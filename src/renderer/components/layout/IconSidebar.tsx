@@ -1,45 +1,82 @@
-import {
-  Globe,
-  FlaskConical,
-  BookOpen,
-  History,
-  Settings,
-  Users
-} from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
-import { useTranslation } from '../../lib/i18n'
-import appIcon from '../../assets/icon.png'
+import { useWorkspaceStore } from '../../stores/workspace.store'
+import { T } from '../../styles/tokens'
+import ProjectIcon from '../shared/ProjectIcon'
 
 type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'settings'
 
 interface NavItem {
   id: SidebarPage | 'invite'
-  icon: React.ReactNode
   label: string
+  icon: (active: boolean) => React.ReactNode
   action?: () => void
+}
+
+function GlobeIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.7} strokeLinecap="round">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="2" y1="12" x2="22" y2="12" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
+  )
+}
+
+function CheckIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.7} strokeLinecap="round">
+      <polyline points="9 11 12 14 22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+    </svg>
+  )
+}
+
+function ClockIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.7} strokeLinecap="round">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  )
+}
+
+function GearIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
+    </svg>
+  )
+}
+
+function UsersIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  )
 }
 
 export default function IconSidebar() {
   const activePage = useUIStore((s) => s.activeSidebarPage)
   const setActivePage = useUIStore((s) => s.setActiveSidebarPage)
   const setShowSettingsModal = useUIStore((s) => s.setShowSettingsModal)
-  const { t } = useTranslation()
+  const activeProject = useWorkspaceStore((s) => {
+    const pid = s.activeProjectId
+    return s.projects.find((p) => p.id === pid)
+  })
 
   const topItems: NavItem[] = [
-    { id: 'apis', icon: <Globe size={20} />, label: t('sidebar.apis') },
-    { id: 'tests', icon: <FlaskConical size={20} />, label: t('sidebar.tests') },
-    { id: 'docs', icon: <BookOpen size={20} />, label: t('sidebar.docs') },
-    { id: 'history', icon: <History size={20} />, label: t('sidebar.history') },
+    { id: 'apis', label: 'APIs', icon: (a) => <GlobeIcon active={a} /> },
+    { id: 'tests', label: 'Tests', icon: (a) => <CheckIcon active={a} /> },
+    { id: 'history', label: 'History', icon: (a) => <ClockIcon active={a} /> },
   ]
 
   const bottomItems: NavItem[] = [
-    {
-      id: 'settings',
-      icon: <Settings size={20} />,
-      label: t('sidebar.settings'),
-      action: () => setShowSettingsModal(true)
-    },
-    { id: 'invite', icon: <Users size={20} />, label: t('sidebar.invite') },
+    { id: 'settings', label: 'Settings', icon: () => <GearIcon />, action: () => setShowSettingsModal(true) },
+    { id: 'invite', label: 'Invite', icon: () => <UsersIcon /> },
   ]
 
   function handleClick(item: NavItem) {
@@ -52,82 +89,104 @@ export default function IconSidebar() {
 
   return (
     <div
-      className="flex shrink-0 flex-col items-center overflow-hidden"
       style={{
-        width: 80,
-        minWidth: 80,
-        background: 'var(--nav-bg)',
-        padding: '0 4px',
-        paddingTop: 48,
-        userSelect: 'none',
+        width: T.sidebarW,
+        minWidth: T.sidebarW,
+        background: T.bg,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        flexShrink: 0,
+        paddingTop: 12,
       }}
     >
-      {/* App Logo in rounded box */}
-      <div
-        title="Apinizer API Tester"
-        style={{
-          width: 42,
-          height: 42,
-          borderRadius: 12,
-          background: '#ffffff',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.10)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: 16,
-          flexShrink: 0,
-        }}
-      >
-        <img
-          src={appIcon}
-          alt="Apinizer API Tester"
-          style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 6 }}
+      {/* Project icon */}
+      <div style={{ marginBottom: 8, flexShrink: 0 }}>
+        <ProjectIcon
+          name={activeProject?.name || 'P'}
+          color="#5b6af0"
+          size={32}
         />
       </div>
 
-      {/* Top nav items */}
-      <div className="flex flex-1 flex-col items-center" style={{ gap: 4 }}>
+      {/* Top nav */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flex: 1, width: '100%' }}>
         {topItems.map((item) => {
-          const isActive = activePage === item.id
+          const active = activePage === item.id
           return (
-            <button
+            <div
               key={item.id}
-              type="button"
               onClick={() => handleClick(item)}
-              className={`nav-item ${isActive ? 'nav-item-active' : ''}`}
-              title={item.label}
+              style={{
+                width: 'calc(100% - 8px)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 3,
+                padding: '9px 4px',
+                cursor: 'pointer',
+                color: active ? T.accent : T.ghost,
+                background: active ? T.accentBg : 'transparent',
+                borderRadius: 8,
+                margin: '0 4px',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={(e) => {
+                if (!active) (e.currentTarget as HTMLElement).style.background = T.surface
+              }}
+              onMouseLeave={(e) => {
+                if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'
+              }}
             >
-              {item.icon}
-              <span>{item.label}</span>
-            </button>
+              {item.icon(active)}
+              <span style={{ fontSize: 10.5, fontWeight: active ? 600 : 400, fontFamily: 'inherit' }}>{item.label}</span>
+            </div>
           )
         })}
       </div>
 
-      {/* Bottom nav items */}
-      <div className="flex flex-col items-center" style={{ gap: 4, marginBottom: 24 }}>
+      {/* Bottom nav */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingBottom: 10, width: '100%' }}>
         {bottomItems.map((item) => (
-          <button
+          <div
             key={item.id}
-            type="button"
             onClick={() => handleClick(item)}
-            className="nav-item"
-            title={item.label}
+            style={{
+              width: 'calc(100% - 8px)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 3,
+              padding: '9px 4px',
+              cursor: 'pointer',
+              color: T.ghost,
+              borderRadius: 8,
+              margin: '0 4px',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = T.surface }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
           >
-            {item.icon}
-            <span>{item.label}</span>
-          </button>
+            {item.icon(false)}
+            <span style={{ fontSize: 10.5, fontFamily: 'inherit' }}>{item.label}</span>
+          </div>
         ))}
 
         {/* Avatar */}
         <div
-          className="flex items-center justify-center rounded-full text-[0.825rem] font-bold text-white"
           style={{
             width: 32,
             height: 32,
-            background: 'var(--accent)',
-            marginTop: 16,
+            borderRadius: '50%',
+            background: T.accent,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 12,
+            fontWeight: 700,
+            color: 'white',
             cursor: 'pointer',
+            marginTop: 4,
           }}
         >
           A

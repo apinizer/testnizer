@@ -26,6 +26,14 @@ function NodeIcon({ icon }: { icon?: string }) {
 
   const iconMap: Record<string, React.ReactNode> = {
     module: <MoreHorizontal size={13} className="text-[var(--hint)]" />,
+    collection: (
+      <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded" style={{ background: '#5b6af0' }}>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
+          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+          <polyline points="13 2 13 9 20 9" fill="none" stroke="white" strokeWidth="2" />
+        </svg>
+      </div>
+    ),
     endpoints: (
       <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-[var(--accent)]">
         <FileText size={10} className="text-white" />
@@ -41,7 +49,11 @@ function NodeIcon({ icon }: { icon?: string }) {
         <Briefcase size={10} className="text-white" />
       </div>
     ),
-    folder: <Folder size={13} className="fill-[#888] text-[#888]" />,
+    folder: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="#fbbf24" stroke="none">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+      </svg>
+    ),
     calc: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>,
     quick: <Zap size={13} className="text-[var(--hint)]" />,
   }

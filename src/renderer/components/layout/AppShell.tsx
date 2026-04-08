@@ -11,6 +11,9 @@ import SettingsModal from '../modals/SettingsModal'
 import CodeGeneratorModal from '../modals/CodeGeneratorModal'
 import CollectionRunnerModal from '../modals/CollectionRunnerModal'
 import UpdateModal from '../modals/UpdateModal'
+import SaveModal from '../modals/SaveModal'
+import NewProjectModal from '../modals/NewProjectModal'
+import EndpointSaveModal from '../modals/EndpointSaveModal'
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useKeyboardShortcuts } from '../../lib/keyboard-shortcuts'
@@ -23,12 +26,10 @@ export default function AppShell() {
 
   useKeyboardShortcuts()
 
-  // Initialize workspace data from DB on mount
   useEffect(() => {
     initialize()
   }, [initialize])
 
-  // Show loading state while initializing
   if (!initialized) {
     return (
       <div
@@ -45,37 +46,36 @@ export default function AppShell() {
     return (
       <div className="flex h-screen w-screen overflow-hidden" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
         <ProjectHome />
-
-        {/* Modals still available */}
         <SettingsModal />
         <UpdateModal />
+        <NewProjectModal />
       </div>
     )
   }
 
-  // Project is active — show main workspace
+  // Project is active — Apidog layout:
+  // Header spans full width (including over sidebar area)
+  // Below header: IconSidebar | LeftPanel | Workbench
+  // Footer spans full width
   return (
-    <div className="flex h-screen w-screen overflow-hidden" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
-      {/* Icon Sidebar — 80px (Apidog nav rail) */}
-      <IconSidebar />
+    <div className="flex h-screen w-screen flex-col overflow-hidden" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+      {/* Header — full width, 44px */}
+      <Header />
 
-      {/* Main content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Header tab bar — 44px */}
-        <Header />
+      {/* Body — sidebar + content area */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Icon Sidebar — 64px, no top border, starts below header */}
+        <IconSidebar />
 
-        {/* Body */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* Left Panel — 256px */}
-          {!isLeftPanelCollapsed && <LeftPanel />}
+        {/* Left Panel — collection tree */}
+        {!isLeftPanelCollapsed && <LeftPanel />}
 
-          {/* Workbench */}
-          <Workbench />
-        </div>
-
-        {/* Footer — 36px */}
-        <Footer />
+        {/* Workbench — flex:1 */}
+        <Workbench />
       </div>
+
+      {/* Footer — full width, 28px */}
+      <Footer />
 
       {/* Modals */}
       <ImportModal />
@@ -84,6 +84,9 @@ export default function AppShell() {
       <CodeGeneratorModal />
       <CollectionRunnerModal />
       <UpdateModal />
+      <SaveModal />
+      <NewProjectModal />
+      <EndpointSaveModal />
     </div>
   )
 }

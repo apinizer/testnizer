@@ -313,6 +313,42 @@ const api = {
     }
   },
 
+  // ─── Branch ──────────────────────────────────────────────────
+  branch: {
+    list: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('branch:list', projectId),
+    get: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('branch:get', id),
+    create: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('branch:create', payload),
+    rename: (id: string, name: string): Promise<unknown> =>
+      ipcRenderer.invoke('branch:rename', id, name),
+    delete: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('branch:delete', id),
+    ensureDefault: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('branch:ensureDefault', projectId)
+  },
+
+  // ─── Save ───────────────────────────────────────────────────
+  save: {
+    local: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('save:local', payload),
+    selectDirectory: (): Promise<unknown> =>
+      ipcRenderer.invoke('save:selectDirectory'),
+    git: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('save:git', payload),
+    gitListFiles: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('save:gitListFiles', payload),
+    gitReadFile: (filePath: string): Promise<unknown> =>
+      ipcRenderer.invoke('save:gitReadFile', filePath),
+    gitCleanup: (tmpDir: string): Promise<unknown> =>
+      ipcRenderer.invoke('save:gitCleanup', tmpDir),
+    getGitCredentials: (): Promise<unknown> =>
+      ipcRenderer.invoke('save:getGitCredentials'),
+    history: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('save:history', projectId)
+  },
+
   // ─── SSE ────────────────────────────────────────────────────
   sse: {
     connect: (options: unknown): Promise<unknown> =>

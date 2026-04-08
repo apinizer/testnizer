@@ -1,100 +1,87 @@
-import { Search, GitBranch, Filter } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
-import { useTranslation } from '../../lib/i18n'
+import { T } from '../../styles/tokens'
 import TreeView from '../sidebar/TreeView'
 import NewDropdown from '../sidebar/NewDropdown'
+import BranchDropdown from '../sidebar/BranchDropdown'
 
 export default function LeftPanel() {
   const searchQuery = useWorkspaceStore((s) => s.searchQuery)
   const setSearchQuery = useWorkspaceStore((s) => s.setSearchQuery)
-  const { t } = useTranslation()
 
   return (
     <div
-      className="flex shrink-0 flex-col overflow-hidden"
       style={{
-        width: 256,
-        minWidth: 256,
-        background: 'var(--white)',
-        borderRight: '1px solid var(--border)',
+        width: T.panelW,
+        minWidth: T.panelW,
+        background: T.white,
+        borderRight: `1px solid ${T.border}`,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        flexShrink: 0,
       }}
     >
-      {/* Panel header — 36px */}
+      {/* Panel header — 44px */}
       <div
-        className="flex shrink-0 items-center gap-1.5"
         style={{
-          height: 36,
+          height: 44,
+          borderBottom: `1px solid ${T.border}`,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
           padding: '0 10px',
-          borderBottom: '1px solid var(--border)',
+          flexShrink: 0,
         }}
       >
-        <span className="flex-1 text-[0.825rem] font-semibold" style={{ color: 'var(--text)' }}>
-          {t('leftPanel.apis')}
+        <span style={{ fontWeight: 700, fontSize: 14, flex: 1, color: T.text }}>
+          API'ler
         </span>
 
-        {/* Branch pill */}
-        <button
-          type="button"
-          className="flex cursor-pointer items-center gap-1 text-[0.825rem]"
-          style={{
-            background: 'var(--bg)',
-            border: '1px solid var(--border2)',
-            borderRadius: 12,
-            padding: '2px 6px',
-            color: 'var(--muted)',
-          }}
-        >
-          <GitBranch size={9} />
-          main
-        </button>
-      </div>
-
-      {/* Search + New dropdown */}
-      <div
-        className="flex gap-1"
-        style={{
-          padding: '6px 8px',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          className="flex flex-1 items-center gap-1"
-          style={{
-            background: 'var(--bg)',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-            padding: '3px 6px',
-          }}
-        >
-          <Search size={11} className="shrink-0" style={{ color: 'var(--hint)' }} />
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('leftPanel.search')}
-            className="w-full border-none bg-transparent text-[0.875rem] outline-none"
-            style={{
-              color: 'var(--text)',
-              lineHeight: '18px',
-            }}
-          />
-        </div>
-
-        <button
-          type="button"
-          className="cursor-pointer"
-          style={{
-            background: 'transparent',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-            padding: 4,
-            color: 'var(--muted)',
-          }}
-        >
-          <Filter size={11} />
-        </button>
+        {/* Branch dropdown */}
+        <BranchDropdown />
 
         {/* New dropdown (+ button) */}
         <NewDropdown />
+      </div>
+
+      {/* Search */}
+      <div
+        style={{
+          padding: '8px 10px',
+          borderBottom: `1px solid ${T.border}`,
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            background: T.surface,
+            border: `1.5px solid ${T.border2}`,
+            borderRadius: 8,
+            padding: '6px 10px',
+            gap: 7,
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.ghost} strokeWidth="2">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Ara..."
+            style={{
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              fontSize: 13,
+              color: T.text,
+              width: '100%',
+              fontFamily: 'inherit',
+            }}
+          />
+        </div>
       </div>
 
       {/* Tree */}

@@ -1,8 +1,7 @@
 import { create } from 'zustand'
-import type { Workspace, Project, TreeNode } from '../types'
+import type { Workspace, Project, TreeNode, Folder, Endpoint, SavedRequest } from '../types'
 
 interface WorkspaceStore {
-  /** Whether initial data has been loaded from DB */
   initialized: boolean
   workspaces: Workspace[]
   activeWorkspaceId: string | null
@@ -13,7 +12,6 @@ interface WorkspaceStore {
   activeNodeId: string | null
   searchQuery: string
 
-  /** Initialize — load workspaces & projects from DB */
   initialize: () => Promise<void>
   setActiveWorkspace: (id: string) => void
   setActiveProject: (id: string | null) => void
@@ -26,40 +24,140 @@ interface WorkspaceStore {
   fetchProjects: (workspaceId: string) => Promise<void>
   createProject: (name: string, type: 'http' | 'grpc' | 'websocket') => Promise<string | null>
   deleteProject: (id: string) => Promise<void>
-  /** Go back to the Home/project list screen */
   goHome: () => void
+  /** Reload tree data from DB for active project */
+  refreshTree: () => Promise<void>
 }
 
-function defaultTree(): TreeNode[] {
+interface FolderRow {
+  id: string
+  project_id: string
+  parent_id: string | null
+  name: string
+  sort_order: number
+}
+
+interface EndpointRow {
+  id: string
+  project_id: string
+  folder_id: string | null
+  name: string
+  method: string | null
+  path: string
+  protocol: string
+}
+
+interface SavedRequestRow {
+  id: string
+  project_id: string | null
+  folder_id: string | null
+  name: string
+  method: string | null
+  url: string
+  protocol: string
+}
+
+async function buildTreeFromDB(projectId: string, projectName: string): Promise<TreeNode[]> {
+  try {
+    // Load folders
+    const foldersResult = await window.api?.folder?.list(projectId) as { success: boolean; data?: FolderRow[] }
+    const folders: FolderRow[] = foldersResult?.success && foldersResult.data ? foldersResult.data : []
+
+    // Load endpoints
+    const endpointsResult = await window.api?.endpoint?.listByProject(projectId) as { success: boolean; data?: EndpointRow[] }
+    const endpoints: EndpointRow[] = endpointsResult?.success && endpointsResult.data ? endpointsResult.data : []
+
+    // Load saved requests
+    const savedResult = await window.api?.savedRequest?.list(projectId) as { success: boolean; data?: SavedRequestRow[] }
+    const savedRequests: SavedRequestRow[] = savedResult?.success && savedResult.data ? savedResult.data : []
+
+    // Build folder tree nodes
+    const folderNodes: TreeNode[] = folders.map((f) => {
+      // Endpoints in this folder
+      const folderEndpoints: TreeNode[] = endpoints
+        .filter((e) => e.folder_id === f.id)
+        .map((e) => ({
+          id: e.id,
+          type: 'endpoint' as const,
+          label: e.name,
+          method: e.method || 'GET',
+          path: e.path,
+        }))
+
+      // Saved requests in this folder
+      const folderSaved: TreeNode[] = savedRequests
+        .filter((r) => r.folder_id === f.id)
+        .map((r) => ({
+          id: r.id,
+          type: 'request' as const,
+          label: r.name,
+          method: r.method || 'GET',
+          path: r.url,
+        }))
+
+      return {
+        id: f.id,
+        type: 'folder' as const,
+        label: f.name,
+        icon: 'folder',
+        children: [...folderEndpoints, ...folderSaved],
+      }
+    })
+
+    // Root-level endpoints (no folder)
+    const rootEndpoints: TreeNode[] = endpoints
+      .filter((e) => !e.folder_id)
+      .map((e) => ({
+        id: e.id,
+        type: 'endpoint' as const,
+        label: e.name,
+        method: e.method || 'GET',
+        path: e.path,
+      }))
+
+    // Root-level saved requests (no folder)
+    const rootSaved: TreeNode[] = savedRequests
+      .filter((r) => !r.folder_id)
+      .map((r) => ({
+        id: r.id,
+        type: 'request' as const,
+        label: r.name,
+        method: r.method || 'GET',
+        path: r.url,
+      }))
+
+    // Build project root node
+    const projectNode: TreeNode = {
+      id: `project-${projectId}`,
+      type: 'module',
+      label: projectName,
+      icon: 'collection',
+      children: [...folderNodes, ...rootEndpoints, ...rootSaved],
+    }
+
+    // Quick Requests section
+    const quickRequests: TreeNode = {
+      id: 'quick-requests',
+      type: 'module',
+      label: 'Quick Requests',
+      icon: 'quick',
+      children: [],
+    }
+
+    return [projectNode, quickRequests]
+  } catch {
+    return emptyTree()
+  }
+}
+
+function emptyTree(): TreeNode[] {
   return [
     {
       id: 'default-module',
       type: 'module',
       label: 'Default module',
       icon: 'module',
-      children: [
-        {
-          id: 'endpoints',
-          type: 'folder',
-          label: 'Endpoints',
-          icon: 'endpoints',
-          children: [],
-        },
-        {
-          id: 'schemas',
-          type: 'folder',
-          label: 'Schemas',
-          icon: 'schemas',
-          children: [],
-        },
-        {
-          id: 'components',
-          type: 'folder',
-          label: 'Components',
-          icon: 'components',
-          children: [],
-        },
-      ],
+      children: [],
     },
     { id: 'quick-requests', type: 'module', label: 'Quick Requests', icon: 'quick', children: [] },
   ]
@@ -71,8 +169,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   activeWorkspaceId: null,
   projects: [],
   activeProjectId: null,
-  treeData: defaultTree(),
-  openNodeIds: new Set(['default-module', 'endpoints']),
+  treeData: emptyTree(),
+  openNodeIds: new Set(['default-module']),
   activeNodeId: null,
   searchQuery: '',
 
@@ -80,7 +178,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (get().initialized) return
 
     try {
-      // Load workspaces
       const wsResult = await window.api?.workspace?.list()
       if (wsResult?.success && wsResult.data) {
         const workspaces = wsResult.data as Workspace[]
@@ -90,7 +187,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           const wsId = workspaces[0].id
           set({ activeWorkspaceId: wsId })
 
-          // Load projects for this workspace
           const projResult = await window.api?.project?.list(wsId)
           if (projResult?.success && projResult.data) {
             set({ projects: projResult.data as Project[] })
@@ -98,7 +194,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         }
       }
     } catch {
-      // IPC not available yet — will show empty state
+      // IPC not available
     }
 
     set({ initialized: true })
@@ -106,7 +202,32 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
-  setActiveProject: (id) => set({ activeProjectId: id, treeData: defaultTree() }),
+  setActiveProject: async (id) => {
+    set({ activeProjectId: id })
+    if (!id) {
+      set({ treeData: emptyTree() })
+      return
+    }
+    // Find project name
+    const project = get().projects.find((p) => p.id === id)
+    const projectName = project?.name || 'Project'
+
+    const tree = await buildTreeFromDB(id, projectName)
+    const openIds = new Set<string>()
+    // Auto-open the project root
+    for (const node of tree) {
+      openIds.add(node.id)
+      // Also open first-level folders
+      if (node.children) {
+        for (const child of node.children) {
+          if (child.type === 'folder') {
+            openIds.add(child.id)
+          }
+        }
+      }
+    }
+    set({ treeData: tree, openNodeIds: openIds })
+  },
 
   setTreeData: (data) => set({ treeData: data }),
 
@@ -131,7 +252,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         set({ workspaces: result.data as Workspace[] })
       }
     } catch {
-      // IPC not available yet
+      // IPC not available
     }
   },
 
@@ -142,7 +263,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         await get().fetchWorkspaces()
       }
     } catch {
-      // IPC not available yet
+      // IPC not available
     }
   },
 
@@ -153,7 +274,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         set({ projects: result.data as Project[] })
       }
     } catch {
-      // IPC not available yet
+      // IPC not available
     }
   },
 
@@ -168,7 +289,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         return created.id
       }
     } catch {
-      // IPC not available yet
+      // IPC not available
     }
     return null
   },
@@ -180,7 +301,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       if (wsId) {
         await get().fetchProjects(wsId)
       }
-      // If the deleted project was active, go home
       if (get().activeProjectId === id) {
         set({ activeProjectId: null })
       }
@@ -190,4 +310,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   goHome: () => set({ activeProjectId: null }),
+
+  refreshTree: async () => {
+    const projectId = get().activeProjectId
+    if (!projectId) return
+    const project = get().projects.find((p) => p.id === projectId)
+    const projectName = project?.name || 'Project'
+    const tree = await buildTreeFromDB(projectId, projectName)
+    // Preserve existing openNodeIds
+    set({ treeData: tree })
+  },
 }))

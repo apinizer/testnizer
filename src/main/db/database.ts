@@ -177,6 +177,30 @@ function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_global_vars_workspace ON global_variables(workspace_id);
     CREATE INDEX IF NOT EXISTS idx_history_workspace ON history(workspace_id);
     CREATE INDEX IF NOT EXISTS idx_history_executed_at ON history(executed_at);
+
+    CREATE TABLE IF NOT EXISTS branches (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      parent_branch_id TEXT REFERENCES branches(id) ON DELETE SET NULL,
+      created_at INTEGER NOT NULL,
+      is_default INTEGER DEFAULT 0,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_branches_project ON branches(project_id);
+
+    CREATE TABLE IF NOT EXISTS save_history (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'local',
+      path TEXT NOT NULL,
+      message TEXT NOT NULL DEFAULT '',
+      timestamp INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_save_history_project ON save_history(project_id);
   `)
 }
 

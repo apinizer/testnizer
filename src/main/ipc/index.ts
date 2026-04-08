@@ -12,6 +12,8 @@ import { registerRunnerHandlers } from './runner.handler'
 import { registerGraphqlHandlers } from './graphql.handler'
 import { registerGrpcHandlers } from './grpc.handler'
 import { registerSseHandlers } from './sse.handler'
+import { registerBranchHandlers } from './branch.handler'
+import { registerSaveHandlers } from './save.handler'
 
 export function registerAllHandlers(): void {
   registerRequestHandlers()
@@ -28,4 +30,6 @@ export function registerAllHandlers(): void {
   registerGraphqlHandlers()
   registerGrpcHandlers()
   registerSseHandlers()
+  registerBranchHandlers()
+  registerSaveHandlers()
 }

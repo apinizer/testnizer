@@ -17,7 +17,8 @@ import type {
   WsdlParseResult,
   SoapMetadata,
   WsSecurityConfig,
-  WsMessage
+  WsMessage,
+  Branch
 } from '../renderer/types'
 
 interface WorkspaceApi {
@@ -574,6 +575,66 @@ interface WindowApi {
   toggleMaximize(): Promise<IpcResult<boolean>>
 }
 
+// ─── Branch ──────────────────────────────────────────────────────
+
+interface BranchApi {
+  list(projectId: string): Promise<IpcResult<Branch[]>>
+  get(id: string): Promise<IpcResult<Branch | undefined>>
+  create(payload: { project_id: string; name: string; parent_branch_id?: string | null }): Promise<IpcResult<Branch>>
+  rename(id: string, name: string): Promise<IpcResult<Branch | undefined>>
+  delete(id: string): Promise<IpcResult<boolean>>
+  ensureDefault(projectId: string): Promise<IpcResult<Branch>>
+}
+
+// ─── Save ────────────────────────────────────────────────────────
+
+interface SaveLocalResult {
+  path: string
+  fileName: string
+}
+
+interface SaveGitResult {
+  repoUrl: string
+  branch: string
+}
+
+interface SaveGitListResult {
+  tmpDir: string
+  files: Array<{ name: string; path: string; size: number }>
+}
+
+interface SaveHistoryRow {
+  id: string
+  project_id: string
+  mode: string
+  path: string
+  message: string
+  timestamp: number
+}
+
+interface SaveApi {
+  local(payload: { projectId: string; directoryPath?: string }): Promise<IpcResult<SaveLocalResult>>
+  selectDirectory(): Promise<IpcResult<string>>
+  git(payload: {
+    projectId: string
+    repoUrl: string
+    branch: string
+    username: string
+    token: string
+    commitMessage: string
+  }): Promise<IpcResult<SaveGitResult>>
+  gitListFiles(payload: {
+    repoUrl: string
+    branch: string
+    username: string
+    token: string
+  }): Promise<IpcResult<SaveGitListResult>>
+  gitReadFile(filePath: string): Promise<IpcResult<unknown>>
+  gitCleanup(tmpDir: string): Promise<IpcResult<undefined>>
+  getGitCredentials(): Promise<IpcResult<Record<string, unknown>>>
+  history(projectId: string): Promise<IpcResult<SaveHistoryRow[]>>
+}
+
 interface ApiBridge {
   window: WindowApi
   request: RequestApi
@@ -596,6 +657,8 @@ interface ApiBridge {
   grpc: GrpcApi
   sse: SseApi
   updater: UpdaterApi
+  branch: BranchApi
+  save: SaveApi
 }
 
 declare global {

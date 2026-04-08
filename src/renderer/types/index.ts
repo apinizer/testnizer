@@ -438,3 +438,53 @@ export type CodeLanguage =
   | 'curl' | 'js-fetch' | 'js-axios'
   | 'python-requests' | 'java-okhttp'
   | 'go' | 'php' | 'ruby' | 'swift' | 'kotlin' | 'csharp'
+
+// ─── Branch ─────────────────────────────────────────────────
+
+export interface Branch {
+  id: string
+  project_id: string
+  name: string
+  parent_branch_id: string | null
+  created_at: number
+  is_default: boolean
+}
+
+// ─── Save / Git ─────────────────────────────────────────────
+
+export type SaveMode = 'local' | 'git'
+
+export interface SaveLocalOptions {
+  projectId: string
+  directoryPath: string
+}
+
+export interface SaveGitOptions {
+  projectId: string
+  repoUrl: string
+  branch: string
+  username: string
+  token: string
+  commitMessage: string
+}
+
+export interface GitOpenOptions {
+  repoUrl: string
+  branch: string
+  username: string
+  token: string
+}
+
+export interface SaveHistoryEntry {
+  id: string
+  mode: SaveMode
+  path: string
+  message: string
+  timestamp: number
+}
+
+export interface GitRepoFile {
+  name: string
+  path: string
+  size: number
+}

@@ -44,13 +44,9 @@ export function useKeyboardShortcuts(): void {
         {
           key: 's',
           ctrl: true,
-          description: 'Save request',
+          description: 'Save project',
           action: () => {
-            // Save is a no-op stub for now — triggers dirty flag clear
-            const activeTabId = useTabsStore.getState().activeTabId
-            if (activeTabId) {
-              useTabsStore.getState().markDirty(activeTabId, false)
-            }
+            useUIStore.getState().setShowSaveModal(true)
           },
         },
         {

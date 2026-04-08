@@ -1,37 +1,20 @@
-import { X, Home } from 'lucide-react'
-import { useTabsStore } from '../../stores/tabs.store'
-import { useRequestStore } from '../../stores/request.store'
-import { useResponseStore } from '../../stores/response.store'
+import { Save } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
+import { useUIStore } from '../../stores/ui.store'
+import { useBranchStore } from '../../stores/branch.store'
 import { useTranslation } from '../../lib/i18n'
-
-const METHOD_COLORS: Record<string, string> = {
-  GET: '#0066cc',
-  POST: '#1a7a4a',
-  PUT: '#b35a00',
-  PATCH: '#0a7a5a',
-  DELETE: '#cc2200',
-  HEAD: '#6b21a8',
-  OPTIONS: '#888888',
-}
+import ProjectIcon from '../shared/ProjectIcon'
+import { T } from '../../styles/tokens'
 
 export default function Header() {
-  const tabs = useTabsStore((s) => s.tabs)
-  const activeTabId = useTabsStore((s) => s.activeTabId)
-  const setActiveTab = useTabsStore((s) => s.setActiveTab)
-  const closeTab = useTabsStore((s) => s.closeTab)
-  const switchToTab = useRequestStore((s) => s.switchToTab)
-  const removeTabState = useRequestStore((s) => s.removeTabState)
-  const clearResponse = useResponseStore((s) => s.clearResponse)
   const goHome = useWorkspaceStore((s) => s.goHome)
+  const setShowSaveModal = useUIStore((s) => s.setShowSaveModal)
+  const activeBranch = useBranchStore((s) => s.getActiveBranch())
   const activeProject = useWorkspaceStore((s) => {
     const pid = s.activeProjectId
     return s.projects.find((p) => p.id === pid)
   })
   const { t } = useTranslation()
-
-  // Whether project tab is active (no request tab selected)
-  const isProjectTabActive = !activeTabId || !tabs.find((tab) => tab.id === activeTabId)
 
   function handleDoubleClick(e: React.MouseEvent) {
     const target = e.target as HTMLElement
@@ -39,191 +22,147 @@ export default function Header() {
     window.api?.window?.toggleMaximize?.()
   }
 
-  function handleSwitchTab(tabId: string) {
-    if (tabId === activeTabId) return
-    switchToTab(tabId)
-    clearResponse()
-    setActiveTab(tabId)
-  }
-
-  function handleCloseTab(tabId: string) {
-    removeTabState(tabId)
-    closeTab(tabId)
-    // After closing, switch to the new active tab
-    const newActiveId = useTabsStore.getState().activeTabId
-    if (newActiveId) {
-      switchToTab(newActiveId)
-      clearResponse()
-    }
-  }
-
-  function handleProjectTabClick() {
-    // Deselect all request tabs → show project welcome
-    setActiveTab(null)
-    clearResponse()
-  }
-
-  function handleCloseProject() {
-    // Go back to home/project list
-    goHome()
-  }
-
   return (
     <header
-      className="drag-region flex shrink-0 items-end"
+      className="drag-region flex shrink-0 items-center"
       style={{
         height: 44,
         paddingLeft: 72,
-        background: 'var(--bg)',
-        borderBottom: '1px solid var(--border-split)',
+        background: T.white,
+        borderBottom: `1px solid ${T.border}`,
       }}
       onDoubleClick={handleDoubleClick}
     >
-      {/* Tab strip */}
-      <div className="no-drag flex h-[44px] flex-1 items-end overflow-hidden">
-        {/* Home tab */}
+      {/* Home tab */}
+      <div
+        className="no-drag flex items-center cursor-pointer shrink-0"
+        style={{
+          padding: '0 16px',
+          height: '100%',
+          borderRight: `1px solid ${T.border}`,
+          color: T.muted,
+          fontSize: 14,
+        }}
+        onClick={goHome}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = T.surface }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <polyline points="9 22 9 12 15 12 15 22" />
+        </svg>
+        {t('home.tab')}
+      </div>
+
+      {/* Project tab */}
+      {activeProject && (
         <div
-          className="flex h-[36px] cursor-pointer items-center gap-1.5 px-3 text-[0.825rem]"
+          className="no-drag group flex items-center gap-1.5 cursor-pointer shrink-0"
           style={{
-            background: 'transparent',
-            borderLeft: '1px solid transparent',
-            borderRight: '1px solid transparent',
-            borderTop: 'none',
-            borderBottom: 'none',
-            color: 'var(--muted)',
-            minWidth: 60,
-            borderRadius: '6px 6px 0 0',
-            marginBottom: -1,
+            padding: '0 16px',
+            height: '100%',
+            fontSize: 14,
+            fontWeight: 500,
+            borderBottom: `2px solid ${T.accent}`,
+            color: T.text,
           }}
-          onClick={handleCloseProject}
-          title={t('home.tab')}
         >
-          <Home size={14} />
-          <span className="text-[0.875rem]">{t('home.tab')}</span>
+          <ProjectIcon name={activeProject.name} size={18} color={T.accent} />
+          <span className="truncate" style={{ maxWidth: 160 }}>{activeProject.name}</span>
+          <span
+            className="hidden cursor-pointer group-hover:inline"
+            style={{ color: T.ghost, fontSize: 16, marginLeft: 4 }}
+            onClick={(e) => {
+              e.stopPropagation()
+              goHome()
+            }}
+          >
+            ×
+          </span>
+        </div>
+      )}
+
+      {/* "..." menu */}
+      <div
+        className="no-drag flex items-center cursor-pointer shrink-0"
+        style={{ padding: '0 8px', color: T.ghost, fontSize: 18 }}
+      >
+        ···
+      </div>
+
+      {/* Spacer */}
+      <div className="flex-1" />
+
+      {/* Right side */}
+      <div className="no-drag flex items-center gap-2 shrink-0" style={{ padding: '0 14px' }}>
+        {/* Branch pill */}
+        <div
+          className="flex items-center gap-1.5 cursor-pointer"
+          style={{
+            padding: '4px 10px',
+            background: T.surface,
+            border: `1.5px solid ${T.border2}`,
+            borderRadius: 20,
+            fontSize: 12,
+            color: T.sub,
+          }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="6" y1="3" x2="6" y2="15" />
+            <circle cx="18" cy="6" r="3" />
+            <circle cx="6" cy="18" r="3" />
+            <path d="M18 9a9 9 0 0 1-9 9" />
+          </svg>
+          <span style={{ fontWeight: 500 }}>{activeBranch?.name || 'main'}</span>
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
         </div>
 
-        {/* Active project tab */}
-        {activeProject && (
-          <div
-            className={`tab-item group relative flex h-[36px] cursor-pointer items-center gap-1.5 px-3 text-[0.825rem] ${isProjectTabActive ? 'tab-item-active' : ''}`}
-            style={{
-              background: isProjectTabActive ? 'var(--white)' : 'transparent',
-              borderLeft: isProjectTabActive ? '1px solid var(--border-split)' : '1px solid transparent',
-              borderRight: isProjectTabActive ? '1px solid var(--border-split)' : '1px solid transparent',
-              borderTop: 'none',
-              borderBottom: 'none',
-              color: 'var(--heading)',
-              minWidth: 92,
-              maxWidth: 200,
-              borderRadius: '6px 6px 0 0',
-              marginBottom: -1,
-            }}
-            onClick={handleProjectTabClick}
-          >
-            <span className="truncate text-[0.875rem] font-medium">{activeProject.name}</span>
+        {/* Save */}
+        <button
+          type="button"
+          onClick={() => setShowSaveModal(true)}
+          className="flex items-center gap-1 cursor-pointer"
+          style={{
+            background: 'transparent',
+            border: `1px solid ${T.border}`,
+            borderRadius: 7,
+            padding: '4px 10px',
+            color: T.muted,
+            fontSize: 12,
+          }}
+          title="Save Project (Cmd+S)"
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.color = T.accent
+            ;(e.currentTarget as HTMLElement).style.borderColor = T.accent
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.color = T.muted
+            ;(e.currentTarget as HTMLElement).style.borderColor = T.border
+          }}
+        >
+          <Save size={12} />
+        </button>
 
-            {/* Close project tab (X) */}
-            <button
-              type="button"
-              className="ml-auto hidden shrink-0 items-center justify-center rounded-full group-hover:inline-flex"
-              style={{
-                width: 18,
-                height: 18,
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--muted)',
-              }}
-              onClick={(e) => {
-                e.stopPropagation()
-                handleCloseProject()
-              }}
-              onMouseOver={(e) => {
-                (e.currentTarget as HTMLElement).style.background = 'var(--fill-5)'
-              }}
-              onMouseOut={(e) => {
-                (e.currentTarget as HTMLElement).style.background = 'transparent'
-              }}
-            >
-              <X size={12} />
-            </button>
-          </div>
-        )}
-
-        {/* Request tabs */}
-        {tabs.map((tab) => {
-          const isActive = tab.id === activeTabId
-          const methodColor = METHOD_COLORS[tab.method || ''] || 'var(--muted)'
-          return (
-            <div
-              key={tab.id}
-              className={`tab-item group relative flex h-[36px] cursor-pointer items-center gap-1.5 px-3 text-[0.825rem] ${isActive ? 'tab-item-active' : ''}`}
-              style={{
-                background: isActive ? 'var(--white)' : 'transparent',
-                borderLeft: isActive ? '1px solid var(--border-split)' : '1px solid transparent',
-                borderRight: isActive ? '1px solid var(--border-split)' : '1px solid transparent',
-                borderTop: 'none',
-                borderBottom: 'none',
-                color: isActive ? 'var(--heading)' : 'var(--text)',
-                minWidth: 92,
-                maxWidth: 200,
-                borderRadius: '6px 6px 0 0',
-                marginBottom: -1,
-              }}
-              onClick={() => handleSwitchTab(tab.id)}
-            >
-              {/* Method label */}
-              <span
-                className="shrink-0 text-[0.875rem] font-bold uppercase"
-                style={{ color: methodColor }}
-              >
-                {tab.method || tab.protocol?.toUpperCase() || ''}
-              </span>
-
-              {/* Tab name */}
-              <span className="truncate">{tab.name}</span>
-
-              {/* Dirty indicator */}
-              {tab.isDirty && (
-                <span
-                  className="absolute right-2 top-2 rounded-full"
-                  style={{
-                    width: 6,
-                    height: 6,
-                    background: 'var(--accent)',
-                  }}
-                />
-              )}
-
-              {/* Close button */}
-              <button
-                type="button"
-                className="ml-auto hidden shrink-0 items-center justify-center rounded-full group-hover:inline-flex"
-                style={{
-                  width: 18,
-                  height: 18,
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: 'var(--muted)',
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleCloseTab(tab.id)
-                }}
-                onMouseOver={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = 'var(--fill-5)'
-                }}
-                onMouseOut={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = 'transparent'
-                }}
-              >
-                <X size={12} />
-              </button>
-            </div>
-          )
-        })}
-
+        {/* Avatar */}
+        <div
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: '50%',
+            background: T.accent,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 12,
+            fontWeight: 700,
+            color: 'white',
+            cursor: 'pointer',
+          }}
+        >
+          A
+        </div>
       </div>
     </header>
   )

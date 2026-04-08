@@ -2,63 +2,76 @@
 
 /* ── Light Theme (default) ── */
 :root[data-theme="light"] {
-  --bg:           #f5f5f7;
+  --bg:           #f4f4f6;
   --white:        #ffffff;
-  --border:       #e8e8ed;
-  --border2:      #d0d0da;
-  --border-split: #e8e8ed;
-  --text:         #1a1a2e;
-  --heading:      #0d0d1a;
-  --muted:        #6b6b7b;
-  --hint:         #9b9baa;
-  --accent:       #3F51B5;
-  --accent-light: #E8EAF6;
-  --accent-text:  #303F9F;
-  --surface:      #fafafa;
-  --green:        #1a7a4a;
-  --green-bg:     #e8f9f1;
-  --green-border: #b3e5cc;
-  --blue:         #0066cc;
-  --orange:       #b35a00;
-  --red:          #cc2200;
-  --item-hover:   rgba(0,0,0,0.04);
-  --fill-4:       #f2f4f7;
+  --border:       #e5e7eb;
+  --border2:      #d1d5db;
+  --border-split: #e5e7eb;
+  --text:         #111827;
+  --heading:      #111827;
+  --sub:          #374151;
+  --muted:        #6b7280;
+  --hint:         #9ca3af;
+  --accent:       #5b6af0;
+  --accent-light: #eef0fe;
+  --accent-text:  #4a59df;
+  --surface:      #f9fafb;
+  --green:        #15803d;
+  --green-bg:     #dcfce7;
+  --green-border: #bbf7d0;
+  --blue:         #1d4ed8;
+  --orange:       #92400e;
+  --red:          #b91c1c;
+  --item-hover:   #f9fafb;
+  --fill-4:       #f4f4f6;
   --fill-5:       rgba(0,0,0,0.06);
+  --input-bg:     #ffffff;
 
   /* Sidebar (nav rail) */
-  --nav-bg:       #f2f4f7;
-  --nav-hover:    rgba(0,0,0,0.04);
-  --nav-active-bg: #ffffff;
+  --nav-bg:       #ffffff;
+  --nav-hover:    #f9fafb;
+  --nav-active-bg: #eef0fe;
+
+  /* Shadows */
+  --shadow-modal: 0 16px 48px rgba(0,0,0,0.14);
+  --shadow-drop:  0 8px 32px rgba(0,0,0,0.12);
 }
 
 /* ── Dark Theme ── */
 :root[data-theme="dark"] {
-  --bg:           #1b1c21;
-  --white:        #242424;
+  --bg:           #0f0f17;
+  --white:        #16161f;
   --border:       rgba(255,255,255,0.08);
-  --border2:      rgba(255,255,255,0.12);
+  --border2:      rgba(255,255,255,0.14);
   --border-split: rgba(255,255,255,0.06);
-  --text:         #e2e2f0;
-  --heading:      #f0f0f8;
-  --muted:        #8888aa;
-  --hint:         #555570;
-  --accent:       #7986CB;
-  --accent-light: rgba(121,134,203,0.15);
-  --accent-text:  #9FA8DA;
-  --surface:      #2d2d2d;
+  --text:         #f1f1f5;
+  --heading:      #f1f1f5;
+  --sub:          #c9cad8;
+  --muted:        #8b8ca8;
+  --hint:         #5a5b72;
+  --accent:       #7b8af5;
+  --accent-light: rgba(91,106,240,0.15);
+  --accent-text:  #9fa8f5;
+  --surface:      #1a1a2a;
   --green:        #49cc90;
   --green-bg:     rgba(73,204,144,0.12);
+  --green-border: rgba(73,204,144,0.25);
   --blue:         #61affe;
   --orange:       #fca130;
-  --red:          #cc2200;
-  --item-hover:   rgba(255,255,255,0.06);
-  --fill-4:       #2a2a30;
+  --red:          #ef4444;
+  --item-hover:   #252538;
+  --fill-4:       #1a1a2a;
   --fill-5:       rgba(255,255,255,0.08);
+  --input-bg:     #1e1e2e;
 
   /* Sidebar (nav rail) */
   --nav-bg:       #13131a;
   --nav-hover:    rgba(255,255,255,0.04);
-  --nav-active-bg: rgba(255,255,255,0.08);
+  --nav-active-bg: rgba(91,106,240,0.15);
+
+  /* Shadows */
+  --shadow-modal: 0 16px 48px rgba(0,0,0,0.5);
+  --shadow-drop:  0 8px 32px rgba(0,0,0,0.4);
 }
 
 /* ── Base ── */
@@ -69,7 +82,7 @@ html, body, #root {
   width: 100%;
   overflow: hidden;
   font-family: Inter, -apple-system, 'Segoe UI', system-ui, sans-serif;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.5;
   background: var(--bg);
   color: var(--text);
@@ -89,6 +102,12 @@ html, body, #root {
 :root[data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 :root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
+/* ── Focus ring (mockup style) ── */
+input:focus, textarea:focus, select:focus {
+  border-color: #5b6af0 !important;
+  box-shadow: 0 0 0 3px rgba(91,106,240,0.1);
+}
+
 /* ── Animations ── */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
@@ -97,6 +116,10 @@ html, body, #root {
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* ── Drag region for frameless window ── */

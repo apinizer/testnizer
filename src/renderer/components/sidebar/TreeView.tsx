@@ -62,7 +62,7 @@ export default function TreeView() {
         setMethod(node.method as HttpMethod)
       }
       if (node.path) {
-        setUrl(`https://api.example.com${node.path}`)
+        setUrl(node.path)
       }
     },
     [setActiveNode, setMethod, setUrl]

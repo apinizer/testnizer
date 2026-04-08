@@ -1,78 +1,53 @@
-import { Globe, Wifi, Cookie, Trash2, HelpCircle } from 'lucide-react'
-import { useEnvironmentStore } from '../../stores/environment.store'
 import { useUIStore } from '../../stores/ui.store'
-import { useTranslation } from '../../lib/i18n'
+import { useEnvironmentStore } from '../../stores/environment.store'
+import { T } from '../../styles/tokens'
 
 export default function Footer() {
   const environments = useEnvironmentStore((s) => s.environments)
   const activeEnvId = useEnvironmentStore((s) => s.activeEnvironmentId)
   const activeEnv = environments.find((e) => e.id === activeEnvId)
   const setShowCollectionRunner = useUIStore((s) => s.setShowCollectionRunner)
-  const { t } = useTranslation()
 
   return (
     <footer
-      className="flex shrink-0 items-center text-[0.875rem]"
       style={{
-        height: 36,
-        background: 'var(--white)',
-        borderTop: '1px solid var(--border)',
+        height: 28,
+        background: T.white,
+        borderTop: `1px solid ${T.border}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 16,
+        padding: '0 14px',
+        flexShrink: 0,
+        fontSize: 12,
+        fontFamily: 'inherit',
       }}
     >
-      {/* Left side */}
-      <div className="flex items-center gap-3" style={{ paddingLeft: 12 }}>
-        <span className="cursor-pointer" style={{ color: 'var(--muted)' }}>
-          {t('footer.designFirst')}
-        </span>
-        <span className="cursor-pointer" style={{ color: 'var(--muted)' }}>
-          {t('footer.requestFirst')}
-        </span>
+      {/* Left */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: T.muted }}>
+        <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.POST.color }} />
+        Hazır
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: T.muted }}>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="2" y1="12" x2="22" y2="12" />
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+        </svg>
+        {activeEnv?.name || 'Üretim'}
       </div>
 
-      {/* Spacer */}
-      <div className="flex-1" />
+      <div style={{ flex: 1 }} />
 
-      {/* Right side */}
-      <div className="flex items-center gap-3" style={{ paddingRight: 12 }}>
-        {/* Online */}
-        <div className="flex items-center gap-1" style={{ color: 'var(--muted)' }}>
-          <Wifi size={11} style={{ color: 'var(--green)' }} />
-          <span>{t('footer.online')}</span>
-        </div>
-
-        {/* Environment */}
-        <div className="flex items-center gap-1" style={{ color: 'var(--muted)' }}>
-          <Globe size={11} />
-          {activeEnv?.name || t('footer.noEnvironment')}
-        </div>
-
-        {/* Runner */}
-        <span
-          className="cursor-pointer"
-          style={{ color: 'var(--muted)' }}
-          onClick={() => setShowCollectionRunner(true)}
-        >
-          {'\u25B6'} {t('footer.runner')}
-        </span>
-
-        {/* Cookies */}
-        <span className="flex cursor-pointer items-center gap-1" style={{ color: 'var(--muted)' }}>
-          <Cookie size={11} />
-          {t('footer.cookies')}
-        </span>
-
-        {/* Trash */}
-        <span className="flex cursor-pointer items-center gap-1" style={{ color: 'var(--muted)' }}>
-          <Trash2 size={11} />
-          {t('footer.trash')}
-        </span>
-
-        {/* Help */}
-        <span className="flex cursor-pointer items-center gap-1" style={{ color: 'var(--muted)' }}>
-          <HelpCircle size={11} />
-          {t('footer.help')}
-        </span>
-      </div>
+      {/* Right */}
+      <span
+        style={{ color: T.ghost, cursor: 'pointer', fontFamily: 'inherit' }}
+        onClick={() => setShowCollectionRunner(true)}
+      >
+        ▶ Çalıştır
+      </span>
+      <span style={{ color: T.ghost, cursor: 'pointer', fontFamily: 'inherit' }}>Konsol</span>
+      <span style={{ color: T.ghost, cursor: 'pointer', fontFamily: 'inherit' }}>?</span>
     </footer>
   )
 }

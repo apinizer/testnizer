@@ -192,18 +192,19 @@ export default function KeyValueTable({
           style={{
             gridTemplateColumns: '32px minmax(120px, 1fr) minmax(120px, 1fr) minmax(100px, 0.6fr) 32px',
             borderBottom: '1px solid var(--border)',
-            background: 'var(--white)',
+            background: 'var(--surface)',
+            borderRadius: '8px 8px 0 0',
           }}
         >
           <div />
-          <div className="px-3 py-2 text-[0.8125rem] font-medium" style={{ color: 'var(--text)' }}>
-            Name
+          <div className="px-2.5 py-1.5" style={{ fontSize: 11, color: 'var(--hint)', fontWeight: 400, fontFamily: 'inherit' }}>
+            Ad
           </div>
-          <div className="px-3 py-2 text-[0.8125rem] font-medium" style={{ color: 'var(--text)' }}>
-            Value
+          <div className="px-2.5 py-1.5" style={{ fontSize: 11, color: 'var(--hint)', fontWeight: 400, fontFamily: 'inherit' }}>
+            Değer
           </div>
-          <div className="px-3 py-2 text-[0.8125rem] font-medium" style={{ color: 'var(--text)' }}>
-            Description
+          <div className="px-2.5 py-1.5" style={{ fontSize: 11, color: 'var(--hint)', fontWeight: 400, fontFamily: 'inherit' }}>
+            Açıklama
           </div>
           <div />
         </div>

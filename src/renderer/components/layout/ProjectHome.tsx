@@ -1,35 +1,20 @@
 import { useState } from 'react'
-import { Plus, FolderOpen, Trash2, MoreHorizontal } from 'lucide-react'
+import { Plus, Trash2, MoreHorizontal, GitBranch } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
+import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import type { Project } from '../../types'
+import ProjectIcon from '../shared/ProjectIcon'
 import appIcon from '../../assets/icon.png'
 
 export default function ProjectHome() {
   const projects = useWorkspaceStore((s) => s.projects)
   const setActiveProject = useWorkspaceStore((s) => s.setActiveProject)
-  const createProject = useWorkspaceStore((s) => s.createProject)
   const deleteProject = useWorkspaceStore((s) => s.deleteProject)
+  const setShowNewProjectModal = useUIStore((s) => s.setShowNewProjectModal)
   const { t } = useTranslation()
 
-  const [showCreate, setShowCreate] = useState(projects.length === 0)
-  const [newName, setNewName] = useState('')
-  const [projectType, setProjectType] = useState<'http' | 'grpc' | 'websocket'>('http')
-  const [isCreating, setIsCreating] = useState(false)
   const [contextMenuId, setContextMenuId] = useState<string | null>(null)
-
-  async function handleCreate() {
-    const name = newName.trim()
-    if (!name) return
-    setIsCreating(true)
-    const id = await createProject(name, projectType)
-    setIsCreating(false)
-    if (id) {
-      setNewName('')
-      setShowCreate(false)
-      setActiveProject(id)
-    }
-  }
 
   function handleOpenProject(project: Project) {
     setActiveProject(project.id)
@@ -41,7 +26,7 @@ export default function ProjectHome() {
   }
 
   const typeLabels: Record<string, string> = {
-    http: 'HTTP',
+    http: 'HTTP / REST',
     grpc: 'gRPC',
     websocket: 'WebSocket',
   }
@@ -68,12 +53,26 @@ export default function ProjectHome() {
       <div style={{ width: '100%', maxWidth: 640, padding: '0 24px' }}>
         {/* Section header */}
         <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
-          <h2 className="text-[1rem] font-semibold" style={{ color: 'var(--heading)' }}>
-            {t('home.projects')}
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-[1rem] font-semibold" style={{ color: 'var(--heading)' }}>
+              {t('home.projects')}
+            </h2>
+            <span
+              className="text-[0.75rem]"
+              style={{
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                padding: '1px 8px',
+                color: 'var(--muted)',
+              }}
+            >
+              {projects.length}
+            </span>
+          </div>
           <button
             type="button"
-            onClick={() => setShowCreate(true)}
+            onClick={() => setShowNewProjectModal(true)}
             className="flex cursor-pointer items-center gap-1.5 rounded-lg text-[0.875rem] font-medium"
             style={{
               background: 'var(--accent)',
@@ -86,101 +85,6 @@ export default function ProjectHome() {
             {t('home.newProject')}
           </button>
         </div>
-
-        {/* Create project card */}
-        {showCreate && (
-          <div
-            className="rounded-xl"
-            style={{
-              background: 'var(--white)',
-              border: '1px solid var(--accent)',
-              padding: 20,
-              marginBottom: 12,
-            }}
-          >
-            <div className="text-[0.825rem] font-semibold" style={{ color: 'var(--heading)', marginBottom: 12 }}>
-              {t('home.createProject')}
-            </div>
-
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreate()
-                if (e.key === 'Escape') {
-                  setShowCreate(false)
-                  setNewName('')
-                }
-              }}
-              placeholder={t('home.projectNamePlaceholder')}
-              autoFocus
-              className="w-full rounded-lg border text-[0.825rem] outline-none"
-              style={{
-                background: 'var(--bg)',
-                border: '1px solid var(--border2)',
-                padding: '8px 12px',
-                color: 'var(--text)',
-                marginBottom: 12,
-              }}
-            />
-
-            {/* Type selection */}
-            <div className="flex gap-2" style={{ marginBottom: 16 }}>
-              {(['http', 'grpc', 'websocket'] as const).map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => setProjectType(type)}
-                  className="cursor-pointer rounded-lg text-[0.875rem]"
-                  style={{
-                    background: projectType === type ? 'var(--accent-light)' : 'var(--bg)',
-                    border: projectType === type ? '1px solid var(--accent)' : '1px solid var(--border)',
-                    color: projectType === type ? 'var(--accent-text)' : 'var(--muted)',
-                    padding: '4px 12px',
-                    fontWeight: projectType === type ? 500 : 400,
-                  }}
-                >
-                  {typeLabels[type]}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleCreate}
-                disabled={!newName.trim() || isCreating}
-                className="cursor-pointer rounded-lg text-[0.875rem] font-medium text-white"
-                style={{
-                  background: newName.trim() ? 'var(--accent)' : 'var(--border2)',
-                  border: 'none',
-                  padding: '6px 20px',
-                  opacity: isCreating ? 0.7 : 1,
-                }}
-              >
-                {isCreating ? t('home.creating') : t('home.create')}
-              </button>
-              {projects.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCreate(false)
-                    setNewName('')
-                  }}
-                  className="cursor-pointer rounded-lg text-[0.875rem]"
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid var(--border)',
-                    padding: '6px 16px',
-                    color: 'var(--muted)',
-                  }}
-                >
-                  {t('home.cancel')}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Project list */}
         <div className="flex flex-col gap-2">
@@ -196,27 +100,32 @@ export default function ProjectHome() {
               onClick={() => handleOpenProject(project)}
               onMouseOver={(e) => {
                 (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'
-                ;(e.currentTarget as HTMLElement).style.boxShadow = '0 2px 8px rgba(124,115,230,0.1)'
+                ;(e.currentTarget as HTMLElement).style.boxShadow =
+                  '0 2px 8px rgba(124,115,230,0.1)'
               }}
               onMouseOut={(e) => {
                 (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'
                 ;(e.currentTarget as HTMLElement).style.boxShadow = 'none'
               }}
             >
-              <div
-                className="flex shrink-0 items-center justify-center rounded-lg"
-                style={{ width: 40, height: 40, background: 'var(--accent-light)' }}
-              >
-                <FolderOpen size={20} style={{ color: 'var(--accent)' }} />
-              </div>
+              <ProjectIcon name={project.name} color="#7c73e6" size={40} />
 
               <div className="flex-1 overflow-hidden">
-                <div className="truncate text-[0.825rem] font-medium" style={{ color: 'var(--heading)' }}>
+                <div
+                  className="truncate text-[0.825rem] font-medium"
+                  style={{ color: 'var(--heading)' }}
+                >
                   {project.name}
                 </div>
-                <div className="text-[0.8rem]" style={{ color: 'var(--muted)' }}>
-                  {typeLabels[project.type] || 'HTTP'} &middot;{' '}
-                  {new Date(project.created_at).toLocaleDateString()}
+                <div className="flex items-center gap-2 text-[0.8rem]" style={{ color: 'var(--muted)' }}>
+                  <span>{typeLabels[project.type] || 'HTTP'}</span>
+                  <span>&middot;</span>
+                  <span className="flex items-center gap-1">
+                    <GitBranch size={10} />
+                    main
+                  </span>
+                  <span>&middot;</span>
+                  <span>{new Date(project.created_at).toLocaleDateString()}</span>
                 </div>
               </div>
 
@@ -285,11 +194,40 @@ export default function ProjectHome() {
           ))}
         </div>
 
-        {/* Empty state when no projects and create form is hidden */}
-        {projects.length === 0 && !showCreate && (
-          <div className="flex flex-col items-center py-16" style={{ color: 'var(--muted)' }}>
-            <FolderOpen size={48} style={{ marginBottom: 12, opacity: 0.4 }} />
-            <p className="text-[0.825rem]">{t('home.noProjects')}</p>
+        {/* Empty state */}
+        {projects.length === 0 && (
+          <div
+            className="flex flex-col items-center rounded-xl py-16"
+            style={{
+              color: 'var(--muted)',
+              background: 'var(--white)',
+              border: '1px dashed var(--border2)',
+            }}
+          >
+            <div
+              className="mb-4 flex items-center justify-center rounded-full"
+              style={{ width: 56, height: 56, background: 'var(--bg)' }}
+            >
+              <Plus size={24} style={{ color: 'var(--hint)' }} />
+            </div>
+            <p className="mb-1 text-[0.875rem] font-medium" style={{ color: 'var(--text)' }}>
+              Henüz proje yok
+            </p>
+            <p className="mb-4 text-[0.825rem]">{t('home.noProjects')}</p>
+            <button
+              type="button"
+              onClick={() => setShowNewProjectModal(true)}
+              className="flex cursor-pointer items-center gap-1.5 rounded-lg text-[0.825rem] font-medium"
+              style={{
+                background: 'var(--accent)',
+                color: '#fff',
+                border: 'none',
+                padding: '6px 16px',
+              }}
+            >
+              <Plus size={13} />
+              İlk Projeyi Oluştur
+            </button>
           </div>
         )}
       </div>
