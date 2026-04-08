@@ -1,0 +1,31 @@
+import { registerRequestHandlers } from './request.handler'
+import { registerWorkspaceHandlers } from './workspace.handler'
+import { registerProjectHandlers } from './project.handler'
+import { registerEndpointHandlers } from './endpoint.handler'
+import { registerEnvironmentHandlers } from './environment.handler'
+import { registerHistoryHandlers } from './history.handler'
+import { registerSettingsHandlers } from './settings.handler'
+import { registerImportExportHandlers } from './import-export.handler'
+import { registerSoapHandlers } from './soap.handler'
+import { registerWebSocketHandlers } from './websocket.handler'
+import { registerRunnerHandlers } from './runner.handler'
+import { registerGraphqlHandlers } from './graphql.handler'
+import { registerGrpcHandlers } from './grpc.handler'
+import { registerSseHandlers } from './sse.handler'
+
+export function registerAllHandlers(): void {
+  registerRequestHandlers()
+  registerWorkspaceHandlers()
+  registerProjectHandlers()
+  registerEndpointHandlers()
+  registerEnvironmentHandlers()
+  registerHistoryHandlers()
+  registerSettingsHandlers()
+  registerImportExportHandlers()
+  registerSoapHandlers()
+  registerWebSocketHandlers()
+  registerRunnerHandlers()
+  registerGraphqlHandlers()
+  registerGrpcHandlers()
+  registerSseHandlers()
+}
