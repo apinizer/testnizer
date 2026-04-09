@@ -103,7 +103,7 @@ function EndpointTabBar() {
         borderBottom: `1px solid ${T.border}`,
         flexShrink: 0,
         overflowX: 'auto',
-        height: 38,
+        height: 32,
       }}
     >
       {tabs.map((tab) => {
@@ -116,8 +116,8 @@ function EndpointTabBar() {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
-              padding: '0 14px',
+              gap: 5,
+              padding: '0 10px',
               height: '100%',
               cursor: 'pointer',
               fontSize: 13,

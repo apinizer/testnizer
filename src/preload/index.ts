@@ -189,7 +189,13 @@ const api = {
     importCurl: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('import:curl', payload),
     exportCurl: (request: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('export:curl', request)
+      ipcRenderer.invoke('export:curl', request),
+    importWsdl: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('import:wsdl', payload),
+    parseWsdlForImport: (url: string): Promise<unknown> =>
+      ipcRenderer.invoke('import:wsdl:parse', url),
+    parseWsdlFileForImport: (content: string): Promise<unknown> =>
+      ipcRenderer.invoke('import:wsdl:parseFile', content)
   },
 
   // ─── SOAP ─────────────────────────────────────────────────

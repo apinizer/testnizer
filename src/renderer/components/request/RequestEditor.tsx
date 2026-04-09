@@ -60,9 +60,9 @@ export default function RequestEditor() {
               key={tab}
               type="button"
               onClick={() => setActiveTab(tab)}
-              className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap px-3 text-[0.8125rem] transition-colors"
+              className="flex cursor-pointer items-center gap-1 whitespace-nowrap px-2.5 text-[13px] transition-colors"
               style={{
-                height: 36,
+                height: 30,
                 borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
                 color: isActive ? 'var(--text)' : 'var(--muted)',
                 fontWeight: isActive ? 500 : 400,
@@ -87,15 +87,20 @@ export default function RequestEditor() {
         })}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-3.5">
-        {activeTab === 'params' && <ParamsTab />}
-        {activeTab === 'auth' && <AuthTab />}
-        {activeTab === 'headers' && <HeadersTab />}
-        {activeTab === 'body' && <BodyTab />}
-        {activeTab === 'preRequest' && <PreRequestTab />}
-        {activeTab === 'tests' && <TestsTab />}
-      </div>
+      {/* Content — Body tab fills available space for Monaco, others scroll */}
+      {activeTab === 'body' ? (
+        <div className="flex-1 overflow-hidden p-2">
+          <BodyTab />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto p-2.5">
+          {activeTab === 'params' && <ParamsTab />}
+          {activeTab === 'auth' && <AuthTab />}
+          {activeTab === 'headers' && <HeadersTab />}
+          {activeTab === 'preRequest' && <PreRequestTab />}
+          {activeTab === 'tests' && <TestsTab />}
+        </div>
+      )}
     </div>
   )
 }

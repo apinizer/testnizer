@@ -37,18 +37,27 @@ export default function MonacoWrapper({
         options={{
           minimap: { enabled: false },
           lineNumbers,
+          lineNumbersMinChars: 3,
           folding: true,
           wordWrap: 'on',
           fontSize: fontSize - 2,
-          fontFamily: "'SF Mono', 'JetBrains Mono', monospace",
-          fontLigatures: true,
-          padding: { top: 12, bottom: 12 },
+          fontWeight: '400',
+          fontFamily: "Menlo, Monaco, Consolas, 'SF Mono', 'Cascadia Code', monospace",
+          fontLigatures: false,
+          padding: { top: 6, bottom: 6 },
           scrollBeyondLastLine: false,
           automaticLayout: true,
-          renderLineHighlight: 'line',
+          renderLineHighlight: readOnly ? 'none' : 'line',
           smoothScrolling: true,
           readOnly,
           domReadOnly: readOnly,
+          glyphMargin: false,
+          lineDecorationsWidth: 4,
+          overviewRulerBorder: false,
+          scrollbar: {
+            verticalScrollbarSize: 8,
+            horizontalScrollbarSize: 8,
+          },
         }}
       />
     </div>

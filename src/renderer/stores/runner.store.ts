@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 import type { HttpMethod, TestResult } from '../types'
+import { useEnvironmentStore } from './environment.store'
+import { useWorkspaceStore } from './workspace.store'
+import { resolveVariables } from '../lib/variable-resolver'
 
 export interface RunnerEndpoint {
   id: string
@@ -85,6 +88,11 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
     const selected = state.endpoints.filter((ep) => ep.selected)
     if (selected.length === 0) return
 
+    // Resolve environment variables
+    const envStore = useEnvironmentStore.getState()
+    const wsStore = useWorkspaceStore.getState()
+    const activeVars = envStore.getActiveVariables()
+
     set({ isRunning: true, stopRequested: false, results: [], currentIndex: 0 })
 
     for (let i = 0; i < selected.length; i++) {
@@ -95,14 +103,20 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
       const start = Date.now()
       let result: RunnerResult
 
+      // Resolve variables in URL
+      const resolvedUrl = resolveVariables(ep.url, activeVars)
+
       try {
         const ipcResult = await window.api?.request?.send({
           method: ep.method,
-          url: ep.url,
+          url: resolvedUrl,
           params: [],
           headers: [],
           body: { type: 'none' },
           auth: { type: 'none' },
+          _workspaceId: wsStore.activeWorkspaceId || undefined,
+          _projectId: wsStore.activeProjectId || undefined,
+          _endpointId: ep.id,
         })
 
         if (ipcResult?.success && ipcResult.data) {

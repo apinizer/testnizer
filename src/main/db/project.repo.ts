@@ -171,6 +171,26 @@ export function updateFolder(id: string, data: {
 
 export function deleteFolder(id: string): boolean {
   const db = getDb()
+
+  // Collect all descendant folder IDs (recursive) so we can cascade-delete endpoints
+  const allFolderIds: string[] = [id]
+  const collectChildren = db.prepare('SELECT id FROM folders WHERE parent_id = ?')
+  const queue = [id]
+  while (queue.length > 0) {
+    const parentId = queue.shift()!
+    const children = collectChildren.all(parentId) as Array<{ id: string }>
+    for (const child of children) {
+      allFolderIds.push(child.id)
+      queue.push(child.id)
+    }
+  }
+
+  // Delete endpoints in all these folders (ON DELETE SET NULL would orphan them)
+  const placeholders = allFolderIds.map(() => '?').join(',')
+  db.prepare(`DELETE FROM endpoints WHERE folder_id IN (${placeholders})`).run(...allFolderIds)
+  db.prepare(`DELETE FROM saved_requests WHERE folder_id IN (${placeholders})`).run(...allFolderIds)
+
+  // Delete the folder (child folders cascade via ON DELETE CASCADE on parent_id)
   const result = db.prepare('DELETE FROM folders WHERE id = ?').run(id)
   return result.changes > 0
 }

@@ -6,7 +6,7 @@ import { useTabsStore } from '../../stores/tabs.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTranslation } from '../../lib/i18n'
 import MethodBadge from '../shared/MethodBadge'
-import { T, BTN_P, BTN_S, MONO_INP } from '../../styles/tokens'
+import { T, BTN_P, BTN_S, BASE_INP } from '../../styles/tokens'
 import type { HttpMethod } from '../../types'
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
@@ -48,13 +48,13 @@ export default function UrlBar() {
   return (
     <div
       style={{
-        height: 56,
+        height: 40,
         background: T.white,
         borderBottom: `1px solid ${T.border}`,
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
-        padding: '0 16px',
+        gap: 6,
+        padding: '0 12px',
         flexShrink: 0,
       }}
     >
@@ -68,14 +68,15 @@ export default function UrlBar() {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 6,
-            padding: '6px 10px',
+            gap: 4,
+            padding: '3px 8px',
             background: T.surface,
-            border: `1.5px solid ${T.border2}`,
-            borderRadius: 8,
+            border: `1px solid ${T.border2}`,
+            borderRadius: 6,
             cursor: 'pointer',
             userSelect: 'none',
-            minWidth: 102,
+            minWidth: 80,
+            height: 28,
           }}
         >
           <MethodBadge method={method} />
@@ -94,9 +95,9 @@ export default function UrlBar() {
               zIndex: 200,
               background: T.white,
               border: `1px solid ${T.border}`,
-              borderRadius: 10,
-              padding: 5,
-              minWidth: 120,
+              borderRadius: 8,
+              padding: 4,
+              minWidth: 110,
               boxShadow: '0 6px 20px rgba(0,0,0,0.1)',
             }}
           >
@@ -111,8 +112,8 @@ export default function UrlBar() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
-                  padding: '6px 10px',
-                  borderRadius: 7,
+                  padding: '4px 8px',
+                  borderRadius: 5,
                   cursor: 'pointer',
                 }}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = T.surface }}
@@ -139,9 +140,10 @@ export default function UrlBar() {
         }}
         placeholder={t('urlBar.enterUrl')}
         style={{
-          ...MONO_INP,
+          ...BASE_INP,
           flex: 1,
-          padding: '8px 12px',
+          height: 28,
+          fontWeight: 400,
         }}
       />
 

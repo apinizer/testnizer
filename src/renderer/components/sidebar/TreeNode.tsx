@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useRef, useEffect } from 'react'
 import type { TreeNode as TreeNodeType } from '../../types'
 import MethodBadge from '../shared/MethodBadge'
 import {
@@ -8,6 +8,8 @@ import {
   Folder,
   MoreHorizontal,
   Zap,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 
 interface TreeNodeProps {
@@ -17,6 +19,7 @@ interface TreeNodeProps {
   onSelect: (node: TreeNodeType) => void
   onToggle: (id: string) => void
   onDelete?: (node: TreeNodeType) => void
+  onRename?: (node: TreeNodeType, newName: string) => void
   openIds: Set<string>
   /** When true, children are not rendered (handled by virtualizer) */
   isFlat?: boolean
@@ -69,6 +72,7 @@ export default function TreeNodeComponent({
   onSelect,
   onToggle,
   onDelete,
+  onRename,
   openIds,
   isFlat = false,
 }: TreeNodeProps) {
@@ -79,15 +83,92 @@ export default function TreeNodeComponent({
   const indent = depth * 14
   const [hovered, setHovered] = useState(false)
 
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const contextRef = useRef<HTMLDivElement>(null)
+
+  // Inline rename state
+  const [renaming, setRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
+
+  const canModify = node.type === 'folder' || node.type === 'endpoint' || node.type === 'request'
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!contextMenu) return
+    const handler = () => setContextMenu(null)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [contextMenu])
+
+  // Focus rename input when entering rename mode
+  useEffect(() => {
+    if (renaming) {
+      setTimeout(() => {
+        renameInputRef.current?.focus()
+        renameInputRef.current?.select()
+      }, 20)
+    }
+  }, [renaming])
+
   const handleClick = useCallback(() => {
+    if (renaming) return
     if (hasChildren) onToggle(node.id)
     if (isRequest) onSelect(node)
-  }, [hasChildren, isRequest, node, onToggle, onSelect])
+  }, [hasChildren, isRequest, node, onToggle, onSelect, renaming])
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if (!canModify) return
+      e.preventDefault()
+      e.stopPropagation()
+      setContextMenu({ x: e.clientX, y: e.clientY })
+    },
+    [canModify]
+  )
+
+  const startRename = useCallback(() => {
+    setRenameValue(node.label)
+    setRenaming(true)
+    setContextMenu(null)
+  }, [node.label])
+
+  const confirmRename = useCallback(() => {
+    const trimmed = renameValue.trim()
+    if (trimmed && trimmed !== node.label && onRename) {
+      onRename(node, trimmed)
+    }
+    setRenaming(false)
+  }, [renameValue, node, onRename])
+
+  const cancelRename = useCallback(() => {
+    setRenaming(false)
+  }, [])
+
+  const handleRenameKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        confirmRename()
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        cancelRename()
+      }
+    },
+    [confirmRename, cancelRename]
+  )
+
+  const handleDeleteClick = useCallback(() => {
+    setContextMenu(null)
+    onDelete?.(node)
+  }, [node, onDelete])
 
   return (
     <div>
       <div
         onClick={handleClick}
+        onContextMenu={handleContextMenu}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className="flex cursor-pointer select-none items-center gap-[5px] rounded-md text-[0.875rem] transition-colors"
@@ -114,25 +195,58 @@ export default function TreeNodeComponent({
         {isRequest && <MethodBadge method={node.method || 'GET'} small />}
         {node.icon === 'folder' && <NodeIcon icon="folder" />}
 
-        {/* Label */}
-        <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{node.label}</span>
+        {/* Label or rename input */}
+        {renaming ? (
+          <input
+            ref={renameInputRef}
+            type="text"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={handleRenameKeyDown}
+            onBlur={confirmRename}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 rounded border px-1.5 py-0.5 text-sm outline-none"
+            style={{
+              borderColor: 'var(--accent)',
+              background: 'var(--white)',
+              color: 'var(--text)',
+              minWidth: 0,
+            }}
+          />
+        ) : (
+          <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{node.label}</span>
+        )}
 
-        {/* Delete button — shown on hover for deletable items */}
-        {hovered && onDelete && (node.type === 'request' || node.type === 'endpoint' || node.type === 'folder') && (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onDelete(node) }}
-            className="shrink-0 rounded p-0.5"
-            style={{ background: 'transparent', border: 'none', color: 'var(--hint)', cursor: 'pointer', lineHeight: 1 }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--red)' }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--hint)' }}
-            title="Sil"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-          </button>
+        {/* Action buttons — shown on hover for modifiable items */}
+        {!renaming && hovered && canModify && (
+          <div className="flex shrink-0 items-center gap-0.5">
+            {onRename && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); startRename() }}
+                className="shrink-0 rounded p-0.5"
+                style={{ background: 'transparent', border: 'none', color: 'var(--hint)', cursor: 'pointer', lineHeight: 1 }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--accent)' }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--hint)' }}
+                title="Rename"
+              >
+                <Pencil size={12} />
+              </button>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onDelete(node) }}
+                className="shrink-0 rounded p-0.5"
+                style={{ background: 'transparent', border: 'none', color: 'var(--hint)', cursor: 'pointer', lineHeight: 1 }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#cc2200' }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--hint)' }}
+                title="Delete"
+              >
+                <Trash2 size={12} />
+              </button>
+            )}
+          </div>
         )}
 
         {/* Count badge */}
@@ -149,6 +263,43 @@ export default function TreeNodeComponent({
         )}
       </div>
 
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          ref={contextRef}
+          className="fixed z-[9999] min-w-[160px] rounded-lg border py-1 shadow-lg"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+            background: 'var(--white)',
+            borderColor: 'var(--border)',
+          }}
+        >
+          {onRename && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); startRename() }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-[var(--bg)]"
+              style={{ color: 'var(--text)', border: 'none', background: 'transparent', cursor: 'pointer' }}
+            >
+              <Pencil size={13} style={{ color: 'var(--muted)' }} />
+              Rename
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); handleDeleteClick() }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-[var(--bg)]"
+              style={{ color: '#cc2200', border: 'none', background: 'transparent', cursor: 'pointer' }}
+            >
+              <Trash2 size={13} />
+              Delete
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Children — only rendered in non-flat (non-virtualized) mode */}
       {!isFlat && hasChildren && isOpen && node.children!.map((child) => (
         <TreeNodeComponent
@@ -159,6 +310,7 @@ export default function TreeNodeComponent({
           onSelect={onSelect}
           onToggle={onToggle}
           onDelete={onDelete}
+          onRename={onRename}
           openIds={openIds}
         />
       ))}

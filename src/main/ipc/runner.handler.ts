@@ -4,6 +4,8 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { executeHttpRequest, HttpRequestOptions } from '../protocols/http.engine'
 import * as endpointRepo from '../db/endpoint.repo'
+import * as historyRepo from '../db/history.repo'
+import { getDb } from '../db/database'
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -53,6 +55,7 @@ interface RunnerExecuteOptions {
   projectId: string
   endpointIds: string[]
   environmentId?: string
+  workspaceId?: string
   delay?: number
 }
 
@@ -241,6 +244,77 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+// ─── Variable Resolution ─────────────────────────────────────────
+
+function loadEnvironmentVariables(environmentId?: string, workspaceId?: string): Record<string, string> {
+  const vars: Record<string, string> = {}
+  const db = getDb()
+
+  // Load global variables
+  if (workspaceId) {
+    const globals = db.prepare(
+      'SELECT key, value FROM global_variables WHERE workspace_id = ? AND enabled = 1'
+    ).all(workspaceId) as Array<{ key: string; value: string }>
+    for (const g of globals) {
+      vars[g.key] = g.value
+    }
+  }
+
+  // Load environment variables (override globals)
+  if (environmentId) {
+    const envVars = db.prepare(
+      'SELECT key, value FROM environment_variables WHERE environment_id = ? AND enabled = 1'
+    ).all(environmentId) as Array<{ key: string; value: string }>
+    for (const v of envVars) {
+      vars[v.key] = v.value
+    }
+  }
+
+  return vars
+}
+
+function resolveRunnerVariables(template: string, vars: Record<string, string>): string {
+  if (!template) return template
+  return template.replace(/\{\{([^}]+)\}\}/g, (_match, expression: string) => {
+    const trimmed = expression.trim()
+    if (trimmed in vars) return vars[trimmed]
+    return `{{${trimmed}}}`
+  })
+}
+
+function resolveRequestOptions(
+  options: HttpRequestOptions,
+  vars: Record<string, string>
+): HttpRequestOptions {
+  if (Object.keys(vars).length === 0) return options
+
+  const resolved = { ...options }
+  resolved.url = resolveRunnerVariables(resolved.url, vars)
+
+  if (resolved.params) {
+    resolved.params = (resolved.params as KeyValuePair[]).map((p) => ({
+      ...p,
+      key: resolveRunnerVariables(p.key, vars),
+      value: resolveRunnerVariables(p.value, vars),
+    }))
+  }
+  if (resolved.headers) {
+    resolved.headers = (resolved.headers as KeyValuePair[]).map((h) => ({
+      ...h,
+      key: resolveRunnerVariables(h.key, vars),
+      value: resolveRunnerVariables(h.value, vars),
+    }))
+  }
+  if (resolved.body && (resolved.body as RequestBody).content) {
+    resolved.body = {
+      ...(resolved.body as RequestBody),
+      content: resolveRunnerVariables((resolved.body as RequestBody).content!, vars),
+    } as HttpRequestOptions['body']
+  }
+
+  return resolved
+}
+
 // ─── Runner Execution ────────────────────────────────────────────
 
 async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerReport> {
@@ -250,6 +324,9 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   const startedAt = Date.now()
   const results: EndpointRunResult[] = []
   const total = options.endpointIds.length
+
+  // Load environment variables for interpolation
+  const envVars = loadEnvironmentVariables(options.environmentId, options.workspaceId)
 
   let totalAssertions = 0
   let passedAssertions = 0
@@ -308,7 +385,34 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
     }
 
     try {
-      const response = await executeHttpRequest(requestOptions)
+      // Resolve environment variables in request
+      const resolvedOptions = resolveRequestOptions(requestOptions, envVars)
+      const response = await executeHttpRequest(resolvedOptions)
+
+      // Auto-save to history
+      try {
+        historyRepo.addHistory({
+          workspace_id: options.workspaceId,
+          project_id: options.projectId,
+          endpoint_id: endpointId,
+          protocol: endpoint.protocol || 'http',
+          method: resolvedOptions.method,
+          url: resolvedOptions.url,
+          status_code: response.status,
+          duration_ms: response.timing?.total ? Math.round(response.timing.total) : undefined,
+          request_snapshot: JSON.stringify({
+            method: resolvedOptions.method,
+            url: resolvedOptions.url,
+          }),
+          response_snapshot: JSON.stringify({
+            status: response.status,
+            statusText: response.statusText,
+            timing: response.timing,
+          }),
+        })
+      } catch {
+        // History save failure should not affect runner
+      }
 
       // Parse assertions from request schema
       const schema = parseJsonSafe<{ assertions?: TestAssertion[] }>(endpoint.request_schema, {})

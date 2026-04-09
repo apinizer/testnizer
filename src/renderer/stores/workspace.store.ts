@@ -73,9 +73,9 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
     const savedResult = await window.api?.savedRequest?.list(projectId) as { success: boolean; data?: SavedRequestRow[] }
     const savedRequests: SavedRequestRow[] = savedResult?.success && savedResult.data ? savedResult.data : []
 
-    // Build folder tree nodes
-    const folderNodes: TreeNode[] = folders.map((f) => {
-      // Endpoints in this folder
+    // Build folder map (id → TreeNode) with direct children (endpoints + saved requests)
+    const folderMap = new Map<string, TreeNode>()
+    for (const f of folders) {
       const folderEndpoints: TreeNode[] = endpoints
         .filter((e) => e.folder_id === f.id)
         .map((e) => ({
@@ -86,7 +86,6 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
           path: e.path,
         }))
 
-      // Saved requests in this folder
       const folderSaved: TreeNode[] = savedRequests
         .filter((r) => r.folder_id === f.id)
         .map((r) => ({
@@ -97,14 +96,29 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
           path: r.url,
         }))
 
-      return {
+      folderMap.set(f.id, {
         id: f.id,
         type: 'folder' as const,
         label: f.name,
         icon: 'folder',
         children: [...folderEndpoints, ...folderSaved],
+      })
+    }
+
+    // Nest child folders under their parents
+    const rootFolderNodes: TreeNode[] = []
+    for (const f of folders) {
+      const node = folderMap.get(f.id)!
+      if (f.parent_id && folderMap.has(f.parent_id)) {
+        // Add as child of parent folder
+        const parent = folderMap.get(f.parent_id)!
+        if (!parent.children) parent.children = []
+        parent.children.push(node)
+      } else {
+        // Root-level folder (no parent or parent not found)
+        rootFolderNodes.push(node)
       }
-    })
+    }
 
     // Root-level endpoints (no folder)
     const rootEndpoints: TreeNode[] = endpoints
@@ -134,7 +148,7 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
       type: 'module',
       label: projectName,
       icon: 'collection',
-      children: [...folderNodes, ...rootEndpoints, ...rootSaved],
+      children: [...rootFolderNodes, ...rootEndpoints, ...rootSaved],
     }
 
     // Quick Requests section

@@ -180,6 +180,10 @@ interface RequestApi {
     followRedirects?: boolean
     sslVerification?: boolean
     proxy?: unknown
+    _workspaceId?: string
+    _projectId?: string
+    _endpointId?: string
+    _protocol?: string
   }): Promise<IpcResult<ApiResponse>>
   cancel(requestId: string): Promise<IpcResult<boolean>>
 }
@@ -195,6 +199,17 @@ interface ImportExportApi {
   importInsomnia(payload: { projectId: string; content: string }): Promise<IpcResult<ImportResult>>
   importCurl(payload: { projectId: string; curlCommand: string }): Promise<IpcResult<ImportResult>>
   exportCurl(request: CurlExportRequest): Promise<IpcResult<string>>
+  importWsdl(payload: {
+    projectId: string
+    targetFolderId?: string | null
+    createNewFolder?: boolean
+    newFolderName?: string
+    wsdlUrl?: string
+    wsdlContent?: string
+    parsedWsdl?: WsdlParseResult
+  }): Promise<IpcResult<ImportResult>>
+  parseWsdlForImport(url: string): Promise<IpcResult<WsdlParseResult>>
+  parseWsdlFileForImport(content: string): Promise<IpcResult<WsdlParseResult>>
 }
 
 interface CurlExportRequest {

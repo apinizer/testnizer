@@ -34,12 +34,13 @@ export const T = {
   OPTIONS: { bg: '#e0f2fe', color: '#0369a1', border: '#bae6fd' },
 } as const
 
+// Standard UI font: 13px — matches Postman/Apidog density.
 export const BASE_INP: CSSProperties = {
   width: '100%',
   background: 'var(--input-bg)',
-  border: '1.5px solid var(--border2)',
-  borderRadius: 8,
-  padding: '8px 11px',
+  border: '1px solid var(--border2)',
+  borderRadius: 6,
+  padding: '4px 8px',
   fontSize: 13,
   color: 'var(--text)',
   outline: 'none',
@@ -49,46 +50,47 @@ export const BASE_INP: CSSProperties = {
 export const MONO_INP: CSSProperties = {
   ...BASE_INP,
   fontFamily: "var(--font-mono)",
-  fontSize: 12.5,
 }
 
 export const BTN_P: CSSProperties = {
-  padding: '8px 18px',
+  padding: '4px 12px',
   background: 'var(--accent)',
   border: 'none',
-  borderRadius: 8,
+  borderRadius: 6,
   color: '#fff',
   fontWeight: 600,
   fontSize: 13,
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
-  gap: 6,
+  gap: 5,
   whiteSpace: 'nowrap',
+  height: 28,
 }
 
 export const BTN_S: CSSProperties = {
-  padding: '7px 14px',
+  padding: '4px 10px',
   background: 'var(--white)',
-  border: '1.5px solid var(--border2)',
-  borderRadius: 8,
+  border: '1px solid var(--border2)',
+  borderRadius: 6,
   color: 'var(--sub, #374151)',
   fontSize: 13,
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
-  gap: 5,
+  gap: 4,
+  height: 28,
 }
 
 export const LBL_S: CSSProperties = {
-  fontSize: 11.5,
+  fontSize: 11,
   color: 'var(--muted)',
   fontWeight: 500,
-  marginBottom: 5,
+  marginBottom: 4,
 }
 
 export const KV_HEADER_CELL: CSSProperties = {
-  padding: '6px 10px',
+  padding: '4px 8px',
   fontSize: 11,
   color: 'var(--hint)',
   fontWeight: 400,

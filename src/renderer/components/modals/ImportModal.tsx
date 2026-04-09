@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { X, Upload, FileText, Globe2, Loader2 } from 'lucide-react'
+import { X, Upload, FileText, Globe2, Loader2, FolderPlus, FolderOpen, ChevronRight } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
+import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTranslation } from '../../lib/i18n'
+import type { WsdlParseResult, WsdlService, Folder, TreeNode } from '../../types'
 
 interface ImportFormat {
   id: string
@@ -93,11 +95,22 @@ export default function ImportModal() {
   const parseSoapWsdl = useSoapStore((s) => s.parseWsdl)
   const { t } = useTranslation()
 
+  const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
+  const treeData = useWorkspaceStore((s) => s.treeData)
+  const refreshTree = useWorkspaceStore((s) => s.refreshTree)
+
   const [selectedIdx, setSelectedIdx] = useState(0)
-  const [step, setStep] = useState<1 | 2>(1)
+  const [step, setStep] = useState<1 | 2 | 3>(1)
   const [importUrl, setImportUrl] = useState('')
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState('')
+
+  // WSDL-specific state
+  const [wsdlParsed, setWsdlParsed] = useState<WsdlParseResult | null>(null)
+  const [wsdlFolderMode, setWsdlFolderMode] = useState<'new' | 'existing' | 'root'>('new')
+  const [wsdlNewFolderName, setWsdlNewFolderName] = useState('')
+  const [wsdlTargetFolderId, setWsdlTargetFolderId] = useState<string | null>(null)
+  const [wsdlImporting, setWsdlImporting] = useState(false)
 
   if (!showImportModal) return null
 
@@ -111,6 +124,11 @@ export default function ImportModal() {
     setImportUrl('')
     setImportError('')
     setImportLoading(false)
+    setWsdlParsed(null)
+    setWsdlFolderMode('new')
+    setWsdlNewFolderName('')
+    setWsdlTargetFolderId(null)
+    setWsdlImporting(false)
   }
 
   function handleNext() {
@@ -126,6 +144,35 @@ export default function ImportModal() {
     setImportError('')
   }
 
+  async function handleWsdlImport() {
+    if (!wsdlParsed || !activeProjectId) return
+    setWsdlImporting(true)
+    setImportError('')
+
+    try {
+      const result = await window.api?.importExport?.importWsdl({
+        projectId: activeProjectId,
+        targetFolderId: wsdlFolderMode === 'existing' ? wsdlTargetFolderId : null,
+        createNewFolder: wsdlFolderMode === 'new',
+        newFolderName: wsdlFolderMode === 'new' ? (wsdlNewFolderName.trim() || undefined) : undefined,
+        wsdlUrl: importUrl.trim() || undefined,
+        parsedWsdl: wsdlParsed,
+      })
+
+      if (result?.success) {
+        const data = result.data as { endpointCount?: number; folderCount?: number }
+        await refreshTree()
+        handleClose()
+      } else {
+        setImportError(result?.error || 'Failed to import WSDL')
+      }
+    } catch (err) {
+      setImportError((err as Error).message || 'Import failed')
+    } finally {
+      setWsdlImporting(false)
+    }
+  }
+
   async function handleImportUrl() {
     if (!importUrl.trim()) return
     setImportLoading(true)
@@ -133,20 +180,25 @@ export default function ImportModal() {
 
     try {
       if (selectedFormat.id === 'wsdl') {
-        const tabId = 'tab-' + Math.random().toString(36).substring(2, 10)
-        setSoapWsdlUrl(importUrl.trim())
-        openTab({
-          id: tabId,
-          name: 'SOAP \u2014 ' + new URL(importUrl.trim()).hostname,
-          protocol: 'soap',
-          method: 'POST',
-          url: importUrl.trim(),
-        })
-        await parseSoapWsdl()
-        handleClose()
+        // Parse WSDL first, then show folder selection (step 3)
+        const parseResult = await window.api?.importExport?.parseWsdlForImport(importUrl.trim())
+        if (parseResult?.success && parseResult.data) {
+          const parsed = parseResult.data as WsdlParseResult
+          setWsdlParsed(parsed)
+          // Auto-suggest folder name from first service
+          if (parsed.services.length > 0) {
+            setWsdlNewFolderName(parsed.services[0].name)
+          }
+          setStep(3)
+        } else {
+          setImportError(parseResult?.error || 'Failed to parse WSDL')
+        }
       } else if (selectedFormat.id === 'openapi') {
-        const result = await window.api?.importExport?.importOpenApi({ url: importUrl.trim() })
+        const pid = activeProjectId
+        if (!pid) { setImportError('No active project selected'); return }
+        const result = await window.api?.importExport?.importOpenApi({ projectId: pid, content: importUrl.trim(), format: 'openapi' })
         if (result?.success) {
+          await refreshTree()
           handleClose()
         } else {
           setImportError(result?.error || 'Failed to import OpenAPI spec')
@@ -175,39 +227,47 @@ export default function ImportModal() {
       const fileData = result.data as { content: string; filePath: string }
 
       if (selectedFormat.id === 'wsdl') {
-        const tabId = 'tab-' + Math.random().toString(36).substring(2, 10)
-        openTab({
-          id: tabId,
-          name: 'SOAP \u2014 ' + (fileData.filePath.split('/').pop() || 'WSDL'),
-          protocol: 'soap',
-          method: 'POST',
-          url: '',
-        })
-        const parseResult = await window.api?.soap?.parseWsdlFile(fileData.content)
-        if (parseResult?.success) {
-          handleClose()
+        // Parse WSDL file, then show folder selection (step 3)
+        const parseResult = await window.api?.importExport?.parseWsdlFileForImport(fileData.content)
+        if (parseResult?.success && parseResult.data) {
+          const parsed = parseResult.data as WsdlParseResult
+          setWsdlParsed(parsed)
+          if (parsed.services.length > 0) {
+            setWsdlNewFolderName(parsed.services[0].name)
+          }
+          setStep(3)
         } else {
           setImportError(parseResult?.error || 'Failed to parse WSDL file')
         }
       } else if (selectedFormat.id === 'openapi') {
-        const importResult = await window.api?.importExport?.importOpenApi({ content: fileData.content })
-        if (importResult?.success) handleClose()
+        const pid = activeProjectId
+        if (!pid) { setImportError('No active project selected'); return }
+        const importResult = await window.api?.importExport?.importOpenApi({ projectId: pid, content: fileData.content, format: 'openapi' })
+        if (importResult?.success) { await refreshTree(); handleClose() }
         else setImportError(importResult?.error || 'Failed to import OpenAPI spec')
       } else if (selectedFormat.id === 'postman') {
-        const importResult = await window.api?.importExport?.importPostman({ content: fileData.content })
-        if (importResult?.success) handleClose()
+        const pid = activeProjectId
+        if (!pid) { setImportError('No active project selected'); return }
+        const importResult = await window.api?.importExport?.importPostman({ projectId: pid, content: fileData.content })
+        if (importResult?.success) { await refreshTree(); handleClose() }
         else setImportError(importResult?.error || 'Failed to import Postman collection')
       } else if (selectedFormat.id === 'curl') {
-        const importResult = await window.api?.importExport?.importCurl({ content: fileData.content })
-        if (importResult?.success) handleClose()
+        const pid = activeProjectId
+        if (!pid) { setImportError('No active project selected'); return }
+        const importResult = await window.api?.importExport?.importCurl({ projectId: pid, curlCommand: fileData.content })
+        if (importResult?.success) { await refreshTree(); handleClose() }
         else setImportError(importResult?.error || 'Failed to import cURL')
       } else if (selectedFormat.id === 'har') {
-        const importResult = await window.api?.importExport?.importHar({ content: fileData.content })
-        if (importResult?.success) handleClose()
+        const pid = activeProjectId
+        if (!pid) { setImportError('No active project selected'); return }
+        const importResult = await window.api?.importExport?.importHar({ projectId: pid, content: fileData.content })
+        if (importResult?.success) { await refreshTree(); handleClose() }
         else setImportError(importResult?.error || 'Failed to import HAR file')
       } else if (selectedFormat.id === 'insomnia') {
-        const importResult = await window.api?.importExport?.importInsomnia({ content: fileData.content })
-        if (importResult?.success) handleClose()
+        const pid = activeProjectId
+        if (!pid) { setImportError('No active project selected'); return }
+        const importResult = await window.api?.importExport?.importInsomnia({ projectId: pid, content: fileData.content })
+        if (importResult?.success) { await refreshTree(); handleClose() }
         else setImportError(importResult?.error || 'Failed to import Insomnia collection')
       } else {
         setImportError('File import is not yet implemented for this format')
@@ -236,7 +296,7 @@ export default function ImportModal() {
             <div className="mb-1 text-[1.57rem] font-bold text-[var(--text)]">
               {step === 1 ? t('import.title') : `Import ${selectedFormat.name}`}
             </div>
-            <div className="text-[0.875rem] text-[var(--muted)]">
+            <div className="text-[0.8rem] text-[var(--muted)]">
               {step === 1
                 ? t('import.subtitle')
                 : `Enter a URL or upload a ${selectedFormat.name} file to import`}
@@ -261,7 +321,7 @@ export default function ImportModal() {
                   key={fmt.name}
                   type="button"
                   onClick={() => setSelectedIdx(i)}
-                  className="flex cursor-pointer flex-col items-center gap-[7px] rounded-[10px] px-2 pb-3 pt-3.5 text-center text-[0.875rem] transition-all"
+                  className="flex cursor-pointer flex-col items-center gap-[7px] rounded-[10px] px-2 pb-3 pt-3.5 text-center text-[0.8rem] transition-all"
                   style={{
                     border: `1.5px solid ${selectedIdx === i ? 'var(--accent)' : 'var(--border)'}`,
                     background: selectedIdx === i ? 'var(--accent-light)' : 'var(--white)',
@@ -279,14 +339,14 @@ export default function ImportModal() {
               <button
                 type="button"
                 onClick={handleClose}
-                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.875rem] text-[#555] transition-colors hover:bg-[var(--bg)]"
+                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.8rem] text-[#555] transition-colors hover:bg-[var(--bg)]"
               >
                 {t('import.cancel')}
               </button>
               <button
                 type="button"
                 onClick={handleNext}
-                className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] text-[0.875rem] font-semibold text-white transition-colors hover:opacity-90"
+                className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] text-[0.8rem] font-semibold text-white transition-colors hover:opacity-90"
               >
                 {t('import.next')} {'\u2192'}
               </button>
@@ -300,7 +360,7 @@ export default function ImportModal() {
               {/* URL input */}
               {canUrlImport && (
                 <div>
-                  <label className="mb-2 flex items-center gap-1.5 text-[0.875rem] font-medium text-[var(--text)]">
+                  <label className="mb-2 flex items-center gap-1.5 text-[0.8rem] font-medium text-[var(--text)]">
                     <Globe2 size={15} />
                     Import from URL
                   </label>
@@ -317,13 +377,13 @@ export default function ImportModal() {
                           ? 'https://example.com/service?wsdl'
                           : 'https://example.com/api/openapi.json'
                       }
-                      className="flex-1 rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 font-mono text-[0.875rem] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                      className="flex-1 rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-1.5 font-mono text-[0.8rem] text-[var(--text)] outline-none focus:border-[var(--accent)]"
                     />
                     <button
                       type="button"
                       onClick={handleImportUrl}
                       disabled={importLoading || !importUrl.trim()}
-                      className="flex cursor-pointer items-center gap-1.5 rounded-lg border-none bg-[var(--accent)] px-4 py-2 text-[0.875rem] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex cursor-pointer items-center gap-1.5 rounded-lg border-none bg-[var(--accent)] px-3 py-1.5 text-[0.8rem] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {importLoading ? (
                         <Loader2 size={14} className="animate-spin" />
@@ -339,7 +399,7 @@ export default function ImportModal() {
               {canUrlImport && canFileImport && (
                 <div className="flex items-center gap-3">
                   <div className="h-px flex-1 bg-[var(--border)]" />
-                  <span className="text-[0.875rem] text-[var(--hint)]">or</span>
+                  <span className="text-[0.8rem] text-[var(--hint)]">or</span>
                   <div className="h-px flex-1 bg-[var(--border)]" />
                 </div>
               )}
@@ -347,7 +407,7 @@ export default function ImportModal() {
               {/* File upload */}
               {canFileImport && (
                 <div>
-                  <label className="mb-2 flex items-center gap-1.5 text-[0.875rem] font-medium text-[var(--text)]">
+                  <label className="mb-2 flex items-center gap-1.5 text-[0.8rem] font-medium text-[var(--text)]">
                     <FileText size={15} />
                     Import from file
                   </label>
@@ -355,7 +415,7 @@ export default function ImportModal() {
                     type="button"
                     onClick={handleImportFile}
                     disabled={importLoading}
-                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[var(--border2)] py-6 text-[0.875rem] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[var(--border2)] py-4 text-[0.8rem] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ background: 'transparent' }}
                   >
                     {importLoading ? (
@@ -370,7 +430,7 @@ export default function ImportModal() {
 
               {importError && (
                 <div
-                  className="rounded-lg px-3 py-2 text-[0.875rem]"
+                  className="rounded-lg px-3 py-2 text-[0.8rem]"
                   style={{ background: '#fff0f0', color: '#cc2200', border: '1px solid #f5b3b3' }}
                 >
                   {importError}
@@ -383,17 +443,196 @@ export default function ImportModal() {
               <button
                 type="button"
                 onClick={handleBack}
-                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.875rem] text-[#555] transition-colors hover:bg-[var(--bg)]"
+                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.8rem] text-[#555] transition-colors hover:bg-[var(--bg)]"
               >
                 {'\u2190'} Back
               </button>
               <button
                 type="button"
                 onClick={handleClose}
-                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.875rem] text-[#555] transition-colors hover:bg-[var(--bg)]"
+                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.8rem] text-[#555] transition-colors hover:bg-[var(--bg)]"
               >
                 {t('import.cancel')}
               </button>
+            </div>
+          </>
+        )}
+
+        {/* Step 3: WSDL Folder Selection */}
+        {step === 3 && wsdlParsed && (
+          <>
+            <div className="space-y-4">
+              {/* WSDL Summary */}
+              <div
+                className="rounded-lg p-4"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+              >
+                <div className="mb-2 text-[0.8rem] font-semibold text-[var(--text)]">
+                  WSDL Parsed Successfully
+                </div>
+                <div className="space-y-1 text-[0.8125rem] text-[var(--muted)]">
+                  {wsdlParsed.services.map((svc) => (
+                    <div key={svc.name}>
+                      <span className="font-medium text-[var(--text)]">{svc.name}</span>
+                      {svc.ports.map((port) => (
+                        <div key={port.name} className="ml-4">
+                          {port.name} — {port.operations.length} operation{port.operations.length !== 1 ? 's' : ''}
+                          <div className="ml-4 text-[0.75rem] text-[var(--hint)]">
+                            {port.operations.map((op) => op.name).join(', ')}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  <div className="mt-2 text-[0.75rem]">
+                    Endpoint: <code className="text-[var(--blue)]">{wsdlParsed.endpointUrl}</code>
+                    {' '} | SOAP {wsdlParsed.soapVersion === 'soap12' ? '1.2' : '1.1'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Folder Selection */}
+              <div>
+                <div className="mb-3 text-[0.8rem] font-semibold text-[var(--text)]">
+                  Import Destination
+                </div>
+
+                {/* New folder option */}
+                <label
+                  className="mb-2 flex cursor-pointer items-center gap-2 rounded-lg p-3 transition-colors"
+                  style={{
+                    border: `1.5px solid ${wsdlFolderMode === 'new' ? 'var(--accent)' : 'var(--border)'}`,
+                    background: wsdlFolderMode === 'new' ? 'var(--accent-light)' : 'transparent',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="wsdlFolder"
+                    checked={wsdlFolderMode === 'new'}
+                    onChange={() => setWsdlFolderMode('new')}
+                    className="accent-[var(--accent)]"
+                  />
+                  <FolderPlus size={16} className="text-[var(--accent)]" />
+                  <span className="text-[0.8rem] text-[var(--text)]">Create new folder</span>
+                </label>
+                {wsdlFolderMode === 'new' && (
+                  <div className="mb-2 ml-8">
+                    <input
+                      type="text"
+                      value={wsdlNewFolderName}
+                      onChange={(e) => setWsdlNewFolderName(e.target.value)}
+                      placeholder="Folder name"
+                      className="w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[0.8rem] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                )}
+
+                {/* Existing folder option */}
+                <label
+                  className="mb-2 flex cursor-pointer items-center gap-2 rounded-lg p-3 transition-colors"
+                  style={{
+                    border: `1.5px solid ${wsdlFolderMode === 'existing' ? 'var(--accent)' : 'var(--border)'}`,
+                    background: wsdlFolderMode === 'existing' ? 'var(--accent-light)' : 'transparent',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="wsdlFolder"
+                    checked={wsdlFolderMode === 'existing'}
+                    onChange={() => setWsdlFolderMode('existing')}
+                    className="accent-[var(--accent)]"
+                  />
+                  <FolderOpen size={16} className="text-[var(--accent)]" />
+                  <span className="text-[0.8rem] text-[var(--text)]">Add to existing folder</span>
+                </label>
+                {wsdlFolderMode === 'existing' && (
+                  <div className="mb-2 ml-8 max-h-[160px] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg)] p-2">
+                    {treeData.flatMap((node) =>
+                      (node.children ?? [])
+                        .filter((c) => c.type === 'folder')
+                        .map((folder) => (
+                          <button
+                            key={folder.id}
+                            type="button"
+                            onClick={() => setWsdlTargetFolderId(folder.id)}
+                            className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-[0.8125rem] transition-colors hover:bg-[var(--accent-light)]"
+                            style={{
+                              background: wsdlTargetFolderId === folder.id ? 'var(--accent-light)' : 'transparent',
+                              color: wsdlTargetFolderId === folder.id ? 'var(--accent-text)' : 'var(--text)',
+                              border: 'none',
+                            }}
+                          >
+                            <ChevronRight size={12} />
+                            {folder.label}
+                          </button>
+                        ))
+                    )}
+                    {treeData.flatMap((n) => (n.children ?? []).filter((c) => c.type === 'folder')).length === 0 && (
+                      <div className="py-2 text-center text-[0.8125rem] text-[var(--hint)]">No folders found</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Root level option */}
+                <label
+                  className="flex cursor-pointer items-center gap-2 rounded-lg p-3 transition-colors"
+                  style={{
+                    border: `1.5px solid ${wsdlFolderMode === 'root' ? 'var(--accent)' : 'var(--border)'}`,
+                    background: wsdlFolderMode === 'root' ? 'var(--accent-light)' : 'transparent',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="wsdlFolder"
+                    checked={wsdlFolderMode === 'root'}
+                    onChange={() => setWsdlFolderMode('root')}
+                    className="accent-[var(--accent)]"
+                  />
+                  <span className="text-[0.8rem] text-[var(--text)]">Project root (no folder)</span>
+                </label>
+              </div>
+
+              {importError && (
+                <div
+                  className="rounded-lg px-3 py-2 text-[0.8rem]"
+                  style={{ background: '#fff0f0', color: '#cc2200', border: '1px solid #f5b3b3' }}
+                >
+                  {importError}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="mt-6 flex justify-between border-t border-[var(--border)] pt-4">
+              <button
+                type="button"
+                onClick={() => { setStep(2); setWsdlParsed(null); setImportError('') }}
+                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.8rem] text-[#555] transition-colors hover:bg-[var(--bg)]"
+              >
+                {'\u2190'} Back
+              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.8rem] text-[#555] transition-colors hover:bg-[var(--bg)]"
+                >
+                  {t('import.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleWsdlImport}
+                  disabled={wsdlImporting || (wsdlFolderMode === 'existing' && !wsdlTargetFolderId)}
+                  className="flex cursor-pointer items-center gap-1.5 rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] text-[0.8rem] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {wsdlImporting ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Upload size={14} />
+                  )}
+                  Import {wsdlParsed.services.reduce((sum, s) => sum + s.ports.reduce((ps, p) => ps + p.operations.length, 0), 0)} Endpoints
+                </button>
+              </div>
             </div>
           </>
         )}

@@ -14,6 +14,35 @@ function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
 }
 
+/** SOAP metadata stored in endpoint request_schema.soap */
+interface SoapEndpointMeta {
+  wsdlUrl?: string
+  serviceName?: string
+  portName?: string
+  operationName?: string
+  soapAction?: string
+  soapVersion?: 'soap11' | 'soap12'
+  endpointUrl?: string
+  inputSchema?: Record<string, unknown>
+  outputSchema?: Record<string, unknown>
+  exampleRequest?: string
+  exampleResponse?: string
+}
+
+/** Snapshot of SOAP state for per-tab caching */
+interface TabSoapState {
+  wsdlUrl: string
+  parsedWsdl: WsdlParseResult | null
+  selectedService: string | null
+  selectedPort: string | null
+  selectedOperation: string | null
+  formValues: Record<string, string>
+  rawXml: string
+  bodyMode: 'form' | 'raw'
+  wsSecurity: WsSecurityConfig
+  endpointUrl: string
+}
+
 interface SoapStore {
   wsdlUrl: string
   parsedWsdl: WsdlParseResult | null
@@ -30,6 +59,13 @@ interface SoapStore {
 
   wsSecurity: WsSecurityConfig
 
+  /** The resolved SOAP endpoint URL (for sending) */
+  endpointUrl: string
+
+  /** Per-tab state cache */
+  _tabStates: Map<string, TabSoapState>
+  _currentTabId: string | null
+
   setWsdlUrl: (url: string) => void
   parseWsdl: () => Promise<void>
   selectService: (name: string) => void
@@ -43,6 +79,19 @@ interface SoapStore {
   sendSoap: () => Promise<void>
   reset: () => void
 
+  /** Load SOAP data from an imported endpoint's request_schema */
+  loadFromEndpoint: (data: {
+    url: string
+    body?: { type: string; content?: string }
+    headers?: Array<{ key: string; value: string; enabled: boolean }>
+    soap?: SoapEndpointMeta
+  }) => void
+
+  /** Switch active tab — saves current state and loads target tab state */
+  switchToTab: (tabId: string) => void
+  /** Remove cached state for a closed tab */
+  removeTabState: (tabId: string) => void
+
   getSelectedService: () => WsdlService | undefined
   getSelectedPort: () => WsdlPort | undefined
   getSelectedOperation: () => WsdlOperation | undefined
@@ -55,6 +104,36 @@ const defaultWsSecurity: WsSecurityConfig = {
   password: '',
   passwordType: 'PasswordText',
   addTimestamp: false,
+}
+
+function extractSoapTabState(s: SoapStore): TabSoapState {
+  return {
+    wsdlUrl: s.wsdlUrl,
+    parsedWsdl: s.parsedWsdl,
+    selectedService: s.selectedService,
+    selectedPort: s.selectedPort,
+    selectedOperation: s.selectedOperation,
+    formValues: s.formValues,
+    rawXml: s.rawXml,
+    bodyMode: s.bodyMode,
+    wsSecurity: s.wsSecurity,
+    endpointUrl: s.endpointUrl,
+  }
+}
+
+function emptySoapTabState(): TabSoapState {
+  return {
+    wsdlUrl: '',
+    parsedWsdl: null,
+    selectedService: null,
+    selectedPort: null,
+    selectedOperation: null,
+    formValues: {},
+    rawXml: '',
+    bodyMode: 'raw',
+    wsSecurity: { ...defaultWsSecurity },
+    endpointUrl: '',
+  }
 }
 
 export const useSoapStore = create<SoapStore>((set, get) => ({
@@ -72,6 +151,11 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
   bodyMode: 'raw',
 
   wsSecurity: { ...defaultWsSecurity },
+
+  endpointUrl: '',
+
+  _tabStates: new Map(),
+  _currentTabId: null,
 
   setWsdlUrl: (url) => set({ wsdlUrl: url }),
 
@@ -299,6 +383,98 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     }
   },
 
+  loadFromEndpoint: (data) => {
+    const soapMeta = data.soap
+    const xmlBody = data.body?.content || soapMeta?.exampleRequest || ''
+    const endpointUrl = soapMeta?.endpointUrl || data.url || ''
+
+    if (soapMeta) {
+      // Build a synthetic WsdlParseResult from stored metadata
+      const operation: WsdlOperation = {
+        name: soapMeta.operationName || 'Unknown',
+        soapAction: soapMeta.soapAction || '',
+        inputSchema: soapMeta.inputSchema || {},
+        outputSchema: soapMeta.outputSchema || {},
+        exampleRequest: soapMeta.exampleRequest || '',
+        exampleResponse: soapMeta.exampleResponse || '',
+      }
+
+      const port: WsdlPort = {
+        name: soapMeta.portName || 'Port',
+        endpointUrl,
+        operations: [operation],
+      }
+
+      const service: WsdlService = {
+        name: soapMeta.serviceName || 'Service',
+        ports: [port],
+      }
+
+      const syntheticWsdl: WsdlParseResult = {
+        services: [service],
+        endpointUrl,
+        soapVersion: soapMeta.soapVersion || 'soap11',
+        rawWsdl: '',
+      }
+
+      set({
+        wsdlUrl: soapMeta.wsdlUrl || '',
+        parsedWsdl: syntheticWsdl,
+        isLoading: false,
+        parseError: null,
+        selectedService: service.name,
+        selectedPort: port.name,
+        selectedOperation: operation.name,
+        rawXml: xmlBody,
+        bodyMode: 'raw',
+        formValues: flattenSchema(operation.inputSchema),
+        endpointUrl,
+      })
+    } else {
+      // No SOAP metadata — just load raw XML
+      set({
+        wsdlUrl: '',
+        parsedWsdl: null,
+        isLoading: false,
+        parseError: null,
+        selectedService: null,
+        selectedPort: null,
+        selectedOperation: null,
+        rawXml: xmlBody,
+        bodyMode: 'raw',
+        formValues: {},
+        endpointUrl,
+      })
+    }
+  },
+
+  switchToTab: (tabId) => {
+    const state = get()
+    const tabStates = new Map(state._tabStates)
+
+    // Save current tab state
+    if (state._currentTabId) {
+      tabStates.set(state._currentTabId, extractSoapTabState(state))
+    }
+
+    // Load target tab state (or empty for new tabs)
+    const target = tabStates.get(tabId) || emptySoapTabState()
+
+    set({
+      ...target,
+      isLoading: false,
+      parseError: null,
+      _tabStates: tabStates,
+      _currentTabId: tabId,
+    })
+  },
+
+  removeTabState: (tabId) => {
+    const tabStates = new Map(get()._tabStates)
+    tabStates.delete(tabId)
+    set({ _tabStates: tabStates })
+  },
+
   reset: () =>
     set({
       wsdlUrl: '',
@@ -312,6 +488,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
       rawXml: '',
       bodyMode: 'raw',
       wsSecurity: { ...defaultWsSecurity },
+      endpointUrl: '',
     }),
 
   getSelectedService: () => {

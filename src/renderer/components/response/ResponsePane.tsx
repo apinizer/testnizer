@@ -75,7 +75,7 @@ export default function ResponsePane() {
             key={tab}
             type="button"
             onClick={() => setActiveTab(tab)}
-            className="cursor-pointer whitespace-nowrap px-3.5 py-2 text-[0.875rem] transition-colors"
+            className="cursor-pointer whitespace-nowrap px-2.5 py-1 text-[13px] transition-colors"
             style={{
               borderBottom:
                 activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
@@ -94,7 +94,7 @@ export default function ResponsePane() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto bg-[var(--surface)]">
+      <div className="flex-1 overflow-hidden bg-[var(--surface)]">
         {activeTab === 'response' && <ResponseBody />}
         {activeTab === 'cookie' && <CookieTab />}
         {activeTab === 'console' && <ConsoleTab />}

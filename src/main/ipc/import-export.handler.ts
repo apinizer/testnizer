@@ -2,6 +2,7 @@ import { ipcMain, dialog } from 'electron'
 import { readFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { getDb } from '../db/database'
+import { parseWsdl, parseWsdlFromContent, type WsdlParseResult } from '../protocols/soap.engine'
 
 interface ImportResult {
   success: boolean
@@ -179,6 +180,43 @@ export function registerImportExportHandlers(): void {
     try {
       const curl = exportAsCurl(request)
       return { success: true, data: curl }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── WSDL Parse for Import (returns parsed services) ─────
+  ipcMain.handle('import:wsdl:parse', async (_event, url: string) => {
+    try {
+      const result = await parseWsdl(url)
+      return { success: true, data: result }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('import:wsdl:parseFile', async (_event, content: string) => {
+    try {
+      const result = await parseWsdlFromContent(content)
+      return { success: true, data: result }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── WSDL Import (create folder + endpoints) ─────────────
+  ipcMain.handle('import:wsdl', async (_event, payload: {
+    projectId: string
+    targetFolderId?: string | null
+    createNewFolder?: boolean
+    newFolderName?: string
+    wsdlUrl?: string
+    wsdlContent?: string
+    parsedWsdl?: WsdlParseResult
+  }) => {
+    try {
+      const result = await importWsdl(payload)
+      return { success: true, data: result }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -1679,4 +1717,154 @@ function mapInsomniaAuth(auth: InsomniaAuth): Record<string, unknown> | null {
   }
 
   return config
+}
+
+// ─── WSDL Import (Postman-like flow) ───────────────────────
+// Kullanıcı WSDL URL verir → uygulama parse eder → klasör seçimi sorar → tüm operasyonları endpoint olarak oluşturur
+
+async function importWsdl(payload: {
+  projectId: string
+  targetFolderId?: string | null
+  createNewFolder?: boolean
+  newFolderName?: string
+  wsdlUrl?: string
+  wsdlContent?: string
+  parsedWsdl?: WsdlParseResult
+}): Promise<ImportResult> {
+  const warnings: string[] = []
+  const db = getDb()
+  const now = Date.now()
+  let endpointCount = 0
+  let folderCount = 0
+
+  // Step 1: Get parsed WSDL (either pre-parsed or parse now)
+  let parsed: WsdlParseResult
+  if (payload.parsedWsdl) {
+    parsed = payload.parsedWsdl
+  } else if (payload.wsdlUrl) {
+    parsed = await parseWsdl(payload.wsdlUrl)
+  } else if (payload.wsdlContent) {
+    parsed = await parseWsdlFromContent(payload.wsdlContent)
+  } else {
+    return { success: false, error: 'No WSDL URL or content provided' }
+  }
+
+  if (!parsed.services || parsed.services.length === 0) {
+    return { success: false, error: 'No services found in WSDL' }
+  }
+
+  // Step 2: Determine target folder
+  let rootFolderId: string | null = payload.targetFolderId ?? null
+
+  if (payload.createNewFolder) {
+    rootFolderId = randomUUID()
+    const folderName = payload.newFolderName || parsed.services[0]?.name || 'WSDL Import'
+    db.prepare(`
+      INSERT INTO folders (id, project_id, parent_id, name, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(rootFolderId, payload.projectId, payload.targetFolderId ?? null, folderName, 0)
+    folderCount++
+  }
+
+  // Step 3: Create folder hierarchy and endpoints for each service/port/operation
+  // Matches Postman/Apidog: Service folder > Port folders > Operations
+  // When user created a new folder AND there's only 1 service, use the new folder as the
+  // service container (avoids double-nesting like Calculator > Calculator > CalculatorSoap)
+  const skipServiceFolder = payload.createNewFolder && parsed.services.length === 1
+
+  for (const service of parsed.services) {
+    let serviceFolderId: string
+
+    if (skipServiceFolder) {
+      // The user-created folder IS the service folder
+      serviceFolderId = rootFolderId!
+    } else {
+      // Create a service-level folder (matches Postman/Apidog behavior)
+      serviceFolderId = randomUUID()
+      db.prepare(`
+        INSERT INTO folders (id, project_id, parent_id, name, sort_order)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(serviceFolderId, payload.projectId, rootFolderId, service.name, folderCount)
+      folderCount++
+    }
+
+    for (const port of service.ports) {
+      // Always create port-level folders under the service folder
+      const portFolderId = randomUUID()
+      db.prepare(`
+        INSERT INTO folders (id, project_id, parent_id, name, sort_order)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(portFolderId, payload.projectId, serviceFolderId, port.name, folderCount)
+      folderCount++
+      const parentForEndpoints = portFolderId
+
+      for (const operation of port.operations) {
+        const endpointId = randomUUID()
+        const endpointUrl = port.endpointUrl || parsed.endpointUrl
+
+        const requestSchema = JSON.stringify({
+          method: 'POST',
+          url: endpointUrl,
+          headers: [
+            { id: randomUUID(), key: 'Content-Type', value: parsed.soapVersion === 'soap12' ? 'application/soap+xml; charset=utf-8' : 'text/xml; charset=utf-8', enabled: true },
+            { id: randomUUID(), key: 'SOAPAction', value: operation.soapAction, enabled: true }
+          ],
+          body: { type: 'xml', content: operation.exampleRequest },
+          soap: {
+            wsdlUrl: payload.wsdlUrl || '',
+            serviceName: service.name,
+            portName: port.name,
+            operationName: operation.name,
+            soapAction: operation.soapAction,
+            soapVersion: parsed.soapVersion,
+            endpointUrl,
+            inputSchema: operation.inputSchema,
+            outputSchema: operation.outputSchema,
+            exampleRequest: operation.exampleRequest,
+            exampleResponse: operation.exampleResponse
+          }
+        })
+
+        const responseSchemas = JSON.stringify({
+          '200': {
+            description: 'SOAP Response',
+            content: { 'text/xml': { example: operation.exampleResponse } }
+          }
+        })
+
+        db.prepare(`
+          INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          endpointId,
+          payload.projectId,
+          parentForEndpoints,
+          operation.name,
+          `SOAP operation: ${operation.name} (${service.name}/${port.name})`,
+          'http',
+          'POST',
+          endpointUrl,
+          'developing',
+          requestSchema,
+          responseSchemas,
+          endpointCount,
+          now,
+          now
+        )
+        endpointCount++
+      }
+    }
+  }
+
+  if (endpointCount === 0) {
+    warnings.push('No operations found in WSDL')
+  }
+
+  return {
+    success: true,
+    collectionId: payload.projectId,
+    endpointCount,
+    folderCount,
+    warnings: warnings.length > 0 ? warnings : undefined
+  }
 }

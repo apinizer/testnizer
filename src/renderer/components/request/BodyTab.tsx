@@ -7,15 +7,23 @@ const BODY_OPTIONS: { value: BodyType; label: string }[] = [
   { value: 'none', label: 'none' },
   { value: 'form-data', label: 'form-data' },
   { value: 'urlencoded', label: 'x-www-form-urlencoded' },
-  { value: 'json', label: 'JSON' },
-  { value: 'xml', label: 'XML' },
-  { value: 'text', label: 'Text' },
-  { value: 'binary', label: 'Binary' },
+  { value: 'json', label: 'raw' },
+  { value: 'binary', label: 'binary' },
+]
+
+const RAW_FORMATS: { value: BodyType; label: string; lang: string }[] = [
+  { value: 'json', label: 'JSON', lang: 'json' },
+  { value: 'xml', label: 'XML', lang: 'xml' },
+  { value: 'text', label: 'Text', lang: 'plaintext' },
+  { value: 'html', label: 'HTML', lang: 'html' },
+  { value: 'javascript', label: 'JavaScript', lang: 'javascript' },
 ]
 
 function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
 }
+
+const isRawType = (t: BodyType) => ['json', 'xml', 'text', 'html', 'javascript'].includes(t)
 
 export default function BodyTab() {
   const body = useRequestStore((s) => s.body)
@@ -27,6 +35,33 @@ export default function BodyTab() {
 
   const handleContentChange = (content: string) => {
     setBody({ ...body, content })
+  }
+
+  const handleBeautify = () => {
+    if (body.type === 'json' && body.content) {
+      try {
+        const formatted = JSON.stringify(JSON.parse(body.content), null, 2)
+        setBody({ ...body, content: formatted })
+      } catch { /* ignore */ }
+    }
+    if (body.type === 'xml' && body.content) {
+      // Basic XML prettify
+      let formatted = body.content.replace(/></g, '>\n<')
+      let indent = 0
+      formatted = formatted
+        .split('\n')
+        .map((line) => {
+          const trimmed = line.trim()
+          if (trimmed.startsWith('</')) indent = Math.max(0, indent - 1)
+          const padded = '  '.repeat(indent) + trimmed
+          if (trimmed.startsWith('<') && !trimmed.startsWith('</') && !trimmed.startsWith('<?') && !trimmed.endsWith('/>') && !trimmed.includes('</')) {
+            indent++
+          }
+          return padded
+        })
+        .join('\n')
+      setBody({ ...body, content: formatted })
+    }
   }
 
   const handleFormDataUpdate = (id: string, updates: Partial<KeyValuePair>) => {
@@ -61,115 +96,123 @@ export default function BodyTab() {
     setBody({ ...body, urlEncoded: [...(body.urlEncoded || []), newItem] })
   }
 
-  const monacoLanguage = body.type === 'xml' ? 'xml' : body.type === 'json' ? 'json' : 'plaintext'
+  const monacoLanguage = body.type === 'xml' ? 'xml'
+    : body.type === 'json' ? 'json'
+    : body.type === 'html' ? 'html'
+    : body.type === 'javascript' ? 'javascript'
+    : 'plaintext'
+
+  // Determine which top-level radio is selected
+  const activeRadio = isRawType(body.type) ? 'json' as BodyType : body.type
 
   return (
-    <div>
-      {/* Body type selector — Apidog-style pill/chip buttons */}
-      <div
-        className="mb-3 flex items-center gap-1"
-        style={{ borderBottom: '1px solid var(--border)', paddingBottom: 10 }}
-      >
+    <div className="flex h-full flex-col">
+      {/* Body type selector — Postman-style radio buttons */}
+      <div className="flex shrink-0 items-center gap-3 pb-1.5 text-[13px]" style={{ borderBottom: '1px solid var(--border)' }}>
         {BODY_OPTIONS.map((opt) => {
-          const isActive = body.type === opt.value
+          const isActive = opt.value === activeRadio
           return (
-            <button
+            <label
               key={opt.value}
-              type="button"
-              onClick={() => handleTypeChange(opt.value)}
-              className="cursor-pointer rounded-full text-[0.8125rem] font-medium transition-all"
-              style={{
-                padding: '4px 12px',
-                background: isActive ? 'var(--accent)' : 'transparent',
-                color: isActive ? '#ffffff' : 'var(--muted)',
-                border: 'none',
-              }}
-              onMouseOver={(e) => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLElement).style.background = 'var(--fill-4)'
-                  ;(e.currentTarget as HTMLElement).style.color = 'var(--text)'
-                }
-              }}
-              onMouseOut={(e) => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLElement).style.background = 'transparent'
-                  ;(e.currentTarget as HTMLElement).style.color = 'var(--muted)'
-                }
-              }}
+              className="flex cursor-pointer items-center gap-1.5 text-[13px]"
+              style={{ color: isActive ? 'var(--text)' : 'var(--muted)' }}
             >
+              <input
+                type="radio"
+                name="bodyType"
+                checked={isActive}
+                onChange={() => handleTypeChange(opt.value)}
+                style={{ accentColor: 'var(--accent)', width: 13, height: 13, margin: 0 }}
+              />
               {opt.label}
-            </button>
+            </label>
           )
         })}
+
+        {/* Raw format dropdown — shown when raw is selected (like Postman) */}
+        {isRawType(body.type) && (
+          <>
+            <span className="text-[var(--border2)]">|</span>
+            <select
+              value={body.type}
+              onChange={(e) => handleTypeChange(e.target.value as BodyType)}
+              className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg)] px-1.5 py-px text-[13px] font-medium text-[var(--accent-text)] outline-none"
+            >
+              {RAW_FORMATS.map((f) => (
+                <option key={f.value} value={f.value}>{f.label}</option>
+              ))}
+            </select>
+          </>
+        )}
+
+        {/* Spacer + Beautify button */}
+        <div className="flex-1" />
+        {isRawType(body.type) && (body.type === 'json' || body.type === 'xml') && (
+          <button
+            type="button"
+            onClick={handleBeautify}
+            className="cursor-pointer rounded border border-[var(--border)] bg-transparent px-2 py-0.5 text-[13px] text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+          >
+            Beautify
+          </button>
+        )}
       </div>
 
-      {/* Content */}
+      {/* Content area */}
       {body.type === 'none' && (
-        <div className="py-8 text-center text-sm text-[var(--hint)]">
+        <div className="flex flex-1 items-center justify-center text-[0.8rem] text-[var(--hint)]">
           This request does not have a body.
         </div>
       )}
 
-      {(body.type === 'json' || body.type === 'xml' || body.type === 'text' || body.type === 'html' || body.type === 'javascript') && (
-        <div>
-          {/* Toolbar row — Apidog style */}
-          <div
-            className="flex items-center gap-3"
-            style={{ marginBottom: 8 }}
-          >
-            {body.type === 'json' && (
-              <span className="text-[0.8rem]" style={{ color: 'var(--hint)' }}>
-                application/json
-              </span>
-            )}
-            {body.type === 'xml' && (
-              <span className="text-[0.8rem]" style={{ color: 'var(--hint)' }}>
-                application/xml
-              </span>
-            )}
-          </div>
-          <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--white)]">
-            <MonacoWrapper
-              value={body.content || ''}
-              onChange={handleContentChange}
-              language={monacoLanguage}
-              height={200}
-            />
-          </div>
+      {isRawType(body.type) && (
+        <div className="flex-1 overflow-hidden pt-1">
+          <MonacoWrapper
+            value={body.content || ''}
+            onChange={handleContentChange}
+            language={monacoLanguage}
+            height="100%"
+          />
         </div>
       )}
 
       {body.type === 'form-data' && (
-        <KeyValueTable
-          rows={body.formData || []}
-          onUpdate={handleFormDataUpdate}
-          onRemove={handleFormDataRemove}
-          onAdd={handleFormDataAdd}
-          addLabel="+ Add Field"
-        />
+        <div className="flex-1 overflow-auto pt-1">
+          <KeyValueTable
+            rows={body.formData || []}
+            onUpdate={handleFormDataUpdate}
+            onRemove={handleFormDataRemove}
+            onAdd={handleFormDataAdd}
+            addLabel="+ Add Field"
+          />
+        </div>
       )}
 
       {body.type === 'urlencoded' && (
-        <KeyValueTable
-          rows={body.urlEncoded || []}
-          onUpdate={handleUrlEncodedUpdate}
-          onRemove={handleUrlEncodedRemove}
-          onAdd={handleUrlEncodedAdd}
-          addLabel="+ Add Field"
-        />
+        <div className="flex-1 overflow-auto pt-1">
+          <KeyValueTable
+            rows={body.urlEncoded || []}
+            onUpdate={handleUrlEncodedUpdate}
+            onRemove={handleUrlEncodedRemove}
+            onAdd={handleUrlEncodedAdd}
+            addLabel="+ Add Field"
+          />
+        </div>
       )}
 
       {body.type === 'binary' && (
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--white)] p-4 text-center">
-          <button
-            type="button"
-            className="cursor-pointer rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-4 py-2 text-sm text-[var(--text)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
-          >
-            Select File
-          </button>
-          {body.binaryPath && (
-            <div className="mt-2 text-sm text-[var(--muted)]">{body.binaryPath}</div>
-          )}
+        <div className="flex flex-1 items-center justify-center">
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--white)] p-3 text-center">
+            <button
+              type="button"
+              className="cursor-pointer rounded border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 text-[0.8rem] text-[var(--text)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
+            >
+              Select File
+            </button>
+            {body.binaryPath && (
+              <div className="mt-1.5 text-[0.78rem] text-[var(--muted)]">{body.binaryPath}</div>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -1,11 +1,13 @@
-import { useRef, useMemo, useCallback } from 'react'
+import { useRef, useMemo, useCallback, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
-import type { TreeNode as TreeNodeType, HttpMethod, KeyValuePair, RequestBody, AuthConfig } from '../../types'
+import { useSoapStore } from '../../stores/soap.store'
+import type { TreeNode as TreeNodeType, HttpMethod, Protocol, KeyValuePair, RequestBody, AuthConfig } from '../../types'
 import TreeNodeComponent from './TreeNode'
+import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 
 // Re-alias for flattenTree signature
 type TreeNode = TreeNodeType
@@ -48,6 +50,8 @@ export default function TreeView() {
   const switchToTab = useRequestStore((s) => s.switchToTab)
   const clearResponse = useResponseStore((s) => s.clearResponse)
   const refreshTree = useWorkspaceStore((s) => s.refreshTree)
+  const loadSoapFromEndpoint = useSoapStore((s) => s.loadFromEndpoint)
+  const switchSoapToTab = useSoapStore((s) => s.switchToTab)
 
   const parentRef = useRef<HTMLDivElement>(null)
 
@@ -131,10 +135,14 @@ export default function TreeView() {
           }
           if (result?.success && result.data) {
             const ep = result.data
+            const protocol = (ep.protocol || 'http') as Protocol
             let params: KeyValuePair[] = []
             let headers: KeyValuePair[] = []
             let body: RequestBody = { type: 'none' }
             let auth: AuthConfig = { type: 'none' }
+            let soapMeta: Record<string, unknown> | undefined
+            let schemaUrl = ep.path
+            let schemaMethod = ep.method || 'GET'
 
             if (ep.request_schema) {
               try {
@@ -143,28 +151,48 @@ export default function TreeView() {
                 headers = schema.headers || []
                 body = schema.body || { type: 'none' }
                 auth = schema.auth || { type: 'none' }
+                soapMeta = schema.soap
+                // Use URL/method from schema if available (WSDL-imported endpoints store full data)
+                if (schema.url) schemaUrl = schema.url
+                if (schema.method) schemaMethod = schema.method
               } catch { /* ignore */ }
             }
+
+            // WSDL-imported SOAP endpoints (with soapMeta) use the standard HTTP editor
+            // just like Postman/Apidog — URL bar, Headers (Content-Type, SOAPAction), Body (XML)
+            const effectiveProtocol = (protocol === 'soap' && soapMeta) ? 'http' as Protocol : protocol
 
             openTab({
               id: tabId,
               name: ep.name,
-              protocol: (ep.protocol || 'http') as 'http',
-              method: ep.method || 'GET',
-              url: ep.path,
+              protocol: effectiveProtocol,
+              method: schemaMethod,
+              url: schemaUrl,
               endpointId: ep.id,
             })
 
             switchToTab(tabId)
             clearResponse()
-            loadFromEndpoint({
-              method: (ep.method || 'GET') as HttpMethod,
-              url: ep.path,
-              params,
-              headers,
-              body,
-              auth,
-            })
+
+            if (effectiveProtocol === 'soap') {
+              // Manual SOAP editor (no imported metadata)
+              switchSoapToTab(tabId)
+              loadSoapFromEndpoint({
+                url: schemaUrl,
+                body: body as { type: string; content?: string },
+                headers: headers as Array<{ key: string; value: string; enabled: boolean }>,
+                soap: undefined,
+              })
+            } else {
+              loadFromEndpoint({
+                method: schemaMethod as HttpMethod,
+                url: schemaUrl,
+                params,
+                headers,
+                body,
+                auth,
+              })
+            }
             return
           }
         } catch {
@@ -187,18 +215,50 @@ export default function TreeView() {
         url: node.path || '',
       })
     },
-    [setActiveNode, loadFromEndpoint, openTab, switchToTab, clearResponse]
+    [setActiveNode, loadFromEndpoint, openTab, switchToTab, clearResponse, loadSoapFromEndpoint, switchSoapToTab]
   )
 
-  const handleDelete = useCallback(
-    async (node: TreeNode) => {
+  // Delete confirmation dialog state
+  const [deleteTarget, setDeleteTarget] = useState<TreeNode | null>(null)
+
+  const handleDeleteRequest = useCallback(
+    (node: TreeNode) => {
+      setDeleteTarget(node)
+    },
+    []
+  )
+
+  const handleDeleteConfirm = useCallback(
+    async () => {
+      if (!deleteTarget) return
       try {
-        if (node.type === 'request') {
-          await window.api?.savedRequest?.delete(node.id)
+        if (deleteTarget.type === 'request') {
+          await window.api?.savedRequest?.delete(deleteTarget.id)
+        } else if (deleteTarget.type === 'endpoint') {
+          await window.api?.endpoint?.delete(deleteTarget.id)
+        } else if (deleteTarget.type === 'folder') {
+          await window.api?.folder?.delete(deleteTarget.id)
+        }
+        await refreshTree()
+      } catch { /* ignore */ }
+      setDeleteTarget(null)
+    },
+    [deleteTarget, refreshTree]
+  )
+
+  const handleDeleteCancel = useCallback(() => {
+    setDeleteTarget(null)
+  }, [])
+
+  const handleRename = useCallback(
+    async (node: TreeNode, newName: string) => {
+      try {
+        if (node.type === 'folder') {
+          await window.api?.folder?.update(node.id, { name: newName })
         } else if (node.type === 'endpoint') {
-          await window.api?.endpoint?.delete(node.id)
-        } else if (node.type === 'folder') {
-          await window.api?.folder?.delete(node.id)
+          await window.api?.endpoint?.update(node.id, { name: newName })
+        } else if (node.type === 'request') {
+          await window.api?.savedRequest?.update(node.id, { name: newName })
         }
         await refreshTree()
       } catch { /* ignore */ }
@@ -235,7 +295,8 @@ export default function TreeView() {
                 activeId={activeNodeId}
                 onSelect={handleSelect}
                 onToggle={toggleNode}
-                onDelete={handleDelete}
+                onDelete={handleDeleteRequest}
+                onRename={handleRename}
                 openIds={openNodeIds}
                 isFlat
               />
@@ -243,6 +304,15 @@ export default function TreeView() {
           )
         })}
       </div>
+
+      {/* Delete confirmation dialog */}
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        itemName={deleteTarget?.label || ''}
+        itemType={(deleteTarget?.type as 'folder' | 'endpoint' | 'request') || 'endpoint'}
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
     </div>
   )
 }

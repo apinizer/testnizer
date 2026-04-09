@@ -22,26 +22,26 @@ export default function ResponseMeta() {
       : '0'
 
   return (
-    <div className="flex shrink-0 items-center gap-3.5 border-b border-[var(--border)] bg-[var(--white)] px-4 py-2">
+    <div className="flex shrink-0 items-center gap-2.5 border-b border-[var(--border)] bg-[var(--white)] px-3 py-1">
       {/* Status */}
       {response.status && (
         <StatusBadge status={response.status} statusText={response.statusText} />
       )}
 
       {/* Timing */}
-      <span className="text-sm text-[var(--muted)]">
+      <span className="text-[13px] text-[var(--muted)]">
         <span className="font-semibold text-[var(--green)]">{response.timing.total}</span> {t('response.ms')}
       </span>
 
       {/* Size */}
-      <span className="text-sm text-[var(--muted)]">
+      <span className="text-[13px] text-[var(--muted)]">
         <span className="font-semibold text-[var(--text)]">{sizeKB}</span> {t('response.kb')}
       </span>
 
       {/* Test badge */}
       {totalTests > 0 && (
         <span
-          className="rounded-full px-2.5 py-0.5 text-[0.875rem] font-medium"
+          className="rounded-full px-2 py-0.5 text-[12px] font-medium"
           style={{
             background: allPassed ? 'var(--green-bg)' : '#fff0f0',
             color: allPassed ? 'var(--green)' : 'var(--red)',
@@ -52,27 +52,29 @@ export default function ResponseMeta() {
         </span>
       )}
 
-      {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Actions */}
+      {/* Actions — compact like Postman */}
       <button
         type="button"
         onClick={() => setShowCodeGenerator(true)}
-        className="flex cursor-pointer items-center gap-1 rounded-[5px] border border-[var(--border)] bg-[var(--bg)] px-2 py-[3px] text-[0.875rem] text-[var(--muted)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--accent)]"
+        className="flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 text-[12px] text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+        style={{ borderColor: 'var(--border)', background: 'transparent' }}
       >
-        <Code2 size={12} />
+        <Code2 size={11} />
         {t('response.code')}
       </button>
       <button
         type="button"
-        className="cursor-pointer rounded-[5px] border border-[var(--border)] bg-[var(--bg)] px-2 py-[3px] text-[0.875rem] text-[var(--muted)] transition-colors hover:bg-[var(--surface)]"
+        className="cursor-pointer rounded border px-1.5 py-0.5 text-[12px] text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+        style={{ borderColor: 'var(--border)', background: 'transparent' }}
       >
         {'\u2193'} {t('response.save')}
       </button>
       <button
         type="button"
-        className="cursor-pointer rounded-[5px] border border-[var(--border)] bg-[var(--bg)] px-2 py-[3px] text-[0.875rem] text-[var(--muted)] transition-colors hover:bg-[var(--surface)]"
+        className="cursor-pointer rounded border px-1.5 py-0.5 text-[12px] text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+        style={{ borderColor: 'var(--border)', background: 'transparent' }}
         onClick={() => {
           if (response.body) {
             navigator.clipboard.writeText(response.body)

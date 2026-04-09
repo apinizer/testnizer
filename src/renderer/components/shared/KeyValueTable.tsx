@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, X } from 'lucide-react'
 import type { KeyValuePair } from '../../types'
 
@@ -88,6 +89,55 @@ interface AutocompleteState {
   selectedIndex: number
 }
 
+/** Autocomplete dropdown rendered via portal so it's never clipped */
+function AutocompleteDropdown({
+  anchorRef,
+  suggestions,
+  selectedIndex,
+  onSelect,
+  onHover,
+}: {
+  anchorRef: React.RefObject<HTMLInputElement | null>
+  suggestions: string[]
+  selectedIndex: number
+  onSelect: (s: string) => void
+  onHover: (i: number) => void
+}) {
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 })
+
+  useEffect(() => {
+    if (anchorRef.current) {
+      const rect = anchorRef.current.getBoundingClientRect()
+      setPos({ top: rect.bottom + 2, left: rect.left, width: rect.width })
+    }
+  }, [anchorRef, suggestions])
+
+  return createPortal(
+    <div
+      className="fixed z-[9999] max-h-[200px] overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--white)]"
+      style={{ top: pos.top, left: pos.left, width: pos.width, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+    >
+      {suggestions.map((s, i) => (
+        <div
+          key={s}
+          className="cursor-pointer px-2.5 py-1 text-[13px]"
+          style={{
+            background: i === selectedIndex ? 'var(--accent-light)' : 'transparent',
+            color: i === selectedIndex ? 'var(--accent-text)' : 'var(--text)',
+          }}
+          onMouseDown={() => onSelect(s)}
+          onMouseEnter={() => onHover(i)}
+        >
+          {s}
+        </div>
+      ))}
+    </div>,
+    document.body
+  )
+}
+
+const GRID_COLS = '28px minmax(100px, 1fr) minmax(100px, 1fr) minmax(80px, 0.5fr) 28px'
+
 export default function KeyValueTable({
   rows,
   onUpdate,
@@ -98,51 +148,63 @@ export default function KeyValueTable({
   enableAutocomplete = false,
 }: KeyValueTableProps) {
   const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
+  const activeInputRef = useRef<HTMLInputElement | null>(null)
 
+  // Close autocomplete on outside click
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setAutocomplete(null)
-      }
+    if (!autocomplete) return
+    const handler = () => setAutocomplete(null)
+    // Delay to let onMouseDown fire first
+    const timeout = setTimeout(() => {
+      window.addEventListener('mousedown', handler)
+    }, 0)
+    return () => {
+      clearTimeout(timeout)
+      window.removeEventListener('mousedown', handler)
     }
-    window.addEventListener('mousedown', handler)
-    return () => window.removeEventListener('mousedown', handler)
-  }, [])
+  }, [autocomplete])
 
-  function handleKeyInputChange(rowId: string, value: string) {
-    onUpdate(rowId, { key: value })
-    if (!enableAutocomplete) return
-    if (value.length > 0) {
-      const filtered = COMMON_HEADERS.filter((h) =>
-        h.toLowerCase().includes(value.toLowerCase())
-      )
-      if (filtered.length > 0) {
-        setAutocomplete({ rowId, field: 'key', suggestions: filtered, selectedIndex: 0 })
+  const handleKeyInputChange = useCallback(
+    (rowId: string, value: string, ref: HTMLInputElement | null) => {
+      onUpdate(rowId, { key: value })
+      if (!enableAutocomplete) return
+      activeInputRef.current = ref
+      if (value.length > 0) {
+        const filtered = COMMON_HEADERS.filter((h) =>
+          h.toLowerCase().includes(value.toLowerCase())
+        )
+        if (filtered.length > 0) {
+          setAutocomplete({ rowId, field: 'key', suggestions: filtered, selectedIndex: 0 })
+        } else {
+          setAutocomplete(null)
+        }
       } else {
         setAutocomplete(null)
       }
-    } else {
-      setAutocomplete(null)
-    }
-  }
+    },
+    [enableAutocomplete, onUpdate]
+  )
 
-  function handleValueInputChange(rowId: string, key: string, value: string) {
-    onUpdate(rowId, { value })
-    if (!enableAutocomplete) return
-    if (key.toLowerCase() === 'content-type' && value.length > 0) {
-      const filtered = CONTENT_TYPE_VALUES.filter((v) =>
-        v.toLowerCase().includes(value.toLowerCase())
-      )
-      if (filtered.length > 0) {
-        setAutocomplete({ rowId, field: 'value', suggestions: filtered, selectedIndex: 0 })
+  const handleValueInputChange = useCallback(
+    (rowId: string, key: string, value: string, ref: HTMLInputElement | null) => {
+      onUpdate(rowId, { value })
+      if (!enableAutocomplete) return
+      activeInputRef.current = ref
+      if (key.toLowerCase() === 'content-type' && value.length > 0) {
+        const filtered = CONTENT_TYPE_VALUES.filter((v) =>
+          v.toLowerCase().includes(value.toLowerCase())
+        )
+        if (filtered.length > 0) {
+          setAutocomplete({ rowId, field: 'value', suggestions: filtered, selectedIndex: 0 })
+        } else {
+          setAutocomplete(null)
+        }
       } else {
         setAutocomplete(null)
       }
-    } else {
-      setAutocomplete(null)
-    }
-  }
+    },
+    [enableAutocomplete, onUpdate]
+  )
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (!autocomplete) return
@@ -184,49 +246,40 @@ export default function KeyValueTable({
 
   return (
     <div>
-      {/* Table */}
-      <div className="overflow-hidden rounded-lg border border-[var(--border)]" style={{ background: 'var(--white)' }}>
-        {/* Header row — Apidog style: Name | Value | Description */}
+      <div className="overflow-visible rounded-md border border-[var(--border)]" style={{ background: 'var(--white)' }}>
+        {/* Header */}
         <div
-          className="grid"
+          className="grid text-[11px] text-[var(--hint)]"
           style={{
-            gridTemplateColumns: '32px minmax(120px, 1fr) minmax(120px, 1fr) minmax(100px, 0.6fr) 32px',
+            gridTemplateColumns: GRID_COLS,
             borderBottom: '1px solid var(--border)',
             background: 'var(--surface)',
-            borderRadius: '8px 8px 0 0',
           }}
         >
           <div />
-          <div className="px-2.5 py-1.5" style={{ fontSize: 11, color: 'var(--hint)', fontWeight: 400, fontFamily: 'inherit' }}>
-            Ad
-          </div>
-          <div className="px-2.5 py-1.5" style={{ fontSize: 11, color: 'var(--hint)', fontWeight: 400, fontFamily: 'inherit' }}>
-            Değer
-          </div>
-          <div className="px-2.5 py-1.5" style={{ fontSize: 11, color: 'var(--hint)', fontWeight: 400, fontFamily: 'inherit' }}>
-            Açıklama
-          </div>
+          <div className="px-2.5 py-1">Key</div>
+          <div className="px-2.5 py-1">Value</div>
+          <div className="px-2.5 py-1">Description</div>
           <div />
         </div>
 
-        {/* Data rows */}
+        {/* Rows */}
         {rows.map((row, idx) => (
           <div
             key={row.id}
-            className="group relative grid"
+            className="group grid"
             style={{
-              gridTemplateColumns: '32px minmax(120px, 1fr) minmax(120px, 1fr) minmax(100px, 0.6fr) 32px',
+              gridTemplateColumns: GRID_COLS,
               borderBottom: idx < rows.length - 1 ? '1px solid var(--border)' : 'none',
               opacity: row.enabled ? 1 : 0.45,
-              background: 'var(--white)',
             }}
           >
             {/* Checkbox */}
-            <div className="flex items-center justify-center py-1">
+            <div className="flex items-center justify-center">
               <button
                 type="button"
                 onClick={() => onUpdate(row.id, { enabled: !row.enabled })}
-                className="flex h-[14px] w-[14px] shrink-0 cursor-pointer items-center justify-center rounded-[3px]"
+                className="flex h-3.5 w-3.5 shrink-0 cursor-pointer items-center justify-center rounded-sm"
                 style={{
                   border: `1.5px solid ${row.enabled ? 'var(--accent)' : 'var(--hint)'}`,
                   background: row.enabled ? 'var(--accent)' : 'transparent',
@@ -236,13 +289,14 @@ export default function KeyValueTable({
               </button>
             </div>
 
-            {/* Name/Key */}
+            {/* Key */}
             <div className="relative" style={{ borderRight: '1px solid var(--border)' }}>
               <input
                 value={row.key}
-                onChange={(e) => handleKeyInputChange(row.id, e.target.value)}
-                onFocus={() => {
+                onChange={(e) => handleKeyInputChange(row.id, e.target.value, e.currentTarget)}
+                onFocus={(e) => {
                   if (enableAutocomplete && row.key.length > 0) {
+                    activeInputRef.current = e.currentTarget
                     const filtered = COMMON_HEADERS.filter((h) =>
                       h.toLowerCase().includes(row.key.toLowerCase())
                     )
@@ -252,43 +306,19 @@ export default function KeyValueTable({
                   }
                 }}
                 onKeyDown={handleKeyDown}
-                className="w-full border-none bg-transparent px-3 py-[7px] text-[0.8125rem] text-[var(--text)] outline-none"
-                style={{ fontFamily: 'inherit' }}
-                placeholder="Name"
+                className="w-full border-none bg-transparent px-2.5 py-[5px] text-[13px] text-[var(--text)] outline-none"
+                placeholder="Key"
               />
-              {autocomplete && autocomplete.rowId === row.id && autocomplete.field === 'key' && (
-                <div
-                  ref={dropdownRef}
-                  className="absolute left-0 top-full z-[300] max-h-[200px] w-full overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--white)]"
-                  style={{ boxShadow: '0 6px 20px rgba(0,0,0,0.1)' }}
-                >
-                  {autocomplete.suggestions.map((s, i) => (
-                    <div
-                      key={s}
-                      className="cursor-pointer px-3 py-1.5 text-[0.8125rem]"
-                      style={{
-                        background: i === autocomplete.selectedIndex ? 'var(--accent-light)' : 'transparent',
-                        color: i === autocomplete.selectedIndex ? 'var(--accent-text)' : 'var(--text)',
-                      }}
-                      onMouseDown={() => selectSuggestion(s)}
-                      onMouseEnter={() =>
-                        setAutocomplete((prev) => (prev ? { ...prev, selectedIndex: i } : null))
-                      }
-                    >
-                      {s}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Value */}
             <div className="relative" style={{ borderRight: '1px solid var(--border)' }}>
               <input
                 value={row.value}
-                onChange={(e) => handleValueInputChange(row.id, row.key, e.target.value)}
-                onFocus={() => {
+                onChange={(e) => handleValueInputChange(row.id, row.key, e.target.value, e.currentTarget)}
+                onFocus={(e) => {
                   if (enableAutocomplete && row.key.toLowerCase() === 'content-type' && row.value.length > 0) {
+                    activeInputRef.current = e.currentTarget
                     const filtered = CONTENT_TYPE_VALUES.filter((v) =>
                       v.toLowerCase().includes(row.value.toLowerCase())
                     )
@@ -298,34 +328,10 @@ export default function KeyValueTable({
                   }
                 }}
                 onKeyDown={handleKeyDown}
-                className="w-full border-none bg-transparent px-3 py-[7px] text-[0.8125rem] outline-none"
-                style={{ color: valueColor || 'var(--text)', fontFamily: 'inherit' }}
+                className="w-full border-none bg-transparent px-2.5 py-[5px] text-[13px] outline-none"
+                style={{ color: valueColor || 'var(--text)' }}
                 placeholder="Value"
               />
-              {autocomplete && autocomplete.rowId === row.id && autocomplete.field === 'value' && (
-                <div
-                  ref={dropdownRef}
-                  className="absolute left-0 top-full z-[300] max-h-[200px] w-full overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--white)]"
-                  style={{ boxShadow: '0 6px 20px rgba(0,0,0,0.1)' }}
-                >
-                  {autocomplete.suggestions.map((s, i) => (
-                    <div
-                      key={s}
-                      className="cursor-pointer px-3 py-1.5 text-[0.8125rem]"
-                      style={{
-                        background: i === autocomplete.selectedIndex ? 'var(--accent-light)' : 'transparent',
-                        color: i === autocomplete.selectedIndex ? 'var(--accent-text)' : 'var(--text)',
-                      }}
-                      onMouseDown={() => selectSuggestion(s)}
-                      onMouseEnter={() =>
-                        setAutocomplete((prev) => (prev ? { ...prev, selectedIndex: i } : null))
-                      }
-                    >
-                      {s}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Description */}
@@ -333,8 +339,7 @@ export default function KeyValueTable({
               <input
                 value={row.description || ''}
                 onChange={(e) => onUpdate(row.id, { description: e.target.value })}
-                className="w-full border-none bg-transparent px-3 py-[7px] text-[0.8125rem] text-[var(--muted)] outline-none"
-                style={{ fontFamily: 'inherit' }}
+                className="w-full border-none bg-transparent px-2.5 py-[5px] text-[13px] text-[var(--muted)] outline-none"
                 placeholder="Description"
               />
             </div>
@@ -355,19 +360,18 @@ export default function KeyValueTable({
           </div>
         ))}
 
-        {/* Placeholder row — "Add a new param" like Apidog */}
+        {/* Placeholder row */}
         <div
           className="grid cursor-pointer"
           style={{
-            gridTemplateColumns: '32px minmax(120px, 1fr) minmax(120px, 1fr) minmax(100px, 0.6fr) 32px',
+            gridTemplateColumns: GRID_COLS,
             borderTop: rows.length > 0 ? '1px solid var(--border)' : 'none',
-            background: 'var(--white)',
           }}
           onClick={onAdd}
         >
           <div />
-          <div className="px-3 py-[7px] text-[0.8125rem]" style={{ color: 'var(--muted)' }}>
-            Add a new param
+          <div className="px-2.5 py-[5px] text-[13px] text-[var(--hint)]">
+            Add new...
           </div>
           <div />
           <div />
@@ -375,15 +379,25 @@ export default function KeyValueTable({
         </div>
       </div>
 
-      {/* "+" add button below table */}
+      {/* Add button */}
       <button
         type="button"
         onClick={onAdd}
-        className="mt-2 w-full cursor-pointer rounded-[7px] border border-dashed border-[var(--border)] bg-transparent py-1.5 text-[0.8125rem] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
-        style={{ color: 'var(--muted)' }}
+        className="mt-1.5 w-full cursor-pointer rounded-md border border-dashed border-[var(--border)] bg-transparent py-1 text-[13px] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
       >
         {addLabel}
       </button>
+
+      {/* Autocomplete portal */}
+      {autocomplete && autocomplete.suggestions.length > 0 && (
+        <AutocompleteDropdown
+          anchorRef={activeInputRef}
+          suggestions={autocomplete.suggestions}
+          selectedIndex={autocomplete.selectedIndex}
+          onSelect={selectSuggestion}
+          onHover={(i) => setAutocomplete((prev) => (prev ? { ...prev, selectedIndex: i } : null))}
+        />
+      )}
     </div>
   )
 }

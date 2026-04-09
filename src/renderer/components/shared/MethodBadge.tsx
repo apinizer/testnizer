@@ -20,11 +20,7 @@ export default function MethodBadge({ method, small = false }: MethodBadgeProps)
   return (
     <span
       style={{
-        background: c.bg,
         color: c.color,
-        border: `1px solid ${c.border}`,
-        borderRadius: 4,
-        padding: small ? '1px 5px' : '3px 9px',
         fontSize: small ? 9 : 11,
         fontWeight: 700,
         fontFamily: "'SF Mono','Cascadia Code','Fira Code',monospace",

@@ -14,7 +14,7 @@ export default function StatusBadge({ status, statusText }: StatusBadgeProps) {
   const color = getStatusColor(status)
 
   return (
-    <span className="flex items-center gap-1.5 text-[0.875rem] font-bold" style={{ color }}>
+    <span className="flex items-center gap-1 text-[13px] font-bold" style={{ color }}>
       <span
         className="inline-block h-2 w-2 rounded-full"
         style={{ background: color }}

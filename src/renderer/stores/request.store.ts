@@ -9,6 +9,9 @@ import type {
 } from '../types'
 import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
+import { useEnvironmentStore } from './environment.store'
+import { useWorkspaceStore } from './workspace.store'
+import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 
 function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
@@ -179,7 +182,24 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     const { method, url, params, headers, body, auth } = get()
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
+    const envStore = useEnvironmentStore.getState()
+    const wsStore = useWorkspaceStore.getState()
     const activeTabId = tabsStore.activeTabId
+
+    // Resolve {{variable}} placeholders
+    const activeVars = envStore.getActiveVariables()
+    const resolvedUrl = resolveVariables(url, activeVars)
+    const resolvedParams = resolveKeyValuePairs(
+      params.filter((p) => p.enabled),
+      activeVars
+    )
+    const resolvedHeaders = resolveKeyValuePairs(
+      headers.filter((h) => h.enabled),
+      activeVars
+    )
+    const resolvedBody = body.content
+      ? { ...body, content: resolveVariables(body.content, activeVars) }
+      : body
 
     responseStore.setLoading(true)
     responseStore.clearResponse()
@@ -190,11 +210,14 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     try {
       const result = await window.api?.request?.send({
         method,
-        url,
-        params: params.filter((p) => p.enabled) as unknown[],
-        headers: headers.filter((h) => h.enabled) as unknown[],
-        body,
+        url: resolvedUrl,
+        params: resolvedParams as unknown[],
+        headers: resolvedHeaders as unknown[],
+        body: resolvedBody,
         auth,
+        // History metadata
+        _workspaceId: wsStore.activeWorkspaceId || undefined,
+        _projectId: wsStore.activeProjectId || undefined,
       })
 
       if (result?.success && result.data) {
