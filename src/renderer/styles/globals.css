@@ -75,18 +75,31 @@
 }
 
 /* ── Base ── */
+:root {
+  --font-sans: Inter, -apple-system, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+}
+
 html, body, #root {
   margin: 0;
   padding: 0;
   height: 100%;
   width: 100%;
   overflow: hidden;
-  font-family: Inter, -apple-system, 'Segoe UI', system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.5;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Force consistent font on ALL elements */
+*, *::before, *::after {
+  font-family: inherit;
+}
+code, pre, .mono, [data-mono] {
+  font-family: var(--font-mono) !important;
 }
 
 /* ── Scrollbar (Apidog-style thin) ── */

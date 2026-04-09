@@ -337,6 +337,14 @@ const api = {
       ipcRenderer.invoke('save:selectDirectory'),
     git: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('save:git', payload),
+    storeGitToken: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('save:storeGitToken', payload),
+    gitPush: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('save:gitPush', payload),
+    gitPull: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('save:gitPull', payload),
+    gitConfig: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('save:gitConfig', projectId),
     gitListFiles: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('save:gitListFiles', payload),
     gitReadFile: (filePath: string): Promise<unknown> =>

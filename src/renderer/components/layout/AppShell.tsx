@@ -14,6 +14,7 @@ import UpdateModal from '../modals/UpdateModal'
 import SaveModal from '../modals/SaveModal'
 import NewProjectModal from '../modals/NewProjectModal'
 import EndpointSaveModal from '../modals/EndpointSaveModal'
+import ProjectDetailModal from '../modals/ProjectDetailModal'
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useKeyboardShortcuts } from '../../lib/keyboard-shortcuts'
@@ -87,6 +88,7 @@ export default function AppShell() {
       <SaveModal />
       <NewProjectModal />
       <EndpointSaveModal />
+      <ProjectDetailModal />
     </div>
   )
 }

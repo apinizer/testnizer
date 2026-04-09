@@ -1,26 +1,146 @@
-import { Save } from 'lucide-react'
+import { useState } from 'react'
+import { Save, Loader2 } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
-import { useBranchStore } from '../../stores/branch.store'
 import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
+import BranchDropdown from '../sidebar/BranchDropdown'
 import { T } from '../../styles/tokens'
+
+// SVG icons for git operations
+function ArrowUpIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <line x1="12" y1="19" x2="12" y2="5" />
+      <polyline points="5 12 12 5 19 12" />
+    </svg>
+  )
+}
+function ArrowDownIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <polyline points="19 12 12 19 5 12" />
+    </svg>
+  )
+}
+
+type OpStatus = 'idle' | 'loading' | 'success' | 'error'
 
 export default function Header() {
   const goHome = useWorkspaceStore((s) => s.goHome)
   const setShowSaveModal = useUIStore((s) => s.setShowSaveModal)
-  const activeBranch = useBranchStore((s) => s.getActiveBranch())
+  const setShowProjectDetailModal = useUIStore((s) => s.setShowProjectDetailModal)
+  const refreshTree = useWorkspaceStore((s) => s.refreshTree)
   const activeProject = useWorkspaceStore((s) => {
     const pid = s.activeProjectId
     return s.projects.find((p) => p.id === pid)
   })
   const { t } = useTranslation()
 
+  const [saveStatus, setSaveStatus] = useState<OpStatus>('idle')
+  const [pushStatus, setPushStatus] = useState<OpStatus>('idle')
+  const [pullStatus, setPullStatus] = useState<OpStatus>('idle')
+  const [statusMsg, setStatusMsg] = useState('')
+
+  const isGitProject = activeProject && (activeProject.save_mode === 'git' || activeProject.save_mode === 'both')
+
+  // ─── Local save ──────────────────────────────────────────
+  async function handleSave() {
+    if (!activeProject) { setShowSaveModal(true); return }
+    const mode = activeProject.save_mode || 'local'
+
+    if (mode === 'local' || mode === 'both') {
+      setSaveStatus('loading')
+      try {
+        const result = await window.api?.save?.local({
+          projectId: activeProject.id,
+          directoryPath: activeProject.local_path || undefined,
+        }) as { success: boolean; error?: string }
+        if (result?.success) {
+          setSaveStatus('success')
+          setTimeout(() => setSaveStatus('idle'), 2000)
+        } else {
+          setShowSaveModal(true)
+          setSaveStatus('idle')
+        }
+      } catch {
+        setShowSaveModal(true)
+        setSaveStatus('idle')
+      }
+      return
+    }
+    // git-only mode: use push
+    handlePush()
+  }
+
+  // ─── Git push ────────────────────────────────────────────
+  async function handlePush() {
+    if (!activeProject) return
+    setPushStatus('loading')
+    setStatusMsg('')
+    try {
+      const result = await window.api?.save?.gitPush({
+        projectId: activeProject.id,
+      }) as { success: boolean; data?: { noChanges?: boolean; message?: string }; error?: string }
+
+      if (result?.success) {
+        if (result.data?.noChanges) {
+          setStatusMsg('Değişiklik yok')
+        } else {
+          setStatusMsg('Push başarılı')
+        }
+        setPushStatus('success')
+        setTimeout(() => { setPushStatus('idle'); setStatusMsg('') }, 3000)
+      } else {
+        setStatusMsg(result?.error || 'Push hatası')
+        setPushStatus('error')
+        setTimeout(() => { setPushStatus('idle'); setStatusMsg('') }, 5000)
+      }
+    } catch (e) {
+      setStatusMsg((e as Error).message)
+      setPushStatus('error')
+      setTimeout(() => { setPushStatus('idle'); setStatusMsg('') }, 5000)
+    }
+  }
+
+  // ─── Git pull ────────────────────────────────────────────
+  async function handlePull() {
+    if (!activeProject) return
+    setPullStatus('loading')
+    setStatusMsg('')
+    try {
+      const result = await window.api?.save?.gitPull({
+        projectId: activeProject.id,
+      }) as { success: boolean; data?: { imported: Record<string, number> }; error?: string }
+
+      if (result?.success) {
+        const imp = result.data?.imported
+        const total = imp ? Object.values(imp).reduce((a, b) => a + b, 0) : 0
+        setStatusMsg(`Pull: ${total} kayıt içe aktarıldı`)
+        setPullStatus('success')
+        // Refresh tree to show imported data
+        await refreshTree()
+        setTimeout(() => { setPullStatus('idle'); setStatusMsg('') }, 3000)
+      } else {
+        setStatusMsg(result?.error || 'Pull hatası')
+        setPullStatus('error')
+        setTimeout(() => { setPullStatus('idle'); setStatusMsg('') }, 5000)
+      }
+    } catch (e) {
+      setStatusMsg((e as Error).message)
+      setPullStatus('error')
+      setTimeout(() => { setPullStatus('idle'); setStatusMsg('') }, 5000)
+    }
+  }
+
   function handleDoubleClick(e: React.MouseEvent) {
     const target = e.target as HTMLElement
     if (target.closest('button') || target.closest('input')) return
     window.api?.window?.toggleMaximize?.()
   }
+
+  const anyLoading = saveStatus === 'loading' || pushStatus === 'loading' || pullStatus === 'loading'
 
   return (
     <header
@@ -67,7 +187,7 @@ export default function Header() {
             color: T.text,
           }}
         >
-          <ProjectIcon name={activeProject.name} size={18} color={T.accent} />
+          <ProjectIcon name={activeProject.name} emoji={activeProject.icon_emoji || undefined} color={activeProject.icon_color || T.accent} size={18} />
           <span className="truncate" style={{ maxWidth: 160 }}>{activeProject.name}</span>
           <span
             className="hidden cursor-pointer group-hover:inline"
@@ -90,59 +210,121 @@ export default function Header() {
         ···
       </div>
 
+      {/* Status message */}
+      {statusMsg && (
+        <div
+          className="no-drag shrink-0"
+          style={{
+            fontSize: 11,
+            padding: '2px 10px',
+            borderRadius: 4,
+            color: pushStatus === 'error' || pullStatus === 'error' ? 'var(--red)' : 'var(--green)',
+            background: pushStatus === 'error' || pullStatus === 'error' ? 'rgba(239,68,68,0.1)' : 'var(--green-bg)',
+          }}
+        >
+          {statusMsg}
+        </div>
+      )}
+
       {/* Spacer */}
       <div className="flex-1" />
 
       {/* Right side */}
-      <div className="no-drag flex items-center gap-2 shrink-0" style={{ padding: '0 14px' }}>
-        {/* Branch pill */}
-        <div
-          className="flex items-center gap-1.5 cursor-pointer"
-          style={{
-            padding: '4px 10px',
-            background: T.surface,
-            border: `1.5px solid ${T.border2}`,
-            borderRadius: 20,
-            fontSize: 12,
-            color: T.sub,
-          }}
-        >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="6" y1="3" x2="6" y2="15" />
-            <circle cx="18" cy="6" r="3" />
-            <circle cx="6" cy="18" r="3" />
-            <path d="M18 9a9 9 0 0 1-9 9" />
-          </svg>
-          <span style={{ fontWeight: 500 }}>{activeBranch?.name || 'main'}</span>
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </div>
+      <div className="no-drag flex items-center gap-1.5 shrink-0" style={{ padding: '0 14px' }}>
+        {/* Branch dropdown */}
+        <BranchDropdown pill />
 
-        {/* Save */}
+        {/* Git Pull */}
+        {isGitProject && (
+          <button
+            type="button"
+            onClick={handlePull}
+            disabled={anyLoading}
+            className="flex items-center gap-1 cursor-pointer"
+            title="Git Pull"
+            style={{
+              background: 'transparent',
+              border: `1px solid ${pullStatus === 'success' ? 'var(--green)' : pullStatus === 'error' ? 'var(--red)' : T.border}`,
+              borderRadius: 7,
+              padding: '4px 8px',
+              color: pullStatus === 'success' ? 'var(--green)' : pullStatus === 'error' ? 'var(--red)' : T.muted,
+              fontSize: 11,
+              transition: 'all 0.2s',
+              opacity: anyLoading && pullStatus !== 'loading' ? 0.5 : 1,
+            }}
+            onMouseEnter={(e) => {
+              if (pullStatus === 'idle') (e.currentTarget as HTMLElement).style.borderColor = T.accent
+            }}
+            onMouseLeave={(e) => {
+              if (pullStatus === 'idle') (e.currentTarget as HTMLElement).style.borderColor = T.border
+            }}
+          >
+            {pullStatus === 'loading' ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowDownIcon />}
+            <span>Pull</span>
+          </button>
+        )}
+
+        {/* Git Push */}
+        {isGitProject && (
+          <button
+            type="button"
+            onClick={handlePush}
+            disabled={anyLoading}
+            className="flex items-center gap-1 cursor-pointer"
+            title="Git Push"
+            style={{
+              background: 'transparent',
+              border: `1px solid ${pushStatus === 'success' ? 'var(--green)' : pushStatus === 'error' ? 'var(--red)' : T.border}`,
+              borderRadius: 7,
+              padding: '4px 8px',
+              color: pushStatus === 'success' ? 'var(--green)' : pushStatus === 'error' ? 'var(--red)' : T.muted,
+              fontSize: 11,
+              transition: 'all 0.2s',
+              opacity: anyLoading && pushStatus !== 'loading' ? 0.5 : 1,
+            }}
+            onMouseEnter={(e) => {
+              if (pushStatus === 'idle') (e.currentTarget as HTMLElement).style.borderColor = T.accent
+            }}
+            onMouseLeave={(e) => {
+              if (pushStatus === 'idle') (e.currentTarget as HTMLElement).style.borderColor = T.border
+            }}
+          >
+            {pushStatus === 'loading' ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpIcon />}
+            <span>Push</span>
+          </button>
+        )}
+
+        {/* Local Save */}
         <button
           type="button"
-          onClick={() => setShowSaveModal(true)}
+          onClick={handleSave}
+          disabled={anyLoading}
           className="flex items-center gap-1 cursor-pointer"
           style={{
             background: 'transparent',
-            border: `1px solid ${T.border}`,
+            border: `1px solid ${saveStatus === 'success' ? 'var(--green)' : T.border}`,
             borderRadius: 7,
             padding: '4px 10px',
-            color: T.muted,
+            color: saveStatus === 'success' ? 'var(--green)' : T.muted,
             fontSize: 12,
+            transition: 'all 0.2s',
           }}
           title="Save Project (Cmd+S)"
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.color = T.accent
-            ;(e.currentTarget as HTMLElement).style.borderColor = T.accent
+            if (saveStatus === 'idle') {
+              (e.currentTarget as HTMLElement).style.color = T.accent
+              ;(e.currentTarget as HTMLElement).style.borderColor = T.accent
+            }
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.color = T.muted
-            ;(e.currentTarget as HTMLElement).style.borderColor = T.border
+            if (saveStatus === 'idle') {
+              (e.currentTarget as HTMLElement).style.color = T.muted
+              ;(e.currentTarget as HTMLElement).style.borderColor = T.border
+            }
           }}
         >
-          <Save size={12} />
+          {saveStatus === 'loading' ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={12} />}
+          {saveStatus === 'success' && <span style={{ fontSize: 10 }}>✓</span>}
         </button>
 
         {/* Avatar */}

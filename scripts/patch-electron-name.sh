@@ -26,4 +26,12 @@ elif [ -x "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchSe
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain user 2>/dev/null
 fi
 
+# Patch electron-vite log messages to show "Apinizer" instead of "electron app"
+EV_DIR="node_modules/electron-vite/dist"
+if [ -d "$EV_DIR" ]; then
+  find "$EV_DIR" -type f \( -name "*.mjs" -o -name "*.cjs" \) -exec \
+    sed -i '' 's/start electron app\.\.\./start Apinizer.../g; s/restart electron app\.\.\./restart Apinizer.../g' {} +
+  echo "Patched electron-vite log messages"
+fi
+
 echo "Done — restart the app for changes to take effect"

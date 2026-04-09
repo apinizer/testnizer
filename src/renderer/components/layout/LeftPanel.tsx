@@ -2,7 +2,6 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { T } from '../../styles/tokens'
 import TreeView from '../sidebar/TreeView'
 import NewDropdown from '../sidebar/NewDropdown'
-import BranchDropdown from '../sidebar/BranchDropdown'
 
 export default function LeftPanel() {
   const searchQuery = useWorkspaceStore((s) => s.searchQuery)
@@ -36,9 +35,6 @@ export default function LeftPanel() {
         <span style={{ fontWeight: 700, fontSize: 14, flex: 1, color: T.text }}>
           API'ler
         </span>
-
-        {/* Branch dropdown */}
-        <BranchDropdown />
 
         {/* New dropdown (+ button) */}
         <NewDropdown />

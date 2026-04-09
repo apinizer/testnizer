@@ -202,6 +202,23 @@ function runMigrations(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_save_history_project ON save_history(project_id);
   `)
+
+  // ─── Incremental migrations ─────────────────────────────────
+  // Add save settings columns to projects (safe to re-run)
+  const cols = database.pragma('table_info(projects)') as Array<{ name: string }>
+  const colNames = cols.map((c) => c.name)
+  if (!colNames.includes('save_mode')) {
+    database.exec(`ALTER TABLE projects ADD COLUMN save_mode TEXT NOT NULL DEFAULT 'local'`)
+  }
+  if (!colNames.includes('local_path')) {
+    database.exec(`ALTER TABLE projects ADD COLUMN local_path TEXT`)
+  }
+  if (!colNames.includes('icon_emoji')) {
+    database.exec(`ALTER TABLE projects ADD COLUMN icon_emoji TEXT`)
+  }
+  if (!colNames.includes('icon_color')) {
+    database.exec(`ALTER TABLE projects ADD COLUMN icon_color TEXT DEFAULT '#7c73e6'`)
+  }
 }
 
 function seedDefaults(database: Database.Database): void {

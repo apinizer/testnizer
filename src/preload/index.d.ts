@@ -32,8 +32,8 @@ interface WorkspaceApi {
 interface ProjectApi {
   list(workspaceId: string): Promise<IpcResult<Project[]>>
   get(id: string): Promise<IpcResult<Project | undefined>>
-  create(payload: { workspace_id: string; name: string; description?: string; type?: string }): Promise<IpcResult<Project>>
-  update(id: string, payload: { name?: string; description?: string; type?: string; sort_order?: number }): Promise<IpcResult<Project | undefined>>
+  create(payload: { workspace_id: string; name: string; description?: string; type?: string; save_mode?: string; local_path?: string }): Promise<IpcResult<Project>>
+  update(id: string, payload: { name?: string; description?: string; type?: string; save_mode?: string; local_path?: string | null; sort_order?: number }): Promise<IpcResult<Project | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
 }
 
@@ -612,6 +612,31 @@ interface SaveHistoryRow {
   timestamp: number
 }
 
+interface GitPushResult {
+  repoUrl: string
+  branch: string
+  message?: string
+  noChanges?: boolean
+}
+
+interface GitPullResult {
+  imported: {
+    folders: number
+    endpoints: number
+    savedRequests: number
+    environments: number
+    environmentVariables: number
+    globalVariables: number
+  }
+}
+
+interface GitConfigResult {
+  repoUrl: string
+  username: string
+  branch: string
+  hasToken: boolean
+}
+
 interface SaveApi {
   local(payload: { projectId: string; directoryPath?: string }): Promise<IpcResult<SaveLocalResult>>
   selectDirectory(): Promise<IpcResult<string>>
@@ -623,6 +648,10 @@ interface SaveApi {
     token: string
     commitMessage: string
   }): Promise<IpcResult<SaveGitResult>>
+  storeGitToken(payload: { repoUrl: string; username: string; token: string }): Promise<IpcResult<boolean>>
+  gitPush(payload: { projectId: string; commitMessage?: string }): Promise<IpcResult<GitPushResult>>
+  gitPull(payload: { projectId: string }): Promise<IpcResult<GitPullResult>>
+  gitConfig(projectId: string): Promise<IpcResult<GitConfigResult | null>>
   gitListFiles(payload: {
     repoUrl: string
     branch: string

@@ -22,7 +22,9 @@ interface WorkspaceStore {
   fetchWorkspaces: () => Promise<void>
   createWorkspace: (name: string, description?: string) => Promise<void>
   fetchProjects: (workspaceId: string) => Promise<void>
-  createProject: (name: string, type: 'http' | 'grpc' | 'websocket') => Promise<string | null>
+  createProject: (name: string, type: 'http' | 'grpc' | 'websocket', saveMode?: string, localPath?: string, iconEmoji?: string, iconColor?: string) => Promise<string | null>
+  renameProject: (id: string, newName: string) => Promise<void>
+  updateProject: (id: string, data: { name?: string; save_mode?: string; local_path?: string | null }) => Promise<void>
   deleteProject: (id: string) => Promise<void>
   goHome: () => void
   /** Reload tree data from DB for active project */
@@ -206,11 +208,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ activeProjectId: id })
     if (!id) {
       set({ treeData: emptyTree() })
+      // Reset accent color to default
+      document.documentElement.style.removeProperty('--accent')
+      document.documentElement.style.removeProperty('--accent-text')
       return
     }
-    // Find project name
+    // Find project and apply its color
     const project = get().projects.find((p) => p.id === id)
     const projectName = project?.name || 'Project'
+    if (project?.icon_color) {
+      document.documentElement.style.setProperty('--accent', project.icon_color)
+      document.documentElement.style.setProperty('--accent-text', project.icon_color)
+    }
 
     const tree = await buildTreeFromDB(id, projectName)
     const openIds = new Set<string>()
@@ -278,11 +287,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
   },
 
-  createProject: async (name, type) => {
+  createProject: async (name, type, saveMode, localPath, iconEmoji, iconColor) => {
     try {
       const wsId = get().activeWorkspaceId
       if (!wsId) return null
-      const result = await window.api?.project?.create({ workspace_id: wsId, name, type })
+      const result = await window.api?.project?.create({
+        workspace_id: wsId,
+        name,
+        type,
+        save_mode: saveMode,
+        local_path: localPath,
+        icon_emoji: iconEmoji,
+        icon_color: iconColor,
+      })
       if (result?.success && result.data) {
         await get().fetchProjects(wsId)
         const created = result.data as Project
@@ -292,6 +309,26 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // IPC not available
     }
     return null
+  },
+
+  renameProject: async (id, newName) => {
+    try {
+      await window.api?.project?.update(id, { name: newName })
+      const wsId = get().activeWorkspaceId
+      if (wsId) await get().fetchProjects(wsId)
+    } catch {
+      // IPC not available
+    }
+  },
+
+  updateProject: async (id, data) => {
+    try {
+      await window.api?.project?.update(id, data)
+      const wsId = get().activeWorkspaceId
+      if (wsId) await get().fetchProjects(wsId)
+    } catch {
+      // IPC not available
+    }
   },
 
   deleteProject: async (id) => {

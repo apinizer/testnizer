@@ -16,6 +16,7 @@ interface TreeNodeProps {
   activeId: string | null
   onSelect: (node: TreeNodeType) => void
   onToggle: (id: string) => void
+  onDelete?: (node: TreeNodeType) => void
   openIds: Set<string>
   /** When true, children are not rendered (handled by virtualizer) */
   isFlat?: boolean
@@ -67,6 +68,7 @@ export default function TreeNodeComponent({
   activeId,
   onSelect,
   onToggle,
+  onDelete,
   openIds,
   isFlat = false,
 }: TreeNodeProps) {
@@ -113,7 +115,25 @@ export default function TreeNodeComponent({
         {node.icon === 'folder' && <NodeIcon icon="folder" />}
 
         {/* Label */}
-        <span className="overflow-hidden text-ellipsis whitespace-nowrap">{node.label}</span>
+        <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{node.label}</span>
+
+        {/* Delete button — shown on hover for deletable items */}
+        {hovered && onDelete && (node.type === 'request' || node.type === 'endpoint' || node.type === 'folder') && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onDelete(node) }}
+            className="shrink-0 rounded p-0.5"
+            style={{ background: 'transparent', border: 'none', color: 'var(--hint)', cursor: 'pointer', lineHeight: 1 }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--red)' }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--hint)' }}
+            title="Sil"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+          </button>
+        )}
 
         {/* Count badge */}
         {node.count != null && (
@@ -138,6 +158,7 @@ export default function TreeNodeComponent({
           activeId={activeId}
           onSelect={onSelect}
           onToggle={onToggle}
+          onDelete={onDelete}
           openIds={openIds}
         />
       ))}

@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useUIStore } from '../../stores/ui.store'
+import { useTabsStore } from '../../stores/tabs.store'
+import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTranslation } from '../../lib/i18n'
 import MethodBadge from '../shared/MethodBadge'
 import { T, BTN_P, BTN_S, MONO_INP } from '../../styles/tokens'
@@ -12,14 +14,25 @@ const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 
 export default function UrlBar() {
   const method = useRequestStore((s) => s.method)
   const url = useRequestStore((s) => s.url)
+  const params = useRequestStore((s) => s.params)
+  const headers = useRequestStore((s) => s.headers)
+  const body = useRequestStore((s) => s.body)
+  const auth = useRequestStore((s) => s.auth)
+  const preScript = useRequestStore((s) => s.preScript)
+  const postScript = useRequestStore((s) => s.postScript)
+  const assertions = useRequestStore((s) => s.assertions)
   const setMethod = useRequestStore((s) => s.setMethod)
   const setUrl = useRequestStore((s) => s.setUrl)
   const sendRequest = useRequestStore((s) => s.sendRequest)
   const isLoading = useResponseStore((s) => s.isLoading)
   const setShowEndpointSaveModal = useUIStore((s) => s.setShowEndpointSaveModal)
+  const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
+  const refreshTree = useWorkspaceStore((s) => s.refreshTree)
   const { t } = useTranslation()
 
   const [showMethodDrop, setShowMethodDrop] = useState(false)
+  const [saveLoading, setSaveLoading] = useState(false)
+  const [saveOk, setSaveOk] = useState(false)
   const dropRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -163,15 +176,57 @@ export default function UrlBar() {
       {/* Save button */}
       <button
         type="button"
-        onClick={() => setShowEndpointSaveModal(true)}
-        style={BTN_S}
+        onClick={async () => {
+          const isSaved = activeTab?.savedRequestId || activeTab?.endpointId
+          if (!isSaved) {
+            // Not saved yet — open save modal
+            setShowEndpointSaveModal(true)
+            return
+          }
+          // Already saved — update in place
+          setSaveLoading(true)
+          try {
+            if (activeTab.savedRequestId) {
+              await window.api?.savedRequest?.update(activeTab.savedRequestId, {
+                method,
+                url,
+                params: JSON.stringify(params),
+                headers: JSON.stringify(headers),
+                body: JSON.stringify(body),
+                auth: JSON.stringify(auth),
+                pre_script: preScript,
+                post_script: postScript,
+                assertions: JSON.stringify(assertions),
+              })
+            } else if (activeTab.endpointId) {
+              await window.api?.endpoint?.update(activeTab.endpointId, {
+                method,
+                path: url,
+                request_schema: JSON.stringify({ params, headers, body, auth }),
+              })
+            }
+            // Update tab
+            useTabsStore.getState().updateTab(activeTab.id, { method, url })
+            useTabsStore.getState().markDirty(activeTab.id, false)
+            await refreshTree()
+            setSaveOk(true)
+            setTimeout(() => setSaveOk(false), 1500)
+          } catch { /* ignore */ }
+          setSaveLoading(false)
+        }}
+        disabled={saveLoading}
+        style={{
+          ...BTN_S,
+          borderColor: saveOk ? 'var(--green)' : undefined,
+          color: saveOk ? 'var(--green)' : undefined,
+        }}
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
           <polyline points="17 21 17 13 7 13 7 21" />
           <polyline points="7 3 7 8 15 8" />
         </svg>
-        {t('urlBar.save')}
+        {saveOk ? '✓' : t('urlBar.save')}
       </button>
     </div>
   )

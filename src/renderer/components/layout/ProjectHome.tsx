@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Plus, Trash2, MoreHorizontal, GitBranch } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Plus, Trash2, MoreHorizontal, GitBranch, Pencil } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
@@ -11,18 +11,51 @@ export default function ProjectHome() {
   const projects = useWorkspaceStore((s) => s.projects)
   const setActiveProject = useWorkspaceStore((s) => s.setActiveProject)
   const deleteProject = useWorkspaceStore((s) => s.deleteProject)
+  const renameProject = useWorkspaceStore((s) => s.renameProject)
   const setShowNewProjectModal = useUIStore((s) => s.setShowNewProjectModal)
   const { t } = useTranslation()
 
   const [contextMenuId, setContextMenuId] = useState<string | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
+
+  // Close context menu on outside click
+  useEffect(() => {
+    function handleClick() { setContextMenuId(null) }
+    if (contextMenuId) document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [contextMenuId])
+
+  // Focus rename input
+  useEffect(() => {
+    if (renamingId && renameInputRef.current) {
+      renameInputRef.current.focus()
+      renameInputRef.current.select()
+    }
+  }, [renamingId])
 
   function handleOpenProject(project: Project) {
+    if (renamingId === project.id) return
     setActiveProject(project.id)
   }
 
   async function handleDeleteProject(id: string) {
     setContextMenuId(null)
     await deleteProject(id)
+  }
+
+  function handleStartRename(project: Project) {
+    setContextMenuId(null)
+    setRenamingId(project.id)
+    setRenameValue(project.name)
+  }
+
+  async function handleConfirmRename(id: string) {
+    if (renameValue.trim() && renameValue.trim() !== projects.find((p) => p.id === id)?.name) {
+      await renameProject(id, renameValue.trim())
+    }
+    setRenamingId(null)
   }
 
   const typeLabels: Record<string, string> = {
@@ -108,15 +141,43 @@ export default function ProjectHome() {
                 ;(e.currentTarget as HTMLElement).style.boxShadow = 'none'
               }}
             >
-              <ProjectIcon name={project.name} color="#7c73e6" size={40} />
+              <ProjectIcon name={project.name} emoji={project.icon_emoji || undefined} color={project.icon_color || '#7c73e6'} size={40} />
 
               <div className="flex-1 overflow-hidden">
-                <div
-                  className="truncate text-[0.825rem] font-medium"
-                  style={{ color: 'var(--heading)' }}
-                >
-                  {project.name}
-                </div>
+                {renamingId === project.id ? (
+                  <input
+                    ref={renameInputRef}
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleConfirmRename(project.id)
+                      if (e.key === 'Escape') setRenamingId(null)
+                    }}
+                    onBlur={() => handleConfirmRename(project.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-[0.825rem] font-medium"
+                    style={{
+                      color: 'var(--heading)',
+                      background: 'var(--surface)',
+                      border: '1.5px solid var(--accent)',
+                      borderRadius: 4,
+                      padding: '1px 6px',
+                      outline: 'none',
+                      width: '100%',
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="truncate text-[0.825rem] font-medium"
+                    style={{ color: 'var(--heading)' }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation()
+                      handleStartRename(project)
+                    }}
+                  >
+                    {project.name}
+                  </div>
+                )}
                 <div className="flex items-center gap-2 text-[0.8rem]" style={{ color: 'var(--muted)' }}>
                   <span>{typeLabels[project.type] || 'HTTP'}</span>
                   <span>&middot;</span>
@@ -163,6 +224,30 @@ export default function ProjectHome() {
                       minWidth: 140,
                     }}
                   >
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleStartRename(project)
+                      }}
+                      className="flex w-full cursor-pointer items-center gap-2 rounded-md text-[0.875rem]"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: '6px 8px',
+                        color: 'var(--text)',
+                        textAlign: 'left',
+                      }}
+                      onMouseOver={(e) => {
+                        (e.currentTarget as HTMLElement).style.background = 'var(--surface)'
+                      }}
+                      onMouseOut={(e) => {
+                        (e.currentTarget as HTMLElement).style.background = 'transparent'
+                      }}
+                    >
+                      <Pencil size={14} />
+                      {t('home.rename') || 'Yeniden Adlandır'}
+                    </button>
                     <button
                       type="button"
                       onClick={(e) => {

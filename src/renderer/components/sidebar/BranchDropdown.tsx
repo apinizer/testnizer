@@ -3,7 +3,7 @@ import { GitBranch, Plus, Check, Trash2 } from 'lucide-react'
 import { useBranchStore } from '../../stores/branch.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 
-export default function BranchDropdown() {
+export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
   const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
@@ -74,24 +74,38 @@ export default function BranchDropdown() {
       {/* Pill button */}
       <button
         type="button"
-        className="flex cursor-pointer items-center gap-1 text-[0.75rem]"
-        style={{
+        className="flex cursor-pointer items-center gap-1"
+        style={pill ? {
+          background: 'var(--surface)',
+          border: '1.5px solid var(--border2)',
+          borderRadius: 20,
+          padding: '4px 10px',
+          fontSize: 12,
+          color: 'var(--sub, #374151)',
+          fontWeight: 500,
+        } : {
           background: 'var(--bg)',
           border: '1px solid var(--border2)',
           borderRadius: 12,
           padding: '2px 8px',
+          fontSize: '0.75rem',
           color: 'var(--muted)',
         }}
         onClick={() => setOpen(!open)}
       >
-        <GitBranch size={9} />
-        <span className="max-w-[80px] truncate">{activeBranch?.name || 'main'}</span>
+        <GitBranch size={pill ? 11 : 9} />
+        <span className={pill ? 'max-w-[120px] truncate' : 'max-w-[80px] truncate'}>{activeBranch?.name || 'main'}</span>
+        {pill && (
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        )}
       </button>
 
       {/* Dropdown */}
       {open && (
         <div
-          className="absolute left-0 top-full z-50 mt-1 flex flex-col overflow-hidden"
+          className="absolute right-0 top-full z-50 mt-1 flex flex-col overflow-hidden"
           style={{
             minWidth: 200,
             background: 'var(--white)',

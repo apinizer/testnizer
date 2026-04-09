@@ -7,6 +7,10 @@ export interface ProjectRow {
   name: string
   description: string | null
   type: string
+  save_mode: string
+  local_path: string | null
+  icon_emoji: string | null
+  icon_color: string | null
   sort_order: number
   created_at: number
   updated_at: number
@@ -39,6 +43,10 @@ export function createProject(data: {
   name: string
   description?: string
   type?: string
+  save_mode?: string
+  local_path?: string
+  icon_emoji?: string
+  icon_color?: string
 }): ProjectRow {
   const db = getDb()
   const now = Date.now()
@@ -49,14 +57,18 @@ export function createProject(data: {
   ).get(data.workspace_id) as { max_order: number }
 
   db.prepare(`
-    INSERT INTO projects (id, workspace_id, name, description, type, sort_order, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO projects (id, workspace_id, name, description, type, save_mode, local_path, icon_emoji, icon_color, sort_order, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     data.workspace_id,
     data.name,
     data.description ?? null,
     data.type ?? 'http',
+    data.save_mode ?? 'local',
+    data.local_path ?? null,
+    data.icon_emoji ?? null,
+    data.icon_color ?? '#7c73e6',
     maxOrder.max_order + 1,
     now,
     now
@@ -68,6 +80,10 @@ export function updateProject(id: string, data: {
   name?: string
   description?: string
   type?: string
+  save_mode?: string
+  local_path?: string | null
+  icon_emoji?: string | null
+  icon_color?: string | null
   sort_order?: number
 }): ProjectRow | undefined {
   const db = getDb()
@@ -76,12 +92,16 @@ export function updateProject(id: string, data: {
   if (!existing) return undefined
 
   db.prepare(`
-    UPDATE projects SET name = ?, description = ?, type = ?, sort_order = ?, updated_at = ?
+    UPDATE projects SET name = ?, description = ?, type = ?, save_mode = ?, local_path = ?, icon_emoji = ?, icon_color = ?, sort_order = ?, updated_at = ?
     WHERE id = ?
   `).run(
     data.name ?? existing.name,
     data.description ?? existing.description,
     data.type ?? existing.type,
+    data.save_mode ?? existing.save_mode,
+    data.local_path !== undefined ? data.local_path : existing.local_path,
+    data.icon_emoji !== undefined ? data.icon_emoji : existing.icon_emoji,
+    data.icon_color !== undefined ? data.icon_color : existing.icon_color,
     data.sort_order ?? existing.sort_order,
     now,
     id

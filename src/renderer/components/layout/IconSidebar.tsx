@@ -63,6 +63,7 @@ export default function IconSidebar() {
   const activePage = useUIStore((s) => s.activeSidebarPage)
   const setActivePage = useUIStore((s) => s.setActiveSidebarPage)
   const setShowSettingsModal = useUIStore((s) => s.setShowSettingsModal)
+  const setShowProjectDetailModal = useUIStore((s) => s.setShowProjectDetailModal)
   const activeProject = useWorkspaceStore((s) => {
     const pid = s.activeProjectId
     return s.projects.find((p) => p.id === pid)
@@ -75,7 +76,7 @@ export default function IconSidebar() {
   ]
 
   const bottomItems: NavItem[] = [
-    { id: 'settings', label: 'Settings', icon: () => <GearIcon />, action: () => setShowSettingsModal(true) },
+    { id: 'settings', label: 'Settings', icon: () => <GearIcon />, action: () => setShowProjectDetailModal(true) },
     { id: 'invite', label: 'Invite', icon: () => <UsersIcon /> },
   ]
 
@@ -104,7 +105,8 @@ export default function IconSidebar() {
       <div style={{ marginBottom: 8, flexShrink: 0 }}>
         <ProjectIcon
           name={activeProject?.name || 'P'}
-          color="#5b6af0"
+          emoji={activeProject?.icon_emoji || undefined}
+          color={activeProject?.icon_color || '#5b6af0'}
           size={32}
         />
       </div>

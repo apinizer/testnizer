@@ -70,12 +70,4 @@ export function registerBranchHandlers(): void {
     }
   })
 
-  ipcMain.handle('save:history', async (_event, projectId: string) => {
-    try {
-      const data = getSaveHistory(projectId)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
 }

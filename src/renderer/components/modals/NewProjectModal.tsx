@@ -268,7 +268,14 @@ export default function NewProjectModal() {
           grpc: 'grpc',
           websocket: 'websocket',
         }
-        const projectId = await createProject(projName.trim(), typeMap[projType] || 'http')
+        const projectId = await createProject(
+          projName.trim(),
+          typeMap[projType] || 'http',
+          saveMode,
+          (saveMode === 'local' || saveMode === 'both') ? localFolder : undefined,
+          activeEmoji || undefined,
+          selectedColor,
+        )
         if (projectId) {
           // Create the named branch (or ensure default)
           if (branchName.trim() && branchName.trim() !== 'main') {
@@ -279,12 +286,13 @@ export default function NewProjectModal() {
           }
 
           // Save git credentials if git mode
-          if ((saveMode === 'git' || saveMode === 'both') && gitUrl && gitToken) {
+          if ((saveMode === 'git' || saveMode === 'both') && gitUrl) {
             try {
               await window.api?.settings?.set(`git.${projectId}`, {
                 repoUrl: gitUrl,
                 username: gitUser,
                 branch: gitBranch,
+                token: gitToken || '',
               })
             } catch {
               // Non-critical

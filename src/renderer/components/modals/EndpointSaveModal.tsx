@@ -17,6 +17,13 @@ export default function EndpointSaveModal() {
   })
   const url = useRequestStore((s) => s.url)
   const method = useRequestStore((s) => s.method)
+  const params = useRequestStore((s) => s.params)
+  const headers = useRequestStore((s) => s.headers)
+  const body = useRequestStore((s) => s.body)
+  const auth = useRequestStore((s) => s.auth)
+  const preScript = useRequestStore((s) => s.preScript)
+  const postScript = useRequestStore((s) => s.postScript)
+  const assertions = useRequestStore((s) => s.assertions)
 
   const [endpointName, setEndpointName] = useState('Yeni Endpoint')
   const [selectedFolder, setSelectedFolder] = useState('')
@@ -78,20 +85,33 @@ export default function EndpointSaveModal() {
     if (!activeProjectId) return
     setSaving(true)
     try {
-      await window.api?.savedRequest?.create({
+      const result = await window.api?.savedRequest?.create({
         project_id: activeProjectId,
         folder_id: selectedFolder || null,
         name: endpointName.trim() || 'Untitled',
         method,
         url,
         protocol: 'http',
-      })
+        params: JSON.stringify(params),
+        headers: JSON.stringify(headers),
+        body: JSON.stringify(body),
+        auth: JSON.stringify(auth),
+        pre_script: preScript,
+        post_script: postScript,
+        assertions: JSON.stringify(assertions),
+      }) as { success: boolean; data?: { id: string } }
+
       // Refresh tree to show the saved endpoint
       await refreshTree()
-      // Mark current tab as not dirty
+
+      // Update current tab with savedRequestId so future saves update in place
       const tabId = useTabsStore.getState().activeTabId
       if (tabId) {
         useTabsStore.getState().markDirty(tabId, false)
+        useTabsStore.getState().updateTab(tabId, {
+          name: endpointName.trim() || 'Untitled',
+          savedRequestId: result?.data?.id,
+        })
       }
       handleClose()
     } catch {

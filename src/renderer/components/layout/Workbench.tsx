@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import UrlBar from './UrlBar'
 import RequestEditor from '../request/RequestEditor'
@@ -10,6 +11,7 @@ import SseEditor from '../protocols/SseEditor'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
+import { useWorkspaceStore } from '../../stores/workspace.store'
 import NewRequestWelcome from './NewRequestWelcome'
 import ProjectWelcome from './ProjectWelcome'
 import MethodBadge from '../shared/MethodBadge'
@@ -21,9 +23,51 @@ function EndpointTabBar() {
   const setActiveTab = useTabsStore((s) => s.setActiveTab)
   const closeTab = useTabsStore((s) => s.closeTab)
   const openTab = useTabsStore((s) => s.openTab)
+  const updateTab = useTabsStore((s) => s.updateTab)
   const switchToTab = useRequestStore((s) => s.switchToTab)
   const removeTabState = useRequestStore((s) => s.removeTabState)
   const clearResponse = useResponseStore((s) => s.clearResponse)
+  const refreshTree = useWorkspaceStore((s) => s.refreshTree)
+
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (renamingTabId && renameInputRef.current) {
+      renameInputRef.current.focus()
+      renameInputRef.current.select()
+    }
+  }, [renamingTabId])
+
+  function handleStartRename(tabId: string, currentName: string) {
+    setRenamingTabId(tabId)
+    setRenameValue(currentName)
+  }
+
+  async function handleConfirmRename(tabId: string) {
+    if (renameValue.trim()) {
+      updateTab(tabId, { name: renameValue.trim() })
+      // Also update saved request name in DB and refresh tree
+      const tab = tabs.find((t) => t.id === tabId)
+      let dbUpdated = false
+      if (tab?.savedRequestId) {
+        try {
+          await window.api?.savedRequest?.update(tab.savedRequestId, { name: renameValue.trim() })
+          dbUpdated = true
+        } catch { /* ignore */ }
+      } else if (tab?.endpointId) {
+        try {
+          await window.api?.endpoint?.update(tab.endpointId, { name: renameValue.trim() })
+          dbUpdated = true
+        } catch { /* ignore */ }
+      }
+      if (dbUpdated) {
+        await refreshTree()
+      }
+    }
+    setRenamingTabId(null)
+  }
 
   function handleSwitchTab(tabId: string) {
     if (tabId === activeTabId) return
@@ -85,7 +129,33 @@ function EndpointTabBar() {
             }}
           >
             {tab.method && <MethodBadge method={tab.method} small />}
-            <span>{tab.name}</span>
+            {renamingTabId === tab.id ? (
+              <input
+                ref={renameInputRef}
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleConfirmRename(tab.id)
+                  if (e.key === 'Escape') setRenamingTabId(null)
+                }}
+                onBlur={() => handleConfirmRename(tab.id)}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: T.surface,
+                  border: `1px solid ${T.accent}`,
+                  borderRadius: 3,
+                  padding: '0 4px',
+                  fontSize: 12,
+                  color: T.text,
+                  outline: 'none',
+                  width: 120,
+                }}
+              />
+            ) : (
+              <span onDoubleClick={(e) => { e.stopPropagation(); handleStartRename(tab.id, tab.name) }}>
+                {tab.name}
+              </span>
+            )}
             {tab.isDirty && (
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.accent, flexShrink: 0 }} />
             )}

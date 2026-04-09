@@ -21,6 +21,7 @@ interface UIStore {
   showSaveModal: boolean
   showNewProjectModal: boolean
   showEndpointSaveModal: boolean
+  showProjectDetailModal: boolean
 
   setTheme: (theme: Theme) => void
   setLocale: (locale: Locale) => void
@@ -39,6 +40,7 @@ interface UIStore {
   setShowSaveModal: (show: boolean) => void
   setShowNewProjectModal: (show: boolean) => void
   setShowEndpointSaveModal: (show: boolean) => void
+  setShowProjectDetailModal: (show: boolean) => void
 }
 
 function applyTheme(theme: Theme): void {
@@ -65,6 +67,7 @@ export const useUIStore = create<UIStore>((set) => ({
   showSaveModal: false,
   showNewProjectModal: false,
   showEndpointSaveModal: false,
+  showProjectDetailModal: false,
 
   setTheme: (theme) => {
     applyTheme(theme)
@@ -101,6 +104,7 @@ export const useUIStore = create<UIStore>((set) => ({
   setShowSaveModal: (show) => set({ showSaveModal: show }),
   setShowNewProjectModal: (show) => set({ showNewProjectModal: show }),
   setShowEndpointSaveModal: (show) => set({ showEndpointSaveModal: show }),
+  setShowProjectDetailModal: (show) => set({ showProjectDetailModal: show }),
 }))
 
 // Apply initial theme

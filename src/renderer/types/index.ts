@@ -51,6 +51,10 @@ export interface Project {
   name: string
   description?: string
   type: 'http' | 'grpc' | 'websocket'
+  save_mode: 'local' | 'git' | 'both'
+  local_path?: string | null
+  icon_emoji?: string | null
+  icon_color?: string | null
   sort_order: number
   created_at: number
   updated_at: number

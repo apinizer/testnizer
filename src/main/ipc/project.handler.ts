@@ -25,6 +25,10 @@ export function registerProjectHandlers(): void {
     name: string
     description?: string
     type?: string
+    save_mode?: string
+    local_path?: string
+    icon_emoji?: string
+    icon_color?: string
   }) => {
     try {
       const data = projectRepo.createProject(payload)
@@ -38,6 +42,8 @@ export function registerProjectHandlers(): void {
     name?: string
     description?: string
     type?: string
+    save_mode?: string
+    local_path?: string | null
     sort_order?: number
   }) => {
     try {

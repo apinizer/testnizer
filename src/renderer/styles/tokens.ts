@@ -18,9 +18,9 @@ export const T = {
   inputBg: 'var(--input-bg)',
   hover: 'var(--item-hover)',
 
-  // accent colors (same in both themes)
-  accent: '#5b6af0',
-  accentHover: '#4a59df',
+  // accent colors — use CSS variable so project color applies everywhere
+  accent: 'var(--accent)',
+  accentHover: 'var(--accent-text)',
   accentBg: 'var(--accent-light)',
   accentText: 'var(--accent-text)',
 
@@ -42,27 +42,25 @@ export const BASE_INP: CSSProperties = {
   padding: '8px 11px',
   fontSize: 13,
   color: 'var(--text)',
-  fontFamily: 'inherit',
   outline: 'none',
   boxSizing: 'border-box',
 }
 
 export const MONO_INP: CSSProperties = {
   ...BASE_INP,
-  fontFamily: "'SF Mono','Cascadia Code','Fira Code',monospace",
+  fontFamily: "var(--font-mono)",
   fontSize: 12.5,
 }
 
 export const BTN_P: CSSProperties = {
   padding: '8px 18px',
-  background: '#5b6af0',
+  background: 'var(--accent)',
   border: 'none',
   borderRadius: 8,
   color: '#fff',
   fontWeight: 600,
   fontSize: 13,
   cursor: 'pointer',
-  fontFamily: 'inherit',
   display: 'flex',
   alignItems: 'center',
   gap: 6,
@@ -77,7 +75,6 @@ export const BTN_S: CSSProperties = {
   color: 'var(--sub, #374151)',
   fontSize: 13,
   cursor: 'pointer',
-  fontFamily: 'inherit',
   display: 'flex',
   alignItems: 'center',
   gap: 5,
@@ -88,7 +85,6 @@ export const LBL_S: CSSProperties = {
   color: 'var(--muted)',
   fontWeight: 500,
   marginBottom: 5,
-  fontFamily: 'inherit',
 }
 
 export const KV_HEADER_CELL: CSSProperties = {
@@ -96,7 +92,6 @@ export const KV_HEADER_CELL: CSSProperties = {
   fontSize: 11,
   color: 'var(--hint)',
   fontWeight: 400,
-  fontFamily: 'inherit',
 }
 
 export type MethodColorKey = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
