@@ -22,6 +22,8 @@ interface UIStore {
   showNewProjectModal: boolean
   showEndpointSaveModal: boolean
   showProjectDetailModal: boolean
+  showHistoryPanel: boolean
+  showConsolePanel: boolean
 
   setTheme: (theme: Theme) => void
   setLocale: (locale: Locale) => void
@@ -41,6 +43,9 @@ interface UIStore {
   setShowNewProjectModal: (show: boolean) => void
   setShowEndpointSaveModal: (show: boolean) => void
   setShowProjectDetailModal: (show: boolean) => void
+  setShowHistoryPanel: (show: boolean) => void
+  setShowConsolePanel: (show: boolean) => void
+  toggleConsolePanel: () => void
 }
 
 function applyTheme(theme: Theme): void {
@@ -68,6 +73,8 @@ export const useUIStore = create<UIStore>((set) => ({
   showNewProjectModal: false,
   showEndpointSaveModal: false,
   showProjectDetailModal: false,
+  showHistoryPanel: false,
+  showConsolePanel: false,
 
   setTheme: (theme) => {
     applyTheme(theme)
@@ -105,6 +112,9 @@ export const useUIStore = create<UIStore>((set) => ({
   setShowNewProjectModal: (show) => set({ showNewProjectModal: show }),
   setShowEndpointSaveModal: (show) => set({ showEndpointSaveModal: show }),
   setShowProjectDetailModal: (show) => set({ showProjectDetailModal: show }),
+  setShowHistoryPanel: (show) => set({ showHistoryPanel: show }),
+  setShowConsolePanel: (show) => set({ showConsolePanel: show }),
+  toggleConsolePanel: () => set((s) => ({ showConsolePanel: !s.showConsolePanel })),
 }))
 
 // Apply initial theme

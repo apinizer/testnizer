@@ -20,12 +20,34 @@
   --green-bg:     #dcfce7;
   --green-border: #bbf7d0;
   --blue:         #1d4ed8;
-  --orange:       #92400e;
+  --orange:       #c2410c;
   --red:          #b91c1c;
-  --item-hover:   #f9fafb;
+  --item-hover:   #f3f4f6;
   --fill-4:       #f4f4f6;
   --fill-5:       rgba(0,0,0,0.06);
   --input-bg:     #ffffff;
+
+  /* Tree icons (same in both themes for brand consistency) */
+  --tree-folder:     #f59e0b;
+  --tree-schemas:    #4caf82;
+  --tree-components: #e88c3a;
+
+  /* Method badges — light */
+  --mb-get-bg:     #dbeafe; --mb-get-fg:     #1d4ed8; --mb-get-br:     #bfdbfe;
+  --mb-post-bg:    #dcfce7; --mb-post-fg:    #15803d; --mb-post-br:    #bbf7d0;
+  --mb-put-bg:     #fef3c7; --mb-put-fg:     #92400e; --mb-put-br:     #fde68a;
+  --mb-patch-bg:   #ecfdf5; --mb-patch-fg:   #065f46; --mb-patch-br:   #a7f3d0;
+  --mb-delete-bg:  #fee2e2; --mb-delete-fg:  #b91c1c; --mb-delete-br:  #fecaca;
+  --mb-head-bg:    #ede9fe; --mb-head-fg:    #5b21b6; --mb-head-br:    #ddd6fe;
+  --mb-options-bg: #e0f2fe; --mb-options-fg: #0369a1; --mb-options-br: #bae6fd;
+
+  /* JSON syntax (Postman-matching) */
+  --json-key:     #0550ae;
+  --json-string:  #c2410c;
+  --json-number:  #15803d;
+  --json-bool:    #1e40af;
+  --json-null:    #6b7280;
+  --json-punct:   #374151;
 
   /* Sidebar (nav rail) */
   --nav-bg:       #ffffff;
@@ -37,41 +59,63 @@
   --shadow-drop:  0 8px 32px rgba(0,0,0,0.12);
 }
 
-/* ── Dark Theme ── */
+/* ── Dark Theme (Postman-matching) ── */
 :root[data-theme="dark"] {
-  --bg:           #0f0f17;
-  --white:        #16161f;
-  --border:       rgba(255,255,255,0.08);
-  --border2:      rgba(255,255,255,0.14);
-  --border-split: rgba(255,255,255,0.06);
-  --text:         #f1f1f5;
-  --heading:      #f1f1f5;
-  --sub:          #c9cad8;
-  --muted:        #8b8ca8;
-  --hint:         #5a5b72;
+  --bg:           #1c1c1e;
+  --white:        #212124;
+  --border:       #2e2e33;
+  --border2:      #3a3a40;
+  --border-split: #2a2a2f;
+  --text:         #eaeaea;
+  --heading:      #f5f5f7;
+  --sub:          #d0d0d5;
+  --muted:        #9a9aa3;
+  --hint:         #6e6e76;
   --accent:       #7b8af5;
-  --accent-light: rgba(91,106,240,0.15);
-  --accent-text:  #9fa8f5;
-  --surface:      #1a1a2a;
-  --green:        #49cc90;
-  --green-bg:     rgba(73,204,144,0.12);
-  --green-border: rgba(73,204,144,0.25);
-  --blue:         #61affe;
-  --orange:       #fca130;
-  --red:          #ef4444;
-  --item-hover:   #252538;
-  --fill-4:       #1a1a2a;
+  --accent-light: rgba(123,138,245,0.18);
+  --accent-text:  #a5b2ff;
+  --surface:      #18181a;
+  --green:        #6bdd9a;
+  --green-bg:     rgba(107,221,154,0.14);
+  --green-border: rgba(107,221,154,0.32);
+  --blue:         #7bb9ff;
+  --orange:       #ffa94d;
+  --red:          #ff6b6b;
+  --item-hover:   #2b2b30;
+  --fill-4:       #1e1e22;
   --fill-5:       rgba(255,255,255,0.08);
-  --input-bg:     #1e1e2e;
+  --input-bg:     #28282d;
+
+  /* Tree icons (keep brand colors but slightly lifted) */
+  --tree-folder:     #f5a623;
+  --tree-schemas:    #4caf82;
+  --tree-components: #e88c3a;
+
+  /* Method badges — dark (Postman-matching tinted backgrounds) */
+  --mb-get-bg:     rgba(59,130,246,0.18);  --mb-get-fg:     #7bb9ff; --mb-get-br:     rgba(59,130,246,0.35);
+  --mb-post-bg:    rgba(34,197,94,0.18);   --mb-post-fg:    #6bdd9a; --mb-post-br:    rgba(34,197,94,0.35);
+  --mb-put-bg:     rgba(245,158,11,0.18);  --mb-put-fg:     #ffb84d; --mb-put-br:     rgba(245,158,11,0.35);
+  --mb-patch-bg:   rgba(20,184,166,0.18);  --mb-patch-fg:   #6dd6c2; --mb-patch-br:   rgba(20,184,166,0.35);
+  --mb-delete-bg:  rgba(239,68,68,0.18);   --mb-delete-fg:  #ff7373; --mb-delete-br:  rgba(239,68,68,0.35);
+  --mb-head-bg:    rgba(168,85,247,0.18);  --mb-head-fg:    #c99cff; --mb-head-br:    rgba(168,85,247,0.35);
+  --mb-options-bg: rgba(14,165,233,0.18);  --mb-options-fg: #70c3f0; --mb-options-br: rgba(14,165,233,0.35);
+
+  /* JSON syntax (Postman dark) */
+  --json-key:     #7fb3ff;
+  --json-string:  #ff9a5c;
+  --json-number:  #6bdd9a;
+  --json-bool:    #b58bff;
+  --json-null:    #8a8a92;
+  --json-punct:   #c0c0c6;
 
   /* Sidebar (nav rail) */
-  --nav-bg:       #13131a;
-  --nav-hover:    rgba(255,255,255,0.04);
-  --nav-active-bg: rgba(91,106,240,0.15);
+  --nav-bg:       #171718;
+  --nav-hover:    #26262a;
+  --nav-active-bg: rgba(123,138,245,0.18);
 
   /* Shadows */
-  --shadow-modal: 0 16px 48px rgba(0,0,0,0.5);
-  --shadow-drop:  0 8px 32px rgba(0,0,0,0.4);
+  --shadow-modal: 0 16px 48px rgba(0,0,0,0.6);
+  --shadow-drop:  0 8px 32px rgba(0,0,0,0.5);
 }
 
 /* ── Base ── */
@@ -118,8 +162,8 @@ code, pre, .mono, [data-mono] {
 
 /* ── Focus ring (mockup style) ── */
 input:focus, textarea:focus, select:focus {
-  border-color: #5b6af0 !important;
-  box-shadow: 0 0 0 3px rgba(91,106,240,0.1);
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-light);
 }
 
 /* ── Animations ── */

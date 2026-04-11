@@ -13,6 +13,15 @@ export function registerEnvironmentHandlers(): void {
     }
   })
 
+  ipcMain.handle('environment:listByProject', async (_event, projectId: string) => {
+    try {
+      const data = envRepo.getEnvironmentsByProject(projectId)
+      return { success: true, data }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
   ipcMain.handle('environment:get', async (_event, id: string) => {
     try {
       const data = envRepo.getEnvironmentById(id)
@@ -24,6 +33,7 @@ export function registerEnvironmentHandlers(): void {
 
   ipcMain.handle('environment:create', async (_event, payload: {
     workspace_id: string
+    project_id?: string | null
     name: string
     is_active?: boolean
   }) => {
@@ -50,6 +60,15 @@ export function registerEnvironmentHandlers(): void {
   ipcMain.handle('environment:setActive', async (_event, workspaceId: string, environmentId: string) => {
     try {
       envRepo.setActiveEnvironment(workspaceId, environmentId)
+      return { success: true, data: true }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('environment:setActiveForProject', async (_event, projectId: string, environmentId: string) => {
+    try {
+      envRepo.setActiveEnvironmentForProject(projectId, environmentId)
       return { success: true, data: true }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -129,8 +148,18 @@ export function registerEnvironmentHandlers(): void {
     }
   })
 
+  ipcMain.handle('globalVariable:listByProject', async (_event, projectId: string) => {
+    try {
+      const data = envRepo.getGlobalVariablesByProject(projectId)
+      return { success: true, data }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
   ipcMain.handle('globalVariable:create', async (_event, payload: {
     workspace_id: string
+    project_id?: string | null
     key: string
     value: string
     description?: string

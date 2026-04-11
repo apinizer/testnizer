@@ -24,14 +24,14 @@ export const T = {
   accentBg: 'var(--accent-light)',
   accentText: 'var(--accent-text)',
 
-  // method badge colors (fixed — readable in both themes)
-  GET:     { bg: '#dbeafe', color: '#1d4ed8', border: '#bfdbfe' },
-  POST:    { bg: '#dcfce7', color: '#15803d', border: '#bbf7d0' },
-  PUT:     { bg: '#fef3c7', color: '#92400e', border: '#fde68a' },
-  PATCH:   { bg: '#ecfdf5', color: '#065f46', border: '#a7f3d0' },
-  DELETE:  { bg: '#fee2e2', color: '#b91c1c', border: '#fecaca' },
-  HEAD:    { bg: '#ede9fe', color: '#5b21b6', border: '#ddd6fe' },
-  OPTIONS: { bg: '#e0f2fe', color: '#0369a1', border: '#bae6fd' },
+  // method badge colors — use CSS vars so they adapt to dark mode (defined in globals.css)
+  GET:     { bg: 'var(--mb-get-bg)',     color: 'var(--mb-get-fg)',     border: 'var(--mb-get-br)' },
+  POST:    { bg: 'var(--mb-post-bg)',    color: 'var(--mb-post-fg)',    border: 'var(--mb-post-br)' },
+  PUT:     { bg: 'var(--mb-put-bg)',     color: 'var(--mb-put-fg)',     border: 'var(--mb-put-br)' },
+  PATCH:   { bg: 'var(--mb-patch-bg)',   color: 'var(--mb-patch-fg)',   border: 'var(--mb-patch-br)' },
+  DELETE:  { bg: 'var(--mb-delete-bg)',  color: 'var(--mb-delete-fg)',  border: 'var(--mb-delete-br)' },
+  HEAD:    { bg: 'var(--mb-head-bg)',    color: 'var(--mb-head-fg)',    border: 'var(--mb-head-br)' },
+  OPTIONS: { bg: 'var(--mb-options-bg)', color: 'var(--mb-options-fg)', border: 'var(--mb-options-br)' },
 } as const
 
 // Standard UI font: 13px — matches Postman/Apidog density.

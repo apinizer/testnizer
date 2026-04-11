@@ -44,6 +44,8 @@ export function registerProjectHandlers(): void {
     type?: string
     save_mode?: string
     local_path?: string | null
+    icon_emoji?: string | null
+    icon_color?: string | null
     sort_order?: number
   }) => {
     try {

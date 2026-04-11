@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" shape-rendering="geometricPrecision">
+  <!-- Dark navy rounded background — rx ≈ 32/256 * 1024 -->
+  <rect x="0" y="0" width="1024" height="1024" rx="128" ry="128" fill="#1B3358"/>
+
+  <!--
+    Bold ">" chevron, rendered as a stroked polyline so the result is
+    font-independent (librsvg in sharp has no Menlo/Monaco).
+    The visible glyph spans ~40% of the icon width.
+
+    Geometry: V-shape with apex on the right.
+      left-top    → (320, 336)
+      apex        → (560, 512)
+      left-bottom → (320, 688)
+    stroke-linecap=round + linejoin=round gives the bold, soft feel.
+  -->
+  <polyline
+    points="320,336 560,512 320,688"
+    fill="none"
+    stroke="#4A90D9"
+    stroke-width="96"
+    stroke-linecap="round"
+    stroke-linejoin="round"/>
+
+  <!--
+    Vertical cursor rectangle to the right of the chevron.
+      width  ≈ 9%  of icon  → 92
+      height ≈ 36% of icon  → 368
+      rx=12 (≈ 3/256 * 1024 for corner radius)
+  -->
+  <rect
+    x="652"
+    y="328"
+    width="92"
+    height="368"
+    rx="12"
+    ry="12"
+    fill="#ED7D31"/>
+</svg>

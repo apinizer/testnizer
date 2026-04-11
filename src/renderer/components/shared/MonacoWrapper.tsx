@@ -9,6 +9,7 @@ interface MonacoWrapperProps {
   lineNumbers?: 'on' | 'off'
   height?: string | number
   className?: string
+  wordWrap?: boolean
 }
 
 export default function MonacoWrapper({
@@ -19,6 +20,7 @@ export default function MonacoWrapper({
   lineNumbers = 'on',
   height = '100%',
   className,
+  wordWrap = true,
 }: MonacoWrapperProps) {
   const theme = useUIStore((s) => s.theme)
   const fontSize = useUIStore((s) => s.fontSize)
@@ -39,7 +41,7 @@ export default function MonacoWrapper({
           lineNumbers,
           lineNumbersMinChars: 3,
           folding: true,
-          wordWrap: 'on',
+          wordWrap: wordWrap ? 'on' : 'off',
           fontSize: fontSize - 2,
           fontWeight: '400',
           fontFamily: "Menlo, Monaco, Consolas, 'SF Mono', 'Cascadia Code', monospace",

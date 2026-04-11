@@ -1,28 +1,29 @@
 import { useState } from 'react'
 import { useResponseStore } from '../../stores/response.store'
-import { Loader2, Send } from 'lucide-react'
+import { Loader2, Send, Globe, MoreHorizontal, History as HistoryIcon } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
-import ResponseMeta from './ResponseMeta'
 import ResponseBody from './ResponseBody'
 import CookieTab from './CookieTab'
 import ConsoleTab from './ConsoleTab'
+import HeadersTab from './HeadersTab'
+import TestResultsTab from './TestResultsTab'
 import ActualRequestTab from './ActualRequestTab'
 import EmptyState from '../shared/EmptyState'
+import StatusBadge from '../shared/StatusBadge'
+import { useUIStore } from '../../stores/ui.store'
 
-type ResTabKey = 'response' | 'cookie' | 'console' | 'actualRequest'
-const RES_TAB_KEYS: ResTabKey[] = ['response', 'cookie', 'console', 'actualRequest']
+type ResTabKey = 'body' | 'cookies' | 'headers' | 'testResults' | 'console' | 'actualRequest'
 
-const TAB_I18N_MAP: Record<ResTabKey, string> = {
-  response: 'response.response',
-  cookie: 'response.cookie',
-  console: 'response.console',
-  actualRequest: 'response.actualRequest',
-}
-
+/**
+ * Response panel — Postman-style layout:
+ * [ Body | Cookies(n) | Headers(n) | Test Results | Console ]   [200 OK • 142ms • 2.1 KB • ⋯]
+ */
 export default function ResponsePane() {
   const response = useResponseStore((s) => s.response)
   const isLoading = useResponseStore((s) => s.isLoading)
-  const [activeTab, setActiveTab] = useState<ResTabKey>('response')
+  const setShowCodeGenerator = useUIStore((s) => s.setShowCodeGenerator)
+  const setShowHistoryPanel = useUIStore((s) => s.setShowHistoryPanel)
+  const [activeTab, setActiveTab] = useState<ResTabKey>('body')
   const { t } = useTranslation()
 
   // Loading state
@@ -48,55 +49,156 @@ export default function ResponsePane() {
     )
   }
 
-  // Error state
+  // Error state (no status code at all)
   if (response.error && !response.status) {
     return (
       <div className="flex h-full flex-col bg-[var(--white)]">
-        <ResponseMeta />
         <div className="flex flex-1 items-center justify-center p-4">
-          <div className="rounded-lg border border-[#f5b3b3] bg-[#fff0f0] p-4 text-center">
-            <div className="mb-1 text-sm font-medium text-[var(--red)]">{t('response.requestFailed')}</div>
-            <div className="text-sm text-[var(--muted)]">{response.error}</div>
+          <div
+            className="rounded-lg p-4 text-center"
+            style={{
+              background: 'rgba(239,68,68,0.08)',
+              border: '1px solid rgba(239,68,68,0.35)',
+            }}
+          >
+            <div className="mb-1 text-sm font-medium" style={{ color: 'var(--red)' }}>
+              {t('response.requestFailed')}
+            </div>
+            <div className="text-sm" style={{ color: 'var(--muted)' }}>{response.error}</div>
           </div>
         </div>
       </div>
     )
   }
 
+  const cookieCount = response.cookies?.length ?? 0
+  const headerCount = response.headers ? Object.keys(response.headers).length : 0
+  const testTotal = response.testResults?.length ?? 0
+  const testPassed = response.testResults?.filter((r) => r.passed).length ?? 0
+  const testFailed = testTotal - testPassed
+
+  const sizeKB = response.bodySize
+    ? (response.bodySize / 1024).toFixed(2)
+    : response.body
+      ? (new Blob([response.body]).size / 1024).toFixed(2)
+      : '0'
+
+  const humanTime = (ms: number) => {
+    if (ms >= 1000) return `${(ms / 1000).toFixed(2)} s`
+    return `${ms} ms`
+  }
+
+  const TABS: Array<{ key: ResTabKey; label: string; count?: number; countColor?: string }> = [
+    { key: 'body', label: 'Body' },
+    { key: 'cookies', label: 'Cookies', count: cookieCount },
+    { key: 'headers', label: 'Headers', count: headerCount },
+    {
+      key: 'testResults',
+      label: 'Test Results',
+      count: testTotal || undefined,
+      countColor: testTotal > 0 ? (testFailed > 0 ? 'var(--red)' : 'var(--green)') : undefined,
+    },
+    { key: 'console', label: 'Console' },
+    { key: 'actualRequest', label: 'Actual' },
+  ]
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
-      {/* Meta bar */}
-      <ResponseMeta />
+      {/* ── Top bar: tabs (left) + meta (right) — Postman style ── */}
+      <div
+        className="flex shrink-0 items-center gap-1 pl-2 pr-2"
+        style={{
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--white)',
+          height: 34,
+        }}
+      >
+        {/* History icon — Postman shows a small clock button before status */}
+        <button
+          type="button"
+          onClick={() => setShowHistoryPanel(true)}
+          className="flex shrink-0 cursor-pointer items-center justify-center rounded p-1"
+          style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--accent)' }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--muted)' }}
+          title="Response history"
+        >
+          <HistoryIcon size={14} />
+        </button>
 
-      {/* Tab bar */}
-      <div className="flex shrink-0 border-b border-[var(--border)] bg-[var(--white)]">
-        {RES_TAB_KEYS.map((tab) => (
+        {/* Tabs */}
+        <div className="flex flex-1 items-center gap-0 overflow-x-auto">
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.key
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className="relative shrink-0 cursor-pointer whitespace-nowrap px-3 text-[13px] transition-colors"
+                style={{
+                  height: 33,
+                  background: 'transparent',
+                  border: 'none',
+                  color: isActive ? 'var(--accent-text)' : 'var(--muted)',
+                  fontWeight: isActive ? 600 : 400,
+                  borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                  marginBottom: -1,
+                }}
+              >
+                {tab.label}
+                {tab.count != null && tab.count > 0 && (
+                  <span
+                    className="ml-1 text-[12px]"
+                    style={{ color: tab.countColor || (isActive ? 'var(--accent-text)' : 'var(--hint)') }}
+                  >
+                    ({tab.count})
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Right: meta info (status • time • size • globe • more) */}
+        <div className="flex shrink-0 items-center gap-3 pl-2">
+          {response.status != null && (
+            <StatusBadge status={response.status} statusText={response.statusText} pill />
+          )}
+          {response.timing?.total != null && (
+            <span className="text-[12px]" style={{ color: 'var(--muted)' }}>
+              <span className="font-semibold" style={{ color: 'var(--green)' }}>{humanTime(response.timing.total)}</span>
+            </span>
+          )}
+          <span className="text-[12px]" style={{ color: 'var(--muted)' }}>
+            <span className="font-semibold" style={{ color: 'var(--text)' }}>{sizeKB} KB</span>
+          </span>
           <button
-            key={tab}
             type="button"
-            onClick={() => setActiveTab(tab)}
-            className="cursor-pointer whitespace-nowrap px-2.5 py-1 text-[13px] transition-colors"
-            style={{
-              borderBottom:
-                activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
-              color: activeTab === tab ? 'var(--accent-text)' : 'var(--muted)',
-              fontWeight: activeTab === tab ? 500 : 400,
-              background: 'transparent',
-              border: 'none',
-              borderBottomWidth: 2,
-              borderBottomStyle: 'solid',
-              borderBottomColor: activeTab === tab ? 'var(--accent)' : 'transparent',
-            }}
+            title="Network"
+            className="flex cursor-pointer items-center justify-center rounded p-1"
+            style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
           >
-            {t(TAB_I18N_MAP[tab])}
+            <Globe size={14} />
           </button>
-        ))}
+          <button
+            type="button"
+            title="More"
+            onClick={() => setShowCodeGenerator(true)}
+            className="flex cursor-pointer items-center justify-center rounded p-1"
+            style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
+          >
+            <MoreHorizontal size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden bg-[var(--surface)]">
-        {activeTab === 'response' && <ResponseBody />}
-        {activeTab === 'cookie' && <CookieTab />}
+      <div className="flex-1 overflow-hidden bg-[var(--white)]">
+        {activeTab === 'body' && <ResponseBody />}
+        {activeTab === 'cookies' && <CookieTab />}
+        {activeTab === 'headers' && <HeadersTab />}
+        {activeTab === 'testResults' && <TestResultsTab />}
         {activeTab === 'console' && <ConsoleTab />}
         {activeTab === 'actualRequest' && <ActualRequestTab />}
       </div>

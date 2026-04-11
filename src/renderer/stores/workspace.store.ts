@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Workspace, Project, TreeNode, Folder, Endpoint, SavedRequest } from '../types'
+import { useEnvironmentStore } from './environment.store'
 
 interface WorkspaceStore {
   initialized: boolean
@@ -24,7 +25,7 @@ interface WorkspaceStore {
   fetchProjects: (workspaceId: string) => Promise<void>
   createProject: (name: string, type: 'http' | 'grpc' | 'websocket', saveMode?: string, localPath?: string, iconEmoji?: string, iconColor?: string) => Promise<string | null>
   renameProject: (id: string, newName: string) => Promise<void>
-  updateProject: (id: string, data: { name?: string; save_mode?: string; local_path?: string | null }) => Promise<void>
+  updateProject: (id: string, data: { name?: string; save_mode?: string; local_path?: string | null; icon_emoji?: string | null; icon_color?: string | null }) => Promise<void>
   deleteProject: (id: string) => Promise<void>
   goHome: () => void
   /** Reload tree data from DB for active project */
@@ -220,6 +221,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setActiveProject: async (id) => {
     set({ activeProjectId: id })
+    // Reload environments/globals for the new scope
+    await useEnvironmentStore.getState().setCurrentProject(id)
     if (!id) {
       set({ treeData: emptyTree() })
       // Reset accent color to default

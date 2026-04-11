@@ -32,8 +32,8 @@ interface WorkspaceApi {
 interface ProjectApi {
   list(workspaceId: string): Promise<IpcResult<Project[]>>
   get(id: string): Promise<IpcResult<Project | undefined>>
-  create(payload: { workspace_id: string; name: string; description?: string; type?: string; save_mode?: string; local_path?: string }): Promise<IpcResult<Project>>
-  update(id: string, payload: { name?: string; description?: string; type?: string; save_mode?: string; local_path?: string | null; sort_order?: number }): Promise<IpcResult<Project | undefined>>
+  create(payload: { workspace_id: string; name: string; description?: string; type?: string; save_mode?: string; local_path?: string; icon_emoji?: string | null; icon_color?: string | null }): Promise<IpcResult<Project>>
+  update(id: string, payload: { name?: string; description?: string; type?: string; save_mode?: string; local_path?: string | null; sort_order?: number; icon_emoji?: string | null; icon_color?: string | null }): Promise<IpcResult<Project | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
 }
 
@@ -103,10 +103,12 @@ interface SavedRequestApi {
 
 interface EnvironmentApi {
   list(workspaceId: string): Promise<IpcResult<Environment[]>>
+  listByProject(projectId: string): Promise<IpcResult<Environment[]>>
   get(id: string): Promise<IpcResult<Environment | undefined>>
-  create(payload: { workspace_id: string; name: string; is_active?: boolean }): Promise<IpcResult<Environment>>
+  create(payload: { workspace_id: string; project_id?: string | null; name: string; is_active?: boolean }): Promise<IpcResult<Environment>>
   update(id: string, payload: { name?: string; is_active?: boolean }): Promise<IpcResult<Environment | undefined>>
   setActive(workspaceId: string, environmentId: string): Promise<IpcResult<boolean>>
+  setActiveForProject(projectId: string, environmentId: string): Promise<IpcResult<boolean>>
   delete(id: string): Promise<IpcResult<boolean>>
 }
 
@@ -127,8 +129,10 @@ interface EnvVariableApi {
 
 interface GlobalVariableApi {
   list(workspaceId: string): Promise<IpcResult<GlobalVariable[]>>
+  listByProject(projectId: string): Promise<IpcResult<GlobalVariable[]>>
   create(payload: {
     workspace_id: string
+    project_id?: string | null
     key: string
     value: string
     description?: string
@@ -136,7 +140,14 @@ interface GlobalVariableApi {
     secret?: boolean
     initial_value?: string
   }): Promise<IpcResult<GlobalVariable>>
-  update(id: string, payload: Partial<GlobalVariable>): Promise<IpcResult<GlobalVariable | undefined>>
+  update(id: string, payload: {
+    key?: string
+    value?: string
+    description?: string
+    enabled?: boolean
+    secret?: boolean
+    initial_value?: string
+  }): Promise<IpcResult<GlobalVariable | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
 }
 

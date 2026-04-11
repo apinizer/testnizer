@@ -15,6 +15,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import NewRequestWelcome from './NewRequestWelcome'
 import ProjectWelcome from './ProjectWelcome'
 import MethodBadge from '../shared/MethodBadge'
+import EnvironmentSelector from '../shared/EnvironmentSelector'
 import { T } from '../../styles/tokens'
 
 function EndpointTabBar() {
@@ -202,6 +203,17 @@ function EndpointTabBar() {
         }}
       >
         ···
+      </div>
+
+      {/* Push environment selector to right end */}
+      <div style={{ flex: 1 }} />
+
+      {/* Environment selector (Postman parity — right end of tab bar) */}
+      <div
+        className="flex shrink-0 items-center"
+        style={{ paddingRight: 10, paddingLeft: 8 }}
+      >
+        <EnvironmentSelector />
       </div>
     </div>
   )

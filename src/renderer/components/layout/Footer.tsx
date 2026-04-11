@@ -1,5 +1,7 @@
+import { Terminal, AlertCircle } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
+import { useConsoleStore } from '../../stores/console.store'
 import { T } from '../../styles/tokens'
 
 export default function Footer() {
@@ -7,6 +9,10 @@ export default function Footer() {
   const activeEnvId = useEnvironmentStore((s) => s.activeEnvironmentId)
   const activeEnv = environments.find((e) => e.id === activeEnvId)
   const setShowCollectionRunner = useUIStore((s) => s.setShowCollectionRunner)
+  const showConsolePanel = useUIStore((s) => s.showConsolePanel)
+  const toggleConsolePanel = useUIStore((s) => s.toggleConsolePanel)
+  const consoleEntries = useConsoleStore((s) => s.entries)
+  const errorCount = consoleEntries.filter((e) => (e.status && e.status >= 400) || e.error).length
 
   return (
     <footer
@@ -46,7 +52,42 @@ export default function Footer() {
       >
         ▶ Çalıştır
       </span>
-      <span style={{ color: T.ghost, cursor: 'pointer', fontFamily: 'inherit' }}>Konsol</span>
+      <button
+        type="button"
+        onClick={toggleConsolePanel}
+        title="Console (Alt+Ctrl+C)"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 5,
+          background: 'transparent',
+          border: 'none',
+          padding: '2px 6px',
+          borderRadius: 4,
+          color: showConsolePanel ? T.accent : T.ghost,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          fontSize: 12,
+          fontWeight: showConsolePanel ? 600 : 400,
+        }}
+      >
+        <Terminal size={11} />
+        Konsol
+        {errorCount > 0 && (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 2,
+              color: 'var(--red)',
+              fontWeight: 600,
+            }}
+          >
+            <AlertCircle size={10} />
+            {errorCount}
+          </span>
+        )}
+      </button>
       <span style={{ color: T.ghost, cursor: 'pointer', fontFamily: 'inherit' }}>?</span>
     </footer>
   )

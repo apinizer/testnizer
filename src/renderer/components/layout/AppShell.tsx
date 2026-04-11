@@ -15,6 +15,8 @@ import SaveModal from '../modals/SaveModal'
 import NewProjectModal from '../modals/NewProjectModal'
 import EndpointSaveModal from '../modals/EndpointSaveModal'
 import ProjectDetailModal from '../modals/ProjectDetailModal'
+import HistoryPanel from '../modals/HistoryPanel'
+import ConsolePanel from './ConsolePanel'
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useKeyboardShortcuts } from '../../lib/keyboard-shortcuts'
@@ -59,7 +61,10 @@ export default function AppShell() {
   // Below header: IconSidebar | LeftPanel | Workbench
   // Footer spans full width
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+    <div
+      className="relative flex h-screen w-screen flex-col overflow-hidden"
+      style={{ background: 'var(--bg)', color: 'var(--text)' }}
+    >
       {/* Header — full width, 44px */}
       <Header />
 
@@ -75,6 +80,9 @@ export default function AppShell() {
         <Workbench />
       </div>
 
+      {/* Console Panel — absolute, slides up above footer */}
+      <ConsolePanel />
+
       {/* Footer — full width, 28px */}
       <Footer />
 
@@ -89,6 +97,7 @@ export default function AppShell() {
       <NewProjectModal />
       <EndpointSaveModal />
       <ProjectDetailModal />
+      <HistoryPanel />
     </div>
   )
 }

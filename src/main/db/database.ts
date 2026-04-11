@@ -219,6 +219,25 @@ function runMigrations(database: Database.Database): void {
   if (!colNames.includes('icon_color')) {
     database.exec(`ALTER TABLE projects ADD COLUMN icon_color TEXT DEFAULT '#7c73e6'`)
   }
+
+  // Scope environments to a project. Postman has environments per workspace
+  // but the user wants per-project isolation. NULL project_id means legacy
+  // workspace-scoped (shown only when no project is active).
+  const envCols = database.pragma('table_info(environments)') as Array<{ name: string }>
+  const envColNames = envCols.map((c) => c.name)
+  if (!envColNames.includes('project_id')) {
+    database.exec(`ALTER TABLE environments ADD COLUMN project_id TEXT`)
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_environments_project ON environments(project_id)`)
+  }
+
+  // Same for global_variables: per-project scope for globals that should only
+  // apply within one project.
+  const gvCols = database.pragma('table_info(global_variables)') as Array<{ name: string }>
+  const gvColNames = gvCols.map((c) => c.name)
+  if (!gvColNames.includes('project_id')) {
+    database.exec(`ALTER TABLE global_variables ADD COLUMN project_id TEXT`)
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_global_vars_project ON global_variables(project_id)`)
+  }
 }
 
 function seedDefaults(database: Database.Database): void {

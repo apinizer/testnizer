@@ -29,9 +29,9 @@ function NodeIcon({ icon }: { icon?: string }) {
   if (!icon) return null
 
   const iconMap: Record<string, React.ReactNode> = {
-    module: <MoreHorizontal size={13} className="text-[var(--hint)]" />,
+    module: <MoreHorizontal size={13} style={{ color: 'var(--hint)' }} />,
     collection: (
-      <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded" style={{ background: '#5b6af0' }}>
+      <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded" style={{ background: 'var(--accent)' }}>
         <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
           <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
           <polyline points="13 2 13 9 20 9" fill="none" stroke="white" strokeWidth="2" />
@@ -39,27 +39,27 @@ function NodeIcon({ icon }: { icon?: string }) {
       </div>
     ),
     endpoints: (
-      <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-[var(--accent)]">
+      <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded" style={{ background: 'var(--accent)' }}>
         <FileText size={10} className="text-white" />
       </div>
     ),
     schemas: (
-      <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-[#4caf82]">
+      <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded" style={{ background: 'var(--tree-schemas, #4caf82)' }}>
         <Box size={10} className="text-white" />
       </div>
     ),
     components: (
-      <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-[#e88c3a]">
+      <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded" style={{ background: 'var(--tree-components, #e88c3a)' }}>
         <Briefcase size={10} className="text-white" />
       </div>
     ),
     folder: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="#fbbf24" stroke="none">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--tree-folder, #fbbf24)" stroke="none">
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
       </svg>
     ),
-    calc: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>,
-    quick: <Zap size={13} className="text-[var(--hint)]" />,
+    calc: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--hint)" strokeWidth="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>,
+    quick: <Zap size={13} style={{ color: 'var(--hint)' }} />,
   }
 
   return <>{iconMap[icon] || null}</>
@@ -174,8 +174,8 @@ export default function TreeNodeComponent({
         className="flex cursor-pointer select-none items-center gap-[5px] rounded-md text-[0.875rem] transition-colors"
         style={{
           padding: `4px 10px 4px ${10 + indent}px`,
-          background: isActive ? 'var(--accent-light)' : hovered ? 'var(--bg)' : 'transparent',
-          color: isActive ? 'var(--accent-text)' : node.italic ? '#aaa' : '#444',
+          background: isActive ? 'var(--accent-light)' : hovered ? 'var(--item-hover)' : 'transparent',
+          color: isActive ? 'var(--accent-text)' : node.italic ? 'var(--hint)' : 'var(--sub)',
           fontStyle: node.italic ? 'italic' : 'normal',
         }}
       >
@@ -239,7 +239,7 @@ export default function TreeNodeComponent({
                 onClick={(e) => { e.stopPropagation(); onDelete(node) }}
                 className="shrink-0 rounded p-0.5"
                 style={{ background: 'transparent', border: 'none', color: 'var(--hint)', cursor: 'pointer', lineHeight: 1 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#cc2200' }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--red)' }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--hint)' }}
                 title="Delete"
               >
@@ -291,7 +291,7 @@ export default function TreeNodeComponent({
               type="button"
               onClick={(e) => { e.stopPropagation(); handleDeleteClick() }}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-[var(--bg)]"
-              style={{ color: '#cc2200', border: 'none', background: 'transparent', cursor: 'pointer' }}
+              style={{ color: 'var(--red)', border: 'none', background: 'transparent', cursor: 'pointer' }}
             >
               <Trash2 size={13} />
               Delete

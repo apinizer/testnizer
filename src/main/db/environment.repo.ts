@@ -4,6 +4,7 @@ import { getDb } from './database'
 export interface EnvironmentRow {
   id: string
   workspace_id: string
+  project_id: string | null
   name: string
   is_active: number
   created_at: number
@@ -24,6 +25,7 @@ export interface EnvironmentVariableRow {
 export interface GlobalVariableRow {
   id: string
   workspace_id: string
+  project_id: string | null
   key: string
   value: string
   description: string | null
@@ -41,6 +43,14 @@ export function getEnvironmentsByWorkspace(workspaceId: string): EnvironmentRow[
   ).all(workspaceId) as EnvironmentRow[]
 }
 
+/** Per-project environments — excludes globally-scoped (project_id IS NULL). */
+export function getEnvironmentsByProject(projectId: string): EnvironmentRow[] {
+  const db = getDb()
+  return db.prepare(
+    'SELECT * FROM environments WHERE project_id = ? ORDER BY created_at ASC'
+  ).all(projectId) as EnvironmentRow[]
+}
+
 export function getEnvironmentById(id: string): EnvironmentRow | undefined {
   const db = getDb()
   return db.prepare('SELECT * FROM environments WHERE id = ?').get(id) as EnvironmentRow | undefined
@@ -48,6 +58,7 @@ export function getEnvironmentById(id: string): EnvironmentRow | undefined {
 
 export function createEnvironment(data: {
   workspace_id: string
+  project_id?: string | null
   name: string
   is_active?: boolean
 }): EnvironmentRow {
@@ -56,9 +67,9 @@ export function createEnvironment(data: {
   const id = randomUUID()
 
   db.prepare(`
-    INSERT INTO environments (id, workspace_id, name, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, data.workspace_id, data.name, data.is_active ? 1 : 0, now, now)
+    INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, data.workspace_id, data.project_id ?? null, data.name, data.is_active ? 1 : 0, now, now)
   return getEnvironmentById(id)!
 }
 
@@ -87,6 +98,14 @@ export function setActiveEnvironment(workspaceId: string, environmentId: string)
   const db = getDb()
   const now = Date.now()
   db.prepare('UPDATE environments SET is_active = 0, updated_at = ? WHERE workspace_id = ?').run(now, workspaceId)
+  db.prepare('UPDATE environments SET is_active = 1, updated_at = ? WHERE id = ?').run(now, environmentId)
+}
+
+/** Set the active environment within a single project's scope. */
+export function setActiveEnvironmentForProject(projectId: string, environmentId: string): void {
+  const db = getDb()
+  const now = Date.now()
+  db.prepare('UPDATE environments SET is_active = 0, updated_at = ? WHERE project_id = ?').run(now, projectId)
   db.prepare('UPDATE environments SET is_active = 1, updated_at = ? WHERE id = ?').run(now, environmentId)
 }
 
@@ -175,8 +194,16 @@ export function getGlobalVariables(workspaceId: string): GlobalVariableRow[] {
   ).all(workspaceId) as GlobalVariableRow[]
 }
 
+export function getGlobalVariablesByProject(projectId: string): GlobalVariableRow[] {
+  const db = getDb()
+  return db.prepare(
+    'SELECT * FROM global_variables WHERE project_id = ? ORDER BY key ASC'
+  ).all(projectId) as GlobalVariableRow[]
+}
+
 export function createGlobalVariable(data: {
   workspace_id: string
+  project_id?: string | null
   key: string
   value: string
   description?: string
@@ -188,11 +215,12 @@ export function createGlobalVariable(data: {
   const id = randomUUID()
 
   db.prepare(`
-    INSERT INTO global_variables (id, workspace_id, key, value, description, enabled, secret, initial_value)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO global_variables (id, workspace_id, project_id, key, value, description, enabled, secret, initial_value)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     data.workspace_id,
+    data.project_id ?? null,
     data.key,
     data.value,
     data.description ?? null,

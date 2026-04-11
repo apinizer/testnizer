@@ -11,6 +11,7 @@ import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
+import { useConsoleStore } from './console.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 
 function makeId(): string {
@@ -220,23 +221,42 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         _projectId: wsStore.activeProjectId || undefined,
       })
 
+      // Convert resolved headers to Record<string,string> for console/history
+      const headerRecord: Record<string, string> = {}
+      for (const h of resolvedHeaders) headerRecord[h.key] = h.value
+      const consoleReq = {
+        method,
+        url: resolvedUrl,
+        headers: headerRecord,
+        body: resolvedBody?.content,
+      }
+
       if (result?.success && result.data) {
-        responseStore.setResponse(result.data as ApiResponse)
+        const apiResp = result.data as ApiResponse
+        responseStore.setResponse(apiResp)
+        useConsoleStore.getState().addFromResponse(consoleReq, apiResp)
       } else {
-        responseStore.setResponse({
+        const errResp: ApiResponse = {
           requestId: makeId(),
           protocol: 'http',
           error: result?.error || 'Request failed',
           timing: { total: 0 },
-        })
+        }
+        responseStore.setResponse(errResp)
+        useConsoleStore.getState().addFromResponse(consoleReq, errResp)
       }
     } catch {
-      responseStore.setResponse({
+      const errResp: ApiResponse = {
         requestId: makeId(),
         protocol: 'http',
         error: 'Request failed — IPC not available',
         timing: { total: 0 },
-      })
+      }
+      responseStore.setResponse(errResp)
+      useConsoleStore.getState().addFromResponse(
+        { method, url, headers: {} },
+        errResp
+      )
     } finally {
       responseStore.setLoading(false)
       if (activeTabId) {

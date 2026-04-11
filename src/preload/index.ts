@@ -102,6 +102,8 @@ const api = {
   environment: {
     list: (workspaceId: string): Promise<unknown> =>
       ipcRenderer.invoke('environment:list', workspaceId),
+    listByProject: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('environment:listByProject', projectId),
     get: (id: string): Promise<unknown> =>
       ipcRenderer.invoke('environment:get', id),
     create: (payload: unknown): Promise<unknown> =>
@@ -110,6 +112,8 @@ const api = {
       ipcRenderer.invoke('environment:update', id, payload),
     setActive: (workspaceId: string, environmentId: string): Promise<unknown> =>
       ipcRenderer.invoke('environment:setActive', workspaceId, environmentId),
+    setActiveForProject: (projectId: string, environmentId: string): Promise<unknown> =>
+      ipcRenderer.invoke('environment:setActiveForProject', projectId, environmentId),
     delete: (id: string): Promise<unknown> =>
       ipcRenderer.invoke('environment:delete', id)
   },
@@ -130,6 +134,8 @@ const api = {
   globalVariable: {
     list: (workspaceId: string): Promise<unknown> =>
       ipcRenderer.invoke('globalVariable:list', workspaceId),
+    listByProject: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('globalVariable:listByProject', projectId),
     create: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('globalVariable:create', payload),
     update: (id: string, payload: unknown): Promise<unknown> =>

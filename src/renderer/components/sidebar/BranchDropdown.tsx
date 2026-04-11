@@ -149,7 +149,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                       handleDelete(branch.id)
                     }}
                     onMouseOver={(e) => {
-                      (e.currentTarget as HTMLElement).style.color = '#cc2200'
+                      (e.currentTarget as HTMLElement).style.color = 'var(--red)'
                     }}
                     onMouseOut={(e) => {
                       (e.currentTarget as HTMLElement).style.color = 'var(--muted)'
