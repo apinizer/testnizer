@@ -5,16 +5,19 @@
   <!--
     Bold ">" chevron, rendered as a stroked polyline so the result is
     font-independent (librsvg in sharp has no Menlo/Monaco).
-    The visible glyph spans ~40% of the icon width.
 
-    Geometry: V-shape with apex on the right.
-      left-top    → (320, 336)
-      apex        → (560, 512)
-      left-bottom → (320, 688)
+    Positioned so the chevron's bounding box is centered at x=30% of the
+    icon width (307 of 1024). Width is still 240 (apex − left tail), so:
+      left-top    → (187, 336)
+      apex        → (427, 512)
+      left-bottom → (187, 688)
+    This pulls the chevron clearly into the left third, leaving a wide
+    navy gap before the cursor so the two read as "prompt" + "cursor"
+    rather than a single ">|" glyph.
     stroke-linecap=round + linejoin=round gives the bold, soft feel.
   -->
   <polyline
-    points="320,336 560,512 320,688"
+    points="187,336 427,512 187,688"
     fill="none"
     stroke="#4A90D9"
     stroke-width="96"
@@ -22,13 +25,13 @@
     stroke-linejoin="round"/>
 
   <!--
-    Vertical cursor rectangle to the right of the chevron.
-      width  ≈ 9%  of icon  → 92
-      height ≈ 36% of icon  → 368
-      rx=12 (≈ 3/256 * 1024 for corner radius)
+    Vertical cursor rectangle — left edge at x=65% of icon width (666 of
+    1024). Width ≈9% (92), height ≈36% (368), rx=12.
+    The ~191px navy gap between chevron apex and this rect is what makes
+    the two elements read as separate prompt + blinking cursor.
   -->
   <rect
-    x="652"
+    x="666"
     y="328"
     width="92"
     height="368"
