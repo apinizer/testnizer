@@ -345,6 +345,10 @@ const api = {
   save: {
     local: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('save:local', payload),
+    selectFile: (): Promise<unknown> =>
+      ipcRenderer.invoke('save:selectFile'),
+    importLocal: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('save:importLocal', payload),
     selectDirectory: (): Promise<unknown> =>
       ipcRenderer.invoke('save:selectDirectory'),
     git: (payload: unknown): Promise<unknown> =>
@@ -365,6 +369,8 @@ const api = {
       ipcRenderer.invoke('save:gitCleanup', tmpDir),
     getGitCredentials: (): Promise<unknown> =>
       ipcRenderer.invoke('save:getGitCredentials'),
+    gitDiff: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('save:gitDiff', payload),
     history: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('save:history', projectId)
   },

@@ -1,11 +1,74 @@
 import { useState, useEffect } from 'react'
-import { X, FolderOpen, GitBranch, Loader2, Check, AlertCircle } from 'lucide-react'
+import {
+  X, FolderOpen, GitBranch, Loader2, Check, AlertCircle,
+  ArrowUp, ArrowDown, Plus, Minus, RefreshCw,
+} from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import type { SaveMode, GitRepoFile } from '../../types'
 
-type TabMode = 'save' | 'open'
+type TabMode = 'save' | 'push' | 'pull' | 'open'
+
+interface DiffEntry { id: string; name: string; status: 'added' | 'removed' | 'modified' }
+interface DiffCategory { added: number; removed: number; modified: number; details: DiffEntry[] }
+interface DiffResult {
+  direction: 'push' | 'pull'
+  remoteExists: boolean
+  totalChanges: number
+  changes: {
+    endpoints: DiffCategory
+    folders: DiffCategory
+    savedRequests: DiffCategory
+    environments: DiffCategory
+    globalVariables: DiffCategory
+  }
+  summary: string
+}
+
+function DiffCategoryView({ label, diff }: { label: string; diff: DiffCategory }) {
+  const total = diff.added + diff.removed + diff.modified
+  if (total === 0) return null
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div className="mb-1 flex items-center gap-2 text-[12px] font-semibold" style={{ color: 'var(--text)' }}>
+        {label}
+        <span className="rounded px-1.5 py-px text-[10px] font-normal" style={{ background: 'var(--surface)', color: 'var(--muted)' }}>
+          {total}
+        </span>
+      </div>
+      <div className="rounded-md" style={{ border: '1px solid var(--border)' }}>
+        {diff.details.map((item, i) => (
+          <div key={item.id} className="flex items-center gap-2 px-2.5 py-1 text-[12px]"
+            style={{ borderBottom: i < diff.details.length - 1 ? '1px solid var(--border)' : 'none' }}
+          >
+            {item.status === 'added' && <Plus size={11} style={{ color: '#1a7a4a' }} />}
+            {item.status === 'removed' && <Minus size={11} style={{ color: '#cc2200' }} />}
+            {item.status === 'modified' && <RefreshCw size={11} style={{ color: '#b35a00' }} />}
+            <span className="flex-1 truncate" style={{
+              color: item.status === 'added' ? '#1a7a4a' : item.status === 'removed' ? '#cc2200' : '#b35a00',
+            }}>
+              {item.name}
+            </span>
+            <span className="text-[10px]" style={{
+              color: 'var(--muted)',
+              background: item.status === 'added' ? '#e8f9f1' : item.status === 'removed' ? '#fff0f0' : '#fff4e0',
+              padding: '1px 5px', borderRadius: 3,
+            }}>
+              {item.status}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const inputStyle: React.CSSProperties = {
+  background: 'var(--surface)', border: '1px solid var(--border)',
+  borderRadius: 6, padding: '6px 10px', fontSize: 13,
+  color: 'var(--text)', outline: 'none', width: '100%',
+}
 
 export default function SaveModal() {
   const show = useUIStore((s) => s.showSaveModal)
@@ -29,68 +92,82 @@ export default function SaveModal() {
   const [gitFiles, setGitFiles] = useState<GitRepoFile[]>([])
   const [gitTmpDir, setGitTmpDir] = useState('')
 
+  // Diff preview state
+  const [diffResult, setDiffResult] = useState<DiffResult | null>(null)
+  const [diffLoading, setDiffLoading] = useState(false)
+
   useEffect(() => {
     if (show && activeProjectId) {
       fetchSaveHistory(activeProjectId)
     }
   }, [show, activeProjectId, fetchSaveHistory])
 
+  // Auto-fetch diff when switching to push/pull tabs
+  useEffect(() => {
+    if (show && activeProjectId && (tabMode === 'push' || tabMode === 'pull')) {
+      fetchDiff(tabMode === 'push' ? 'push' : 'pull')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show, tabMode, activeProjectId])
+
   if (!show) return null
 
   function handleClose() {
-    setShow(false)
-    setStatus(null)
-    setGitFiles([])
+    setShow(false); setStatus(null); setGitFiles([])
+    setDiffResult(null); setDiffLoading(false)
     if (gitTmpDir) {
       window.api?.save?.gitCleanup(gitTmpDir)
       setGitTmpDir('')
     }
   }
 
+  async function fetchDiff(direction: 'push' | 'pull') {
+    if (!activeProjectId) return
+    setDiffLoading(true); setDiffResult(null); setStatus(null)
+    try {
+      const result = await window.api?.save?.gitDiff({ projectId: activeProjectId, direction }) as {
+        success: boolean; data?: DiffResult; error?: string
+      }
+      if (result?.success && result.data) {
+        setDiffResult(result.data)
+      } else {
+        setStatus({ type: 'error', message: result?.error || 'Failed to compute diff' })
+      }
+    } catch (e) {
+      setStatus({ type: 'error', message: (e as Error).message })
+    }
+    setDiffLoading(false)
+  }
+
   async function handleSelectDirectory() {
     const result = await window.api?.save?.selectDirectory() as { success: boolean; data?: string }
-    if (result?.success && result.data) {
-      setLocalDir(result.data)
-    }
+    if (result?.success && result.data) setLocalDir(result.data)
   }
 
   async function handleSave() {
     if (!activeProjectId) return
-    setLoading(true)
-    setStatus(null)
-
+    setLoading(true); setStatus(null)
     try {
       if (saveMode === 'local') {
         const result = await window.api?.save?.local({
           projectId: activeProjectId,
           directoryPath: localDir || undefined,
         }) as { success: boolean; data?: { path: string; fileName: string }; error?: string }
-
         if (result?.success && result.data) {
           setStatus({ type: 'success', message: `Saved: ${result.data.fileName}` })
-          if (result.data.path) {
-            const dir = result.data.path.substring(0, result.data.path.lastIndexOf('/'))
-            setLocalDir(dir)
-          }
+          if (result.data.path) setLocalDir(result.data.path.substring(0, result.data.path.lastIndexOf('/')))
           fetchSaveHistory(activeProjectId)
         } else {
           setStatus({ type: 'error', message: result?.error || 'Save failed' })
         }
       } else {
         if (!gitUrl || !gitUsername || !gitToken) {
-          setStatus({ type: 'error', message: 'Please fill in all Git fields' })
-          setLoading(false)
-          return
+          setStatus({ type: 'error', message: 'Please fill in all Git fields' }); setLoading(false); return
         }
         const result = await window.api?.save?.git({
-          projectId: activeProjectId,
-          repoUrl: gitUrl,
-          branch: gitBranch,
-          username: gitUsername,
-          token: gitToken,
-          commitMessage: commitMessage || 'Update project',
-        }) as { success: boolean; data?: unknown; error?: string }
-
+          projectId: activeProjectId, repoUrl: gitUrl, branch: gitBranch,
+          username: gitUsername, token: gitToken, commitMessage: commitMessage || 'Update project',
+        }) as { success: boolean; error?: string }
         if (result?.success) {
           setStatus({ type: 'success', message: `Pushed to ${gitBranch}` })
           fetchSaveHistory(activeProjectId)
@@ -98,469 +175,294 @@ export default function SaveModal() {
           setStatus({ type: 'error', message: result?.error || 'Git push failed' })
         }
       }
-    } catch (e) {
-      setStatus({ type: 'error', message: (e as Error).message })
-    }
+    } catch (e) { setStatus({ type: 'error', message: (e as Error).message }) }
+    setLoading(false)
+  }
+
+  async function handleGitPush() {
+    if (!activeProjectId) return
+    setLoading(true); setStatus(null)
+    try {
+      const result = await window.api?.save?.gitPush({
+        projectId: activeProjectId,
+        commitMessage: commitMessage || undefined,
+      }) as { success: boolean; data?: { noChanges?: boolean; message?: string }; error?: string }
+      if (result?.success) {
+        setStatus({ type: 'success', message: result.data?.noChanges ? 'No changes to push.' : `Pushed: ${result.data?.message || 'Success'}` })
+        fetchSaveHistory(activeProjectId)
+      } else {
+        setStatus({ type: 'error', message: result?.error || 'Push failed' })
+      }
+    } catch (e) { setStatus({ type: 'error', message: (e as Error).message }) }
+    setLoading(false)
+  }
+
+  async function handleGitPull() {
+    if (!activeProjectId) return
+    setLoading(true); setStatus(null)
+    try {
+      const result = await window.api?.save?.gitPull({ projectId: activeProjectId }) as {
+        success: boolean; data?: { imported?: Record<string, number> }; error?: string
+      }
+      if (result?.success) {
+        const imp = result.data?.imported
+        const msg = imp
+          ? `Pulled: ${imp.endpoints || 0} endpoints, ${imp.savedRequests || 0} requests, ${imp.environments || 0} environments`
+          : 'Pull completed'
+        setStatus({ type: 'success', message: msg })
+        fetchSaveHistory(activeProjectId)
+      } else {
+        setStatus({ type: 'error', message: result?.error || 'Pull failed' })
+      }
+    } catch (e) { setStatus({ type: 'error', message: (e as Error).message }) }
     setLoading(false)
   }
 
   async function handleGitOpen() {
     if (!gitUrl || !gitUsername || !gitToken) {
-      setStatus({ type: 'error', message: 'Please fill in all Git fields' })
-      return
+      setStatus({ type: 'error', message: 'Please fill in all Git fields' }); return
     }
-    setLoading(true)
-    setStatus(null)
-
+    setLoading(true); setStatus(null)
     try {
       const result = await window.api?.save?.gitListFiles({
-        repoUrl: gitUrl,
-        branch: gitBranch,
-        username: gitUsername,
-        token: gitToken,
+        repoUrl: gitUrl, branch: gitBranch, username: gitUsername, token: gitToken,
       }) as { success: boolean; data?: { tmpDir: string; files: GitRepoFile[] }; error?: string }
-
       if (result?.success && result.data) {
-        setGitFiles(result.data.files)
-        setGitTmpDir(result.data.tmpDir)
-        if (result.data.files.length === 0) {
-          setStatus({ type: 'error', message: 'No JSON files found in repository' })
-        }
-      } else {
-        setStatus({ type: 'error', message: result?.error || 'Failed to list files' })
-      }
-    } catch (e) {
-      setStatus({ type: 'error', message: (e as Error).message })
-    }
+        setGitFiles(result.data.files); setGitTmpDir(result.data.tmpDir)
+        if (result.data.files.length === 0) setStatus({ type: 'error', message: 'No JSON files found in repository' })
+      } else { setStatus({ type: 'error', message: result?.error || 'Failed to list files' }) }
+    } catch (e) { setStatus({ type: 'error', message: (e as Error).message }) }
     setLoading(false)
   }
 
   async function handleImportFile(file: GitRepoFile) {
     setLoading(true)
     try {
-      const result = await window.api?.save?.gitReadFile(file.path) as { success: boolean; data?: unknown; error?: string }
-      if (result?.success && result.data) {
-        setStatus({ type: 'success', message: `Loaded: ${file.name}` })
-        // Data is available — in a real implementation this would trigger import
-      } else {
-        setStatus({ type: 'error', message: result?.error || 'Failed to read file' })
-      }
-    } catch (e) {
-      setStatus({ type: 'error', message: (e as Error).message })
-    }
+      const result = await window.api?.save?.gitReadFile(file.path) as { success: boolean; error?: string }
+      if (result?.success) { setStatus({ type: 'success', message: `Loaded: ${file.name}` }) }
+      else { setStatus({ type: 'error', message: result?.error || 'Failed to read file' }) }
+    } catch (e) { setStatus({ type: 'error', message: (e as Error).message }) }
     setLoading(false)
   }
 
+  const tabs: { id: TabMode; label: string; icon?: React.ReactNode }[] = [
+    { id: 'save', label: 'Save' },
+    { id: 'push', label: 'Push', icon: <ArrowUp size={11} /> },
+    { id: 'pull', label: 'Pull', icon: <ArrowDown size={11} /> },
+    { id: 'open', label: 'Open from Git' },
+  ]
+
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.4)' }}
-      onClick={handleClose}
+    <div className="fixed inset-0 z-[100] flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.4)' }} onClick={handleClose}
     >
-      <div
-        className="flex flex-col overflow-hidden"
-        style={{
-          width: 480,
-          maxHeight: '80vh',
-          background: 'var(--white)',
-          borderRadius: 12,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-        }}
+      <div className="flex flex-col overflow-hidden"
+        style={{ width: 520, maxHeight: '80vh', background: 'var(--white)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div
-          className="flex shrink-0 items-center justify-between px-4"
+        {/* Header with tabs */}
+        <div className="flex shrink-0 items-center justify-between px-4"
           style={{ height: 48, borderBottom: '1px solid var(--border)' }}
         >
-          <div className="flex items-center gap-3">
-            <span className="text-[0.925rem] font-semibold" style={{ color: 'var(--heading)' }}>
-              Project Save
-            </span>
-            {/* Tab toggle */}
-            <div
-              className="flex items-center"
-              style={{ background: 'var(--bg)', borderRadius: 6, padding: 2 }}
-            >
-              <button
-                type="button"
-                className="cursor-pointer px-3 py-0.5 text-[0.75rem]"
-                style={{
-                  background: tabMode === 'save' ? 'var(--white)' : 'transparent',
-                  border: 'none',
-                  borderRadius: 4,
-                  color: tabMode === 'save' ? 'var(--accent)' : 'var(--muted)',
-                  fontWeight: tabMode === 'save' ? 600 : 400,
-                }}
-                onClick={() => { setTabMode('save'); setStatus(null); setGitFiles([]) }}
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                className="cursor-pointer px-3 py-0.5 text-[0.75rem]"
-                style={{
-                  background: tabMode === 'open' ? 'var(--white)' : 'transparent',
-                  border: 'none',
-                  borderRadius: 4,
-                  color: tabMode === 'open' ? 'var(--accent)' : 'var(--muted)',
-                  fontWeight: tabMode === 'open' ? 600 : 400,
-                }}
-                onClick={() => { setTabMode('open'); setStatus(null); setGitFiles([]) }}
-              >
-                Open from Git
-              </button>
+          <div className="flex items-center gap-2">
+            <span className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Project</span>
+            <div className="flex items-center" style={{ background: 'var(--surface)', borderRadius: 6, padding: 2 }}>
+              {tabs.map((tab) => (
+                <button key={tab.id} type="button"
+                  className="flex cursor-pointer items-center gap-1 px-2.5 py-1 text-[11px]"
+                  style={{
+                    background: tabMode === tab.id ? 'var(--white)' : 'transparent',
+                    border: 'none', borderRadius: 4,
+                    color: tabMode === tab.id ? 'var(--accent)' : 'var(--muted)',
+                    fontWeight: tabMode === tab.id ? 600 : 400,
+                  }}
+                  onClick={() => { setTabMode(tab.id); setStatus(null); setGitFiles([]) }}
+                >
+                  {tab.icon}{tab.label}
+                </button>
+              ))}
             </div>
           </div>
-          <button
-            type="button"
-            className="cursor-pointer"
+          <button type="button" className="cursor-pointer"
             style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
             onClick={handleClose}
-          >
-            <X size={16} />
-          </button>
+          ><X size={16} /></button>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">
-          {tabMode === 'save' ? (
+
+          {/* ── SAVE TAB ── */}
+          {tabMode === 'save' && (
             <>
-              {/* Mode selector */}
-              <div className="mb-4 flex gap-3">
-                <label
-                  className="flex flex-1 cursor-pointer items-center gap-2 rounded-lg p-3 text-[0.825rem]"
-                  style={{
-                    border: `2px solid ${saveMode === 'local' ? 'var(--accent)' : 'var(--border)'}`,
-                    background: saveMode === 'local' ? 'var(--accentLight)' : 'transparent',
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="saveMode"
-                    checked={saveMode === 'local'}
-                    onChange={() => setSaveMode('local')}
-                    className="hidden"
-                  />
-                  <FolderOpen size={16} style={{ color: saveMode === 'local' ? 'var(--accent)' : 'var(--muted)' }} />
-                  <div>
-                    <div className="font-medium" style={{ color: 'var(--text)' }}>Local</div>
-                    <div className="text-[0.75rem]" style={{ color: 'var(--muted)' }}>Save to this computer</div>
-                  </div>
-                </label>
-                <label
-                  className="flex flex-1 cursor-pointer items-center gap-2 rounded-lg p-3 text-[0.825rem]"
-                  style={{
-                    border: `2px solid ${saveMode === 'git' ? 'var(--accent)' : 'var(--border)'}`,
-                    background: saveMode === 'git' ? 'var(--accentLight)' : 'transparent',
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="saveMode"
-                    checked={saveMode === 'git'}
-                    onChange={() => setSaveMode('git')}
-                    className="hidden"
-                  />
-                  <GitBranch size={16} style={{ color: saveMode === 'git' ? 'var(--accent)' : 'var(--muted)' }} />
-                  <div>
-                    <div className="font-medium" style={{ color: 'var(--text)' }}>Git</div>
-                    <div className="text-[0.75rem]" style={{ color: 'var(--muted)' }}>GitHub / GitLab</div>
-                  </div>
-                </label>
+              <div className="mb-3 flex gap-2">
+                {(['local', 'git'] as SaveMode[]).map((mode) => (
+                  <label key={mode}
+                    className="flex flex-1 cursor-pointer items-center gap-2 rounded-lg p-2.5 text-[13px]"
+                    style={{
+                      border: `1.5px solid ${saveMode === mode ? 'var(--accent)' : 'var(--border)'}`,
+                      background: saveMode === mode ? 'var(--accent-light)' : 'transparent',
+                    }}
+                  >
+                    <input type="radio" name="saveMode" checked={saveMode === mode}
+                      onChange={() => setSaveMode(mode)} className="hidden"
+                    />
+                    {mode === 'local' ? <FolderOpen size={14} style={{ color: saveMode === mode ? 'var(--accent)' : 'var(--muted)' }} />
+                      : <GitBranch size={14} style={{ color: saveMode === mode ? 'var(--accent)' : 'var(--muted)' }} />}
+                    <div>
+                      <div className="font-medium" style={{ color: 'var(--text)' }}>{mode === 'local' ? 'Local' : 'Git'}</div>
+                      <div className="text-[11px]" style={{ color: 'var(--muted)' }}>{mode === 'local' ? 'Save to this computer' : 'GitHub / GitLab'}</div>
+                    </div>
+                  </label>
+                ))}
               </div>
 
-              {/* Local mode fields */}
               {saveMode === 'local' && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="mb-1 block text-[0.75rem] font-medium" style={{ color: 'var(--muted)' }}>
-                      Directory
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        value={localDir}
-                        onChange={(e) => setLocalDir(e.target.value)}
-                        placeholder="Select folder..."
-                        readOnly
-                        className="flex-1 text-[0.825rem]"
-                        style={{
-                          background: 'var(--bg)',
-                          border: '1px solid var(--border)',
-                          borderRadius: 6,
-                          padding: '6px 10px',
-                          color: 'var(--text)',
-                          outline: 'none',
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="cursor-pointer text-[0.75rem]"
-                        style={{
-                          background: 'var(--bg)',
-                          border: '1px solid var(--border)',
-                          borderRadius: 6,
-                          padding: '6px 12px',
-                          color: 'var(--text)',
-                        }}
-                        onClick={handleSelectDirectory}
-                      >
-                        Browse
-                      </button>
-                    </div>
-                  </div>
+                <div className="flex gap-2">
+                  <input value={localDir} readOnly placeholder="Select folder..." style={{ ...inputStyle, flex: 1, fontFamily: 'monospace', fontSize: 12 }} />
+                  <button type="button" className="cursor-pointer text-[12px]"
+                    style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 12px', color: 'var(--text)' }}
+                    onClick={handleSelectDirectory}
+                  >Browse</button>
                 </div>
               )}
 
-              {/* Git mode fields */}
               {saveMode === 'git' && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="mb-1 block text-[0.75rem] font-medium" style={{ color: 'var(--muted)' }}>
-                      Repository URL
-                    </label>
-                    <input
-                      value={gitUrl}
-                      onChange={(e) => setGitUrl(e.target.value)}
-                      placeholder="https://github.com/user/repo.git"
-                      className="w-full text-[0.825rem]"
-                      style={{
-                        background: 'var(--bg)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 6,
-                        padding: '6px 10px',
-                        color: 'var(--text)',
-                        outline: 'none',
-                      }}
-                    />
-                  </div>
+                <div className="space-y-2.5">
+                  <input value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} placeholder="https://github.com/user/repo.git" style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }} />
                   <div className="flex gap-2">
-                    <div className="flex-1">
-                      <label className="mb-1 block text-[0.75rem] font-medium" style={{ color: 'var(--muted)' }}>
-                        Branch
-                      </label>
-                      <input
-                        value={gitBranch}
-                        onChange={(e) => setGitBranch(e.target.value)}
-                        placeholder="main"
-                        className="w-full text-[0.825rem]"
-                        style={{
-                          background: 'var(--bg)',
-                          border: '1px solid var(--border)',
-                          borderRadius: 6,
-                          padding: '6px 10px',
-                          color: 'var(--text)',
-                          outline: 'none',
-                        }}
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <label className="mb-1 block text-[0.75rem] font-medium" style={{ color: 'var(--muted)' }}>
-                        Username
-                      </label>
-                      <input
-                        value={gitUsername}
-                        onChange={(e) => setGitUsername(e.target.value)}
-                        placeholder="username"
-                        className="w-full text-[0.825rem]"
-                        style={{
-                          background: 'var(--bg)',
-                          border: '1px solid var(--border)',
-                          borderRadius: 6,
-                          padding: '6px 10px',
-                          color: 'var(--text)',
-                          outline: 'none',
-                        }}
-                      />
-                    </div>
+                    <input value={gitBranch} onChange={(e) => setGitBranch(e.target.value)} placeholder="main" style={{ ...inputStyle, fontFamily: 'monospace' }} />
+                    <input value={gitUsername} onChange={(e) => setGitUsername(e.target.value)} placeholder="username" style={inputStyle} />
                   </div>
-                  <div>
-                    <label className="mb-1 block text-[0.75rem] font-medium" style={{ color: 'var(--muted)' }}>
-                      Personal Access Token
-                    </label>
-                    <input
-                      type="password"
-                      value={gitToken}
-                      onChange={(e) => setGitToken(e.target.value)}
-                      placeholder="ghp_xxxx..."
-                      className="w-full text-[0.825rem]"
-                      style={{
-                        background: 'var(--bg)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 6,
-                        padding: '6px 10px',
-                        color: 'var(--text)',
-                        outline: 'none',
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[0.75rem] font-medium" style={{ color: 'var(--muted)' }}>
-                      Commit Message
-                    </label>
-                    <input
-                      value={commitMessage}
-                      onChange={(e) => setCommitMessage(e.target.value)}
-                      placeholder="Update project"
-                      className="w-full text-[0.825rem]"
-                      style={{
-                        background: 'var(--bg)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 6,
-                        padding: '6px 10px',
-                        color: 'var(--text)',
-                        outline: 'none',
-                      }}
-                    />
-                  </div>
+                  <input type="password" value={gitToken} onChange={(e) => setGitToken(e.target.value)} placeholder="ghp_xxxx..." style={{ ...inputStyle, fontFamily: 'monospace' }} />
+                  <input value={commitMessage} onChange={(e) => setCommitMessage(e.target.value)} placeholder="Commit message..." style={inputStyle} />
                 </div>
               )}
 
-              {/* Save History */}
               {saveHistory.length > 0 && (
-                <div className="mt-4">
-                  <div className="mb-2 text-[0.75rem] font-medium" style={{ color: 'var(--muted)' }}>
-                    Recent Saves
-                  </div>
-                  <div
-                    className="max-h-[120px] overflow-y-auto rounded-lg"
-                    style={{ border: '1px solid var(--border)' }}
-                  >
+                <div className="mt-3">
+                  <div className="mb-1 text-[11px] font-semibold" style={{ color: 'var(--muted)' }}>Recent Saves</div>
+                  <div className="max-h-[100px] overflow-y-auto rounded-md" style={{ border: '1px solid var(--border)' }}>
                     {saveHistory.slice(0, 5).map((entry) => (
-                      <div
-                        key={entry.id}
-                        className="flex items-center gap-2 px-3 py-1.5 text-[0.75rem]"
+                      <div key={entry.id} className="flex items-center gap-2 px-2.5 py-1 text-[12px]"
                         style={{ borderBottom: '1px solid var(--border)' }}
                       >
-                        {entry.mode === 'local' ? (
-                          <FolderOpen size={12} style={{ color: 'var(--muted)' }} />
-                        ) : (
-                          <GitBranch size={12} style={{ color: 'var(--muted)' }} />
-                        )}
-                        <span className="flex-1 truncate" style={{ color: 'var(--text)' }}>
-                          {entry.message}
-                        </span>
-                        <span style={{ color: 'var(--hint)' }}>
-                          {new Date(entry.timestamp).toLocaleDateString()}
-                        </span>
+                        {entry.mode === 'local' ? <FolderOpen size={11} style={{ color: 'var(--muted)' }} /> : <GitBranch size={11} style={{ color: 'var(--muted)' }} />}
+                        <span className="flex-1 truncate" style={{ color: 'var(--text)' }}>{entry.message}</span>
+                        <span className="text-[10px]" style={{ color: 'var(--hint)' }}>{new Date(entry.timestamp).toLocaleDateString()}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
             </>
-          ) : (
-            /* Open from Git tab */
+          )}
+
+          {/* ── PUSH TAB ── */}
+          {tabMode === 'push' && (
             <>
-              <div className="space-y-3">
-                <div>
-                  <label className="mb-1 block text-[0.75rem] font-medium" style={{ color: 'var(--muted)' }}>
-                    Repository URL
-                  </label>
-                  <input
-                    value={gitUrl}
-                    onChange={(e) => setGitUrl(e.target.value)}
-                    placeholder="https://github.com/user/repo.git"
-                    className="w-full text-[0.825rem]"
-                    style={{
-                      background: 'var(--bg)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 6,
-                      padding: '6px 10px',
-                      color: 'var(--text)',
-                      outline: 'none',
-                    }}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <label className="mb-1 block text-[0.75rem] font-medium" style={{ color: 'var(--muted)' }}>
-                      Branch
-                    </label>
-                    <input
-                      value={gitBranch}
-                      onChange={(e) => setGitBranch(e.target.value)}
-                      placeholder="main"
-                      className="w-full text-[0.825rem]"
-                      style={{
-                        background: 'var(--bg)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 6,
-                        padding: '6px 10px',
-                        color: 'var(--text)',
-                        outline: 'none',
-                      }}
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="mb-1 block text-[0.75rem] font-medium" style={{ color: 'var(--muted)' }}>
-                      Username
-                    </label>
-                    <input
-                      value={gitUsername}
-                      onChange={(e) => setGitUsername(e.target.value)}
-                      placeholder="username"
-                      className="w-full text-[0.825rem]"
-                      style={{
-                        background: 'var(--bg)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 6,
-                        padding: '6px 10px',
-                        color: 'var(--text)',
-                        outline: 'none',
-                      }}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="mb-1 block text-[0.75rem] font-medium" style={{ color: 'var(--muted)' }}>
-                    Personal Access Token
-                  </label>
-                  <input
-                    type="password"
-                    value={gitToken}
-                    onChange={(e) => setGitToken(e.target.value)}
-                    placeholder="ghp_xxxx..."
-                    className="w-full text-[0.825rem]"
-                    style={{
-                      background: 'var(--bg)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 6,
-                      padding: '6px 10px',
-                      color: 'var(--text)',
-                      outline: 'none',
-                    }}
-                  />
-                </div>
+              <div className="mb-3">
+                <input value={commitMessage} onChange={(e) => setCommitMessage(e.target.value)}
+                  placeholder="Commit message (optional)..." style={inputStyle}
+                />
               </div>
 
-              {/* File list from Git repo */}
-              {gitFiles.length > 0 && (
-                <div className="mt-4">
-                  <div className="mb-2 text-[0.75rem] font-medium" style={{ color: 'var(--muted)' }}>
-                    JSON Files in Repository
+              {diffLoading && (
+                <div className="flex items-center gap-2 py-6 text-center text-[13px]" style={{ color: 'var(--muted)', justifyContent: 'center' }}>
+                  <Loader2 size={14} className="animate-spin" /> Comparing with remote...
+                </div>
+              )}
+
+              {diffResult && !diffLoading && (
+                <div>
+                  {/* Summary bar */}
+                  <div className="mb-3 flex items-center gap-2 rounded-md px-3 py-2 text-[12px]" style={{
+                    background: diffResult.totalChanges === 0 ? 'var(--surface)' : '#fff4e0',
+                    border: '1px solid var(--border)',
+                  }}>
+                    <ArrowUp size={13} style={{ color: diffResult.totalChanges === 0 ? 'var(--muted)' : '#b35a00' }} />
+                    <span style={{ color: diffResult.totalChanges === 0 ? 'var(--muted)' : '#b35a00', fontWeight: 500 }}>
+                      {diffResult.summary}
+                    </span>
                   </div>
-                  <div
-                    className="max-h-[160px] overflow-y-auto rounded-lg"
-                    style={{ border: '1px solid var(--border)' }}
-                  >
+
+                  {diffResult.totalChanges > 0 && (
+                    <div className="max-h-[220px] overflow-y-auto">
+                      <DiffCategoryView label="Endpoints" diff={diffResult.changes.endpoints} />
+                      <DiffCategoryView label="Saved Requests" diff={diffResult.changes.savedRequests} />
+                      <DiffCategoryView label="Folders" diff={diffResult.changes.folders} />
+                      <DiffCategoryView label="Environments" diff={diffResult.changes.environments} />
+                      <DiffCategoryView label="Global Variables" diff={diffResult.changes.globalVariables} />
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── PULL TAB ── */}
+          {tabMode === 'pull' && (
+            <>
+              {diffLoading && (
+                <div className="flex items-center gap-2 py-6 text-center text-[13px]" style={{ color: 'var(--muted)', justifyContent: 'center' }}>
+                  <Loader2 size={14} className="animate-spin" /> Comparing with remote...
+                </div>
+              )}
+
+              {diffResult && !diffLoading && (
+                <div>
+                  <div className="mb-3 flex items-center gap-2 rounded-md px-3 py-2 text-[12px]" style={{
+                    background: diffResult.totalChanges === 0 ? 'var(--surface)' : '#e8f4ff',
+                    border: '1px solid var(--border)',
+                  }}>
+                    <ArrowDown size={13} style={{ color: diffResult.totalChanges === 0 ? 'var(--muted)' : '#0066cc' }} />
+                    <span style={{ color: diffResult.totalChanges === 0 ? 'var(--muted)' : '#0066cc', fontWeight: 500 }}>
+                      {diffResult.summary}
+                    </span>
+                  </div>
+
+                  {diffResult.totalChanges > 0 && (
+                    <div className="max-h-[220px] overflow-y-auto">
+                      <DiffCategoryView label="Endpoints" diff={diffResult.changes.endpoints} />
+                      <DiffCategoryView label="Saved Requests" diff={diffResult.changes.savedRequests} />
+                      <DiffCategoryView label="Folders" diff={diffResult.changes.folders} />
+                      <DiffCategoryView label="Environments" diff={diffResult.changes.environments} />
+                      <DiffCategoryView label="Global Variables" diff={diffResult.changes.globalVariables} />
+                    </div>
+                  )}
+
+                  {!diffResult.remoteExists && (
+                    <div className="mt-2 rounded-md px-3 py-2 text-[12px]" style={{ background: '#fff0f0', color: '#cc2200' }}>
+                      No remote data found. Push first before pulling.
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── OPEN FROM GIT TAB ── */}
+          {tabMode === 'open' && (
+            <>
+              <div className="space-y-2.5">
+                <input value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} placeholder="https://github.com/user/repo.git" style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }} />
+                <div className="flex gap-2">
+                  <input value={gitBranch} onChange={(e) => setGitBranch(e.target.value)} placeholder="main" style={{ ...inputStyle, fontFamily: 'monospace' }} />
+                  <input value={gitUsername} onChange={(e) => setGitUsername(e.target.value)} placeholder="username" style={inputStyle} />
+                </div>
+                <input type="password" value={gitToken} onChange={(e) => setGitToken(e.target.value)} placeholder="ghp_xxxx..." style={{ ...inputStyle, fontFamily: 'monospace' }} />
+              </div>
+              {gitFiles.length > 0 && (
+                <div className="mt-3">
+                  <div className="mb-1 text-[11px] font-semibold" style={{ color: 'var(--muted)' }}>JSON Files in Repository</div>
+                  <div className="max-h-[140px] overflow-y-auto rounded-md" style={{ border: '1px solid var(--border)' }}>
                     {gitFiles.map((file) => (
-                      <div
-                        key={file.name}
-                        className="flex cursor-pointer items-center gap-2 px-3 py-2 text-[0.825rem]"
+                      <div key={file.name} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--surface)]"
                         style={{ borderBottom: '1px solid var(--border)', color: 'var(--text)' }}
                         onClick={() => handleImportFile(file)}
-                        onMouseOver={(e) => {
-                          (e.currentTarget as HTMLElement).style.background = 'var(--fill-3)'
-                        }}
-                        onMouseOut={(e) => {
-                          (e.currentTarget as HTMLElement).style.background = 'transparent'
-                        }}
                       >
                         <span className="flex-1">{file.name}</span>
-                        <span className="text-[0.75rem]" style={{ color: 'var(--hint)' }}>
-                          {(file.size / 1024).toFixed(1)} KB
-                        </span>
+                        <span className="text-[11px]" style={{ color: 'var(--hint)' }}>{(file.size / 1024).toFixed(1)} KB</span>
                       </div>
                     ))}
                   </div>
@@ -571,54 +473,43 @@ export default function SaveModal() {
 
           {/* Status message */}
           {status && (
-            <div
-              className="mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-[0.825rem]"
-              style={{
-                background: status.type === 'success' ? 'var(--greenBg)' : '#fff0f0',
-                color: status.type === 'success' ? 'var(--green)' : '#cc2200',
-              }}
-            >
-              {status.type === 'success' ? <Check size={14} /> : <AlertCircle size={14} />}
+            <div className="mt-3 flex items-center gap-2 rounded-md px-3 py-2 text-[12px]" style={{
+              background: status.type === 'success' ? '#e8f9f1' : '#fff0f0',
+              color: status.type === 'success' ? '#1a7a4a' : '#cc2200',
+            }}>
+              {status.type === 'success' ? <Check size={13} /> : <AlertCircle size={13} />}
               {status.message}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div
-          className="flex shrink-0 items-center justify-end gap-2 px-4"
-          style={{ height: 52, borderTop: '1px solid var(--border)' }}
+        <div className="flex shrink-0 items-center justify-end gap-2 px-4"
+          style={{ height: 48, borderTop: '1px solid var(--border)' }}
         >
-          <button
-            type="button"
-            className="cursor-pointer text-[0.825rem]"
-            style={{
-              background: 'transparent',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              padding: '6px 16px',
-              color: 'var(--text)',
-            }}
+          <button type="button" className="cursor-pointer text-[13px]"
+            style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 14px', color: 'var(--text)' }}
             onClick={handleClose}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="flex cursor-pointer items-center gap-1.5 text-[0.825rem]"
+          >Cancel</button>
+          <button type="button"
+            className="flex cursor-pointer items-center gap-1.5 text-[13px]"
             style={{
-              background: 'var(--accent)',
-              border: 'none',
-              borderRadius: 6,
-              padding: '6px 16px',
-              color: '#fff',
-              opacity: loading ? 0.7 : 1,
+              background: 'var(--accent)', border: 'none', borderRadius: 6,
+              padding: '5px 14px', color: '#fff', opacity: loading ? 0.7 : 1,
             }}
             disabled={loading}
-            onClick={tabMode === 'save' ? handleSave : handleGitOpen}
+            onClick={
+              tabMode === 'save' ? handleSave
+                : tabMode === 'push' ? handleGitPush
+                : tabMode === 'pull' ? handleGitPull
+                : handleGitOpen
+            }
           >
-            {loading && <Loader2 size={14} className="animate-spin" />}
-            {tabMode === 'save' ? 'Save' : 'Connect'}
+            {loading && <Loader2 size={13} className="animate-spin" />}
+            {tabMode === 'save' ? 'Save'
+              : tabMode === 'push' ? 'Push'
+              : tabMode === 'pull' ? 'Pull'
+              : 'Connect'}
           </button>
         </div>
       </div>

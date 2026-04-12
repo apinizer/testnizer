@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, X } from 'lucide-react'
 import type { KeyValuePair } from '../../types'
+import VariableAutocompleteInput from './VariableAutocompleteInput'
 
 const COMMON_HEADERS = [
   'Accept',
@@ -313,20 +314,9 @@ export default function KeyValueTable({
 
             {/* Value */}
             <div className="relative" style={{ borderRight: '1px solid var(--border)' }}>
-              <input
+              <VariableAutocompleteInput
                 value={row.value}
-                onChange={(e) => handleValueInputChange(row.id, row.key, e.target.value, e.currentTarget)}
-                onFocus={(e) => {
-                  if (enableAutocomplete && row.key.toLowerCase() === 'content-type' && row.value.length > 0) {
-                    activeInputRef.current = e.currentTarget
-                    const filtered = CONTENT_TYPE_VALUES.filter((v) =>
-                      v.toLowerCase().includes(row.value.toLowerCase())
-                    )
-                    if (filtered.length > 0) {
-                      setAutocomplete({ rowId: row.id, field: 'value', suggestions: filtered, selectedIndex: 0 })
-                    }
-                  }
-                }}
+                onChange={(val) => handleValueInputChange(row.id, row.key, val, null)}
                 onKeyDown={handleKeyDown}
                 className="w-full border-none bg-transparent px-2.5 py-[5px] text-[13px] outline-none"
                 style={{ color: valueColor || 'var(--text)' }}

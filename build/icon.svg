@@ -1,41 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" shape-rendering="geometricPrecision">
-  <!-- Dark navy rounded background — rx ≈ 32/256 * 1024 -->
-  <rect x="0" y="0" width="1024" height="1024" rx="128" ry="128" fill="#1B3358"/>
-
   <!--
-    Bold ">" chevron, rendered as a stroked polyline so the result is
-    font-independent (librsvg in sharp has no Menlo/Monaco).
-
-    Positioned so the chevron's bounding box is centered at x=30% of the
-    icon width (307 of 1024). Width is still 240 (apex − left tail), so:
-      left-top    → (187, 336)
-      apex        → (427, 512)
-      left-bottom → (187, 688)
-    This pulls the chevron clearly into the left third, leaving a wide
-    navy gap before the cursor so the two read as "prompt" + "cursor"
-    rather than a single ">|" glyph.
-    stroke-linecap=round + linejoin=round gives the bold, soft feel.
+    Apinizer brand mark — two triangles forming a stylized "A" / forward arrow.
+    Blue (#4472C4) left triangle + Orange (#ED7D31) right triangle.
+    Transparent background.
   -->
-  <polyline
-    points="187,336 427,512 187,688"
-    fill="none"
-    stroke="#4A90D9"
-    stroke-width="96"
-    stroke-linecap="round"
-    stroke-linejoin="round"/>
 
-  <!--
-    Vertical cursor rectangle — left edge at x=65% of icon width (666 of
-    1024). Width ≈9% (92), height ≈36% (368), rx=12.
-    The ~191px navy gap between chevron apex and this rect is what makes
-    the two elements read as separate prompt + blinking cursor.
-  -->
-  <rect
-    x="666"
-    y="328"
-    width="92"
-    height="368"
-    rx="12"
-    ry="12"
-    fill="#ED7D31"/>
+  <!-- Blue triangle — large, left-leaning, the dominant left stroke of the "A" -->
+  <polygon
+    points="190,830 440,140 560,830"
+    fill="#4472C4"
+  />
+
+  <!-- Orange triangle — smaller, right-side, overlapping the blue slightly -->
+  <polygon
+    points="480,830 670,310 834,830"
+    fill="#ED7D31"
+  />
 </svg>

@@ -665,6 +665,8 @@ interface GitConfigResult {
 
 interface SaveApi {
   local(payload: { projectId: string; directoryPath?: string }): Promise<IpcResult<SaveLocalResult>>
+  selectFile(): Promise<IpcResult<{ filePath: string; project: unknown }>>
+  importLocal(payload: { filePath: string; projectId: string }): Promise<IpcResult<unknown>>
   selectDirectory(): Promise<IpcResult<string>>
   git(payload: {
     projectId: string
@@ -687,6 +689,7 @@ interface SaveApi {
   gitReadFile(filePath: string): Promise<IpcResult<unknown>>
   gitCleanup(tmpDir: string): Promise<IpcResult<undefined>>
   getGitCredentials(): Promise<IpcResult<Record<string, unknown>>>
+  gitDiff(payload: { projectId: string; direction: 'push' | 'pull' }): Promise<IpcResult<unknown>>
   history(projectId: string): Promise<IpcResult<SaveHistoryRow[]>>
 }
 

@@ -6,6 +6,7 @@ import { useTabsStore } from '../../stores/tabs.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTranslation } from '../../lib/i18n'
 import MethodBadge from '../shared/MethodBadge'
+import VariableAutocompleteInput from '../shared/VariableAutocompleteInput'
 import { T, BTN_P, BTN_S, BASE_INP } from '../../styles/tokens'
 import type { HttpMethod } from '../../types'
 
@@ -126,10 +127,10 @@ export default function UrlBar() {
         )}
       </div>
 
-      {/* URL input */}
-      <input
+      {/* URL input with variable autocomplete */}
+      <VariableAutocompleteInput
         value={url}
-        onChange={(e) => setUrl(e.target.value)}
+        onChange={setUrl}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
             sendRequest()

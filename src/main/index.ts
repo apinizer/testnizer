@@ -21,7 +21,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    title: 'Apinizer API Tester',
+    title: 'Apinizer',
     icon: iconPath,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 12, y: 14 },
@@ -61,7 +61,7 @@ function createWindow(): void {
 }
 
 // Set app name early so macOS dock/menu shows correct name
-app.name = 'Apinizer API Tester'
+app.name = 'Apinizer'
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.apinizer.api-tester')
