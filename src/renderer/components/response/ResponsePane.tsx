@@ -22,7 +22,7 @@ export default function ResponsePane() {
   const response = useResponseStore((s) => s.response)
   const isLoading = useResponseStore((s) => s.isLoading)
   const setShowCodeGenerator = useUIStore((s) => s.setShowCodeGenerator)
-  const setShowHistoryPanel = useUIStore((s) => s.setShowHistoryPanel)
+  const setActiveSidebarPage = useUIStore((s) => s.setActiveSidebarPage)
   const [activeTab, setActiveTab] = useState<ResTabKey>('body')
   const { t } = useTranslation()
 
@@ -88,7 +88,7 @@ export default function ResponsePane() {
     return `${ms} ms`
   }
 
-  const TABS: Array<{ key: ResTabKey; label: string; count?: number; countColor?: string }> = [
+  const TABS: Array<{ key: ResTabKey; label: string; count?: number; countLabel?: string; countColor?: string }> = [
     { key: 'body', label: 'Body' },
     { key: 'cookies', label: 'Cookies', count: cookieCount },
     { key: 'headers', label: 'Headers', count: headerCount },
@@ -96,6 +96,7 @@ export default function ResponsePane() {
       key: 'testResults',
       label: 'Test Results',
       count: testTotal || undefined,
+      countLabel: testTotal > 0 ? `${testPassed}/${testTotal}` : undefined,
       countColor: testTotal > 0 ? (testFailed > 0 ? 'var(--red)' : 'var(--green)') : undefined,
     },
     { key: 'console', label: 'Console' },
@@ -116,7 +117,7 @@ export default function ResponsePane() {
         {/* History icon — Postman shows a small clock button before status */}
         <button
           type="button"
-          onClick={() => setShowHistoryPanel(true)}
+          onClick={() => setActiveSidebarPage('history')}
           className="flex shrink-0 cursor-pointer items-center justify-center rounded p-1"
           style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--accent)' }}
@@ -149,10 +150,10 @@ export default function ResponsePane() {
                 {tab.label}
                 {tab.count != null && tab.count > 0 && (
                   <span
-                    className="ml-1 text-[12px]"
+                    className="ml-1 text-[12px] font-semibold"
                     style={{ color: tab.countColor || (isActive ? 'var(--accent-text)' : 'var(--hint)') }}
                   >
-                    ({tab.count})
+                    {tab.countLabel || tab.count}
                   </span>
                 )}
               </button>

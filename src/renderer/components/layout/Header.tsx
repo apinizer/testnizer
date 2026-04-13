@@ -148,7 +148,7 @@ export default function Header() {
       style={{
         height: 44,
         paddingLeft: 72,
-        background: T.white,
+        background: 'var(--header-bg)',
         borderBottom: `1px solid ${T.border}`,
       }}
       onDoubleClick={handleDoubleClick}

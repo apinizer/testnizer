@@ -42,11 +42,11 @@ const translations: Record<Locale, Record<string, string>> = {
 
     // Request tabs
     'request.params': 'Params',
-    'request.auth': 'Auth',
+    'request.auth': 'Authorization',
     'request.headers': 'Headers',
     'request.body': 'Body',
-    'request.preRequest': 'Pre-request',
-    'request.tests': 'Tests',
+    'request.scripts': 'Scripts',
+    'request.settings': 'Settings',
 
     // Response tabs
     'response.response': 'Response',
@@ -297,11 +297,11 @@ const translations: Record<Locale, Record<string, string>> = {
 
     // Request tabs
     'request.params': 'Parametreler',
-    'request.auth': 'Kimlik Dogrulama',
+    'request.auth': 'Yetkilendirme',
     'request.headers': 'Basliklar',
     'request.body': 'Govde',
-    'request.preRequest': 'On-istek',
-    'request.tests': 'Testler',
+    'request.scripts': 'Betikler',
+    'request.settings': 'Ayarlar',
 
     // Response tabs
     'response.response': 'Yanit',

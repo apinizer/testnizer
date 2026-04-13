@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
+import { useUIStore } from '../../stores/ui.store'
 import { useSoapStore } from '../../stores/soap.store'
 import type { TreeNode as TreeNodeType, HttpMethod, Protocol, KeyValuePair, RequestBody, AuthConfig } from '../../types'
 import TreeNodeComponent from './TreeNode'
@@ -46,7 +47,7 @@ export default function TreeView() {
   const toggleNode = useWorkspaceStore((s) => s.toggleNode)
   const setActiveNode = useWorkspaceStore((s) => s.setActiveNode)
   const loadFromEndpoint = useRequestStore((s) => s.loadFromEndpoint)
-  const openTab = useTabsStore((s) => s.openTab)
+  const openPreviewTab = useTabsStore((s) => s.openPreviewTab)
   const switchToTab = useRequestStore((s) => s.switchToTab)
   const clearResponse = useResponseStore((s) => s.clearResponse)
   const refreshTree = useWorkspaceStore((s) => s.refreshTree)
@@ -66,6 +67,11 @@ export default function TreeView() {
     estimateSize: () => 30,
     overscan: 10,
   })
+
+  /** After openPreviewTab, get the actual active tab ID (might be a reused preview tab) */
+  function getActiveTabId(): string {
+    return useTabsStore.getState().activeTabId || ''
+  }
 
   const handleSelect = useCallback(
     async (node: TreeNode) => {
@@ -95,8 +101,7 @@ export default function TreeView() {
             const parsedBody: RequestBody = sr.body ? JSON.parse(sr.body) : { type: 'none' }
             const parsedAuth: AuthConfig = sr.auth ? JSON.parse(sr.auth) : { type: 'none' }
 
-            // Open tab
-            openTab({
+            openPreviewTab({
               id: tabId,
               name: sr.name,
               protocol: (sr.protocol || 'http') as 'http',
@@ -105,8 +110,8 @@ export default function TreeView() {
               savedRequestId: sr.id,
             })
 
-            // Switch and load data
-            switchToTab(tabId)
+            const realTabId = getActiveTabId()
+            switchToTab(realTabId)
             clearResponse()
             loadFromEndpoint({
               method: (sr.method || 'GET') as HttpMethod,
@@ -152,17 +157,14 @@ export default function TreeView() {
                 body = schema.body || { type: 'none' }
                 auth = schema.auth || { type: 'none' }
                 soapMeta = schema.soap
-                // Use URL/method from schema if available (WSDL-imported endpoints store full data)
                 if (schema.url) schemaUrl = schema.url
                 if (schema.method) schemaMethod = schema.method
               } catch { /* ignore */ }
             }
 
-            // WSDL-imported SOAP endpoints (with soapMeta) use the standard HTTP editor
-            // just like Postman/Apidog — URL bar, Headers (Content-Type, SOAPAction), Body (XML)
             const effectiveProtocol = (protocol === 'soap' && soapMeta) ? 'http' as Protocol : protocol
 
-            openTab({
+            openPreviewTab({
               id: tabId,
               name: ep.name,
               protocol: effectiveProtocol,
@@ -171,12 +173,12 @@ export default function TreeView() {
               endpointId: ep.id,
             })
 
-            switchToTab(tabId)
+            const realTabId = getActiveTabId()
+            switchToTab(realTabId)
             clearResponse()
 
             if (effectiveProtocol === 'soap') {
-              // Manual SOAP editor (no imported metadata)
-              switchSoapToTab(tabId)
+              switchSoapToTab(realTabId)
               loadSoapFromEndpoint({
                 url: schemaUrl,
                 body: body as { type: string; content?: string },
@@ -201,21 +203,22 @@ export default function TreeView() {
       }
 
       // Fallback: open with basic info from tree node
-      openTab({
+      openPreviewTab({
         id: tabId,
         name: node.label,
         protocol: 'http',
         method: method,
         url: node.path || '',
       })
-      switchToTab(tabId)
+      const realTabId = getActiveTabId()
+      switchToTab(realTabId)
       clearResponse()
       loadFromEndpoint({
         method,
         url: node.path || '',
       })
     },
-    [setActiveNode, loadFromEndpoint, openTab, switchToTab, clearResponse, loadSoapFromEndpoint, switchSoapToTab]
+    [setActiveNode, loadFromEndpoint, openPreviewTab, switchToTab, clearResponse, loadSoapFromEndpoint, switchSoapToTab]
   )
 
   // Delete confirmation dialog state
@@ -266,6 +269,88 @@ export default function TreeView() {
     [refreshTree]
   )
 
+  const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
+  const setShowCollectionRunner = useUIStore((s) => s.setShowCollectionRunner)
+
+  const handleAddRequest = useCallback(
+    async (parentNode: TreeNode) => {
+      if (!activeProjectId) return
+      try {
+        const folderId = parentNode.type === 'folder' ? parentNode.id : null
+        await window.api?.savedRequest?.create({
+          project_id: activeProjectId,
+          folder_id: folderId,
+          name: 'New Request',
+          method: 'GET',
+          url: '',
+          protocol: 'http',
+        })
+        await refreshTree()
+      } catch { /* ignore */ }
+    },
+    [activeProjectId, refreshTree]
+  )
+
+  const handleAddFolder = useCallback(
+    async (parentNode: TreeNode) => {
+      if (!activeProjectId) return
+      try {
+        const parentFolderId = parentNode.type === 'folder' ? parentNode.id : null
+        await window.api?.folder?.create({
+          project_id: activeProjectId,
+          parent_id: parentFolderId,
+          name: 'New Folder',
+        })
+        await refreshTree()
+      } catch { /* ignore */ }
+    },
+    [activeProjectId, refreshTree]
+  )
+
+  const handleDuplicate = useCallback(
+    async (node: TreeNode) => {
+      try {
+        if (node.type === 'request') {
+          const result = await window.api?.savedRequest?.get(node.id) as { success: boolean; data?: Record<string, unknown> }
+          if (result?.success && result.data) {
+            const sr = result.data
+            await window.api?.savedRequest?.create({
+              ...sr,
+              name: `${sr.name} (copy)`,
+            })
+          }
+        } else if (node.type === 'endpoint') {
+          const result = await window.api?.endpoint?.get(node.id) as { success: boolean; data?: Record<string, unknown> }
+          if (result?.success && result.data) {
+            const ep = result.data
+            await window.api?.endpoint?.create({
+              ...ep,
+              name: `${ep.name} (copy)`,
+            })
+          }
+        }
+        await refreshTree()
+      } catch { /* ignore */ }
+    },
+    [refreshTree]
+  )
+
+  const handleRunFolder = useCallback(
+    (_node: TreeNode) => {
+      setShowCollectionRunner(true)
+    },
+    [setShowCollectionRunner]
+  )
+
+  const handleExport = useCallback(
+    async (node: TreeNode) => {
+      try {
+        await window.api?.save?.exportCollection?.({ folderId: node.id })
+      } catch { /* ignore */ }
+    },
+    []
+  )
+
   return (
     <div ref={parentRef} className="flex-1 overflow-y-auto px-1.5 py-2">
       <div
@@ -297,6 +382,11 @@ export default function TreeView() {
                 onToggle={toggleNode}
                 onDelete={handleDeleteRequest}
                 onRename={handleRename}
+                onAddRequest={handleAddRequest}
+                onAddFolder={handleAddFolder}
+                onDuplicate={handleDuplicate}
+                onRunFolder={handleRunFolder}
+                onExport={handleExport}
                 openIds={openNodeIds}
                 isFlat
               />

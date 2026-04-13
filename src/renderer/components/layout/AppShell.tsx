@@ -15,7 +15,6 @@ import SaveModal from '../modals/SaveModal'
 import NewProjectModal from '../modals/NewProjectModal'
 import EndpointSaveModal from '../modals/EndpointSaveModal'
 import ProjectDetailModal from '../modals/ProjectDetailModal'
-import HistoryPanel from '../modals/HistoryPanel'
 import ConsolePanel from './ConsolePanel'
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
@@ -23,6 +22,7 @@ import { useKeyboardShortcuts } from '../../lib/keyboard-shortcuts'
 
 export default function AppShell() {
   const isLeftPanelCollapsed = useUIStore((s) => s.isLeftPanelCollapsed)
+  const activeSidebarPage = useUIStore((s) => s.activeSidebarPage)
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const initialized = useWorkspaceStore((s) => s.initialized)
   const initialize = useWorkspaceStore((s) => s.initialize)
@@ -73,8 +73,8 @@ export default function AppShell() {
         {/* Icon Sidebar — 64px, no top border, starts below header */}
         <IconSidebar />
 
-        {/* Left Panel — collection tree */}
-        {!isLeftPanelCollapsed && <LeftPanel />}
+        {/* Left Panel — collection tree or history */}
+        {(!isLeftPanelCollapsed || activeSidebarPage === 'history') && <LeftPanel />}
 
         {/* Workbench — flex:1 */}
         <Workbench />
@@ -97,7 +97,6 @@ export default function AppShell() {
       <NewProjectModal />
       <EndpointSaveModal />
       <ProjectDetailModal />
-      <HistoryPanel />
     </div>
   )
 }

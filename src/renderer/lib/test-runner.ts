@@ -324,6 +324,29 @@ interface HaveChain {
   property(name: string): void
 }
 
+interface ResponseHaveChain {
+  status(code: number): void
+  header(name: string, value?: string): void
+  jsonBody(path?: string): void
+  body(expected?: string): void
+}
+
+interface ResponseBeChain {
+  ok: void
+  accepted: void
+  badRequest: void
+  unauthorized: void
+  forbidden: void
+  notFound: void
+  error: void
+}
+
+interface ResponseToChain {
+  have: ResponseHaveChain
+  be: ResponseBeChain
+  not: { have: ResponseHaveChain; be: ResponseBeChain }
+}
+
 export interface PmApi {
   response: {
     code: number
@@ -335,6 +358,7 @@ export interface PmApi {
     }
     responseTime: number
     responseSize: number
+    to: ResponseToChain
   }
   request: {
     method: string
@@ -370,6 +394,79 @@ export function createPmApi(
   const globalUpdates = new Map<string, string>()
   const localVars = new Map<string, string>()
 
+  // Build Chai-BDD style chain for pm.response.to.have.status() etc.
+  function assertionError(msg: string): never { throw new Error(msg) }
+
+  const responseHaveChain: ResponseHaveChain = {
+    status(code: number): void {
+      const actual = response.status ?? 0
+      if (actual !== code) assertionError(`expected response to have status code ${code} but got ${actual}`)
+    },
+    header(name: string, value?: string): void {
+      const headers = response.headers ?? {}
+      const entry = Object.entries(headers).find(([k]) => k.toLowerCase() === name.toLowerCase())
+      if (!entry) assertionError(`expected response to have header "${name}"`)
+      if (value !== undefined && entry && entry[1] !== value) {
+        assertionError(`expected header "${name}" to equal "${value}" but got "${entry[1]}"`)
+      }
+    },
+    jsonBody(_path?: string): void {
+      try { JSON.parse(response.body ?? '') }
+      catch { assertionError('expected response to have a JSON body') }
+    },
+    body(expected?: string): void {
+      if (expected !== undefined && (response.body ?? '') !== expected) {
+        assertionError(`expected body to equal "${expected}"`)
+      }
+    }
+  }
+
+  const responseBeChain: ResponseBeChain = {
+    get ok(): void { const s = response.status ?? 0; if (s < 200 || s >= 300) assertionError(`expected 2xx but got ${s}`) },
+    get accepted(): void { if ((response.status ?? 0) !== 202) assertionError(`expected 202 but got ${response.status}`) },
+    get badRequest(): void { if ((response.status ?? 0) !== 400) assertionError(`expected 400 but got ${response.status}`) },
+    get unauthorized(): void { if ((response.status ?? 0) !== 401) assertionError(`expected 401 but got ${response.status}`) },
+    get forbidden(): void { if ((response.status ?? 0) !== 403) assertionError(`expected 403 but got ${response.status}`) },
+    get notFound(): void { if ((response.status ?? 0) !== 404) assertionError(`expected 404 but got ${response.status}`) },
+    get error(): void { const s = response.status ?? 0; if (s < 400) assertionError(`expected 4xx/5xx but got ${s}`) },
+  }
+
+  const responseNotHaveChain: ResponseHaveChain = {
+    status(code: number): void {
+      if ((response.status ?? 0) === code) assertionError(`expected response to not have status code ${code}`)
+    },
+    header(name: string): void {
+      const headers = response.headers ?? {}
+      const found = Object.keys(headers).some((k) => k.toLowerCase() === name.toLowerCase())
+      if (found) assertionError(`expected response to not have header "${name}"`)
+    },
+    jsonBody(): void {
+      try { JSON.parse(response.body ?? ''); assertionError('expected response to not have a JSON body') }
+      catch { /* good */ }
+    },
+    body(expected?: string): void {
+      if (expected !== undefined && (response.body ?? '') === expected) {
+        assertionError(`expected body to not equal "${expected}"`)
+      }
+    }
+  }
+
+  const responseNotBeChain: ResponseBeChain = {
+    get ok(): void { const s = response.status ?? 0; if (s >= 200 && s < 300) assertionError(`expected not 2xx but got ${s}`) },
+    get accepted(): void { if ((response.status ?? 0) === 202) assertionError('expected not 202') },
+    get badRequest(): void { if ((response.status ?? 0) === 400) assertionError('expected not 400') },
+    get unauthorized(): void { if ((response.status ?? 0) === 401) assertionError('expected not 401') },
+    get forbidden(): void { if ((response.status ?? 0) === 403) assertionError('expected not 403') },
+    get notFound(): void { if ((response.status ?? 0) === 404) assertionError('expected not 404') },
+    get error(): void { const s = response.status ?? 0; if (s >= 400) assertionError(`expected not 4xx/5xx but got ${s}`) },
+  }
+
+  const responseToChain: ResponseToChain = {
+    have: responseHaveChain,
+    be: responseBeChain,
+    not: { have: responseNotHaveChain, be: responseNotBeChain }
+  }
+
   const pmApi: PmApi = {
     response: {
       get code(): number { return response.status ?? 0 },
@@ -388,7 +485,8 @@ export function createPmApi(
         }
       },
       get responseTime(): number { return response.timing.total },
-      get responseSize(): number { return response.bodySize ?? 0 }
+      get responseSize(): number { return response.bodySize ?? 0 },
+      to: responseToChain,
     },
     request: {
       method: response.actualRequest?.method ?? '',

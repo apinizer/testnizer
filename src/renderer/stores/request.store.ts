@@ -13,6 +13,7 @@ import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
 import { useConsoleStore } from './console.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
+import { runAssertions, runScript, createPmApi } from '../lib/test-runner'
 
 function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
@@ -233,8 +234,44 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
 
       if (result?.success && result.data) {
         const apiResp = result.data as ApiResponse
-        responseStore.setResponse(apiResp)
-        useConsoleStore.getState().addFromResponse(consoleReq, apiResp)
+        const { postScript: ps, assertions: asserts } = get()
+
+        // Run post-response script and assertions
+        const allTestResults = [...(apiResp.testResults || [])]
+        const allConsoleLogs = [...(apiResp.consoleLogs || [])]
+
+        // Run built-in assertions
+        if (asserts.length > 0) {
+          const assertionResults = runAssertions(asserts, apiResp)
+          allTestResults.push(...assertionResults)
+        }
+
+        // Run post-response script (pm.test, pm.expect, etc.)
+        if (ps && ps.trim()) {
+          const activeVarsRecord = envStore.getActiveVariables()
+          const envMap = new Map<string, string>(Object.entries(activeVarsRecord))
+          const globalMap = new Map<string, string>()
+          // Populate global vars
+          const globalVars = envStore.globalVariables || []
+          for (const gv of globalVars) {
+            if (gv.enabled) globalMap.set(gv.key, gv.value || gv.initialValue || '')
+          }
+
+          const pmApi = createPmApi(apiResp, envMap, globalMap)
+          const scriptResult = runScript(ps, pmApi)
+          allTestResults.push(...scriptResult.results)
+          allConsoleLogs.push(...scriptResult.consoleLogs)
+        }
+
+        // Merge test results and console logs into response
+        const enrichedResp: ApiResponse = {
+          ...apiResp,
+          testResults: allTestResults.length > 0 ? allTestResults : undefined,
+          consoleLogs: allConsoleLogs.length > 0 ? allConsoleLogs : undefined,
+        }
+
+        responseStore.setResponse(enrichedResp)
+        useConsoleStore.getState().addFromResponse(consoleReq, enrichedResp)
       } else {
         const errResp: ApiResponse = {
           requestId: makeId(),

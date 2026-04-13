@@ -77,6 +77,9 @@ export default function ResponseBody() {
     if (effectiveFormat === 'JSON') {
       try { return JSON.stringify(JSON.parse(body), null, 2) } catch { return body }
     }
+    if (effectiveFormat === 'XML' || effectiveFormat === 'HTML') {
+      return formatXml(body)
+    }
     return body
   }, [body, viewMode, effectiveFormat])
 
@@ -344,4 +347,47 @@ export default function ResponseBody() {
       </div>
     </div>
   )
+}
+
+/** Simple XML/HTML beautifier — adds indentation without external deps */
+function formatXml(xml: string): string {
+  try {
+    const PADDING = '  '
+    let formatted = ''
+    let indent = 0
+    // Normalize: remove existing whitespace between tags
+    const normalized = xml.replace(/(>)\s*(<)/g, '$1\n$2').trim()
+    const lines = normalized.split('\n')
+
+    for (const raw of lines) {
+      const line = raw.trim()
+      if (!line) continue
+
+      // Closing tag
+      if (line.startsWith('</')) {
+        indent = Math.max(0, indent - 1)
+        formatted += PADDING.repeat(indent) + line + '\n'
+      }
+      // Self-closing tag or processing instruction
+      else if (line.endsWith('/>') || line.startsWith('<?')) {
+        formatted += PADDING.repeat(indent) + line + '\n'
+      }
+      // Opening tag that also has a closing tag on the same line: <tag>value</tag>
+      else if (line.startsWith('<') && line.includes('</') && !line.startsWith('<!--')) {
+        formatted += PADDING.repeat(indent) + line + '\n'
+      }
+      // Opening tag
+      else if (line.startsWith('<') && !line.startsWith('<!--')) {
+        formatted += PADDING.repeat(indent) + line + '\n'
+        indent++
+      }
+      // Comment or text content
+      else {
+        formatted += PADDING.repeat(indent) + line + '\n'
+      }
+    }
+    return formatted.trimEnd()
+  } catch {
+    return xml
+  }
 }

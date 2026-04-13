@@ -1,4 +1,4 @@
-import { Globe, Zap, FileText, Code2 } from 'lucide-react'
+import { Globe, Zap, FileText } from 'lucide-react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
 
@@ -39,16 +39,6 @@ export default function NewRequestWelcome() {
     })
   }
 
-  function createSoapRequest() {
-    if (!activeTabId) return
-    updateTab(activeTabId, {
-      name: 'SOAP Request',
-      protocol: 'soap',
-      method: 'POST',
-      url: '',
-    })
-  }
-
   function createWebSocket() {
     const id = makeTabId()
     openTab({ id, name: 'WebSocket', protocol: 'websocket', method: 'GET', url: '' })
@@ -60,12 +50,6 @@ export default function NewRequestWelcome() {
       iconBg: '#E3F2FD',
       label: 'New HTTP Endpoint',
       onClick: createHttpEndpoint,
-    },
-    {
-      icon: <Code2 size={28} strokeWidth={1.5} />,
-      iconBg: '#FCE4EC',
-      label: 'New SOAP Request',
-      onClick: createSoapRequest,
     },
     {
       icon: <FileText size={28} strokeWidth={1.5} />,

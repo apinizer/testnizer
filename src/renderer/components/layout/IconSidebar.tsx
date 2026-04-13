@@ -64,7 +64,6 @@ export default function IconSidebar() {
   const setActivePage = useUIStore((s) => s.setActiveSidebarPage)
   const setShowSettingsModal = useUIStore((s) => s.setShowSettingsModal)
   const setShowProjectDetailModal = useUIStore((s) => s.setShowProjectDetailModal)
-  const setShowHistoryPanel = useUIStore((s) => s.setShowHistoryPanel)
   const activeProject = useWorkspaceStore((s) => {
     const pid = s.activeProjectId
     return s.projects.find((p) => p.id === pid)
@@ -73,7 +72,7 @@ export default function IconSidebar() {
   const topItems: NavItem[] = [
     { id: 'apis', label: 'APIs', icon: (a) => <GlobeIcon active={a} /> },
     { id: 'tests', label: 'Tests', icon: (a) => <CheckIcon active={a} /> },
-    { id: 'history', label: 'History', icon: (a) => <ClockIcon active={a} />, action: () => setShowHistoryPanel(true) },
+    { id: 'history', label: 'History', icon: (a) => <ClockIcon active={a} /> },
   ]
 
   const bottomItems: NavItem[] = [

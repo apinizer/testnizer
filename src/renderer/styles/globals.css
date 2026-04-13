@@ -4,6 +4,7 @@
 :root[data-theme="light"] {
   --bg:           #f4f4f6;
   --white:        #ffffff;
+  --header-bg:    #f0f0f2;
   --border:       #e5e7eb;
   --border2:      #d1d5db;
   --border-split: #e5e7eb;
@@ -15,6 +16,7 @@
   --accent:       #5b6af0;
   --accent-light: #eef0fe;
   --accent-text:  #4a59df;
+  --send-bg:      #2563eb;
   --surface:      #f9fafb;
   --green:        #15803d;
   --green-bg:     #dcfce7;
@@ -63,6 +65,7 @@
 :root[data-theme="dark"] {
   --bg:           #1c1c1e;
   --white:        #212124;
+  --header-bg:    #1a1a1c;
   --border:       #2e2e33;
   --border2:      #3a3a40;
   --border-split: #2a2a2f;
@@ -74,6 +77,7 @@
   --accent:       #7b8af5;
   --accent-light: rgba(123,138,245,0.18);
   --accent-text:  #a5b2ff;
+  --send-bg:      #3b82f6;
   --surface:      #18181a;
   --green:        #6bdd9a;
   --green-bg:     rgba(107,221,154,0.14);

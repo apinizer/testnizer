@@ -24,6 +24,7 @@ function EndpointTabBar() {
   const setActiveTab = useTabsStore((s) => s.setActiveTab)
   const closeTab = useTabsStore((s) => s.closeTab)
   const openTab = useTabsStore((s) => s.openTab)
+  const pinTab = useTabsStore((s) => s.pinTab)
   const updateTab = useTabsStore((s) => s.updateTab)
   const switchToTab = useRequestStore((s) => s.switchToTab)
   const removeTabState = useRequestStore((s) => s.removeTabState)
@@ -109,11 +110,16 @@ function EndpointTabBar() {
     >
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId
+        const isPreview = tab.isPreview
         return (
           <div
             key={tab.id}
             className="group"
             onClick={() => handleSwitchTab(tab.id)}
+            onDoubleClick={() => {
+              // Double-click pins preview tab (Postman behavior)
+              if (isPreview) pinTab(tab.id)
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -123,6 +129,7 @@ function EndpointTabBar() {
               cursor: 'pointer',
               fontSize: 13,
               fontWeight: isActive ? 500 : 400,
+              fontStyle: isPreview ? 'italic' : 'normal',
               borderBottom: isActive ? `2px solid ${T.accent}` : '2px solid transparent',
               color: isActive ? T.text : T.muted,
               whiteSpace: 'nowrap',
@@ -150,10 +157,18 @@ function EndpointTabBar() {
                   color: T.text,
                   outline: 'none',
                   width: 120,
+                  fontStyle: 'normal',
                 }}
               />
             ) : (
-              <span onDoubleClick={(e) => { e.stopPropagation(); handleStartRename(tab.id, tab.name) }}>
+              <span onDoubleClick={(e) => {
+                e.stopPropagation()
+                if (isPreview) {
+                  pinTab(tab.id)
+                } else {
+                  handleStartRename(tab.id, tab.name)
+                }
+              }}>
                 {tab.name}
               </span>
             )}

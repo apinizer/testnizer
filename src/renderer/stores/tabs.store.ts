@@ -1,11 +1,15 @@
 import { create } from 'zustand'
-import type { Tab, Protocol } from '../types'
+import type { Tab } from '../types'
 
 interface TabsStore {
   tabs: Tab[]
   activeTabId: string | null
 
   openTab: (tab: Omit<Tab, 'isDirty' | 'isLoading'>) => void
+  /** Open in a preview (temporary) tab — replaces existing preview tab */
+  openPreviewTab: (tab: Omit<Tab, 'isDirty' | 'isLoading' | 'isPreview'>) => void
+  /** Pin (persist) the current preview tab so it won't be replaced */
+  pinTab: (id: string) => void
   closeTab: (id: string) => void
   setActiveTab: (id: string | null) => void
   updateTab: (id: string, updates: Partial<Tab>) => void
@@ -26,16 +30,62 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
           (tab.savedRequestId && t.savedRequestId === tab.savedRequestId)
       )
       if (existing) {
-        set({ activeTabId: existing.id })
+        // If found an existing preview tab, pin it
+        set((state) => ({
+          activeTabId: existing.id,
+          tabs: state.tabs.map((t) => t.id === existing.id ? { ...t, isPreview: false } : t),
+        }))
         return
       }
     }
-    const newTab: Tab = { ...tab, isDirty: false, isLoading: false }
+    const newTab: Tab = { ...tab, isDirty: false, isLoading: false, isPreview: false }
     set((state) => ({
       tabs: [...state.tabs, newTab],
       activeTabId: newTab.id,
     }))
   },
+
+  openPreviewTab: (tab) => {
+    // If there's already a tab for this exact endpoint/savedRequest, just activate it
+    if (tab.endpointId || tab.savedRequestId) {
+      const existing = get().tabs.find(
+        (t) =>
+          (tab.endpointId && t.endpointId === tab.endpointId) ||
+          (tab.savedRequestId && t.savedRequestId === tab.savedRequestId)
+      )
+      if (existing) {
+        set({ activeTabId: existing.id })
+        return
+      }
+    }
+
+    const state = get()
+    const existingPreview = state.tabs.find((t) => t.isPreview)
+
+    if (existingPreview) {
+      // Replace the existing preview tab's content
+      set((s) => ({
+        tabs: s.tabs.map((t) =>
+          t.id === existingPreview.id
+            ? { ...t, ...tab, id: existingPreview.id, isDirty: false, isLoading: false, isPreview: true }
+            : t
+        ),
+        activeTabId: existingPreview.id,
+      }))
+    } else {
+      // Create a new preview tab
+      const newTab: Tab = { ...tab, isDirty: false, isLoading: false, isPreview: true }
+      set((s) => ({
+        tabs: [...s.tabs, newTab],
+        activeTabId: newTab.id,
+      }))
+    }
+  },
+
+  pinTab: (id) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.id === id ? { ...t, isPreview: false } : t)),
+    })),
 
   closeTab: (id) =>
     set((state) => {

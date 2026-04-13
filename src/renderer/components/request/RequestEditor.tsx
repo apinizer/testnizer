@@ -5,34 +5,34 @@ import ParamsTab from './ParamsTab'
 import AuthTab from './AuthTab'
 import HeadersTab from './HeadersTab'
 import BodyTab from './BodyTab'
-import PreRequestTab from './PreRequestTab'
-import TestsTab from './TestsTab'
+import ScriptsTab from './ScriptsTab'
+import SettingsTab from './SettingsTab'
 
-type ReqTabKey = 'params' | 'body' | 'headers' | 'auth' | 'preRequest' | 'tests'
+type ReqTabKey = 'params' | 'headers' | 'auth' | 'body' | 'scripts' | 'settings'
 
-const REQ_TAB_KEYS: ReqTabKey[] = ['params', 'body', 'headers', 'auth', 'preRequest', 'tests']
-
-const TAB_I18N_MAP: Record<ReqTabKey, string> = {
-  params: 'request.params',
-  body: 'request.body',
-  headers: 'request.headers',
-  auth: 'request.auth',
-  preRequest: 'request.preRequest',
-  tests: 'request.tests',
-}
+const REQ_TABS: { key: ReqTabKey; label: string; i18n?: string }[] = [
+  { key: 'params', label: 'Params', i18n: 'request.params' },
+  { key: 'headers', label: 'Headers', i18n: 'request.headers' },
+  { key: 'auth', label: 'Authorization', i18n: 'request.auth' },
+  { key: 'body', label: 'Body', i18n: 'request.body' },
+  { key: 'scripts', label: 'Scripts' },
+  { key: 'settings', label: 'Settings' },
+]
 
 export default function RequestEditor() {
   const [activeTab, setActiveTab] = useState<ReqTabKey>('params')
   const params = useRequestStore((s) => s.params)
   const headers = useRequestStore((s) => s.headers)
   const body = useRequestStore((s) => s.body)
+  const auth = useRequestStore((s) => s.auth)
   const { t } = useTranslation()
 
   const enabledParamCount = params.filter((p) => p.enabled).length
   const enabledHeaderCount = headers.filter((h) => h.enabled).length
   const hasBody = body.type !== 'none'
+  const hasAuth = auth.type !== 'none'
 
-  function getTabBadge(tab: ReqTabKey): { count: number; bg: string; color: string } | null {
+  function getBadge(tab: ReqTabKey): { count?: number; dot?: boolean; bg: string; color: string } | null {
     if (tab === 'params' && enabledParamCount > 0) {
       return { count: enabledParamCount, bg: 'var(--accent-light)', color: 'var(--accent-text)' }
     }
@@ -42,39 +42,52 @@ export default function RequestEditor() {
     if (tab === 'body' && hasBody) {
       return { count: 1, bg: 'var(--accent-light)', color: 'var(--accent-text)' }
     }
+    // Green dot for active auth (Postman style)
+    if (tab === 'auth' && hasAuth) {
+      return { dot: true, bg: 'var(--green)', color: 'var(--green)' }
+    }
     return null
   }
 
+  // Scripts and Settings tabs need full height for Monaco
+  const isFullHeight = activeTab === 'scripts' || activeTab === 'body'
+
   return (
     <div className="flex h-full flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-      {/* Tab bar — Apidog style: text tabs with underline */}
+      {/* Tab bar — Postman style */}
       <div
         className="flex shrink-0 items-center overflow-x-auto"
         style={{ borderBottom: '1px solid var(--border)', background: 'var(--white)', padding: '0 4px' }}
       >
-        {REQ_TAB_KEYS.map((tab) => {
-          const badge = getTabBadge(tab)
-          const isActive = activeTab === tab
+        {REQ_TABS.map((tab) => {
+          const badge = getBadge(tab.key)
+          const isActive = activeTab === tab.key
           return (
             <button
-              key={tab}
+              key={tab.key}
               type="button"
-              onClick={() => setActiveTab(tab)}
+              onClick={() => setActiveTab(tab.key)}
               className="flex cursor-pointer items-center gap-1 whitespace-nowrap px-2.5 text-[13px] transition-colors"
               style={{
                 height: 30,
-                borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                borderBottom: 'none',
+                borderBottomWidth: 2,
+                borderBottomStyle: 'solid',
+                borderBottomColor: isActive ? 'var(--accent)' : 'transparent',
                 color: isActive ? 'var(--text)' : 'var(--muted)',
                 fontWeight: isActive ? 500 : 400,
                 background: 'transparent',
                 border: 'none',
-                borderBottomWidth: 2,
-                borderBottomStyle: 'solid',
-                borderBottomColor: isActive ? 'var(--accent)' : 'transparent',
               }}
             >
-              {t(TAB_I18N_MAP[tab])}
-              {badge && (
+              {tab.i18n ? t(tab.i18n) : tab.label}
+              {badge?.dot && (
+                <span
+                  className="inline-block h-[6px] w-[6px] rounded-full"
+                  style={{ background: badge.bg }}
+                />
+              )}
+              {badge?.count != null && (
                 <span
                   className="rounded-full px-[5px] text-[0.75rem]"
                   style={{ background: badge.bg, color: badge.color }}
@@ -87,18 +100,18 @@ export default function RequestEditor() {
         })}
       </div>
 
-      {/* Content — Body tab fills available space for Monaco, others scroll */}
-      {activeTab === 'body' ? (
-        <div className="flex-1 overflow-hidden p-2">
-          <BodyTab />
+      {/* Content */}
+      {isFullHeight ? (
+        <div className="flex-1 overflow-hidden">
+          {activeTab === 'body' && <div className="h-full p-2"><BodyTab /></div>}
+          {activeTab === 'scripts' && <ScriptsTab />}
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-2.5">
           {activeTab === 'params' && <ParamsTab />}
-          {activeTab === 'auth' && <AuthTab />}
           {activeTab === 'headers' && <HeadersTab />}
-          {activeTab === 'preRequest' && <PreRequestTab />}
-          {activeTab === 'tests' && <TestsTab />}
+          {activeTab === 'auth' && <AuthTab />}
+          {activeTab === 'settings' && <SettingsTab />}
         </div>
       )}
     </div>

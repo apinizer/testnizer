@@ -79,12 +79,6 @@ export default function NewDropdown() {
       action: () => createProtocolTab('websocket', 'WebSocket'),
     },
     {
-      icon: '\uD83D\uDCE8',
-      label: 'SOAP',
-      bg: '#f0ecff',
-      action: () => createProtocolTab('soap', 'SOAP Request'),
-    },
-    {
       icon: '\u25C8',
       label: 'GraphQL',
       bg: '#ffe8f0',

@@ -6,7 +6,7 @@
 export type Protocol = 'http' | 'soap' | 'websocket' | 'graphql' | 'grpc' | 'sse'
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 export type BodyType = 'none' | 'json' | 'xml' | 'text' | 'html' | 'javascript' | 'form-data' | 'urlencoded' | 'binary'
-export type AuthType = 'none' | 'basic' | 'bearer' | 'api-key' | 'oauth2' | 'digest' | 'ntlm' | 'aws-signature' | 'hawk'
+export type AuthType = 'none' | 'basic' | 'bearer' | 'api-key' | 'oauth2' | 'digest' | 'ntlm' | 'aws-signature' | 'hawk' | 'wsse'
 export type EndpointStatus = 'developing' | 'testing' | 'released' | 'deprecated'
 export type Theme = 'light' | 'dark' | 'system'
 export type Language = 'tr' | 'en'
@@ -157,6 +157,7 @@ export interface AuthConfig {
   ntlm?: { username: string; password: string; domain?: string; workstation?: string }
   hawk?: { authId: string; authKey: string; algorithm: 'sha1' | 'sha256' }
   awsSignature?: { accessKey: string; secretKey: string; region: string; service: string }
+  wsse?: { username: string; password: string; passwordType: 'PasswordText' | 'PasswordDigest'; addTimestamp: boolean }
 }
 
 export interface OAuth2Config {
@@ -425,6 +426,8 @@ export interface Tab {
   savedRequestId?: string
   isDirty: boolean
   isLoading: boolean
+  /** Preview tabs are replaced when another item is single-clicked. Double-click pins them. */
+  isPreview?: boolean
 }
 
 export interface UIState {
