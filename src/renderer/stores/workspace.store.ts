@@ -23,9 +23,9 @@ interface WorkspaceStore {
   fetchWorkspaces: () => Promise<void>
   createWorkspace: (name: string, description?: string) => Promise<void>
   fetchProjects: (workspaceId: string) => Promise<void>
-  createProject: (name: string, type: 'http' | 'grpc' | 'websocket', saveMode?: string, localPath?: string, iconEmoji?: string, iconColor?: string) => Promise<string | null>
+  createProject: (name: string, type: 'http' | 'grpc' | 'websocket', saveMode?: string, localPath?: string, iconEmoji?: string, iconColor?: string, displayName?: string) => Promise<string | null>
   renameProject: (id: string, newName: string) => Promise<void>
-  updateProject: (id: string, data: { name?: string; save_mode?: string; local_path?: string | null; icon_emoji?: string | null; icon_color?: string | null }) => Promise<void>
+  updateProject: (id: string, data: { name?: string; display_name?: string | null; save_mode?: string; local_path?: string | null; icon_emoji?: string | null; icon_color?: string | null }) => Promise<void>
   deleteProject: (id: string) => Promise<void>
   goHome: () => void
   /** Reload tree data from DB for active project */
@@ -294,7 +294,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
   },
 
-  createProject: async (name, type, saveMode, localPath, iconEmoji, iconColor) => {
+  createProject: async (name, type, saveMode, localPath, iconEmoji, iconColor, displayName) => {
     try {
       const wsId = get().activeWorkspaceId
       if (!wsId) return null
@@ -306,6 +306,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         local_path: localPath,
         icon_emoji: iconEmoji,
         icon_color: iconColor,
+        display_name: displayName,
       })
       if (result?.success && result.data) {
         await get().fetchProjects(wsId)
@@ -320,7 +321,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   renameProject: async (id, newName) => {
     try {
-      await window.api?.project?.update(id, { name: newName })
+      await window.api?.project?.update(id, { display_name: newName })
       const wsId = get().activeWorkspaceId
       if (wsId) await get().fetchProjects(wsId)
     } catch {

@@ -112,7 +112,7 @@ export default function ProjectDetailModal() {
   useEffect(() => {
     if (show && activeProject) {
       setTab('overview')
-      setEditName(activeProject.name)
+      setEditName(activeProject.display_name || activeProject.name)
       setEditDesc(activeProject.description || '')
       setEditSaveMode(activeProject.save_mode || 'local')
       setEditLocalPath(activeProject.local_path || '')
@@ -180,7 +180,7 @@ export default function ProjectDetailModal() {
     if (!activeProject) return
     setSaving(true)
 
-    if (editName.trim() !== activeProject.name) {
+    if (editName.trim() !== (activeProject.display_name || activeProject.name)) {
       await renameProject(activeProject.id, editName.trim())
     }
 
@@ -272,14 +272,14 @@ export default function ProjectDetailModal() {
             style={{ borderBottom: '1px solid var(--border)' }}
           >
             <ProjectIcon
-              name={activeProject.name}
+              name={activeProject.display_name || activeProject.name}
               emoji={activeProject.icon_emoji || undefined}
               color={activeProject.icon_color || '#5b6af0'}
               size={34}
             />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[13px] font-semibold" style={{ color: 'var(--heading)' }}>
-                {activeProject.name}
+                {activeProject.display_name || activeProject.name}
               </div>
               <div className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--muted)' }}>
                 {typeLabels[activeProject.type]?.icon}

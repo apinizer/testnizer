@@ -32,6 +32,8 @@ export default function Header() {
   const setShowSaveModal = useUIStore((s) => s.setShowSaveModal)
   const setShowProjectDetailModal = useUIStore((s) => s.setShowProjectDetailModal)
   const refreshTree = useWorkspaceStore((s) => s.refreshTree)
+  const setActiveProject = useWorkspaceStore((s) => s.setActiveProject)
+  const setGitLoading = useUIStore((s) => s.setGitLoading)
   const activeProject = useWorkspaceStore((s) => {
     const pid = s.activeProjectId
     return s.projects.find((p) => p.id === pid)
@@ -74,22 +76,20 @@ export default function Header() {
     handlePush()
   }
 
-  // ─── Git push ────────────────────────────────────────────
+  // ─── Git push (uses real git — pushes current branch) ────
   async function handlePush() {
     if (!activeProject) return
     setPushStatus('loading')
     setStatusMsg('')
+    setGitLoading('Pushing to remote...')
     try {
-      const result = await window.api?.save?.gitPush({
-        projectId: activeProject.id,
-      }) as { success: boolean; data?: { noChanges?: boolean; message?: string }; error?: string }
+      const api = window.api as Record<string, Record<string, (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>>>
+
+      const result = await api.git.push(activeProject.id)
 
       if (result?.success) {
-        if (result.data?.noChanges) {
-          setStatusMsg('Değişiklik yok')
-        } else {
-          setStatusMsg('Push başarılı')
-        }
+        const data = result.data as { branch?: string }
+        setStatusMsg(`Push başarılı (${data?.branch || 'branch'})`)
         setPushStatus('success')
         setTimeout(() => { setPushStatus('idle'); setStatusMsg('') }, 3000)
       } else {
@@ -102,25 +102,35 @@ export default function Header() {
       setPushStatus('error')
       setTimeout(() => { setPushStatus('idle'); setStatusMsg('') }, 5000)
     }
+    setGitLoading(null)
   }
 
-  // ─── Git pull ────────────────────────────────────────────
+  // ─── Git pull (uses real git — pulls current branch) ────
   async function handlePull() {
     if (!activeProject) return
     setPullStatus('loading')
     setStatusMsg('')
+    setGitLoading('Pulling from remote...')
     try {
-      const result = await window.api?.save?.gitPull({
-        projectId: activeProject.id,
-      }) as { success: boolean; data?: { imported: Record<string, number> }; error?: string }
+      const api = window.api as Record<string, Record<string, (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>>>
+      const result = await api.git.pull(activeProject.id)
 
       if (result?.success) {
-        const imp = result.data?.imported
-        const total = imp ? Object.values(imp).reduce((a, b) => a + b, 0) : 0
-        setStatusMsg(`Pull: ${total} kayıt içe aktarıldı`)
+        const data = result.data as { branch?: string }
+        setStatusMsg(`Pull başarılı (${data?.branch || 'branch'})`)
         setPullStatus('success')
-        // Refresh tree to show imported data
+
+        // Full app refresh — re-read everything from DB
+        // Re-import pulled data into DB first
+        try {
+          await api.save.gitPull({ projectId: activeProject.id })
+        } catch { /* pulled data may not need DB import if using file-based */ }
+
+        // Refresh tree, tabs, and all stores
         await refreshTree()
+        // Force full project reload to refresh all data
+        await setActiveProject(activeProject.id)
+
         setTimeout(() => { setPullStatus('idle'); setStatusMsg('') }, 3000)
       } else {
         setStatusMsg(result?.error || 'Pull hatası')
@@ -132,6 +142,7 @@ export default function Header() {
       setPullStatus('error')
       setTimeout(() => { setPullStatus('idle'); setStatusMsg('') }, 5000)
     }
+    setGitLoading(null)
   }
 
   function handleDoubleClick(e: React.MouseEvent) {
@@ -187,8 +198,8 @@ export default function Header() {
             color: T.text,
           }}
         >
-          <ProjectIcon name={activeProject.name} emoji={activeProject.icon_emoji || undefined} color={activeProject.icon_color || T.accent} size={18} />
-          <span className="truncate" style={{ maxWidth: 160 }}>{activeProject.name}</span>
+          <ProjectIcon name={activeProject.display_name || activeProject.name} emoji={activeProject.icon_emoji || undefined} color={activeProject.icon_color || T.accent} size={18} />
+          <span className="truncate" style={{ maxWidth: 160 }}>{activeProject.display_name || activeProject.name}</span>
           <span
             className="hidden cursor-pointer group-hover:inline"
             style={{ color: T.ghost, fontSize: 16, marginLeft: 4 }}

@@ -49,6 +49,7 @@ export interface Project {
   id: string
   workspace_id: string
   name: string
+  display_name?: string | null
   description?: string
   type: 'http' | 'grpc' | 'websocket'
   save_mode: 'local' | 'git' | 'both'

@@ -19,6 +19,32 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useKeyboardShortcuts } from '../../lib/keyboard-shortcuts'
 
+function GitLoadingOverlay() {
+  const gitLoading = useUIStore((s) => s.gitLoading)
+  if (!gitLoading) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)' }}
+    >
+      <div
+        className="flex flex-col items-center gap-4 rounded-2xl px-10 py-8"
+        style={{ background: 'var(--white)', boxShadow: '0 16px 48px rgba(0,0,0,0.2)' }}
+      >
+        <div
+          style={{
+            width: 36, height: 36, border: '3px solid var(--border)',
+            borderTopColor: 'var(--accent)', borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite',
+          }}
+        />
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{gitLoading}</div>
+      </div>
+    </div>
+  )
+}
+
 export default function AppShell() {
   const isLeftPanelCollapsed = useUIStore((s) => s.isLeftPanelCollapsed)
   const activeSidebarPage = useUIStore((s) => s.activeSidebarPage)
@@ -95,6 +121,9 @@ export default function AppShell() {
       <NewProjectModal />
       <EndpointSaveModal />
       <ProjectDetailModal />
+
+      {/* Git loading overlay */}
+      <GitLoadingOverlay />
     </div>
   )
 }

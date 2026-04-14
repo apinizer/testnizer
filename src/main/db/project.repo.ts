@@ -5,6 +5,7 @@ export interface ProjectRow {
   id: string
   workspace_id: string
   name: string
+  display_name: string | null
   description: string | null
   type: string
   save_mode: string
@@ -41,6 +42,7 @@ export function getProjectById(id: string): ProjectRow | undefined {
 export function createProject(data: {
   workspace_id: string
   name: string
+  display_name?: string
   description?: string
   type?: string
   save_mode?: string
@@ -57,12 +59,13 @@ export function createProject(data: {
   ).get(data.workspace_id) as { max_order: number }
 
   db.prepare(`
-    INSERT INTO projects (id, workspace_id, name, description, type, save_mode, local_path, icon_emoji, icon_color, sort_order, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO projects (id, workspace_id, name, display_name, description, type, save_mode, local_path, icon_emoji, icon_color, sort_order, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     data.workspace_id,
     data.name,
+    data.display_name ?? null,
     data.description ?? null,
     data.type ?? 'http',
     data.save_mode ?? 'local',
@@ -78,6 +81,7 @@ export function createProject(data: {
 
 export function updateProject(id: string, data: {
   name?: string
+  display_name?: string | null
   description?: string
   type?: string
   save_mode?: string
@@ -92,10 +96,11 @@ export function updateProject(id: string, data: {
   if (!existing) return undefined
 
   db.prepare(`
-    UPDATE projects SET name = ?, description = ?, type = ?, save_mode = ?, local_path = ?, icon_emoji = ?, icon_color = ?, sort_order = ?, updated_at = ?
+    UPDATE projects SET name = ?, display_name = ?, description = ?, type = ?, save_mode = ?, local_path = ?, icon_emoji = ?, icon_color = ?, sort_order = ?, updated_at = ?
     WHERE id = ?
   `).run(
     data.name ?? existing.name,
+    data.display_name !== undefined ? data.display_name : existing.display_name,
     data.description ?? existing.description,
     data.type ?? existing.type,
     data.save_mode ?? existing.save_mode,

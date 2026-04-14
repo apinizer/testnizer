@@ -352,7 +352,7 @@ const api = {
     }
   },
 
-  // ─── Branch ──────────────────────────────────────────────────
+  // ─── Branch (legacy DB branches) ────────────────────────────
   branch: {
     list: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('branch:list', projectId),
@@ -366,6 +366,32 @@ const api = {
       ipcRenderer.invoke('branch:delete', id),
     ensureDefault: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('branch:ensureDefault', projectId)
+  },
+
+  // ─── Git (real Git operations) ────────────────────────────
+  git: {
+    hasConfig: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:hasConfig', projectId),
+    listBranches: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:listBranches', projectId),
+    currentBranch: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:currentBranch', projectId),
+    createBranch: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('git:createBranch', payload),
+    switchBranch: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('git:switchBranch', payload),
+    merge: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('git:merge', payload),
+    push: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:push', projectId),
+    pull: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:pull', projectId),
+    status: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:status', projectId),
+    deleteBranch: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('git:deleteBranch', payload),
+    log: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('git:log', payload),
   },
 
   // ─── Save ───────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import { registerSseHandlers } from './sse.handler'
 import { registerBranchHandlers } from './branch.handler'
 import { registerSaveHandlers } from './save.handler'
 import { registerSchedulerHandlers, startAllSchedulers } from './scheduler.handler'
+import { registerGitHandlers } from './git.handler'
 
 export function registerAllHandlers(): void {
   registerRequestHandlers()
@@ -34,6 +35,7 @@ export function registerAllHandlers(): void {
   registerBranchHandlers()
   registerSaveHandlers()
   registerSchedulerHandlers()
+  registerGitHandlers()
 
   // Start scheduled task timers after all handlers are registered
   startAllSchedulers()

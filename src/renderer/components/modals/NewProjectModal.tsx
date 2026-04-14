@@ -113,6 +113,8 @@ export default function NewProjectModal() {
 
   // Step 2 — details
   const [projName, setProjName] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false)
   const [projDesc, setProjDesc] = useState('')
   const [projType, setProjType] = useState<ProjectType>('http')
   const [branchName, setBranchName] = useState('main')
@@ -141,7 +143,7 @@ export default function NewProjectModal() {
       setGitCloneToken(''); setGitCloneDir(''); setShowCloneToken(false)
       setCloning(false); setCloneError('')
       setLocalFilePath(''); setLocalFileData(null)
-      setProjName(''); setProjDesc(''); setProjType('http')
+      setProjName(''); setDisplayName(''); setSlugManuallyEdited(false); setProjDesc(''); setProjType('http')
       setBranchName('main'); setNameError(false)
       setIconOpt('auto'); setSelectedColor('#7c73e6')
       setSelectedEmoji(''); setCustomEmoji('')
@@ -175,25 +177,34 @@ export default function NewProjectModal() {
         branch: gitCloneBranch,
         username: gitCloneUser,
         token: gitCloneToken,
-      }) as { success: boolean; data?: { tmpDir: string; files: { name: string; path: string }[] }; error?: string }
+      }) as { success: boolean; data?: { tmpDir: string; files: { name: string; path: string }[]; isEmpty?: boolean }; error?: string }
 
-      if (!listResult?.success || !listResult.data?.files?.length) {
-        setCloneError(listResult?.error || 'No project files found in repository.')
+      if (!listResult?.success) {
+        setCloneError(listResult?.error || 'Git bağlantısı başarısız.')
         setCloning(false)
         return
       }
 
-      // Read first project file
-      const fileResult = await window.api?.save?.gitReadFile(listResult.data.files[0].path) as {
-        success: boolean; data?: { project?: { name?: string }; version?: string }
-      }
+      // Empty repo — no files yet, that's OK — create new project and push later
+      if (listResult.data?.isEmpty || !listResult.data?.files?.length) {
+        if (listResult.data?.tmpDir) {
+          await window.api?.save?.gitCleanup(listResult.data.tmpDir)
+        }
+      } else {
+        // Read first project file
+        const fileResult = await window.api?.save?.gitReadFile(listResult.data.files[0].path) as {
+          success: boolean; data?: { project?: { name?: string }; version?: string }
+        }
 
-      if (fileResult?.success && fileResult.data?.project?.name) {
-        setProjName(fileResult.data.project.name)
-      }
+        if (fileResult?.success && fileResult.data?.project?.name) {
+          const importedName = fileResult.data.project.name
+          setDisplayName(importedName)
+          setProjName(importedName.toLowerCase().replace(/[^a-zA-Z0-9\s\-_]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, ''))
+        }
 
-      // Cleanup tmp
-      await window.api?.save?.gitCleanup(listResult.data.tmpDir)
+        // Cleanup tmp
+        await window.api?.save?.gitCleanup(listResult.data.tmpDir)
+      }
 
       // Pre-fill git settings for step 3
       setGitUrl(gitCloneUrl)
@@ -219,7 +230,10 @@ export default function NewProjectModal() {
       setLocalFileData(result.data.project as { project?: { name?: string; description?: string } })
       // Pre-fill project name from imported file
       const importedName = (result.data.project as { project?: { name?: string } })?.project?.name
-      if (importedName) setProjName(importedName)
+      if (importedName) {
+        setDisplayName(importedName)
+        setProjName(importedName.toLowerCase().replace(/[^a-zA-Z0-9\s\-_]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, ''))
+      }
       const dir = result.data.filePath.substring(0, result.data.filePath.lastIndexOf('/'))
       setLocalFolder(dir)
       setSaveMode('local')
@@ -253,7 +267,10 @@ export default function NewProjectModal() {
             setLocalFilePath(result.data.filePath)
             setLocalFileData(result.data.project as { project?: { name?: string } })
             const importedName = (result.data.project as { project?: { name?: string } })?.project?.name
-            if (importedName) setProjName(importedName)
+            if (importedName) {
+              setDisplayName(importedName)
+              setProjName(importedName.toLowerCase().replace(/[^a-zA-Z0-9\s\-_]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, ''))
+            }
             const dir = result.data.filePath.substring(0, result.data.filePath.lastIndexOf('/'))
             setLocalFolder(dir)
             setSaveMode('local')
@@ -268,7 +285,7 @@ export default function NewProjectModal() {
     }
 
     if (step === 2) {
-      if (!projName.trim()) {
+      if (!projName.trim() || !displayName.trim()) {
         setNameError(true)
         setTimeout(() => setNameError(false), 1500)
         return
@@ -287,6 +304,7 @@ export default function NewProjectModal() {
           (saveMode === 'local' || saveMode === 'both') ? localFolder : undefined,
           activeEmoji || undefined,
           selectedColor,
+          displayName.trim(),
         )
         if (projectId) {
           if (branchName.trim() && branchName.trim() !== 'main') {
@@ -309,7 +327,11 @@ export default function NewProjectModal() {
                 repoUrl: gitUrl, username: gitUser,
                 branch: gitBranch, token: gitToken || '',
               })
-            } catch { /* non-critical */ }
+
+              // Initial push — create main branch in remote with project data
+              const api = window.api as Record<string, Record<string, (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>>>
+              await api.git.push(projectId)
+            } catch { /* non-critical — user can push later */ }
           }
 
           setDone(true)
@@ -535,29 +557,63 @@ export default function NewProjectModal() {
               <div className="flex items-center gap-3 rounded-lg" style={{
                 padding: 12, background: 'var(--surface)', border: '1px solid var(--border)',
               }}>
-                <ProjectIcon name={projName} emoji={activeEmoji} color={selectedColor} size={44} />
+                <ProjectIcon name={displayName || projName} emoji={activeEmoji} color={selectedColor} size={44} />
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
-                    {projName || t('newProject.name').replace(' *', '')}
+                    {displayName || projName || t('newProject.name').replace(' *', '')}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
-                    {t('newProject.preview')}
+                    {projName ? projName : t('newProject.preview')}
                   </div>
                 </div>
               </div>
 
-              {/* Name */}
+              {/* Display Name */}
               <div>
-                <Label text={t('newProject.name')} />
+                <Label text="DISPLAY NAME *" />
                 <input
-                  value={projName} onChange={(e) => setProjName(e.target.value)}
-                  placeholder={t('newProject.namePlaceholder')} autoFocus
+                  value={displayName}
+                  onChange={(e) => {
+                    setDisplayName(e.target.value)
+                    // Auto-generate slug from display name if user hasn't manually edited it
+                    const slug = e.target.value
+                      .toLowerCase()
+                      .replace(/[^a-zA-Z0-9\s\-_]/g, '')
+                      .replace(/\s+/g, '-')
+                      .replace(/-+/g, '-')
+                      .replace(/^-|-$/g, '')
+                    if (!slugManuallyEdited) setProjName(slug)
+                  }}
+                  placeholder="My Awesome Project" autoFocus
+                  onKeyDown={(e) => { if (e.key === 'Enter') goNext() }}
+                  style={inputStyle}
+                />
+                <div style={{ fontSize: 10, color: 'var(--hint)', marginTop: 3 }}>
+                  Shown in the UI. Can contain spaces, Turkish characters, etc.
+                </div>
+              </div>
+
+              {/* Name (slug) */}
+              <div>
+                <Label text="PROJECT NAME (SLUG) *" />
+                <input
+                  value={projName}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^a-zA-Z0-9\-_]/g, '')
+                    setProjName(val)
+                    setSlugManuallyEdited(true)
+                  }}
+                  placeholder="my-awesome-project"
                   onKeyDown={(e) => { if (e.key === 'Enter') goNext() }}
                   style={{
                     ...inputStyle,
+                    fontFamily: 'monospace',
                     border: `1px solid ${nameError ? '#cc2200' : 'var(--border)'}`,
                   }}
                 />
+                <div style={{ fontSize: 10, color: 'var(--hint)', marginTop: 3 }}>
+                  Used for file names and Git. Only a-z, 0-9, dash (-) and underscore (_).
+                </div>
                 {nameError && (
                   <div style={{ fontSize: 11, color: '#cc2200', marginTop: 3 }}>
                     {t('newProject.nameRequired')}

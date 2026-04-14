@@ -219,6 +219,9 @@ function runMigrations(database: Database.Database): void {
   if (!colNames.includes('icon_color')) {
     database.exec(`ALTER TABLE projects ADD COLUMN icon_color TEXT DEFAULT '#7c73e6'`)
   }
+  if (!colNames.includes('display_name')) {
+    database.exec(`ALTER TABLE projects ADD COLUMN display_name TEXT`)
+  }
 
   // Scope environments to a project. Postman has environments per workspace
   // but the user wants per-project isolation. NULL project_id means legacy

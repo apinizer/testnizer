@@ -18,17 +18,15 @@ interface ProjectExport {
   environments: Record<string, unknown>[]
   environmentVariables: Record<string, unknown>[]
   globalVariables: Record<string, unknown>[]
-  branches: Record<string, unknown>[]
 }
 
-function exportProjectData(projectId: string): ProjectExport {
+export function exportProjectData(projectId: string): ProjectExport {
   const db = getDb()
 
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as Record<string, unknown>
   const folders = db.prepare('SELECT * FROM folders WHERE project_id = ?').all(projectId) as Record<string, unknown>[]
   const endpoints = db.prepare('SELECT * FROM endpoints WHERE project_id = ?').all(projectId) as Record<string, unknown>[]
   const savedRequests = db.prepare('SELECT * FROM saved_requests WHERE project_id = ?').all(projectId) as Record<string, unknown>[]
-  const branches = db.prepare('SELECT * FROM branches WHERE project_id = ?').all(projectId) as Record<string, unknown>[]
 
   // Endpoint cases for all endpoints
   const endpointIds = endpoints.map((e) => e.id as string)
@@ -40,25 +38,22 @@ function exportProjectData(projectId: string): ProjectExport {
     ).all(...endpointIds) as Record<string, unknown>[]
   }
 
-  // Environments + variables for project's workspace
-  const workspaceId = project?.workspace_id as string
+  // Environments + variables scoped to THIS project
   let environments: Record<string, unknown>[] = []
   let environmentVariables: Record<string, unknown>[] = []
   let globalVariables: Record<string, unknown>[] = []
 
-  if (workspaceId) {
-    environments = db.prepare('SELECT * FROM environments WHERE workspace_id = ?').all(workspaceId) as Record<string, unknown>[]
+  environments = db.prepare('SELECT * FROM environments WHERE project_id = ?').all(projectId) as Record<string, unknown>[]
 
-    const envIds = environments.map((e) => e.id as string)
-    if (envIds.length > 0) {
-      const placeholders = envIds.map(() => '?').join(',')
-      environmentVariables = db.prepare(
-        `SELECT * FROM environment_variables WHERE environment_id IN (${placeholders})`
-      ).all(...envIds) as Record<string, unknown>[]
-    }
-
-    globalVariables = db.prepare('SELECT * FROM global_variables WHERE workspace_id = ?').all(workspaceId) as Record<string, unknown>[]
+  const envIds = environments.map((e) => e.id as string)
+  if (envIds.length > 0) {
+    const placeholders = envIds.map(() => '?').join(',')
+    environmentVariables = db.prepare(
+      `SELECT * FROM environment_variables WHERE environment_id IN (${placeholders})`
+    ).all(...envIds) as Record<string, unknown>[]
   }
+
+  globalVariables = db.prepare('SELECT * FROM global_variables WHERE project_id = ?').all(projectId) as Record<string, unknown>[]
 
   return {
     version: '1.0.0',
@@ -71,11 +66,15 @@ function exportProjectData(projectId: string): ProjectExport {
     environments,
     environmentVariables,
     globalVariables,
-    branches,
   }
 }
 
 // ─── Import (upsert) project data into DB ────────────────────────
+export function importProjectDataFromJson(jsonString: string, projectId: string): void {
+  const data = JSON.parse(jsonString) as ProjectExport
+  importProjectData(data, projectId)
+}
+
 function importProjectData(data: ProjectExport, projectId: string): void {
   const db = getDb()
 
@@ -119,12 +118,7 @@ function importProjectData(data: ProjectExport, projectId: string): void {
     'sort_order', 'created_at', 'updated_at'
   ])
 
-  // Import branches
-  upsert('branches', data.branches, [
-    'id', 'project_id', 'name', 'parent_branch_id', 'created_at', 'is_default'
-  ])
-
-  // Import environments (workspace level)
+  // Import environments
   if (data.environments?.length) {
     upsert('environments', data.environments, [
       'id', 'workspace_id', 'name', 'is_active', 'created_at', 'updated_at'
@@ -342,15 +336,27 @@ export function registerSaveHandlers(): void {
       const git = simpleGit()
 
       // Clone
+      let isEmptyRepo = false
       try {
         await git.clone(authUrl, tmpDir, ['--branch', payload.branch, '--single-branch', '--depth', '1'])
       } catch {
-        // If branch doesn't exist, clone default and create branch
+        // If branch doesn't exist, try default branch
         rmSync(tmpDir, { recursive: true, force: true })
         mkdirSync(tmpDir, { recursive: true })
-        await git.clone(authUrl, tmpDir, ['--depth', '1'])
-        const gitRepo = simpleGit(tmpDir)
-        await gitRepo.checkoutLocalBranch(payload.branch)
+        try {
+          await git.clone(authUrl, tmpDir, ['--depth', '1'])
+          const gitRepo = simpleGit(tmpDir)
+          await gitRepo.checkoutLocalBranch(payload.branch)
+        } catch {
+          // Completely empty repo — init locally
+          rmSync(tmpDir, { recursive: true, force: true })
+          mkdirSync(tmpDir, { recursive: true })
+          const gitRepo = simpleGit(tmpDir)
+          await gitRepo.init()
+          await gitRepo.addRemote('origin', authUrl)
+          await gitRepo.checkoutLocalBranch(payload.branch)
+          isEmptyRepo = true
+        }
       }
 
       const gitRepo = simpleGit(tmpDir)
@@ -362,13 +368,13 @@ export function registerSaveHandlers(): void {
       // Commit and push
       await gitRepo.add(fileName)
       const status = await gitRepo.status()
-      if (status.staged.length === 0 && status.modified.length === 0) {
+      if (status.staged.length === 0 && status.modified.length === 0 && !isEmptyRepo) {
         rmSync(tmpDir, { recursive: true, force: true })
         return { success: true, data: { repoUrl: payload.repoUrl, branch: payload.branch, message: 'No changes to push' } }
       }
 
       await gitRepo.commit(payload.commitMessage || `Update ${projectName}`)
-      await gitRepo.push('origin', payload.branch)
+      await gitRepo.push('origin', payload.branch, isEmptyRepo ? ['--set-upstream'] : [])
 
       // Save credentials securely
       const store = await getSecureStore()
@@ -416,14 +422,26 @@ export function registerSaveHandlers(): void {
       const git = simpleGit()
 
       // Clone
+      let isEmptyRepo = false
       try {
         await git.clone(authUrl, tmpDir, ['--branch', config.branch, '--single-branch', '--depth', '1'])
       } catch {
         rmSync(tmpDir, { recursive: true, force: true })
         mkdirSync(tmpDir, { recursive: true })
-        await git.clone(authUrl, tmpDir, ['--depth', '1'])
-        const gitRepo = simpleGit(tmpDir)
-        await gitRepo.checkoutLocalBranch(config.branch)
+        try {
+          await git.clone(authUrl, tmpDir, ['--depth', '1'])
+          const gitRepo = simpleGit(tmpDir)
+          await gitRepo.checkoutLocalBranch(config.branch)
+        } catch {
+          // Completely empty repo — init locally
+          rmSync(tmpDir, { recursive: true, force: true })
+          mkdirSync(tmpDir, { recursive: true })
+          const gitRepo = simpleGit(tmpDir)
+          await gitRepo.init()
+          await gitRepo.addRemote('origin', authUrl)
+          await gitRepo.checkoutLocalBranch(config.branch)
+          isEmptyRepo = true
+        }
       }
 
       const gitRepo = simpleGit(tmpDir)
@@ -435,14 +453,14 @@ export function registerSaveHandlers(): void {
       // Check for changes
       await gitRepo.add(fileName)
       const status = await gitRepo.status()
-      if (status.staged.length === 0) {
+      if (status.staged.length === 0 && !isEmptyRepo) {
         rmSync(tmpDir, { recursive: true, force: true })
         return { success: true, data: { noChanges: true, message: 'Değişiklik yok — her şey güncel.' } }
       }
 
       const msg = payload.commitMessage || `Update ${projectName} — ${new Date().toLocaleString()}`
       await gitRepo.commit(msg)
-      await gitRepo.push('origin', config.branch)
+      await gitRepo.push('origin', config.branch, isEmptyRepo ? ['--set-upstream'] : [])
 
       addSaveHistory({
         project_id: payload.projectId,
@@ -477,7 +495,21 @@ export function registerSaveHandlers(): void {
       mkdirSync(tmpDir, { recursive: true })
 
       const git = simpleGit()
-      await git.clone(authUrl, tmpDir, ['--branch', config.branch, '--single-branch', '--depth', '1'])
+
+      try {
+        await git.clone(authUrl, tmpDir, ['--branch', config.branch, '--single-branch', '--depth', '1'])
+      } catch {
+        // Branch not found — try default branch
+        rmSync(tmpDir, { recursive: true, force: true })
+        mkdirSync(tmpDir, { recursive: true })
+        try {
+          await git.clone(authUrl, tmpDir, ['--depth', '1'])
+        } catch {
+          // Empty repo — nothing to pull
+          rmSync(tmpDir, { recursive: true, force: true })
+          return { success: false, error: 'Git repository boş — henüz push yapılmamış.' }
+        }
+      }
 
       // Find JSON files
       const files = readdirSync(tmpDir).filter((f) => f.endsWith('.json') && !f.startsWith('.'))
@@ -574,16 +606,35 @@ export function registerSaveHandlers(): void {
       mkdirSync(tmpDir, { recursive: true })
 
       const git = simpleGit()
-      await git.clone(authUrl, tmpDir, ['--branch', payload.branch, '--single-branch', '--depth', '1'])
 
-      const files = readdirSync(tmpDir)
+      let isEmpty = false
+      try {
+        await git.clone(authUrl, tmpDir, ['--branch', payload.branch, '--single-branch', '--depth', '1'])
+      } catch {
+        // Branch not found — try cloning without branch (default branch)
+        rmSync(tmpDir, { recursive: true, force: true })
+        mkdirSync(tmpDir, { recursive: true })
+        try {
+          await git.clone(authUrl, tmpDir, ['--depth', '1'])
+        } catch {
+          // Completely empty repo — init locally and set remote
+          rmSync(tmpDir, { recursive: true, force: true })
+          mkdirSync(tmpDir, { recursive: true })
+          const gitRepo = simpleGit(tmpDir)
+          await gitRepo.init()
+          await gitRepo.addRemote('origin', authUrl)
+          isEmpty = true
+        }
+      }
+
+      const files = isEmpty ? [] : readdirSync(tmpDir)
         .filter((f) => f.endsWith('.json') && !f.startsWith('.'))
         .map((f) => {
           const stat = statSync(join(tmpDir, f))
           return { name: f, path: join(tmpDir, f), size: stat.size }
         })
 
-      return { success: true, data: { tmpDir, files } }
+      return { success: true, data: { tmpDir, files, isEmpty } }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

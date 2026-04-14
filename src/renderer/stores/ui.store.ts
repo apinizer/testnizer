@@ -24,6 +24,7 @@ interface UIStore {
   showProjectDetailModal: boolean
   showHistoryPanel: boolean
   showConsolePanel: boolean
+  gitLoading: string | null  // null = idle, string = message to display
 
   setTheme: (theme: Theme) => void
   setLocale: (locale: Locale) => void
@@ -46,6 +47,7 @@ interface UIStore {
   setShowHistoryPanel: (show: boolean) => void
   setShowConsolePanel: (show: boolean) => void
   toggleConsolePanel: () => void
+  setGitLoading: (msg: string | null) => void
 }
 
 function applyTheme(theme: Theme): void {
@@ -75,6 +77,7 @@ export const useUIStore = create<UIStore>((set) => ({
   showProjectDetailModal: false,
   showHistoryPanel: false,
   showConsolePanel: false,
+  gitLoading: null,
 
   setTheme: (theme) => {
     applyTheme(theme)
@@ -115,6 +118,7 @@ export const useUIStore = create<UIStore>((set) => ({
   setShowHistoryPanel: (show) => set({ showHistoryPanel: show }),
   setShowConsolePanel: (show) => set({ showConsolePanel: show }),
   toggleConsolePanel: () => set((s) => ({ showConsolePanel: !s.showConsolePanel })),
+  setGitLoading: (msg) => set({ gitLoading: msg }),
 }))
 
 // Apply initial theme

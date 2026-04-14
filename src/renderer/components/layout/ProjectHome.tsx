@@ -48,7 +48,7 @@ export default function ProjectHome() {
   function handleStartRename(project: Project) {
     setContextMenuId(null)
     setRenamingId(project.id)
-    setRenameValue(project.name)
+    setRenameValue(project.display_name || project.name)
   }
 
   async function handleConfirmRename(id: string) {
@@ -141,7 +141,7 @@ export default function ProjectHome() {
                 ;(e.currentTarget as HTMLElement).style.boxShadow = 'none'
               }}
             >
-              <ProjectIcon name={project.name} emoji={project.icon_emoji || undefined} color={project.icon_color || '#7c73e6'} size={40} />
+              <ProjectIcon name={project.display_name || project.name} emoji={project.icon_emoji || undefined} color={project.icon_color || '#7c73e6'} size={40} />
 
               <div className="flex-1 overflow-hidden">
                 {renamingId === project.id ? (
@@ -175,7 +175,7 @@ export default function ProjectHome() {
                       handleStartRename(project)
                     }}
                   >
-                    {project.name}
+                    {project.display_name || project.name}
                   </div>
                 )}
                 <div className="flex items-center gap-2 text-[0.8rem]" style={{ color: 'var(--muted)' }}>
