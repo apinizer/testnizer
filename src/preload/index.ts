@@ -176,6 +176,8 @@ const api = {
 
   // ─── Import/Export ───────────────────────────────────────
   importExport: {
+    fetchUrl: (url: string): Promise<unknown> =>
+      ipcRenderer.invoke('import:fetchUrl', url),
     openFile: (): Promise<unknown> =>
       ipcRenderer.invoke('import:openFile'),
     importOpenApi: (payload: unknown): Promise<unknown> =>
@@ -251,7 +253,32 @@ const api = {
       return () => {
         ipcRenderer.removeListener('runner:progress', handler)
       }
-    }
+    },
+    history: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('runner:history', projectId),
+    deleteHistory: (historyId: string): Promise<unknown> =>
+      ipcRenderer.invoke('runner:deleteHistory', historyId),
+  },
+
+  // ─── Scheduler ──────────────────────────────────────────────────
+  scheduler: {
+    create: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('scheduler:create', payload),
+    list: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('scheduler:list', projectId),
+    delete: (taskId: string): Promise<unknown> =>
+      ipcRenderer.invoke('scheduler:delete', taskId),
+    toggle: (taskId: string): Promise<unknown> =>
+      ipcRenderer.invoke('scheduler:toggle', taskId),
+    onRunCompleted: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('scheduler:runCompleted', handler)
+      return () => {
+        ipcRenderer.removeListener('scheduler:runCompleted', handler)
+      }
+    },
   },
 
   // ─── GraphQL ────────────────────────────────────────────────

@@ -14,6 +14,7 @@ import { registerGrpcHandlers } from './grpc.handler'
 import { registerSseHandlers } from './sse.handler'
 import { registerBranchHandlers } from './branch.handler'
 import { registerSaveHandlers } from './save.handler'
+import { registerSchedulerHandlers, startAllSchedulers } from './scheduler.handler'
 
 export function registerAllHandlers(): void {
   registerRequestHandlers()
@@ -32,4 +33,8 @@ export function registerAllHandlers(): void {
   registerSseHandlers()
   registerBranchHandlers()
   registerSaveHandlers()
+  registerSchedulerHandlers()
+
+  // Start scheduled task timers after all handlers are registered
+  startAllSchedulers()
 }

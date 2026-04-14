@@ -57,6 +57,7 @@ interface RunnerExecuteOptions {
   environmentId?: string
   workspaceId?: string
   delay?: number
+  folderName?: string
 }
 
 interface RunnerExportOptions {
@@ -86,6 +87,9 @@ interface EndpointRunResult {
   skipped: number
   assertions: AssertionResult[]
   error?: string
+  responseSize?: number
+  responseBody?: string
+  responseHeaders?: Record<string, string>
 }
 
 interface AssertionResult {
@@ -450,7 +454,10 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
         failed,
         skipped: 0,
         assertions: assertionResults,
-        error: response.error
+        error: response.error,
+        responseSize: response.bodySize ?? 0,
+        responseBody: response.body ?? undefined,
+        responseHeaders: response.headers ?? undefined,
       }
 
       results.push(result)
@@ -483,10 +490,48 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
 
   isRunning = false
 
+  const completedAt = Date.now()
+  const durationMs = completedAt - startedAt
+  const avgRespTime = results.length > 0
+    ? Math.round(results.reduce((sum, r) => sum + r.duration, 0) / results.length)
+    : 0
+
+  // Save to runner_history
+  try {
+    const db = getDb()
+    const { randomUUID } = require('crypto')
+    db.prepare(`
+      INSERT INTO runner_history (id, project_id, environment_name, source, iterations, duration_ms,
+        total_endpoints, passed_endpoints, failed_endpoints, total_tests, passed_tests, failed_tests,
+        skipped_tests, avg_resp_time, results_json, started_at, folder_name)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      randomUUID(),
+      options.projectId,
+      options.environmentId || null,
+      'Runner',
+      1,
+      durationMs,
+      results.length,
+      passedEndpoints,
+      failedEndpoints,
+      totalAssertions,
+      passedAssertions,
+      failedAssertions,
+      0,
+      avgRespTime,
+      JSON.stringify(results),
+      startedAt,
+      options.folderName || null
+    )
+  } catch {
+    // History save failure should not affect runner
+  }
+
   return {
     projectId: options.projectId,
     startedAt,
-    completedAt: Date.now(),
+    completedAt,
     totalEndpoints: results.length,
     passedEndpoints,
     failedEndpoints,
@@ -570,6 +615,12 @@ function exportAsHtml(results: EndpointRunResult[]): string {
 </html>`
 }
 
+// ─── Public API for scheduler ─────────────────────────────────────
+
+export async function executeCollectionForScheduler(options: RunnerExecuteOptions): Promise<RunnerReport> {
+  return executeCollection(options)
+}
+
 // ─── Register Handlers ───────────────────────────────────────────
 
 export function registerRunnerHandlers(): void {
@@ -607,6 +658,18 @@ export function registerRunnerHandlers(): void {
         content = exportAsJson(options.results)
       }
       return { success: true, data: content }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('runner:history', async (_event, projectId: string) => {
+    try {
+      const db = getDb()
+      const rows = db.prepare(
+        'SELECT * FROM runner_history WHERE project_id = ? ORDER BY started_at DESC LIMIT 100'
+      ).all(projectId)
+      return { success: true, data: rows }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

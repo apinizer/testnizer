@@ -50,6 +50,17 @@ interface OpenApiDoc {
 }
 
 export function registerImportExportHandlers(): void {
+  // Fetch content from a URL (for importing from URL)
+  ipcMain.handle('import:fetchUrl', async (_event, url: string) => {
+    try {
+      const axios = (await import('axios')).default
+      const response = await axios.get(url, { timeout: 30000, responseType: 'text' })
+      return { success: true, data: response.data }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
   ipcMain.handle('import:openFile', async () => {
     try {
       const result = await dialog.showOpenDialog({
@@ -74,9 +85,11 @@ export function registerImportExportHandlers(): void {
     projectId: string
     content: string
     format: string
+    folderId?: string | null
+    sourceUrl?: string
   }) => {
     try {
-      const result = await importOpenApi(payload.projectId, payload.content)
+      const result = await importOpenApi(payload.projectId, payload.content, payload.folderId ?? null, payload.sourceUrl)
       return { success: true, data: result }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -117,9 +130,10 @@ export function registerImportExportHandlers(): void {
   ipcMain.handle('import:postman', async (_event, payload: {
     projectId: string
     content: string
+    folderId?: string | null
   }) => {
     try {
-      const result = await importPostman(payload.projectId, payload.content)
+      const result = await importPostman(payload.projectId, payload.content, payload.folderId ?? null)
       return { success: true, data: result }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -153,9 +167,10 @@ export function registerImportExportHandlers(): void {
   ipcMain.handle('import:insomnia', async (_event, payload: {
     projectId: string
     content: string
+    folderId?: string | null
   }) => {
     try {
-      const result = await importInsomnia(payload.projectId, payload.content)
+      const result = await importInsomnia(payload.projectId, payload.content, payload.folderId ?? null)
       return { success: true, data: result }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -166,9 +181,10 @@ export function registerImportExportHandlers(): void {
   ipcMain.handle('import:curl', async (_event, payload: {
     projectId: string
     curlCommand: string
+    folderId?: string | null
   }) => {
     try {
-      const result = importCurl(payload.projectId, payload.curlCommand)
+      const result = importCurl(payload.projectId, payload.curlCommand, payload.folderId ?? null)
       return { success: true, data: result }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -223,7 +239,7 @@ export function registerImportExportHandlers(): void {
   })
 }
 
-async function importOpenApi(projectId: string, content: string): Promise<ImportResult> {
+async function importOpenApi(projectId: string, content: string, parentFolderId: string | null = null, sourceUrl?: string): Promise<ImportResult> {
   const warnings: string[] = []
   let doc: OpenApiDoc
 
@@ -254,7 +270,22 @@ async function importOpenApi(projectId: string, content: string): Promise<Import
   // Extract base URL
   let baseUrl = ''
   if (doc.servers && doc.servers.length > 0) {
-    baseUrl = doc.servers[0].url
+    const serverUrl = doc.servers[0].url
+    if (serverUrl.startsWith('http://') || serverUrl.startsWith('https://')) {
+      baseUrl = serverUrl
+    } else {
+      // Relative server URL — resolve from source URL if available
+      if (sourceUrl) {
+        try {
+          const parsed = new URL(sourceUrl)
+          baseUrl = `${parsed.protocol}//${parsed.host}${serverUrl}`
+        } catch {
+          baseUrl = serverUrl
+        }
+      } else {
+        baseUrl = serverUrl
+      }
+    }
   } else if (doc.host) {
     const scheme = doc.schemes ? doc.schemes[0] : 'https'
     baseUrl = `${scheme}://${doc.host}${doc.basePath || ''}`
@@ -271,8 +302,8 @@ async function importOpenApi(projectId: string, content: string): Promise<Import
       const folderId = randomUUID()
       db.prepare(`
         INSERT INTO folders (id, project_id, parent_id, name, sort_order)
-        VALUES (?, ?, NULL, ?, ?)
-      `).run(folderId, projectId, tag.name, folderCount)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(folderId, projectId, parentFolderId, tag.name, folderCount)
       tagFolderMap[tag.name] = folderId
       folderCount++
     }
@@ -291,7 +322,7 @@ async function importOpenApi(projectId: string, content: string): Promise<Import
         const name = operation.summary || operation.operationId || `${method.toUpperCase()} ${path}`
 
         // Determine folder
-        let folderId: string | null = null
+        let folderId: string | null = parentFolderId
         if (operation.tags && operation.tags.length > 0) {
           const tagName = operation.tags[0]
           if (tagFolderMap[tagName]) {
@@ -301,21 +332,58 @@ async function importOpenApi(projectId: string, content: string): Promise<Import
             const newFolderId = randomUUID()
             db.prepare(`
               INSERT INTO folders (id, project_id, parent_id, name, sort_order)
-              VALUES (?, ?, NULL, ?, ?)
-            `).run(newFolderId, projectId, tagName, folderCount)
+              VALUES (?, ?, ?, ?, ?)
+            `).run(newFolderId, projectId, parentFolderId, tagName, folderCount)
             tagFolderMap[tagName] = newFolderId
             folderId = newFolderId
             folderCount++
           }
         }
 
-        // Build request schema from parameters
-        const requestSchema: Record<string, unknown> = {}
+        // Build full URL
+        const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${path}` : path
+
+        // Convert OpenAPI parameters to app format
+        const params: Array<{ id: string; key: string; value: string; description: string; enabled: boolean }> = []
+        const headers: Array<{ id: string; key: string; value: string; description: string; enabled: boolean }> = []
+
         if (operation.parameters) {
-          requestSchema.parameters = operation.parameters
+          for (const param of operation.parameters) {
+            const item = {
+              id: randomUUID(),
+              key: param.name,
+              value: param.schema?.default ?? '',
+              description: param.description || '',
+              enabled: true,
+            }
+            if (param.in === 'query') params.push(item)
+            else if (param.in === 'header') headers.push(item)
+            // path params are embedded in URL
+          }
         }
-        if (operation.requestBody) {
-          requestSchema.requestBody = operation.requestBody
+
+        // Convert request body
+        let body: { type: string; content?: string } = { type: 'none' }
+        if (operation.requestBody?.content) {
+          const contentTypes = Object.keys(operation.requestBody.content)
+          if (contentTypes.some((ct) => ct.includes('json'))) {
+            const schema = operation.requestBody.content['application/json']?.schema
+            body = { type: 'json', content: schema ? JSON.stringify(schema, null, 2) : '{}' }
+          } else if (contentTypes.some((ct) => ct.includes('xml'))) {
+            body = { type: 'xml', content: '' }
+          } else if (contentTypes.some((ct) => ct.includes('form'))) {
+            body = { type: 'form-data' }
+          }
+        }
+
+        // Build request_schema in app's expected format
+        const requestSchema = {
+          method: method.toUpperCase(),
+          url: fullUrl,
+          params,
+          headers,
+          body,
+          auth: { type: 'none' },
         }
 
         // Build response schemas
@@ -332,9 +400,9 @@ async function importOpenApi(projectId: string, content: string): Promise<Import
           operation.description ?? null,
           'http',
           method.toUpperCase(),
-          path,
+          fullUrl,
           'developing',
-          Object.keys(requestSchema).length > 0 ? JSON.stringify(requestSchema) : null,
+          JSON.stringify(requestSchema),
           responseSchemas,
           endpointCount,
           now,
@@ -511,7 +579,7 @@ interface PostmanVariable {
 
 // ─── Postman Import ─────────────────────────────────────────
 
-async function importPostman(projectId: string, content: string): Promise<ImportResult> {
+async function importPostman(projectId: string, content: string, rootFolderId: string | null = null): Promise<ImportResult> {
   const warnings: string[] = []
   let collection: PostmanCollection
 
@@ -623,7 +691,7 @@ async function importPostman(projectId: string, content: string): Promise<Import
     }
   }
 
-  processItems(collection.item, null)
+  processItems(collection.item, rootFolderId)
 
   if (endpointCount === 0) {
     warnings.push('No requests found in the Postman collection')
@@ -853,7 +921,7 @@ interface CurlExportRequest {
 
 // ─── cURL Import ────────────────────────────────────────────
 
-function importCurl(projectId: string, curlCommand: string): ImportResult {
+function importCurl(projectId: string, curlCommand: string, parentFolderId: string | null = null): ImportResult {
   const warnings: string[] = []
   const db = getDb()
   const now = Date.now()
@@ -893,7 +961,7 @@ function importCurl(projectId: string, curlCommand: string): ImportResult {
   `).run(
     endpointId,
     projectId,
-    null,
+    parentFolderId,
     name,
     null,
     'http',
@@ -1446,7 +1514,7 @@ interface InsomniaAuth {
 
 // ─── Insomnia Import ────────────────────────────────────────
 
-async function importInsomnia(projectId: string, content: string): Promise<ImportResult> {
+async function importInsomnia(projectId: string, content: string, rootFolderId: string | null = null): Promise<ImportResult> {
   const warnings: string[] = []
   let doc: InsomniaExport
 
@@ -1479,7 +1547,7 @@ async function importInsomnia(projectId: string, content: string): Promise<Impor
   for (const resource of resources) {
     if (resource._type === 'request_group') {
       const folderId = randomUUID()
-      const parentFolderId = resource.parentId ? (folderMap.get(resource.parentId) ?? null) : null
+      const parentFolderId = resource.parentId ? (folderMap.get(resource.parentId) ?? rootFolderId) : rootFolderId
 
       db.prepare(`
         INSERT INTO folders (id, project_id, parent_id, name, sort_order)
@@ -1518,7 +1586,7 @@ async function importInsomnia(projectId: string, content: string): Promise<Impor
       }
 
       const endpointId = randomUUID()
-      const parentFolderId = resource.parentId ? (folderMap.get(resource.parentId) ?? null) : null
+      const parentFolderId = resource.parentId ? (folderMap.get(resource.parentId) ?? rootFolderId) : rootFolderId
 
       const requestSchema: Record<string, unknown> = {}
 

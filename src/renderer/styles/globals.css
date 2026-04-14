@@ -30,7 +30,7 @@
   --input-bg:     #ffffff;
 
   /* Tree icons (same in both themes for brand consistency) */
-  --tree-folder:     #f59e0b;
+  --tree-folder:     #9b9b9b;
   --tree-schemas:    #4caf82;
   --tree-components: #e88c3a;
 
@@ -91,7 +91,7 @@
   --input-bg:     #28282d;
 
   /* Tree icons (keep brand colors but slightly lifted) */
-  --tree-folder:     #f5a623;
+  --tree-folder:     #9b9b9b;
   --tree-schemas:    #4caf82;
   --tree-components: #e88c3a;
 

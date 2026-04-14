@@ -9,7 +9,6 @@ import ImportModal from '../modals/ImportModal'
 import EnvironmentModal from '../modals/EnvironmentModal'
 import SettingsModal from '../modals/SettingsModal'
 import CodeGeneratorModal from '../modals/CodeGeneratorModal'
-import CollectionRunnerModal from '../modals/CollectionRunnerModal'
 import UpdateModal from '../modals/UpdateModal'
 import SaveModal from '../modals/SaveModal'
 import NewProjectModal from '../modals/NewProjectModal'
@@ -74,7 +73,7 @@ export default function AppShell() {
         <IconSidebar />
 
         {/* Left Panel — collection tree or history */}
-        {(!isLeftPanelCollapsed || activeSidebarPage === 'history') && <LeftPanel />}
+        {(!isLeftPanelCollapsed || activeSidebarPage === 'history' || activeSidebarPage === 'tests') && <LeftPanel />}
 
         {/* Workbench — flex:1 */}
         <Workbench />
@@ -91,7 +90,6 @@ export default function AppShell() {
       <EnvironmentModal />
       <SettingsModal />
       <CodeGeneratorModal />
-      <CollectionRunnerModal />
       <UpdateModal />
       <SaveModal />
       <NewProjectModal />

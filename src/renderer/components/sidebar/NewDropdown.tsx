@@ -84,26 +84,6 @@ export default function NewDropdown() {
       bg: '#ffe8f0',
       action: () => createProtocolTab('graphql', 'GraphQL'),
     },
-    {
-      icon: '\u25A3',
-      label: 'gRPC',
-      bg: '#e8ffe8',
-      action: () => createProtocolTab('grpc', 'gRPC'),
-    },
-    {
-      icon: '\u21C9',
-      label: 'SSE',
-      bg: '#fff8e0',
-      action: () => createProtocolTab('sse', 'SSE Stream'),
-    },
-    { icon: '\u00B7\u00B7\u00B7', label: 'More...', bg: '#f5f5f5', muted: true },
-  ]
-
-  const middleItems: DropdownItem[] = [
-    { icon: '\uD83D\uDCE6', label: 'Schema', bg: '#e8f5e9' },
-    { icon: '\uD83D\uDCDD', label: 'Markdown', bg: '#e8f4ff' },
-    { icon: '\uD83D\uDCC1', label: 'Folder', bg: '#fff8e1' },
-    { icon: '\uD83D\uDDC2', label: 'Module', bg: '#fce4ec' },
   ]
 
   const otherItems: { icon: string; label: string; shortcut: string; action?: () => void }[] = [
@@ -147,33 +127,6 @@ export default function NewDropdown() {
               cursor: 'pointer',
               textAlign: 'left',
             }}
-            onClick={() => {
-              item.action?.()
-              if (!item.action) setOpen(false)
-            }}
-          >
-            <div
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-sm"
-              style={{ background: item.bg }}
-            >
-              {item.icon}
-            </div>
-            {item.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Separator */}
-      <div className="mx-0 my-1.5 border-t border-[var(--border)]" />
-
-      {/* Middle section */}
-      <div className="mb-2 grid grid-cols-2 gap-1">
-        {middleItems.map((item) => (
-          <button
-            key={item.label}
-            type="button"
-            className="flex items-center gap-2 rounded-lg px-2.5 py-[7px] text-[0.875rem] text-[var(--text)] transition-colors hover:bg-[var(--bg)]"
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
             onClick={() => {
               item.action?.()
               if (!item.action) setOpen(false)

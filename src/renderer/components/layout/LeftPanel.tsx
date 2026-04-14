@@ -4,13 +4,12 @@ import { T } from '../../styles/tokens'
 import TreeView from '../sidebar/TreeView'
 import NewDropdown from '../sidebar/NewDropdown'
 import HistoryListPanel from '../sidebar/HistoryListPanel'
+import TestsPanel from '../sidebar/TestsPanel'
 
 export default function LeftPanel() {
   const searchQuery = useWorkspaceStore((s) => s.searchQuery)
   const setSearchQuery = useWorkspaceStore((s) => s.setSearchQuery)
   const activeSidebarPage = useUIStore((s) => s.activeSidebarPage)
-
-  const isHistory = activeSidebarPage === 'history'
 
   return (
     <div
@@ -25,11 +24,11 @@ export default function LeftPanel() {
         flexShrink: 0,
       }}
     >
-      {isHistory ? (
-        /* History view — Postman style */
+      {activeSidebarPage === 'history' ? (
         <HistoryListPanel />
+      ) : activeSidebarPage === 'tests' ? (
+        <TestsPanel />
       ) : (
-        /* Default APIs view */
         <>
           {/* Panel header — 44px */}
           <div

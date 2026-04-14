@@ -4,7 +4,6 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
-import { useUIStore } from '../../stores/ui.store'
 import { useSoapStore } from '../../stores/soap.store'
 import type { TreeNode as TreeNodeType, HttpMethod, Protocol, KeyValuePair, RequestBody, AuthConfig } from '../../types'
 import TreeNodeComponent from './TreeNode'
@@ -270,8 +269,6 @@ export default function TreeView() {
   )
 
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
-  const setShowCollectionRunner = useUIStore((s) => s.setShowCollectionRunner)
-
   const handleAddRequest = useCallback(
     async (parentNode: TreeNode) => {
       if (!activeProjectId) return
@@ -335,11 +332,19 @@ export default function TreeView() {
     [refreshTree]
   )
 
+  const openTab = useTabsStore((s) => s.openTab)
+
   const handleRunFolder = useCallback(
-    (_node: TreeNode) => {
-      setShowCollectionRunner(true)
+    (node: TreeNode) => {
+      const tabId = 'runner-' + node.id
+      openTab({
+        id: tabId,
+        name: 'Runner',
+        protocol: 'runner',
+        folderId: node.id,
+      })
     },
-    [setShowCollectionRunner]
+    [openTab]
   )
 
   const handleExport = useCallback(

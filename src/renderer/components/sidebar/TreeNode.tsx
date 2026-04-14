@@ -55,7 +55,7 @@ function NodeIcon({ icon }: { icon?: string }) {
       </div>
     ),
     folder: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--tree-folder, #fbbf24)" stroke="none">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tree-folder)" strokeWidth="1.8">
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
       </svg>
     ),
@@ -217,8 +217,8 @@ export default function TreeNodeComponent({
       if (onAddFolder) {
         items.push({ label: 'Add Folder', icon: FolderPlusIcon, action: () => onAddFolder(node) })
       }
-      if (onRunFolder && isTopLevel) {
-        items.push({ label: 'Run Collection', icon: PlayIcon, separator: true, action: () => onRunFolder(node) })
+      if (onRunFolder) {
+        items.push({ label: 'Run', icon: PlayIcon, separator: true, action: () => onRunFolder(node) })
       }
       if (onDuplicate) {
         items.push({ label: 'Duplicate', icon: CopyIcon, separator: !isTopLevel, action: () => onDuplicate(node) })

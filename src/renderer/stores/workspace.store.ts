@@ -152,16 +152,7 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
       children: [...rootFolderNodes, ...rootEndpoints, ...rootSaved],
     }
 
-    // Quick Requests section
-    const quickRequests: TreeNode = {
-      id: 'quick-requests',
-      type: 'module',
-      label: 'Quick Requests',
-      icon: 'quick',
-      children: [],
-    }
-
-    return [projectNode, quickRequests]
+    return [projectNode]
   } catch {
     return emptyTree()
   }
@@ -176,7 +167,6 @@ function emptyTree(): TreeNode[] {
       icon: 'module',
       children: [],
     },
-    { id: 'quick-requests', type: 'module', label: 'Quick Requests', icon: 'quick', children: [] },
   ]
 }
 

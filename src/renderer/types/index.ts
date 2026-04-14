@@ -3,7 +3,7 @@
 
 // ─── Enums ───────────────────────────────────────────────────
 
-export type Protocol = 'http' | 'soap' | 'websocket' | 'graphql' | 'grpc' | 'sse'
+export type Protocol = 'http' | 'soap' | 'websocket' | 'graphql' | 'grpc' | 'sse' | 'runner'
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 export type BodyType = 'none' | 'json' | 'xml' | 'text' | 'html' | 'javascript' | 'form-data' | 'urlencoded' | 'binary'
 export type AuthType = 'none' | 'basic' | 'bearer' | 'api-key' | 'oauth2' | 'digest' | 'ntlm' | 'aws-signature' | 'hawk' | 'wsse'
@@ -424,6 +424,10 @@ export interface Tab {
   url?: string
   endpointId?: string
   savedRequestId?: string
+  /** Folder/module ID — used by runner tab to scope endpoints */
+  folderId?: string
+  /** Opaque key — changing this forces the runner tab to re-read sessionStorage */
+  sessionKey?: string
   isDirty: boolean
   isLoading: boolean
   /** Preview tabs are replaced when another item is single-clicked. Double-click pins them. */

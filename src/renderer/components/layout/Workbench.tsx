@@ -8,6 +8,8 @@ import WebSocketEditor from '../protocols/WebSocketEditor'
 import GraphQLEditor from '../protocols/GraphQLEditor'
 import GrpcEditor from '../protocols/GrpcEditor'
 import SseEditor from '../protocols/SseEditor'
+import RunnerTab from '../runner/RunnerTab'
+import RunnerVariables from '../runner/RunnerVariables'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
@@ -136,7 +138,15 @@ function EndpointTabBar() {
               flexShrink: 0,
             }}
           >
-            {tab.method && <MethodBadge method={tab.method} small />}
+            {tab.protocol === 'runner' && (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ flexShrink: 0 }}>
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M9 3v18" />
+                <path d="M3 9h6" />
+                <path d="M3 15h6" />
+              </svg>
+            )}
+            {tab.method && tab.protocol !== 'runner' && <MethodBadge method={tab.method} small />}
             {renamingTabId === tab.id ? (
               <input
                 ref={renameInputRef}
@@ -305,29 +315,44 @@ export default function Workbench() {
     )
   }
 
+  if (protocol === 'runner') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <RunnerTab folderId={activeTab.folderId} tabId={activeTab.id} sessionKey={activeTab.sessionKey} />
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-      {/* Endpoint tab bar */}
-      <EndpointTabBar />
+    <div className="flex flex-1 overflow-hidden" style={{ background: 'var(--white)' }}>
+      {/* Main content */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Endpoint tab bar */}
+        <EndpointTabBar />
 
-      {/* URL Bar */}
-      <UrlBar />
+        {/* URL Bar */}
+        <UrlBar />
 
-      {/* Split pane: Request (top) | Response (bottom) */}
-      <PanelGroup direction="vertical" className="flex-1">
-        <Panel defaultSize={50} minSize={20} maxSize={80}>
-          <RequestEditor />
-        </Panel>
+        {/* Split pane: Request (top) | Response (bottom) */}
+        <PanelGroup direction="vertical" className="flex-1">
+          <Panel defaultSize={50} minSize={20} maxSize={80}>
+            <RequestEditor />
+          </Panel>
 
-        <PanelResizeHandle
-          className="shrink-0"
-          style={{ height: 1, background: 'var(--border)', cursor: 'row-resize' }}
-        />
+          <PanelResizeHandle
+            className="shrink-0"
+            style={{ height: 1, background: 'var(--border)', cursor: 'row-resize' }}
+          />
 
-        <Panel defaultSize={50} minSize={20} maxSize={80}>
-          <ResponsePane />
-        </Panel>
-      </PanelGroup>
+          <Panel defaultSize={50} minSize={20} maxSize={80}>
+            <ResponsePane />
+          </Panel>
+        </PanelGroup>
+      </div>
+
+      {/* Right: All Variables panel (Postman-style) */}
+      <RunnerVariables />
     </div>
   )
 }

@@ -238,6 +238,59 @@ function runMigrations(database: Database.Database): void {
     database.exec(`ALTER TABLE global_variables ADD COLUMN project_id TEXT`)
     database.exec(`CREATE INDEX IF NOT EXISTS idx_global_vars_project ON global_variables(project_id)`)
   }
+
+  // Scheduled tasks table
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      endpoint_ids TEXT NOT NULL DEFAULT '[]',
+      folder_id TEXT,
+      environment_id TEXT,
+      interval_value INTEGER NOT NULL DEFAULT 60,
+      interval_unit TEXT NOT NULL DEFAULT 'minutes',
+      delay_ms INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_run_at INTEGER,
+      next_run_at INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_project ON scheduled_tasks(project_id);
+  `)
+
+  // Runner history table
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS runner_history (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      environment_name TEXT,
+      source TEXT NOT NULL DEFAULT 'Runner',
+      iterations INTEGER NOT NULL DEFAULT 1,
+      duration_ms INTEGER NOT NULL DEFAULT 0,
+      total_endpoints INTEGER NOT NULL DEFAULT 0,
+      passed_endpoints INTEGER NOT NULL DEFAULT 0,
+      failed_endpoints INTEGER NOT NULL DEFAULT 0,
+      total_tests INTEGER NOT NULL DEFAULT 0,
+      passed_tests INTEGER NOT NULL DEFAULT 0,
+      failed_tests INTEGER NOT NULL DEFAULT 0,
+      skipped_tests INTEGER NOT NULL DEFAULT 0,
+      avg_resp_time INTEGER NOT NULL DEFAULT 0,
+      results_json TEXT,
+      started_at INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_runner_history_project ON runner_history(project_id);
+    CREATE INDEX IF NOT EXISTS idx_runner_history_started ON runner_history(started_at);
+  `)
+
+  // Add folder_name column to runner_history if missing
+  const rhCols = database.pragma('table_info(runner_history)') as Array<{ name: string }>
+  const rhColNames = rhCols.map((c) => c.name)
+  if (!rhColNames.includes('folder_name')) {
+    database.exec(`ALTER TABLE runner_history ADD COLUMN folder_name TEXT`)
+  }
 }
 
 function seedDefaults(database: Database.Database): void {

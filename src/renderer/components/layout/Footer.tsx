@@ -1,6 +1,7 @@
 import { Terminal, AlertCircle } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
+import { useTabsStore } from '../../stores/tabs.store'
 import { useConsoleStore } from '../../stores/console.store'
 import { T } from '../../styles/tokens'
 
@@ -8,7 +9,7 @@ export default function Footer() {
   const environments = useEnvironmentStore((s) => s.environments)
   const activeEnvId = useEnvironmentStore((s) => s.activeEnvironmentId)
   const activeEnv = environments.find((e) => e.id === activeEnvId)
-  const setShowCollectionRunner = useUIStore((s) => s.setShowCollectionRunner)
+  const openTab = useTabsStore((s) => s.openTab)
   const showConsolePanel = useUIStore((s) => s.showConsolePanel)
   const toggleConsolePanel = useUIStore((s) => s.toggleConsolePanel)
   const consoleEntries = useConsoleStore((s) => s.entries)
@@ -48,7 +49,7 @@ export default function Footer() {
       {/* Right */}
       <span
         style={{ color: T.ghost, cursor: 'pointer', fontFamily: 'inherit' }}
-        onClick={() => setShowCollectionRunner(true)}
+        onClick={() => openTab({ id: 'runner-all-' + Date.now(), name: 'Runner', protocol: 'runner' })}
       >
         ▶ Çalıştır
       </span>
