@@ -123,27 +123,21 @@ async function startOAuthFlow(provider: OAuthProvider): Promise<{ success: boole
     return { success: false, error: `${provider} login is not available yet.` }
   }
 
-  const redirectUri = 'http://localhost:19284/oauth/callback'
   const state = randomBytes(16).toString('hex')
-
-  const params = new URLSearchParams({
-    client_id: creds.clientId,
-    redirect_uri: redirectUri,
-    response_type: 'code',
-    scope: providerConfig.scopes.join(' '),
-    state,
-  })
-
-  const authUrl = `${providerConfig.authUrl}?${params.toString()}`
+  // Port will be determined dynamically
+  let redirectUri = ''
 
   // Start a temporary local HTTP server to catch the OAuth callback
+  // Try multiple ports in case one is busy
+  const PORTS = [19284, 19285, 19286, 19287, 19288]
+
   return new Promise((resolve) => {
     let resolved = false
 
     const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       if (resolved) { res.end(); return }
 
-      const reqUrl = new URL(req.url || '/', `http://localhost:19284`)
+      const reqUrl = new URL(req.url || '/', redirectUri)
 
       if (reqUrl.pathname !== '/oauth/callback') {
         res.writeHead(404)
@@ -249,7 +243,7 @@ async function startOAuthFlow(provider: OAuthProvider): Promise<{ success: boole
 
         // Get user info
         const userResponse = await fetch(providerConfig.userInfoUrl, {
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'Apinizer' },
         })
         const userData = await userResponse.json() as Record<string, string>
 
@@ -265,10 +259,20 @@ async function startOAuthFlow(provider: OAuthProvider): Promise<{ success: boole
           avatarUrl = userData.picture
           providerId = userData.id
         } else if (provider === 'github') {
-          email = userData.email
           name = userData.login || userData.name
           avatarUrl = userData.avatar_url
           providerId = String(userData.id)
+          // GitHub may not return email in profile if it's set to private
+          // Fetch from /user/emails endpoint instead
+          email = userData.email
+          if (!email) {
+            const emailsRes = await fetch('https://api.github.com/user/emails', {
+              headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'Apinizer' },
+            })
+            const emails = await emailsRes.json() as Array<{ email: string; primary: boolean; verified: boolean }>
+            const primary = emails.find((e) => e.primary && e.verified) || emails.find((e) => e.verified) || emails[0]
+            if (primary) email = primary.email
+          }
         } else {
           // gitlab
           email = userData.email
@@ -291,12 +295,23 @@ async function startOAuthFlow(provider: OAuthProvider): Promise<{ success: boole
 
         const now = Date.now()
         if (!user) {
-          // Check if email exists with different provider
+          // Check if email exists with different provider — link accounts automatically
           const existingUser = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined
           if (existingUser) {
-            sendPage('Authentication Failed', `An account with this email already exists (${existingUser.auth_provider}). You can close this tab.`, true)
+            // Same email, different provider — update provider info and log them in
+            db.prepare('UPDATE users SET auth_provider = ?, provider_id = ?, avatar_url = ?, display_name = ?, updated_at = ? WHERE id = ?')
+              .run(provider, providerId, avatarUrl, name, Date.now(), existingUser.id)
+            user = db.prepare('SELECT * FROM users WHERE id = ?').get(existingUser.id) as UserRow
+            const session = createSession(user.id)
+            sendPage('Authentication Successful', 'You are now signed in. Returning to Apinizer...', false)
             cleanup()
-            resolve({ success: false, error: `An account with this email already exists (${existingUser.auth_provider})` })
+            const wins = BrowserWindow.getAllWindows()
+            if (wins.length > 0) {
+              const main = wins[0]
+              if (main.isMinimized()) main.restore()
+              main.focus()
+            }
+            resolve({ success: true, data: { user: sanitizeUser(user), session } })
             return
           }
 
@@ -342,18 +357,46 @@ async function startOAuthFlow(provider: OAuthProvider): Promise<{ success: boole
       }
     })
 
-    // Listen on port 19284
-    server.listen(19284, '127.0.0.1', () => {
-      // Open the system browser
-      shell.openExternal(authUrl)
-    })
+    // Try ports sequentially until one works
+    let portIndex = 0
 
-    server.on('error', (err) => {
-      if (!resolved) {
-        resolved = true
-        resolve({ success: false, error: `Could not start OAuth callback server: ${err.message}` })
+    function tryNextPort() {
+      if (portIndex >= PORTS.length) {
+        if (!resolved) {
+          resolved = true
+          resolve({ success: false, error: 'Could not start OAuth callback server: all ports busy' })
+        }
+        return
       }
-    })
+
+      const port = PORTS[portIndex]
+      redirectUri = `http://localhost:${port}/oauth/callback`
+
+      server.once('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') {
+          portIndex++
+          tryNextPort()
+        } else if (!resolved) {
+          resolved = true
+          resolve({ success: false, error: `Could not start OAuth callback server: ${err.message}` })
+        }
+      })
+
+      server.listen(port, '127.0.0.1', () => {
+        // Build auth URL with the port that actually worked
+        const params = new URLSearchParams({
+          client_id: creds.clientId,
+          redirect_uri: redirectUri,
+          response_type: 'code',
+          scope: providerConfig.scopes.join(' '),
+          state,
+        })
+        const authUrl = `${providerConfig.authUrl}?${params.toString()}`
+        shell.openExternal(authUrl)
+      })
+    }
+
+    tryNextPort()
 
     // Timeout after 5 minutes
     setTimeout(() => {
