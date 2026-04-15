@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 const SESSION_TOKEN_KEY = 'apinizer_session_token'
+const GUEST_MODE_KEY = 'apinizer_guest_mode'
 
 interface User {
   id: string
@@ -19,11 +20,14 @@ interface AuthState {
   isLoading: boolean
   error: string | null
 
+  isGuest: boolean
+
   // Actions
   checkSession: () => Promise<void>
   login: (emailOrUsername: string, password: string) => Promise<boolean>
   register: (email: string, username: string, password: string, displayName?: string) => Promise<boolean>
   oauthLogin: (provider: 'google' | 'github' | 'gitlab') => Promise<boolean>
+  continueAsGuest: () => void
   logout: () => Promise<void>
   updateProfile: (data: { displayName?: string; email?: string; username?: string }) => Promise<boolean>
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>
@@ -37,10 +41,17 @@ const api = () => (window as any).api
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isAuthenticated: false,
+  isGuest: false,
   isLoading: true,
   error: null,
 
   checkSession: async () => {
+    // Check guest mode first
+    if (localStorage.getItem(GUEST_MODE_KEY) === 'true') {
+      set({ isAuthenticated: true, isGuest: true, user: null, isLoading: false })
+      return
+    }
+
     const token = localStorage.getItem(SESSION_TOKEN_KEY)
     if (!token) {
       set({ isLoading: false, isAuthenticated: false, user: null })
@@ -136,13 +147,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
+  continueAsGuest: () => {
+    localStorage.setItem(GUEST_MODE_KEY, 'true')
+    set({ isAuthenticated: true, isGuest: true, user: null, isLoading: false, error: null })
+  },
+
   logout: async () => {
     const token = localStorage.getItem(SESSION_TOKEN_KEY)
     if (token) {
       try { await api().auth.logout(token) } catch { /* ignore */ }
     }
     localStorage.removeItem(SESSION_TOKEN_KEY)
-    set({ user: null, isAuthenticated: false, isLoading: false, error: null })
+    localStorage.removeItem(GUEST_MODE_KEY)
+    set({ user: null, isAuthenticated: false, isGuest: false, isLoading: false, error: null })
   },
 
   updateProfile: async (data) => {

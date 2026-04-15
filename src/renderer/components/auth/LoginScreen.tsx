@@ -108,6 +108,9 @@ export default function LoginScreen() {
 
           {/* OAuth buttons */}
           <OAuthButtons />
+
+          {/* Anonymous / Guest */}
+          <GuestButton />
         </div>
       </div>
     </div>
@@ -399,5 +402,39 @@ function OAuthButtons() {
         GitLab
       </button>
     </div>
+  )
+}
+
+/* ── Guest Button ─────────────────────────────────────────── */
+
+function GuestButton() {
+  const continueAsGuest = useAuthStore((s) => s.continueAsGuest)
+
+  return (
+    <button
+      type="button"
+      onClick={continueAsGuest}
+      className="mt-3 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border py-2.5 transition-colors"
+      style={{
+        borderColor: 'var(--border)',
+        background: 'transparent',
+        color: 'var(--muted)',
+        fontSize: 13,
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLElement).style.background = 'var(--surface)'
+        ;(e.currentTarget as HTMLElement).style.color = 'var(--text)'
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLElement).style.background = 'transparent'
+        ;(e.currentTarget as HTMLElement).style.color = 'var(--muted)'
+      }}
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+      Continue without account
+    </button>
   )
 }
