@@ -17,6 +17,7 @@ import ProjectDetailModal from '../modals/ProjectDetailModal'
 import ProfileModal from '../modals/ProfileModal'
 import ConsolePanel from './ConsolePanel'
 import LoginScreen from '../auth/LoginScreen'
+import QuickTestShell from './QuickTestShell'
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useAuthStore } from '../../stores/auth.store'
@@ -56,6 +57,8 @@ export default function AppShell() {
   const initialize = useWorkspaceStore((s) => s.initialize)
 
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const isGuest = useAuthStore((s) => s.isGuest)
+  const hasPasswordSet = useAuthStore((s) => s.hasPasswordSet)
   const authLoading = useAuthStore((s) => s.isLoading)
   const checkSession = useAuthStore((s) => s.checkSession)
 
@@ -67,10 +70,11 @@ export default function AppShell() {
   }, [checkSession])
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !isGuest) {
       initialize()
     }
-  }, [initialize, isAuthenticated])
+  }, [initialize, isAuthenticated, isGuest])
+
 
   // Auth loading state
   if (authLoading) {
@@ -93,6 +97,27 @@ export default function AppShell() {
   // Not authenticated — show login screen
   if (!isAuthenticated) {
     return <LoginScreen />
+  }
+
+  // Guest mode with password set = Quick Test only (no project access)
+  if (isGuest && hasPasswordSet) {
+    return <QuickTestShell />
+  }
+
+  // Guest mode without password = full access (initialize workspace)
+  if (isGuest && !hasPasswordSet) {
+    // Need to initialize for full access
+    if (!initialized) {
+      initialize()
+      return (
+        <div
+          className="flex h-screen w-screen items-center justify-center"
+          style={{ background: 'var(--bg)', color: 'var(--muted)' }}
+        >
+          <div>Loading...</div>
+        </div>
+      )
+    }
   }
 
   if (!initialized) {
@@ -119,10 +144,7 @@ export default function AppShell() {
     )
   }
 
-  // Project is active — Apidog layout:
-  // Header spans full width (including over sidebar area)
-  // Below header: IconSidebar | LeftPanel | Workbench
-  // Footer spans full width
+  // Project is active — full layout
   return (
     <div
       className="relative flex h-screen w-screen flex-col overflow-hidden"

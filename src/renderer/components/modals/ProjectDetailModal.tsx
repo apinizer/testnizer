@@ -290,7 +290,7 @@ export default function ProjectDetailModal() {
 
           {/* Nav */}
           <div className="flex-1 overflow-y-auto py-2">
-            <SidebarGroup title="Collection">
+            <SidebarGroup title="Project Settings">
               {SIDEBAR_TABS.filter((t) => !t.group).map((item) => (
                 <SidebarItem
                   key={item.id}
@@ -332,8 +332,8 @@ export default function ProjectDetailModal() {
             className="flex items-center justify-between px-3 py-2"
             style={{ borderTop: '1px solid var(--border)' }}
           >
-            <span style={{ color: 'var(--hint)' }}>
-              {activeProject.save_mode || 'local'}
+            <span style={{ color: 'var(--hint)', fontSize: 13 }}>
+              {modeLabels[activeProject.save_mode || 'local']?.label || 'Local'}
             </span>
             <button
               type="button"

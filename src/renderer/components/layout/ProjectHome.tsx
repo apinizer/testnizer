@@ -121,7 +121,14 @@ export default function ProjectHome() {
       {/* Header */}
       <div className="flex w-full items-center justify-center" style={{ paddingTop: 60, paddingBottom: 32 }}>
         <div className="flex flex-col items-center gap-3">
-          <img src={appIcon} alt="Apinizer" style={{ width: 56, height: 56, borderRadius: 14 }} />
+          <div style={{
+            width: 72, height: 72, borderRadius: 18,
+            background: '#fff',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <img src={appIcon} alt="Apinizer" style={{ width: 52, height: 52, borderRadius: 12 }} />
+          </div>
           <h1 className="text-[1.5rem] font-bold" style={{ color: 'var(--heading)' }}>
             Apinizer API Tester
           </h1>

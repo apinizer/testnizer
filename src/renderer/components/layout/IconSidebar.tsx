@@ -6,7 +6,7 @@ import ProjectIcon from '../shared/ProjectIcon'
 type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'settings'
 
 interface NavItem {
-  id: SidebarPage | 'invite'
+  id: SidebarPage
   label: string
   icon: (active: boolean) => React.ReactNode
   action?: () => void
@@ -40,21 +40,11 @@ function ClockIcon({ active }: { active: boolean }) {
   )
 }
 
-function GearIcon() {
+function CogIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
       <circle cx="12" cy="12" r="3" />
-      <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
-    </svg>
-  )
-}
-
-function UsersIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
   )
 }
@@ -62,7 +52,6 @@ function UsersIcon() {
 export default function IconSidebar() {
   const activePage = useUIStore((s) => s.activeSidebarPage)
   const setActivePage = useUIStore((s) => s.setActiveSidebarPage)
-  const setShowSettingsModal = useUIStore((s) => s.setShowSettingsModal)
   const setShowProjectDetailModal = useUIStore((s) => s.setShowProjectDetailModal)
   const activeProject = useWorkspaceStore((s) => {
     const pid = s.activeProjectId
@@ -76,14 +65,13 @@ export default function IconSidebar() {
   ]
 
   const bottomItems: NavItem[] = [
-    { id: 'settings', label: 'Settings', icon: () => <GearIcon />, action: () => setShowProjectDetailModal(true) },
-    { id: 'invite', label: 'Invite', icon: () => <UsersIcon /> },
+    { id: 'settings', label: 'Settings', icon: () => <CogIcon />, action: () => setShowProjectDetailModal(true) },
   ]
 
   function handleClick(item: NavItem) {
     if (item.action) {
       item.action()
-    } else if (item.id !== 'invite') {
+    } else {
       setActivePage(item.id as SidebarPage)
     }
   }
@@ -173,26 +161,6 @@ export default function IconSidebar() {
             <span style={{ fontSize: 13, fontFamily: 'inherit' }}>{item.label}</span>
           </div>
         ))}
-
-        {/* Avatar */}
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: '50%',
-            background: T.accent,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 13,
-            fontWeight: 700,
-            color: 'white',
-            cursor: 'pointer',
-            marginTop: 4,
-          }}
-        >
-          A
-        </div>
       </div>
     </div>
   )

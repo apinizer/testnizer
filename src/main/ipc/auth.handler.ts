@@ -1,8 +1,6 @@
-import { ipcMain, shell, BrowserWindow } from 'electron'
+import { ipcMain } from 'electron'
 import { randomUUID, scrypt, randomBytes, timingSafeEqual } from 'crypto'
-import { createServer, IncomingMessage, ServerResponse } from 'http'
 import { getDb } from '../db/database'
-import { OAUTH_CREDENTIALS } from '../config/oauth.config'
 
 // ─── Password helpers (crypto.scrypt — no extra dependency) ──────
 
@@ -69,14 +67,6 @@ interface UserRow {
   updated_at: number
 }
 
-interface SessionRow {
-  id: string
-  user_id: string
-  token: string
-  expires_at: number
-  created_at: number
-}
-
 function sanitizeUser(user: UserRow) {
   return {
     id: user.id,
@@ -90,377 +80,66 @@ function sanitizeUser(user: UserRow) {
   }
 }
 
-// ─── OAuth helpers ───────────────────────────────────────────────
-
-const OAUTH_PROVIDERS = {
-  google: {
-    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-    tokenUrl: 'https://oauth2.googleapis.com/token',
-    userInfoUrl: 'https://www.googleapis.com/oauth2/v2/userinfo',
-    scopes: ['email', 'profile'],
-  },
-  github: {
-    authUrl: 'https://github.com/login/oauth/authorize',
-    tokenUrl: 'https://github.com/login/oauth/access_token',
-    userInfoUrl: 'https://api.github.com/user',
-    scopes: ['user:email'],
-  },
-  gitlab: {
-    authUrl: 'https://gitlab.com/oauth/authorize',
-    tokenUrl: 'https://gitlab.com/oauth/token',
-    userInfoUrl: 'https://gitlab.com/api/v4/user',
-    scopes: ['read_user'],
-  },
-} as const
-
-type OAuthProvider = 'google' | 'github' | 'gitlab'
-
-async function startOAuthFlow(provider: OAuthProvider): Promise<{ success: boolean; data?: unknown; error?: string }> {
-  const providerConfig = OAUTH_PROVIDERS[provider]
-  const creds = OAUTH_CREDENTIALS[provider]
-
-  if (!creds.clientId || creds.clientId.startsWith('YOUR_')) {
-    return { success: false, error: `${provider} login is not available yet.` }
-  }
-
-  const state = randomBytes(16).toString('hex')
-  // Port will be determined dynamically
-  let redirectUri = ''
-
-  // Start a temporary local HTTP server to catch the OAuth callback
-  // Try multiple ports in case one is busy
-  const PORTS = [19284, 19285, 19286, 19287, 19288]
-
-  return new Promise((resolve) => {
-    let resolved = false
-
-    const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-      if (resolved) { res.end(); return }
-
-      const reqUrl = new URL(req.url || '/', redirectUri)
-
-      if (reqUrl.pathname !== '/oauth/callback') {
-        res.writeHead(404)
-        res.end('Not found')
-        return
-      }
-
-      const code = reqUrl.searchParams.get('code')
-      const returnedState = reqUrl.searchParams.get('state')
-      const error = reqUrl.searchParams.get('error')
-
-      // Always respond with a nice HTML page first
-      const sendPage = (title: string, message: string, isError: boolean) => {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        const successScript = isError ? '' : `<script>
-  (function() {
-    var count = 3;
-    var el = document.getElementById('countdown');
-    var msg = document.getElementById('close-msg');
-    var timer = setInterval(function() {
-      count--;
-      if (el) el.textContent = count;
-      if (count <= 0) {
-        clearInterval(timer);
-        try { window.close(); } catch(e) {}
-        // If window.close() didn't work (browser security), show manual message
-        if (msg) msg.textContent = 'You can now close this tab.';
-        if (el) el.parentElement.style.display = 'none';
-      }
-    }, 1000);
-  })();
-</script>`
-        const countdownText = isError
-          ? ''
-          : '<p id="close-msg" style="color:#9ca3af;margin:12px 0 0;font-size:14px">Returning to Apinizer in <span id="countdown">3</span>s...</p>'
-        res.end(`<!DOCTYPE html>
-<html>
-<head><title>${title}</title></head>
-<body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f4f4f6">
-  <div style="text-align:center;padding:40px;background:white;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.1);max-width:400px">
-    <div style="font-size:48px;margin-bottom:16px">${isError ? '&#10060;' : '&#9989;'}</div>
-    <h2 style="margin:0 0 8px;color:#111827">${title}</h2>
-    <p style="color:#6b7280;margin:0">${message}</p>
-    ${countdownText}
-  </div>
-  ${successScript}
-</body>
-</html>`)
-      }
-
-      // Cleanup server
-      const cleanup = () => {
-        resolved = true
-        try { server.close() } catch { /* ignore */ }
-      }
-
-      if (error) {
-        sendPage('Authentication Failed', `Error: ${error}. You can close this tab.`, true)
-        cleanup()
-        resolve({ success: false, error: `OAuth error: ${error}` })
-        return
-      }
-
-      if (returnedState !== state) {
-        sendPage('Authentication Failed', 'Security check failed (state mismatch). You can close this tab.', true)
-        cleanup()
-        resolve({ success: false, error: 'OAuth state mismatch' })
-        return
-      }
-
-      if (!code) {
-        sendPage('Authentication Failed', 'No authorization code received. You can close this tab.', true)
-        cleanup()
-        resolve({ success: false, error: 'No authorization code received' })
-        return
-      }
-
-      try {
-        // Exchange code for token
-        const tokenResponse = await fetch(providerConfig.tokenUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Accept: 'application/json',
-          },
-          body: new URLSearchParams({
-            client_id: creds.clientId,
-            client_secret: creds.clientSecret,
-            code,
-            redirect_uri: redirectUri,
-            grant_type: 'authorization_code',
-          }),
-        })
-        const tokenData = await tokenResponse.json() as Record<string, string>
-        const accessToken = tokenData.access_token
-
-        if (!accessToken) {
-          sendPage('Authentication Failed', 'Could not get access token. You can close this tab.', true)
-          cleanup()
-          resolve({ success: false, error: 'Failed to get access token' })
-          return
-        }
-
-        // Get user info
-        const userResponse = await fetch(providerConfig.userInfoUrl, {
-          headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'Apinizer' },
-        })
-        const userData = await userResponse.json() as Record<string, string>
-
-        // Normalize user data across providers
-        let email: string
-        let name: string
-        let avatarUrl: string
-        let providerId: string
-
-        if (provider === 'google') {
-          email = userData.email
-          name = userData.name
-          avatarUrl = userData.picture
-          providerId = userData.id
-        } else if (provider === 'github') {
-          name = userData.login || userData.name
-          avatarUrl = userData.avatar_url
-          providerId = String(userData.id)
-          // GitHub may not return email in profile if it's set to private
-          // Fetch from /user/emails endpoint instead
-          email = userData.email
-          if (!email) {
-            const emailsRes = await fetch('https://api.github.com/user/emails', {
-              headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'Apinizer' },
-            })
-            const emails = await emailsRes.json() as Array<{ email: string; primary: boolean; verified: boolean }>
-            const primary = emails.find((e) => e.primary && e.verified) || emails.find((e) => e.verified) || emails[0]
-            if (primary) email = primary.email
-          }
-        } else {
-          // gitlab
-          email = userData.email
-          name = userData.username || userData.name
-          avatarUrl = userData.avatar_url
-          providerId = String(userData.id)
-        }
-
-        if (!email) {
-          sendPage('Authentication Failed', 'Could not get email from provider. You can close this tab.', true)
-          cleanup()
-          resolve({ success: false, error: 'Could not get email from OAuth provider' })
-          return
-        }
-
-        // Find or create user
-        const db = getDb()
-        let user = db.prepare('SELECT * FROM users WHERE email = ? AND auth_provider = ?')
-          .get(email, provider) as UserRow | undefined
-
-        const now = Date.now()
-        if (!user) {
-          // Check if email exists with different provider — link accounts automatically
-          const existingUser = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined
-          if (existingUser) {
-            // Same email, different provider — update provider info and log them in
-            db.prepare('UPDATE users SET auth_provider = ?, provider_id = ?, avatar_url = ?, display_name = ?, updated_at = ? WHERE id = ?')
-              .run(provider, providerId, avatarUrl, name, Date.now(), existingUser.id)
-            user = db.prepare('SELECT * FROM users WHERE id = ?').get(existingUser.id) as UserRow
-            const session = createSession(user.id)
-            sendPage('Authentication Successful', 'You are now signed in. Returning to Apinizer...', false)
-            cleanup()
-            const wins = BrowserWindow.getAllWindows()
-            if (wins.length > 0) {
-              const main = wins[0]
-              if (main.isMinimized()) main.restore()
-              main.focus()
-            }
-            resolve({ success: true, data: { user: sanitizeUser(user), session } })
-            return
-          }
-
-          const userId = randomUUID()
-          const username = name.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase() || `user_${randomBytes(4).toString('hex')}`
-
-          // Ensure unique username
-          let finalUsername = username
-          let counter = 1
-          while (db.prepare('SELECT id FROM users WHERE username = ?').get(finalUsername)) {
-            finalUsername = `${username}${counter}`
-            counter++
-          }
-
-          db.prepare(`
-            INSERT INTO users (id, email, username, display_name, avatar_url, auth_provider, provider_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).run(userId, email, finalUsername, name, avatarUrl, provider, providerId, now, now)
-
-          user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow
-        } else {
-          // Update avatar and display name on each login
-          db.prepare('UPDATE users SET avatar_url = ?, display_name = ?, updated_at = ? WHERE id = ?')
-            .run(avatarUrl, name, now, user.id)
-          user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id) as UserRow
-        }
-
-        const session = createSession(user.id)
-        sendPage('Authentication Successful', 'You are now signed in. Returning to Apinizer...', false)
-        cleanup()
-        // Bring Apinizer window to front
-        const wins = BrowserWindow.getAllWindows()
-        if (wins.length > 0) {
-          const main = wins[0]
-          if (main.isMinimized()) main.restore()
-          main.focus()
-        }
-        resolve({ success: true, data: { user: sanitizeUser(user), session } })
-      } catch (e) {
-        sendPage('Authentication Failed', `${(e as Error).message}. You can close this tab.`, true)
-        cleanup()
-        resolve({ success: false, error: (e as Error).message })
-      }
-    })
-
-    // Try ports sequentially until one works
-    let portIndex = 0
-
-    function tryNextPort() {
-      if (portIndex >= PORTS.length) {
-        if (!resolved) {
-          resolved = true
-          resolve({ success: false, error: 'Could not start OAuth callback server: all ports busy' })
-        }
-        return
-      }
-
-      const port = PORTS[portIndex]
-      redirectUri = `http://localhost:${port}/oauth/callback`
-
-      server.once('error', (err: NodeJS.ErrnoException) => {
-        if (err.code === 'EADDRINUSE') {
-          portIndex++
-          tryNextPort()
-        } else if (!resolved) {
-          resolved = true
-          resolve({ success: false, error: `Could not start OAuth callback server: ${err.message}` })
-        }
-      })
-
-      server.listen(port, '127.0.0.1', () => {
-        // Build auth URL with the port that actually worked
-        const params = new URLSearchParams({
-          client_id: creds.clientId,
-          redirect_uri: redirectUri,
-          response_type: 'code',
-          scope: providerConfig.scopes.join(' '),
-          state,
-        })
-        const authUrl = `${providerConfig.authUrl}?${params.toString()}`
-        shell.openExternal(authUrl)
-      })
-    }
-
-    tryNextPort()
-
-    // Timeout after 5 minutes
-    setTimeout(() => {
-      if (!resolved) {
-        resolved = true
-        try { server.close() } catch { /* ignore */ }
-        resolve({ success: false, error: 'OAuth login timed out' })
-      }
-    }, 5 * 60 * 1000)
-  })
-}
-
 // ─── Register handlers ───────────────────────────────────────────
 
 export function registerAuthHandlers(): void {
-  // ─── Register (local) ──────────────────────────────────────
-  ipcMain.handle('auth:register', async (_event, payload: {
-    email: string
-    username: string
+  // ─── Check if password is set ─────────────────────────────
+  ipcMain.handle('auth:hasPassword', async () => {
+    try {
+      const db = getDb()
+      const user = db.prepare(
+        'SELECT id FROM users WHERE auth_provider = ? AND password_hash IS NOT NULL'
+      ).get('local') as { id: string } | undefined
+      return { success: true, data: { hasPassword: !!user } }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── Set password (first time or update from anonymous) ───
+  ipcMain.handle('auth:setPassword', async (_event, payload: {
     password: string
-    displayName?: string
   }) => {
     try {
       const db = getDb()
-      const { email, username, password, displayName } = payload
+      const { password } = payload
 
-      // Validation
-      if (!email || !username || !password) {
-        return { success: false, error: 'Email, username and password are required' }
+      if (!password || password.length < 8) {
+        return { success: false, error: 'Password must be at least 8 characters' }
       }
-      if (password.length < 6) {
-        return { success: false, error: 'Password must be at least 6 characters' }
+      if (!/[a-zA-Z]/.test(password)) {
+        return { success: false, error: 'Password must contain at least one letter' }
       }
-      if (username.length < 3) {
-        return { success: false, error: 'Username must be at least 3 characters' }
-      }
-      if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
-        return { success: false, error: 'Username can only contain letters, numbers, _ and -' }
-      }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        return { success: false, error: 'Invalid email format' }
+      if (!/[0-9]/.test(password)) {
+        return { success: false, error: 'Password must contain at least one number' }
       }
 
-      // Check uniqueness
-      const existingEmail = db.prepare('SELECT id FROM users WHERE email = ?').get(email)
-      if (existingEmail) {
-        return { success: false, error: 'An account with this email already exists' }
-      }
-      const existingUsername = db.prepare('SELECT id FROM users WHERE username = ?').get(username)
-      if (existingUsername) {
-        return { success: false, error: 'This username is already taken' }
-      }
+      // Check if a local user already exists
+      let user = db.prepare(
+        'SELECT * FROM users WHERE auth_provider = ?'
+      ).get('local') as UserRow | undefined
 
       const { hash, salt } = await hashPassword(password)
-      const userId = randomUUID()
       const now = Date.now()
 
-      db.prepare(`
-        INSERT INTO users (id, email, username, display_name, password_hash, salt, auth_provider, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'local', ?, ?)
-      `).run(userId, email, username, displayName || username, hash, salt, now, now)
+      if (user) {
+        // Update existing user's password
+        db.prepare(
+          'UPDATE users SET password_hash = ?, salt = ?, updated_at = ? WHERE id = ?'
+        ).run(hash, salt, now, user.id)
+        user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id) as UserRow
+      } else {
+        // Create new local user
+        const userId = randomUUID()
+        db.prepare(`
+          INSERT INTO users (id, email, username, display_name, password_hash, salt, auth_provider, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, 'local', ?, ?)
+        `).run(userId, 'local@apinizer.app', 'local', 'Local User', hash, salt, now, now)
+        user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow
+      }
 
-      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow
-      const session = createSession(userId)
+      cleanExpiredSessions()
+      const session = createSession(user.id)
 
       return { success: true, data: { user: sanitizeUser(user), session } }
     } catch (e) {
@@ -468,34 +147,30 @@ export function registerAuthHandlers(): void {
     }
   })
 
-  // ─── Login (local) ─────────────────────────────────────────
+  // ─── Login (password only) ──────────────────────────────────
   ipcMain.handle('auth:login', async (_event, payload: {
-    emailOrUsername: string
     password: string
   }) => {
     try {
       const db = getDb()
-      const { emailOrUsername, password } = payload
+      const { password } = payload
 
-      if (!emailOrUsername || !password) {
-        return { success: false, error: 'Email/username and password are required' }
+      if (!password) {
+        return { success: false, error: 'Password is required' }
       }
 
-      // Find user by email or username
+      // Find the local user with password
       const user = db.prepare(
-        'SELECT * FROM users WHERE (email = ? OR username = ?) AND auth_provider = ?'
-      ).get(emailOrUsername, emailOrUsername, 'local') as UserRow | undefined
+        'SELECT * FROM users WHERE auth_provider = ? AND password_hash IS NOT NULL'
+      ).get('local') as UserRow | undefined
 
-      if (!user) {
-        return { success: false, error: 'Invalid credentials' }
-      }
-      if (!user.password_hash || !user.salt) {
-        return { success: false, error: 'This account uses social login' }
+      if (!user || !user.password_hash || !user.salt) {
+        return { success: false, error: 'No password has been set' }
       }
 
       const valid = await verifyPassword(password, user.password_hash, user.salt)
       if (!valid) {
-        return { success: false, error: 'Invalid credentials' }
+        return { success: false, error: 'Invalid password' }
       }
 
       cleanExpiredSessions()
@@ -515,7 +190,7 @@ export function registerAuthHandlers(): void {
 
       const session = db.prepare(
         'SELECT * FROM sessions WHERE token = ? AND expires_at > ?'
-      ).get(token, Date.now()) as SessionRow | undefined
+      ).get(token, Date.now()) as { id: string; user_id: string; token: string; expires_at: number; created_at: number } | undefined
 
       if (!session) {
         return { success: false, error: 'Session expired' }
@@ -538,64 +213,6 @@ export function registerAuthHandlers(): void {
       const db = getDb()
       db.prepare('DELETE FROM sessions WHERE token = ?').run(token)
       return { success: true }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
-
-  // ─── Update profile ────────────────────────────────────────
-  ipcMain.handle('auth:updateProfile', async (_event, payload: {
-    userId: string
-    displayName?: string
-    email?: string
-    username?: string
-  }) => {
-    try {
-      const db = getDb()
-      const { userId, displayName, email, username } = payload
-      const now = Date.now()
-
-      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined
-      if (!user) {
-        return { success: false, error: 'User not found' }
-      }
-
-      // Check email uniqueness if changed
-      if (email && email !== user.email) {
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-          return { success: false, error: 'Invalid email format' }
-        }
-        const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, userId)
-        if (existing) {
-          return { success: false, error: 'This email is already in use' }
-        }
-      }
-
-      // Check username uniqueness if changed
-      if (username && username !== user.username) {
-        if (username.length < 3) {
-          return { success: false, error: 'Username must be at least 3 characters' }
-        }
-        if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
-          return { success: false, error: 'Username can only contain letters, numbers, _ and -' }
-        }
-        const existing = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(username, userId)
-        if (existing) {
-          return { success: false, error: 'This username is already taken' }
-        }
-      }
-
-      db.prepare(`
-        UPDATE users SET
-          display_name = COALESCE(?, display_name),
-          email = COALESCE(?, email),
-          username = COALESCE(?, username),
-          updated_at = ?
-        WHERE id = ?
-      `).run(displayName ?? null, email ?? null, username ?? null, now, userId)
-
-      const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow
-      return { success: true, data: { user: sanitizeUser(updated) } }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -626,8 +243,14 @@ export function registerAuthHandlers(): void {
       if (!valid) {
         return { success: false, error: 'Current password is incorrect' }
       }
-      if (newPassword.length < 6) {
-        return { success: false, error: 'New password must be at least 6 characters' }
+      if (newPassword.length < 8) {
+        return { success: false, error: 'New password must be at least 8 characters' }
+      }
+      if (!/[a-zA-Z]/.test(newPassword)) {
+        return { success: false, error: 'New password must contain at least one letter' }
+      }
+      if (!/[0-9]/.test(newPassword)) {
+        return { success: false, error: 'New password must contain at least one number' }
       }
 
       const { hash, salt } = await hashPassword(newPassword)
@@ -638,54 +261,6 @@ export function registerAuthHandlers(): void {
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
-  })
-
-  // ─── Delete account ────────────────────────────────────────
-  ipcMain.handle('auth:deleteAccount', async (_event, payload: {
-    userId: string
-    password?: string
-  }) => {
-    try {
-      const db = getDb()
-      const { userId, password } = payload
-
-      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined
-      if (!user) {
-        return { success: false, error: 'User not found' }
-      }
-
-      // Verify password for local users
-      if (user.auth_provider === 'local' && user.password_hash && user.salt) {
-        if (!password) {
-          return { success: false, error: 'Password is required to delete account' }
-        }
-        const valid = await verifyPassword(password, user.password_hash, user.salt)
-        if (!valid) {
-          return { success: false, error: 'Password is incorrect' }
-        }
-      }
-
-      // Delete sessions first, then user
-      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId)
-      db.prepare('DELETE FROM users WHERE id = ?').run(userId)
-
-      return { success: true }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
-
-  // ─── OAuth flows ───────────────────────────────────────────
-  ipcMain.handle('auth:oauthGoogle', async () => {
-    return startOAuthFlow('google')
-  })
-
-  ipcMain.handle('auth:oauthGithub', async () => {
-    return startOAuthFlow('github')
-  })
-
-  ipcMain.handle('auth:oauthGitlab', async () => {
-    return startOAuthFlow('gitlab')
   })
 
   // ─── List users (for admin/debug) ──────────────────────────

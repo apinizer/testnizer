@@ -4,26 +4,18 @@ import { electronAPI } from '@electron-toolkit/preload'
 const api = {
   // ─── Auth ───────────────────────────────────────────────
   auth: {
-    register: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('auth:register', payload),
+    hasPassword: (): Promise<unknown> =>
+      ipcRenderer.invoke('auth:hasPassword'),
+    setPassword: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('auth:setPassword', payload),
     login: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('auth:login', payload),
     getSession: (token: string): Promise<unknown> =>
       ipcRenderer.invoke('auth:getSession', token),
     logout: (token: string): Promise<unknown> =>
       ipcRenderer.invoke('auth:logout', token),
-    updateProfile: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('auth:updateProfile', payload),
     changePassword: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('auth:changePassword', payload),
-    deleteAccount: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('auth:deleteAccount', payload),
-    oauthGoogle: (): Promise<unknown> =>
-      ipcRenderer.invoke('auth:oauthGoogle'),
-    oauthGithub: (): Promise<unknown> =>
-      ipcRenderer.invoke('auth:oauthGithub'),
-    oauthGitlab: (): Promise<unknown> =>
-      ipcRenderer.invoke('auth:oauthGitlab'),
     listUsers: (): Promise<unknown> =>
       ipcRenderer.invoke('auth:listUsers'),
   },

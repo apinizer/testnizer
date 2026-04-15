@@ -19,19 +19,17 @@ interface AuthState {
   isAuthenticated: boolean
   isLoading: boolean
   error: string | null
-
   isGuest: boolean
+  hasPasswordSet: boolean | null // null = not checked yet
 
   // Actions
   checkSession: () => Promise<void>
-  login: (emailOrUsername: string, password: string) => Promise<boolean>
-  register: (email: string, username: string, password: string, displayName?: string) => Promise<boolean>
-  oauthLogin: (provider: 'google' | 'github' | 'gitlab') => Promise<boolean>
+  checkHasPassword: () => Promise<void>
+  login: (password: string) => Promise<boolean>
+  setPassword: (password: string) => Promise<boolean>
   continueAsGuest: () => void
   logout: () => Promise<void>
-  updateProfile: (data: { displayName?: string; email?: string; username?: string }) => Promise<boolean>
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>
-  deleteAccount: (password?: string) => Promise<boolean>
   clearError: () => void
 }
 
@@ -44,48 +42,42 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isGuest: false,
   isLoading: true,
   error: null,
+  hasPasswordSet: null,
 
   checkSession: async () => {
-    // Check guest mode first
-    if (localStorage.getItem(GUEST_MODE_KEY) === 'true') {
-      set({ isAuthenticated: true, isGuest: true, user: null, isLoading: false })
-      return
-    }
+    // Always require login on app launch — clear any previous session
+    localStorage.removeItem(SESSION_TOKEN_KEY)
+    localStorage.removeItem(GUEST_MODE_KEY)
+    set({ isLoading: false, isAuthenticated: false, isGuest: false, user: null })
+  },
 
-    const token = localStorage.getItem(SESSION_TOKEN_KEY)
-    if (!token) {
-      set({ isLoading: false, isAuthenticated: false, user: null })
-      return
-    }
-
+  checkHasPassword: async () => {
     try {
-      const result = await api().auth.getSession(token) as {
+      const result = await api().auth.hasPassword() as {
         success: boolean
-        data?: { user: User }
-        error?: string
+        data?: { hasPassword: boolean }
       }
-      if (result?.success && result.data?.user) {
-        set({ user: result.data.user, isAuthenticated: true, isLoading: false })
+      if (result?.success) {
+        set({ hasPasswordSet: result.data?.hasPassword ?? false, isLoading: false })
       } else {
-        localStorage.removeItem(SESSION_TOKEN_KEY)
-        set({ user: null, isAuthenticated: false, isLoading: false })
+        set({ hasPasswordSet: false, isLoading: false })
       }
     } catch {
-      localStorage.removeItem(SESSION_TOKEN_KEY)
-      set({ user: null, isAuthenticated: false, isLoading: false })
+      set({ hasPasswordSet: false, isLoading: false })
     }
   },
 
-  login: async (emailOrUsername: string, password: string) => {
+  login: async (password: string) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api().auth.login({ emailOrUsername, password }) as {
+      const result = await api().auth.login({ password }) as {
         success: boolean
         data?: { user: User; session: { token: string } }
         error?: string
       }
       if (result?.success && result.data) {
         localStorage.setItem(SESSION_TOKEN_KEY, result.data.session.token)
+        localStorage.removeItem(GUEST_MODE_KEY)
         set({ user: result.data.user, isAuthenticated: true, isLoading: false, error: null })
         return true
       } else {
@@ -98,47 +90,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  register: async (email: string, username: string, password: string, displayName?: string) => {
+  setPassword: async (password: string) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api().auth.register({ email, username, password, displayName }) as {
+      const result = await api().auth.setPassword({ password }) as {
         success: boolean
         data?: { user: User; session: { token: string } }
         error?: string
       }
       if (result?.success && result.data) {
         localStorage.setItem(SESSION_TOKEN_KEY, result.data.session.token)
-        set({ user: result.data.user, isAuthenticated: true, isLoading: false, error: null })
+        localStorage.removeItem(GUEST_MODE_KEY)
+        set({
+          user: result.data.user,
+          isAuthenticated: true,
+          isLoading: false,
+          error: null,
+          hasPasswordSet: true,
+        })
         return true
       } else {
-        set({ isLoading: false, error: result?.error || 'Registration failed' })
-        return false
-      }
-    } catch (e) {
-      set({ isLoading: false, error: (e as Error).message })
-      return false
-    }
-  },
-
-  oauthLogin: async (provider: 'google' | 'github' | 'gitlab') => {
-    set({ isLoading: true, error: null })
-    try {
-      const methodMap = {
-        google: 'oauthGoogle',
-        github: 'oauthGithub',
-        gitlab: 'oauthGitlab',
-      } as const
-      const result = await api().auth[methodMap[provider]]() as {
-        success: boolean
-        data?: { user: User; session: { token: string } }
-        error?: string
-      }
-      if (result?.success && result.data) {
-        localStorage.setItem(SESSION_TOKEN_KEY, result.data.session.token)
-        set({ user: result.data.user, isAuthenticated: true, isLoading: false, error: null })
-        return true
-      } else {
-        set({ isLoading: false, error: result?.error || 'OAuth login failed' })
+        set({ isLoading: false, error: result?.error || 'Failed to set password' })
         return false
       }
     } catch (e) {
@@ -159,30 +131,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     localStorage.removeItem(SESSION_TOKEN_KEY)
     localStorage.removeItem(GUEST_MODE_KEY)
-    set({ user: null, isAuthenticated: false, isGuest: false, isLoading: false, error: null })
-  },
-
-  updateProfile: async (data) => {
-    const { user } = get()
-    if (!user) return false
-    set({ error: null })
-    try {
-      const result = await api().auth.updateProfile({ userId: user.id, ...data }) as {
-        success: boolean
-        data?: { user: User }
-        error?: string
-      }
-      if (result?.success && result.data) {
-        set({ user: result.data.user })
-        return true
-      } else {
-        set({ error: result?.error || 'Update failed' })
-        return false
-      }
-    } catch (e) {
-      set({ error: (e as Error).message })
-      return false
-    }
+    set({ user: null, isAuthenticated: false, isGuest: false, isLoading: false, error: null, hasPasswordSet: null })
   },
 
   changePassword: async (currentPassword: string, newPassword: string) => {
@@ -200,26 +149,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { success: false, error: result?.error || 'Password change failed' }
     } catch (e) {
       return { success: false, error: (e as Error).message }
-    }
-  },
-
-  deleteAccount: async (password?: string) => {
-    const { user } = get()
-    if (!user) return false
-    try {
-      const result = await api().auth.deleteAccount({ userId: user.id, password }) as {
-        success: boolean; error?: string
-      }
-      if (result?.success) {
-        localStorage.removeItem(SESSION_TOKEN_KEY)
-        set({ user: null, isAuthenticated: false })
-        return true
-      }
-      set({ error: result?.error || 'Delete failed' })
-      return false
-    } catch (e) {
-      set({ error: (e as Error).message })
-      return false
     }
   },
 

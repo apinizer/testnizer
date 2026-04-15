@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Save, Loader2 } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
-import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
 import BranchDropdown from '../sidebar/BranchDropdown'
@@ -31,7 +30,6 @@ type OpStatus = 'idle' | 'loading' | 'success' | 'error'
 export default function Header() {
   const goHome = useWorkspaceStore((s) => s.goHome)
   const setShowSaveModal = useUIStore((s) => s.setShowSaveModal)
-  const setShowProjectDetailModal = useUIStore((s) => s.setShowProjectDetailModal)
   const refreshTree = useWorkspaceStore((s) => s.refreshTree)
   const setActiveProject = useWorkspaceStore((s) => s.setActiveProject)
   const setGitLoading = useUIStore((s) => s.setGitLoading)
@@ -338,52 +336,7 @@ export default function Header() {
           {saveStatus === 'loading' ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={12} />}
           {saveStatus === 'success' && <span style={{ fontSize: 13 }}>✓</span>}
         </button>
-
-        {/* Avatar */}
-        <UserAvatar />
       </div>
     </header>
   )
-}
-
-function UserAvatar() {
-  const user = useAuthStore((s) => s.user)
-  const setShowProfileModal = useUIStore((s) => s.setShowProfileModal)
-
-  const initials = user
-    ? getInitials(user.displayName || user.username)
-    : 'A'
-
-  return (
-    <div
-      onClick={() => setShowProfileModal(true)}
-      style={{
-        width: 28,
-        height: 28,
-        borderRadius: '50%',
-        background: user?.avatarUrl ? 'transparent' : T.accent,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 13,
-        fontWeight: 700,
-        color: 'white',
-        cursor: 'pointer',
-        overflow: 'hidden',
-      }}
-      title={user?.displayName || user?.username || 'Profile'}
-    >
-      {user?.avatarUrl ? (
-        <img src={user.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-      ) : (
-        initials
-      )}
-    </div>
-  )
-}
-
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/)
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
-  return name.substring(0, 2).toUpperCase()
 }

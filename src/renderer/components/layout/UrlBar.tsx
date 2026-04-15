@@ -79,17 +79,17 @@ export default function UrlBar() {
   return (
     <div
       style={{
-        height: 40,
+        height: 44,
         background: T.white,
         borderBottom: `1px solid ${T.border}`,
         display: 'flex',
         alignItems: 'center',
-        gap: 6,
+        gap: 0,
         padding: '0 12px',
         flexShrink: 0,
       }}
     >
-      {/* Method dropdown */}
+      {/* Method dropdown — Postman style: bordered pill on the left, flush with URL input */}
       <div ref={dropRef} style={{ position: 'relative' }}>
         <div
           onClick={(e) => {
@@ -100,14 +100,15 @@ export default function UrlBar() {
             display: 'flex',
             alignItems: 'center',
             gap: 4,
-            padding: '3px 8px',
-            background: T.surface,
-            border: `1px solid ${T.border2}`,
-            borderRadius: 6,
+            padding: '0 10px',
+            background: T.white,
+            border: `1px solid ${T.border}`,
+            borderRight: 'none',
+            borderRadius: '8px 0 0 8px',
             cursor: 'pointer',
             userSelect: 'none',
-            minWidth: 80,
-            height: 28,
+            minWidth: 90,
+            height: 32,
           }}
         >
           <MethodBadge method={method} />
@@ -158,7 +159,7 @@ export default function UrlBar() {
         )}
       </div>
 
-      {/* URL input with variable autocomplete */}
+      {/* URL input — Postman style: flush with method dropdown */}
       <VariableAutocompleteInput
         value={url}
         onChange={(v) => { pinIfPreview(); setUrl(v) }}
@@ -174,22 +175,23 @@ export default function UrlBar() {
         style={{
           ...BASE_INP,
           flex: 1,
-          height: 28,
+          height: 32,
           fontWeight: 400,
+          borderRadius: '0 8px 8px 0',
+          border: `1px solid ${T.border}`,
         }}
       />
 
       {/* Send split button — Postman style */}
-      <div ref={sendDropRef} style={{ position: 'relative', display: 'flex' }}>
+      <div ref={sendDropRef} style={{ position: 'relative', display: 'flex', marginLeft: 8 }}>
         <button
           type="button"
           onClick={() => { pinIfPreview(); sendRequest() }}
           disabled={isLoading}
           style={{
             ...BTN_P,
-            background: 'var(--accent)',
-            borderTopRightRadius: 0,
-            borderBottomRightRadius: 0,
+            height: 32,
+            borderRadius: '8px 0 0 8px',
             opacity: isLoading ? 0.75 : 1,
           }}
         >
@@ -221,15 +223,17 @@ export default function UrlBar() {
             background: 'var(--accent)',
             border: 'none',
             borderLeft: '1px solid rgba(255,255,255,0.25)',
-            borderTopRightRadius: 6,
-            borderBottomRightRadius: 6,
+            borderTopRightRadius: 8,
+            borderBottomRightRadius: 8,
+            borderTopLeftRadius: 0,
+            borderBottomLeftRadius: 0,
             color: '#fff',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: '0 6px',
-            height: 28,
+            height: 32,
             opacity: isLoading ? 0.75 : 1,
           }}
         >
@@ -350,6 +354,9 @@ export default function UrlBar() {
         disabled={saveLoading}
         style={{
           ...BTN_S,
+          height: 32,
+          borderRadius: 8,
+          marginLeft: 6,
           borderColor: saveOk ? 'var(--green)' : undefined,
           color: saveOk ? 'var(--green)' : undefined,
         }}
