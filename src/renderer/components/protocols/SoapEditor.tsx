@@ -42,7 +42,7 @@ export default function SoapEditor() {
                   key={tab.key}
                   type="button"
                   onClick={() => setActiveTab(tab.key)}
-                  className="flex cursor-pointer items-center gap-1 whitespace-nowrap px-2.5 text-[13px] transition-colors"
+                  className="flex cursor-pointer items-center gap-1 whitespace-nowrap px-2.5transition-colors"
                   style={{
                     height: 30,
                     borderBottom: 'none',
@@ -61,7 +61,7 @@ export default function SoapEditor() {
             })}
 
             {selectedOperation && (
-              <span className="ml-auto mr-2 rounded-full bg-[var(--accent-light)] px-2 py-0.5 text-[0.75rem] text-[var(--accent-text)]">
+              <span className="ml-auto mr-2 rounded-full bg-[var(--accent-light)] px-2 py-0.5 text-[var(--accent-text)]">
                 {selectedOperation}
               </span>
             )}
@@ -81,7 +81,7 @@ export default function SoapEditor() {
                 {parsedWsdl ? (
                   <SoapBodyEditor />
                 ) : (
-                  <div className="py-8 text-center text-sm" style={{ color: 'var(--hint)' }}>
+                  <div className="py-8 text-center" style={{ color: 'var(--hint)' }}>
                     Import a WSDL first to edit the request body.
                   </div>
                 )}
@@ -100,7 +100,7 @@ export default function SoapEditor() {
                 type="button"
                 onClick={sendSoap}
                 disabled={isLoading || !selectedOperation}
-                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
                 style={{ background: 'var(--accent)', border: 'none' }}
               >
                 <Send size={14} />

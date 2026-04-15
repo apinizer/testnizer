@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { ArrowLeft, BarChart2 } from 'lucide-react'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
+import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 
 interface RunHistoryRow {
   id: string
@@ -22,6 +23,8 @@ interface RunHistoryRow {
   started_at: number
 }
 
+type HistoryTab = 'Functional' | 'Scheduled'
+
 interface RunnerHistoryProps {
   onBack: () => void
   onNewRun?: () => void
@@ -33,8 +36,10 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
   const [runs, setRuns] = useState<RunHistoryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [activeTab, setActiveTab] = useState<HistoryTab>('Functional')
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
-  useEffect(() => {
+  const loadRuns = () => {
     if (!activeProjectId) return
     setLoading(true)
     window.api?.runner?.history(activeProjectId).then((result: unknown) => {
@@ -44,7 +49,18 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
       }
       setLoading(false)
     }).catch(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadRuns()
   }, [activeProjectId])
+
+  const filteredRuns = useMemo(() => {
+    if (activeTab === 'Scheduled') {
+      return runs.filter((r) => r.source === 'Scheduler')
+    }
+    return runs.filter((r) => r.source !== 'Scheduler')
+  }, [runs, activeTab])
 
   const toggleSelect = (id: string) => {
     setSelectedIds((s) => {
@@ -53,6 +69,25 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
       else next.add(id)
       return next
     })
+  }
+
+  const handleDeleteClick = () => {
+    if (selectedIds.size === 0) return
+    setShowDeleteConfirm(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    setShowDeleteConfirm(false)
+    const ids = Array.from(selectedIds)
+    try {
+      const res = await window.api?.runner?.deleteHistory(ids) as { success: boolean }
+      if (res?.success) {
+        setRuns((prev) => prev.filter((r) => !selectedIds.has(r.id)))
+        setSelectedIds(new Set())
+      }
+    } catch {
+      // deletion failed silently
+    }
   }
 
   const handleViewReport = (run: RunHistoryRow) => {
@@ -76,6 +111,10 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
       // invalid JSON
     }
   }
+
+  const tabDescription = activeTab === 'Scheduled'
+    ? 'Runs triggered automatically via Scheduled Tasks.'
+    : 'Runs triggered for this collection via Collection Runner.'
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden" style={{ fontSize: 13 }}>
@@ -104,15 +143,16 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
 
       {/* Tabs */}
       <div className="flex shrink-0 items-center gap-0 border-b border-[var(--border)] px-5">
-        {['Functional', 'Scheduled', 'Performance'].map((tab, i) => (
+        {(['Functional', 'Scheduled'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
+            onClick={() => { setActiveTab(tab); setSelectedIds(new Set()) }}
             className="cursor-pointer border-none bg-transparent px-3 py-2"
             style={{
-              color: i === 0 ? 'var(--text)' : 'var(--muted)',
-              fontWeight: i === 0 ? 600 : 400,
-              borderBottom: i === 0 ? '2px solid var(--accent)' : '2px solid transparent',
+              color: activeTab === tab ? 'var(--text)' : 'var(--muted)',
+              fontWeight: activeTab === tab ? 600 : 400,
+              borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
               marginBottom: -1,
             }}
           >
@@ -123,7 +163,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
 
       {/* Description */}
       <div className="shrink-0 px-5 py-2" style={{ fontSize: 13, color: 'var(--muted)' }}>
-        Runs triggered for this collection via Collection Runner.
+        {tabDescription}
       </div>
 
       {/* Selection bar */}
@@ -140,6 +180,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
             </button>
             <button
               type="button"
+              onClick={handleDeleteClick}
               className="cursor-pointer rounded-[6px] border-none bg-[#cc2200] px-3 py-1 font-medium text-white hover:opacity-90"
             >
               Delete
@@ -152,8 +193,12 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
       <div className="flex-1 overflow-auto px-5">
         {loading ? (
           <div className="py-8 text-center text-[var(--hint)]">Loading...</div>
-        ) : runs.length === 0 ? (
-          <div className="py-8 text-center text-[var(--hint)]">No runs yet. Start a run to see history here.</div>
+        ) : filteredRuns.length === 0 ? (
+          <div className="py-8 text-center text-[var(--hint)]">
+            {activeTab === 'Scheduled'
+              ? 'No scheduled runs yet. Create a scheduled task to see runs here.'
+              : 'No runs yet. Start a run to see history here.'}
+          </div>
         ) : (
           <table className="w-full" style={{ fontSize: 13 }}>
             <thead>
@@ -173,7 +218,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
               </tr>
             </thead>
             <tbody>
-              {runs.map((run) => (
+              {filteredRuns.map((run) => (
                 <HistoryRow
                   key={run.id}
                   run={run}
@@ -187,6 +232,14 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
           </table>
         )}
       </div>
+
+      <DeleteConfirmDialog
+        open={showDeleteConfirm}
+        itemName={`${selectedIds.size} run${selectedIds.size > 1 ? 's' : ''}`}
+        itemType="run history"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   )
 }
@@ -250,9 +303,9 @@ function HistoryRow({
       <td className="py-2.5 pr-4 text-[var(--text)]">{run.environment_name || '-'}</td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{run.iterations}</td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{formatDuration(run.duration_ms)}</td>
-      <td className="py-2.5 pr-4 text-[var(--text)]">{run.total_tests}</td>
-      <td className="py-2.5 pr-4 text-[var(--text)]">{run.passed_tests}</td>
-      <td className="py-2.5 pr-4 text-[var(--text)]">{run.failed_tests}</td>
+      <td className="py-2.5 pr-4 text-[var(--text)]">{run.total_endpoints}</td>
+      <td className="py-2.5 pr-4 text-[var(--text)]">{run.passed_endpoints}</td>
+      <td className="py-2.5 pr-4 text-[var(--text)]">{run.failed_endpoints}</td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{run.skipped_tests}</td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{run.avg_resp_time} ms</td>
       <td className="py-2.5">

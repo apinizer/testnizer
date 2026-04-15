@@ -94,7 +94,7 @@ export default function SettingsModal() {
         <div className="space-y-5">
           {/* Theme */}
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-[var(--muted)]">
+            <label className="mb-1.5 block font-medium text-[var(--muted)]">
               {t('settings.theme')}
             </label>
             <div className="flex gap-2">
@@ -103,7 +103,7 @@ export default function SettingsModal() {
                   key={thm}
                   type="button"
                   onClick={() => update({ theme: thm })}
-                  className="cursor-pointer rounded-[7px] px-3 py-1.5 text-sm transition-colors"
+                  className="cursor-pointer rounded-[7px] px-3 py-1.5 transition-colors"
                   style={{
                     background: settings.theme === thm ? 'var(--accent-light)' : 'var(--bg)',
                     color: settings.theme === thm ? 'var(--accent-text)' : 'var(--text)',
@@ -118,13 +118,13 @@ export default function SettingsModal() {
 
           {/* Language */}
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-[var(--muted)]">
+            <label className="mb-1.5 block font-medium text-[var(--muted)]">
               {t('settings.language')}
             </label>
             <select
               value={settings.language}
               onChange={(e) => update({ language: e.target.value as Language })}
-              className="rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none"
+              className="rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none"
             >
               <option value="en">{t('settings.english')}</option>
               <option value="tr">{t('settings.turkish')}</option>
@@ -133,7 +133,7 @@ export default function SettingsModal() {
 
           {/* Font size */}
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-[var(--muted)]">
+            <label className="mb-1.5 block font-medium text-[var(--muted)]">
               {t('settings.fontSize')}
             </label>
             <input
@@ -142,23 +142,23 @@ export default function SettingsModal() {
               onChange={(e) => update({ fontSize: Number(e.target.value) })}
               min={10}
               max={20}
-              className="w-20 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none"
+              className="w-20 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none"
             />
-            <span className="ml-2 text-sm text-[var(--muted)]">px</span>
+            <span className="ml-2 text-[var(--muted)]">px</span>
           </div>
 
           {/* Timeout */}
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-[var(--muted)]">
+            <label className="mb-1.5 block font-medium text-[var(--muted)]">
               {t('settings.timeout')}
             </label>
             <input
               type="number"
               value={settings.timeout}
               onChange={(e) => update({ timeout: Number(e.target.value) })}
-              className="w-28 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none"
+              className="w-28 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none"
             />
-            <span className="ml-2 text-sm text-[var(--muted)]">ms</span>
+            <span className="ml-2 text-[var(--muted)]">ms</span>
           </div>
 
           {/* SSL Verification */}
@@ -169,12 +169,12 @@ export default function SettingsModal() {
               onChange={(e) => update({ sslVerification: e.target.checked })}
               className="accent-[var(--accent)]"
             />
-            <label className="text-sm text-[var(--text)]">{t('settings.sslVerification')}</label>
+            <label className="text-[var(--text)]">{t('settings.sslVerification')}</label>
           </div>
 
           {/* Proxy */}
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-[var(--muted)]">
+            <label className="mb-1.5 block font-medium text-[var(--muted)]">
               {t('settings.proxy')}
             </label>
             <select
@@ -182,7 +182,7 @@ export default function SettingsModal() {
               onChange={(e) =>
                 update({ proxyMode: e.target.value as 'system' | 'none' | 'custom' })
               }
-              className="rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none"
+              className="rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none"
             >
               <option value="system">{t('settings.systemProxy')}</option>
               <option value="none">{t('settings.noProxy')}</option>
@@ -195,13 +195,13 @@ export default function SettingsModal() {
                   value={settings.proxyHost}
                   onChange={(e) => update({ proxyHost: e.target.value })}
                   placeholder={t('settings.host')}
-                  className="flex-1 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none"
+                  className="flex-1 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none"
                 />
                 <input
                   value={settings.proxyPort}
                   onChange={(e) => update({ proxyPort: e.target.value })}
                   placeholder={t('settings.port')}
-                  className="w-20 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none"
+                  className="w-20 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none"
                 />
               </div>
             )}
@@ -216,12 +216,12 @@ export default function SettingsModal() {
                 onChange={(e) => update({ autoUpdate: e.target.checked })}
                 className="accent-[var(--accent)]"
               />
-              <label className="text-sm text-[var(--text)]">{t('settings.autoUpdate')}</label>
+              <label className="text-[var(--text)]">{t('settings.autoUpdate')}</label>
             </div>
             <button
               type="button"
               onClick={handleCheckUpdates}
-              className="cursor-pointer rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1 text-[0.825rem] text-[var(--muted)] transition-colors hover:text-[var(--text)]"
+              className="cursor-pointer rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1 text-[var(--muted)] transition-colors hover:text-[var(--text)]"
             >
               {t('settings.checkForUpdates')}
             </button>
@@ -233,14 +233,14 @@ export default function SettingsModal() {
           <button
             type="button"
             onClick={() => setShow(false)}
-            className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.825rem] text-[#555] transition-colors hover:bg-[var(--bg)]"
+            className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[#555] transition-colors hover:bg-[var(--bg)]"
           >
             {t('settings.cancel')}
           </button>
           <button
             type="button"
             onClick={handleSave}
-            className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] text-[0.825rem] font-semibold text-white transition-colors hover:opacity-90"
+            className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
           >
             {t('settings.save')}
           </button>

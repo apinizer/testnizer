@@ -15,14 +15,14 @@ export default function WsComposer() {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="text-[0.875rem] font-medium uppercase tracking-widest text-[var(--muted)]">
+        <label className="font-medium uppercase tracking-widest text-[var(--muted)]">
           Message
         </label>
         <div className="flex rounded-lg border border-[var(--border)]">
           <button
             type="button"
             onClick={() => setComposerMode('json')}
-            className="cursor-pointer px-3 py-1 text-[0.875rem] font-medium transition-colors"
+            className="cursor-pointer px-3 py-1 font-medium transition-colors"
             style={{
               background: composerMode === 'json' ? 'var(--accent)' : 'transparent',
               color: composerMode === 'json' ? 'white' : 'var(--muted)',
@@ -35,7 +35,7 @@ export default function WsComposer() {
           <button
             type="button"
             onClick={() => setComposerMode('text')}
-            className="cursor-pointer px-3 py-1 text-[0.875rem] font-medium transition-colors"
+            className="cursor-pointer px-3 py-1 font-medium transition-colors"
             style={{
               background: composerMode === 'text' ? 'var(--accent)' : 'transparent',
               color: composerMode === 'text' ? 'white' : 'var(--muted)',
@@ -59,7 +59,7 @@ export default function WsComposer() {
         type="button"
         onClick={sendMessage}
         disabled={!isConnected || !composerContent.trim()}
-        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
         style={{ background: 'var(--accent)', border: 'none' }}
       >
         <Send size={14} />

@@ -75,7 +75,7 @@ export default function CollectionRunnerModal() {
               <path d="M3 9h6" />
               <path d="M3 15h6" />
             </svg>
-            <span className="text-[0.8125rem] font-semibold text-[var(--text)]">Runner</span>
+            <span className="font-semibold text-[var(--text)]">Runner</span>
           </div>
           <div className="flex-1" />
           <button

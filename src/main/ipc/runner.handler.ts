@@ -58,6 +58,7 @@ interface RunnerExecuteOptions {
   workspaceId?: string
   delay?: number
   folderName?: string
+  source?: string
 }
 
 interface RunnerExportOptions {
@@ -509,7 +510,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       randomUUID(),
       options.projectId,
       options.environmentId || null,
-      'Runner',
+      options.source || 'Runner',
       1,
       durationMs,
       results.length,
@@ -618,7 +619,7 @@ function exportAsHtml(results: EndpointRunResult[]): string {
 // ─── Public API for scheduler ─────────────────────────────────────
 
 export async function executeCollectionForScheduler(options: RunnerExecuteOptions): Promise<RunnerReport> {
-  return executeCollection(options)
+  return executeCollection({ ...options, source: 'Scheduler' })
 }
 
 // ─── Register Handlers ───────────────────────────────────────────
@@ -670,6 +671,18 @@ export function registerRunnerHandlers(): void {
         'SELECT * FROM runner_history WHERE project_id = ? ORDER BY started_at DESC LIMIT 100'
       ).all(projectId)
       return { success: true, data: rows }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('runner:deleteHistory', async (_event, ids: string | string[]) => {
+    try {
+      const db = getDb()
+      const idList = Array.isArray(ids) ? ids : [ids]
+      const placeholders = idList.map(() => '?').join(',')
+      db.prepare(`DELETE FROM runner_history WHERE id IN (${placeholders})`).run(...idList)
+      return { success: true }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

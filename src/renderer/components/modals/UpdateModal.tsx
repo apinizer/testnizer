@@ -93,22 +93,22 @@ function StatusContent({
       return (
         <>
           <Loader2 size={32} className="animate-spin text-[var(--accent)]" />
-          <span className="text-sm text-[var(--muted)]">{t('update.checking')}</span>
+          <span className="text-[var(--muted)]">{t('update.checking')}</span>
         </>
       )
     case 'available':
       return (
         <>
           <Download size={32} className="text-[var(--accent)]" />
-          <span className="text-sm font-medium text-[var(--text)]">
+          <span className="font-medium text-[var(--text)]">
             {t('update.available')}: v{version}
           </span>
           {releaseNotes && (
             <div className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3">
-              <div className="mb-1 text-[0.875rem] font-medium text-[var(--muted)]">
+              <div className="mb-1 font-medium text-[var(--muted)]">
                 {t('update.releaseNotes')}
               </div>
-              <div className="max-h-24 overflow-y-auto text-sm text-[var(--text)]">
+              <div className="max-h-24 overflow-y-auto text-[var(--text)]">
                 {releaseNotes}
               </div>
             </div>
@@ -118,7 +118,7 @@ function StatusContent({
     case 'downloading':
       return (
         <>
-          <span className="text-sm text-[var(--muted)]">
+          <span className="text-[var(--muted)]">
             {t('update.downloading')} {Math.round(downloadPercent)}%
           </span>
           <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--bg)]">
@@ -133,7 +133,7 @@ function StatusContent({
       return (
         <>
           <CheckCircle2 size={32} className="text-[var(--green)]" />
-          <span className="text-sm font-medium text-[var(--text)]">
+          <span className="font-medium text-[var(--text)]">
             {t('update.ready')}
           </span>
         </>
@@ -142,11 +142,11 @@ function StatusContent({
       return (
         <>
           <AlertCircle size={32} className="text-[#cc2200]" />
-          <span className="text-sm font-medium text-[#cc2200]">
+          <span className="font-medium text-[#cc2200]">
             {t('update.error')}
           </span>
           {errorMessage && (
-            <span className="text-sm text-[var(--muted)]">{errorMessage}</span>
+            <span className="text-[var(--muted)]">{errorMessage}</span>
           )}
         </>
       )
@@ -154,7 +154,7 @@ function StatusContent({
       return (
         <>
           <CheckCircle2 size={32} className="text-[var(--green)]" />
-          <span className="text-sm text-[var(--muted)]">{t('update.upToDate')}</span>
+          <span className="text-[var(--muted)]">{t('update.upToDate')}</span>
         </>
       )
   }
@@ -184,7 +184,7 @@ function UpdateActions({
         <button
           type="button"
           onClick={onDownload}
-          className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] text-[0.875rem] font-semibold text-white transition-colors hover:opacity-90"
+          className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
         >
           {t('update.download')}
         </button>
@@ -195,14 +195,14 @@ function UpdateActions({
           <button
             type="button"
             onClick={onClose}
-            className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.875rem] text-[#555] transition-colors hover:bg-[var(--bg)]"
+            className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[#555] transition-colors hover:bg-[var(--bg)]"
           >
             {t('update.later')}
           </button>
           <button
             type="button"
             onClick={onInstall}
-            className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] text-[0.875rem] font-semibold text-white transition-colors hover:opacity-90"
+            className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
           >
             {t('update.restartNow')}
           </button>
@@ -213,7 +213,7 @@ function UpdateActions({
         <button
           type="button"
           onClick={onCheck}
-          className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] text-[0.875rem] font-semibold text-white transition-colors hover:opacity-90"
+          className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
         >
           {t('update.retry')}
         </button>
@@ -223,7 +223,7 @@ function UpdateActions({
         <button
           type="button"
           onClick={onCheck}
-          className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] text-[0.875rem] font-semibold text-white transition-colors hover:opacity-90"
+          className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
         >
           {t('settings.checkForUpdates')}
         </button>

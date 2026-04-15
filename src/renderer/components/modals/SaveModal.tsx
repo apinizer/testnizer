@@ -31,15 +31,15 @@ function DiffCategoryView({ label, diff }: { label: string; diff: DiffCategory }
   if (total === 0) return null
   return (
     <div style={{ marginBottom: 8 }}>
-      <div className="mb-1 flex items-center gap-2 text-[12px] font-semibold" style={{ color: 'var(--text)' }}>
+      <div className="mb-1 flex items-center gap-2 font-semibold" style={{ color: 'var(--text)' }}>
         {label}
-        <span className="rounded px-1.5 py-px text-[10px] font-normal" style={{ background: 'var(--surface)', color: 'var(--muted)' }}>
+        <span className="rounded px-1.5 py-px font-normal" style={{ background: 'var(--surface)', color: 'var(--muted)' }}>
           {total}
         </span>
       </div>
       <div className="rounded-md" style={{ border: '1px solid var(--border)' }}>
         {diff.details.map((item, i) => (
-          <div key={item.id} className="flex items-center gap-2 px-2.5 py-1 text-[12px]"
+          <div key={item.id} className="flex items-center gap-2 px-2.5 py-1"
             style={{ borderBottom: i < diff.details.length - 1 ? '1px solid var(--border)' : 'none' }}
           >
             {item.status === 'added' && <Plus size={11} style={{ color: '#1a7a4a' }} />}
@@ -50,7 +50,7 @@ function DiffCategoryView({ label, diff }: { label: string; diff: DiffCategory }
             }}>
               {item.name}
             </span>
-            <span className="text-[10px]" style={{
+            <span style={{
               color: 'var(--muted)',
               background: item.status === 'added' ? '#e8f9f1' : item.status === 'removed' ? '#fff0f0' : '#fff4e0',
               padding: '1px 5px', borderRadius: 3,
@@ -265,11 +265,11 @@ export default function SaveModal() {
           style={{ height: 48, borderBottom: '1px solid var(--border)' }}
         >
           <div className="flex items-center gap-2">
-            <span className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Project</span>
+            <span className="font-semibold" style={{ color: 'var(--text)' }}>Project</span>
             <div className="flex items-center" style={{ background: 'var(--surface)', borderRadius: 6, padding: 2 }}>
               {tabs.map((tab) => (
                 <button key={tab.id} type="button"
-                  className="flex cursor-pointer items-center gap-1 px-2.5 py-1 text-[11px]"
+                  className="flex cursor-pointer items-center gap-1 px-2.5 py-1"
                   style={{
                     background: tabMode === tab.id ? 'var(--white)' : 'transparent',
                     border: 'none', borderRadius: 4,
@@ -298,7 +298,7 @@ export default function SaveModal() {
               <div className="mb-3 flex gap-2">
                 {(['local', 'git'] as SaveMode[]).map((mode) => (
                   <label key={mode}
-                    className="flex flex-1 cursor-pointer items-center gap-2 rounded-lg p-2.5 text-[13px]"
+                    className="flex flex-1 cursor-pointer items-center gap-2 rounded-lg p-2.5"
                     style={{
                       border: `1.5px solid ${saveMode === mode ? 'var(--accent)' : 'var(--border)'}`,
                       background: saveMode === mode ? 'var(--accent-light)' : 'transparent',
@@ -311,7 +311,7 @@ export default function SaveModal() {
                       : <GitBranch size={14} style={{ color: saveMode === mode ? 'var(--accent)' : 'var(--muted)' }} />}
                     <div>
                       <div className="font-medium" style={{ color: 'var(--text)' }}>{mode === 'local' ? 'Local' : 'Git'}</div>
-                      <div className="text-[11px]" style={{ color: 'var(--muted)' }}>{mode === 'local' ? 'Save to this computer' : 'GitHub / GitLab'}</div>
+                      <div style={{ color: 'var(--muted)' }}>{mode === 'local' ? 'Save to this computer' : 'GitHub / GitLab'}</div>
                     </div>
                   </label>
                 ))}
@@ -319,8 +319,8 @@ export default function SaveModal() {
 
               {saveMode === 'local' && (
                 <div className="flex gap-2">
-                  <input value={localDir} readOnly placeholder="Select folder..." style={{ ...inputStyle, flex: 1, fontFamily: 'monospace', fontSize: 12 }} />
-                  <button type="button" className="cursor-pointer text-[12px]"
+                  <input value={localDir} readOnly placeholder="Select folder..." style={{ ...inputStyle, flex: 1, fontFamily: 'var(--font-mono)', fontSize: 13 }} />
+                  <button type="button" className="cursor-pointer"
                     style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 12px', color: 'var(--text)' }}
                     onClick={handleSelectDirectory}
                   >Browse</button>
@@ -329,27 +329,27 @@ export default function SaveModal() {
 
               {saveMode === 'git' && (
                 <div className="space-y-2.5">
-                  <input value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} placeholder="https://github.com/user/repo.git" style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }} />
+                  <input value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} placeholder="https://github.com/user/repo.git" style={{ ...inputStyle, fontFamily: 'var(--font-mono)', fontSize: 13 }} />
                   <div className="flex gap-2">
-                    <input value={gitBranch} onChange={(e) => setGitBranch(e.target.value)} placeholder="main" style={{ ...inputStyle, fontFamily: 'monospace' }} />
+                    <input value={gitBranch} onChange={(e) => setGitBranch(e.target.value)} placeholder="main" style={{ ...inputStyle, fontFamily: 'var(--font-mono)' }} />
                     <input value={gitUsername} onChange={(e) => setGitUsername(e.target.value)} placeholder="username" style={inputStyle} />
                   </div>
-                  <input type="password" value={gitToken} onChange={(e) => setGitToken(e.target.value)} placeholder="ghp_xxxx..." style={{ ...inputStyle, fontFamily: 'monospace' }} />
+                  <input type="password" value={gitToken} onChange={(e) => setGitToken(e.target.value)} placeholder="ghp_xxxx..." style={{ ...inputStyle, fontFamily: 'var(--font-mono)' }} />
                   <input value={commitMessage} onChange={(e) => setCommitMessage(e.target.value)} placeholder="Commit message..." style={inputStyle} />
                 </div>
               )}
 
               {saveHistory.length > 0 && (
                 <div className="mt-3">
-                  <div className="mb-1 text-[11px] font-semibold" style={{ color: 'var(--muted)' }}>Recent Saves</div>
+                  <div className="mb-1 font-semibold" style={{ color: 'var(--muted)' }}>Recent Saves</div>
                   <div className="max-h-[100px] overflow-y-auto rounded-md" style={{ border: '1px solid var(--border)' }}>
                     {saveHistory.slice(0, 5).map((entry) => (
-                      <div key={entry.id} className="flex items-center gap-2 px-2.5 py-1 text-[12px]"
+                      <div key={entry.id} className="flex items-center gap-2 px-2.5 py-1"
                         style={{ borderBottom: '1px solid var(--border)' }}
                       >
                         {entry.mode === 'local' ? <FolderOpen size={11} style={{ color: 'var(--muted)' }} /> : <GitBranch size={11} style={{ color: 'var(--muted)' }} />}
                         <span className="flex-1 truncate" style={{ color: 'var(--text)' }}>{entry.message}</span>
-                        <span className="text-[10px]" style={{ color: 'var(--hint)' }}>{new Date(entry.timestamp).toLocaleDateString()}</span>
+                        <span style={{ color: 'var(--hint)' }}>{new Date(entry.timestamp).toLocaleDateString()}</span>
                       </div>
                     ))}
                   </div>
@@ -368,7 +368,7 @@ export default function SaveModal() {
               </div>
 
               {diffLoading && (
-                <div className="flex items-center gap-2 py-6 text-center text-[13px]" style={{ color: 'var(--muted)', justifyContent: 'center' }}>
+                <div className="flex items-center gap-2 py-6 text-center" style={{ color: 'var(--muted)', justifyContent: 'center' }}>
                   <Loader2 size={14} className="animate-spin" /> Comparing with remote...
                 </div>
               )}
@@ -376,7 +376,7 @@ export default function SaveModal() {
               {diffResult && !diffLoading && (
                 <div>
                   {/* Summary bar */}
-                  <div className="mb-3 flex items-center gap-2 rounded-md px-3 py-2 text-[12px]" style={{
+                  <div className="mb-3 flex items-center gap-2 rounded-md px-3 py-2" style={{
                     background: diffResult.totalChanges === 0 ? 'var(--surface)' : '#fff4e0',
                     border: '1px solid var(--border)',
                   }}>
@@ -404,14 +404,14 @@ export default function SaveModal() {
           {tabMode === 'pull' && (
             <>
               {diffLoading && (
-                <div className="flex items-center gap-2 py-6 text-center text-[13px]" style={{ color: 'var(--muted)', justifyContent: 'center' }}>
+                <div className="flex items-center gap-2 py-6 text-center" style={{ color: 'var(--muted)', justifyContent: 'center' }}>
                   <Loader2 size={14} className="animate-spin" /> Comparing with remote...
                 </div>
               )}
 
               {diffResult && !diffLoading && (
                 <div>
-                  <div className="mb-3 flex items-center gap-2 rounded-md px-3 py-2 text-[12px]" style={{
+                  <div className="mb-3 flex items-center gap-2 rounded-md px-3 py-2" style={{
                     background: diffResult.totalChanges === 0 ? 'var(--surface)' : '#e8f4ff',
                     border: '1px solid var(--border)',
                   }}>
@@ -432,7 +432,7 @@ export default function SaveModal() {
                   )}
 
                   {!diffResult.remoteExists && (
-                    <div className="mt-2 rounded-md px-3 py-2 text-[12px]" style={{ background: '#fff0f0', color: '#cc2200' }}>
+                    <div className="mt-2 rounded-md px-3 py-2" style={{ background: '#fff0f0', color: '#cc2200' }}>
                       No remote data found. Push first before pulling.
                     </div>
                   )}
@@ -445,24 +445,24 @@ export default function SaveModal() {
           {tabMode === 'open' && (
             <>
               <div className="space-y-2.5">
-                <input value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} placeholder="https://github.com/user/repo.git" style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }} />
+                <input value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} placeholder="https://github.com/user/repo.git" style={{ ...inputStyle, fontFamily: 'var(--font-mono)', fontSize: 13 }} />
                 <div className="flex gap-2">
-                  <input value={gitBranch} onChange={(e) => setGitBranch(e.target.value)} placeholder="main" style={{ ...inputStyle, fontFamily: 'monospace' }} />
+                  <input value={gitBranch} onChange={(e) => setGitBranch(e.target.value)} placeholder="main" style={{ ...inputStyle, fontFamily: 'var(--font-mono)' }} />
                   <input value={gitUsername} onChange={(e) => setGitUsername(e.target.value)} placeholder="username" style={inputStyle} />
                 </div>
-                <input type="password" value={gitToken} onChange={(e) => setGitToken(e.target.value)} placeholder="ghp_xxxx..." style={{ ...inputStyle, fontFamily: 'monospace' }} />
+                <input type="password" value={gitToken} onChange={(e) => setGitToken(e.target.value)} placeholder="ghp_xxxx..." style={{ ...inputStyle, fontFamily: 'var(--font-mono)' }} />
               </div>
               {gitFiles.length > 0 && (
                 <div className="mt-3">
-                  <div className="mb-1 text-[11px] font-semibold" style={{ color: 'var(--muted)' }}>JSON Files in Repository</div>
+                  <div className="mb-1 font-semibold" style={{ color: 'var(--muted)' }}>JSON Files in Repository</div>
                   <div className="max-h-[140px] overflow-y-auto rounded-md" style={{ border: '1px solid var(--border)' }}>
                     {gitFiles.map((file) => (
-                      <div key={file.name} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--surface)]"
+                      <div key={file.name} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-[var(--surface)]"
                         style={{ borderBottom: '1px solid var(--border)', color: 'var(--text)' }}
                         onClick={() => handleImportFile(file)}
                       >
                         <span className="flex-1">{file.name}</span>
-                        <span className="text-[11px]" style={{ color: 'var(--hint)' }}>{(file.size / 1024).toFixed(1)} KB</span>
+                        <span style={{ color: 'var(--hint)' }}>{(file.size / 1024).toFixed(1)} KB</span>
                       </div>
                     ))}
                   </div>
@@ -473,7 +473,7 @@ export default function SaveModal() {
 
           {/* Status message */}
           {status && (
-            <div className="mt-3 flex items-center gap-2 rounded-md px-3 py-2 text-[12px]" style={{
+            <div className="mt-3 flex items-center gap-2 rounded-md px-3 py-2" style={{
               background: status.type === 'success' ? '#e8f9f1' : '#fff0f0',
               color: status.type === 'success' ? '#1a7a4a' : '#cc2200',
             }}>
@@ -487,12 +487,12 @@ export default function SaveModal() {
         <div className="flex shrink-0 items-center justify-end gap-2 px-4"
           style={{ height: 48, borderTop: '1px solid var(--border)' }}
         >
-          <button type="button" className="cursor-pointer text-[13px]"
+          <button type="button" className="cursor-pointer"
             style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 14px', color: 'var(--text)' }}
             onClick={handleClose}
           >Cancel</button>
           <button type="button"
-            className="flex cursor-pointer items-center gap-1.5 text-[13px]"
+            className="flex cursor-pointer items-center gap-1.5"
             style={{
               background: 'var(--accent)', border: 'none', borderRadius: 6,
               padding: '5px 14px', color: '#fff', opacity: loading ? 0.7 : 1,

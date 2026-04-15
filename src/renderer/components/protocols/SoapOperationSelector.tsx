@@ -19,17 +19,17 @@ export default function SoapOperationSelector() {
 
   return (
     <div className="space-y-3">
-      <label className="text-[0.875rem] font-medium uppercase tracking-widest text-[var(--muted)]">
+      <label className="font-medium uppercase tracking-widest text-[var(--muted)]">
         Service Configuration
       </label>
       <div className="grid grid-cols-3 gap-3">
         {/* Service */}
         <div className="space-y-1">
-          <span className="text-[0.875rem] text-[var(--muted)]">Service</span>
+          <span className="text-[var(--muted)]">Service</span>
           <select
             value={selectedService || ''}
             onChange={(e) => selectService(e.target.value)}
-            className="w-full cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+            className="w-full cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
           >
             {services.map((svc) => (
               <option key={svc.name} value={svc.name}>
@@ -41,11 +41,11 @@ export default function SoapOperationSelector() {
 
         {/* Port */}
         <div className="space-y-1">
-          <span className="text-[0.875rem] text-[var(--muted)]">Port</span>
+          <span className="text-[var(--muted)]">Port</span>
           <select
             value={selectedPort || ''}
             onChange={(e) => selectPort(e.target.value)}
-            className="w-full cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+            className="w-full cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
           >
             {ports.map((port) => (
               <option key={port.name} value={port.name}>
@@ -57,11 +57,11 @@ export default function SoapOperationSelector() {
 
         {/* Operation */}
         <div className="space-y-1">
-          <span className="text-[0.875rem] text-[var(--muted)]">Operation</span>
+          <span className="text-[var(--muted)]">Operation</span>
           <select
             value={selectedOperation || ''}
             onChange={(e) => selectOperation(e.target.value)}
-            className="w-full cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+            className="w-full cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
           >
             {operations.map((op) => (
               <option key={op.name} value={op.name}>
@@ -75,8 +75,8 @@ export default function SoapOperationSelector() {
       {/* Endpoint URL display */}
       {currentPort && (
         <div className="flex items-center gap-2 rounded-lg bg-[var(--surface)] px-3 py-1.5">
-          <span className="text-[0.875rem] font-medium uppercase text-[var(--hint)]">Endpoint</span>
-          <span className="font-mono text-sm text-[var(--blue)]">{currentPort.endpointUrl}</span>
+          <span className="font-medium uppercase text-[var(--hint)]">Endpoint</span>
+          <span className="font-mono text-[var(--blue)]">{currentPort.endpointUrl}</span>
         </div>
       )}
     </div>

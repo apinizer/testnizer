@@ -175,7 +175,7 @@ export default function EndpointSaveModal() {
         <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           {/* Endpoint name */}
           <div>
-            <div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 500, marginBottom: 5, fontFamily: 'inherit' }}>
+            <div style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 500, marginBottom: 5, fontFamily: 'inherit' }}>
               Endpoint Adı
             </div>
             <input
@@ -202,7 +202,7 @@ export default function EndpointSaveModal() {
 
           {/* Folder selection */}
           <div>
-            <div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 500, marginBottom: 8, fontFamily: 'inherit' }}>
+            <div style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 500, marginBottom: 8, fontFamily: 'inherit' }}>
               Klasöre Kaydet
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

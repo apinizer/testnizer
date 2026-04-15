@@ -111,7 +111,7 @@ export default function NewDropdown() {
       }}
     >
       {/* New section */}
-      <div className="mb-2 ml-1 text-[0.75rem] font-medium uppercase tracking-widest text-[var(--hint)]">
+      <div className="mb-2 ml-1 font-medium uppercase tracking-widest text-[var(--hint)]">
         New
       </div>
       <div className="mb-2 grid grid-cols-2 gap-1">
@@ -119,7 +119,7 @@ export default function NewDropdown() {
           <button
             key={item.label}
             type="button"
-            className="flex items-center gap-2 rounded-lg px-2.5 py-[7px] text-[0.875rem] transition-colors hover:bg-[var(--bg)]"
+            className="flex items-center gap-2 rounded-lg px-2.5 py-[7px] transition-colors hover:bg-[var(--bg)]"
             style={{
               color: item.muted ? 'var(--hint)' : 'var(--text)',
               background: 'transparent',
@@ -133,7 +133,7 @@ export default function NewDropdown() {
             }}
           >
             <div
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-sm"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px]"
               style={{ background: item.bg }}
             >
               {item.icon}
@@ -145,23 +145,23 @@ export default function NewDropdown() {
 
       {/* Separator */}
       <div className="border-t border-[var(--border)] pt-2">
-        <div className="mb-1 text-[0.75rem] uppercase tracking-widest text-[var(--hint)]">
+        <div className="mb-1 uppercase tracking-widest text-[var(--hint)]">
           Other
         </div>
         {otherItems.map((item) => (
           <button
             key={item.label}
             type="button"
-            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[0.875rem] text-[var(--text)] transition-colors hover:bg-[var(--bg)]"
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[var(--text)] transition-colors hover:bg-[var(--bg)]"
             style={{ background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
             onClick={() => {
               item.action?.()
               if (!item.action) setOpen(false)
             }}
           >
-            <span className="w-5 text-sm">{item.icon}</span>
+            <span className="w-5">{item.icon}</span>
             <span className="flex-1">{item.label}</span>
-            <span className="text-[0.75rem] text-[var(--hint)]">{item.shortcut}</span>
+            <span className="text-[var(--hint)]">{item.shortcut}</span>
           </button>
         ))}
       </div>

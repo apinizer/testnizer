@@ -83,7 +83,7 @@ export const BTN_S: CSSProperties = {
 }
 
 export const LBL_S: CSSProperties = {
-  fontSize: 11,
+  fontSize: 13,
   color: 'var(--muted)',
   fontWeight: 500,
   marginBottom: 4,
@@ -91,7 +91,7 @@ export const LBL_S: CSSProperties = {
 
 export const KV_HEADER_CELL: CSSProperties = {
   padding: '4px 8px',
-  fontSize: 11,
+  fontSize: 13,
   color: 'var(--hint)',
   fontWeight: 400,
 }

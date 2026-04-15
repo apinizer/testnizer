@@ -17,14 +17,14 @@ export default function SoapBodyEditor() {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="text-[0.875rem] font-medium uppercase tracking-widest text-[var(--muted)]">
+        <label className="font-medium uppercase tracking-widest text-[var(--muted)]">
           Request Body
         </label>
         <div className="flex rounded-lg border border-[var(--border)]">
           <button
             type="button"
             onClick={() => setBodyMode('form')}
-            className="cursor-pointer px-3 py-1 text-[0.875rem] font-medium transition-colors"
+            className="cursor-pointer px-3 py-1 font-medium transition-colors"
             style={{
               background: bodyMode === 'form' ? 'var(--accent)' : 'transparent',
               color: bodyMode === 'form' ? 'white' : 'var(--muted)',
@@ -37,7 +37,7 @@ export default function SoapBodyEditor() {
           <button
             type="button"
             onClick={() => setBodyMode('raw')}
-            className="cursor-pointer px-3 py-1 text-[0.875rem] font-medium transition-colors"
+            className="cursor-pointer px-3 py-1 font-medium transition-colors"
             style={{
               background: bodyMode === 'raw' ? 'var(--accent)' : 'transparent',
               color: bodyMode === 'raw' ? 'white' : 'var(--muted)',
@@ -57,8 +57,8 @@ export default function SoapBodyEditor() {
             className="grid border-b border-[var(--border)]"
             style={{ gridTemplateColumns: '1fr 1fr', background: 'var(--surface)' }}
           >
-            <div className="p-1.5 px-3 text-[0.875rem] font-medium text-[var(--muted)]">Parameter</div>
-            <div className="p-1.5 px-3 text-[0.875rem] font-medium text-[var(--muted)]">Value</div>
+            <div className="p-1.5 px-3 font-medium text-[var(--muted)]">Parameter</div>
+            <div className="p-1.5 px-3 font-medium text-[var(--muted)]">Value</div>
           </div>
           {/* Rows */}
           {formKeys.map((key, idx) => (
@@ -70,19 +70,19 @@ export default function SoapBodyEditor() {
                 borderBottom: idx < formKeys.length - 1 ? '1px solid var(--border)' : 'none',
               }}
             >
-              <div className="flex items-center px-3 py-1.5 font-mono text-sm text-[var(--text)]">
+              <div className="flex items-center px-3 py-1.5 font-mono text-[var(--text)]">
                 {key}
               </div>
               <input
                 value={formValues[key]}
                 onChange={(e) => setFormValue(key, e.target.value)}
-                className="border-none bg-transparent px-3 py-1.5 font-mono text-sm text-[var(--blue)] outline-none"
+                className="border-none bg-transparent px-3 py-1.5 font-mono text-[var(--blue)] outline-none"
                 placeholder={`Enter ${key}...`}
               />
             </div>
           ))}
           {formKeys.length === 0 && (
-            <div className="px-3 py-4 text-center text-sm text-[var(--hint)]">
+            <div className="px-3 py-4 text-center text-[var(--hint)]">
               No input parameters for this operation
             </div>
           )}

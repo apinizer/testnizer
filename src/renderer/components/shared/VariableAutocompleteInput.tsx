@@ -287,7 +287,7 @@ export default function VariableAutocompleteInput({
                       width: 18,
                       height: 18,
                       borderRadius: 4,
-                      fontSize: 11,
+                      fontSize: 13,
                       fontWeight: 700,
                       color: cfg.color,
                       background: cfg.bg,
@@ -303,7 +303,7 @@ export default function VariableAutocompleteInput({
                       fontSize: 13,
                       fontWeight: 500,
                       color: 'var(--text)',
-                      fontFamily: 'monospace',
+                      fontFamily: 'var(--font-mono)',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -314,7 +314,7 @@ export default function VariableAutocompleteInput({
                   {/* Value preview or description */}
                   <span
                     style={{
-                      fontSize: 11,
+                      fontSize: 13,
                       color: 'var(--muted)',
                       fontStyle: 'italic',
                       whiteSpace: 'nowrap',
@@ -330,7 +330,7 @@ export default function VariableAutocompleteInput({
               )
             })}
             {suggestions.length === 0 && (
-              <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)' }}>
+              <div style={{ padding: '8px 12px', fontSize: 13, color: 'var(--muted)' }}>
                 No variables found
               </div>
             )}

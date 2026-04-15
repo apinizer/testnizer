@@ -278,10 +278,10 @@ export default function ProjectDetailModal() {
               size={34}
             />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px] font-semibold" style={{ color: 'var(--heading)' }}>
+              <div className="truncate font-semibold" style={{ color: 'var(--heading)' }}>
                 {activeProject.display_name || activeProject.name}
               </div>
-              <div className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--muted)' }}>
+              <div className="flex items-center gap-1" style={{ color: 'var(--muted)' }}>
                 {typeLabels[activeProject.type]?.icon}
                 <span>{typeLabels[activeProject.type]?.label || 'HTTP'}</span>
               </div>
@@ -332,7 +332,7 @@ export default function ProjectDetailModal() {
             className="flex items-center justify-between px-3 py-2"
             style={{ borderTop: '1px solid var(--border)' }}
           >
-            <span className="text-[10px]" style={{ color: 'var(--hint)' }}>
+            <span style={{ color: 'var(--hint)' }}>
               {activeProject.save_mode || 'local'}
             </span>
             <button
@@ -451,7 +451,7 @@ export default function ProjectDetailModal() {
             <button
               type="button"
               onClick={handleClose}
-              className="cursor-pointer rounded-[7px] px-4 py-[7px] text-[13px]"
+              className="cursor-pointer rounded-[7px] px-4 py-[7px]"
               style={{
                 background: 'var(--white)',
                 border: '1.5px solid var(--border2)',
@@ -464,7 +464,7 @@ export default function ProjectDetailModal() {
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="cursor-pointer rounded-[7px] px-5 py-[7px] text-[13px] font-semibold"
+              className="cursor-pointer rounded-[7px] px-5 py-[7px] font-semibold"
               style={{
                 background: 'var(--accent)',
                 border: 'none',
@@ -489,7 +489,7 @@ function SidebarGroup({ title, children }: { title: string; children: React.Reac
   return (
     <div className="mb-3">
       <div
-        className="px-4 py-1 text-[10px] font-semibold uppercase tracking-wide"
+        className="px-4 py-1 font-semibold uppercase tracking-wide"
         style={{ color: 'var(--hint)' }}
       >
         {title}
@@ -538,7 +538,7 @@ function PaneHeader({ title, subtitle }: { title: string; subtitle?: string }) {
     <div className="mb-5">
       <div className="text-[16px] font-semibold" style={{ color: 'var(--heading)' }}>{title}</div>
       {subtitle && (
-        <div className="mt-0.5 text-[12px]" style={{ color: 'var(--muted)' }}>
+        <div className="mt-0.5" style={{ color: 'var(--muted)' }}>
           {subtitle}
         </div>
       )}
@@ -550,7 +550,7 @@ function Label({ text }: { text: string }) {
   return (
     <div
       style={{
-        fontSize: 11,
+        fontSize: 13,
         color: 'var(--muted)',
         fontWeight: 600,
         textTransform: 'uppercase',
@@ -624,7 +624,7 @@ function OverviewPane(props: {
               <button
                 type="button"
                 onClick={() => { props.onIconModeChange('auto'); props.onIconEmojiChange('') }}
-                className="flex-1 cursor-pointer rounded-[7px] py-1.5 text-[12px]"
+                className="flex-1 cursor-pointer rounded-[7px] py-1.5"
                 style={{
                   border: `1.5px solid ${props.iconMode === 'auto' ? 'var(--accent)' : 'var(--border2)'}`,
                   background: props.iconMode === 'auto' ? 'var(--accent-light)' : 'var(--white)',
@@ -637,7 +637,7 @@ function OverviewPane(props: {
               <button
                 type="button"
                 onClick={() => props.onIconModeChange('emoji')}
-                className="flex-1 cursor-pointer rounded-[7px] py-1.5 text-[12px]"
+                className="flex-1 cursor-pointer rounded-[7px] py-1.5"
                 style={{
                   border: `1.5px solid ${props.iconMode === 'emoji' ? 'var(--accent)' : 'var(--border2)'}`,
                   background: props.iconMode === 'emoji' ? 'var(--accent-light)' : 'var(--white)',
@@ -713,8 +713,8 @@ function OverviewPane(props: {
 function MetaField({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--hint)' }}>{label}</div>
-      <div className="mt-0.5 text-[12px]" style={{ color: 'var(--text)' }}>{value}</div>
+      <div className="uppercase tracking-wide" style={{ color: 'var(--hint)' }}>{label}</div>
+      <div className="mt-0.5" style={{ color: 'var(--text)' }}>{value}</div>
     </div>
   )
 }
@@ -818,7 +818,7 @@ function AuthPane({
 
         {auth.type === 'none' && (
           <div
-            className="rounded-[8px] p-4 text-[12px]"
+            className="rounded-[8px] p-4"
             style={{
               background: 'var(--surface)',
               border: '1px dashed var(--border2)',
@@ -889,7 +889,7 @@ function VariablesPane({
       <button
         type="button"
         onClick={onOpenManager}
-        className="mt-5 cursor-pointer rounded-[7px] px-4 py-2 text-[13px] font-semibold"
+        className="mt-5 cursor-pointer rounded-[7px] px-4 py-2 font-semibold"
         style={{
           background: 'var(--accent)',
           border: 'none',
@@ -900,7 +900,7 @@ function VariablesPane({
       </button>
 
       <div
-        className="mt-5 rounded-[8px] p-4 text-[12px]"
+        className="mt-5 rounded-[8px] p-4"
         style={{
           background: 'var(--surface)',
           border: '1px solid var(--border)',
@@ -920,7 +920,7 @@ function StatCard({ label, value }: { label: string; value: number }) {
       className="rounded-[8px] p-4"
       style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
     >
-      <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--muted)' }}>{label}</div>
+      <div className="uppercase tracking-wide" style={{ color: 'var(--muted)' }}>{label}</div>
       <div className="mt-1 text-[24px] font-semibold" style={{ color: 'var(--heading)' }}>{value}</div>
     </div>
   )
@@ -961,7 +961,7 @@ function StoragePane(props: {
                 key={m}
                 type="button"
                 onClick={() => props.onSaveModeChange(m)}
-                className="flex-1 cursor-pointer items-center gap-2 rounded-[8px] px-3 py-2 text-[12px]"
+                className="flex-1 cursor-pointer items-center gap-2 rounded-[8px] px-3 py-2"
                 style={{
                   display: 'flex',
                   justifyContent: 'center',
@@ -991,7 +991,7 @@ function StoragePane(props: {
               <button
                 type="button"
                 onClick={props.onSelectDir}
-                className="cursor-pointer rounded-[7px] px-3 text-[12px]"
+                className="cursor-pointer rounded-[7px] px-3"
                 style={{
                   background: 'var(--surface)',
                   border: '1.5px solid var(--border2)',
@@ -1006,7 +1006,7 @@ function StoragePane(props: {
 
         {(props.saveMode === 'git' || props.saveMode === 'both') && (
           <div className="flex flex-col gap-3 rounded-[8px] p-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+            <div className="font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
               Git Repository
             </div>
             <div>
@@ -1055,7 +1055,7 @@ function StoragePane(props: {
                   {props.showToken ? <EyeOff size={13} /> : <Eye size={13} />}
                 </button>
               </div>
-              <div className="mt-1 text-[10px]" style={{ color: 'var(--hint)' }}>
+              <div className="mt-1" style={{ color: 'var(--hint)' }}>
                 Token is encrypted and stored in electron-store.
               </div>
             </div>
@@ -1083,7 +1083,7 @@ function BranchesPane({
       <div className="flex flex-col gap-1">
         {branches.length === 0 && (
           <div
-            className="rounded-[8px] p-6 text-center text-[13px]"
+            className="rounded-[8px] p-6 text-center"
             style={{ background: 'var(--surface)', border: '1px dashed var(--border2)', color: 'var(--hint)' }}
           >
             No branches yet.
@@ -1094,7 +1094,7 @@ function BranchesPane({
           return (
             <div
               key={branch.id}
-              className="flex items-center gap-2 rounded-[8px] px-4 py-2 text-[13px]"
+              className="flex items-center gap-2 rounded-[8px] px-4 py-2"
               style={{
                 background: isActive ? 'var(--accent-light)' : 'var(--surface)',
                 border: `1px solid ${isActive ? 'var(--accent)' : 'var(--border)'}`,
@@ -1105,7 +1105,7 @@ function BranchesPane({
               <span className="font-mono" style={{ fontWeight: isActive ? 600 : 400 }}>{branch.name}</span>
               {branch.is_default && (
                 <span
-                  className="rounded px-1.5 py-[1px] text-[10px] font-semibold"
+                  className="rounded px-1.5 py-[1px] font-semibold"
                   style={{ background: 'var(--accent)', color: '#fff' }}
                 >
                   default
@@ -1113,7 +1113,7 @@ function BranchesPane({
               )}
               {isActive && (
                 <span
-                  className="rounded px-1.5 py-[1px] text-[10px] font-semibold"
+                  className="rounded px-1.5 py-[1px] font-semibold"
                   style={{
                     background: 'var(--green-bg)',
                     color: 'var(--green)',
@@ -1124,7 +1124,7 @@ function BranchesPane({
                 </span>
               )}
               <span className="flex-1" />
-              <span className="text-[10px]" style={{ color: 'var(--hint)' }}>
+              <span style={{ color: 'var(--hint)' }}>
                 {new Date(branch.created_at).toLocaleDateString()}
               </span>
             </div>
@@ -1163,7 +1163,7 @@ function AppSettingsPane({
                 key={t}
                 type="button"
                 onClick={() => onThemeChange(t)}
-                className="flex-1 cursor-pointer rounded-[8px] px-3 py-2 text-[12px]"
+                className="flex-1 cursor-pointer rounded-[8px] px-3 py-2"
                 style={{
                   border: `2px solid ${theme === t ? 'var(--accent)' : 'var(--border)'}`,
                   background: theme === t ? 'var(--accent-light)' : 'var(--white)',
@@ -1201,7 +1201,7 @@ function AppSettingsPane({
               style={{ flex: 1, accentColor: 'var(--accent)' }}
             />
             <span
-              className="rounded-[6px] px-2 py-0.5 text-[13px] font-semibold"
+              className="rounded-[6px] px-2 py-0.5 font-semibold"
               style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', minWidth: 40, textAlign: 'center' }}
             >
               {fontSize}px

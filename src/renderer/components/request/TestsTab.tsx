@@ -131,7 +131,7 @@ export default function TestsTab() {
 
   return (
     <div>
-      <div className="mb-2 text-[0.8125rem] font-medium" style={{ color: 'var(--text)' }}>
+      <div className="mb-2 font-medium" style={{ color: 'var(--text)' }}>
         Visual Assertions
       </div>
 
@@ -149,7 +149,7 @@ export default function TestsTab() {
           ref={btnRef}
           type="button"
           onClick={() => setShowPicker(!showPicker)}
-          className="mb-3 mt-1 w-full cursor-pointer rounded-[7px] border border-dashed border-[var(--border2)] bg-transparent py-[5px] text-sm text-[var(--hint)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
+          className="mb-3 mt-1 w-full cursor-pointer rounded-[7px] border border-dashed border-[var(--border2)] bg-transparent py-[5px] text-[var(--hint)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
         >
           + Add Assertion
         </button>
@@ -162,7 +162,7 @@ export default function TestsTab() {
           >
             {ASSERTION_CATEGORIES.map((cat) => (
               <div key={cat.label}>
-                <div className="px-3 pb-0.5 pt-2 text-[0.875rem] font-semibold uppercase tracking-wider text-[var(--hint)]">
+                <div className="px-3 pb-0.5 pt-2 font-semibold uppercase tracking-wider text-[var(--hint)]">
                   {cat.label}
                 </div>
                 {cat.items.map((item) => (
@@ -170,7 +170,7 @@ export default function TestsTab() {
                     key={item.type}
                     type="button"
                     onClick={() => handlePickType(item.type, item.label)}
-                    className="flex w-full cursor-pointer items-center gap-2 bg-transparent px-3 py-1.5 text-left text-[0.875rem] text-[var(--text)] transition-colors hover:bg-[var(--accent-light)]"
+                    className="flex w-full cursor-pointer items-center gap-2 bg-transparent px-3 py-1.5 text-left text-[var(--text)] transition-colors hover:bg-[var(--accent-light)]"
                     style={{ border: 'none' }}
                   >
                     {item.label}

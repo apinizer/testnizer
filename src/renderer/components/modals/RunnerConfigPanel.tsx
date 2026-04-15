@@ -28,14 +28,14 @@ export default function RunnerConfigPanel({ projects, environments }: RunnerConf
     <div className="flex w-[320px] shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--bg)]">
       {/* Project selector */}
       <div className="border-b border-[var(--border)] px-4 py-3">
-        <label className="mb-1 block text-[0.875rem] font-medium uppercase tracking-wider text-[var(--hint)]">
+        <label className="mb-1 block font-medium uppercase tracking-wider text-[var(--hint)]">
           Project
         </label>
         <select
           value={projectId ?? ''}
           onChange={(e) => setProjectId(e.target.value || null)}
           disabled={isRunning}
-          className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+          className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
         >
           <option value="">All Projects</option>
           {projects.map((p) => (
@@ -48,14 +48,14 @@ export default function RunnerConfigPanel({ projects, environments }: RunnerConf
 
       {/* Environment selector */}
       <div className="border-b border-[var(--border)] px-4 py-3">
-        <label className="mb-1 block text-[0.875rem] font-medium uppercase tracking-wider text-[var(--hint)]">
+        <label className="mb-1 block font-medium uppercase tracking-wider text-[var(--hint)]">
           Environment
         </label>
         <select
           value={environmentId ?? ''}
           onChange={(e) => setEnvironmentId(e.target.value || null)}
           disabled={isRunning}
-          className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+          className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
         >
           <option value="">No Environment</option>
           {environments.map((env) => (
@@ -68,7 +68,7 @@ export default function RunnerConfigPanel({ projects, environments }: RunnerConf
 
       {/* Delay input */}
       <div className="border-b border-[var(--border)] px-4 py-3">
-        <label className="mb-1 flex items-center gap-1.5 text-[0.875rem] font-medium uppercase tracking-wider text-[var(--hint)]">
+        <label className="mb-1 flex items-center gap-1.5 font-medium uppercase tracking-wider text-[var(--hint)]">
           <Clock size={11} />
           Delay between requests
         </label>
@@ -80,22 +80,22 @@ export default function RunnerConfigPanel({ projects, environments }: RunnerConf
             value={delay}
             onChange={(e) => setDelay(Number(e.target.value))}
             disabled={isRunning}
-            className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+            className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
           />
-          <span className="shrink-0 text-[0.875rem] text-[var(--muted)]">ms</span>
+          <span className="shrink-0 text-[var(--muted)]">ms</span>
         </div>
       </div>
 
       {/* Endpoint list header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2">
-        <span className="text-[0.875rem] font-medium text-[var(--muted)]">
+        <span className="font-medium text-[var(--muted)]">
           Endpoints ({selectedCount}/{endpoints.length})
         </span>
         <button
           type="button"
           onClick={allSelected ? deselectAll : selectAll}
           disabled={isRunning}
-          className="flex cursor-pointer items-center gap-1 bg-transparent text-[0.875rem] text-[var(--accent)] hover:underline"
+          className="flex cursor-pointer items-center gap-1 bg-transparent text-[var(--accent)] hover:underline"
           style={{ border: 'none' }}
         >
           {allSelected ? (
@@ -136,11 +136,11 @@ export default function RunnerConfigPanel({ projects, environments }: RunnerConf
               )}
             </div>
             <MethodBadge method={ep.method} />
-            <span className="flex-1 truncate text-sm text-[var(--text)]">{ep.name}</span>
+            <span className="flex-1 truncate text-[var(--text)]">{ep.name}</span>
           </button>
         ))}
         {endpoints.length === 0 && (
-          <div className="px-4 py-6 text-center text-sm text-[var(--hint)]">
+          <div className="px-4 py-6 text-center text-[var(--hint)]">
             No endpoints found in project
           </div>
         )}

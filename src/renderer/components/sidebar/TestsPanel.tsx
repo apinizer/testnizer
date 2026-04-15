@@ -15,6 +15,7 @@ import {
   ToggleRight,
 } from 'lucide-react'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
+import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 
 /* ── Section icons ─────────────────────────────────────────── */
 
@@ -86,6 +87,7 @@ export default function TestsPanel() {
   const [scheduledTasks, setScheduledTasks] = useState<ScheduledTaskRow[]>([])
   const [showPlusMenu, setShowPlusMenu] = useState(false)
   const plusRef = useRef<HTMLDivElement>(null)
+  const [deleteTaskTarget, setDeleteTaskTarget] = useState<ScheduledTaskRow | null>(null)
 
   // Close plus menu on outside click
   useEffect(() => {
@@ -195,11 +197,13 @@ export default function TestsPanel() {
     } catch { /* invalid JSON */ }
   }, [openOrReuseRunnerTab])
 
-  const deleteScheduledTask = useCallback(async (taskId: string) => {
+  const confirmDeleteTask = useCallback(async () => {
+    if (!deleteTaskTarget) return
     const api = window.api as Record<string, unknown> & { scheduler?: { delete: (id: string) => Promise<{ success: boolean }> } }
-    await api.scheduler?.delete(taskId)
+    await api.scheduler?.delete(deleteTaskTarget.id)
+    setDeleteTaskTarget(null)
     loadScheduledTasks()
-  }, [loadScheduledTasks])
+  }, [deleteTaskTarget, loadScheduledTasks])
 
   const toggleScheduledTask = useCallback(async (taskId: string) => {
     const api = window.api as Record<string, unknown> & { scheduler?: { toggle: (id: string) => Promise<{ success: boolean }> } }
@@ -240,7 +244,7 @@ export default function TestsPanel() {
         className="flex shrink-0 items-center gap-2 border-b px-3"
         style={{ height: 44, borderColor: T.border }}
       >
-        <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: T.text }}>Tests</span>
+        <span style={{ flex: 1, fontSize: 15, fontWeight: 700, color: T.text }}>Tests</span>
 
         {/* + button with dropdown */}
         <div ref={plusRef} style={{ position: 'relative' }}>
@@ -363,6 +367,14 @@ export default function TestsPanel() {
           onLabelClick={openScheduledTasksTab}
         />
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteTaskTarget}
+        itemName={deleteTaskTarget?.name || ''}
+        itemType="scheduled task"
+        onConfirm={confirmDeleteTask}
+        onCancel={() => setDeleteTaskTarget(null)}
+      />
     </div>
   )
 }

@@ -29,19 +29,19 @@ export default function ResponseMeta() {
       )}
 
       {/* Timing */}
-      <span className="text-[13px] text-[var(--muted)]">
+      <span className="text-[var(--muted)]">
         <span className="font-semibold text-[var(--green)]">{response.timing.total}</span> {t('response.ms')}
       </span>
 
       {/* Size */}
-      <span className="text-[13px] text-[var(--muted)]">
+      <span className="text-[var(--muted)]">
         <span className="font-semibold text-[var(--text)]">{sizeKB}</span> {t('response.kb')}
       </span>
 
       {/* Test badge */}
       {totalTests > 0 && (
         <span
-          className="rounded-full px-2 py-0.5 text-[12px] font-medium"
+          className="rounded-full px-2 py-0.5 font-medium"
           style={{
             background: allPassed ? 'var(--green-bg)' : '#fff0f0',
             color: allPassed ? 'var(--green)' : 'var(--red)',
@@ -58,7 +58,7 @@ export default function ResponseMeta() {
       <button
         type="button"
         onClick={() => setShowCodeGenerator(true)}
-        className="flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 text-[12px] text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+        className="flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
         style={{ borderColor: 'var(--border)', background: 'transparent' }}
       >
         <Code2 size={11} />
@@ -66,14 +66,14 @@ export default function ResponseMeta() {
       </button>
       <button
         type="button"
-        className="cursor-pointer rounded border px-1.5 py-0.5 text-[12px] text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+        className="cursor-pointer rounded border px-1.5 py-0.5 text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
         style={{ borderColor: 'var(--border)', background: 'transparent' }}
       >
         {'\u2193'} {t('response.save')}
       </button>
       <button
         type="button"
-        className="cursor-pointer rounded border px-1.5 py-0.5 text-[12px] text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+        className="cursor-pointer rounded border px-1.5 py-0.5 text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
         style={{ borderColor: 'var(--border)', background: 'transparent' }}
         onClick={() => {
           if (response.body) {

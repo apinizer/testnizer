@@ -99,7 +99,7 @@ export default function SseEventLog() {
           <select
             value={eventTypeFilter}
             onChange={(e) => setEventTypeFilter(e.target.value)}
-            className="rounded border border-[var(--border)] bg-[var(--white)] px-2 py-0.5 text-[0.875rem] text-[var(--text)] outline-none"
+            className="rounded border border-[var(--border)] bg-[var(--white)] px-2 py-0.5 text-[var(--text)] outline-none"
           >
             <option value="">All events</option>
             {eventTypes.map((type) => (
@@ -108,7 +108,7 @@ export default function SseEventLog() {
               </option>
             ))}
           </select>
-          <span className="text-[0.875rem] text-[var(--hint)]">
+          <span className="text-[var(--hint)]">
             {filteredEvents.length} of {events.length}
           </span>
         </div>
@@ -117,7 +117,7 @@ export default function SseEventLog() {
       {/* Events */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {filteredEvents.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-[var(--hint)]">
+          <div className="flex h-full items-center justify-center text-[var(--hint)]">
             {connectionState === 'connected'
               ? 'Waiting for events...'
               : 'Connect to an SSE endpoint to begin.'}
@@ -138,21 +138,21 @@ export default function SseEventLog() {
                 <div className="flex items-center gap-2">
                   {/* Type badge */}
                   <span
-                    className="shrink-0 rounded px-1.5 py-0.5 text-[0.643rem] font-medium uppercase"
+                    className="shrink-0 rounded px-1.5 py-0.5 font-medium uppercase"
                     style={{ background: typeStyle.bg, color: typeStyle.color }}
                   >
                     {event.type}
                   </span>
 
                   {/* Data preview */}
-                  <span className="flex-1 truncate font-mono text-[0.875rem] text-[var(--text)]">
+                  <span className="flex-1 truncate font-mono text-[var(--text)]">
                     {truncate(event.data.replace(/\n/g, ' '), 80)}
                   </span>
 
                   {/* JSON badge */}
                   {isJson && (
                     <span
-                      className="shrink-0 rounded px-1 py-0.5 text-[0.643rem] font-medium"
+                      className="shrink-0 rounded px-1 py-0.5 font-medium"
                       style={{ background: 'var(--accent-light)', color: 'var(--accent-text)' }}
                     >
                       JSON
@@ -161,20 +161,20 @@ export default function SseEventLog() {
 
                   {/* Event ID */}
                   {event.id && (
-                    <span className="shrink-0 font-mono text-[0.875rem] text-[var(--hint)]">
+                    <span className="shrink-0 font-mono text-[var(--hint)]">
                       id:{event.id}
                     </span>
                   )}
 
                   {/* Timestamp */}
-                  <span className="shrink-0 text-[0.875rem] text-[var(--hint)]">
+                  <span className="shrink-0 text-[var(--hint)]">
                     {formatTimestamp(event.timestamp)}
                   </span>
                 </div>
 
                 {/* Expanded content */}
                 {isExpanded && (
-                  <pre className="mt-1.5 max-h-48 overflow-auto rounded-lg bg-[var(--surface)] p-2 font-mono text-[0.875rem] text-[var(--text)]">
+                  <pre className="mt-1.5 max-h-48 overflow-auto rounded-lg bg-[var(--surface)] p-2 font-mono text-[var(--text)]">
                     {isJson ? formatJson(event.data) : event.data}
                   </pre>
                 )}
@@ -187,11 +187,11 @@ export default function SseEventLog() {
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <div className="flex items-center gap-3">
-          <span className="text-[0.875rem] text-[var(--muted)]">
+          <span className="text-[var(--muted)]">
             {events.length} event{events.length !== 1 ? 's' : ''}
           </span>
           {connectionState === 'connected' && connectedAt && (
-            <span className="text-[0.875rem] text-[var(--hint)]">
+            <span className="text-[var(--hint)]">
               {formatDuration(now - connectedAt)}
             </span>
           )}
@@ -204,12 +204,12 @@ export default function SseEventLog() {
               onChange={(e) => setAutoScroll(e.target.checked)}
               className="accent-[var(--accent)]"
             />
-            <span className="text-[0.875rem] text-[var(--muted)]">Auto-scroll</span>
+            <span className="text-[var(--muted)]">Auto-scroll</span>
           </label>
           <button
             type="button"
             onClick={clearEvents}
-            className="flex cursor-pointer items-center gap-1 text-[0.875rem] text-[var(--hint)] transition-colors hover:text-[var(--text)]"
+            className="flex cursor-pointer items-center gap-1 text-[var(--hint)] transition-colors hover:text-[var(--text)]"
             style={{ background: 'transparent', border: 'none' }}
           >
             <Trash2 size={11} />

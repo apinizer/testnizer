@@ -125,7 +125,9 @@
 /* ── Base ── */
 :root {
   --font-sans: Inter, -apple-system, 'Segoe UI', system-ui, sans-serif;
-  --font-mono: Menlo, Monaco, Consolas, 'Courier New', monospace;
+  --font-mono: 'SF Mono', Menlo, Monaco, Consolas, 'Courier New', monospace;
+  --font-size-base: 13px;
+  --font-size-title: 15px;
 }
 
 html, body, #root {
@@ -135,7 +137,7 @@ html, body, #root {
   width: 100%;
   overflow: hidden;
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-weight: 400;
   line-height: 1.5;
   background: var(--bg);
@@ -146,9 +148,15 @@ html, body, #root {
 /* Force consistent font on ALL elements */
 *, *::before, *::after {
   font-family: inherit;
+  font-size: inherit;
 }
 code, pre, .mono, [data-mono] {
   font-family: var(--font-mono) !important;
+}
+
+/* Standard elements inherit 13px base */
+button, input, select, textarea, label, a, span, div, p, li, td, th {
+  font-size: inherit;
 }
 
 /* ── Scrollbar (Apidog-style thin) ── */
@@ -226,7 +234,7 @@ input:focus, textarea:focus, select:focus {
   border-radius: 10px;
   cursor: pointer;
   color: var(--muted);
-  font-size: 0.786rem;
+  font-size: var(--font-size-base);
   font-weight: 500;
   line-height: 1;
   gap: 6px;
@@ -272,7 +280,7 @@ select {
   border: 1px solid var(--border);
   border-radius: 7px;
   padding: 5px 10px;
-  font-size: 0.875rem;
+  font-size: var(--font-size-base);
   outline: none;
   cursor: pointer;
   appearance: none;

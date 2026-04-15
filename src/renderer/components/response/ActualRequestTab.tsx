@@ -6,7 +6,7 @@ export default function ActualRequestTab() {
 
   if (!actual) {
     return (
-      <div className="p-4 text-center text-sm text-[var(--hint)]">
+      <div className="p-4 text-center text-[var(--hint)]">
         Send a request to see the actual request details.
       </div>
     )
@@ -14,7 +14,7 @@ export default function ActualRequestTab() {
 
   return (
     <div className="p-3.5">
-      <pre className="m-0 font-mono text-sm leading-[1.85]">
+      <pre className="m-0 font-mono leading-[1.85]">
         <span className="text-[var(--blue)]">{actual.method}</span>{' '}
         <span className="text-[var(--text)]">{actual.url}</span>{' '}
         <span className="text-[var(--muted)]">HTTP/1.1</span>

@@ -60,12 +60,12 @@ export default function CodeGeneratorModal() {
       >
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-3">
-          <div className="text-[0.875rem] font-bold text-[var(--text)]">Generate Code</div>
+          <div className="font-bold text-[var(--text)]">Generate Code</div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleCopy}
-              className="flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1 text-[0.875rem] text-[var(--muted)] transition-colors hover:bg-[var(--surface)]"
+              className="flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1 text-[var(--muted)] transition-colors hover:bg-[var(--surface)]"
             >
               {copied ? <Check size={13} className="text-[var(--green)]" /> : <Copy size={13} />}
               {copied ? 'Copied!' : 'Copy'}
@@ -90,7 +90,7 @@ export default function CodeGeneratorModal() {
                 key={lang.id}
                 type="button"
                 onClick={() => setActiveLang(lang.id)}
-                className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left text-[0.875rem] transition-colors"
+                className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors"
                 style={{
                   background: activeLang === lang.id ? 'var(--accent-light)' : 'transparent',
                   color: activeLang === lang.id ? 'var(--accent-text)' : 'var(--text)',
@@ -123,7 +123,7 @@ export default function CodeGeneratorModal() {
           <button
             type="button"
             onClick={() => setShow(false)}
-            className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.875rem] text-[#555] transition-colors hover:bg-[var(--bg)]"
+            className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[#555] transition-colors hover:bg-[var(--bg)]"
           >
             Close
           </button>

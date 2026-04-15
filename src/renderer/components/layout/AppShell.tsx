@@ -39,7 +39,7 @@ function GitLoadingOverlay() {
             animation: 'spin 0.8s linear infinite',
           }}
         />
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{gitLoading}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{gitLoading}</div>
       </div>
     </div>
   )
@@ -64,7 +64,7 @@ export default function AppShell() {
         className="flex h-screen w-screen items-center justify-center"
         style={{ background: 'var(--bg)', color: 'var(--muted)' }}
       >
-        <div className="text-[0.825rem]">Loading...</div>
+        <div>Loading...</div>
       </div>
     )
   }

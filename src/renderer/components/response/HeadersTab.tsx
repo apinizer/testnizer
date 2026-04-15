@@ -10,7 +10,7 @@ export default function HeadersTab() {
 
   if (keys.length === 0) {
     return (
-      <div className="p-4 text-center text-[13px]" style={{ color: 'var(--hint)' }}>
+      <div className="p-4 text-center" style={{ color: 'var(--hint)' }}>
         No headers in response.
       </div>
     )
@@ -18,7 +18,7 @@ export default function HeadersTab() {
 
   return (
     <div className="h-full overflow-auto">
-      <table className="w-full border-collapse text-[13px]">
+      <table className="w-full border-collapse">
         <thead>
           <tr style={{ background: 'var(--surface)' }}>
             <th
@@ -28,7 +28,7 @@ export default function HeadersTab() {
                 color: 'var(--muted)',
                 borderBottom: '1px solid var(--border)',
                 width: '35%',
-                fontSize: 12,
+                fontSize: 13,
               }}
             >
               KEY
@@ -39,7 +39,7 @@ export default function HeadersTab() {
                 padding: '8px 12px',
                 color: 'var(--muted)',
                 borderBottom: '1px solid var(--border)',
-                fontSize: 12,
+                fontSize: 13,
               }}
             >
               VALUE

@@ -38,7 +38,7 @@ export default function EnvironmentSelector() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex cursor-pointer items-center gap-1.5 text-[12px]"
+        className="flex cursor-pointer items-center gap-1.5"
         style={{
           background: 'transparent',
           border: '1px solid var(--border)',
@@ -98,7 +98,7 @@ export default function EnvironmentSelector() {
               setActiveEnvironment(null)
               setOpen(false)
             }}
-            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px]"
+            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left"
             style={{
               background: activeEnvId === null ? 'var(--accent-light)' : 'transparent',
               border: 'none',
@@ -131,7 +131,7 @@ export default function EnvironmentSelector() {
                     setActiveEnvironment(env.id)
                     setOpen(false)
                   }}
-                  className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px]"
+                  className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left"
                   style={{
                     background: isActive ? 'var(--accent-light)' : 'transparent',
                     border: 'none',
@@ -161,7 +161,7 @@ export default function EnvironmentSelector() {
               setShowEnvironmentModal(true)
               setOpen(false)
             }}
-            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px]"
+            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left"
             style={{
               background: 'transparent',
               border: 'none',

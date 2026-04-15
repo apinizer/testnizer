@@ -17,8 +17,8 @@ const AUTH_OPTIONS: { value: AuthType; label: string; soapOnly?: boolean }[] = [
 ]
 
 /* Shared field styles */
-const LABEL = "mb-1.5 text-[0.8125rem] font-medium"
-const INPUT = "w-full rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-sm outline-none"
+const LABEL = "mb-1.5 font-medium"
+const INPUT = "w-full rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-3 py-2 outline-none"
 const CARD = "rounded-lg border border-[var(--border)] bg-[var(--white)] p-4"
 
 function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
@@ -75,7 +75,7 @@ export default function AuthTab() {
                 if (opt.value === 'wsse') setWsSecurity({ enabled: true })
                 else if (auth.type === 'wsse') setWsSecurity({ enabled: false })
               }}
-              className="cursor-pointer rounded-full text-[0.8125rem] font-medium transition-all"
+              className="cursor-pointer rounded-full font-medium transition-all"
               style={{
                 padding: '4px 12px',
                 background: isActive ? 'var(--accent)' : 'transparent',
@@ -103,7 +103,7 @@ export default function AuthTab() {
 
       {/* ── No Auth ── */}
       {auth.type === 'none' && (
-        <div className="py-8 text-center text-sm" style={{ color: 'var(--hint)' }}>
+        <div className="py-8 text-center" style={{ color: 'var(--hint)' }}>
           This request does not use any authorization.
         </div>
       )}
@@ -130,10 +130,10 @@ export default function AuthTab() {
               <Lock size={14} />
             </button>
           </div>
-          <div className="mt-3 text-[0.8125rem]" style={{ color: 'var(--hint)' }}>
+          <div className="mt-3" style={{ color: 'var(--hint)' }}>
             Sent as:{' '}
             <code
-              className="rounded px-1.5 py-0.5 text-[0.8125rem]"
+              className="rounded px-1.5 py-0.5"
               style={{ background: 'var(--fill-4)', color: 'var(--text)' }}
             >
               Authorization: Bearer &lt;token&gt;
@@ -166,7 +166,7 @@ export default function AuthTab() {
               }
             />
           </div>
-          <div className="mt-3 text-[0.8125rem]" style={{ color: 'var(--hint)' }}>
+          <div className="mt-3" style={{ color: 'var(--hint)' }}>
             The authorization header will be auto-generated from the username and password.
           </div>
         </div>
@@ -220,7 +220,7 @@ export default function AuthTab() {
                         apiKey: { key: auth.apiKey?.key || '', value: auth.apiKey?.value || '', in: loc },
                       })
                     }
-                    className="cursor-pointer rounded-full text-[0.8125rem] font-medium"
+                    className="cursor-pointer rounded-full font-medium"
                     style={{
                       padding: '4px 14px',
                       background: isActive ? 'var(--accent)' : 'var(--fill-4)',
@@ -370,7 +370,7 @@ export default function AuthTab() {
             className="mt-4 rounded-lg p-3"
             style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
           >
-            <div className="mb-2 text-[0.75rem] font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+            <div className="mb-2 font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
               Current Token
             </div>
             <input
@@ -384,7 +384,7 @@ export default function AuthTab() {
             />
             <button
               type="button"
-              className="mt-2 cursor-pointer rounded-[7px] px-3 py-1.5 text-[0.8125rem] font-medium text-white"
+              className="mt-2 cursor-pointer rounded-[7px] px-3 py-1.5 font-medium text-white"
               style={{ background: 'var(--accent)', border: 'none' }}
             >
               Get New Access Token
@@ -417,7 +417,7 @@ export default function AuthTab() {
               }
             />
           </div>
-          <div className="mt-3 text-[0.8125rem]" style={{ color: 'var(--hint)' }}>
+          <div className="mt-3" style={{ color: 'var(--hint)' }}>
             Digest authentication uses a challenge-response mechanism. The client sends the request, the server responds with a nonce, and the client resends with the digest.
           </div>
         </div>
@@ -493,7 +493,7 @@ export default function AuthTab() {
               placeholder="Workstation (optional)"
             />
           </div>
-          <div className="mt-3 text-[0.8125rem]" style={{ color: 'var(--hint)' }}>
+          <div className="mt-3" style={{ color: 'var(--hint)' }}>
             NTLM authentication is used primarily in Windows environments. Domain and workstation are optional.
           </div>
         </div>
@@ -503,11 +503,11 @@ export default function AuthTab() {
       {auth.type === 'wsse' && (
         <div className={CARD}>
           <div className="mb-4 flex items-center gap-2">
-            <span className="text-[0.8125rem] font-semibold" style={{ color: 'var(--text)' }}>
+            <span className="font-semibold" style={{ color: 'var(--text)' }}>
               WS-Security Configuration
             </span>
             <span
-              className="rounded-full px-2 py-0.5 text-[0.75rem]"
+              className="rounded-full px-2 py-0.5"
               style={{ background: 'var(--accent-light)', color: 'var(--accent-text)' }}
             >
               Enabled
@@ -576,7 +576,7 @@ export default function AuthTab() {
               onChange={(e) => setWsSecurity({ addTimestamp: e.target.checked })}
               className="accent-[var(--accent)]"
             />
-            <span className="text-sm" style={{ color: 'var(--text)' }}>Add Timestamp</span>
+            <span style={{ color: 'var(--text)' }}>Add Timestamp</span>
           </label>
         </div>
       )}

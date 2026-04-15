@@ -163,7 +163,7 @@ function EndpointTabBar() {
                   border: `1px solid ${T.accent}`,
                   borderRadius: 3,
                   padding: '0 4px',
-                  fontSize: 12,
+                  fontSize: 13,
                   color: T.text,
                   outline: 'none',
                   width: 120,
@@ -187,7 +187,7 @@ function EndpointTabBar() {
             )}
             <span
               className="hidden cursor-pointer group-hover:inline"
-              style={{ color: T.ghost, fontSize: 14 }}
+              style={{ color: T.ghost, fontSize: 13 }}
               onClick={(e) => handleCloseTab(tab.id, e)}
             >
               ×
@@ -223,7 +223,7 @@ function EndpointTabBar() {
           height: '100%',
           cursor: 'pointer',
           color: T.ghost,
-          fontSize: 14,
+          fontSize: 13,
           flexShrink: 0,
         }}
       >

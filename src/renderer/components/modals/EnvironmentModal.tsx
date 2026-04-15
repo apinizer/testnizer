@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Eye, EyeOff, Globe, Layers, Check } from 'lucide-react
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import type { Environment, EnvironmentVariable, GlobalVariable } from '../../types'
+import DeleteConfirmDialog from './DeleteConfirmDialog'
 
 type Pane = { kind: 'globals' } | { kind: 'env'; id: string }
 
@@ -40,6 +41,7 @@ export default function EnvironmentModal() {
   const [pane, setPane] = useState<Pane>({ kind: 'globals' })
   const [creatingEnv, setCreatingEnv] = useState(false)
   const [newEnvName, setNewEnvName] = useState('')
+  const [deleteEnvTarget, setDeleteEnvTarget] = useState<Environment | null>(null)
 
   const selectedEnv: Environment | null = useMemo(() => {
     if (pane.kind !== 'env') return null
@@ -130,7 +132,7 @@ export default function EnvironmentModal() {
             className="flex items-center justify-between px-4 py-3"
             style={{ borderBottom: '1px solid var(--border)' }}
           >
-            <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+            <span className="font-semibold" style={{ color: 'var(--text)' }}>
               Environments
             </span>
             <button
@@ -147,7 +149,7 @@ export default function EnvironmentModal() {
           <button
             type="button"
             onClick={() => setPane({ kind: 'globals' })}
-            className="flex cursor-pointer items-center gap-2 px-4 py-2 text-left text-[13px]"
+            className="flex cursor-pointer items-center gap-2 px-4 py-2 text-left"
             style={{
               background: pane.kind === 'globals' ? 'var(--accent-light)' : 'transparent',
               border: 'none',
@@ -160,13 +162,13 @@ export default function EnvironmentModal() {
           </button>
 
           {/* Separator */}
-          <div className="px-4 pt-3 pb-1 text-[11px] uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+          <div className="px-4 pt-3 pb-1 uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
             Environments
           </div>
 
           <div className="flex-1 overflow-y-auto">
             {environments.length === 0 && !creatingEnv && (
-              <div className="px-4 py-3 text-[12px]" style={{ color: 'var(--hint)' }}>
+              <div className="px-4 py-3" style={{ color: 'var(--hint)' }}>
                 No environments yet.
               </div>
             )}
@@ -175,7 +177,7 @@ export default function EnvironmentModal() {
                 key={env.id}
                 type="button"
                 onClick={() => setPane({ kind: 'env', id: env.id })}
-                className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left text-[13px]"
+                className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left"
                 style={{
                   background: pane.kind === 'env' && pane.id === env.id ? 'var(--accent-light)' : 'transparent',
                   border: 'none',
@@ -205,7 +207,7 @@ export default function EnvironmentModal() {
                     }
                   }}
                   placeholder="Environment name"
-                  className="flex-1 rounded border px-2 py-1 text-[12px] outline-none"
+                  className="flex-1 rounded border px-2 py-1 outline-none"
                   style={{
                     borderColor: 'var(--accent)',
                     background: 'var(--white)',
@@ -223,7 +225,7 @@ export default function EnvironmentModal() {
             <button
               type="button"
               onClick={() => setCreatingEnv(true)}
-              className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-[6px] py-1.5 text-[12px]"
+              className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-[6px] py-1.5"
               style={{
                 background: 'var(--accent)',
                 border: 'none',
@@ -251,21 +253,32 @@ export default function EnvironmentModal() {
               env={selectedEnv}
               isActive={selectedEnv.id === activeEnvId}
               onSetActive={() => setActiveEnv(selectedEnv.id)}
-              onDelete={() => {
-                deleteEnvironment(selectedEnv.id)
-                setPane({ kind: 'globals' })
-              }}
+              onDelete={() => setDeleteEnvTarget(selectedEnv)}
               onVarChange={handleVarChange}
               onAddVar={handleAddVar}
               onRemoveVar={handleRemoveVar}
             />
           ) : (
-            <div className="flex h-full items-center justify-center text-[13px]" style={{ color: 'var(--hint)' }}>
+            <div className="flex h-full items-center justify-center" style={{ color: 'var(--hint)' }}>
               Select an environment from the sidebar.
             </div>
           )}
         </div>
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteEnvTarget}
+        itemName={deleteEnvTarget?.name || ''}
+        itemType="environment"
+        onConfirm={() => {
+          if (deleteEnvTarget) {
+            deleteEnvironment(deleteEnvTarget.id)
+            setPane({ kind: 'globals' })
+          }
+          setDeleteEnvTarget(null)
+        }}
+        onCancel={() => setDeleteEnvTarget(null)}
+      />
     </div>
   )
 }
@@ -293,7 +306,7 @@ function GlobalsPane({
       >
         <div>
           <div className="text-[15px] font-semibold" style={{ color: 'var(--heading)' }}>Globals</div>
-          <div className="text-[11px]" style={{ color: 'var(--muted)' }}>
+          <div style={{ color: 'var(--muted)' }}>
             A global variable can be accessed anywhere inside this project.
           </div>
         </div>
@@ -343,7 +356,7 @@ function EnvPane({
             </div>
             {isActive && (
               <span
-                className="rounded-full px-2 py-[1px] text-[10px] font-medium"
+                className="rounded-full px-2 py-[1px] font-medium"
                 style={{
                   background: 'var(--green-bg)',
                   color: 'var(--green)',
@@ -354,7 +367,7 @@ function EnvPane({
               </span>
             )}
           </div>
-          <div className="text-[11px]" style={{ color: 'var(--muted)' }}>
+          <div style={{ color: 'var(--muted)' }}>
             {env.variables.length} variables
           </div>
         </div>
@@ -363,7 +376,7 @@ function EnvPane({
             <button
               type="button"
               onClick={onSetActive}
-              className="cursor-pointer rounded px-2.5 py-1 text-[12px]"
+              className="cursor-pointer rounded px-2.5 py-1"
               style={{
                 background: 'var(--accent)',
                 border: 'none',
@@ -432,7 +445,7 @@ function VarTable({
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header row */}
       <div
-        className="grid shrink-0 items-center px-5 py-2 text-[11px] font-medium uppercase tracking-wide"
+        className="grid shrink-0 items-center px-5 py-2 font-medium uppercase tracking-wide"
         style={{
           gridTemplateColumns: '22px 1fr 100px 1fr 1fr 28px',
           gap: 12,
@@ -463,7 +476,7 @@ function VarTable({
         <button
           type="button"
           onClick={onAdd}
-          className="m-4 flex w-[calc(100%-2rem)] cursor-pointer items-center justify-center gap-1 rounded-[6px] border border-dashed py-2 text-[12px]"
+          className="m-4 flex w-[calc(100%-2rem)] cursor-pointer items-center justify-center gap-1 rounded-[6px] border border-dashed py-2"
           style={{
             borderColor: 'var(--border2)',
             background: 'transparent',
@@ -502,7 +515,7 @@ function VarRowView({
 
   return (
     <div
-      className="grid items-center px-5 text-[13px]"
+      className="grid items-center px-5"
       style={{
         gridTemplateColumns: '22px 1fr 100px 1fr 1fr 28px',
         gap: 12,
@@ -529,8 +542,7 @@ function VarRowView({
       <select
         value={variable.secret ? 'secret' : 'default'}
         onChange={(e) => onUpdate({ secret: e.target.value === 'secret' })}
-        className="text-[12px]"
-        style={{
+               style={{
           background: 'transparent',
           border: '1px solid var(--border)',
           borderRadius: 4,

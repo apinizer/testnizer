@@ -3,6 +3,7 @@ import { GitBranch, GitMerge, Plus, Check, Trash2, ArrowUpCircle, ArrowDownCircl
 import { useBranchStore } from '../../stores/branch.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
+import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 
 export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
   const [open, setOpen] = useState(false)
@@ -11,6 +12,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
   const [newName, setNewName] = useState('')
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [deleteBranchTarget, setDeleteBranchTarget] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -152,12 +154,17 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     setBusy(false)
   }
 
-  async function handleDelete(branchName: string) {
-    if (!activeProjectId) return
+  function handleDelete(branchName: string) {
+    setDeleteBranchTarget(branchName)
+  }
+
+  async function confirmDeleteBranch() {
+    if (!activeProjectId || !deleteBranchTarget) return
+    setDeleteBranchTarget(null)
     setBusy(true)
-    const result = await deleteBranch(activeProjectId, branchName)
+    const result = await deleteBranch(activeProjectId, deleteBranchTarget)
     if (result.success) {
-      showToast('success', `Branch "${branchName}" deleted`)
+      showToast('success', `Branch "${deleteBranchTarget}" deleted`)
     } else {
       showToast('error', result.error || 'Delete failed')
     }
@@ -177,7 +184,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
           border: '1.5px solid var(--border2)',
           borderRadius: 20,
           padding: '4px 10px',
-          fontSize: 12,
+          fontSize: 13,
           color: 'var(--sub, #374151)',
           fontWeight: 500,
         } : {
@@ -185,7 +192,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
           border: '1px solid var(--border2)',
           borderRadius: 12,
           padding: '2px 8px',
-          fontSize: '0.75rem',
+          fontSize: 13,
           color: 'var(--muted)',
         }}
         onClick={() => {
@@ -237,7 +244,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
               <button
                 type="button"
                 className="flex cursor-pointer items-center gap-1 rounded px-2 py-1"
-                style={{ fontSize: 12, background: 'transparent', border: 'none', color: 'var(--text)' }}
+                style={{ fontSize: 13, background: 'transparent', border: 'none', color: 'var(--text)' }}
                 onClick={handlePush}
                 disabled={busy}
                 title="Push"
@@ -250,7 +257,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
               <button
                 type="button"
                 className="flex cursor-pointer items-center gap-1 rounded px-2 py-1"
-                style={{ fontSize: 12, background: 'transparent', border: 'none', color: 'var(--text)' }}
+                style={{ fontSize: 13, background: 'transparent', border: 'none', color: 'var(--text)' }}
                 onClick={handlePull}
                 disabled={busy}
                 title="Pull"
@@ -263,7 +270,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
               <button
                 type="button"
                 className="flex cursor-pointer items-center gap-1 rounded px-2 py-1"
-                style={{ fontSize: 12, background: 'transparent', border: 'none', color: 'var(--text)' }}
+                style={{ fontSize: 13, background: 'transparent', border: 'none', color: 'var(--text)' }}
                 onClick={() => setMerging(!merging)}
                 disabled={busy}
                 title="Merge"
@@ -279,7 +286,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
           {/* Merge mode — select source branch */}
           {merging && (
             <div className="border-b px-2 py-1.5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-              <div style={{ fontSize: 11, color: 'var(--hint)', marginBottom: 4 }}>
+              <div style={{ fontSize: 13, color: 'var(--hint)', marginBottom: 4 }}>
                 Merge into <strong style={{ color: 'var(--text)' }}>{currentBranch}</strong> from:
               </div>
               {otherBranches.map((b) => (
@@ -299,14 +306,14 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                 </button>
               ))}
               {otherBranches.length === 0 && (
-                <div style={{ fontSize: 12, color: 'var(--hint)', padding: '4px 0' }}>No other branches</div>
+                <div style={{ fontSize: 13, color: 'var(--hint)', padding: '4px 0' }}>No other branches</div>
               )}
             </div>
           )}
 
           {/* Loading indicator */}
           {loading && (
-            <div style={{ fontSize: 12, color: 'var(--hint)', padding: '8px 12px', textAlign: 'center' }}>
+            <div style={{ fontSize: 13, color: 'var(--hint)', padding: '8px 12px', textAlign: 'center' }}>
               Loading branches...
             </div>
           )}
@@ -360,7 +367,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
               </div>
             ))}
             {branches.length === 0 && !loading && (
-              <div style={{ fontSize: 12, color: 'var(--hint)', padding: '8px 12px', textAlign: 'center' }}>
+              <div style={{ fontSize: 13, color: 'var(--hint)', padding: '8px 12px', textAlign: 'center' }}>
                 No branches
               </div>
             )}
@@ -398,7 +405,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                 type="button"
                 className="cursor-pointer"
                 style={{
-                  fontSize: 12,
+                  fontSize: 13,
                   background: 'var(--accent)',
                   color: '#fff',
                   border: 'none',
@@ -435,6 +442,13 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
           )}
         </div>
       )}
+      <DeleteConfirmDialog
+        open={!!deleteBranchTarget}
+        itemName={deleteBranchTarget || ''}
+        itemType="branch"
+        onConfirm={confirmDeleteBranch}
+        onCancel={() => setDeleteBranchTarget(null)}
+      />
     </div>
   )
 }

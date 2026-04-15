@@ -39,7 +39,7 @@ export default function ScriptsTab() {
               key={s.key}
               type="button"
               onClick={() => setActiveSection(s.key)}
-              className="cursor-pointer rounded-md px-3 py-1 text-[12px] font-medium transition-all"
+              className="cursor-pointer rounded-md px-3 py-1 font-medium transition-all"
               style={{
                 background: isActive ? 'var(--accent-light)' : 'transparent',
                 color: isActive ? 'var(--accent-text)' : 'var(--muted)',
@@ -60,7 +60,7 @@ export default function ScriptsTab() {
         <div className="flex-1" />
 
         {/* Snippet helper */}
-        <span className="text-[11px]" style={{ color: 'var(--hint)' }}>
+        <span style={{ color: 'var(--hint)' }}>
           JavaScript (Postman Sandbox)
         </span>
       </div>

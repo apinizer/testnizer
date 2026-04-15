@@ -120,17 +120,17 @@ export default function HistoryPanel() {
           style={{ borderBottom: '1px solid var(--border)' }}
         >
           <Clock size={16} style={{ color: 'var(--accent)' }} />
-          <span className="text-[14px] font-semibold" style={{ color: 'var(--heading)' }}>
+          <span className="font-semibold" style={{ color: 'var(--heading)' }}>
             History
           </span>
-          <span className="text-[11px]" style={{ color: 'var(--muted)' }}>
+          <span style={{ color: 'var(--muted)' }}>
             {entries.length} entries
           </span>
           <div className="flex-1" />
           <button
             type="button"
             onClick={() => clear(activeWorkspaceId || undefined)}
-            className="cursor-pointer rounded px-2 py-1 text-[12px]"
+            className="cursor-pointer rounded px-2 py-1"
             style={{
               background: 'transparent',
               border: '1px solid var(--border)',
@@ -159,7 +159,7 @@ export default function HistoryPanel() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search history..."
-            className="flex-1 text-[13px] outline-none"
+            className="flex-1 outline-none"
             style={{
               background: 'var(--white)',
               border: '1px solid var(--border)',
@@ -175,7 +175,7 @@ export default function HistoryPanel() {
           {/* List */}
           <div className="w-[360px] shrink-0 overflow-y-auto" style={{ borderRight: '1px solid var(--border)' }}>
             {groups.length === 0 && (
-              <div className="p-8 text-center text-[13px]" style={{ color: 'var(--hint)' }}>
+              <div className="p-8 text-center" style={{ color: 'var(--hint)' }}>
                 No history yet. Send a request to build up history.
               </div>
             )}
@@ -183,7 +183,7 @@ export default function HistoryPanel() {
             {groups.map(({ label, items }) => (
               <div key={label}>
                 <div
-                  className="sticky top-0 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide"
+                  className="sticky top-0 px-4 py-1.5 font-semibold uppercase tracking-wide"
                   style={{
                     background: 'var(--surface)',
                     color: 'var(--muted)',
@@ -200,7 +200,7 @@ export default function HistoryPanel() {
                       key={entry.id}
                       onClick={() => setSelectedId(entry.id)}
                       onDoubleClick={() => handleOpenInTab(entry)}
-                      className="group flex cursor-pointer items-center gap-2 px-4 py-2 text-[12px]"
+                      className="group flex cursor-pointer items-center gap-2 px-4 py-2"
                       style={{
                         background: isSelected ? 'var(--accent-light)' : 'transparent',
                         borderBottom: '1px solid var(--border-split)',
@@ -217,7 +217,7 @@ export default function HistoryPanel() {
                       <span className="flex-1 truncate">{shortUrl(entry.url)}</span>
                       {entry.status_code != null && (
                         <span
-                          className="shrink-0 rounded px-1 text-[11px] font-medium"
+                          className="shrink-0 rounded px-1 font-medium"
                           style={{
                             color: statusColor(entry.status_code),
                           }}
@@ -225,7 +225,7 @@ export default function HistoryPanel() {
                           {entry.status_code}
                         </span>
                       )}
-                      <span className="shrink-0 text-[10px]" style={{ color: 'var(--muted)' }}>
+                      <span className="shrink-0" style={{ color: 'var(--muted)' }}>
                         {formatTime(entry.executed_at)}
                       </span>
                       <button
@@ -256,7 +256,7 @@ export default function HistoryPanel() {
             {selected ? (
               <HistoryDetail entry={selected} onOpen={() => handleOpenInTab(selected)} />
             ) : (
-              <div className="flex h-full items-center justify-center text-[13px]" style={{ color: 'var(--hint)' }}>
+              <div className="flex h-full items-center justify-center" style={{ color: 'var(--hint)' }}>
                 Select a history entry to preview it. Double-click to open.
               </div>
             )}
@@ -277,20 +277,20 @@ function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => v
     <div className="p-4">
       <div className="mb-3 flex items-center gap-2">
         <MethodBadge method={entry.method || 'GET'} />
-        <span className="flex-1 truncate font-mono text-[13px]" style={{ color: 'var(--text)' }}>
+        <span className="flex-1 truncate font-mono" style={{ color: 'var(--text)' }}>
           {entry.url}
         </span>
         <button
           type="button"
           onClick={onOpen}
-          className="cursor-pointer rounded px-2.5 py-1 text-[12px]"
+          className="cursor-pointer rounded px-2.5 py-1"
           style={{ background: 'var(--accent)', border: 'none', color: '#fff', fontWeight: 600 }}
         >
           Open in tab
         </button>
       </div>
 
-      <div className="mb-3 flex items-center gap-4 text-[12px]" style={{ color: 'var(--muted)' }}>
+      <div className="mb-3 flex items-center gap-4" style={{ color: 'var(--muted)' }}>
         {entry.status_code != null && (
           <span>
             Status: <span className="font-semibold" style={{ color: statusColor(entry.status_code) }}>{entry.status_code}</span>
@@ -306,11 +306,11 @@ function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => v
 
       {resp?.headers && Object.keys(resp.headers).length > 0 && (
         <div className="mb-4">
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+          <div className="mb-1 font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
             Response headers
           </div>
           <div
-            className="rounded font-mono text-[12px]"
+            className="rounded font-mono"
             style={{ background: 'var(--surface)', border: '1px solid var(--border)', padding: 10 }}
           >
             {Object.entries(resp.headers).map(([k, v]) => (
@@ -325,11 +325,11 @@ function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => v
 
       {resp?.body && (
         <div>
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+          <div className="mb-1 font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
             Response body
           </div>
           <pre
-            className="m-0 max-h-[380px] overflow-auto whitespace-pre-wrap font-mono text-[12px]"
+            className="m-0 max-h-[380px] overflow-auto whitespace-pre-wrap font-mono"
             style={{
               background: 'var(--surface)',
               border: '1px solid var(--border)',

@@ -43,7 +43,7 @@ export default function RunnerResults({
   const totalDuration = report
     ? report.completedAt - report.startedAt
     : results.reduce((acc, r) => acc + r.duration, 0)
-  const totalTests = results.reduce((acc, r) => acc + r.passed + r.failed, 0)
+  const totalTests = results.length
   const totalErrors = results.filter((r) => r.error).length
   const avgRespTime = results.length > 0
     ? Math.round(results.reduce((acc, r) => acc + r.duration, 0) / results.length)
@@ -386,7 +386,7 @@ export default function RunnerResults({
               <div
                 style={{
                   color: 'var(--text)',
-                  fontFamily: "'SF Mono','Cascadia Code','Fira Code',monospace",
+                  fontFamily: "var(--font-mono)",
                   marginBottom: 16,
                 }}
               >
@@ -396,7 +396,7 @@ export default function RunnerResults({
               <div
                 style={{
                   color: 'var(--text)',
-                  fontFamily: "'SF Mono','Cascadia Code','Fira Code',monospace",
+                  fontFamily: "var(--font-mono)",
                   wordBreak: 'break-all',
                 }}
               >
@@ -415,8 +415,8 @@ export default function RunnerResults({
 function StatCell({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div>
-      <div style={{ fontSize: 11, color: 'var(--hint)', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 14, fontWeight: 600, color: color || 'var(--text)' }}>{value}</div>
+      <div style={{ fontSize: 13, color: 'var(--hint)', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: color || 'var(--text)' }}>{value}</div>
     </div>
   )
 }
@@ -429,7 +429,7 @@ function MethodLabel({ method }: { method: string }) {
         fontSize: 13,
         fontWeight: 700,
         color: mc.color,
-        fontFamily: "'SF Mono','Cascadia Code','Fira Code',monospace",
+        fontFamily: "var(--font-mono)",
         letterSpacing: '0.02em',
         flexShrink: 0,
       }}
@@ -468,17 +468,17 @@ function ResultRow({
             fontSize: 13,
             fontWeight: 700,
             color: mc.color,
-            fontFamily: "'SF Mono','Cascadia Code','Fira Code',monospace",
+            fontFamily: "var(--font-mono)",
             flexShrink: 0,
           }}
         >
           {result.method}
         </span>
-        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {result.endpointName}
         </span>
         {result.status !== null && (
-          <span style={{ fontSize: 14, fontWeight: 600, color: statusColor, flexShrink: 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: statusColor, flexShrink: 0 }}>
             {result.status}
           </span>
         )}

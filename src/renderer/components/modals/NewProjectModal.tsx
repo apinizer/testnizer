@@ -29,7 +29,7 @@ function StepDot({ step, current }: { step: number; current: number }) {
         background: done ? 'var(--green)' : active ? 'var(--accent)' : 'var(--surface)',
         color: done || active ? 'white' : 'var(--hint)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 11, fontWeight: 600, flexShrink: 0, transition: 'all 0.2s',
+        fontSize: 13, fontWeight: 600, flexShrink: 0, transition: 'all 0.2s',
         border: !done && !active ? '1px solid var(--border)' : 'none',
       }}
     >
@@ -41,7 +41,7 @@ function StepDot({ step, current }: { step: number; current: number }) {
 function Label({ text }: { text: string }) {
   return (
     <div style={{
-      fontSize: 11, color: 'var(--muted)', fontWeight: 600,
+      fontSize: 13, color: 'var(--muted)', fontWeight: 600,
       textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5,
     }}>
       {text}
@@ -79,7 +79,7 @@ function OptionCard({
         {icon}
         <span style={{ fontWeight: 600, fontSize: 13 }}>{label}</span>
       </div>
-      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{sub}</div>
+      <div style={{ fontSize: 13, color: 'var(--muted)' }}>{sub}</div>
     </div>
   )
 }
@@ -382,7 +382,7 @@ export default function NewProjectModal() {
                 <div className="flex items-center gap-1.5">
                   <StepDot step={s} current={step} />
                   <span style={{
-                    fontSize: 11, fontWeight: s === step ? 600 : 400,
+                    fontSize: 13, fontWeight: s === step ? 600 : 400,
                     color: s < step ? 'var(--green)' : s === step ? 'var(--accent)' : 'var(--hint)',
                     whiteSpace: 'nowrap',
                   }}>{stepLabels[i]}</span>
@@ -433,7 +433,7 @@ export default function NewProjectModal() {
                     <input
                       value={gitCloneUrl} onChange={(e) => setGitCloneUrl(e.target.value)}
                       placeholder={t('newProject.git.repoUrlPlaceholder')}
-                      style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }}
+                      style={{ ...inputStyle, fontFamily: 'var(--font-mono)', fontSize: 13 }}
                     />
                   </div>
                   <div className="flex gap-2.5">
@@ -448,7 +448,7 @@ export default function NewProjectModal() {
                       <Label text={t('newProject.git.branch')} />
                       <input
                         value={gitCloneBranch} onChange={(e) => setGitCloneBranch(e.target.value)}
-                        placeholder="main" style={{ ...inputStyle, fontFamily: 'monospace' }}
+                        placeholder="main" style={{ ...inputStyle, fontFamily: 'var(--font-mono)' }}
                       />
                     </div>
                   </div>
@@ -459,7 +459,7 @@ export default function NewProjectModal() {
                         type={showCloneToken ? 'text' : 'password'}
                         value={gitCloneToken} onChange={(e) => setGitCloneToken(e.target.value)}
                         placeholder="ghp_xxxxxxxxxxxx"
-                        style={{ ...inputStyle, flex: 1, fontFamily: 'monospace' }}
+                        style={{ ...inputStyle, flex: 1, fontFamily: 'var(--font-mono)' }}
                       />
                       <button type="button" onClick={() => setShowCloneToken((v) => !v)}
                         style={{
@@ -471,7 +471,7 @@ export default function NewProjectModal() {
                         {showCloneToken ? <EyeOff size={13} /> : <Eye size={13} />}
                       </button>
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--hint)', marginTop: 3 }}>
+                    <div style={{ fontSize: 13, color: 'var(--hint)', marginTop: 3 }}>
                       {t('newProject.git.tokenHint')}
                     </div>
                   </div>
@@ -481,19 +481,19 @@ export default function NewProjectModal() {
                       <input
                         value={gitCloneDir} readOnly
                         placeholder={t('newProject.git.localDirPlaceholder')}
-                        style={{ ...inputStyle, flex: 1, fontFamily: 'monospace', fontSize: 12 }}
+                        style={{ ...inputStyle, flex: 1, fontFamily: 'var(--font-mono)', fontSize: 13 }}
                       />
                       <button type="button" onClick={() => handleSelectDir(setGitCloneDir)}
                         style={{
                           padding: '7px 12px', background: 'var(--surface)',
                           border: '1px solid var(--border)', borderRadius: 6,
-                          color: 'var(--muted)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+                          color: 'var(--muted)', fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
                         }}
                       >{t('newProject.selectFolder')}</button>
                     </div>
                   </div>
                   {cloneError && (
-                    <div style={{ fontSize: 12, color: '#cc2200', padding: '4px 0' }}>{cloneError}</div>
+                    <div style={{ fontSize: 13, color: '#cc2200', padding: '4px 0' }}>{cloneError}</div>
                   )}
                 </div>
               )}
@@ -526,7 +526,7 @@ export default function NewProjectModal() {
                         {localFileData?.project?.name || 'Project file selected'}
                       </div>
                       <div style={{
-                        fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace',
+                        fontSize: 13, color: 'var(--muted)', fontFamily: 'var(--font-mono)',
                         background: 'var(--white)', border: '1px solid var(--border)',
                         borderRadius: 5, padding: '5px 10px', width: '100%',
                         textAlign: 'center', wordBreak: 'break-all',
@@ -540,7 +540,7 @@ export default function NewProjectModal() {
                         style={{
                           padding: '5px 14px', background: 'transparent',
                           border: '1px solid var(--border)', borderRadius: 6,
-                          color: 'var(--muted)', fontSize: 12,
+                          color: 'var(--muted)', fontSize: 13,
                         }}
                       >Change file</button>
                     </>
@@ -559,10 +559,10 @@ export default function NewProjectModal() {
               }}>
                 <ProjectIcon name={displayName || projName} emoji={activeEmoji} color={selectedColor} size={44} />
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
                     {displayName || projName || t('newProject.name').replace(' *', '')}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
+                  <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 1 }}>
                     {projName ? projName : t('newProject.preview')}
                   </div>
                 </div>
@@ -588,7 +588,7 @@ export default function NewProjectModal() {
                   onKeyDown={(e) => { if (e.key === 'Enter') goNext() }}
                   style={inputStyle}
                 />
-                <div style={{ fontSize: 10, color: 'var(--hint)', marginTop: 3 }}>
+                <div style={{ fontSize: 13, color: 'var(--hint)', marginTop: 3 }}>
                   Shown in the UI. Can contain spaces, Turkish characters, etc.
                 </div>
               </div>
@@ -607,15 +607,15 @@ export default function NewProjectModal() {
                   onKeyDown={(e) => { if (e.key === 'Enter') goNext() }}
                   style={{
                     ...inputStyle,
-                    fontFamily: 'monospace',
+                    fontFamily: 'var(--font-mono)',
                     border: `1px solid ${nameError ? '#cc2200' : 'var(--border)'}`,
                   }}
                 />
-                <div style={{ fontSize: 10, color: 'var(--hint)', marginTop: 3 }}>
+                <div style={{ fontSize: 13, color: 'var(--hint)', marginTop: 3 }}>
                   Used for file names and Git. Only a-z, 0-9, dash (-) and underscore (_).
                 </div>
                 {nameError && (
-                  <div style={{ fontSize: 11, color: '#cc2200', marginTop: 3 }}>
+                  <div style={{ fontSize: 13, color: '#cc2200', marginTop: 3 }}>
                     {t('newProject.nameRequired')}
                   </div>
                 )}
@@ -648,9 +648,9 @@ export default function NewProjectModal() {
                 <Label text={t('newProject.branchName')} />
                 <input
                   value={branchName} onChange={(e) => setBranchName(e.target.value)}
-                  placeholder="main" style={{ ...inputStyle, fontFamily: 'monospace' }}
+                  placeholder="main" style={{ ...inputStyle, fontFamily: 'var(--font-mono)' }}
                 />
-                <div style={{ fontSize: 10, color: 'var(--hint)', marginTop: 3 }}>
+                <div style={{ fontSize: 13, color: 'var(--hint)', marginTop: 3 }}>
                   {t('newProject.branchHint')}
                 </div>
               </div>
@@ -663,7 +663,7 @@ export default function NewProjectModal() {
                   <div className="mb-2 flex gap-2">
                     <div
                       onClick={() => { setIconOpt('auto'); setSelectedEmoji('') }}
-                      className="cursor-pointer flex-1 rounded-md px-3 py-1.5 text-center text-[12px] font-medium"
+                      className="cursor-pointer flex-1 rounded-md px-3 py-1.5 text-center font-medium"
                       style={{
                         border: `1.5px solid ${iconOpt === 'auto' ? 'var(--accent)' : 'var(--border)'}`,
                         background: iconOpt === 'auto' ? 'var(--accent-light)' : 'var(--white)',
@@ -672,7 +672,7 @@ export default function NewProjectModal() {
                     >{t('newProject.iconAuto')}</div>
                     <div
                       onClick={() => setIconOpt('emoji')}
-                      className="cursor-pointer flex-1 rounded-md px-3 py-1.5 text-center text-[12px] font-medium"
+                      className="cursor-pointer flex-1 rounded-md px-3 py-1.5 text-center font-medium"
                       style={{
                         border: `1.5px solid ${iconOpt === 'emoji' ? 'var(--accent)' : 'var(--border)'}`,
                         background: iconOpt === 'emoji' ? 'var(--accent-light)' : 'var(--white)',
@@ -744,13 +744,13 @@ export default function NewProjectModal() {
                   <Label text={t('newProject.localFolder')} />
                   <div className="flex gap-2">
                     <input value={localFolder} readOnly placeholder={t('newProject.folderPlaceholder')}
-                      style={{ ...inputStyle, flex: 1, fontFamily: 'monospace', fontSize: 12 }}
+                      style={{ ...inputStyle, flex: 1, fontFamily: 'var(--font-mono)', fontSize: 13 }}
                     />
                     <button type="button" onClick={() => handleSelectDir(setLocalFolder)}
                       style={{
                         padding: '7px 12px', background: 'var(--surface)',
                         border: '1px solid var(--border)', borderRadius: 6,
-                        color: 'var(--muted)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+                        color: 'var(--muted)', fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
                       }}
                     >{t('newProject.selectFolder')}</button>
                   </div>
@@ -765,7 +765,7 @@ export default function NewProjectModal() {
                     <Label text={t('newProject.git.repoUrl')} />
                     <input value={gitUrl} onChange={(e) => setGitUrl(e.target.value)}
                       placeholder={t('newProject.git.repoUrlPlaceholder')}
-                      style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }}
+                      style={{ ...inputStyle, fontFamily: 'var(--font-mono)', fontSize: 13 }}
                     />
                   </div>
                   <div className="flex gap-2.5">
@@ -778,7 +778,7 @@ export default function NewProjectModal() {
                     <div className="flex-1">
                       <Label text={t('newProject.git.branch')} />
                       <input value={gitBranch} onChange={(e) => setGitBranch(e.target.value)}
-                        placeholder="main" style={{ ...inputStyle, fontFamily: 'monospace' }}
+                        placeholder="main" style={{ ...inputStyle, fontFamily: 'var(--font-mono)' }}
                       />
                     </div>
                   </div>
@@ -788,7 +788,7 @@ export default function NewProjectModal() {
                       <input type={showToken ? 'text' : 'password'}
                         value={gitToken} onChange={(e) => setGitToken(e.target.value)}
                         placeholder="ghp_xxxxxxxxxxxx"
-                        style={{ ...inputStyle, flex: 1, fontFamily: 'monospace' }}
+                        style={{ ...inputStyle, flex: 1, fontFamily: 'var(--font-mono)' }}
                       />
                       <button type="button" onClick={() => setShowToken((v) => !v)}
                         style={{
@@ -800,7 +800,7 @@ export default function NewProjectModal() {
                         {showToken ? <EyeOff size={13} /> : <Eye size={13} />}
                       </button>
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--hint)', marginTop: 3 }}>
+                    <div style={{ fontSize: 13, color: 'var(--hint)', marginTop: 3 }}>
                       {t('newProject.git.tokenHint')}
                     </div>
                   </div>
@@ -818,13 +818,13 @@ export default function NewProjectModal() {
                     <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
                       {projName || 'Project'}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                    <div style={{ fontSize: 13, color: 'var(--muted)' }}>
                       {projType === 'http' ? 'HTTP / REST' : projType === 'grpc' ? 'gRPC' : 'WebSocket'}
                       {' · '}{branchName} branch
                     </div>
                   </div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                <div style={{ fontSize: 13, color: 'var(--muted)' }}>
                   {saveMode === 'local' && `${t('newProject.localSave')}${localFolder ? `: ${localFolder}` : ''}`}
                   {saveMode === 'git' && `${t('newProject.gitSave')} ${gitUrl || t('newProject.noRepo')}`}
                   {saveMode === 'both' && t('newProject.bothSave')}

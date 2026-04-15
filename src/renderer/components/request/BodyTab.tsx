@@ -108,13 +108,13 @@ export default function BodyTab() {
   return (
     <div className="flex h-full flex-col">
       {/* Body type selector — Postman-style radio buttons */}
-      <div className="flex shrink-0 items-center gap-3 pb-1.5 text-[13px]" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div className="flex shrink-0 items-center gap-3 pb-1.5" style={{ borderBottom: '1px solid var(--border)' }}>
         {BODY_OPTIONS.map((opt) => {
           const isActive = opt.value === activeRadio
           return (
             <label
               key={opt.value}
-              className="flex cursor-pointer items-center gap-1.5 text-[13px]"
+              className="flex cursor-pointer items-center gap-1.5"
               style={{ color: isActive ? 'var(--text)' : 'var(--muted)' }}
             >
               <input
@@ -136,7 +136,7 @@ export default function BodyTab() {
             <select
               value={body.type}
               onChange={(e) => handleTypeChange(e.target.value as BodyType)}
-              className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg)] px-1.5 py-px text-[13px] font-medium text-[var(--accent-text)] outline-none"
+              className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg)] px-1.5 py-px font-medium text-[var(--accent-text)] outline-none"
             >
               {RAW_FORMATS.map((f) => (
                 <option key={f.value} value={f.value}>{f.label}</option>
@@ -151,7 +151,7 @@ export default function BodyTab() {
           <button
             type="button"
             onClick={handleBeautify}
-            className="cursor-pointer rounded border border-[var(--border)] bg-transparent px-2 py-0.5 text-[13px] text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+            className="cursor-pointer rounded border border-[var(--border)] bg-transparent px-2 py-0.5 text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
           >
             Beautify
           </button>
@@ -160,7 +160,7 @@ export default function BodyTab() {
 
       {/* Content area */}
       {body.type === 'none' && (
-        <div className="flex flex-1 items-center justify-center text-[0.8rem] text-[var(--hint)]">
+        <div className="flex flex-1 items-center justify-center text-[var(--hint)]">
           This request does not have a body.
         </div>
       )}
@@ -205,12 +205,12 @@ export default function BodyTab() {
           <div className="rounded-lg border border-[var(--border)] bg-[var(--white)] p-3 text-center">
             <button
               type="button"
-              className="cursor-pointer rounded border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 text-[0.8rem] text-[var(--text)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
+              className="cursor-pointer rounded border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 text-[var(--text)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
             >
               Select File
             </button>
             {body.binaryPath && (
-              <div className="mt-1.5 text-[0.78rem] text-[var(--muted)]">{body.binaryPath}</div>
+              <div className="mt-1.5 text-[var(--muted)]">{body.binaryPath}</div>
             )}
           </div>
         </div>

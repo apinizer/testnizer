@@ -6,14 +6,14 @@ export default function CookieTab() {
 
   if (cookies.length === 0) {
     return (
-      <div className="p-4 text-center text-sm text-[var(--hint)]">No cookies in response.</div>
+      <div className="p-4 text-center text-[var(--hint)]">No cookies in response.</div>
     )
   }
 
   return (
-    <div className="p-3.5 font-mono text-sm">
+    <div className="p-3.5 font-mono">
       {/* Header */}
-      <div className="mb-1 grid grid-cols-5 gap-4 text-[0.875rem] font-medium text-[var(--muted)]">
+      <div className="mb-1 grid grid-cols-5 gap-4 font-medium text-[var(--muted)]">
         <span>Name</span>
         <span>Value</span>
         <span>Domain</span>
@@ -37,7 +37,7 @@ export default function CookieTab() {
             <span className="text-[var(--text)]">{cookie.value}</span>
             <span className="text-[var(--muted)]">{cookie.domain || '-'}</span>
             <span className="text-[var(--muted)]">{cookie.path || '/'}</span>
-            <span className="text-[0.875rem] text-[var(--orange)]">{flags.join(', ') || '-'}</span>
+            <span className="text-[var(--orange)]">{flags.join(', ') || '-'}</span>
           </div>
         )
       })}

@@ -404,7 +404,8 @@ export default function TreeView() {
       <DeleteConfirmDialog
         open={!!deleteTarget}
         itemName={deleteTarget?.label || ''}
-        itemType={(deleteTarget?.type as 'folder' | 'endpoint' | 'request') || 'endpoint'}
+        itemType={deleteTarget?.type || 'endpoint'}
+        requireTyping={deleteTarget?.type === 'folder'}
         onConfirm={handleDeleteConfirm}
         onCancel={handleDeleteCancel}
       />

@@ -32,7 +32,7 @@ export default function StatusBadge({ status, statusText, pill = false }: Status
   if (pill) {
     return (
       <span
-        className="inline-flex items-center rounded-[4px] px-2 py-[3px] text-[12px] font-semibold"
+        className="inline-flex items-center rounded-[4px] px-2 py-[3px] font-semibold"
         style={{
           color: fg,
           background: bg,
@@ -45,7 +45,7 @@ export default function StatusBadge({ status, statusText, pill = false }: Status
   }
 
   return (
-    <span className="flex items-center gap-1 text-[13px] font-bold" style={{ color: fg }}>
+    <span className="flex items-center gap-1 font-bold" style={{ color: fg }}>
       <span
         className="inline-block h-2 w-2 rounded-full"
         style={{ background: fg }}

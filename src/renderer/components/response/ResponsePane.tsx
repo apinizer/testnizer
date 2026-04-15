@@ -31,7 +31,7 @@ export default function ResponsePane() {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-[var(--white)]">
         <Loader2 size={24} className="animate-spin text-[var(--accent)]" />
-        <span className="mt-2 text-sm text-[var(--muted)]">{t('response.sendingRequest')}</span>
+        <span className="mt-2 text-[var(--muted)]">{t('response.sendingRequest')}</span>
       </div>
     )
   }
@@ -61,10 +61,10 @@ export default function ResponsePane() {
               border: '1px solid rgba(239,68,68,0.35)',
             }}
           >
-            <div className="mb-1 text-sm font-medium" style={{ color: 'var(--red)' }}>
+            <div className="mb-1 font-medium" style={{ color: 'var(--red)' }}>
               {t('response.requestFailed')}
             </div>
-            <div className="text-sm" style={{ color: 'var(--muted)' }}>{response.error}</div>
+            <div style={{ color: 'var(--muted)' }}>{response.error}</div>
           </div>
         </div>
       </div>
@@ -136,7 +136,7 @@ export default function ResponsePane() {
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
-                className="relative shrink-0 cursor-pointer whitespace-nowrap px-3 text-[13px] transition-colors"
+                className="relative shrink-0 cursor-pointer whitespace-nowrap px-3 transition-colors"
                 style={{
                   height: 33,
                   background: 'transparent',
@@ -150,7 +150,7 @@ export default function ResponsePane() {
                 {tab.label}
                 {tab.count != null && tab.count > 0 && (
                   <span
-                    className="ml-1 text-[12px] font-semibold"
+                    className="ml-1 font-semibold"
                     style={{ color: tab.countColor || (isActive ? 'var(--accent-text)' : 'var(--hint)') }}
                   >
                     {tab.countLabel || tab.count}
@@ -167,11 +167,11 @@ export default function ResponsePane() {
             <StatusBadge status={response.status} statusText={response.statusText} pill />
           )}
           {response.timing?.total != null && (
-            <span className="text-[12px]" style={{ color: 'var(--muted)' }}>
+            <span style={{ color: 'var(--muted)' }}>
               <span className="font-semibold" style={{ color: 'var(--green)' }}>{humanTime(response.timing.total)}</span>
             </span>
           )}
-          <span className="text-[12px]" style={{ color: 'var(--muted)' }}>
+          <span style={{ color: 'var(--muted)' }}>
             <span className="font-semibold" style={{ color: 'var(--text)' }}>{sizeKB} KB</span>
           </span>
           <button

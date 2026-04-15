@@ -74,13 +74,13 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
       {isRunning && (
         <div className="shrink-0 border-b border-[var(--border)] px-5 py-3">
           <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-[0.8125rem] text-[var(--muted)]">
+            <span className="text-[var(--muted)]">
               Running {currentIndex} of {totalCount}...
             </span>
             <button
               type="button"
               onClick={stop}
-              className="cursor-pointer rounded-[5px] border border-[#cc2200] bg-transparent px-3 py-0.5 text-[0.75rem] font-medium text-[#cc2200] hover:bg-[#fff0f0]"
+              className="cursor-pointer rounded-[5px] border border-[#cc2200] bg-transparent px-3 py-0.5 font-medium text-[#cc2200] hover:bg-[#fff0f0]"
             >
               Stop
             </button>
@@ -98,14 +98,14 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
       {!isRunning && results.length > 0 && (
         <div className="shrink-0 border-b border-[var(--border)] px-5 py-3">
           <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-[0.9375rem] font-semibold text-[var(--text)]">
+            <h2 className="text-[15px] font-semibold text-[var(--text)]">
               Run results
             </h2>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={onNewRun}
-                className="flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1 text-[0.75rem] text-[var(--muted)] transition-colors hover:bg-[var(--surface)]"
+                className="flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1 text-[var(--muted)] transition-colors hover:bg-[var(--surface)]"
               >
                 <RotateCcw size={11} />
                 Run Again
@@ -113,7 +113,7 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
               <button
                 type="button"
                 onClick={onNewRun}
-                className="flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1 text-[0.75rem] text-[var(--muted)] transition-colors hover:bg-[var(--surface)]"
+                className="flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1 text-[var(--muted)] transition-colors hover:bg-[var(--surface)]"
               >
                 <Plus size={11} />
                 New Run
@@ -122,7 +122,7 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
           </div>
 
           {/* Run timestamp */}
-          <div className="mb-3 flex items-center gap-2 text-[0.75rem]">
+          <div className="mb-3 flex items-center gap-2">
             <span
               className="inline-block h-2 w-2 rounded-full"
               style={{ background: totalFailed > 0 ? '#cc2200' : '#1a7a4a' }}
@@ -132,14 +132,14 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
             </span>
             <button
               type="button"
-              className="cursor-pointer border-none bg-transparent text-[0.75rem] text-[var(--accent)] hover:underline"
+              className="cursor-pointer border-none bg-transparent text-[var(--accent)] hover:underline"
             >
               View all runs
             </button>
           </div>
 
           {/* Summary stats table */}
-          <div className="flex gap-6 text-[0.75rem]">
+          <div className="flex gap-6">
             <StatCell label="Source" value="Runner" />
             <StatCell label="Iterations" value={String(report?.totalEndpoints ?? results.length)} />
             <StatCell label="Duration" value={formatDuration(totalDuration)} />
@@ -158,7 +158,7 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
               key={tab.key}
               type="button"
               onClick={() => setActiveFilter(tab.key)}
-              className="cursor-pointer border-none bg-transparent px-2.5 py-2 text-[0.75rem] transition-colors"
+              className="cursor-pointer border-none bg-transparent px-2.5 py-2 transition-colors"
               style={{
                 color: activeFilter === tab.key ? 'var(--accent-text)' : 'var(--muted)',
                 fontWeight: activeFilter === tab.key ? 600 : 400,
@@ -170,12 +170,12 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
             </button>
           ))}
           <div className="flex-1" />
-          <div className="flex items-center gap-1 text-[0.75rem] text-[var(--hint)]">
-            <button type="button" className="cursor-pointer border-none bg-transparent px-1.5 py-1 text-[0.75rem] font-medium text-[var(--accent)]">
+          <div className="flex items-center gap-1 text-[var(--hint)]">
+            <button type="button" className="cursor-pointer border-none bg-transparent px-1.5 py-1 font-medium text-[var(--accent)]">
               List
             </button>
             <span className="text-[var(--border2)]">|</span>
-            <button type="button" className="cursor-pointer border-none bg-transparent px-1.5 py-1 text-[0.75rem] text-[var(--muted)]">
+            <button type="button" className="cursor-pointer border-none bg-transparent px-1.5 py-1 text-[var(--muted)]">
               Grid
             </button>
           </div>
@@ -185,7 +185,7 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
       {/* Results list */}
       <div className="flex-1 overflow-auto">
         {results.length === 0 && !isRunning && (
-          <div className="flex h-full items-center justify-center text-[0.8125rem] text-[var(--hint)]">
+          <div className="flex h-full items-center justify-center text-[var(--hint)]">
             Running collection...
           </div>
         )}
@@ -203,8 +203,8 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
 function StatCell({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div>
-      <div className="mb-0.5 text-[0.6875rem] text-[var(--hint)]">{label}</div>
-      <div className="text-[0.75rem] font-medium" style={{ color: color || 'var(--text)' }}>
+      <div className="mb-0.5 text-[var(--hint)]">{label}</div>
+      <div className="font-medium" style={{ color: color || 'var(--text)' }}>
         {value}
       </div>
     </div>
@@ -229,35 +229,35 @@ function ResultRow({ result }: { result: import('../../stores/runner.store').End
       {/* Method + path > name */}
       <div className="mb-0.5 flex items-center gap-2">
         <span
-          className="shrink-0 text-[0.75rem] font-bold"
+          className="shrink-0 font-bold"
           style={{
             color: mc.color,
-            fontFamily: "'SF Mono','Cascadia Code','Fira Code',monospace",
+            fontFamily: "var(--font-mono)",
           }}
         >
           {result.method}
         </span>
-        <span className="text-[0.8125rem] text-[var(--text)]">
+        <span className="text-[var(--text)]">
           {result.endpointName}
         </span>
 
         {/* Right: status + duration + size */}
         <div className="ml-auto flex items-center gap-3">
           {result.status !== null && (
-            <span className="text-[0.8125rem] font-medium" style={{ color: statusColor }}>
+            <span className="font-medium" style={{ color: statusColor }}>
               {result.status}
             </span>
           )}
           {result.error && result.status === null && (
-            <span className="text-[0.8125rem] font-medium text-[#cc2200]">
+            <span className="font-medium text-[#cc2200]">
               Error
             </span>
           )}
-          <span className="text-[0.75rem] text-[var(--muted)]">
+          <span className="text-[var(--muted)]">
             {result.duration} ms
           </span>
           {result.responseSize != null && result.responseSize > 0 && (
-            <span className="text-[0.75rem] text-[var(--muted)]">
+            <span className="text-[var(--muted)]">
               {formatBytes(result.responseSize)}
             </span>
           )}
@@ -265,13 +265,13 @@ function ResultRow({ result }: { result: import('../../stores/runner.store').End
       </div>
 
       {/* URL */}
-      <div className="mb-1 truncate text-[0.75rem] text-[var(--hint)]">
+      <div className="mb-1 truncate text-[var(--hint)]">
         {result.url}
       </div>
 
       {/* Error message */}
       {result.error && (
-        <div className="mt-1 text-[0.75rem] text-[#cc2200]">
+        <div className="mt-1 text-[#cc2200]">
           {result.error}
         </div>
       )}
@@ -280,7 +280,7 @@ function ResultRow({ result }: { result: import('../../stores/runner.store').End
       {result.assertions.length > 0 ? (
         <div className="mt-1.5 space-y-0.5">
           {result.assertions.map((a, i) => (
-            <div key={i} className="flex items-center gap-1.5 text-[0.75rem]">
+            <div key={i} className="flex items-center gap-1.5">
               <span style={{ color: a.passed ? '#1a7a4a' : '#cc2200' }}>
                 {a.passed ? '✓' : '✗'}
               </span>
@@ -294,7 +294,7 @@ function ResultRow({ result }: { result: import('../../stores/runner.store').End
           ))}
         </div>
       ) : (
-        <div className="mt-1 text-[0.75rem] text-[var(--hint)]">
+        <div className="mt-1 text-[var(--hint)]">
           No tests found
         </div>
       )}

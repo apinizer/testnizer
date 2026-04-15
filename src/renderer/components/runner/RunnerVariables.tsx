@@ -38,7 +38,7 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
     >
       {/* Header */}
       <div className="shrink-0 border-b border-[var(--border)] px-4 py-2.5">
-        <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent-text)', margin: 0 }}>All variables</h3>
+        <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-text)', margin: 0 }}>All variables</h3>
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -48,7 +48,7 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
             <div className="mb-2 flex items-center gap-2">
               <span
                 className="flex items-center justify-center rounded font-bold text-white"
-                style={{ width: 18, height: 18, fontSize: 10, background: '#e86826' }}
+                style={{ width: 18, height: 18, fontSize: 13, background: '#e86826' }}
               >
                 E
               </span>
@@ -91,7 +91,7 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
           <div className="mb-2 flex items-center gap-2">
             <span
               className="flex items-center justify-center rounded font-bold text-white"
-              style={{ width: 18, height: 18, fontSize: 10, background: '#1a7a4a' }}
+              style={{ width: 18, height: 18, fontSize: 13, background: '#1a7a4a' }}
             >
               G
             </span>

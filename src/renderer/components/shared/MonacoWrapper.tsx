@@ -173,7 +173,7 @@ export default function MonacoWrapper({
           wordWrap: wordWrap ? 'on' : 'off',
           fontSize: fontSize - 2,
           fontWeight: '400',
-          fontFamily: "Menlo, Monaco, Consolas, 'SF Mono', 'Cascadia Code', monospace",
+          fontFamily: "var(--font-mono)",
           fontLigatures: false,
           padding: { top: 6, bottom: 6 },
           scrollBeyondLastLine: false,

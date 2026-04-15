@@ -121,7 +121,7 @@ function AutocompleteDropdown({
       {suggestions.map((s, i) => (
         <div
           key={s}
-          className="cursor-pointer px-2.5 py-1 text-[13px]"
+          className="cursor-pointer px-2.5 py-1"
           style={{
             background: i === selectedIndex ? 'var(--accent-light)' : 'transparent',
             color: i === selectedIndex ? 'var(--accent-text)' : 'var(--text)',
@@ -250,7 +250,7 @@ export default function KeyValueTable({
       <div className="overflow-visible rounded-md border border-[var(--border)]" style={{ background: 'var(--white)' }}>
         {/* Header */}
         <div
-          className="grid text-[11px] text-[var(--hint)]"
+          className="grid text-[var(--hint)]"
           style={{
             gridTemplateColumns: GRID_COLS,
             borderBottom: '1px solid var(--border)',
@@ -307,7 +307,7 @@ export default function KeyValueTable({
                   }
                 }}
                 onKeyDown={handleKeyDown}
-                className="w-full border-none bg-transparent px-2.5 py-[5px] text-[13px] text-[var(--text)] outline-none"
+                className="w-full border-none bg-transparent px-2.5 py-[5px] text-[var(--text)] outline-none"
                 placeholder="Key"
               />
             </div>
@@ -318,7 +318,7 @@ export default function KeyValueTable({
                 value={row.value}
                 onChange={(val) => handleValueInputChange(row.id, row.key, val, null)}
                 onKeyDown={handleKeyDown}
-                className="w-full border-none bg-transparent px-2.5 py-[5px] text-[13px] outline-none"
+                className="w-full border-none bg-transparent px-2.5 py-[5px] outline-none"
                 style={{ color: valueColor || 'var(--text)' }}
                 placeholder="Value"
               />
@@ -329,7 +329,7 @@ export default function KeyValueTable({
               <input
                 value={row.description || ''}
                 onChange={(e) => onUpdate(row.id, { description: e.target.value })}
-                className="w-full border-none bg-transparent px-2.5 py-[5px] text-[13px] text-[var(--muted)] outline-none"
+                className="w-full border-none bg-transparent px-2.5 py-[5px] text-[var(--muted)] outline-none"
                 placeholder="Description"
               />
             </div>
@@ -360,7 +360,7 @@ export default function KeyValueTable({
           onClick={onAdd}
         >
           <div />
-          <div className="px-2.5 py-[5px] text-[13px] text-[var(--hint)]">
+          <div className="px-2.5 py-[5px] text-[var(--hint)]">
             Add new...
           </div>
           <div />
@@ -373,7 +373,7 @@ export default function KeyValueTable({
       <button
         type="button"
         onClick={onAdd}
-        className="mt-1.5 w-full cursor-pointer rounded-md border border-dashed border-[var(--border)] bg-transparent py-1 text-[13px] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
+        className="mt-1.5 w-full cursor-pointer rounded-md border border-dashed border-[var(--border)] bg-transparent py-1 text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
       >
         {addLabel}
       </button>

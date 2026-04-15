@@ -62,7 +62,7 @@ function UnaryView({
 }) {
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center bg-[var(--white)] text-sm text-[var(--muted)]">
+      <div className="flex h-full items-center justify-center bg-[var(--white)] text-[var(--muted)]">
         Calling gRPC method...
       </div>
     )
@@ -71,15 +71,15 @@ function UnaryView({
   if (error && !response) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 bg-[var(--white)] p-4">
-        <span className="text-sm font-medium text-red-500">Error</span>
-        <span className="text-center text-sm text-[var(--muted)]">{error}</span>
+        <span className="font-medium text-red-500">Error</span>
+        <span className="text-center text-[var(--muted)]">{error}</span>
       </div>
     )
   }
 
   if (!response) {
     return (
-      <div className="flex h-full items-center justify-center bg-[var(--white)] text-sm text-[var(--hint)]">
+      <div className="flex h-full items-center justify-center bg-[var(--white)] text-[var(--hint)]">
         Execute a gRPC call to see the response
       </div>
     )
@@ -88,8 +88,8 @@ function UnaryView({
   if (response.error && !response.body) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 bg-[var(--white)] p-4">
-        <span className="text-sm font-medium text-red-500">Error</span>
-        <span className="text-center text-sm text-[var(--muted)]">{response.error}</span>
+        <span className="font-medium text-red-500">Error</span>
+        <span className="text-center text-[var(--muted)]">{response.error}</span>
       </div>
     )
   }
@@ -98,12 +98,12 @@ function UnaryView({
     <div className="flex h-full flex-col bg-[var(--white)]">
       {/* Meta bar */}
       <div className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-3.5 py-2">
-        <span className="text-[0.875rem] font-medium" style={{ color: 'var(--accent-text)' }}>
+        <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
           Response
         </span>
         {response.status !== undefined && (
           <span
-            className="rounded-full px-2 py-0.5 text-[0.875rem] font-semibold"
+            className="rounded-full px-2 py-0.5 font-semibold"
             style={{
               background: response.status === 0 ? '#e8f9f1' : '#fff0f0',
               color: response.status === 0 ? '#1a7a4a' : '#cc2200',
@@ -112,9 +112,9 @@ function UnaryView({
             {response.status === 0 ? 'OK' : `Code ${response.status}`}
           </span>
         )}
-        <span className="text-[0.875rem] text-[var(--muted)]">{response.timing.total}ms</span>
+        <span className="text-[var(--muted)]">{response.timing.total}ms</span>
         {response.bodySize !== undefined && (
-          <span className="text-[0.875rem] text-[var(--hint)]">
+          <span className="text-[var(--hint)]">
             {response.bodySize > 1024
               ? `${(response.bodySize / 1024).toFixed(1)} KB`
               : `${response.bodySize} B`}
@@ -154,12 +154,12 @@ function StreamView() {
     <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
       {/* Header */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3.5 py-2">
-        <span className="text-[0.875rem] font-medium" style={{ color: 'var(--accent-text)' }}>
+        <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
           Stream Events
         </span>
         {isStreaming && (
           <span
-            className="rounded-full px-2 py-0.5 text-[0.875rem] font-medium"
+            className="rounded-full px-2 py-0.5 font-medium"
             style={{ background: '#e8f9f1', color: '#1a7a4a' }}
           >
             Streaming
@@ -170,7 +170,7 @@ function StreamView() {
       {/* Event list */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {streamEvents.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-[var(--hint)]">
+          <div className="flex h-full items-center justify-center text-[var(--hint)]">
             Waiting for stream events...
           </div>
         ) : (
@@ -184,20 +184,20 @@ function StreamView() {
               >
                 <div className="flex items-center gap-2">
                   <span
-                    className="shrink-0 rounded px-1.5 py-0.5 text-[0.643rem] font-medium"
+                    className="shrink-0 rounded px-1.5 py-0.5 font-medium"
                     style={{ background: '#e8f4ff', color: '#0066cc' }}
                   >
                     #{event.index + 1}
                   </span>
-                  <span className="flex-1 truncate font-mono text-[0.875rem] text-[var(--text)]">
+                  <span className="flex-1 truncate font-mono text-[var(--text)]">
                     {truncate(event.data.replace(/\n/g, ' '), 80)}
                   </span>
-                  <span className="shrink-0 text-[0.875rem] text-[var(--hint)]">
+                  <span className="shrink-0 text-[var(--hint)]">
                     {formatTimestamp(event.timestamp)}
                   </span>
                 </div>
                 {isExpanded && (
-                  <pre className="mt-1.5 max-h-48 overflow-auto rounded-lg bg-[var(--surface)] p-2 font-mono text-[0.875rem] text-[var(--text)]">
+                  <pre className="mt-1.5 max-h-48 overflow-auto rounded-lg bg-[var(--surface)] p-2 font-mono text-[var(--text)]">
                     {formatJson(event.data)}
                   </pre>
                 )}
@@ -209,7 +209,7 @@ function StreamView() {
 
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
-        <span className="text-[0.875rem] text-[var(--muted)]">
+        <span className="text-[var(--muted)]">
           {streamEvents.length} event{streamEvents.length !== 1 ? 's' : ''}
         </span>
         <label className="flex cursor-pointer items-center gap-1.5">
@@ -219,7 +219,7 @@ function StreamView() {
             onChange={(e) => setAutoScroll(e.target.checked)}
             className="accent-[var(--accent)]"
           />
-          <span className="text-[0.875rem] text-[var(--muted)]">Auto-scroll</span>
+          <span className="text-[var(--muted)]">Auto-scroll</span>
         </label>
       </div>
     </div>

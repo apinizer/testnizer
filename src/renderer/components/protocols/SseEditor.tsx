@@ -22,12 +22,12 @@ export default function SseEditor() {
     <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
       {/* Tab bar label */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--white)] px-3.5 py-2">
-        <span className="text-[0.875rem] font-medium" style={{ color: 'var(--accent-text)' }}>
+        <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
           SSE (Server-Sent Events)
         </span>
         {connectionState === 'connected' && (
           <span
-            className="rounded-full px-2 py-0.5 text-[0.875rem] font-medium"
+            className="rounded-full px-2 py-0.5 font-medium"
             style={{ background: '#e8f9f1', color: '#1a7a4a' }}
           >
             Connected
@@ -45,13 +45,13 @@ export default function SseEditor() {
           <button
             type="button"
             onClick={() => setLastEventIdExpanded((v) => !v)}
-            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)]"
+            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)]"
             style={{ background: 'transparent', border: 'none' }}
           >
             {lastEventIdExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             <span>Last-Event-ID</span>
             {lastEventId.trim() && (
-              <span className="ml-1 truncate font-mono text-[0.875rem] text-[var(--muted)]">
+              <span className="ml-1 truncate font-mono text-[var(--muted)]">
                 {lastEventId}
               </span>
             )}
@@ -63,7 +63,7 @@ export default function SseEditor() {
                 value={lastEventId}
                 onChange={(e) => setLastEventId(e.target.value)}
                 placeholder="Optional: resume from this event ID"
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-sm text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
               />
             </div>
           )}
@@ -74,7 +74,7 @@ export default function SseEditor() {
           <button
             type="button"
             onClick={() => setHeadersExpanded((v) => !v)}
-            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)]"
+            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)]"
             style={{ background: 'transparent', border: 'none' }}
           >
             {headersExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -82,7 +82,7 @@ export default function SseEditor() {
             <span>Custom Headers</span>
             {enabledHeaderCount > 0 && (
               <span
-                className="ml-1 rounded-full px-[5px] text-[0.875rem]"
+                className="ml-1 rounded-full px-[5px]"
                 style={{ background: 'var(--green-bg)', color: 'var(--green)' }}
               >
                 {enabledHeaderCount}

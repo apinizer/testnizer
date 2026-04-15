@@ -256,8 +256,8 @@ const api = {
     },
     history: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('runner:history', projectId),
-    deleteHistory: (historyId: string): Promise<unknown> =>
-      ipcRenderer.invoke('runner:deleteHistory', historyId),
+    deleteHistory: (ids: string | string[]): Promise<unknown> =>
+      ipcRenderer.invoke('runner:deleteHistory', ids),
   },
 
   // ─── Scheduler ──────────────────────────────────────────────────

@@ -49,26 +49,26 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
       <div className="flex w-[55%] flex-col overflow-hidden border-r border-[var(--border)]">
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-4 py-2.5">
-          <span className="text-[0.8125rem] font-semibold text-[var(--text)]">Run Sequence</span>
+          <span className="font-semibold text-[var(--text)]">Run Sequence</span>
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={allSelected ? deselectAll : selectAll}
-              className="cursor-pointer border-none bg-transparent text-[0.75rem] text-[var(--muted)] hover:text-[var(--accent)]"
+              className="cursor-pointer border-none bg-transparent text-[var(--muted)] hover:text-[var(--accent)]"
             >
               {allSelected ? 'Deselect All' : 'Select All'}
             </button>
             <button
               type="button"
               onClick={selectAll}
-              className="cursor-pointer border-none bg-transparent text-[0.75rem] text-[var(--muted)] hover:text-[var(--accent)]"
+              className="cursor-pointer border-none bg-transparent text-[var(--muted)] hover:text-[var(--accent)]"
             >
               Select All
             </button>
             <button
               type="button"
               onClick={handleReset}
-              className="cursor-pointer border-none bg-transparent text-[0.75rem] text-[var(--muted)] hover:text-[var(--accent)]"
+              className="cursor-pointer border-none bg-transparent text-[var(--muted)] hover:text-[var(--accent)]"
             >
               Reset
             </button>
@@ -83,7 +83,7 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
               className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-2 transition-colors hover:bg-[var(--surface)]"
             >
               {/* Row number */}
-              <span className="w-6 shrink-0 text-right text-[0.75rem] text-[var(--hint)]">
+              <span className="w-6 shrink-0 text-right text-[var(--hint)]">
                 {index + 1}
               </span>
 
@@ -107,13 +107,13 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
               <MethodBadge method={ep.method} />
 
               {/* Name */}
-              <span className="flex-1 truncate text-[0.8125rem] text-[var(--text)]">
+              <span className="flex-1 truncate text-[var(--text)]">
                 {ep.name}
               </span>
             </div>
           ))}
           {endpoints.length === 0 && (
-            <div className="flex h-full items-center justify-center text-[0.8125rem] text-[var(--hint)]">
+            <div className="flex h-full items-center justify-center text-[var(--hint)]">
               No endpoints found in project
             </div>
           )}
@@ -129,7 +129,7 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
               key={tab}
               type="button"
               onClick={() => setActiveTab(tab)}
-              className="cursor-pointer border-b-2 border-none bg-transparent px-3 py-2.5 text-[0.8125rem] capitalize transition-colors"
+              className="cursor-pointer border-b-2 border-none bg-transparent px-3 py-2.5 capitalize transition-colors"
               style={{
                 borderBottomColor: activeTab === tab ? 'var(--accent)' : 'transparent',
                 borderBottomWidth: 2,
@@ -148,43 +148,43 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
           {activeTab === 'functional' && (
             <>
               {/* Choose how to run */}
-              <h3 className="mb-3 text-[0.8125rem] font-semibold text-[var(--text)]">
+              <h3 className="mb-3 font-semibold text-[var(--text)]">
                 Choose how to run your collection
               </h3>
               <div className="mb-5 space-y-2">
-                <label className="flex cursor-pointer items-center gap-2 text-[0.8125rem] text-[var(--text)]">
+                <label className="flex cursor-pointer items-center gap-2 text-[var(--text)]">
                   <input type="radio" name="runMode" defaultChecked className="accent-[#e86826]" />
                   Run manually
                 </label>
-                <label className="flex cursor-pointer items-center gap-2 text-[0.8125rem] text-[var(--muted)]">
+                <label className="flex cursor-pointer items-center gap-2 text-[var(--muted)]">
                   <input type="radio" name="runMode" disabled className="accent-[var(--accent)]" />
                   Schedule runs
-                  <span className="text-[0.6875rem] text-[var(--hint)]">(coming soon)</span>
+                  <span className="text-[var(--hint)]">(coming soon)</span>
                 </label>
-                <label className="flex cursor-pointer items-center gap-2 text-[0.8125rem] text-[var(--muted)]">
+                <label className="flex cursor-pointer items-center gap-2 text-[var(--muted)]">
                   <input type="radio" name="runMode" disabled className="accent-[var(--accent)]" />
                   Automate runs via CLI
-                  <span className="text-[0.6875rem] text-[var(--hint)]">(coming soon)</span>
+                  <span className="text-[var(--hint)]">(coming soon)</span>
                 </label>
               </div>
 
               {/* Run configuration */}
-              <h3 className="mb-3 text-[0.8125rem] font-semibold text-[var(--text)]">
+              <h3 className="mb-3 font-semibold text-[var(--text)]">
                 Run configuration
               </h3>
               <div className="mb-4 flex gap-4">
                 <div className="flex-1">
-                  <label className="mb-1 block text-[0.75rem] text-[var(--muted)]">Iterations</label>
+                  <label className="mb-1 block text-[var(--muted)]">Iterations</label>
                   <input
                     type="number"
                     min={1}
                     value={iterations}
                     onChange={(e) => setIterations(Number(e.target.value))}
-                    className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[0.8125rem] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                    className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="mb-1 block text-[0.75rem] text-[var(--muted)]">Delay</label>
+                  <label className="mb-1 block text-[var(--muted)]">Delay</label>
                   <div className="flex items-center gap-1.5">
                     <input
                       type="number"
@@ -192,20 +192,20 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
                       step={100}
                       value={delay}
                       onChange={(e) => setDelay(Number(e.target.value))}
-                      className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[0.8125rem] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                      className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                     />
-                    <span className="shrink-0 text-[0.75rem] text-[var(--muted)]">ms</span>
+                    <span className="shrink-0 text-[var(--muted)]">ms</span>
                   </div>
                 </div>
               </div>
 
               {/* Environment */}
               <div className="mb-5">
-                <label className="mb-1 block text-[0.75rem] text-[var(--muted)]">Environment</label>
+                <label className="mb-1 block text-[var(--muted)]">Environment</label>
                 <select
                   value={environmentId}
                   onChange={(e) => setEnvironmentId(e.target.value)}
-                  className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[0.8125rem] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                  className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                 >
                   <option value="">No Environment</option>
                   {environments.map((env) => (
@@ -215,7 +215,7 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
               </div>
 
               {/* Advanced Settings */}
-              <h3 className="mb-3 text-[0.8125rem] font-semibold text-[var(--text)]">
+              <h3 className="mb-3 font-semibold text-[var(--text)]">
                 Advanced Settings
               </h3>
               <div className="space-y-2.5">
@@ -231,7 +231,7 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
                   type="button"
                   onClick={handleRun}
                   disabled={isRunning || selectedCount === 0}
-                  className="flex cursor-pointer items-center gap-2 rounded-[7px] border-none px-5 py-2 text-[0.875rem] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex cursor-pointer items-center gap-2 rounded-[7px] border-none px-5 py-2 font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ background: '#e86826' }}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="white" stroke="none">
@@ -248,7 +248,7 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
           )}
 
           {activeTab === 'performance' && (
-            <div className="flex h-full items-center justify-center text-[0.8125rem] text-[var(--hint)]">
+            <div className="flex h-full items-center justify-center text-[var(--hint)]">
               Performance testing coming soon
             </div>
           )}
@@ -262,7 +262,7 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
 
 function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 text-[0.8125rem] text-[var(--text)]">
+    <label className="flex cursor-pointer items-center gap-2 text-[var(--text)]">
       <input
         type="checkbox"
         checked={checked}

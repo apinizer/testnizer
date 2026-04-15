@@ -82,7 +82,7 @@ export default function NewRequestWelcome() {
             >
               <span style={{ color: 'var(--accent)' }}>{action.icon}</span>
             </div>
-            <span className="text-center text-[0.875rem] font-medium text-[var(--text)]">
+            <span className="text-center font-medium text-[var(--text)]">
               {action.label}
             </span>
           </button>

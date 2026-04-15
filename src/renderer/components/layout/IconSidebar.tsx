@@ -141,7 +141,7 @@ export default function IconSidebar() {
               }}
             >
               {item.icon(active)}
-              <span style={{ fontSize: 10.5, fontWeight: active ? 600 : 400, fontFamily: 'inherit' }}>{item.label}</span>
+              <span style={{ fontSize: 13, fontWeight: active ? 600 : 400, fontFamily: 'inherit' }}>{item.label}</span>
             </div>
           )
         })}
@@ -170,7 +170,7 @@ export default function IconSidebar() {
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
           >
             {item.icon(false)}
-            <span style={{ fontSize: 10.5, fontFamily: 'inherit' }}>{item.label}</span>
+            <span style={{ fontSize: 13, fontFamily: 'inherit' }}>{item.label}</span>
           </div>
         ))}
 
@@ -184,7 +184,7 @@ export default function IconSidebar() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: 700,
             color: 'white',
             cursor: 'pointer',

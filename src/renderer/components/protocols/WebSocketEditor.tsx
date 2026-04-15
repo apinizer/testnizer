@@ -20,11 +20,11 @@ export default function WebSocketEditor() {
     <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
       {/* Tab bar label */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--white)] px-3.5 py-2">
-        <span className="text-[0.875rem] font-medium" style={{ color: 'var(--accent-text)' }}>
+        <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
           WebSocket
         </span>
         {connectionState === 'connected' && (
-          <span className="rounded-full px-2 py-0.5 text-[0.875rem] font-medium" style={{ background: '#e8f9f1', color: '#1a7a4a' }}>
+          <span className="rounded-full px-2 py-0.5 font-medium" style={{ background: '#e8f9f1', color: '#1a7a4a' }}>
             Connected
           </span>
         )}
@@ -40,7 +40,7 @@ export default function WebSocketEditor() {
           <button
             type="button"
             onClick={() => setHeadersExpanded((v) => !v)}
-            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)]"
+            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)]"
             style={{ background: 'transparent', border: 'none' }}
           >
             {headersExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -48,7 +48,7 @@ export default function WebSocketEditor() {
             <span>Custom Headers</span>
             {enabledHeaderCount > 0 && (
               <span
-                className="ml-1 rounded-full px-[5px] text-[0.875rem]"
+                className="ml-1 rounded-full px-[5px]"
                 style={{ background: 'var(--green-bg)', color: 'var(--green)' }}
               >
                 {enabledHeaderCount}

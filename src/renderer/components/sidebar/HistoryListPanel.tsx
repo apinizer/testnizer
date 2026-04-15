@@ -7,6 +7,7 @@ import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
 import MethodBadge from '../shared/MethodBadge'
+import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import type { HistoryEntry, KeyValuePair, RequestBody, AuthConfig, HttpMethod, ApiResponse, Tab } from '../../types'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 
@@ -52,6 +53,7 @@ export default function HistoryListPanel() {
 
   const [runHistory, setRunHistory] = useState<RunHistoryRow[]>([])
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['__all__']))
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   // Fetch on mount
   useEffect(() => {
@@ -308,7 +310,7 @@ export default function HistoryListPanel() {
                 background: 'var(--surface)',
                 color: 'var(--muted)',
                 borderBottom: '1px solid var(--border)',
-                fontSize: 11,
+                fontSize: 13,
               }}
             >
               {label}
@@ -349,7 +351,7 @@ export default function HistoryListPanel() {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation()
-                    deleteEntry(entry.id)
+                    setDeleteTargetId(entry.id)
                   }}
                   className="hidden shrink-0 cursor-pointer group-hover:block"
                   style={{
@@ -366,6 +368,17 @@ export default function HistoryListPanel() {
           </div>
         ))}
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteTargetId}
+        itemName="this history entry"
+        itemType="history entry"
+        onConfirm={() => {
+          if (deleteTargetId) deleteEntry(deleteTargetId)
+          setDeleteTargetId(null)
+        }}
+        onCancel={() => setDeleteTargetId(null)}
+      />
     </div>
   )
 }

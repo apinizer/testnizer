@@ -15,7 +15,7 @@ export default function TestResultsTab() {
 
   if (results.length === 0) {
     return (
-      <div className="p-4 text-center text-[13px]" style={{ color: 'var(--hint)' }}>
+      <div className="p-4 text-center" style={{ color: 'var(--hint)' }}>
         No tests were run for this request.
       </div>
     )
@@ -47,7 +47,7 @@ export default function TestResultsTab() {
           <button
             type="button"
             onClick={() => setShowFilterDrop((v) => !v)}
-            className="flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-[12px]"
+            className="flex cursor-pointer items-center gap-1 rounded px-2 py-1"
             style={{
               background: 'transparent',
               border: '1px solid var(--border2)',
@@ -78,7 +78,7 @@ export default function TestResultsTab() {
                 <div
                   key={mode}
                   onClick={() => { setFilter(mode); setShowFilterDrop(false) }}
-                  className="cursor-pointer rounded px-3 py-1.5 text-[12px]"
+                  className="cursor-pointer rounded px-3 py-1.5"
                   style={{ color: 'var(--text)' }}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--surface)' }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
@@ -99,12 +99,12 @@ export default function TestResultsTab() {
         {filtered.map((r, idx) => (
           <div
             key={idx}
-            className="flex items-start gap-3 px-4 py-3 text-[13px]"
+            className="flex items-start gap-3 px-4 py-3"
             style={{ borderBottom: '1px solid var(--border-split)' }}
           >
             {/* PASSED / FAILED badge */}
             <span
-              className="mt-[1px] shrink-0 rounded px-2 py-0.5 text-[11px] font-bold uppercase"
+              className="mt-[1px] shrink-0 rounded px-2 py-0.5 font-bold uppercase"
               style={{
                 background: r.passed ? 'var(--green-bg)' : 'rgba(239,68,68,0.12)',
                 color: r.passed ? 'var(--green)' : 'var(--red)',

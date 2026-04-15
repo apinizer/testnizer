@@ -368,7 +368,7 @@ export default function ImportModal() {
                   ? `Import ${selectedFormat.name}`
                   : 'Import Destination'}
             </div>
-            <div className="text-[0.8rem] text-[var(--muted)]">
+            <div className="text-[var(--muted)]">
               {step === 1
                 ? t('import.subtitle')
                 : step === 2
@@ -391,7 +391,7 @@ export default function ImportModal() {
           {[1, 2, 3].map((s) => (
             <div key={s} className="flex items-center gap-2">
               <div
-                className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold"
+                className="flex h-6 w-6 items-center justify-center rounded-full font-bold"
                 style={{
                   background: step >= s ? 'var(--accent)' : 'var(--surface)',
                   color: step >= s ? 'white' : 'var(--hint)',
@@ -401,8 +401,7 @@ export default function ImportModal() {
                 {step > s ? <Check size={12} /> : s}
               </div>
               <span
-                className="text-[12px]"
-                style={{
+                               style={{
                   color: step >= s ? 'var(--text)' : 'var(--hint)',
                   fontWeight: step === s ? 600 : 400,
                 }}
@@ -425,7 +424,7 @@ export default function ImportModal() {
                   key={fmt.name}
                   type="button"
                   onClick={() => setSelectedIdx(i)}
-                  className="flex cursor-pointer flex-col items-center gap-[7px] rounded-[10px] px-2 pb-3 pt-3.5 text-center text-[0.8rem] transition-all"
+                  className="flex cursor-pointer flex-col items-center gap-[7px] rounded-[10px] px-2 pb-3 pt-3.5 text-center transition-all"
                   style={{
                     border: `1.5px solid ${selectedIdx === i ? 'var(--accent)' : 'var(--border)'}`,
                     background: selectedIdx === i ? 'var(--accent-light)' : 'var(--white)',
@@ -442,14 +441,14 @@ export default function ImportModal() {
               <button
                 type="button"
                 onClick={handleClose}
-                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.8rem] text-[var(--sub)] transition-colors hover:bg-[var(--bg)]"
+                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--sub)] transition-colors hover:bg-[var(--bg)]"
               >
                 {t('import.cancel')}
               </button>
               <button
                 type="button"
                 onClick={handleNext}
-                className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] text-[0.8rem] font-semibold text-white transition-colors hover:opacity-90"
+                className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
               >
                 {t('import.next')} {'\u2192'}
               </button>
@@ -463,7 +462,7 @@ export default function ImportModal() {
             <div className="space-y-4">
               {canUrlImport && (
                 <div>
-                  <label className="mb-2 flex items-center gap-1.5 text-[0.8rem] font-medium text-[var(--text)]">
+                  <label className="mb-2 flex items-center gap-1.5 font-medium text-[var(--text)]">
                     <Globe2 size={15} />
                     Import from URL
                   </label>
@@ -478,13 +477,13 @@ export default function ImportModal() {
                           ? 'https://example.com/service?wsdl'
                           : 'https://example.com/api/openapi.json'
                       }
-                      className="flex-1 rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-1.5 font-mono text-[0.8rem] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                      className="flex-1 rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-1.5 font-mono text-[var(--text)] outline-none focus:border-[var(--accent)]"
                     />
                     <button
                       type="button"
                       onClick={handleImportUrl}
                       disabled={importLoading || !importUrl.trim()}
-                      className="flex cursor-pointer items-center gap-1.5 rounded-lg border-none bg-[var(--accent)] px-3 py-1.5 text-[0.8rem] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex cursor-pointer items-center gap-1.5 rounded-lg border-none bg-[var(--accent)] px-3 py-1.5 font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {importLoading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                       Next
@@ -496,14 +495,14 @@ export default function ImportModal() {
               {canUrlImport && canFileImport && (
                 <div className="flex items-center gap-3">
                   <div className="h-px flex-1 bg-[var(--border)]" />
-                  <span className="text-[0.8rem] text-[var(--hint)]">or</span>
+                  <span className="text-[var(--hint)]">or</span>
                   <div className="h-px flex-1 bg-[var(--border)]" />
                 </div>
               )}
 
               {canFileImport && (
                 <div>
-                  <label className="mb-2 flex items-center gap-1.5 text-[0.8rem] font-medium text-[var(--text)]">
+                  <label className="mb-2 flex items-center gap-1.5 font-medium text-[var(--text)]">
                     <FileText size={15} />
                     Import from file
                   </label>
@@ -511,7 +510,7 @@ export default function ImportModal() {
                     type="button"
                     onClick={handleImportFile}
                     disabled={importLoading}
-                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[var(--border2)] py-4 text-[0.8rem] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[var(--border2)] py-4 text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ background: 'transparent' }}
                   >
                     {importLoading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
@@ -522,7 +521,7 @@ export default function ImportModal() {
 
               {importError && (
                 <div
-                  className="rounded-lg px-3 py-2 text-[0.8rem]"
+                  className="rounded-lg px-3 py-2"
                   style={{ background: '#fff0f0', color: '#cc2200', border: '1px solid #f5b3b3' }}
                 >
                   {importError}
@@ -534,14 +533,14 @@ export default function ImportModal() {
               <button
                 type="button"
                 onClick={handleBack}
-                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.8rem] text-[var(--sub)] transition-colors hover:bg-[var(--bg)]"
+                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--sub)] transition-colors hover:bg-[var(--bg)]"
               >
                 {'\u2190'} Back
               </button>
               <button
                 type="button"
                 onClick={handleClose}
-                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.8rem] text-[var(--sub)] transition-colors hover:bg-[var(--bg)]"
+                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--sub)] transition-colors hover:bg-[var(--bg)]"
               >
                 {t('import.cancel')}
               </button>
@@ -559,10 +558,10 @@ export default function ImportModal() {
                   className="rounded-lg p-4"
                   style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
                 >
-                  <div className="mb-2 text-[0.8rem] font-semibold text-[var(--text)]">
+                  <div className="mb-2 font-semibold text-[var(--text)]">
                     WSDL Parsed Successfully
                   </div>
-                  <div className="space-y-1 text-[0.8125rem] text-[var(--muted)]">
+                  <div className="space-y-1 text-[var(--muted)]">
                     {wsdlParsed.services.map((svc) => (
                       <div key={svc.name}>
                         <span className="font-medium text-[var(--text)]">{svc.name}</span>
@@ -580,7 +579,7 @@ export default function ImportModal() {
               {/* File info (non-WSDL) */}
               {!wsdlParsed && pendingFileName && (
                 <div
-                  className="flex items-center gap-2 rounded-lg p-3 text-[0.8125rem]"
+                  className="flex items-center gap-2 rounded-lg p-3"
                   style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
                 >
                   <FileText size={16} className="text-[var(--accent)]" />
@@ -592,7 +591,7 @@ export default function ImportModal() {
 
               {/* Folder Selection */}
               <div>
-                <div className="mb-3 text-[0.8rem] font-semibold text-[var(--text)]">
+                <div className="mb-3 font-semibold text-[var(--text)]">
                   Import Destination
                 </div>
 
@@ -612,7 +611,7 @@ export default function ImportModal() {
                     className="accent-[var(--accent)]"
                   />
                   <FolderPlus size={16} className="text-[var(--accent)]" />
-                  <span className="text-[0.8rem] text-[var(--text)]">Create new folder</span>
+                  <span className="text-[var(--text)]">Create new folder</span>
                 </label>
                 {folderMode === 'new' && (
                   <div className="mb-2 ml-8">
@@ -621,7 +620,7 @@ export default function ImportModal() {
                       value={newFolderName}
                       onChange={(e) => setNewFolderName(e.target.value)}
                       placeholder="Folder name"
-                      className="w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[0.8rem] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                      className="w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                     />
                   </div>
                 )}
@@ -642,7 +641,7 @@ export default function ImportModal() {
                     className="accent-[var(--accent)]"
                   />
                   <FolderOpen size={16} className="text-[var(--accent)]" />
-                  <span className="text-[0.8rem] text-[var(--text)]">Add to existing folder</span>
+                  <span className="text-[var(--text)]">Add to existing folder</span>
                 </label>
                 {folderMode === 'existing' && (
                   <div className="mb-2 ml-8 max-h-[160px] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg)] p-2">
@@ -651,7 +650,7 @@ export default function ImportModal() {
                         key={folder.id}
                         type="button"
                         onClick={() => setTargetFolderId(folder.id)}
-                        className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-[0.8125rem] transition-colors hover:bg-[var(--accent-light)]"
+                        className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-[var(--accent-light)]"
                         style={{
                           paddingLeft: 8 + depth * 16,
                           background: targetFolderId === folder.id ? 'var(--accent-light)' : 'transparent',
@@ -664,7 +663,7 @@ export default function ImportModal() {
                       </button>
                     ))}
                     {allFolders.length === 0 && (
-                      <div className="py-2 text-center text-[0.8125rem] text-[var(--hint)]">No folders found</div>
+                      <div className="py-2 text-center text-[var(--hint)]">No folders found</div>
                     )}
                   </div>
                 )}
@@ -684,13 +683,13 @@ export default function ImportModal() {
                     onChange={() => setFolderMode('root')}
                     className="accent-[var(--accent)]"
                   />
-                  <span className="text-[0.8rem] text-[var(--text)]">Project root (no folder)</span>
+                  <span className="text-[var(--text)]">Project root (no folder)</span>
                 </label>
               </div>
 
               {importError && (
                 <div
-                  className="rounded-lg px-3 py-2 text-[0.8rem]"
+                  className="rounded-lg px-3 py-2"
                   style={{ background: '#fff0f0', color: '#cc2200', border: '1px solid #f5b3b3' }}
                 >
                   {importError}
@@ -703,7 +702,7 @@ export default function ImportModal() {
               <button
                 type="button"
                 onClick={handleBack}
-                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.8rem] text-[var(--sub)] transition-colors hover:bg-[var(--bg)]"
+                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--sub)] transition-colors hover:bg-[var(--bg)]"
               >
                 {'\u2190'} Back
               </button>
@@ -711,7 +710,7 @@ export default function ImportModal() {
                 <button
                   type="button"
                   onClick={handleClose}
-                  className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[0.8rem] text-[var(--sub)] transition-colors hover:bg-[var(--bg)]"
+                  className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--sub)] transition-colors hover:bg-[var(--bg)]"
                 >
                   {t('import.cancel')}
                 </button>
@@ -719,7 +718,7 @@ export default function ImportModal() {
                   type="button"
                   onClick={handleFinalImport}
                   disabled={importing || (folderMode === 'existing' && !targetFolderId)}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] text-[0.8rem] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex cursor-pointer items-center gap-1.5 rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                   Import

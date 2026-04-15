@@ -9,7 +9,7 @@ export default function ParamsTab() {
 
   return (
     <div>
-      <div className="mb-2 text-[0.8125rem] font-medium" style={{ color: 'var(--text)' }}>
+      <div className="mb-2 font-medium" style={{ color: 'var(--text)' }}>
         Query Params
       </div>
       <KeyValueTable

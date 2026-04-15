@@ -67,7 +67,7 @@ export default function RequestEditor() {
               key={tab.key}
               type="button"
               onClick={() => setActiveTab(tab.key)}
-              className="flex cursor-pointer items-center gap-1 whitespace-nowrap px-2.5 text-[13px] transition-colors"
+              className="flex cursor-pointer items-center gap-1 whitespace-nowrap px-2.5 transition-colors"
               style={{
                 height: 30,
                 borderBottom: 'none',
@@ -89,7 +89,7 @@ export default function RequestEditor() {
               )}
               {badge?.count != null && (
                 <span
-                  className="rounded-full px-[5px] text-[0.75rem]"
+                  className="rounded-full px-[5px]"
                   style={{ background: badge.bg, color: badge.color }}
                 >
                   {badge.count}

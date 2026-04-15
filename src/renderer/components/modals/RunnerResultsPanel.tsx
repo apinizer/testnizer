@@ -26,10 +26,10 @@ export default function RunnerResultsPanel() {
       {(isRunning || results.length > 0) && (
         <div className="shrink-0 border-b border-[var(--border)] px-5 py-3">
           <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-[0.875rem] text-[var(--muted)]">
+            <span className="text-[var(--muted)]">
               {isRunning ? `Running ${currentIndex + 1} of ${selectedCount}...` : `Completed ${results.length} of ${selectedCount}`}
             </span>
-            <span className="text-[0.875rem] font-medium text-[var(--text)]">
+            <span className="font-medium text-[var(--text)]">
               {Math.round(progress)}%
             </span>
           </div>
@@ -48,7 +48,7 @@ export default function RunnerResultsPanel() {
       {/* Results list */}
       <div className="flex-1 overflow-auto">
         {results.length === 0 && !isRunning && (
-          <div className="flex h-full items-center justify-center text-sm text-[var(--hint)]">
+          <div className="flex h-full items-center justify-center text-[var(--hint)]">
             Click "Run Collection" to start
           </div>
         )}
@@ -70,21 +70,21 @@ export default function RunnerResultsPanel() {
                   {result.expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 </span>
                 <MethodBadge method={result.method} />
-                <span className="flex-1 truncate text-[0.875rem] text-[var(--text)]">
+                <span className="flex-1 truncate text-[var(--text)]">
                   {result.name}
                 </span>
                 {result.status && (
                   <StatusBadge status={result.status} statusText={result.statusText} />
                 )}
                 {result.error && !result.status && (
-                  <span className="rounded-full bg-[#fff0f0] px-2 py-0.5 text-[0.875rem] text-[#cc2200]">
+                  <span className="rounded-full bg-[#fff0f0] px-2 py-0.5 text-[#cc2200]">
                     Error
                   </span>
                 )}
-                <span className="text-[0.875rem] text-[var(--muted)]">{result.duration}ms</span>
+                <span className="text-[var(--muted)]">{result.duration}ms</span>
                 {total > 0 && (
                   <span
-                    className="rounded-full px-2 py-0.5 text-[0.875rem] font-medium"
+                    className="rounded-full px-2 py-0.5 font-medium"
                     style={{
                       background: allPassed ? 'var(--green-bg)' : '#fff0f0',
                       color: allPassed ? 'var(--green)' : '#cc2200',
@@ -98,12 +98,12 @@ export default function RunnerResultsPanel() {
               {result.expanded && (
                 <div className="border-t border-[var(--border)] bg-[var(--surface)] px-8 py-2.5">
                   {result.error && (
-                    <div className="mb-2 text-sm text-[#cc2200]">{result.error}</div>
+                    <div className="mb-2 text-[#cc2200]">{result.error}</div>
                   )}
                   {result.testResults.length > 0 ? (
                     <div className="space-y-1">
                       {result.testResults.map((tr, idx) => (
-                        <div key={idx} className="flex items-center gap-2 text-sm">
+                        <div key={idx} className="flex items-center gap-2">
                           {tr.passed ? (
                             <CheckCircle2 size={13} className="text-[var(--green)]" />
                           ) : (
@@ -121,7 +121,7 @@ export default function RunnerResultsPanel() {
                       ))}
                     </div>
                   ) : (
-                    <div className="text-sm text-[var(--hint)]">No test assertions</div>
+                    <div className="text-[var(--hint)]">No test assertions</div>
                   )}
                 </div>
               )}
@@ -133,18 +133,18 @@ export default function RunnerResultsPanel() {
       {/* Summary */}
       {results.length > 0 && !isRunning && (
         <div className="flex shrink-0 items-center gap-5 border-t border-[var(--border)] bg-[var(--bg)] px-5 py-2.5">
-          <div className="flex items-center gap-1.5 text-[0.875rem]">
+          <div className="flex items-center gap-1.5">
             <CheckCircle2 size={13} className="text-[var(--green)]" />
             <span className="font-semibold text-[var(--green)]">{totalPassed}</span>
             <span className="text-[var(--muted)]">passed</span>
           </div>
-          <div className="flex items-center gap-1.5 text-[0.875rem]">
+          <div className="flex items-center gap-1.5">
             <XCircle size={13} className="text-[#cc2200]" />
             <span className="font-semibold text-[#cc2200]">{totalFailed}</span>
             <span className="text-[var(--muted)]">failed</span>
           </div>
           <div className="flex-1" />
-          <span className="text-[0.875rem] text-[var(--muted)]">
+          <span className="text-[var(--muted)]">
             Total: <span className="font-semibold text-[var(--text)]">{totalTime}ms</span>
           </span>
         </div>

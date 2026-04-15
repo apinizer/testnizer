@@ -26,7 +26,7 @@ export default function Footer() {
         gap: 16,
         padding: '0 14px',
         flexShrink: 0,
-        fontSize: 12,
+        fontSize: 13,
         fontFamily: 'inherit',
       }}
     >
@@ -68,7 +68,7 @@ export default function Footer() {
           color: showConsolePanel ? T.accent : T.ghost,
           cursor: 'pointer',
           fontFamily: 'inherit',
-          fontSize: 12,
+          fontSize: 13,
           fontWeight: showConsolePanel ? 600 : 400,
         }}
       >

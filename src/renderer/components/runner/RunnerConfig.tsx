@@ -58,7 +58,7 @@ export default function RunnerConfig({
       {/* Content */}
       <div className="flex-1 overflow-auto px-5 py-4">
         {/* Choose how to run */}
-        <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
           Choose how to run your collection
         </h3>
         <div style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -116,7 +116,7 @@ export default function RunnerConfig({
         )}
 
         {/* Run configuration */}
-        <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
           Run configuration
         </h3>
         <div className="mb-4 flex gap-4">
@@ -149,7 +149,7 @@ export default function RunnerConfig({
         </div>
 
         {/* Advanced Settings */}
-        <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
           Advanced Settings
         </h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

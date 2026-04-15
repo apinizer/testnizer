@@ -42,7 +42,7 @@ export default function LeftPanel() {
               flexShrink: 0,
             }}
           >
-            <span style={{ fontWeight: 700, fontSize: 14, flex: 1, color: T.text }}>
+            <span style={{ fontWeight: 700, fontSize: 15, flex: 1, color: T.text }}>
               API'ler
             </span>
 

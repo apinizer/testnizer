@@ -56,12 +56,12 @@ export default function GrpcRequestPane() {
     <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
       {/* Tab bar label */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--white)] px-3.5 py-2">
-        <span className="text-[0.875rem] font-medium" style={{ color: 'var(--accent-text)' }}>
+        <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
           gRPC
         </span>
         {methodTypeInfo && (
           <span
-            className="rounded-full px-2 py-0.5 text-[0.875rem] font-medium"
+            className="rounded-full px-2 py-0.5 font-medium"
             style={{ background: methodTypeInfo.bg, color: methodTypeInfo.color }}
           >
             {methodTypeInfo.label}
@@ -73,21 +73,21 @@ export default function GrpcRequestPane() {
       <div className="flex-1 space-y-3 overflow-y-auto p-3.5">
         {/* Server address + TLS */}
         <div className="space-y-2">
-          <label className="text-[0.875rem] font-medium text-[var(--muted)]">Server Address</label>
+          <label className="font-medium text-[var(--muted)]">Server Address</label>
           <div className="flex items-center gap-2">
             <input
               type="text"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               placeholder="localhost:50051"
-              className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-sm text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
+              className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
             />
 
             {/* TLS toggle */}
             <button
               type="button"
               onClick={() => setUseTls(!useTls)}
-              className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-2 text-[0.875rem] font-medium transition-colors"
+              className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-2 font-medium transition-colors"
               style={{
                 borderColor: useTls ? '#1a7a4a' : 'var(--border)',
                 background: useTls ? '#e8f9f1' : 'transparent',
@@ -103,7 +103,7 @@ export default function GrpcRequestPane() {
               type="button"
               onClick={loadProto}
               disabled={isLoading}
-              className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: 'var(--accent)', border: 'none' }}
             >
               <Upload size={13} />
@@ -115,14 +115,14 @@ export default function GrpcRequestPane() {
         {/* Proto path indicator */}
         {protoPath && (
           <div className="flex items-center gap-2 rounded-lg bg-[var(--surface)] px-3 py-1.5">
-            <span className="text-[0.875rem] text-[var(--muted)]">Proto:</span>
-            <span className="truncate font-mono text-[0.875rem] text-[var(--text)]">{protoPath}</span>
+            <span className="text-[var(--muted)]">Proto:</span>
+            <span className="truncate font-mono text-[var(--text)]">{protoPath}</span>
           </div>
         )}
 
         {/* Error message */}
         {errorMessage && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-600">
             {errorMessage}
           </div>
         )}
@@ -131,11 +131,11 @@ export default function GrpcRequestPane() {
         {protoLoaded && (
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="mb-1 block text-[0.875rem] font-medium text-[var(--muted)]">Service</label>
+              <label className="mb-1 block font-medium text-[var(--muted)]">Service</label>
               <select
                 value={selectedService || ''}
                 onChange={(e) => selectService(e.target.value)}
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
               >
                 {services.map((svc) => (
                   <option key={svc.name} value={svc.name}>
@@ -145,11 +145,11 @@ export default function GrpcRequestPane() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-[0.875rem] font-medium text-[var(--muted)]">Method</label>
+              <label className="mb-1 block font-medium text-[var(--muted)]">Method</label>
               <select
                 value={selectedMethod || ''}
                 onChange={(e) => selectMethod(e.target.value)}
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
               >
                 {(services.find((s) => s.name === selectedService)?.methods || []).map((m) => (
                   <option key={m.name} value={m.name}>
@@ -164,7 +164,7 @@ export default function GrpcRequestPane() {
         {/* Request body */}
         {protoLoaded && (
           <div>
-            <label className="mb-1 block text-[0.875rem] font-medium text-[var(--muted)]">
+            <label className="mb-1 block font-medium text-[var(--muted)]">
               Request Message (JSON)
             </label>
             <div className="overflow-hidden rounded-lg border border-[var(--border)]">
@@ -184,7 +184,7 @@ export default function GrpcRequestPane() {
             <button
               type="button"
               onClick={() => setMetadataExpanded((v) => !v)}
-              className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)]"
+              className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)]"
               style={{ background: 'transparent', border: 'none' }}
             >
               {metadataExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -192,7 +192,7 @@ export default function GrpcRequestPane() {
               <span>Metadata</span>
               {enabledMetaCount > 0 && (
                 <span
-                  className="ml-1 rounded-full px-[5px] text-[0.875rem]"
+                  className="ml-1 rounded-full px-[5px]"
                   style={{ background: 'var(--green-bg)', color: 'var(--green)' }}
                 >
                   {enabledMetaCount}
@@ -220,7 +220,7 @@ export default function GrpcRequestPane() {
               <button
                 type="button"
                 onClick={cancelStream}
-                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium text-white transition-opacity"
+                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity"
                 style={{ background: '#cc2200', border: 'none' }}
               >
                 Cancel Stream
@@ -230,7 +230,7 @@ export default function GrpcRequestPane() {
                 type="button"
                 onClick={execute}
                 disabled={isLoading || !selectedService || !selectedMethod}
-                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
                 style={{ background: 'var(--accent)', border: 'none' }}
               >
                 <Play size={14} />

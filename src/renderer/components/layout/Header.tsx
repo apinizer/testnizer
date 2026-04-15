@@ -172,7 +172,7 @@ export default function Header() {
           height: '100%',
           borderRight: `1px solid ${T.border}`,
           color: T.muted,
-          fontSize: 14,
+          fontSize: 13,
         }}
         onClick={goHome}
         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = T.surface }}
@@ -192,7 +192,7 @@ export default function Header() {
           style={{
             padding: '0 16px',
             height: '100%',
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: 500,
             borderBottom: `2px solid ${T.accent}`,
             color: T.text,
@@ -226,7 +226,7 @@ export default function Header() {
         <div
           className="no-drag shrink-0"
           style={{
-            fontSize: 11,
+            fontSize: 13,
             padding: '2px 10px',
             borderRadius: 4,
             color: pushStatus === 'error' || pullStatus === 'error' ? 'var(--red)' : 'var(--green)',
@@ -259,7 +259,7 @@ export default function Header() {
               borderRadius: 7,
               padding: '4px 8px',
               color: pullStatus === 'success' ? 'var(--green)' : pullStatus === 'error' ? 'var(--red)' : T.muted,
-              fontSize: 11,
+              fontSize: 13,
               transition: 'all 0.2s',
               opacity: anyLoading && pullStatus !== 'loading' ? 0.5 : 1,
             }}
@@ -289,7 +289,7 @@ export default function Header() {
               borderRadius: 7,
               padding: '4px 8px',
               color: pushStatus === 'success' ? 'var(--green)' : pushStatus === 'error' ? 'var(--red)' : T.muted,
-              fontSize: 11,
+              fontSize: 13,
               transition: 'all 0.2s',
               opacity: anyLoading && pushStatus !== 'loading' ? 0.5 : 1,
             }}
@@ -317,7 +317,7 @@ export default function Header() {
             borderRadius: 7,
             padding: '4px 10px',
             color: saveStatus === 'success' ? 'var(--green)' : T.muted,
-            fontSize: 12,
+            fontSize: 13,
             transition: 'all 0.2s',
           }}
           title="Save Project (Cmd+S)"
@@ -335,7 +335,7 @@ export default function Header() {
           }}
         >
           {saveStatus === 'loading' ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={12} />}
-          {saveStatus === 'success' && <span style={{ fontSize: 10 }}>✓</span>}
+          {saveStatus === 'success' && <span style={{ fontSize: 13 }}>✓</span>}
         </button>
 
         {/* Avatar */}
@@ -348,7 +348,7 @@ export default function Header() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: 700,
             color: 'white',
             cursor: 'pointer',

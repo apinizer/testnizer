@@ -43,7 +43,7 @@ export default function WsMessageLog() {
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-[var(--hint)]">
+          <div className="flex h-full items-center justify-center text-[var(--hint)]">
             No messages yet. Connect and send a message to begin.
           </div>
         ) : (
@@ -64,24 +64,24 @@ export default function WsMessageLog() {
                     <ArrowDown size={12} className="shrink-0 text-[var(--green)]" />
                   )}
                   {/* Preview */}
-                  <span className="flex-1 truncate font-mono text-[0.875rem] text-[var(--text)]">
+                  <span className="flex-1 truncate font-mono text-[var(--text)]">
                     {truncate(msg.content.replace(/\n/g, ' '), 80)}
                   </span>
                   {/* Type badge */}
-                  <span className="shrink-0 rounded px-1.5 py-0.5 text-[0.643rem] font-medium uppercase" style={{
+                  <span className="shrink-0 rounded px-1.5 py-0.5 font-medium uppercase" style={{
                     background: msg.contentType === 'json' ? 'var(--accent-light)' : 'var(--surface)',
                     color: msg.contentType === 'json' ? 'var(--accent-text)' : 'var(--muted)',
                   }}>
                     {msg.contentType}
                   </span>
                   {/* Timestamp */}
-                  <span className="shrink-0 text-[0.875rem] text-[var(--hint)]">
+                  <span className="shrink-0 text-[var(--hint)]">
                     {formatTimestamp(msg.timestamp)}
                   </span>
                 </div>
                 {/* Expanded content */}
                 {isExpanded && (
-                  <pre className="mt-1.5 max-h-48 overflow-auto rounded-lg bg-[var(--surface)] p-2 font-mono text-[0.875rem] text-[var(--text)]">
+                  <pre className="mt-1.5 max-h-48 overflow-auto rounded-lg bg-[var(--surface)] p-2 font-mono text-[var(--text)]">
                     {formatContent(msg)}
                   </pre>
                 )}
@@ -93,7 +93,7 @@ export default function WsMessageLog() {
 
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
-        <span className="text-[0.875rem] text-[var(--muted)]">
+        <span className="text-[var(--muted)]">
           {messages.length} message{messages.length !== 1 ? 's' : ''}
           {' '}({messages.filter((m) => m.direction === 'sent').length} sent,{' '}
           {messages.filter((m) => m.direction === 'received').length} received)
@@ -106,12 +106,12 @@ export default function WsMessageLog() {
               onChange={(e) => setAutoScroll(e.target.checked)}
               className="accent-[var(--accent)]"
             />
-            <span className="text-[0.875rem] text-[var(--muted)]">Auto-scroll</span>
+            <span className="text-[var(--muted)]">Auto-scroll</span>
           </label>
           <button
             type="button"
             onClick={clearMessages}
-            className="flex cursor-pointer items-center gap-1 text-[0.875rem] text-[var(--hint)] transition-colors hover:text-[var(--text)]"
+            className="flex cursor-pointer items-center gap-1 text-[var(--hint)] transition-colors hover:text-[var(--text)]"
             style={{ background: 'transparent', border: 'none' }}
           >
             <Trash2 size={11} />

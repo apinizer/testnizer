@@ -89,7 +89,7 @@ export default function ProjectWelcome() {
             >
               <span style={{ color: action.iconColor }}>{action.icon}</span>
             </div>
-            <span className="text-center" style={{ color: 'var(--text)', fontSize: 14, fontWeight: 500 }}>
+            <span className="text-center" style={{ color: 'var(--text)', fontSize: 13, fontWeight: 500 }}>
               {action.label}
             </span>
           </button>

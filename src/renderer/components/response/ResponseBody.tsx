@@ -143,7 +143,7 @@ export default function ResponseBody() {
           <button
             type="button"
             onClick={() => setFormatOpen((v) => !v)}
-            className="flex cursor-pointer items-center gap-1 rounded px-2 py-[3px] text-[12px]"
+            className="flex cursor-pointer items-center gap-1 rounded px-2 py-[3px]"
             style={{
               background: 'var(--surface)',
               border: '1px solid var(--border)',
@@ -168,7 +168,7 @@ export default function ResponseBody() {
                   key={m}
                   type="button"
                   onClick={() => { setFormatMode(m); setFormatOpen(false) }}
-                  className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-[var(--item-hover)]"
+                  className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-[var(--item-hover)]"
                   style={{ background: 'transparent', border: 'none', color: 'var(--text)' }}
                 >
                   {m}
@@ -182,7 +182,7 @@ export default function ResponseBody() {
         <button
           type="button"
           onClick={() => setViewMode('Pretty')}
-          className="cursor-pointer rounded px-2 py-[3px] text-[12px] transition-colors"
+          className="cursor-pointer rounded px-2 py-[3px] transition-colors"
           style={{
             background: 'transparent',
             border: 'none',
@@ -199,7 +199,7 @@ export default function ResponseBody() {
         <button
           type="button"
           onClick={() => setViewMode('Raw')}
-          className="cursor-pointer rounded px-2 py-[3px] text-[12px] transition-colors"
+          className="cursor-pointer rounded px-2 py-[3px] transition-colors"
           style={{
             background: 'transparent',
             border: 'none',
@@ -213,7 +213,7 @@ export default function ResponseBody() {
         <button
           type="button"
           onClick={() => setViewMode('Preview')}
-          className="cursor-pointer rounded px-2 py-[3px] text-[12px] transition-colors"
+          className="cursor-pointer rounded px-2 py-[3px] transition-colors"
           style={{
             background: 'transparent',
             border: 'none',
@@ -289,7 +289,7 @@ export default function ResponseBody() {
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter response... (substring or JSONPath-like)"
             autoFocus
-            className="flex-1 text-[12px] outline-none"
+            className="flex-1 outline-none"
             style={{
               background: 'var(--white)',
               border: '1px solid var(--border)',
@@ -303,7 +303,7 @@ export default function ResponseBody() {
             <button
               type="button"
               onClick={() => setFilter('')}
-              className="cursor-pointer text-[11px]"
+              className="cursor-pointer"
               style={{ color: 'var(--muted)', background: 'transparent', border: 'none' }}
             >
               Clear

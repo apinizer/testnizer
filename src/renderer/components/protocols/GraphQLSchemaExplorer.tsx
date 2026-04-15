@@ -14,14 +14,14 @@ export default function GraphQLSchemaExplorer({ schemaData, error }: Props) {
   if (error) {
     return (
       <div className="flex h-full items-center justify-center p-4">
-        <span className="text-sm text-red-500">{error}</span>
+        <span className="text-red-500">{error}</span>
       </div>
     )
   }
 
   if (!schemaData) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-[var(--hint)]">
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-[var(--hint)]">
         <Search size={20} />
         <span>Click "Introspect" to load the schema</span>
       </div>
@@ -55,7 +55,7 @@ export default function GraphQLSchemaExplorer({ schemaData, error }: Props) {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Filter types..."
-              className="w-full border-none bg-transparent text-[0.875rem] text-[var(--text)] outline-none placeholder:text-[var(--hint)]"
+              className="w-full border-none bg-transparent text-[var(--text)] outline-none placeholder:text-[var(--hint)]"
             />
           </div>
         </div>
@@ -107,7 +107,7 @@ export default function GraphQLSchemaExplorer({ schemaData, error }: Props) {
         {selectedType ? (
           <TypeDetail type={selectedType} onNavigate={setSelectedTypeName} />
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-[var(--hint)]">
+          <div className="flex h-full items-center justify-center text-[var(--hint)]">
             Select a type to view its details
           </div>
         )}
@@ -135,7 +135,7 @@ function TypeSection({
 
   return (
     <div className="border-b border-[var(--border)]">
-      <div className="px-2.5 py-1.5 text-[0.875rem] font-semibold uppercase tracking-wider text-[var(--hint)]">
+      <div className="px-2.5 py-1.5 font-semibold uppercase tracking-wider text-[var(--hint)]">
         {label} ({types.length})
       </div>
       {types.map((t) => (
@@ -143,7 +143,7 @@ function TypeSection({
           key={t.name}
           type="button"
           onClick={() => onSelect(t.name)}
-          className="flex w-full cursor-pointer items-center gap-1.5 px-2.5 py-1 text-left text-[0.875rem] transition-colors"
+          className="flex w-full cursor-pointer items-center gap-1.5 px-2.5 py-1 text-left transition-colors"
           style={{
             background: selected === t.name ? 'var(--accent-light)' : 'transparent',
             color: selected === t.name ? 'var(--accent-text)' : 'var(--text)',
@@ -172,28 +172,28 @@ function TypeDetail({
       {/* Type header */}
       <div className="mb-3">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-[var(--text)]">{type.name}</h3>
+          <h3 className="font-semibold text-[var(--text)]">{type.name}</h3>
           <span
-            className="rounded px-1.5 py-0.5 text-[0.643rem] font-medium uppercase"
+            className="rounded px-1.5 py-0.5 font-medium uppercase"
             style={{ background: 'var(--accent-light)', color: 'var(--accent-text)' }}
           >
             {type.kind}
           </span>
         </div>
         {type.description && (
-          <p className="mt-1 text-[0.875rem] text-[var(--muted)]">{type.description}</p>
+          <p className="mt-1 text-[var(--muted)]">{type.description}</p>
         )}
       </div>
 
       {/* Enum values */}
       {type.enumValues && type.enumValues.length > 0 && (
         <div className="mb-3">
-          <div className="mb-1.5 text-[0.875rem] font-semibold text-[var(--muted)]">Values</div>
+          <div className="mb-1.5 font-semibold text-[var(--muted)]">Values</div>
           <div className="flex flex-wrap gap-1">
             {type.enumValues.map((val) => (
               <span
                 key={val}
-                className="rounded px-2 py-0.5 font-mono text-[0.875rem]"
+                className="rounded px-2 py-0.5 font-mono"
                 style={{ background: 'var(--surface)', color: 'var(--orange)' }}
               >
                 {val}
@@ -206,7 +206,7 @@ function TypeDetail({
       {/* Fields */}
       {type.fields.length > 0 && (
         <div>
-          <div className="mb-1.5 text-[0.875rem] font-semibold text-[var(--muted)]">
+          <div className="mb-1.5 font-semibold text-[var(--muted)]">
             Fields ({type.fields.length})
           </div>
           <div className="space-y-1">
@@ -234,13 +234,13 @@ function FieldRow({
   return (
     <div className="rounded-lg border border-[var(--border)] px-3 py-2">
       <div className="flex items-baseline gap-2">
-        <span className="font-mono text-[0.875rem] font-medium text-[var(--text)]">
+        <span className="font-mono font-medium text-[var(--text)]">
           {field.name}
         </span>
         <button
           type="button"
           onClick={() => onNavigate(typeName)}
-          className="cursor-pointer font-mono text-[0.875rem] transition-colors hover:underline"
+          className="cursor-pointer font-mono transition-colors hover:underline"
           style={{ color: 'var(--accent-text)', background: 'transparent', border: 'none', padding: 0 }}
         >
           {field.type}
@@ -248,20 +248,20 @@ function FieldRow({
       </div>
 
       {field.description && (
-        <p className="mt-0.5 text-[0.875rem] text-[var(--muted)]">{field.description}</p>
+        <p className="mt-0.5 text-[var(--muted)]">{field.description}</p>
       )}
 
       {field.args.length > 0 && (
         <div className="mt-1.5 space-y-0.5">
-          <span className="text-[0.875rem] font-medium text-[var(--hint)]">Arguments:</span>
+          <span className="font-medium text-[var(--hint)]">Arguments:</span>
           {field.args.map((arg) => (
             <div key={arg.name} className="flex items-baseline gap-1.5 pl-2">
-              <span className="font-mono text-[0.875rem] text-[var(--text)]">{arg.name}</span>
-              <span className="font-mono text-[0.875rem]" style={{ color: 'var(--orange)' }}>
+              <span className="font-mono text-[var(--text)]">{arg.name}</span>
+              <span className="font-mono" style={{ color: 'var(--orange)' }}>
                 {arg.type}
               </span>
               {arg.description && (
-                <span className="text-[0.875rem] text-[var(--hint)]">— {arg.description}</span>
+                <span className="text-[var(--hint)]">— {arg.description}</span>
               )}
             </div>
           ))}

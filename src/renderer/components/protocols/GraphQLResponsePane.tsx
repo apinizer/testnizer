@@ -27,7 +27,7 @@ export default function GraphQLResponsePane() {
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id)}
-            className="cursor-pointer px-3.5 py-2 text-[0.875rem] font-medium transition-colors"
+            className="cursor-pointer px-3.5 py-2 font-medium transition-colors"
             style={{
               color: activeTab === tab.id ? 'var(--accent-text)' : 'var(--muted)',
               borderBottom: activeTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
@@ -68,7 +68,7 @@ function ResponseTab({
 }) {
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-[var(--muted)]">
+      <div className="flex h-full items-center justify-center text-[var(--muted)]">
         Running query...
       </div>
     )
@@ -76,7 +76,7 @@ function ResponseTab({
 
   if (!response) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-[var(--hint)]">
+      <div className="flex h-full items-center justify-center text-[var(--hint)]">
         Run a query to see the response
       </div>
     )
@@ -85,8 +85,8 @@ function ResponseTab({
   if (response.error && !response.body) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-4">
-        <span className="text-sm font-medium text-red-500">Error</span>
-        <span className="text-center text-sm text-[var(--muted)]">{response.error}</span>
+        <span className="font-medium text-red-500">Error</span>
+        <span className="text-center text-[var(--muted)]">{response.error}</span>
       </div>
     )
   }
@@ -97,7 +97,7 @@ function ResponseTab({
       <div className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-3.5 py-1.5">
         {response.status !== undefined && (
           <span
-            className="rounded-full px-2 py-0.5 text-[0.875rem] font-semibold"
+            className="rounded-full px-2 py-0.5 font-semibold"
             style={{
               background: response.status < 300 ? '#e8f9f1' : response.status < 400 ? '#fff4e0' : '#fff0f0',
               color: response.status < 300 ? '#1a7a4a' : response.status < 400 ? '#b35a00' : '#cc2200',
@@ -106,11 +106,11 @@ function ResponseTab({
             {response.status} {response.statusText || ''}
           </span>
         )}
-        <span className="text-[0.875rem] text-[var(--muted)]">
+        <span className="text-[var(--muted)]">
           {response.timing.total}ms
         </span>
         {response.bodySize !== undefined && (
-          <span className="text-[0.875rem] text-[var(--hint)]">
+          <span className="text-[var(--hint)]">
             {response.bodySize > 1024
               ? `${(response.bodySize / 1024).toFixed(1)} KB`
               : `${response.bodySize} B`}

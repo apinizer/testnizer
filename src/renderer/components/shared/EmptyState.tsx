@@ -16,15 +16,15 @@ export default function EmptyState({ icon, message, description, action }: Empty
       {icon && (
         <div className="text-[var(--hint)]">{icon}</div>
       )}
-      <p className="text-sm font-medium text-[var(--muted)]">{message}</p>
+      <p className="font-medium text-[var(--muted)]">{message}</p>
       {description && (
-        <p className="text-sm text-[var(--hint)]">{description}</p>
+        <p className="text-[var(--hint)]">{description}</p>
       )}
       {action && (
         <button
           type="button"
           onClick={action.onClick}
-          className="mt-2 cursor-pointer rounded-[7px] bg-[var(--accent)] px-4 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+          className="mt-2 cursor-pointer rounded-[7px] bg-[var(--accent)] px-4 py-1.5 font-semibold text-white transition-colors hover:opacity-90"
         >
           {action.label}
         </button>

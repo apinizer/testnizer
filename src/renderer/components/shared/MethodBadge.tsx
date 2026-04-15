@@ -21,9 +21,9 @@ export default function MethodBadge({ method, small = false }: MethodBadgeProps)
     <span
       style={{
         color: c.color,
-        fontSize: small ? 9 : 11,
+        fontSize: small ? 11 : 11,
         fontWeight: 700,
-        fontFamily: "'SF Mono','Cascadia Code','Fira Code',monospace",
+        fontFamily: "var(--font-mono)",
         letterSpacing: '0.03em',
         flexShrink: 0,
         whiteSpace: 'nowrap',

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { ArrowLeft, Clock, Trash2, ToggleLeft, ToggleRight, Play } from 'lucide-react'
+import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 
 interface ScheduledTask {
   id: string
@@ -26,6 +27,7 @@ interface ScheduledTasksViewProps {
 export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksViewProps) {
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const [tasks, setTasks] = useState<ScheduledTask[]>([])
+  const [deleteTarget, setDeleteTarget] = useState<ScheduledTask | null>(null)
 
   const loadTasks = useCallback(() => {
     if (!activeProjectId) return
@@ -55,12 +57,14 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
     loadTasks()
   }, [loadTasks])
 
-  const deleteTask = useCallback(async (taskId: string) => {
+  const confirmDeleteTask = useCallback(async () => {
+    if (!deleteTarget) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const api = window.api as any
-    await api.scheduler?.delete(taskId)
+    await api.scheduler?.delete(deleteTarget.id)
+    setDeleteTarget(null)
     loadTasks()
-  }, [loadTasks])
+  }, [deleteTarget, loadTasks])
 
   const formatDate = (ts: number) => {
     const d = new Date(ts)
@@ -87,7 +91,7 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
           <ArrowLeft size={16} />
         </button>
         <Clock size={16} style={{ color: '#0369a1' }} />
-        <span style={{ fontWeight: 600, color: 'var(--text)', fontSize: 14, flex: 1 }}>
+        <span style={{ fontWeight: 600, color: 'var(--text)', fontSize: 15, flex: 1 }}>
           Scheduled Tasks
         </span>
         <button
@@ -111,7 +115,7 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
         {tasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-16" style={{ color: 'var(--hint)' }}>
             <Clock size={32} />
-            <div style={{ fontSize: 14 }}>No scheduled tasks yet</div>
+            <div style={{ fontSize: 13 }}>No scheduled tasks yet</div>
             <div>Use "Schedule runs" in the Runner configuration to create one.</div>
           </div>
         ) : (
@@ -142,13 +146,21 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
                   task={task}
                   formatDate={formatDate}
                   onToggle={() => toggleTask(task.id)}
-                  onDelete={() => deleteTask(task.id)}
+                  onDelete={() => setDeleteTarget(task)}
                 />
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        itemName={deleteTarget?.name || ''}
+        itemType="scheduled task"
+        onConfirm={confirmDeleteTask}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   )
 }

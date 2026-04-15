@@ -87,7 +87,7 @@ export default function ConsoleTab() {
         {/* Left side */}
         <button
           type="button"
-          className="flex cursor-pointer items-center gap-1 text-[12px]"
+          className="flex cursor-pointer items-center gap-1"
           style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
           title="Layout"
         >
@@ -95,7 +95,7 @@ export default function ConsoleTab() {
         </button>
 
         <span
-          className="flex items-center gap-1.5 text-[12px]"
+          className="flex items-center gap-1.5"
           style={{ color: isOnline ? 'var(--green)' : 'var(--muted)' }}
         >
           <Wifi size={13} />
@@ -105,7 +105,7 @@ export default function ConsoleTab() {
         <button
           type="button"
           onClick={() => setShowFind((v) => !v)}
-          className="flex cursor-pointer items-center gap-1.5 text-[12px]"
+          className="flex cursor-pointer items-center gap-1.5"
           style={{
             background: 'transparent',
             border: 'none',
@@ -118,7 +118,7 @@ export default function ConsoleTab() {
 
         <button
           type="button"
-          className="relative flex cursor-pointer items-center gap-1.5 text-[12px]"
+          className="relative flex cursor-pointer items-center gap-1.5"
           style={{
             background: 'transparent',
             border: 'none',
@@ -139,7 +139,7 @@ export default function ConsoleTab() {
 
         {/* Error count */}
         {errorCount > 0 && (
-          <span className="flex items-center gap-1 text-[12px]" style={{ color: 'var(--red)' }}>
+          <span className="flex items-center gap-1" style={{ color: 'var(--red)' }}>
             <AlertCircle size={13} />
             {errorCount} Error{errorCount === 1 ? '' : 's'}
           </span>
@@ -150,7 +150,7 @@ export default function ConsoleTab() {
           <button
             type="button"
             onClick={() => setFilterOpen((v) => !v)}
-            className="flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-[12px]"
+            className="flex cursor-pointer items-center gap-1 rounded px-2 py-1"
             style={{
               background: 'transparent',
               border: '1px solid var(--border)',
@@ -175,7 +175,7 @@ export default function ConsoleTab() {
                     key={o.key}
                     type="button"
                     onClick={() => { setFilter(o.key); setFilterOpen(false) }}
-                    className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-[var(--item-hover)]"
+                    className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--item-hover)]"
                     style={{
                       background: 'transparent',
                       border: 'none',
@@ -195,7 +195,7 @@ export default function ConsoleTab() {
         <button
           type="button"
           onClick={clear}
-          className="cursor-pointer rounded px-2 py-1 text-[12px]"
+          className="cursor-pointer rounded px-2 py-1"
           style={{
             background: 'var(--surface)',
             border: '1px solid var(--border)',
@@ -227,7 +227,7 @@ export default function ConsoleTab() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Find in console..."
-            className="flex-1 text-[12px] outline-none"
+            className="flex-1 outline-none"
             style={{
               background: 'var(--white)',
               border: '1px solid var(--border)',
@@ -250,7 +250,7 @@ export default function ConsoleTab() {
       {/* Entry list */}
       <div className="flex-1 overflow-auto">
         {filtered.length === 0 ? (
-          <div className="p-8 text-center text-[13px]" style={{ color: 'var(--hint)' }}>
+          <div className="p-8 text-center" style={{ color: 'var(--hint)' }}>
             {entries.length === 0
               ? 'No console entries yet. Send a request to see it here.'
               : 'No entries match your filter.'}
@@ -296,7 +296,7 @@ function ConsoleEntryRow({
       {/* Top line — method, url, status, timing */}
       <div
         onClick={onToggle}
-        className="flex cursor-pointer items-center gap-2 px-3 py-1.5 font-mono text-[12px]"
+        className="flex cursor-pointer items-center gap-2 px-3 py-1.5 font-mono"
         style={{ color: 'var(--text)' }}
         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--item-hover)' }}
         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
@@ -318,7 +318,7 @@ function ConsoleEntryRow({
 
       {/* Expanded body — sections */}
       {expanded && (
-        <div className="pb-2 pl-6 pr-3 font-mono text-[12px]" style={{ color: 'var(--text)' }}>
+        <div className="pb-2 pl-6 pr-3 font-mono" style={{ color: 'var(--text)' }}>
           {entry.error && (
             <Section title="Error" defaultOpen>
               <div style={{ color: 'var(--red)' }}>{entry.error}</div>

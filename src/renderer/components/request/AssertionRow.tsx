@@ -59,11 +59,11 @@ export default function AssertionRow({ assertion, onUpdate, onRemove }: Assertio
               if (e.key === 'Enter') commitName()
               if (e.key === 'Escape') { setNameValue(assertion.name); setEditingName(false) }
             }}
-            className="flex-1 rounded border border-[var(--accent)] bg-[var(--white)] px-1.5 py-0.5 text-sm text-[var(--text)] outline-none"
+            className="flex-1 rounded border border-[var(--accent)] bg-[var(--white)] px-1.5 py-0.5 text-[var(--text)] outline-none"
           />
         ) : (
           <span
-            className="flex-1 cursor-pointer text-sm text-[var(--muted)] hover:text-[var(--text)]"
+            className="flex-1 cursor-pointer text-[var(--muted)] hover:text-[var(--text)]"
             onClick={() => { setNameValue(assertion.name); setEditingName(true) }}
           >
             {assertion.name}
@@ -107,13 +107,13 @@ function AssertionFields({
   display: { color: string; bg: string }
 }) {
   const inputCls =
-    'rounded border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]'
+    'rounded border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-[var(--text)] outline-none focus:border-[var(--accent)]'
 
   switch (assertion.type) {
     case 'status_equals':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[0.875rem] text-[var(--muted)]">Expected status:</span>
+          <span className="text-[var(--muted)]">Expected status:</span>
           <input
             type="number"
             value={assertion.expected ?? 200}
@@ -127,14 +127,14 @@ function AssertionFields({
     case 'status_in_range':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[0.875rem] text-[var(--muted)]">Range:</span>
+          <span className="text-[var(--muted)]">Range:</span>
           <input
             type="number"
             value={assertion.rangeMin ?? 200}
             onChange={(e) => onUpdate({ rangeMin: Number(e.target.value) })}
             className={`${inputCls} w-20`}
           />
-          <span className="text-[0.875rem] text-[var(--muted)]">to</span>
+          <span className="text-[var(--muted)]">to</span>
           <input
             type="number"
             value={assertion.rangeMax ?? 299}
@@ -150,7 +150,7 @@ function AssertionFields({
     case 'body_contains':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[0.875rem] text-[var(--muted)]">Contains:</span>
+          <span className="text-[var(--muted)]">Contains:</span>
           <input
             type="text"
             value={String(assertion.expected ?? '')}
@@ -164,7 +164,7 @@ function AssertionFields({
     case 'body_equals_json':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[0.875rem] text-[var(--muted)]">Expected JSON:</span>
+          <span className="text-[var(--muted)]">Expected JSON:</span>
           <input
             type="text"
             value={String(assertion.expected ?? '{}')}
@@ -179,7 +179,7 @@ function AssertionFields({
       return (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
-            <span className="w-16 text-[0.875rem] text-[var(--muted)]">JSONPath:</span>
+            <span className="w-16 text-[var(--muted)]">JSONPath:</span>
             <input
               type="text"
               value={assertion.jsonPath ?? ''}
@@ -189,7 +189,7 @@ function AssertionFields({
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-16 text-[0.875rem] text-[var(--muted)]">Expected:</span>
+            <span className="w-16 text-[var(--muted)]">Expected:</span>
             <input
               type="text"
               value={String(assertion.expected ?? '')}
@@ -205,7 +205,7 @@ function AssertionFields({
       return (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
-            <span className="w-16 text-[0.875rem] text-[var(--muted)]">XPath:</span>
+            <span className="w-16 text-[var(--muted)]">XPath:</span>
             <input
               type="text"
               value={assertion.xPath ?? ''}
@@ -215,7 +215,7 @@ function AssertionFields({
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-16 text-[0.875rem] text-[var(--muted)]">Expected:</span>
+            <span className="w-16 text-[var(--muted)]">Expected:</span>
             <input
               type="text"
               value={String(assertion.expected ?? '')}
@@ -230,7 +230,7 @@ function AssertionFields({
     case 'header_exists':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[0.875rem] text-[var(--muted)]">Header name:</span>
+          <span className="text-[var(--muted)]">Header name:</span>
           <input
             type="text"
             value={assertion.headerName ?? ''}
@@ -246,7 +246,7 @@ function AssertionFields({
       return (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
-            <span className="w-20 text-[0.875rem] text-[var(--muted)]">Header name:</span>
+            <span className="w-20 text-[var(--muted)]">Header name:</span>
             <input
               type="text"
               value={assertion.headerName ?? ''}
@@ -256,7 +256,7 @@ function AssertionFields({
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-20 text-[0.875rem] text-[var(--muted)]">
+            <span className="w-20 text-[var(--muted)]">
               {assertion.type === 'header_equals' ? 'Equals:' : 'Contains:'}
             </span>
             <input
@@ -273,14 +273,14 @@ function AssertionFields({
     case 'response_time_under':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[0.875rem] text-[var(--muted)]">Max time:</span>
+          <span className="text-[var(--muted)]">Max time:</span>
           <input
             type="number"
             value={assertion.expected ?? 2000}
             onChange={(e) => onUpdate({ expected: Number(e.target.value) })}
             className={`${inputCls} w-24`}
           />
-          <span className="text-[0.875rem] text-[var(--muted)]">ms</span>
+          <span className="text-[var(--muted)]">ms</span>
           <BadgePill color={display.color} bg={display.bg}>{assertion.expected ?? 2000} ms</BadgePill>
         </div>
       )
@@ -288,14 +288,14 @@ function AssertionFields({
     case 'response_size_under':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[0.875rem] text-[var(--muted)]">Max size:</span>
+          <span className="text-[var(--muted)]">Max size:</span>
           <input
             type="number"
             value={assertion.expected ?? 10240}
             onChange={(e) => onUpdate({ expected: Number(e.target.value) })}
             className={`${inputCls} w-24`}
           />
-          <span className="text-[0.875rem] text-[var(--muted)]">bytes</span>
+          <span className="text-[var(--muted)]">bytes</span>
           <BadgePill color={display.color} bg={display.bg}>{assertion.expected ?? 10240} B</BadgePill>
         </div>
       )
@@ -317,7 +317,7 @@ function AssertionFields({
       return (
         <div className="flex items-center gap-2">
           <Check size={12} className="text-[var(--green)]" />
-          <span className="text-sm text-[var(--muted)]">Configured</span>
+          <span className="text-[var(--muted)]">Configured</span>
         </div>
       )
   }
@@ -326,7 +326,7 @@ function AssertionFields({
 function BadgePill({ color, bg, children }: { color: string; bg: string; children: React.ReactNode }) {
   return (
     <span
-      className="rounded px-[7px] py-[1px] font-mono text-sm"
+      className="rounded px-[7px] py-[1px] font-mono"
       style={{ color, background: bg }}
     >
       {children}

@@ -109,7 +109,7 @@ function ContextMenu({ items, x, y, onClose }: { items: MenuItemDef[]; x: number
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); item.action(); onClose() }}
-            className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-[6px] text-left text-[13px] transition-colors"
+            className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-[6px] text-left transition-colors"
             style={{
               color: item.danger ? 'var(--red)' : 'var(--text)',
               background: 'transparent',
@@ -257,7 +257,7 @@ export default function TreeNodeComponent({
         onContextMenu={canModify || isFolder || node.type === 'module' ? openContextMenu : undefined}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        className="flex cursor-pointer select-none items-center gap-[5px] rounded-md text-[0.875rem] transition-colors"
+        className="flex cursor-pointer select-none items-center gap-[5px] rounded-md transition-colors"
         style={{
           padding: `4px 10px 4px ${10 + indent}px`,
           background: isActive ? 'var(--accent-light)' : hovered ? 'var(--item-hover)' : 'transparent',
@@ -294,7 +294,7 @@ export default function TreeNodeComponent({
             }}
             onBlur={confirmRename}
             onClick={(e) => e.stopPropagation()}
-            className="flex-1 rounded border px-1.5 py-0.5 text-sm outline-none"
+            className="flex-1 rounded border px-1.5 py-0.5 outline-none"
             style={{
               borderColor: 'var(--accent)',
               background: 'var(--white)',
@@ -323,7 +323,7 @@ export default function TreeNodeComponent({
         {/* Count badge */}
         {node.count != null && !showActions && (
           <span
-            className="ml-1 shrink-0 rounded-full px-[5px] text-[0.75rem]"
+            className="ml-1 shrink-0 rounded-full px-[5px]"
             style={{ background: node.countBg || '#f0f0f5', color: node.countColor || '#888' }}
           >
             {node.count}

@@ -5,6 +5,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import type { Project } from '../../types'
 import ProjectIcon from '../shared/ProjectIcon'
+import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import appIcon from '../../assets/icon.png'
 
 export default function ProjectHome() {
@@ -19,6 +20,7 @@ export default function ProjectHome() {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
 
   // Close context menu on outside click
   useEffect(() => {
@@ -40,9 +42,15 @@ export default function ProjectHome() {
     setActiveProject(project.id)
   }
 
-  async function handleDeleteProject(id: string) {
+  function handleDeleteProject(project: Project) {
     setContextMenuId(null)
-    await deleteProject(id)
+    setDeleteTarget(project)
+  }
+
+  async function confirmDeleteProject() {
+    if (!deleteTarget) return
+    await deleteProject(deleteTarget.id)
+    setDeleteTarget(null)
   }
 
   function handleStartRename(project: Project) {
@@ -76,7 +84,7 @@ export default function ProjectHome() {
           <h1 className="text-[1.5rem] font-bold" style={{ color: 'var(--heading)' }}>
             Apinizer API Tester
           </h1>
-          <p className="text-[0.825rem]" style={{ color: 'var(--muted)' }}>
+          <p style={{ color: 'var(--muted)' }}>
             {t('home.subtitle')}
           </p>
         </div>
@@ -91,8 +99,7 @@ export default function ProjectHome() {
               {t('home.projects')}
             </h2>
             <span
-              className="text-[0.75rem]"
-              style={{
+                           style={{
                 background: 'var(--bg)',
                 border: '1px solid var(--border)',
                 borderRadius: 10,
@@ -106,7 +113,7 @@ export default function ProjectHome() {
           <button
             type="button"
             onClick={() => setShowNewProjectModal(true)}
-            className="flex cursor-pointer items-center gap-1.5 rounded-lg text-[0.875rem] font-medium"
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg font-medium"
             style={{
               background: 'var(--accent)',
               color: '#fff',
@@ -155,7 +162,7 @@ export default function ProjectHome() {
                     }}
                     onBlur={() => handleConfirmRename(project.id)}
                     onClick={(e) => e.stopPropagation()}
-                    className="text-[0.825rem] font-medium"
+                    className="font-medium"
                     style={{
                       color: 'var(--heading)',
                       background: 'var(--surface)',
@@ -168,7 +175,7 @@ export default function ProjectHome() {
                   />
                 ) : (
                   <div
-                    className="truncate text-[0.825rem] font-medium"
+                    className="truncate font-medium"
                     style={{ color: 'var(--heading)' }}
                     onDoubleClick={(e) => {
                       e.stopPropagation()
@@ -178,7 +185,7 @@ export default function ProjectHome() {
                     {project.display_name || project.name}
                   </div>
                 )}
-                <div className="flex items-center gap-2 text-[0.8rem]" style={{ color: 'var(--muted)' }}>
+                <div className="flex items-center gap-2" style={{ color: 'var(--muted)' }}>
                   <span>{typeLabels[project.type] || 'HTTP'}</span>
                   <span>&middot;</span>
                   <span className="flex items-center gap-1">
@@ -230,7 +237,7 @@ export default function ProjectHome() {
                         e.stopPropagation()
                         handleStartRename(project)
                       }}
-                      className="flex w-full cursor-pointer items-center gap-2 rounded-md text-[0.875rem]"
+                      className="flex w-full cursor-pointer items-center gap-2 rounded-md"
                       style={{
                         background: 'transparent',
                         border: 'none',
@@ -252,9 +259,9 @@ export default function ProjectHome() {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
-                        handleDeleteProject(project.id)
+                        handleDeleteProject(project)
                       }}
-                      className="flex w-full cursor-pointer items-center gap-2 rounded-md text-[0.875rem]"
+                      className="flex w-full cursor-pointer items-center gap-2 rounded-md"
                       style={{
                         background: 'transparent',
                         border: 'none',
@@ -295,14 +302,14 @@ export default function ProjectHome() {
             >
               <Plus size={24} style={{ color: 'var(--hint)' }} />
             </div>
-            <p className="mb-1 text-[0.875rem] font-medium" style={{ color: 'var(--text)' }}>
+            <p className="mb-1 font-medium" style={{ color: 'var(--text)' }}>
               Henüz proje yok
             </p>
-            <p className="mb-4 text-[0.825rem]">{t('home.noProjects')}</p>
+            <p className="mb-4">{t('home.noProjects')}</p>
             <button
               type="button"
               onClick={() => setShowNewProjectModal(true)}
-              className="flex cursor-pointer items-center gap-1.5 rounded-lg text-[0.825rem] font-medium"
+              className="flex cursor-pointer items-center gap-1.5 rounded-lg font-medium"
               style={{
                 background: 'var(--accent)',
                 color: '#fff',
@@ -316,6 +323,16 @@ export default function ProjectHome() {
           </div>
         )}
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        itemName={deleteTarget?.display_name || deleteTarget?.name || ''}
+        itemType="project"
+        requireTyping
+        description="This will permanently delete the project and all its data."
+        onConfirm={confirmDeleteProject}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   )
 }
