@@ -71,7 +71,7 @@ export function createProject(data: {
     data.save_mode ?? 'local',
     data.local_path ?? null,
     data.icon_emoji ?? null,
-    data.icon_color ?? '#7c73e6',
+    data.icon_color ?? '#2D5FA0',
     maxOrder.max_order + 1,
     now,
     now

@@ -1,4 +1,4 @@
-import { ipcMain, shell } from 'electron'
+import { ipcMain, shell, BrowserWindow } from 'electron'
 import { randomUUID, scrypt, randomBytes, timingSafeEqual } from 'crypto'
 import { createServer, IncomingMessage, ServerResponse } from 'http'
 import { getDb } from '../db/database'
@@ -158,6 +158,27 @@ async function startOAuthFlow(provider: OAuthProvider): Promise<{ success: boole
       // Always respond with a nice HTML page first
       const sendPage = (title: string, message: string, isError: boolean) => {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        const successScript = isError ? '' : `<script>
+  (function() {
+    var count = 3;
+    var el = document.getElementById('countdown');
+    var msg = document.getElementById('close-msg');
+    var timer = setInterval(function() {
+      count--;
+      if (el) el.textContent = count;
+      if (count <= 0) {
+        clearInterval(timer);
+        try { window.close(); } catch(e) {}
+        // If window.close() didn't work (browser security), show manual message
+        if (msg) msg.textContent = 'You can now close this tab.';
+        if (el) el.parentElement.style.display = 'none';
+      }
+    }, 1000);
+  })();
+</script>`
+        const countdownText = isError
+          ? ''
+          : '<p id="close-msg" style="color:#9ca3af;margin:12px 0 0;font-size:14px">Returning to Apinizer in <span id="countdown">3</span>s...</p>'
         res.end(`<!DOCTYPE html>
 <html>
 <head><title>${title}</title></head>
@@ -166,7 +187,9 @@ async function startOAuthFlow(provider: OAuthProvider): Promise<{ success: boole
     <div style="font-size:48px;margin-bottom:16px">${isError ? '&#10060;' : '&#9989;'}</div>
     <h2 style="margin:0 0 8px;color:#111827">${title}</h2>
     <p style="color:#6b7280;margin:0">${message}</p>
+    ${countdownText}
   </div>
+  ${successScript}
 </body>
 </html>`)
       }
@@ -302,8 +325,15 @@ async function startOAuthFlow(provider: OAuthProvider): Promise<{ success: boole
         }
 
         const session = createSession(user.id)
-        sendPage('Authentication Successful', 'You are now signed in. You can close this tab and return to Apinizer.', false)
+        sendPage('Authentication Successful', 'You are now signed in. Returning to Apinizer...', false)
         cleanup()
+        // Bring Apinizer window to front
+        const wins = BrowserWindow.getAllWindows()
+        if (wins.length > 0) {
+          const main = wins[0]
+          if (main.isMinimized()) main.restore()
+          main.focus()
+        }
         resolve({ success: true, data: { user: sanitizeUser(user), session } })
       } catch (e) {
         sendPage('Authentication Failed', `${(e as Error).message}. You can close this tab.`, true)

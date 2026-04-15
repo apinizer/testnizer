@@ -220,12 +220,12 @@ export default function EndpointSaveModal() {
                     padding: '8px 12px',
                     borderRadius: 8,
                     cursor: 'pointer',
-                    border: `1.5px solid ${selectedFolder === f.id ? '#5b6af0' : 'var(--border)'}`,
+                    border: `1.5px solid ${selectedFolder === f.id ? '#2D5FA0' : 'var(--border)'}`,
                     background: selectedFolder === f.id ? 'var(--accent-light)' : 'var(--white)',
                     transition: 'all 0.12s',
                   }}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill={selectedFolder === f.id ? '#5b6af0' : '#fbbf24'} stroke="none">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill={selectedFolder === f.id ? '#2D5FA0' : '#fbbf24'} stroke="none">
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                   </svg>
                   <span
@@ -240,7 +240,7 @@ export default function EndpointSaveModal() {
                     {f.name}
                   </span>
                   {selectedFolder === f.id && (
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5b6af0" strokeWidth="2.5">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2D5FA0" strokeWidth="2.5">
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                   )}
@@ -285,7 +285,7 @@ export default function EndpointSaveModal() {
                     display: 'flex',
                     gap: 8,
                     padding: '8px 12px',
-                    border: '1.5px solid #5b6af0',
+                    border: '1.5px solid #2D5FA0',
                     borderRadius: 8,
                     background: '#eef0fe',
                   }}
@@ -366,7 +366,7 @@ export default function EndpointSaveModal() {
             disabled={saving}
             style={{
               padding: '8px 18px',
-              background: saving ? 'var(--hint)' : '#5b6af0',
+              background: saving ? 'var(--hint)' : '#2D5FA0',
               border: 'none',
               borderRadius: 8,
               color: '#fff',

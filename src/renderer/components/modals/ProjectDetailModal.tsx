@@ -26,7 +26,7 @@ import ProjectIcon from '../shared/ProjectIcon'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import type { Theme, Language } from '../../types'
 
-const COLORS = ['#7c73e6', '#e85d4a', '#f5a623', '#1a7a4a', '#0066cc', '#7c4dff', '#e91e63', '#00897b', '#555555']
+const COLORS = ['#2D5FA0', '#e85d4a', '#f5a623', '#1a7a4a', '#0066cc', '#7c4dff', '#e91e63', '#00897b', '#555555']
 const EMOJIS = ['🚀', '⚡', '🔥', '🎯', '🌐', '🔌', '💻', '📡', '🛡️', '⚙️', '📦', '🗄️', '🔑', '💡', '🤖', '🌊']
 
 function applyProjectColor(color: string) {
@@ -94,7 +94,7 @@ export default function ProjectDetailModal() {
   const [gitConfig, setGitConfig] = useState<{ repoUrl?: string; username?: string; branch?: string; token?: string } | null>(null)
 
   const [editIconEmoji, setEditIconEmoji] = useState('')
-  const [editIconColor, setEditIconColor] = useState('#7c73e6')
+  const [editIconColor, setEditIconColor] = useState('#2D5FA0')
   const [editIconMode, setEditIconMode] = useState<'auto' | 'emoji'>('auto')
 
   // Project-level Postman-style settings (auth / pre / tests)
@@ -122,7 +122,7 @@ export default function ProjectDetailModal() {
       setEditGitToken('')
       setShowToken(false)
       setEditIconEmoji(activeProject.icon_emoji || '')
-      setEditIconColor(activeProject.icon_color || '#7c73e6')
+      setEditIconColor(activeProject.icon_color || '#2D5FA0')
       setEditIconMode(activeProject.icon_emoji ? 'emoji' : 'auto')
       loadGitConfig(activeProject.id)
       loadProjectSettings(activeProject.id)
@@ -274,7 +274,7 @@ export default function ProjectDetailModal() {
             <ProjectIcon
               name={activeProject.display_name || activeProject.name}
               emoji={activeProject.icon_emoji || undefined}
-              color={activeProject.icon_color || '#5b6af0'}
+              color={activeProject.icon_color || '#2D5FA0'}
               size={34}
             />
             <div className="min-w-0 flex-1">

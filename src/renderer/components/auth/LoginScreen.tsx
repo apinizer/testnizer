@@ -24,7 +24,7 @@ export default function LoginScreen() {
         <div
           className="flex w-[360px] shrink-0 flex-col items-center justify-center gap-6 p-10"
           style={{
-            background: 'linear-gradient(145deg, #5b6af0 0%, #7c73e6 50%, #9b8afb 100%)',
+            background: 'linear-gradient(145deg, #1e3a6e 0%, #2D5FA0 50%, #4a89cc 100%)',
           }}
         >
           {/* Logo */}

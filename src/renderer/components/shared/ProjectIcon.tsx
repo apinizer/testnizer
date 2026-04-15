@@ -18,7 +18,7 @@ export { getInitials }
 export default function ProjectIcon({
   name,
   emoji,
-  color = '#7c73e6',
+  color = '#2D5FA0',
   size = 36,
   fontSize,
 }: ProjectIconProps) {

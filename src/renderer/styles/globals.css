@@ -13,10 +13,10 @@
   --sub:          #374151;
   --muted:        #6b7280;
   --hint:         #9ca3af;
-  --accent:       #5b6af0;
-  --accent-light: #eef0fe;
-  --accent-text:  #4a59df;
-  --send-bg:      #2563eb;
+  --accent:       #2D5FA0;
+  --accent-light: #e8f0fa;
+  --accent-text:  #24507f;
+  --send-bg:      #2D5FA0;
   --surface:      #f9fafb;
   --green:        #15803d;
   --green-bg:     #dcfce7;
@@ -54,7 +54,7 @@
   /* Sidebar (nav rail) */
   --nav-bg:       #ffffff;
   --nav-hover:    #f9fafb;
-  --nav-active-bg: #eef0fe;
+  --nav-active-bg: #e8f0fa;
 
   /* Shadows */
   --shadow-modal: 0 16px 48px rgba(0,0,0,0.14);
@@ -74,10 +74,10 @@
   --sub:          #d0d0d5;
   --muted:        #9a9aa3;
   --hint:         #6e6e76;
-  --accent:       #7b8af5;
-  --accent-light: rgba(123,138,245,0.18);
-  --accent-text:  #a5b2ff;
-  --send-bg:      #3b82f6;
+  --accent:       #5a8fd4;
+  --accent-light: rgba(45,95,160,0.22);
+  --accent-text:  #8bb8f0;
+  --send-bg:      #5a8fd4;
   --surface:      #18181a;
   --green:        #6bdd9a;
   --green-bg:     rgba(107,221,154,0.14);
@@ -115,7 +115,7 @@
   /* Sidebar (nav rail) */
   --nav-bg:       #171718;
   --nav-hover:    #26262a;
-  --nav-active-bg: rgba(123,138,245,0.18);
+  --nav-active-bg: rgba(45,95,160,0.22);
 
   /* Shadows */
   --shadow-modal: 0 16px 48px rgba(0,0,0,0.6);

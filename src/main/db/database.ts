@@ -217,7 +217,7 @@ function runMigrations(database: Database.Database): void {
     database.exec(`ALTER TABLE projects ADD COLUMN icon_emoji TEXT`)
   }
   if (!colNames.includes('icon_color')) {
-    database.exec(`ALTER TABLE projects ADD COLUMN icon_color TEXT DEFAULT '#7c73e6'`)
+    database.exec(`ALTER TABLE projects ADD COLUMN icon_color TEXT DEFAULT '#2D5FA0'`)
   }
   if (!colNames.includes('display_name')) {
     database.exec(`ALTER TABLE projects ADD COLUMN display_name TEXT`)
@@ -339,7 +339,7 @@ function seedDefaults(database: Database.Database): void {
   database.prepare(`
     INSERT INTO workspaces (id, name, description, color, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(workspaceId, 'Default Workspace', 'Your first workspace', '#7c73e6', now, now)
+  `).run(workspaceId, 'Default Workspace', 'Your first workspace', '#2D5FA0', now, now)
 
   database.prepare(`
     INSERT INTO projects (id, workspace_id, name, description, type, sort_order, created_at, updated_at)

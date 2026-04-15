@@ -26,7 +26,7 @@ interface Suggestion {
 }
 
 const CATEGORY_CONFIG: Record<VariableCategory, { label: string; color: string; bg: string }> = {
-  environment: { label: 'E', color: '#7c73e6', bg: '#eeecfe' },
+  environment: { label: 'E', color: '#2D5FA0', bg: '#e8f0fa' },
   global: { label: 'G', color: '#1a7a4a', bg: '#e8f9f1' },
   dynamic: { label: 'D', color: '#b35a00', bg: '#fff4e0' },
 }

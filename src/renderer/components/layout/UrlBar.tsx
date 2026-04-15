@@ -187,7 +187,7 @@ export default function UrlBar() {
           disabled={isLoading}
           style={{
             ...BTN_P,
-            background: 'var(--send-bg)',
+            background: 'var(--accent)',
             borderTopRightRadius: 0,
             borderBottomRightRadius: 0,
             opacity: isLoading ? 0.75 : 1,
@@ -218,7 +218,7 @@ export default function UrlBar() {
           }}
           disabled={isLoading}
           style={{
-            background: 'var(--send-bg)',
+            background: 'var(--accent)',
             border: 'none',
             borderLeft: '1px solid rgba(255,255,255,0.25)',
             borderTopRightRadius: 6,

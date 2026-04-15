@@ -599,7 +599,7 @@ function exportAsHtml(results: EndpointRunResult[]): string {
 </head>
 <body>
   <div class="header">
-    <h1 style="margin:0;font-size:20px;color:#7c73e6">Apinizer API Tester</h1>
+    <h1 style="margin:0;font-size:20px;color:#2D5FA0">Apinizer API Tester</h1>
     <h2 style="margin:8px 0 0;font-size:16px;font-weight:500">Collection Run Report</h2>
     <p style="margin:8px 0 0;font-size:13px;color:#888">Generated: ${new Date().toISOString()}</p>
     <div class="stats">

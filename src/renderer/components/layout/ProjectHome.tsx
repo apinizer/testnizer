@@ -189,7 +189,7 @@ export default function ProjectHome() {
                 ;(e.currentTarget as HTMLElement).style.boxShadow = 'none'
               }}
             >
-              <ProjectIcon name={project.display_name || project.name} emoji={project.icon_emoji || undefined} color={project.icon_color || '#7c73e6'} size={40} />
+              <ProjectIcon name={project.display_name || project.name} emoji={project.icon_emoji || undefined} color={project.icon_color || '#2D5FA0'} size={40} />
 
               <div className="flex-1 overflow-hidden">
                 {renamingId === project.id ? (

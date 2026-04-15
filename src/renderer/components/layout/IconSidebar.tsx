@@ -106,7 +106,7 @@ export default function IconSidebar() {
         <ProjectIcon
           name={activeProject?.display_name || activeProject?.name || 'P'}
           emoji={activeProject?.icon_emoji || undefined}
-          color={activeProject?.icon_color || '#5b6af0'}
+          color={activeProject?.icon_color || '#2D5FA0'}
           size={32}
         />
       </div>

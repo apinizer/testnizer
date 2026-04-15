@@ -9,7 +9,7 @@ import { useBranchStore } from '../../stores/branch.store'
 import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
 
-const COLORS = ['#7c73e6', '#e85d4a', '#f5a623', '#1a7a4a', '#0066cc', '#7c4dff', '#e91e63', '#00897b', '#555555']
+const COLORS = ['#2D5FA0', '#e85d4a', '#f5a623', '#1a7a4a', '#0066cc', '#7c4dff', '#e91e63', '#00897b', '#555555']
 const EMOJIS = ['🚀', '⚡', '🔥', '🎯', '🌐', '🔌', '💻', '📡', '🛡️', '⚙️', '📦', '🗄️', '🔑', '💡', '🤖', '🌊']
 
 type ProjectType = 'http' | 'grpc' | 'websocket'
@@ -120,7 +120,7 @@ export default function NewProjectModal() {
   const [branchName, setBranchName] = useState('main')
   const [nameError, setNameError] = useState(false)
   const [iconOpt, setIconOpt] = useState<IconOption>('auto')
-  const [selectedColor, setSelectedColor] = useState('#7c73e6')
+  const [selectedColor, setSelectedColor] = useState('#2D5FA0')
   const [selectedEmoji, setSelectedEmoji] = useState('')
   const [customEmoji, setCustomEmoji] = useState('')
 
@@ -145,7 +145,7 @@ export default function NewProjectModal() {
       setLocalFilePath(''); setLocalFileData(null)
       setProjName(''); setDisplayName(''); setSlugManuallyEdited(false); setProjDesc(''); setProjType('http')
       setBranchName('main'); setNameError(false)
-      setIconOpt('auto'); setSelectedColor('#7c73e6')
+      setIconOpt('auto'); setSelectedColor('#2D5FA0')
       setSelectedEmoji(''); setCustomEmoji('')
       setSaveMode('local'); setLocalFolder('')
       setGitUrl(''); setGitUser(''); setGitBranch('main')
