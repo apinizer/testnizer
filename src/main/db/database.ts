@@ -294,6 +294,38 @@ function runMigrations(database: Database.Database): void {
   if (!rhColNames.includes('folder_name')) {
     database.exec(`ALTER TABLE runner_history ADD COLUMN folder_name TEXT`)
   }
+
+  // ─── Auth tables ─────────────────────────────────────────
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      username TEXT NOT NULL UNIQUE,
+      display_name TEXT,
+      password_hash TEXT,
+      salt TEXT,
+      avatar_url TEXT,
+      auth_provider TEXT NOT NULL DEFAULT 'local',
+      provider_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+  `)
 }
 
 function seedDefaults(database: Database.Database): void {

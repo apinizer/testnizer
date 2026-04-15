@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Save, Loader2 } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
+import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
 import BranchDropdown from '../sidebar/BranchDropdown'
@@ -339,24 +340,50 @@ export default function Header() {
         </button>
 
         {/* Avatar */}
-        <div
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: '50%',
-            background: T.accent,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 13,
-            fontWeight: 700,
-            color: 'white',
-            cursor: 'pointer',
-          }}
-        >
-          A
-        </div>
+        <UserAvatar />
       </div>
     </header>
   )
+}
+
+function UserAvatar() {
+  const user = useAuthStore((s) => s.user)
+  const setShowProfileModal = useUIStore((s) => s.setShowProfileModal)
+
+  const initials = user
+    ? getInitials(user.displayName || user.username)
+    : 'A'
+
+  return (
+    <div
+      onClick={() => setShowProfileModal(true)}
+      style={{
+        width: 28,
+        height: 28,
+        borderRadius: '50%',
+        background: user?.avatarUrl ? 'transparent' : T.accent,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 13,
+        fontWeight: 700,
+        color: 'white',
+        cursor: 'pointer',
+        overflow: 'hidden',
+      }}
+      title={user?.displayName || user?.username || 'Profile'}
+    >
+      {user?.avatarUrl ? (
+        <img src={user.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      ) : (
+        initials
+      )}
+    </div>
+  )
+}
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return name.substring(0, 2).toUpperCase()
 }

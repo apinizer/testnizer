@@ -16,8 +16,10 @@ import { registerBranchHandlers } from './branch.handler'
 import { registerSaveHandlers } from './save.handler'
 import { registerSchedulerHandlers, startAllSchedulers } from './scheduler.handler'
 import { registerGitHandlers } from './git.handler'
+import { registerAuthHandlers } from './auth.handler'
 
 export function registerAllHandlers(): void {
+  registerAuthHandlers()
   registerRequestHandlers()
   registerWorkspaceHandlers()
   registerProjectHandlers()

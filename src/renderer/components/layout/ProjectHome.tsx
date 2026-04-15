@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Plus, Trash2, MoreHorizontal, GitBranch, Pencil } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
+import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
 import type { Project } from '../../types'
 import ProjectIcon from '../shared/ProjectIcon'
@@ -72,11 +73,51 @@ export default function ProjectHome() {
     websocket: 'WebSocket',
   }
 
+  const authUser = useAuthStore((s) => s.user)
+  const setShowProfileModal = useUIStore((s) => s.setShowProfileModal)
+
   return (
     <div
-      className="flex h-full w-full flex-col items-center overflow-y-auto"
+      className="relative flex h-full w-full flex-col items-center overflow-y-auto"
       style={{ background: 'var(--bg)' }}
     >
+      {/* Profile avatar — top right */}
+      {authUser && (
+        <div
+          className="absolute right-5 top-4 z-10 flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors"
+          onClick={() => setShowProfileModal(true)}
+          style={{ background: 'transparent' }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--item-hover)' }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+        >
+          <div
+            className="flex shrink-0 items-center justify-center rounded-full font-bold text-white"
+            style={{
+              width: 28,
+              height: 28,
+              background: authUser.avatarUrl ? 'transparent' : 'var(--accent)',
+              fontSize: 13,
+              overflow: 'hidden',
+            }}
+          >
+            {authUser.avatarUrl ? (
+              <img src={authUser.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              (() => {
+                const name = authUser.displayName || authUser.username
+                const parts = name.trim().split(/\s+/)
+                return parts.length >= 2
+                  ? (parts[0][0] + parts[1][0]).toUpperCase()
+                  : name.substring(0, 2).toUpperCase()
+              })()
+            )}
+          </div>
+          <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>
+            {authUser.displayName || authUser.username}
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex w-full items-center justify-center" style={{ paddingTop: 60, paddingBottom: 32 }}>
         <div className="flex flex-col items-center gap-3">

@@ -14,9 +14,12 @@ import SaveModal from '../modals/SaveModal'
 import NewProjectModal from '../modals/NewProjectModal'
 import EndpointSaveModal from '../modals/EndpointSaveModal'
 import ProjectDetailModal from '../modals/ProjectDetailModal'
+import ProfileModal from '../modals/ProfileModal'
 import ConsolePanel from './ConsolePanel'
+import LoginScreen from '../auth/LoginScreen'
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
+import { useAuthStore } from '../../stores/auth.store'
 import { useKeyboardShortcuts } from '../../lib/keyboard-shortcuts'
 
 function GitLoadingOverlay() {
@@ -52,11 +55,45 @@ export default function AppShell() {
   const initialized = useWorkspaceStore((s) => s.initialized)
   const initialize = useWorkspaceStore((s) => s.initialize)
 
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const authLoading = useAuthStore((s) => s.isLoading)
+  const checkSession = useAuthStore((s) => s.checkSession)
+
   useKeyboardShortcuts()
 
+  // Check auth session on mount
   useEffect(() => {
-    initialize()
-  }, [initialize])
+    checkSession()
+  }, [checkSession])
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      initialize()
+    }
+  }, [initialize, isAuthenticated])
+
+  // Auth loading state
+  if (authLoading) {
+    return (
+      <div
+        className="flex h-screen w-screen items-center justify-center"
+        style={{ background: 'var(--bg)', color: 'var(--muted)' }}
+      >
+        <div
+          style={{
+            width: 32, height: 32, border: '3px solid var(--border)',
+            borderTopColor: 'var(--accent)', borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite',
+          }}
+        />
+      </div>
+    )
+  }
+
+  // Not authenticated — show login screen
+  if (!isAuthenticated) {
+    return <LoginScreen />
+  }
 
   if (!initialized) {
     return (
@@ -77,6 +114,7 @@ export default function AppShell() {
         <SettingsModal />
         <UpdateModal />
         <NewProjectModal />
+        <ProfileModal />
       </div>
     )
   }
@@ -121,6 +159,7 @@ export default function AppShell() {
       <NewProjectModal />
       <EndpointSaveModal />
       <ProjectDetailModal />
+      <ProfileModal />
 
       {/* Git loading overlay */}
       <GitLoadingOverlay />

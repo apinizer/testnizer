@@ -24,6 +24,7 @@ interface UIStore {
   showProjectDetailModal: boolean
   showHistoryPanel: boolean
   showConsolePanel: boolean
+  showProfileModal: boolean
   gitLoading: string | null  // null = idle, string = message to display
 
   setTheme: (theme: Theme) => void
@@ -47,6 +48,7 @@ interface UIStore {
   setShowHistoryPanel: (show: boolean) => void
   setShowConsolePanel: (show: boolean) => void
   toggleConsolePanel: () => void
+  setShowProfileModal: (show: boolean) => void
   setGitLoading: (msg: string | null) => void
 }
 
@@ -77,6 +79,7 @@ export const useUIStore = create<UIStore>((set) => ({
   showProjectDetailModal: false,
   showHistoryPanel: false,
   showConsolePanel: false,
+  showProfileModal: false,
   gitLoading: null,
 
   setTheme: (theme) => {
@@ -118,6 +121,7 @@ export const useUIStore = create<UIStore>((set) => ({
   setShowHistoryPanel: (show) => set({ showHistoryPanel: show }),
   setShowConsolePanel: (show) => set({ showConsolePanel: show }),
   toggleConsolePanel: () => set((s) => ({ showConsolePanel: !s.showConsolePanel })),
+  setShowProfileModal: (show) => set({ showProfileModal: show }),
   setGitLoading: (msg) => set({ gitLoading: msg }),
 }))
 

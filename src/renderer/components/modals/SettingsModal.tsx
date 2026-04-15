@@ -80,7 +80,7 @@ export default function SettingsModal() {
       >
         {/* Header */}
         <div className="mb-5 flex items-center justify-between">
-          <span className="text-lg font-bold text-[var(--text)]">{t('settings.title')}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{t('settings.title')}</span>
           <button
             type="button"
             onClick={() => setShow(false)}
