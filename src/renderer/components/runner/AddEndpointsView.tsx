@@ -205,14 +205,16 @@ export default function AddEndpointsView() {
 
       {/* Endpoint list grouped by folder */}
       <div className="flex-1 overflow-y-auto px-3 py-2">
-        {groups.length === 0 ? (
+        {groups.length === 0 && rootEndpoints.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16" style={{ color: 'var(--hint)' }}>
             <div style={{ fontSize: 14 }}>
               {allEndpoints.length === 0 ? 'No endpoints in this project' : availableEndpoints.length === 0 ? 'All endpoints are already in this suite' : 'No matches'}
             </div>
           </div>
         ) : (
-          groups.map((group) => {
+          <>
+          {/* Folder groups */}
+          {groups.map((group) => {
             const key = group.folder?.id || '_root'
             const expanded = expandedFolders[key] !== false
             const folderEps = group.endpoints
@@ -239,7 +241,7 @@ export default function AddEndpointsView() {
                   />
                   <FolderOpen size={14} style={{ color: 'var(--accent)' }} />
                   <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-                    {group.folder?.name || 'Root'}
+                    {group.folder?.name || 'Ungrouped'}
                   </span>
                   <span style={{ fontSize: 13, color: 'var(--hint)' }}>
                     ({folderEps.length})
@@ -273,7 +275,30 @@ export default function AddEndpointsView() {
                 )}
               </div>
             )
-          })
+          })}
+
+          {/* Root endpoints (no folder) — show flat */}
+          {rootEndpoints.map((ep) => (
+            <label
+              key={ep.id}
+              className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-1.5 transition-colors hover:bg-[var(--surface)]"
+            >
+              <input
+                type="checkbox"
+                checked={selected.has(ep.id)}
+                onChange={() => toggleEndpoint(ep.id)}
+                className="cursor-pointer"
+              />
+              {ep.method && <MethodBadge method={ep.method} small />}
+              <span className="flex-1 truncate" style={{ fontSize: 13, color: 'var(--text)' }}>
+                {ep.name}
+              </span>
+              <span className="truncate" style={{ fontSize: 13, color: 'var(--hint)', maxWidth: 240 }}>
+                {ep.path}
+              </span>
+            </label>
+          ))}
+          </>
         )}
       </div>
 

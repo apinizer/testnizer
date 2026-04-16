@@ -438,7 +438,7 @@ function SuiteNode({
         )}
       </div>
 
-      {/* Endpoints */}
+      {/* Endpoints grouped by folder — tree structure */}
       {expanded && (
         <div>
           {endpoints.length === 0 ? (
@@ -446,13 +446,7 @@ function SuiteNode({
               No endpoints. Right-click to add.
             </div>
           ) : (
-            endpoints.map((ep) => (
-              <EndpointItem
-                key={ep.id}
-                endpoint={ep}
-                onRemove={() => onRemoveEndpoint(ep.id)}
-              />
-            ))
+            <SuiteEndpointTree endpoints={endpoints} onRemoveEndpoint={onRemoveEndpoint} />
           )}
         </div>
       )}
@@ -460,14 +454,73 @@ function SuiteNode({
   )
 }
 
+/* ── Suite endpoint tree (grouped by folder) ──────────────── */
+
+function SuiteEndpointTree({ endpoints, onRemoveEndpoint }: {
+  endpoints: SuiteEndpoint[]
+  onRemoveEndpoint: (endpointId: string) => void
+}) {
+  const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({})
+
+  // Group by folder_name
+  const folderGroups = new Map<string, SuiteEndpoint[]>()
+  const ungrouped: SuiteEndpoint[] = []
+
+  for (const ep of endpoints) {
+    if (ep.folder_name) {
+      const group = folderGroups.get(ep.folder_name) || []
+      group.push(ep)
+      folderGroups.set(ep.folder_name, group)
+    } else {
+      ungrouped.push(ep)
+    }
+  }
+
+  return (
+    <>
+      {/* Folder groups */}
+      {[...folderGroups.entries()].map(([folderName, eps]) => {
+        const collapsed = collapsedFolders[folderName] ?? false
+        return (
+          <div key={folderName}>
+            {/* Folder header */}
+            <div
+              className="flex cursor-pointer items-center gap-1.5 py-[3px] pl-8 pr-3"
+              onClick={() => setCollapsedFolders((s) => ({ ...s, [folderName]: !collapsed }))}
+              style={{ color: 'var(--muted)' }}
+            >
+              <span style={{ flexShrink: 0 }}>
+                {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+              </span>
+              <FolderOpen size={12} style={{ color: 'var(--hint)', flexShrink: 0 }} />
+              <span className="truncate" style={{ fontSize: 13, fontWeight: 500 }}>
+                {folderName}
+              </span>
+            </div>
+            {/* Endpoints in folder */}
+            {!collapsed && eps.map((ep) => (
+              <EndpointItem key={ep.id} endpoint={ep} onRemove={() => onRemoveEndpoint(ep.id)} indent={20} />
+            ))}
+          </div>
+        )
+      })}
+
+      {/* Ungrouped endpoints */}
+      {ungrouped.map((ep) => (
+        <EndpointItem key={ep.id} endpoint={ep} onRemove={() => onRemoveEndpoint(ep.id)} indent={10} />
+      ))}
+    </>
+  )
+}
+
 /* ── Endpoint item in suite ───────────────────────────────── */
 
-function EndpointItem({ endpoint, onRemove }: { endpoint: SuiteEndpoint; onRemove: () => void }) {
+function EndpointItem({ endpoint, onRemove, indent = 10 }: { endpoint: SuiteEndpoint; onRemove: () => void; indent?: number }) {
   const [hovered, setHovered] = useState(false)
   return (
     <div
-      className="flex items-center gap-2 py-[4px] pl-10 pr-3"
-      style={{ background: hovered ? 'var(--item-hover)' : 'transparent' }}
+      className="flex items-center gap-2 py-[3px] pr-3"
+      style={{ paddingLeft: indent + 28, background: hovered ? 'var(--item-hover)' : 'transparent' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -479,11 +532,6 @@ function EndpointItem({ endpoint, onRemove }: { endpoint: SuiteEndpoint; onRemov
       <span className="flex-1 truncate" style={{ fontSize: 13, color: 'var(--text)' }}>
         {endpoint.name}
       </span>
-      {endpoint.folder_name && (
-        <span className="shrink-0 truncate" style={{ fontSize: 12, color: 'var(--hint)', maxWidth: 80 }}>
-          {endpoint.folder_name}
-        </span>
-      )}
       {hovered && (
         <button
           type="button"

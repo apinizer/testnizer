@@ -78,6 +78,7 @@ interface ResponseTiming {
 interface EndpointRunResult {
   endpointId: string
   endpointName: string
+  folderName?: string
   method: string
   url: string
   status: number | null
