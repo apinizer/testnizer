@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useEnvironmentStore } from '../../stores/environment.store'
+import { useUIStore } from '../../stores/ui.store'
 
 interface RunnerVariablesProps {
   environmentId?: string
@@ -122,6 +123,7 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
                 type="button"
                 className="cursor-pointer border-none bg-transparent hover:underline"
                 style={{ color: 'var(--accent)', fontSize: 13 }}
+                onClick={() => useUIStore.getState().setShowEnvironmentModal(true)}
               >
                 Add
               </button>

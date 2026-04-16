@@ -1,241 +1,208 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTabsStore } from '../../stores/tabs.store'
-import type { Tab } from '../../types'
+import { useUIStore } from '../../stores/ui.store'
 import { T } from '../../styles/tokens'
 import {
   Plus,
   Search,
   ChevronRight,
   ChevronDown,
-  Clock,
   Play,
   Trash2,
-  ToggleLeft,
-  ToggleRight,
+  FolderOpen,
+  MoreHorizontal,
+  Globe,
+  Pencil,
 } from 'lucide-react'
-import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
+import MethodBadge from '../shared/MethodBadge'
 
-/* ── Section icons ─────────────────────────────────────────── */
+/* ── Types ─────────────────────────────────────────────────── */
 
-function SectionIcon({ bg, children }: { bg: string; children: React.ReactNode }) {
-  return (
-    <span
-      style={{
-        width: 22,
-        height: 22,
-        borderRadius: 6,
-        background: bg,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-      }}
-    >
-      {children}
-    </span>
-  )
-}
-
-/* ── Run history row (from DB) ───────────────────────────────── */
-
-interface RunHistoryRow {
-  id: string
-  project_id: string
-  duration_ms: number
-  total_endpoints: number
-  passed_endpoints: number
-  failed_endpoints: number
-  total_tests: number
-  failed_tests: number
-  avg_resp_time: number
-  results_json: string | null
-  started_at: number
-}
-
-/* ── Scheduled task row (from DB) ────────────────────────────── */
-
-interface ScheduledTaskRow {
+interface TestSuite {
   id: string
   project_id: string
   name: string
-  endpoint_ids: string
-  folder_id: string | null
-  environment_id: string | null
-  interval_value: number
-  interval_unit: string
-  delay_ms: number
-  enabled: number
-  last_run_at: number | null
-  next_run_at: number | null
+  description: string | null
+  sort_order: number
   created_at: number
+  updated_at: number
 }
+
+interface SuiteEndpoint {
+  id: string
+  name: string
+  method: string | null
+  path: string
+  protocol: string
+  folder_id: string | null
+  folder_name: string | null
+  sort_order: number
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const api = () => (window as any).api
 
 /* ── Main panel ────────────────────────────────────────────── */
 
 export default function TestsPanel() {
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const openTab = useTabsStore((s) => s.openTab)
+  const addEndpointsSuiteId = useUIStore((s) => s.addEndpointsSuiteId)
 
   const [searchQuery, setSearchQuery] = useState('')
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    runs: true,
-    scheduled: true,
-  })
-  const [runHistory, setRunHistory] = useState<RunHistoryRow[]>([])
-  const [scheduledTasks, setScheduledTasks] = useState<ScheduledTaskRow[]>([])
-  const [showPlusMenu, setShowPlusMenu] = useState(false)
-  const plusRef = useRef<HTMLDivElement>(null)
-  const [deleteTaskTarget, setDeleteTaskTarget] = useState<ScheduledTaskRow | null>(null)
+  const [suites, setSuites] = useState<TestSuite[]>([])
+  const [expandedSuites, setExpandedSuites] = useState<Record<string, boolean>>({})
+  const [suiteEndpoints, setSuiteEndpoints] = useState<Record<string, SuiteEndpoint[]>>({})
 
-  // Close plus menu on outside click
+  // Create suite
+  const [showNewSuiteInput, setShowNewSuiteInput] = useState(false)
+  const [newSuiteName, setNewSuiteName] = useState('')
+  const newSuiteRef = useRef<HTMLInputElement>(null)
+
+  // Rename
+  const [renamingSuiteId, setRenamingSuiteId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const renameRef = useRef<HTMLInputElement>(null)
+
+  // Context menu
+  const [contextMenu, setContextMenu] = useState<{ suiteId: string; x: number; y: number } | null>(null)
+
+  // Delete confirm
+  const [deleteTarget, setDeleteTarget] = useState<TestSuite | null>(null)
+
+
+  // ─── Load suites ──────────────────────────────────────────
+  const loadSuites = useCallback(async () => {
+    if (!activeProjectId) return
+    const result = await api().testSuite.list(activeProjectId)
+    if (result?.success && result.data) setSuites(result.data)
+  }, [activeProjectId])
+
+  useEffect(() => { loadSuites() }, [loadSuites])
+
+  // ─── Load endpoints for a suite ───────────────────────────
+  const loadSuiteEndpoints = useCallback(async (suiteId: string) => {
+    const result = await api().testSuite.listEndpoints(suiteId)
+    if (result?.success && result.data) {
+      setSuiteEndpoints((prev) => ({ ...prev, [suiteId]: result.data }))
+    }
+  }, [])
+
+  // Auto-load endpoints when suite is expanded
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (plusRef.current && !plusRef.current.contains(e.target as Node)) {
-        setShowPlusMenu(false)
+    for (const suiteId of Object.keys(expandedSuites)) {
+      if (expandedSuites[suiteId] && !suiteEndpoints[suiteId]) {
+        loadSuiteEndpoints(suiteId)
       }
     }
-    if (showPlusMenu) document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [showPlusMenu])
+  }, [expandedSuites, suiteEndpoints, loadSuiteEndpoints])
 
-  // Load run history
+  // Reload suite endpoints when AddEndpoints view closes (addEndpointsSuiteId goes null)
+  const prevAddSuiteIdRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!activeProjectId) return
-    window.api?.runner?.history(activeProjectId).then((result: unknown) => {
-      const res = result as { success: boolean; data?: RunHistoryRow[] }
-      if (res?.success && res.data) setRunHistory(res.data)
-    }).catch(() => {})
-  }, [activeProjectId])
+    const prevId = prevAddSuiteIdRef.current
+    prevAddSuiteIdRef.current = addEndpointsSuiteId
+    // When it transitions from a value to null, reload that suite's endpoints
+    if (prevId && !addEndpointsSuiteId) {
+      loadSuiteEndpoints(prevId)
+      // Auto-expand the suite
+      setExpandedSuites((s) => ({ ...s, [prevId]: true }))
+    }
+  }, [addEndpointsSuiteId, loadSuiteEndpoints])
 
-  // Load scheduled tasks
-  const loadScheduledTasks = useCallback(() => {
-    if (!activeProjectId) return
-    const api = window.api as Record<string, unknown> & { scheduler?: { list: (id: string) => Promise<{ success: boolean; data?: ScheduledTaskRow[] }> } }
-    api.scheduler?.list(activeProjectId).then((result) => {
-      if (result?.success && result.data) setScheduledTasks(result.data)
-    }).catch(() => {})
-  }, [activeProjectId])
+  // ─── Create suite ─────────────────────────────────────────
+  const handleCreateSuite = useCallback(async () => {
+    if (!newSuiteName.trim() || !activeProjectId) return
+    await api().testSuite.create({ project_id: activeProjectId, name: newSuiteName.trim() })
+    setNewSuiteName('')
+    setShowNewSuiteInput(false)
+    await loadSuites()
+  }, [newSuiteName, activeProjectId, loadSuites])
 
-  useEffect(() => {
-    loadScheduledTasks()
-  }, [loadScheduledTasks])
+  // ─── Delete suite ─────────────────────────────────────────
+  const handleDeleteSuite = useCallback(async () => {
+    if (!deleteTarget) return
+    await api().testSuite.delete(deleteTarget.id)
+    setDeleteTarget(null)
+    setContextMenu(null)
+    await loadSuites()
+  }, [deleteTarget, loadSuites])
 
-  // Listen for scheduled run completions to refresh data
-  useEffect(() => {
-    const api = window.api as Record<string, unknown> & { scheduler?: { onRunCompleted: (cb: (e: unknown) => void) => () => void } }
-    const unsub = api.scheduler?.onRunCompleted?.(() => {
-      // Refresh both history and tasks
-      loadScheduledTasks()
-      if (activeProjectId) {
-        window.api?.runner?.history(activeProjectId).then((result: unknown) => {
-          const res = result as { success: boolean; data?: RunHistoryRow[] }
-          if (res?.success && res.data) setRunHistory(res.data)
-        }).catch(() => {})
-      }
-    })
-    return () => { unsub?.() }
-  }, [loadScheduledTasks, activeProjectId])
+  // ─── Rename suite ─────────────────────────────────────────
+  const handleRenameSuite = useCallback(async () => {
+    if (!renamingSuiteId || !renameValue.trim()) {
+      setRenamingSuiteId(null)
+      return
+    }
+    await api().testSuite.update(renamingSuiteId, { name: renameValue.trim() })
+    setRenamingSuiteId(null)
+    await loadSuites()
+  }, [renamingSuiteId, renameValue, loadSuites])
 
-  const RUNNER_TAB_ID = 'runner-main'
+  // ─── Run suite ────────────────────────────────────────────
+  const handleRunSuite = useCallback(async (suite: TestSuite) => {
+    const eps = suiteEndpoints[suite.id] || []
+    if (eps.length === 0) {
+      // Load first
+      const result = await api().testSuite.listEndpoints(suite.id)
+      if (!result?.success || !result.data?.length) return
+      const endpointIds = (result.data as SuiteEndpoint[]).map((e: SuiteEndpoint) => e.id)
+      runEndpoints(endpointIds, suite.name)
+    } else {
+      runEndpoints(eps.map((e) => e.id), suite.name)
+    }
+    setContextMenu(null)
+  }, [suiteEndpoints])
 
-  /** Find existing runner tab or create one, reusing the same tab */
-  const openOrReuseRunnerTab = useCallback((sessionData?: Record<string, unknown>) => {
+  const runEndpoints = useCallback((endpointIds: string[], suiteName: string) => {
     const tabs = useTabsStore.getState().tabs
-    const existing = tabs.find((t: Tab) => t.protocol === 'runner')
-    const tabId = existing ? existing.id : RUNNER_TAB_ID
-    const newSessionKey = String(Date.now())
+    const existing = tabs.find((t) => t.protocol === 'runner')
+    const tabId = existing ? existing.id : 'runner-main'
+    const sessionKey = String(Date.now())
 
-    if (sessionData) {
-      sessionStorage.setItem(`runner-report-${tabId}`, JSON.stringify(sessionData))
-    }
+    sessionStorage.setItem(`runner-report-${tabId}`, JSON.stringify({
+      autoRun: true,
+      endpointIds,
+      folderName: suiteName,
+    }))
 
     if (existing) {
-      // Reuse — activate and bump sessionKey so RunnerTab re-reads sessionStorage
       useTabsStore.getState().setActiveTab(existing.id)
-      useTabsStore.getState().updateTab(existing.id, { sessionKey: newSessionKey })
+      useTabsStore.getState().updateTab(existing.id, { sessionKey })
     } else {
-      openTab({ id: tabId, name: 'Runner', protocol: 'runner', sessionKey: newSessionKey })
+      openTab({ id: tabId, name: 'Runner', protocol: 'runner', sessionKey })
     }
-    return tabId
   }, [openTab])
 
-  const openRunnerTab = useCallback(() => {
-    setShowPlusMenu(false)
-    openOrReuseRunnerTab()
-  }, [openOrReuseRunnerTab])
+  // ─── Remove endpoint from suite ───────────────────────────
+  const handleRemoveEndpoint = useCallback(async (suiteId: string, endpointId: string) => {
+    await api().testSuite.removeEndpoint({ suite_id: suiteId, endpoint_id: endpointId })
+    await loadSuiteEndpoints(suiteId)
+  }, [loadSuiteEndpoints])
 
-  const openScheduledTasksTab = useCallback(() => {
-    openOrReuseRunnerTab({ viewScheduledTasks: true })
-  }, [openOrReuseRunnerTab])
+  // ─── Focus new suite input ────────────────────────────────
+  useEffect(() => {
+    if (showNewSuiteInput) newSuiteRef.current?.focus()
+  }, [showNewSuiteInput])
 
-  const openAllRunsTab = useCallback(() => {
-    openOrReuseRunnerTab({ viewAllRuns: true })
-  }, [openOrReuseRunnerTab])
+  useEffect(() => {
+    if (renamingSuiteId) renameRef.current?.focus()
+  }, [renamingSuiteId])
 
-  const openRunReport = useCallback((run: RunHistoryRow) => {
-    if (!run.results_json) return
-    try {
-      const results = JSON.parse(run.results_json) as EndpointRunResult[]
-      openOrReuseRunnerTab({
-        results,
-        report: {
-          projectId: run.project_id,
-          startedAt: run.started_at,
-          completedAt: run.started_at + run.duration_ms,
-          totalEndpoints: run.total_endpoints,
-          passedEndpoints: run.passed_endpoints,
-          failedEndpoints: run.failed_endpoints,
-          totalAssertions: run.total_tests,
-          passedAssertions: run.total_tests - run.failed_tests,
-          failedAssertions: run.failed_tests,
-          results,
-        },
-        startedAt: run.started_at,
-      })
-    } catch { /* invalid JSON */ }
-  }, [openOrReuseRunnerTab])
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!contextMenu) return
+    const handler = () => setContextMenu(null)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [contextMenu])
 
-  const confirmDeleteTask = useCallback(async () => {
-    if (!deleteTaskTarget) return
-    const api = window.api as Record<string, unknown> & { scheduler?: { delete: (id: string) => Promise<{ success: boolean }> } }
-    await api.scheduler?.delete(deleteTaskTarget.id)
-    setDeleteTaskTarget(null)
-    loadScheduledTasks()
-  }, [deleteTaskTarget, loadScheduledTasks])
-
-  const toggleScheduledTask = useCallback(async (taskId: string) => {
-    const api = window.api as Record<string, unknown> & { scheduler?: { toggle: (id: string) => Promise<{ success: boolean }> } }
-    await api.scheduler?.toggle(taskId)
-    loadScheduledTasks()
-  }, [loadScheduledTasks])
-
-  const toggleSection = (key: string) => {
-    setExpandedSections((s) => ({ ...s, [key]: !s[key] }))
-  }
-
-  const formatDate = (ts: number) => {
-    const d = new Date(ts)
-    const now = new Date()
-    const isToday = d.toDateString() === now.toDateString()
-    if (isToday) return 'Today ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
-      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  }
-  const formatDuration = (ms: number) => {
-    if (ms < 1000) return `${ms}ms`
-    return `${(ms / 1000).toFixed(1)}s`
-  }
-
-  // Filter runs by search
-  const filteredHistory = searchQuery.trim()
-    ? runHistory.filter((r) => formatDate(r.started_at).toLowerCase().includes(searchQuery.toLowerCase()))
-    : runHistory
-
-  const filteredTasks = searchQuery.trim()
-    ? scheduledTasks.filter((t) => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    : scheduledTasks
+  // ─── Filter ───────────────────────────────────────────────
+  const filteredSuites = searchQuery.trim()
+    ? suites.filter((s) => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : suites
 
   return (
     <div className="flex h-full flex-col overflow-hidden" style={{ fontSize: 13 }}>
@@ -245,44 +212,15 @@ export default function TestsPanel() {
         style={{ height: 44, borderColor: T.border }}
       >
         <span style={{ flex: 1, fontSize: 15, fontWeight: 700, color: T.text }}>Tests</span>
-
-        {/* + button with dropdown */}
-        <div ref={plusRef} style={{ position: 'relative' }}>
-          <button
-            type="button"
-            onClick={() => setShowPlusMenu(!showPlusMenu)}
-            className="flex cursor-pointer items-center justify-center rounded-[7px] border-none"
-            style={{ width: 28, height: 28, background: 'var(--accent)', color: '#fff' }}
-            title="New"
-          >
-            <Plus size={15} strokeWidth={2.5} />
-          </button>
-          {showPlusMenu && (
-            <div
-              className="rounded-[8px] border border-[var(--border)]"
-              style={{
-                position: 'absolute',
-                top: 32,
-                right: 0,
-                width: 180,
-                background: 'var(--white)',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-                zIndex: 100,
-                padding: '4px 0',
-              }}
-            >
-              <button
-                type="button"
-                onClick={openRunnerTab}
-                className="flex w-full cursor-pointer items-center gap-2 border-none bg-transparent px-3 py-2 text-left hover:bg-[var(--surface)]"
-                style={{ fontSize: 13, color: 'var(--text)' }}
-              >
-                <Play size={14} style={{ color: 'var(--accent)' }} />
-                New Run
-              </button>
-            </div>
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={() => { setShowNewSuiteInput(true); setNewSuiteName('') }}
+          className="flex cursor-pointer items-center justify-center rounded-[7px] border-none"
+          style={{ width: 28, height: 28, background: 'var(--accent)', color: '#fff' }}
+          title="New Test Suite"
+        >
+          <Plus size={15} strokeWidth={2.5} />
+        </button>
       </div>
 
       {/* Search */}
@@ -302,229 +240,280 @@ export default function TestsPanel() {
         </div>
       </div>
 
-      {/* Scrollable content */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto py-1">
-
-        {/* ══ Runs ══ */}
-        <SectionHeader
-          icon={<SectionIcon bg="#e8f0fe"><Play size={13} style={{ color: '#4285f4' }} /></SectionIcon>}
-          label="Runs"
-          expanded={expandedSections.runs}
-          onToggle={() => toggleSection('runs')}
-          onLabelClick={openAllRunsTab}
-          action={
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); openRunnerTab() }}
-              title="New Run"
-              className="flex cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent p-0.5"
-              style={{ color: T.ghost }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--accent)' }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = T.ghost }}
-            >
-              <Plus size={14} />
-            </button>
-          }
-        />
-        {expandedSections.runs && (
-          <div className="pb-2">
-            {filteredHistory.length === 0 ? (
-              <EmptySection actionLabel="+ New Run" onAction={openRunnerTab} />
-            ) : (
-              <>
-                {filteredHistory.slice(0, 10).map((run) => (
-                  <RunHistoryItem
-                    key={run.id}
-                    date={formatDate(run.started_at)}
-                    duration={formatDuration(run.duration_ms)}
-                    hasFailed={run.failed_endpoints > 0 || run.failed_tests > 0}
-                    onClick={() => openRunReport(run)}
-                  />
-                ))}
-                {filteredHistory.length > 10 && (
-                  <div className="px-9 py-1">
-                    <button
-                      type="button"
-                      onClick={openAllRunsTab}
-                      className="cursor-pointer border-none bg-transparent hover:underline"
-                      style={{ color: 'var(--accent)', fontSize: 13 }}
-                    >
-                      View all {filteredHistory.length} runs
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
+        {/* New suite input */}
+        {showNewSuiteInput && (
+          <div className="flex items-center gap-2 px-3 py-2">
+            <FolderOpen size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+            <input
+              ref={newSuiteRef}
+              value={newSuiteName}
+              onChange={(e) => setNewSuiteName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateSuite()
+                if (e.key === 'Escape') setShowNewSuiteInput(false)
+              }}
+              onBlur={() => {
+                if (newSuiteName.trim()) handleCreateSuite()
+                else setShowNewSuiteInput(false)
+              }}
+              placeholder="Test suite name..."
+              className="flex-1 rounded border px-2 py-1 outline-none"
+              style={{ fontSize: 13, borderColor: 'var(--accent)', background: 'var(--input-bg)', color: 'var(--text)' }}
+            />
           </div>
         )}
 
-        {/* ══ Scheduled Tasks ══ */}
-        <SectionHeader
-          icon={<SectionIcon bg="#e0f2fe"><Clock size={13} style={{ color: '#0369a1' }} /></SectionIcon>}
-          label="Scheduled Tasks"
-          expanded={expandedSections.scheduled}
-          onToggle={() => toggleSection('scheduled')}
-          onLabelClick={openScheduledTasksTab}
-        />
+        {/* Suite list */}
+        {filteredSuites.length === 0 && !showNewSuiteInput ? (
+          <div className="mx-3 mt-4 rounded-[7px] border border-dashed py-6 text-center" style={{ borderColor: T.border2 }}>
+            <FolderOpen size={28} style={{ color: 'var(--hint)', margin: '0 auto 8px' }} />
+            <div style={{ color: 'var(--hint)', fontSize: 13 }}>No test suites yet</div>
+            <button
+              type="button"
+              onClick={() => { setShowNewSuiteInput(true); setNewSuiteName('') }}
+              className="mt-2 cursor-pointer border-none bg-transparent font-medium"
+              style={{ color: 'var(--accent)', fontSize: 13 }}
+            >
+              + Create Test Suite
+            </button>
+          </div>
+        ) : (
+          filteredSuites.map((suite) => (
+            <SuiteNode
+              key={suite.id}
+              suite={suite}
+              expanded={expandedSuites[suite.id] ?? false}
+              endpoints={suiteEndpoints[suite.id] || []}
+              isRenaming={renamingSuiteId === suite.id}
+              renameValue={renameValue}
+              renameRef={renameRef}
+              onToggle={() => setExpandedSuites((s) => ({ ...s, [suite.id]: !s[suite.id] }))}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setContextMenu({ suiteId: suite.id, x: e.clientX, y: e.clientY })
+              }}
+              onRenameChange={setRenameValue}
+              onRenameSubmit={handleRenameSuite}
+              onRenameCancel={() => setRenamingSuiteId(null)}
+              onRemoveEndpoint={(eid) => handleRemoveEndpoint(suite.id, eid)}
+            />
+          ))
+        )}
       </div>
 
+      {/* Context menu */}
+      {contextMenu && (() => {
+        const suite = suites.find((s) => s.id === contextMenu.suiteId)
+        if (!suite) return null
+        return (
+          <div
+            className="fixed z-[500] rounded-lg border py-1"
+            style={{
+              left: contextMenu.x,
+              top: contextMenu.y,
+              background: 'var(--white)',
+              borderColor: 'var(--border)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+              minWidth: 160,
+            }}
+          >
+            <ContextMenuItem
+              icon={<Play size={13} />}
+              label="Run Suite"
+              onClick={() => handleRunSuite(suite)}
+            />
+            <ContextMenuItem
+              icon={<Plus size={13} />}
+              label="Add Endpoints"
+              onClick={() => {
+                setContextMenu(null)
+                useUIStore.getState().setAddEndpointsSuite(suite.id, suite.name)
+              }}
+            />
+            <ContextMenuItem
+              icon={<Pencil size={13} />}
+              label="Rename"
+              onClick={() => {
+                setRenamingSuiteId(suite.id)
+                setRenameValue(suite.name)
+                setContextMenu(null)
+              }}
+            />
+            <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+            <ContextMenuItem
+              icon={<Trash2 size={13} />}
+              label="Delete"
+              danger
+              onClick={() => { setDeleteTarget(suite); setContextMenu(null) }}
+            />
+          </div>
+        )
+      })()}
+
+      {/* Delete confirm */}
       <DeleteConfirmDialog
-        open={!!deleteTaskTarget}
-        itemName={deleteTaskTarget?.name || ''}
-        itemType="scheduled task"
-        onConfirm={confirmDeleteTask}
-        onCancel={() => setDeleteTaskTarget(null)}
+        open={!!deleteTarget}
+        itemName={deleteTarget?.name || ''}
+        itemType="test suite"
+        onConfirm={handleDeleteSuite}
+        onCancel={() => setDeleteTarget(null)}
       />
     </div>
   )
 }
 
-/* ── Section header ────────────────────────────────────────── */
+/* ── Suite node (folder) ──────────────────────────────────── */
 
-function SectionHeader({
-  icon, label, expanded, onToggle, action, onLabelClick,
+function SuiteNode({
+  suite, expanded, endpoints, isRenaming, renameValue, renameRef,
+  onToggle, onContextMenu, onRenameChange, onRenameSubmit, onRenameCancel,
+  onRemoveEndpoint,
 }: {
-  icon: React.ReactNode; label: string; expanded: boolean; onToggle: () => void
-  action?: React.ReactNode; onLabelClick?: () => void
-}) {
-  const [hovered, setHovered] = useState(false)
-  return (
-    <div
-      className="flex w-full items-center gap-2 px-3 py-[7px]"
-      style={{ background: hovered ? 'var(--item-hover)' : 'transparent', transition: 'background 0.1s', cursor: 'pointer' }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0"
-        style={{ color: T.ghost }}
-      >
-        {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-      </button>
-      <button
-        type="button"
-        onClick={onLabelClick || onToggle}
-        className="flex flex-1 cursor-pointer items-center gap-2 border-none bg-transparent p-0 text-left"
-      >
-        {icon}
-        <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{label}</span>
-      </button>
-      {action && hovered && action}
-    </div>
-  )
-}
-
-/* ── Run history item ──────────────────────────────────────── */
-
-function RunHistoryItem({ date, duration, hasFailed, onClick }: {
-  date: string; duration: string; hasFailed: boolean; onClick: () => void
-}) {
-  const [hovered, setHovered] = useState(false)
-  return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className="flex cursor-pointer items-center gap-2 py-[5px] pl-9 pr-3"
-      style={{ background: hovered ? 'var(--item-hover)' : 'transparent', transition: 'background 0.1s' }}
-    >
-      <span className="inline-block shrink-0 rounded-full" style={{ width: 7, height: 7, background: hasFailed ? '#cc2200' : '#1a7a4a' }} />
-      <span style={{ flex: 1, color: 'var(--text)', fontSize: 13 }}>{date}</span>
-      <span style={{ fontSize: 13, color: 'var(--muted)', flexShrink: 0 }}>{duration}</span>
-    </div>
-  )
-}
-
-/* ── Scheduled task item (Postman-style) ──────────────────── */
-
-function ScheduledTaskItem({ task, formatDate, onToggle, onDelete }: {
-  task: ScheduledTaskRow
-  formatDate: (ts: number) => string
+  suite: TestSuite
+  expanded: boolean
+  endpoints: SuiteEndpoint[]
+  isRenaming: boolean
+  renameValue: string
+  renameRef: React.RefObject<HTMLInputElement>
   onToggle: () => void
-  onDelete: () => void
+  onContextMenu: (e: React.MouseEvent) => void
+  onRenameChange: (v: string) => void
+  onRenameSubmit: () => void
+  onRenameCancel: () => void
+  onRemoveEndpoint: (endpointId: string) => void
 }) {
   const [hovered, setHovered] = useState(false)
-  const endpointCount = (() => {
-    try { return (JSON.parse(task.endpoint_ids) as string[]).length } catch { return 0 }
-  })()
 
   return (
-    <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className="flex items-start gap-2 py-[6px] pl-9 pr-3"
-      style={{ background: hovered ? 'var(--item-hover)' : 'transparent', transition: 'background 0.1s' }}
-    >
-      {/* Status dot */}
-      <span
-        className="mt-1.5 inline-block shrink-0 rounded-full"
-        style={{ width: 7, height: 7, background: task.enabled ? '#1a7a4a' : '#aaa' }}
-      />
+    <div>
+      {/* Suite header */}
+      <div
+        className="flex items-center gap-1.5 px-3 py-[6px]"
+        style={{ background: hovered ? 'var(--item-hover)' : 'transparent', cursor: 'pointer' }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={onToggle}
+        onContextMenu={onContextMenu}
+      >
+        <span style={{ color: T.ghost, flexShrink: 0 }}>
+          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        </span>
+        <FolderOpen size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
 
-      {/* Info */}
-      <div className="flex-1" style={{ minWidth: 0 }}>
-        <div className="truncate" style={{ color: 'var(--text)', fontWeight: 500, fontSize: 13 }}>
-          {task.name}
-        </div>
-        <div style={{ color: 'var(--muted)', fontSize: 13, marginTop: 1 }}>
-          Runs every {task.interval_value} {task.interval_unit} &middot; {endpointCount} endpoints
-        </div>
-        {task.next_run_at && task.enabled ? (
-          <div style={{ color: 'var(--hint)', fontSize: 13, marginTop: 1 }}>
-            Next: {formatDate(task.next_run_at)}
-          </div>
-        ) : null}
-        {task.last_run_at ? (
-          <div style={{ color: 'var(--hint)', fontSize: 13, marginTop: 1 }}>
-            Last: {formatDate(task.last_run_at)}
-          </div>
-        ) : null}
+        {isRenaming ? (
+          <input
+            ref={renameRef as React.RefObject<HTMLInputElement>}
+            value={renameValue}
+            onChange={(e) => onRenameChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onRenameSubmit()
+              if (e.key === 'Escape') onRenameCancel()
+            }}
+            onBlur={onRenameSubmit}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 rounded border px-1.5 py-0.5 outline-none"
+            style={{ fontSize: 13, borderColor: 'var(--accent)', background: 'var(--input-bg)', color: 'var(--text)' }}
+          />
+        ) : (
+          <span className="flex-1 truncate" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+            {suite.name}
+          </span>
+        )}
+
+        <span style={{ fontSize: 13, color: 'var(--hint)', flexShrink: 0 }}>
+          {endpoints.length > 0 ? endpoints.length : ''}
+        </span>
+
+        {hovered && !isRenaming && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onContextMenu(e) }}
+            className="flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0"
+            style={{ color: T.ghost }}
+          >
+            <MoreHorizontal size={14} />
+          </button>
+        )}
       </div>
 
-      {/* Actions (visible on hover) */}
-      {hovered && (
-        <div className="flex shrink-0 items-center gap-1 pt-0.5">
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onToggle() }}
-            title={task.enabled ? 'Pause' : 'Resume'}
-            className="flex cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent p-0.5"
-            style={{ color: task.enabled ? '#1a7a4a' : '#aaa' }}
-          >
-            {task.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-          </button>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onDelete() }}
-            title="Delete"
-            className="flex cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent p-0.5"
-            style={{ color: '#cc2200' }}
-          >
-            <Trash2 size={14} />
-          </button>
+      {/* Endpoints */}
+      {expanded && (
+        <div>
+          {endpoints.length === 0 ? (
+            <div className="py-2 pl-10 pr-3" style={{ color: 'var(--hint)', fontSize: 13 }}>
+              No endpoints. Right-click to add.
+            </div>
+          ) : (
+            endpoints.map((ep) => (
+              <EndpointItem
+                key={ep.id}
+                endpoint={ep}
+                onRemove={() => onRemoveEndpoint(ep.id)}
+              />
+            ))
+          )}
         </div>
       )}
     </div>
   )
 }
 
-/* ── Empty section ─────────────────────────────────────────── */
+/* ── Endpoint item in suite ───────────────────────────────── */
 
-function EmptySection({ actionLabel, onAction }: { actionLabel?: string; onAction?: () => void }) {
+function EndpointItem({ endpoint, onRemove }: { endpoint: SuiteEndpoint; onRemove: () => void }) {
+  const [hovered, setHovered] = useState(false)
   return (
-    <div className="mx-3 rounded-[7px] border border-dashed py-3 text-center" style={{ borderColor: T.border2 }}>
-      {actionLabel && (
+    <div
+      className="flex items-center gap-2 py-[4px] pl-10 pr-3"
+      style={{ background: hovered ? 'var(--item-hover)' : 'transparent' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {endpoint.method ? (
+        <MethodBadge method={endpoint.method} small />
+      ) : (
+        <Globe size={12} style={{ color: 'var(--hint)' }} />
+      )}
+      <span className="flex-1 truncate" style={{ fontSize: 13, color: 'var(--text)' }}>
+        {endpoint.name}
+      </span>
+      {endpoint.folder_name && (
+        <span className="shrink-0 truncate" style={{ fontSize: 12, color: 'var(--hint)', maxWidth: 80 }}>
+          {endpoint.folder_name}
+        </span>
+      )}
+      {hovered && (
         <button
           type="button"
-          onClick={onAction}
-          className="cursor-pointer border-none bg-transparent font-medium"
-          style={{ color: T.ghost, fontSize: 13 }}
+          onClick={(e) => { e.stopPropagation(); onRemove() }}
+          className="flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0"
+          title="Remove from suite"
+          style={{ color: '#cc2200' }}
         >
-          {actionLabel}
+          <Trash2 size={12} />
         </button>
       )}
     </div>
   )
 }
+
+/* ── Context menu item ────────────────────────────────────── */
+
+function ContextMenuItem({ icon, label, danger, onClick }: {
+  icon: React.ReactNode; label: string; danger?: boolean; onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      className="flex w-full cursor-pointer items-center gap-2 border-none bg-transparent px-3 py-1.5 text-left transition-colors hover:bg-[var(--surface)]"
+      style={{ fontSize: 13, color: danger ? '#cc2200' : 'var(--text)' }}
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
+

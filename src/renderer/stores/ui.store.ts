@@ -26,6 +26,8 @@ interface UIStore {
   showConsolePanel: boolean
   showProfileModal: boolean
   gitLoading: string | null  // null = idle, string = message to display
+  addEndpointsSuiteId: string | null
+  addEndpointsSuiteName: string | null
 
   setTheme: (theme: Theme) => void
   setLocale: (locale: Locale) => void
@@ -50,6 +52,7 @@ interface UIStore {
   toggleConsolePanel: () => void
   setShowProfileModal: (show: boolean) => void
   setGitLoading: (msg: string | null) => void
+  setAddEndpointsSuite: (suiteId: string | null, suiteName?: string | null) => void
 }
 
 function applyTheme(theme: Theme): void {
@@ -81,6 +84,8 @@ export const useUIStore = create<UIStore>((set) => ({
   showConsolePanel: false,
   showProfileModal: false,
   gitLoading: null,
+  addEndpointsSuiteId: null,
+  addEndpointsSuiteName: null,
 
   setTheme: (theme) => {
     applyTheme(theme)
@@ -123,6 +128,7 @@ export const useUIStore = create<UIStore>((set) => ({
   toggleConsolePanel: () => set((s) => ({ showConsolePanel: !s.showConsolePanel })),
   setShowProfileModal: (show) => set({ showProfileModal: show }),
   setGitLoading: (msg) => set({ gitLoading: msg }),
+  setAddEndpointsSuite: (suiteId, suiteName) => set({ addEndpointsSuiteId: suiteId, addEndpointsSuiteName: suiteName ?? null }),
 }))
 
 // Apply initial theme

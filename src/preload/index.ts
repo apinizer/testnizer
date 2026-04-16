@@ -299,6 +299,26 @@ const api = {
     },
   },
 
+  // ─── Test Suites ──────────────────────────────────────────────
+  testSuite: {
+    list: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('testSuite:list', projectId),
+    get: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('testSuite:get', id),
+    create: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('testSuite:create', payload),
+    update: (id: string, payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('testSuite:update', id, payload),
+    delete: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('testSuite:delete', id),
+    listEndpoints: (suiteId: string): Promise<unknown> =>
+      ipcRenderer.invoke('testSuite:listEndpoints', suiteId),
+    addEndpoints: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('testSuite:addEndpoints', payload),
+    removeEndpoint: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('testSuite:removeEndpoint', payload),
+  },
+
   // ─── GraphQL ────────────────────────────────────────────────
   graphql: {
     execute: (options: unknown): Promise<unknown> =>

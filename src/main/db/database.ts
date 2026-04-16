@@ -326,6 +326,34 @@ function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
   `)
+
+  // ─── Test Suites ──────────────────────────────────────────
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS test_suites (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_test_suites_project ON test_suites(project_id);
+
+    CREATE TABLE IF NOT EXISTS test_suite_endpoints (
+      id TEXT PRIMARY KEY,
+      suite_id TEXT NOT NULL,
+      endpoint_id TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (suite_id) REFERENCES test_suites(id) ON DELETE CASCADE,
+      FOREIGN KEY (endpoint_id) REFERENCES endpoints(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tse_suite ON test_suite_endpoints(suite_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tse_unique ON test_suite_endpoints(suite_id, endpoint_id);
+  `)
 }
 
 function seedDefaults(database: Database.Database): void {

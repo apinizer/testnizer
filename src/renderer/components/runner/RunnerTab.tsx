@@ -182,6 +182,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null)
 
+  // Track pending autoRun data so we can trigger after endpoints are loaded
+  const pendingAutoRunRef = useRef<{ endpointIds: string[]; folderName?: string } | null>(null)
+
   // Check for pre-loaded report data or viewAllRuns from sidebar
   useEffect(() => {
     if (!tabId) return
@@ -195,6 +198,10 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           setView('history')
         } else if (data.viewScheduledTasks) {
           setView('scheduled')
+        } else if (data.autoRun && data.endpointIds) {
+          // Store for when endpoints are loaded
+          pendingAutoRunRef.current = { endpointIds: data.endpointIds, folderName: data.folderName }
+          if (data.folderName) setRunFolderName(data.folderName)
         } else {
           const typed = data as { results: EndpointRunResult[]; report: RunnerReport; startedAt: number }
           setResults(typed.results)
@@ -205,6 +212,64 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       } catch { /* ignore */ }
     }
   }, [tabId, sessionKey])
+
+  // Auto-run: once endpoints are loaded and we have pending autoRun, select & run
+  useEffect(() => {
+    const pending = pendingAutoRunRef.current
+    if (!pending || endpoints.length === 0) return
+    pendingAutoRunRef.current = null
+
+    const targetIds = new Set(pending.endpointIds)
+    // Select only the target endpoints
+    setEndpoints((eps) => eps.map((ep) => ({ ...ep, selected: targetIds.has(ep.id) })))
+    setFolderGroups((groups) => groups.map((g) => ({
+      ...g,
+      endpoints: g.endpoints.map((ep) => ({ ...ep, selected: targetIds.has(ep.id) })),
+    })))
+
+    // Trigger run after a tick so state is updated
+    setTimeout(() => {
+      // Build selected list directly from pending IDs matched against current endpoints
+      const matched = endpoints.filter((ep) => targetIds.has(ep.id))
+      if (matched.length === 0) return
+
+      setView('results')
+      setIsRunning(true)
+      setResults([])
+      setReport(null)
+      setCurrentIndex(0)
+      setTotalCount(matched.length)
+      setRunStartedAt(Date.now())
+      setSelectedResultId(null)
+
+      const unsubscribe = window.api?.runner?.onProgress?.((progress: unknown) => {
+        const p = progress as { current: number; total: number; result: EndpointRunResult }
+        setCurrentIndex(p.current)
+        setTotalCount(p.total)
+        setResults((prev) => [...prev, p.result])
+      })
+
+      window.api?.runner?.execute({
+        projectId: activeProjectId || '',
+        endpointIds: matched.map((ep) => ep.id),
+        environmentId: environmentId || undefined,
+        workspaceId: activeWorkspaceId || undefined,
+        delay,
+        folderName: pending.folderName || runFolderName || undefined,
+      }).then((result: unknown) => {
+        const res = result as { success: boolean; data?: RunnerReport }
+        if (res?.success && res.data) {
+          setReport(res.data)
+          setResults(res.data.results)
+          setCurrentIndex(res.data.totalEndpoints)
+          setTotalCount(res.data.totalEndpoints)
+        }
+      }).finally(() => {
+        unsubscribe?.()
+        setIsRunning(false)
+      })
+    }, 100)
+  }, [endpoints, activeProjectId, activeWorkspaceId, environmentId, delay, runFolderName])
 
   // Collect endpoints and folder groups from the target folder/module
   useEffect(() => {

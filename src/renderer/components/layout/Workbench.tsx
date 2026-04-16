@@ -14,8 +14,10 @@ import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
+import { useUIStore } from '../../stores/ui.store'
 import NewRequestWelcome from './NewRequestWelcome'
 import ProjectWelcome from './ProjectWelcome'
+import AddEndpointsView from '../runner/AddEndpointsView'
 import MethodBadge from '../shared/MethodBadge'
 import EnvironmentSelector from '../shared/EnvironmentSelector'
 import { T } from '../../styles/tokens'
@@ -249,6 +251,16 @@ export default function Workbench() {
   const activeTabId = useTabsStore((s) => s.activeTabId)
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const protocol = activeTab?.protocol || 'http'
+  const addEndpointsSuiteId = useUIStore((s) => s.addEndpointsSuiteId)
+
+  // Add Endpoints view — takes over the workbench content area
+  if (addEndpointsSuiteId) {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <AddEndpointsView />
+      </div>
+    )
+  }
 
   // No active tab — show project welcome
   if (!activeTab) {

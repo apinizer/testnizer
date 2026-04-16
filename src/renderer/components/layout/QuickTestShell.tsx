@@ -28,10 +28,11 @@ export default function QuickTestShell() {
       <div
         className="drag-region flex shrink-0 items-center justify-between"
         style={{
-          height: 40,
+          height: 44,
           background: 'var(--white)',
           borderBottom: '1px solid var(--border)',
-          padding: '0 16px',
+          paddingLeft: 80,
+          paddingRight: 16,
         }}
       >
         <div className="no-drag flex items-center gap-2">

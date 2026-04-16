@@ -233,7 +233,7 @@ export default function ProjectDetailModal() {
     { id: 'preRequest', label: 'Pre-request Script', icon: <Play size={14} /> },
     { id: 'tests', label: 'Tests', icon: <FlaskConical size={14} /> },
     { id: 'variables', label: 'Variables', icon: <Braces size={14} /> },
-    { id: 'storage', label: 'Storage', icon: <Database size={14} />, group: 'Apinizer' },
+    { id: 'storage', label: 'Storage', icon: <Database size={14} /> },
     { id: 'branches', label: 'Branches', icon: <GitMerge size={14} /> },
     { id: 'app', label: 'App Settings', icon: <SettingsIcon size={14} /> },
   ]
@@ -291,7 +291,7 @@ export default function ProjectDetailModal() {
           {/* Nav */}
           <div className="flex-1 overflow-y-auto py-2">
             <SidebarGroup title="Project Settings">
-              {SIDEBAR_TABS.filter((t) => !t.group).map((item) => (
+              {SIDEBAR_TABS.map((item) => (
                 <SidebarItem
                   key={item.id}
                   label={item.label}
@@ -300,30 +300,6 @@ export default function ProjectDetailModal() {
                   onClick={() => setTab(item.id)}
                 />
               ))}
-            </SidebarGroup>
-            <SidebarGroup title="Apinizer">
-              {SIDEBAR_TABS.filter((t) => t.group === 'Apinizer').map((item) => (
-                <SidebarItem
-                  key={item.id}
-                  label={item.label}
-                  icon={item.icon}
-                  active={tab === item.id}
-                  onClick={() => setTab(item.id)}
-                />
-              ))}
-              {/* Extra app-level tabs that don't belong to 'Apinizer' group but are shown at bottom */}
-              <SidebarItem
-                label="Branches"
-                icon={<GitMerge size={14} />}
-                active={tab === 'branches'}
-                onClick={() => setTab('branches')}
-              />
-              <SidebarItem
-                label="App Settings"
-                icon={<SettingsIcon size={14} />}
-                active={tab === 'app'}
-                onClick={() => setTab('app')}
-              />
             </SidebarGroup>
           </div>
 
