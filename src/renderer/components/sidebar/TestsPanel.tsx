@@ -14,7 +14,11 @@ import {
   MoreHorizontal,
   Globe,
   Pencil,
+  BarChart2,
+  Clock,
+  Home,
 } from 'lucide-react'
+import type { Tab } from '../../types'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import MethodBadge from '../shared/MethodBadge'
 
@@ -156,17 +160,16 @@ export default function TestsPanel() {
     setContextMenu(null)
   }, [suiteEndpoints])
 
-  const runEndpoints = useCallback((endpointIds: string[], suiteName: string) => {
+  // ─── Open / reuse the runner tab with optional session data ─
+  const openOrReuseRunnerTab = useCallback((sessionData?: Record<string, unknown>) => {
     const tabs = useTabsStore.getState().tabs
-    const existing = tabs.find((t) => t.protocol === 'runner')
+    const existing = tabs.find((t: Tab) => t.protocol === 'runner')
     const tabId = existing ? existing.id : 'runner-main'
     const sessionKey = String(Date.now())
 
-    sessionStorage.setItem(`runner-report-${tabId}`, JSON.stringify({
-      autoRun: true,
-      endpointIds,
-      folderName: suiteName,
-    }))
+    if (sessionData) {
+      sessionStorage.setItem(`runner-report-${tabId}`, JSON.stringify(sessionData))
+    }
 
     if (existing) {
       useTabsStore.getState().setActiveTab(existing.id)
@@ -175,6 +178,27 @@ export default function TestsPanel() {
       openTab({ id: tabId, name: 'Runner', protocol: 'runner', sessionKey })
     }
   }, [openTab])
+
+  const runEndpoints = useCallback((endpointIds: string[], suiteName: string) => {
+    openOrReuseRunnerTab({
+      autoRun: true,
+      endpointIds,
+      folderName: suiteName,
+      sourceType: 'suite',
+    })
+  }, [openOrReuseRunnerTab])
+
+  const openTestsHome = useCallback(() => {
+    openOrReuseRunnerTab({ viewHome: true })
+  }, [openOrReuseRunnerTab])
+
+  const openAllRuns = useCallback(() => {
+    openOrReuseRunnerTab({ viewAllRuns: true })
+  }, [openOrReuseRunnerTab])
+
+  const openScheduledTasks = useCallback(() => {
+    openOrReuseRunnerTab({ viewScheduledTasks: true })
+  }, [openOrReuseRunnerTab])
 
   // ─── Remove endpoint from suite ───────────────────────────
   const handleRemoveEndpoint = useCallback(async (suiteId: string, endpointId: string) => {
@@ -238,6 +262,33 @@ export default function TestsPanel() {
             style={{ color: T.text, fontFamily: 'inherit', fontSize: 13 }}
           />
         </div>
+      </div>
+
+      {/* Quick nav — Home / All Runs / Scheduled Tasks */}
+      <div className="shrink-0 border-b py-1" style={{ borderColor: T.border }}>
+        <NavItem
+          icon={<Home size={14} style={{ color: 'var(--accent)' }} />}
+          label="Overview"
+          onClick={openTestsHome}
+        />
+        <NavItem
+          icon={<BarChart2 size={14} style={{ color: '#4285f4' }} />}
+          label="All Runs"
+          onClick={openAllRuns}
+        />
+        <NavItem
+          icon={<Clock size={14} style={{ color: '#0369a1' }} />}
+          label="Scheduled Tasks"
+          onClick={openScheduledTasks}
+        />
+      </div>
+
+      {/* Suites section label */}
+      <div
+        className="flex shrink-0 items-center justify-between px-3 pb-1 pt-2"
+        style={{ color: 'var(--muted)' }}
+      >
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Test Suites</span>
       </div>
 
       {/* Content */}
@@ -561,6 +612,36 @@ function ContextMenuItem({ icon, label, danger, onClick }: {
     >
       {icon}
       {label}
+    </button>
+  )
+}
+
+/* ── Sidebar nav item (All Runs / Scheduled Tasks) ────────── */
+
+function NavItem({ icon, label, onClick }: {
+  icon: React.ReactNode; label: string; onClick: () => void
+}) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="flex w-full cursor-pointer items-center gap-2 border-none px-3 py-[7px] text-left"
+      style={{
+        background: hovered ? 'var(--item-hover)' : 'transparent',
+        transition: 'background 0.1s',
+        fontSize: 13,
+        fontWeight: 500,
+        color: 'var(--text)',
+      }}
+    >
+      <span className="flex shrink-0 items-center justify-center" style={{ width: 16 }}>
+        {icon}
+      </span>
+      <span className="flex-1 truncate">{label}</span>
+      <ChevronRight size={12} style={{ color: 'var(--hint)', flexShrink: 0 }} />
     </button>
   )
 }

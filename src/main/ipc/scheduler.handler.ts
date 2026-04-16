@@ -65,6 +65,8 @@ async function executeScheduledRun(task: ScheduledTask): Promise<void> {
       endpointIds,
       environmentId: task.environment_id || undefined,
       delay: task.delay_ms,
+      folderName: task.name,
+      sourceLabel: `Scheduled: ${task.name}`,
     })
 
     // Update last_run_at and next_run_at

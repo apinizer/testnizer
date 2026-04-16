@@ -1,6 +1,6 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
-import { ArrowLeft, BarChart2 } from 'lucide-react'
+import { ArrowLeft, BarChart2, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 
@@ -9,6 +9,7 @@ interface RunHistoryRow {
   project_id: string
   environment_name: string | null
   source: string
+  source_label: string | null
   iterations: number
   duration_ms: number
   total_endpoints: number
@@ -25,42 +26,45 @@ interface RunHistoryRow {
 
 type HistoryTab = 'Functional' | 'Scheduled'
 
+const PAGE_SIZE = 20
+
 interface RunnerHistoryProps {
   onBack: () => void
   onNewRun?: () => void
-  onViewReport?: (results: EndpointRunResult[], report: RunnerReport, startedAt: number) => void
+  onViewReport?: (results: EndpointRunResult[], report: RunnerReport, startedAt: number, sourceLabel?: string) => void
 }
 
 export default function RunnerHistory({ onBack, onNewRun, onViewReport }: RunnerHistoryProps) {
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const [runs, setRuns] = useState<RunHistoryRow[]>([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [activeTab, setActiveTab] = useState<HistoryTab>('Functional')
+  const [page, setPage] = useState(0)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
-  const loadRuns = () => {
+  const loadRuns = useCallback(() => {
     if (!activeProjectId) return
     setLoading(true)
-    window.api?.runner?.history(activeProjectId).then((result: unknown) => {
-      const res = result as { success: boolean; data?: RunHistoryRow[] }
+    window.api?.runner?.history({
+      projectId: activeProjectId,
+      tab: activeTab,
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+    }).then((result: unknown) => {
+      const res = result as { success: boolean; data?: { rows: RunHistoryRow[]; total: number } }
       if (res?.success && res.data) {
-        setRuns(res.data)
+        setRuns(res.data.rows)
+        setTotal(res.data.total)
       }
       setLoading(false)
     }).catch(() => setLoading(false))
-  }
+  }, [activeProjectId, activeTab, page])
 
   useEffect(() => {
     loadRuns()
-  }, [activeProjectId])
-
-  const filteredRuns = useMemo(() => {
-    if (activeTab === 'Scheduled') {
-      return runs.filter((r) => r.source === 'Scheduler')
-    }
-    return runs.filter((r) => r.source !== 'Scheduler')
-  }, [runs, activeTab])
+  }, [loadRuns])
 
   const toggleSelect = (id: string) => {
     setSelectedIds((s) => {
@@ -69,6 +73,26 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
       else next.add(id)
       return next
     })
+  }
+
+  const allSelected = runs.length > 0 && runs.every((r) => selectedIds.has(r.id))
+  const someSelected = runs.some((r) => selectedIds.has(r.id))
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      // Deselect every row currently on page
+      setSelectedIds((s) => {
+        const next = new Set(s)
+        for (const r of runs) next.delete(r.id)
+        return next
+      })
+    } else {
+      setSelectedIds((s) => {
+        const next = new Set(s)
+        for (const r of runs) next.add(r.id)
+        return next
+      })
+    }
   }
 
   const handleDeleteClick = () => {
@@ -82,8 +106,12 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
     try {
       const res = await window.api?.runner?.deleteHistory(ids) as { success: boolean }
       if (res?.success) {
-        setRuns((prev) => prev.filter((r) => !selectedIds.has(r.id)))
         setSelectedIds(new Set())
+        // Reset to first page if current page would be empty after deletion
+        const remaining = total - ids.length
+        const maxPage = Math.max(0, Math.ceil(remaining / PAGE_SIZE) - 1)
+        if (page > maxPage) setPage(maxPage)
+        else loadRuns()
       }
     } catch {
       // deletion failed silently
@@ -106,7 +134,8 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
         failedAssertions: run.failed_tests,
         results,
       }
-      onViewReport(results, report, run.started_at)
+      const sourceLabel = run.source_label || run.source || 'Runner'
+      onViewReport(results, report, run.started_at, sourceLabel)
     } catch {
       // invalid JSON
     }
@@ -147,7 +176,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
           <button
             key={tab}
             type="button"
-            onClick={() => { setActiveTab(tab); setSelectedIds(new Set()) }}
+            onClick={() => { setActiveTab(tab); setSelectedIds(new Set()); setPage(0) }}
             className="cursor-pointer border-none bg-transparent px-3 py-2"
             style={{
               color: activeTab === tab ? 'var(--text)' : 'var(--muted)',
@@ -193,7 +222,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
       <div className="flex-1 overflow-auto px-5">
         {loading ? (
           <div className="py-8 text-center text-[var(--hint)]">Loading...</div>
-        ) : filteredRuns.length === 0 ? (
+        ) : runs.length === 0 ? (
           <div className="py-8 text-center text-[var(--hint)]">
             {activeTab === 'Scheduled'
               ? 'No scheduled runs yet. Create a scheduled task to see runs here.'
@@ -203,7 +232,18 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
           <table className="w-full" style={{ fontSize: 13 }}>
             <thead>
               <tr className="border-b border-[var(--border)] text-left">
-                <th className="w-8 py-2" />
+                <th className="w-8 py-2">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all"
+                    checked={allSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = !allSelected && someSelected
+                    }}
+                    onChange={toggleSelectAll}
+                    className="h-[14px] w-[14px] cursor-pointer accent-[var(--accent)]"
+                  />
+                </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>Start time</th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>Source</th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>Environment</th>
@@ -218,7 +258,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
               </tr>
             </thead>
             <tbody>
-              {filteredRuns.map((run) => (
+              {runs.map((run) => (
                 <HistoryRow
                   key={run.id}
                   run={run}
@@ -232,6 +272,40 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
           </table>
         )}
       </div>
+
+      {/* Pagination */}
+      {!loading && total > PAGE_SIZE && (
+        <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] px-5 py-2">
+          <span style={{ color: 'var(--muted)', fontSize: 13 }}>
+            Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="flex cursor-pointer items-center gap-1 rounded-[6px] border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ borderColor: 'var(--border)', background: 'var(--white)', color: 'var(--text)', fontSize: 13 }}
+            >
+              <ChevronLeft size={14} />
+              Prev
+            </button>
+            <span style={{ color: 'var(--muted)', fontSize: 13, padding: '0 8px' }}>
+              Page {page + 1} / {Math.max(1, Math.ceil(total / PAGE_SIZE))}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((p) => (p + 1) * PAGE_SIZE < total ? p + 1 : p)}
+              disabled={(page + 1) * PAGE_SIZE >= total}
+              className="flex cursor-pointer items-center gap-1 rounded-[6px] border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ borderColor: 'var(--border)', background: 'var(--white)', color: 'var(--text)', fontSize: 13 }}
+            >
+              Next
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
 
       <DeleteConfirmDialog
         open={showDeleteConfirm}
@@ -253,7 +327,7 @@ function HistoryRow({
   onViewReport,
   hasViewReport,
 }: {
-  run: { id: string; started_at: number; source: string; environment_name: string | null; iterations: number; duration_ms: number; total_endpoints: number; passed_endpoints: number; failed_endpoints: number; total_tests: number; passed_tests: number; failed_tests: number; skipped_tests: number; avg_resp_time: number }
+  run: { id: string; started_at: number; source: string; source_label: string | null; environment_name: string | null; iterations: number; duration_ms: number; total_endpoints: number; passed_endpoints: number; failed_endpoints: number; total_tests: number; passed_tests: number; failed_tests: number; skipped_tests: number; avg_resp_time: number }
   isSelected: boolean
   onToggle: () => void
   onViewReport: () => void
@@ -299,7 +373,7 @@ function HistoryRow({
           {formatDate(run.started_at)}
         </div>
       </td>
-      <td className="py-2.5 pr-4 text-[var(--text)]">{run.source}</td>
+      <td className="py-2.5 pr-4 text-[var(--text)]">{run.source_label || run.source}</td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{run.environment_name || '-'}</td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{run.iterations}</td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{formatDuration(run.duration_ms)}</td>

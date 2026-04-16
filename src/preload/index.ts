@@ -272,8 +272,10 @@ const api = {
         ipcRenderer.removeListener('runner:progress', handler)
       }
     },
-    history: (projectId: string): Promise<unknown> =>
-      ipcRenderer.invoke('runner:history', projectId),
+    history: (arg: string | { projectId: string; limit?: number; offset?: number; tab?: 'Functional' | 'Scheduled' }): Promise<unknown> =>
+      ipcRenderer.invoke('runner:history', arg),
+    historyStats: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('runner:historyStats', projectId),
     deleteHistory: (ids: string | string[]): Promise<unknown> =>
       ipcRenderer.invoke('runner:deleteHistory', ids),
   },

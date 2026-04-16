@@ -294,6 +294,9 @@ function runMigrations(database: Database.Database): void {
   if (!rhColNames.includes('folder_name')) {
     database.exec(`ALTER TABLE runner_history ADD COLUMN folder_name TEXT`)
   }
+  if (!rhColNames.includes('source_label')) {
+    database.exec(`ALTER TABLE runner_history ADD COLUMN source_label TEXT`)
+  }
 
   // ─── Auth tables ─────────────────────────────────────────
   database.exec(`

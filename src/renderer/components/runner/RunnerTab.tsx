@@ -8,6 +8,7 @@ import RunnerResults from './RunnerResults'
 import RunnerVariables from './RunnerVariables'
 import RunnerHistory from './RunnerHistory'
 import ScheduledTasksView from './ScheduledTasksView'
+import TestsHome from './TestsHome'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 
 /* ── Types ─────────────────────────────────────────────────── */
@@ -159,7 +160,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
 
   const [endpoints, setEndpoints] = useState<RunnerEndpointItem[]>([])
   const [folderGroups, setFolderGroups] = useState<RunnerFolderGroup[]>([])
-  const [view, setView] = useState<'config' | 'results' | 'history' | 'scheduled'>('config')
+  const [view, setView] = useState<'home' | 'config' | 'results' | 'history' | 'scheduled'>('config')
   const [delay, setDelay] = useState(0)
   const [iterations, setIterations] = useState(1)
   const [environmentId, setEnvironmentId] = useState('')
@@ -182,8 +183,12 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null)
 
+  // Origin tracking: 'apis' if opened via right-click Run on APIs tree, 'suite' if from Test Suite, 'runner' otherwise
+  const [runOrigin, setRunOrigin] = useState<'apis' | 'suite' | 'runner'>(folderId ? 'apis' : 'runner')
+  const [runSourceLabel, setRunSourceLabel] = useState<string>('Runner')
+
   // Track pending autoRun data so we can trigger after endpoints are loaded
-  const pendingAutoRunRef = useRef<{ endpointIds: string[]; folderName?: string } | null>(null)
+  const pendingAutoRunRef = useRef<{ endpointIds: string[]; folderName?: string; sourceType?: 'suite' | 'apis' | 'runner' } | null>(null)
 
   // Check for pre-loaded report data or viewAllRuns from sidebar
   useEffect(() => {
@@ -194,14 +199,22 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       sessionStorage.removeItem(key)
       try {
         const data = JSON.parse(stored)
-        if (data.viewAllRuns) {
+        if (data.viewHome) {
+          setView('home')
+        } else if (data.viewAllRuns) {
           setView('history')
         } else if (data.viewScheduledTasks) {
           setView('scheduled')
         } else if (data.autoRun && data.endpointIds) {
           // Store for when endpoints are loaded
-          pendingAutoRunRef.current = { endpointIds: data.endpointIds, folderName: data.folderName }
+          pendingAutoRunRef.current = {
+            endpointIds: data.endpointIds,
+            folderName: data.folderName,
+            sourceType: data.sourceType,
+          }
           if (data.folderName) setRunFolderName(data.folderName)
+          if (data.sourceType === 'suite') setRunOrigin('suite')
+          else if (data.sourceType === 'apis') setRunOrigin('apis')
         } else {
           const typed = data as { results: EndpointRunResult[]; report: RunnerReport; startedAt: number }
           setResults(typed.results)
@@ -249,6 +262,16 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         setResults((prev) => [...prev, p.result])
       })
 
+      const labelName = pending.folderName || runFolderName
+      const origin = pending.sourceType || (folderId ? 'apis' : 'runner')
+      const sourceLabel = origin === 'suite' && labelName
+        ? `Suite: ${labelName}`
+        : origin === 'apis' && labelName
+        ? `APIs: ${labelName}`
+        : 'Runner'
+      setRunSourceLabel(sourceLabel)
+      setRunOrigin(origin)
+
       window.api?.runner?.execute({
         projectId: activeProjectId || '',
         endpointIds: matched.map((ep) => ep.id),
@@ -256,6 +279,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         workspaceId: activeWorkspaceId || undefined,
         delay,
         folderName: pending.folderName || runFolderName || undefined,
+        sourceLabel,
       }).then((result: unknown) => {
         const res = result as { success: boolean; data?: RunnerReport }
         if (res?.success && res.data) {
@@ -269,7 +293,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         setIsRunning(false)
       })
     }, 100)
-  }, [endpoints, activeProjectId, activeWorkspaceId, environmentId, delay, runFolderName])
+  }, [endpoints, activeProjectId, activeWorkspaceId, environmentId, delay, runFolderName, folderId])
 
   // Collect endpoints and folder groups from the target folder/module
   useEffect(() => {
@@ -343,6 +367,13 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       setResults((prev) => [...prev, p.result])
     })
 
+    const sourceLabel = runOrigin === 'suite' && runFolderName
+      ? `Suite: ${runFolderName}`
+      : runOrigin === 'apis' && runFolderName
+      ? `APIs: ${runFolderName}`
+      : 'Runner'
+    setRunSourceLabel(sourceLabel)
+
     try {
       const result = await window.api?.runner?.execute({
         projectId: activeProjectId || '',
@@ -351,6 +382,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         workspaceId: activeWorkspaceId || undefined,
         delay,
         folderName: runFolderName || undefined,
+        sourceLabel,
       })
 
       if (result?.success && result.data) {
@@ -366,7 +398,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       unsubscribe?.()
       setIsRunning(false)
     }
-  }, [endpoints, activeProjectId, activeWorkspaceId, environmentId, delay, runFolderName])
+  }, [endpoints, activeProjectId, activeWorkspaceId, environmentId, delay, runFolderName, runOrigin])
 
   const handleStop = useCallback(() => {
     window.api?.runner?.stop()
@@ -383,11 +415,12 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     setView('history')
   }, [])
 
-  const handleViewReport = useCallback((histResults: EndpointRunResult[], histReport: RunnerReport, startedAt: number) => {
+  const handleViewReport = useCallback((histResults: EndpointRunResult[], histReport: RunnerReport, startedAt: number, sourceLabel?: string) => {
     setResults(histResults)
     setReport(histReport)
     setRunStartedAt(startedAt)
     setSelectedResultId(null)
+    setRunSourceLabel(sourceLabel || 'Runner')
     setView('results')
   }, [])
 
@@ -428,14 +461,21 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     <div ref={containerRef} className="flex flex-1 overflow-hidden">
       {/* Left + Middle */}
       <div className="flex flex-1 overflow-hidden" style={{ minWidth: 0 }}>
-        {view === 'scheduled' ? (
+        {view === 'home' ? (
+          <TestsHome
+            onViewAllRuns={() => setView('history')}
+            onViewScheduled={() => setView('scheduled')}
+            onNewRun={handleNewRun}
+            onViewReport={handleViewReport}
+          />
+        ) : view === 'scheduled' ? (
           <ScheduledTasksView
-            onBack={() => setView('config')}
+            onBack={() => setView('home')}
             onNewRun={handleNewRun}
           />
         ) : view === 'history' ? (
           <RunnerHistory
-            onBack={() => setView(results.length > 0 ? 'results' : 'config')}
+            onBack={() => setView(results.length > 0 ? 'results' : 'home')}
             onNewRun={handleNewRun}
             onViewReport={handleViewReport}
           />
@@ -483,6 +523,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             currentIndex={currentIndex}
             totalCount={totalCount}
             runStartedAt={runStartedAt}
+            sourceLabel={runSourceLabel}
             onStop={handleStop}
             onNewRun={handleNewRun}
             onRunAgain={handleRun}

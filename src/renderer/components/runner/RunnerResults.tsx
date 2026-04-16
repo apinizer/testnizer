@@ -13,6 +13,7 @@ interface RunnerResultsProps {
   currentIndex: number
   totalCount: number
   runStartedAt: number | null
+  sourceLabel?: string
   onStop: () => void
   onNewRun: () => void
   onRunAgain: () => void
@@ -28,6 +29,7 @@ export default function RunnerResults({
   currentIndex,
   totalCount,
   runStartedAt,
+  sourceLabel,
   onStop,
   onNewRun,
   onRunAgain,
@@ -180,7 +182,7 @@ export default function RunnerResults({
 
             {/* Stats row */}
             <div className="flex gap-8">
-              <StatCell label="Source" value="Runner" />
+              <StatCell label="Source" value={sourceLabel || 'Runner'} />
               <StatCell label="Environment" value={report ? 'Active' : '-'} />
               <StatCell label="Iterations" value="1" />
               <StatCell label="Duration" value={formatDuration(totalDuration)} />

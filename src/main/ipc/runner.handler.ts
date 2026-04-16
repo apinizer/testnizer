@@ -59,6 +59,7 @@ interface RunnerExecuteOptions {
   delay?: number
   folderName?: string
   source?: string
+  sourceLabel?: string
 }
 
 interface RunnerExportOptions {
@@ -505,8 +506,8 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
     db.prepare(`
       INSERT INTO runner_history (id, project_id, environment_name, source, iterations, duration_ms,
         total_endpoints, passed_endpoints, failed_endpoints, total_tests, passed_tests, failed_tests,
-        skipped_tests, avg_resp_time, results_json, started_at, folder_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        skipped_tests, avg_resp_time, results_json, started_at, folder_name, source_label)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       randomUUID(),
       options.projectId,
@@ -524,7 +525,8 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       avgRespTime,
       JSON.stringify(results),
       startedAt,
-      options.folderName || null
+      options.folderName || null,
+      options.sourceLabel || null
     )
   } catch {
     // History save failure should not affect runner
@@ -665,13 +667,47 @@ export function registerRunnerHandlers(): void {
     }
   })
 
-  ipcMain.handle('runner:history', async (_event, projectId: string) => {
+  ipcMain.handle('runner:history', async (_event, arg: string | { projectId: string; limit?: number; offset?: number; tab?: 'Functional' | 'Scheduled' }) => {
     try {
       const db = getDb()
+
+      // Backward-compatible: accept plain projectId string
+      if (typeof arg === 'string') {
+        const rows = db.prepare(
+          'SELECT * FROM runner_history WHERE project_id = ? ORDER BY started_at DESC LIMIT 100'
+        ).all(arg)
+        return { success: true, data: rows }
+      }
+
+      const { projectId, limit = 20, offset = 0, tab } = arg
+      const sourceFilter = tab === 'Scheduled' ? "source = 'Scheduler'" : tab === 'Functional' ? "source != 'Scheduler'" : '1=1'
+
       const rows = db.prepare(
-        'SELECT * FROM runner_history WHERE project_id = ? ORDER BY started_at DESC LIMIT 100'
-      ).all(projectId)
-      return { success: true, data: rows }
+        `SELECT * FROM runner_history WHERE project_id = ? AND ${sourceFilter} ORDER BY started_at DESC LIMIT ? OFFSET ?`
+      ).all(projectId, limit, offset)
+
+      const totalRow = db.prepare(
+        `SELECT COUNT(*) as n FROM runner_history WHERE project_id = ? AND ${sourceFilter}`
+      ).get(projectId) as { n: number }
+
+      return { success: true, data: { rows, total: totalRow.n } }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('runner:historyStats', async (_event, projectId: string) => {
+    try {
+      const db = getDb()
+      const row = db.prepare(
+        `SELECT
+           COUNT(*) as runs,
+           COALESCE(SUM(total_endpoints), 0) as totalEndpoints,
+           COALESCE(SUM(passed_endpoints), 0) as passedEndpoints,
+           COALESCE(SUM(failed_endpoints), 0) as failedEndpoints
+         FROM runner_history WHERE project_id = ?`
+      ).get(projectId) as { runs: number; totalEndpoints: number; passedEndpoints: number; failedEndpoints: number }
+      return { success: true, data: row }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
