@@ -94,7 +94,7 @@
   },
   "build": {
     "appId": "com.apinizer.api-tester",
-    "productName": "Apinizer API Tester",
+    "productName": "Apinizer",
     "directories": {
       "buildResources": "build"
     },
@@ -119,7 +119,7 @@
         "zip"
       ],
       "icon": "build/icon.icns",
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "artifactName": "Apinizer.1.0.${arch}.${ext}",
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
@@ -132,14 +132,16 @@
         "nsis",
         "zip"
       ],
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "artifactName": "Apinizer.1.0.${ext}"
     },
     "linux": {
       "target": [
         "AppImage",
         "deb"
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "artifactName": "Apinizer.1.0.${ext}"
     },
     "nsis": {
       "oneClick": false,
