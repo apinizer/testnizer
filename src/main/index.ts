@@ -12,7 +12,7 @@ function getIconPath(): string {
   return join(process.resourcesPath, 'resources/icon.png')
 }
 
-function createWindow(): void {
+function createWindow(): BrowserWindow {
   const iconPath = getIconPath()
 
   const mainWindow = new BrowserWindow({
@@ -38,16 +38,6 @@ function createWindow(): void {
     mainWindow.show()
   })
 
-  // Window control IPC handlers
-  ipcMain.handle('window:toggleMaximize', () => {
-    if (mainWindow.isMaximized()) {
-      mainWindow.unmaximize()
-    } else {
-      mainWindow.maximize()
-    }
-    return { success: true }
-  })
-
   mainWindow.webContents.setWindowOpenHandler((details) => {
     // Only allow http(s) URLs to be opened in the system browser.
     // Reject file://, javascript:, and any other schemes to prevent the
@@ -68,7 +58,23 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  return mainWindow
 }
+
+// Window control IPC handler — registered once, resolves target window dynamically.
+// Placing this inside createWindow() caused duplicate-handler errors when
+// reopening the window from the dock (macOS).
+ipcMain.handle('window:toggleMaximize', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) return { success: false, error: 'No window' }
+  if (win.isMaximized()) {
+    win.unmaximize()
+  } else {
+    win.maximize()
+  }
+  return { success: true }
+})
 
 // Set app name early so macOS dock/menu shows correct name
 app.name = 'Apinizer'

@@ -349,14 +349,25 @@ function HistoryRow({
     return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
   }
 
+  // Row-click opens the report (same action as the end-of-row icon).
+  // Checkbox cell stops propagation so selection works independently.
+  const rowClickable = hasViewReport
+  const handleRowClick = () => {
+    if (rowClickable) onViewReport()
+  }
+
   return (
     <tr
       className="border-b border-[var(--border)] transition-colors"
-      style={{ background: isSelected ? 'var(--accent-light)' : hovered ? 'var(--surface)' : undefined }}
+      style={{
+        background: isSelected ? 'var(--accent-light)' : hovered ? 'var(--surface)' : undefined,
+        cursor: rowClickable ? 'pointer' : 'default',
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={handleRowClick}
     >
-      <td className="py-2.5">
+      <td className="py-2.5" onClick={(e) => e.stopPropagation()}>
         <input
           type="checkbox"
           checked={isSelected}
@@ -386,7 +397,7 @@ function HistoryRow({
         {(hovered || isSelected) && hasViewReport && (
           <button
             type="button"
-            onClick={onViewReport}
+            onClick={(e) => { e.stopPropagation(); onViewReport() }}
             title="View Report"
             className="flex cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent p-1 text-[var(--muted)] hover:text-[var(--accent)]"
           >

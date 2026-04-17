@@ -32,7 +32,7 @@ interface AuthState {
   logout: () => Promise<void>
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>
   disablePassword: (currentPassword: string) => Promise<{ success: boolean; error?: string }>
-  recoverPassword: (recoveryEmail: string) => Promise<{ success: boolean; error?: string; newPassword?: string }>
+  recoverPassword: (osPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>
   clearError: () => void
 }
 
@@ -185,16 +185,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  recoverPassword: async (recoveryEmail: string) => {
+  recoverPassword: async (osPassword: string, newPassword: string) => {
+    set({ isLoading: true, error: null })
     try {
-      const result = await api().auth.recoverPassword({ recoveryEmail }) as {
+      const result = await api().auth.recoverPassword({ osPassword, newPassword }) as {
         success: boolean
-        data?: { newPassword: string }
+        data?: { user: User; session: { token: string } }
         error?: string
       }
-      if (result?.success) return { success: true, newPassword: result.data?.newPassword }
+      if (result?.success && result.data) {
+        // On success, the backend returns a fresh session so the user is
+        // immediately unlocked into the app with their new password.
+        localStorage.setItem(SESSION_TOKEN_KEY, result.data.session.token)
+        localStorage.removeItem(GUEST_MODE_KEY)
+        set({
+          user: result.data.user,
+          isAuthenticated: true,
+          isLoading: false,
+          error: null,
+          hasPasswordSet: true,
+        })
+        return { success: true }
+      }
+      set({ isLoading: false })
       return { success: false, error: result?.error || 'Recovery failed' }
     } catch (e) {
+      set({ isLoading: false })
       return { success: false, error: (e as Error).message }
     }
   },

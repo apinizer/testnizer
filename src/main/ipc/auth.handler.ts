@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { randomUUID, scrypt, randomBytes, timingSafeEqual } from 'crypto'
 import { getDb } from '../db/database'
+import { verifyOsPassword } from '../lib/os-auth'
 
 // ─── Password helpers (crypto.scrypt — no extra dependency) ──────
 
@@ -89,26 +90,6 @@ function sanitizeUser(user: UserRow) {
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-}
-
-function generateRandomPassword(): string {
-  // 14 chars, guaranteed letter + digit
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-  const digits = '23456789'
-  const all = chars + digits + '!@#$%&*'
-  const out: string[] = []
-  // ensure at least one letter and one digit
-  out.push(chars[randomBytes(1)[0] % chars.length])
-  out.push(digits[randomBytes(1)[0] % digits.length])
-  for (let i = 0; i < 12; i++) {
-    out.push(all[randomBytes(1)[0] % all.length])
-  }
-  // Fisher-Yates shuffle using random bytes
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = randomBytes(1)[0] % (i + 1)
-    ;[out[i], out[j]] = [out[j], out[i]]
-  }
-  return out.join('')
 }
 
 // ─── Register handlers ───────────────────────────────────────────
@@ -227,42 +208,58 @@ export function registerAuthHandlers(): void {
     }
   })
 
-  // ─── Recover password (offline, no email) ─────────────────
-  // The app is fully offline. The user proves ownership by entering the
-  // recovery address they set at sign-up; the new password is shown
-  // directly on screen (not emailed).
+  // ─── Recover password (offline, OS password verification) ─
+  // The app is fully offline so there is no email flow. The user proves
+  // ownership of the machine by entering their operating-system login
+  // password; if that succeeds they immediately set a new app password
+  // and are logged in.
   ipcMain.handle('auth:recoverPassword', async (_event, payload: {
-    recoveryEmail: string
+    osPassword: string
+    newPassword: string
   }) => {
     try {
       const db = getDb()
-      const { recoveryEmail } = payload
+      const { osPassword, newPassword } = payload
 
-      if (!recoveryEmail || !isValidEmail(recoveryEmail)) {
-        return { success: false, error: 'Please enter a valid email address' }
+      if (!osPassword) {
+        return { success: false, error: 'System password is required' }
+      }
+      if (!newPassword || newPassword.length < 8) {
+        return { success: false, error: 'New password must be at least 8 characters' }
+      }
+      if (!/[a-zA-Z]/.test(newPassword)) {
+        return { success: false, error: 'New password must contain at least one letter' }
+      }
+      if (!/[0-9]/.test(newPassword)) {
+        return { success: false, error: 'New password must contain at least one number' }
       }
 
       const user = db.prepare(
         'SELECT * FROM users WHERE auth_provider = ? AND password_hash IS NOT NULL'
       ).get('local') as UserRow | undefined
 
-      if (!user || !user.recovery_email) {
-        return { success: false, error: 'No recovery address is configured for this account' }
+      if (!user) {
+        return { success: false, error: 'No password-protected account found on this machine' }
       }
 
-      if (user.recovery_email.toLowerCase() !== recoveryEmail.trim().toLowerCase()) {
-        return { success: false, error: 'Recovery address does not match' }
+      const osCheck = await verifyOsPassword(osPassword)
+      if (!osCheck.ok) {
+        return { success: false, error: osCheck.error || 'System password verification failed' }
       }
 
-      const newPassword = generateRandomPassword()
       const { hash, salt } = await hashPassword(newPassword)
-
+      const now = Date.now()
       db.prepare(
         'UPDATE users SET password_hash = ?, salt = ?, updated_at = ? WHERE id = ?'
-      ).run(hash, salt, Date.now(), user.id)
+      ).run(hash, salt, now, user.id)
+      // Invalidate any previous sessions so old tokens can no longer unlock the app.
       db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id)
 
-      return { success: true, data: { newPassword } }
+      cleanExpiredSessions()
+      const session = createSession(user.id)
+      const refreshed = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id) as UserRow
+
+      return { success: true, data: { user: sanitizeUser(refreshed), session } }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

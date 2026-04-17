@@ -1,8 +1,15 @@
 import { useRef, useEffect } from 'react'
-import Editor, { type Monaco } from '@monaco-editor/react'
+import Editor, { loader, type Monaco } from '@monaco-editor/react'
+import * as monaco from 'monaco-editor'
 import type { editor } from 'monaco-editor'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
+
+// Bundle Monaco locally — @monaco-editor/react defaults to loading from a
+// jsdelivr CDN which is blocked by our strict Content-Security-Policy
+// (connect-src 'self'). Passing the local module makes the editor load
+// entirely from the app bundle.
+loader.config({ monaco })
 
 /** Built-in dynamic variables for Monaco autocomplete */
 const BUILTIN_DYNAMIC_VARS: { name: string; description: string }[] = [
