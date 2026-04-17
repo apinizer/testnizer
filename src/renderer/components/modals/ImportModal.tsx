@@ -305,7 +305,7 @@ export default function ImportModal() {
       } else if (fmtId === 'openapi') {
         importResult = await window.api?.importExport?.importOpenApi({
           projectId: pid,
-          content: pendingFileContent,
+          content: pendingFileContent || '',
           format: 'openapi',
           folderId,
           sourceUrl: pendingSourceUrl || undefined,
@@ -313,19 +313,19 @@ export default function ImportModal() {
       } else if (fmtId === 'postman') {
         importResult = await window.api?.importExport?.importPostman({
           projectId: pid,
-          content: pendingFileContent,
+          content: pendingFileContent || '',
           folderId,
         }) as { success: boolean; error?: string } | undefined
       } else if (fmtId === 'insomnia') {
         importResult = await window.api?.importExport?.importInsomnia({
           projectId: pid,
-          content: pendingFileContent,
+          content: pendingFileContent || '',
           folderId,
         }) as { success: boolean; error?: string } | undefined
       } else if (fmtId === 'curl') {
         importResult = await window.api?.importExport?.importCurl({
           projectId: pid,
-          curlCommand: pendingFileContent,
+          curlCommand: pendingFileContent || '',
           folderId,
         }) as { success: boolean; error?: string } | undefined
       } else {

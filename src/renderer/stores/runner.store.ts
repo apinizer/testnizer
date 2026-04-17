@@ -163,6 +163,8 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
         environmentId,
         workspaceId,
         delay: state.delay,
+        iterations: state.iterations,
+        stopOnError: state.stopOnError,
       })
 
       if (result?.success && result.data) {

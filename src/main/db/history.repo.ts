@@ -85,10 +85,16 @@ export function addHistory(data: {
   return getHistoryById(id)!
 }
 
-export function clearHistory(workspaceId?: string): number {
+export function clearHistory(scope?: string | { workspace_id?: string; project_id?: string }): number {
   const db = getDb()
-  if (workspaceId) {
-    const result = db.prepare('DELETE FROM history WHERE workspace_id = ?').run(workspaceId)
+  // Back-compat: allow passing a workspaceId string directly
+  const opts = typeof scope === 'string' ? { workspace_id: scope } : (scope || {})
+  if (opts.project_id) {
+    const result = db.prepare('DELETE FROM history WHERE project_id = ?').run(opts.project_id)
+    return result.changes
+  }
+  if (opts.workspace_id) {
+    const result = db.prepare('DELETE FROM history WHERE workspace_id = ?').run(opts.workspace_id)
     return result.changes
   }
   const result = db.prepare('DELETE FROM history').run()

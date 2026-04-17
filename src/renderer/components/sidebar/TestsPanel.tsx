@@ -17,10 +17,13 @@ import {
   BarChart2,
   Clock,
   Home,
+  Download,
+  Upload,
 } from 'lucide-react'
 import type { Tab } from '../../types'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import MethodBadge from '../shared/MethodBadge'
+import { useTranslation } from '../../lib/i18n'
 
 /* ── Types ─────────────────────────────────────────────────── */
 
@@ -51,6 +54,7 @@ const api = () => (window as any).api
 /* ── Main panel ────────────────────────────────────────────── */
 
 export default function TestsPanel() {
+  const { t } = useTranslation()
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const openTab = useTabsStore((s) => s.openTab)
   const addEndpointsSuiteId = useUIStore((s) => s.addEndpointsSuiteId)
@@ -175,7 +179,7 @@ export default function TestsPanel() {
       useTabsStore.getState().setActiveTab(existing.id)
       useTabsStore.getState().updateTab(existing.id, { sessionKey })
     } else {
-      openTab({ id: tabId, name: 'Runner', protocol: 'runner', sessionKey })
+      openTab({ id: tabId, name: t('testsPanel.runnerName'), protocol: 'runner', sessionKey })
     }
   }, [openTab])
 
@@ -206,6 +210,34 @@ export default function TestsPanel() {
     await loadSuiteEndpoints(suiteId)
   }, [loadSuiteEndpoints])
 
+  // ─── Export suite ─────────────────────────────────────────
+  const handleExportSuite = useCallback(async (suiteId: string) => {
+    try {
+      const result = await api().save?.exportTestSuite?.(suiteId)
+      if (!result?.success && result?.error && result.error !== 'Cancelled') {
+        console.error('Export suite failed:', result.error)
+      }
+    } catch (err) {
+      console.error(err)
+    }
+    setContextMenu(null)
+  }, [])
+
+  // ─── Import suite ─────────────────────────────────────────
+  const handleImportSuite = useCallback(async () => {
+    if (!activeProjectId) return
+    try {
+      const result = await api().save?.importTestSuite?.({ projectId: activeProjectId })
+      if (result?.success) {
+        await loadSuites()
+      } else if (result?.error && result.error !== 'Cancelled') {
+        console.error('Import suite failed:', result.error)
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }, [activeProjectId, loadSuites])
+
   // ─── Focus new suite input ────────────────────────────────
   useEffect(() => {
     if (showNewSuiteInput) newSuiteRef.current?.focus()
@@ -235,13 +267,22 @@ export default function TestsPanel() {
         className="flex shrink-0 items-center gap-2 border-b px-3"
         style={{ height: 44, borderColor: T.border }}
       >
-        <span style={{ flex: 1, fontSize: 15, fontWeight: 700, color: T.text }}>Tests</span>
+        <span style={{ flex: 1, fontSize: 15, fontWeight: 700, color: T.text }}>{t('tests.title')}</span>
+        <button
+          type="button"
+          onClick={handleImportSuite}
+          className="flex cursor-pointer items-center justify-center rounded-[7px] border"
+          style={{ width: 28, height: 28, background: 'var(--surface)', borderColor: T.border2, color: 'var(--text)' }}
+          title={t('tests.importSuite')}
+        >
+          <Upload size={13} strokeWidth={2.2} />
+        </button>
         <button
           type="button"
           onClick={() => { setShowNewSuiteInput(true); setNewSuiteName('') }}
           className="flex cursor-pointer items-center justify-center rounded-[7px] border-none"
           style={{ width: 28, height: 28, background: 'var(--accent)', color: '#fff' }}
-          title="New Test Suite"
+          title={t('tests.newSuite')}
         >
           <Plus size={15} strokeWidth={2.5} />
         </button>
@@ -257,7 +298,7 @@ export default function TestsPanel() {
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search..."
+            placeholder={t('tests.search')}
             className="w-full border-none bg-transparent outline-none"
             style={{ color: T.text, fontFamily: 'inherit', fontSize: 13 }}
           />
@@ -268,17 +309,17 @@ export default function TestsPanel() {
       <div className="shrink-0 border-b py-1" style={{ borderColor: T.border }}>
         <NavItem
           icon={<Home size={14} style={{ color: 'var(--accent)' }} />}
-          label="Overview"
+          label={t('tests.overview')}
           onClick={openTestsHome}
         />
         <NavItem
           icon={<BarChart2 size={14} style={{ color: '#4285f4' }} />}
-          label="All Runs"
+          label={t('tests.allRuns')}
           onClick={openAllRuns}
         />
         <NavItem
           icon={<Clock size={14} style={{ color: '#0369a1' }} />}
-          label="Scheduled Tasks"
+          label={t('tests.scheduled')}
           onClick={openScheduledTasks}
         />
       </div>
@@ -288,7 +329,7 @@ export default function TestsPanel() {
         className="flex shrink-0 items-center justify-between px-3 pb-1 pt-2"
         style={{ color: 'var(--muted)' }}
       >
-        <span style={{ fontSize: 13, fontWeight: 600 }}>Test Suites</span>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{t('tests.testSuites')}</span>
       </div>
 
       {/* Content */}
@@ -309,7 +350,7 @@ export default function TestsPanel() {
                 if (newSuiteName.trim()) handleCreateSuite()
                 else setShowNewSuiteInput(false)
               }}
-              placeholder="Test suite name..."
+              placeholder={t('tests.newSuitePlaceholder')}
               className="flex-1 rounded border px-2 py-1 outline-none"
               style={{ fontSize: 13, borderColor: 'var(--accent)', background: 'var(--input-bg)', color: 'var(--text)' }}
             />
@@ -320,14 +361,14 @@ export default function TestsPanel() {
         {filteredSuites.length === 0 && !showNewSuiteInput ? (
           <div className="mx-3 mt-4 rounded-[7px] border border-dashed py-6 text-center" style={{ borderColor: T.border2 }}>
             <FolderOpen size={28} style={{ color: 'var(--hint)', margin: '0 auto 8px' }} />
-            <div style={{ color: 'var(--hint)', fontSize: 13 }}>No test suites yet</div>
+            <div style={{ color: 'var(--hint)', fontSize: 13 }}>{t('tests.noSuites')}</div>
             <button
               type="button"
               onClick={() => { setShowNewSuiteInput(true); setNewSuiteName('') }}
               className="mt-2 cursor-pointer border-none bg-transparent font-medium"
               style={{ color: 'var(--accent)', fontSize: 13 }}
             >
-              + Create Test Suite
+              {t('tests.createSuite')}
             </button>
           </div>
         ) : (
@@ -372,12 +413,12 @@ export default function TestsPanel() {
           >
             <ContextMenuItem
               icon={<Play size={13} />}
-              label="Run Suite"
+              label={t('testsPanel.runSuite')}
               onClick={() => handleRunSuite(suite)}
             />
             <ContextMenuItem
               icon={<Plus size={13} />}
-              label="Add Endpoints"
+              label={t('testsPanel.addEndpoints')}
               onClick={() => {
                 setContextMenu(null)
                 useUIStore.getState().setAddEndpointsSuite(suite.id, suite.name)
@@ -385,7 +426,7 @@ export default function TestsPanel() {
             />
             <ContextMenuItem
               icon={<Pencil size={13} />}
-              label="Rename"
+              label={t('testsPanel.rename')}
               onClick={() => {
                 setRenamingSuiteId(suite.id)
                 setRenameValue(suite.name)
@@ -394,8 +435,14 @@ export default function TestsPanel() {
             />
             <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
             <ContextMenuItem
+              icon={<Download size={13} />}
+              label={t('testsPanel.export')}
+              onClick={() => handleExportSuite(suite.id)}
+            />
+            <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+            <ContextMenuItem
               icon={<Trash2 size={13} />}
-              label="Delete"
+              label={t('testsPanel.delete')}
               danger
               onClick={() => { setDeleteTarget(suite); setContextMenu(null) }}
             />
@@ -407,7 +454,7 @@ export default function TestsPanel() {
       <DeleteConfirmDialog
         open={!!deleteTarget}
         itemName={deleteTarget?.name || ''}
-        itemType="test suite"
+        itemType={t('testsPanel.testSuiteLabel')}
         onConfirm={handleDeleteSuite}
         onCancel={() => setDeleteTarget(null)}
       />
@@ -427,7 +474,7 @@ function SuiteNode({
   endpoints: SuiteEndpoint[]
   isRenaming: boolean
   renameValue: string
-  renameRef: React.RefObject<HTMLInputElement>
+  renameRef: React.RefObject<HTMLInputElement | null>
   onToggle: () => void
   onContextMenu: (e: React.MouseEvent) => void
   onRenameChange: (v: string) => void
@@ -435,6 +482,7 @@ function SuiteNode({
   onRenameCancel: () => void
   onRemoveEndpoint: (endpointId: string) => void
 }) {
+  const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
 
   return (
@@ -494,7 +542,7 @@ function SuiteNode({
         <div>
           {endpoints.length === 0 ? (
             <div className="py-2 pl-10 pr-3" style={{ color: 'var(--hint)', fontSize: 13 }}>
-              No endpoints. Right-click to add.
+              {t('testsPanel.noEndpointsHint')}
             </div>
           ) : (
             <SuiteEndpointTree endpoints={endpoints} onRemoveEndpoint={onRemoveEndpoint} />
@@ -567,6 +615,7 @@ function SuiteEndpointTree({ endpoints, onRemoveEndpoint }: {
 /* ── Endpoint item in suite ───────────────────────────────── */
 
 function EndpointItem({ endpoint, onRemove, indent = 10 }: { endpoint: SuiteEndpoint; onRemove: () => void; indent?: number }) {
+  const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
   return (
     <div
@@ -588,7 +637,7 @@ function EndpointItem({ endpoint, onRemove, indent = 10 }: { endpoint: SuiteEndp
           type="button"
           onClick={(e) => { e.stopPropagation(); onRemove() }}
           className="flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0"
-          title="Remove from suite"
+          title={t('testsPanel.removeFromSuite')}
           style={{ color: '#cc2200' }}
         >
           <Trash2 size={12} />

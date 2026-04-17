@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { BarChart2, Clock, FolderOpen, Play, ChevronRight, CheckCircle2, XCircle } from 'lucide-react'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
+import { useTranslation } from '../../lib/i18n'
 
 interface RunHistoryRow {
   id: string
@@ -59,6 +60,7 @@ export default function TestsHome({
   onNewRun,
   onViewReport,
 }: TestsHomeProps) {
+  const { t } = useTranslation()
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const [runs, setRuns] = useState<RunHistoryRow[]>([])
   const [stats, setStats] = useState<HistoryStats>({ runs: 0, totalEndpoints: 0, passedEndpoints: 0, failedEndpoints: 0 })
@@ -129,7 +131,7 @@ export default function TestsHome({
     const d = new Date(ts)
     const now = new Date()
     const isToday = d.toDateString() === now.toDateString()
-    if (isToday) return 'Today, ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    if (isToday) return t('testsHome.today') + ', ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
       d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
@@ -149,7 +151,7 @@ export default function TestsHome({
         style={{ height: 48 }}
       >
         <span style={{ fontWeight: 700, color: 'var(--text)', fontSize: 16, flex: 1 }}>
-          Tests
+          {t('testsHome.title')}
         </span>
         <button
           type="button"
@@ -158,14 +160,14 @@ export default function TestsHome({
           style={{ background: 'var(--accent)', fontSize: 13 }}
         >
           <Play size={13} />
-          New Run
+          {t('testsHome.newRun')}
         </button>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-auto px-6 py-5">
         {loading ? (
-          <div className="text-center" style={{ color: 'var(--hint)' }}>Loading...</div>
+          <div className="text-center" style={{ color: 'var(--hint)' }}>{t('testsHome.loading')}</div>
         ) : (
           <>
             {/* Summary cards */}
@@ -180,29 +182,29 @@ export default function TestsHome({
               <SummaryCard
                 icon={<BarChart2 size={18} style={{ color: '#4285f4' }} />}
                 iconBg="#e8f0fe"
-                label="Endpoints Tested"
+                label={t('testsHome.endpointsTested')}
                 primary={String(totalEndpointsRun)}
                 sub={
                   totalEndpointsRun > 0
-                    ? `${passedEndpoints} passed • ${failedEndpoints} failed • ${runSessions} run${runSessions === 1 ? '' : 's'}`
-                    : 'No runs yet'
+                    ? `${passedEndpoints} ${t('testsHome.passed')} • ${failedEndpoints} ${t('testsHome.failed')} • ${runSessions} ${runSessions === 1 ? t('testsHome.run') : t('testsHome.runs')}`
+                    : t('testsHome.noRunsYet')
                 }
                 onClick={onViewAllRuns}
               />
               <SummaryCard
                 icon={<Clock size={18} style={{ color: '#0369a1' }} />}
                 iconBg="#e0f2fe"
-                label="Scheduled Tasks"
+                label={t('testsHome.scheduledTasks')}
                 primary={String(tasks.length)}
-                sub={tasks.length > 0 ? `${activeTasks} active` : 'No scheduled tasks'}
+                sub={tasks.length > 0 ? `${activeTasks} ${t('testsHome.active')}` : t('testsHome.noScheduledTasks')}
                 onClick={onViewScheduled}
               />
               <SummaryCard
                 icon={<FolderOpen size={18} style={{ color: 'var(--accent)' }} />}
                 iconBg="var(--accent-light)"
-                label="Test Suites"
+                label={t('testsHome.testSuites')}
                 primary={String(suites.length)}
-                sub={suites.length > 0 ? 'Manage from sidebar' : 'No test suites yet'}
+                sub={suites.length > 0 ? t('testsHome.manageFromSidebar') : t('testsHome.noTestSuitesYet')}
               />
             </div>
 
@@ -218,7 +220,7 @@ export default function TestsHome({
               <section>
                 <div className="mb-2 flex items-center justify-between">
                   <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
-                    Recent Runs
+                    {t('testsHome.recentRuns')}
                   </h3>
                   {runs.length > 0 && (
                     <button
@@ -227,7 +229,7 @@ export default function TestsHome({
                       className="flex cursor-pointer items-center gap-1 border-none bg-transparent"
                       style={{ color: 'var(--accent)', fontSize: 13 }}
                     >
-                      View all <ChevronRight size={12} />
+                      {t('testsHome.viewAll')} <ChevronRight size={12} />
                     </button>
                   )}
                 </div>
@@ -237,7 +239,7 @@ export default function TestsHome({
                 >
                   {recentRuns.length === 0 ? (
                     <div className="py-6 text-center" style={{ color: 'var(--hint)', fontSize: 13 }}>
-                      No runs yet
+                      {t('testsHome.noRunsYet')}
                     </div>
                   ) : (
                     recentRuns.map((run, idx) => {
@@ -261,7 +263,7 @@ export default function TestsHome({
                               {formatDate(run.started_at)}
                             </div>
                             <div style={{ color: 'var(--muted)', fontSize: 13 }}>
-                              {run.source_label || run.source} • {run.total_endpoints} endpoints • {run.passed_tests}/{run.total_tests} tests
+                              {run.source_label || run.source} • {run.total_endpoints} {t('testsHome.endpoints')} • {run.passed_tests}/{run.total_tests} {t('testsHome.testsLabel')}
                             </div>
                           </div>
                           <div
@@ -280,7 +282,7 @@ export default function TestsHome({
               <section>
                 <div className="mb-2 flex items-center justify-between">
                   <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
-                    Test Suites
+                    {t('testsHome.testSuites')}
                   </h3>
                 </div>
                 <div
@@ -289,7 +291,7 @@ export default function TestsHome({
                 >
                   {recentSuites.length === 0 ? (
                     <div className="py-6 text-center" style={{ color: 'var(--hint)', fontSize: 13 }}>
-                      No test suites yet
+                      {t('testsHome.noTestSuitesYet')}
                     </div>
                   ) : (
                     recentSuites.map((suite, idx) => (
@@ -304,7 +306,7 @@ export default function TestsHome({
                         <div className="flex-1 truncate">
                           <div style={{ color: 'var(--text)', fontWeight: 500 }}>{suite.name}</div>
                           <div style={{ color: 'var(--muted)', fontSize: 13 }}>
-                            Created {formatDate(suite.created_at)}
+                            {t('testsHome.createdOn')} {formatDate(suite.created_at)}
                           </div>
                         </div>
                       </div>
@@ -314,7 +316,7 @@ export default function TestsHome({
 
                 <div className="mb-2 flex items-center justify-between">
                   <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
-                    Upcoming Scheduled
+                    {t('testsHome.upcomingScheduled')}
                   </h3>
                   {tasks.length > 0 && (
                     <button
@@ -323,7 +325,7 @@ export default function TestsHome({
                       className="flex cursor-pointer items-center gap-1 border-none bg-transparent"
                       style={{ color: 'var(--accent)', fontSize: 13 }}
                     >
-                      View all <ChevronRight size={12} />
+                      {t('testsHome.viewAll')} <ChevronRight size={12} />
                     </button>
                   )}
                 </div>
@@ -333,7 +335,7 @@ export default function TestsHome({
                 >
                   {tasks.length === 0 ? (
                     <div className="py-6 text-center" style={{ color: 'var(--hint)', fontSize: 13 }}>
-                      No scheduled tasks
+                      {t('testsHome.noScheduledTasks')}
                     </div>
                   ) : (
                     tasks.slice(0, 5).map((task, idx) => (
@@ -353,8 +355,8 @@ export default function TestsHome({
                           <div style={{ color: 'var(--text)', fontWeight: 500 }}>{task.name}</div>
                           <div style={{ color: 'var(--muted)', fontSize: 13 }}>
                             {task.enabled && task.next_run_at
-                              ? `Next: ${formatDate(task.next_run_at)}`
-                              : 'Paused'}
+                              ? `${t('testsHome.next')}: ${formatDate(task.next_run_at)}`
+                              : t('testsHome.paused')}
                           </div>
                         </div>
                       </div>

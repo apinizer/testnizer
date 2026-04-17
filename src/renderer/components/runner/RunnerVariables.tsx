@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useUIStore } from '../../stores/ui.store'
+import { useTranslation } from '../../lib/i18n'
 
 interface RunnerVariablesProps {
   environmentId?: string
@@ -8,6 +9,7 @@ interface RunnerVariablesProps {
 }
 
 export default function RunnerVariables({ environmentId, fillParent }: RunnerVariablesProps) {
+  const { t } = useTranslation()
   const environments = useEnvironmentStore((s) => s.environments)
   const globalVariables = useEnvironmentStore((s) => s.globalVariables)
   const activeEnvironmentId = useEnvironmentStore((s) => s.activeEnvironmentId)
@@ -39,7 +41,7 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
     >
       {/* Header */}
       <div className="shrink-0 border-b border-[var(--border)] px-4 py-2.5">
-        <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-text)', margin: 0 }}>All variables</h3>
+        <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-text)', margin: 0 }}>{t('runnerVars.title')}</h3>
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -68,7 +70,7 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
                       </td>
                       <td className="py-1.5" style={{ color: 'var(--muted)' }}>
                         {v.value || v.initialValue || (
-                          <span className="italic" style={{ color: 'var(--hint)' }}>Enter value</span>
+                          <span className="italic" style={{ color: 'var(--hint)' }}>{t('runnerVars.enterValue')}</span>
                         )}
                       </td>
                     </tr>
@@ -77,13 +79,13 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
               </table>
             ) : (
               <div style={{ color: 'var(--hint)' }}>
-                No variables in this environment.
+                {t('runnerVars.noVariables')}
               </div>
             )}
           </div>
         ) : (
           <div className="border-b border-[var(--border)] px-4 py-3" style={{ color: 'var(--hint)' }}>
-            Select an environment to see its variables.
+            {t('runnerVars.selectEnv')}
           </div>
         )}
 
@@ -96,7 +98,7 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
             >
               G
             </span>
-            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Globals</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{t('runnerVars.globals')}</span>
           </div>
 
           {enabledGlobals.length > 0 ? (
@@ -118,14 +120,14 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
             </table>
           ) : (
             <div style={{ color: 'var(--hint)' }}>
-              No global variables in this workspace.{' '}
+              {t('runnerVars.noGlobals')}{' '}
               <button
                 type="button"
                 className="cursor-pointer border-none bg-transparent hover:underline"
                 style={{ color: 'var(--accent)', fontSize: 13 }}
                 onClick={() => useUIStore.getState().setShowEnvironmentModal(true)}
               >
-                Add
+                {t('runnerVars.add')}
               </button>
             </div>
           )}

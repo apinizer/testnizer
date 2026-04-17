@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useRunnerStore } from '../../stores/runner.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import MethodBadge from '../shared/MethodBadge'
-import { ChevronRight, GripVertical, FolderClosed } from 'lucide-react'
+import { ChevronRight, GripVertical } from 'lucide-react'
 
 interface RunnerConfigViewProps {
   projectId: string
@@ -31,7 +31,6 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
   const environments = useEnvironmentStore((s) => s.environments)
   const [environmentId, setEnvironmentId] = useState<string>('')
 
-  const [activeTab, setActiveTab] = useState<'functional' | 'performance'>('functional')
   const allSelected = endpoints.length > 0 && endpoints.every((ep) => ep.selected)
   const selectedCount = endpoints.filter((ep) => ep.selected).length
 
@@ -122,52 +121,7 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
 
       {/* Right: Configuration */}
       <div className="flex w-[45%] flex-col overflow-auto bg-[var(--white)]">
-        {/* Tabs: Functional / Performance */}
-        <div className="flex shrink-0 gap-0 border-b border-[var(--border)] px-4">
-          {(['functional', 'performance'] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActiveTab(tab)}
-              className="cursor-pointer border-b-2 border-none bg-transparent px-3 py-2.5 capitalize transition-colors"
-              style={{
-                borderBottomColor: activeTab === tab ? 'var(--accent)' : 'transparent',
-                borderBottomWidth: 2,
-                borderBottomStyle: 'solid',
-                color: activeTab === tab ? 'var(--accent-text)' : 'var(--muted)',
-                fontWeight: activeTab === tab ? 600 : 400,
-                marginBottom: -1,
-              }}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
-        </div>
-
         <div className="flex-1 overflow-auto px-5 py-4">
-          {activeTab === 'functional' && (
-            <>
-              {/* Choose how to run */}
-              <h3 className="mb-3 font-semibold text-[var(--text)]">
-                Choose how to run your collection
-              </h3>
-              <div className="mb-5 space-y-2">
-                <label className="flex cursor-pointer items-center gap-2 text-[var(--text)]">
-                  <input type="radio" name="runMode" defaultChecked className="accent-[#e86826]" />
-                  Run manually
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 text-[var(--muted)]">
-                  <input type="radio" name="runMode" disabled className="accent-[var(--accent)]" />
-                  Schedule runs
-                  <span className="text-[var(--hint)]">(coming soon)</span>
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 text-[var(--muted)]">
-                  <input type="radio" name="runMode" disabled className="accent-[var(--accent)]" />
-                  Automate runs via CLI
-                  <span className="text-[var(--hint)]">(coming soon)</span>
-                </label>
-              </div>
-
               {/* Run configuration */}
               <h3 className="mb-3 font-semibold text-[var(--text)]">
                 Run configuration
@@ -244,14 +198,6 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
                   </svg>
                 </button>
               </div>
-            </>
-          )}
-
-          {activeTab === 'performance' && (
-            <div className="flex h-full items-center justify-center text-[var(--hint)]">
-              Performance testing coming soon
-            </div>
-          )}
         </div>
       </div>
     </div>

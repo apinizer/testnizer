@@ -122,7 +122,9 @@
   --shadow-drop:  0 8px 32px rgba(0,0,0,0.5);
 }
 
-/* ── Base ── */
+/* ── Base ──
+   --font-sans and --font-size-base are controlled by Project Settings.
+   The UI store writes them dynamically to documentElement.style.           */
 :root {
   --font-sans: Inter, -apple-system, 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'SF Mono', Menlo, Monaco, Consolas, 'Courier New', monospace;

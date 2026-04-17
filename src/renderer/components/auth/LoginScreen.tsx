@@ -1,7 +1,12 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useAuthStore } from '../../stores/auth.store'
-import { Eye, EyeOff, Loader2, AlertCircle, Lock, Shield, Check, X, Zap } from 'lucide-react'
+import { useTranslation } from '../../lib/i18n'
+import { Eye, EyeOff, Loader2, AlertCircle, Lock, Shield, Check, X, Zap, Mail } from 'lucide-react'
 import appIcon from '../../assets/icon.png'
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
 
 // ─── Password strength validation ────────────────────────────
 function validatePassword(pw: string): { valid: boolean; hasLength: boolean; hasLetter: boolean; hasNumber: boolean } {
@@ -171,16 +176,22 @@ export default function LoginScreen() {
 /* ── Password Login Form (when password is already set) ───── */
 
 function PasswordLoginForm() {
+  const { t } = useTranslation()
   const login = useAuthStore((s) => s.login)
   const continueAsGuest = useAuthStore((s) => s.continueAsGuest)
   const isLoading = useAuthStore((s) => s.isLoading)
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
+  const [showRecover, setShowRecover] = useState(false)
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     await login(password)
   }, [password, login])
+
+  if (showRecover) {
+    return <RecoverPasswordForm onBack={() => setShowRecover(false)} />
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -191,23 +202,23 @@ function PasswordLoginForm() {
         >
           <Lock size={24} style={{ color: 'var(--accent-text)' }} />
         </div>
-        <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)' }}>Welcome Back</div>
+        <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)' }}>{t('login.welcomeBack')}</div>
         <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>
-          Enter your password to access your projects, or start a quick test
+          {t('login.enterPassword')}
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
           <label style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-            Password
+            {t('login.password')}
           </label>
           <div className="relative">
             <input
               type={showPw ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
+              placeholder={t('login.password')}
               autoFocus
               className="w-full rounded-lg border py-2.5 pl-3.5 pr-10 outline-none transition-colors"
               style={{
@@ -229,6 +240,16 @@ function PasswordLoginForm() {
               {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
             </button>
           </div>
+          <div className="flex justify-end" style={{ marginTop: 6 }}>
+            <button
+              type="button"
+              onClick={() => setShowRecover(true)}
+              className="cursor-pointer border-none bg-transparent p-0"
+              style={{ fontSize: 13, color: 'var(--accent-text)' }}
+            >
+              {t('login.forgotPassword')}
+            </button>
+          </div>
         </div>
 
         <button
@@ -238,7 +259,7 @@ function PasswordLoginForm() {
           style={{ background: 'var(--accent)', fontSize: 14 }}
         >
           {isLoading && <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />}
-          Unlock
+          {t('login.unlock')}
         </button>
       </form>
 
@@ -271,11 +292,136 @@ function PasswordLoginForm() {
         }}
       >
         <Zap size={16} style={{ color: 'var(--accent)' }} />
-        Quick Test
+        {t('login.quickTest')}
       </button>
       <div style={{ fontSize: 13, color: 'var(--hint)', textAlign: 'center', marginTop: -4 }}>
-        Start testing immediately without unlocking your projects
+        {t('login.quickTestDesc')}
       </div>
+    </div>
+  )
+}
+
+/* ── Recover Password Form ────────────────────────────────── */
+
+function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
+  const { t } = useTranslation()
+  const recoverPassword = useAuthStore((s) => s.recoverPassword)
+  const [email, setEmail] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [newPassword, setNewPassword] = useState<string | null>(null)
+
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    if (!isValidEmail(email)) {
+      setError(t('login.invalidEmail'))
+      return
+    }
+    setLoading(true)
+    const result = await recoverPassword(email.trim())
+    setLoading(false)
+    if (result.success && result.newPassword) {
+      setNewPassword(result.newPassword)
+    } else {
+      setError(result.error || 'Recovery failed')
+    }
+  }, [email, recoverPassword, t])
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex items-center gap-3 pb-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex cursor-pointer items-center justify-center rounded-md border-none bg-transparent p-1"
+          style={{ color: 'var(--muted)' }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5" />
+            <path d="M12 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)' }}>{t('login.recoverTitle')}</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('login.recoverDesc')}</div>
+        </div>
+      </div>
+
+      {newPassword ? (
+        <div className="flex flex-col gap-3">
+          <div
+            className="flex items-start gap-2 rounded-lg px-3.5 py-3"
+            style={{ background: 'var(--green-bg)', border: '1px solid rgba(26,122,74,0.2)' }}
+          >
+            <Check size={15} style={{ color: 'var(--green)', marginTop: 2, flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: 'var(--green)' }}>{t('login.recoverShown')}</span>
+          </div>
+          <div
+            className="rounded-lg px-4 py-3"
+            style={{
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              fontFamily: "'SF Mono', Menlo, Consolas, monospace",
+              fontSize: 16,
+              letterSpacing: 1,
+              textAlign: 'center',
+              color: 'var(--text)',
+              userSelect: 'all',
+            }}
+          >
+            {newPassword}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+            {t('login.recoverSavePrompt')}
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {error && (
+            <div
+              className="flex items-center gap-2 rounded-lg px-3.5 py-2.5"
+              style={{ background: 'rgba(185,28,28,0.08)', border: '1px solid rgba(185,28,28,0.15)' }}
+            >
+              <AlertCircle size={15} style={{ color: 'var(--red)', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, color: 'var(--red)' }}>{error}</span>
+            </div>
+          )}
+          <div>
+            <label style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+              {t('login.recoveryEmail')}
+            </label>
+            <div className="relative">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t('login.recoveryEmailPlaceholder')}
+                autoFocus
+                className="w-full rounded-lg border py-2.5 pl-10 pr-3.5 outline-none transition-colors"
+                style={{
+                  fontSize: 14,
+                  borderColor: 'var(--border)',
+                  background: 'var(--input-bg)',
+                  color: 'var(--text)',
+                }}
+                onFocus={(e) => { (e.target as HTMLElement).style.borderColor = 'var(--accent)' }}
+                onBlur={(e) => { (e.target as HTMLElement).style.borderColor = 'var(--border)' }}
+              />
+              <Mail size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--hint)' }} />
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={loading || !email}
+            className="mt-1 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-none py-2.5 font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ background: 'var(--accent)', fontSize: 14 }}
+          >
+            {loading && <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />}
+            {t('login.recoverSend')}
+          </button>
+        </form>
+      )}
     </div>
   )
 }
@@ -383,21 +529,30 @@ function WelcomeOptions({ onSetPassword }: { onSetPassword: () => void }) {
 /* ── Set Password Form ────────────────────────────────────── */
 
 function SetPasswordForm({ onBack }: { onBack: () => void }) {
+  const { t } = useTranslation()
   const setPasswordAction = useAuthStore((s) => s.setPassword)
   const isLoading = useAuthStore((s) => s.isLoading)
   const [password, setPassword] = useState('')
   const [confirmPw, setConfirmPw] = useState('')
+  const [recoveryEmail, setRecoveryEmail] = useState('')
   const [showPw, setShowPw] = useState(false)
+  const [emailError, setEmailError] = useState('')
 
   const pwCheck = validatePassword(password)
   const passwordsMatch = password === confirmPw
-  const canSubmit = pwCheck.valid && confirmPw && passwordsMatch && !isLoading
+  const emailValid = isValidEmail(recoveryEmail)
+  const canSubmit = pwCheck.valid && confirmPw && passwordsMatch && emailValid && !isLoading
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
+    setEmailError('')
     if (!pwCheck.valid || !passwordsMatch) return
-    await setPasswordAction(password)
-  }, [password, pwCheck.valid, passwordsMatch, setPasswordAction])
+    if (!isValidEmail(recoveryEmail)) {
+      setEmailError(t('login.invalidEmail'))
+      return
+    }
+    await setPasswordAction(password, recoveryEmail.trim())
+  }, [password, recoveryEmail, pwCheck.valid, passwordsMatch, setPasswordAction, t])
 
   return (
     <div className="flex flex-col gap-5">
@@ -414,9 +569,9 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
           </svg>
         </button>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)' }}>Set Password</div>
+          <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)' }}>{t('login.setPasswordTitle')}</div>
           <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-            This password will be required to access the app
+            {t('login.setPasswordDesc')}
           </div>
         </div>
       </div>
@@ -424,7 +579,7 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
           <label style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-            Password
+            {t('login.password')}
           </label>
           <div className="relative">
             <input
@@ -458,7 +613,7 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
 
         <div>
           <label style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-            Confirm Password
+            {t('profile.confirmPassword')}
           </label>
           <input
             type={showPw ? 'text' : 'password'}
@@ -480,7 +635,36 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
             }}
           />
           {confirmPw && !passwordsMatch && (
-            <div style={{ fontSize: 13, color: 'var(--red)', marginTop: 4 }}>Passwords do not match</div>
+            <div style={{ fontSize: 13, color: 'var(--red)', marginTop: 4 }}>{t('profile.passwordsDoNotMatch')}</div>
+          )}
+        </div>
+
+        <div>
+          <label style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+            {t('login.recoveryEmail')}
+          </label>
+          <div className="relative">
+            <input
+              type="email"
+              value={recoveryEmail}
+              onChange={(e) => { setRecoveryEmail(e.target.value); setEmailError('') }}
+              placeholder={t('login.recoveryEmailPlaceholder')}
+              className="w-full rounded-lg border py-2.5 pl-10 pr-3.5 outline-none transition-colors"
+              style={{
+                fontSize: 14,
+                borderColor: emailError ? 'var(--red)' : 'var(--border)',
+                background: 'var(--input-bg)',
+                color: 'var(--text)',
+              }}
+              onFocus={(e) => { if (!emailError) (e.target as HTMLElement).style.borderColor = 'var(--accent)' }}
+              onBlur={(e) => { (e.target as HTMLElement).style.borderColor = emailError ? 'var(--red)' : 'var(--border)' }}
+            />
+            <Mail size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--hint)' }} />
+          </div>
+          {emailError ? (
+            <div style={{ fontSize: 13, color: 'var(--red)', marginTop: 4 }}>{emailError}</div>
+          ) : (
+            <div style={{ fontSize: 13, color: 'var(--hint)', marginTop: 4 }}>{t('login.recoveryEmailHint')}</div>
           )}
         </div>
 
@@ -491,7 +675,7 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
           style={{ background: 'var(--accent)', fontSize: 14 }}
         >
           {isLoading && <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />}
-          Set Password & Continue
+          {t('login.setPasswordButton')}
         </button>
       </form>
     </div>

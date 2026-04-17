@@ -118,7 +118,7 @@ export default function HistoryListPanel() {
         url: entry.url,
         body: snap.body as { type: string; content?: string } | undefined,
         headers: snap.headers as Array<{ key: string; value: string; enabled: boolean }> | undefined,
-        soap: snap.soap as Record<string, unknown> | undefined,
+        soap: (snap as Record<string, unknown>).soap as Record<string, unknown> | undefined,
       })
     } else {
       switchToTab(realTabId)

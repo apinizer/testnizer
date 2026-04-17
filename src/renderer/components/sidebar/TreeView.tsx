@@ -310,20 +310,20 @@ export default function TreeView() {
         if (node.type === 'request') {
           const result = await window.api?.savedRequest?.get(node.id) as { success: boolean; data?: Record<string, unknown> }
           if (result?.success && result.data) {
-            const sr = result.data
+            const sr = result.data as Record<string, unknown> & { name: string; url: string }
             await window.api?.savedRequest?.create({
               ...sr,
               name: `${sr.name} (copy)`,
-            })
+            } as Parameters<typeof window.api.savedRequest.create>[0])
           }
         } else if (node.type === 'endpoint') {
           const result = await window.api?.endpoint?.get(node.id) as { success: boolean; data?: Record<string, unknown> }
           if (result?.success && result.data) {
-            const ep = result.data
+            const ep = result.data as Record<string, unknown> & { name: string; project_id: string; path: string }
             await window.api?.endpoint?.create({
               ...ep,
               name: `${ep.name} (copy)`,
-            })
+            } as Parameters<typeof window.api.endpoint.create>[0])
           }
         }
         await refreshTree()
@@ -350,10 +350,37 @@ export default function TreeView() {
   const handleExport = useCallback(
     async (node: TreeNode) => {
       try {
-        await window.api?.save?.exportCollection?.({ folderId: node.id })
-      } catch { /* ignore */ }
+        if (node.type !== 'folder' && node.type !== 'module') return
+        const result = await window.api?.save?.exportFolder?.(node.id) as { success: boolean; error?: string }
+        if (!result?.success && result?.error && result.error !== 'Cancelled') {
+          console.error('Export folder failed:', result.error)
+        }
+      } catch (err) {
+        console.error(err)
+      }
     },
     []
+  )
+
+  const handleImportFolder = useCallback(
+    async (node: TreeNode) => {
+      if (!activeProjectId) return
+      try {
+        const parentId = node.type === 'folder' ? node.id : null
+        const result = await window.api?.save?.importFolder?.({
+          projectId: activeProjectId,
+          parentFolderId: parentId,
+        }) as { success: boolean; error?: string }
+        if (result?.success) {
+          await refreshTree()
+        } else if (result?.error && result.error !== 'Cancelled') {
+          console.error('Import folder failed:', result.error)
+        }
+      } catch (err) {
+        console.error(err)
+      }
+    },
+    [activeProjectId, refreshTree]
   )
 
   return (
@@ -392,6 +419,7 @@ export default function TreeView() {
                 onDuplicate={handleDuplicate}
                 onRunFolder={handleRunFolder}
                 onExport={handleExport}
+                onImport={handleImportFolder}
                 openIds={openNodeIds}
                 isFlat
               />

@@ -337,7 +337,10 @@ export type AssertionType =
   | 'header_contains'
   | 'response_time_under'
   | 'response_size_under'
-  | 'custom_script'
+  // 'pm_script' is an internal synthetic type used to label results coming
+  // out of post-response pm.test() calls — it is never offered in the UI
+  // "add assertion" menu.
+  | 'pm_script'
 
 export interface TestAssertion {
   id: string
@@ -348,7 +351,6 @@ export interface TestAssertion {
   jsonPath?: string
   xPath?: string
   headerName?: string
-  script?: string
   rangeMin?: number
   rangeMax?: number
 }

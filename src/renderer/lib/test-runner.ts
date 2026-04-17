@@ -176,8 +176,6 @@ function evaluateAssertion(
         return assertResponseTimeUnder(assertion, response)
       case 'response_size_under':
         return assertResponseSizeUnder(assertion, response)
-      case 'custom_script':
-        return { assertion, passed: true, actual: 'script' }
       default:
         return { assertion, passed: false, error: `Unknown assertion type: ${assertion.type}` }
     }
@@ -422,13 +420,13 @@ export function createPmApi(
   }
 
   const responseBeChain: ResponseBeChain = {
-    get ok(): void { const s = response.status ?? 0; if (s < 200 || s >= 300) assertionError(`expected 2xx but got ${s}`) },
-    get accepted(): void { if ((response.status ?? 0) !== 202) assertionError(`expected 202 but got ${response.status}`) },
-    get badRequest(): void { if ((response.status ?? 0) !== 400) assertionError(`expected 400 but got ${response.status}`) },
-    get unauthorized(): void { if ((response.status ?? 0) !== 401) assertionError(`expected 401 but got ${response.status}`) },
-    get forbidden(): void { if ((response.status ?? 0) !== 403) assertionError(`expected 403 but got ${response.status}`) },
-    get notFound(): void { if ((response.status ?? 0) !== 404) assertionError(`expected 404 but got ${response.status}`) },
-    get error(): void { const s = response.status ?? 0; if (s < 400) assertionError(`expected 4xx/5xx but got ${s}`) },
+    get ok() { const s = response.status ?? 0; if (s < 200 || s >= 300) assertionError(`expected 2xx but got ${s}`); return undefined },
+    get accepted() { if ((response.status ?? 0) !== 202) assertionError(`expected 202 but got ${response.status}`); return undefined },
+    get badRequest() { if ((response.status ?? 0) !== 400) assertionError(`expected 400 but got ${response.status}`); return undefined },
+    get unauthorized() { if ((response.status ?? 0) !== 401) assertionError(`expected 401 but got ${response.status}`); return undefined },
+    get forbidden() { if ((response.status ?? 0) !== 403) assertionError(`expected 403 but got ${response.status}`); return undefined },
+    get notFound() { if ((response.status ?? 0) !== 404) assertionError(`expected 404 but got ${response.status}`); return undefined },
+    get error() { const s = response.status ?? 0; if (s < 400) assertionError(`expected 4xx/5xx but got ${s}`); return undefined },
   }
 
   const responseNotHaveChain: ResponseHaveChain = {
@@ -452,13 +450,13 @@ export function createPmApi(
   }
 
   const responseNotBeChain: ResponseBeChain = {
-    get ok(): void { const s = response.status ?? 0; if (s >= 200 && s < 300) assertionError(`expected not 2xx but got ${s}`) },
-    get accepted(): void { if ((response.status ?? 0) === 202) assertionError('expected not 202') },
-    get badRequest(): void { if ((response.status ?? 0) === 400) assertionError('expected not 400') },
-    get unauthorized(): void { if ((response.status ?? 0) === 401) assertionError('expected not 401') },
-    get forbidden(): void { if ((response.status ?? 0) === 403) assertionError('expected not 403') },
-    get notFound(): void { if ((response.status ?? 0) === 404) assertionError('expected not 404') },
-    get error(): void { const s = response.status ?? 0; if (s >= 400) assertionError(`expected not 4xx/5xx but got ${s}`) },
+    get ok() { const s = response.status ?? 0; if (s >= 200 && s < 300) assertionError(`expected not 2xx but got ${s}`); return undefined },
+    get accepted() { if ((response.status ?? 0) === 202) assertionError('expected not 202'); return undefined },
+    get badRequest() { if ((response.status ?? 0) === 400) assertionError('expected not 400'); return undefined },
+    get unauthorized() { if ((response.status ?? 0) === 401) assertionError('expected not 401'); return undefined },
+    get forbidden() { if ((response.status ?? 0) === 403) assertionError('expected not 403'); return undefined },
+    get notFound() { if ((response.status ?? 0) === 404) assertionError('expected not 404'); return undefined },
+    get error() { const s = response.status ?? 0; if (s >= 400) assertionError(`expected not 4xx/5xx but got ${s}`); return undefined },
   }
 
   const responseToChain: ResponseToChain = {
@@ -563,17 +561,21 @@ function createExpectChain(value: unknown): AssertionChain {
         assertionError(`Expected ${String(value)} to be below ${n}`)
       }
     },
-    get true(): void {
+    get true() {
       if (value !== true) assertionError(`Expected true but got ${String(value)}`)
+      return undefined
     },
-    get false(): void {
+    get false() {
       if (value !== false) assertionError(`Expected false but got ${String(value)}`)
+      return undefined
     },
-    get null(): void {
+    get null() {
       if (value !== null) assertionError(`Expected null but got ${String(value)}`)
+      return undefined
     },
-    get undefined(): void {
+    get undefined() {
       if (value !== undefined) assertionError(`Expected undefined but got ${String(value)}`)
+      return undefined
     }
   }
 
@@ -683,7 +685,7 @@ export function runScript(
     assertion: {
       id: `script-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: tr.name,
-      type: 'custom_script' as const,
+      type: 'pm_script' as const,
       enabled: true
     },
     passed: tr.passed,

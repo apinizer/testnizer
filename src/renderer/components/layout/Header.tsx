@@ -82,7 +82,7 @@ export default function Header() {
     setStatusMsg('')
     setGitLoading('Pushing to remote...')
     try {
-      const api = window.api as Record<string, Record<string, (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>>>
+      const api = window.api as unknown as Record<string, Record<string, (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>>>
 
       const result = await api.git.push(activeProject.id)
 
@@ -111,7 +111,7 @@ export default function Header() {
     setStatusMsg('')
     setGitLoading('Pulling from remote...')
     try {
-      const api = window.api as Record<string, Record<string, (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>>>
+      const api = window.api as unknown as Record<string, Record<string, (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>>>
       const result = await api.git.pull(activeProject.id)
 
       if (result?.success) {

@@ -30,11 +30,16 @@ function verifyPassword(password: string, hash: string, salt: string): Promise<b
 
 // ─── Session helpers ─────────────────────────────────────────────
 
-const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+// 7 days is plenty for an offline desktop app — keeps the blast radius of a
+// leaked token small while still avoiding daily re-auth prompts.
+const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000
 
 function createSession(userId: string): { token: string; expiresAt: number } {
   const db = getDb()
-  const token = randomUUID() + '-' + randomBytes(16).toString('hex')
+  // 32 random bytes (~256 bits) encoded as base64url. This is stronger than
+  // UUIDv4+hex (UUID carries version/variant bits and is 122 bits of entropy)
+  // and produces a URL-safe opaque string.
+  const token = randomBytes(32).toString('base64url')
   const now = Date.now()
   const expiresAt = now + SESSION_DURATION_MS
 
@@ -63,6 +68,7 @@ interface UserRow {
   avatar_url: string | null
   auth_provider: string
   provider_id: string | null
+  recovery_email: string | null
   created_at: number
   updated_at: number
 }
@@ -75,9 +81,34 @@ function sanitizeUser(user: UserRow) {
     displayName: user.display_name,
     avatarUrl: user.avatar_url,
     authProvider: user.auth_provider,
+    recoveryEmail: user.recovery_email,
     createdAt: user.created_at,
     updatedAt: user.updated_at,
   }
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+function generateRandomPassword(): string {
+  // 14 chars, guaranteed letter + digit
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+  const digits = '23456789'
+  const all = chars + digits + '!@#$%&*'
+  const out: string[] = []
+  // ensure at least one letter and one digit
+  out.push(chars[randomBytes(1)[0] % chars.length])
+  out.push(digits[randomBytes(1)[0] % digits.length])
+  for (let i = 0; i < 12; i++) {
+    out.push(all[randomBytes(1)[0] % all.length])
+  }
+  // Fisher-Yates shuffle using random bytes
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = randomBytes(1)[0] % (i + 1)
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out.join('')
 }
 
 // ─── Register handlers ───────────────────────────────────────────
@@ -99,10 +130,11 @@ export function registerAuthHandlers(): void {
   // ─── Set password (first time or update from anonymous) ───
   ipcMain.handle('auth:setPassword', async (_event, payload: {
     password: string
+    recoveryEmail?: string
   }) => {
     try {
       const db = getDb()
-      const { password } = payload
+      const { password, recoveryEmail } = payload
 
       if (!password || password.length < 8) {
         return { success: false, error: 'Password must be at least 8 characters' }
@@ -113,6 +145,9 @@ export function registerAuthHandlers(): void {
       if (!/[0-9]/.test(password)) {
         return { success: false, error: 'Password must contain at least one number' }
       }
+      if (recoveryEmail && !isValidEmail(recoveryEmail)) {
+        return { success: false, error: 'Recovery email is not valid' }
+      }
 
       // Check if a local user already exists
       let user = db.prepare(
@@ -121,20 +156,27 @@ export function registerAuthHandlers(): void {
 
       const { hash, salt } = await hashPassword(password)
       const now = Date.now()
+      const trimmedRecovery = recoveryEmail ? recoveryEmail.trim() : null
 
       if (user) {
-        // Update existing user's password
-        db.prepare(
-          'UPDATE users SET password_hash = ?, salt = ?, updated_at = ? WHERE id = ?'
-        ).run(hash, salt, now, user.id)
+        // Update existing user's password (and recovery email if provided)
+        if (trimmedRecovery !== null) {
+          db.prepare(
+            'UPDATE users SET password_hash = ?, salt = ?, recovery_email = ?, updated_at = ? WHERE id = ?'
+          ).run(hash, salt, trimmedRecovery, now, user.id)
+        } else {
+          db.prepare(
+            'UPDATE users SET password_hash = ?, salt = ?, updated_at = ? WHERE id = ?'
+          ).run(hash, salt, now, user.id)
+        }
         user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id) as UserRow
       } else {
         // Create new local user
         const userId = randomUUID()
         db.prepare(`
-          INSERT INTO users (id, email, username, display_name, password_hash, salt, auth_provider, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, 'local', ?, ?)
-        `).run(userId, 'local@apinizer.app', 'local', 'Local User', hash, salt, now, now)
+          INSERT INTO users (id, email, username, display_name, password_hash, salt, auth_provider, recovery_email, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, 'local', ?, ?, ?)
+        `).run(userId, 'local@apinizer.app', 'local', 'Local User', hash, salt, trimmedRecovery, now, now)
         user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow
       }
 
@@ -142,6 +184,85 @@ export function registerAuthHandlers(): void {
       const session = createSession(user.id)
 
       return { success: true, data: { user: sanitizeUser(user), session } }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── Disable password protection (from profile) ────────────
+  ipcMain.handle('auth:disablePassword', async (_event, payload: {
+    userId: string
+    currentPassword: string
+  }) => {
+    try {
+      const db = getDb()
+      const { userId, currentPassword } = payload
+
+      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined
+      if (!user) {
+        return { success: false, error: 'User not found' }
+      }
+      if (user.auth_provider !== 'local') {
+        return { success: false, error: 'Only available for local accounts' }
+      }
+      if (!user.password_hash || !user.salt) {
+        return { success: false, error: 'No password is set' }
+      }
+
+      const valid = await verifyPassword(currentPassword, user.password_hash, user.salt)
+      if (!valid) {
+        return { success: false, error: 'Current password is incorrect' }
+      }
+
+      // Clear password + recovery email and drop all sessions so the app
+      // reverts to the "no password set" state on next launch.
+      db.prepare(
+        'UPDATE users SET password_hash = NULL, salt = NULL, recovery_email = NULL, updated_at = ? WHERE id = ?'
+      ).run(Date.now(), userId)
+      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId)
+
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── Recover password (offline, no email) ─────────────────
+  // The app is fully offline. The user proves ownership by entering the
+  // recovery address they set at sign-up; the new password is shown
+  // directly on screen (not emailed).
+  ipcMain.handle('auth:recoverPassword', async (_event, payload: {
+    recoveryEmail: string
+  }) => {
+    try {
+      const db = getDb()
+      const { recoveryEmail } = payload
+
+      if (!recoveryEmail || !isValidEmail(recoveryEmail)) {
+        return { success: false, error: 'Please enter a valid email address' }
+      }
+
+      const user = db.prepare(
+        'SELECT * FROM users WHERE auth_provider = ? AND password_hash IS NOT NULL'
+      ).get('local') as UserRow | undefined
+
+      if (!user || !user.recovery_email) {
+        return { success: false, error: 'No recovery address is configured for this account' }
+      }
+
+      if (user.recovery_email.toLowerCase() !== recoveryEmail.trim().toLowerCase()) {
+        return { success: false, error: 'Recovery address does not match' }
+      }
+
+      const newPassword = generateRandomPassword()
+      const { hash, salt } = await hashPassword(newPassword)
+
+      db.prepare(
+        'UPDATE users SET password_hash = ?, salt = ?, updated_at = ? WHERE id = ?'
+      ).run(hash, salt, Date.now(), user.id)
+      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id)
+
+      return { success: true, data: { newPassword } }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

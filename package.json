@@ -5,7 +5,10 @@
   "description": "Apinizer API Tester — Cross-platform desktop API testing application",
   "main": "./out/main/index.js",
   "homepage": "https://apinizer.com",
-  "author": "Apinizer",
+  "author": {
+    "name": "Apinizer",
+    "email": "support@apinizer.com"
+  },
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
@@ -61,6 +64,7 @@
     "@tailwindcss/vite": "^4.0.0",
     "@tanstack/react-virtual": "^3.11.2",
     "@types/better-sqlite3": "^7.6.12",
+    "@types/eventsource": "^1.1.15",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.7",
@@ -130,6 +134,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "publish": null
   }
 }

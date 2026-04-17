@@ -97,6 +97,16 @@ export interface HttpRequestOptions {
   followRedirects?: boolean
   sslVerification?: boolean
   proxy?: ProxyConfig
+  certificates?: {
+    caCerts?: Buffer[]
+    clientCert?: {
+      cert?: Buffer
+      key?: Buffer
+      pfx?: Buffer
+      passphrase?: string
+    }
+  }
+  signal?: AbortSignal
 }
 
 // ─── Cookie Jar (manual management — no axios-cookiejar-support) ─────
@@ -475,11 +485,27 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       validateStatus: () => true, // Accept all status codes
       responseType: 'text',
       transformResponse: [(d: string) => d], // Prevent auto JSON parse
+      signal: options.signal,
     }
 
-    // SSL configuration
+    // SSL + certificate configuration
     const rejectUnauthorized = options.sslVerification !== false
-    config.httpsAgent = new https.Agent({ rejectUnauthorized })
+    const httpsAgentOpts: https.AgentOptions = { rejectUnauthorized }
+    if (options.certificates?.caCerts?.length) {
+      httpsAgentOpts.ca = options.certificates.caCerts
+    }
+    const clientCert = options.certificates?.clientCert
+    if (clientCert) {
+      if (clientCert.pfx) {
+        httpsAgentOpts.pfx = clientCert.pfx
+        if (clientCert.passphrase) httpsAgentOpts.passphrase = clientCert.passphrase
+      } else {
+        if (clientCert.cert) httpsAgentOpts.cert = clientCert.cert
+        if (clientCert.key) httpsAgentOpts.key = clientCert.key
+        if (clientCert.passphrase) httpsAgentOpts.passphrase = clientCert.passphrase
+      }
+    }
+    config.httpsAgent = new https.Agent(httpsAgentOpts)
     config.httpAgent = new http.Agent()
 
     // Proxy configuration

@@ -31,7 +31,7 @@ interface BranchStore {
   fetchSaveHistory: (projectId: string) => Promise<void>
 }
 
-const api = () => (window as Record<string, unknown>).api as Record<string, Record<string, (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>>>
+const api = () => (window as unknown as Record<string, unknown>).api as Record<string, Record<string, (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>>>
 
 export const useBranchStore = create<BranchStore>((set, get) => ({
   branches: [],

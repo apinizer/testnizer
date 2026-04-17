@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useUIStore } from '../../stores/ui.store'
 import { useTabsStore } from '../../stores/tabs.store'
+import { useTranslation } from '../../lib/i18n'
 import type { Protocol } from '../../types'
 
 function makeTabId(): string {
@@ -17,6 +18,7 @@ interface DropdownItem {
 }
 
 export default function NewDropdown() {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -62,41 +64,47 @@ export default function NewDropdown() {
   const newItems: DropdownItem[] = [
     {
       icon: '\uD83C\uDF10',
-      label: 'HTTP Endpoint',
+      label: t('newDropdown.httpEndpoint'),
       bg: '#e8f4ff',
-      action: () => createProtocolTab('http', 'New Request', 'GET'),
+      action: () => createProtocolTab('http', t('welcome.newEndpointName'), 'GET'),
     },
     {
       icon: '\u26A1',
-      label: 'Quick Request',
+      label: t('newDropdown.quickRequest'),
       bg: '#fff4e0',
-      action: () => createProtocolTab('http', 'Quick Request', 'GET'),
+      action: () => createProtocolTab('http', t('welcome.quickRequest'), 'GET'),
     },
     {
       icon: '\uD83D\uDD0C',
-      label: 'WebSocket',
+      label: t('newDropdown.websocket'),
       bg: '#fff0ec',
-      action: () => createProtocolTab('websocket', 'WebSocket'),
+      action: () => createProtocolTab('websocket', t('welcome.websocket')),
     },
     {
       icon: '\u25C8',
-      label: 'GraphQL',
+      label: t('newDropdown.graphql'),
       bg: '#ffe8f0',
-      action: () => createProtocolTab('graphql', 'GraphQL'),
+      action: () => createProtocolTab('graphql', t('welcome.graphql')),
+    },
+    {
+      icon: '\uD83E\uDD16',
+      label: t('newDropdown.aiSse'),
+      bg: '#ede7f6',
+      action: () => createProtocolTab('sse', t('welcome.aiSseName')),
     },
   ]
 
   const otherItems: { icon: string; label: string; shortcut: string; action?: () => void }[] = [
     {
       icon: '\u2B07',
-      label: 'Import',
+      label: t('newDropdown.import'),
       shortcut: '\u2318O',
       action: () => {
         setOpen(false)
         setShowImportModal(true)
       },
     },
-    { icon: '{}', label: 'Import cURL', shortcut: '\u2318I' },
+    { icon: '{}', label: t('newDropdown.importCurl'), shortcut: '\u2318I' },
   ]
 
   const dropdown = open ? createPortal(
@@ -112,7 +120,7 @@ export default function NewDropdown() {
     >
       {/* New section */}
       <div className="mb-2 ml-1 font-medium uppercase tracking-widest text-[var(--hint)]">
-        New
+        {t('leftPanel.new')}
       </div>
       <div className="mb-2 grid grid-cols-2 gap-1">
         {newItems.map((item) => (
@@ -146,7 +154,7 @@ export default function NewDropdown() {
       {/* Separator */}
       <div className="border-t border-[var(--border)] pt-2">
         <div className="mb-1 uppercase tracking-widest text-[var(--hint)]">
-          Other
+          {t('newDropdown.other')}
         </div>
         {otherItems.map((item) => (
           <button

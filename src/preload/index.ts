@@ -16,6 +16,10 @@ const api = {
       ipcRenderer.invoke('auth:logout', token),
     changePassword: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('auth:changePassword', payload),
+    disablePassword: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('auth:disablePassword', payload),
+    recoverPassword: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('auth:recoverPassword', payload),
     listUsers: (): Promise<unknown> =>
       ipcRenderer.invoke('auth:listUsers'),
   },
@@ -170,8 +174,8 @@ const api = {
       ipcRenderer.invoke('history:get', id),
     add: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('history:add', payload),
-    clear: (workspaceId?: string): Promise<unknown> =>
-      ipcRenderer.invoke('history:clear', workspaceId),
+    clear: (scope?: string | { workspace_id?: string; project_id?: string }): Promise<unknown> =>
+      ipcRenderer.invoke('history:clear', scope),
     delete: (id: string): Promise<unknown> =>
       ipcRenderer.invoke('history:delete', id),
     prune: (limit: number, workspaceId?: string): Promise<unknown> =>
@@ -321,6 +325,20 @@ const api = {
       ipcRenderer.invoke('testSuite:removeEndpoint', payload),
   },
 
+  // ─── Certificates ───────────────────────────────────────────
+  certificate: {
+    list: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('certificate:list', projectId),
+    add: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('certificate:add', payload),
+    update: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('certificate:update', payload),
+    delete: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('certificate:delete', id),
+    pickFile: (kind: 'crt' | 'key' | 'pfx' | 'ca'): Promise<unknown> =>
+      ipcRenderer.invoke('certificate:pickFile', kind),
+  },
+
   // ─── GraphQL ────────────────────────────────────────────────
   graphql: {
     execute: (options: unknown): Promise<unknown> =>
@@ -465,7 +483,19 @@ const api = {
     gitDiff: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('save:gitDiff', payload),
     history: (projectId: string): Promise<unknown> =>
-      ipcRenderer.invoke('save:history', projectId)
+      ipcRenderer.invoke('save:history', projectId),
+    exportProject: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('save:exportProject', projectId),
+    exportFolder: (folderId: string): Promise<unknown> =>
+      ipcRenderer.invoke('save:exportFolder', folderId),
+    exportTestSuite: (suiteId: string): Promise<unknown> =>
+      ipcRenderer.invoke('save:exportTestSuite', suiteId),
+    importProject: (payload: { workspaceId: string; name?: string }): Promise<unknown> =>
+      ipcRenderer.invoke('save:importProject', payload),
+    importFolder: (payload: { projectId: string; parentFolderId?: string | null }): Promise<unknown> =>
+      ipcRenderer.invoke('save:importFolder', payload),
+    importTestSuite: (payload: { projectId: string }): Promise<unknown> =>
+      ipcRenderer.invoke('save:importTestSuite', payload),
   },
 
   // ─── SSE ────────────────────────────────────────────────────

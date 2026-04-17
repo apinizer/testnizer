@@ -41,10 +41,6 @@ const ASSERTION_CATEGORIES: AssertionCategory[] = [
       { type: 'response_size_under', label: 'Response size under' },
     ],
   },
-  {
-    label: 'Custom',
-    items: [{ type: 'custom_script', label: 'Custom script' }],
-  },
 ]
 
 function makeId(): string {
@@ -75,8 +71,6 @@ function defaultsForType(type: AssertionType): Partial<TestAssertion> {
       return { expected: 2000 }
     case 'response_size_under':
       return { expected: 10240 }
-    case 'custom_script':
-      return { script: '// Write your assertion script here\npm.expect(pm.response.code).to.equal(200);' }
     default:
       return {}
   }

@@ -49,7 +49,17 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    // Only allow http(s) URLs to be opened in the system browser.
+    // Reject file://, javascript:, and any other schemes to prevent the
+    // renderer from triggering OS handlers with untrusted content.
+    try {
+      const parsed = new URL(details.url)
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        shell.openExternal(details.url)
+      }
+    } catch {
+      // Malformed URL — ignore.
+    }
     return { action: 'deny' }
   })
 

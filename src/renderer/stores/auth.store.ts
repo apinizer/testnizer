@@ -10,6 +10,7 @@ interface User {
   displayName: string | null
   avatarUrl: string | null
   authProvider: string
+  recoveryEmail: string | null
   createdAt: number
   updatedAt: number
 }
@@ -26,10 +27,12 @@ interface AuthState {
   checkSession: () => Promise<void>
   checkHasPassword: () => Promise<void>
   login: (password: string) => Promise<boolean>
-  setPassword: (password: string) => Promise<boolean>
+  setPassword: (password: string, recoveryEmail?: string) => Promise<boolean>
   continueAsGuest: () => void
   logout: () => Promise<void>
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>
+  disablePassword: (currentPassword: string) => Promise<{ success: boolean; error?: string }>
+  recoverPassword: (recoveryEmail: string) => Promise<{ success: boolean; error?: string; newPassword?: string }>
   clearError: () => void
 }
 
@@ -90,10 +93,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  setPassword: async (password: string) => {
+  setPassword: async (password: string, recoveryEmail?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api().auth.setPassword({ password }) as {
+      const payload: { password: string; recoveryEmail?: string } = { password }
+      if (recoveryEmail) payload.recoveryEmail = recoveryEmail
+      const result = await api().auth.setPassword(payload) as {
         success: boolean
         data?: { user: User; session: { token: string } }
         error?: string
@@ -147,6 +152,48 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return { success: true }
       }
       return { success: false, error: result?.error || 'Password change failed' }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  },
+
+  disablePassword: async (currentPassword: string) => {
+    const { user } = get()
+    if (!user) return { success: false, error: 'Not logged in' }
+    try {
+      const result = await api().auth.disablePassword({
+        userId: user.id,
+        currentPassword,
+      }) as { success: boolean; error?: string }
+      if (result?.success) {
+        // Reset local state — app will show the "no password" flow next launch.
+        localStorage.removeItem(SESSION_TOKEN_KEY)
+        localStorage.removeItem(GUEST_MODE_KEY)
+        set({
+          user: null,
+          isAuthenticated: false,
+          isGuest: false,
+          isLoading: false,
+          error: null,
+          hasPasswordSet: false,
+        })
+        return { success: true }
+      }
+      return { success: false, error: result?.error || 'Failed to disable password' }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  },
+
+  recoverPassword: async (recoveryEmail: string) => {
+    try {
+      const result = await api().auth.recoverPassword({ recoveryEmail }) as {
+        success: boolean
+        data?: { newPassword: string }
+        error?: string
+      }
+      if (result?.success) return { success: true, newPassword: result.data?.newPassword }
+      return { success: false, error: result?.error || 'Recovery failed' }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

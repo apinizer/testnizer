@@ -5,11 +5,13 @@ import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
 import { getDb } from '../db/database'
 import { addSaveHistory } from '../db/branch.repo'
+import { encryptSecret, decryptSecret } from '../lib/secure-storage'
 
 // ─── Full Project Export Format ──────────────────────────────────
 interface ProjectExport {
   version: string
   exportedAt: number
+  kind?: 'project'
   project: Record<string, unknown>
   folders: Record<string, unknown>[]
   endpoints: Record<string, unknown>[]
@@ -18,6 +20,30 @@ interface ProjectExport {
   environments: Record<string, unknown>[]
   environmentVariables: Record<string, unknown>[]
   globalVariables: Record<string, unknown>[]
+  testSuites?: Record<string, unknown>[]
+  testSuiteEndpoints?: Record<string, unknown>[]
+}
+
+// ─── Folder Export Format ────────────────────────────────────────
+interface FolderExport {
+  version: string
+  exportedAt: number
+  kind: 'folder'
+  rootFolderId: string
+  folders: Record<string, unknown>[]
+  endpoints: Record<string, unknown>[]
+  endpointCases: Record<string, unknown>[]
+}
+
+// ─── Test Suite Export Format ────────────────────────────────────
+interface TestSuiteExport {
+  version: string
+  exportedAt: number
+  kind: 'testSuite'
+  suite: Record<string, unknown>
+  endpoints: Record<string, unknown>[]
+  endpointCases: Record<string, unknown>[]
+  suiteEndpoints: Record<string, unknown>[]
 }
 
 export function exportProjectData(projectId: string): ProjectExport {
@@ -55,9 +81,21 @@ export function exportProjectData(projectId: string): ProjectExport {
 
   globalVariables = db.prepare('SELECT * FROM global_variables WHERE project_id = ?').all(projectId) as Record<string, unknown>[]
 
+  // Test suites + M2M endpoint links
+  const testSuites = db.prepare('SELECT * FROM test_suites WHERE project_id = ?').all(projectId) as Record<string, unknown>[]
+  let testSuiteEndpoints: Record<string, unknown>[] = []
+  const suiteIds = testSuites.map((s) => s.id as string)
+  if (suiteIds.length > 0) {
+    const ph = suiteIds.map(() => '?').join(',')
+    testSuiteEndpoints = db.prepare(
+      `SELECT * FROM test_suite_endpoints WHERE suite_id IN (${ph})`
+    ).all(...suiteIds) as Record<string, unknown>[]
+  }
+
   return {
     version: '1.0.0',
     exportedAt: Date.now(),
+    kind: 'project',
     project,
     folders,
     endpoints,
@@ -66,6 +104,8 @@ export function exportProjectData(projectId: string): ProjectExport {
     environments,
     environmentVariables,
     globalVariables,
+    testSuites,
+    testSuiteEndpoints,
   }
 }
 
@@ -138,6 +178,482 @@ function importProjectData(data: ProjectExport, projectId: string): void {
       'id', 'workspace_id', 'key', 'value', 'description', 'enabled', 'secret', 'initial_value'
     ])
   }
+
+  // Import test suites
+  if (data.testSuites?.length) {
+    upsert('test_suites', data.testSuites, [
+      'id', 'project_id', 'name', 'description', 'sort_order', 'created_at', 'updated_at'
+    ])
+  }
+
+  // Import test_suite_endpoints
+  if (data.testSuiteEndpoints?.length) {
+    upsert('test_suite_endpoints', data.testSuiteEndpoints, [
+      'id', 'suite_id', 'endpoint_id', 'sort_order'
+    ])
+  }
+}
+
+// ─── Folder Export / Import ──────────────────────────────────────
+function collectFolderTree(rootFolderId: string): { folders: Record<string, unknown>[]; endpoints: Record<string, unknown>[]; endpointCases: Record<string, unknown>[] } {
+  const db = getDb()
+
+  const rootFolder = db.prepare('SELECT * FROM folders WHERE id = ?').get(rootFolderId) as Record<string, unknown> | undefined
+  if (!rootFolder) {
+    return { folders: [], endpoints: [], endpointCases: [] }
+  }
+
+  // Recursively gather all descendant folder IDs (BFS)
+  const folders: Record<string, unknown>[] = [rootFolder]
+  const queue: string[] = [rootFolderId]
+  while (queue.length > 0) {
+    const parentId = queue.shift() as string
+    const children = db.prepare('SELECT * FROM folders WHERE parent_id = ?').all(parentId) as Record<string, unknown>[]
+    for (const child of children) {
+      folders.push(child)
+      queue.push(child.id as string)
+    }
+  }
+
+  const folderIds = folders.map((f) => f.id as string)
+  const ph = folderIds.map(() => '?').join(',')
+  const endpoints = db.prepare(
+    `SELECT * FROM endpoints WHERE folder_id IN (${ph})`
+  ).all(...folderIds) as Record<string, unknown>[]
+
+  const endpointIds = endpoints.map((e) => e.id as string)
+  let endpointCases: Record<string, unknown>[] = []
+  if (endpointIds.length > 0) {
+    const eph = endpointIds.map(() => '?').join(',')
+    endpointCases = db.prepare(
+      `SELECT * FROM endpoint_cases WHERE endpoint_id IN (${eph})`
+    ).all(...endpointIds) as Record<string, unknown>[]
+  }
+
+  return { folders, endpoints, endpointCases }
+}
+
+export function exportFolderData(folderId: string): FolderExport {
+  const { folders, endpoints, endpointCases } = collectFolderTree(folderId)
+  return {
+    version: '1.0.0',
+    exportedAt: Date.now(),
+    kind: 'folder',
+    rootFolderId: folderId,
+    folders,
+    endpoints,
+    endpointCases,
+  }
+}
+
+/**
+ * Import a folder tree into target project. New IDs are generated
+ * so the imported folder is a fresh copy (no collision with source).
+ */
+export function importFolderData(
+  data: FolderExport,
+  projectId: string,
+  parentFolderId: string | null = null,
+): { foldersImported: number; endpointsImported: number } {
+  const db = getDb()
+  const now = Date.now()
+
+  // ID remapping: oldId → newId
+  const folderIdMap = new Map<string, string>()
+  const endpointIdMap = new Map<string, string>()
+
+  for (const f of data.folders) folderIdMap.set(f.id as string, randomUUID())
+  for (const e of data.endpoints) endpointIdMap.set(e.id as string, randomUUID())
+
+  const insertFolder = db.prepare(
+    `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`
+  )
+  const insertEndpoint = db.prepare(
+    `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+  const insertCase = db.prepare(
+    `INSERT INTO endpoint_cases (id, endpoint_id, name, params, headers, body, auth, assertions, is_default, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+
+  const tx = db.transaction(() => {
+    // Folders — root's parent becomes parentFolderId, others remap
+    for (const f of data.folders) {
+      const oldId = f.id as string
+      const newId = folderIdMap.get(oldId) as string
+      const oldParent = f.parent_id as string | null
+      let newParent: string | null
+      if (oldId === data.rootFolderId) {
+        newParent = parentFolderId
+      } else {
+        newParent = oldParent && folderIdMap.has(oldParent) ? folderIdMap.get(oldParent) as string : parentFolderId
+      }
+      insertFolder.run(newId, projectId, newParent, f.name, f.sort_order ?? 0)
+    }
+
+    // Endpoints
+    for (const e of data.endpoints) {
+      const newId = endpointIdMap.get(e.id as string) as string
+      const oldFolderId = e.folder_id as string | null
+      const newFolderId = oldFolderId && folderIdMap.has(oldFolderId) ? folderIdMap.get(oldFolderId) as string : null
+      insertEndpoint.run(
+        newId,
+        projectId,
+        newFolderId,
+        e.name,
+        e.description ?? null,
+        e.protocol || 'http',
+        e.method ?? null,
+        e.path,
+        e.status || 'developing',
+        e.request_schema ?? null,
+        e.response_schemas ?? null,
+        e.sort_order ?? 0,
+        (e.created_at as number) || now,
+        now,
+      )
+    }
+
+    // Cases
+    for (const c of data.endpointCases) {
+      const newCaseId = randomUUID()
+      const newEndpointId = endpointIdMap.get(c.endpoint_id as string)
+      if (!newEndpointId) continue
+      insertCase.run(
+        newCaseId,
+        newEndpointId,
+        c.name,
+        c.params ?? null,
+        c.headers ?? null,
+        c.body ?? null,
+        c.auth ?? null,
+        c.assertions ?? null,
+        c.is_default ?? 0,
+        (c.created_at as number) || now,
+      )
+    }
+  })
+  tx()
+
+  return { foldersImported: folderIdMap.size, endpointsImported: endpointIdMap.size }
+}
+
+// ─── Test Suite Export / Import ──────────────────────────────────
+export function exportTestSuiteData(suiteId: string): TestSuiteExport {
+  const db = getDb()
+  const suite = db.prepare('SELECT * FROM test_suites WHERE id = ?').get(suiteId) as Record<string, unknown> | undefined
+  if (!suite) {
+    return {
+      version: '1.0.0',
+      exportedAt: Date.now(),
+      kind: 'testSuite',
+      suite: {},
+      endpoints: [],
+      endpointCases: [],
+      suiteEndpoints: [],
+    }
+  }
+
+  const suiteEndpoints = db.prepare(
+    'SELECT * FROM test_suite_endpoints WHERE suite_id = ?'
+  ).all(suiteId) as Record<string, unknown>[]
+
+  const endpointIds = suiteEndpoints.map((se) => se.endpoint_id as string)
+  let endpoints: Record<string, unknown>[] = []
+  let endpointCases: Record<string, unknown>[] = []
+  if (endpointIds.length > 0) {
+    const ph = endpointIds.map(() => '?').join(',')
+    endpoints = db.prepare(
+      `SELECT * FROM endpoints WHERE id IN (${ph})`
+    ).all(...endpointIds) as Record<string, unknown>[]
+    endpointCases = db.prepare(
+      `SELECT * FROM endpoint_cases WHERE endpoint_id IN (${ph})`
+    ).all(...endpointIds) as Record<string, unknown>[]
+  }
+
+  return {
+    version: '1.0.0',
+    exportedAt: Date.now(),
+    kind: 'testSuite',
+    suite,
+    endpoints,
+    endpointCases,
+    suiteEndpoints,
+  }
+}
+
+/**
+ * Import a test suite into target project. New IDs are generated.
+ * All endpoints come in without a folder (folder_id = null) to avoid
+ * dangling folder references from the source project.
+ */
+export function importTestSuiteData(
+  data: TestSuiteExport,
+  projectId: string,
+): { suiteId: string; endpointsImported: number } {
+  const db = getDb()
+  const now = Date.now()
+
+  const newSuiteId = randomUUID()
+  const endpointIdMap = new Map<string, string>()
+  for (const e of data.endpoints) endpointIdMap.set(e.id as string, randomUUID())
+
+  const insertSuite = db.prepare(
+    `INSERT INTO test_suites (id, project_id, name, description, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  )
+  const insertEndpoint = db.prepare(
+    `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+  const insertCase = db.prepare(
+    `INSERT INTO endpoint_cases (id, endpoint_id, name, params, headers, body, auth, assertions, is_default, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+  const insertLink = db.prepare(
+    `INSERT INTO test_suite_endpoints (id, suite_id, endpoint_id, sort_order) VALUES (?, ?, ?, ?)`
+  )
+
+  const suite = data.suite
+  const suiteName = (suite?.name as string) || 'Imported Suite'
+
+  const tx = db.transaction(() => {
+    insertSuite.run(
+      newSuiteId,
+      projectId,
+      suiteName,
+      suite?.description ?? null,
+      suite?.sort_order ?? 0,
+      now,
+      now,
+    )
+
+    for (const e of data.endpoints) {
+      const newId = endpointIdMap.get(e.id as string) as string
+      insertEndpoint.run(
+        newId,
+        projectId,
+        null, // drop folder association on import
+        e.name,
+        e.description ?? null,
+        e.protocol || 'http',
+        e.method ?? null,
+        e.path,
+        e.status || 'developing',
+        e.request_schema ?? null,
+        e.response_schemas ?? null,
+        e.sort_order ?? 0,
+        (e.created_at as number) || now,
+        now,
+      )
+    }
+
+    for (const c of data.endpointCases) {
+      const newEndpointId = endpointIdMap.get(c.endpoint_id as string)
+      if (!newEndpointId) continue
+      insertCase.run(
+        randomUUID(),
+        newEndpointId,
+        c.name,
+        c.params ?? null,
+        c.headers ?? null,
+        c.body ?? null,
+        c.auth ?? null,
+        c.assertions ?? null,
+        c.is_default ?? 0,
+        (c.created_at as number) || now,
+      )
+    }
+
+    for (const link of data.suiteEndpoints) {
+      const newEndpointId = endpointIdMap.get(link.endpoint_id as string)
+      if (!newEndpointId) continue
+      insertLink.run(randomUUID(), newSuiteId, newEndpointId, link.sort_order ?? 0)
+    }
+  })
+  tx()
+
+  return { suiteId: newSuiteId, endpointsImported: endpointIdMap.size }
+}
+
+/**
+ * Import a whole project (from exported JSON) as a NEW project in the
+ * target workspace. All IDs are regenerated so source and target can
+ * coexist. Returns the new project id.
+ */
+export function importProjectAsNew(
+  data: ProjectExport,
+  workspaceId: string,
+  overrides?: { name?: string },
+): { projectId: string } {
+  const db = getDb()
+  const now = Date.now()
+
+  const newProjectId = randomUUID()
+  const folderIdMap = new Map<string, string>()
+  const endpointIdMap = new Map<string, string>()
+  const savedReqIdMap = new Map<string, string>()
+  const envIdMap = new Map<string, string>()
+  const suiteIdMap = new Map<string, string>()
+
+  for (const f of data.folders) folderIdMap.set(f.id as string, randomUUID())
+  for (const e of data.endpoints) endpointIdMap.set(e.id as string, randomUUID())
+  for (const s of data.savedRequests) savedReqIdMap.set(s.id as string, randomUUID())
+  for (const env of data.environments) envIdMap.set(env.id as string, randomUUID())
+  for (const s of data.testSuites || []) suiteIdMap.set(s.id as string, randomUUID())
+
+  const proj = data.project || {}
+  const projName = overrides?.name || (proj.name as string) || 'Imported Project'
+
+  const tx = db.transaction(() => {
+    // Insert project
+    db.prepare(
+      `INSERT INTO projects (id, workspace_id, name, description, type, sort_order, created_at, updated_at, save_mode, local_path, icon_emoji, icon_color, display_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      newProjectId,
+      workspaceId,
+      projName,
+      proj.description ?? null,
+      proj.type || 'http',
+      proj.sort_order ?? 0,
+      now,
+      now,
+      proj.save_mode || 'local',
+      proj.local_path ?? null,
+      proj.icon_emoji ?? null,
+      proj.icon_color ?? '#2D5FA0',
+      overrides?.name ?? (proj.display_name ?? null),
+    )
+
+    // Folders
+    const insertFolder = db.prepare(
+      `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`
+    )
+    for (const f of data.folders) {
+      const newId = folderIdMap.get(f.id as string) as string
+      const oldParent = f.parent_id as string | null
+      const newParent = oldParent && folderIdMap.has(oldParent) ? folderIdMap.get(oldParent) as string : null
+      insertFolder.run(newId, newProjectId, newParent, f.name, f.sort_order ?? 0)
+    }
+
+    // Endpoints
+    const insertEndpoint = db.prepare(
+      `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    for (const e of data.endpoints) {
+      const newId = endpointIdMap.get(e.id as string) as string
+      const oldFolderId = e.folder_id as string | null
+      const newFolderId = oldFolderId && folderIdMap.has(oldFolderId) ? folderIdMap.get(oldFolderId) as string : null
+      insertEndpoint.run(
+        newId, newProjectId, newFolderId,
+        e.name, e.description ?? null, e.protocol || 'http', e.method ?? null, e.path,
+        e.status || 'developing', e.request_schema ?? null, e.response_schemas ?? null,
+        e.sort_order ?? 0, (e.created_at as number) || now, now,
+      )
+    }
+
+    // Endpoint cases
+    const insertCase = db.prepare(
+      `INSERT INTO endpoint_cases (id, endpoint_id, name, params, headers, body, auth, assertions, is_default, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    for (const c of data.endpointCases || []) {
+      const newEndpointId = endpointIdMap.get(c.endpoint_id as string)
+      if (!newEndpointId) continue
+      insertCase.run(
+        randomUUID(), newEndpointId, c.name,
+        c.params ?? null, c.headers ?? null, c.body ?? null, c.auth ?? null, c.assertions ?? null,
+        c.is_default ?? 0, (c.created_at as number) || now,
+      )
+    }
+
+    // Saved requests
+    const insertSaved = db.prepare(
+      `INSERT INTO saved_requests (id, project_id, folder_id, name, protocol, method, url, params, headers, body, auth, pre_script, post_script, assertions, metadata, sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    for (const s of data.savedRequests || []) {
+      const newId = savedReqIdMap.get(s.id as string) as string
+      const oldFolderId = s.folder_id as string | null
+      const newFolderId = oldFolderId && folderIdMap.has(oldFolderId) ? folderIdMap.get(oldFolderId) as string : null
+      insertSaved.run(
+        newId, newProjectId, newFolderId,
+        s.name, s.protocol || 'http', s.method ?? null, s.url ?? null,
+        s.params ?? null, s.headers ?? null, s.body ?? null, s.auth ?? null,
+        s.pre_script ?? null, s.post_script ?? null, s.assertions ?? null, s.metadata ?? null,
+        s.sort_order ?? 0, (s.created_at as number) || now, now,
+      )
+    }
+
+    // Environments
+    const insertEnv = db.prepare(
+      `INSERT INTO environments (id, workspace_id, name, is_active, created_at, updated_at, project_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    for (const env of data.environments || []) {
+      const newEnvId = envIdMap.get(env.id as string) as string
+      insertEnv.run(
+        newEnvId, workspaceId, env.name, env.is_active ?? 0,
+        (env.created_at as number) || now, now, newProjectId,
+      )
+    }
+
+    // Environment variables
+    const insertEnvVar = db.prepare(
+      `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    for (const v of data.environmentVariables || []) {
+      const newEnvId = envIdMap.get(v.environment_id as string)
+      if (!newEnvId) continue
+      insertEnvVar.run(
+        randomUUID(), newEnvId, v.key, v.value ?? null,
+        v.description ?? null, v.enabled ?? 1, v.secret ?? 0, v.initial_value ?? null,
+      )
+    }
+
+    // Global variables
+    const insertGlobal = db.prepare(
+      `INSERT INTO global_variables (id, workspace_id, key, value, description, enabled, secret, initial_value, project_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    for (const g of data.globalVariables || []) {
+      insertGlobal.run(
+        randomUUID(), workspaceId, g.key, g.value ?? null,
+        g.description ?? null, g.enabled ?? 1, g.secret ?? 0, g.initial_value ?? null, newProjectId,
+      )
+    }
+
+    // Test suites
+    const insertSuite = db.prepare(
+      `INSERT INTO test_suites (id, project_id, name, description, sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    for (const s of data.testSuites || []) {
+      const newId = suiteIdMap.get(s.id as string) as string
+      insertSuite.run(
+        newId, newProjectId, s.name, s.description ?? null, s.sort_order ?? 0,
+        (s.created_at as number) || now, now,
+      )
+    }
+
+    // Test suite endpoints
+    const insertLink = db.prepare(
+      `INSERT INTO test_suite_endpoints (id, suite_id, endpoint_id, sort_order) VALUES (?, ?, ?, ?)`
+    )
+    for (const link of data.testSuiteEndpoints || []) {
+      const newSuiteId = suiteIdMap.get(link.suite_id as string)
+      const newEndpointId = endpointIdMap.get(link.endpoint_id as string)
+      if (!newSuiteId || !newEndpointId) continue
+      insertLink.run(randomUUID(), newSuiteId, newEndpointId, link.sort_order ?? 0)
+    }
+  })
+  tx()
+
+  return { projectId: newProjectId }
 }
 
 // ─── Git helpers ─────────────────────────────────────────────────
@@ -177,14 +693,15 @@ async function getProjectGitConfig(projectId: string): Promise<{
     const config = gitConfig?.[projectId]
     if (!config?.repoUrl) return null
 
-    // Token may be in config directly, or in secure store (legacy)
-    let token = config.token || ''
+    // Token may be in config directly, or in secure store (legacy).
+    // Values written since the safeStorage migration are decrypted here.
+    let token = decryptSecret(config.token || '') || ''
     if (!token) {
       try {
         const secureStore = await getSecureStore()
         const b64Key = `git.${Buffer.from(config.repoUrl).toString('base64').slice(0, 32)}`
         const creds = secureStore.get(b64Key) as { token?: string } | undefined
-        token = creds?.token || ''
+        token = decryptSecret(creds?.token || '') || ''
       } catch { /* ignore */ }
     }
 
@@ -201,6 +718,137 @@ async function getProjectGitConfig(projectId: string): Promise<{
 
 // ─── Register all handlers ───────────────────────────────────────
 export function registerSaveHandlers(): void {
+
+  // ─── Generic: write JSON to file via save dialog ───────────
+  async function writeJsonViaSaveDialog(content: string, defaultName: string): Promise<{ success: boolean; path?: string; error?: string }> {
+    const win = BrowserWindow.getFocusedWindow()
+    const result = await dialog.showSaveDialog(win!, {
+      defaultPath: defaultName,
+      filters: [{ name: 'JSON', extensions: ['json'] }, { name: 'All Files', extensions: ['*'] }],
+    })
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: 'Cancelled' }
+    }
+    writeFileSync(result.filePath, content, 'utf-8')
+    return { success: true, path: result.filePath }
+  }
+
+  // ─── Export Project (JSON file dialog) ─────────────────────
+  ipcMain.handle('save:exportProject', async (_event, projectId: string) => {
+    try {
+      const data = exportProjectData(projectId)
+      const projectName = (data.project?.name as string || 'project').replace(/[^a-zA-Z0-9-_]/g, '_')
+      const dateStr = new Date().toISOString().slice(0, 10)
+      const defaultName = `${projectName}-${dateStr}.json`
+      const res = await writeJsonViaSaveDialog(JSON.stringify(data, null, 2), defaultName)
+      if (!res.success) return { success: false, error: res.error }
+      return { success: true, data: { path: res.path } }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── Export Folder ─────────────────────────────────────────
+  ipcMain.handle('save:exportFolder', async (_event, folderId: string) => {
+    try {
+      const data = exportFolderData(folderId)
+      const db = getDb()
+      const folder = db.prepare('SELECT name FROM folders WHERE id = ?').get(folderId) as { name?: string } | undefined
+      const folderName = (folder?.name || 'folder').replace(/[^a-zA-Z0-9-_]/g, '_')
+      const defaultName = `folder-${folderName}-${new Date().toISOString().slice(0, 10)}.json`
+      const res = await writeJsonViaSaveDialog(JSON.stringify(data, null, 2), defaultName)
+      if (!res.success) return { success: false, error: res.error }
+      return { success: true, data: { path: res.path } }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── Export Test Suite ─────────────────────────────────────
+  ipcMain.handle('save:exportTestSuite', async (_event, suiteId: string) => {
+    try {
+      const data = exportTestSuiteData(suiteId)
+      const suiteName = ((data.suite?.name as string) || 'suite').replace(/[^a-zA-Z0-9-_]/g, '_')
+      const defaultName = `suite-${suiteName}-${new Date().toISOString().slice(0, 10)}.json`
+      const res = await writeJsonViaSaveDialog(JSON.stringify(data, null, 2), defaultName)
+      if (!res.success) return { success: false, error: res.error }
+      return { success: true, data: { path: res.path } }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── Import Project (as NEW project in workspace) ──────────
+  ipcMain.handle('save:importProject', async (_event, payload: { workspaceId: string; name?: string }) => {
+    try {
+      const win = BrowserWindow.getFocusedWindow()
+      const result = await dialog.showOpenDialog(win!, {
+        properties: ['openFile'],
+        title: 'Select project export file',
+        filters: [{ name: 'JSON Files', extensions: ['json'] }],
+      })
+      if (result.canceled || !result.filePaths[0]) {
+        return { success: false, error: 'Cancelled' }
+      }
+      const content = readFileSync(result.filePaths[0], 'utf-8')
+      const parsed = JSON.parse(content) as ProjectExport
+      if (!parsed.version || !parsed.project) {
+        return { success: false, error: 'Invalid project file format.' }
+      }
+      const res = importProjectAsNew(parsed, payload.workspaceId, { name: payload.name })
+      return { success: true, data: { projectId: res.projectId } }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── Import Folder (into existing project, optional parent) ─
+  ipcMain.handle('save:importFolder', async (_event, payload: { projectId: string; parentFolderId?: string | null }) => {
+    try {
+      const win = BrowserWindow.getFocusedWindow()
+      const result = await dialog.showOpenDialog(win!, {
+        properties: ['openFile'],
+        title: 'Select folder export file',
+        filters: [{ name: 'JSON Files', extensions: ['json'] }],
+      })
+      if (result.canceled || !result.filePaths[0]) {
+        return { success: false, error: 'Cancelled' }
+      }
+      const content = readFileSync(result.filePaths[0], 'utf-8')
+      const parsed = JSON.parse(content) as FolderExport
+      if (!parsed.version || parsed.kind !== 'folder') {
+        return { success: false, error: 'Invalid folder export file.' }
+      }
+      const out = importFolderData(parsed, payload.projectId, payload.parentFolderId ?? null)
+      return { success: true, data: out }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── Import Test Suite (into existing project) ─────────────
+  ipcMain.handle('save:importTestSuite', async (_event, payload: { projectId: string }) => {
+    try {
+      const win = BrowserWindow.getFocusedWindow()
+      const result = await dialog.showOpenDialog(win!, {
+        properties: ['openFile'],
+        title: 'Select test suite export file',
+        filters: [{ name: 'JSON Files', extensions: ['json'] }],
+      })
+      if (result.canceled || !result.filePaths[0]) {
+        return { success: false, error: 'Cancelled' }
+      }
+      const content = readFileSync(result.filePaths[0], 'utf-8')
+      const parsed = JSON.parse(content) as TestSuiteExport
+      if (!parsed.version || parsed.kind !== 'testSuite') {
+        return { success: false, error: 'Invalid test suite export file.' }
+      }
+      const out = importTestSuiteData(parsed, payload.projectId)
+      return { success: true, data: out }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
 
   // ─── Save Local ─────────────────────────────────────────────
   ipcMain.handle('save:local', async (_event, payload: {
@@ -376,12 +1024,12 @@ export function registerSaveHandlers(): void {
       await gitRepo.commit(payload.commitMessage || `Update ${projectName}`)
       await gitRepo.push('origin', payload.branch, isEmptyRepo ? ['--set-upstream'] : [])
 
-      // Save credentials securely
+      // Save credentials securely (token is wrapped via OS keychain).
       const store = await getSecureStore()
       store.set(`git.${Buffer.from(payload.repoUrl).toString('base64').slice(0, 32)}`, {
         repoUrl: payload.repoUrl,
         username: payload.username,
-        token: payload.token,
+        token: encryptSecret(payload.token),
       })
 
       addSaveHistory({
@@ -569,7 +1217,7 @@ export function registerSaveHandlers(): void {
       store.set(b64Key, {
         repoUrl: payload.repoUrl,
         username: payload.username,
-        token: payload.token,
+        token: encryptSecret(payload.token),
       })
       return { success: true }
     } catch (e) {

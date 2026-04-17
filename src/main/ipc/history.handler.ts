@@ -45,9 +45,9 @@ export function registerHistoryHandlers(): void {
     }
   })
 
-  ipcMain.handle('history:clear', async (_event, workspaceId?: string) => {
+  ipcMain.handle('history:clear', async (_event, scope?: string | { workspace_id?: string; project_id?: string }) => {
     try {
-      const data = historyRepo.clearHistory(workspaceId)
+      const data = historyRepo.clearHistory(scope)
       return { success: true, data }
     } catch (e) {
       return { success: false, error: (e as Error).message }

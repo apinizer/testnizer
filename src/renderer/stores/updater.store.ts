@@ -91,7 +91,8 @@ export const useUpdaterStore = create<UpdaterStore>((set) => ({
 export function initUpdaterListeners(): (() => void) | undefined {
   if (!window.api?.updater?.onEvent) return undefined
 
-  const cleanup = window.api.updater.onEvent((event: Record<string, unknown>) => {
+  const cleanup = window.api.updater.onEvent((raw) => {
+    const event = raw as unknown as Record<string, unknown>
     const store = useUpdaterStore.getState()
     const type = event.type as string
 

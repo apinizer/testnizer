@@ -1,4 +1,30 @@
 import { ipcMain } from 'electron'
+import { encryptSecret, decryptSecret } from '../lib/secure-storage'
+
+// Field names that must never be written in plaintext. When writing/reading
+// structured settings values we transparently run safeStorage encryption
+// on any field whose key matches this set.
+const SENSITIVE_FIELDS = new Set(['token', 'password', 'passphrase', 'secret', 'apiKey', 'api_key'])
+
+function transformSecrets(value: unknown, mode: 'encrypt' | 'decrypt'): unknown {
+  if (value === null || value === undefined) return value
+  if (Array.isArray(value)) {
+    return value.map((v) => transformSecrets(v, mode))
+  }
+  if (typeof value === 'object') {
+    const source = value as Record<string, unknown>
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(source)) {
+      if (SENSITIVE_FIELDS.has(k) && typeof v === 'string') {
+        out[k] = mode === 'encrypt' ? encryptSecret(v) : decryptSecret(v)
+      } else {
+        out[k] = transformSecrets(v, mode)
+      }
+    }
+    return out
+  }
+  return value
+}
 
 interface AppSettings {
   theme: string
@@ -55,7 +81,7 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:getAll', async () => {
     try {
       const store = await getStore()
-      const data = store.store
+      const data = transformSecrets(store.store, 'decrypt') as AppSettings
       return { success: true, data }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -65,7 +91,7 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:get', async (_event, key: string) => {
     try {
       const store = await getStore()
-      const data = store.get(key)
+      const data = transformSecrets(store.get(key), 'decrypt')
       return { success: true, data }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -75,7 +101,7 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:set', async (_event, key: string, value: unknown) => {
     try {
       const store = await getStore()
-      store.set(key, value)
+      store.set(key, transformSecrets(value, 'encrypt'))
       return { success: true, data: true }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -86,9 +112,9 @@ export function registerSettingsHandlers(): void {
     try {
       const store = await getStore()
       for (const [key, value] of Object.entries(settings)) {
-        store.set(key, value)
+        store.set(key, transformSecrets(value, 'encrypt'))
       }
-      return { success: true, data: store.store }
+      return { success: true, data: transformSecrets(store.store, 'decrypt') }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

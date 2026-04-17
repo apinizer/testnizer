@@ -330,7 +330,7 @@ export default function AuthTab() {
               <div className="mb-3">
                 <div className={LABEL} style={{ color: 'var(--text)' }}>Username</div>
                 <input
-                  value={(auth.oauth2 as Record<string, unknown>)?.username as string || ''}
+                  value={(auth.oauth2 as unknown as Record<string, unknown>)?.username as string || ''}
                   onChange={(e) =>
                     setAuth({ ...auth, oauth2: { ...auth.oauth2!, username: e.target.value } as typeof auth.oauth2 })
                   }
@@ -342,7 +342,7 @@ export default function AuthTab() {
               <div className="mb-3">
                 <div className={LABEL} style={{ color: 'var(--text)' }}>Password</div>
                 <PasswordInput
-                  value={(auth.oauth2 as Record<string, unknown>)?.password as string || ''}
+                  value={(auth.oauth2 as unknown as Record<string, unknown>)?.password as string || ''}
                   onChange={(v) =>
                     setAuth({ ...auth, oauth2: { ...auth.oauth2!, password: v } as typeof auth.oauth2 })
                   }

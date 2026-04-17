@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, Trash2, MoreHorizontal, GitBranch, Pencil } from 'lucide-react'
+import { Plus, Trash2, MoreHorizontal, GitBranch, Pencil, Upload } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
 import { useAuthStore } from '../../stores/auth.store'
@@ -11,11 +11,31 @@ import appIcon from '../../assets/icon.png'
 
 export default function ProjectHome() {
   const projects = useWorkspaceStore((s) => s.projects)
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
+  const fetchProjects = useWorkspaceStore((s) => s.fetchProjects)
   const setActiveProject = useWorkspaceStore((s) => s.setActiveProject)
   const deleteProject = useWorkspaceStore((s) => s.deleteProject)
   const renameProject = useWorkspaceStore((s) => s.renameProject)
   const setShowNewProjectModal = useUIStore((s) => s.setShowNewProjectModal)
   const { t } = useTranslation()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api = () => (window as any).api
+
+  async function handleImportProject() {
+    if (!activeWorkspaceId) return
+    try {
+      const result = await api().save?.importProject?.({ workspaceId: activeWorkspaceId })
+      if (result?.success && result.data?.projectId) {
+        await fetchProjects(activeWorkspaceId)
+        setActiveProject(result.data.projectId)
+      } else if (result?.error && result.error !== 'Cancelled') {
+        console.error('Import project failed:', result.error)
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
 
   const [contextMenuId, setContextMenuId] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -158,20 +178,37 @@ export default function ProjectHome() {
               {projects.length}
             </span>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowNewProjectModal(true)}
-            className="flex cursor-pointer items-center gap-1.5 rounded-lg font-medium"
-            style={{
-              background: 'var(--accent)',
-              color: '#fff',
-              border: 'none',
-              padding: '6px 14px',
-            }}
-          >
-            <Plus size={14} />
-            {t('home.newProject')}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleImportProject}
+              className="flex cursor-pointer items-center gap-1.5 rounded-lg font-medium"
+              style={{
+                background: 'var(--white)',
+                color: 'var(--text)',
+                border: '1px solid var(--border2)',
+                padding: '6px 14px',
+              }}
+              title={t('home.importTitle')}
+            >
+              <Upload size={14} />
+              {t('home.import')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowNewProjectModal(true)}
+              className="flex cursor-pointer items-center gap-1.5 rounded-lg font-medium"
+              style={{
+                background: 'var(--accent)',
+                color: '#fff',
+                border: 'none',
+                padding: '6px 14px',
+              }}
+            >
+              <Plus size={14} />
+              {t('home.newProject')}
+            </button>
+          </div>
         </div>
 
         {/* Project list */}
@@ -301,7 +338,7 @@ export default function ProjectHome() {
                       }}
                     >
                       <Pencil size={14} />
-                      {t('home.rename') || 'Yeniden Adlandır'}
+                      {t('home.rename')}
                     </button>
                     <button
                       type="button"
@@ -351,7 +388,7 @@ export default function ProjectHome() {
               <Plus size={24} style={{ color: 'var(--hint)' }} />
             </div>
             <p className="mb-1 font-medium" style={{ color: 'var(--text)' }}>
-              Henüz proje yok
+              {t('home.noProjectsYet')}
             </p>
             <p className="mb-4">{t('home.noProjects')}</p>
             <button
@@ -366,7 +403,7 @@ export default function ProjectHome() {
               }}
             >
               <Plus size={13} />
-              İlk Projeyi Oluştur
+              {t('home.createFirstProject')}
             </button>
           </div>
         )}
@@ -375,9 +412,9 @@ export default function ProjectHome() {
       <DeleteConfirmDialog
         open={!!deleteTarget}
         itemName={deleteTarget?.display_name || deleteTarget?.name || ''}
-        itemType="project"
+        itemType={t('home.projectLabel')}
         requireTyping
-        description="This will permanently delete the project and all its data."
+        description={t('home.deleteProjectDesc')}
         onConfirm={confirmDeleteProject}
         onCancel={() => setDeleteTarget(null)}
       />

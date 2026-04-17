@@ -6,6 +6,7 @@ import type {
   AuthConfig,
   TestAssertion,
   ApiResponse,
+  ConsoleLog,
 } from '../types'
 import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
@@ -181,15 +182,50 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   },
 
   sendRequest: async () => {
-    const { method, url, params, headers, body, auth } = get()
+    const { method, url, params, headers, body, auth, preScript } = get()
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const envStore = useEnvironmentStore.getState()
     const wsStore = useWorkspaceStore.getState()
     const activeTabId = tabsStore.activeTabId
 
-    // Resolve {{variable}} placeholders
-    const activeVars = envStore.getActiveVariables()
+    const preScriptLogs: ConsoleLog[] = []
+
+    // Per-send variable overlay. Pre-request script can call
+    // pm.environment.set / pm.variables.set — we fold those into this object
+    // so that variable resolution below sees them on this request. Note that
+    // these overrides are in-memory only; persisting to the environment store
+    // would require the same plumbing the post-response script lacks today,
+    // and introducing that is outside the scope of this change.
+    const scriptOverrides: Record<string, string> = {}
+
+    // Run pre-request script before variables are resolved so the script can
+    // mutate them.
+    if (preScript && preScript.trim()) {
+      const activeVarsRecord = envStore.getActiveVariables()
+      const envMap = new Map<string, string>(Object.entries(activeVarsRecord))
+      const globalMap = new Map<string, string>()
+      const globalVars = envStore.globalVariables || []
+      for (const gv of globalVars) {
+        if (gv.enabled) globalMap.set(gv.key, gv.value || gv.initialValue || '')
+      }
+      // Pre-request scripts don't read response — supply an empty shell so the
+      // pm API contract is satisfied.
+      const emptyResp: ApiResponse = { requestId: makeId(), protocol: 'http', timing: { total: 0 } }
+      const pmApi = createPmApi(emptyResp, envMap, globalMap)
+      const scriptResult = runScript(preScript, pmApi)
+      // test-runner emits 'info'/'debug' via console.info/debug — flatten those
+      // into 'log' so they satisfy ConsoleLog's narrower level union.
+      for (const log of scriptResult.consoleLogs) {
+        const level = log.level === 'error' ? 'error' : log.level === 'warn' ? 'warn' : 'log'
+        preScriptLogs.push({ level, message: log.message, timestamp: log.timestamp })
+      }
+      Object.assign(scriptOverrides, scriptResult.globalUpdates, scriptResult.envUpdates)
+    }
+
+    // Resolve {{variable}} placeholders (after pre-request script has had
+    // a chance to mutate env/globals).
+    const activeVars = { ...envStore.getActiveVariables(), ...scriptOverrides }
     const resolvedUrl = resolveVariables(url, activeVars)
     const resolvedParams = resolveKeyValuePairs(
       params.filter((p) => p.enabled),
@@ -209,6 +245,24 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       tabsStore.markLoading(activeTabId, true)
     }
 
+    // Pull project-level request settings (timeout/ssl/proxy) if available.
+    // These are persisted by ProjectDetailModal under project.<id>.settings.
+    interface ProjectNetSettings {
+      requestTimeout?: number
+      sslVerification?: boolean
+      followRedirects?: boolean
+      proxy?: { mode?: 'system' | 'none' | 'custom'; host?: string; port?: number; bypass?: string; auth?: { username: string; password: string } }
+    }
+    let netSettings: ProjectNetSettings = {}
+    if (wsStore.activeProjectId) {
+      try {
+        const res = await window.api?.settings?.get(`project.${wsStore.activeProjectId}.settings`) as
+          | { success: boolean; data?: ProjectNetSettings }
+          | undefined
+        if (res?.success && res.data) netSettings = res.data
+      } catch { /* ignore */ }
+    }
+
     try {
       const result = await window.api?.request?.send({
         method,
@@ -217,6 +271,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         headers: resolvedHeaders as unknown[],
         body: resolvedBody,
         auth,
+        timeout: netSettings.requestTimeout,
+        sslVerification: netSettings.sslVerification,
+        followRedirects: netSettings.followRedirects,
+        proxy: netSettings.proxy,
         // History metadata
         _workspaceId: wsStore.activeWorkspaceId || undefined,
         _projectId: wsStore.activeProjectId || undefined,
@@ -238,7 +296,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
 
         // Run post-response script and assertions
         const allTestResults = [...(apiResp.testResults || [])]
-        const allConsoleLogs = [...(apiResp.consoleLogs || [])]
+        const allConsoleLogs = [...(apiResp.consoleLogs || []), ...preScriptLogs]
 
         // Run built-in assertions
         if (asserts.length > 0) {
@@ -248,7 +306,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
 
         // Run post-response script (pm.test, pm.expect, etc.)
         if (ps && ps.trim()) {
-          const activeVarsRecord = envStore.getActiveVariables()
+          const activeVarsRecord = { ...envStore.getActiveVariables(), ...scriptOverrides }
           const envMap = new Map<string, string>(Object.entries(activeVarsRecord))
           const globalMap = new Map<string, string>()
           // Populate global vars

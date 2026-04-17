@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Check, X } from 'lucide-react'
 import type { KeyValuePair } from '../../types'
 import VariableAutocompleteInput from './VariableAutocompleteInput'
+import { useTranslation } from '../../lib/i18n'
 
 const COMMON_HEADERS = [
   'Accept',
@@ -144,10 +145,12 @@ export default function KeyValueTable({
   onUpdate,
   onRemove,
   onAdd,
-  addLabel = '+ Add Parameter',
+  addLabel,
   valueColor,
   enableAutocomplete = false,
 }: KeyValueTableProps) {
+  const { t } = useTranslation()
+  const resolvedAddLabel = addLabel ?? `+ ${t('kv.key')} / ${t('kv.value')}`
   const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(null)
   const activeInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -258,9 +261,9 @@ export default function KeyValueTable({
           }}
         >
           <div />
-          <div className="px-2.5 py-1">Key</div>
-          <div className="px-2.5 py-1">Value</div>
-          <div className="px-2.5 py-1">Description</div>
+          <div className="px-2.5 py-1">{t('kv.key')}</div>
+          <div className="px-2.5 py-1">{t('kv.value')}</div>
+          <div className="px-2.5 py-1">{t('kv.description')}</div>
           <div />
         </div>
 
@@ -308,7 +311,7 @@ export default function KeyValueTable({
                 }}
                 onKeyDown={handleKeyDown}
                 className="w-full border-none bg-transparent px-2.5 py-[5px] text-[var(--text)] outline-none"
-                placeholder="Key"
+                placeholder={t('kv.key')}
               />
             </div>
 
@@ -320,7 +323,7 @@ export default function KeyValueTable({
                 onKeyDown={handleKeyDown}
                 className="w-full border-none bg-transparent px-2.5 py-[5px] outline-none"
                 style={{ color: valueColor || 'var(--text)' }}
-                placeholder="Value"
+                placeholder={t('kv.value')}
               />
             </div>
 
@@ -330,7 +333,7 @@ export default function KeyValueTable({
                 value={row.description || ''}
                 onChange={(e) => onUpdate(row.id, { description: e.target.value })}
                 className="w-full border-none bg-transparent px-2.5 py-[5px] text-[var(--muted)] outline-none"
-                placeholder="Description"
+                placeholder={t('kv.description')}
               />
             </div>
 
@@ -361,7 +364,7 @@ export default function KeyValueTable({
         >
           <div />
           <div className="px-2.5 py-[5px] text-[var(--hint)]">
-            Add new...
+            {t('kv.addNew')}
           </div>
           <div />
           <div />
@@ -375,7 +378,7 @@ export default function KeyValueTable({
         onClick={onAdd}
         className="mt-1.5 w-full cursor-pointer rounded-md border border-dashed border-[var(--border)] bg-transparent py-1 text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
       >
-        {addLabel}
+        {resolvedAddLabel}
       </button>
 
       {/* Autocomplete portal */}

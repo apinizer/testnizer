@@ -10,13 +10,13 @@ import SettingsTab from './SettingsTab'
 
 type ReqTabKey = 'params' | 'headers' | 'auth' | 'body' | 'scripts' | 'settings'
 
-const REQ_TABS: { key: ReqTabKey; label: string; i18n?: string }[] = [
+const REQ_TABS: { key: ReqTabKey; label: string; i18n: string }[] = [
   { key: 'params', label: 'Params', i18n: 'request.params' },
   { key: 'headers', label: 'Headers', i18n: 'request.headers' },
   { key: 'auth', label: 'Authorization', i18n: 'request.auth' },
   { key: 'body', label: 'Body', i18n: 'request.body' },
-  { key: 'scripts', label: 'Scripts' },
-  { key: 'settings', label: 'Settings' },
+  { key: 'scripts', label: 'Scripts', i18n: 'request.scripts' },
+  { key: 'settings', label: 'Settings', i18n: 'request.settings' },
 ]
 
 export default function RequestEditor() {
@@ -80,7 +80,7 @@ export default function RequestEditor() {
                 border: 'none',
               }}
             >
-              {tab.i18n ? t(tab.i18n) : tab.label}
+              {t(tab.i18n)}
               {badge?.dot && (
                 <span
                   className="inline-block h-[6px] w-[6px] rounded-full"

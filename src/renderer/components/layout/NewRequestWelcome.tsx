@@ -1,4 +1,4 @@
-import { Globe, Zap, FileText } from 'lucide-react'
+import { Globe, Zap, FileText, Bot } from 'lucide-react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
 
@@ -22,7 +22,7 @@ export default function NewRequestWelcome() {
   function createHttpEndpoint() {
     if (!activeTabId) return
     updateTab(activeTabId, {
-      name: 'New Endpoint',
+      name: t('welcome.newEndpointName'),
       protocol: 'http',
       method: 'GET',
       url: '',
@@ -32,7 +32,7 @@ export default function NewRequestWelcome() {
   function createQuickRequest() {
     if (!activeTabId) return
     updateTab(activeTabId, {
-      name: 'Quick Request',
+      name: t('welcome.quickRequest'),
       protocol: 'http',
       method: 'GET',
       url: '',
@@ -41,26 +41,37 @@ export default function NewRequestWelcome() {
 
   function createWebSocket() {
     const id = makeTabId()
-    openTab({ id, name: 'WebSocket', protocol: 'websocket', method: 'GET', url: '' })
+    openTab({ id, name: t('welcome.websocket'), protocol: 'websocket', method: 'GET', url: '' })
+  }
+
+  function createAiSse() {
+    const id = makeTabId()
+    openTab({ id, name: t('welcome.aiSseName'), protocol: 'sse', url: '' })
   }
 
   const actions: QuickAction[] = [
     {
       icon: <Globe size={28} strokeWidth={1.5} />,
       iconBg: '#E3F2FD',
-      label: 'New HTTP Endpoint',
+      label: t('welcome.newHttpEndpoint'),
       onClick: createHttpEndpoint,
     },
     {
       icon: <FileText size={28} strokeWidth={1.5} />,
       iconBg: '#EDE7F6',
-      label: 'New WebSocket',
+      label: t('welcome.websocket'),
       onClick: createWebSocket,
+    },
+    {
+      icon: <Bot size={28} strokeWidth={1.5} />,
+      iconBg: '#F3E5F5',
+      label: t('welcome.aiSse'),
+      onClick: createAiSse,
     },
     {
       icon: <Zap size={28} strokeWidth={1.5} />,
       iconBg: '#E8F5E9',
-      label: 'Quick Request',
+      label: t('welcome.quickRequest'),
       onClick: createQuickRequest,
     },
   ]

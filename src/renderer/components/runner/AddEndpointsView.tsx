@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Search, ChevronRight, ChevronDown, FolderOpen, X } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
+import { useTranslation } from '../../lib/i18n'
 import MethodBadge from '../shared/MethodBadge'
 
 interface EndpointWithFolder {
@@ -27,6 +28,7 @@ interface FolderGroup {
 const api = () => (window as any).api
 
 export default function AddEndpointsView() {
+  const { t } = useTranslation()
   const suiteId = useUIStore((s) => s.addEndpointsSuiteId)
   const suiteName = useUIStore((s) => s.addEndpointsSuiteName)
   const close = useCallback(() => useUIStore.getState().setAddEndpointsSuite(null), [])
@@ -161,10 +163,10 @@ export default function AddEndpointsView() {
       >
         <div>
           <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>
-            Add Endpoints to "{suiteName}"
+            {t('addEndpoints.addTo')} "{suiteName}"
           </div>
           <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>
-            Select endpoints from your project to include in this test suite
+            {t('addEndpoints.subtitle')}
           </div>
         </div>
         <button
@@ -184,7 +186,7 @@ export default function AddEndpointsView() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search endpoints..."
+            placeholder={t('addEndpoints.searchPlaceholder')}
             autoFocus
             className="flex-1 border-none bg-transparent outline-none"
             style={{ fontSize: 14, color: 'var(--text)' }}
@@ -198,7 +200,7 @@ export default function AddEndpointsView() {
             className="cursor-pointer"
           />
           <span style={{ fontSize: 13, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-            {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
+            {selected.size > 0 ? `${selected.size} ${t('addEndpoints.selected')}` : t('addEndpoints.selectAll')}
           </span>
         </label>
       </div>
@@ -208,7 +210,7 @@ export default function AddEndpointsView() {
         {groups.length === 0 && rootEndpoints.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16" style={{ color: 'var(--hint)' }}>
             <div style={{ fontSize: 14 }}>
-              {allEndpoints.length === 0 ? 'No endpoints in this project' : availableEndpoints.length === 0 ? 'All endpoints are already in this suite' : 'No matches'}
+              {allEndpoints.length === 0 ? t('addEndpoints.noEndpoints') : availableEndpoints.length === 0 ? t('addEndpoints.allAlreadyIn') : t('addEndpoints.noMatches')}
             </div>
           </div>
         ) : (
@@ -241,7 +243,7 @@ export default function AddEndpointsView() {
                   />
                   <FolderOpen size={14} style={{ color: 'var(--accent)' }} />
                   <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-                    {group.folder?.name || 'Ungrouped'}
+                    {group.folder?.name || t('addEndpoints.ungrouped')}
                   </span>
                   <span style={{ fontSize: 13, color: 'var(--hint)' }}>
                     ({folderEps.length})
@@ -305,7 +307,7 @@ export default function AddEndpointsView() {
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between border-t px-5 py-3" style={{ borderColor: 'var(--border)' }}>
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>
-          {filtered.length} endpoint{filtered.length !== 1 ? 's' : ''} available
+          {filtered.length} {filtered.length !== 1 ? t('addEndpoints.endpoints') : t('addEndpoints.endpoint')} {t('addEndpoints.available')}
         </span>
         <div className="flex items-center gap-2">
           <button
@@ -314,7 +316,7 @@ export default function AddEndpointsView() {
             className="cursor-pointer rounded-lg border px-4 py-1.5"
             style={{ background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--text)', fontSize: 13 }}
           >
-            Cancel
+            {t('addEndpoints.cancel')}
           </button>
           <button
             type="button"
@@ -323,7 +325,7 @@ export default function AddEndpointsView() {
             className="cursor-pointer rounded-lg border-none px-5 py-1.5 font-medium text-white disabled:opacity-50"
             style={{ background: 'var(--accent)', fontSize: 13 }}
           >
-            Add {selected.size > 0 ? `${selected.size} endpoint${selected.size > 1 ? 's' : ''}` : ''}
+            {t('addEndpoints.add')} {selected.size > 0 ? `${selected.size} ${selected.size > 1 ? t('addEndpoints.endpoints') : t('addEndpoints.endpoint')}` : ''}
           </button>
         </div>
       </div>

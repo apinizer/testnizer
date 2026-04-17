@@ -1,7 +1,8 @@
-import { Globe, Zap, Radio, Cpu } from 'lucide-react'
+import { Globe, Zap, Radio, Cpu, Bot } from 'lucide-react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
+import { useTranslation } from '../../lib/i18n'
 
 function makeTabId(): string {
   return 'tab-' + Math.random().toString(36).substring(2, 10)
@@ -19,10 +20,11 @@ export default function ProjectWelcome() {
   const openTab = useTabsStore((s) => s.openTab)
   const switchToTab = useRequestStore((s) => s.switchToTab)
   const clearResponse = useResponseStore((s) => s.clearResponse)
+  const { t } = useTranslation()
 
-  function createTab(name: string, protocol: 'http' | 'websocket' | 'graphql', method = 'GET') {
+  function createTab(name: string, protocol: 'http' | 'websocket' | 'graphql' | 'sse', method?: string) {
     const id = makeTabId()
-    openTab({ id, name, protocol, method, url: '' })
+    openTab({ id, name, protocol, method: method ?? 'GET', url: '' })
     switchToTab(id)
     clearResponse()
   }
@@ -32,29 +34,36 @@ export default function ProjectWelcome() {
       icon: <Globe size={32} strokeWidth={1.5} />,
       iconBg: '#E3F2FD',
       iconColor: '#1976D2',
-      label: 'New HTTP Endpoint',
-      onClick: () => createTab('New Endpoint', 'http', 'GET'),
+      label: t('welcome.newHttpEndpoint'),
+      onClick: () => createTab(t('welcome.newEndpointName'), 'http', 'GET'),
     },
     {
       icon: <Zap size={32} strokeWidth={1.5} />,
       iconBg: '#E8F5E9',
       iconColor: '#388E3C',
-      label: 'Quick Request',
-      onClick: () => createTab('Quick Request', 'http', 'GET'),
+      label: t('welcome.quickRequest'),
+      onClick: () => createTab(t('welcome.quickRequest'), 'http', 'GET'),
     },
     {
       icon: <Radio size={32} strokeWidth={1.5} />,
       iconBg: '#E0F7FA',
       iconColor: '#00838F',
-      label: 'WebSocket',
-      onClick: () => createTab('WebSocket', 'websocket'),
+      label: t('welcome.websocket'),
+      onClick: () => createTab(t('welcome.websocket'), 'websocket'),
     },
     {
       icon: <Cpu size={32} strokeWidth={1.5} />,
       iconBg: '#F3E5F5',
       iconColor: '#6A1B9A',
-      label: 'GraphQL',
-      onClick: () => createTab('GraphQL', 'graphql', 'POST'),
+      label: t('welcome.graphql'),
+      onClick: () => createTab(t('welcome.graphql'), 'graphql', 'POST'),
+    },
+    {
+      icon: <Bot size={32} strokeWidth={1.5} />,
+      iconBg: '#EDE7F6',
+      iconColor: '#5E35B1',
+      label: t('welcome.aiSse'),
+      onClick: () => createTab(t('welcome.aiSseName'), 'sse'),
     },
   ]
 

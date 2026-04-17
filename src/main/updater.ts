@@ -127,22 +127,9 @@ export async function initAutoUpdater(): Promise<void> {
     }
   })
 
-  // ─── Initial check with 5-second delay ──────────────────────
-
-  setTimeout(() => {
-    autoUpdater.checkForUpdates().catch((err: unknown) => {
-      console.error('Auto-update check failed:', (err as Error).message)
-    })
-  }, 5000)
-
-  // ─── Periodic check every 4 hours ──────────────────────────
-
-  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000
-  setInterval(() => {
-    autoUpdater.checkForUpdates().catch((err: unknown) => {
-      console.error('Periodic auto-update check failed:', (err as Error).message)
-    })
-  }, FOUR_HOURS_MS)
+  // NOTE: Automatic update polling is intentionally disabled.
+  // This application runs fully offline by default; updates must be
+  // triggered manually by the user through the Settings UI.
 }
 
 function registerStubHandlers(): void {

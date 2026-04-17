@@ -7,8 +7,6 @@ import {
   Server,
   Wifi,
   Save,
-  Eye,
-  EyeOff,
   Info,
   ShieldCheck,
   Play,
@@ -16,24 +14,38 @@ import {
   Braces,
   Database,
   GitMerge,
-  Settings as SettingsIcon,
+  Sliders,
+  Palette,
+  Keyboard,
+  HardDrive,
+  FileBadge,
+  Network,
+  RefreshCw,
+  HelpCircle,
 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
+import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
-import MonacoWrapper from '../shared/MonacoWrapper'
-import type { Theme, Language } from '../../types'
-
-const COLORS = ['#2D5FA0', '#e85d4a', '#f5a623', '#1a7a4a', '#0066cc', '#7c4dff', '#e91e63', '#00897b', '#555555']
-const EMOJIS = ['🚀', '⚡', '🔥', '🎯', '🌐', '🔌', '💻', '📡', '🛡️', '⚙️', '📦', '🗄️', '🔑', '💡', '🤖', '🌊']
-
-function applyProjectColor(color: string) {
-  const root = document.documentElement
-  root.style.setProperty('--accent', color)
-  root.style.setProperty('--accent-text', color)
-}
+import {
+  OverviewPane,
+  AuthPane,
+  ScriptPane,
+  VariablesPane,
+  StoragePane,
+  BranchesPane,
+  GeneralPane,
+  ThemesPane,
+  ShortcutsPane,
+  DataPane,
+  CertificatesPane,
+  ProxyPane,
+  UpdatePane,
+  AboutPane,
+} from './project-settings-panes'
+import type { ProjectSettings, ProjectAuth } from './project-settings-panes'
 
 type Tab =
   | 'overview'
@@ -43,32 +55,47 @@ type Tab =
   | 'variables'
   | 'storage'
   | 'branches'
-  | 'app'
-
-interface ProjectSettings {
-  auth: {
-    type: 'none' | 'inherit' | 'basic' | 'bearer' | 'api-key'
-    bearerToken?: string
-    basicUser?: string
-    basicPass?: string
-    apiKeyKey?: string
-    apiKeyValue?: string
-    apiKeyIn?: 'header' | 'query'
-  }
-  preScript: string
-  testScript: string
-}
+  | 'general'
+  | 'themes'
+  | 'shortcuts'
+  | 'data'
+  | 'certificates'
+  | 'proxy'
+  | 'update'
+  | 'about'
 
 const DEFAULT_SETTINGS: ProjectSettings = {
   auth: { type: 'none' },
   preScript: '// Runs before every request in this project\n// pm.environment.set("timestamp", Date.now())\n',
   testScript: '// Runs after every response in this project\n// pm.test("Status is 2xx", () => pm.response.to.be.ok)\n',
+  // Postman-style general settings (apply per-project)
+  requestTimeout: 30000,
+  maxResponseSizeMb: 50,
+  trimRequest: true,
+  autoSave: true,
+  alwaysOpenNewTab: true,
+  askOnClose: true,
+  sendNoCache: true,
+  sendPostmanToken: true,
+  retainHeaders: false,
+  sslVerification: true,
+  followRedirects: true,
+  workingDirectory: '',
+  // Proxy
+  proxy: { mode: 'system' },
+  // Update
+  autoCheckUpdates: true,
+  autoDownloadUpdates: false,
 }
 
 export default function ProjectDetailModal() {
+  const { t } = useTranslation()
   const show = useUIStore((s) => s.showProjectDetailModal)
   const setShow = useUIStore((s) => s.setShowProjectDetailModal)
   const setShowEnvironmentModal = useUIStore((s) => s.setShowEnvironmentModal)
+  const setShowUpdateModal = useUIStore((s) => s.setShowUpdateModal)
+  const setShowImportModal = useUIStore((s) => s.setShowImportModal)
+
   const activeProject = useWorkspaceStore((s) => {
     const pid = s.activeProjectId
     return s.projects.find((p) => p.id === pid)
@@ -97,18 +124,20 @@ export default function ProjectDetailModal() {
   const [editIconColor, setEditIconColor] = useState('#2D5FA0')
   const [editIconMode, setEditIconMode] = useState<'auto' | 'emoji'>('auto')
 
-  // Project-level Postman-style settings (auth / pre / tests)
   const [projSettings, setProjSettings] = useState<ProjectSettings>(DEFAULT_SETTINGS)
 
-  // App-level
+  // App-level (shared state)
   const theme = useUIStore((s) => s.theme)
   const setTheme = useUIStore((s) => s.setTheme)
   const locale = useUIStore((s) => s.locale)
   const setLocale = useUIStore((s) => s.setLocale)
   const fontSize = useUIStore((s) => s.fontSize)
   const setFontSize = useUIStore((s) => s.setFontSize)
+  const fontFamily = useUIStore((s) => s.fontFamily)
+  const setFontFamily = useUIStore((s) => s.setFontFamily)
+  const accentColor = useUIStore((s) => s.accentColor)
+  const setAccentColor = useUIStore((s) => s.setAccentColor)
 
-  // Load project data when opening
   useEffect(() => {
     if (show && activeProject) {
       setTab('overview')
@@ -150,7 +179,7 @@ export default function ProjectDetailModal() {
     try {
       const result = await window.api?.settings?.get(`project.${projectId}.settings`) as {
         success: boolean
-        data?: ProjectSettings
+        data?: Partial<ProjectSettings>
       }
       if (result?.success && result.data) {
         setProjSettings({ ...DEFAULT_SETTINGS, ...result.data })
@@ -191,7 +220,6 @@ export default function ProjectDetailModal() {
       icon_emoji: emojiVal,
       icon_color: editIconColor,
     })
-    applyProjectColor(editIconColor)
 
     if (editSaveMode === 'git' || editSaveMode === 'both') {
       if (editGitUrl) {
@@ -207,7 +235,6 @@ export default function ProjectDetailModal() {
       }
     }
 
-    // Persist Postman-style project settings
     try {
       await window.api?.settings?.set(`project.${activeProject.id}.settings`, projSettings)
     } catch { /* non-critical */ }
@@ -222,21 +249,36 @@ export default function ProjectDetailModal() {
   }
 
   const modeLabels: Record<string, { label: string; icon: React.ReactNode }> = {
-    local: { label: 'Local', icon: <FolderOpen size={12} /> },
-    git: { label: 'Git', icon: <GitBranch size={12} /> },
-    both: { label: 'Local + Git', icon: <Save size={12} /> },
+    local: { label: t('storage.local'), icon: <FolderOpen size={12} /> },
+    git: { label: t('storage.git'), icon: <GitBranch size={12} /> },
+    both: { label: t('storage.both'), icon: <Save size={12} /> },
   }
 
-  const SIDEBAR_TABS: Array<{ id: Tab; label: string; icon: React.ReactNode; group?: string }> = [
-    { id: 'overview', label: 'Overview', icon: <Info size={14} /> },
-    { id: 'authorization', label: 'Authorization', icon: <ShieldCheck size={14} /> },
-    { id: 'preRequest', label: 'Pre-request Script', icon: <Play size={14} /> },
-    { id: 'tests', label: 'Tests', icon: <FlaskConical size={14} /> },
-    { id: 'variables', label: 'Variables', icon: <Braces size={14} /> },
-    { id: 'storage', label: 'Storage', icon: <Database size={14} /> },
-    { id: 'branches', label: 'Branches', icon: <GitMerge size={14} /> },
-    { id: 'app', label: 'App Settings', icon: <SettingsIcon size={14} /> },
+  const ALL_TABS: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
+    { id: 'overview', label: t('tab.overview'), icon: <Info size={14} /> },
+    { id: 'authorization', label: t('tab.authorization'), icon: <ShieldCheck size={14} /> },
+    { id: 'preRequest', label: t('tab.preRequest'), icon: <Play size={14} /> },
+    { id: 'tests', label: t('tab.tests'), icon: <FlaskConical size={14} /> },
+    { id: 'variables', label: t('tab.variables'), icon: <Braces size={14} /> },
+    { id: 'storage', label: t('tab.storage'), icon: <Database size={14} /> },
+    { id: 'branches', label: t('tab.branches'), icon: <GitMerge size={14} /> },
+    { id: 'general', label: t('tab.general'), icon: <Sliders size={14} /> },
+    { id: 'themes', label: t('tab.themes'), icon: <Palette size={14} /> },
+    { id: 'shortcuts', label: t('tab.shortcuts'), icon: <Keyboard size={14} /> },
+    { id: 'data', label: t('tab.data'), icon: <HardDrive size={14} /> },
+    { id: 'certificates', label: t('tab.certificates'), icon: <FileBadge size={14} /> },
+    { id: 'proxy', label: t('tab.proxy'), icon: <Network size={14} /> },
+    { id: 'update', label: t('tab.update'), icon: <RefreshCw size={14} /> },
+    { id: 'about', label: t('tab.about'), icon: <HelpCircle size={14} /> },
   ]
+
+  function updateAuth(patch: Partial<ProjectAuth>) {
+    setProjSettings((s) => ({ ...s, auth: { ...s.auth, ...patch } }))
+  }
+
+  function updateProjSettings(patch: Partial<ProjectSettings>) {
+    setProjSettings((s) => ({ ...s, ...patch }))
+  }
 
   return (
     <div
@@ -250,17 +292,17 @@ export default function ProjectDetailModal() {
         style={{
           background: 'var(--white)',
           borderRadius: 14,
-          width: 960,
+          width: 1040,
           maxWidth: '96%',
-          height: 640,
-          maxHeight: '92vh',
+          height: 680,
+          maxHeight: '94vh',
           boxShadow: 'var(--shadow-modal)',
           border: '1px solid var(--border)',
         }}
       >
         {/* Sidebar */}
         <div
-          className="flex w-[230px] shrink-0 flex-col"
+          className="flex w-[240px] shrink-0 flex-col"
           style={{
             background: 'var(--surface)',
             borderRight: '1px solid var(--border)',
@@ -290,17 +332,15 @@ export default function ProjectDetailModal() {
 
           {/* Nav */}
           <div className="flex-1 overflow-y-auto py-2">
-            <SidebarGroup title="Project Settings">
-              {SIDEBAR_TABS.map((item) => (
-                <SidebarItem
-                  key={item.id}
-                  label={item.label}
-                  icon={item.icon}
-                  active={tab === item.id}
-                  onClick={() => setTab(item.id)}
-                />
-              ))}
-            </SidebarGroup>
+            {ALL_TABS.map((item) => (
+              <SidebarItem
+                key={item.id}
+                label={item.label}
+                icon={item.icon}
+                active={tab === item.id}
+                onClick={() => setTab(item.id)}
+              />
+            ))}
           </div>
 
           {/* Close */}
@@ -308,7 +348,7 @@ export default function ProjectDetailModal() {
             className="flex items-center justify-between px-3 py-2"
             style={{ borderTop: '1px solid var(--border)' }}
           >
-            <span style={{ color: 'var(--hint)', fontSize: 13 }}>
+            <span style={{ color: 'var(--hint)' }}>
               {modeLabels[activeProject.save_mode || 'local']?.label || 'Local'}
             </span>
             <button
@@ -342,34 +382,27 @@ export default function ProjectDetailModal() {
                 updatedAt={activeProject.updated_at}
               />
             )}
-
             {tab === 'authorization' && (
-              <AuthPane
-                settings={projSettings}
-                onChange={(a) => setProjSettings((s) => ({ ...s, auth: { ...s.auth, ...a } }))}
-              />
+              <AuthPane auth={projSettings.auth} onChange={updateAuth} />
             )}
-
             {tab === 'preRequest' && (
               <ScriptPane
-                title="Pre-request Script"
-                description="This script runs before every request in this project. Use `pm.environment.set(...)` to stage values."
+                title={t('tab.preRequest')}
+                description={t('script.preRequestDesc')}
                 value={projSettings.preScript}
-                onChange={(v) => setProjSettings((s) => ({ ...s, preScript: v }))}
+                onChange={(v) => updateProjSettings({ preScript: v })}
                 language="javascript"
               />
             )}
-
             {tab === 'tests' && (
               <ScriptPane
-                title="Tests"
-                description="This script runs after every response. Use `pm.test(...)` and `pm.expect(...)` to assert."
+                title={t('tab.tests')}
+                description={t('script.testsDesc')}
                 value={projSettings.testScript}
-                onChange={(v) => setProjSettings((s) => ({ ...s, testScript: v }))}
+                onChange={(v) => updateProjSettings({ testScript: v })}
                 language="javascript"
               />
             )}
-
             {tab === 'variables' && (
               <VariablesPane
                 envCount={envCount}
@@ -380,9 +413,9 @@ export default function ProjectDetailModal() {
                 }}
               />
             )}
-
             {tab === 'storage' && (
               <StoragePane
+                projectId={activeProject.id}
                 saveMode={editSaveMode}
                 localPath={editLocalPath}
                 gitUrl={editGitUrl}
@@ -390,7 +423,6 @@ export default function ProjectDetailModal() {
                 gitBranch={editGitBranch}
                 gitToken={editGitToken}
                 showToken={showToken}
-                gitConfig={gitConfig}
                 modeLabels={modeLabels}
                 onSaveModeChange={setEditSaveMode}
                 onLocalPathChange={setEditLocalPath}
@@ -402,21 +434,54 @@ export default function ProjectDetailModal() {
                 onToggleShowToken={() => setShowToken((v) => !v)}
               />
             )}
-
             {tab === 'branches' && (
               <BranchesPane branches={branches} activeBranchId={activeBranchId} />
             )}
 
-            {tab === 'app' && (
-              <AppSettingsPane
+            {tab === 'general' && (
+              <GeneralPane settings={projSettings} onChange={updateProjSettings} />
+            )}
+            {tab === 'themes' && (
+              <ThemesPane
                 theme={theme}
                 locale={locale}
                 fontSize={fontSize}
+                fontFamily={fontFamily}
+                accentColor={accentColor}
                 onThemeChange={setTheme}
                 onLocaleChange={setLocale}
                 onFontSizeChange={setFontSize}
+                onFontFamilyChange={setFontFamily}
+                onAccentColorChange={setAccentColor}
               />
             )}
+            {tab === 'shortcuts' && <ShortcutsPane />}
+            {tab === 'data' && (
+              <DataPane
+                projectId={activeProject.id}
+                onOpenImport={() => {
+                  setShow(false)
+                  setShowImportModal(true)
+                }}
+              />
+            )}
+            {tab === 'certificates' && (
+              <CertificatesPane projectId={activeProject.id} />
+            )}
+            {tab === 'proxy' && (
+              <ProxyPane settings={projSettings} onChange={updateProjSettings} />
+            )}
+            {tab === 'update' && (
+              <UpdatePane
+                settings={projSettings}
+                onChange={updateProjSettings}
+                onCheckNow={() => {
+                  setShow(false)
+                  setShowUpdateModal(true)
+                }}
+              />
+            )}
+            {tab === 'about' && <AboutPane />}
           </div>
 
           {/* Footer */}
@@ -434,7 +499,7 @@ export default function ProjectDetailModal() {
                 color: 'var(--text)',
               }}
             >
-              Close
+              {t('modal.close')}
             </button>
             <button
               type="button"
@@ -448,7 +513,7 @@ export default function ProjectDetailModal() {
                 opacity: saving ? 0.7 : 1,
               }}
             >
-              {saving ? 'Saving…' : 'Save Changes'}
+              {saving ? t('modal.saving') : t('modal.saveChanges')}
             </button>
           </div>
         </div>
@@ -460,20 +525,6 @@ export default function ProjectDetailModal() {
 // ════════════════════════════════════════════════════════════════
 // Sidebar helpers
 // ════════════════════════════════════════════════════════════════
-
-function SidebarGroup({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-3">
-      <div
-        className="px-4 py-1 font-semibold uppercase tracking-wide"
-        style={{ color: 'var(--hint)' }}
-      >
-        {title}
-      </div>
-      {children}
-    </div>
-  )
-}
 
 function SidebarItem({
   label,
@@ -490,7 +541,7 @@ function SidebarItem({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full cursor-pointer items-center gap-2 px-4 py-[7px] text-left text-[12.5px]"
+      className="flex w-full cursor-pointer items-center gap-2 px-4 py-[7px] text-left"
       style={{
         background: active ? 'var(--accent-light)' : 'transparent',
         border: 'none',
@@ -502,689 +553,5 @@ function SidebarItem({
       {icon}
       {label}
     </button>
-  )
-}
-
-// ════════════════════════════════════════════════════════════════
-// Panes
-// ════════════════════════════════════════════════════════════════
-
-function PaneHeader({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <div className="mb-5">
-      <div className="text-[16px] font-semibold" style={{ color: 'var(--heading)' }}>{title}</div>
-      {subtitle && (
-        <div className="mt-0.5" style={{ color: 'var(--muted)' }}>
-          {subtitle}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function Label({ text }: { text: string }) {
-  return (
-    <div
-      style={{
-        fontSize: 13,
-        color: 'var(--muted)',
-        fontWeight: 600,
-        textTransform: 'uppercase',
-        letterSpacing: '0.06em',
-        marginBottom: 5,
-      }}
-    >
-      {text}
-    </div>
-  )
-}
-
-const BASE_INP: React.CSSProperties = {
-  width: '100%',
-  background: 'var(--input-bg)',
-  border: '1.5px solid var(--border2)',
-  borderRadius: 7,
-  padding: '8px 10px',
-  fontSize: 13,
-  color: 'var(--text)',
-  outline: 'none',
-  boxSizing: 'border-box',
-}
-
-function OverviewPane(props: {
-  name: string
-  desc: string
-  iconMode: 'auto' | 'emoji'
-  iconEmoji: string
-  iconColor: string
-  onNameChange: (v: string) => void
-  onDescChange: (v: string) => void
-  onIconModeChange: (v: 'auto' | 'emoji') => void
-  onIconEmojiChange: (v: string) => void
-  onIconColorChange: (v: string) => void
-  typeLabel: string
-  createdAt: number
-  updatedAt: number
-}) {
-  return (
-    <div className="p-6">
-      <PaneHeader
-        title="Overview"
-        subtitle="Basic information about this collection."
-      />
-
-      <div className="flex flex-col gap-4">
-        <div>
-          <Label text="Name" />
-          <input
-            value={props.name}
-            onChange={(e) => props.onNameChange(e.target.value)}
-            style={BASE_INP}
-          />
-        </div>
-
-        <div>
-          <Label text="Description" />
-          <textarea
-            value={props.desc}
-            onChange={(e) => props.onDescChange(e.target.value)}
-            rows={3}
-            style={{ ...BASE_INP, resize: 'vertical', fontFamily: 'inherit' }}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label text="Icon" />
-            <div className="mb-2 flex gap-2">
-              <button
-                type="button"
-                onClick={() => { props.onIconModeChange('auto'); props.onIconEmojiChange('') }}
-                className="flex-1 cursor-pointer rounded-[7px] py-1.5"
-                style={{
-                  border: `1.5px solid ${props.iconMode === 'auto' ? 'var(--accent)' : 'var(--border2)'}`,
-                  background: props.iconMode === 'auto' ? 'var(--accent-light)' : 'var(--white)',
-                  color: props.iconMode === 'auto' ? 'var(--accent-text)' : 'var(--text)',
-                  fontWeight: props.iconMode === 'auto' ? 600 : 400,
-                }}
-              >
-                Initials
-              </button>
-              <button
-                type="button"
-                onClick={() => props.onIconModeChange('emoji')}
-                className="flex-1 cursor-pointer rounded-[7px] py-1.5"
-                style={{
-                  border: `1.5px solid ${props.iconMode === 'emoji' ? 'var(--accent)' : 'var(--border2)'}`,
-                  background: props.iconMode === 'emoji' ? 'var(--accent-light)' : 'var(--white)',
-                  color: props.iconMode === 'emoji' ? 'var(--accent-text)' : 'var(--text)',
-                  fontWeight: props.iconMode === 'emoji' ? 600 : 400,
-                }}
-              >
-                Emoji
-              </button>
-            </div>
-            {props.iconMode === 'emoji' && (
-              <div className="flex flex-wrap gap-1">
-                {EMOJIS.map((e) => (
-                  <button
-                    key={e}
-                    type="button"
-                    onClick={() => props.onIconEmojiChange(e)}
-                    className="cursor-pointer"
-                    style={{
-                      width: 30,
-                      height: 30,
-                      borderRadius: 6,
-                      border: `1.5px solid ${props.iconEmoji === e ? 'var(--accent)' : 'var(--border)'}`,
-                      background: props.iconEmoji === e ? 'var(--accent-light)' : 'var(--white)',
-                      fontSize: 16,
-                    }}
-                  >
-                    {e}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <Label text="Accent Color" />
-            <div className="flex flex-wrap gap-2">
-              {COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => props.onIconColorChange(c)}
-                  className="cursor-pointer"
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 7,
-                    background: c,
-                    border: `2.5px solid ${c === props.iconColor ? 'var(--heading)' : 'transparent'}`,
-                    transform: c === props.iconColor ? 'scale(1.12)' : 'scale(1)',
-                    transition: 'all 0.15s',
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Metadata */}
-        <div
-          className="mt-2 grid grid-cols-3 gap-4 rounded-[8px] p-3"
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-        >
-          <MetaField label="Type" value={props.typeLabel} />
-          <MetaField label="Created" value={new Date(props.createdAt).toLocaleDateString()} />
-          <MetaField label="Updated" value={new Date(props.updatedAt).toLocaleDateString()} />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function MetaField({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="uppercase tracking-wide" style={{ color: 'var(--hint)' }}>{label}</div>
-      <div className="mt-0.5" style={{ color: 'var(--text)' }}>{value}</div>
-    </div>
-  )
-}
-
-function AuthPane({
-  settings,
-  onChange,
-}: {
-  settings: ProjectSettings
-  onChange: (updates: Partial<ProjectSettings['auth']>) => void
-}) {
-  const { auth } = settings
-  return (
-    <div className="p-6">
-      <PaneHeader
-        title="Authorization"
-        subtitle="This authorization method will be used by every request in this collection."
-      />
-
-      <div className="flex flex-col gap-4">
-        <div>
-          <Label text="Type" />
-          <select
-            value={auth.type}
-            onChange={(e) => onChange({ type: e.target.value as ProjectSettings['auth']['type'] })}
-            style={{ ...BASE_INP, cursor: 'pointer' }}
-          >
-            <option value="none">No Auth</option>
-            <option value="inherit">Inherit from parent</option>
-            <option value="basic">Basic Auth</option>
-            <option value="bearer">Bearer Token</option>
-            <option value="api-key">API Key</option>
-          </select>
-        </div>
-
-        {auth.type === 'bearer' && (
-          <div>
-            <Label text="Token" />
-            <input
-              value={auth.bearerToken || ''}
-              onChange={(e) => onChange({ bearerToken: e.target.value })}
-              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
-              style={{ ...BASE_INP, fontFamily: 'var(--font-mono)' }}
-            />
-          </div>
-        )}
-
-        {auth.type === 'basic' && (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label text="Username" />
-              <input
-                value={auth.basicUser || ''}
-                onChange={(e) => onChange({ basicUser: e.target.value })}
-                style={BASE_INP}
-              />
-            </div>
-            <div>
-              <Label text="Password" />
-              <input
-                type="password"
-                value={auth.basicPass || ''}
-                onChange={(e) => onChange({ basicPass: e.target.value })}
-                style={BASE_INP}
-              />
-            </div>
-          </div>
-        )}
-
-        {auth.type === 'api-key' && (
-          <div className="grid grid-cols-[1fr_1fr_120px] gap-3">
-            <div>
-              <Label text="Key" />
-              <input
-                value={auth.apiKeyKey || ''}
-                onChange={(e) => onChange({ apiKeyKey: e.target.value })}
-                style={BASE_INP}
-              />
-            </div>
-            <div>
-              <Label text="Value" />
-              <input
-                value={auth.apiKeyValue || ''}
-                onChange={(e) => onChange({ apiKeyValue: e.target.value })}
-                style={BASE_INP}
-              />
-            </div>
-            <div>
-              <Label text="Add to" />
-              <select
-                value={auth.apiKeyIn || 'header'}
-                onChange={(e) => onChange({ apiKeyIn: e.target.value as 'header' | 'query' })}
-                style={{ ...BASE_INP, cursor: 'pointer' }}
-              >
-                <option value="header">Header</option>
-                <option value="query">Query Params</option>
-              </select>
-            </div>
-          </div>
-        )}
-
-        {auth.type === 'none' && (
-          <div
-            className="rounded-[8px] p-4"
-            style={{
-              background: 'var(--surface)',
-              border: '1px dashed var(--border2)',
-              color: 'var(--muted)',
-            }}
-          >
-            This collection uses <strong>no authorization</strong>. Individual requests can still override this.
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ScriptPane({
-  title,
-  description,
-  value,
-  onChange,
-  language,
-}: {
-  title: string
-  description: string
-  value: string
-  onChange: (v: string) => void
-  language: string
-}) {
-  return (
-    <div className="flex h-full flex-col p-6">
-      <PaneHeader title={title} subtitle={description} />
-      <div
-        className="flex-1 overflow-hidden rounded-[8px]"
-        style={{ border: '1px solid var(--border2)', minHeight: 320 }}
-      >
-        <MonacoWrapper
-          value={value}
-          onChange={onChange}
-          language={language}
-          lineNumbers="on"
-          height="100%"
-        />
-      </div>
-    </div>
-  )
-}
-
-function VariablesPane({
-  envCount,
-  globalVarsCount,
-  onOpenManager,
-}: {
-  envCount: number
-  globalVarsCount: number
-  onOpenManager: () => void
-}) {
-  return (
-    <div className="p-6">
-      <PaneHeader
-        title="Variables"
-        subtitle="Variables let you reuse values across requests. Globals are shared within this project."
-      />
-
-      <div className="grid grid-cols-2 gap-3">
-        <StatCard label="Environments" value={envCount} />
-        <StatCard label="Global Variables" value={globalVarsCount} />
-      </div>
-
-      <button
-        type="button"
-        onClick={onOpenManager}
-        className="mt-5 cursor-pointer rounded-[7px] px-4 py-2 font-semibold"
-        style={{
-          background: 'var(--accent)',
-          border: 'none',
-          color: '#fff',
-        }}
-      >
-        Open Environment Manager
-      </button>
-
-      <div
-        className="mt-5 rounded-[8px] p-4"
-        style={{
-          background: 'var(--surface)',
-          border: '1px solid var(--border)',
-          color: 'var(--muted)',
-        }}
-      >
-        Reference variables using <code style={{ color: 'var(--json-string)' }}>{'{{variableName}}'}</code> in URLs,
-        headers, and bodies. Environment values override globals when both are set.
-      </div>
-    </div>
-  )
-}
-
-function StatCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div
-      className="rounded-[8px] p-4"
-      style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-    >
-      <div className="uppercase tracking-wide" style={{ color: 'var(--muted)' }}>{label}</div>
-      <div className="mt-1 text-[24px] font-semibold" style={{ color: 'var(--heading)' }}>{value}</div>
-    </div>
-  )
-}
-
-function StoragePane(props: {
-  saveMode: 'local' | 'git' | 'both'
-  localPath: string
-  gitUrl: string
-  gitUser: string
-  gitBranch: string
-  gitToken: string
-  showToken: boolean
-  gitConfig: { repoUrl?: string; username?: string; branch?: string; token?: string } | null
-  modeLabels: Record<string, { label: string; icon: React.ReactNode }>
-  onSaveModeChange: (v: 'local' | 'git' | 'both') => void
-  onLocalPathChange: (v: string) => void
-  onSelectDir: () => void
-  onGitUrlChange: (v: string) => void
-  onGitUserChange: (v: string) => void
-  onGitBranchChange: (v: string) => void
-  onGitTokenChange: (v: string) => void
-  onToggleShowToken: () => void
-}) {
-  return (
-    <div className="p-6">
-      <PaneHeader
-        title="Storage"
-        subtitle="Where this project's collection is persisted — local filesystem, a Git repo, or both."
-      />
-
-      <div className="flex flex-col gap-4">
-        <div>
-          <Label text="Save Mode" />
-          <div className="flex gap-2">
-            {(['local', 'git', 'both'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => props.onSaveModeChange(m)}
-                className="flex-1 cursor-pointer items-center gap-2 rounded-[8px] px-3 py-2"
-                style={{
-                  display: 'flex',
-                  justifyContent: 'center',
-                  border: `2px solid ${props.saveMode === m ? 'var(--accent)' : 'var(--border)'}`,
-                  background: props.saveMode === m ? 'var(--accent-light)' : 'var(--white)',
-                  color: props.saveMode === m ? 'var(--accent-text)' : 'var(--text)',
-                  fontWeight: props.saveMode === m ? 600 : 400,
-                }}
-              >
-                {props.modeLabels[m]?.icon}
-                {props.modeLabels[m]?.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {(props.saveMode === 'local' || props.saveMode === 'both') && (
-          <div>
-            <Label text="Local Folder" />
-            <div className="flex gap-2">
-              <input
-                value={props.localPath}
-                readOnly
-                placeholder="Select folder…"
-                style={{ ...BASE_INP, fontFamily: 'var(--font-mono)', flex: 1 }}
-              />
-              <button
-                type="button"
-                onClick={props.onSelectDir}
-                className="cursor-pointer rounded-[7px] px-3"
-                style={{
-                  background: 'var(--surface)',
-                  border: '1.5px solid var(--border2)',
-                  color: 'var(--text)',
-                }}
-              >
-                Browse…
-              </button>
-            </div>
-          </div>
-        )}
-
-        {(props.saveMode === 'git' || props.saveMode === 'both') && (
-          <div className="flex flex-col gap-3 rounded-[8px] p-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <div className="font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
-              Git Repository
-            </div>
-            <div>
-              <Label text="URL" />
-              <input
-                value={props.gitUrl}
-                onChange={(e) => props.onGitUrlChange(e.target.value)}
-                placeholder="https://github.com/user/repo.git"
-                style={{ ...BASE_INP, fontFamily: 'var(--font-mono)' }}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label text="Username" />
-                <input value={props.gitUser} onChange={(e) => props.onGitUserChange(e.target.value)} style={BASE_INP} />
-              </div>
-              <div>
-                <Label text="Branch" />
-                <input
-                  value={props.gitBranch}
-                  onChange={(e) => props.onGitBranchChange(e.target.value)}
-                  style={{ ...BASE_INP, fontFamily: 'var(--font-mono)' }}
-                />
-              </div>
-            </div>
-            <div>
-              <Label text="Personal Access Token" />
-              <div className="flex gap-2">
-                <input
-                  type={props.showToken ? 'text' : 'password'}
-                  value={props.gitToken}
-                  onChange={(e) => props.onGitTokenChange(e.target.value)}
-                  placeholder="Leave empty to keep existing token"
-                  style={{ ...BASE_INP, fontFamily: 'var(--font-mono)', flex: 1 }}
-                />
-                <button
-                  type="button"
-                  onClick={props.onToggleShowToken}
-                  className="cursor-pointer rounded-[7px] px-3"
-                  style={{
-                    background: 'var(--white)',
-                    border: '1.5px solid var(--border2)',
-                    color: 'var(--muted)',
-                  }}
-                >
-                  {props.showToken ? <EyeOff size={13} /> : <Eye size={13} />}
-                </button>
-              </div>
-              <div className="mt-1" style={{ color: 'var(--hint)' }}>
-                Token is encrypted and stored in electron-store.
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function BranchesPane({
-  branches,
-  activeBranchId,
-}: {
-  branches: Array<{ id: string; name: string; is_default: boolean; created_at: number }>
-  activeBranchId: string | null
-}) {
-  return (
-    <div className="p-6">
-      <PaneHeader
-        title="Branches"
-        subtitle="Manage branches for this project. Use the header branch pill to switch quickly."
-      />
-
-      <div className="flex flex-col gap-1">
-        {branches.length === 0 && (
-          <div
-            className="rounded-[8px] p-6 text-center"
-            style={{ background: 'var(--surface)', border: '1px dashed var(--border2)', color: 'var(--hint)' }}
-          >
-            No branches yet.
-          </div>
-        )}
-        {branches.map((branch) => {
-          const isActive = branch.id === activeBranchId
-          return (
-            <div
-              key={branch.id}
-              className="flex items-center gap-2 rounded-[8px] px-4 py-2"
-              style={{
-                background: isActive ? 'var(--accent-light)' : 'var(--surface)',
-                border: `1px solid ${isActive ? 'var(--accent)' : 'var(--border)'}`,
-                color: isActive ? 'var(--accent-text)' : 'var(--text)',
-              }}
-            >
-              <GitBranch size={13} />
-              <span className="font-mono" style={{ fontWeight: isActive ? 600 : 400 }}>{branch.name}</span>
-              {branch.is_default && (
-                <span
-                  className="rounded px-1.5 py-[1px] font-semibold"
-                  style={{ background: 'var(--accent)', color: '#fff' }}
-                >
-                  default
-                </span>
-              )}
-              {isActive && (
-                <span
-                  className="rounded px-1.5 py-[1px] font-semibold"
-                  style={{
-                    background: 'var(--green-bg)',
-                    color: 'var(--green)',
-                    border: '1px solid var(--green-border)',
-                  }}
-                >
-                  active
-                </span>
-              )}
-              <span className="flex-1" />
-              <span style={{ color: 'var(--hint)' }}>
-                {new Date(branch.created_at).toLocaleDateString()}
-              </span>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function AppSettingsPane({
-  theme,
-  locale,
-  fontSize,
-  onThemeChange,
-  onLocaleChange,
-  onFontSizeChange,
-}: {
-  theme: Theme
-  locale: Language
-  fontSize: number
-  onThemeChange: (v: Theme) => void
-  onLocaleChange: (v: Language) => void
-  onFontSizeChange: (v: number) => void
-}) {
-  return (
-    <div className="p-6">
-      <PaneHeader title="App Settings" subtitle="Preferences that apply to the entire application." />
-
-      <div className="flex flex-col gap-5">
-        <div>
-          <Label text="Theme" />
-          <div className="flex gap-2">
-            {(['light', 'dark', 'system'] as Theme[]).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => onThemeChange(t)}
-                className="flex-1 cursor-pointer rounded-[8px] px-3 py-2"
-                style={{
-                  border: `2px solid ${theme === t ? 'var(--accent)' : 'var(--border)'}`,
-                  background: theme === t ? 'var(--accent-light)' : 'var(--white)',
-                  color: theme === t ? 'var(--accent-text)' : 'var(--text)',
-                  fontWeight: theme === t ? 600 : 400,
-                }}
-              >
-                {t === 'light' ? 'Light' : t === 'dark' ? 'Dark' : 'System'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <Label text="Language" />
-          <select
-            value={locale}
-            onChange={(e) => onLocaleChange(e.target.value as Language)}
-            style={{ ...BASE_INP, cursor: 'pointer' }}
-          >
-            <option value="en">English</option>
-            <option value="tr">Türkçe</option>
-          </select>
-        </div>
-
-        <div>
-          <Label text="Font Size" />
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={10}
-              max={20}
-              value={fontSize}
-              onChange={(e) => onFontSizeChange(Number(e.target.value))}
-              style={{ flex: 1, accentColor: 'var(--accent)' }}
-            />
-            <span
-              className="rounded-[6px] px-2 py-0.5 font-semibold"
-              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', minWidth: 40, textAlign: 'center' }}
-            >
-              {fontSize}px
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
   )
 }

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync as read
 import { join } from 'path'
 import { getDb } from '../db/database'
 import { exportProjectData, importProjectDataFromJson } from './save.handler'
+import type { SimpleGit, BranchSummaryBranch } from 'simple-git'
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -50,7 +51,7 @@ function buildAuthUrl(repoUrl: string, username: string, token: string): string 
   return urlObj.toString()
 }
 
-async function ensureGitRepo(localPath: string, authUrl: string, defaultBranch: string): Promise<ReturnType<Awaited<ReturnType<typeof import('simple-git')>>['simpleGit']>> {
+async function ensureGitRepo(localPath: string, authUrl: string, defaultBranch: string): Promise<SimpleGit> {
   const { simpleGit } = await import('simple-git')
 
   if (!existsSync(localPath)) {
@@ -153,7 +154,7 @@ export function registerGitHandlers(): void {
       const seen = new Set<string>()
 
       // Local branches
-      for (const [name, info] of Object.entries(branchSummary.branches)) {
+      for (const [name, info] of Object.entries(branchSummary.branches) as [string, BranchSummaryBranch][]) {
         if (name.startsWith('remotes/')) continue
         branches.push({ name, current: info.current, isRemote: false })
         seen.add(name)

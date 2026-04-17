@@ -125,7 +125,7 @@ function resolveSchemaUrl(schemaLocation: string, parentUrl: string): string {
   }
 }
 
-async function fetchContent(url: string): Promise<string> {
+async function fetchContent(url: string, sslVerification = true): Promise<string> {
   if (/^file:\/\//i.test(url)) {
     const { readFileSync } = await import('fs')
     const filePath = url.replace(/^file:\/\//, '')
@@ -134,7 +134,10 @@ async function fetchContent(url: string): Promise<string> {
   const response = await axios.get<string>(url, {
     responseType: 'text',
     timeout: 15000,
-    httpsAgent: new https.Agent({ rejectUnauthorized: false })
+    // Keep HTTPS certificate validation enabled by default; callers may
+    // opt out explicitly when importing WSDL from trusted-but-self-signed
+    // internal endpoints.
+    httpsAgent: new https.Agent({ rejectUnauthorized: sslVerification })
   })
   return response.data
 }

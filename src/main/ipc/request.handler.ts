@@ -1,6 +1,62 @@
 import { ipcMain } from 'electron'
 import { executeHttpRequest, HttpRequestOptions } from '../protocols/http.engine'
 import * as historyRepo from '../db/history.repo'
+import { listCertificatesForHost } from '../db/certificate.repo'
+import { URL } from 'url'
+import { readFileSync } from 'fs'
+import { resolve, extname } from 'path'
+import { decryptSecret } from '../lib/secure-storage'
+
+// Whitelist of extensions we are willing to read as certificate material.
+// Anything else is rejected outright — even if a malicious DB row points
+// at a system file, we simply refuse to touch it.
+const ALLOWED_CERT_EXTS = new Set(['.crt', '.cer', '.pem', '.key', '.pfx', '.p12'])
+
+function safeReadCertFile(filePath: string): Buffer | null {
+  try {
+    const abs = resolve(filePath)
+    const ext = extname(abs).toLowerCase()
+    if (!ALLOWED_CERT_EXTS.has(ext)) return null
+    return readFileSync(abs)
+  } catch {
+    return null
+  }
+}
+
+function loadCertificatesFor(projectId: string | undefined, url: string): HttpRequestOptions['certificates'] {
+  if (!projectId) return undefined
+  try {
+    const host = new URL(url).hostname
+    const rows = listCertificatesForHost(projectId, host)
+    if (rows.length === 0) return undefined
+    const caCerts: Buffer[] = []
+    let clientCert: { cert?: Buffer; key?: Buffer; pfx?: Buffer; passphrase?: string } | undefined
+    for (const r of rows) {
+      const passphrase = decryptSecret(r.passphrase) ?? undefined
+      if (r.kind === 'ca' && r.crt_path) {
+        const buf = safeReadCertFile(r.crt_path)
+        if (buf) caCerts.push(buf)
+      } else if (r.kind === 'client') {
+        if (r.pfx_path) {
+          const pfx = safeReadCertFile(r.pfx_path)
+          if (pfx) clientCert = { pfx, passphrase }
+        } else if (r.crt_path && r.key_path) {
+          const cert = safeReadCertFile(r.crt_path)
+          const key = safeReadCertFile(r.key_path)
+          if (cert && key) clientCert = { cert, key, passphrase }
+        }
+      }
+    }
+    return { caCerts: caCerts.length ? caCerts : undefined, clientCert }
+  } catch {
+    return undefined
+  }
+}
+
+// Map of in-flight request IDs → AbortController, so the renderer can call
+// request:cancel(id) to abort a long-running request (e.g. a user-initiated
+// "cancel" during a slow response).
+const pendingRequests = new Map<string, AbortController>()
 
 export function registerRequestHandlers(): void {
   ipcMain.handle('request:send', async (_event, options: HttpRequestOptions & {
@@ -8,8 +64,24 @@ export function registerRequestHandlers(): void {
     _projectId?: string
     _endpointId?: string
     _protocol?: string
+    _requestId?: string
   }) => {
+    const requestId = options._requestId
+    let controller: AbortController | undefined
     try {
+      // If a project is known and no certificates were explicitly provided,
+      // attempt to pull matching CA / client certs from the project configuration.
+      if (options._projectId && !options.certificates) {
+        const certs = loadCertificatesFor(options._projectId, options.url)
+        if (certs) {
+          options = { ...options, certificates: certs }
+        }
+      }
+      if (requestId) {
+        controller = new AbortController()
+        pendingRequests.set(requestId, controller)
+        options = { ...options, signal: controller.signal }
+      }
       const result = await executeHttpRequest(options)
 
       // Auto-save to history
@@ -48,12 +120,17 @@ export function registerRequestHandlers(): void {
       return { success: true, data: result }
     } catch (e) {
       return { success: false, error: (e as Error).message }
+    } finally {
+      if (requestId) pendingRequests.delete(requestId)
     }
   })
 
-  ipcMain.handle('request:cancel', async (_event, _requestId: string) => {
+  ipcMain.handle('request:cancel', async (_event, requestId: string) => {
     try {
-      // TODO: Implement request cancellation via AbortController
+      const controller = pendingRequests.get(requestId)
+      if (!controller) return { success: true, data: false }
+      controller.abort()
+      pendingRequests.delete(requestId)
       return { success: true, data: true }
     } catch (e) {
       return { success: false, error: (e as Error).message }

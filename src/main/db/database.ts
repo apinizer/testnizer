@@ -330,6 +330,31 @@ function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
   `)
 
+  // Add recovery_email column to users (safe to re-run)
+  const userCols = database.pragma('table_info(users)') as Array<{ name: string }>
+  const userColNames = userCols.map((c) => c.name)
+  if (!userColNames.includes('recovery_email')) {
+    database.exec(`ALTER TABLE users ADD COLUMN recovery_email TEXT`)
+  }
+
+  // ─── Certificates (per-project: CA + Client) ──────────────
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS certificates (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'client',
+      host TEXT,
+      crt_path TEXT,
+      key_path TEXT,
+      pfx_path TEXT,
+      passphrase TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_certificates_project ON certificates(project_id);
+  `)
+
   // ─── Test Suites ──────────────────────────────────────────
   database.exec(`
     CREATE TABLE IF NOT EXISTS test_suites (

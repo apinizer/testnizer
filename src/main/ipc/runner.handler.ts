@@ -57,6 +57,8 @@ interface RunnerExecuteOptions {
   environmentId?: string
   workspaceId?: string
   delay?: number
+  iterations?: number
+  stopOnError?: boolean
   folderName?: string
   source?: string
   sourceLabel?: string
@@ -226,9 +228,6 @@ function runAssertionsMainProcess(
             const expected = Number(assertion.expected ?? 0)
             return { name: assertion.name, passed: actual < expected, actual }
           }
-          case 'custom_script': {
-            return { name: assertion.name, passed: true, actual: 'script (skipped in runner)' }
-          }
           default:
             return { name: assertion.name, passed: false, error: `Unknown type: ${assertion.type}` }
         }
@@ -330,7 +329,10 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
 
   const startedAt = Date.now()
   const results: EndpointRunResult[] = []
-  const total = options.endpointIds.length
+  const iterations = Math.max(1, options.iterations ?? 1)
+  const stopOnError = options.stopOnError ?? false
+  const endpointsPerIteration = options.endpointIds.length
+  const total = endpointsPerIteration * iterations
 
   // Load environment variables for interpolation
   const envVars = loadEnvironmentVariables(options.environmentId, options.workspaceId)
@@ -341,8 +343,10 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   let passedEndpoints = 0
   let failedEndpoints = 0
 
-  for (let i = 0; i < total; i++) {
-    if (shouldStop) break
+  outer: for (let iter = 0; iter < iterations; iter++) {
+    for (let j = 0; j < endpointsPerIteration; j++) {
+      if (shouldStop) break outer
+      const i = iter * endpointsPerIteration + j
 
     const endpointId = options.endpointIds[i]
     const endpoint = endpointRepo.getEndpointById(endpointId)
@@ -465,6 +469,8 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
 
       results.push(result)
       sendProgress({ current: i + 1, total, endpointId, result })
+
+      if (stopOnError && !endpointPassed) break outer
     } catch (e) {
       const result: EndpointRunResult = {
         endpointId,
@@ -483,11 +489,14 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       results.push(result)
       failedEndpoints++
       sendProgress({ current: i + 1, total, endpointId, result })
+
+      if (stopOnError) break outer
     }
 
-    // Delay between requests if configured
-    if (options.delay && options.delay > 0 && i < total - 1 && !shouldStop) {
-      await delay(options.delay)
+      // Delay between requests if configured
+      if (options.delay && options.delay > 0 && i < total - 1 && !shouldStop) {
+        await delay(options.delay)
+      }
     }
   }
 
@@ -513,7 +522,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       options.projectId,
       options.environmentId || null,
       options.source || 'Runner',
-      1,
+      iterations,
       durationMs,
       results.length,
       passedEndpoints,

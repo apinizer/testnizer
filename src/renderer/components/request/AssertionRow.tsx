@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { X, Check, ToggleLeft, ToggleRight } from 'lucide-react'
-import MonacoWrapper from '../shared/MonacoWrapper'
 import type { TestAssertion } from '../../types'
 
 const TYPE_STYLES: Record<string, { color: string; bg: string }> = {
@@ -15,7 +14,6 @@ const TYPE_STYLES: Record<string, { color: string; bg: string }> = {
   header_exists: { color: '#0066cc', bg: '#e8f4ff' },
   header_equals: { color: '#0066cc', bg: '#e8f4ff' },
   header_contains: { color: '#0066cc', bg: '#e8f4ff' },
-  custom_script: { color: 'var(--accent)', bg: 'var(--accent-light)' },
 }
 
 interface AssertionRowProps {
@@ -297,19 +295,6 @@ function AssertionFields({
           />
           <span className="text-[var(--muted)]">bytes</span>
           <BadgePill color={display.color} bg={display.bg}>{assertion.expected ?? 10240} B</BadgePill>
-        </div>
-      )
-
-    case 'custom_script':
-      return (
-        <div className="overflow-hidden rounded border border-[var(--border)]">
-          <MonacoWrapper
-            value={assertion.script ?? ''}
-            onChange={(val) => onUpdate({ script: val })}
-            language="javascript"
-            height={80}
-            lineNumbers="off"
-          />
         </div>
       )
 
