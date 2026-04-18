@@ -4,6 +4,7 @@ import { setLocale as setI18nLocale } from '../lib/i18n'
 
 type Locale = Language
 type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'settings'
+export type RightPanelTab = 'variables' | 'code'
 
 // Preset font stacks offered as quick picks. The stored `fontFamily` is always
 // a raw CSS font-family value — users may type any stack they like.
@@ -42,6 +43,8 @@ interface UIStore {
   gitLoading: string | null  // null = idle, string = message to display
   addEndpointsSuiteId: string | null
   addEndpointsSuiteName: string | null
+  rightPanelCollapsed: boolean
+  rightPanelTab: RightPanelTab
 
   setTheme: (theme: Theme) => void
   setLocale: (locale: Locale) => void
@@ -70,6 +73,9 @@ interface UIStore {
   setShowProfileModal: (show: boolean) => void
   setGitLoading: (msg: string | null) => void
   setAddEndpointsSuite: (suiteId: string | null, suiteName?: string | null) => void
+  setRightPanelCollapsed: (collapsed: boolean) => void
+  toggleRightPanel: () => void
+  setRightPanelTab: (tab: RightPanelTab) => void
 }
 
 function applyTheme(theme: Theme): void {
@@ -136,6 +142,8 @@ export const useUIStore = create<UIStore>((set) => ({
   gitLoading: null,
   addEndpointsSuiteId: null,
   addEndpointsSuiteName: null,
+  rightPanelCollapsed: false,
+  rightPanelTab: 'variables',
 
   setTheme: (theme) => {
     applyTheme(theme)
@@ -240,6 +248,9 @@ export const useUIStore = create<UIStore>((set) => ({
   setShowProfileModal: (show) => set({ showProfileModal: show }),
   setGitLoading: (msg) => set({ gitLoading: msg }),
   setAddEndpointsSuite: (suiteId, suiteName) => set({ addEndpointsSuiteId: suiteId, addEndpointsSuiteName: suiteName ?? null }),
+  setRightPanelCollapsed: (collapsed) => set({ rightPanelCollapsed: collapsed }),
+  toggleRightPanel: () => set((s) => ({ rightPanelCollapsed: !s.rightPanelCollapsed })),
+  setRightPanelTab: (tab) => set({ rightPanelTab: tab, rightPanelCollapsed: false }),
 }))
 
 // Apply initial theme + font defaults. Real values are loaded via hydrateFromSettings()

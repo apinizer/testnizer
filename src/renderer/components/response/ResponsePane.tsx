@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect, forwardRef } from 'react'
 import { useResponseStore } from '../../stores/response.store'
-import { Loader2, Send, Globe, MoreHorizontal, History as HistoryIcon } from 'lucide-react'
+import { Loader2, Send, Globe, History as HistoryIcon } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
 import ResponseBody from './ResponseBody'
 import CookieTab from './CookieTab'
@@ -11,8 +11,119 @@ import ActualRequestTab from './ActualRequestTab'
 import EmptyState from '../shared/EmptyState'
 import StatusBadge from '../shared/StatusBadge'
 import { useUIStore } from '../../stores/ui.store'
+import type { ApiResponse } from '../../types'
 
 type ResTabKey = 'body' | 'cookies' | 'headers' | 'testResults' | 'console' | 'actualRequest'
+
+/** Extract hostname from URL safely */
+function extractHost(url?: string): string {
+  if (!url) return '—'
+  try {
+    const u = new URL(url)
+    return u.host || '—'
+  } catch {
+    return '—'
+  }
+}
+
+/** Extract protocol (http/https) from URL */
+function extractProtocol(url?: string): string {
+  if (!url) return '—'
+  try {
+    const u = new URL(url)
+    return u.protocol.replace(':', '').toUpperCase()
+  } catch {
+    return '—'
+  }
+}
+
+/** Human format milliseconds for the timing table */
+function fmtMs(ms?: number): string {
+  if (ms == null) return '—'
+  if (ms < 1) return '<1 ms'
+  return `${Math.round(ms)} ms`
+}
+
+/** Network info popover — rendered when the globe icon is clicked */
+const NetworkInfoPopover = forwardRef<HTMLDivElement, { response: ApiResponse }>(
+  function NetworkInfoPopover({ response }, ref) {
+    const url = response.actualRequest?.url
+    const host = extractHost(url)
+    const proto = extractProtocol(url)
+    const contentType = response.headers?.['content-type'] || response.headers?.['Content-Type'] || '—'
+    const server = response.headers?.['server'] || response.headers?.['Server'] || '—'
+    const t = response.timing || { total: 0 }
+
+    const rows: Array<[string, string]> = [
+      ['Host', host],
+      ['Protocol', proto],
+      ['Method', response.actualRequest?.method || '—'],
+      ['Status', response.status != null ? `${response.status} ${response.statusText || ''}`.trim() : '—'],
+      ['Server', server],
+      ['Content-Type', contentType],
+    ]
+
+    const timings: Array<[string, string]> = [
+      ['DNS lookup', fmtMs(t.dns)],
+      ['TCP handshake', fmtMs(t.tcp)],
+      ['TLS handshake', fmtMs(t.tls)],
+      ['Time to first byte', fmtMs(t.ttfb)],
+      ['Download', fmtMs(t.download)],
+      ['Total', fmtMs(t.total)],
+    ]
+
+    return (
+      <div
+        ref={ref}
+        className="absolute z-[1000] mt-1 rounded-md border border-[var(--border)] bg-[var(--white)] shadow-lg"
+        style={{
+          top: '100%',
+          right: 0,
+          width: 320,
+          boxShadow: '0 6px 24px rgba(0,0,0,0.12)',
+          fontSize: 13,
+        }}
+      >
+        <div
+          className="px-3 py-2 font-semibold text-[var(--text)]"
+          style={{ borderBottom: '1px solid var(--border)' }}
+        >
+          Network
+        </div>
+        <div className="px-3 py-2">
+          <table className="w-full" style={{ fontSize: 13 }}>
+            <tbody>
+              {rows.map(([k, v]) => (
+                <tr key={k}>
+                  <td className="py-1 pr-3 text-[var(--muted)]" style={{ width: 110 }}>{k}</td>
+                  <td className="py-1 font-mono text-[var(--text)]" style={{ wordBreak: 'break-all' }}>{v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div
+          className="px-3 py-2 font-semibold text-[var(--text)]"
+          style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}
+        >
+          Timings
+        </div>
+        <div className="px-3 py-2">
+          <table className="w-full" style={{ fontSize: 13 }}>
+            <tbody>
+              {timings.map(([k, v]) => (
+                <tr key={k}>
+                  <td className="py-1 pr-3 text-[var(--muted)]" style={{ width: 160 }}>{k}</td>
+                  <td className="py-1 font-mono text-[var(--text)]">{v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  }
+)
 
 /**
  * Response panel — Postman-style layout:
@@ -21,10 +132,29 @@ type ResTabKey = 'body' | 'cookies' | 'headers' | 'testResults' | 'console' | 'a
 export default function ResponsePane() {
   const response = useResponseStore((s) => s.response)
   const isLoading = useResponseStore((s) => s.isLoading)
-  const setShowCodeGenerator = useUIStore((s) => s.setShowCodeGenerator)
   const setActiveSidebarPage = useUIStore((s) => s.setActiveSidebarPage)
   const [activeTab, setActiveTab] = useState<ResTabKey>('body')
+  const [showNetworkInfo, setShowNetworkInfo] = useState(false)
+  const networkBtnRef = useRef<HTMLButtonElement>(null)
+  const networkPopRef = useRef<HTMLDivElement>(null)
   const { t } = useTranslation()
+
+  // Close network popover on outside click
+  useEffect(() => {
+    if (!showNetworkInfo) return
+    const handler = (e: MouseEvent) => {
+      if (
+        networkPopRef.current &&
+        !networkPopRef.current.contains(e.target as Node) &&
+        networkBtnRef.current &&
+        !networkBtnRef.current.contains(e.target as Node)
+      ) {
+        setShowNetworkInfo(false)
+      }
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [showNetworkInfo])
 
   // Loading state
   if (isLoading) {
@@ -174,23 +304,28 @@ export default function ResponsePane() {
           <span style={{ color: 'var(--muted)' }}>
             <span className="font-semibold" style={{ color: 'var(--text)' }}>{sizeKB} KB</span>
           </span>
-          <button
-            type="button"
-            title="Network"
-            className="flex cursor-pointer items-center justify-center rounded p-1"
-            style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
-          >
-            <Globe size={14} />
-          </button>
-          <button
-            type="button"
-            title="More"
-            onClick={() => setShowCodeGenerator(true)}
-            className="flex cursor-pointer items-center justify-center rounded p-1"
-            style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
-          >
-            <MoreHorizontal size={14} />
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button
+              ref={networkBtnRef}
+              type="button"
+              title="Network info"
+              onClick={() => setShowNetworkInfo((v) => !v)}
+              className="flex cursor-pointer items-center justify-center rounded p-1"
+              style={{
+                background: showNetworkInfo ? 'var(--accent-light)' : 'transparent',
+                border: 'none',
+                color: showNetworkInfo ? 'var(--accent-text)' : 'var(--muted)',
+              }}
+            >
+              <Globe size={14} />
+            </button>
+            {showNetworkInfo && (
+              <NetworkInfoPopover
+                ref={networkPopRef}
+                response={response}
+              />
+            )}
+          </div>
         </div>
       </div>
 

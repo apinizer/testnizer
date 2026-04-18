@@ -43,13 +43,16 @@
   --mb-head-bg:    #ede9fe; --mb-head-fg:    #5b21b6; --mb-head-br:    #ddd6fe;
   --mb-options-bg: #e0f2fe; --mb-options-fg: #0369a1; --mb-options-br: #bae6fd;
 
-  /* JSON syntax (Postman-matching) */
+  /* JSON syntax tokens */
   --json-key:     #0550ae;
   --json-string:  #c2410c;
   --json-number:  #15803d;
   --json-bool:    #1e40af;
   --json-null:    #6b7280;
   --json-punct:   #374151;
+
+  /* Variable highlight color — {{var}} tokens in inputs/editors */
+  --variable-color: #0066cc;
 
   /* Sidebar (nav rail) */
   --nav-bg:       #ffffff;
@@ -61,7 +64,7 @@
   --shadow-drop:  0 8px 32px rgba(0,0,0,0.12);
 }
 
-/* ── Dark Theme (Postman-matching) ── */
+/* ── Dark Theme ── */
 :root[data-theme="dark"] {
   --bg:           #1c1c1e;
   --white:        #212124;
@@ -95,7 +98,7 @@
   --tree-schemas:    #4caf82;
   --tree-components: #e88c3a;
 
-  /* Method badges — dark (Postman-matching tinted backgrounds) */
+  /* Method badges — dark (tinted backgrounds) */
   --mb-get-bg:     rgba(59,130,246,0.18);  --mb-get-fg:     #7bb9ff; --mb-get-br:     rgba(59,130,246,0.35);
   --mb-post-bg:    rgba(34,197,94,0.18);   --mb-post-fg:    #6bdd9a; --mb-post-br:    rgba(34,197,94,0.35);
   --mb-put-bg:     rgba(245,158,11,0.18);  --mb-put-fg:     #ffb84d; --mb-put-br:     rgba(245,158,11,0.35);
@@ -104,13 +107,16 @@
   --mb-head-bg:    rgba(168,85,247,0.18);  --mb-head-fg:    #c99cff; --mb-head-br:    rgba(168,85,247,0.35);
   --mb-options-bg: rgba(14,165,233,0.18);  --mb-options-fg: #70c3f0; --mb-options-br: rgba(14,165,233,0.35);
 
-  /* JSON syntax (Postman dark) */
+  /* JSON syntax (dark) */
   --json-key:     #7fb3ff;
   --json-string:  #ff9a5c;
   --json-number:  #6bdd9a;
   --json-bool:    #b58bff;
   --json-null:    #8a8a92;
   --json-punct:   #c0c0c6;
+
+  /* Variable highlight color — {{var}} tokens in inputs/editors */
+  --variable-color: #7bb9ff;
 
   /* Sidebar (nav rail) */
   --nav-bg:       #171718;
@@ -161,7 +167,7 @@ button, input, select, textarea, label, a, span, div, p, li, td, th {
   font-size: inherit;
 }
 
-/* ── Scrollbar (Apidog-style thin) ── */
+/* ── Scrollbar (thin) ── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
@@ -202,7 +208,7 @@ input:focus, textarea:focus, select:focus {
   -webkit-app-region: no-drag;
 }
 
-/* ── Apidog-style tab bar ── */
+/* ── Tab bar ── */
 .tab-item {
   position: relative;
   opacity: 0.72;
@@ -225,7 +231,7 @@ input:focus, textarea:focus, select:focus {
   z-index: 2;
 }
 
-/* ── Nav item (sidebar) — Apidog 72x64 ── */
+/* ── Nav item (sidebar) 72x64 ── */
 .nav-item {
   display: flex;
   flex-direction: column;
@@ -258,7 +264,7 @@ button {
   font-family: inherit;
 }
 
-/* ── Form elements — Apidog-style clean white inputs ── */
+/* ── Form elements — clean white inputs ── */
 input[type="text"],
 input[type="password"],
 input[type="email"],

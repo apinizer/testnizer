@@ -5,6 +5,46 @@ import type { editor } from 'monaco-editor'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 
+/** CSS class name used by Monaco decorations to colorize {{variables}} */
+const VARIABLE_DECO_CLASS = 'monaco-variable-highlight'
+
+/** Make sure the CSS rule is injected exactly once */
+let variableStyleInjected = false
+function ensureVariableStyle(): void {
+  if (variableStyleInjected) return
+  variableStyleInjected = true
+  const style = document.createElement('style')
+  style.textContent = `
+    .${VARIABLE_DECO_CLASS} {
+      color: var(--variable-color, #0066cc) !important;
+      font-weight: 500;
+    }
+  `
+  document.head.appendChild(style)
+}
+
+/** Scan the model and apply variable highlight decorations. */
+function applyVariableHighlights(
+  ed: editor.IStandaloneCodeEditor,
+  prev: string[]
+): string[] {
+  const model = ed.getModel()
+  if (!model) return prev
+  const text = model.getValue()
+  const re = /\{\{[^}]*?\}\}/g
+  const decos: editor.IModelDeltaDecoration[] = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const start = model.getPositionAt(m.index)
+    const end = model.getPositionAt(m.index + m[0].length)
+    decos.push({
+      range: new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column),
+      options: { inlineClassName: VARIABLE_DECO_CLASS },
+    })
+  }
+  return ed.deltaDecorations(prev, decos)
+}
+
 // Bundle Monaco locally — @monaco-editor/react defaults to loading from a
 // jsdelivr CDN which is blocked by our strict Content-Security-Policy
 // (connect-src 'self'). Passing the local module makes the editor load
@@ -146,16 +186,31 @@ export default function MonacoWrapper({
     : theme
   const monacoRef = useRef<Monaco | null>(null)
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
+  const decoIdsRef = useRef<string[]>([])
 
   const handleEditorMount = (ed: editor.IStandaloneCodeEditor, monaco: Monaco) => {
     monacoRef.current = monaco
     editorRef.current = ed
+    ensureVariableStyle()
     if (!readOnly) {
       registerVariableCompletionProvider(monaco)
     }
+    // Initial highlight + refresh on content change
+    decoIdsRef.current = applyVariableHighlights(ed, decoIdsRef.current)
+    ed.onDidChangeModelContent(() => {
+      decoIdsRef.current = applyVariableHighlights(ed, decoIdsRef.current)
+    })
   }
 
   // Cleanup on unmount is not needed since we register globally once
+
+  useEffect(() => {
+    // If `value` prop changes from outside, refresh decorations too
+    const ed = editorRef.current
+    if (ed) {
+      decoIdsRef.current = applyVariableHighlights(ed, decoIdsRef.current)
+    }
+  }, [value])
 
   useEffect(() => {
     return () => {

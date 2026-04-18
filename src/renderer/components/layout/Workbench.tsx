@@ -9,7 +9,7 @@ import GraphQLEditor from '../protocols/GraphQLEditor'
 import GrpcEditor from '../protocols/GrpcEditor'
 import SseEditor from '../protocols/SseEditor'
 import RunnerTab from '../runner/RunnerTab'
-import RunnerVariables from '../runner/RunnerVariables'
+import RightPanel from './RightPanel'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
@@ -363,8 +363,8 @@ export default function Workbench() {
         </PanelGroup>
       </div>
 
-      {/* Right: All Variables panel (Postman-style) */}
-      <RunnerVariables />
+      {/* Right: Postman-style tabbed panel (Variables / Code / ...) */}
+      <RightPanel />
     </div>
   )
 }

@@ -20,6 +20,8 @@
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux",
+    "build:all": "npm run build && electron-builder --mac --win --linux",
+    "pack:collect": "node scripts/collect-packages.js",
     "typecheck:main": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:preload": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:renderer": "tsc --noEmit -p tsconfig.web.json",
@@ -100,6 +102,7 @@
     },
     "afterPack": "./scripts/ad-hoc-sign.js",
     "afterSign": "./scripts/notarize.js",
+    "afterAllArtifactBuild": "./scripts/collect-packages.js",
     "files": [
       "out/**/*",
       "resources/**/*"
@@ -129,19 +132,31 @@
     },
     "win": {
       "target": [
-        "nsis",
-        "zip"
+        {
+          "target": "nsis",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
       ],
       "icon": "build/icon.ico",
-      "artifactName": "Apinizer.1.0.${ext}"
+      "artifactName": "Apinizer.1.0.${arch}.${ext}"
     },
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        {
+          "target": "AppImage",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64", "arm64"]
+        }
       ],
       "icon": "build/icon.png",
-      "artifactName": "Apinizer.1.0.${ext}"
+      "artifactName": "Apinizer.1.0.${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

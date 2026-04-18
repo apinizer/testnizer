@@ -61,7 +61,7 @@ export default function ScriptsTab() {
 
         {/* Snippet helper */}
         <span style={{ color: 'var(--hint)' }}>
-          JavaScript (Postman Sandbox)
+          JavaScript
         </span>
       </div>
 

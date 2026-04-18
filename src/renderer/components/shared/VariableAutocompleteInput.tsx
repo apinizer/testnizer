@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useEnvironmentStore } from '../../stores/environment.store'
 
@@ -226,17 +226,117 @@ export default function VariableAutocompleteInput({
 
   const isOpen = suggestions.length > 0
 
+  // Sync overlay scroll with input scroll; also copy computed padding/font
+  // so the overlay aligns exactly even when styles come from classNames.
+  const overlayRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const input = inputRef.current
+    const overlay = overlayRef.current
+    if (!input || !overlay) return
+    const cs = window.getComputedStyle(input)
+    overlay.style.paddingLeft = cs.paddingLeft
+    overlay.style.paddingRight = cs.paddingRight
+    overlay.style.paddingTop = cs.paddingTop
+    overlay.style.paddingBottom = cs.paddingBottom
+    overlay.style.fontFamily = cs.fontFamily
+    overlay.style.fontSize = cs.fontSize
+    overlay.style.fontWeight = cs.fontWeight
+    overlay.style.lineHeight = cs.lineHeight
+    overlay.style.letterSpacing = cs.letterSpacing
+    const syncScroll = () => {
+      overlay.scrollLeft = input.scrollLeft
+    }
+    input.addEventListener('scroll', syncScroll)
+    return () => input.removeEventListener('scroll', syncScroll)
+  }, [value, className, style])
+
+  // Build highlighted segments: plain text between {{ }} + colored variable tokens
+  const segments = useMemo(() => {
+    const out: Array<{ text: string; isVar: boolean }> = []
+    const re = /\{\{[^}]*?\}\}/g
+    let last = 0
+    let m: RegExpExecArray | null
+    while ((m = re.exec(value)) !== null) {
+      if (m.index > last) out.push({ text: value.slice(last, m.index), isVar: false })
+      out.push({ text: m[0], isVar: true })
+      last = m.index + m[0].length
+    }
+    if (last < value.length) out.push({ text: value.slice(last), isVar: false })
+    return out
+  }, [value])
+
+  // Extract font-related style props to sync overlay. We mirror padding and
+  // font metrics so overlay glyphs align exactly with the input caret.
+  const inputStyle = (style || {}) as React.CSSProperties
+  const overlayStyle: React.CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    pointerEvents: 'none',
+    overflow: 'hidden',
+    whiteSpace: 'pre',
+    display: 'flex',
+    alignItems: 'center',
+    padding: inputStyle.padding,
+    paddingLeft: inputStyle.paddingLeft,
+    paddingRight: inputStyle.paddingRight,
+    paddingTop: inputStyle.paddingTop,
+    paddingBottom: inputStyle.paddingBottom,
+    fontFamily: inputStyle.fontFamily,
+    fontSize: inputStyle.fontSize,
+    fontWeight: inputStyle.fontWeight,
+    lineHeight: inputStyle.lineHeight,
+    letterSpacing: inputStyle.letterSpacing,
+    color: inputStyle.color || 'var(--text)',
+    borderRadius: inputStyle.borderRadius,
+    // Transparent border so overlay box matches input's content box
+    border: '1px solid transparent',
+    boxSizing: inputStyle.boxSizing || 'border-box',
+  }
+
+  // Hide the real text in the input so only the overlay shows colored text,
+  // but keep the caret visible.
+  const inputOverlayHider: React.CSSProperties = value
+    ? { color: 'transparent', caretColor: (inputStyle as React.CSSProperties).color as string || 'var(--text)' }
+    : {}
+
   return (
     <>
-      <input
-        ref={inputRef}
-        value={value}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        style={style}
-        className={className}
-      />
+      <span
+        style={{
+          position: 'relative',
+          display: 'flex',
+          flex: (inputStyle as React.CSSProperties).flex ?? undefined,
+          width: className?.includes('w-full') ? '100%' : (inputStyle as React.CSSProperties).width,
+          minWidth: 0,
+        }}
+      >
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          style={{
+            ...inputStyle,
+            ...inputOverlayHider,
+            flex: 1,
+            width: '100%',
+            position: 'relative',
+            zIndex: 1,
+            background: 'transparent',
+          }}
+          className={className}
+        />
+        <div ref={overlayRef} aria-hidden="true" style={overlayStyle}>
+          {segments.map((seg, i) =>
+            seg.isVar ? (
+              <span key={i} style={{ color: 'var(--variable-color, #0066cc)', fontWeight: 500 }}>{seg.text}</span>
+            ) : (
+              <span key={i}>{seg.text}</span>
+            )
+          )}
+        </div>
+      </span>
       {isOpen &&
         createPortal(
           <div
