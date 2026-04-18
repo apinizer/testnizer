@@ -30,6 +30,14 @@ function shouldInclude(fileName) {
   return ALLOWED_EXTS.has(ext)
 }
 
+/**
+ * Rename electron-builder's multi-arch nsis combined installer from the
+ * double-dot form "Apinizer.1.0..exe" (blank ${arch}) to a clearer name.
+ */
+function normalizeName(name) {
+  return name.replace(/^Apinizer\.1\.0\.\.exe$/, 'Apinizer.1.0.win.universal.exe')
+}
+
 function collect() {
   if (!fs.existsSync(DIST_DIR)) {
     console.error(`[collect-packages] dist/ does not exist at ${DIST_DIR}`)
@@ -43,10 +51,11 @@ function collect() {
     if (!entry.isFile()) continue
     if (!shouldInclude(entry.name)) continue
     const src = path.join(DIST_DIR, entry.name)
-    const dest = path.join(OUT_DIR, entry.name)
+    const outName = normalizeName(entry.name)
+    const dest = path.join(OUT_DIR, outName)
     fs.copyFileSync(src, dest)
     copiedPaths.push(dest)
-    console.log(`[collect-packages] ${entry.name}`)
+    console.log(`[collect-packages] ${outName}`)
   }
   console.log(`[collect-packages] copied ${copiedPaths.length} file(s) -> ${OUT_DIR}`)
   return copiedPaths
