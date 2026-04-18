@@ -18,10 +18,16 @@
     "postinstall": "electron-builder install-app-deps && bash scripts/patch-electron-name.sh",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
+    "build:win:x64": "npm run build && electron-builder --win --x64",
+    "build:win:arm64": "npm run build && electron-builder --win --arm64",
     "build:mac": "npm run build && electron-builder --mac",
+    "build:mac:x64": "npm run build && electron-builder --mac --x64",
+    "build:mac:arm64": "npm run build && electron-builder --mac --arm64",
     "build:linux": "npm run build && electron-builder --linux",
-    "build:all": "npm run build && electron-builder --mac --win --linux",
+    "build:linux:x64": "npm run build && electron-builder --linux --x64",
+    "build:linux:arm64": "npm run build && electron-builder --linux --arm64",
     "pack:collect": "node scripts/collect-packages.js",
+    "verify:natives": "node scripts/verify-natives.js",
     "typecheck:main": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:preload": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:renderer": "tsc --noEmit -p tsconfig.web.json",
@@ -118,7 +124,14 @@
     ],
     "mac": {
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
       ],
       "icon": "build/icon.icns",
       "artifactName": "Apinizer.1.0.${arch}.${ext}",

@@ -1,0 +1,185 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Allow only one concurrent build per ref — cancel stale ones.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # macOS — one job per arch, each on a native runner so better-sqlite3's
+  # prebuild-install pulls the correct darwin-{x64,arm64} binary and
+  # electron-rebuild compiles against the host's arch if a prebuild is missing.
+  # ---------------------------------------------------------------------------
+  build-mac:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14   # Apple Silicon
+          - arch: x64
+            runner: macos-13   # Intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps (host arch only)
+        run: npm ci
+
+      - name: Build renderer + main
+        run: npm run build
+
+      - name: Package (dmg + zip, ${{ matrix.arch }})
+        env:
+          # Skip signing in CI unless the secrets are actually configured.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish never
+
+      - name: Verify native binaries
+        run: node scripts/verify-natives.js --platform=darwin --arch=${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.arch }}
+          path: |
+            dist/ready-packages/*.dmg
+            dist/ready-packages/*.zip
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Linux — native x64 on ubuntu-latest, native arm64 on ubuntu-24.04-arm.
+  # Both run electron-rebuild against the host's glibc, which matches the
+  # target users (no cross-compile gymnastics).
+  # ---------------------------------------------------------------------------
+  build-linux:
+    name: Linux ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install system build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential python3 libopenjp2-tools rpm fakeroot dpkg
+
+      - name: Install deps (host arch only)
+        run: npm ci
+
+      - name: Build renderer + main
+        run: npm run build
+
+      - name: Package (AppImage + deb, ${{ matrix.arch }})
+        run: npx electron-builder --linux --${{ matrix.arch }} --publish never
+
+      - name: Verify native binaries
+        run: node scripts/verify-natives.js --platform=linux --arch=${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            dist/ready-packages/*.AppImage
+            dist/ready-packages/*.deb
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Windows — x64 on windows-latest (native), arm64 on windows-11-arm (native).
+  # Running each arch on its own native host is the only reliable way to get
+  # the correct better_sqlite3.node into the NSIS installer.
+  # ---------------------------------------------------------------------------
+  build-windows:
+    name: Windows ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps (host arch only)
+        run: npm ci
+
+      - name: Build renderer + main
+        run: npm run build
+
+      - name: Package (nsis + zip, ${{ matrix.arch }})
+        run: npx electron-builder --win --${{ matrix.arch }} --publish never
+
+      - name: Verify native binaries
+        run: node scripts/verify-natives.js --platform=win32 --arch=${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-${{ matrix.arch }}
+          path: |
+            dist/ready-packages/*.exe
+            dist/ready-packages/*.zip
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Draft GitHub Release on tag pushes — collects all six artifacts.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-mac, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \) -exec cp {} release/ \;
+          ls -la release/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: release/*
