@@ -34,7 +34,7 @@ export const T = {
   OPTIONS: { bg: 'var(--mb-options-bg)', color: 'var(--mb-options-fg)', border: 'var(--mb-options-br)' },
 } as const
 
-// Standard UI font: 13px — matches Postman/Apidog density.
+// Standard UI font: 13px — compact desktop density.
 export const BASE_INP: CSSProperties = {
   width: '100%',
   background: 'var(--input-bg)',

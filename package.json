@@ -118,8 +118,7 @@
     ],
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        "dmg"
       ],
       "icon": "build/icon.icns",
       "artifactName": "Apinizer.1.0.${arch}.${ext}",
