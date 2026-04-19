@@ -4,12 +4,10 @@
 
 ## Faz 1 — Core HTTP Client (MVP)
 
-**UI önce okunacak:** `docs/mockups/ApinizerApiTesterLight.jsx`
-
 Sırasıyla implement et:
 
 ### 1. Types (`src/renderer/types/index.ts`)
-`docs/TYPES.md` dosyasındaki tüm interface'leri kopyala.
+Mevcut `src/renderer/types/index.ts` dosyasını referans al; eksik domain tiplerini ekle.
 
 ### 2. Database
 - `src/main/db/database.ts` — init + migrations (11 tablo)
@@ -62,7 +60,7 @@ Mockup'taki gibi:
 - `CookieTab.tsx`, `ConsoleTab.tsx`, `ActualRequestTab.tsx`
 
 ### 9. Shared Components
-- `MethodBadge.tsx` (renk tablosu UI-SPEC.md §1.3)
+- `MethodBadge.tsx` (renk tablosu CLAUDE.md "Method Badge Renkleri")
 - `StatusBadge.tsx`
 - `KeyValueTable.tsx`
 - `MonacoEditor.tsx` (wrapper)
@@ -88,8 +86,7 @@ Mockup'taki gibi:
 
 ### 1. SOAP Engine
 - `src/main/protocols/soap.engine.ts`
-- `docs/java-reference/ConverterWSDL.java` referans al
-- `findAllSchemasRecursively()` port et
+- `findAllSchemasRecursively()` — XSD'leri rekürsif çekip birleştir
 - SOAP 1.1/1.2 versiyon tespiti
 - Envelope üretimi (form schema'dan)
 - WS-Security (wsse paketi)

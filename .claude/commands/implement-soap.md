@@ -3,9 +3,8 @@
 SOAP/WSDL desteğini uçtan uca implement eder.
 
 ## Önce Oku
-1. `docs/java-reference/ConverterWSDL.java` — production Java implementasyonu
-2. `.claude/agents/protocol-engine.md` → SOAP Engine bölümü
-3. `docs/mockups/ApinizerApiTesterLight.jsx` → SOAP UI flow
+e1. `.claude/agents/protocol-engine.md` → SOAP Engine bölümü
+2. Mevcut `src/main/protocols/soap.engine.ts` (varsa)
 
 ## Paketler
 
@@ -27,7 +26,7 @@ import { XMLParser } from 'fast-xml-parser'
 //   - client.describe() → service/port/operation ağacı
 //   - Her operasyon için: name, inputSchema, outputSchema, exampleRequest
 //   - SOAP versiyon tespiti (namespace'den)
-//   - findAllSchemasRecursively() — Java ConverterWSDL.findAllSchemasResursively() portu
+//   - findAllSchemasRecursively() — XSD'leri rekürsif çekip tek dokümanda birleştir
 
 // generateEnvelope(opName, params, namespace, soapVersion): string
 //   - SOAP 1.1 vs 1.2 envelope namespace

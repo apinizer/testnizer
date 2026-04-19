@@ -144,7 +144,6 @@ async function fetchContent(url: string, sslVerification = true): Promise<string
 
 /**
  * Recursively find all XSD schemas imported within a WSDL/XSD document.
- * Ported from Java ConverterWSDL.findAllSchemasResursively()
  */
 export async function findAllSchemasRecursively(
   schemaBody: string,

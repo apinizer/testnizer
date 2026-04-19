@@ -11,17 +11,6 @@
 
 ---
 
-## Referans UI Mockup'ları
-
-`docs/mockups/` klasöründe iki JSX dosyası bulunur:
-
-- **`ApinizerApiTesterLight.jsx`** — Açık tema, ekran görüntüsü alınan Apidog UI'ına birebir benzer. **Bu dosya UI'ın kesin referansıdır.** Her bileşenin görsel çıktısı bu mockup'a uygun olmalıdır.
-- **`ApinizerApiTesterDark.jsx`** — Koyu tema versiyonu.
-
-Claude Code UI bileşeni yazmadan önce mutlaka bu dosyaları okusun.
-
----
-
 ## Kesin Tech Stack
 
 | Katman | Teknoloji |
@@ -229,17 +218,6 @@ apinizer-api-tester/
 │       │   └── code-generator.ts       # cURL/JS/Python snippets
 │       └── types/
 │           └── index.ts                # Tüm TypeScript tipleri
-├── docs/
-│   ├── SRS.md
-│   ├── UI-SPEC.md
-│   ├── APIDOG-ANALYSIS.md
-│   ├── TYPES.md
-│   ├── mockups/
-│   │   ├── ApinizerApiTesterLight.jsx  # ← KESİN UI REFERANSI
-│   │   └── ApinizerApiTesterDark.jsx
-│   └── java-reference/
-│       ├── README.md
-│       └── ConverterWSDL.java
 └── .claude/
     ├── agents/
     │   ├── ui-frontend.md

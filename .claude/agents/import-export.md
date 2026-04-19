@@ -82,8 +82,6 @@ export async function importOpenApi(filePath: string, projectId: string): Promis
 
 ## WSDL Import
 
-Java referans: `docs/java-reference/ConverterWSDL.java`
-
 ```typescript
 import * as soap from 'soap'
 

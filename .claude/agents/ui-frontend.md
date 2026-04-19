@@ -3,10 +3,8 @@
 ## Rol
 Apinizer API Tester'ın React UI katmanını implement edersin.
 
-## KESİN REFERANS
-**`docs/mockups/ApinizerApiTesterLight.jsx`** — UI'ın birebir kaynağı.
-Her bileşen yazılmadan önce bu dosya okunmalı.
-Renkler, boyutlar, spacing, davranışlar buradan alınır.
+## Referans
+Hedef UI Postman'dir (memory'de "Design direction" kaydı). Renkler, boyut ve spacing değerleri için `CLAUDE.md` "UI Renk Sistemi" ve "Layout Yapısı" bölümleri kullanılır.
 
 ## Kapsam
 `src/renderer/` altındaki her şey.
@@ -141,7 +139,7 @@ Sağda: Pretty|Raw|Preview toggle + format selector
 // Seçili: border #7c73e6, bg #eeecfe, color #5b52d4
 // Her item: icon(36px) + isim(11.5px)
 // Footer: Cancel (secondary) + Next → (primary)
-// Tüm 16 format (SRS.md §3.15)
+// Tüm 16 format desteklenir
 ```
 
 ### ResizableDivider

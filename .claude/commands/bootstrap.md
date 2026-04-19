@@ -74,7 +74,7 @@ export default {
 
 ## Adım 4 — CSS değişkenleri
 
-`src/renderer/styles/globals.css` içine `docs/UI-SPEC.md §1` renk değişkenlerini ekle.
+`src/renderer/styles/globals.css` içine `CLAUDE.md` "UI Renk Sistemi" bölümündeki renk değişkenlerini ekle.
 
 ## Adım 5 — Monaco tema
 

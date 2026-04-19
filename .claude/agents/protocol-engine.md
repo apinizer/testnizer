@@ -56,22 +56,13 @@ export async function executeHttp(opts: HttpExecuteOptions): Promise<ApiResponse
 
 ## SOAP Engine (`soap.engine.ts`)
 
-### Java Referans Implementasyonu
-`docs/java-reference/ConverterWSDL.java` — WSDL parse, operasyon listesi, XSD recursive çekme.
+### Temel Yetenekler
+- WSDL parse → `soap.createClientAsync(url)` + `client.describe()`
+- Operasyon listesi ve örnek envelope üretimi (schema'dan)
+- XSD'leri rekürsif olarak çekip birleştirme
+- SOAP 1.1 / 1.2 versiyon tespiti (WSDL binding namespace'inden)
 
-**Java → Node.js Mapping:**
-
-| Java Metodu | Node.js Karşılığı |
-|---|---|
-| `WsdlImporter.importWsdl()` | `soap.createClientAsync(url)` |
-| `iface.getOperationList()` | `client.describe()` |
-| `exampleRequestForOperation()` | Schema'dan envelope build |
-| `findAllSchemasResursively()` | Aşağıda port |
-| `resolveSchemaUrl()` | `new URL(schemaLocation, parentUrl).toString()` |
-| `normalizeLocation()` | `.toLowerCase().replace(/\\/g, '/')` |
-| `servers()` — SOAP 1.1/1.2 | WSDL namespace'den tespit |
-
-### `findAllSchemasRecursively()` Port
+### `findAllSchemasRecursively()`
 
 ```typescript
 async function findAllSchemasRecursively(
