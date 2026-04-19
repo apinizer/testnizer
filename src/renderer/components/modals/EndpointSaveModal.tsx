@@ -31,6 +31,7 @@ export default function EndpointSaveModal() {
   const [newFolderName, setNewFolderName] = useState('')
   const [saving, setSaving] = useState(false)
   const [folders, setFolders] = useState<Folder[]>([])
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     if (show && activeProjectId) {
@@ -205,47 +206,109 @@ export default function EndpointSaveModal() {
             <div style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 500, marginBottom: 8, fontFamily: 'inherit' }}>
               Klasöre Kaydet
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {folders.map((f) => (
-                <div
-                  key={f.id}
-                  onClick={() => {
-                    setSelectedFolder(f.id)
-                    setCreatingFolder(false)
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '8px 12px',
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    border: `1.5px solid ${selectedFolder === f.id ? '#2D5FA0' : 'var(--border)'}`,
-                    background: selectedFolder === f.id ? 'var(--accent-light)' : 'var(--white)',
-                    transition: 'all 0.12s',
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill={selectedFolder === f.id ? '#2D5FA0' : '#fbbf24'} stroke="none">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                  </svg>
-                  <span
-                    style={{
-                      flex: 1,
-                      fontSize: 13,
-                      color: selectedFolder === f.id ? 'var(--accent-text)' : 'var(--sub, var(--text))',
-                      fontWeight: selectedFolder === f.id ? 500 : 400,
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    {f.name}
-                  </span>
-                  {selectedFolder === f.id && (
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2D5FA0" strokeWidth="2.5">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  )}
-                </div>
-              ))}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+                maxHeight: 280,
+                overflowY: 'auto',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                padding: 4,
+                background: 'var(--surface)',
+              }}
+            >
+              {(() => {
+                const childrenOf = new Map<string | null, Folder[]>()
+                for (const f of folders) {
+                  const arr = childrenOf.get(f.parent_id) ?? []
+                  arr.push(f)
+                  childrenOf.set(f.parent_id, arr)
+                }
+
+                const renderNodes = (parentId: string | null, depth: number): React.ReactNode[] => {
+                  const nodes = childrenOf.get(parentId) ?? []
+                  return nodes.map((f) => {
+                    const children = childrenOf.get(f.id) ?? []
+                    const hasChildren = children.length > 0
+                    const isExpanded = expandedFolders[f.id] ?? true
+                    const isSelected = selectedFolder === f.id
+                    return (
+                      <div key={f.id}>
+                        <div
+                          onClick={() => {
+                            setSelectedFolder(f.id)
+                            setCreatingFolder(false)
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            padding: '6px 8px',
+                            paddingLeft: 8 + depth * 14,
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                            background: isSelected ? 'var(--accent-light)' : 'transparent',
+                          }}
+                        >
+                          {hasChildren ? (
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setExpandedFolders((s) => ({ ...s, [f.id]: !isExpanded }))
+                              }}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: 14,
+                                height: 14,
+                                color: 'var(--hint)',
+                                cursor: 'pointer',
+                                userSelect: 'none',
+                                transition: 'transform 0.12s',
+                                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                              }}
+                            >
+                              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5l8 7-8 7z" />
+                              </svg>
+                            </span>
+                          ) : (
+                            <span style={{ display: 'inline-block', width: 14 }} />
+                          )}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill={isSelected ? '#2D5FA0' : '#fbbf24'} stroke="none">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                          </svg>
+                          <span
+                            style={{
+                              flex: 1,
+                              fontSize: 13,
+                              color: isSelected ? 'var(--accent-text)' : 'var(--text)',
+                              fontWeight: isSelected ? 500 : 400,
+                              fontFamily: 'inherit',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
+                            {f.name}
+                          </span>
+                          {isSelected && (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2D5FA0" strokeWidth="2.5">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </div>
+                        {hasChildren && isExpanded && renderNodes(f.id, depth + 1)}
+                      </div>
+                    )
+                  })
+                }
+
+                return renderNodes(null, 0)
+              })()}
 
               {/* No folders message */}
               {folders.length === 0 && !creatingFolder && (
@@ -253,6 +316,8 @@ export default function EndpointSaveModal() {
                   Henüz klasör yok
                 </div>
               )}
+            </div>
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
 
               {/* Create new folder */}
               {!creatingFolder ? (

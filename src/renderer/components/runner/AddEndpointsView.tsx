@@ -73,17 +73,37 @@ export default function AddEndpointsView() {
   // Filter endpoints not already in suite
   const availableEndpoints = allEndpoints.filter((e) => !existingIds.has(e.id))
 
-  // Search filter
-  const filtered = search.trim()
-    ? availableEndpoints.filter((e) =>
-        e.name.toLowerCase().includes(search.toLowerCase()) ||
-        e.path.toLowerCase().includes(search.toLowerCase())
-      )
-    : availableEndpoints
-
-  // Group by folder — skip root, use parent folder name
+  // Build folder lookup early so search can resolve folder names
   const folderMap = new Map<string, FolderInfo>()
   for (const f of folders) folderMap.set(f.id, f)
+
+  // Walk up the folder chain and collect all ancestor names (so a search match
+  // on a parent folder also surfaces endpoints that live in its descendants).
+  const folderPathTokens = (folderId: string | null): string => {
+    if (!folderId) return ''
+    const tokens: string[] = []
+    let cur: string | null = folderId
+    const seen = new Set<string>()
+    while (cur && !seen.has(cur)) {
+      seen.add(cur)
+      const f = folderMap.get(cur)
+      if (!f) break
+      tokens.push(f.name)
+      cur = f.parent_id
+    }
+    return tokens.join(' / ').toLowerCase()
+  }
+
+  // Search filter — matches endpoint name, endpoint path, or any folder
+  // name in the endpoint's folder ancestry.
+  const searchLc = search.trim().toLowerCase()
+  const filtered = searchLc
+    ? availableEndpoints.filter((e) =>
+        e.name.toLowerCase().includes(searchLc) ||
+        e.path.toLowerCase().includes(searchLc) ||
+        folderPathTokens(e.folder_id).includes(searchLc)
+      )
+    : availableEndpoints
 
   // Build folder display name with parent path
   const getFolderDisplayName = (folderId: string): string => {
