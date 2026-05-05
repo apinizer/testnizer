@@ -42,6 +42,13 @@ interface AppSettings {
     ntlm?: { domain?: string }
   }
   autoUpdate: boolean
+  /**
+   * Crash + error reporting via Sentry. **Default off** — opt-in only.
+   * When `true`, the main process initializes @sentry/electron at next
+   * launch with the DSN configured at build time. No data leaves the user's
+   * machine while this flag is false.
+   */
+  telemetryEnabled: boolean
 }
 
 const defaults: AppSettings = {
@@ -53,9 +60,10 @@ const defaults: AppSettings = {
   followRedirects: true,
   historyLimit: 500,
   proxy: {
-    mode: 'system'
+    mode: 'system',
   },
-  autoUpdate: true
+  autoUpdate: true,
+  telemetryEnabled: false,
 }
 
 interface StoreInstance {
@@ -72,7 +80,7 @@ async function getStore(): Promise<StoreInstance> {
   const { default: Store } = await import('electron-store')
   storeInstance = new Store<AppSettings>({
     name: 'settings',
-    defaults
+    defaults,
   }) as unknown as StoreInstance
   return storeInstance
 }

@@ -3,6 +3,7 @@ import { readFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { getDb } from '../db/database'
 import { parseWsdl, parseWsdlFromContent, type WsdlParseResult } from '../protocols/soap.engine'
+import { loadProto, type GrpcServiceDescription } from '../protocols/grpc.engine'
 
 interface ImportResult {
   success: boolean
@@ -30,10 +31,13 @@ interface OpenApiPath {
     requestBody?: {
       content?: Record<string, { schema?: Record<string, unknown> }>
     }
-    responses?: Record<string, {
-      description?: string
-      content?: Record<string, { schema?: Record<string, unknown> }>
-    }>
+    responses?: Record<
+      string,
+      {
+        description?: string
+        content?: Record<string, { schema?: Record<string, unknown> }>
+      }
+    >
   }
 }
 
@@ -67,8 +71,8 @@ export function registerImportExportHandlers(): void {
         properties: ['openFile'],
         filters: [
           { name: 'API Specs', extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml', 'proto'] },
-          { name: 'All Files', extensions: ['*'] }
-        ]
+          { name: 'All Files', extensions: ['*'] },
+        ],
       })
       if (result.canceled || result.filePaths.length === 0) {
         return { success: true, data: null }
@@ -81,20 +85,31 @@ export function registerImportExportHandlers(): void {
     }
   })
 
-  ipcMain.handle('import:openApi', async (_event, payload: {
-    projectId: string
-    content: string
-    format: string
-    folderId?: string | null
-    sourceUrl?: string
-  }) => {
-    try {
-      const result = await importOpenApi(payload.projectId, payload.content, payload.folderId ?? null, payload.sourceUrl)
-      return { success: true, data: result }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle(
+    'import:openApi',
+    async (
+      _event,
+      payload: {
+        projectId: string
+        content: string
+        format: string
+        folderId?: string | null
+        sourceUrl?: string
+      },
+    ) => {
+      try {
+        const result = await importOpenApi(
+          payload.projectId,
+          payload.content,
+          payload.folderId ?? null,
+          payload.sourceUrl,
+        )
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 
   ipcMain.handle('export:openApi', async (_event, projectId: string) => {
     try {
@@ -112,8 +127,8 @@ export function registerImportExportHandlers(): void {
         filters: [
           { name: 'JSON', extensions: ['json'] },
           { name: 'YAML', extensions: ['yaml', 'yml'] },
-          { name: 'All Files', extensions: ['*'] }
-        ]
+          { name: 'All Files', extensions: ['*'] },
+        ],
       })
       if (result.canceled || !result.filePath) {
         return { success: true, data: null }
@@ -127,18 +142,28 @@ export function registerImportExportHandlers(): void {
   })
 
   // ─── Postman Import ─────────────────────────────────────────
-  ipcMain.handle('import:postman', async (_event, payload: {
-    projectId: string
-    content: string
-    folderId?: string | null
-  }) => {
-    try {
-      const result = await importPostman(payload.projectId, payload.content, payload.folderId ?? null)
-      return { success: true, data: result }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle(
+    'import:postman',
+    async (
+      _event,
+      payload: {
+        projectId: string
+        content: string
+        folderId?: string | null
+      },
+    ) => {
+      try {
+        const result = await importPostman(
+          payload.projectId,
+          payload.content,
+          payload.folderId ?? null,
+        )
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 
   // ─── Postman Export ─────────────────────────────────────────
   ipcMain.handle('export:postman', async (_event, projectId: string) => {
@@ -151,45 +176,77 @@ export function registerImportExportHandlers(): void {
   })
 
   // ─── HAR Import ───────────────────────────────────────────
-  ipcMain.handle('import:har', async (_event, payload: {
-    projectId: string
-    content: string
-  }) => {
-    try {
-      const result = await importHar(payload.projectId, payload.content)
-      return { success: true, data: result }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle(
+    'import:har',
+    async (
+      _event,
+      payload: {
+        projectId: string
+        content: string
+      },
+    ) => {
+      try {
+        const result = await importHar(payload.projectId, payload.content)
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 
   // ─── Insomnia Import ────────────────────────────────────────
-  ipcMain.handle('import:insomnia', async (_event, payload: {
-    projectId: string
-    content: string
-    folderId?: string | null
-  }) => {
+  ipcMain.handle(
+    'import:insomnia',
+    async (
+      _event,
+      payload: {
+        projectId: string
+        content: string
+        folderId?: string | null
+      },
+    ) => {
+      try {
+        const result = await importInsomnia(
+          payload.projectId,
+          payload.content,
+          payload.folderId ?? null,
+        )
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
+
+  // ─── Insomnia Export ────────────────────────────────────────
+  ipcMain.handle('export:insomnia', async (_event, projectId: string) => {
     try {
-      const result = await importInsomnia(payload.projectId, payload.content, payload.folderId ?? null)
-      return { success: true, data: result }
+      const data = exportAsInsomnia(projectId)
+      return { success: true, data }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
   })
 
   // ─── cURL Import ──────────────────────────────────────────
-  ipcMain.handle('import:curl', async (_event, payload: {
-    projectId: string
-    curlCommand: string
-    folderId?: string | null
-  }) => {
-    try {
-      const result = importCurl(payload.projectId, payload.curlCommand, payload.folderId ?? null)
-      return { success: true, data: result }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle(
+    'import:curl',
+    async (
+      _event,
+      payload: {
+        projectId: string
+        curlCommand: string
+        folderId?: string | null
+      },
+    ) => {
+      try {
+        const result = importCurl(payload.projectId, payload.curlCommand, payload.folderId ?? null)
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 
   // ─── cURL Export ──────────────────────────────────────────
   ipcMain.handle('export:curl', async (_event, request: CurlExportRequest) => {
@@ -202,6 +259,27 @@ export function registerImportExportHandlers(): void {
   })
 
   // ─── WSDL Parse for Import (returns parsed services) ─────
+  // ─── Proto / gRPC collection import ─────────────────────
+  ipcMain.handle(
+    'import:proto',
+    async (
+      _event,
+      payload: {
+        projectId: string
+        protoPath: string
+        folderId?: string | null
+        serverAddress?: string
+      },
+    ) => {
+      try {
+        const result = await importProto(payload)
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
+
   ipcMain.handle('import:wsdl:parse', async (_event, url: string) => {
     try {
       const result = await parseWsdl(url)
@@ -221,25 +299,36 @@ export function registerImportExportHandlers(): void {
   })
 
   // ─── WSDL Import (create folder + endpoints) ─────────────
-  ipcMain.handle('import:wsdl', async (_event, payload: {
-    projectId: string
-    targetFolderId?: string | null
-    createNewFolder?: boolean
-    newFolderName?: string
-    wsdlUrl?: string
-    wsdlContent?: string
-    parsedWsdl?: WsdlParseResult
-  }) => {
-    try {
-      const result = await importWsdl(payload)
-      return { success: true, data: result }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle(
+    'import:wsdl',
+    async (
+      _event,
+      payload: {
+        projectId: string
+        targetFolderId?: string | null
+        createNewFolder?: boolean
+        newFolderName?: string
+        wsdlUrl?: string
+        wsdlContent?: string
+        parsedWsdl?: WsdlParseResult
+      },
+    ) => {
+      try {
+        const result = await importWsdl(payload)
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 }
 
-async function importOpenApi(projectId: string, content: string, parentFolderId: string | null = null, sourceUrl?: string): Promise<ImportResult> {
+async function importOpenApi(
+  projectId: string,
+  content: string,
+  parentFolderId: string | null = null,
+  sourceUrl?: string,
+): Promise<ImportResult> {
   const warnings: string[] = []
   let doc: OpenApiDoc
 
@@ -300,10 +389,12 @@ async function importOpenApi(projectId: string, content: string, parentFolderId:
   if (doc.tags) {
     for (const tag of doc.tags) {
       const folderId = randomUUID()
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO folders (id, project_id, parent_id, name, sort_order)
         VALUES (?, ?, ?, ?, ?)
-      `).run(folderId, projectId, parentFolderId, tag.name, folderCount)
+      `,
+      ).run(folderId, projectId, parentFolderId, tag.name, folderCount)
       tagFolderMap[tag.name] = folderId
       folderCount++
     }
@@ -330,10 +421,12 @@ async function importOpenApi(projectId: string, content: string, parentFolderId:
           } else {
             // Create folder for this tag
             const newFolderId = randomUUID()
-            db.prepare(`
+            db.prepare(
+              `
               INSERT INTO folders (id, project_id, parent_id, name, sort_order)
               VALUES (?, ?, ?, ?, ?)
-            `).run(newFolderId, projectId, parentFolderId, tagName, folderCount)
+            `,
+            ).run(newFolderId, projectId, parentFolderId, tagName, folderCount)
             tagFolderMap[tagName] = newFolderId
             folderId = newFolderId
             folderCount++
@@ -344,8 +437,20 @@ async function importOpenApi(projectId: string, content: string, parentFolderId:
         const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${path}` : path
 
         // Convert OpenAPI parameters to app format
-        const params: Array<{ id: string; key: string; value: string; description: string; enabled: boolean }> = []
-        const headers: Array<{ id: string; key: string; value: string; description: string; enabled: boolean }> = []
+        const params: Array<{
+          id: string
+          key: string
+          value: string
+          description: string
+          enabled: boolean
+        }> = []
+        const headers: Array<{
+          id: string
+          key: string
+          value: string
+          description: string
+          enabled: boolean
+        }> = []
 
         if (operation.parameters) {
           for (const param of operation.parameters) {
@@ -389,10 +494,12 @@ async function importOpenApi(projectId: string, content: string, parentFolderId:
         // Build response schemas
         const responseSchemas = operation.responses ? JSON.stringify(operation.responses) : null
 
-        db.prepare(`
+        db.prepare(
+          `
           INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
+        `,
+        ).run(
           endpointId,
           projectId,
           folderId,
@@ -406,7 +513,7 @@ async function importOpenApi(projectId: string, content: string, parentFolderId:
           responseSchemas,
           endpointCount,
           now,
-          now
+          now,
         )
         endpointCount++
       }
@@ -423,25 +530,27 @@ async function importOpenApi(projectId: string, content: string, parentFolderId:
     endpointCount,
     folderCount,
     suggestedEnvVars,
-    warnings: warnings.length > 0 ? warnings : undefined
+    warnings: warnings.length > 0 ? warnings : undefined,
   }
 }
 
 function exportProjectAsOpenApi(projectId: string): string {
   const db = getDb()
 
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as {
-    name: string
-    description: string | null
-  } | undefined
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
+    | {
+        name: string
+        description: string | null
+      }
+    | undefined
 
   if (!project) {
     throw new Error('Project not found')
   }
 
-  const endpoints = db.prepare(
-    'SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC'
-  ).all(projectId) as Array<{
+  const endpoints = db
+    .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as Array<{
     method: string | null
     path: string
     name: string
@@ -450,41 +559,153 @@ function exportProjectAsOpenApi(projectId: string): string {
     response_schemas: string | null
   }>
 
+  // Pull a base server URL from the first endpoint's full URL (renderer stores
+  // it in request_schema.url) so the exported spec is browseable.
+  let baseServer: string | undefined
+  for (const ep of endpoints) {
+    if (!ep.request_schema) continue
+    try {
+      const schema = JSON.parse(ep.request_schema) as { url?: string }
+      if (schema.url) {
+        try {
+          const u = new URL(schema.url.replace(/\{\{[^}]+\}\}/g, 'placeholder'))
+          baseServer = `${u.protocol}//${u.host}`
+          break
+        } catch {
+          // Templated url — skip, try next.
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const paths: Record<string, Record<string, unknown>> = {}
 
   for (const ep of endpoints) {
-    if (!paths[ep.path]) {
-      paths[ep.path] = {}
+    const path = ep.path || '/'
+    if (!paths[path]) {
+      paths[path] = {}
     }
     const method = (ep.method || 'GET').toLowerCase()
     const operation: Record<string, unknown> = {
       summary: ep.name,
       description: ep.description || undefined,
-      responses: ep.response_schemas ? JSON.parse(ep.response_schemas) : { '200': { description: 'OK' } }
+      responses: ep.response_schemas
+        ? JSON.parse(ep.response_schemas)
+        : { '200': { description: 'OK' } },
     }
 
     if (ep.request_schema) {
-      const schema = JSON.parse(ep.request_schema) as Record<string, unknown>
-      if (schema.parameters) {
-        operation.parameters = schema.parameters
+      const schema = JSON.parse(ep.request_schema) as UiRequestSchema
+      const params: Array<Record<string, unknown>> = []
+
+      // Path templating from `{vars}` in URL
+      const pathVarRe = /\{([^}]+)\}/g
+      let m: RegExpExecArray | null
+      while ((m = pathVarRe.exec(path)) !== null) {
+        params.push({
+          name: m[1],
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        })
       }
-      if (schema.requestBody) {
-        operation.requestBody = schema.requestBody
+
+      // Query params
+      for (const p of schema.params ?? []) {
+        if (p.enabled === false) continue
+        params.push({
+          name: p.key,
+          in: 'query',
+          description: p.description,
+          required: false,
+          schema: { type: 'string', default: p.value },
+        })
+      }
+
+      // Headers
+      for (const h of schema.headers ?? []) {
+        if (h.enabled === false) continue
+        // Skip headers OpenAPI doesn't want (Content-Type covered by requestBody)
+        if (h.key.toLowerCase() === 'content-type') continue
+        params.push({
+          name: h.key,
+          in: 'header',
+          description: h.description,
+          required: false,
+          schema: { type: 'string', default: h.value },
+        })
+      }
+
+      if (params.length > 0) operation.parameters = params
+
+      // Body → requestBody.content
+      const body = schema.body
+      if (body && body.type && body.type !== 'none') {
+        let mediaType = 'text/plain'
+        const example = body.content
+        let exampleObj: unknown = example
+        switch (body.type) {
+          case 'json':
+            mediaType = 'application/json'
+            try {
+              exampleObj = example ? JSON.parse(example) : undefined
+            } catch {
+              exampleObj = example
+            }
+            break
+          case 'xml':
+            mediaType = 'application/xml'
+            break
+          case 'html':
+            mediaType = 'text/html'
+            break
+          case 'javascript':
+            mediaType = 'application/javascript'
+            break
+          case 'form-data':
+            mediaType = 'multipart/form-data'
+            break
+          case 'urlencoded':
+            mediaType = 'application/x-www-form-urlencoded'
+            break
+          case 'binary':
+            mediaType = 'application/octet-stream'
+            break
+        }
+        if (body.type === 'form-data' || body.type === 'urlencoded') {
+          const properties: Record<string, unknown> = {}
+          const items = body.type === 'form-data' ? (body.formData ?? []) : (body.urlEncoded ?? [])
+          for (const kv of items) {
+            properties[kv.key] = { type: 'string', example: kv.value }
+          }
+          operation.requestBody = {
+            content: {
+              [mediaType]: { schema: { type: 'object', properties } },
+            },
+          }
+        } else if (exampleObj !== undefined) {
+          operation.requestBody = {
+            content: { [mediaType]: { example: exampleObj } },
+          }
+        }
       }
     }
 
-    paths[ep.path][method] = operation
+    paths[path][method] = operation
   }
 
-  const doc = {
+  const doc: Record<string, unknown> = {
     openapi: '3.0.3',
     info: {
       title: project.name,
       description: project.description || '',
-      version: '1.0.0'
+      version: '1.0.0',
     },
-    paths
+    paths,
   }
+  if (baseServer) doc.servers = [{ url: baseServer }]
 
   return JSON.stringify(doc, null, 2)
 }
@@ -496,6 +717,7 @@ interface PostmanCollection {
     name: string
     description?: string
     schema: string
+    _postman_id?: string
   }
   item: PostmanItem[]
   variable?: PostmanVariable[]
@@ -506,13 +728,20 @@ interface PostmanItem {
   name: string
   request?: PostmanRequest
   response?: unknown[]
-  item?: PostmanItem[]   // folder (item group)
+  item?: PostmanItem[] // folder (item group)
+  description?: string
+  event?: PostmanEvent[]
+}
+
+interface PostmanEvent {
+  listen: 'prerequest' | 'test' | string
+  script?: { exec?: string | string[]; type?: string; src?: string }
 }
 
 interface PostmanRequest {
-  method: string
+  method?: string
   header?: PostmanHeader[]
-  url: PostmanUrl | string
+  url?: PostmanUrl | string
   body?: PostmanBody
   auth?: PostmanAuth
   description?: string
@@ -528,9 +757,11 @@ interface PostmanHeader {
 interface PostmanUrl {
   raw?: string
   protocol?: string
-  host?: string[]
-  path?: string[]
+  host?: string[] | string
+  port?: string
+  path?: Array<string | { value: string }> | string
   query?: PostmanQuery[]
+  variable?: Array<{ key: string; value: string }>
 }
 
 interface PostmanQuery {
@@ -545,6 +776,8 @@ interface PostmanBody {
   raw?: string
   formdata?: PostmanFormData[]
   urlencoded?: PostmanUrlEncoded[]
+  file?: { src?: string; content?: string }
+  graphql?: { query?: string; variables?: string }
   options?: {
     raw?: { language?: string }
   }
@@ -552,7 +785,8 @@ interface PostmanBody {
 
 interface PostmanFormData {
   key: string
-  value: string
+  value?: string
+  src?: string | string[]
   description?: string
   disabled?: boolean
   type?: string
@@ -565,32 +799,308 @@ interface PostmanUrlEncoded {
   disabled?: boolean
 }
 
+// Postman 2.1 stores auth fields as either an array of { key, value } pairs
+// (legacy) or as a flat object (modern). Both are accepted on import.
 interface PostmanAuth {
   type: string
-  basic?: Array<{ key: string; value: string }>
-  bearer?: Array<{ key: string; value: string }>
-  apikey?: Array<{ key: string; value: string }>
+  basic?:
+    | Array<{ key: string; value: string; type?: string }>
+    | { username?: string; password?: string }
+  bearer?: Array<{ key: string; value: string; type?: string }> | { token?: string }
+  apikey?:
+    | Array<{ key: string; value: string; type?: string }>
+    | { key?: string; value?: string; in?: string }
+  digest?: Array<{ key: string; value: string }> | { username?: string; password?: string }
+  oauth2?: Array<{ key: string; value: string }> | Record<string, unknown>
+  ntlm?:
+    | Array<{ key: string; value: string }>
+    | { username?: string; password?: string; domain?: string; workstation?: string }
 }
 
 interface PostmanVariable {
   key: string
   value: string
+  type?: string
 }
 
 // ─── Postman Import ─────────────────────────────────────────
 
-async function importPostman(projectId: string, content: string, rootFolderId: string | null = null): Promise<ImportResult> {
+// ─── Postman / Insomnia script helpers ─────────────────────
+
+/**
+ * Normalize an Insomnia v5 script string so it runs against the same `pm`
+ * shim as Postman scripts. Replaces `insomnia.*` references with their `pm.*`
+ * equivalents — the surface is API-compatible for the cases we care about
+ * (environment, response, test/expect, iterationData, execution.skipRequest).
+ */
+export function normalizeInsomniaScript(script: string): string {
+  if (!script) return ''
+  return script
+    .replace(/\binsomnia\.iterationData\b/g, 'pm.iterationData')
+    .replace(/\binsomnia\.environment\b/g, 'pm.environment')
+    .replace(/\binsomnia\.globals\b/g, 'pm.globals')
+    .replace(/\binsomnia\.variables\b/g, 'pm.variables')
+    .replace(/\binsomnia\.collectionVariables\b/g, 'pm.collectionVariables')
+    .replace(/\binsomnia\.response\b/g, 'pm.response')
+    .replace(/\binsomnia\.request\b/g, 'pm.request')
+    .replace(/\binsomnia\.test\b/g, 'pm.test')
+    .replace(/\binsomnia\.expect\b/g, 'pm.expect')
+    .replace(/\binsomnia\.execution\b/g, 'pm.execution')
+    .replace(/\binsomnia\.info\b/g, 'pm.info')
+    .replace(/\binsomnia\.sendRequest\b/g, 'pm.sendRequest')
+    .replace(/\binsomnia\b/g, 'pm')
+}
+
+/** Pull pre/post scripts from a Postman item.event[] array. */
+export function extractPostmanEventScripts(events: PostmanEvent[] | undefined): {
+  preScript?: string
+  postScript?: string
+} {
+  if (!events) return {}
+  const out: { preScript?: string; postScript?: string } = {}
+  for (const ev of events) {
+    const exec = ev.script?.exec
+    if (!exec) continue
+    const text = Array.isArray(exec) ? exec.join('\n') : exec
+    if (ev.listen === 'prerequest') out.preScript = text
+    else if (ev.listen === 'test') out.postScript = text
+  }
+  return out
+}
+
+// ─── Postman helpers ────────────────────────────────────────
+
+/** Postman 2.x auth field accessor — handles both array-of-{key,value}
+ * and flat-object representations. */
+function readAuthField(src: PostmanAuth[keyof PostmanAuth] | undefined, key: string): string {
+  if (!src) return ''
+  if (Array.isArray(src)) {
+    return (src.find((p) => p.key === key)?.value as string) ?? ''
+  }
+  if (typeof src === 'object') {
+    const v = (src as Record<string, unknown>)[key]
+    return typeof v === 'string' ? v : ''
+  }
+  return ''
+}
+
+function genKvId(): string {
+  return Math.random().toString(36).slice(2, 10)
+}
+
+/** Reconstruct a full URL from a Postman url object or string. Preserves
+ * `{{variables}}` and template placeholders as-is — never URL-decodes them. */
+export function reconstructPostmanUrl(url: PostmanUrl | string | undefined): string {
+  if (!url) return ''
+  if (typeof url === 'string') return url
+  if (url.raw) return url.raw
+
+  const protocol = url.protocol ?? 'https'
+  const host = Array.isArray(url.host) ? url.host.join('.') : (url.host ?? '')
+  const port = url.port ? `:${url.port}` : ''
+  const pathParts = Array.isArray(url.path)
+    ? url.path.map((p) => (typeof p === 'string' ? p : (p.value ?? '')))
+    : url.path
+      ? [String(url.path)]
+      : []
+  const path = pathParts.length > 0 ? '/' + pathParts.join('/') : ''
+  return `${protocol}://${host}${port}${path}`
+}
+
+/** Best-effort path extraction for the endpoints.path column. Falls back to
+ * the raw URL if the URL contains template variables that break URL parsing. */
+function extractPath(url: string): string {
+  if (!url) return '/'
+  // If the URL contains {{vars}} we can't reliably parse it — use a safe
+  // substitution then strip back the placeholder.
+  const PLACEHOLDER = '__VAR__'
+  const safe = url.replace(/\{\{[^}]+\}\}/g, PLACEHOLDER)
+  try {
+    const parsed = new URL(safe)
+    let pathname = parsed.pathname || '/'
+    pathname = pathname.replace(new RegExp(PLACEHOLDER, 'g'), '*')
+    return pathname
+  } catch {
+    // Relative URL or `{{baseUrl}}/path` form — strip protocol/host best-effort.
+    const m = url.match(/(?:https?:\/\/[^/]+)?(\/.*)$/)
+    return m?.[1] ?? url
+  }
+}
+
+/** Map Postman body modes onto the renderer's RequestBody shape. */
+export function mapPostmanBodyToUi(body: PostmanBody | undefined): {
+  type: string
+  content?: string
+  formData?: Array<{ id: string; key: string; value: string; enabled: boolean }>
+  urlEncoded?: Array<{ id: string; key: string; value: string; enabled: boolean }>
+} {
+  if (!body || !body.mode) return { type: 'none' }
+
+  switch (body.mode) {
+    case 'raw': {
+      const lang = body.options?.raw?.language ?? 'text'
+      const map: Record<string, string> = {
+        json: 'json',
+        xml: 'xml',
+        html: 'html',
+        javascript: 'javascript',
+        text: 'text',
+        graphql: 'json',
+      }
+      return { type: map[lang] ?? 'text', content: body.raw ?? '' }
+    }
+    case 'graphql': {
+      const payload = body.graphql
+        ? JSON.stringify(
+            {
+              query: body.graphql.query ?? '',
+              variables: tryParseJson(body.graphql.variables) ?? {},
+            },
+            null,
+            2,
+          )
+        : ''
+      return { type: 'json', content: payload }
+    }
+    case 'formdata': {
+      const formData = (body.formdata ?? []).map((fd) => ({
+        id: genKvId(),
+        key: fd.key ?? '',
+        value: fd.value ?? (Array.isArray(fd.src) ? fd.src.join(',') : (fd.src ?? '')),
+        enabled: !fd.disabled,
+      }))
+      return { type: 'form-data', formData }
+    }
+    case 'urlencoded': {
+      const urlEncoded = (body.urlencoded ?? []).map((ue) => ({
+        id: genKvId(),
+        key: ue.key ?? '',
+        value: ue.value ?? '',
+        enabled: !ue.disabled,
+      }))
+      return { type: 'urlencoded', urlEncoded }
+    }
+    case 'file':
+      // Binary upload — content path can't survive an export, so we record the
+      // hint. The user re-attaches the file in the UI.
+      return { type: 'binary', content: body.file?.src ?? '' }
+    default:
+      return { type: 'none' }
+  }
+}
+
+function tryParseJson(s: string | undefined): unknown {
+  if (!s) return null
+  try {
+    return JSON.parse(s)
+  } catch {
+    return null
+  }
+}
+
+/** Map Postman auth onto the renderer's AuthConfig shape. */
+export function mapPostmanAuthToUi(auth: PostmanAuth | undefined): Record<string, unknown> | null {
+  if (!auth || !auth.type) return null
+
+  const t = auth.type.toLowerCase()
+  switch (t) {
+    case 'noauth':
+      return { type: 'none' }
+    case 'basic':
+      return {
+        type: 'basic',
+        basic: {
+          username: readAuthField(auth.basic, 'username'),
+          password: readAuthField(auth.basic, 'password'),
+        },
+      }
+    case 'bearer':
+      return {
+        type: 'bearer',
+        bearer: { token: readAuthField(auth.bearer, 'token'), prefix: 'Bearer' },
+      }
+    case 'apikey': {
+      const inLocation = readAuthField(auth.apikey, 'in') || 'header'
+      return {
+        type: 'api-key',
+        apiKey: {
+          key: readAuthField(auth.apikey, 'key'),
+          value: readAuthField(auth.apikey, 'value'),
+          in: inLocation === 'query' ? 'query' : 'header',
+        },
+      }
+    }
+    case 'digest':
+      return {
+        type: 'digest',
+        digest: {
+          username: readAuthField(auth.digest, 'username'),
+          password: readAuthField(auth.digest, 'password'),
+        },
+      }
+    case 'ntlm':
+      return {
+        type: 'ntlm',
+        ntlm: {
+          username: readAuthField(auth.ntlm, 'username'),
+          password: readAuthField(auth.ntlm, 'password'),
+          domain: readAuthField(auth.ntlm, 'domain'),
+          workstation: readAuthField(auth.ntlm, 'workstation'),
+        },
+      }
+    case 'oauth2':
+      // Best-effort — Postman has many flows; we capture token only.
+      return {
+        type: 'oauth2',
+        oauth2: {
+          grantType: 'client_credentials',
+          tokenUrl: readAuthField(auth.oauth2, 'accessTokenUrl'),
+          authUrl: readAuthField(auth.oauth2, 'authUrl'),
+          clientId: readAuthField(auth.oauth2, 'clientId'),
+          clientSecret: readAuthField(auth.oauth2, 'clientSecret'),
+          scope: readAuthField(auth.oauth2, 'scope'),
+          token: readAuthField(auth.oauth2, 'accessToken'),
+        },
+      }
+    default:
+      return { type: 'none' }
+  }
+}
+
+// ─── Postman Import ─────────────────────────────────────────
+
+async function importPostman(
+  projectId: string,
+  content: string,
+  rootFolderId: string | null = null,
+): Promise<ImportResult> {
   const warnings: string[] = []
   let collection: PostmanCollection
 
   try {
     collection = JSON.parse(content) as PostmanCollection
-  } catch {
-    return { success: false, error: 'Failed to parse Postman collection JSON' }
+  } catch (e) {
+    return {
+      success: false,
+      error: 'Failed to parse Postman collection JSON: ' + (e as Error).message,
+    }
   }
 
-  if (!collection.info?.schema?.includes('postman')) {
-    return { success: false, error: 'Not a valid Postman v2.1 collection' }
+  if (
+    !collection.info ||
+    typeof collection.info.name !== 'string' ||
+    !Array.isArray(collection.item)
+  ) {
+    return {
+      success: false,
+      error: 'Not a valid Postman collection (missing `info.name` or `item[]`)',
+    }
+  }
+
+  // Accept v2.0 and v2.1 schemas (both live under getpostman.com).
+  const schema = collection.info.schema ?? ''
+  if (schema && !/postman|getpostman/i.test(schema)) {
+    warnings.push(`Unknown collection schema "${schema}" — importing best-effort.`)
   }
 
   const db = getDb()
@@ -599,102 +1109,101 @@ async function importPostman(projectId: string, content: string, rootFolderId: s
   let folderCount = 0
   const suggestedEnvVars: Record<string, string> = {}
 
-  // Extract collection-level variables
   if (collection.variable) {
     for (const v of collection.variable) {
-      if (v.key && v.value) {
-        suggestedEnvVars[v.key] = v.value
-      }
+      if (v.key) suggestedEnvVars[v.key] = v.value ?? ''
     }
   }
 
   function processItems(items: PostmanItem[], parentFolderId: string | null): void {
     for (const item of items) {
-      if (item.item && !item.request) {
-        // This is a folder
+      const isFolder = Array.isArray(item.item) && !item.request
+      if (isFolder) {
         const folderId = randomUUID()
-        db.prepare(`
-          INSERT INTO folders (id, project_id, parent_id, name, sort_order)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(folderId, projectId, parentFolderId, item.name, folderCount)
+        db.prepare(
+          `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
+        ).run(folderId, projectId, parentFolderId, item.name || 'Folder', folderCount)
         folderCount++
-        processItems(item.item, folderId)
-      } else if (item.request) {
-        // This is a request
-        const req = item.request
-        const method = req.method?.toUpperCase() || 'GET'
-        let url = ''
-        let path = ''
-
-        if (typeof req.url === 'string') {
-          url = req.url
-          try {
-            path = new URL(url).pathname
-          } catch {
-            path = url
-          }
-        } else if (req.url) {
-          url = req.url.raw || ''
-          path = req.url.path ? '/' + req.url.path.join('/') : ''
-        }
-
-        const endpointId = randomUUID()
-
-        // Build request schema
-        const requestSchema: Record<string, unknown> = {}
-
-        // Map parameters from URL query
-        if (typeof req.url === 'object' && req.url?.query) {
-          requestSchema.parameters = req.url.query.map((q) => ({
-            name: q.key,
-            in: 'query',
-            required: false,
-            schema: { type: 'string', default: q.value },
-            description: q.description
-          }))
-        }
-
-        // Map body
-        if (req.body) {
-          requestSchema.requestBody = mapPostmanBody(req.body)
-        }
-
-        // Map auth
-        const authConfig = req.auth ? mapPostmanAuth(req.auth) : (
-          collection.auth ? mapPostmanAuth(collection.auth) : null
-        )
-        if (authConfig) {
-          requestSchema.auth = authConfig
-        }
-
-        db.prepare(`
-          INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          endpointId,
-          projectId,
-          parentFolderId,
-          item.name,
-          req.description ?? null,
-          'http',
-          method,
-          path || url,
-          'developing',
-          Object.keys(requestSchema).length > 0 ? JSON.stringify(requestSchema) : null,
-          null,
-          endpointCount,
-          now,
-          now
-        )
-        endpointCount++
+        processItems(item.item ?? [], folderId)
+        continue
       }
+
+      if (!item.request) {
+        warnings.push(`Skipped item "${item.name ?? '(unnamed)'}" — no request body`)
+        continue
+      }
+
+      const req = item.request
+      const method = (req.method ?? 'GET').toUpperCase()
+      const url = reconstructPostmanUrl(req.url)
+      const path = extractPath(url)
+
+      // Headers — UI KeyValuePair[]
+      const headers = (req.header ?? []).map((h) => ({
+        id: genKvId(),
+        key: h.key ?? '',
+        value: h.value ?? '',
+        description: h.description,
+        enabled: !h.disabled,
+      }))
+
+      // Query params — UI KeyValuePair[]
+      const params =
+        typeof req.url === 'object' && Array.isArray(req.url?.query)
+          ? req.url!.query!.map((q) => ({
+              id: genKvId(),
+              key: q.key ?? '',
+              value: q.value ?? '',
+              description: q.description,
+              enabled: !q.disabled,
+            }))
+          : []
+
+      const body = mapPostmanBodyToUi(req.body)
+      const auth = mapPostmanAuthToUi(req.auth ?? collection.auth)
+
+      // Pull pre-request + test scripts from item.event[]
+      const { preScript, postScript } = extractPostmanEventScripts(item.event)
+
+      const requestSchema: Record<string, unknown> = {
+        url,
+        method,
+        params,
+        headers,
+        body,
+      }
+      if (auth) requestSchema.auth = auth
+      if (preScript) requestSchema.preScript = preScript
+      if (postScript) requestSchema.postScript = postScript
+
+      const endpointId = randomUUID()
+      db.prepare(
+        `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        endpointId,
+        projectId,
+        parentFolderId,
+        item.name || `${method} ${path}`,
+        req.description ?? null,
+        'http',
+        method,
+        path || '/',
+        'developing',
+        JSON.stringify(requestSchema),
+        null,
+        endpointCount,
+        now,
+        now,
+      )
+      endpointCount++
     }
   }
 
   processItems(collection.item, rootFolderId)
 
-  if (endpointCount === 0) {
-    warnings.push('No requests found in the Postman collection')
+  if (endpointCount === 0 && folderCount === 0) {
+    warnings.push('No requests or folders found in the Postman collection')
   }
 
   return {
@@ -702,128 +1211,201 @@ async function importPostman(projectId: string, content: string, rootFolderId: s
     collectionId: projectId,
     endpointCount,
     folderCount,
-    suggestedEnvVars,
-    warnings: warnings.length > 0 ? warnings : undefined
+    suggestedEnvVars: Object.keys(suggestedEnvVars).length > 0 ? suggestedEnvVars : undefined,
+    warnings: warnings.length > 0 ? warnings : undefined,
   }
 }
 
-function mapPostmanBody(body: PostmanBody): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
+// ─── Postman Export ─────────────────────────────────────────
 
-  switch (body.mode) {
-    case 'raw': {
-      const lang = body.options?.raw?.language || 'text'
-      let mediaType = 'text/plain'
-      if (lang === 'json') mediaType = 'application/json'
-      else if (lang === 'xml') mediaType = 'application/xml'
-      else if (lang === 'html') mediaType = 'text/html'
-      else if (lang === 'javascript') mediaType = 'application/javascript'
+// ─── Postman Export ─────────────────────────────────────────
 
-      result.content = {
-        [mediaType]: {
-          example: body.raw
-        }
-      }
-      break
-    }
-    case 'formdata': {
-      if (body.formdata) {
-        const properties: Record<string, unknown> = {}
-        for (const fd of body.formdata) {
-          properties[fd.key] = {
-            type: fd.type === 'file' ? 'string' : 'string',
-            format: fd.type === 'file' ? 'binary' : undefined,
-            example: fd.value
-          }
-        }
-        result.content = {
-          'multipart/form-data': {
-            schema: { type: 'object', properties }
-          }
-        }
-      }
-      break
-    }
-    case 'urlencoded': {
-      if (body.urlencoded) {
-        const properties: Record<string, unknown> = {}
-        for (const ue of body.urlencoded) {
-          properties[ue.key] = { type: 'string', example: ue.value }
-        }
-        result.content = {
-          'application/x-www-form-urlencoded': {
-            schema: { type: 'object', properties }
-          }
-        }
-      }
-      break
-    }
+interface UiKeyValuePair {
+  id?: string
+  key: string
+  value: string
+  description?: string
+  enabled?: boolean
+}
+
+interface UiRequestSchema {
+  url?: string
+  method?: string
+  params?: UiKeyValuePair[]
+  headers?: UiKeyValuePair[]
+  body?: {
+    type?: string
+    content?: string
+    formData?: UiKeyValuePair[]
+    urlEncoded?: UiKeyValuePair[]
+  }
+  auth?: Record<string, unknown>
+}
+
+function buildPostmanUrl(rawUrl: string, params: UiKeyValuePair[] = []): PostmanUrl {
+  const PLACEHOLDER = '__VAR__'
+  const safe = (rawUrl || '').replace(/\{\{[^}]+\}\}/g, PLACEHOLDER)
+  let parsed: URL | null = null
+  try {
+    parsed = new URL(safe)
+  } catch {
+    parsed = null
+  }
+
+  const result: PostmanUrl = { raw: rawUrl }
+  if (parsed) {
+    result.protocol = parsed.protocol.replace(':', '')
+    const hostStr = parsed.hostname.replace(new RegExp(PLACEHOLDER, 'g'), '{{var}}')
+    result.host = hostStr.split('.')
+    if (parsed.port) result.port = parsed.port
+    const pathnameRestored = parsed.pathname.replace(new RegExp(PLACEHOLDER, 'g'), '*')
+    result.path = pathnameRestored.split('/').filter((s) => s.length > 0)
+  } else {
+    result.path = (rawUrl ?? '').split('/').filter((s) => s && !s.startsWith('{{'))
+  }
+
+  if (params.length > 0) {
+    result.query = params.map((p) => ({
+      key: p.key,
+      value: p.value,
+      description: p.description,
+      disabled: p.enabled === false ? true : undefined,
+    }))
   }
 
   return result
 }
 
-function mapPostmanAuth(auth: PostmanAuth): Record<string, unknown> {
-  const config: Record<string, unknown> = { type: auth.type }
-
-  switch (auth.type) {
-    case 'basic': {
-      if (auth.basic) {
-        const username = auth.basic.find((b) => b.key === 'username')?.value ?? ''
-        const password = auth.basic.find((b) => b.key === 'password')?.value ?? ''
-        config.basic = { username, password }
+function bodyToPostman(body: UiRequestSchema['body']): PostmanBody | undefined {
+  if (!body || !body.type || body.type === 'none') return undefined
+  switch (body.type) {
+    case 'json':
+      return { mode: 'raw', raw: body.content ?? '', options: { raw: { language: 'json' } } }
+    case 'xml':
+      return { mode: 'raw', raw: body.content ?? '', options: { raw: { language: 'xml' } } }
+    case 'html':
+      return { mode: 'raw', raw: body.content ?? '', options: { raw: { language: 'html' } } }
+    case 'javascript':
+      return { mode: 'raw', raw: body.content ?? '', options: { raw: { language: 'javascript' } } }
+    case 'text':
+      return { mode: 'raw', raw: body.content ?? '', options: { raw: { language: 'text' } } }
+    case 'form-data':
+      return {
+        mode: 'formdata',
+        formdata: (body.formData ?? []).map((kv) => ({
+          key: kv.key,
+          value: kv.value,
+          disabled: kv.enabled === false ? true : undefined,
+          type: 'text',
+        })),
       }
-      break
-    }
-    case 'bearer': {
-      if (auth.bearer) {
-        const token = auth.bearer.find((b) => b.key === 'token')?.value ?? ''
-        config.bearer = { token }
+    case 'urlencoded':
+      return {
+        mode: 'urlencoded',
+        urlencoded: (body.urlEncoded ?? []).map((kv) => ({
+          key: kv.key,
+          value: kv.value,
+          disabled: kv.enabled === false ? true : undefined,
+        })),
       }
-      break
-    }
-    case 'apikey': {
-      if (auth.apikey) {
-        const key = auth.apikey.find((b) => b.key === 'key')?.value ?? ''
-        const value = auth.apikey.find((b) => b.key === 'value')?.value ?? ''
-        const inLocation = auth.apikey.find((b) => b.key === 'in')?.value ?? 'header'
-        config.type = 'api-key'
-        config.apiKey = { key, value, in: inLocation }
-      }
-      break
-    }
+    case 'binary':
+      return { mode: 'file', file: { src: body.content ?? '' } }
+    default:
+      return undefined
   }
-
-  return config
 }
 
-// ─── Postman Export ─────────────────────────────────────────
+function authToPostman(auth: UiRequestSchema['auth']): PostmanAuth | undefined {
+  if (!auth || !auth.type || auth.type === 'none') return undefined
+  const t = auth.type as string
+  switch (t) {
+    case 'basic': {
+      const a = (auth.basic ?? {}) as { username?: string; password?: string }
+      return {
+        type: 'basic',
+        basic: [
+          { key: 'username', value: a.username ?? '', type: 'string' },
+          { key: 'password', value: a.password ?? '', type: 'string' },
+        ],
+      }
+    }
+    case 'bearer': {
+      const a = (auth.bearer ?? {}) as { token?: string }
+      return { type: 'bearer', bearer: [{ key: 'token', value: a.token ?? '', type: 'string' }] }
+    }
+    case 'api-key': {
+      const a = (auth.apiKey ?? {}) as { key?: string; value?: string; in?: string }
+      return {
+        type: 'apikey',
+        apikey: [
+          { key: 'key', value: a.key ?? '', type: 'string' },
+          { key: 'value', value: a.value ?? '', type: 'string' },
+          { key: 'in', value: a.in ?? 'header', type: 'string' },
+        ],
+      }
+    }
+    case 'digest': {
+      const a = (auth.digest ?? {}) as { username?: string; password?: string }
+      return {
+        type: 'digest',
+        digest: [
+          { key: 'username', value: a.username ?? '' },
+          { key: 'password', value: a.password ?? '' },
+        ],
+      }
+    }
+    case 'ntlm': {
+      const a = (auth.ntlm ?? {}) as {
+        username?: string
+        password?: string
+        domain?: string
+        workstation?: string
+      }
+      return {
+        type: 'ntlm',
+        ntlm: [
+          { key: 'username', value: a.username ?? '' },
+          { key: 'password', value: a.password ?? '' },
+          { key: 'domain', value: a.domain ?? '' },
+          { key: 'workstation', value: a.workstation ?? '' },
+        ],
+      }
+    }
+    case 'oauth2': {
+      const a = (auth.oauth2 ?? {}) as Record<string, string>
+      return {
+        type: 'oauth2',
+        oauth2: [
+          { key: 'accessToken', value: a.token ?? '' },
+          { key: 'accessTokenUrl', value: a.tokenUrl ?? '' },
+          { key: 'authUrl', value: a.authUrl ?? '' },
+          { key: 'clientId', value: a.clientId ?? '' },
+          { key: 'clientSecret', value: a.clientSecret ?? '' },
+          { key: 'scope', value: a.scope ?? '' },
+        ],
+      }
+    }
+    default:
+      return undefined
+  }
+}
 
 function exportAsPostman(projectId: string): string {
   const db = getDb()
 
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as {
-    name: string
-    description: string | null
-  } | undefined
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
+    | { name: string; description: string | null }
+    | undefined
 
-  if (!project) {
-    throw new Error('Project not found')
-  }
+  if (!project) throw new Error('Project not found')
 
-  // Get folders
-  const folders = db.prepare(
-    'SELECT * FROM folders WHERE project_id = ? ORDER BY sort_order ASC'
-  ).all(projectId) as Array<{
-    id: string
-    parent_id: string | null
-    name: string
-  }>
+  const folders = db
+    .prepare('SELECT * FROM folders WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as Array<{ id: string; parent_id: string | null; name: string }>
 
-  // Get endpoints
-  const endpoints = db.prepare(
-    'SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC'
-  ).all(projectId) as Array<{
+  const endpoints = db
+    .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as Array<{
     id: string
     folder_id: string | null
     method: string | null
@@ -833,56 +1415,59 @@ function exportAsPostman(projectId: string): string {
     request_schema: string | null
   }>
 
-  // Build folder map
   const folderMap = new Map<string, PostmanItem>()
   const rootItems: PostmanItem[] = []
 
   for (const folder of folders) {
-    const postmanFolder: PostmanItem = {
-      name: folder.name,
-      item: []
-    }
-    folderMap.set(folder.id, postmanFolder)
+    folderMap.set(folder.id, { name: folder.name, item: [] })
   }
 
-  // Assign folders to parents
   for (const folder of folders) {
-    const postmanFolder = folderMap.get(folder.id)
-    if (!postmanFolder) continue
-
+    const node = folderMap.get(folder.id)
+    if (!node) continue
     if (folder.parent_id && folderMap.has(folder.parent_id)) {
-      const parentFolder = folderMap.get(folder.parent_id)
-      if (parentFolder?.item) {
-        parentFolder.item.push(postmanFolder)
-      }
+      folderMap.get(folder.parent_id)!.item!.push(node)
     } else {
-      rootItems.push(postmanFolder)
+      rootItems.push(node)
     }
   }
 
-  // Build endpoint items
   for (const ep of endpoints) {
-    const method = (ep.method || 'GET').toUpperCase()
-    const postmanItem: PostmanItem = {
+    const method = (ep.method ?? 'GET').toUpperCase()
+    let schema: UiRequestSchema = {}
+    if (ep.request_schema) {
+      try {
+        schema = JSON.parse(ep.request_schema) as UiRequestSchema
+      } catch {
+        schema = {}
+      }
+    }
+    const url = schema.url ?? ep.path
+
+    const item: PostmanItem = {
       name: ep.name,
       request: {
         method,
-        header: [],
-        url: {
-          raw: ep.path,
-          path: ep.path.split('/').filter(Boolean)
-        },
-        description: ep.description ?? undefined
-      }
+        header: (schema.headers ?? []).map((h) => ({
+          key: h.key,
+          value: h.value,
+          description: h.description,
+          disabled: h.enabled === false ? true : undefined,
+        })),
+        url: buildPostmanUrl(url, schema.params),
+        description: ep.description ?? undefined,
+      },
     }
 
+    const body = bodyToPostman(schema.body)
+    if (body) item.request!.body = body
+    const auth = authToPostman(schema.auth)
+    if (auth) item.request!.auth = auth
+
     if (ep.folder_id && folderMap.has(ep.folder_id)) {
-      const folder = folderMap.get(ep.folder_id)
-      if (folder?.item) {
-        folder.item.push(postmanItem)
-      }
+      folderMap.get(ep.folder_id)!.item!.push(item)
     } else {
-      rootItems.push(postmanItem)
+      rootItems.push(item)
     }
   }
 
@@ -890,9 +1475,9 @@ function exportAsPostman(projectId: string): string {
     info: {
       name: project.name,
       description: project.description ?? undefined,
-      schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json'
+      schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
     },
-    item: rootItems
+    item: rootItems,
   }
 
   return JSON.stringify(collection, null, 2)
@@ -921,7 +1506,11 @@ interface CurlExportRequest {
 
 // ─── cURL Import ────────────────────────────────────────────
 
-function importCurl(projectId: string, curlCommand: string, parentFolderId: string | null = null): ImportResult {
+function importCurl(
+  projectId: string,
+  curlCommand: string,
+  parentFolderId: string | null = null,
+): ImportResult {
   const warnings: string[] = []
   const db = getDb()
   const now = Date.now()
@@ -955,10 +1544,12 @@ function importCurl(projectId: string, curlCommand: string, parentFolderId: stri
     requestSchema.auth = parsed.auth
   }
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `,
+  ).run(
     endpointId,
     projectId,
     parentFolderId,
@@ -972,7 +1563,7 @@ function importCurl(projectId: string, curlCommand: string, parentFolderId: stri
     null,
     0,
     now,
-    now
+    now,
   )
 
   return {
@@ -980,7 +1571,7 @@ function importCurl(projectId: string, curlCommand: string, parentFolderId: stri
     collectionId: projectId,
     endpointCount: 1,
     folderCount: 0,
-    warnings: warnings.length > 0 ? warnings : undefined
+    warnings: warnings.length > 0 ? warnings : undefined,
   }
 }
 
@@ -997,7 +1588,7 @@ interface ParsedCurl {
 function parseCurlCommand(command: string): ParsedCurl {
   // Normalize the command
   const normalized = command
-    .replace(/\\\n/g, ' ')    // Line continuations
+    .replace(/\\\n/g, ' ') // Line continuations
     .replace(/\\\r\n/g, ' ')
     .trim()
 
@@ -1005,7 +1596,7 @@ function parseCurlCommand(command: string): ParsedCurl {
     method: 'GET',
     url: '',
     headers: {},
-    insecure: false
+    insecure: false,
   }
 
   const tokens = tokenizeCurl(normalized)
@@ -1086,8 +1677,8 @@ function parseCurlCommand(command: string): ParsedCurl {
               type: 'basic',
               basic: {
                 username: userPass.substring(0, colonIdx),
-                password: userPass.substring(colonIdx + 1)
-              }
+                password: userPass.substring(colonIdx + 1),
+              },
             }
           }
         }
@@ -1363,81 +1954,90 @@ async function importHar(projectId: string, content: string): Promise<ImportResu
     const endpointId = randomUUID()
     const name = `${method} ${urlForName}`
 
-    const requestSchema: Record<string, unknown> = {}
+    const requestSchema: Record<string, unknown> = { method, url: req.url }
 
-    // Query string parameters
+    // Query string parameters → KeyValuePair[]
     if (req.queryString && req.queryString.length > 0) {
-      requestSchema.parameters = req.queryString.map((q) => ({
-        name: q.name,
-        in: 'query',
-        required: false,
-        schema: { type: 'string', default: q.value }
+      requestSchema.params = req.queryString.map((q) => ({
+        id: genKvId(),
+        key: q.name,
+        value: q.value,
+        enabled: true,
       }))
     }
 
-    // Headers
+    // Headers → KeyValuePair[]
     if (req.headers && req.headers.length > 0) {
-      const headerMap: Record<string, string> = {}
+      const headerList: Array<{
+        id: string
+        key: string
+        value: string
+        enabled: boolean
+      }> = []
       for (const h of req.headers) {
-        // Skip pseudo-headers and common browser headers
         const lowerName = h.name.toLowerCase()
         if (lowerName.startsWith(':') || lowerName === 'host' || lowerName === 'connection') {
           continue
         }
-        headerMap[h.name] = h.value
+        headerList.push({ id: genKvId(), key: h.name, value: h.value, enabled: true })
       }
-      if (Object.keys(headerMap).length > 0) {
-        requestSchema.headers = headerMap
-      }
+      if (headerList.length > 0) requestSchema.headers = headerList
     }
 
-    // Body
+    // Body → RequestBody (UI shape)
     if (req.postData) {
       const postData = req.postData
-      // Skip binary/large bodies
+      const mimeType = postData.mimeType || ''
       if (postData.text && postData.text.length <= 1_000_000) {
-        const mimeType = postData.mimeType || 'text/plain'
-        requestSchema.requestBody = {
-          content: {
-            [mimeType]: {
-              example: postData.text
-            }
+        let bodyType: 'json' | 'xml' | 'html' | 'text' | 'javascript' | 'urlencoded' = 'text'
+        if (mimeType.includes('json')) bodyType = 'json'
+        else if (mimeType.includes('xml')) bodyType = 'xml'
+        else if (mimeType.includes('html')) bodyType = 'html'
+        else if (mimeType.includes('javascript')) bodyType = 'javascript'
+        else if (mimeType.includes('x-www-form-urlencoded')) bodyType = 'urlencoded'
+        if (bodyType === 'urlencoded' && postData.params && postData.params.length > 0) {
+          requestSchema.body = {
+            type: 'urlencoded',
+            urlEncoded: postData.params.map((p) => ({
+              id: genKvId(),
+              key: p.name,
+              value: p.value,
+              enabled: true,
+            })),
           }
+        } else {
+          requestSchema.body = { type: bodyType, content: postData.text }
         }
       } else if (postData.params && postData.params.length > 0) {
-        const properties: Record<string, unknown> = {}
-        for (const p of postData.params) {
-          properties[p.name] = { type: 'string', example: p.value }
-        }
-        requestSchema.requestBody = {
-          content: {
-            'application/x-www-form-urlencoded': {
-              schema: { type: 'object', properties }
-            }
-          }
+        requestSchema.body = {
+          type: 'urlencoded',
+          urlEncoded: postData.params.map((p) => ({
+            id: genKvId(),
+            key: p.name,
+            value: p.value,
+            enabled: true,
+          })),
         }
       } else if (postData.text && postData.text.length > 1_000_000) {
         warnings.push(`Skipped large body for ${method} ${path} (${postData.text.length} bytes)`)
       }
     }
 
-    // Map response status and timing as metadata
+    // Map response status as metadata
     const responseSchemas: Record<string, unknown> = {}
     if (entry.response) {
       const statusCode = String(entry.response.status)
       responseSchemas[statusCode] = {
-        description: entry.response.statusText || 'Response'
+        description: entry.response.statusText || 'Response',
       }
     }
 
-    if (entry.time !== undefined) {
-      requestSchema._timing = { total: entry.time }
-    }
-
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `,
+    ).run(
       endpointId,
       projectId,
       null,
@@ -1451,7 +2051,7 @@ async function importHar(projectId: string, content: string): Promise<ImportResu
       Object.keys(responseSchemas).length > 0 ? JSON.stringify(responseSchemas) : null,
       endpointCount,
       now,
-      now
+      now,
     )
     endpointCount++
   }
@@ -1465,7 +2065,7 @@ async function importHar(projectId: string, content: string): Promise<ImportResu
     collectionId: projectId,
     endpointCount,
     folderCount: 0,
-    warnings: warnings.length > 0 ? warnings : undefined
+    warnings: warnings.length > 0 ? warnings : undefined,
   }
 }
 
@@ -1489,15 +2089,23 @@ interface InsomniaResource {
   method?: string
   body?: InsomniaBody
   headers?: Array<{ name: string; value: string; disabled?: boolean }>
-  parameters?: Array<{ name: string; value: string; disabled?: boolean }>
+  parameters?: Array<{ name: string; value: string; disabled?: boolean; type?: string }>
   authentication?: InsomniaAuth
   data?: Array<{ name: string; value: string }>
+  preRequestScript?: string
+  afterResponseScript?: string
 }
 
 interface InsomniaBody {
   mimeType?: string
   text?: string
-  params?: Array<{ name: string; value: string; fileName?: string; type?: string }>
+  params?: Array<{
+    name: string
+    value: string
+    fileName?: string
+    type?: string
+    disabled?: boolean
+  }>
 }
 
 interface InsomniaAuth {
@@ -1514,155 +2122,190 @@ interface InsomniaAuth {
 
 // ─── Insomnia Import ────────────────────────────────────────
 
-async function importInsomnia(projectId: string, content: string, rootFolderId: string | null = null): Promise<ImportResult> {
-  const warnings: string[] = []
-  let doc: InsomniaExport
+// Insomnia v5 (Insomnia 8+) exports YAML with a different shape:
+// `type: collection.insomnia.rest/5.0`, `collection: [{ children: [...] }]`,
+// `meta: { id, name, ... }`. We accept both v4 JSON and v5 YAML/JSON here.
+interface InsomniaV5Doc {
+  type?: string
+  name?: string
+  meta?: { id?: string; name?: string }
+  collection?: InsomniaV5Item[]
+  environments?: { data?: Record<string, unknown> }
+}
 
+interface InsomniaV5Item {
+  meta?: { id?: string; name?: string }
+  name?: string
+  url?: string
+  method?: string
+  headers?: Array<{ name: string; value: string; disabled?: boolean }>
+  parameters?: Array<{ name: string; value: string; disabled?: boolean }>
+  body?: InsomniaBody
+  authentication?: InsomniaAuth
+  description?: string
+  children?: InsomniaV5Item[] // request groups
+  scripts?: { preRequest?: string; afterResponse?: string }
+}
+
+function isInsomniaV5(doc: unknown): doc is InsomniaV5Doc {
+  if (!doc || typeof doc !== 'object') return false
+  const d = doc as Record<string, unknown>
+  return (
+    typeof d.type === 'string' && /collection\.insomnia/.test(d.type) && Array.isArray(d.collection)
+  )
+}
+
+async function importInsomnia(
+  projectId: string,
+  content: string,
+  rootFolderId: string | null = null,
+): Promise<ImportResult> {
+  const warnings: string[] = []
+  let doc: unknown
+
+  // Try JSON first; fall back to YAML for v5 exports.
   try {
-    doc = JSON.parse(content) as InsomniaExport
+    doc = JSON.parse(content)
   } catch {
-    return { success: false, error: 'Failed to parse Insomnia export as JSON' }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const yaml = require('js-yaml') as { load: (s: string) => unknown }
+      doc = yaml.load(content)
+    } catch (e) {
+      return {
+        success: false,
+        error: 'Failed to parse Insomnia export (not valid JSON or YAML): ' + (e as Error).message,
+      }
+    }
   }
 
-  // Validate format version
-  if (doc.__export_format !== 4 && !doc.resources) {
-    return { success: false, error: 'Not a valid Insomnia v4 export file' }
+  if (isInsomniaV5(doc)) {
+    return importInsomniaV5(projectId, doc, rootFolderId, warnings)
+  }
+  return importInsomniaV4(projectId, doc as InsomniaExport, rootFolderId, warnings)
+}
+
+function importInsomniaV4(
+  projectId: string,
+  doc: InsomniaExport,
+  rootFolderId: string | null,
+  warnings: string[],
+): ImportResult {
+  if (!doc.resources || doc.resources.length === 0) {
+    return { success: false, error: 'Insomnia v4 export contains no resources' }
+  }
+
+  if (doc.__export_format && doc.__export_format !== 4) {
+    warnings.push(`Unexpected __export_format=${doc.__export_format}; importing best-effort.`)
   }
 
   const resources = doc.resources
-  if (!resources || resources.length === 0) {
-    return { success: false, error: 'Insomnia export contains no resources' }
-  }
-
   const db = getDb()
   const now = Date.now()
   let endpointCount = 0
   let folderCount = 0
   const suggestedEnvVars: Record<string, string> = {}
 
-  // Build parent-id to folder-id map for request_group resources
   const folderMap = new Map<string, string>()
 
-  // First pass: create folders from request_group resources
+  // First pass: create folders. Insomnia v4 lists resources flat with parentId
+  // pointers, and parents may appear after children — so we do this in two
+  // passes (first create, then re-parent).
   for (const resource of resources) {
     if (resource._type === 'request_group') {
       const folderId = randomUUID()
-      const parentFolderId = resource.parentId ? (folderMap.get(resource.parentId) ?? rootFolderId) : rootFolderId
-
-      db.prepare(`
-        INSERT INTO folders (id, project_id, parent_id, name, sort_order)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(folderId, projectId, parentFolderId, resource.name || 'Unnamed Folder', folderCount)
-
+      db.prepare(
+        `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
+      ).run(folderId, projectId, rootFolderId, resource.name || 'Folder', folderCount)
       folderMap.set(resource._id, folderId)
       folderCount++
     }
   }
 
-  // Second pass: update folder parent_ids for nested groups
-  // (handle case where child appears before parent in array)
   for (const resource of resources) {
     if (resource._type === 'request_group' && resource.parentId) {
       const folderId = folderMap.get(resource._id)
-      const parentFolderId = folderMap.get(resource.parentId)
-      if (folderId && parentFolderId) {
+      const parentFolderId = folderMap.get(resource.parentId) ?? rootFolderId
+      if (folderId) {
         db.prepare(`UPDATE folders SET parent_id = ? WHERE id = ?`).run(parentFolderId, folderId)
       }
     }
   }
 
-  // Third pass: create endpoints from request resources
   for (const resource of resources) {
-    if (resource._type === 'request') {
-      const method = (resource.method || 'GET').toUpperCase()
-      const url = resource.url || ''
-      let path = ''
+    if (resource._type !== 'request') continue
+    const method = (resource.method ?? 'GET').toUpperCase()
+    const url = resource.url ?? ''
+    const path = extractPath(url)
+    const parentFolderId = resource.parentId
+      ? (folderMap.get(resource.parentId) ?? rootFolderId)
+      : rootFolderId
 
-      try {
-        const parsedUrl = new URL(url.replace(/\{\{[^}]+\}\}/g, 'placeholder'))
-        path = parsedUrl.pathname
-      } catch {
-        path = url
-      }
+    const params = (resource.parameters ?? []).map((p) => ({
+      id: genKvId(),
+      key: p.name,
+      value: p.value,
+      enabled: !p.disabled,
+    }))
+    const headers = (resource.headers ?? []).map((h) => ({
+      id: genKvId(),
+      key: h.name,
+      value: h.value,
+      enabled: !h.disabled,
+    }))
+    const body = mapInsomniaBodyToUi(resource.body)
+    const auth = mapInsomniaAuthToUi(resource.authentication)
 
-      const endpointId = randomUUID()
-      const parentFolderId = resource.parentId ? (folderMap.get(resource.parentId) ?? rootFolderId) : rootFolderId
+    const preScript = resource.preRequestScript
+      ? normalizeInsomniaScript(resource.preRequestScript)
+      : undefined
+    const postScript = resource.afterResponseScript
+      ? normalizeInsomniaScript(resource.afterResponseScript)
+      : undefined
 
-      const requestSchema: Record<string, unknown> = {}
-
-      // Parameters
-      if (resource.parameters && resource.parameters.length > 0) {
-        requestSchema.parameters = resource.parameters
-          .filter((p) => !p.disabled)
-          .map((p) => ({
-            name: p.name,
-            in: 'query',
-            required: false,
-            schema: { type: 'string', default: p.value }
-          }))
-      }
-
-      // Headers
-      if (resource.headers && resource.headers.length > 0) {
-        const headerMap: Record<string, string> = {}
-        for (const h of resource.headers) {
-          if (!h.disabled) {
-            headerMap[h.name] = h.value
-          }
-        }
-        if (Object.keys(headerMap).length > 0) {
-          requestSchema.headers = headerMap
-        }
-      }
-
-      // Body
-      if (resource.body) {
-        requestSchema.requestBody = mapInsomniaBody(resource.body)
-      }
-
-      // Auth
-      if (resource.authentication && !resource.authentication.disabled) {
-        const authConfig = mapInsomniaAuth(resource.authentication)
-        if (authConfig) {
-          requestSchema.auth = authConfig
-        }
-      }
-
-      db.prepare(`
-        INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        endpointId,
-        projectId,
-        parentFolderId,
-        resource.name || `${method} ${path}`,
-        resource.description ?? null,
-        'http',
-        method,
-        path || url,
-        'developing',
-        Object.keys(requestSchema).length > 0 ? JSON.stringify(requestSchema) : null,
-        null,
-        endpointCount,
-        now,
-        now
-      )
-      endpointCount++
+    const requestSchema: Record<string, unknown> = {
+      url,
+      method,
+      params,
+      headers,
+      body,
     }
+    if (auth) requestSchema.auth = auth
+    if (preScript) requestSchema.preScript = preScript
+    if (postScript) requestSchema.postScript = postScript
+
+    const endpointId = randomUUID()
+    db.prepare(
+      `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      endpointId,
+      projectId,
+      parentFolderId,
+      resource.name || `${method} ${path}`,
+      resource.description ?? null,
+      'http',
+      method,
+      path || '/',
+      'developing',
+      JSON.stringify(requestSchema),
+      null,
+      endpointCount,
+      now,
+      now,
+    )
+    endpointCount++
   }
 
-  // Fourth pass: extract environment variables
   for (const resource of resources) {
     if (resource._type === 'environment' && resource.data) {
       for (const entry of resource.data) {
-        if (entry.name && entry.value) {
-          suggestedEnvVars[entry.name] = entry.value
-        }
+        if (entry.name) suggestedEnvVars[entry.name] = entry.value ?? ''
       }
     }
   }
 
-  if (endpointCount === 0) {
+  if (endpointCount === 0 && folderCount === 0) {
     warnings.push('No request resources found in Insomnia export')
   }
 
@@ -1672,119 +2315,496 @@ async function importInsomnia(projectId: string, content: string, rootFolderId: 
     endpointCount,
     folderCount,
     suggestedEnvVars: Object.keys(suggestedEnvVars).length > 0 ? suggestedEnvVars : undefined,
-    warnings: warnings.length > 0 ? warnings : undefined
+    warnings: warnings.length > 0 ? warnings : undefined,
   }
 }
 
-function mapInsomniaBody(body: InsomniaBody): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
+function importInsomniaV5(
+  projectId: string,
+  doc: InsomniaV5Doc,
+  rootFolderId: string | null,
+  warnings: string[],
+): ImportResult {
+  const db = getDb()
+  const now = Date.now()
+  let endpointCount = 0
+  let folderCount = 0
+  const suggestedEnvVars: Record<string, string> = {}
 
-  if (!body.mimeType) {
-    if (body.text) {
-      result.content = { 'text/plain': { example: body.text } }
+  function walk(items: InsomniaV5Item[], parentFolderId: string | null): void {
+    for (const item of items) {
+      const isFolder = Array.isArray(item.children)
+      if (isFolder) {
+        const folderId = randomUUID()
+        db.prepare(
+          `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
+        ).run(folderId, projectId, parentFolderId, item.name ?? 'Folder', folderCount)
+        folderCount++
+        walk(item.children ?? [], folderId)
+        continue
+      }
+
+      const method = (item.method ?? 'GET').toUpperCase()
+      const url = item.url ?? ''
+      const path = extractPath(url)
+
+      const params = (item.parameters ?? []).map((p) => ({
+        id: genKvId(),
+        key: p.name,
+        value: p.value,
+        enabled: !p.disabled,
+      }))
+      const headers = (item.headers ?? []).map((h) => ({
+        id: genKvId(),
+        key: h.name,
+        value: h.value,
+        enabled: !h.disabled,
+      }))
+      const body = mapInsomniaBodyToUi(item.body)
+      const auth = mapInsomniaAuthToUi(item.authentication)
+
+      const requestSchema: Record<string, unknown> = {
+        url,
+        method,
+        params,
+        headers,
+        body,
+      }
+      if (auth) requestSchema.auth = auth
+
+      // Insomnia v5 scripts → pm-compatible scripts
+      const preScript = item.scripts?.preRequest
+        ? normalizeInsomniaScript(item.scripts.preRequest)
+        : undefined
+      const postScript = item.scripts?.afterResponse
+        ? normalizeInsomniaScript(item.scripts.afterResponse)
+        : undefined
+      if (preScript) requestSchema.preScript = preScript
+      if (postScript) requestSchema.postScript = postScript
+
+      const endpointId = randomUUID()
+      db.prepare(
+        `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        endpointId,
+        projectId,
+        parentFolderId,
+        item.name || `${method} ${path}`,
+        item.description ?? null,
+        'http',
+        method,
+        path || '/',
+        'developing',
+        JSON.stringify(requestSchema),
+        null,
+        endpointCount,
+        now,
+        now,
+      )
+      endpointCount++
     }
-    return result
   }
 
-  switch (body.mimeType) {
+  walk(doc.collection ?? [], rootFolderId)
+
+  if (doc.environments?.data) {
+    for (const [k, v] of Object.entries(doc.environments.data)) {
+      if (typeof v === 'string') suggestedEnvVars[k] = v
+    }
+  }
+
+  if (endpointCount === 0 && folderCount === 0) {
+    warnings.push('No requests or folders found in Insomnia v5 export')
+  }
+
+  return {
+    success: true,
+    collectionId: projectId,
+    endpointCount,
+    folderCount,
+    suggestedEnvVars: Object.keys(suggestedEnvVars).length > 0 ? suggestedEnvVars : undefined,
+    warnings: warnings.length > 0 ? warnings : undefined,
+  }
+}
+
+/** Map Insomnia body onto the renderer's RequestBody shape. */
+export function mapInsomniaBodyToUi(body: InsomniaBody | undefined): {
+  type: string
+  content?: string
+  formData?: Array<{ id: string; key: string; value: string; enabled: boolean }>
+  urlEncoded?: Array<{ id: string; key: string; value: string; enabled: boolean }>
+} {
+  if (!body) return { type: 'none' }
+  const mime = body.mimeType ?? ''
+
+  switch (mime) {
     case 'application/json':
+      return { type: 'json', content: body.text ?? '' }
     case 'application/xml':
     case 'text/xml':
-    case 'text/plain':
+      return { type: 'xml', content: body.text ?? '' }
     case 'text/html':
-    case 'application/javascript': {
-      if (body.text) {
-        result.content = { [body.mimeType]: { example: body.text } }
+      return { type: 'html', content: body.text ?? '' }
+    case 'application/javascript':
+      return { type: 'javascript', content: body.text ?? '' }
+    case 'text/plain':
+    case '':
+      return body.text ? { type: 'text', content: body.text } : { type: 'none' }
+    case 'multipart/form-data':
+      return {
+        type: 'form-data',
+        formData: (body.params ?? []).map((p) => ({
+          id: genKvId(),
+          key: p.name,
+          value: p.value ?? p.fileName ?? '',
+          enabled: !(p as { disabled?: boolean }).disabled,
+        })),
       }
-      break
-    }
-    case 'multipart/form-data': {
-      if (body.params && body.params.length > 0) {
-        const properties: Record<string, unknown> = {}
-        for (const p of body.params) {
-          properties[p.name] = {
-            type: 'string',
-            format: p.type === 'file' || p.fileName ? 'binary' : undefined,
-            example: p.value
-          }
-        }
-        result.content = {
-          'multipart/form-data': {
-            schema: { type: 'object', properties }
-          }
-        }
+    case 'application/x-www-form-urlencoded':
+      return {
+        type: 'urlencoded',
+        urlEncoded: (body.params ?? []).map((p) => ({
+          id: genKvId(),
+          key: p.name,
+          value: p.value ?? '',
+          enabled: !(p as { disabled?: boolean }).disabled,
+        })),
       }
-      break
-    }
-    case 'application/x-www-form-urlencoded': {
-      if (body.params && body.params.length > 0) {
-        const properties: Record<string, unknown> = {}
-        for (const p of body.params) {
-          properties[p.name] = { type: 'string', example: p.value }
-        }
-        result.content = {
-          'application/x-www-form-urlencoded': {
-            schema: { type: 'object', properties }
-          }
-        }
-      }
-      break
-    }
-    default: {
-      if (body.text) {
-        result.content = { [body.mimeType]: { example: body.text } }
-      }
-      break
-    }
+    default:
+      // Unknown mime — preserve raw text under that media type as best-effort.
+      return body.text ? { type: 'text', content: body.text } : { type: 'none' }
   }
-
-  return result
 }
 
-function mapInsomniaAuth(auth: InsomniaAuth): Record<string, unknown> | null {
-  if (!auth.type || auth.type === 'none') {
-    return null
-  }
+// ─── Insomnia Export ────────────────────────────────────────
 
-  const config: Record<string, unknown> = { type: auth.type }
-
-  switch (auth.type) {
-    case 'basic': {
-      config.basic = {
-        username: auth.username ?? '',
-        password: auth.password ?? ''
+function bodyToInsomnia(body: UiRequestSchema['body']): InsomniaBody | undefined {
+  if (!body || !body.type || body.type === 'none') return undefined
+  switch (body.type) {
+    case 'json':
+      return { mimeType: 'application/json', text: body.content ?? '' }
+    case 'xml':
+      return { mimeType: 'application/xml', text: body.content ?? '' }
+    case 'html':
+      return { mimeType: 'text/html', text: body.content ?? '' }
+    case 'javascript':
+      return { mimeType: 'application/javascript', text: body.content ?? '' }
+    case 'text':
+      return { mimeType: 'text/plain', text: body.content ?? '' }
+    case 'form-data':
+      return {
+        mimeType: 'multipart/form-data',
+        params: (body.formData ?? []).map((kv) => ({
+          name: kv.key,
+          value: kv.value,
+          ...(kv.enabled === false ? { disabled: true } : {}),
+        })),
       }
-      break
+    case 'urlencoded':
+      return {
+        mimeType: 'application/x-www-form-urlencoded',
+        params: (body.urlEncoded ?? []).map((kv) => ({
+          name: kv.key,
+          value: kv.value,
+          ...(kv.enabled === false ? { disabled: true } : {}),
+        })),
+      }
+    default:
+      return undefined
+  }
+}
+
+function authToInsomnia(auth: UiRequestSchema['auth']): InsomniaAuth | undefined {
+  if (!auth || !auth.type || auth.type === 'none') return undefined
+  const t = auth.type as string
+  switch (t) {
+    case 'basic': {
+      const a = (auth.basic ?? {}) as { username?: string; password?: string }
+      return { type: 'basic', username: a.username ?? '', password: a.password ?? '' }
     }
     case 'bearer': {
-      config.bearer = {
-        token: auth.token ?? '',
-        prefix: auth.prefix ?? 'Bearer'
-      }
-      break
+      const a = (auth.bearer ?? {}) as { token?: string; prefix?: string }
+      return { type: 'bearer', token: a.token ?? '', prefix: a.prefix ?? 'Bearer' }
     }
-    case 'apikey': {
-      config.type = 'api-key'
-      config.apiKey = {
-        key: auth.key ?? '',
-        value: auth.value ?? '',
-        in: auth.addTo === 'query' ? 'query' : 'header'
+    case 'api-key': {
+      const a = (auth.apiKey ?? {}) as { key?: string; value?: string; in?: string }
+      return {
+        type: 'apikey',
+        key: a.key ?? '',
+        value: a.value ?? '',
+        addTo: a.in === 'query' ? 'queryParams' : 'header',
       }
-      break
+    }
+    case 'digest': {
+      const a = (auth.digest ?? {}) as { username?: string; password?: string }
+      return { type: 'digest', username: a.username ?? '', password: a.password ?? '' }
+    }
+    case 'ntlm': {
+      const a = (auth.ntlm ?? {}) as { username?: string; password?: string }
+      return { type: 'ntlm', username: a.username ?? '', password: a.password ?? '' }
     }
     case 'oauth2': {
-      config.oauth2 = {
-        token: auth.token ?? ''
-      }
-      break
+      const a = (auth.oauth2 ?? {}) as { token?: string }
+      return { type: 'oauth2', token: a.token ?? '' }
     }
-    default: {
-      // Unknown auth type, store what we can
-      break
+    default:
+      return undefined
+  }
+}
+
+function exportAsInsomnia(projectId: string): string {
+  const db = getDb()
+
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
+    | { id: string; name: string; description: string | null }
+    | undefined
+  if (!project) throw new Error('Project not found')
+
+  const folders = db
+    .prepare('SELECT * FROM folders WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as Array<{ id: string; parent_id: string | null; name: string }>
+
+  const endpoints = db
+    .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as Array<{
+    id: string
+    folder_id: string | null
+    method: string | null
+    path: string
+    name: string
+    description: string | null
+    request_schema: string | null
+  }>
+
+  const workspaceId = `wrk_${project.id}`
+  const resources: InsomniaResource[] = []
+
+  // Workspace root resource
+  resources.push({
+    _id: workspaceId,
+    _type: 'workspace',
+    name: project.name,
+    description: project.description ?? undefined,
+  })
+
+  for (const folder of folders) {
+    resources.push({
+      _id: `fld_${folder.id}`,
+      _type: 'request_group',
+      parentId: folder.parent_id ? `fld_${folder.parent_id}` : workspaceId,
+      name: folder.name,
+    })
+  }
+
+  for (const ep of endpoints) {
+    let schema: UiRequestSchema = {}
+    if (ep.request_schema) {
+      try {
+        schema = JSON.parse(ep.request_schema) as UiRequestSchema
+      } catch {
+        schema = {}
+      }
+    }
+    const url = schema.url ?? ep.path
+    const method = (ep.method ?? 'GET').toUpperCase()
+    const parentId = ep.folder_id ? `fld_${ep.folder_id}` : workspaceId
+
+    const headers = (schema.headers ?? []).map((h) => ({
+      name: h.key,
+      value: h.value,
+      ...(h.enabled === false ? { disabled: true } : {}),
+    }))
+    const parameters = (schema.params ?? []).map((p) => ({
+      name: p.key,
+      value: p.value,
+      ...(p.enabled === false ? { disabled: true } : {}),
+    }))
+
+    const body = bodyToInsomnia(schema.body)
+    const authentication = authToInsomnia(schema.auth)
+
+    const resource: InsomniaResource = {
+      _id: `req_${ep.id}`,
+      _type: 'request',
+      parentId,
+      name: ep.name,
+      method,
+      url,
+      description: ep.description ?? undefined,
+      headers,
+      parameters,
+    }
+    if (body) resource.body = body
+    if (authentication) resource.authentication = authentication
+
+    resources.push(resource)
+  }
+
+  const doc: InsomniaExport = {
+    __export_format: 4,
+    __export_date: new Date().toISOString(),
+    __export_source: 'testnizer',
+    _type: 'export',
+    resources,
+  }
+
+  return JSON.stringify(doc, null, 2)
+}
+
+/** Map Insomnia authentication onto the renderer's AuthConfig shape. */
+export function mapInsomniaAuthToUi(
+  auth: InsomniaAuth | undefined,
+): Record<string, unknown> | null {
+  if (!auth || !auth.type || auth.type === 'none' || auth.disabled) return null
+  switch (auth.type) {
+    case 'basic':
+      return {
+        type: 'basic',
+        basic: { username: auth.username ?? '', password: auth.password ?? '' },
+      }
+    case 'bearer':
+      return {
+        type: 'bearer',
+        bearer: { token: auth.token ?? '', prefix: auth.prefix ?? 'Bearer' },
+      }
+    case 'apikey':
+      return {
+        type: 'api-key',
+        apiKey: {
+          key: auth.key ?? '',
+          value: auth.value ?? '',
+          in: auth.addTo === 'queryParams' || auth.addTo === 'query' ? 'query' : 'header',
+        },
+      }
+    case 'digest':
+      return {
+        type: 'digest',
+        digest: { username: auth.username ?? '', password: auth.password ?? '' },
+      }
+    case 'ntlm':
+      return {
+        type: 'ntlm',
+        ntlm: { username: auth.username ?? '', password: auth.password ?? '' },
+      }
+    case 'oauth2':
+      return {
+        type: 'oauth2',
+        oauth2: {
+          grantType: 'client_credentials',
+          tokenUrl: '',
+          clientId: '',
+          token: auth.token ?? '',
+        },
+      }
+    default:
+      return { type: 'none' }
+  }
+}
+
+// ─── gRPC / Proto Import ────────────────────────────────────
+
+async function importProto(payload: {
+  projectId: string
+  protoPath: string
+  folderId?: string | null
+  serverAddress?: string
+}): Promise<ImportResult> {
+  const warnings: string[] = []
+  const db = getDb()
+  const now = Date.now()
+  let endpointCount = 0
+  let folderCount = 0
+
+  let parsed: GrpcServiceDescription
+  try {
+    parsed = await loadProto(payload.protoPath)
+  } catch (e) {
+    return { success: false, error: 'Failed to parse proto file: ' + (e as Error).message }
+  }
+
+  if (!parsed.services || parsed.services.length === 0) {
+    return { success: false, error: 'Proto file contains no gRPC services' }
+  }
+
+  const rootFolderId = payload.folderId ?? null
+  const serverAddress = payload.serverAddress ?? 'localhost:50051'
+
+  for (const service of parsed.services) {
+    // One folder per service so the tree mirrors `package.Service`.
+    const serviceFolderId = randomUUID()
+    db.prepare(
+      `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
+    ).run(serviceFolderId, payload.projectId, rootFolderId, service.name, folderCount)
+    folderCount++
+
+    for (const method of service.methods) {
+      const endpointId = randomUUID()
+
+      const streamingType =
+        method.requestStream && method.responseStream
+          ? 'bidi'
+          : method.requestStream
+            ? 'client-stream'
+            : method.responseStream
+              ? 'server-stream'
+              : 'unary'
+
+      const requestSchema = JSON.stringify({
+        method: 'POST',
+        url: serverAddress,
+        body: { type: 'json', content: '{}' },
+        headers: [],
+        params: [],
+        auth: { type: 'none' },
+        grpc: {
+          protoPath: payload.protoPath,
+          packageName: parsed.packageName,
+          serviceName: service.fullName || service.name,
+          methodName: method.name,
+          requestType: method.requestType,
+          responseType: method.responseType,
+          requestStream: method.requestStream,
+          responseStream: method.responseStream,
+          streamingType,
+          serverAddress,
+        },
+      })
+
+      db.prepare(
+        `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        endpointId,
+        payload.projectId,
+        serviceFolderId,
+        method.name,
+        `gRPC ${streamingType} method: ${service.fullName || service.name}.${method.name} (${method.requestType} → ${method.responseType})`,
+        'grpc',
+        'POST',
+        `${service.fullName || service.name}/${method.name}`,
+        'developing',
+        requestSchema,
+        null,
+        endpointCount,
+        now,
+        now,
+      )
+      endpointCount++
     }
   }
 
-  return config
+  if (endpointCount === 0) {
+    warnings.push('No gRPC methods found in proto file')
+  }
+
+  return {
+    success: true,
+    collectionId: payload.projectId,
+    endpointCount,
+    folderCount,
+    warnings: warnings.length > 0 ? warnings : undefined,
+  }
 }
 
 // ─── WSDL Import (Postman-like flow) ───────────────────────
@@ -1827,10 +2847,12 @@ async function importWsdl(payload: {
   if (payload.createNewFolder) {
     rootFolderId = randomUUID()
     const folderName = payload.newFolderName || parsed.services[0]?.name || 'WSDL Import'
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO folders (id, project_id, parent_id, name, sort_order)
       VALUES (?, ?, ?, ?, ?)
-    `).run(rootFolderId, payload.projectId, payload.targetFolderId ?? null, folderName, 0)
+    `,
+    ).run(rootFolderId, payload.projectId, payload.targetFolderId ?? null, folderName, 0)
     folderCount++
   }
 
@@ -1849,20 +2871,24 @@ async function importWsdl(payload: {
     } else {
       // Create a service-level folder (matches Postman/Apidog behavior)
       serviceFolderId = randomUUID()
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO folders (id, project_id, parent_id, name, sort_order)
         VALUES (?, ?, ?, ?, ?)
-      `).run(serviceFolderId, payload.projectId, rootFolderId, service.name, folderCount)
+      `,
+      ).run(serviceFolderId, payload.projectId, rootFolderId, service.name, folderCount)
       folderCount++
     }
 
     for (const port of service.ports) {
       // Always create port-level folders under the service folder
       const portFolderId = randomUUID()
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO folders (id, project_id, parent_id, name, sort_order)
         VALUES (?, ?, ?, ?, ?)
-      `).run(portFolderId, payload.projectId, serviceFolderId, port.name, folderCount)
+      `,
+      ).run(portFolderId, payload.projectId, serviceFolderId, port.name, folderCount)
       folderCount++
       const parentForEndpoints = portFolderId
 
@@ -1874,8 +2900,16 @@ async function importWsdl(payload: {
           method: 'POST',
           url: endpointUrl,
           headers: [
-            { id: randomUUID(), key: 'Content-Type', value: parsed.soapVersion === 'soap12' ? 'application/soap+xml; charset=utf-8' : 'text/xml; charset=utf-8', enabled: true },
-            { id: randomUUID(), key: 'SOAPAction', value: operation.soapAction, enabled: true }
+            {
+              id: randomUUID(),
+              key: 'Content-Type',
+              value:
+                parsed.soapVersion === 'soap12'
+                  ? 'application/soap+xml; charset=utf-8'
+                  : 'text/xml; charset=utf-8',
+              enabled: true,
+            },
+            { id: randomUUID(), key: 'SOAPAction', value: operation.soapAction, enabled: true },
           ],
           body: { type: 'xml', content: operation.exampleRequest },
           soap: {
@@ -1889,21 +2923,23 @@ async function importWsdl(payload: {
             inputSchema: operation.inputSchema,
             outputSchema: operation.outputSchema,
             exampleRequest: operation.exampleRequest,
-            exampleResponse: operation.exampleResponse
-          }
+            exampleResponse: operation.exampleResponse,
+          },
         })
 
         const responseSchemas = JSON.stringify({
           '200': {
             description: 'SOAP Response',
-            content: { 'text/xml': { example: operation.exampleResponse } }
-          }
+            content: { 'text/xml': { example: operation.exampleResponse } },
+          },
         })
 
-        db.prepare(`
+        db.prepare(
+          `
           INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
+        `,
+        ).run(
           endpointId,
           payload.projectId,
           parentForEndpoints,
@@ -1917,7 +2953,7 @@ async function importWsdl(payload: {
           responseSchemas,
           endpointCount,
           now,
-          now
+          now,
         )
         endpointCount++
       }
@@ -1933,6 +2969,6 @@ async function importWsdl(payload: {
     collectionId: payload.projectId,
     endpointCount,
     folderCount,
-    warnings: warnings.length > 0 ? warnings : undefined
+    warnings: warnings.length > 0 ? warnings : undefined,
   }
 }

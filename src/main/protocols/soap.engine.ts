@@ -5,6 +5,11 @@ import { randomUUID } from 'crypto'
 import { performance } from 'perf_hooks'
 import https from 'https'
 import http from 'http'
+import {
+  applyWsSecurity,
+  migrateLegacyConfig,
+  type WsSecurityConfig as WsseConfig,
+} from './wsse.engine'
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -42,14 +47,22 @@ export interface SoapSchema {
   body: string
 }
 
-export interface WsSecurityConfig {
-  enabled: boolean
-  type: 'username-token' | 'timestamp'
-  username?: string
-  password?: string
-  passwordType?: 'PasswordText' | 'PasswordDigest'
-  addTimestamp?: boolean
-}
+/**
+ * SOAP request WS-Security configuration. Accepts both the legacy single-mode
+ * shape (kept for persisted projects) and the new multi-mode shape from
+ * `wsse.engine`. The engine auto-migrates the legacy form via
+ * `migrateLegacyConfig`.
+ */
+export type WsSecurityConfig =
+  | {
+      enabled: boolean
+      type: 'username-token' | 'timestamp'
+      username?: string
+      password?: string
+      passwordType?: 'PasswordText' | 'PasswordDigest'
+      addTimestamp?: boolean
+    }
+  | WsseConfig
 
 export interface SoapExecuteOptions {
   wsdlUrl: string
@@ -97,7 +110,7 @@ const xmlParser = new XMLParser({
   attributeNamePrefix: '@_',
   removeNSPrefix: false,
   parseAttributeValue: false,
-  trimValues: true
+  trimValues: true,
 })
 
 const xmlBuilder = new XMLBuilder({
@@ -105,7 +118,7 @@ const xmlBuilder = new XMLBuilder({
   attributeNamePrefix: '@_',
   format: true,
   indentBy: '  ',
-  suppressEmptyNode: true
+  suppressEmptyNode: true,
 })
 
 // ─── Schema resolution (ported from Java reference) ─────────
@@ -137,7 +150,7 @@ async function fetchContent(url: string, sslVerification = true): Promise<string
     // Keep HTTPS certificate validation enabled by default; callers may
     // opt out explicitly when importing WSDL from trusted-but-self-signed
     // internal endpoints.
-    httpsAgent: new https.Agent({ rejectUnauthorized: sslVerification })
+    httpsAgent: new https.Agent({ rejectUnauthorized: sslVerification }),
   })
   return response.data
 }
@@ -149,7 +162,7 @@ export async function findAllSchemasRecursively(
   schemaBody: string,
   parentUrl: string,
   resolvedLocations: Set<string> = new Set(),
-  schemas: SoapSchema[] = []
+  schemas: SoapSchema[] = [],
 ): Promise<SoapSchema[]> {
   // Parse the XML to find xsd:import elements with schemaLocation
   const parsed = xmlParser.parse(schemaBody) as Record<string, unknown>
@@ -257,7 +270,7 @@ export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
   const client = await soap.createClientAsync(wsdlUrl, {
     disableCache: true,
     escapeXML: false,
-    forceSoap12Headers: false
+    forceSoap12Headers: false,
   })
 
   const description = client.describe() as DescribeResult
@@ -290,7 +303,7 @@ export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
           opName,
           buildExampleParams(inputSchema),
           soapVersion,
-          soapAction
+          soapAction,
         )
         const exampleResponse = generateResponseEnvelope(opName, outputSchema, soapVersion)
 
@@ -300,14 +313,14 @@ export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
           inputSchema,
           outputSchema,
           exampleRequest,
-          exampleResponse
+          exampleResponse,
         })
       }
 
       ports.push({
         name: portName,
         endpointUrl: portEndpoint,
-        operations
+        operations,
       })
     }
 
@@ -318,7 +331,7 @@ export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
     services,
     endpointUrl: firstEndpointUrl || wsdlUrl,
     soapVersion,
-    rawWsdl: wsdlXml
+    rawWsdl: wsdlXml,
   }
 }
 
@@ -346,11 +359,7 @@ export async function parseWsdlFromContent(content: string): Promise<WsdlParseRe
 
 // ─── Helpers ────────────────────────────────────────────────
 
-function extractPortEndpoint(
-  client: soap.Client,
-  _serviceName: string,
-  _portName: string
-): string {
+function extractPortEndpoint(client: soap.Client, _serviceName: string, _portName: string): string {
   // Access endpoint via index signature to avoid private access error
   const clientRecord = client as unknown as Record<string, unknown>
   const endpoint = clientRecord['endpoint']
@@ -360,11 +369,7 @@ function extractPortEndpoint(
   return ''
 }
 
-function extractSoapAction(
-  client: soap.Client,
-  _portName: string,
-  operationName: string
-): string {
+function extractSoapAction(client: soap.Client, _portName: string, operationName: string): string {
   // Walk WSDL definitions to find SOAPAction
   try {
     const wsdlRecord = client.wsdl as unknown as Record<string, unknown>
@@ -429,7 +434,7 @@ export function generateEnvelope(
   params: Record<string, unknown>,
   soapVersion: SoapVersion,
   soapAction?: string,
-  namespace?: string
+  namespace?: string,
 ): string {
   const ns = namespace || 'http://tempuri.org/'
   const envelopeNs =
@@ -453,7 +458,7 @@ export function generateEnvelope(
 function generateResponseEnvelope(
   operationName: string,
   outputSchema: Record<string, unknown>,
-  soapVersion: SoapVersion
+  soapVersion: SoapVersion,
 ): string {
   const envelopeNs =
     soapVersion === 'soap12'
@@ -474,7 +479,7 @@ function generateResponseEnvelope(
 function buildXmlElement(
   elementName: string,
   params: Record<string, unknown>,
-  prefix: string
+  prefix: string,
 ): string {
   const lines: string[] = []
   lines.push(`<${prefix}:${elementName}>`)
@@ -501,46 +506,7 @@ function escapeXml(str: string): string {
     .replace(/'/g, '&apos;')
 }
 
-// ─── WS-Security header generation ─────────────────────────
-
-function buildWsSecurityHeader(config: WsSecurityConfig): string {
-  if (!config.enabled) return ''
-
-  if (config.type === 'username-token' && config.username && config.password) {
-    const passwordType =
-      config.passwordType === 'PasswordDigest'
-        ? 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest'
-        : 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText'
-
-    const timestamp = config.addTimestamp
-      ? `
-      <wsu:Timestamp xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
-        <wsu:Created>${new Date().toISOString()}</wsu:Created>
-        <wsu:Expires>${new Date(Date.now() + 300000).toISOString()}</wsu:Expires>
-      </wsu:Timestamp>`
-      : ''
-
-    return `
-    <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" soap:mustUnderstand="1">
-      <wsse:UsernameToken>
-        <wsse:Username>${escapeXml(config.username)}</wsse:Username>
-        <wsse:Password Type="${passwordType}">${escapeXml(config.password)}</wsse:Password>
-      </wsse:UsernameToken>${timestamp}
-    </wsse:Security>`
-  }
-
-  if (config.type === 'timestamp') {
-    return `
-    <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" soap:mustUnderstand="1">
-      <wsu:Timestamp xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
-        <wsu:Created>${new Date().toISOString()}</wsu:Created>
-        <wsu:Expires>${new Date(Date.now() + 300000).toISOString()}</wsu:Expires>
-      </wsu:Timestamp>
-    </wsse:Security>`
-  }
-
-  return ''
-}
+// WS-Security header generation moved to wsse.engine.ts (shared with standalone tool)
 
 // ─── Execute SOAP request ───────────────────────────────────
 
@@ -555,22 +521,23 @@ export async function executeSoap(options: SoapExecuteOptions): Promise<SoapApiR
       options.params,
       options.soapVersion,
       undefined,
-      undefined
+      undefined,
     )
 
-    // Insert WS-Security header if configured
+    // Apply WS-Security via shared engine (UsernameToken / Timestamp / Sign / Encrypt)
     if (options.wsSecurity?.enabled) {
-      const securityHeader = buildWsSecurityHeader(options.wsSecurity)
-      envelope = envelope.replace('<soap:Header/>', `<soap:Header>${securityHeader}\n  </soap:Header>`)
+      const wsseConfig = migrateLegacyConfig(options.wsSecurity)
+      envelope = await applyWsSecurity(envelope, wsseConfig)
     }
 
     // Build request headers
     const requestHeaders: Record<string, string> = {
-      ...(options.headers ?? {})
+      ...(options.headers ?? {}),
     }
 
     if (options.soapVersion === 'soap12') {
-      requestHeaders['Content-Type'] = `application/soap+xml; charset=utf-8; action="${options.operationName}"`
+      requestHeaders['Content-Type'] =
+        `application/soap+xml; charset=utf-8; action="${options.operationName}"`
     } else {
       requestHeaders['Content-Type'] = 'text/xml; charset=utf-8'
       requestHeaders['SOAPAction'] = `"${options.operationName}"`
@@ -584,9 +551,9 @@ export async function executeSoap(options: SoapExecuteOptions): Promise<SoapApiR
       transformResponse: [(d: string) => d],
       validateStatus: () => true,
       httpsAgent: new https.Agent({
-        rejectUnauthorized: options.sslVerification !== false
+        rejectUnauthorized: options.sslVerification !== false,
       }),
-      httpAgent: new http.Agent()
+      httpAgent: new http.Agent(),
     })
 
     const endTime = performance.now()
@@ -625,8 +592,8 @@ export async function executeSoap(options: SoapExecuteOptions): Promise<SoapApiR
         method: 'POST',
         url: options.endpointUrl,
         headers: requestHeaders,
-        body: envelope
-      }
+        body: envelope,
+      },
     }
   } catch (err) {
     const endTime = performance.now()
@@ -636,7 +603,7 @@ export async function executeSoap(options: SoapExecuteOptions): Promise<SoapApiR
       requestId,
       protocol: 'soap',
       timing: { total: totalTime },
-      error: (err instanceof Error) ? err.message : String(err)
+      error: err instanceof Error ? err.message : String(err),
     }
   }
 }

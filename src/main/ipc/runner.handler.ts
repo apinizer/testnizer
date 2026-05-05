@@ -1,5 +1,5 @@
 // src/main/ipc/runner.handler.ts
-// Apinizer API Tester — Collection Runner IPC Handler
+// Testnizer — Collection Runner IPC Handler
 
 import { ipcMain, BrowserWindow } from 'electron'
 import { executeHttpRequest, HttpRequestOptions } from '../protocols/http.engine'
@@ -56,8 +56,19 @@ interface RunnerExecuteOptions {
   endpointIds: string[]
   environmentId?: string
   workspaceId?: string
+  /** Delay in milliseconds inserted between requests. */
   delay?: number
+  /**
+   * Number of iterations. When `iterationData` is supplied, this is overridden
+   * by `iterationData.length`. Defaults to 1.
+   */
   iterations?: number
+  /**
+   * Per-iteration data rows (Postman / Insomnia compatible). When set, the
+   * runner executes one iteration per row and exposes the row to scripts via
+   * `pm.iterationData.get(key)`.
+   */
+  iterationData?: Record<string, string>[]
   stopOnError?: boolean
   folderName?: string
   source?: string
@@ -140,9 +151,7 @@ function parseJsonSafe<T>(json: string | null, fallback: T): T {
   }
 }
 
-function buildRequestFromEndpoint(
-  endpoint: endpointRepo.EndpointRow
-): HttpRequestOptions | null {
+function buildRequestFromEndpoint(endpoint: endpointRepo.EndpointRow): HttpRequestOptions | null {
   const schema = parseJsonSafe<{
     method?: string
     url?: string
@@ -167,13 +176,20 @@ function buildRequestFromEndpoint(
     auth: schema.auth as HttpRequestOptions['auth'],
     timeout: schema.timeout ?? 30000,
     followRedirects: schema.followRedirects ?? true,
-    sslVerification: schema.sslVerification ?? true
+    sslVerification: schema.sslVerification ?? true,
   }
 }
 
 function runAssertionsMainProcess(
   assertions: TestAssertion[],
-  response: { status?: number; statusText?: string; headers?: Record<string, string>; body?: string; bodySize?: number; timing: ResponseTiming }
+  response: {
+    status?: number
+    statusText?: string
+    headers?: Record<string, string>
+    body?: string
+    bodySize?: number
+    timing: ResponseTiming
+  },
 ): AssertionResult[] {
   return assertions
     .filter((a) => a.enabled)
@@ -194,7 +210,11 @@ function runAssertionsMainProcess(
           case 'body_contains': {
             const body = response.body ?? ''
             const expected = String(assertion.expected ?? '')
-            return { name: assertion.name, passed: body.includes(expected), actual: body.length > 100 ? `${body.slice(0, 100)}...` : body }
+            return {
+              name: assertion.name,
+              passed: body.includes(expected),
+              actual: body.length > 100 ? `${body.slice(0, 100)}...` : body,
+            }
           }
           case 'header_exists': {
             const headerName = (assertion.headerName ?? '').toLowerCase()
@@ -246,21 +266,324 @@ function sendProgress(progress: RunnerProgress): void {
   }
 }
 
+// ─── pm/insomnia script execution (main-process sandbox) ─────────
+
+interface ScriptContext {
+  envVars: Record<string, string>
+  envUpdates: Record<string, string>
+  iterationData: Record<string, string>
+  iterationIndex: number
+  iterationCount: number
+  /** Set by `pm.execution.skipRequest()` — runner reads after preScript. */
+  skipRequest: boolean
+  /** Set by `pm.execution.setNextRequest(name)` — runner uses it after the
+   *  request to redirect flow. `null` means "stop here". */
+  nextRequestName?: string | null
+  /** Test results captured from `pm.test(name, fn)`. */
+  testResults: Array<{ name: string; passed: boolean; error?: string }>
+  /** Console output produced by the script. */
+  consoleLogs: string[]
+}
+
+function newScriptContext(
+  envVars: Record<string, string>,
+  iterationData: Record<string, string>,
+  iterationIndex: number,
+  iterationCount: number,
+): ScriptContext {
+  return {
+    envVars: { ...envVars },
+    envUpdates: {},
+    iterationData,
+    iterationIndex,
+    iterationCount,
+    skipRequest: false,
+    testResults: [],
+    consoleLogs: [],
+  }
+}
+
+interface ScriptResponseShape {
+  status?: number
+  statusText?: string
+  headers?: Record<string, string>
+  body?: string
+  bodySize?: number
+}
+
+/**
+ * Run a Postman / Insomnia compatible script in a `new Function` sandbox.
+ * Mutates `ctx` (envUpdates, skipRequest, testResults, consoleLogs).
+ *
+ * The exposed `pm` shim is intentionally minimal — covering the surface used
+ * in Postman/Insomnia exports: environment, response, test/expect,
+ * iterationData, execution.skipRequest, execution.setNextRequest. More can
+ * be added as fixtures demand.
+ */
+function runUserScript(
+  script: string,
+  ctx: ScriptContext,
+  response: ScriptResponseShape | null,
+): void {
+  if (!script) return
+
+  const log = (...args: unknown[]): void => {
+    ctx.consoleLogs.push(args.map(String).join(' '))
+  }
+
+  function buildPm() {
+    const expect = (value: unknown) => buildExpectChain(value)
+    return {
+      iterationData: {
+        get: (k: string) => ctx.iterationData[k] ?? '',
+        toObject: () => ({ ...ctx.iterationData }),
+      },
+      info: { iteration: ctx.iterationIndex, iterationCount: ctx.iterationCount },
+      environment: {
+        get: (k: string) => ctx.envVars[k] ?? '',
+        set: (k: string, v: unknown) => {
+          ctx.envVars[k] = String(v)
+          ctx.envUpdates[k] = String(v)
+        },
+        unset: (k: string) => {
+          delete ctx.envVars[k]
+          ctx.envUpdates[k] = ''
+        },
+      },
+      globals: {
+        get: (k: string) => ctx.envVars[k] ?? '',
+        set: (k: string, v: unknown) => {
+          ctx.envVars[k] = String(v)
+          ctx.envUpdates[k] = String(v)
+        },
+      },
+      variables: {
+        get: (k: string) => ctx.envVars[k] ?? '',
+        set: (k: string, v: unknown) => {
+          ctx.envVars[k] = String(v)
+          ctx.envUpdates[k] = String(v)
+        },
+      },
+      collectionVariables: {
+        get: (k: string) => ctx.envVars[k] ?? '',
+        set: (k: string, v: unknown) => {
+          ctx.envVars[k] = String(v)
+          ctx.envUpdates[k] = String(v)
+        },
+      },
+      response: response
+        ? buildResponseShim(response)
+        : {
+            code: 0,
+            status: '',
+            text: () => '',
+            json: () => null,
+            headers: { get: () => undefined },
+          },
+      test: (name: string, fn: () => void) => {
+        try {
+          fn()
+          ctx.testResults.push({ name, passed: true })
+        } catch (e) {
+          ctx.testResults.push({ name, passed: false, error: (e as Error).message })
+        }
+      },
+      expect,
+      execution: {
+        skipRequest: () => {
+          ctx.skipRequest = true
+        },
+        setNextRequest: (name: string | null) => {
+          ctx.nextRequestName = name
+        },
+      },
+    }
+  }
+
+  try {
+    const fn = new Function('pm', 'console', script)
+    fn(buildPm(), { log, warn: log, error: log })
+  } catch (e) {
+    ctx.consoleLogs.push(`Script error: ${(e as Error).message}`)
+  }
+}
+
+function buildResponseShim(response: ScriptResponseShape) {
+  const headers = response.headers ?? {}
+  const code = response.status ?? 0
+  return {
+    code,
+    get status() {
+      return response.statusText ?? ''
+    },
+    text: () => response.body ?? '',
+    json: () => {
+      try {
+        return JSON.parse(response.body ?? '{}') as unknown
+      } catch {
+        return null
+      }
+    },
+    headers: {
+      get: (name: string) => {
+        const lower = name.toLowerCase()
+        const found = Object.entries(headers).find(([k]) => k.toLowerCase() === lower)
+        return found ? found[1] : undefined
+      },
+    },
+    responseTime: 0,
+    responseSize: response.bodySize ?? (response.body ? response.body.length : 0),
+    to: {
+      have: {
+        status: (expected: number) => {
+          if (code !== expected) {
+            throw new Error(`expected status ${expected} but got ${code}`)
+          }
+        },
+        header: (name: string) => {
+          const lower = name.toLowerCase()
+          const found = Object.keys(headers).some((k) => k.toLowerCase() === lower)
+          if (!found) throw new Error(`expected header "${name}" to be present`)
+        },
+      },
+      be: {
+        get ok() {
+          if (code < 200 || code >= 300) throw new Error(`expected 2xx but got ${code}`)
+          return true
+        },
+      },
+    },
+  }
+}
+
+interface ChainResult {
+  _: never
+}
+
+function buildExpectChain(value: unknown): {
+  to: {
+    eql: (expected: unknown) => ChainResult
+    equal: (expected: unknown) => ChainResult
+    be: {
+      a: (type: string) => ChainResult
+      an: (type: string) => ChainResult
+      true: ChainResult
+      false: ChainResult
+      null: ChainResult
+      undefined: ChainResult
+      empty: ChainResult
+    }
+    include: (sub: unknown) => ChainResult
+    have: { length: (n: number) => ChainResult; lengthOf: (n: number) => ChainResult }
+    not: {
+      eql: (expected: unknown) => ChainResult
+      include: (sub: unknown) => ChainResult
+    }
+  }
+} {
+  const fail = (msg: string): never => {
+    throw new Error(msg)
+  }
+  const ok = (cond: boolean, msg: string): ChainResult => {
+    if (!cond) fail(msg)
+    return { _: undefined as never }
+  }
+  const eqlCheck = (a: unknown, b: unknown): boolean => {
+    if (a === b) return true
+    if (a == null || b == null) return false
+    if (typeof a !== 'object' || typeof b !== 'object') return false
+    return JSON.stringify(a) === JSON.stringify(b)
+  }
+  const isType = (t: string) => {
+    if (t === 'array') return Array.isArray(value)
+    if (t === 'null') return value === null
+    return typeof value === t
+  }
+  return {
+    to: {
+      eql: (expected) =>
+        ok(
+          eqlCheck(value, expected),
+          `expected ${JSON.stringify(value)} to equal ${JSON.stringify(expected)}`,
+        ),
+      equal: (expected) =>
+        ok(
+          value === expected,
+          `expected ${JSON.stringify(value)} to strictly equal ${JSON.stringify(expected)}`,
+        ),
+      be: {
+        a: (type) => ok(isType(type), `expected ${JSON.stringify(value)} to be a ${type}`),
+        an: (type) => ok(isType(type), `expected ${JSON.stringify(value)} to be an ${type}`),
+        true: ok(value === true, `expected ${JSON.stringify(value)} to be true`),
+        false: ok(value === false, `expected ${JSON.stringify(value)} to be false`),
+        null: ok(value === null, `expected ${JSON.stringify(value)} to be null`),
+        undefined: ok(value === undefined, `expected ${JSON.stringify(value)} to be undefined`),
+        empty: ok(
+          (Array.isArray(value) && value.length === 0) ||
+            (typeof value === 'string' && value.length === 0) ||
+            (value !== null &&
+              typeof value === 'object' &&
+              Object.keys(value as object).length === 0),
+          `expected ${JSON.stringify(value)} to be empty`,
+        ),
+      },
+      include: (sub) => {
+        if (typeof value === 'string' && typeof sub === 'string') {
+          return ok(value.includes(sub), `expected "${value}" to include "${sub}"`)
+        }
+        if (Array.isArray(value)) {
+          return ok(
+            value.some((v) => eqlCheck(v, sub)),
+            `expected array to include ${JSON.stringify(sub)}`,
+          )
+        }
+        return fail('include is only supported for strings and arrays')
+      },
+      have: {
+        length: (n) => {
+          const len = Array.isArray(value) || typeof value === 'string' ? value.length : -1
+          return ok(len === n, `expected length ${n} but got ${len}`)
+        },
+        lengthOf: (n) => {
+          const len = Array.isArray(value) || typeof value === 'string' ? value.length : -1
+          return ok(len === n, `expected length ${n} but got ${len}`)
+        },
+      },
+      not: {
+        eql: (expected) =>
+          ok(
+            !eqlCheck(value, expected),
+            `expected ${JSON.stringify(value)} to not equal ${JSON.stringify(expected)}`,
+          ),
+        include: (sub) => {
+          if (typeof value === 'string' && typeof sub === 'string') {
+            return ok(!value.includes(sub), `expected "${value}" to not include "${sub}"`)
+          }
+          return fail('not.include is only supported for strings')
+        },
+      },
+    },
+  }
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 // ─── Variable Resolution ─────────────────────────────────────────
 
-function loadEnvironmentVariables(environmentId?: string, workspaceId?: string): Record<string, string> {
+function loadEnvironmentVariables(
+  environmentId?: string,
+  workspaceId?: string,
+): Record<string, string> {
   const vars: Record<string, string> = {}
   const db = getDb()
 
   // Load global variables
   if (workspaceId) {
-    const globals = db.prepare(
-      'SELECT key, value FROM global_variables WHERE workspace_id = ? AND enabled = 1'
-    ).all(workspaceId) as Array<{ key: string; value: string }>
+    const globals = db
+      .prepare('SELECT key, value FROM global_variables WHERE workspace_id = ? AND enabled = 1')
+      .all(workspaceId) as Array<{ key: string; value: string }>
     for (const g of globals) {
       vars[g.key] = g.value
     }
@@ -268,9 +591,11 @@ function loadEnvironmentVariables(environmentId?: string, workspaceId?: string):
 
   // Load environment variables (override globals)
   if (environmentId) {
-    const envVars = db.prepare(
-      'SELECT key, value FROM environment_variables WHERE environment_id = ? AND enabled = 1'
-    ).all(environmentId) as Array<{ key: string; value: string }>
+    const envVars = db
+      .prepare(
+        'SELECT key, value FROM environment_variables WHERE environment_id = ? AND enabled = 1',
+      )
+      .all(environmentId) as Array<{ key: string; value: string }>
     for (const v of envVars) {
       vars[v.key] = v.value
     }
@@ -290,7 +615,7 @@ function resolveRunnerVariables(template: string, vars: Record<string, string>):
 
 function resolveRequestOptions(
   options: HttpRequestOptions,
-  vars: Record<string, string>
+  vars: Record<string, string>,
 ): HttpRequestOptions {
   if (Object.keys(vars).length === 0) return options
 
@@ -329,7 +654,9 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
 
   const startedAt = Date.now()
   const results: EndpointRunResult[] = []
-  const iterations = Math.max(1, options.iterations ?? 1)
+  const iterationData = options.iterationData ?? []
+  const iterations =
+    iterationData.length > 0 ? iterationData.length : Math.max(1, options.iterations ?? 1)
   const stopOnError = options.stopOnError ?? false
   const endpointsPerIteration = options.endpointIds.length
   const total = endpointsPerIteration * iterations
@@ -348,150 +675,209 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       if (shouldStop) break outer
       const i = iter * endpointsPerIteration + j
 
-    const endpointId = options.endpointIds[i]
-    const endpoint = endpointRepo.getEndpointById(endpointId)
+      const endpointId = options.endpointIds[i]
+      const endpoint = endpointRepo.getEndpointById(endpointId)
 
-    if (!endpoint) {
-      const result: EndpointRunResult = {
-        endpointId,
-        endpointName: 'Unknown',
-        method: 'GET',
-        url: '',
-        status: null,
-        statusText: '',
-        duration: 0,
-        passed: 0,
-        failed: 0,
-        skipped: 0,
-        assertions: [],
-        error: 'Endpoint not found'
+      if (!endpoint) {
+        const result: EndpointRunResult = {
+          endpointId,
+          endpointName: 'Unknown',
+          method: 'GET',
+          url: '',
+          status: null,
+          statusText: '',
+          duration: 0,
+          passed: 0,
+          failed: 0,
+          skipped: 0,
+          assertions: [],
+          error: 'Endpoint not found',
+        }
+        results.push(result)
+        failedEndpoints++
+        sendProgress({ current: i + 1, total, endpointId, result })
+        continue
       }
-      results.push(result)
-      failedEndpoints++
-      sendProgress({ current: i + 1, total, endpointId, result })
-      continue
-    }
 
-    const requestOptions = buildRequestFromEndpoint(endpoint)
+      const requestOptions = buildRequestFromEndpoint(endpoint)
 
-    if (!requestOptions) {
-      const result: EndpointRunResult = {
-        endpointId,
-        endpointName: endpoint.name,
-        method: endpoint.method ?? 'GET',
-        url: endpoint.path,
-        status: null,
-        statusText: '',
-        duration: 0,
-        passed: 0,
-        failed: 0,
-        skipped: 0,
-        assertions: [],
-        error: 'No URL configured for endpoint'
+      if (!requestOptions) {
+        const result: EndpointRunResult = {
+          endpointId,
+          endpointName: endpoint.name,
+          method: endpoint.method ?? 'GET',
+          url: endpoint.path,
+          status: null,
+          statusText: '',
+          duration: 0,
+          passed: 0,
+          failed: 0,
+          skipped: 0,
+          assertions: [],
+          error: 'No URL configured for endpoint',
+        }
+        results.push(result)
+        failedEndpoints++
+        sendProgress({ current: i + 1, total, endpointId, result })
+        continue
       }
-      results.push(result)
-      failedEndpoints++
-      sendProgress({ current: i + 1, total, endpointId, result })
-      continue
-    }
 
-    try {
-      // Resolve environment variables in request
-      const resolvedOptions = resolveRequestOptions(requestOptions, envVars)
-      const response = await executeHttpRequest(resolvedOptions)
-
-      // Auto-save to history
       try {
-        historyRepo.addHistory({
-          workspace_id: options.workspaceId,
-          project_id: options.projectId,
-          endpoint_id: endpointId,
-          protocol: endpoint.protocol || 'http',
-          method: resolvedOptions.method,
-          url: resolvedOptions.url,
-          status_code: response.status,
-          duration_ms: response.timing?.total ? Math.round(response.timing.total) : undefined,
-          request_snapshot: JSON.stringify({
-            method: resolvedOptions.method,
-            url: resolvedOptions.url,
-          }),
-          response_snapshot: JSON.stringify({
+        // Run pre-request script (Postman event[prerequest] / Insomnia preRequest)
+        const schemaForScripts = parseJsonSafe<{ preScript?: string; postScript?: string }>(
+          endpoint.request_schema,
+          {},
+        )
+        const scriptCtx = newScriptContext(envVars, iterationData[iter] ?? {}, iter, iterations)
+        if (schemaForScripts.preScript) {
+          runUserScript(schemaForScripts.preScript, scriptCtx, null)
+          // Push script env updates back into the global env vars map.
+          for (const [k, v] of Object.entries(scriptCtx.envUpdates)) {
+            envVars[k] = v
+          }
+          if (scriptCtx.skipRequest) {
+            const skipResult: EndpointRunResult = {
+              endpointId,
+              endpointName: endpoint.name,
+              method: requestOptions.method,
+              url: requestOptions.url,
+              status: null,
+              statusText: 'SKIPPED',
+              duration: 0,
+              passed: 0,
+              failed: 0,
+              skipped: 1,
+              assertions: [],
+            }
+            results.push(skipResult)
+            sendProgress({ current: i + 1, total, endpointId, result: skipResult })
+            if (options.delay && options.delay > 0 && i < total - 1 && !shouldStop) {
+              await delay(options.delay)
+            }
+            continue
+          }
+        }
+
+        // Resolve environment variables in request
+        const resolvedOptions = resolveRequestOptions(requestOptions, envVars)
+        const response = await executeHttpRequest(resolvedOptions)
+
+        // Run post-response (test) script
+        const scriptTestResults: AssertionResult[] = []
+        if (schemaForScripts.postScript) {
+          scriptCtx.envUpdates = {}
+          runUserScript(schemaForScripts.postScript, scriptCtx, {
             status: response.status,
             statusText: response.statusText,
-            timing: response.timing,
-          }),
+            headers: response.headers,
+            body: response.body,
+            bodySize: response.bodySize,
+          })
+          for (const [k, v] of Object.entries(scriptCtx.envUpdates)) {
+            envVars[k] = v
+          }
+          for (const t of scriptCtx.testResults) {
+            scriptTestResults.push({
+              name: t.name,
+              passed: t.passed,
+              error: t.error,
+            })
+          }
+        }
+
+        // Auto-save to history
+        try {
+          historyRepo.addHistory({
+            workspace_id: options.workspaceId,
+            project_id: options.projectId,
+            endpoint_id: endpointId,
+            protocol: endpoint.protocol || 'http',
+            method: resolvedOptions.method,
+            url: resolvedOptions.url,
+            status_code: response.status,
+            duration_ms: response.timing?.total ? Math.round(response.timing.total) : undefined,
+            request_snapshot: JSON.stringify({
+              method: resolvedOptions.method,
+              url: resolvedOptions.url,
+            }),
+            response_snapshot: JSON.stringify({
+              status: response.status,
+              statusText: response.statusText,
+              timing: response.timing,
+            }),
+          })
+        } catch {
+          // History save failure should not affect runner
+        }
+
+        // Parse assertions from request schema
+        const schema = parseJsonSafe<{ assertions?: TestAssertion[] }>(endpoint.request_schema, {})
+        const assertions = schema.assertions ?? []
+
+        const declarativeAssertions = runAssertionsMainProcess(assertions, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+          body: response.body,
+          bodySize: response.bodySize,
+          timing: response.timing,
         })
-      } catch {
-        // History save failure should not affect runner
+        const assertionResults = [...declarativeAssertions, ...scriptTestResults]
+
+        const passed = assertionResults.filter((a) => a.passed).length
+        const failed = assertionResults.filter((a) => !a.passed).length
+
+        totalAssertions += assertionResults.length
+        passedAssertions += passed
+        failedAssertions += failed
+
+        const endpointPassed = failed === 0 && !response.error
+        if (endpointPassed) passedEndpoints++
+        else failedEndpoints++
+
+        const result: EndpointRunResult = {
+          endpointId,
+          endpointName: endpoint.name,
+          method: requestOptions.method,
+          url: requestOptions.url,
+          status: response.status ?? null,
+          statusText: response.statusText ?? '',
+          duration: response.timing.total,
+          passed,
+          failed,
+          skipped: 0,
+          assertions: assertionResults,
+          error: response.error,
+          responseSize: response.bodySize ?? 0,
+          responseBody: response.body ?? undefined,
+          responseHeaders: response.headers ?? undefined,
+        }
+
+        results.push(result)
+        sendProgress({ current: i + 1, total, endpointId, result })
+
+        if (stopOnError && !endpointPassed) break outer
+      } catch (e) {
+        const result: EndpointRunResult = {
+          endpointId,
+          endpointName: endpoint.name,
+          method: requestOptions.method,
+          url: requestOptions.url,
+          status: null,
+          statusText: '',
+          duration: 0,
+          passed: 0,
+          failed: 0,
+          skipped: 0,
+          assertions: [],
+          error: (e as Error).message,
+        }
+        results.push(result)
+        failedEndpoints++
+        sendProgress({ current: i + 1, total, endpointId, result })
+
+        if (stopOnError) break outer
       }
-
-      // Parse assertions from request schema
-      const schema = parseJsonSafe<{ assertions?: TestAssertion[] }>(endpoint.request_schema, {})
-      const assertions = schema.assertions ?? []
-
-      const assertionResults = runAssertionsMainProcess(assertions, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-        body: response.body,
-        bodySize: response.bodySize,
-        timing: response.timing
-      })
-
-      const passed = assertionResults.filter((a) => a.passed).length
-      const failed = assertionResults.filter((a) => !a.passed).length
-
-      totalAssertions += assertionResults.length
-      passedAssertions += passed
-      failedAssertions += failed
-
-      const endpointPassed = failed === 0 && !response.error
-      if (endpointPassed) passedEndpoints++
-      else failedEndpoints++
-
-      const result: EndpointRunResult = {
-        endpointId,
-        endpointName: endpoint.name,
-        method: requestOptions.method,
-        url: requestOptions.url,
-        status: response.status ?? null,
-        statusText: response.statusText ?? '',
-        duration: response.timing.total,
-        passed,
-        failed,
-        skipped: 0,
-        assertions: assertionResults,
-        error: response.error,
-        responseSize: response.bodySize ?? 0,
-        responseBody: response.body ?? undefined,
-        responseHeaders: response.headers ?? undefined,
-      }
-
-      results.push(result)
-      sendProgress({ current: i + 1, total, endpointId, result })
-
-      if (stopOnError && !endpointPassed) break outer
-    } catch (e) {
-      const result: EndpointRunResult = {
-        endpointId,
-        endpointName: endpoint.name,
-        method: requestOptions.method,
-        url: requestOptions.url,
-        status: null,
-        statusText: '',
-        duration: 0,
-        passed: 0,
-        failed: 0,
-        skipped: 0,
-        assertions: [],
-        error: (e as Error).message
-      }
-      results.push(result)
-      failedEndpoints++
-      sendProgress({ current: i + 1, total, endpointId, result })
-
-      if (stopOnError) break outer
-    }
 
       // Delay between requests if configured
       if (options.delay && options.delay > 0 && i < total - 1 && !shouldStop) {
@@ -504,20 +890,23 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
 
   const completedAt = Date.now()
   const durationMs = completedAt - startedAt
-  const avgRespTime = results.length > 0
-    ? Math.round(results.reduce((sum, r) => sum + r.duration, 0) / results.length)
-    : 0
+  const avgRespTime =
+    results.length > 0
+      ? Math.round(results.reduce((sum, r) => sum + r.duration, 0) / results.length)
+      : 0
 
   // Save to runner_history
   try {
     const db = getDb()
     const { randomUUID } = require('crypto')
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO runner_history (id, project_id, environment_name, source, iterations, duration_ms,
         total_endpoints, passed_endpoints, failed_endpoints, total_tests, passed_tests, failed_tests,
         skipped_tests, avg_resp_time, results_json, started_at, folder_name, source_label)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `,
+    ).run(
       randomUUID(),
       options.projectId,
       options.environmentId || null,
@@ -535,7 +924,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       JSON.stringify(results),
       startedAt,
       options.folderName || null,
-      options.sourceLabel || null
+      options.sourceLabel || null,
     )
   } catch {
     // History save failure should not affect runner
@@ -551,7 +940,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
     totalAssertions,
     passedAssertions,
     failedAssertions,
-    results
+    results,
   }
 }
 
@@ -571,18 +960,21 @@ function exportAsHtml(results: EndpointRunResult[]): string {
   const escapeHtml = (str: string): string =>
     str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-  const rows = results.map((r) => {
-    const statusColor = r.error ? '#cc2200' : (r.failed > 0 ? '#b35a00' : '#1a7a4a')
-    const statusBg = r.error ? '#fff0f0' : (r.failed > 0 ? '#fff4e0' : '#e8f9f1')
-    const statusText = r.error ? 'Error' : (r.failed > 0 ? 'Failed' : 'Passed')
+  const rows = results
+    .map((r) => {
+      const statusColor = r.error ? '#cc2200' : r.failed > 0 ? '#b35a00' : '#1a7a4a'
+      const statusBg = r.error ? '#fff0f0' : r.failed > 0 ? '#fff4e0' : '#e8f9f1'
+      const statusText = r.error ? 'Error' : r.failed > 0 ? 'Failed' : 'Passed'
 
-    const assertionRows = r.assertions.map((a) => {
-      const aColor = a.passed ? '#1a7a4a' : '#cc2200'
-      const aIcon = a.passed ? '&#10003;' : '&#10007;'
-      return `<tr><td style="padding:4px 12px;color:${aColor}">${aIcon} ${escapeHtml(a.name)}</td><td style="padding:4px 12px">${a.actual !== undefined ? escapeHtml(String(a.actual)) : ''}</td><td style="padding:4px 12px;color:${aColor}">${a.error ? escapeHtml(a.error) : ''}</td></tr>`
-    }).join('')
+      const assertionRows = r.assertions
+        .map((a) => {
+          const aColor = a.passed ? '#1a7a4a' : '#cc2200'
+          const aIcon = a.passed ? '&#10003;' : '&#10007;'
+          return `<tr><td style="padding:4px 12px;color:${aColor}">${aIcon} ${escapeHtml(a.name)}</td><td style="padding:4px 12px">${a.actual !== undefined ? escapeHtml(String(a.actual)) : ''}</td><td style="padding:4px 12px;color:${aColor}">${a.error ? escapeHtml(a.error) : ''}</td></tr>`
+        })
+        .join('')
 
-    return `
+      return `
       <div style="margin-bottom:16px;border:1px solid #e8e8ed;border-radius:8px;overflow:hidden">
         <div style="display:flex;align-items:center;padding:12px 16px;background:${statusBg};gap:12px">
           <span style="font-weight:600;color:${statusColor};min-width:60px">${escapeHtml(r.method)}</span>
@@ -593,13 +985,14 @@ function exportAsHtml(results: EndpointRunResult[]): string {
         ${r.assertions.length > 0 ? `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#fafafa;border-top:1px solid #e8e8ed"><th style="padding:6px 12px;text-align:left">Assertion</th><th style="padding:6px 12px;text-align:left">Actual</th><th style="padding:6px 12px;text-align:left">Error</th></tr></thead><tbody>${assertionRows}</tbody></table>` : ''}
         ${r.error ? `<div style="padding:8px 16px;color:#cc2200;font-size:13px;border-top:1px solid #e8e8ed">${escapeHtml(r.error)}</div>` : ''}
       </div>`
-  }).join('')
+    })
+    .join('')
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Apinizer API Tester - Collection Run Report</title>
+  <title>Testnizer - Collection Run Report</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; color: #1a1a2e; background: #f5f5f7; }
     .header { background: white; border-radius: 12px; padding: 24px 32px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
@@ -611,7 +1004,7 @@ function exportAsHtml(results: EndpointRunResult[]): string {
 </head>
 <body>
   <div class="header">
-    <h1 style="margin:0;font-size:20px;color:#2D5FA0">Apinizer API Tester</h1>
+    <h1 style="margin:0;font-size:20px;color:#2D5FA0">Testnizer</h1>
     <h2 style="margin:8px 0 0;font-size:16px;font-weight:500">Collection Run Report</h2>
     <p style="margin:8px 0 0;font-size:13px;color:#888">Generated: ${new Date().toISOString()}</p>
     <div class="stats">
@@ -630,7 +1023,9 @@ function exportAsHtml(results: EndpointRunResult[]): string {
 
 // ─── Public API for scheduler ─────────────────────────────────────
 
-export async function executeCollectionForScheduler(options: RunnerExecuteOptions): Promise<RunnerReport> {
+export async function executeCollectionForScheduler(
+  options: RunnerExecuteOptions,
+): Promise<RunnerReport> {
   return executeCollection({ ...options, source: 'Scheduler' })
 }
 
@@ -676,46 +1071,72 @@ export function registerRunnerHandlers(): void {
     }
   })
 
-  ipcMain.handle('runner:history', async (_event, arg: string | { projectId: string; limit?: number; offset?: number; tab?: 'Functional' | 'Scheduled' }) => {
-    try {
-      const db = getDb()
+  ipcMain.handle(
+    'runner:history',
+    async (
+      _event,
+      arg:
+        | string
+        | { projectId: string; limit?: number; offset?: number; tab?: 'Functional' | 'Scheduled' },
+    ) => {
+      try {
+        const db = getDb()
 
-      // Backward-compatible: accept plain projectId string
-      if (typeof arg === 'string') {
-        const rows = db.prepare(
-          'SELECT * FROM runner_history WHERE project_id = ? ORDER BY started_at DESC LIMIT 100'
-        ).all(arg)
-        return { success: true, data: rows }
+        // Backward-compatible: accept plain projectId string
+        if (typeof arg === 'string') {
+          const rows = db
+            .prepare(
+              'SELECT * FROM runner_history WHERE project_id = ? ORDER BY started_at DESC LIMIT 100',
+            )
+            .all(arg)
+          return { success: true, data: rows }
+        }
+
+        const { projectId, limit = 20, offset = 0, tab } = arg
+        const sourceFilter =
+          tab === 'Scheduled'
+            ? "source = 'Scheduler'"
+            : tab === 'Functional'
+              ? "source != 'Scheduler'"
+              : '1=1'
+
+        const rows = db
+          .prepare(
+            `SELECT * FROM runner_history WHERE project_id = ? AND ${sourceFilter} ORDER BY started_at DESC LIMIT ? OFFSET ?`,
+          )
+          .all(projectId, limit, offset)
+
+        const totalRow = db
+          .prepare(
+            `SELECT COUNT(*) as n FROM runner_history WHERE project_id = ? AND ${sourceFilter}`,
+          )
+          .get(projectId) as { n: number }
+
+        return { success: true, data: { rows, total: totalRow.n } }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
       }
-
-      const { projectId, limit = 20, offset = 0, tab } = arg
-      const sourceFilter = tab === 'Scheduled' ? "source = 'Scheduler'" : tab === 'Functional' ? "source != 'Scheduler'" : '1=1'
-
-      const rows = db.prepare(
-        `SELECT * FROM runner_history WHERE project_id = ? AND ${sourceFilter} ORDER BY started_at DESC LIMIT ? OFFSET ?`
-      ).all(projectId, limit, offset)
-
-      const totalRow = db.prepare(
-        `SELECT COUNT(*) as n FROM runner_history WHERE project_id = ? AND ${sourceFilter}`
-      ).get(projectId) as { n: number }
-
-      return { success: true, data: { rows, total: totalRow.n } }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+    },
+  )
 
   ipcMain.handle('runner:historyStats', async (_event, projectId: string) => {
     try {
       const db = getDb()
-      const row = db.prepare(
-        `SELECT
+      const row = db
+        .prepare(
+          `SELECT
            COUNT(*) as runs,
            COALESCE(SUM(total_endpoints), 0) as totalEndpoints,
            COALESCE(SUM(passed_endpoints), 0) as passedEndpoints,
            COALESCE(SUM(failed_endpoints), 0) as failedEndpoints
-         FROM runner_history WHERE project_id = ?`
-      ).get(projectId) as { runs: number; totalEndpoints: number; passedEndpoints: number; failedEndpoints: number }
+         FROM runner_history WHERE project_id = ?`,
+        )
+        .get(projectId) as {
+        runs: number
+        totalEndpoints: number
+        passedEndpoints: number
+        failedEndpoints: number
+      }
       return { success: true, data: row }
     } catch (e) {
       return { success: false, error: (e as Error).message }

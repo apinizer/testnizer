@@ -3,6 +3,7 @@ import { Lock, Eye, EyeOff } from 'lucide-react'
 import { useRequestStore } from '../../stores/request.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
+import SoapSecuritySection from '../protocols/SoapSecuritySection'
 import type { AuthType } from '../../types'
 
 const AUTH_OPTIONS: { value: AuthType; label: string; soapOnly?: boolean }[] = [
@@ -17,11 +18,20 @@ const AUTH_OPTIONS: { value: AuthType; label: string; soapOnly?: boolean }[] = [
 ]
 
 /* Shared field styles */
-const LABEL = "mb-1.5 font-medium"
-const INPUT = "w-full rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-3 py-2 outline-none"
-const CARD = "rounded-lg border border-[var(--border)] bg-[var(--white)] p-4"
+const LABEL = 'mb-1.5 font-medium'
+const INPUT =
+  'w-full rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-3 py-2 outline-none'
+const CARD = 'rounded-lg border border-[var(--border)] bg-[var(--white)] p-4'
 
-function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+function PasswordInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+}) {
   const [show, setShow] = useState(false)
   return (
     <div className="relative">
@@ -51,8 +61,7 @@ export default function AuthTab() {
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const isSoap = activeTab?.protocol === 'soap'
 
-  // SOAP WS-Security sync
-  const wsSecurity = useSoapStore((s) => s.wsSecurity)
+  // SOAP WS-Security sync (panel rendered via SoapSecuritySection below)
   const setWsSecurity = useSoapStore((s) => s.setWsSecurity)
 
   const visibleOptions = AUTH_OPTIONS.filter((opt) => !opt.soapOnly || isSoap)
@@ -84,13 +93,13 @@ export default function AuthTab() {
               }}
               onMouseOver={(e) => {
                 if (!isActive) {
-                  (e.currentTarget as HTMLElement).style.background = 'var(--fill-4)'
+                  ;(e.currentTarget as HTMLElement).style.background = 'var(--fill-4)'
                   ;(e.currentTarget as HTMLElement).style.color = 'var(--text)'
                 }
               }}
               onMouseOut={(e) => {
                 if (!isActive) {
-                  (e.currentTarget as HTMLElement).style.background = 'transparent'
+                  ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                   ;(e.currentTarget as HTMLElement).style.color = 'var(--muted)'
                 }
               }}
@@ -111,12 +120,17 @@ export default function AuthTab() {
       {/* ── Bearer Token ── */}
       {auth.type === 'bearer' && (
         <div className={CARD}>
-          <div className={LABEL} style={{ color: 'var(--text)' }}>Token</div>
+          <div className={LABEL} style={{ color: 'var(--text)' }}>
+            Token
+          </div>
           <div className="flex gap-2">
             <input
               value={auth.bearer?.token || ''}
               onChange={(e) =>
-                setAuth({ ...auth, bearer: { ...auth.bearer, token: e.target.value, prefix: auth.bearer?.prefix } })
+                setAuth({
+                  ...auth,
+                  bearer: { ...auth.bearer, token: e.target.value, prefix: auth.bearer?.prefix },
+                })
               }
               className={`flex-1 font-mono ${INPUT}`}
               style={{ color: 'var(--text)' }}
@@ -146,11 +160,16 @@ export default function AuthTab() {
       {auth.type === 'basic' && (
         <div className={CARD}>
           <div className="mb-3">
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Username</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Username
+            </div>
             <input
               value={auth.basic?.username || ''}
               onChange={(e) =>
-                setAuth({ ...auth, basic: { username: e.target.value, password: auth.basic?.password || '' } })
+                setAuth({
+                  ...auth,
+                  basic: { username: e.target.value, password: auth.basic?.password || '' },
+                })
               }
               className={INPUT}
               style={{ color: 'var(--text)' }}
@@ -158,7 +177,9 @@ export default function AuthTab() {
             />
           </div>
           <div>
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Password</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Password
+            </div>
             <PasswordInput
               value={auth.basic?.password || ''}
               onChange={(v) =>
@@ -176,13 +197,19 @@ export default function AuthTab() {
       {auth.type === 'api-key' && (
         <div className={CARD}>
           <div className="mb-3">
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Key</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Key
+            </div>
             <input
               value={auth.apiKey?.key || ''}
               onChange={(e) =>
                 setAuth({
                   ...auth,
-                  apiKey: { key: e.target.value, value: auth.apiKey?.value || '', in: auth.apiKey?.in || 'header' },
+                  apiKey: {
+                    key: e.target.value,
+                    value: auth.apiKey?.value || '',
+                    in: auth.apiKey?.in || 'header',
+                  },
                 })
               }
               className={INPUT}
@@ -191,13 +218,19 @@ export default function AuthTab() {
             />
           </div>
           <div className="mb-3">
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Value</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Value
+            </div>
             <input
               value={auth.apiKey?.value || ''}
               onChange={(e) =>
                 setAuth({
                   ...auth,
-                  apiKey: { key: auth.apiKey?.key || '', value: e.target.value, in: auth.apiKey?.in || 'header' },
+                  apiKey: {
+                    key: auth.apiKey?.key || '',
+                    value: e.target.value,
+                    in: auth.apiKey?.in || 'header',
+                  },
                 })
               }
               className={INPUT}
@@ -206,7 +239,9 @@ export default function AuthTab() {
             />
           </div>
           <div>
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Add to</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Add to
+            </div>
             <div className="flex gap-2">
               {(['header', 'query'] as const).map((loc) => {
                 const isActive = (auth.apiKey?.in || 'header') === loc
@@ -217,7 +252,11 @@ export default function AuthTab() {
                     onClick={() =>
                       setAuth({
                         ...auth,
-                        apiKey: { key: auth.apiKey?.key || '', value: auth.apiKey?.value || '', in: loc },
+                        apiKey: {
+                          key: auth.apiKey?.key || '',
+                          value: auth.apiKey?.value || '',
+                          in: loc,
+                        },
                       })
                     }
                     className="cursor-pointer rounded-full font-medium"
@@ -241,7 +280,9 @@ export default function AuthTab() {
       {auth.type === 'oauth2' && (
         <div className={CARD}>
           <div className="mb-4">
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Grant Type</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Grant Type
+            </div>
             <select
               value={auth.oauth2?.grantType || 'authorization_code'}
               onChange={(e) =>
@@ -249,7 +290,11 @@ export default function AuthTab() {
                   ...auth,
                   oauth2: {
                     ...auth.oauth2!,
-                    grantType: e.target.value as 'authorization_code' | 'client_credentials' | 'password' | 'implicit',
+                    grantType: e.target.value as
+                      | 'authorization_code'
+                      | 'client_credentials'
+                      | 'password'
+                      | 'implicit',
                     tokenUrl: auth.oauth2?.tokenUrl || '',
                     clientId: auth.oauth2?.clientId || '',
                   },
@@ -266,9 +311,12 @@ export default function AuthTab() {
           </div>
 
           {/* Auth URL — shown for authorization_code & implicit */}
-          {(auth.oauth2?.grantType === 'authorization_code' || auth.oauth2?.grantType === 'implicit') && (
+          {(auth.oauth2?.grantType === 'authorization_code' ||
+            auth.oauth2?.grantType === 'implicit') && (
             <div className="mb-3">
-              <div className={LABEL} style={{ color: 'var(--text)' }}>Auth URL</div>
+              <div className={LABEL} style={{ color: 'var(--text)' }}>
+                Auth URL
+              </div>
               <input
                 value={auth.oauth2?.authUrl || ''}
                 onChange={(e) =>
@@ -284,7 +332,9 @@ export default function AuthTab() {
           {/* Token URL — not shown for implicit */}
           {auth.oauth2?.grantType !== 'implicit' && (
             <div className="mb-3">
-              <div className={LABEL} style={{ color: 'var(--text)' }}>Access Token URL</div>
+              <div className={LABEL} style={{ color: 'var(--text)' }}>
+                Access Token URL
+              </div>
               <input
                 value={auth.oauth2?.tokenUrl || ''}
                 onChange={(e) =>
@@ -298,7 +348,9 @@ export default function AuthTab() {
           )}
 
           <div className="mb-3">
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Client ID</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Client ID
+            </div>
             <input
               value={auth.oauth2?.clientId || ''}
               onChange={(e) =>
@@ -313,12 +365,12 @@ export default function AuthTab() {
           {/* Client Secret — not needed for implicit */}
           {auth.oauth2?.grantType !== 'implicit' && (
             <div className="mb-3">
-              <div className={LABEL} style={{ color: 'var(--text)' }}>Client Secret</div>
+              <div className={LABEL} style={{ color: 'var(--text)' }}>
+                Client Secret
+              </div>
               <PasswordInput
                 value={auth.oauth2?.clientSecret || ''}
-                onChange={(v) =>
-                  setAuth({ ...auth, oauth2: { ...auth.oauth2!, clientSecret: v } })
-                }
+                onChange={(v) => setAuth({ ...auth, oauth2: { ...auth.oauth2!, clientSecret: v } })}
                 placeholder="your-client-secret"
               />
             </div>
@@ -328,11 +380,18 @@ export default function AuthTab() {
           {auth.oauth2?.grantType === 'password' && (
             <>
               <div className="mb-3">
-                <div className={LABEL} style={{ color: 'var(--text)' }}>Username</div>
+                <div className={LABEL} style={{ color: 'var(--text)' }}>
+                  Username
+                </div>
                 <input
-                  value={(auth.oauth2 as unknown as Record<string, unknown>)?.username as string || ''}
+                  value={
+                    ((auth.oauth2 as unknown as Record<string, unknown>)?.username as string) || ''
+                  }
                   onChange={(e) =>
-                    setAuth({ ...auth, oauth2: { ...auth.oauth2!, username: e.target.value } as typeof auth.oauth2 })
+                    setAuth({
+                      ...auth,
+                      oauth2: { ...auth.oauth2!, username: e.target.value } as typeof auth.oauth2,
+                    })
                   }
                   className={INPUT}
                   style={{ color: 'var(--text)' }}
@@ -340,11 +399,18 @@ export default function AuthTab() {
                 />
               </div>
               <div className="mb-3">
-                <div className={LABEL} style={{ color: 'var(--text)' }}>Password</div>
+                <div className={LABEL} style={{ color: 'var(--text)' }}>
+                  Password
+                </div>
                 <PasswordInput
-                  value={(auth.oauth2 as unknown as Record<string, unknown>)?.password as string || ''}
+                  value={
+                    ((auth.oauth2 as unknown as Record<string, unknown>)?.password as string) || ''
+                  }
                   onChange={(v) =>
-                    setAuth({ ...auth, oauth2: { ...auth.oauth2!, password: v } as typeof auth.oauth2 })
+                    setAuth({
+                      ...auth,
+                      oauth2: { ...auth.oauth2!, password: v } as typeof auth.oauth2,
+                    })
                   }
                   placeholder="Resource owner password"
                 />
@@ -353,7 +419,9 @@ export default function AuthTab() {
           )}
 
           <div className="mb-3">
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Scope</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Scope
+            </div>
             <input
               value={auth.oauth2?.scope || ''}
               onChange={(e) =>
@@ -370,7 +438,10 @@ export default function AuthTab() {
             className="mt-4 rounded-lg p-3"
             style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
           >
-            <div className="mb-2 font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+            <div
+              className="mb-2 font-semibold uppercase tracking-wide"
+              style={{ color: 'var(--muted)' }}
+            >
               Current Token
             </div>
             <input
@@ -397,11 +468,16 @@ export default function AuthTab() {
       {auth.type === 'digest' && (
         <div className={CARD}>
           <div className="mb-3">
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Username</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Username
+            </div>
             <input
               value={auth.digest?.username || ''}
               onChange={(e) =>
-                setAuth({ ...auth, digest: { username: e.target.value, password: auth.digest?.password || '' } })
+                setAuth({
+                  ...auth,
+                  digest: { username: e.target.value, password: auth.digest?.password || '' },
+                })
               }
               className={INPUT}
               style={{ color: 'var(--text)' }}
@@ -409,7 +485,9 @@ export default function AuthTab() {
             />
           </div>
           <div>
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Password</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Password
+            </div>
             <PasswordInput
               value={auth.digest?.password || ''}
               onChange={(v) =>
@@ -418,7 +496,8 @@ export default function AuthTab() {
             />
           </div>
           <div className="mt-3" style={{ color: 'var(--hint)' }}>
-            Digest authentication uses a challenge-response mechanism. The client sends the request, the server responds with a nonce, and the client resends with the digest.
+            Digest authentication uses a challenge-response mechanism. The client sends the request,
+            the server responds with a nonce, and the client resends with the digest.
           </div>
         </div>
       )}
@@ -427,13 +506,19 @@ export default function AuthTab() {
       {auth.type === 'ntlm' && (
         <div className={CARD}>
           <div className="mb-3">
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Username</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Username
+            </div>
             <input
               value={auth.ntlm?.username || ''}
               onChange={(e) =>
                 setAuth({
                   ...auth,
-                  ntlm: { ...auth.ntlm, username: e.target.value, password: auth.ntlm?.password || '' },
+                  ntlm: {
+                    ...auth.ntlm,
+                    username: e.target.value,
+                    password: auth.ntlm?.password || '',
+                  },
                 })
               }
               className={INPUT}
@@ -442,7 +527,9 @@ export default function AuthTab() {
             />
           </div>
           <div className="mb-3">
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Password</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Password
+            </div>
             <PasswordInput
               value={auth.ntlm?.password || ''}
               onChange={(v) =>
@@ -454,7 +541,9 @@ export default function AuthTab() {
             />
           </div>
           <div className="mb-3">
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Domain</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Domain
+            </div>
             <input
               value={auth.ntlm?.domain || ''}
               onChange={(e) =>
@@ -474,7 +563,9 @@ export default function AuthTab() {
             />
           </div>
           <div>
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Workstation</div>
+            <div className={LABEL} style={{ color: 'var(--text)' }}>
+              Workstation
+            </div>
             <input
               value={auth.ntlm?.workstation || ''}
               onChange={(e) =>
@@ -494,7 +585,8 @@ export default function AuthTab() {
             />
           </div>
           <div className="mt-3" style={{ color: 'var(--hint)' }}>
-            NTLM authentication is used primarily in Windows environments. Domain and workstation are optional.
+            NTLM authentication is used primarily in Windows environments. Domain and workstation
+            are optional.
           </div>
         </div>
       )}
@@ -502,82 +594,7 @@ export default function AuthTab() {
       {/* ── WS-Security (SOAP only) ── */}
       {auth.type === 'wsse' && (
         <div className={CARD}>
-          <div className="mb-4 flex items-center gap-2">
-            <span className="font-semibold" style={{ color: 'var(--text)' }}>
-              WS-Security Configuration
-            </span>
-            <span
-              className="rounded-full px-2 py-0.5"
-              style={{ background: 'var(--accent-light)', color: 'var(--accent-text)' }}
-            >
-              Enabled
-            </span>
-          </div>
-
-          <div className="mb-3">
-            <div className={LABEL} style={{ color: 'var(--text)' }}>Security Type</div>
-            <select
-              value={wsSecurity.type}
-              onChange={(e) =>
-                setWsSecurity({ type: e.target.value as 'username-token' | 'timestamp' })
-              }
-              className={`${INPUT} cursor-pointer`}
-              style={{ color: 'var(--text)' }}
-            >
-              <option value="username-token">Username Token</option>
-              <option value="timestamp">Timestamp</option>
-            </select>
-          </div>
-
-          {wsSecurity.type === 'username-token' && (
-            <>
-              <div className="mb-3">
-                <div className={LABEL} style={{ color: 'var(--text)' }}>Username</div>
-                <input
-                  type="text"
-                  value={wsSecurity.username || ''}
-                  onChange={(e) => setWsSecurity({ username: e.target.value })}
-                  className={INPUT}
-                  style={{ color: 'var(--text)' }}
-                  placeholder="Enter username"
-                />
-              </div>
-
-              <div className="mb-3">
-                <div className={LABEL} style={{ color: 'var(--text)' }}>Password</div>
-                <PasswordInput
-                  value={wsSecurity.password || ''}
-                  onChange={(v) => setWsSecurity({ password: v })}
-                  placeholder="Enter password"
-                />
-              </div>
-
-              <div className="mb-3">
-                <div className={LABEL} style={{ color: 'var(--text)' }}>Password Type</div>
-                <select
-                  value={wsSecurity.passwordType || 'PasswordText'}
-                  onChange={(e) =>
-                    setWsSecurity({ passwordType: e.target.value as 'PasswordText' | 'PasswordDigest' })
-                  }
-                  className={`${INPUT} cursor-pointer`}
-                  style={{ color: 'var(--text)' }}
-                >
-                  <option value="PasswordText">PasswordText</option>
-                  <option value="PasswordDigest">PasswordDigest</option>
-                </select>
-              </div>
-            </>
-          )}
-
-          <label className="flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
-              checked={wsSecurity.addTimestamp || false}
-              onChange={(e) => setWsSecurity({ addTimestamp: e.target.checked })}
-              className="accent-[var(--accent)]"
-            />
-            <span style={{ color: 'var(--text)' }}>Add Timestamp</span>
-          </label>
+          <SoapSecuritySection />
         </div>
       )}
     </div>

@@ -4,78 +4,61 @@ import { electronAPI } from '@electron-toolkit/preload'
 const api = {
   // ─── Auth ───────────────────────────────────────────────
   auth: {
-    hasPassword: (): Promise<unknown> =>
-      ipcRenderer.invoke('auth:hasPassword'),
+    hasPassword: (): Promise<unknown> => ipcRenderer.invoke('auth:hasPassword'),
     setPassword: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('auth:setPassword', payload),
-    login: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('auth:login', payload),
-    getSession: (token: string): Promise<unknown> =>
-      ipcRenderer.invoke('auth:getSession', token),
-    logout: (token: string): Promise<unknown> =>
-      ipcRenderer.invoke('auth:logout', token),
+    login: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('auth:login', payload),
+    getSession: (token: string): Promise<unknown> => ipcRenderer.invoke('auth:getSession', token),
+    logout: (token: string): Promise<unknown> => ipcRenderer.invoke('auth:logout', token),
     changePassword: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('auth:changePassword', payload),
     disablePassword: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('auth:disablePassword', payload),
     recoverPassword: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('auth:recoverPassword', payload),
-    listUsers: (): Promise<unknown> =>
-      ipcRenderer.invoke('auth:listUsers'),
+    listUsers: (): Promise<unknown> => ipcRenderer.invoke('auth:listUsers'),
   },
 
   // ─── Window ─────────────────────────────────────────────
   window: {
-    toggleMaximize: (): Promise<unknown> =>
-      ipcRenderer.invoke('window:toggleMaximize')
+    toggleMaximize: (): Promise<unknown> => ipcRenderer.invoke('window:toggleMaximize'),
   },
 
   // ─── Request ─────────────────────────────────────────────
   request: {
-    send: (options: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('request:send', options),
+    send: (options: unknown): Promise<unknown> => ipcRenderer.invoke('request:send', options),
     cancel: (requestId: string): Promise<unknown> =>
-      ipcRenderer.invoke('request:cancel', requestId)
+      ipcRenderer.invoke('request:cancel', requestId),
   },
 
   // ─── Workspace ───────────────────────────────────────────
   workspace: {
-    list: (): Promise<unknown> =>
-      ipcRenderer.invoke('workspace:list'),
-    get: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('workspace:get', id),
-    create: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('workspace:create', payload),
+    list: (): Promise<unknown> => ipcRenderer.invoke('workspace:list'),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('workspace:get', id),
+    create: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('workspace:create', payload),
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('workspace:update', id, payload),
-    delete: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('workspace:delete', id)
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('workspace:delete', id),
   },
 
   // ─── Project ─────────────────────────────────────────────
   project: {
     list: (workspaceId: string): Promise<unknown> =>
       ipcRenderer.invoke('project:list', workspaceId),
-    get: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('project:get', id),
-    create: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('project:create', payload),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('project:get', id),
+    create: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('project:create', payload),
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('project:update', id, payload),
-    delete: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('project:delete', id)
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('project:delete', id),
   },
 
   // ─── Folder ──────────────────────────────────────────────
   folder: {
-    list: (projectId: string): Promise<unknown> =>
-      ipcRenderer.invoke('folder:list', projectId),
-    create: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('folder:create', payload),
+    list: (projectId: string): Promise<unknown> => ipcRenderer.invoke('folder:list', projectId),
+    create: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('folder:create', payload),
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('folder:update', id, payload),
-    delete: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('folder:delete', id)
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('folder:delete', id),
   },
 
   // ─── Endpoint ────────────────────────────────────────────
@@ -84,40 +67,33 @@ const api = {
       ipcRenderer.invoke('endpoint:listByProject', projectId),
     listByFolder: (folderId: string): Promise<unknown> =>
       ipcRenderer.invoke('endpoint:listByFolder', folderId),
-    get: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('endpoint:get', id),
-    create: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('endpoint:create', payload),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('endpoint:get', id),
+    create: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('endpoint:create', payload),
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('endpoint:update', id, payload),
-    delete: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('endpoint:delete', id)
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('endpoint:delete', id),
   },
 
   // ─── Endpoint Cases ──────────────────────────────────────
   endpointCase: {
     list: (endpointId: string): Promise<unknown> =>
       ipcRenderer.invoke('endpointCase:list', endpointId),
-    get: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('endpointCase:get', id),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('endpointCase:get', id),
     create: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('endpointCase:create', payload),
-    delete: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('endpointCase:delete', id)
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('endpointCase:delete', id),
   },
 
   // ─── Saved Requests ──────────────────────────────────────
   savedRequest: {
     list: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('savedRequest:list', projectId),
-    get: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('savedRequest:get', id),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('savedRequest:get', id),
     create: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('savedRequest:create', payload),
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('savedRequest:update', id, payload),
-    delete: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('savedRequest:delete', id)
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('savedRequest:delete', id),
   },
 
   // ─── Environment ─────────────────────────────────────────
@@ -126,8 +102,7 @@ const api = {
       ipcRenderer.invoke('environment:list', workspaceId),
     listByProject: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('environment:listByProject', projectId),
-    get: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('environment:get', id),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('environment:get', id),
     create: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('environment:create', payload),
     update: (id: string, payload: unknown): Promise<unknown> =>
@@ -136,8 +111,7 @@ const api = {
       ipcRenderer.invoke('environment:setActive', workspaceId, environmentId),
     setActiveForProject: (projectId: string, environmentId: string): Promise<unknown> =>
       ipcRenderer.invoke('environment:setActiveForProject', projectId, environmentId),
-    delete: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('environment:delete', id)
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('environment:delete', id),
   },
 
   // ─── Environment Variables ───────────────────────────────
@@ -148,8 +122,7 @@ const api = {
       ipcRenderer.invoke('envVariable:create', payload),
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('envVariable:update', id, payload),
-    delete: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('envVariable:delete', id)
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('envVariable:delete', id),
   },
 
   // ─── Global Variables ────────────────────────────────────
@@ -162,46 +135,36 @@ const api = {
       ipcRenderer.invoke('globalVariable:create', payload),
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('globalVariable:update', id, payload),
-    delete: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('globalVariable:delete', id)
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('globalVariable:delete', id),
   },
 
   // ─── History ─────────────────────────────────────────────
   history: {
-    list: (options: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('history:list', options),
-    get: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('history:get', id),
-    add: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('history:add', payload),
+    list: (options: unknown): Promise<unknown> => ipcRenderer.invoke('history:list', options),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('history:get', id),
+    add: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('history:add', payload),
     clear: (scope?: string | { workspace_id?: string; project_id?: string }): Promise<unknown> =>
       ipcRenderer.invoke('history:clear', scope),
-    delete: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('history:delete', id),
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('history:delete', id),
     prune: (limit: number, workspaceId?: string): Promise<unknown> =>
-      ipcRenderer.invoke('history:prune', limit, workspaceId)
+      ipcRenderer.invoke('history:prune', limit, workspaceId),
   },
 
   // ─── Settings ────────────────────────────────────────────
   settings: {
-    getAll: (): Promise<unknown> =>
-      ipcRenderer.invoke('settings:getAll'),
-    get: (key: string): Promise<unknown> =>
-      ipcRenderer.invoke('settings:get', key),
+    getAll: (): Promise<unknown> => ipcRenderer.invoke('settings:getAll'),
+    get: (key: string): Promise<unknown> => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown): Promise<unknown> =>
       ipcRenderer.invoke('settings:set', key, value),
     setAll: (settings: unknown): Promise<unknown> =>
       ipcRenderer.invoke('settings:setAll', settings),
-    reset: (): Promise<unknown> =>
-      ipcRenderer.invoke('settings:reset')
+    reset: (): Promise<unknown> => ipcRenderer.invoke('settings:reset'),
   },
 
   // ─── Import/Export ───────────────────────────────────────
   importExport: {
-    fetchUrl: (url: string): Promise<unknown> =>
-      ipcRenderer.invoke('import:fetchUrl', url),
-    openFile: (): Promise<unknown> =>
-      ipcRenderer.invoke('import:openFile'),
+    fetchUrl: (url: string): Promise<unknown> => ipcRenderer.invoke('import:fetchUrl', url),
+    openFile: (): Promise<unknown> => ipcRenderer.invoke('import:openFile'),
     importOpenApi: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('import:openApi', payload),
     exportOpenApi: (projectId: string): Promise<unknown> =>
@@ -212,38 +175,50 @@ const api = {
       ipcRenderer.invoke('import:postman', payload),
     exportPostman: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('export:postman', projectId),
-    importHar: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('import:har', payload),
+    importHar: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('import:har', payload),
     importInsomnia: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('import:insomnia', payload),
-    importCurl: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('import:curl', payload),
-    exportCurl: (request: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('export:curl', request),
-    importWsdl: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('import:wsdl', payload),
+    exportInsomnia: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('export:insomnia', projectId),
+    importCurl: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('import:curl', payload),
+    exportCurl: (request: unknown): Promise<unknown> => ipcRenderer.invoke('export:curl', request),
+    importWsdl: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('import:wsdl', payload),
+    importProto: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('import:proto', payload),
     parseWsdlForImport: (url: string): Promise<unknown> =>
       ipcRenderer.invoke('import:wsdl:parse', url),
     parseWsdlFileForImport: (content: string): Promise<unknown> =>
-      ipcRenderer.invoke('import:wsdl:parseFile', content)
+      ipcRenderer.invoke('import:wsdl:parseFile', content),
   },
 
   // ─── SOAP ─────────────────────────────────────────────────
   soap: {
-    parseWsdl: (url: string): Promise<unknown> =>
-      ipcRenderer.invoke('wsdl:parse', url),
+    parseWsdl: (url: string): Promise<unknown> => ipcRenderer.invoke('wsdl:parse', url),
     parseWsdlFile: (content: string): Promise<unknown> =>
       ipcRenderer.invoke('wsdl:parseFile', content),
-    execute: (options: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('soap:execute', options),
+    execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('soap:execute', options),
     generateEnvelope: (options: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('soap:generateEnvelope', options)
+      ipcRenderer.invoke('soap:generateEnvelope', options),
+  },
+
+  // ─── WS-Security ──────────────────────────────────────────
+  wsse: {
+    apply: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('wsse:apply', payload),
+    verify: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('wsse:verify', payload),
+    decrypt: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('wsse:decrypt', payload),
+  },
+
+  // ─── Diagnostics ──────────────────────────────────────────
+  diagnostics: {
+    export: (): Promise<unknown> => ipcRenderer.invoke('diagnostics:export'),
+    revealLogs: (): Promise<unknown> => ipcRenderer.invoke('diagnostics:reveal'),
+    thirdPartyLicenses: (): Promise<unknown> =>
+      ipcRenderer.invoke('diagnostics:thirdPartyLicenses'),
   },
 
   // ─── WebSocket ────────────────────────────────────────────
   ws: {
-    connect: (options: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('ws:connect', options),
+    connect: (options: unknown): Promise<unknown> => ipcRenderer.invoke('ws:connect', options),
     disconnect: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('ws:disconnect', connectionId),
     send: (connectionId: string, message: string): Promise<unknown> =>
@@ -256,17 +231,14 @@ const api = {
       return () => {
         ipcRenderer.removeListener('ws:event', handler)
       }
-    }
+    },
   },
 
   // ─── Collection Runner ──────────────────────────────────────
   runner: {
-    execute: (options: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('runner:execute', options),
-    stop: (): Promise<unknown> =>
-      ipcRenderer.invoke('runner:stop'),
-    export: (options: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('runner:export', options),
+    execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('runner:execute', options),
+    stop: (): Promise<unknown> => ipcRenderer.invoke('runner:stop'),
+    export: (options: unknown): Promise<unknown> => ipcRenderer.invoke('runner:export', options),
     onProgress: (callback: (progress: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)
@@ -276,8 +248,11 @@ const api = {
         ipcRenderer.removeListener('runner:progress', handler)
       }
     },
-    history: (arg: string | { projectId: string; limit?: number; offset?: number; tab?: 'Functional' | 'Scheduled' }): Promise<unknown> =>
-      ipcRenderer.invoke('runner:history', arg),
+    history: (
+      arg:
+        | string
+        | { projectId: string; limit?: number; offset?: number; tab?: 'Functional' | 'Scheduled' },
+    ): Promise<unknown> => ipcRenderer.invoke('runner:history', arg),
     historyStats: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('runner:historyStats', projectId),
     deleteHistory: (ids: string | string[]): Promise<unknown> =>
@@ -286,14 +261,10 @@ const api = {
 
   // ─── Scheduler ──────────────────────────────────────────────────
   scheduler: {
-    create: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('scheduler:create', payload),
-    list: (projectId: string): Promise<unknown> =>
-      ipcRenderer.invoke('scheduler:list', projectId),
-    delete: (taskId: string): Promise<unknown> =>
-      ipcRenderer.invoke('scheduler:delete', taskId),
-    toggle: (taskId: string): Promise<unknown> =>
-      ipcRenderer.invoke('scheduler:toggle', taskId),
+    create: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('scheduler:create', payload),
+    list: (projectId: string): Promise<unknown> => ipcRenderer.invoke('scheduler:list', projectId),
+    delete: (taskId: string): Promise<unknown> => ipcRenderer.invoke('scheduler:delete', taskId),
+    toggle: (taskId: string): Promise<unknown> => ipcRenderer.invoke('scheduler:toggle', taskId),
     onRunCompleted: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)
@@ -307,16 +278,12 @@ const api = {
 
   // ─── Test Suites ──────────────────────────────────────────────
   testSuite: {
-    list: (projectId: string): Promise<unknown> =>
-      ipcRenderer.invoke('testSuite:list', projectId),
-    get: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('testSuite:get', id),
-    create: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('testSuite:create', payload),
+    list: (projectId: string): Promise<unknown> => ipcRenderer.invoke('testSuite:list', projectId),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuite:get', id),
+    create: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('testSuite:create', payload),
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('testSuite:update', id, payload),
-    delete: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('testSuite:delete', id),
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuite:delete', id),
     listEndpoints: (suiteId: string): Promise<unknown> =>
       ipcRenderer.invoke('testSuite:listEndpoints', suiteId),
     addEndpoints: (payload: unknown): Promise<unknown> =>
@@ -329,20 +296,17 @@ const api = {
   certificate: {
     list: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('certificate:list', projectId),
-    add: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('certificate:add', payload),
+    add: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('certificate:add', payload),
     update: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('certificate:update', payload),
-    delete: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('certificate:delete', id),
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('certificate:delete', id),
     pickFile: (kind: 'crt' | 'key' | 'pfx' | 'ca'): Promise<unknown> =>
       ipcRenderer.invoke('certificate:pickFile', kind),
   },
 
   // ─── GraphQL ────────────────────────────────────────────────
   graphql: {
-    execute: (options: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('graphql:execute', options),
+    execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('graphql:execute', options),
     introspect: (url: string, headers?: unknown): Promise<unknown> =>
       ipcRenderer.invoke('graphql:introspect', { url, headers }),
     subscribe: (options: unknown): Promise<unknown> =>
@@ -357,15 +321,13 @@ const api = {
       return () => {
         ipcRenderer.removeListener('graphql:subscriptionEvent', handler)
       }
-    }
+    },
   },
 
   // ─── gRPC ───────────────────────────────────────────────────
   grpc: {
-    loadProto: (): Promise<unknown> =>
-      ipcRenderer.invoke('grpc:loadProto'),
-    execute: (options: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('grpc:execute', options),
+    loadProto: (): Promise<unknown> => ipcRenderer.invoke('grpc:loadProto'),
+    execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('grpc:execute', options),
     serverStream: (options: unknown): Promise<unknown> =>
       ipcRenderer.invoke('grpc:serverStream', options),
     reflect: (address: string, useTls?: boolean): Promise<unknown> =>
@@ -388,17 +350,14 @@ const api = {
       return () => {
         ipcRenderer.removeListener('grpc:streamEvent', handler)
       }
-    }
+    },
   },
 
   // ─── Updater ─────────────────────────────────────────────────
   updater: {
-    check: (): Promise<unknown> =>
-      ipcRenderer.invoke('updater:check'),
-    download: (): Promise<unknown> =>
-      ipcRenderer.invoke('updater:download'),
-    install: (): Promise<unknown> =>
-      ipcRenderer.invoke('updater:install'),
+    check: (): Promise<unknown> => ipcRenderer.invoke('updater:check'),
+    download: (): Promise<unknown> => ipcRenderer.invoke('updater:download'),
+    install: (): Promise<unknown> => ipcRenderer.invoke('updater:install'),
     onEvent: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)
@@ -407,23 +366,19 @@ const api = {
       return () => {
         ipcRenderer.removeListener('updater:event', handler)
       }
-    }
+    },
   },
 
   // ─── Branch (legacy DB branches) ────────────────────────────
   branch: {
-    list: (projectId: string): Promise<unknown> =>
-      ipcRenderer.invoke('branch:list', projectId),
-    get: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('branch:get', id),
-    create: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('branch:create', payload),
+    list: (projectId: string): Promise<unknown> => ipcRenderer.invoke('branch:list', projectId),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('branch:get', id),
+    create: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('branch:create', payload),
     rename: (id: string, name: string): Promise<unknown> =>
       ipcRenderer.invoke('branch:rename', id, name),
-    delete: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('branch:delete', id),
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('branch:delete', id),
     ensureDefault: (projectId: string): Promise<unknown> =>
-      ipcRenderer.invoke('branch:ensureDefault', projectId)
+      ipcRenderer.invoke('branch:ensureDefault', projectId),
   },
 
   // ─── Git (real Git operations) ────────────────────────────
@@ -438,52 +393,37 @@ const api = {
       ipcRenderer.invoke('git:createBranch', payload),
     switchBranch: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('git:switchBranch', payload),
-    merge: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('git:merge', payload),
-    push: (projectId: string): Promise<unknown> =>
-      ipcRenderer.invoke('git:push', projectId),
-    pull: (projectId: string): Promise<unknown> =>
-      ipcRenderer.invoke('git:pull', projectId),
-    status: (projectId: string): Promise<unknown> =>
-      ipcRenderer.invoke('git:status', projectId),
+    merge: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('git:merge', payload),
+    push: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:push', projectId),
+    pull: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:pull', projectId),
+    status: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:status', projectId),
     deleteBranch: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('git:deleteBranch', payload),
-    log: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('git:log', payload),
+    log: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('git:log', payload),
   },
 
   // ─── Save ───────────────────────────────────────────────────
   save: {
-    local: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('save:local', payload),
-    selectFile: (): Promise<unknown> =>
-      ipcRenderer.invoke('save:selectFile'),
+    local: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('save:local', payload),
+    selectFile: (): Promise<unknown> => ipcRenderer.invoke('save:selectFile'),
     importLocal: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('save:importLocal', payload),
-    selectDirectory: (): Promise<unknown> =>
-      ipcRenderer.invoke('save:selectDirectory'),
-    git: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('save:git', payload),
+    selectDirectory: (): Promise<unknown> => ipcRenderer.invoke('save:selectDirectory'),
+    git: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('save:git', payload),
     storeGitToken: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('save:storeGitToken', payload),
-    gitPush: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('save:gitPush', payload),
-    gitPull: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('save:gitPull', payload),
+    gitPush: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('save:gitPush', payload),
+    gitPull: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('save:gitPull', payload),
     gitConfig: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('save:gitConfig', projectId),
     gitListFiles: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('save:gitListFiles', payload),
     gitReadFile: (filePath: string): Promise<unknown> =>
       ipcRenderer.invoke('save:gitReadFile', filePath),
-    gitCleanup: (tmpDir: string): Promise<unknown> =>
-      ipcRenderer.invoke('save:gitCleanup', tmpDir),
-    getGitCredentials: (): Promise<unknown> =>
-      ipcRenderer.invoke('save:getGitCredentials'),
-    gitDiff: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('save:gitDiff', payload),
-    history: (projectId: string): Promise<unknown> =>
-      ipcRenderer.invoke('save:history', projectId),
+    gitCleanup: (tmpDir: string): Promise<unknown> => ipcRenderer.invoke('save:gitCleanup', tmpDir),
+    getGitCredentials: (): Promise<unknown> => ipcRenderer.invoke('save:getGitCredentials'),
+    gitDiff: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('save:gitDiff', payload),
+    history: (projectId: string): Promise<unknown> => ipcRenderer.invoke('save:history', projectId),
     exportProject: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('save:exportProject', projectId),
     exportFolder: (folderId: string): Promise<unknown> =>
@@ -492,16 +432,17 @@ const api = {
       ipcRenderer.invoke('save:exportTestSuite', suiteId),
     importProject: (payload: { workspaceId: string; name?: string }): Promise<unknown> =>
       ipcRenderer.invoke('save:importProject', payload),
-    importFolder: (payload: { projectId: string; parentFolderId?: string | null }): Promise<unknown> =>
-      ipcRenderer.invoke('save:importFolder', payload),
+    importFolder: (payload: {
+      projectId: string
+      parentFolderId?: string | null
+    }): Promise<unknown> => ipcRenderer.invoke('save:importFolder', payload),
     importTestSuite: (payload: { projectId: string }): Promise<unknown> =>
       ipcRenderer.invoke('save:importTestSuite', payload),
   },
 
   // ─── SSE ────────────────────────────────────────────────────
   sse: {
-    connect: (options: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('sse:connect', options),
+    connect: (options: unknown): Promise<unknown> => ipcRenderer.invoke('sse:connect', options),
     disconnect: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('sse:disconnect', connectionId),
     onEvent: (callback: (event: unknown) => void): (() => void) => {
@@ -512,8 +453,8 @@ const api = {
       return () => {
         ipcRenderer.removeListener('sse:event', handler)
       }
-    }
-  }
+    },
+  },
 }
 
 if (process.contextIsolated) {

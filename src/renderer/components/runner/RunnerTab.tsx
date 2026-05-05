@@ -50,7 +50,11 @@ function collectEndpointsFromNode(node: TreeNode): RunnerEndpointItem[] {
 }
 
 /** Recursively collect folder groups — each folder becomes its own group with full path */
-function collectFolderGroupsFromNode(node: TreeNode, groups: RunnerFolderGroup[], parentPath?: string): void {
+function collectFolderGroupsFromNode(
+  node: TreeNode,
+  groups: RunnerFolderGroup[],
+  parentPath?: string,
+): void {
   if (!node.children) return
   const fullName = parentPath ? `${parentPath} / ${node.label}` : node.label
   const directEps: RunnerEndpointItem[] = []
@@ -99,25 +103,28 @@ function findNodeById(nodes: TreeNode[], id: string): TreeNode | null {
 /* ── Resizable divider ─────────────────────────────────────── */
 
 function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }) {
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    let lastX = e.clientX
-    const onMouseMove = (ev: MouseEvent) => {
-      const dx = ev.clientX - lastX
-      lastX = ev.clientX
-      onDrag(dx)
-    }
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-  }, [onDrag])
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      let lastX = e.clientX
+      const onMouseMove = (ev: MouseEvent) => {
+        const dx = ev.clientX - lastX
+        lastX = ev.clientX
+        onDrag(dx)
+      }
+      const onMouseUp = () => {
+        document.removeEventListener('mousemove', onMouseMove)
+        document.removeEventListener('mouseup', onMouseUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+      document.addEventListener('mousemove', onMouseMove)
+      document.addEventListener('mouseup', onMouseUp)
+    },
+    [onDrag],
+  )
 
   return (
     <div
@@ -160,9 +167,12 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
 
   const [endpoints, setEndpoints] = useState<RunnerEndpointItem[]>([])
   const [folderGroups, setFolderGroups] = useState<RunnerFolderGroup[]>([])
-  const [view, setView] = useState<'home' | 'config' | 'results' | 'history' | 'scheduled'>('config')
+  const [view, setView] = useState<'home' | 'config' | 'results' | 'history' | 'scheduled'>(
+    'config',
+  )
   const [delay, setDelay] = useState(0)
   const [iterations, setIterations] = useState(1)
+  const [iterationData, setIterationData] = useState<Record<string, string>[]>([])
   const [environmentId, setEnvironmentId] = useState('')
   const [stopOnError, setStopOnError] = useState(true)
   const [persistResponses, setPersistResponses] = useState(true)
@@ -184,11 +194,17 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null)
 
   // Origin tracking: 'apis' if opened via right-click Run on APIs tree, 'suite' if from Test Suite, 'runner' otherwise
-  const [runOrigin, setRunOrigin] = useState<'apis' | 'suite' | 'runner'>(folderId ? 'apis' : 'runner')
+  const [runOrigin, setRunOrigin] = useState<'apis' | 'suite' | 'runner'>(
+    folderId ? 'apis' : 'runner',
+  )
   const [runSourceLabel, setRunSourceLabel] = useState<string>('Runner')
 
   // Track pending autoRun data so we can trigger after endpoints are loaded
-  const pendingAutoRunRef = useRef<{ endpointIds: string[]; folderName?: string; sourceType?: 'suite' | 'apis' | 'runner' } | null>(null)
+  const pendingAutoRunRef = useRef<{
+    endpointIds: string[]
+    folderName?: string
+    sourceType?: 'suite' | 'apis' | 'runner'
+  } | null>(null)
 
   // Check for pre-loaded report data or viewAllRuns from sidebar
   useEffect(() => {
@@ -216,13 +232,19 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           if (data.sourceType === 'suite') setRunOrigin('suite')
           else if (data.sourceType === 'apis') setRunOrigin('apis')
         } else {
-          const typed = data as { results: EndpointRunResult[]; report: RunnerReport; startedAt: number }
+          const typed = data as {
+            results: EndpointRunResult[]
+            report: RunnerReport
+            startedAt: number
+          }
           setResults(typed.results)
           setReport(typed.report)
           setRunStartedAt(typed.startedAt)
           setView('results')
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }, [tabId, sessionKey])
 
@@ -235,10 +257,12 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     const targetIds = new Set(pending.endpointIds)
     // Select only the target endpoints
     setEndpoints((eps) => eps.map((ep) => ({ ...ep, selected: targetIds.has(ep.id) })))
-    setFolderGroups((groups) => groups.map((g) => ({
-      ...g,
-      endpoints: g.endpoints.map((ep) => ({ ...ep, selected: targetIds.has(ep.id) })),
-    })))
+    setFolderGroups((groups) =>
+      groups.map((g) => ({
+        ...g,
+        endpoints: g.endpoints.map((ep) => ({ ...ep, selected: targetIds.has(ep.id) })),
+      })),
+    )
 
     // Trigger run after a tick so state is updated
     setTimeout(() => {
@@ -264,34 +288,40 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
 
       const labelName = pending.folderName || runFolderName
       const origin = pending.sourceType || (folderId ? 'apis' : 'runner')
-      const sourceLabel = origin === 'suite' && labelName
-        ? `Suite: ${labelName}`
-        : origin === 'apis' && labelName
-        ? `APIs: ${labelName}`
-        : 'Runner'
+      const sourceLabel =
+        origin === 'suite' && labelName
+          ? `Suite: ${labelName}`
+          : origin === 'apis' && labelName
+            ? `APIs: ${labelName}`
+            : 'Runner'
       setRunSourceLabel(sourceLabel)
       setRunOrigin(origin)
 
-      window.api?.runner?.execute({
-        projectId: activeProjectId || '',
-        endpointIds: matched.map((ep) => ep.id),
-        environmentId: environmentId || undefined,
-        workspaceId: activeWorkspaceId || undefined,
-        delay,
-        folderName: pending.folderName || runFolderName || undefined,
-        sourceLabel,
-      }).then((result: unknown) => {
-        const res = result as { success: boolean; data?: RunnerReport }
-        if (res?.success && res.data) {
-          setReport(res.data)
-          setResults(res.data.results)
-          setCurrentIndex(res.data.totalEndpoints)
-          setTotalCount(res.data.totalEndpoints)
-        }
-      }).finally(() => {
-        unsubscribe?.()
-        setIsRunning(false)
-      })
+      window.api?.runner
+        ?.execute({
+          projectId: activeProjectId || '',
+          endpointIds: matched.map((ep) => ep.id),
+          environmentId: environmentId || undefined,
+          workspaceId: activeWorkspaceId || undefined,
+          delay,
+          iterations,
+          iterationData: iterationData.length > 0 ? iterationData : undefined,
+          folderName: pending.folderName || runFolderName || undefined,
+          sourceLabel,
+        })
+        .then((result: unknown) => {
+          const res = result as { success: boolean; data?: RunnerReport }
+          if (res?.success && res.data) {
+            setReport(res.data)
+            setResults(res.data.results)
+            setCurrentIndex(res.data.totalEndpoints)
+            setTotalCount(res.data.totalEndpoints)
+          }
+        })
+        .finally(() => {
+          unsubscribe?.()
+          setIsRunning(false)
+        })
     }, 100)
   }, [endpoints, activeProjectId, activeWorkspaceId, environmentId, delay, runFolderName, folderId])
 
@@ -316,33 +346,43 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       if (node.type === 'folder' || node.type === 'module') {
         const groups: RunnerFolderGroup[] = []
         collectFolderGroupsFromNode(node, groups)
-        setFolderGroups(groups.length > 0 ? groups : [{ folderId: node.id, folderName: node.label, endpoints: eps }])
+        setFolderGroups(
+          groups.length > 0
+            ? groups
+            : [{ folderId: node.id, folderName: node.label, endpoints: eps }],
+        )
       }
     }
   }, [folderId, treeData])
 
   const toggleEndpoint = useCallback((id: string) => {
-    setEndpoints((eps) => eps.map((ep) => ep.id === id ? { ...ep, selected: !ep.selected } : ep))
-    setFolderGroups((groups) => groups.map((g) => ({
-      ...g,
-      endpoints: g.endpoints.map((ep) => ep.id === id ? { ...ep, selected: !ep.selected } : ep),
-    })))
+    setEndpoints((eps) => eps.map((ep) => (ep.id === id ? { ...ep, selected: !ep.selected } : ep)))
+    setFolderGroups((groups) =>
+      groups.map((g) => ({
+        ...g,
+        endpoints: g.endpoints.map((ep) => (ep.id === id ? { ...ep, selected: !ep.selected } : ep)),
+      })),
+    )
   }, [])
 
   const selectAll = useCallback(() => {
     setEndpoints((eps) => eps.map((ep) => ({ ...ep, selected: true })))
-    setFolderGroups((groups) => groups.map((g) => ({
-      ...g,
-      endpoints: g.endpoints.map((ep) => ({ ...ep, selected: true })),
-    })))
+    setFolderGroups((groups) =>
+      groups.map((g) => ({
+        ...g,
+        endpoints: g.endpoints.map((ep) => ({ ...ep, selected: true })),
+      })),
+    )
   }, [])
 
   const deselectAll = useCallback(() => {
     setEndpoints((eps) => eps.map((ep) => ({ ...ep, selected: false })))
-    setFolderGroups((groups) => groups.map((g) => ({
-      ...g,
-      endpoints: g.endpoints.map((ep) => ({ ...ep, selected: false })),
-    })))
+    setFolderGroups((groups) =>
+      groups.map((g) => ({
+        ...g,
+        endpoints: g.endpoints.map((ep) => ({ ...ep, selected: false })),
+      })),
+    )
   }, [])
 
   const selectedCount = useMemo(() => endpoints.filter((ep) => ep.selected).length, [endpoints])
@@ -367,11 +407,12 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       setResults((prev) => [...prev, p.result])
     })
 
-    const sourceLabel = runOrigin === 'suite' && runFolderName
-      ? `Suite: ${runFolderName}`
-      : runOrigin === 'apis' && runFolderName
-      ? `APIs: ${runFolderName}`
-      : 'Runner'
+    const sourceLabel =
+      runOrigin === 'suite' && runFolderName
+        ? `Suite: ${runFolderName}`
+        : runOrigin === 'apis' && runFolderName
+          ? `APIs: ${runFolderName}`
+          : 'Runner'
     setRunSourceLabel(sourceLabel)
 
     try {
@@ -381,6 +422,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         environmentId: environmentId || undefined,
         workspaceId: activeWorkspaceId || undefined,
         delay,
+        iterations,
+        iterationData: iterationData.length > 0 ? iterationData : undefined,
         folderName: runFolderName || undefined,
         sourceLabel,
       })
@@ -398,7 +441,15 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       unsubscribe?.()
       setIsRunning(false)
     }
-  }, [endpoints, activeProjectId, activeWorkspaceId, environmentId, delay, runFolderName, runOrigin])
+  }, [
+    endpoints,
+    activeProjectId,
+    activeWorkspaceId,
+    environmentId,
+    delay,
+    runFolderName,
+    runOrigin,
+  ])
 
   const handleStop = useCallback(() => {
     window.api?.runner?.stop()
@@ -415,39 +466,50 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     setView('history')
   }, [])
 
-  const handleViewReport = useCallback((histResults: EndpointRunResult[], histReport: RunnerReport, startedAt: number, sourceLabel?: string) => {
-    setResults(histResults)
-    setReport(histReport)
-    setRunStartedAt(startedAt)
-    setSelectedResultId(null)
-    setRunSourceLabel(sourceLabel || 'Runner')
-    setView('results')
-  }, [])
+  const handleViewReport = useCallback(
+    (
+      histResults: EndpointRunResult[],
+      histReport: RunnerReport,
+      startedAt: number,
+      sourceLabel?: string,
+    ) => {
+      setResults(histResults)
+      setReport(histReport)
+      setRunStartedAt(startedAt)
+      setSelectedResultId(null)
+      setRunSourceLabel(sourceLabel || 'Runner')
+      setView('results')
+    },
+    [],
+  )
 
-  const handleSchedule = useCallback(async (intervalValue: number, intervalUnit: 'minutes' | 'hours' | 'days') => {
-    const selected = endpoints.filter((ep) => ep.selected)
-    if (selected.length === 0) return
+  const handleSchedule = useCallback(
+    async (intervalValue: number, intervalUnit: 'minutes' | 'hours' | 'days') => {
+      const selected = endpoints.filter((ep) => ep.selected)
+      if (selected.length === 0) return
 
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const api = window.api as any
-      const result = await api.scheduler.create({
-        projectId: activeProjectId || '',
-        name: `Scheduled Run ${new Date().toLocaleString()}`,
-        endpointIds: selected.map((ep) => ep.id),
-        folderId: folderId || undefined,
-        environmentId: environmentId || undefined,
-        intervalValue,
-        intervalUnit,
-        delayMs: delay,
-      })
-      if (result?.success) {
-        setView('scheduled')
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const api = window.api as any
+        const result = await api.scheduler.create({
+          projectId: activeProjectId || '',
+          name: `Scheduled Run ${new Date().toLocaleString()}`,
+          endpointIds: selected.map((ep) => ep.id),
+          folderId: folderId || undefined,
+          environmentId: environmentId || undefined,
+          intervalValue,
+          intervalUnit,
+          delayMs: delay,
+        })
+        if (result?.success) {
+          setView('scheduled')
+        }
+      } catch (e) {
+        console.error('Failed to create scheduled task:', e)
       }
-    } catch (e) {
-      console.error('Failed to create scheduled task:', e)
-    }
-  }, [endpoints, activeProjectId, folderId, environmentId, delay])
+    },
+    [endpoints, activeProjectId, folderId, environmentId, delay],
+  )
 
   const handleSequenceResize = useCallback((dx: number) => {
     setSequenceWidth((w) => Math.max(200, Math.min(600, w + dx)))
@@ -469,10 +531,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             onViewReport={handleViewReport}
           />
         ) : view === 'scheduled' ? (
-          <ScheduledTasksView
-            onBack={() => setView('home')}
-            onNewRun={handleNewRun}
-          />
+          <ScheduledTasksView onBack={() => setView('home')} onNewRun={handleNewRun} />
         ) : view === 'history' ? (
           <RunnerHistory
             onBack={() => setView(results.length > 0 ? 'results' : 'home')}
@@ -482,7 +541,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         ) : view === 'config' ? (
           <>
             {/* Run Sequence (left) — resizable */}
-            <div style={{ width: sequenceWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
+            <div
+              style={{ width: sequenceWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}
+            >
               <RunnerSequence
                 endpoints={endpoints}
                 folderGroups={folderGroups}
@@ -508,6 +569,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 setPersistResponses={setPersistResponses}
                 keepVariableValues={keepVariableValues}
                 setKeepVariableValues={setKeepVariableValues}
+                iterationData={iterationData}
+                setIterationData={setIterationData}
                 onRun={handleRun}
                 onSchedule={handleSchedule}
                 isRunning={isRunning}

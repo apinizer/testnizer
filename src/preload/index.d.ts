@@ -18,29 +18,66 @@ import type {
   SoapMetadata,
   WsSecurityConfig,
   WsMessage,
-  Branch
+  Branch,
 } from '../renderer/types'
 
 interface WorkspaceApi {
   list(): Promise<IpcResult<Workspace[]>>
   get(id: string): Promise<IpcResult<Workspace | undefined>>
-  create(payload: { name: string; description?: string; color?: string }): Promise<IpcResult<Workspace>>
-  update(id: string, payload: { name?: string; description?: string; color?: string }): Promise<IpcResult<Workspace | undefined>>
+  create(payload: {
+    name: string
+    description?: string
+    color?: string
+  }): Promise<IpcResult<Workspace>>
+  update(
+    id: string,
+    payload: { name?: string; description?: string; color?: string },
+  ): Promise<IpcResult<Workspace | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
 }
 
 interface ProjectApi {
   list(workspaceId: string): Promise<IpcResult<Project[]>>
   get(id: string): Promise<IpcResult<Project | undefined>>
-  create(payload: { workspace_id: string; name: string; description?: string; type?: string; save_mode?: string; local_path?: string; icon_emoji?: string | null; icon_color?: string | null; display_name?: string | null }): Promise<IpcResult<Project>>
-  update(id: string, payload: { name?: string; description?: string; type?: string; save_mode?: string; local_path?: string | null; sort_order?: number; icon_emoji?: string | null; icon_color?: string | null; display_name?: string | null }): Promise<IpcResult<Project | undefined>>
+  create(payload: {
+    workspace_id: string
+    name: string
+    description?: string
+    type?: string
+    save_mode?: string
+    local_path?: string
+    icon_emoji?: string | null
+    icon_color?: string | null
+    display_name?: string | null
+  }): Promise<IpcResult<Project>>
+  update(
+    id: string,
+    payload: {
+      name?: string
+      description?: string
+      type?: string
+      save_mode?: string
+      local_path?: string | null
+      sort_order?: number
+      icon_emoji?: string | null
+      icon_color?: string | null
+      display_name?: string | null
+    },
+  ): Promise<IpcResult<Project | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
 }
 
 interface FolderApi {
   list(projectId: string): Promise<IpcResult<Folder[]>>
-  create(payload: { project_id: string; parent_id?: string | null; name: string }): Promise<IpcResult<Folder>>
-  update(id: string, payload: { name?: string; parent_id?: string | null; sort_order?: number }): Promise<IpcResult<Folder | undefined>>
+  create(payload: {
+    project_id: string
+    parent_id?: string | null
+    name: string
+  }): Promise<IpcResult<Folder>>
+  update(
+    id: string,
+    payload: { name?: string; parent_id?: string | null; sort_order?: number },
+  ): Promise<IpcResult<Folder | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
 }
 
@@ -58,7 +95,10 @@ interface EndpointApi {
     path: string
     status?: string
   }): Promise<IpcResult<Endpoint>>
-  update(id: string, payload: Partial<Omit<Endpoint, 'id' | 'project_id' | 'created_at'>>): Promise<IpcResult<Endpoint | undefined>>
+  update(
+    id: string,
+    payload: Partial<Omit<Endpoint, 'id' | 'project_id' | 'created_at'>>,
+  ): Promise<IpcResult<Endpoint | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
 }
 
@@ -97,24 +137,27 @@ interface SavedRequestApi {
     assertions?: string
     metadata?: string
   }): Promise<IpcResult<SavedRequest>>
-  update(id: string, payload: Partial<{
-    project_id: string | null
-    folder_id: string | null
-    name: string
-    protocol: string
-    method: string
-    url: string
-    params: string
-    headers: string
-    body: string
-    auth: string
-    pre_script: string
-    post_script: string
-    assertions: string
-    metadata: string
-    sort_order: number
-    updated_at: number
-  }>): Promise<IpcResult<SavedRequest | undefined>>
+  update(
+    id: string,
+    payload: Partial<{
+      project_id: string | null
+      folder_id: string | null
+      name: string
+      protocol: string
+      method: string
+      url: string
+      params: string
+      headers: string
+      body: string
+      auth: string
+      pre_script: string
+      post_script: string
+      assertions: string
+      metadata: string
+      sort_order: number
+      updated_at: number
+    }>,
+  ): Promise<IpcResult<SavedRequest | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
 }
 
@@ -122,8 +165,16 @@ interface EnvironmentApi {
   list(workspaceId: string): Promise<IpcResult<Environment[]>>
   listByProject(projectId: string): Promise<IpcResult<Environment[]>>
   get(id: string): Promise<IpcResult<Environment | undefined>>
-  create(payload: { workspace_id: string; project_id?: string | null; name: string; is_active?: boolean }): Promise<IpcResult<Environment>>
-  update(id: string, payload: { name?: string; is_active?: boolean }): Promise<IpcResult<Environment | undefined>>
+  create(payload: {
+    workspace_id: string
+    project_id?: string | null
+    name: string
+    is_active?: boolean
+  }): Promise<IpcResult<Environment>>
+  update(
+    id: string,
+    payload: { name?: string; is_active?: boolean },
+  ): Promise<IpcResult<Environment | undefined>>
   setActive(workspaceId: string, environmentId: string): Promise<IpcResult<boolean>>
   setActiveForProject(projectId: string, environmentId: string): Promise<IpcResult<boolean>>
   delete(id: string): Promise<IpcResult<boolean>>
@@ -140,7 +191,10 @@ interface EnvVariableApi {
     secret?: boolean
     initial_value?: string
   }): Promise<IpcResult<EnvironmentVariable>>
-  update(id: string, payload: Partial<EnvironmentVariable>): Promise<IpcResult<EnvironmentVariable | undefined>>
+  update(
+    id: string,
+    payload: Partial<EnvironmentVariable>,
+  ): Promise<IpcResult<EnvironmentVariable | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
 }
 
@@ -157,19 +211,27 @@ interface GlobalVariableApi {
     secret?: boolean
     initial_value?: string
   }): Promise<IpcResult<GlobalVariable>>
-  update(id: string, payload: {
-    key?: string
-    value?: string
-    description?: string
-    enabled?: boolean
-    secret?: boolean
-    initial_value?: string
-  }): Promise<IpcResult<GlobalVariable | undefined>>
+  update(
+    id: string,
+    payload: {
+      key?: string
+      value?: string
+      description?: string
+      enabled?: boolean
+      secret?: boolean
+      initial_value?: string
+    },
+  ): Promise<IpcResult<GlobalVariable | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
 }
 
 interface HistoryApi {
-  list(options: { workspace_id?: string; project_id?: string; limit?: number; offset?: number }): Promise<IpcResult<HistoryEntry[]>>
+  list(options: {
+    workspace_id?: string
+    project_id?: string
+    limit?: number
+    offset?: number
+  }): Promise<IpcResult<HistoryEntry[]>>
   get(id: string): Promise<IpcResult<HistoryEntry | undefined>>
   add(payload: {
     workspace_id?: string
@@ -218,14 +280,37 @@ interface RequestApi {
 
 interface ImportExportApi {
   openFile(): Promise<IpcResult<{ filePath: string; content: string } | null>>
-  importOpenApi(payload: { projectId: string; content: string; format: string; folderId?: string | null; sourceUrl?: string }): Promise<IpcResult<ImportResult>>
+  importOpenApi(payload: {
+    projectId: string
+    content: string
+    format: string
+    folderId?: string | null
+    sourceUrl?: string
+  }): Promise<IpcResult<ImportResult>>
   exportOpenApi(projectId: string): Promise<IpcResult<string>>
   saveFile(content: string, defaultName: string): Promise<IpcResult<string | null>>
-  importPostman(payload: { projectId: string; content: string; folderId?: string | null }): Promise<IpcResult<ImportResult>>
+  importPostman(payload: {
+    projectId: string
+    content: string
+    folderId?: string | null
+  }): Promise<IpcResult<ImportResult>>
   exportPostman(projectId: string): Promise<IpcResult<string>>
-  importHar(payload: { projectId: string; content: string; folderId?: string | null }): Promise<IpcResult<ImportResult>>
-  importInsomnia(payload: { projectId: string; content: string; folderId?: string | null }): Promise<IpcResult<ImportResult>>
-  importCurl(payload: { projectId: string; curlCommand: string; folderId?: string | null }): Promise<IpcResult<ImportResult>>
+  importHar(payload: {
+    projectId: string
+    content: string
+    folderId?: string | null
+  }): Promise<IpcResult<ImportResult>>
+  importInsomnia(payload: {
+    projectId: string
+    content: string
+    folderId?: string | null
+  }): Promise<IpcResult<ImportResult>>
+  exportInsomnia(projectId: string): Promise<IpcResult<string>>
+  importCurl(payload: {
+    projectId: string
+    curlCommand: string
+    folderId?: string | null
+  }): Promise<IpcResult<ImportResult>>
   exportCurl(request: CurlExportRequest): Promise<IpcResult<string>>
   importWsdl(payload: {
     projectId: string
@@ -238,6 +323,12 @@ interface ImportExportApi {
   }): Promise<IpcResult<ImportResult>>
   parseWsdlForImport(url: string): Promise<IpcResult<WsdlParseResult>>
   parseWsdlFileForImport(content: string): Promise<IpcResult<WsdlParseResult>>
+  importProto(payload: {
+    projectId: string
+    protoPath: string
+    folderId?: string | null
+    serverAddress?: string
+  }): Promise<IpcResult<ImportResult>>
   fetchUrl(url: string): Promise<IpcResult<string | Record<string, unknown>>>
 }
 
@@ -330,6 +421,7 @@ interface RunnerExecuteOptions {
   workspaceId?: string
   delay?: number
   iterations?: number
+  iterationData?: Record<string, string>[]
   stopOnError?: boolean
   folderName?: string
   sourceLabel?: string
@@ -403,7 +495,11 @@ interface RunnerApi {
   stop(): Promise<IpcResult<boolean>>
   export(options: RunnerExportOptions): Promise<IpcResult<string>>
   onProgress(callback: (progress: RunnerProgress) => void): () => void
-  history(arg: string | { projectId: string; limit?: number; offset?: number; tab?: 'Functional' | 'Scheduled' }): Promise<IpcResult<RunnerHistoryEntry[]>>
+  history(
+    arg:
+      | string
+      | { projectId: string; limit?: number; offset?: number; tab?: 'Functional' | 'Scheduled' },
+  ): Promise<IpcResult<RunnerHistoryEntry[]>>
   historyStats(projectId: string): Promise<IpcResult<unknown>>
   deleteHistory(ids: string | string[]): Promise<IpcResult<boolean>>
 }
@@ -441,7 +537,14 @@ interface GraphqlApiResponse {
   headers?: Record<string, string>
   body?: string
   bodySize?: number
-  timing: { total: number; dns?: number; tcp?: number; tls?: number; ttfb?: number; download?: number }
+  timing: {
+    total: number
+    dns?: number
+    tcp?: number
+    tls?: number
+    ttfb?: number
+    download?: number
+  }
   error?: string
   actualRequest?: {
     method: string
@@ -489,7 +592,10 @@ interface GraphqlSubscriptionEvent {
 
 interface GraphqlApi {
   execute(options: GraphqlExecutePayload): Promise<IpcResult<GraphqlApiResponse>>
-  introspect(url: string, headers?: Record<string, string>): Promise<IpcResult<GraphqlIntrospectionResult>>
+  introspect(
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<IpcResult<GraphqlIntrospectionResult>>
   subscribe(options: GraphqlSubscribePayload): Promise<IpcResult<{ subscriptionId: string }>>
   unsubscribe(subscriptionId: string): Promise<IpcResult<boolean>>
   onSubscriptionEvent(callback: (event: GraphqlSubscriptionEvent) => void): () => void
@@ -648,7 +754,11 @@ interface WindowApi {
 interface BranchApi {
   list(projectId: string): Promise<IpcResult<Branch[]>>
   get(id: string): Promise<IpcResult<Branch | undefined>>
-  create(payload: { project_id: string; name: string; parent_branch_id?: string | null }): Promise<IpcResult<Branch>>
+  create(payload: {
+    project_id: string
+    name: string
+    parent_branch_id?: string | null
+  }): Promise<IpcResult<Branch>>
   rename(id: string, name: string): Promise<IpcResult<Branch | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
   ensureDefault(projectId: string): Promise<IpcResult<Branch>>
@@ -718,7 +828,11 @@ interface SaveApi {
     token: string
     commitMessage: string
   }): Promise<IpcResult<SaveGitResult>>
-  storeGitToken(payload: { repoUrl: string; username: string; token: string }): Promise<IpcResult<boolean>>
+  storeGitToken(payload: {
+    repoUrl: string
+    username: string
+    token: string
+  }): Promise<IpcResult<boolean>>
   gitPush(payload: { projectId: string; commitMessage?: string }): Promise<IpcResult<GitPushResult>>
   gitPull(payload: { projectId: string }): Promise<IpcResult<GitPullResult>>
   gitConfig(projectId: string): Promise<IpcResult<GitConfigResult | null>>
@@ -736,9 +850,17 @@ interface SaveApi {
   exportProject(projectId: string): Promise<IpcResult<{ path: string }>>
   exportFolder(folderId: string): Promise<IpcResult<{ path: string }>>
   exportTestSuite(suiteId: string): Promise<IpcResult<{ path: string }>>
-  importProject(payload: { workspaceId: string; name?: string }): Promise<IpcResult<{ projectId: string }>>
-  importFolder(payload: { projectId: string; parentFolderId?: string | null }): Promise<IpcResult<{ foldersImported: number; endpointsImported: number }>>
-  importTestSuite(payload: { projectId: string }): Promise<IpcResult<{ suiteId: string; endpointsImported: number }>>
+  importProject(payload: {
+    workspaceId: string
+    name?: string
+  }): Promise<IpcResult<{ projectId: string }>>
+  importFolder(payload: {
+    projectId: string
+    parentFolderId?: string | null
+  }): Promise<IpcResult<{ foldersImported: number; endpointsImported: number }>>
+  importTestSuite(payload: {
+    projectId: string
+  }): Promise<IpcResult<{ suiteId: string; endpointsImported: number }>>
 }
 
 interface ApiBridge {
@@ -757,6 +879,8 @@ interface ApiBridge {
   settings: SettingsApi
   importExport: ImportExportApi
   soap: SoapApi
+  wsse: WsseApi
+  diagnostics: DiagnosticsApi
   ws: WsApi
   runner: RunnerApi
   graphql: GraphqlApi
@@ -805,6 +929,52 @@ interface CertificateApi {
   }) => Promise<IpcResult<CertificateRowDto>>
   delete: (id: string) => Promise<IpcResult<boolean>>
   pickFile: (kind: 'crt' | 'key' | 'pfx' | 'ca') => Promise<IpcResult<string>>
+}
+
+interface WsseVerifyResultDto {
+  valid: boolean
+  reason?: string
+  signedReferences: string[]
+  certInfo?: {
+    subject?: string
+    issuer?: string
+    notAfter?: string
+    notBefore?: string
+  }
+}
+
+interface WsseApi {
+  apply: (payload: { envelope: string; config: unknown }) => Promise<IpcResult<string>>
+  verify: (payload: {
+    envelope: string
+    certPem: string
+  }) => Promise<IpcResult<WsseVerifyResultDto>>
+  decrypt: (payload: {
+    envelope: string
+    privateKeyPem: string
+    passphrase?: string
+  }) => Promise<IpcResult<string>>
+}
+
+interface ThirdPartyLicenseEntry {
+  name: string
+  version: string
+  license: string
+  repository: string | null
+  publisher: string | null
+  url: string | null
+}
+
+interface ThirdPartyLicensesManifest {
+  generatedAt: string
+  count: number
+  entries: ThirdPartyLicenseEntry[]
+}
+
+interface DiagnosticsApi {
+  export: () => Promise<IpcResult<{ path: string; size: number }>>
+  revealLogs: () => Promise<IpcResult<null>>
+  thirdPartyLicenses: () => Promise<IpcResult<ThirdPartyLicensesManifest>>
 }
 
 interface TestSuiteApi {

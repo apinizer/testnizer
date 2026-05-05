@@ -1,0 +1,8 @@
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Header/>
+  <soap:Body>
+    <tns:Echo xmlns:tns="http://testnizer.com/echo">
+      <tns:Message>Hello, WSSE</tns:Message>
+    </tns:Echo>
+  </soap:Body>
+</soap:Envelope>

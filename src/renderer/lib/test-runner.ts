@@ -1,13 +1,7 @@
 // src/renderer/lib/test-runner.ts
-// Apinizer API Tester — Test Runner (renderer process library)
+// Testnizer — Test Runner (renderer process library)
 
-import type {
-  TestAssertion,
-  TestResult,
-  ApiResponse,
-  ConsoleLog,
-  KeyValuePair
-} from '../types'
+import type { TestAssertion, TestResult, ApiResponse, ConsoleLog, KeyValuePair } from '../types'
 
 // ─── JSONPath Evaluator ──────────────────────────────────────────
 
@@ -124,13 +118,7 @@ function evaluateXPath(xml: string, xpath: string): string | undefined {
     const parserError = doc.querySelector('parsererror')
     if (parserError) return undefined
 
-    const result = doc.evaluate(
-      xpath,
-      doc,
-      null,
-      XPathResult.STRING_TYPE,
-      null
-    )
+    const result = doc.evaluate(xpath, doc, null, XPathResult.STRING_TYPE, null)
     return result.stringValue || undefined
   } catch {
     return undefined
@@ -139,19 +127,13 @@ function evaluateXPath(xml: string, xpath: string): string | undefined {
 
 // ─── Assertion Runner ────────────────────────────────────────────
 
-export function runAssertions(
-  assertions: TestAssertion[],
-  response: ApiResponse
-): TestResult[] {
+export function runAssertions(assertions: TestAssertion[], response: ApiResponse): TestResult[] {
   return assertions
     .filter((a) => a.enabled)
     .map((assertion) => evaluateAssertion(assertion, response))
 }
 
-function evaluateAssertion(
-  assertion: TestAssertion,
-  response: ApiResponse
-): TestResult {
+function evaluateAssertion(assertion: TestAssertion, response: ApiResponse): TestResult {
   try {
     switch (assertion.type) {
       case 'status_equals':
@@ -385,7 +367,7 @@ export interface PmApi {
 export function createPmApi(
   response: ApiResponse,
   envVars: Map<string, string>,
-  globalVars: Map<string, string>
+  globalVars: Map<string, string>,
 ): PmApi {
   const testResults: PmTestResult[] = []
   const envUpdates = new Map<string, string>()
@@ -393,12 +375,15 @@ export function createPmApi(
   const localVars = new Map<string, string>()
 
   // Build Chai-BDD style chain for pm.response.to.have.status() etc.
-  function assertionError(msg: string): never { throw new Error(msg) }
+  function assertionError(msg: string): never {
+    throw new Error(msg)
+  }
 
   const responseHaveChain: ResponseHaveChain = {
     status(code: number): void {
       const actual = response.status ?? 0
-      if (actual !== code) assertionError(`expected response to have status code ${code} but got ${actual}`)
+      if (actual !== code)
+        assertionError(`expected response to have status code ${code} but got ${actual}`)
     },
     header(name: string, value?: string): void {
       const headers = response.headers ?? {}
@@ -409,29 +394,56 @@ export function createPmApi(
       }
     },
     jsonBody(_path?: string): void {
-      try { JSON.parse(response.body ?? '') }
-      catch { assertionError('expected response to have a JSON body') }
+      try {
+        JSON.parse(response.body ?? '')
+      } catch {
+        assertionError('expected response to have a JSON body')
+      }
     },
     body(expected?: string): void {
       if (expected !== undefined && (response.body ?? '') !== expected) {
         assertionError(`expected body to equal "${expected}"`)
       }
-    }
+    },
   }
 
   const responseBeChain: ResponseBeChain = {
-    get ok() { const s = response.status ?? 0; if (s < 200 || s >= 300) assertionError(`expected 2xx but got ${s}`); return undefined },
-    get accepted() { if ((response.status ?? 0) !== 202) assertionError(`expected 202 but got ${response.status}`); return undefined },
-    get badRequest() { if ((response.status ?? 0) !== 400) assertionError(`expected 400 but got ${response.status}`); return undefined },
-    get unauthorized() { if ((response.status ?? 0) !== 401) assertionError(`expected 401 but got ${response.status}`); return undefined },
-    get forbidden() { if ((response.status ?? 0) !== 403) assertionError(`expected 403 but got ${response.status}`); return undefined },
-    get notFound() { if ((response.status ?? 0) !== 404) assertionError(`expected 404 but got ${response.status}`); return undefined },
-    get error() { const s = response.status ?? 0; if (s < 400) assertionError(`expected 4xx/5xx but got ${s}`); return undefined },
+    get ok() {
+      const s = response.status ?? 0
+      if (s < 200 || s >= 300) assertionError(`expected 2xx but got ${s}`)
+      return undefined
+    },
+    get accepted() {
+      if ((response.status ?? 0) !== 202) assertionError(`expected 202 but got ${response.status}`)
+      return undefined
+    },
+    get badRequest() {
+      if ((response.status ?? 0) !== 400) assertionError(`expected 400 but got ${response.status}`)
+      return undefined
+    },
+    get unauthorized() {
+      if ((response.status ?? 0) !== 401) assertionError(`expected 401 but got ${response.status}`)
+      return undefined
+    },
+    get forbidden() {
+      if ((response.status ?? 0) !== 403) assertionError(`expected 403 but got ${response.status}`)
+      return undefined
+    },
+    get notFound() {
+      if ((response.status ?? 0) !== 404) assertionError(`expected 404 but got ${response.status}`)
+      return undefined
+    },
+    get error() {
+      const s = response.status ?? 0
+      if (s < 400) assertionError(`expected 4xx/5xx but got ${s}`)
+      return undefined
+    },
   }
 
   const responseNotHaveChain: ResponseHaveChain = {
     status(code: number): void {
-      if ((response.status ?? 0) === code) assertionError(`expected response to not have status code ${code}`)
+      if ((response.status ?? 0) === code)
+        assertionError(`expected response to not have status code ${code}`)
     },
     header(name: string): void {
       const headers = response.headers ?? {}
@@ -439,57 +451,97 @@ export function createPmApi(
       if (found) assertionError(`expected response to not have header "${name}"`)
     },
     jsonBody(): void {
-      try { JSON.parse(response.body ?? ''); assertionError('expected response to not have a JSON body') }
-      catch { /* good */ }
+      try {
+        JSON.parse(response.body ?? '')
+        assertionError('expected response to not have a JSON body')
+      } catch {
+        /* good */
+      }
     },
     body(expected?: string): void {
       if (expected !== undefined && (response.body ?? '') === expected) {
         assertionError(`expected body to not equal "${expected}"`)
       }
-    }
+    },
   }
 
   const responseNotBeChain: ResponseBeChain = {
-    get ok() { const s = response.status ?? 0; if (s >= 200 && s < 300) assertionError(`expected not 2xx but got ${s}`); return undefined },
-    get accepted() { if ((response.status ?? 0) === 202) assertionError('expected not 202'); return undefined },
-    get badRequest() { if ((response.status ?? 0) === 400) assertionError('expected not 400'); return undefined },
-    get unauthorized() { if ((response.status ?? 0) === 401) assertionError('expected not 401'); return undefined },
-    get forbidden() { if ((response.status ?? 0) === 403) assertionError('expected not 403'); return undefined },
-    get notFound() { if ((response.status ?? 0) === 404) assertionError('expected not 404'); return undefined },
-    get error() { const s = response.status ?? 0; if (s >= 400) assertionError(`expected not 4xx/5xx but got ${s}`); return undefined },
+    get ok() {
+      const s = response.status ?? 0
+      if (s >= 200 && s < 300) assertionError(`expected not 2xx but got ${s}`)
+      return undefined
+    },
+    get accepted() {
+      if ((response.status ?? 0) === 202) assertionError('expected not 202')
+      return undefined
+    },
+    get badRequest() {
+      if ((response.status ?? 0) === 400) assertionError('expected not 400')
+      return undefined
+    },
+    get unauthorized() {
+      if ((response.status ?? 0) === 401) assertionError('expected not 401')
+      return undefined
+    },
+    get forbidden() {
+      if ((response.status ?? 0) === 403) assertionError('expected not 403')
+      return undefined
+    },
+    get notFound() {
+      if ((response.status ?? 0) === 404) assertionError('expected not 404')
+      return undefined
+    },
+    get error() {
+      const s = response.status ?? 0
+      if (s >= 400) assertionError(`expected not 4xx/5xx but got ${s}`)
+      return undefined
+    },
   }
 
   const responseToChain: ResponseToChain = {
     have: responseHaveChain,
     be: responseBeChain,
-    not: { have: responseNotHaveChain, be: responseNotBeChain }
+    not: { have: responseNotHaveChain, be: responseNotBeChain },
   }
 
   const pmApi: PmApi = {
     response: {
-      get code(): number { return response.status ?? 0 },
-      get status(): string { return response.statusText ?? '' },
-      json(): unknown {
-        try { return JSON.parse(response.body ?? '{}') }
-        catch { return null }
+      get code(): number {
+        return response.status ?? 0
       },
-      text(): string { return response.body ?? '' },
+      get status(): string {
+        return response.statusText ?? ''
+      },
+      json(): unknown {
+        try {
+          return JSON.parse(response.body ?? '{}')
+        } catch {
+          return null
+        }
+      },
+      text(): string {
+        return response.body ?? ''
+      },
       headers: {
         get(name: string): string | undefined {
           const lowerName = name.toLowerCase()
           const headers = response.headers ?? {}
           const entry = Object.entries(headers).find(([k]) => k.toLowerCase() === lowerName)
           return entry ? entry[1] : undefined
-        }
+        },
       },
-      get responseTime(): number { return response.timing.total },
-      get responseSize(): number { return response.bodySize ?? 0 },
+      get responseTime(): number {
+        return response.timing.total
+      },
+      get responseSize(): number {
+        return response.bodySize ?? 0
+      },
       to: responseToChain,
     },
     request: {
       method: response.actualRequest?.method ?? '',
       url: response.actualRequest?.url ?? '',
-      headers: response.actualRequest?.headers ?? {}
+      headers: response.actualRequest?.headers ?? {},
     },
     environment: {
       set(key: string, value: string): void {
@@ -498,7 +550,7 @@ export function createPmApi(
       },
       get(key: string): string | undefined {
         return envVars.get(key)
-      }
+      },
     },
     globals: {
       set(key: string, value: string): void {
@@ -507,7 +559,7 @@ export function createPmApi(
       },
       get(key: string): string | undefined {
         return globalVars.get(key)
-      }
+      },
     },
     variables: {
       set(key: string, value: string): void {
@@ -515,7 +567,7 @@ export function createPmApi(
       },
       get(key: string): string | undefined {
         return localVars.get(key) ?? envVars.get(key) ?? globalVars.get(key)
-      }
+      },
     },
     expect(value: unknown): AssertionChain {
       return createExpectChain(value)
@@ -530,7 +582,7 @@ export function createPmApi(
     },
     _testResults: testResults,
     _envUpdates: envUpdates,
-    _globalUpdates: globalUpdates
+    _globalUpdates: globalUpdates,
   }
 
   return pmApi
@@ -576,7 +628,7 @@ function createExpectChain(value: unknown): AssertionChain {
     get undefined() {
       if (value !== undefined) assertionError(`Expected undefined but got ${String(value)}`)
       return undefined
-    }
+    },
   }
 
   const haveChain: HaveChain = {
@@ -587,10 +639,14 @@ function createExpectChain(value: unknown): AssertionChain {
       }
     },
     property(name: string): void {
-      if (typeof value !== 'object' || value === null || !(name in (value as Record<string, unknown>))) {
+      if (
+        typeof value !== 'object' ||
+        value === null ||
+        !(name in (value as Record<string, unknown>))
+      ) {
         assertionError(`Expected object to have property "${name}"`)
       }
-    }
+    },
   }
 
   const notChain: NotChain = {
@@ -598,7 +654,7 @@ function createExpectChain(value: unknown): AssertionChain {
       if (value === expected) {
         assertionError(`Expected ${String(value)} to not equal ${String(expected)}`)
       }
-    }
+    },
   }
 
   const toChain: ToChain = {
@@ -622,7 +678,7 @@ function createExpectChain(value: unknown): AssertionChain {
         assertionError(`Expected string or array but got ${typeof value}`)
       }
     },
-    have: haveChain
+    have: haveChain,
   }
 
   return { to: toChain }
@@ -637,10 +693,7 @@ export interface ScriptRunResult {
   globalUpdates: Record<string, string>
 }
 
-export function runScript(
-  script: string,
-  pmApi: PmApi
-): ScriptRunResult {
+export function runScript(script: string, pmApi: PmApi): ScriptRunResult {
   const consoleLogs: ConsoleLog[] = []
 
   // Create console capture
@@ -649,23 +702,23 @@ export function runScript(
       consoleLogs.push({
         level: 'log',
         message: args.map(String).join(' '),
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
     },
     warn(...args: unknown[]): void {
       consoleLogs.push({
         level: 'warn',
         message: args.map(String).join(' '),
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
     },
     error(...args: unknown[]): void {
       consoleLogs.push({
         level: 'error',
         message: args.map(String).join(' '),
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
-    }
+    },
   }
 
   try {
@@ -676,7 +729,7 @@ export function runScript(
     consoleLogs.push({
       level: 'error',
       message: `Script error: ${(e as Error).message}`,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     })
   }
 
@@ -686,18 +739,22 @@ export function runScript(
       id: `script-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: tr.name,
       type: 'pm_script' as const,
-      enabled: true
+      enabled: true,
     },
     passed: tr.passed,
-    error: tr.error
+    error: tr.error,
   }))
 
   // Convert Map to Record
   const envUpdates: Record<string, string> = {}
-  pmApi._envUpdates.forEach((val, key) => { envUpdates[key] = val })
+  pmApi._envUpdates.forEach((val, key) => {
+    envUpdates[key] = val
+  })
 
   const globalUpdates: Record<string, string> = {}
-  pmApi._globalUpdates.forEach((val, key) => { globalUpdates[key] = val })
+  pmApi._globalUpdates.forEach((val, key) => {
+    globalUpdates[key] = val
+  })
 
   return { results, consoleLogs, envUpdates, globalUpdates }
 }
@@ -714,7 +771,7 @@ export interface ExtractionConfig {
 
 export function extractVariable(
   response: ApiResponse,
-  extraction: ExtractionConfig
+  extraction: ExtractionConfig,
 ): string | undefined {
   switch (extraction.type) {
     case 'jsonpath': {

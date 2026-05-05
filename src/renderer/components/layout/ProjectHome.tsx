@@ -45,7 +45,9 @@ export default function ProjectHome() {
 
   // Close context menu on outside click
   useEffect(() => {
-    function handleClick() { setContextMenuId(null) }
+    function handleClick() {
+      setContextMenuId(null)
+    }
     if (contextMenuId) document.addEventListener('click', handleClick)
     return () => document.removeEventListener('click', handleClick)
   }, [contextMenuId])
@@ -107,8 +109,12 @@ export default function ProjectHome() {
           className="absolute right-5 top-4 z-10 flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors"
           onClick={() => setShowProfileModal(true)}
           style={{ background: 'transparent' }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--item-hover)' }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+          onMouseEnter={(e) => {
+            ;(e.currentTarget as HTMLElement).style.background = 'var(--item-hover)'
+          }}
+          onMouseLeave={(e) => {
+            ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+          }}
         >
           <div
             className="flex shrink-0 items-center justify-center rounded-full font-bold text-white"
@@ -121,7 +127,11 @@ export default function ProjectHome() {
             }}
           >
             {authUser.avatarUrl ? (
-              <img src={authUser.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <img
+                src={authUser.avatarUrl}
+                alt=""
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
             ) : (
               (() => {
                 const name = authUser.displayName || authUser.username
@@ -139,22 +149,33 @@ export default function ProjectHome() {
       )}
 
       {/* Header */}
-      <div className="flex w-full items-center justify-center" style={{ paddingTop: 60, paddingBottom: 32 }}>
+      <div
+        className="flex w-full items-center justify-center"
+        style={{ paddingTop: 60, paddingBottom: 32 }}
+      >
         <div className="flex flex-col items-center gap-3">
-          <div style={{
-            width: 72, height: 72, borderRadius: 18,
-            background: '#fff',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <img src={appIcon} alt="Apinizer" style={{ width: 52, height: 52, borderRadius: 12 }} />
+          <div
+            style={{
+              width: 72,
+              height: 72,
+              borderRadius: 18,
+              background: '#fff',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <img
+              src={appIcon}
+              alt="Testnizer"
+              style={{ width: 52, height: 52, borderRadius: 12 }}
+            />
           </div>
           <h1 className="text-[1.5rem] font-bold" style={{ color: 'var(--heading)' }}>
-            Apinizer API Tester
+            Testnizer
           </h1>
-          <p style={{ color: 'var(--muted)' }}>
-            {t('home.subtitle')}
-          </p>
+          <p style={{ color: 'var(--muted)' }}>{t('home.subtitle')}</p>
         </div>
       </div>
 
@@ -167,7 +188,7 @@ export default function ProjectHome() {
               {t('home.projects')}
             </h2>
             <span
-                           style={{
+              style={{
                 background: 'var(--bg)',
                 border: '1px solid var(--border)',
                 borderRadius: 10,
@@ -224,16 +245,21 @@ export default function ProjectHome() {
               }}
               onClick={() => handleOpenProject(project)}
               onMouseOver={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'
+                ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'
                 ;(e.currentTarget as HTMLElement).style.boxShadow =
                   '0 2px 8px rgba(124,115,230,0.1)'
               }}
               onMouseOut={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'
+                ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'
                 ;(e.currentTarget as HTMLElement).style.boxShadow = 'none'
               }}
             >
-              <ProjectIcon name={project.display_name || project.name} emoji={project.icon_emoji || undefined} color={project.icon_color || '#2D5FA0'} size={40} />
+              <ProjectIcon
+                name={project.display_name || project.name}
+                emoji={project.icon_emoji || undefined}
+                color={project.icon_color || '#2D5FA0'}
+                size={40}
+              />
 
               <div className="flex-1 overflow-hidden">
                 {renamingId === project.id ? (
@@ -331,10 +357,10 @@ export default function ProjectHome() {
                         textAlign: 'left',
                       }}
                       onMouseOver={(e) => {
-                        (e.currentTarget as HTMLElement).style.background = 'var(--surface)'
+                        ;(e.currentTarget as HTMLElement).style.background = 'var(--surface)'
                       }}
                       onMouseOut={(e) => {
-                        (e.currentTarget as HTMLElement).style.background = 'transparent'
+                        ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                       }}
                     >
                       <Pencil size={14} />
@@ -355,10 +381,10 @@ export default function ProjectHome() {
                         textAlign: 'left',
                       }}
                       onMouseOver={(e) => {
-                        (e.currentTarget as HTMLElement).style.background = '#fff0f0'
+                        ;(e.currentTarget as HTMLElement).style.background = '#fff0f0'
                       }}
                       onMouseOut={(e) => {
-                        (e.currentTarget as HTMLElement).style.background = 'transparent'
+                        ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                       }}
                     >
                       <Trash2 size={14} />

@@ -5,12 +5,21 @@ import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
 import BranchDropdown from '../sidebar/BranchDropdown'
+import ToolsDropdown from './ToolsDropdown'
 import { T } from '../../styles/tokens'
 
 // SVG icons for git operations
 function ArrowUpIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
       <line x1="12" y1="19" x2="12" y2="5" />
       <polyline points="5 12 12 5 19 12" />
     </svg>
@@ -18,7 +27,15 @@ function ArrowUpIcon() {
 }
 function ArrowDownIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
       <line x1="12" y1="5" x2="12" y2="19" />
       <polyline points="19 12 12 19 5 12" />
     </svg>
@@ -44,20 +61,24 @@ export default function Header() {
   const [pullStatus, setPullStatus] = useState<OpStatus>('idle')
   const [statusMsg, setStatusMsg] = useState('')
 
-  const isGitProject = activeProject && (activeProject.save_mode === 'git' || activeProject.save_mode === 'both')
+  const isGitProject =
+    activeProject && (activeProject.save_mode === 'git' || activeProject.save_mode === 'both')
 
   // ─── Local save ──────────────────────────────────────────
   async function handleSave() {
-    if (!activeProject) { setShowSaveModal(true); return }
+    if (!activeProject) {
+      setShowSaveModal(true)
+      return
+    }
     const mode = activeProject.save_mode || 'local'
 
     if (mode === 'local' || mode === 'both') {
       setSaveStatus('loading')
       try {
-        const result = await window.api?.save?.local({
+        const result = (await window.api?.save?.local({
           projectId: activeProject.id,
           directoryPath: activeProject.local_path || undefined,
-        }) as { success: boolean; error?: string }
+        })) as { success: boolean; error?: string }
         if (result?.success) {
           setSaveStatus('success')
           setTimeout(() => setSaveStatus('idle'), 2000)
@@ -82,7 +103,13 @@ export default function Header() {
     setStatusMsg('')
     setGitLoading('Pushing to remote...')
     try {
-      const api = window.api as unknown as Record<string, Record<string, (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>>>
+      const api = window.api as unknown as Record<
+        string,
+        Record<
+          string,
+          (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>
+        >
+      >
 
       const result = await api.git.push(activeProject.id)
 
@@ -90,16 +117,25 @@ export default function Header() {
         const data = result.data as { branch?: string }
         setStatusMsg(`Push başarılı (${data?.branch || 'branch'})`)
         setPushStatus('success')
-        setTimeout(() => { setPushStatus('idle'); setStatusMsg('') }, 3000)
+        setTimeout(() => {
+          setPushStatus('idle')
+          setStatusMsg('')
+        }, 3000)
       } else {
         setStatusMsg(result?.error || 'Push hatası')
         setPushStatus('error')
-        setTimeout(() => { setPushStatus('idle'); setStatusMsg('') }, 5000)
+        setTimeout(() => {
+          setPushStatus('idle')
+          setStatusMsg('')
+        }, 5000)
       }
     } catch (e) {
       setStatusMsg((e as Error).message)
       setPushStatus('error')
-      setTimeout(() => { setPushStatus('idle'); setStatusMsg('') }, 5000)
+      setTimeout(() => {
+        setPushStatus('idle')
+        setStatusMsg('')
+      }, 5000)
     }
     setGitLoading(null)
   }
@@ -111,7 +147,13 @@ export default function Header() {
     setStatusMsg('')
     setGitLoading('Pulling from remote...')
     try {
-      const api = window.api as unknown as Record<string, Record<string, (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>>>
+      const api = window.api as unknown as Record<
+        string,
+        Record<
+          string,
+          (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>
+        >
+      >
       const result = await api.git.pull(activeProject.id)
 
       if (result?.success) {
@@ -123,23 +165,34 @@ export default function Header() {
         // Re-import pulled data into DB first
         try {
           await api.save.gitPull({ projectId: activeProject.id })
-        } catch { /* pulled data may not need DB import if using file-based */ }
+        } catch {
+          /* pulled data may not need DB import if using file-based */
+        }
 
         // Refresh tree, tabs, and all stores
         await refreshTree()
         // Force full project reload to refresh all data
         await setActiveProject(activeProject.id)
 
-        setTimeout(() => { setPullStatus('idle'); setStatusMsg('') }, 3000)
+        setTimeout(() => {
+          setPullStatus('idle')
+          setStatusMsg('')
+        }, 3000)
       } else {
         setStatusMsg(result?.error || 'Pull hatası')
         setPullStatus('error')
-        setTimeout(() => { setPullStatus('idle'); setStatusMsg('') }, 5000)
+        setTimeout(() => {
+          setPullStatus('idle')
+          setStatusMsg('')
+        }, 5000)
       }
     } catch (e) {
       setStatusMsg((e as Error).message)
       setPullStatus('error')
-      setTimeout(() => { setPullStatus('idle'); setStatusMsg('') }, 5000)
+      setTimeout(() => {
+        setPullStatus('idle')
+        setStatusMsg('')
+      }, 5000)
     }
     setGitLoading(null)
   }
@@ -150,7 +203,8 @@ export default function Header() {
     window.api?.window?.toggleMaximize?.()
   }
 
-  const anyLoading = saveStatus === 'loading' || pushStatus === 'loading' || pullStatus === 'loading'
+  const anyLoading =
+    saveStatus === 'loading' || pushStatus === 'loading' || pullStatus === 'loading'
 
   return (
     <header
@@ -174,10 +228,22 @@ export default function Header() {
           fontSize: 13,
         }}
         onClick={goHome}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = T.surface }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+        onMouseEnter={(e) => {
+          ;(e.currentTarget as HTMLElement).style.background = T.surface
+        }}
+        onMouseLeave={(e) => {
+          ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+        }}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          style={{ marginRight: 6 }}
+        >
           <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
           <polyline points="9 22 9 12 15 12 15 22" />
         </svg>
@@ -197,8 +263,15 @@ export default function Header() {
             color: T.text,
           }}
         >
-          <ProjectIcon name={activeProject.display_name || activeProject.name} emoji={activeProject.icon_emoji || undefined} color={activeProject.icon_color || T.accent} size={18} />
-          <span className="truncate" style={{ maxWidth: 160 }}>{activeProject.display_name || activeProject.name}</span>
+          <ProjectIcon
+            name={activeProject.display_name || activeProject.name}
+            emoji={activeProject.icon_emoji || undefined}
+            color={activeProject.icon_color || T.accent}
+            size={18}
+          />
+          <span className="truncate" style={{ maxWidth: 160 }}>
+            {activeProject.display_name || activeProject.name}
+          </span>
           <span
             className="hidden cursor-pointer group-hover:inline"
             style={{ color: T.ghost, fontSize: 16, marginLeft: 4 }}
@@ -229,7 +302,10 @@ export default function Header() {
             padding: '2px 10px',
             borderRadius: 4,
             color: pushStatus === 'error' || pullStatus === 'error' ? 'var(--red)' : 'var(--green)',
-            background: pushStatus === 'error' || pullStatus === 'error' ? 'rgba(239,68,68,0.1)' : 'var(--green-bg)',
+            background:
+              pushStatus === 'error' || pullStatus === 'error'
+                ? 'rgba(239,68,68,0.1)'
+                : 'var(--green-bg)',
           }}
         >
           {statusMsg}
@@ -241,6 +317,9 @@ export default function Header() {
 
       {/* Right side */}
       <div className="no-drag flex items-center gap-1.5 shrink-0" style={{ padding: '0 14px' }}>
+        {/* Tools dropdown — JWT, JSON/XML formatter, encode/decode */}
+        <ToolsDropdown />
+
         {/* Branch dropdown */}
         <BranchDropdown pill />
 
@@ -257,19 +336,30 @@ export default function Header() {
               border: `1px solid ${pullStatus === 'success' ? 'var(--green)' : pullStatus === 'error' ? 'var(--red)' : T.border}`,
               borderRadius: 7,
               padding: '4px 8px',
-              color: pullStatus === 'success' ? 'var(--green)' : pullStatus === 'error' ? 'var(--red)' : T.muted,
+              color:
+                pullStatus === 'success'
+                  ? 'var(--green)'
+                  : pullStatus === 'error'
+                    ? 'var(--red)'
+                    : T.muted,
               fontSize: 13,
               transition: 'all 0.2s',
               opacity: anyLoading && pullStatus !== 'loading' ? 0.5 : 1,
             }}
             onMouseEnter={(e) => {
-              if (pullStatus === 'idle') (e.currentTarget as HTMLElement).style.borderColor = T.accent
+              if (pullStatus === 'idle')
+                (e.currentTarget as HTMLElement).style.borderColor = T.accent
             }}
             onMouseLeave={(e) => {
-              if (pullStatus === 'idle') (e.currentTarget as HTMLElement).style.borderColor = T.border
+              if (pullStatus === 'idle')
+                (e.currentTarget as HTMLElement).style.borderColor = T.border
             }}
           >
-            {pullStatus === 'loading' ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowDownIcon />}
+            {pullStatus === 'loading' ? (
+              <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+            ) : (
+              <ArrowDownIcon />
+            )}
             <span>Pull</span>
           </button>
         )}
@@ -287,19 +377,30 @@ export default function Header() {
               border: `1px solid ${pushStatus === 'success' ? 'var(--green)' : pushStatus === 'error' ? 'var(--red)' : T.border}`,
               borderRadius: 7,
               padding: '4px 8px',
-              color: pushStatus === 'success' ? 'var(--green)' : pushStatus === 'error' ? 'var(--red)' : T.muted,
+              color:
+                pushStatus === 'success'
+                  ? 'var(--green)'
+                  : pushStatus === 'error'
+                    ? 'var(--red)'
+                    : T.muted,
               fontSize: 13,
               transition: 'all 0.2s',
               opacity: anyLoading && pushStatus !== 'loading' ? 0.5 : 1,
             }}
             onMouseEnter={(e) => {
-              if (pushStatus === 'idle') (e.currentTarget as HTMLElement).style.borderColor = T.accent
+              if (pushStatus === 'idle')
+                (e.currentTarget as HTMLElement).style.borderColor = T.accent
             }}
             onMouseLeave={(e) => {
-              if (pushStatus === 'idle') (e.currentTarget as HTMLElement).style.borderColor = T.border
+              if (pushStatus === 'idle')
+                (e.currentTarget as HTMLElement).style.borderColor = T.border
             }}
           >
-            {pushStatus === 'loading' ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpIcon />}
+            {pushStatus === 'loading' ? (
+              <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+            ) : (
+              <ArrowUpIcon />
+            )}
             <span>Push</span>
           </button>
         )}
@@ -322,18 +423,22 @@ export default function Header() {
           title="Save Project (Cmd+S)"
           onMouseEnter={(e) => {
             if (saveStatus === 'idle') {
-              (e.currentTarget as HTMLElement).style.color = T.accent
+              ;(e.currentTarget as HTMLElement).style.color = T.accent
               ;(e.currentTarget as HTMLElement).style.borderColor = T.accent
             }
           }}
           onMouseLeave={(e) => {
             if (saveStatus === 'idle') {
-              (e.currentTarget as HTMLElement).style.color = T.muted
+              ;(e.currentTarget as HTMLElement).style.color = T.muted
               ;(e.currentTarget as HTMLElement).style.borderColor = T.border
             }
           }}
         >
-          {saveStatus === 'loading' ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={12} />}
+          {saveStatus === 'loading' ? (
+            <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+          ) : (
+            <Save size={12} />
+          )}
           {saveStatus === 'success' && <span style={{ fontSize: 13 }}>✓</span>}
         </button>
       </div>

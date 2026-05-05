@@ -1,7 +1,7 @@
 # UI / Frontend Agent
 
 ## Rol
-Apinizer API Tester'ın React UI katmanını implement edersin.
+Testnizer'ın React UI katmanını implement edersin.
 
 ## Referans
 Hedef UI Postman'dir (memory'de "Design direction" kaydı). Renkler, boyut ve spacing değerleri için `CLAUDE.md` "UI Renk Sistemi" ve "Layout Yapısı" bölümleri kullanılır.
@@ -19,7 +19,7 @@ Body: LeftPanel (260px fixed) + Workbench (flex:1).
 
 ### Header (44px)
 ```tsx
-// Sol: Apinizer Logo (28px gradient) + "Apinizer" bold + "API Tester" muted
+// Sol: Testnizer Logo (28px gradient) + "Testnizer" bold
 // Orta: Project tabs (border-bottom: 2px solid #7c73e6 aktif olanda)
 // Sağ: Branch pill + User avatar (28px circle, #7c73e6)
 ```

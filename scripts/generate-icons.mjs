@@ -2,7 +2,7 @@
 /**
  * Icon generation script.
  *
- * Takes the Apinizer "A" mark from the logo PNG, places it on a white
+ * Takes the Testnizer "A" mark from the logo PNG, places it on a white
  * rounded-square background with 20% padding, and generates all platform icons.
  *
  * Outputs:
@@ -26,7 +26,7 @@ const BUILD_DIR = resolve(ROOT, 'build')
 const ICONS_DIR = resolve(BUILD_DIR, 'icons')
 const RESOURCES_DIR = resolve(ROOT, 'resources')
 
-// Source: extract the "A" mark from the full Apinizer logo
+// Source: extract the "A" mark from the full Testnizer logo
 const LOGO_PATH = '/Users/ertugrulaslan/temp/apinizer-logo.png'
 
 const STANDARD_SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024]
@@ -60,7 +60,7 @@ async function main() {
   }
   if (!existsSync(ICONS_DIR)) mkdirSync(ICONS_DIR, { recursive: true })
 
-  console.log('Extracting Apinizer "A" mark from logo...\n')
+  console.log('Extracting Testnizer "A" mark from logo...\n')
 
   // Extract the "A" mark (left ~110x110 of the 500x110 logo)
   const markBuffer = await sharp(LOGO_PATH)
@@ -144,14 +144,14 @@ async function main() {
   console.log('  ✓  multi     →  build/icon.icns')
 
   // Update dev Electron .app
-  const devIcns = resolve(ROOT, 'node_modules/electron/dist/Apinizer.app/Contents/Resources/electron.icns')
+  const devIcns = resolve(ROOT, 'node_modules/electron/dist/Testnizer.app/Contents/Resources/electron.icns')
   if (existsSync(dirname(devIcns))) {
     writeFileSync(devIcns, icnsBuf)
     writeFileSync(resolve(dirname(devIcns), 'icon.png'), pngBuffers[512])
-    console.log('  ✓  multi     →  Apinizer.app/electron.icns (dev)')
+    console.log('  ✓  multi     →  Testnizer.app/electron.icns (dev)')
   }
 
-  console.log('\nDone — all icons generated from Apinizer logo.')
+  console.log('\nDone — all icons generated from Testnizer logo.')
 }
 
 main().catch((e) => {

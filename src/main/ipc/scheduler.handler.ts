@@ -1,5 +1,5 @@
 // src/main/ipc/scheduler.handler.ts
-// Apinizer API Tester — Scheduled Tasks IPC Handler
+// Testnizer — Scheduled Tasks IPC Handler
 
 import { ipcMain, BrowserWindow } from 'electron'
 import { getDb } from '../db/database'
@@ -40,10 +40,14 @@ const activeTimers = new Map<string, ReturnType<typeof setInterval>>()
 
 function intervalToMs(value: number, unit: string): number {
   switch (unit) {
-    case 'minutes': return value * 60 * 1000
-    case 'hours': return value * 60 * 60 * 1000
-    case 'days': return value * 24 * 60 * 60 * 1000
-    default: return value * 60 * 1000
+    case 'minutes':
+      return value * 60 * 1000
+    case 'hours':
+      return value * 60 * 60 * 1000
+    case 'days':
+      return value * 24 * 60 * 60 * 1000
+    default:
+      return value * 60 * 1000
   }
 }
 
@@ -71,8 +75,11 @@ async function executeScheduledRun(task: ScheduledTask): Promise<void> {
 
     // Update last_run_at and next_run_at
     const nextRun = computeNextRun(task.interval_value, task.interval_unit)
-    db.prepare('UPDATE scheduled_tasks SET last_run_at = ?, next_run_at = ? WHERE id = ?')
-      .run(Date.now(), nextRun, task.id)
+    db.prepare('UPDATE scheduled_tasks SET last_run_at = ?, next_run_at = ? WHERE id = ?').run(
+      Date.now(),
+      nextRun,
+      task.id,
+    )
 
     // Notify renderer about the completed scheduled run
     const windows = BrowserWindow.getAllWindows()
@@ -89,8 +96,11 @@ async function executeScheduledRun(task: ScheduledTask): Promise<void> {
     console.error(`Scheduled task "${task.name}" failed:`, (e as Error).message)
     // Still update timestamps
     const nextRun = computeNextRun(task.interval_value, task.interval_unit)
-    db.prepare('UPDATE scheduled_tasks SET last_run_at = ?, next_run_at = ? WHERE id = ?')
-      .run(Date.now(), nextRun, task.id)
+    db.prepare('UPDATE scheduled_tasks SET last_run_at = ?, next_run_at = ? WHERE id = ?').run(
+      Date.now(),
+      nextRun,
+      task.id,
+    )
   }
 }
 
@@ -115,9 +125,9 @@ function stopTimer(taskId: string): void {
 export function startAllSchedulers(): void {
   try {
     const db = getDb()
-    const tasks = db.prepare(
-      'SELECT * FROM scheduled_tasks WHERE enabled = 1'
-    ).all() as ScheduledTask[]
+    const tasks = db
+      .prepare('SELECT * FROM scheduled_tasks WHERE enabled = 1')
+      .all() as ScheduledTask[]
     for (const task of tasks) {
       startTimer(task)
     }
@@ -143,11 +153,13 @@ export function registerSchedulerHandlers(): void {
       const now = Date.now()
       const nextRun = computeNextRun(payload.intervalValue, payload.intervalUnit)
 
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO scheduled_tasks (id, project_id, name, endpoint_ids, folder_id, environment_id,
           interval_value, interval_unit, delay_ms, enabled, next_run_at, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-      `).run(
+      `,
+      ).run(
         id,
         payload.projectId,
         payload.name,
@@ -158,7 +170,7 @@ export function registerSchedulerHandlers(): void {
         payload.intervalUnit,
         payload.delayMs ?? 0,
         nextRun,
-        now
+        now,
       )
 
       const task = db.prepare('SELECT * FROM scheduled_tasks WHERE id = ?').get(id) as ScheduledTask
@@ -173,9 +185,9 @@ export function registerSchedulerHandlers(): void {
   ipcMain.handle('scheduler:list', async (_event, projectId: string) => {
     try {
       const db = getDb()
-      const tasks = db.prepare(
-        'SELECT * FROM scheduled_tasks WHERE project_id = ? ORDER BY created_at DESC'
-      ).all(projectId)
+      const tasks = db
+        .prepare('SELECT * FROM scheduled_tasks WHERE project_id = ? ORDER BY created_at DESC')
+        .all(projectId)
       return { success: true, data: tasks }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -196,16 +208,23 @@ export function registerSchedulerHandlers(): void {
   ipcMain.handle('scheduler:toggle', async (_event, taskId: string) => {
     try {
       const db = getDb()
-      const task = db.prepare('SELECT * FROM scheduled_tasks WHERE id = ?').get(taskId) as ScheduledTask | undefined
+      const task = db.prepare('SELECT * FROM scheduled_tasks WHERE id = ?').get(taskId) as
+        | ScheduledTask
+        | undefined
       if (!task) return { success: false, error: 'Task not found' }
 
       const newEnabled = task.enabled ? 0 : 1
       const nextRun = newEnabled ? computeNextRun(task.interval_value, task.interval_unit) : null
-      db.prepare('UPDATE scheduled_tasks SET enabled = ?, next_run_at = ? WHERE id = ?')
-        .run(newEnabled, nextRun, taskId)
+      db.prepare('UPDATE scheduled_tasks SET enabled = ?, next_run_at = ? WHERE id = ?').run(
+        newEnabled,
+        nextRun,
+        taskId,
+      )
 
       if (newEnabled) {
-        const updated = db.prepare('SELECT * FROM scheduled_tasks WHERE id = ?').get(taskId) as ScheduledTask
+        const updated = db
+          .prepare('SELECT * FROM scheduled_tasks WHERE id = ?')
+          .get(taskId) as ScheduledTask
         startTimer(updated)
       } else {
         stopTimer(taskId)

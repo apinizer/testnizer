@@ -18,12 +18,45 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Quality gate — runs once before any platform build. Blocks the matrix on
+  # type errors, lint errors, or failing unit tests so we don't waste CI minutes
+  # building six platform packages from broken code.
+  # ---------------------------------------------------------------------------
+  quality:
+    name: Lint + Typecheck + Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test:unit
+
+  # ---------------------------------------------------------------------------
   # macOS — one job per arch, each on a native runner so better-sqlite3's
   # prebuild-install pulls the correct darwin-{x64,arm64} binary and
   # electron-rebuild compiles against the host's arch if a prebuild is missing.
   # ---------------------------------------------------------------------------
   build-mac:
+    needs: quality
     name: macOS ${{ matrix.arch }}
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -47,11 +80,32 @@ jobs:
       - name: Build renderer + main
         run: npm run build
 
+      - name: E2E smoke tests (Playwright)
+        run: npm run test:e2e:smoke
+
+      - name: E2E HTTP suite (network-dependent; failures non-blocking for now)
+        # Sprint 2 introduced this suite; some tests assume specific httpbin
+        # response shapes and need iteration. Track via STATUS.md before making
+        # this a hard gate.
+        run: npm run test:e2e:http
+        continue-on-error: true
+        env:
+          HTTPBIN_URL: ${{ vars.HTTPBIN_URL || 'https://httpbin.org' }}
+          BADSSL_BASE: ${{ vars.BADSSL_BASE || 'https://badssl.com' }}
+
       - name: Package (dmg + zip, ${{ matrix.arch }})
         env:
           # Skip signing in CI unless the secrets are actually configured.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --mac --${{ matrix.arch }} --publish never
+        # `--publish always` on tag pushes uploads + generates latest-mac.yml
+        # for electron-updater. On main/PR builds we never publish.
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            npx electron-builder --mac --${{ matrix.arch }} --publish always
+          else
+            npx electron-builder --mac --${{ matrix.arch }} --publish never
+          fi
+        shell: bash
 
       - name: Verify native binaries
         run: node scripts/verify-natives.js --platform=darwin --arch=${{ matrix.arch }}
@@ -71,6 +125,11 @@ jobs:
   # ---------------------------------------------------------------------------
   build-linux:
     name: Linux ${{ matrix.arch }}
+    needs: quality
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -101,7 +160,13 @@ jobs:
         run: npm run build
 
       - name: Package (AppImage + deb, ${{ matrix.arch }})
-        run: npx electron-builder --linux --${{ matrix.arch }} --publish never
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            npx electron-builder --linux --${{ matrix.arch }} --publish always
+          else
+            npx electron-builder --linux --${{ matrix.arch }} --publish never
+          fi
+        shell: bash
 
       - name: Verify native binaries
         run: node scripts/verify-natives.js --platform=linux --arch=${{ matrix.arch }}
@@ -121,6 +186,11 @@ jobs:
   # ---------------------------------------------------------------------------
   build-windows:
     name: Windows ${{ matrix.arch }}
+    needs: quality
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -145,7 +215,15 @@ jobs:
         run: npm run build
 
       - name: Package (nsis + zip, ${{ matrix.arch }})
-        run: npx electron-builder --win --${{ matrix.arch }} --publish never
+        # PowerShell on windows-latest, bash on windows-11-arm — use a
+        # cross-shell check via the GITHUB_REF env.
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            npx electron-builder --win --${{ matrix.arch }} --publish always
+          else
+            npx electron-builder --win --${{ matrix.arch }} --publish never
+          fi
 
       - name: Verify native binaries
         run: node scripts/verify-natives.js --platform=win32 --arch=${{ matrix.arch }}

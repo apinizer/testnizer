@@ -32,10 +32,10 @@ function shouldInclude(fileName) {
 
 /**
  * Rename electron-builder's multi-arch nsis combined installer from the
- * double-dot form "Apinizer.1.0..exe" (blank ${arch}) to a clearer name.
+ * double-dot form "Testnizer.1.0..exe" (blank ${arch}) to a clearer name.
  */
 function normalizeName(name) {
-  return name.replace(/^Apinizer\.1\.0\.\.exe$/, 'Apinizer.1.0.win.universal.exe')
+  return name.replace(/^Testnizer\.1\.0\.\.exe$/, 'Testnizer.1.0.win.universal.exe')
 }
 
 function collect() {

@@ -9,6 +9,16 @@ import GraphQLEditor from '../protocols/GraphQLEditor'
 import GrpcEditor from '../protocols/GrpcEditor'
 import SseEditor from '../protocols/SseEditor'
 import RunnerTab from '../runner/RunnerTab'
+import JwtTool from '../tools/JwtTool'
+import JsonFormatTool from '../tools/JsonFormatTool'
+import XmlFormatTool from '../tools/XmlFormatTool'
+import EncodeTool from '../tools/EncodeTool'
+import DiffTool from '../tools/DiffTool'
+import JsonPathTool from '../tools/JsonPathTool'
+import XPathTool from '../tools/XPathTool'
+import XsltTool from '../tools/XsltTool'
+import JoltTool from '../tools/JoltTool'
+import WsSecurityTool from '../tools/WsSecurityTool'
 import RightPanel from './RightPanel'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
@@ -61,12 +71,16 @@ function EndpointTabBar() {
         try {
           await window.api?.savedRequest?.update(tab.savedRequestId, { name: renameValue.trim() })
           dbUpdated = true
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       } else if (tab?.endpointId) {
         try {
           await window.api?.endpoint?.update(tab.endpointId, { name: renameValue.trim() })
           dbUpdated = true
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
       if (dbUpdated) {
         await refreshTree()
@@ -141,7 +155,15 @@ function EndpointTabBar() {
             }}
           >
             {tab.protocol === 'runner' && (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ flexShrink: 0 }}>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth="2"
+                style={{ flexShrink: 0 }}
+              >
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <path d="M9 3v18" />
                 <path d="M3 9h6" />
@@ -173,19 +195,29 @@ function EndpointTabBar() {
                 }}
               />
             ) : (
-              <span onDoubleClick={(e) => {
-                e.stopPropagation()
-                if (isPreview) {
-                  pinTab(tab.id)
-                } else {
-                  handleStartRename(tab.id, tab.name)
-                }
-              }}>
+              <span
+                onDoubleClick={(e) => {
+                  e.stopPropagation()
+                  if (isPreview) {
+                    pinTab(tab.id)
+                  } else {
+                    handleStartRename(tab.id, tab.name)
+                  }
+                }}
+              >
                 {tab.name}
               </span>
             )}
             {tab.isDirty && (
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.accent, flexShrink: 0 }} />
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: T.accent,
+                  flexShrink: 0,
+                }}
+              />
             )}
             <span
               className="hidden cursor-pointer group-hover:inline"
@@ -236,10 +268,7 @@ function EndpointTabBar() {
       <div style={{ flex: 1 }} />
 
       {/* Environment selector (Postman parity — right end of tab bar) */}
-      <div
-        className="flex shrink-0 items-center"
-        style={{ paddingRight: 10, paddingLeft: 8 }}
-      >
+      <div className="flex shrink-0 items-center" style={{ paddingRight: 10, paddingLeft: 8 }}>
         <EnvironmentSelector />
       </div>
     </div>
@@ -327,11 +356,105 @@ export default function Workbench() {
     )
   }
 
+  if (protocol === 'tools.jwt') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <JwtTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.jsonFormat') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <JsonFormatTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.xmlFormat') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <XmlFormatTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.encode') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <EncodeTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.diff') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <DiffTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.jsonpath') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <JsonPathTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.xpath') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <XPathTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.xslt') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <XsltTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.jolt') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <JoltTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.wsSecurity') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <WsSecurityTool />
+      </div>
+    )
+  }
+
   if (protocol === 'runner') {
     return (
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
-        <RunnerTab folderId={activeTab.folderId} tabId={activeTab.id} sessionKey={activeTab.sessionKey} />
+        <RunnerTab
+          folderId={activeTab.folderId}
+          tabId={activeTab.id}
+          sessionKey={activeTab.sessionKey}
+        />
       </div>
     )
   }

@@ -8,12 +8,21 @@ import ConsoleTab from './ConsoleTab'
 import HeadersTab from './HeadersTab'
 import TestResultsTab from './TestResultsTab'
 import ActualRequestTab from './ActualRequestTab'
+import WsseResponsePanel from './WsseResponsePanel'
+import { useTabsStore } from '../../stores/tabs.store'
 import EmptyState from '../shared/EmptyState'
 import StatusBadge from '../shared/StatusBadge'
 import { useUIStore } from '../../stores/ui.store'
 import type { ApiResponse } from '../../types'
 
-type ResTabKey = 'body' | 'cookies' | 'headers' | 'testResults' | 'console' | 'actualRequest'
+type ResTabKey =
+  | 'body'
+  | 'cookies'
+  | 'headers'
+  | 'testResults'
+  | 'console'
+  | 'actualRequest'
+  | 'wsse'
 
 /** Extract hostname from URL safely */
 function extractHost(url?: string): string {
@@ -50,7 +59,8 @@ const NetworkInfoPopover = forwardRef<HTMLDivElement, { response: ApiResponse }>
     const url = response.actualRequest?.url
     const host = extractHost(url)
     const proto = extractProtocol(url)
-    const contentType = response.headers?.['content-type'] || response.headers?.['Content-Type'] || '—'
+    const contentType =
+      response.headers?.['content-type'] || response.headers?.['Content-Type'] || '—'
     const server = response.headers?.['server'] || response.headers?.['Server'] || '—'
     const t = response.timing || { total: 0 }
 
@@ -58,7 +68,10 @@ const NetworkInfoPopover = forwardRef<HTMLDivElement, { response: ApiResponse }>
       ['Host', host],
       ['Protocol', proto],
       ['Method', response.actualRequest?.method || '—'],
-      ['Status', response.status != null ? `${response.status} ${response.statusText || ''}`.trim() : '—'],
+      [
+        'Status',
+        response.status != null ? `${response.status} ${response.statusText || ''}`.trim() : '—',
+      ],
       ['Server', server],
       ['Content-Type', contentType],
     ]
@@ -95,8 +108,15 @@ const NetworkInfoPopover = forwardRef<HTMLDivElement, { response: ApiResponse }>
             <tbody>
               {rows.map(([k, v]) => (
                 <tr key={k}>
-                  <td className="py-1 pr-3 text-[var(--muted)]" style={{ width: 110 }}>{k}</td>
-                  <td className="py-1 font-mono text-[var(--text)]" style={{ wordBreak: 'break-all' }}>{v}</td>
+                  <td className="py-1 pr-3 text-[var(--muted)]" style={{ width: 110 }}>
+                    {k}
+                  </td>
+                  <td
+                    className="py-1 font-mono text-[var(--text)]"
+                    style={{ wordBreak: 'break-all' }}
+                  >
+                    {v}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -113,7 +133,9 @@ const NetworkInfoPopover = forwardRef<HTMLDivElement, { response: ApiResponse }>
             <tbody>
               {timings.map(([k, v]) => (
                 <tr key={k}>
-                  <td className="py-1 pr-3 text-[var(--muted)]" style={{ width: 160 }}>{k}</td>
+                  <td className="py-1 pr-3 text-[var(--muted)]" style={{ width: 160 }}>
+                    {k}
+                  </td>
                   <td className="py-1 font-mono text-[var(--text)]">{v}</td>
                 </tr>
               ))}
@@ -122,7 +144,7 @@ const NetworkInfoPopover = forwardRef<HTMLDivElement, { response: ApiResponse }>
         </div>
       </div>
     )
-  }
+  },
 )
 
 /**
@@ -133,6 +155,7 @@ export default function ResponsePane() {
   const response = useResponseStore((s) => s.response)
   const isLoading = useResponseStore((s) => s.isLoading)
   const setActiveSidebarPage = useUIStore((s) => s.setActiveSidebarPage)
+  const activeProtocolTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const [activeTab, setActiveTab] = useState<ResTabKey>('body')
   const [showNetworkInfo, setShowNetworkInfo] = useState(false)
   const networkBtnRef = useRef<HTMLButtonElement>(null)
@@ -218,7 +241,15 @@ export default function ResponsePane() {
     return `${ms} ms`
   }
 
-  const TABS: Array<{ key: ResTabKey; label: string; count?: number; countLabel?: string; countColor?: string }> = [
+  const isSoapResponse = activeProtocolTab?.protocol === 'soap' || response.protocol === 'soap'
+
+  const TABS: Array<{
+    key: ResTabKey
+    label: string
+    count?: number
+    countLabel?: string
+    countColor?: string
+  }> = [
     { key: 'body', label: 'Body' },
     { key: 'cookies', label: 'Cookies', count: cookieCount },
     { key: 'headers', label: 'Headers', count: headerCount },
@@ -231,6 +262,7 @@ export default function ResponsePane() {
     },
     { key: 'console', label: 'Console' },
     { key: 'actualRequest', label: 'Actual' },
+    ...(isSoapResponse ? [{ key: 'wsse' as ResTabKey, label: 'WS-Security' }] : []),
   ]
 
   return (
@@ -250,8 +282,12 @@ export default function ResponsePane() {
           onClick={() => setActiveSidebarPage('history')}
           className="flex shrink-0 cursor-pointer items-center justify-center rounded p-1"
           style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--accent)' }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--muted)' }}
+          onMouseEnter={(e) => {
+            ;(e.currentTarget as HTMLElement).style.color = 'var(--accent)'
+          }}
+          onMouseLeave={(e) => {
+            ;(e.currentTarget as HTMLElement).style.color = 'var(--muted)'
+          }}
           title="Response history"
         >
           <HistoryIcon size={14} />
@@ -281,7 +317,9 @@ export default function ResponsePane() {
                 {tab.count != null && tab.count > 0 && (
                   <span
                     className="ml-1 font-semibold"
-                    style={{ color: tab.countColor || (isActive ? 'var(--accent-text)' : 'var(--hint)') }}
+                    style={{
+                      color: tab.countColor || (isActive ? 'var(--accent-text)' : 'var(--hint)'),
+                    }}
                   >
                     {tab.countLabel || tab.count}
                   </span>
@@ -298,11 +336,15 @@ export default function ResponsePane() {
           )}
           {response.timing?.total != null && (
             <span style={{ color: 'var(--muted)' }}>
-              <span className="font-semibold" style={{ color: 'var(--green)' }}>{humanTime(response.timing.total)}</span>
+              <span className="font-semibold" style={{ color: 'var(--green)' }}>
+                {humanTime(response.timing.total)}
+              </span>
             </span>
           )}
           <span style={{ color: 'var(--muted)' }}>
-            <span className="font-semibold" style={{ color: 'var(--text)' }}>{sizeKB} KB</span>
+            <span className="font-semibold" style={{ color: 'var(--text)' }}>
+              {sizeKB} KB
+            </span>
           </span>
           <div style={{ position: 'relative' }}>
             <button
@@ -319,12 +361,7 @@ export default function ResponsePane() {
             >
               <Globe size={14} />
             </button>
-            {showNetworkInfo && (
-              <NetworkInfoPopover
-                ref={networkPopRef}
-                response={response}
-              />
-            )}
+            {showNetworkInfo && <NetworkInfoPopover ref={networkPopRef} response={response} />}
           </div>
         </div>
       </div>
@@ -337,6 +374,7 @@ export default function ResponsePane() {
         {activeTab === 'testResults' && <TestResultsTab />}
         {activeTab === 'console' && <ConsoleTab />}
         {activeTab === 'actualRequest' && <ActualRequestTab />}
+        {activeTab === 'wsse' && <WsseResponsePanel body={response.body ?? ''} />}
       </div>
     </div>
   )

@@ -1,0 +1,19 @@
+{
+  "swagger": "2.0",
+  "info": { "title": "Legacy API", "version": "1.0" },
+  "host": "legacy.example.com",
+  "basePath": "/api/v1",
+  "schemes": ["https"],
+  "paths": {
+    "/users": {
+      "get": {
+        "summary": "List users",
+        "tags": ["users"],
+        "parameters": [
+          { "name": "page", "in": "query", "required": false, "type": "integer" }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    }
+  }
+}

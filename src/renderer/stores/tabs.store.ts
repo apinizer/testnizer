@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Tab } from '../types'
+import type { Tab, ToolProtocol } from '../types'
 
 interface TabsStore {
   tabs: Tab[]
@@ -8,6 +8,9 @@ interface TabsStore {
   openTab: (tab: Omit<Tab, 'isDirty' | 'isLoading'>) => void
   /** Open in a preview (temporary) tab — replaces existing preview tab */
   openPreviewTab: (tab: Omit<Tab, 'isDirty' | 'isLoading' | 'isPreview'>) => void
+  /** Open a tool tab (JWT, JSON formatter, etc). Always creates a new tab so
+   *  multiple instances of the same tool can run side by side. */
+  openToolTab: (toolType: ToolProtocol, label: string) => void
   /** Pin (persist) the current preview tab so it won't be replaced */
   pinTab: (id: string) => void
   closeTab: (id: string) => void
@@ -27,13 +30,13 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
       const existing = get().tabs.find(
         (t) =>
           (tab.endpointId && t.endpointId === tab.endpointId) ||
-          (tab.savedRequestId && t.savedRequestId === tab.savedRequestId)
+          (tab.savedRequestId && t.savedRequestId === tab.savedRequestId),
       )
       if (existing) {
         // If found an existing preview tab, pin it
         set((state) => ({
           activeTabId: existing.id,
-          tabs: state.tabs.map((t) => t.id === existing.id ? { ...t, isPreview: false } : t),
+          tabs: state.tabs.map((t) => (t.id === existing.id ? { ...t, isPreview: false } : t)),
         }))
         return
       }
@@ -51,7 +54,7 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
       const existing = get().tabs.find(
         (t) =>
           (tab.endpointId && t.endpointId === tab.endpointId) ||
-          (tab.savedRequestId && t.savedRequestId === tab.savedRequestId)
+          (tab.savedRequestId && t.savedRequestId === tab.savedRequestId),
       )
       if (existing) {
         set({ activeTabId: existing.id })
@@ -67,8 +70,15 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
       set((s) => ({
         tabs: s.tabs.map((t) =>
           t.id === existingPreview.id
-            ? { ...t, ...tab, id: existingPreview.id, isDirty: false, isLoading: false, isPreview: true }
-            : t
+            ? {
+                ...t,
+                ...tab,
+                id: existingPreview.id,
+                isDirty: false,
+                isLoading: false,
+                isPreview: true,
+              }
+            : t,
         ),
         activeTabId: existingPreview.id,
       }))
@@ -80,6 +90,21 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
         activeTabId: newTab.id,
       }))
     }
+  },
+
+  openToolTab: (toolType, label) => {
+    const newTab: Tab = {
+      id: `tool-${toolType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: label,
+      protocol: toolType,
+      isDirty: false,
+      isLoading: false,
+      isPreview: false,
+    }
+    set((state) => ({
+      tabs: [...state.tabs, newTab],
+      activeTabId: newTab.id,
+    }))
   },
 
   pinTab: (id) =>

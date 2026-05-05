@@ -5,7 +5,7 @@ import { useWorkspaceStore } from './workspace.store'
 /**
  * Environment + Globals store — **per-project scope**.
  *
- * Postman maintains a workspace-wide environments list, but Apinizer scopes
+ * Postman maintains a workspace-wide environments list, but Testnizer scopes
  * these per project so projects can have their own baseUrl / tokens without
  * cross-pollution. `currentProjectId` drives which environments are loaded.
  *
@@ -41,7 +41,7 @@ interface EnvironmentStore {
 }
 
 function v(ev: { value?: string; initialValue?: string }): string {
-  return ev.value && ev.value.length > 0 ? ev.value : (ev.initialValue || '')
+  return ev.value && ev.value.length > 0 ? ev.value : ev.initialValue || ''
 }
 
 function newId(): string {
@@ -122,7 +122,12 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
   currentProjectId: null,
 
   setCurrentProject: async (projectId) => {
-    set({ currentProjectId: projectId, environments: [], globalVariables: [], activeEnvironmentId: null })
+    set({
+      currentProjectId: projectId,
+      environments: [],
+      globalVariables: [],
+      activeEnvironmentId: null,
+    })
     if (projectId) {
       await get().fetchEnvironments()
       await get().fetchGlobalVariables()
@@ -138,7 +143,9 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
     if (projectId && id) {
       try {
         await window.api?.environment?.setActiveForProject(projectId, id)
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   },
 
@@ -146,7 +153,10 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
     const projectId = get().currentProjectId
     if (!projectId) return
     try {
-      const result = await window.api?.environment?.listByProject(projectId) as { success: boolean; data?: RawEnvRow[] }
+      const result = (await window.api?.environment?.listByProject(projectId)) as {
+        success: boolean
+        data?: RawEnvRow[]
+      }
       if (result?.success && result.data) {
         const rows = result.data
         // Hydrate nested variables by calling envVariable:list for each env.
@@ -154,13 +164,16 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
         const hydrated: Environment[] = await Promise.all(
           rows.map(async (row) => {
             try {
-              const vr = await window.api?.envVariable?.list(row.id) as { success: boolean; data?: RawVarRow[] }
+              const vr = (await window.api?.envVariable?.list(row.id)) as {
+                success: boolean
+                data?: RawVarRow[]
+              }
               const vars = vr?.success && vr.data ? vr.data.map(rowToEnvVar) : []
               return rowToEnv(row, vars)
             } catch {
               return rowToEnv(row, [])
             }
-          })
+          }),
         )
         const active = hydrated.find((e) => e.is_active)?.id || hydrated[0]?.id || null
         set({ environments: hydrated, activeEnvironmentId: active })
@@ -174,7 +187,10 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
     const projectId = get().currentProjectId
     if (!projectId) return
     try {
-      const result = await window.api?.globalVariable?.listByProject(projectId) as { success: boolean; data?: RawVarRow[] }
+      const result = (await window.api?.globalVariable?.listByProject(projectId)) as {
+        success: boolean
+        data?: RawVarRow[]
+      }
       if (result?.success && result.data) {
         set({ globalVariables: result.data.map(rowToGlobalVar) })
       }
@@ -194,20 +210,18 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
     // the FK check and the create silently no-ops. Fall back to the first
     // existing env's workspace_id as a secondary source.
     const wsId =
-      useWorkspaceStore.getState().activeWorkspaceId ||
-      get().environments[0]?.workspace_id ||
-      null
+      useWorkspaceStore.getState().activeWorkspaceId || get().environments[0]?.workspace_id || null
     if (!wsId) {
       console.warn('[environment.store] createEnvironment: no active workspace')
       return
     }
     try {
-      const result = await window.api?.environment?.create({
+      const result = (await window.api?.environment?.create({
         workspace_id: wsId,
         project_id: projectId,
         name,
         is_active: get().environments.length === 0,
-      }) as { success: boolean; data?: RawEnvRow; error?: string }
+      })) as { success: boolean; data?: RawEnvRow; error?: string }
       if (result?.success && result.data) {
         const created = rowToEnv(result.data, [])
         set((state) => ({
@@ -232,11 +246,13 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
     // Optimistic local update
     set((state) => ({
       environments: state.environments.map((e) =>
-        e.id === id ? { ...e, ...updates, updated_at: Date.now() } : e
+        e.id === id ? { ...e, ...updates, updated_at: Date.now() } : e,
       ),
     }))
     try {
-      const { variables: nextVars, ...rest } = updates as Partial<Environment> & { variables?: EnvironmentVariable[] }
+      const { variables: nextVars, ...rest } = updates as Partial<Environment> & {
+        variables?: EnvironmentVariable[]
+      }
       // Persist basic env fields (name / is_active)
       if (Object.keys(rest).length > 0) {
         await window.api?.environment?.update(id, rest as { name?: string; is_active?: boolean })
@@ -249,7 +265,11 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
         // Deleted
         for (const pv of prevVars) {
           if (!nextIds.has(pv.id)) {
-            try { await window.api?.envVariable?.delete(pv.id) } catch { /* ignore */ }
+            try {
+              await window.api?.envVariable?.delete(pv.id)
+            } catch {
+              /* ignore */
+            }
           }
         }
         // Created / updated
@@ -257,7 +277,7 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
           if (!prevIds.has(nv.id)) {
             // New — create in DB, swap local id for DB id
             try {
-              const res = await window.api?.envVariable?.create({
+              const res = (await window.api?.envVariable?.create({
                 environment_id: id,
                 key: nv.key,
                 value: nv.value,
@@ -265,7 +285,7 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
                 enabled: nv.enabled,
                 secret: nv.secret,
                 description: nv.description,
-              }) as { success: boolean; data?: RawVarRow }
+              })) as { success: boolean; data?: RawVarRow }
               if (res?.success && res.data) {
                 const created = rowToEnvVar(res.data)
                 set((state) => ({
@@ -275,11 +295,13 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
                           ...e,
                           variables: e.variables.map((v2) => (v2.id === nv.id ? created : v2)),
                         }
-                      : e
+                      : e,
                   ),
                 }))
               }
-            } catch { /* keep local */ }
+            } catch {
+              /* keep local */
+            }
           } else {
             const pv = prevVars.find((p) => p.id === nv.id)!
             const changed =
@@ -301,7 +323,9 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
                   description: nv.description,
                 } as unknown as Partial<EnvironmentVariable>
                 await window.api?.envVariable?.update(nv.id, payload)
-              } catch { /* keep local */ }
+              } catch {
+                /* keep local */
+              }
             }
           }
         }
@@ -318,16 +342,16 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
     }))
     try {
       await window.api?.environment?.delete(id)
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   },
 
   addGlobalVariable: async (variable) => {
     const projectId = get().currentProjectId
     // Use the real active workspace id — 'default' fails FK
     const wsId =
-      useWorkspaceStore.getState().activeWorkspaceId ||
-      get().globalVariables[0]?.workspace_id ||
-      ''
+      useWorkspaceStore.getState().activeWorkspaceId || get().globalVariables[0]?.workspace_id || ''
     const tempId = newId()
     const newVar: GlobalVariable = {
       id: tempId,
@@ -343,7 +367,7 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
     set((state) => ({ globalVariables: [...state.globalVariables, newVar] }))
     if (projectId) {
       try {
-        const res = await window.api?.globalVariable?.create({
+        const res = (await window.api?.globalVariable?.create({
           workspace_id: wsId,
           project_id: projectId,
           key: newVar.key,
@@ -352,7 +376,7 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
           enabled: newVar.enabled,
           secret: newVar.secret,
           description: newVar.description,
-        }) as { success: boolean; data?: RawVarRow }
+        })) as { success: boolean; data?: RawVarRow }
         if (res?.success && res.data) {
           // Swap temp row for DB row (so subsequent edits use real id)
           const created = rowToGlobalVar(res.data)
@@ -360,7 +384,9 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
             globalVariables: state.globalVariables.map((g) => (g.id === tempId ? created : g)),
           }))
         }
-      } catch { /* keep local */ }
+      } catch {
+        /* keep local */
+      }
     }
   },
 
@@ -377,14 +403,18 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
         secret: updates.secret,
         description: updates.description,
       })
-    } catch (_err) { /* keep local */ }
+    } catch (_err) {
+      /* keep local */
+    }
   },
 
   deleteGlobalVariable: async (id) => {
     set((state) => ({ globalVariables: state.globalVariables.filter((g) => g.id !== id) }))
     try {
       await window.api?.globalVariable?.delete(id)
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   },
 
   setGlobalVariables: (vars) => set({ globalVariables: vars }),

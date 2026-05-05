@@ -1,0 +1,32 @@
+type: collection.insomnia.rest/5.0
+name: Sample v5
+meta:
+  id: wrk_v5_1
+  name: Sample v5
+collection:
+  - name: Users
+    meta:
+      id: fld_users
+    children:
+      - name: Get user
+        meta:
+          id: req_get
+        method: GET
+        url: "{{ _.baseUrl }}/users/1"
+        headers:
+          - name: Accept
+            value: application/json
+      - name: Create user
+        meta:
+          id: req_create
+        method: POST
+        url: https://api.example.com/users
+        body:
+          mimeType: application/json
+          text: '{"name":"alice"}'
+        authentication:
+          type: bearer
+          token: token-xyz
+environments:
+  data:
+    baseUrl: https://api.example.com

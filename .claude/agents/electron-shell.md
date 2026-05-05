@@ -188,8 +188,8 @@ contextBridge.exposeInMainWorld('api', {
 import type { Configuration } from 'electron-builder'
 
 const config: Configuration = {
-  appId: 'com.apinizer.api-tester',
-  productName: 'Apinizer API Tester',
+  appId: 'com.testnizer.app',
+  productName: 'Testnizer',
   copyright: 'Copyright © 2025 Pruvasoft',
   directories: { output: 'dist-electron', buildResources: 'build' },
   files: ['dist/**'],

@@ -19,6 +19,8 @@ import { registerGitHandlers } from './git.handler'
 import { registerAuthHandlers } from './auth.handler'
 import { registerTestSuiteHandlers } from './test-suite.handler'
 import { registerCertificateHandlers } from './certificate.handler'
+import { registerWsseHandlers } from './wsse.handler'
+import { registerDiagnosticsHandlers } from '../diagnostics'
 
 export function registerAllHandlers(): void {
   registerAuthHandlers()
@@ -42,6 +44,8 @@ export function registerAllHandlers(): void {
   registerGitHandlers()
   registerTestSuiteHandlers()
   registerCertificateHandlers()
+  registerWsseHandlers()
+  registerDiagnosticsHandlers()
 
   // Start scheduled task timers after all handlers are registered
   startAllSchedulers()

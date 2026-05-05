@@ -69,13 +69,14 @@ export const useUpdaterStore = create<UpdaterStore>((set) => ({
     }
   },
 
-  reset: () => set({
-    status: 'idle',
-    version: null,
-    releaseNotes: null,
-    downloadPercent: 0,
-    errorMessage: null,
-  }),
+  reset: () =>
+    set({
+      status: 'idle',
+      version: null,
+      releaseNotes: null,
+      downloadPercent: 0,
+      errorMessage: null,
+    }),
 
   setStatus: (status) => set({ status }),
   setVersion: (version) => set({ version }),
@@ -108,6 +109,7 @@ export function initUpdaterListeners(): (() => void) | undefined {
       case 'not-available':
         store.setStatus('idle')
         break
+      case 'downloading':
       case 'download-progress':
         store.setStatus('downloading')
         if (typeof event.percent === 'number') store.setDownloadPercent(event.percent)
@@ -117,7 +119,7 @@ export function initUpdaterListeners(): (() => void) | undefined {
         store.setDownloadPercent(100)
         break
       case 'error':
-        store.setError((event.message as string) || 'Unknown error')
+        store.setError((event.error as string) || (event.message as string) || 'Unknown error')
         break
     }
   })

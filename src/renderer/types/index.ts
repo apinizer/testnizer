@@ -1,12 +1,65 @@
 // src/renderer/types/index.ts
-// Apinizer API Tester — TypeScript tip referansi
+// Testnizer — TypeScript tip referansi
 
 // ─── Enums ───────────────────────────────────────────────────
 
-export type Protocol = 'http' | 'soap' | 'websocket' | 'graphql' | 'grpc' | 'sse' | 'runner'
+export type Protocol =
+  | 'http'
+  | 'soap'
+  | 'websocket'
+  | 'graphql'
+  | 'grpc'
+  | 'sse'
+  | 'runner'
+  | 'tools.jwt'
+  | 'tools.jsonFormat'
+  | 'tools.xmlFormat'
+  | 'tools.encode'
+  | 'tools.diff'
+  | 'tools.jsonpath'
+  | 'tools.xpath'
+  | 'tools.xslt'
+  | 'tools.jolt'
+  | 'tools.wsSecurity'
+
+export const TOOL_PROTOCOLS = [
+  'tools.jwt',
+  'tools.jsonFormat',
+  'tools.xmlFormat',
+  'tools.encode',
+  'tools.diff',
+  'tools.jsonpath',
+  'tools.xpath',
+  'tools.xslt',
+  'tools.jolt',
+  'tools.wsSecurity',
+] as const satisfies readonly Protocol[]
+export type ToolProtocol = (typeof TOOL_PROTOCOLS)[number]
+export function isToolProtocol(p: Protocol): p is ToolProtocol {
+  return (TOOL_PROTOCOLS as readonly string[]).includes(p)
+}
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
-export type BodyType = 'none' | 'json' | 'xml' | 'text' | 'html' | 'javascript' | 'form-data' | 'urlencoded' | 'binary'
-export type AuthType = 'none' | 'basic' | 'bearer' | 'api-key' | 'oauth2' | 'digest' | 'ntlm' | 'aws-signature' | 'hawk' | 'wsse'
+export type BodyType =
+  | 'none'
+  | 'json'
+  | 'xml'
+  | 'text'
+  | 'html'
+  | 'javascript'
+  | 'form-data'
+  | 'urlencoded'
+  | 'binary'
+export type AuthType =
+  | 'none'
+  | 'basic'
+  | 'bearer'
+  | 'api-key'
+  | 'oauth2'
+  | 'digest'
+  | 'ntlm'
+  | 'aws-signature'
+  | 'hawk'
+  | 'wsse'
 export type EndpointStatus = 'developing' | 'testing' | 'released' | 'deprecated'
 export type Theme = 'light' | 'dark' | 'system'
 export type Language = 'tr' | 'en'
@@ -97,8 +150,8 @@ export interface Endpoint {
   method?: HttpMethod | string
   path: string
   status: EndpointStatus
-  request_schema?: string     // JSON serialized
-  response_schemas?: string   // JSON serialized
+  request_schema?: string // JSON serialized
+  response_schemas?: string // JSON serialized
   sort_order: number
   created_at: number
   updated_at: number
@@ -158,7 +211,12 @@ export interface AuthConfig {
   ntlm?: { username: string; password: string; domain?: string; workstation?: string }
   hawk?: { authId: string; authKey: string; algorithm: 'sha1' | 'sha256' }
   awsSignature?: { accessKey: string; secretKey: string; region: string; service: string }
-  wsse?: { username: string; password: string; passwordType: 'PasswordText' | 'PasswordDigest'; addTimestamp: boolean }
+  wsse?: {
+    username: string
+    password: string
+    passwordType: 'PasswordText' | 'PasswordDigest'
+    addTimestamp: boolean
+  }
 }
 
 export interface OAuth2Config {
@@ -187,12 +245,66 @@ export interface SoapMetadata {
   wsSecurity?: WsSecurityConfig
 }
 
+export type WsSecurityMode = 'username-token' | 'timestamp' | 'sign' | 'encrypt'
+export type WsSignAlgorithm = 'RSA-SHA1' | 'RSA-SHA256' | 'RSA-SHA512'
+export type WsEncryptAlgorithm = 'AES-128-CBC' | 'AES-256-CBC' | 'AES-128-GCM' | 'AES-256-GCM'
+export type WsKeyWrapAlgorithm = 'RSA-OAEP' | 'RSA-1.5'
+export type WsKeyInfoStrategy = 'BinarySecurityToken' | 'IssuerSerial'
+export type WsSignReference = 'Body' | 'Timestamp' | 'UsernameToken'
+
+export interface WsUsernameTokenConfig {
+  username: string
+  password: string
+  passwordType: 'PasswordText' | 'PasswordDigest'
+  nonce: boolean
+  created: boolean
+}
+
+export interface WsTimestampConfig {
+  ttlSeconds: number
+}
+
+export interface WsSignConfig {
+  privateKeyPem: string
+  certPem: string
+  algorithm: WsSignAlgorithm
+  references: WsSignReference[]
+  keyInfoStrategy: WsKeyInfoStrategy
+}
+
+export interface WsEncryptConfig {
+  recipientCertPem: string
+  algorithm: WsEncryptAlgorithm
+  keyWrap: WsKeyWrapAlgorithm
+  targetXpath?: string
+}
+
+/**
+ * Multi-mode WS-Security configuration.
+ *
+ * For backward compatibility with persisted projects, the legacy single-mode
+ * fields (`type`, `username`, `password`, `passwordType`, `addTimestamp`) are
+ * still accepted. The main-process engine auto-migrates them to `modes`.
+ */
 export interface WsSecurityConfig {
   enabled: boolean
-  type: 'username-token' | 'timestamp'
+  /** New multi-mode shape — Sprint 4+ */
+  modes?: WsSecurityMode[]
+  signFirst?: boolean
+  usernameToken?: WsUsernameTokenConfig
+  timestamp?: WsTimestampConfig
+  sign?: WsSignConfig
+  encrypt?: WsEncryptConfig
+
+  /** @deprecated legacy single-mode fields (auto-migrated) */
+  type?: 'username-token' | 'timestamp'
+  /** @deprecated legacy single-mode fields (auto-migrated) */
   username?: string
+  /** @deprecated legacy single-mode fields (auto-migrated) */
   password?: string
+  /** @deprecated legacy single-mode fields (auto-migrated) */
   passwordType?: 'PasswordText' | 'PasswordDigest'
+  /** @deprecated legacy single-mode fields (auto-migrated) */
   addTimestamp?: boolean
 }
 
@@ -382,10 +494,23 @@ export interface HistoryEntry {
 // ─── Import/Export ───────────────────────────────────────────
 
 export type ImportFormat =
-  | 'openapi3' | 'openapi2' | 'postman' | 'insomnia'
-  | 'curl' | 'apidog' | 'har' | 'jmeter'
-  | 'apidoc' | 'raml' | 'io-doc' | 'wsdl'
-  | 'wadl' | 'google-discovery' | 'proto' | 'soapui' | 'hoppscotch'
+  | 'openapi3'
+  | 'openapi2'
+  | 'postman'
+  | 'insomnia'
+  | 'curl'
+  | 'apidog'
+  | 'har'
+  | 'jmeter'
+  | 'apidoc'
+  | 'raml'
+  | 'io-doc'
+  | 'wsdl'
+  | 'wadl'
+  | 'google-discovery'
+  | 'proto'
+  | 'soapui'
+  | 'hoppscotch'
 
 export interface ImportResult {
   success: boolean
@@ -440,7 +565,7 @@ export interface Tab {
 export interface UIState {
   theme: Theme
   leftPanelWidth: number
-  splitPosition: number      // %
+  splitPosition: number // %
   isLeftPanelCollapsed: boolean
   activeProjectId: string | null
   activeWorkspaceId: string | null
@@ -449,9 +574,17 @@ export interface UIState {
 // ─── Code Generation ─────────────────────────────────────────
 
 export type CodeLanguage =
-  | 'curl' | 'js-fetch' | 'js-axios'
-  | 'python-requests' | 'java-okhttp'
-  | 'go' | 'php' | 'ruby' | 'swift' | 'kotlin' | 'csharp'
+  | 'curl'
+  | 'js-fetch'
+  | 'js-axios'
+  | 'python-requests'
+  | 'java-okhttp'
+  | 'go'
+  | 'php'
+  | 'ruby'
+  | 'swift'
+  | 'kotlin'
+  | 'csharp'
 
 // ─── Branch ─────────────────────────────────────────────────
 

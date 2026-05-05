@@ -9,3 +9,27 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# ─── Test output (Vitest + Playwright) ──────────────────
+# Vitest coverage (vitest.config.ts: reporter html/lcov writes here)
+coverage/
+.nyc_output/
+
+# Playwright (playwright.config.ts: list + html reporter)
+playwright-report/
+test-results/
+playwright/.cache/
+playwright/.auth/
+
+# Vitest UI / cache
+.vitest-cache/
+.vitest/
+
+# Generated diagnostics bundles produced by `diagnostics:export`
+testnizer-diagnostics-*.zip
+
+# Generated third-party-licenses manifest (regenerated at packaging time)
+resources/third-party-licenses.json
+
+# Local Playwright trace dumps
+**/trace.zip

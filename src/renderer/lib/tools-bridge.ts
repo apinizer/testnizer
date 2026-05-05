@@ -1,0 +1,75 @@
+/**
+ * Tools ↔ SOAP request bridge.
+ *
+ * Allows the standalone WS-Security tool tab to push its output into the
+ * currently-active SOAP request body, and lets the SOAP request panel pre-fill
+ * a new WS-Security tool tab with its current payload.
+ *
+ * Renderer-only state, no IPC.
+ */
+
+import { useSoapStore } from '../stores/soap.store'
+import { useTabsStore } from '../stores/tabs.store'
+
+let lastSoapTabId: string | null = null
+let pendingPayload: string | null = null
+
+export function registerSoapTabActivity(tabId: string): void {
+  lastSoapTabId = tabId
+}
+
+export function getActiveSoapTabId(): string | null {
+  return lastSoapTabId
+}
+
+/**
+ * Replace the current SOAP request body with the given XML. Returns true on
+ * success — false if no SOAP tab has been active yet.
+ */
+export function pushPayloadToActiveSoap(xml: string): boolean {
+  const tabsStore = useTabsStore.getState()
+  const activeTab = tabsStore.tabs.find((t) => t.id === tabsStore.activeTabId)
+
+  // Prefer the currently active SOAP tab; fall back to the last-known one.
+  if (activeTab?.protocol === 'soap') {
+    useSoapStore.getState().setRawXml(xml)
+    return true
+  }
+
+  if (lastSoapTabId) {
+    const target = tabsStore.tabs.find((t) => t.id === lastSoapTabId)
+    if (target?.protocol === 'soap') {
+      tabsStore.setActiveTab(lastSoapTabId)
+      useSoapStore.getState().setRawXml(xml)
+      return true
+    }
+  }
+
+  return false
+}
+
+/**
+ * Stage a payload for the next-opened WS-Security tool tab to pick up.
+ * Used by SOAP request panel's "Open in WS-Security Tool" action.
+ */
+export function stageWsseToolPayload(xml: string): void {
+  pendingPayload = xml
+}
+
+/**
+ * Consumed by WsSecurityTool on mount. Returns the staged payload (if any) and
+ * clears the slot so subsequent tool tabs start clean.
+ */
+export function consumeStagedWsseToolPayload(): string | null {
+  const v = pendingPayload
+  pendingPayload = null
+  return v
+}
+
+/**
+ * Open a new WS-Security tool tab pre-filled with the given XML payload.
+ */
+export function openWsSecurityToolWith(xml: string, label: string): void {
+  stageWsseToolPayload(xml)
+  useTabsStore.getState().openToolTab('tools.wsSecurity', label)
+}

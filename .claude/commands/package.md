@@ -1,6 +1,6 @@
 # /package
 
-Apinizer API Tester için dağıtım paketlerini (dmg / exe / deb / AppImage / zip) üretir. Bu komut, native modüllerin (özellikle `better-sqlite3`) yanlış hedef mimariyle paketlenmesini **önleyen** kesin prosedürü tanımlar.
+Testnizer için dağıtım paketlerini (dmg / exe / deb / AppImage / zip) üretir. Bu komut, native modüllerin (özellikle `better-sqlite3`) yanlış hedef mimariyle paketlenmesini **önleyen** kesin prosedürü tanımlar.
 
 > **Neden bu dosya var?** Tek `electron-builder --mac --win --linux` çağrısı tek host üzerinde native modülleri güvenilir şekilde derleyemez: `node_modules/better-sqlite3/build/Release/better_sqlite3.node` tek yol, ardışık target'lar birbirini ezer ve sonunda macOS DMG'nin içinden Windows DLL çıkabilir. Aşağıdaki kurallara **harfiyen** uy.
 

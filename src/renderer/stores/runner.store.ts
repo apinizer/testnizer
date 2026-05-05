@@ -57,6 +57,7 @@ interface RunnerStore {
   endpoints: RunnerEndpoint[]
   delay: number
   iterations: number
+  iterationData: Record<string, string>[]
   stopOnError: boolean
   persistResponses: boolean
   keepVariableValues: boolean
@@ -78,6 +79,7 @@ interface RunnerStore {
   deselectAll: () => void
   setDelay: (ms: number) => void
   setIterations: (n: number) => void
+  setIterationData: (rows: Record<string, string>[]) => void
   setStopOnError: (v: boolean) => void
   setPersistResponses: (v: boolean) => void
   setKeepVariableValues: (v: boolean) => void
@@ -93,6 +95,7 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
   endpoints: [],
   delay: 1000,
   iterations: 1,
+  iterationData: [],
   stopOnError: true,
   persistResponses: true,
   keepVariableValues: true,
@@ -112,9 +115,7 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
 
   toggleEndpoint: (id) =>
     set((s) => ({
-      endpoints: s.endpoints.map((ep) =>
-        ep.id === id ? { ...ep, selected: !ep.selected } : ep
-      ),
+      endpoints: s.endpoints.map((ep) => (ep.id === id ? { ...ep, selected: !ep.selected } : ep)),
     })),
 
   selectAll: () =>
@@ -125,6 +126,7 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
 
   setDelay: (ms) => set({ delay: Math.max(0, ms) }),
   setIterations: (n) => set({ iterations: Math.max(1, n) }),
+  setIterationData: (rows) => set({ iterationData: Array.isArray(rows) ? rows : [] }),
   setStopOnError: (v) => set({ stopOnError: v }),
   setPersistResponses: (v) => set({ persistResponses: v }),
   setKeepVariableValues: (v) => set({ keepVariableValues: v }),

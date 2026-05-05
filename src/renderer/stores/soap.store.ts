@@ -75,6 +75,7 @@ interface SoapStore {
   setFormValues: (values: Record<string, string>) => void
   setRawXml: (xml: string) => void
   setBodyMode: (mode: 'form' | 'raw') => void
+  setEndpointUrl: (url: string) => void
   setWsSecurity: (config: Partial<WsSecurityConfig>) => void
   sendSoap: () => Promise<void>
   reset: () => void
@@ -99,11 +100,28 @@ interface SoapStore {
 
 const defaultWsSecurity: WsSecurityConfig = {
   enabled: false,
-  type: 'username-token',
-  username: '',
-  password: '',
-  passwordType: 'PasswordText',
-  addTimestamp: false,
+  modes: [],
+  signFirst: true,
+  usernameToken: {
+    username: '',
+    password: '',
+    passwordType: 'PasswordText',
+    nonce: false,
+    created: false,
+  },
+  timestamp: { ttlSeconds: 300 },
+  sign: {
+    privateKeyPem: '',
+    certPem: '',
+    algorithm: 'RSA-SHA256',
+    references: ['Body'],
+    keyInfoStrategy: 'BinarySecurityToken',
+  },
+  encrypt: {
+    recipientCertPem: '',
+    algorithm: 'AES-256-CBC',
+    keyWrap: 'RSA-OAEP',
+  },
 }
 
 function extractSoapTabState(s: SoapStore): TabSoapState {
@@ -288,7 +306,9 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
   },
 
   selectOperation: (name) => {
-    const op = get().getSelectedPort()?.operations.find((o) => o.name === name)
+    const op = get()
+      .getSelectedPort()
+      ?.operations.find((o) => o.name === name)
     set({ selectedOperation: name })
     if (op) {
       set({
@@ -309,6 +329,8 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
 
   setBodyMode: (mode) => set({ bodyMode: mode }),
 
+  setEndpointUrl: (url) => set({ endpointUrl: url }),
+
   setWsSecurity: (config) =>
     set((state) => ({
       wsSecurity: { ...state.wsSecurity, ...config },
@@ -327,7 +349,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
 
     const op = get().getSelectedOperation()
     const port = get().getSelectedPort()
-    const endpointUrl = port?.endpointUrl || parsedWsdl?.endpointUrl || ''
+    const endpointUrl = port?.endpointUrl || parsedWsdl?.endpointUrl || get().endpointUrl || ''
 
     try {
       const result = await window.api?.request?.send({
@@ -341,7 +363,10 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         auth: wsSecurity.enabled
           ? {
               type: 'basic',
-              basic: { username: wsSecurity.username || '', password: wsSecurity.password || '' },
+              basic: {
+                username: wsSecurity.usernameToken?.username || wsSecurity.username || '',
+                password: wsSecurity.usernameToken?.password || wsSecurity.password || '',
+              },
             }
           : undefined,
       })
@@ -364,7 +389,9 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         status: 200,
         statusText: 'OK',
         headers: { 'content-type': 'text/xml; charset=utf-8' },
-        body: op?.exampleResponse || '<soap:Envelope><soap:Body><Response/></soap:Body></soap:Envelope>',
+        body:
+          op?.exampleResponse ||
+          '<soap:Envelope><soap:Body><Response/></soap:Body></soap:Envelope>',
         bodySize: (op?.exampleResponse || '').length,
         timing: { total: 245 },
         actualRequest: {

@@ -1,13 +1,27 @@
-# Apinizer API Tester — Claude Code Master Instructions
+# Testnizer — Claude Code Master Instructions
 
 ## Ürün Özeti
 
-**Apinizer API Tester** — Apidog'un görsel arayüzünü ve kullanıcı deneyimini referans alan, sıfırdan inşa edilmiş, **tamamen bağımsız** cross-platform masaüstü API test uygulaması.
+**Testnizer** — Apidog'un görsel arayüzünü ve kullanıcı deneyimini referans alan, sıfırdan inşa edilmiş, **tamamen bağımsız** cross-platform masaüstü API test uygulaması.
 
 - Dağıtım: Ücretsiz standalone Electron app
 - Platform: Windows, macOS, Linux
-- Bağımlılık: Sıfır — Apinizer sunucusuna ihtiyaç yok
+- Bağımlılık: Sıfır — harici sunucuya ihtiyaç yok
 - Hedef: Kurumsal (bankacılık, kamu, sigorta) + genel developer kitlesi
+
+---
+
+## Komutlar
+
+```bash
+npm install              # Bağımlılıklar + electron-builder install-app-deps + patch-electron-name.sh (postinstall)
+npm run dev              # electron-vite dev — renderer http://localhost:5173, Electron Testnizer.app olarak başlar
+npm run build            # Main + preload + renderer üretim derlemesi (out/)
+npm run typecheck        # main + renderer için tsc --noEmit
+npm run icons            # build/ ve resources/ ikonlarını yeniden üretir (sharp + png2icons)
+```
+
+Paketleme (dmg/exe/deb/AppImage/zip) için **`.claude/commands/package.md`**'deki sırayı izle — native module (`better-sqlite3`) çapraz mimari rebuild'ini bozmamak için kritik.
 
 ---
 
@@ -18,18 +32,19 @@
 | Desktop shell | Electron ^31 |
 | Build tool | electron-vite ^2 |
 | Frontend | React 19 + TypeScript 5 |
-| Styling | Tailwind CSS v3 + shadcn/ui |
+| Styling | Tailwind CSS ^4 (`@tailwindcss/vite`) + shadcn/ui (Radix UI) |
 | Code editor | Monaco Editor (`@monaco-editor/react`) |
 | State | Zustand ^5 |
-| Local DB | better-sqlite3 ^9 |
+| Local DB | better-sqlite3 ^11 |
 | Config/secrets | electron-store ^10 |
-| HTTP/REST | axios ^1.7 |
-| SOAP/WSDL | node-soap ^0.45 + wsse |
+| HTTP/REST | axios ^1.7 + tough-cookie |
+| SOAP/WSDL | soap ^1.9 + wsse |
 | WebSocket | ws ^8 |
 | GraphQL | graphql ^16 + graphql-ws |
 | gRPC | @grpc/grpc-js + @grpc/proto-loader |
 | SSE | eventsource ^2 |
-| OpenAPI parse | swagger-parser + js-yaml |
+| OpenAPI parse | @readme/openapi-parser + js-yaml + fast-xml-parser |
+| Git entegrasyonu | simple-git |
 | Packaging | electron-builder ^25 |
 | Auto-update | electron-updater ^6 |
 
@@ -57,6 +72,19 @@ Preload (contextBridge)    →  window.api köprüsü — tek iletişim kanalı
 - `contextIsolation: true` — her zaman
 - `nodeIntegration: false` — her zaman
 - `webSecurity: false` — sadece dev modunda
+- `index.html` CSP: `connect-src 'self'` — renderer'dan dış ağ trafiği **yasak**, tüm network main process IPC üzerinden geçer
+- `setWindowOpenHandler`: yalnızca `http(s)` URL'leri `shell.openExternal` ile açılır, diğer şemalar reddedilir
+
+### Branding ve Kimlik
+- `app.name = 'Testnizer'`, `appUserModelId = com.testnizer.app`
+- macOS `userData`: `~/Library/Application Support/Testnizer` (eski kurulumlarda `Apinizer` adında olabilir — manuel migrasyon gerekir)
+- Dev modunda `node_modules/electron/dist/Electron.app`, `postinstall` ile `Testnizer.app` olarak yeniden adlandırılır (`scripts/patch-electron-name.sh`)
+
+### macOS Packaging Gotchas
+- `afterPack: scripts/ad-hoc-sign.js` — yerel build'lerde ad-hoc imzalama
+- `afterSign: scripts/notarize.js` — `package.json`'da `notarize: false` (kapalı); açmak için Apple Developer credentials env var'ları gerekir
+- `hardenedRuntime: true`, `entitlements: build/entitlements.mac.plist`
+- `afterAllArtifactBuild: scripts/collect-packages.js` — `dist/`'ten `release/`'a normalleştirilmiş artifact toplar
 
 ---
 
@@ -71,7 +99,7 @@ border2:      #d0d0da   (güçlü kenar)
 text:         #1a1a2e   (ana metin)
 muted:        #888888   (ikincil metin)
 hint:         #bbbbbb   (soluk/placeholder)
-accent:       #7c73e6   (Apinizer mor — buton, aktif, vurgu)
+accent:       #7c73e6   (Testnizer mor — buton, aktif, vurgu)
 accentLight:  #eeecfe   (aktif tab/item arka plan)
 accentText:   #5b52d4   (aksanın metin tonu)
 surface:      #fafafa   (kart içi zemin)
@@ -127,110 +155,85 @@ DELETE:  bg=#fff0f0 color=#cc2200 border=#f5b3b3
 ## Proje Dosya Yapısı
 
 ```
-apinizer-api-tester/
+testnizer/
 ├── src/
-│   ├── main/
-│   │   ├── index.ts                    # Electron entry, window creation
-│   │   ├── ipc/
-│   │   │   ├── index.ts                # Tüm handler'ları register eder
-│   │   │   ├── request.handler.ts      # HTTP/SOAP/WS/GQL/gRPC/SSE
-│   │   │   ├── workspace.handler.ts
-│   │   │   ├── project.handler.ts
-│   │   │   ├── endpoint.handler.ts
-│   │   │   ├── environment.handler.ts
-│   │   │   ├── history.handler.ts
-│   │   │   ├── import-export.handler.ts
-│   │   │   └── settings.handler.ts
-│   │   ├── protocols/
-│   │   │   ├── http.engine.ts
-│   │   │   ├── soap.engine.ts
-│   │   │   ├── websocket.engine.ts
-│   │   │   ├── graphql.engine.ts
-│   │   │   ├── grpc.engine.ts
-│   │   │   └── sse.engine.ts
-│   │   ├── db/
-│   │   │   ├── database.ts             # Init + migrations
-│   │   │   ├── workspace.repo.ts
-│   │   │   ├── project.repo.ts
-│   │   │   ├── endpoint.repo.ts
-│   │   │   ├── environment.repo.ts
-│   │   │   └── history.repo.ts
-│   │   └── updater.ts
+│   ├── main/                          # Node.js — network, DB, dosya, IPC
+│   │   ├── index.ts                   # BrowserWindow, app.name, dock, IPC register
+│   │   ├── updater.ts                 # electron-updater
+│   │   ├── ipc/                       # Protokol/feature başına bir handler
+│   │   │   ├── index.ts               # registerAllHandlers()
+│   │   │   ├── request.handler.ts     # Generic HTTP request
+│   │   │   ├── http.engine.ts → protocols/  (referans)
+│   │   │   └── {auth, workspace, project, branch, endpoint, environment,
+│   │   │        history, certificate, git, import-export, save, settings,
+│   │   │        soap, websocket, graphql, grpc, sse,
+│   │   │        runner, scheduler, test-suite}.handler.ts
+│   │   ├── protocols/                 # Protokol motorları
+│   │   │   └── {http, soap, websocket, graphql, grpc, sse}.engine.ts
+│   │   └── db/                        # better-sqlite3 + migrations
+│   │       ├── database.ts            # Init + schema + migrations
+│   │       └── {workspace, project, branch, endpoint, environment,
+│   │            history, certificate}.repo.ts
 │   ├── preload/
-│   │   └── index.ts                    # contextBridge — window.api
-│   └── renderer/
-│       ├── main.tsx
-│       ├── App.tsx
+│   │   └── index.ts                   # contextBridge — window.api köprüsü
+│   └── renderer/                      # React 19 — yalnızca UI
+│       ├── main.tsx, App.tsx
+│       ├── index.html                 # CSP: connect-src 'self'
 │       ├── components/
-│       │   ├── layout/
-│       │   │   ├── AppShell.tsx        # Root layout
-│       │   │   ├── Header.tsx          # 44px — logo + tabs + branch + avatar
-│       │   │   ├── LeftPanel.tsx       # 260px — tree + search
-│       │   │   ├── UrlBar.tsx          # 56px — method + url + send
-│       │   │   ├── Workbench.tsx       # Split request/response
-│       │   │   └── Footer.tsx          # 28px
-│       │   ├── sidebar/
-│       │   │   ├── TreeView.tsx        # Recursive tree component
-│       │   │   ├── TreeNode.tsx
-│       │   │   └── NewDropdown.tsx     # "+" dropdown menu
-│       │   ├── request/
-│       │   │   ├── RequestEditor.tsx   # Tab container
-│       │   │   ├── ParamsTab.tsx
-│       │   │   ├── AuthTab.tsx
-│       │   │   ├── HeadersTab.tsx
-│       │   │   ├── BodyTab.tsx
-│       │   │   ├── PreRequestTab.tsx
-│       │   │   └── TestsTab.tsx
-│       │   ├── response/
-│       │   │   ├── ResponsePane.tsx
-│       │   │   ├── ResponseMeta.tsx    # Status + time + size + test badge
-│       │   │   ├── ResponseBody.tsx    # Monaco readonly
-│       │   │   ├── CookieTab.tsx
-│       │   │   ├── ConsoleTab.tsx
-│       │   │   └── ActualRequestTab.tsx
-│       │   ├── protocols/
-│       │   │   ├── SoapEditor.tsx      # WSDL import + operation selector
-│       │   │   ├── WebSocketEditor.tsx
-│       │   │   ├── GraphQLEditor.tsx
-│       │   │   ├── GrpcEditor.tsx
-│       │   │   └── SseEditor.tsx
-│       │   ├── modals/
-│       │   │   ├── ImportModal.tsx     # 16-format import grid
-│       │   │   ├── EnvironmentModal.tsx
-│       │   │   └── SettingsModal.tsx
-│       │   └── shared/
-│       │       ├── MethodBadge.tsx
-│       │       ├── StatusBadge.tsx
-│       │       ├── KeyValueTable.tsx   # Params/headers table
-│       │       ├── MonacoEditor.tsx    # Wrapper with theme
-│       │       └── EmptyState.tsx
-│       ├── stores/
-│       │   ├── workspace.store.ts
-│       │   ├── tabs.store.ts
-│       │   ├── request.store.ts
-│       │   ├── response.store.ts
-│       │   ├── environment.store.ts
-│       │   └── ui.store.ts
+│       │   ├── auth/                  # LoginScreen + password kurulum
+│       │   ├── layout/                # AppShell, Header, LeftPanel, UrlBar,
+│       │   │                          # Workbench, Footer, ProjectHome
+│       │   ├── sidebar/               # TreeView, TreeNode, NewDropdown
+│       │   ├── request/               # RequestEditor + Params/Auth/Headers/Body/Pre/Tests
+│       │   ├── response/              # ResponsePane + Body/Cookie/Console/ActualRequest
+│       │   ├── protocols/             # SOAP/WS/GraphQL/gRPC/SSE editörleri
+│       │   ├── runner/                # Collection runner UI
+│       │   ├── modals/                # Import, Environment, Settings, vb.
+│       │   └── shared/                # MethodBadge, StatusBadge, MonacoEditor, vb.
+│       ├── stores/                    # Zustand — feature başına bir store
+│       │   └── {auth, workspace, branch, tabs, request, response, environment,
+│       │        history, console, ui, runner, updater,
+│       │        soap, websocket, graphql, grpc, sse}.store.ts
 │       ├── lib/
-│       │   ├── variable-resolver.ts    # {{var}} substitution
-│       │   ├── dynamic-values.ts       # {{$randomInt}} etc.
-│       │   ├── test-runner.ts          # pm API + assertions
-│       │   └── code-generator.ts       # cURL/JS/Python snippets
-│       └── types/
-│           └── index.ts                # Tüm TypeScript tipleri
+│       │   ├── variable-resolver.ts   # {{var}} substitution
+│       │   ├── dynamic-values.ts      # {{$randomInt}} vb.
+│       │   ├── test-runner.ts         # pm API + assertions
+│       │   ├── code-generator.ts      # cURL/JS/Python snippet üretimi
+│       │   ├── i18n.ts                # EN + TR çeviriler
+│       │   ├── monaco-theme.ts, keyboard-shortcuts.ts, utils.ts
+│       └── types/index.ts             # Tüm TypeScript tipleri (tek dosya)
+├── scripts/
+│   ├── patch-electron-name.sh         # Electron.app → Testnizer.app (postinstall)
+│   ├── generate-icons.mjs             # Logo → multi-size PNG/ICO/ICNS
+│   ├── ad-hoc-sign.js                 # afterPack — yerel imzalama
+│   ├── notarize.js                    # afterSign — Apple notarize (opt-in)
+│   ├── collect-packages.js            # afterAllArtifactBuild — release/ topla
+│   └── verify-natives.js              # better-sqlite3 native binding mimarisini kontrol
+├── build/                             # icon.{icns,ico,png}, entitlements.mac.plist
+├── resources/                         # Runtime kaynakları (icon, vb.)
 └── .claude/
-    ├── agents/
-    │   ├── ui-frontend.md
-    │   ├── protocol-engine.md
-    │   ├── database.md
-    │   ├── electron-shell.md
-    │   └── import-export.md
-    └── commands/
-        ├── bootstrap.md
-        ├── implement-phase.md
-        ├── implement-soap.md
-        └── add-protocol.md
+    ├── agents/        # ui-frontend, protocol-engine, database, electron-shell, import-export
+    └── commands/      # bootstrap, implement-phase, implement-soap, add-protocol, package
 ```
+
+---
+
+## Major Feature Modülleri (handler ↔ store ↔ UI)
+
+| Modül | Main handler | Renderer store | Notlar |
+|---|---|---|---|
+| Auth / Login | `auth.handler.ts` | `auth.store.ts` | Opsiyonel password ile yerel veri koruma |
+| Workspace + Project | `workspace.handler.ts`, `project.handler.ts` | `workspace.store.ts` | Workspace içinde n-proje |
+| Branch + Git | `branch.handler.ts`, `git.handler.ts` | `branch.store.ts` | `simple-git`, proje başına branch |
+| Endpoint + Environment | `endpoint.handler.ts`, `environment.handler.ts` | `environment.store.ts` | Env'ler **proje scope** (Postman'den farklı), initialValue + value |
+| History | `history.handler.ts` | `history.store.ts` | Yerel SQLite |
+| Certificate | `certificate.handler.ts` | — | mTLS / client cert |
+| Import/Export + Save | `import-export.handler.ts`, `save.handler.ts` | — | OpenAPI/Postman/Insomnia/cURL/HAR vb. |
+| Settings | `settings.handler.ts` | `ui.store.ts` | electron-store |
+| Collection Runner | `runner.handler.ts` | `runner.store.ts` | Çoklu endpoint sequential run + HTML rapor |
+| Scheduler | `scheduler.handler.ts` | — | Zamanlanmış görevler |
+| Test Suite | `test-suite.handler.ts` | — | Çoklu koleksiyon test setleri |
+| Updater | (`src/main/updater.ts`) | `updater.store.ts` | electron-updater |
 
 ---
 
@@ -253,3 +256,13 @@ Her feature için bu sırayı izle:
 - Tailwind class'ları — inline style yok (Monaco/dinamik değerler hariç)
 - Monaco: `automaticLayout: true` her zaman
 - Component: max ~200 satır, gerekirse böl
+
+---
+
+## Gotchas
+
+- **Native rebuild**: `better-sqlite3` arch-specific derleme gerektirir. Dev'de `electron-builder install-app-deps` postinstall'da çalışır. Çapraz mimari paketleme için **mutlaka** `.claude/commands/package.md` sırasını izle (yoksa macOS DMG'sinden Windows DLL çıkabilir).
+- **Dev launcher rename**: İlk `npm install` sonrası `Electron.app` → `Testnizer.app` olarak yeniden adlandırılır. Dock/menüde "Testnizer" görünür. `npm run icons` `Testnizer.app/electron.icns`'i de günceller.
+- **Renderer'dan dış ağ yok**: CSP `connect-src 'self'`. Yeni bir HTTP çağrısı eklenecekse main process'te engine + IPC handler oluşturulmalı.
+- **Tailwind v4**: `tailwind.config.*` yok, `@tailwindcss/vite` plugin'i kullanılıyor. v3 dokümantasyonuna güvenme.
+- **Dynamic import uyarısı**: `runner.handler.ts`, `scheduler.handler.ts` tarafından dinamik import edilirken `ipc/index.ts`'te statik de import ediliyor — Vite uyarı verir, davranışsal sorun yok.
