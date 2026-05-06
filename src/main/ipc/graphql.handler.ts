@@ -7,6 +7,7 @@ import {
   type GraphqlExecuteOptions,
   type GraphqlSubscribeOptions
 } from '../protocols/graphql.engine'
+import { logRequest, logResponse, logEvent } from '../lib/console-logger'
 
 interface GraphqlExecutePayload {
   url: string
@@ -29,6 +30,7 @@ interface GraphqlExecutePayload {
   }
   timeout?: number
   sslVerification?: boolean
+  _tabId?: string
 }
 
 interface GraphqlIntrospectPayload {
@@ -45,6 +47,7 @@ interface GraphqlSubscribePayload {
   operationName?: string
   headers?: Record<string, string>
   sslVerification?: boolean
+  _tabId?: string
 }
 
 export function registerGraphqlHandlers(): void {
@@ -62,7 +65,53 @@ export function registerGraphqlHandlers(): void {
         sslVerification: payload.sslVerification
       }
 
+      const opName = payload.operationName || 'anonymous'
+      logRequest({
+        protocol: 'graphql',
+        method: 'POST',
+        url: payload.url,
+        body: payload.query,
+        tabId: payload._tabId,
+        message: `GraphQL ${opName} → ${payload.url}`,
+        meta: { operation: opName },
+      })
+
       const response = await executeQuery(options)
+
+      // GraphQL returns 200 even on errors; flag them.
+      let hasGqlErrors = false
+      try {
+        if (response.body) {
+          const parsed = JSON.parse(response.body) as { errors?: unknown[] }
+          if (Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+            hasGqlErrors = true
+          }
+        }
+      } catch {
+        // not JSON; ignore
+      }
+
+      logResponse({
+        protocol: 'graphql',
+        method: 'POST',
+        url: payload.url,
+        status: response.status,
+        statusText: response.statusText,
+        durationMs: response.timing?.total,
+        sizeBytes: response.bodySize,
+        requestHeaders: response.actualRequest?.headers,
+        requestBody: response.actualRequest?.body,
+        responseHeaders: response.headers,
+        responseBody: response.body,
+        error: response.error
+          ? { message: response.error }
+          : hasGqlErrors
+            ? { message: 'GraphQL errors in response' }
+            : undefined,
+        tabId: payload._tabId,
+        meta: { operation: opName, gqlErrors: hasGqlErrors },
+      })
+
       return { success: true, data: response }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -100,6 +149,16 @@ export function registerGraphqlHandlers(): void {
         headers: payload.headers,
         sslVerification: payload.sslVerification
       }
+
+      logEvent({
+        protocol: 'graphql',
+        category: 'connection',
+        message: `GraphQL subscription started: ${payload.operationName || 'anonymous'}`,
+        url: payload.wsUrl ?? payload.url,
+        body: payload.query,
+        direction: 'out',
+        tabId: payload._tabId,
+      })
 
       const subscriptionId = subscribe(options, win.id)
       return { success: true, data: { subscriptionId } }

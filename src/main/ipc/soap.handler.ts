@@ -8,6 +8,7 @@ import {
   type SoapVersion,
   type WsSecurityConfig
 } from '../protocols/soap.engine'
+import { logRequest, logResponse } from '../lib/console-logger'
 
 interface SoapExecutePayload {
   wsdlUrl: string
@@ -21,6 +22,7 @@ interface SoapExecutePayload {
   wsSecurity?: WsSecurityConfig
   timeout?: number
   sslVerification?: boolean
+  _tabId?: string
 }
 
 interface GenerateEnvelopePayload {
@@ -68,7 +70,51 @@ export function registerSoapHandlers(): void {
         timeout: payload.timeout,
         sslVerification: payload.sslVerification
       }
+
+      logRequest({
+        protocol: 'soap',
+        method: 'POST',
+        url: payload.endpointUrl,
+        tabId: payload._tabId,
+        message: `SOAP ${payload.operationName} → ${payload.endpointUrl}`,
+        meta: {
+          soapVersion: payload.soapVersion,
+          operation: payload.operationName,
+        },
+      })
+
       const result = await executeSoap(options)
+
+      // SOAP-Fault detection: SOAP 11/12 reports faults inside the body even
+      // when the HTTP status is 200. Tag those as errors so users notice.
+      const bodyStr = result.body ?? ''
+      const isFault = /<(?:[^>:\s]+:)?Fault[\s>]/i.test(bodyStr)
+
+      logResponse({
+        protocol: 'soap',
+        method: 'POST',
+        url: payload.endpointUrl,
+        status: result.status,
+        statusText: result.statusText,
+        durationMs: result.timing?.total,
+        sizeBytes: result.bodySize,
+        requestHeaders: result.actualRequest?.headers,
+        requestBody: result.actualRequest?.body,
+        responseHeaders: result.headers,
+        responseBody: result.body,
+        error: result.error
+          ? { message: result.error }
+          : isFault
+            ? { message: 'SOAP Fault returned' }
+            : undefined,
+        tabId: payload._tabId,
+        meta: {
+          operation: payload.operationName,
+          soapVersion: payload.soapVersion,
+          fault: isFault,
+        },
+      })
+
       return { success: true, data: result }
     } catch (e) {
       return { success: false, error: (e as Error).message }

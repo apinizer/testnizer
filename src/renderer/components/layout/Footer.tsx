@@ -13,7 +13,9 @@ export default function Footer() {
   const showConsolePanel = useUIStore((s) => s.showConsolePanel)
   const toggleConsolePanel = useUIStore((s) => s.toggleConsolePanel)
   const consoleEntries = useConsoleStore((s) => s.entries)
-  const errorCount = consoleEntries.filter((e) => (e.status && e.status >= 400) || e.error).length
+  const errorCount = consoleEntries.filter(
+    (e) => e.level === 'error' || (e.status != null && e.status >= 400),
+  ).length
 
   return (
     <footer

@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   Wifi,
   Search as SearchIcon,
@@ -9,23 +10,37 @@ import {
   X,
   MoreHorizontal,
   Maximize2,
+  ArrowDown,
+  ArrowUp,
 } from 'lucide-react'
-import { useConsoleStore, type ConsoleLogFilter, type ConsoleEntry } from '../../stores/console.store'
+import {
+  useConsoleStore,
+  selectFilteredEntries,
+  type ConsoleLogFilter,
+  type ConsoleLogEntry,
+} from '../../stores/console.store'
 
 /**
- * Postman-style Console panel (res59.png).
+ * Postman-style Console panel.
  *
- * Shows a scrollable list of request entries:
- *   ▸ POST http://www.dneonline.com/calculator.asmx     400  433 ms
- *   ▾ POST http://www.dneonline.com/                    405  216 ms
- *        ▸ Network
- *        ▾ Request Headers
- *             Content-Type: "text/xml; charset=utf-8"
- *             ...
- *        ▸ Request Body
- *        ▾ Response Headers
+ * Renders the global ConsoleStore entries as a scrollable, virtualized
+ * list. Each row is collapsible: clicking it expands inline detail
+ * sections (network meta, request/response headers, request/response
+ * body, errors, script logs).
+ *
+ * Filtering: protocol chips (All/HTTP/WS/gRPC/GraphQL/SOAP/SSE/Errors),
+ * free-text search.
+ *
+ * When `tabFilterId` is provided, only entries with that tabId are
+ * shown — used to reuse this view inside a single request's response
+ * pane.
  */
-export default function ConsoleTab() {
+export interface ConsoleTabProps {
+  /** When set, only entries whose tabId matches are displayed. */
+  tabFilterId?: string
+}
+
+export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
   const entries = useConsoleStore((s) => s.entries)
   const filter = useConsoleStore((s) => s.filter)
   const setFilter = useConsoleStore((s) => s.setFilter)
@@ -35,47 +50,72 @@ export default function ConsoleTab() {
   const toggleExpanded = useConsoleStore((s) => s.toggleExpanded)
   const clear = useConsoleStore((s) => s.clear)
   const isOnline = useConsoleStore((s) => s.isOnline)
+  const autoScroll = useConsoleStore((s) => s.autoScroll)
+  const setAutoScroll = useConsoleStore((s) => s.setAutoScroll)
 
   const [showFind, setShowFind] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
 
-  // Filter entries
-  const filtered = useMemo(() => {
-    let list = entries
-    if (filter === 'error') {
-      list = list.filter((e) => (e.status && e.status >= 400) || e.error)
-    } else if (filter === 'warn') {
-      list = list.filter((e) => e.status && e.status >= 300 && e.status < 400)
-    } else if (filter === 'log' || filter === 'network') {
-      // both refer to network log
-    }
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase()
-      list = list.filter((e) =>
-        `${e.method} ${e.url}`.toLowerCase().includes(q) ||
-        (e.responseBody || '').toLowerCase().includes(q)
-      )
-    }
-    return list
-  }, [entries, filter, searchTerm])
+  // Apply protocol/level + search filtering, plus per-tab filter (when
+  // this view is rendered inside a single-request response pane).
+  const filtered = useMemo(
+    () =>
+      selectFilteredEntries(entries, {
+        filter,
+        searchTerm,
+        activeTabIdFilter: tabFilterId ?? null,
+      }),
+    [entries, filter, searchTerm, tabFilterId],
+  )
 
-  // Error count
   const errorCount = useMemo(
-    () => entries.filter((e) => (e.status && e.status >= 400) || e.error).length,
-    [entries]
+    () =>
+      filtered.filter(
+        (e) => e.level === 'error' || (e.status != null && e.status >= 400),
+      ).length,
+    [filtered],
   )
 
   const FILTER_OPTIONS: Array<{ key: ConsoleLogFilter; label: string }> = [
     { key: 'all', label: 'All Logs' },
-    { key: 'network', label: 'Network' },
-    { key: 'log', label: 'Logs' },
+    { key: 'http', label: 'HTTP' },
+    { key: 'soap', label: 'SOAP' },
+    { key: 'graphql', label: 'GraphQL' },
+    { key: 'grpc', label: 'gRPC' },
+    { key: 'websocket', label: 'WebSocket' },
+    { key: 'sse', label: 'SSE' },
     { key: 'warn', label: 'Warnings' },
     { key: 'error', label: 'Errors' },
   ]
 
+  // ── Virtualization ──────────────────────────────────────────
+  const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const virtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => scrollerRef.current,
+    estimateSize: (index) =>
+      expandedIds.has(filtered[index]?.id) ? 320 : 28,
+    overscan: 8,
+    measureElement: (el) => el.getBoundingClientRect().height,
+  })
+
+  // Re-measure when expansion state changes
+  useEffect(() => {
+    virtualizer.measure()
+  }, [expandedIds, virtualizer])
+
+  // Auto-scroll to bottom when new entries arrive
+  useEffect(() => {
+    if (!autoScroll) return
+    if (filtered.length === 0) return
+    virtualizer.scrollToIndex(filtered.length - 1, { align: 'end' })
+  }, [filtered.length, autoScroll, virtualizer])
+
+  const onClear = useCallback(() => clear(), [clear])
+
   return (
     <div className="flex h-full flex-col bg-[var(--white)]">
-      {/* ── Top bar — exactly like Postman ── */}
+      {/* ── Top bar ── */}
       <div
         className="flex shrink-0 items-center gap-3 px-3"
         style={{
@@ -84,7 +124,6 @@ export default function ConsoleTab() {
           background: 'var(--white)',
         }}
       >
-        {/* Left side */}
         <button
           type="button"
           className="flex cursor-pointer items-center gap-1"
@@ -113,15 +152,12 @@ export default function ConsoleTab() {
           }}
         >
           <SearchIcon size={13} />
-          Find and replace
+          Find
         </button>
 
-        <button
-          type="button"
-          className="relative flex cursor-pointer items-center gap-1.5"
+        <span
+          className="flex items-center gap-1.5"
           style={{
-            background: 'transparent',
-            border: 'none',
             color: 'var(--accent)',
             borderBottom: '2px solid var(--accent)',
             height: 35,
@@ -133,19 +169,36 @@ export default function ConsoleTab() {
         >
           <Terminal size={13} />
           Console
-        </button>
+          <span style={{ color: 'var(--muted)', fontWeight: 400 }}>
+            {filtered.length}
+          </span>
+        </span>
 
         <div className="flex-1" />
 
-        {/* Error count */}
+        <button
+          type="button"
+          onClick={() => setAutoScroll(!autoScroll)}
+          className="flex cursor-pointer items-center gap-1 rounded px-2 py-1"
+          title="Auto-scroll"
+          style={{
+            background: autoScroll ? 'var(--accentLight)' : 'transparent',
+            border: '1px solid var(--border)',
+            color: autoScroll ? 'var(--accentText)' : 'var(--muted)',
+          }}
+        >
+          {autoScroll ? <ArrowDown size={11} /> : <ArrowUp size={11} />}
+          Auto
+        </button>
+
         {errorCount > 0 && (
           <span className="flex items-center gap-1" style={{ color: 'var(--red)' }}>
             <AlertCircle size={13} />
-            {errorCount} Error{errorCount === 1 ? '' : 's'}
+            {errorCount}
           </span>
         )}
 
-        {/* All Logs dropdown */}
+        {/* Filter dropdown */}
         <div className="relative">
           <button
             type="button"
@@ -191,10 +244,9 @@ export default function ConsoleTab() {
           )}
         </div>
 
-        {/* Clear */}
         <button
           type="button"
-          onClick={clear}
+          onClick={onClear}
           className="cursor-pointer rounded px-2 py-1"
           style={{
             background: 'var(--surface)',
@@ -215,7 +267,7 @@ export default function ConsoleTab() {
         </button>
       </div>
 
-      {/* Find-and-replace input (toggleable) */}
+      {/* Find input */}
       {showFind && (
         <div
           className="flex shrink-0 items-center gap-2 px-3 py-1.5"
@@ -247,8 +299,8 @@ export default function ConsoleTab() {
         </div>
       )}
 
-      {/* Entry list */}
-      <div className="flex-1 overflow-auto">
+      {/* Virtualized list */}
+      <div ref={scrollerRef} className="flex-1 overflow-auto" data-testid="console-list">
         {filtered.length === 0 ? (
           <div className="p-8 text-center" style={{ color: 'var(--hint)' }}>
             {entries.length === 0
@@ -256,14 +308,40 @@ export default function ConsoleTab() {
               : 'No entries match your filter.'}
           </div>
         ) : (
-          filtered.map((entry) => (
-            <ConsoleEntryRow
-              key={entry.id}
-              entry={entry}
-              expanded={expandedIds.has(entry.id)}
-              onToggle={() => toggleExpanded(entry.id)}
-            />
-          ))
+          <div
+            style={{
+              height: virtualizer.getTotalSize(),
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {virtualizer.getVirtualItems().map((vi) => {
+              const entry = filtered[vi.index]
+              if (!entry) return null
+              return (
+                <div
+                  key={entry.id}
+                  data-index={vi.index}
+                  ref={(el) => {
+                    if (el) virtualizer.measureElement(el)
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${vi.start}px)`,
+                  }}
+                >
+                  <ConsoleEntryRow
+                    entry={entry}
+                    expanded={expandedIds.has(entry.id)}
+                    onToggle={() => toggleExpanded(entry.id)}
+                  />
+                </div>
+              )
+            })}
+          </div>
         )}
       </div>
     </div>
@@ -274,7 +352,10 @@ export default function ConsoleTab() {
 // Entry row
 // ────────────────────────────────────────────────────────────────
 
-function statusColor(status?: number): string {
+function statusColor(status?: number, level?: string): string {
+  if (level === 'error') return 'var(--red)'
+  if (level === 'warning') return 'var(--orange)'
+  if (level === 'success') return 'var(--green)'
   if (status == null) return 'var(--muted)'
   if (status >= 200 && status < 300) return 'var(--green)'
   if (status >= 300 && status < 400) return 'var(--blue)'
@@ -282,76 +363,150 @@ function statusColor(status?: number): string {
   return 'var(--red)'
 }
 
+function protocolBadgeColor(protocol: string): string {
+  switch (protocol) {
+    case 'http': return 'var(--blue)'
+    case 'soap': return 'var(--accent)'
+    case 'graphql': return '#e535ab'
+    case 'grpc': return '#0a7a5a'
+    case 'websocket': return 'var(--orange)'
+    case 'sse': return 'var(--green)'
+    default: return 'var(--muted)'
+  }
+}
+
+function formatTime(ts: number): string {
+  const d = new Date(ts)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  const ss = String(d.getSeconds()).padStart(2, '0')
+  const ms = String(d.getMilliseconds()).padStart(3, '0')
+  return `${hh}:${mm}:${ss}.${ms}`
+}
+
 function ConsoleEntryRow({
   entry,
   expanded,
   onToggle,
 }: {
-  entry: ConsoleEntry
+  entry: ConsoleLogEntry
   expanded: boolean
   onToggle: () => void
 }) {
   return (
     <div style={{ borderBottom: '1px solid var(--border-split)' }}>
-      {/* Top line — method, url, status, timing */}
       <div
         onClick={onToggle}
-        className="flex cursor-pointer items-center gap-2 px-3 py-1.5 font-mono"
-        style={{ color: 'var(--text)' }}
+        className="flex cursor-pointer items-center gap-2 px-3 py-1 font-mono"
+        style={{ color: 'var(--text)', fontSize: 12, lineHeight: '20px', minHeight: 28 }}
         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--item-hover)' }}
         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
       >
         <span style={{ color: 'var(--muted)' }}>
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
-        <span style={{ color: 'var(--text)', fontWeight: 600 }}>{entry.method}</span>
-        <span className="flex-1 truncate" style={{ color: 'var(--text)' }}>{entry.url}</span>
+        <span style={{ color: 'var(--hint)', minWidth: 90 }}>
+          {formatTime(entry.timestamp)}
+        </span>
+        <span
+          style={{
+            background: protocolBadgeColor(entry.protocol),
+            color: '#fff',
+            padding: '0 6px',
+            borderRadius: 3,
+            fontSize: 10,
+            fontWeight: 700,
+            minWidth: 50,
+            textAlign: 'center',
+          }}
+        >
+          {entry.protocol.toUpperCase()}
+        </span>
+        {entry.method && (
+          <span style={{ color: 'var(--text)', fontWeight: 600, minWidth: 50 }}>
+            {entry.method}
+          </span>
+        )}
+        <span className="flex-1 truncate" style={{ color: 'var(--text)' }}>
+          {entry.message ?? entry.url ?? ''}
+        </span>
         {entry.status != null && (
-          <span className="shrink-0" style={{ color: statusColor(entry.status), fontWeight: 600, minWidth: 32 }}>
+          <span
+            className="shrink-0"
+            style={{
+              color: statusColor(entry.status, entry.level),
+              fontWeight: 600,
+              minWidth: 36,
+              textAlign: 'right',
+            }}
+          >
             {entry.status}
           </span>
         )}
-        <span className="shrink-0" style={{ color: 'var(--green)', minWidth: 70, textAlign: 'right' }}>
-          {entry.durationMs != null ? `${entry.durationMs} ms` : '—'}
+        <span
+          className="shrink-0"
+          style={{ color: 'var(--muted)', minWidth: 70, textAlign: 'right' }}
+        >
+          {entry.durationMs != null ? `${entry.durationMs} ms` : ''}
         </span>
       </div>
 
-      {/* Expanded body — sections */}
       {expanded && (
-        <div className="pb-2 pl-6 pr-3 font-mono" style={{ color: 'var(--text)' }}>
-          {entry.error && (
+        <div className="pb-2 pl-6 pr-3 font-mono" style={{ color: 'var(--text)', fontSize: 12 }}>
+          {entry.details?.error && (
             <Section title="Error" defaultOpen>
-              <div style={{ color: 'var(--red)' }}>{entry.error}</div>
+              <div style={{ color: 'var(--red)' }}>{entry.details.error.message}</div>
+              {entry.details.error.stack && (
+                <pre className="m-0 mt-1 whitespace-pre-wrap" style={{ color: 'var(--muted)' }}>
+                  {entry.details.error.stack}
+                </pre>
+              )}
             </Section>
           )}
+
           <Section title="Network">
-            <KV k="Method" v={entry.method} />
-            <KV k="URL" v={entry.url} />
+            {entry.method && <KV k="Method" v={entry.method} />}
+            {entry.url && <KV k="URL" v={entry.url} />}
+            <KV k="Protocol" v={entry.protocol} />
+            <KV k="Category" v={entry.category} />
             {entry.status != null && (
-              <KV k="Status" v={String(entry.status)} valueColor={statusColor(entry.status)} />
+              <KV k="Status" v={String(entry.status)} valueColor={statusColor(entry.status, entry.level)} />
             )}
+            {entry.statusText && <KV k="Status Text" v={entry.statusText} />}
             {entry.durationMs != null && <KV k="Duration" v={`${entry.durationMs} ms`} />}
+            {entry.sizeBytes != null && <KV k="Size" v={`${entry.sizeBytes} B`} />}
+            {entry.details?.direction && <KV k="Direction" v={entry.details.direction} />}
+            {entry.details?.eventName && <KV k="Event" v={entry.details.eventName} />}
+            {entry.details?.meta &&
+              Object.entries(entry.details.meta).map(([k, v]) => (
+                <KV key={k} k={k} v={String(v)} />
+              ))}
           </Section>
-          <Section title="Request Headers" defaultOpen>
-            {renderHeaders(entry.requestHeaders)}
-          </Section>
-          {entry.requestBody && (
+
+          {entry.details?.requestHeaders && (
+            <Section title="Request Headers" defaultOpen>
+              {renderHeaders(entry.details.requestHeaders)}
+            </Section>
+          )}
+          {entry.details?.requestBody && (
             <Section title="Request Body">
-              <pre className="m-0 whitespace-pre-wrap" style={{ color: 'var(--json-string)' }}>
-                {entry.requestBody}
+              <pre className="m-0 max-h-[240px] overflow-auto whitespace-pre-wrap" style={{ color: 'var(--json-string, #b35a00)' }}>
+                {entry.details.requestBody}
               </pre>
             </Section>
           )}
-          <Section title="Response Headers">
-            {renderHeaders(entry.responseHeaders)}
-          </Section>
-          {entry.responseBody && (
+          {entry.details?.responseHeaders && (
+            <Section title="Response Headers">
+              {renderHeaders(entry.details.responseHeaders)}
+            </Section>
+          )}
+          {entry.details?.responseBody && (
             <Section title="Response Body">
               <pre
                 className="m-0 max-h-[240px] overflow-auto whitespace-pre-wrap"
                 style={{ color: 'var(--text)' }}
               >
-                {entry.responseBody}
+                {entry.details.responseBody}
               </pre>
             </Section>
           )}
@@ -362,8 +517,11 @@ function ConsoleEntryRow({
                   key={i}
                   style={{
                     color:
-                      l.level === 'error' ? 'var(--red)' :
-                      l.level === 'warn' ? 'var(--orange)' : 'var(--text)',
+                      l.level === 'error'
+                        ? 'var(--red)'
+                        : l.level === 'warn'
+                          ? 'var(--orange)'
+                          : 'var(--text)',
                   }}
                 >
                   {l.message}
@@ -376,10 +534,6 @@ function ConsoleEntryRow({
     </div>
   )
 }
-
-// ────────────────────────────────────────────────────────────────
-// Section (collapsible)
-// ────────────────────────────────────────────────────────────────
 
 function Section({
   title,
@@ -410,7 +564,7 @@ function KV({ k, v, valueColor }: { k: string; v: string; valueColor?: string })
   return (
     <div className="flex gap-2">
       <span style={{ color: 'var(--muted)' }}>{k}:</span>
-      <span style={{ color: valueColor || 'var(--json-string)' }}>"{v}"</span>
+      <span style={{ color: valueColor || 'var(--json-string, #b35a00)' }}>"{v}"</span>
     </div>
   )
 }
@@ -421,9 +575,11 @@ function renderHeaders(headers?: Record<string, string>) {
   }
   return (
     <>
-      {Object.keys(headers).sort().map((k) => (
-        <KV key={k} k={k} v={headers[k]} />
-      ))}
+      {Object.keys(headers)
+        .sort()
+        .map((k) => (
+          <KV key={k} k={k} v={headers[k]} />
+        ))}
     </>
   )
 }

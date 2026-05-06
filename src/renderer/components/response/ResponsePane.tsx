@@ -372,7 +372,9 @@ export default function ResponsePane() {
         {activeTab === 'cookies' && <CookieTab />}
         {activeTab === 'headers' && <HeadersTab />}
         {activeTab === 'testResults' && <TestResultsTab />}
-        {activeTab === 'console' && <ConsoleTab />}
+        {activeTab === 'console' && (
+          <ConsoleTab tabFilterId={activeProtocolTab?.id} />
+        )}
         {activeTab === 'actualRequest' && <ActualRequestTab />}
         {activeTab === 'wsse' && <WsseResponsePanel body={response.body ?? ''} />}
       </div>

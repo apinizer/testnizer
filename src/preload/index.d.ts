@@ -274,8 +274,46 @@ interface RequestApi {
     _projectId?: string
     _endpointId?: string
     _protocol?: string
+    _requestId?: string
+    _tabId?: string
   }): Promise<IpcResult<ApiResponse>>
   cancel(requestId: string): Promise<IpcResult<boolean>>
+}
+
+// ─── Console (Postman-style streaming logs) ───────────────────────
+
+interface ConsoleLogEntryDto {
+  id: string
+  timestamp: number
+  protocol: 'http' | 'soap' | 'grpc' | 'websocket' | 'graphql' | 'sse'
+  level: 'info' | 'success' | 'warning' | 'error'
+  category: 'request' | 'response' | 'event' | 'connection' | 'system'
+  tabId?: string
+  method?: string
+  url?: string
+  status?: number
+  statusText?: string
+  durationMs?: number
+  sizeBytes?: number
+  message?: string
+  details?: {
+    requestHeaders?: Record<string, string>
+    requestBody?: string
+    responseHeaders?: Record<string, string>
+    responseBody?: string
+    error?: { message: string; stack?: string }
+    direction?: 'in' | 'out'
+    eventName?: string
+    meta?: Record<string, string | number | boolean>
+  }
+}
+
+interface ConsoleApi {
+  /**
+   * Subscribe to streaming console:log events emitted by the main
+   * process. Returns a teardown function.
+   */
+  onLog(callback: (entry: ConsoleLogEntryDto) => void): () => void
 }
 
 interface ImportExportApi {
@@ -903,6 +941,7 @@ interface SaveApi {
 interface ApiBridge {
   window: WindowApi
   request: RequestApi
+  console: ConsoleApi
   workspace: WorkspaceApi
   project: ProjectApi
   folder: FolderApi

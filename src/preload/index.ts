@@ -449,6 +449,23 @@ const api = {
       ipcRenderer.invoke('save:importTestSuite', payload),
   },
 
+  // ─── Console logs (Postman-style) ───────────────────────────
+  console: {
+    /**
+     * Subscribe to streaming console log entries from main process.
+     * Returns a teardown function that removes the listener.
+     */
+    onLog: (callback: (entry: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('console:log', handler)
+      return () => {
+        ipcRenderer.removeListener('console:log', handler)
+      }
+    },
+  },
+
   // ─── SSE ────────────────────────────────────────────────────
   sse: {
     connect: (options: unknown): Promise<unknown> => ipcRenderer.invoke('sse:connect', options),

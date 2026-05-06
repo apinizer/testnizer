@@ -13,6 +13,7 @@ import {
   type GrpcClientStreamOptions,
   type GrpcBidiStreamOptions
 } from '../protocols/grpc.engine'
+import { logRequest, logResponse, logEvent } from '../lib/console-logger'
 
 interface GrpcExecutePayload {
   serverAddress: string
@@ -24,6 +25,7 @@ interface GrpcExecutePayload {
   timeout?: number
   useTls?: boolean
   sslVerification?: boolean
+  _tabId?: string
 }
 
 interface GrpcServerStreamPayload {
@@ -36,6 +38,7 @@ interface GrpcServerStreamPayload {
   timeout?: number
   useTls?: boolean
   sslVerification?: boolean
+  _tabId?: string
 }
 
 interface GrpcClientStreamPayload {
@@ -99,7 +102,40 @@ export function registerGrpcHandlers(): void {
         sslVerification: payload.sslVerification
       }
 
+      const fullMethod = `${payload.serviceName}/${payload.methodName}`
+      logRequest({
+        protocol: 'grpc',
+        method: 'unary',
+        url: `${payload.serverAddress}/${fullMethod}`,
+        body: payload.requestBody,
+        headers: payload.metadata,
+        tabId: payload._tabId,
+        message: `gRPC unary ${fullMethod}`,
+        meta: { tls: !!payload.useTls },
+      })
+
       const response = await executeUnary(options)
+
+      logResponse({
+        protocol: 'grpc',
+        method: 'unary',
+        url: `${payload.serverAddress}/${fullMethod}`,
+        status: response.grpcStatus,
+        statusText: response.grpcStatusMessage,
+        durationMs: response.timing?.total,
+        sizeBytes: response.bodySize,
+        requestHeaders: payload.metadata,
+        requestBody: payload.requestBody,
+        responseBody: response.body,
+        error: response.error
+          ? { message: response.error }
+          : (response.grpcStatus != null && response.grpcStatus !== 0)
+            ? { message: response.grpcStatusMessage || `gRPC code ${response.grpcStatus}` }
+            : undefined,
+        tabId: payload._tabId,
+        meta: { method: fullMethod },
+      })
+
       return { success: true, data: response }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -125,6 +161,17 @@ export function registerGrpcHandlers(): void {
         useTls: payload.useTls,
         sslVerification: payload.sslVerification
       }
+
+      const fullMethod = `${payload.serviceName}/${payload.methodName}`
+      logEvent({
+        protocol: 'grpc',
+        category: 'connection',
+        message: `gRPC server-stream open: ${fullMethod}`,
+        url: `${payload.serverAddress}/${fullMethod}`,
+        body: payload.requestBody,
+        direction: 'out',
+        tabId: payload._tabId,
+      })
 
       const streamId = await executeServerStream(options, win.id)
       return { success: true, data: { streamId } }
