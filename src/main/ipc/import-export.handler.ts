@@ -10,6 +10,12 @@ interface ImportResult {
   collectionId?: string
   endpointCount?: number
   folderCount?: number
+  /**
+   * Newly inserted endpoint IDs in insertion order. Populated by Postman /
+   * Insomnia importers so callers (e.g. test suite import) can attach the
+   * fresh endpoints to suites without re-querying the DB.
+   */
+  endpointIds?: string[]
   suggestedEnvVars?: Record<string, string>
   warnings?: string[]
   error?: string
@@ -1118,7 +1124,7 @@ export function mapPostmanAuthToUi(auth: PostmanAuth | undefined): Record<string
 
 // ─── Postman Import ─────────────────────────────────────────
 
-async function importPostman(
+export async function importPostman(
   projectId: string,
   content: string,
   rootFolderId: string | null = null,
@@ -1156,6 +1162,7 @@ async function importPostman(
   const now = Date.now()
   let endpointCount = 0
   let folderCount = 0
+  const endpointIds: string[] = []
   const suggestedEnvVars: Record<string, string> = {}
 
   if (collection.variable) {
@@ -1245,6 +1252,7 @@ async function importPostman(
         now,
         now,
       )
+      endpointIds.push(endpointId)
       endpointCount++
     }
   }
@@ -1260,6 +1268,7 @@ async function importPostman(
     collectionId: projectId,
     endpointCount,
     folderCount,
+    endpointIds,
     suggestedEnvVars: Object.keys(suggestedEnvVars).length > 0 ? suggestedEnvVars : undefined,
     warnings: warnings.length > 0 ? warnings : undefined,
   }
@@ -2309,6 +2318,7 @@ function importInsomniaV4(
   const now = Date.now()
   let endpointCount = 0
   let folderCount = 0
+  const endpointIds: string[] = []
   const suggestedEnvVars: Record<string, string> = {}
 
   const folderMap = new Map<string, string>()
@@ -2402,6 +2412,7 @@ function importInsomniaV4(
       now,
       now,
     )
+    endpointIds.push(endpointId)
     endpointCount++
   }
 
@@ -2436,6 +2447,7 @@ function importInsomniaV4(
     collectionId: projectId,
     endpointCount,
     folderCount,
+    endpointIds,
     suggestedEnvVars: Object.keys(suggestedEnvVars).length > 0 ? suggestedEnvVars : undefined,
     warnings: warnings.length > 0 ? warnings : undefined,
   }
@@ -2451,6 +2463,7 @@ function importInsomniaV5(
   const now = Date.now()
   let endpointCount = 0
   let folderCount = 0
+  const endpointIds: string[] = []
   const suggestedEnvVars: Record<string, string> = {}
 
   function walk(items: InsomniaV5Item[], parentFolderId: string | null): void {
@@ -2524,6 +2537,7 @@ function importInsomniaV5(
         now,
         now,
       )
+      endpointIds.push(endpointId)
       endpointCount++
     }
   }
@@ -2545,6 +2559,7 @@ function importInsomniaV5(
     collectionId: projectId,
     endpointCount,
     folderCount,
+    endpointIds,
     suggestedEnvVars: Object.keys(suggestedEnvVars).length > 0 ? suggestedEnvVars : undefined,
     warnings: warnings.length > 0 ? warnings : undefined,
   }

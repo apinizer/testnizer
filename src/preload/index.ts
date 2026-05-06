@@ -446,8 +446,11 @@ const api = {
       projectId: string
       parentFolderId?: string | null
     }): Promise<unknown> => ipcRenderer.invoke('save:importFolder', payload),
-    importTestSuite: (payload: { projectId: string }): Promise<unknown> =>
-      ipcRenderer.invoke('save:importTestSuite', payload),
+    importTestSuite: (payload: {
+      projectId: string
+      content?: string
+      suiteName?: string
+    }): Promise<unknown> => ipcRenderer.invoke('save:importTestSuite', payload),
   },
 
   // ─── Console logs (Postman-style) ───────────────────────────

@@ -6,6 +6,42 @@ import { randomUUID } from 'crypto'
 import { getDb } from '../db/database'
 import { addSaveHistory } from '../db/branch.repo'
 import { encryptSecret, decryptSecret } from '../lib/secure-storage'
+import { importPostman, importInsomnia } from './import-export.handler'
+
+// ─── Multi-format detection for test suite import ────────────────
+export type TestSuiteImportFormat = 'testnizer' | 'postman' | 'insomnia' | 'unknown'
+
+/**
+ * Detect the import format from a parsed JSON document. We look at top-level
+ * shape rather than file extension since users may rename files.
+ */
+export function detectTestSuiteImportFormat(parsed: unknown): TestSuiteImportFormat {
+  if (!parsed || typeof parsed !== 'object') return 'unknown'
+  const doc = parsed as Record<string, unknown>
+
+  // Testnizer native: { kind: 'testSuite', version, suite, ... }
+  if (doc.kind === 'testSuite' && typeof doc.version === 'string') return 'testnizer'
+
+  // Postman v2.x: { info: { schema: '...postman.com...', name }, item: [...] }
+  if (doc.info && typeof doc.info === 'object' && Array.isArray(doc.item)) {
+    const info = doc.info as Record<string, unknown>
+    const schema = typeof info.schema === 'string' ? info.schema : ''
+    const postmanId = typeof info._postman_id === 'string' ? info._postman_id : ''
+    if (postmanId || /postman|getpostman/i.test(schema) || typeof info.name === 'string') {
+      return 'postman'
+    }
+  }
+
+  // Insomnia v4: { _type: 'export', __export_format: 4, resources: [...] }
+  if (doc._type === 'export' && Array.isArray(doc.resources)) return 'insomnia'
+
+  // Insomnia v5: { type: 'collection.insomnia.rest/...', collection: [...] }
+  if (typeof doc.type === 'string' && /collection\.insomnia/.test(doc.type) && Array.isArray(doc.collection)) {
+    return 'insomnia'
+  }
+
+  return 'unknown'
+}
 
 // ─── Full Project Export Format ──────────────────────────────────
 interface ProjectExport {
@@ -478,6 +514,97 @@ export function importTestSuiteData(
 }
 
 /**
+ * Multi-format test-suite import. Accepts the raw file content and routes to
+ * the appropriate importer based on auto-detected shape. For Postman /
+ * Insomnia inputs we (1) reuse the existing project importers to create the
+ * endpoints under `projectId` (no folder), then (2) create a fresh test suite
+ * and link the imported endpoints to it.
+ */
+export async function importTestSuiteFromFile(
+  content: string,
+  projectId: string,
+  suiteName?: string,
+): Promise<{
+  suiteId: string
+  endpointsImported: number
+  format: TestSuiteImportFormat
+  warnings?: string[]
+}> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch (e) {
+    throw new Error('Could not parse file as JSON: ' + (e as Error).message)
+  }
+
+  const format = detectTestSuiteImportFormat(parsed)
+
+  if (format === 'testnizer') {
+    const data = parsed as TestSuiteExport
+    if (data.kind !== 'testSuite' || !data.suite) {
+      throw new Error('Invalid Testnizer test suite export.')
+    }
+    const out = importTestSuiteData(data, projectId)
+    return { suiteId: out.suiteId, endpointsImported: out.endpointsImported, format }
+  }
+
+  if (format === 'postman' || format === 'insomnia') {
+    const result = format === 'postman'
+      ? await importPostman(projectId, content, null)
+      : await importInsomnia(projectId, content, null)
+
+    if (!result.success) {
+      throw new Error(result.error || `${format} import failed`)
+    }
+
+    const endpointIds = result.endpointIds ?? []
+
+    // Derive a friendly default suite name from the source document.
+    let derivedName = suiteName
+    if (!derivedName) {
+      if (format === 'postman') {
+        const doc = parsed as { info?: { name?: string } }
+        derivedName = doc.info?.name ? `${doc.info.name} (imported)` : 'Imported Postman Suite'
+      } else {
+        const doc = parsed as { name?: string }
+        derivedName = doc.name ? `${doc.name} (imported)` : 'Imported Insomnia Suite'
+      }
+    }
+
+    const db = getDb()
+    const now = Date.now()
+    const newSuiteId = randomUUID()
+
+    db.prepare(
+      `INSERT INTO test_suites (id, project_id, name, description, sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(newSuiteId, projectId, derivedName, null, 0, now, now)
+
+    const insertLink = db.prepare(
+      `INSERT INTO test_suite_endpoints (id, suite_id, endpoint_id, sort_order) VALUES (?, ?, ?, ?)`,
+    )
+    const tx = db.transaction(() => {
+      let order = 0
+      for (const epId of endpointIds) {
+        insertLink.run(randomUUID(), newSuiteId, epId, order++)
+      }
+    })
+    tx()
+
+    return {
+      suiteId: newSuiteId,
+      endpointsImported: endpointIds.length,
+      format,
+      warnings: result.warnings,
+    }
+  }
+
+  throw new Error(
+    'Unknown test suite format. Expected Testnizer (.json), Postman v2.x, or Insomnia v4/v5 export.',
+  )
+}
+
+/**
  * Import a whole project (from exported JSON) as a NEW project in the
  * target workspace. All IDs are regenerated so source and target can
  * coexist. Returns the new project id.
@@ -826,29 +953,38 @@ export function registerSaveHandlers(): void {
     }
   })
 
-  // ─── Import Test Suite (into existing project) ─────────────
-  ipcMain.handle('save:importTestSuite', async (_event, payload: { projectId: string }) => {
-    try {
-      const win = BrowserWindow.getFocusedWindow()
-      const result = await dialog.showOpenDialog(win!, {
-        properties: ['openFile'],
-        title: 'Select test suite export file',
-        filters: [{ name: 'JSON Files', extensions: ['json'] }],
-      })
-      if (result.canceled || !result.filePaths[0]) {
-        return { success: false, error: 'Cancelled' }
+  // ─── Import Test Suite (multi-format, auto-detect) ─────────
+  // Accepts either a raw `content` string (already-read file) or, when
+  // omitted, opens a file picker. Auto-detects Testnizer/Postman/Insomnia
+  // based on top-level shape — see `detectTestSuiteImportFormat`.
+  ipcMain.handle(
+    'save:importTestSuite',
+    async (_event, payload: { projectId: string; content?: string; suiteName?: string }) => {
+      try {
+        let content = payload.content
+        if (!content) {
+          const win = BrowserWindow.getFocusedWindow()
+          const result = await dialog.showOpenDialog(win!, {
+            properties: ['openFile'],
+            title: 'Select test suite / collection file',
+            filters: [
+              { name: 'Collections (JSON)', extensions: ['json'] },
+              { name: 'All Files', extensions: ['*'] },
+            ],
+          })
+          if (result.canceled || !result.filePaths[0]) {
+            return { success: false, error: 'Cancelled' }
+          }
+          content = readFileSync(result.filePaths[0], 'utf-8')
+        }
+
+        const out = await importTestSuiteFromFile(content, payload.projectId, payload.suiteName)
+        return { success: true, data: out }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
       }
-      const content = readFileSync(result.filePaths[0], 'utf-8')
-      const parsed = JSON.parse(content) as TestSuiteExport
-      if (!parsed.version || parsed.kind !== 'testSuite') {
-        return { success: false, error: 'Invalid test suite export file.' }
-      }
-      const out = importTestSuiteData(parsed, payload.projectId)
-      return { success: true, data: out }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+    },
+  )
 
   // ─── Save Local ─────────────────────────────────────────────
   ipcMain.handle('save:local', async (_event, payload: {
