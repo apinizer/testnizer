@@ -1,4 +1,4 @@
 provider: github
 owner: apinizer-cloud
-repo: testnizer
+repo: testnizer-releases
 updaterCacheDirName: testnizer-updater

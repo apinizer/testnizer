@@ -56,7 +56,7 @@ jobs:
     permissions:
       contents: write
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -129,7 +129,7 @@ jobs:
     permissions:
       contents: write
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -190,7 +190,7 @@ jobs:
     permissions:
       contents: write
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -261,3 +261,6 @@ jobs:
         with:
           draft: true
           files: release/*
+          repository: apinizer-cloud/testnizer-releases
+          tag_name: ${{ github.ref_name }}
+          token: ${{ secrets.RELEASE_TOKEN }}

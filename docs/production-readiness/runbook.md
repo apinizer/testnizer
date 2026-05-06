@@ -7,8 +7,8 @@ Tekrarlanan operasyonel görevlerin adım adım komut listesi. Yeni ekip üyesi 
 ## 1. Geliştirme Ortamı Kurulumu
 
 ```bash
-# Repo klon (henüz GitHub'a taşınmadı; mevcut GitLab)
-git clone https://gitlab.com/apinizer-cloud/apinizer-apitester.git testnizer
+# Repo klon (private kaynak repo)
+git clone https://github.com/apinizer-cloud/testnizer.git
 cd testnizer
 
 # Bağımlılıklar (postinstall otomatik electron-rebuild + Testnizer.app rename çalışır)

@@ -249,7 +249,7 @@
     "publish": {
       "provider": "github",
       "owner": "apinizer-cloud",
-      "repo": "testnizer",
+      "repo": "testnizer-releases",
       "releaseType": "release"
     }
   }
