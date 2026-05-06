@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { evaluateJsonPath, JSONPATH_EXAMPLES } from '../../lib/tools/jsonpath'
 import { useTranslation } from '../../lib/i18n'
+
+type JsonPathResult = ReturnType<typeof evaluateJsonPath>
 
 const SAMPLE = JSON.stringify(
   {
@@ -23,10 +25,14 @@ export default function JsonPathTool() {
   const { t } = useTranslation()
   const [json, setJson] = useState(SAMPLE)
   const [expr, setExpr] = useState('$..author')
+  const [result, setResult] = useState<JsonPathResult | null>(null)
 
-  const result = useMemo(() => evaluateJsonPath(json, expr), [json, expr])
-  const output = result.ok ? JSON.stringify(result.matches, null, 2) : ''
-  const matchCount = result.ok ? result.matches.length : 0
+  const output = result?.ok ? JSON.stringify(result.matches, null, 2) : ''
+  const matchCount = result?.ok ? result.matches.length : 0
+
+  function handleEvaluate() {
+    setResult(evaluateJsonPath(json, expr))
+  }
 
   const toolbar = (
     <>
@@ -34,6 +40,7 @@ export default function JsonPathTool() {
         type="text"
         value={expr}
         onChange={(e) => setExpr(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && handleEvaluate()}
         placeholder="$.store.book[*].author"
         className="rounded border px-2 py-1 font-mono text-xs"
         style={{
@@ -62,6 +69,13 @@ export default function JsonPathTool() {
           </option>
         ))}
       </select>
+      <button
+        onClick={handleEvaluate}
+        className="rounded px-3 py-1 text-xs font-medium"
+        style={{ background: 'var(--accent)', color: '#fff' }}
+      >
+        {t('tools.common.evaluate')}
+      </button>
     </>
   )
 
@@ -73,7 +87,11 @@ export default function JsonPathTool() {
       outputLabel={t('tools.common.output')}
       inputPane={<MonacoWrapper value={json} onChange={setJson} language="json" />}
       outputPane={
-        result.ok ? (
+        !result ? (
+          <div className="p-3 text-sm" style={{ color: 'var(--muted)' }}>
+            {t('tools.common.empty')}
+          </div>
+        ) : result.ok ? (
           <MonacoWrapper value={output} language="json" readOnly />
         ) : (
           <div className="p-3 text-sm" style={{ color: 'var(--red, #cc2200)' }}>
@@ -83,7 +101,7 @@ export default function JsonPathTool() {
         )
       }
       footer={
-        result.ok ? (
+        result?.ok ? (
           <span>
             {matchCount} {t('tools.jsonpath.matches')}
           </span>

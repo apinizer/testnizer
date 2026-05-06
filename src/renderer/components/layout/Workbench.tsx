@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import UrlBar from './UrlBar'
 import RequestEditor from '../request/RequestEditor'
@@ -48,6 +49,47 @@ function EndpointTabBar() {
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
+  const [contextMenu, setContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(
+    null,
+  )
+
+  useEffect(() => {
+    if (!contextMenu) return
+    function dismiss() {
+      setContextMenu(null)
+    }
+    window.addEventListener('click', dismiss)
+    window.addEventListener('contextmenu', dismiss)
+    return () => {
+      window.removeEventListener('click', dismiss)
+      window.removeEventListener('contextmenu', dismiss)
+    }
+  }, [contextMenu])
+
+  function handleTabContextAction(
+    tabId: string,
+    action: 'close' | 'closeOthers' | 'closeRight' | 'closeLeft' | 'closeAll' | 'rename',
+  ) {
+    setContextMenu(null)
+    const allTabs = useTabsStore.getState().tabs
+    const idx = allTabs.findIndex((t) => t.id === tabId)
+    if (idx < 0) return
+    const idsToClose: string[] = []
+    if (action === 'close') idsToClose.push(tabId)
+    else if (action === 'closeOthers') idsToClose.push(...allTabs.filter((t) => t.id !== tabId).map((t) => t.id))
+    else if (action === 'closeRight') idsToClose.push(...allTabs.slice(idx + 1).map((t) => t.id))
+    else if (action === 'closeLeft') idsToClose.push(...allTabs.slice(0, idx).map((t) => t.id))
+    else if (action === 'closeAll') idsToClose.push(...allTabs.map((t) => t.id))
+    else if (action === 'rename') {
+      const target = allTabs.find((t) => t.id === tabId)
+      if (target) handleStartRename(tabId, target.name)
+      return
+    }
+    for (const id of idsToClose) {
+      removeTabState(id)
+      closeTab(id)
+    }
+  }
 
   useEffect(() => {
     if (renamingTabId && renameInputRef.current) {
@@ -137,6 +179,16 @@ function EndpointTabBar() {
             onDoubleClick={() => {
               // Double-click pins preview tab (Postman behavior)
               if (isPreview) pinTab(tab.id)
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              const x = e.clientX
+              const y = e.clientY
+              const id = tab.id
+              // Defer state update so the current contextmenu event finishes
+              // bubbling before the global dismiss listener attaches.
+              setTimeout(() => setContextMenu({ tabId: id, x, y }), 0)
             }}
             style={{
               display: 'flex',
@@ -248,22 +300,6 @@ function EndpointTabBar() {
         +
       </div>
 
-      {/* ··· more */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 8px',
-          height: '100%',
-          cursor: 'pointer',
-          color: T.ghost,
-          fontSize: 13,
-          flexShrink: 0,
-        }}
-      >
-        ···
-      </div>
-
       {/* Push environment selector to right end */}
       <div style={{ flex: 1 }} />
 
@@ -271,7 +307,89 @@ function EndpointTabBar() {
       <div className="flex shrink-0 items-center" style={{ paddingRight: 10, paddingLeft: 8 }}>
         <EnvironmentSelector />
       </div>
+
+      {contextMenu &&
+        createPortal(
+          <div
+            className="fixed z-[9000] overflow-hidden rounded-[8px]"
+            style={{
+              top: contextMenu.y,
+              left: contextMenu.x,
+              minWidth: 200,
+              background: 'var(--white)',
+              border: '1px solid var(--border)',
+              boxShadow: 'var(--shadow-drop)',
+              padding: 4,
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+            }}
+          >
+            <ContextMenuItem
+              label="Rename"
+              onClick={() => handleTabContextAction(contextMenu.tabId, 'rename')}
+            />
+            <ContextMenuItem
+              label="Close"
+              onClick={() => handleTabContextAction(contextMenu.tabId, 'close')}
+            />
+            <ContextMenuItem
+              label="Close Others"
+              onClick={() => handleTabContextAction(contextMenu.tabId, 'closeOthers')}
+            />
+            <ContextMenuItem
+              label="Close to the Left"
+              onClick={() => handleTabContextAction(contextMenu.tabId, 'closeLeft')}
+            />
+            <ContextMenuItem
+              label="Close to the Right"
+              onClick={() => handleTabContextAction(contextMenu.tabId, 'closeRight')}
+            />
+            <div style={{ height: 1, background: 'var(--border-split)', margin: '4px 0' }} />
+            <ContextMenuItem
+              label="Close All"
+              danger
+              onClick={() => handleTabContextAction(contextMenu.tabId, 'closeAll')}
+            />
+          </div>,
+          document.body,
+        )}
     </div>
+  )
+}
+
+function ContextMenuItem({
+  label,
+  onClick,
+  danger,
+}: {
+  label: string
+  onClick: () => void
+  danger?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full cursor-pointer items-center rounded-md text-left"
+      style={{
+        background: 'transparent',
+        border: 'none',
+        padding: '6px 10px',
+        fontSize: 13,
+        color: danger ? '#cc2200' : 'var(--text)',
+      }}
+      onMouseEnter={(e) => {
+        ;(e.currentTarget as HTMLElement).style.background = danger ? '#fff0f0' : 'var(--surface)'
+      }}
+      onMouseLeave={(e) => {
+        ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+      }}
+    >
+      {label}
+    </button>
   )
 }
 
@@ -471,16 +589,16 @@ export default function Workbench() {
 
         {/* Split pane: Request (top) | Response (bottom) */}
         <PanelGroup direction="vertical" className="flex-1">
-          <Panel defaultSize={50} minSize={20} maxSize={80}>
+          <Panel defaultSize={65} minSize={25} maxSize={85}>
             <RequestEditor />
           </Panel>
 
           <PanelResizeHandle
-            className="shrink-0"
-            style={{ height: 1, background: 'var(--border)', cursor: 'row-resize' }}
+            className="shrink-0 transition-colors hover:bg-[var(--accent)]"
+            style={{ height: 4, background: 'var(--border)', cursor: 'row-resize' }}
           />
 
-          <Panel defaultSize={50} minSize={20} maxSize={80}>
+          <Panel defaultSize={35} minSize={15} maxSize={75}>
             <ResponsePane />
           </Panel>
         </PanelGroup>

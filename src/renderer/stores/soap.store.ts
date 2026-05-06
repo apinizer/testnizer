@@ -178,20 +178,31 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
   setWsdlUrl: (url) => set({ wsdlUrl: url }),
 
   parseWsdl: async () => {
-    const { wsdlUrl } = get()
-    if (!wsdlUrl.trim()) return
+    const rawUrl = get().wsdlUrl.trim()
+    if (!rawUrl) return
+
+    // Normalize URL: prepend https:// when no scheme is present, so users
+    // can paste hostnames like "www.foo.com/svc?wsdl" without errors.
+    const normalizedUrl =
+      /^[a-z][a-z0-9+.-]*:\/\//i.test(rawUrl) || rawUrl.startsWith('file://')
+        ? rawUrl
+        : `https://${rawUrl}`
+
+    if (normalizedUrl !== rawUrl) {
+      set({ wsdlUrl: normalizedUrl })
+    }
 
     set({ isLoading: true, parseError: null, parsedWsdl: null })
 
     try {
-      const result = await window.api?.request?.send({
-        method: 'POST',
-        url: '__internal__:soap:parseWsdl',
-        body: { type: 'text', content: wsdlUrl },
-      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const api = (window as any).api
+      const result = (await api?.soap?.parseWsdl(normalizedUrl)) as
+        | { success: boolean; data?: WsdlParseResult; error?: string }
+        | undefined
 
       if (result?.success && result.data) {
-        const parsed = (result.data as unknown as { parsedWsdl: WsdlParseResult }).parsedWsdl
+        const parsed = result.data
         set({ parsedWsdl: parsed, isLoading: false })
 
         // Auto-select first service/port/operation
@@ -200,7 +211,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
           set({ selectedService: svc.name })
           if (svc.ports.length > 0) {
             const port = svc.ports[0]
-            set({ selectedPort: port.name })
+            set({ selectedPort: port.name, endpointUrl: port.endpointUrl })
             if (port.operations.length > 0) {
               const op = port.operations[0]
               set({
@@ -217,57 +228,10 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
           isLoading: false,
         })
       }
-    } catch {
-      // Demo mode: generate sample WSDL data
-      const demoResult: WsdlParseResult = {
-        services: [
-          {
-            name: 'CalculatorService',
-            ports: [
-              {
-                name: 'CalculatorPort',
-                endpointUrl: get().wsdlUrl.replace('?wsdl', ''),
-                operations: [
-                  {
-                    name: 'Add',
-                    soapAction: 'http://calculator.example.com/Add',
-                    inputSchema: { intA: 'int', intB: 'int' },
-                    outputSchema: { AddResult: 'int' },
-                    exampleRequest:
-                      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:cal="http://calculator.example.com/">\n  <soapenv:Header/>\n  <soapenv:Body>\n    <cal:Add>\n      <cal:intA>0</cal:intA>\n      <cal:intB>0</cal:intB>\n    </cal:Add>\n  </soapenv:Body>\n</soapenv:Envelope>',
-                    exampleResponse:
-                      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">\n  <soapenv:Body>\n    <AddResponse>\n      <AddResult>0</AddResult>\n    </AddResponse>\n  </soapenv:Body>\n</soapenv:Envelope>',
-                  },
-                  {
-                    name: 'Subtract',
-                    soapAction: 'http://calculator.example.com/Subtract',
-                    inputSchema: { intA: 'int', intB: 'int' },
-                    outputSchema: { SubtractResult: 'int' },
-                    exampleRequest:
-                      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:cal="http://calculator.example.com/">\n  <soapenv:Header/>\n  <soapenv:Body>\n    <cal:Subtract>\n      <cal:intA>0</cal:intA>\n      <cal:intB>0</cal:intB>\n    </cal:Subtract>\n  </soapenv:Body>\n</soapenv:Envelope>',
-                    exampleResponse:
-                      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">\n  <soapenv:Body>\n    <SubtractResponse>\n      <SubtractResult>0</SubtractResult>\n    </SubtractResponse>\n  </soapenv:Body>\n</soapenv:Envelope>',
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-        endpointUrl: get().wsdlUrl.replace('?wsdl', ''),
-        soapVersion: 'soap11',
-        rawWsdl: '<!-- WSDL content -->',
-      }
-
-      set({ parsedWsdl: demoResult, isLoading: false })
-      const svc = demoResult.services[0]
-      const port = svc.ports[0]
-      const op = port.operations[0]
+    } catch (e) {
       set({
-        selectedService: svc.name,
-        selectedPort: port.name,
-        selectedOperation: op.name,
-        rawXml: op.exampleRequest,
-        formValues: flattenSchema(op.inputSchema),
+        parseError: (e as Error).message || 'Failed to parse WSDL',
+        isLoading: false,
       })
     }
   },
@@ -295,6 +259,9 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     set({ selectedPort: name, selectedOperation: null })
     const svc = parsedWsdl?.services.find((s) => s.name === selectedService)
     const port = svc?.ports.find((p) => p.name === name)
+    if (port?.endpointUrl) {
+      set({ endpointUrl: port.endpointUrl })
+    }
     if (port && port.operations.length > 0) {
       const op = port.operations[0]
       set({

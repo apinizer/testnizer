@@ -3,7 +3,7 @@ import type { Theme, Language } from '../types'
 import { setLocale as setI18nLocale } from '../lib/i18n'
 
 type Locale = Language
-type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'settings'
+type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'tools' | 'settings'
 export type RightPanelTab = 'variables' | 'code'
 
 // Preset font stacks offered as quick picks. The stored `fontFamily` is always

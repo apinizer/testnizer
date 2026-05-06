@@ -8,6 +8,8 @@ export default function SoapOperationSelector() {
   const selectService = useSoapStore((s) => s.selectService)
   const selectPort = useSoapStore((s) => s.selectPort)
   const selectOperation = useSoapStore((s) => s.selectOperation)
+  const endpointUrl = useSoapStore((s) => s.endpointUrl)
+  const setEndpointUrl = useSoapStore((s) => s.setEndpointUrl)
 
   if (!parsedWsdl) return null
 
@@ -72,11 +74,17 @@ export default function SoapOperationSelector() {
         </div>
       </div>
 
-      {/* Endpoint URL display */}
+      {/* Endpoint URL — editable */}
       {currentPort && (
-        <div className="flex items-center gap-2 rounded-lg bg-[var(--surface)] px-3 py-1.5">
-          <span className="font-medium uppercase text-[var(--hint)]">Endpoint</span>
-          <span className="font-mono text-[var(--blue)]">{currentPort.endpointUrl}</span>
+        <div className="space-y-1">
+          <span className="text-[var(--muted)]">Endpoint URL</span>
+          <input
+            type="text"
+            value={endpointUrl || currentPort.endpointUrl}
+            onChange={(e) => setEndpointUrl(e.target.value)}
+            placeholder="https://example.com/services/Echo"
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 font-mono text-[var(--text)] outline-none focus:border-[var(--accent)]"
+          />
         </div>
       )}
     </div>

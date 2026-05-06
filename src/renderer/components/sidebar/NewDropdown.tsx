@@ -71,12 +71,6 @@ export default function NewDropdown() {
       action: () => createProtocolTab('http', t('welcome.newEndpointName'), 'GET'),
     },
     {
-      icon: '\u26A1',
-      label: t('newDropdown.quickRequest'),
-      bg: '#fff4e0',
-      action: () => createProtocolTab('http', t('welcome.quickRequest'), 'GET'),
-    },
-    {
       icon: '\uD83D\uDCDD',
       label: t('newDropdown.soapMethod'),
       bg: '#fff4e0',
@@ -99,6 +93,12 @@ export default function NewDropdown() {
       label: t('newDropdown.aiSse'),
       bg: '#ede7f6',
       action: () => createProtocolTab('sse', t('welcome.aiSseName')),
+    },
+    {
+      icon: '\u2B21',
+      label: t('newDropdown.grpc'),
+      bg: '#e8f5e9',
+      action: () => createProtocolTab('grpc', t('welcome.grpc'), 'POST'),
     },
   ]
 

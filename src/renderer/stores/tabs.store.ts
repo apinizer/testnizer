@@ -8,8 +8,8 @@ interface TabsStore {
   openTab: (tab: Omit<Tab, 'isDirty' | 'isLoading'>) => void
   /** Open in a preview (temporary) tab — replaces existing preview tab */
   openPreviewTab: (tab: Omit<Tab, 'isDirty' | 'isLoading' | 'isPreview'>) => void
-  /** Open a tool tab (JWT, JSON formatter, etc). Always creates a new tab so
-   *  multiple instances of the same tool can run side by side. */
+  /** Open a tool tab (JWT, JSON formatter, etc). If a tab of the same tool
+   *  type already exists, activate it instead of opening a duplicate. */
   openToolTab: (toolType: ToolProtocol, label: string) => void
   /** Pin (persist) the current preview tab so it won't be replaced */
   pinTab: (id: string) => void
@@ -93,6 +93,11 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   },
 
   openToolTab: (toolType, label) => {
+    const existing = get().tabs.find((t) => t.protocol === toolType)
+    if (existing) {
+      set({ activeTabId: existing.id })
+      return
+    }
     const newTab: Tab = {
       id: `tool-${toolType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: label,

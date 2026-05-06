@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { transformJolt } from '../../lib/tools/jolt'
 import { useTranslation } from '../../lib/i18n'
+
+type JoltResult = ReturnType<typeof transformJolt>
 
 const SAMPLE_INPUT = JSON.stringify(
   { user: { firstName: 'Alice', lastName: 'Smith', email: 'alice@example.com' } },
@@ -26,13 +28,28 @@ export default function JoltTool() {
   const { t } = useTranslation()
   const [input, setInput] = useState(SAMPLE_INPUT)
   const [spec, setSpec] = useState(SAMPLE_SPEC)
+  const [result, setResult] = useState<JoltResult | null>(null)
 
-  const result = useMemo(() => transformJolt(input, spec), [input, spec])
-  const output = result.ok ? JSON.stringify(result.output, null, 2) : ''
+  const output = result?.ok ? JSON.stringify(result.output, null, 2) : ''
+
+  function handleTransform() {
+    setResult(transformJolt(input, spec))
+  }
+
+  const toolbar = (
+    <button
+      onClick={handleTransform}
+      className="rounded px-3 py-1 text-xs font-medium"
+      style={{ background: 'var(--accent)', color: '#fff' }}
+    >
+      {t('tools.common.transform')}
+    </button>
+  )
 
   return (
     <ToolShell
       title={t('tools.jolt.title')}
+      toolbar={toolbar}
       inputLabel={t('tools.jolt.input')}
       outputLabel={t('tools.common.output')}
       inputPane={
@@ -56,7 +73,11 @@ export default function JoltTool() {
         </div>
       }
       outputPane={
-        result.ok ? (
+        !result ? (
+          <div className="p-3 text-sm" style={{ color: 'var(--muted)' }}>
+            {t('tools.common.empty')}
+          </div>
+        ) : result.ok ? (
           <MonacoWrapper value={output} language="json" readOnly />
         ) : (
           <div className="p-3 text-sm" style={{ color: 'var(--red, #cc2200)' }}>

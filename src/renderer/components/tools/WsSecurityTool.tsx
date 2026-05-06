@@ -171,17 +171,23 @@ export default function WsSecurityTool() {
       inputPane={
         <div className="flex h-full flex-col">
           <div
-            className="flex shrink-0 flex-wrap gap-1 border-b px-2 py-1"
+            className="flex shrink-0 flex-wrap items-center gap-1 border-b px-2 h-8"
             style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
           >
             {MODES.map((m) => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
-                className="rounded px-2.5 py-1 text-xs font-medium"
+                className="rounded px-2.5 py-0.5 text-xs font-medium transition-colors"
                 style={{
                   background: mode === m ? 'var(--accent-light)' : 'transparent',
                   color: mode === m ? 'var(--accent-text)' : 'var(--muted)',
+                }}
+                onMouseEnter={(e) => {
+                  if (mode !== m) (e.currentTarget as HTMLElement).style.background = 'var(--bg)'
+                }}
+                onMouseLeave={(e) => {
+                  if (mode !== m) (e.currentTarget as HTMLElement).style.background = 'transparent'
                 }}
               >
                 {modeLabel(m, t)}
@@ -190,7 +196,7 @@ export default function WsSecurityTool() {
           </div>
 
           <div
-            className="grid shrink-0 grid-cols-1 gap-2 border-b px-3 py-2 text-[11px]"
+            className="grid shrink-0 grid-cols-1 gap-2 border-b px-2 py-1.5 text-xs"
             style={{ borderColor: 'var(--border)' }}
           >
             {mode === 'username-token' && (

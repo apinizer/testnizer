@@ -1,7 +1,44 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { Check, Copy } from 'lucide-react'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
+
+function CopyVarButton({ varKey }: { varKey: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={async (e) => {
+        e.stopPropagation()
+        if (!varKey) return
+        try {
+          await navigator.clipboard.writeText(`{{${varKey}}}`)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        } catch {
+          /* ignore */
+        }
+      }}
+      title={`Copy {{${varKey}}}`}
+      className="cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+      style={{
+        background: 'transparent',
+        border: 'none',
+        padding: 2,
+        color: copied ? 'var(--accent)' : 'var(--muted)',
+      }}
+      onMouseEnter={(e) => {
+        if (!copied) (e.currentTarget as HTMLElement).style.color = 'var(--accent)'
+      }}
+      onMouseLeave={(e) => {
+        if (!copied) (e.currentTarget as HTMLElement).style.color = 'var(--muted)'
+      }}
+    >
+      {copied ? <Check size={11} /> : <Copy size={11} />}
+    </button>
+  )
+}
 
 interface RunnerVariablesProps {
   environmentId?: string
@@ -64,7 +101,7 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
               <table className="w-full">
                 <tbody>
                   {envVars.map((v) => (
-                    <tr key={v.id} className="border-b border-[var(--border)] last:border-b-0">
+                    <tr key={v.id} className="group border-b border-[var(--border)] last:border-b-0">
                       <td className="py-1.5 pr-3" style={{ fontWeight: 500, color: 'var(--text)' }}>
                         {v.key}
                       </td>
@@ -72,6 +109,9 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
                         {v.value || v.initialValue || (
                           <span className="italic" style={{ color: 'var(--hint)' }}>{t('runnerVars.enterValue')}</span>
                         )}
+                      </td>
+                      <td className="py-1.5 pl-2" style={{ width: 18 }}>
+                        <CopyVarButton varKey={v.key} />
                       </td>
                     </tr>
                   ))}
@@ -105,7 +145,7 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
             <table className="w-full">
               <tbody>
                 {enabledGlobals.map((v) => (
-                  <tr key={v.id} className="border-b border-[var(--border)] last:border-b-0">
+                  <tr key={v.id} className="group border-b border-[var(--border)] last:border-b-0">
                     <td className="py-1.5 pr-3" style={{ fontWeight: 500, color: 'var(--text)' }}>
                       {v.key}
                     </td>
@@ -113,6 +153,9 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
                       {v.value || v.initialValue || (
                         <span className="italic" style={{ color: 'var(--hint)' }}>Enter value</span>
                       )}
+                    </td>
+                    <td className="py-1.5 pl-2" style={{ width: 18 }}>
+                      <CopyVarButton varKey={v.key} />
                     </td>
                   </tr>
                 ))}

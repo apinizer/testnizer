@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useSoapStore } from '../../stores/soap.store'
-import MonacoWrapper from '../shared/MonacoWrapper'
 
 const INPUT =
   'w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]'
@@ -13,11 +12,12 @@ const SOAP12_NS = 'http://www.w3.org/2003/05/soap-envelope'
 type SoapVersion = 'soap11' | 'soap12'
 
 /**
- * Manual SOAP method form — used for invoking SOAP services without a WSDL.
+ * Manual SOAP method form — for invoking a SOAP service without a WSDL.
  *
- * The user supplies endpoint URL, SOAP version, SOAPAction, operation namespace
- * and operation name. "Generate envelope" produces a minimal SOAP envelope
- * template into the request body editor.
+ * Captures the metadata needed to build a request: endpoint URL, SOAP
+ * version, SOAPAction, operation name and namespace. "Generate Envelope"
+ * writes a minimal envelope template to the Body sub-tab where the user
+ * fine-tunes the actual XML payload.
  */
 export default function SoapManualForm() {
   const endpointUrl = useSoapStore((s) => s.endpointUrl)
@@ -28,20 +28,15 @@ export default function SoapManualForm() {
   const [soapAction, setSoapAction] = useState('')
   const [operationName, setOperationName] = useState('Echo')
   const [operationNamespace, setOperationNamespace] = useState('http://example.com/echo')
-  const [bodyChildren, setBodyChildren] = useState<string>(`<tns:Message>Hello</tns:Message>`)
 
   function generateEnvelope(): string {
     const soapNs = version === 'soap12' ? SOAP12_NS : SOAP11_NS
-    const indented = bodyChildren
-      .split('\n')
-      .map((line) => '      ' + line)
-      .join('\n')
     return [
       `<soap:Envelope xmlns:soap="${soapNs}" xmlns:tns="${operationNamespace}">`,
       '  <soap:Header/>',
       '  <soap:Body>',
       `    <tns:${operationName}>`,
-      indented,
+      `      <!-- Replace with request payload, e.g. <tns:Param>value</tns:Param> -->`,
       `    </tns:${operationName}>`,
       '  </soap:Body>',
       '</soap:Envelope>',
@@ -112,17 +107,7 @@ export default function SoapManualForm() {
         </div>
       </div>
 
-      <div>
-        <label className={LABEL}>Body Children (inside &lt;tns:OperationName&gt;)</label>
-        <div
-          className="overflow-hidden rounded-lg border border-[var(--border)]"
-          style={{ height: 140 }}
-        >
-          <MonacoWrapper value={bodyChildren} onChange={setBodyChildren} language="xml" />
-        </div>
-      </div>
-
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={handleGenerate}
@@ -131,11 +116,9 @@ export default function SoapManualForm() {
         >
           Generate Envelope → Body
         </button>
-      </div>
-
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--muted)]">
-        After generating, switch to the <strong>Body</strong> tab to fine-tune the XML, then
-        configure WS-Security in the <strong>Auth</strong> tab and press <strong>Send</strong>.
+        <span className="text-xs text-[var(--muted)]">
+          Writes a SOAP envelope template into the Body tab
+        </span>
       </div>
     </div>
   )

@@ -5,6 +5,7 @@ import TreeView from '../sidebar/TreeView'
 import NewDropdown from '../sidebar/NewDropdown'
 import HistoryListPanel from '../sidebar/HistoryListPanel'
 import TestsPanel from '../sidebar/TestsPanel'
+import ToolsPanel from '../sidebar/ToolsPanel'
 
 export default function LeftPanel() {
   const searchQuery = useWorkspaceStore((s) => s.searchQuery)
@@ -28,6 +29,8 @@ export default function LeftPanel() {
         <HistoryListPanel />
       ) : activeSidebarPage === 'tests' ? (
         <TestsPanel />
+      ) : activeSidebarPage === 'tools' ? (
+        <ToolsPanel />
       ) : (
         <>
           {/* Panel header — 44px */}

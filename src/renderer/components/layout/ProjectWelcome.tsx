@@ -1,4 +1,4 @@
-import { Globe, Zap, Radio, Cpu, Bot } from 'lucide-react'
+import { Globe, Radio, Cpu, Bot, FileCode2, Hexagon } from 'lucide-react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
@@ -22,7 +22,11 @@ export default function ProjectWelcome() {
   const clearResponse = useResponseStore((s) => s.clearResponse)
   const { t } = useTranslation()
 
-  function createTab(name: string, protocol: 'http' | 'websocket' | 'graphql' | 'sse', method?: string) {
+  function createTab(
+    name: string,
+    protocol: 'http' | 'soap' | 'websocket' | 'graphql' | 'sse' | 'grpc',
+    method?: string,
+  ) {
     const id = makeTabId()
     openTab({ id, name, protocol, method: method ?? 'GET', url: '' })
     switchToTab(id)
@@ -38,11 +42,11 @@ export default function ProjectWelcome() {
       onClick: () => createTab(t('welcome.newEndpointName'), 'http', 'GET'),
     },
     {
-      icon: <Zap size={32} strokeWidth={1.5} />,
-      iconBg: '#E8F5E9',
-      iconColor: '#388E3C',
-      label: t('welcome.quickRequest'),
-      onClick: () => createTab(t('welcome.quickRequest'), 'http', 'GET'),
+      icon: <FileCode2 size={32} strokeWidth={1.5} />,
+      iconBg: '#FFF3E0',
+      iconColor: '#E65100',
+      label: t('newDropdown.soapMethod'),
+      onClick: () => createTab(t('welcome.newSoapMethodName'), 'soap', 'POST'),
     },
     {
       icon: <Radio size={32} strokeWidth={1.5} />,
@@ -64,6 +68,13 @@ export default function ProjectWelcome() {
       iconColor: '#5E35B1',
       label: t('welcome.aiSse'),
       onClick: () => createTab(t('welcome.aiSseName'), 'sse'),
+    },
+    {
+      icon: <Hexagon size={32} strokeWidth={1.5} />,
+      iconBg: '#E8F5E9',
+      iconColor: '#2E7D32',
+      label: t('welcome.grpc'),
+      onClick: () => createTab(t('welcome.grpc'), 'grpc'),
     },
   ]
 

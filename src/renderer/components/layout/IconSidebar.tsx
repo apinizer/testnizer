@@ -5,7 +5,7 @@ import type { Tab } from '../../types'
 import { T } from '../../styles/tokens'
 import ProjectIcon from '../shared/ProjectIcon'
 
-type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'settings'
+type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'tools' | 'settings'
 
 interface NavItem {
   id: SidebarPage
@@ -42,6 +42,14 @@ function ClockIcon({ active }: { active: boolean }) {
   )
 }
 
+function WrenchIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.7} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+    </svg>
+  )
+}
+
 function CogIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -64,6 +72,7 @@ export default function IconSidebar() {
     { id: 'apis', label: 'APIs', icon: (a) => <GlobeIcon active={a} /> },
     { id: 'tests', label: 'Tests', icon: (a) => <CheckIcon active={a} /> },
     { id: 'history', label: 'History', icon: (a) => <ClockIcon active={a} /> },
+    { id: 'tools', label: 'Tools', icon: (a) => <WrenchIcon active={a} /> },
   ]
 
   const bottomItems: NavItem[] = [

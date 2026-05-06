@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { X, Plus, Trash2, Eye, EyeOff, Globe, Layers, Check } from 'lucide-react'
+import { X, Plus, Trash2, Eye, EyeOff, Globe, Layers, Check, Copy } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import type { Environment, EnvironmentVariable, GlobalVariable } from '../../types'
@@ -103,7 +103,7 @@ export default function EnvironmentModal() {
 
   return (
     <div
-      className="fixed inset-0 z-[500] flex items-center justify-center"
+      className="fixed inset-0 z-[9000] flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.36)' }}
       onClick={() => setShow(false)}
     >
@@ -447,7 +447,7 @@ function VarTable({
       <div
         className="grid shrink-0 items-center px-5 py-2 font-medium uppercase tracking-wide"
         style={{
-          gridTemplateColumns: '22px 1fr 100px 1fr 1fr 28px',
+          gridTemplateColumns: '22px 1fr 100px 1fr 1fr 28px 28px',
           gap: 12,
           background: 'var(--surface)',
           borderBottom: '1px solid var(--border)',
@@ -459,6 +459,7 @@ function VarTable({
         <span>Type</span>
         <span>Initial Value</span>
         <span>Current Value</span>
+        <span />
         <span />
       </div>
 
@@ -501,6 +502,7 @@ function VarRowView({
   onRemove: () => void
 }) {
   const [showCurrent, setShowCurrent] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const INPUT: React.CSSProperties = {
     width: '100%',
@@ -583,6 +585,40 @@ function VarRowView({
           </button>
         )}
       </div>
+
+      {/* Copy {{var}} reference */}
+      <button
+        type="button"
+        onClick={async () => {
+          if (!variable.key) return
+          try {
+            await navigator.clipboard.writeText(`{{${variable.key}}}`)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1200)
+          } catch {
+            // ignore clipboard failures
+          }
+        }}
+        title={variable.key ? `Copy {{${variable.key}}}` : 'Set a variable name first'}
+        disabled={!variable.key}
+        className="flex cursor-pointer items-center justify-center"
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: copied ? 'var(--accent)' : 'var(--hint)',
+          padding: 4,
+          opacity: variable.key ? 1 : 0.4,
+          cursor: variable.key ? 'pointer' : 'not-allowed',
+        }}
+        onMouseEnter={(e) => {
+          if (variable.key && !copied) (e.currentTarget as HTMLElement).style.color = 'var(--accent)'
+        }}
+        onMouseLeave={(e) => {
+          if (!copied) (e.currentTarget as HTMLElement).style.color = 'var(--hint)'
+        }}
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+      </button>
 
       {/* Remove */}
       <button

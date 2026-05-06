@@ -5,7 +5,6 @@ import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
 import BranchDropdown from '../sidebar/BranchDropdown'
-import ToolsDropdown from './ToolsDropdown'
 import { T } from '../../styles/tokens'
 
 // SVG icons for git operations
@@ -285,14 +284,6 @@ export default function Header() {
         </div>
       )}
 
-      {/* "..." menu */}
-      <div
-        className="no-drag flex items-center cursor-pointer shrink-0"
-        style={{ padding: '0 8px', color: T.ghost, fontSize: 18 }}
-      >
-        ···
-      </div>
-
       {/* Status message */}
       {statusMsg && (
         <div
@@ -317,9 +308,6 @@ export default function Header() {
 
       {/* Right side */}
       <div className="no-drag flex items-center gap-1.5 shrink-0" style={{ padding: '0 14px' }}>
-        {/* Tools dropdown — JWT, JSON/XML formatter, encode/decode */}
-        <ToolsDropdown />
-
         {/* Branch dropdown */}
         <BranchDropdown pill />
 

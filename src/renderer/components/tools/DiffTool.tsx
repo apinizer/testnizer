@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { computeDiff, renderUnifiedDiff, type DiffMode } from '../../lib/tools/diff'
 import { useTranslation } from '../../lib/i18n'
+
+type DiffResult = ReturnType<typeof computeDiff>
 
 export default function DiffTool() {
   const { t } = useTranslation()
@@ -11,13 +13,13 @@ export default function DiffTool() {
   const [mode, setMode] = useState<DiffMode>('lines')
   const [ignoreWs, setIgnoreWs] = useState(false)
   const [ignoreCase, setIgnoreCase] = useState(false)
+  const [result, setResult] = useState<DiffResult | null>(null)
 
-  const result = useMemo(
-    () => computeDiff(left, right, { mode, ignoreWhitespace: ignoreWs, ignoreCase }),
-    [left, right, mode, ignoreWs, ignoreCase],
-  )
+  function handleCompare() {
+    setResult(computeDiff(left, right, { mode, ignoreWhitespace: ignoreWs, ignoreCase }))
+  }
 
-  const unified = renderUnifiedDiff(result)
+  const unified = result ? renderUnifiedDiff(result) : ''
 
   const toolbar = (
     <>
@@ -50,6 +52,13 @@ export default function DiffTool() {
         />
         {t('tools.diff.ignoreCase')}
       </label>
+      <button
+        onClick={handleCompare}
+        className="rounded px-3 py-1 text-xs font-medium"
+        style={{ background: 'var(--accent)', color: '#fff' }}
+      >
+        {t('tools.common.compare')}
+      </button>
     </>
   )
 
@@ -70,16 +79,26 @@ export default function DiffTool() {
           </div>
         </div>
       }
-      outputPane={<MonacoWrapper value={unified} language="diff" readOnly />}
+      outputPane={
+        !result ? (
+          <div className="p-3 text-sm" style={{ color: 'var(--muted)' }}>
+            {t('tools.common.empty')}
+          </div>
+        ) : (
+          <MonacoWrapper value={unified} language="diff" readOnly />
+        )
+      }
       footer={
-        <div className="flex items-center gap-4">
-          <span style={{ color: '#1a7a4a' }}>
-            +{result.added} {t('tools.diff.added')}
-          </span>
-          <span style={{ color: '#cc2200' }}>
-            -{result.removed} {t('tools.diff.removed')}
-          </span>
-        </div>
+        result ? (
+          <div className="flex items-center gap-4">
+            <span style={{ color: '#1a7a4a' }}>
+              +{result.added} {t('tools.diff.added')}
+            </span>
+            <span style={{ color: '#cc2200' }}>
+              -{result.removed} {t('tools.diff.removed')}
+            </span>
+          </div>
+        ) : null
       }
     />
   )

@@ -4,6 +4,8 @@ import ToolShell from './ToolShell'
 import { evaluateXPath } from '../../lib/tools/xpath'
 import { useTranslation } from '../../lib/i18n'
 
+type XPathResult = ReturnType<typeof evaluateXPath>
+
 const SAMPLE = `<?xml version="1.0"?>
 <library>
   <book id="1">
@@ -27,6 +29,7 @@ export default function XPathTool() {
   const [xml, setXml] = useState(SAMPLE)
   const [expr, setExpr] = useState('//title')
   const [namespaces, setNamespaces] = useState<NsRow[]>([])
+  const [result, setResult] = useState<XPathResult | null>(null)
 
   const nsMap = useMemo(() => {
     const m: Record<string, string> = {}
@@ -34,10 +37,12 @@ export default function XPathTool() {
     return m
   }, [namespaces])
 
-  const result = useMemo(() => evaluateXPath(xml, expr, nsMap), [xml, expr, nsMap])
+  function handleEvaluate() {
+    setResult(evaluateXPath(xml, expr, nsMap))
+  }
 
   const output = (() => {
-    if (!result.ok) return ''
+    if (!result || !result.ok) return ''
     if (result.kind === 'nodes') return result.values.join('\n\n')
     return String(result.value)
   })()
@@ -48,6 +53,7 @@ export default function XPathTool() {
         type="text"
         value={expr}
         onChange={(e) => setExpr(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && handleEvaluate()}
         placeholder="//book/title"
         className="rounded border px-2 py-1 font-mono text-xs"
         style={{
@@ -65,6 +71,13 @@ export default function XPathTool() {
         style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
       >
         + {t('tools.xpath.namespaces')}
+      </button>
+      <button
+        onClick={handleEvaluate}
+        className="rounded px-3 py-1 text-xs font-medium"
+        style={{ background: 'var(--accent)', color: '#fff' }}
+      >
+        {t('tools.common.evaluate')}
       </button>
     </>
   )
@@ -128,7 +141,11 @@ export default function XPathTool() {
         </div>
       }
       outputPane={
-        result.ok ? (
+        !result ? (
+          <div className="p-3 text-sm" style={{ color: 'var(--muted)' }}>
+            {t('tools.common.empty')}
+          </div>
+        ) : result.ok ? (
           <MonacoWrapper value={output} language="xml" readOnly />
         ) : (
           <div className="p-3 text-sm" style={{ color: 'var(--red, #cc2200)' }}>
@@ -138,7 +155,7 @@ export default function XPathTool() {
         )
       }
       footer={
-        result.ok && result.kind === 'nodes' ? (
+        result?.ok && result.kind === 'nodes' ? (
           <span>
             {result.count} {t('tools.jsonpath.matches')}
           </span>

@@ -192,7 +192,7 @@ export default function ResponsePane() {
   // Empty state
   if (!response) {
     return (
-      <div className="flex h-full bg-[var(--white)]">
+      <div className="flex h-full items-center justify-center bg-[var(--white)]">
         <EmptyState
           icon={<Send size={32} />}
           message={t('empty.clickSend')}

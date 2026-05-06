@@ -1,4 +1,4 @@
-import { Globe, Zap, FileText, Bot } from 'lucide-react'
+import { Globe, FileText, Bot, FileCode2, Cpu, Hexagon } from 'lucide-react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
 
@@ -29,12 +29,12 @@ export default function NewRequestWelcome() {
     })
   }
 
-  function createQuickRequest() {
+  function createSoapMethod() {
     if (!activeTabId) return
     updateTab(activeTabId, {
-      name: t('welcome.quickRequest'),
-      protocol: 'http',
-      method: 'GET',
+      name: t('welcome.newSoapMethodName'),
+      protocol: 'soap',
+      method: 'POST',
       url: '',
     })
   }
@@ -44,9 +44,19 @@ export default function NewRequestWelcome() {
     openTab({ id, name: t('welcome.websocket'), protocol: 'websocket', method: 'GET', url: '' })
   }
 
+  function createGraphQL() {
+    const id = makeTabId()
+    openTab({ id, name: t('welcome.graphql'), protocol: 'graphql', method: 'POST', url: '' })
+  }
+
   function createAiSse() {
     const id = makeTabId()
     openTab({ id, name: t('welcome.aiSseName'), protocol: 'sse', url: '' })
+  }
+
+  function createGrpc() {
+    const id = makeTabId()
+    openTab({ id, name: t('welcome.grpc'), protocol: 'grpc', method: 'POST', url: '' })
   }
 
   const actions: QuickAction[] = [
@@ -57,22 +67,34 @@ export default function NewRequestWelcome() {
       onClick: createHttpEndpoint,
     },
     {
+      icon: <FileCode2 size={28} strokeWidth={1.5} />,
+      iconBg: '#FFF3E0',
+      label: t('newDropdown.soapMethod'),
+      onClick: createSoapMethod,
+    },
+    {
       icon: <FileText size={28} strokeWidth={1.5} />,
-      iconBg: '#EDE7F6',
+      iconBg: '#E0F7FA',
       label: t('welcome.websocket'),
       onClick: createWebSocket,
     },
     {
-      icon: <Bot size={28} strokeWidth={1.5} />,
+      icon: <Cpu size={28} strokeWidth={1.5} />,
       iconBg: '#F3E5F5',
+      label: t('welcome.graphql'),
+      onClick: createGraphQL,
+    },
+    {
+      icon: <Bot size={28} strokeWidth={1.5} />,
+      iconBg: '#EDE7F6',
       label: t('welcome.aiSse'),
       onClick: createAiSse,
     },
     {
-      icon: <Zap size={28} strokeWidth={1.5} />,
+      icon: <Hexagon size={28} strokeWidth={1.5} />,
       iconBg: '#E8F5E9',
-      label: t('welcome.quickRequest'),
-      onClick: createQuickRequest,
+      label: t('welcome.grpc'),
+      onClick: createGrpc,
     },
   ]
 
