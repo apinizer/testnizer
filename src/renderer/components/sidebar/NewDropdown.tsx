@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { Globe, Radio, Cpu, Bot, FileCode2, Hexagon, Download, Code2 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
@@ -10,7 +11,8 @@ function makeTabId(): string {
 }
 
 interface DropdownItem {
-  icon: string
+  icon: ReactNode
+  iconColor: string
   label: string
   bg: string
   muted?: boolean
@@ -65,46 +67,52 @@ export default function NewDropdown() {
 
   const newItems: DropdownItem[] = [
     {
-      icon: '\uD83C\uDF10',
+      icon: <Globe size={16} strokeWidth={1.75} />,
+      iconColor: '#1976D2',
       label: t('newDropdown.httpEndpoint'),
-      bg: '#e8f4ff',
+      bg: '#E3F2FD',
       action: () => createProtocolTab('http', t('welcome.newEndpointName'), 'GET'),
     },
     {
-      icon: '\uD83D\uDCDD',
+      icon: <FileCode2 size={16} strokeWidth={1.75} />,
+      iconColor: '#E65100',
       label: t('newDropdown.soapMethod'),
-      bg: '#fff4e0',
+      bg: '#FFF3E0',
       action: () => createProtocolTab('soap', t('welcome.newSoapMethodName')),
     },
     {
-      icon: '\uD83D\uDD0C',
+      icon: <Radio size={16} strokeWidth={1.75} />,
+      iconColor: '#00838F',
       label: t('newDropdown.websocket'),
-      bg: '#fff0ec',
+      bg: '#E0F7FA',
       action: () => createProtocolTab('websocket', t('welcome.websocket')),
     },
     {
-      icon: '\u25C8',
+      icon: <Cpu size={16} strokeWidth={1.75} />,
+      iconColor: '#6A1B9A',
       label: t('newDropdown.graphql'),
-      bg: '#ffe8f0',
+      bg: '#F3E5F5',
       action: () => createProtocolTab('graphql', t('welcome.graphql')),
     },
     {
-      icon: '\uD83E\uDD16',
+      icon: <Bot size={16} strokeWidth={1.75} />,
+      iconColor: '#5E35B1',
       label: t('newDropdown.aiSse'),
-      bg: '#ede7f6',
+      bg: '#EDE7F6',
       action: () => createProtocolTab('ai', t('welcome.aiSseName')),
     },
     {
-      icon: '\u2B21',
+      icon: <Hexagon size={16} strokeWidth={1.75} />,
+      iconColor: '#2E7D32',
       label: t('newDropdown.grpc'),
-      bg: '#e8f5e9',
+      bg: '#E8F5E9',
       action: () => createProtocolTab('grpc', t('welcome.grpc'), 'POST'),
     },
   ]
 
-  const otherItems: { icon: string; label: string; shortcut: string; action?: () => void }[] = [
+  const otherItems: { icon: ReactNode; label: string; shortcut: string; action?: () => void }[] = [
     {
-      icon: '\u2B07',
+      icon: <Download size={14} />,
       label: t('newDropdown.import'),
       shortcut: '\u2318O',
       action: () => {
@@ -112,7 +120,7 @@ export default function NewDropdown() {
         setShowImportModal(true)
       },
     },
-    { icon: '{}', label: t('newDropdown.importCurl'), shortcut: '\u2318I' },
+    { icon: <Code2 size={14} />, label: t('newDropdown.importCurl'), shortcut: '\u2318I' },
   ]
 
   const dropdown = open
@@ -151,7 +159,7 @@ export default function NewDropdown() {
               >
                 <div
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px]"
-                  style={{ background: item.bg }}
+                  style={{ background: item.bg, color: item.iconColor }}
                 >
                   {item.icon}
                 </div>
@@ -181,7 +189,7 @@ export default function NewDropdown() {
                   if (!item.action) setOpen(false)
                 }}
               >
-                <span className="w-5">{item.icon}</span>
+                <span className="flex w-5 items-center text-[var(--muted)]">{item.icon}</span>
                 <span className="flex-1">{item.label}</span>
                 <span className="text-[var(--hint)]">{item.shortcut}</span>
               </button>

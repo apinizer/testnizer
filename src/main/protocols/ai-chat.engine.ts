@@ -7,7 +7,22 @@
 // Renderer never touches the network directly; it talks to ai-chat.handler.ts
 // which drives this engine.
 
-export type AiProvider = 'openai' | 'anthropic' | 'openrouter' | 'custom'
+export type AiProvider =
+  | 'openai'
+  | 'anthropic'
+  | 'openrouter'
+  | 'google'
+  | 'deepseek'
+  | 'xai'
+  | 'mistral'
+  | 'groq'
+  | 'perplexity'
+  | 'cerebras'
+  | 'cohere'
+  | 'fireworks'
+  | 'deepinfra'
+  | 'together'
+  | 'custom'
 
 export interface AiChatMessage {
   role: 'user' | 'assistant' | 'system'
@@ -34,9 +49,25 @@ export interface AiStreamChunk {
 
 // ─── URL + body builders (exported for unit testing) ─────────
 
-const DEFAULT_OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
-const DEFAULT_ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
-const DEFAULT_OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+// Default chat-completions endpoints for each provider. All non-Anthropic
+// providers use OpenAI-compatible request/response shapes — we just point at
+// each vendor's chat-completions URL.
+const PROVIDER_DEFAULT_URLS: Record<Exclude<AiProvider, 'custom'>, string> = {
+  openai: 'https://api.openai.com/v1/chat/completions',
+  anthropic: 'https://api.anthropic.com/v1/messages',
+  openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+  google: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+  deepseek: 'https://api.deepseek.com/chat/completions',
+  xai: 'https://api.x.ai/v1/chat/completions',
+  mistral: 'https://api.mistral.ai/v1/chat/completions',
+  groq: 'https://api.groq.com/openai/v1/chat/completions',
+  perplexity: 'https://api.perplexity.ai/chat/completions',
+  cerebras: 'https://api.cerebras.ai/v1/chat/completions',
+  cohere: 'https://api.cohere.com/compatibility/v1/chat/completions',
+  fireworks: 'https://api.fireworks.ai/inference/v1/chat/completions',
+  deepinfra: 'https://api.deepinfra.com/v1/openai/chat/completions',
+  together: 'https://api.together.xyz/v1/chat/completions',
+}
 
 export function resolveProviderUrl(provider: AiProvider, customUrl?: string): string {
   if (provider === 'custom') {
@@ -49,10 +80,9 @@ export function resolveProviderUrl(provider: AiProvider, customUrl?: string): st
     // Allow user override even on built-in providers (e.g., Azure OpenAI proxy).
     return customUrl.trim()
   }
-  if (provider === 'openai') return DEFAULT_OPENAI_URL
-  if (provider === 'anthropic') return DEFAULT_ANTHROPIC_URL
-  if (provider === 'openrouter') return DEFAULT_OPENROUTER_URL
-  throw new Error(`Unknown provider: ${provider as string}`)
+  const url = PROVIDER_DEFAULT_URLS[provider]
+  if (!url) throw new Error(`Unknown provider: ${provider as string}`)
+  return url
 }
 
 export function buildHeaders(provider: AiProvider, apiKey: string): Record<string, string> {

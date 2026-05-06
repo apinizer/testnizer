@@ -765,7 +765,22 @@ interface SseApi {
 
 // ─── AI Chat ────────────────────────────────────────────────────
 
-type AiProviderId = 'openai' | 'anthropic' | 'openrouter' | 'custom'
+type AiProviderId =
+  | 'openai'
+  | 'anthropic'
+  | 'openrouter'
+  | 'google'
+  | 'deepseek'
+  | 'xai'
+  | 'mistral'
+  | 'groq'
+  | 'perplexity'
+  | 'cerebras'
+  | 'cohere'
+  | 'fireworks'
+  | 'deepinfra'
+  | 'together'
+  | 'custom'
 
 interface AiChatSendPayload {
   provider: AiProviderId
