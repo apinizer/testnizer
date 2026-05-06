@@ -632,8 +632,25 @@ function exportProjectAsOpenApi(projectId: string): string {
 
   const paths: Record<string, Record<string, unknown>> = {}
 
+  // Strip the server prefix off the stored URL so the path keys are valid
+  // OpenAPI paths (e.g. /pets/{id}) rather than full URLs.
+  function stripServer(rawPath: string): string {
+    if (!rawPath) return '/'
+    if (rawPath.startsWith('/')) return rawPath
+    try {
+      const u = new URL(rawPath.replace(/\{\{[^}]+\}\}/g, 'placeholder'))
+      // Restore any {{var}} that landed inside the pathname when we substituted
+      // the placeholder above.
+      const tail = `${u.pathname}${u.search}` || '/'
+      return tail
+    } catch {
+      // Templated URL or path-only — return as-is so the caller can decide.
+      return rawPath
+    }
+  }
+
   for (const ep of endpoints) {
-    const path = ep.path || '/'
+    const path = stripServer(ep.path || '/')
     if (!paths[path]) {
       paths[path] = {}
     }
@@ -1320,6 +1337,8 @@ interface UiRequestSchema {
     urlEncoded?: UiKeyValuePair[]
   }
   auth?: Record<string, unknown>
+  preScript?: string
+  postScript?: string
 }
 
 function buildPostmanUrl(rawUrl: string, params: UiKeyValuePair[] = []): PostmanUrl {
@@ -1554,6 +1573,24 @@ export function exportAsPostman(projectId: string): string {
     if (body) item.request!.body = body
     const auth = authToPostman(schema.auth)
     if (auth) item.request!.auth = auth
+
+    // Pre-request and test scripts → Postman event[]
+    const events: Array<{ listen: 'prerequest' | 'test'; script: { type: string; exec: string[] } }> = []
+    if (schema.preScript && schema.preScript.trim()) {
+      events.push({
+        listen: 'prerequest',
+        script: { type: 'text/javascript', exec: schema.preScript.split('\n') },
+      })
+    }
+    if (schema.postScript && schema.postScript.trim()) {
+      events.push({
+        listen: 'test',
+        script: { type: 'text/javascript', exec: schema.postScript.split('\n') },
+      })
+    }
+    if (events.length > 0) {
+      ;(item as PostmanItem & { event?: typeof events }).event = events
+    }
 
     if (ep.folder_id && folderMap.has(ep.folder_id)) {
       folderMap.get(ep.folder_id)!.item!.push(item)
@@ -3137,7 +3174,7 @@ async function importWsdl(payload: {
           parentForEndpoints,
           operation.name,
           `SOAP operation: ${operation.name} (${service.name}/${port.name})`,
-          'http',
+          'soap',
           'POST',
           endpointUrl,
           'developing',

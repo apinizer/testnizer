@@ -384,23 +384,26 @@ describe('Postman round-trip: import → exportAsPostman → re-import', () => {
     expect(methods).toEqual(['GET', 'GET', 'GET', 'POST', 'POST', 'POST', 'PUT'])
   })
 
-  it('BUG: pre/test scripts are LOST on round-trip (export does not emit event[])', async () => {
+  it('preserves pre-request and test scripts on round-trip (event[])', async () => {
     await importPostman('proj-1', JSON.stringify(buildRealisticCollection()))
     const exported = JSON.parse(exportAsPostman('proj-1'))
 
-    // Walk every item recursively
-    type Item = { event?: unknown[]; item?: Item[] }
-    const collectEvents = (items: Item[]): unknown[] => {
-      const out: unknown[] = []
+    type Item = {
+      event?: Array<{ listen: string; script: { exec: string[] } }>
+      item?: Item[]
+    }
+    const collectEvents = (items: Item[]): Array<{ listen: string; script: { exec: string[] } }> => {
+      const out: Array<{ listen: string; script: { exec: string[] } }> = []
       for (const it of items) {
         if (it.event) out.push(...it.event)
         if (it.item) out.push(...collectEvents(it.item))
       }
       return out
     }
-    const allEvents = collectEvents(exported.item)
-    // Documents the regression: should be > 0 once exporter emits event[].
-    expect(allEvents.length).toBe(0)
+    const allEvents = collectEvents(exported.item as Item[])
+    expect(allEvents.length).toBeGreaterThan(0)
+    expect(allEvents.some((e) => e.listen === 'prerequest')).toBe(true)
+    expect(allEvents.some((e) => e.listen === 'test')).toBe(true)
   })
 
   it('BUG: collection-level variable[] is LOST on round-trip', async () => {
