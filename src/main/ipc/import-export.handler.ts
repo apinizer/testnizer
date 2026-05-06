@@ -3390,10 +3390,11 @@ export async function importProto(payload: {
               ? 'server-stream'
               : 'unary'
 
+      const skeletonContent = method.requestSkeleton ?? '{}'
       const requestSchema = JSON.stringify({
         method: 'POST',
         url: serverAddress,
-        body: { type: 'json', content: '{}' },
+        body: { type: 'json', content: skeletonContent },
         headers: [],
         params: [],
         auth: { type: 'none' },

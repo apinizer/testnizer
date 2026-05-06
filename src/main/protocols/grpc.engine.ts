@@ -24,6 +24,11 @@ export interface GrpcMethodInfo {
   responseType: string
   requestStream: boolean
   responseStream: boolean
+  /**
+   * JSON-stringified skeleton for the request message (zero-valued per field).
+   * Optional: only present when the proto definition for the request type was resolved.
+   */
+  requestSkeleton?: string
 }
 
 export interface GrpcExecuteOptions {
@@ -177,6 +182,180 @@ function extractMetadata(meta: grpc.Metadata): Record<string, string> {
   return result
 }
 
+// ─── Helper: build JSON skeleton from a proto message definition ───
+
+interface ProtoFieldDescriptor {
+  name?: string
+  type?: string
+  typeName?: string
+  label?: string
+}
+
+interface ProtoMessageType {
+  name?: string
+  field?: ProtoFieldDescriptor[]
+}
+
+interface ProtoEnumType {
+  value?: Array<{ name?: string; number?: number }>
+}
+
+/**
+ * Lookup function for resolving cross-message references (TYPE_MESSAGE / TYPE_ENUM).
+ * Receives a `typeName` (e.g. "Sub" or "google.protobuf.Any") plus the current
+ * package context to attempt scoped + fully-qualified resolution.
+ */
+export type ProtoTypeLookup = (
+  typeName: string
+) => protoLoader.MessageTypeDefinition | protoLoader.EnumTypeDefinition | undefined
+
+/**
+ * Default zero-value for a proto3 scalar type.
+ * See https://protobuf.dev/programming-guides/proto3/#default
+ */
+function zeroValueForScalar(type: string): unknown {
+  switch (type) {
+    case 'TYPE_STRING':
+      return ''
+    case 'TYPE_BYTES':
+      return ''
+    case 'TYPE_BOOL':
+      return false
+    case 'TYPE_DOUBLE':
+    case 'TYPE_FLOAT':
+      return 0
+    case 'TYPE_INT32':
+    case 'TYPE_UINT32':
+    case 'TYPE_SINT32':
+    case 'TYPE_FIXED32':
+    case 'TYPE_SFIXED32':
+      return 0
+    case 'TYPE_INT64':
+    case 'TYPE_UINT64':
+    case 'TYPE_SINT64':
+    case 'TYPE_FIXED64':
+    case 'TYPE_SFIXED64':
+      // longs option = String → emit "0" string for symmetry with engine
+      return '0'
+    default:
+      return null
+  }
+}
+
+/**
+ * Builds a JSON skeleton (object literal) from a proto MessageTypeDefinition
+ * by walking its field list and emitting each field's zero value.
+ *
+ * - Scalars use their proto3 default (string→"", int→0, bool→false, long→"0")
+ * - Repeated fields → `[]` regardless of element type
+ * - Nested messages → recursively built skeleton (or `{}` if unresolved)
+ * - Enums → first declared value name (or `""` if unresolved)
+ *
+ * `lookup` is consulted with the field's `typeName` to resolve nested
+ * messages / enums. If lookup returns undefined the function falls back to
+ * a graceful default (empty object / empty string).
+ *
+ * `seen` guards against cyclic message references.
+ */
+export function buildJsonSkeletonFromProtoMessage(
+  message: protoLoader.MessageTypeDefinition,
+  lookup?: ProtoTypeLookup,
+  seen: Set<string> = new Set()
+): Record<string, unknown> {
+  const skeleton: Record<string, unknown> = {}
+  const messageType = message.type as ProtoMessageType | undefined
+  const fields = messageType?.field ?? []
+  const messageName = messageType?.name ?? ''
+
+  // Cycle guard: if we re-enter the same message, return {} so callers can
+  // continue walking siblings without recursing forever.
+  if (messageName && seen.has(messageName)) {
+    return skeleton
+  }
+  const nextSeen = messageName ? new Set(seen).add(messageName) : seen
+
+  for (const field of fields) {
+    const fieldName = field.name
+    if (!fieldName) continue
+
+    // Repeated → empty array placeholder regardless of element type.
+    if (field.label === 'LABEL_REPEATED') {
+      skeleton[fieldName] = []
+      continue
+    }
+
+    const t = field.type ?? ''
+
+    if (t === 'TYPE_MESSAGE') {
+      const refName = field.typeName ?? ''
+      const resolved = lookup?.(refName)
+      if (resolved && (resolved as protoLoader.MessageTypeDefinition).format === 'Protocol Buffer 3 DescriptorProto') {
+        skeleton[fieldName] = buildJsonSkeletonFromProtoMessage(
+          resolved as protoLoader.MessageTypeDefinition,
+          lookup,
+          nextSeen
+        )
+      } else {
+        // Unresolved / well-known type (Any, Empty, ...) → graceful empty object
+        skeleton[fieldName] = {}
+      }
+      continue
+    }
+
+    if (t === 'TYPE_ENUM') {
+      const refName = field.typeName ?? ''
+      const resolved = lookup?.(refName)
+      if (resolved && (resolved as protoLoader.EnumTypeDefinition).format === 'Protocol Buffer 3 EnumDescriptorProto') {
+        const enumType = (resolved as protoLoader.EnumTypeDefinition).type as ProtoEnumType | undefined
+        const firstValue = enumType?.value?.[0]?.name
+        skeleton[fieldName] = firstValue ?? ''
+      } else {
+        skeleton[fieldName] = ''
+      }
+      continue
+    }
+
+    skeleton[fieldName] = zeroValueForScalar(t)
+  }
+
+  return skeleton
+}
+
+/**
+ * Builds a `ProtoTypeLookup` over a loaded `PackageDefinition`. Resolves the
+ * passed name against:
+ *   1. Fully-qualified key (e.g. "google.protobuf.Any")
+ *   2. `<currentPackage>.<name>` (e.g. "Sub" inside package "test" → "test.Sub")
+ *   3. Suffix-match against any package-qualified key (best-effort).
+ */
+export function makeProtoTypeLookup(
+  packageDefinition: protoLoader.PackageDefinition,
+  currentPackage: string
+): ProtoTypeLookup {
+  return (typeName: string) => {
+    if (!typeName) return undefined
+
+    // 1) Fully qualified
+    const direct = packageDefinition[typeName]
+    if (direct) return direct as protoLoader.MessageTypeDefinition | protoLoader.EnumTypeDefinition
+
+    // 2) Scoped to current package
+    if (currentPackage) {
+      const scoped = packageDefinition[`${currentPackage}.${typeName}`]
+      if (scoped) return scoped as protoLoader.MessageTypeDefinition | protoLoader.EnumTypeDefinition
+    }
+
+    // 3) Best-effort suffix match (e.g. nested type lookups)
+    const suffix = `.${typeName}`
+    for (const key of Object.keys(packageDefinition)) {
+      if (key === typeName || key.endsWith(suffix)) {
+        return packageDefinition[key] as protoLoader.MessageTypeDefinition | protoLoader.EnumTypeDefinition
+      }
+    }
+    return undefined
+  }
+}
+
 // ─── Helper: extract services from package definition ───────
 
 function extractServices(
@@ -184,6 +363,24 @@ function extractServices(
 ): { packageName: string; services: GrpcServiceInfo[] } {
   const services: GrpcServiceInfo[] = []
   let packageName = ''
+
+  // First pass: determine package name from any service entry so the lookup
+  // can scope unqualified typeNames correctly.
+  for (const fullName of Object.keys(packageDefinition)) {
+    const def = packageDefinition[fullName] as protoLoader.AnyDefinition
+    if ('format' in def) continue
+    // Heuristic: a service entry has at least one MethodDefinition-shaped value.
+    const sd = def as Record<string, unknown>
+    const looksLikeService = Object.values(sd).some(
+      (v) => v && typeof v === 'object' && 'requestType' in (v as object) && 'responseType' in (v as object)
+    )
+    if (looksLikeService && fullName.includes('.')) {
+      packageName = fullName.slice(0, fullName.lastIndexOf('.'))
+      break
+    }
+  }
+
+  const lookup = makeProtoTypeLookup(packageDefinition, packageName)
 
   for (const [fullName, def] of Object.entries(packageDefinition)) {
     // A service definition has methods with requestType/responseType
@@ -200,20 +397,34 @@ function extractServices(
 
     for (const [methodName, methodDef] of Object.entries(serviceDef)) {
       const method = methodDef as {
-        requestType?: { type?: { name?: string } }
-        responseType?: { type?: { name?: string } }
+        requestType?: protoLoader.MessageTypeDefinition
+        responseType?: protoLoader.MessageTypeDefinition
         requestStream?: boolean
         responseStream?: boolean
       } | undefined
 
       if (method?.requestType && method?.responseType) {
         isService = true
+        const reqTypeName =
+          (method.requestType.type as { name?: string } | undefined)?.name ?? 'unknown'
+        const resTypeName =
+          (method.responseType.type as { name?: string } | undefined)?.name ?? 'unknown'
+
+        let requestSkeleton: string | undefined
+        try {
+          const skeletonObj = buildJsonSkeletonFromProtoMessage(method.requestType, lookup)
+          requestSkeleton = JSON.stringify(skeletonObj, null, 2)
+        } catch {
+          requestSkeleton = undefined
+        }
+
         methods.push({
           name: methodName,
-          requestType: method.requestType.type?.name ?? 'unknown',
-          responseType: method.responseType.type?.name ?? 'unknown',
+          requestType: reqTypeName,
+          responseType: resTypeName,
           requestStream: method.requestStream ?? false,
-          responseStream: method.responseStream ?? false
+          responseStream: method.responseStream ?? false,
+          requestSkeleton
         })
       }
     }
