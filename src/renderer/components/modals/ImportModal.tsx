@@ -115,7 +115,11 @@ export default function ImportModal() {
   // File content stored after selecting file in step 2 — used for import in step 3
   const [pendingFileContent, setPendingFileContent] = useState<string | null>(null)
   const [pendingFileName, setPendingFileName] = useState('')
+  const [pendingFilePath, setPendingFilePath] = useState<string | null>(null)
   const [pendingSourceUrl, setPendingSourceUrl] = useState('')
+
+  // Proto-specific (gRPC) — optional server address override
+  const [protoServerAddress, setProtoServerAddress] = useState('')
 
   // Folder selection (step 3) — unified for ALL formats
   const [folderMode, setFolderMode] = useState<'new' | 'existing' | 'root'>('new')
@@ -141,6 +145,8 @@ export default function ImportModal() {
     setImportLoading(false)
     setPendingFileContent(null)
     setPendingFileName('')
+    setPendingFilePath(null)
+    setProtoServerAddress('')
     setFolderMode('new')
     setNewFolderName('')
     setTargetFolderId(null)
@@ -250,8 +256,9 @@ export default function ImportModal() {
           setImportError(parseResult?.error || 'Failed to parse WSDL file')
         }
       } else {
-        // Store file content and proceed to folder selection
+        // Store file content + path and proceed to folder selection
         setPendingFileContent(fileData.content)
+        setPendingFilePath(fileData.filePath)
         const fname = fileData.filePath.split('/').pop()?.split('\\').pop() || selectedFormat.name
         setPendingFileName(fname.replace(/\.[^.]+$/, ''))
         goToFolderStep(fname.replace(/\.[^.]+$/, ''))
@@ -326,6 +333,24 @@ export default function ImportModal() {
         importResult = await window.api?.importExport?.importCurl({
           projectId: pid,
           curlCommand: pendingFileContent || '',
+          folderId,
+        }) as { success: boolean; error?: string } | undefined
+      } else if (fmtId === 'proto') {
+        if (!pendingFilePath) {
+          setImportError('Proto file path missing — please re-select the file')
+          setImporting(false)
+          return
+        }
+        importResult = await window.api?.importExport?.importProto({
+          projectId: pid,
+          protoPath: pendingFilePath,
+          folderId,
+          serverAddress: protoServerAddress.trim() || undefined,
+        }) as { success: boolean; error?: string } | undefined
+      } else if (fmtId === 'raml') {
+        importResult = await window.api?.importExport?.importRaml({
+          projectId: pid,
+          content: pendingFileContent || '',
           folderId,
         }) as { success: boolean; error?: string } | undefined
       } else {
@@ -686,6 +711,24 @@ export default function ImportModal() {
                   <span className="text-[var(--text)]">Project root (no folder)</span>
                 </label>
               </div>
+
+              {selectedFormat.id === 'proto' && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[12px] font-medium text-[var(--sub)]">
+                    gRPC server address (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={protoServerAddress}
+                    onChange={(e) => setProtoServerAddress(e.target.value)}
+                    placeholder="localhost:50051"
+                    className="w-full rounded-lg border border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                  />
+                  <span className="text-[11px] text-[var(--hint)]">
+                    Used as the default server for every imported method. Leave empty to use localhost:50051.
+                  </span>
+                </div>
+              )}
 
               {importError && (
                 <div

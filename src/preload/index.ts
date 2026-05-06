@@ -192,6 +192,7 @@ const api = {
     importCurl: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('import:curl', payload),
     exportCurl: (request: unknown): Promise<unknown> => ipcRenderer.invoke('export:curl', request),
     importWsdl: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('import:wsdl', payload),
+    importRaml: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('import:raml', payload),
     importProto: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('import:proto', payload),
     parseWsdlForImport: (url: string): Promise<unknown> =>

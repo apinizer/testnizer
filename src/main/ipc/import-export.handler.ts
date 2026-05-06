@@ -321,6 +321,30 @@ export function registerImportExportHandlers(): void {
       }
     },
   )
+
+  // ─── RAML 1.0 Import ────────────────────────────────────
+  ipcMain.handle(
+    'import:raml',
+    async (
+      _event,
+      payload: {
+        projectId: string
+        content: string
+        folderId?: string | null
+      },
+    ) => {
+      try {
+        const result = await importRaml(
+          payload.projectId,
+          payload.content,
+          payload.folderId ?? null,
+        )
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 }
 
 async function importOpenApi(
@@ -1629,7 +1653,7 @@ interface ParsedCurl {
   cookies?: string
 }
 
-function parseCurlCommand(command: string): ParsedCurl {
+export function parseCurlCommand(command: string): ParsedCurl {
   // Normalize the command
   const normalized = command
     .replace(/\\\n/g, ' ') // Line continuations
@@ -1744,6 +1768,39 @@ function parseCurlCommand(command: string): ParsedCurl {
         break
       }
 
+      case '-A':
+      case '--user-agent': {
+        i++
+        if (i < tokens.length) {
+          result.headers['User-Agent'] = tokens[i]
+        }
+        break
+      }
+
+      case '-e':
+      case '--referer': {
+        i++
+        if (i < tokens.length) {
+          result.headers['Referer'] = tokens[i]
+        }
+        break
+      }
+
+      case '-x':
+      case '--proxy': {
+        // Consume the proxy value but do not let it leak into result.url.
+        // Proxy is not yet surfaced on the imported endpoint schema.
+        i++
+        break
+      }
+
+      case '-L':
+      case '--location':
+      case '--compressed': {
+        // Boolean flags with no value; safely ignored at parse time.
+        break
+      }
+
       case '-F':
       case '--form': {
         i++
@@ -1781,7 +1838,7 @@ function parseCurlCommand(command: string): ParsedCurl {
   return result
 }
 
-function tokenizeCurl(command: string): string[] {
+export function tokenizeCurl(command: string): string[] {
   const tokens: string[] = []
   let current = ''
   let inSingle = false
@@ -1832,7 +1889,7 @@ function tokenizeCurl(command: string): string[] {
 
 // ─── cURL Export ────────────────────────────────────────────
 
-function exportAsCurl(request: CurlExportRequest): string {
+export function exportAsCurl(request: CurlExportRequest): string {
   const parts: string[] = ['curl']
 
   // Method
@@ -2203,7 +2260,7 @@ function isInsomniaV5(doc: unknown): doc is InsomniaV5Doc {
   )
 }
 
-async function importInsomnia(
+export async function importInsomnia(
   projectId: string,
   content: string,
   rootFolderId: string | null = null,
@@ -2260,7 +2317,8 @@ function importInsomniaV4(
   // pointers, and parents may appear after children — so we do this in two
   // passes (first create, then re-parent).
   for (const resource of resources) {
-    if (resource._type === 'request_group') {
+    if (!resource || typeof resource !== 'object') continue
+    if (resource._type === 'request_group' && resource._id) {
       const folderId = randomUUID()
       db.prepare(
         `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
@@ -2271,7 +2329,8 @@ function importInsomniaV4(
   }
 
   for (const resource of resources) {
-    if (resource._type === 'request_group' && resource.parentId) {
+    if (!resource || typeof resource !== 'object') continue
+    if (resource._type === 'request_group' && resource.parentId && resource._id) {
       const folderId = folderMap.get(resource._id)
       const parentFolderId = folderMap.get(resource.parentId) ?? rootFolderId
       if (folderId) {
@@ -2281,6 +2340,7 @@ function importInsomniaV4(
   }
 
   for (const resource of resources) {
+    if (!resource || typeof resource !== 'object') continue
     if (resource._type !== 'request') continue
     const method = (resource.method ?? 'GET').toUpperCase()
     const url = resource.url ?? ''
@@ -2346,9 +2406,23 @@ function importInsomniaV4(
   }
 
   for (const resource of resources) {
-    if (resource._type === 'environment' && resource.data) {
-      for (const entry of resource.data) {
-        if (entry.name) suggestedEnvVars[entry.name] = entry.value ?? ''
+    if (!resource || typeof resource !== 'object') continue
+    if (resource._type === 'environment') {
+      // Insomnia v4: environment vars live in `data` either as
+      // `[{name, value}]` (legacy) or `{key: value}` (current export). We
+      // accept both so secret-only and structured envs both round-trip.
+      const data = (resource as InsomniaResource & { data?: unknown }).data
+      if (Array.isArray(data)) {
+        for (const entry of data) {
+          if (entry && typeof entry === 'object' && (entry as { name?: string }).name) {
+            const e = entry as { name: string; value?: string }
+            suggestedEnvVars[e.name] = e.value ?? ''
+          }
+        }
+      } else if (data && typeof data === 'object') {
+        for (const [k, v] of Object.entries(data)) {
+          if (typeof v === 'string') suggestedEnvVars[k] = v
+        }
       }
     }
   }
@@ -2566,11 +2640,23 @@ function bodyToInsomnia(body: UiRequestSchema['body']): InsomniaBody | undefined
     case 'form-data':
       return {
         mimeType: 'multipart/form-data',
-        params: (body.formData ?? []).map((kv) => ({
-          name: kv.key,
-          value: kv.value,
-          ...(kv.enabled === false ? { disabled: true } : {}),
-        })),
+        params: (body.formData ?? []).map((kv) => {
+          const isFile = kv.type === 'file'
+          if (isFile) {
+            return {
+              name: kv.key,
+              value: '',
+              type: 'file' as const,
+              fileName: kv.filePath ?? kv.value ?? '',
+              ...(kv.enabled === false ? { disabled: true } : {}),
+            }
+          }
+          return {
+            name: kv.key,
+            value: kv.value,
+            ...(kv.enabled === false ? { disabled: true } : {}),
+          }
+        }),
       }
     case 'urlencoded':
       return {
@@ -2624,7 +2710,7 @@ function authToInsomnia(auth: UiRequestSchema['auth']): InsomniaAuth | undefined
   }
 }
 
-function exportAsInsomnia(projectId: string): string {
+export function exportAsInsomnia(projectId: string): string {
   const db = getDb()
 
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
@@ -2769,13 +2855,13 @@ export function mapInsomniaAuthToUi(
         },
       }
     default:
-      return { type: 'none' }
+      return null
   }
 }
 
 // ─── gRPC / Proto Import ────────────────────────────────────
 
-async function importProto(payload: {
+export async function importProto(payload: {
   projectId: string
   protoPath: string
   folderId?: string | null
@@ -3040,6 +3126,627 @@ async function importWsdl(payload: {
     collectionId: payload.projectId,
     endpointCount,
     folderCount,
+    warnings: warnings.length > 0 ? warnings : undefined,
+  }
+}
+
+// ─── SoapUI / ReadyAPI Project Import ──────────────────────
+// Parses a SoapUI project XML export: each <con:call> under <con:operation> under
+// <con:interface> becomes one SOAP endpoint (POST text/xml). Each interface becomes
+// a sub-folder under the user's chosen target folder (or under the root).
+
+export interface SoapUiCall {
+  /** Name of the request/call as authored in SoapUI (e.g. "Request 1") */
+  name: string
+  /** Endpoint URL the SoapUI request was pointed at (may be empty if absent) */
+  endpointUrl: string
+  /** SOAP envelope body (raw XML string from <con:request>) */
+  rawXml: string
+  /** SOAPAction header value inherited from the operation (may be empty) */
+  soapAction: string
+}
+
+export interface SoapUiOperation {
+  name: string
+  /** SOAPAction declared at the operation level */
+  soapAction: string
+  calls: SoapUiCall[]
+}
+
+export interface SoapUiInterface {
+  name: string
+  /** WSDL definition URL/path if the interface declared one */
+  definition: string
+  operations: SoapUiOperation[]
+}
+
+export interface SoapUiParseResult {
+  projectName: string
+  interfaces: SoapUiInterface[]
+}
+
+/**
+ * Pull a string attribute from a fast-xml-parser node, tolerating multiple
+ * candidate names (e.g. SoapUI uses both `action` and `soapAction` across
+ * project versions). fast-xml-parser emits attributes with the `@_` prefix
+ * when `attributeNamePrefix` is left at its default.
+ */
+function readSoapUiAttr(node: unknown, ...names: string[]): string {
+  if (!node || typeof node !== 'object') return ''
+  const obj = node as Record<string, unknown>
+  for (const n of names) {
+    const direct = obj[`@_${n}`]
+    if (typeof direct === 'string') return direct
+    if (typeof direct === 'number') return String(direct)
+  }
+  return ''
+}
+
+/**
+ * Coerce a possibly-single-or-array fast-xml-parser child into a flat array.
+ * fast-xml-parser collapses single-element arrays to scalars by default; we
+ * always want list semantics for repeated SoapUI children.
+ */
+function asSoapUiArray<T>(value: T | T[] | undefined): T[] {
+  if (value === undefined || value === null) return []
+  return Array.isArray(value) ? value : [value]
+}
+
+/**
+ * Extract a string body from a fast-xml-parser node that may be a string scalar
+ * or an object with a `#text` property. Returns '' for missing values.
+ */
+function readSoapUiText(node: unknown): string {
+  if (node === undefined || node === null) return ''
+  if (typeof node === 'string') return node
+  if (typeof node === 'number' || typeof node === 'boolean') return String(node)
+  if (typeof node === 'object') {
+    const obj = node as Record<string, unknown>
+    const text = obj['#text']
+    if (typeof text === 'string') return text
+    if (typeof text === 'number') return String(text)
+  }
+  return ''
+}
+
+/**
+ * Parse a SoapUI / ReadyAPI project XML string into our internal shape.
+ *
+ * SoapUI project files use `con:` namespace prefixes throughout. We keep the
+ * prefixes (`removeNSPrefix: false`) so we don't accidentally collide with
+ * unrelated tags inside CDATA-encoded SOAP envelopes.
+ *
+ * Multiple <con:request> children inside a single <con:call> are *all*
+ * preserved — they typically represent SoapUI's "test request" variants. We
+ * surface each as a separate endpoint so users see every variant rather than
+ * silently dropping all but the first. Variant names are disambiguated with
+ * " - request N" so the endpoint list stays readable.
+ */
+export function parseSoapUiProject(content: string): SoapUiParseResult {
+  // Use a fresh fast-xml-parser per call; cheap and avoids shared state.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { XMLParser } = require('fast-xml-parser') as typeof import('fast-xml-parser')
+
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: '@_',
+    cdataPropName: '#cdata',
+    parseAttributeValue: false,
+    parseTagValue: false,
+    trimValues: false,
+    removeNSPrefix: false,
+  })
+
+  const doc = parser.parse(content) as Record<string, unknown>
+  const project =
+    (doc['con:soapui-project'] as Record<string, unknown> | undefined) ??
+    (doc['soapui-project'] as Record<string, unknown> | undefined)
+
+  if (!project) {
+    throw new Error('Not a valid SoapUI project file (missing <con:soapui-project> root)')
+  }
+
+  const projectName = readSoapUiAttr(project, 'name') || 'SoapUI Import'
+  const rawInterfaces = asSoapUiArray(
+    project['con:interface'] ?? project['interface'],
+  ) as Record<string, unknown>[]
+
+  const interfaces: SoapUiInterface[] = []
+  for (const iface of rawInterfaces) {
+    const ifaceName = readSoapUiAttr(iface, 'name') || 'Interface'
+    const definition = readSoapUiAttr(iface, 'definition')
+
+    const rawOps = asSoapUiArray(
+      iface['con:operation'] ?? iface['operation'],
+    ) as Record<string, unknown>[]
+
+    const operations: SoapUiOperation[] = []
+    for (const op of rawOps) {
+      const opName = readSoapUiAttr(op, 'name') || 'Operation'
+      // SoapUI stores the SOAPAction either under `action` (current schema) or
+      // `soapAction` (legacy). Tolerate both.
+      const soapAction = readSoapUiAttr(op, 'action', 'soapAction')
+
+      const rawCalls = asSoapUiArray(
+        op['con:call'] ?? op['call'],
+      ) as Record<string, unknown>[]
+
+      const calls: SoapUiCall[] = []
+      for (const call of rawCalls) {
+        const callName = readSoapUiAttr(call, 'name') || 'Request'
+        const endpointUrl = readSoapUiText(call['con:endpoint'] ?? call['endpoint'])
+
+        const requestNodes = asSoapUiArray(
+          call['con:request'] ?? call['request'],
+        ) as Array<Record<string, unknown> | string>
+
+        if (requestNodes.length === 0) {
+          calls.push({ name: callName, endpointUrl, rawXml: '', soapAction })
+          continue
+        }
+
+        for (let i = 0; i < requestNodes.length; i++) {
+          const node = requestNodes[i]
+          let rawXml = ''
+          if (typeof node === 'string') {
+            rawXml = node
+          } else if (node && typeof node === 'object') {
+            const obj = node as Record<string, unknown>
+            const cdata = obj['#cdata']
+            if (typeof cdata === 'string') rawXml = cdata
+            else if (Array.isArray(cdata)) rawXml = cdata.join('')
+            else rawXml = readSoapUiText(node)
+          }
+
+          const variantName =
+            requestNodes.length > 1 ? `${callName} - request ${i + 1}` : callName
+
+          calls.push({
+            name: variantName,
+            endpointUrl: endpointUrl || '',
+            rawXml,
+            soapAction,
+          })
+        }
+      }
+
+      operations.push({ name: opName, soapAction, calls })
+    }
+
+    interfaces.push({ name: ifaceName, definition, operations })
+  }
+
+  return { projectName, interfaces }
+}
+
+async function importSoapUi(payload: {
+  projectId: string
+  content: string
+  folderId?: string | null
+}): Promise<ImportResult> {
+  const warnings: string[] = []
+  const db = getDb()
+  const now = Date.now()
+  let endpointCount = 0
+  let folderCount = 0
+
+  let parsed: SoapUiParseResult
+  try {
+    parsed = parseSoapUiProject(payload.content)
+  } catch (e) {
+    return { success: false, error: (e as Error).message }
+  }
+
+  if (parsed.interfaces.length === 0) {
+    return {
+      success: true,
+      collectionId: payload.projectId,
+      endpointCount: 0,
+      folderCount: 0,
+      warnings: ['No <con:interface> elements found in project'],
+    }
+  }
+
+  const rootFolderId: string | null = payload.folderId ?? null
+
+  for (const iface of parsed.interfaces) {
+    // Each interface gets its own folder so SoapUI services stay grouped.
+    const interfaceFolderId = randomUUID()
+    db.prepare(
+      `INSERT INTO folders (id, project_id, parent_id, name, sort_order)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run(interfaceFolderId, payload.projectId, rootFolderId, iface.name, folderCount)
+    folderCount++
+
+    for (const op of iface.operations) {
+      for (const call of op.calls) {
+        const endpointId = randomUUID()
+        const endpointName = `${op.name} - ${call.name}`
+
+        if (!call.endpointUrl) {
+          warnings.push(`Endpoint URL missing for ${iface.name}/${op.name}/${call.name}`)
+        }
+
+        const requestSchema = JSON.stringify({
+          method: 'POST',
+          url: call.endpointUrl,
+          headers: [
+            {
+              id: randomUUID(),
+              key: 'Content-Type',
+              value: 'text/xml; charset=utf-8',
+              enabled: true,
+            },
+            {
+              id: randomUUID(),
+              key: 'SOAPAction',
+              value: op.soapAction || call.soapAction || '',
+              enabled: true,
+            },
+          ],
+          body: { type: 'xml', content: call.rawXml },
+          soap: {
+            wsdlUrl: iface.definition,
+            serviceName: iface.name,
+            operationName: op.name,
+            soapAction: op.soapAction || call.soapAction || '',
+            endpointUrl: call.endpointUrl,
+            rawXml: call.rawXml,
+            contentType: 'text/xml; charset=utf-8',
+          },
+        })
+
+        db.prepare(
+          `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          endpointId,
+          payload.projectId,
+          interfaceFolderId,
+          endpointName,
+          `SoapUI call: ${iface.name}/${op.name}/${call.name}`,
+          'soap',
+          'POST',
+          call.endpointUrl,
+          'developing',
+          requestSchema,
+          null,
+          endpointCount,
+          now,
+          now,
+        )
+        endpointCount++
+      }
+    }
+  }
+
+  if (endpointCount === 0) {
+    warnings.push('No <con:call> entries found in any interface')
+  }
+
+  return {
+    success: true,
+    collectionId: payload.projectId,
+    endpointCount,
+    folderCount,
+    warnings: warnings.length > 0 ? warnings : undefined,
+  }
+}
+
+// ─── RAML 1.0 Import ─────────────────────────────────────────
+//
+// Minimal RAML 1.0 importer. Handles the 80% case:
+//   - title / version / baseUri (with {version} substitution)
+//   - Nested resources (e.g. /users, /users/{id})
+//   - HTTP methods (get/post/put/patch/delete/head/options) with:
+//       * displayName / description
+//       * queryParameters → params
+//       * headers
+//       * body (application/json | application/xml | text/plain)
+//
+// Deferred to a follow-up (NOT supported here):
+//   - types / schemas (no $ref expansion)
+//   - resourceTypes / traits inheritance
+//   - securitySchemes
+//   - protocols / mediaType global defaults beyond fallback
+//   - !include directives (cross-file resolution)
+
+interface RamlMethodLike {
+  displayName?: unknown
+  description?: unknown
+  queryParameters?: unknown
+  headers?: unknown
+  body?: unknown
+}
+
+export interface ParsedRamlMethod {
+  method: string
+  displayName: string | null
+  description: string | null
+  queryParameters: Array<{ name: string; description: string | null; defaultValue: string }>
+  headers: Array<{ name: string; description: string | null; defaultValue: string }>
+  body: { type: 'none' | 'json' | 'xml' | 'text'; content?: string }
+}
+
+export interface ParsedRamlEndpoint {
+  fullPath: string
+  resourceDisplayName: string | null
+  parentSegments: string[]
+  method: ParsedRamlMethod
+}
+
+export interface ParsedRamlSpec {
+  title: string | null
+  version: string | null
+  baseUri: string | null
+  resolvedBaseUri: string | null
+  endpoints: ParsedRamlEndpoint[]
+}
+
+const RAML_HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'] as const
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function asRamlString(value: unknown): string | null {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return null
+}
+
+function extractRamlNamedFields(
+  raw: unknown,
+): Array<{ name: string; description: string | null; defaultValue: string }> {
+  if (!isPlainObject(raw)) return []
+  const out: Array<{ name: string; description: string | null; defaultValue: string }> = []
+  for (const [name, def] of Object.entries(raw)) {
+    if (isPlainObject(def)) {
+      const description = asRamlString(def.description)
+      const defaultValue = asRamlString(def.default) ?? asRamlString(def.example) ?? ''
+      out.push({ name, description, defaultValue })
+    } else {
+      // Shorthand form e.g. queryParameters: { foo: string }
+      out.push({ name, description: null, defaultValue: '' })
+    }
+  }
+  return out
+}
+
+function extractRamlBody(
+  raw: unknown,
+): { type: 'none' | 'json' | 'xml' | 'text'; content?: string } {
+  if (!isPlainObject(raw)) return { type: 'none' }
+
+  // Media-type-keyed form: body: { application/json: { ... } }
+  if ('application/json' in raw && isPlainObject(raw['application/json'])) {
+    const def = raw['application/json'] as Record<string, unknown>
+    const example = asRamlString(def.example)
+    return { type: 'json', content: example ?? '{}' }
+  }
+  if ('application/xml' in raw && isPlainObject(raw['application/xml'])) {
+    const def = raw['application/xml'] as Record<string, unknown>
+    const example = asRamlString(def.example)
+    return { type: 'xml', content: example ?? '' }
+  }
+  if ('text/plain' in raw && isPlainObject(raw['text/plain'])) {
+    const def = raw['text/plain'] as Record<string, unknown>
+    const example = asRamlString(def.example)
+    return { type: 'text', content: example ?? '' }
+  }
+
+  // Direct type form: body: { type: object, properties: {...}, example: ... }
+  if ('type' in raw || 'properties' in raw || 'example' in raw) {
+    const example = asRamlString(raw.example)
+    return { type: 'json', content: example ?? '{}' }
+  }
+
+  return { type: 'none' }
+}
+
+function parseRamlMethod(method: string, raw: unknown): ParsedRamlMethod {
+  const obj: RamlMethodLike = isPlainObject(raw) ? (raw as RamlMethodLike) : {}
+  return {
+    method: method.toUpperCase(),
+    displayName: asRamlString(obj.displayName),
+    description: asRamlString(obj.description),
+    queryParameters: extractRamlNamedFields(obj.queryParameters),
+    headers: extractRamlNamedFields(obj.headers),
+    body: extractRamlBody(obj.body),
+  }
+}
+
+function walkRamlResource(
+  resourcePath: string,
+  resource: Record<string, unknown>,
+  parentSegments: string[],
+  acc: ParsedRamlEndpoint[],
+): void {
+  const displayName = asRamlString(resource.displayName)
+  const newParents = [...parentSegments, displayName ?? resourcePath]
+
+  for (const method of RAML_HTTP_METHODS) {
+    if (method in resource) {
+      const parsed = parseRamlMethod(method, resource[method])
+      acc.push({
+        fullPath: resourcePath,
+        resourceDisplayName: displayName,
+        parentSegments,
+        method: parsed,
+      })
+    }
+  }
+
+  // Recurse into nested resources (any key that starts with '/')
+  for (const [key, value] of Object.entries(resource)) {
+    if (key.startsWith('/') && isPlainObject(value)) {
+      walkRamlResource(resourcePath + key, value, newParents, acc)
+    }
+  }
+}
+
+function resolveRamlBaseUri(baseUri: string | null, version: string | null): string | null {
+  if (!baseUri) return null
+  if (!version) return baseUri
+  return baseUri.replace(/\{version\}/g, version)
+}
+
+function stripRamlHeader(content: string): string {
+  // Strip the leading `#%RAML 1.0` directive — it's a YAML comment so js-yaml
+  // treats it as harmless, but stripping makes the parser inputs deterministic.
+  return content.replace(/^#%RAML[^\n]*\n/, '')
+}
+
+export function parseRamlSpec(content: string): ParsedRamlSpec {
+  const stripped = stripRamlHeader(content)
+
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const yamlMod = require('js-yaml') as {
+    load: (s: string, opts?: { schema?: unknown }) => unknown
+    FAILSAFE_SCHEMA: unknown
+  }
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
+  let parsed: unknown
+  try {
+    // Default schema is fine for the common case; FAILSAFE_SCHEMA would force
+    // every scalar to a string which loses booleans/numbers, so we let js-yaml
+    // use CORE_SCHEMA but catch and rethrow on unknown tags like `!include`.
+    parsed = yamlMod.load(stripped)
+  } catch (e) {
+    throw new Error('Failed to parse RAML as YAML: ' + (e as Error).message)
+  }
+
+  if (!isPlainObject(parsed)) {
+    throw new Error('RAML root is not an object')
+  }
+
+  const title = asRamlString(parsed.title)
+  const version = asRamlString(parsed.version)
+  const baseUri = asRamlString(parsed.baseUri)
+  const resolvedBaseUri = resolveRamlBaseUri(baseUri, version)
+
+  const endpoints: ParsedRamlEndpoint[] = []
+  for (const [key, value] of Object.entries(parsed)) {
+    if (key.startsWith('/') && isPlainObject(value)) {
+      walkRamlResource(key, value, [], endpoints)
+    }
+  }
+
+  return { title, version, baseUri, resolvedBaseUri, endpoints }
+}
+
+async function importRaml(
+  projectId: string,
+  content: string,
+  parentFolderId: string | null = null,
+): Promise<ImportResult> {
+  const warnings: string[] = []
+  let spec: ParsedRamlSpec
+  try {
+    spec = parseRamlSpec(content)
+  } catch (e) {
+    return { success: false, error: (e as Error).message }
+  }
+
+  const db = getDb()
+  const now = Date.now()
+  let endpointCount = 0
+  let folderCount = 0
+  const suggestedEnvVars: Record<string, string> = {}
+
+  if (spec.resolvedBaseUri) {
+    suggestedEnvVars['baseUrl'] = spec.resolvedBaseUri
+  }
+
+  // Group endpoints by their top-level resource segment so we get a tidy folder
+  // tree (one folder per top-level resource).
+  const topLevelFolderMap: Record<string, string> = {}
+
+  for (const ep of spec.endpoints) {
+    const topSegment = '/' + (ep.fullPath.split('/').filter(Boolean)[0] ?? '')
+
+    let folderId: string | null = parentFolderId
+    if (topSegment !== '/') {
+      if (!topLevelFolderMap[topSegment]) {
+        const newFolderId = randomUUID()
+        db.prepare(
+          `
+          INSERT INTO folders (id, project_id, parent_id, name, sort_order)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        ).run(newFolderId, projectId, parentFolderId, topSegment, folderCount)
+        topLevelFolderMap[topSegment] = newFolderId
+        folderCount++
+      }
+      folderId = topLevelFolderMap[topSegment]
+    }
+
+    const baseUrl = spec.resolvedBaseUri ?? ''
+    const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${ep.fullPath}` : ep.fullPath
+
+    const params = ep.method.queryParameters.map((p) => ({
+      id: randomUUID(),
+      key: p.name,
+      value: p.defaultValue,
+      description: p.description ?? '',
+      enabled: true,
+    }))
+    const headers = ep.method.headers.map((h) => ({
+      id: randomUUID(),
+      key: h.name,
+      value: h.defaultValue,
+      description: h.description ?? '',
+      enabled: true,
+    }))
+
+    const requestSchema = {
+      method: ep.method.method,
+      url: fullUrl,
+      params,
+      headers,
+      body: ep.method.body,
+      auth: { type: 'none' },
+    }
+
+    const name =
+      ep.method.displayName ?? ep.resourceDisplayName ?? `${ep.method.method} ${ep.fullPath}`
+
+    const endpointId = randomUUID()
+    db.prepare(
+      `
+      INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      endpointId,
+      projectId,
+      folderId,
+      name,
+      ep.method.description ?? null,
+      'http',
+      ep.method.method,
+      fullUrl,
+      'developing',
+      JSON.stringify(requestSchema),
+      null,
+      endpointCount,
+      now,
+      now,
+    )
+    endpointCount++
+  }
+
+  if (endpointCount === 0) {
+    warnings.push('No endpoints found in the RAML document')
+  }
+
+  return {
+    success: true,
+    collectionId: projectId,
+    endpointCount,
+    folderCount,
+    suggestedEnvVars: Object.keys(suggestedEnvVars).length ? suggestedEnvVars : undefined,
     warnings: warnings.length > 0 ? warnings : undefined,
   }
 }
