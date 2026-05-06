@@ -87,6 +87,23 @@ export default function BodyTab() {
     setBody({ ...body, urlEncoded })
   }
 
+  const handleBinaryPick = async () => {
+    try {
+      const res = await window.api?.dialog?.openFile?.({
+        title: 'Select binary file',
+      })
+      if (res?.success && res.data && !Array.isArray(res.data)) {
+        setBody({ ...body, binaryPath: res.data.filePath })
+      }
+    } catch {
+      /* user cancelled or no dialog */
+    }
+  }
+
+  const handleBinaryClear = () => {
+    setBody({ ...body, binaryPath: undefined })
+  }
+
   const handleUrlEncodedRemove = (id: string) => {
     setBody({ ...body, urlEncoded: (body.urlEncoded || []).filter((item) => item.id !== id) })
   }
@@ -206,12 +223,23 @@ export default function BodyTab() {
           <div className="rounded-lg border border-[var(--border)] bg-[var(--white)] p-3 text-center">
             <button
               type="button"
+              onClick={handleBinaryPick}
               className="cursor-pointer rounded border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 text-[var(--text)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
             >
-              Select File
+              {body.binaryPath ? 'Change File' : 'Select File'}
             </button>
             {body.binaryPath && (
-              <div className="mt-1.5 text-[var(--muted)]">{body.binaryPath}</div>
+              <div className="mt-1.5 flex items-center justify-center gap-2 text-[var(--muted)]">
+                <span className="truncate" style={{ maxWidth: 360 }}>{body.binaryPath}</span>
+                <button
+                  type="button"
+                  onClick={handleBinaryClear}
+                  className="cursor-pointer border-none bg-transparent text-[var(--muted)] hover:text-[var(--accent)]"
+                  title="Clear file"
+                >
+                  ×
+                </button>
+              </div>
             )}
           </div>
         </div>

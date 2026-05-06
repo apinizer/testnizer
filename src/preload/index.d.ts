@@ -968,6 +968,21 @@ interface ApiBridge {
   save: SaveApi
   certificate: CertificateApi
   testSuite: TestSuiteApi
+  dialog: DialogApi
+}
+
+interface DialogFileResult {
+  filePath: string
+  fileName: string
+  size: number
+}
+
+interface DialogApi {
+  openFile: (options?: {
+    title?: string
+    filters?: Array<{ name: string; extensions: string[] }>
+    multiSelections?: boolean
+  }) => Promise<IpcResult<DialogFileResult | DialogFileResult[]>>
 }
 
 interface CertificateRowDto {
