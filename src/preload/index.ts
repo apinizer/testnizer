@@ -24,6 +24,15 @@ const api = {
     toggleMaximize: (): Promise<unknown> => ipcRenderer.invoke('window:toggleMaximize'),
   },
 
+  // ─── Dialog ─────────────────────────────────────────────
+  dialog: {
+    openFile: (options?: {
+      title?: string
+      filters?: Array<{ name: string; extensions: string[] }>
+      multiSelections?: boolean
+    }): Promise<unknown> => ipcRenderer.invoke('dialog:openFile', options ?? {}),
+  },
+
   // ─── Request ─────────────────────────────────────────────
   request: {
     send: (options: unknown): Promise<unknown> => ipcRenderer.invoke('request:send', options),

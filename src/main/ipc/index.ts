@@ -20,6 +20,7 @@ import { registerAuthHandlers } from './auth.handler'
 import { registerTestSuiteHandlers } from './test-suite.handler'
 import { registerCertificateHandlers } from './certificate.handler'
 import { registerWsseHandlers } from './wsse.handler'
+import { registerDialogHandlers } from './dialog.handler'
 import { registerDiagnosticsHandlers } from '../diagnostics'
 
 export function registerAllHandlers(): void {
@@ -45,6 +46,7 @@ export function registerAllHandlers(): void {
   registerTestSuiteHandlers()
   registerCertificateHandlers()
   registerWsseHandlers()
+  registerDialogHandlers()
   registerDiagnosticsHandlers()
 
   // Start scheduled task timers after all handlers are registered
