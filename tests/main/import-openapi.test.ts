@@ -564,10 +564,9 @@ describe('OpenAPI security schemes', () => {
 // ─── Examples ──────────────────────────────────────────────────
 
 describe('OpenAPI examples', () => {
-  it('does NOT prefer top-level example over schema (current behavior)', async () => {
-    // The importer serializes the schema into body.content. The provided
-    // `example` field on the media type is dropped. This test pins the
-    // current (lossy) behavior so any future fix is intentional.
+  it('prefers content[mt].example over schema when both are present', async () => {
+    // Importer now uses the operation's example when supplied — far more
+    // useful as a starter body than a JSON-Schema dump.
     const projectId = randomUUID()
     seedProject(projectId)
     await importOpenApi(projectId, JSON.stringify(petstoreSpec))
@@ -577,27 +576,49 @@ describe('OpenAPI examples', () => {
       .get('Create a pet') as { request_schema: string }
     const schema = JSON.parse(createPet.request_schema)
     expect(schema.body.type).toBe('json')
-    // The example { name: 'fluffy', tag: 'cat' } was provided in the spec
-    // but the importer stores the SCHEMA, not the example.
-    expect(schema.body.content).not.toContain('fluffy')
+    expect(schema.body.content).toContain('fluffy')
   })
 })
 
 // ─── $ref schemas ──────────────────────────────────────────────
 
 describe('OpenAPI $ref handling', () => {
-  it('preserves $ref strings as-is in body content (no resolution)', async () => {
-    // Importer stringifies the raw schema verbatim, including $ref.
+  it('falls back to schema (with $ref) when no example is provided', async () => {
+    // Spec without an `example` field — body should contain the raw $ref.
     const projectId = randomUUID()
     seedProject(projectId)
-    await importOpenApi(projectId, JSON.stringify(petstoreSpec))
+    const noExampleSpec = {
+      openapi: '3.0.3',
+      info: { title: 'NoExample', version: '1.0.0' },
+      paths: {
+        '/widgets': {
+          post: {
+            summary: 'Create widget',
+            requestBody: {
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Widget' },
+                },
+              },
+            },
+            responses: { '200': { description: 'OK' } },
+          },
+        },
+      },
+      components: {
+        schemas: {
+          Widget: { type: 'object', properties: { id: { type: 'integer' } } },
+        },
+      },
+    }
+    await importOpenApi(projectId, JSON.stringify(noExampleSpec))
 
-    const createPet = memDb
+    const createWidget = memDb
       .prepare('SELECT request_schema FROM endpoints WHERE name = ?')
-      .get('Create a pet') as { request_schema: string }
-    const schema = JSON.parse(createPet.request_schema)
+      .get('Create widget') as { request_schema: string }
+    const schema = JSON.parse(createWidget.request_schema)
     expect(schema.body.content).toContain('$ref')
-    expect(schema.body.content).toContain('#/components/schemas/NewPet')
+    expect(schema.body.content).toContain('#/components/schemas/Widget')
   })
 
   it('does not crash on deeply nested $refs / circular schemas', async () => {

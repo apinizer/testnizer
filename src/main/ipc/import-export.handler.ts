@@ -35,7 +35,14 @@ interface OpenApiPath {
       description?: string
     }>
     requestBody?: {
-      content?: Record<string, { schema?: Record<string, unknown> }>
+      content?: Record<
+        string,
+        {
+          schema?: Record<string, unknown>
+          example?: unknown
+          examples?: Record<string, { value?: unknown }>
+        }
+      >
     }
     responses?: Record<
       string,
@@ -575,15 +582,38 @@ async function importOpenApi(
           }
         }
 
-        // Convert request body
+        // Convert request body — prefer the operation's `example` /
+        // first `examples.*.value` over a JSON-schema dump (which is far
+        // less useful as a starter request body).
         let body: { type: string; content?: string } = { type: 'none' }
         if (operation.requestBody?.content) {
           const contentTypes = Object.keys(operation.requestBody.content)
+          const pickExample = (mt: string): string | undefined => {
+            const entry = operation.requestBody!.content![mt] as
+              | { example?: unknown; examples?: Record<string, { value?: unknown }>; schema?: Record<string, unknown> }
+              | undefined
+            if (!entry) return undefined
+            if (entry.example !== undefined) {
+              return typeof entry.example === 'string'
+                ? entry.example
+                : JSON.stringify(entry.example, null, 2)
+            }
+            if (entry.examples) {
+              const first = Object.values(entry.examples)[0]
+              if (first?.value !== undefined) {
+                return typeof first.value === 'string'
+                  ? first.value
+                  : JSON.stringify(first.value, null, 2)
+              }
+            }
+            return entry.schema ? JSON.stringify(entry.schema, null, 2) : undefined
+          }
           if (contentTypes.some((ct) => ct.includes('json'))) {
-            const schema = operation.requestBody.content['application/json']?.schema
-            body = { type: 'json', content: schema ? JSON.stringify(schema, null, 2) : '{}' }
+            const content = pickExample('application/json') ?? '{}'
+            body = { type: 'json', content }
           } else if (contentTypes.some((ct) => ct.includes('xml'))) {
-            body = { type: 'xml', content: '' }
+            const xmlMt = contentTypes.find((ct) => ct.includes('xml'))!
+            body = { type: 'xml', content: pickExample(xmlMt) ?? '' }
           } else if (contentTypes.some((ct) => ct.includes('form'))) {
             body = { type: 'form-data' }
           }
