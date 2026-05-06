@@ -541,21 +541,23 @@ describe('servers[] handling', () => {
 // ─── Auth / security schemes ───────────────────────────────────
 
 describe('OpenAPI security schemes', () => {
-  it('parses spec containing bearer + apiKey + basic without crashing', async () => {
+  it('maps operation-level + global security to AuthConfig (bearer/apiKey/basic)', async () => {
     const projectId = randomUUID()
     seedProject(projectId)
     const r = await importOpenApi(projectId, JSON.stringify(petstoreSpec))
     expect(r.success).toBe(true)
-    // Endpoints created — but importer currently does not wire auth into
-    // request_schema.auth. That's an asserted behavior gap (see bug list).
     const rows = memDb
-      .prepare('SELECT request_schema FROM endpoints WHERE project_id = ?')
-      .all(projectId) as Array<{ request_schema: string }>
-    for (const row of rows) {
-      const schema = JSON.parse(row.request_schema)
-      // Bug: auth always falls back to 'none' regardless of operation.security
-      expect(schema.auth).toEqual({ type: 'none' })
-    }
+      .prepare('SELECT name, request_schema FROM endpoints WHERE project_id = ?')
+      .all(projectId) as Array<{ name: string; request_schema: string }>
+    // At least one endpoint should have a non-none auth resolved from
+    // components.securitySchemes (the spec uses bearerAuth + apiKey on
+    // various operations).
+    const authsByName = Object.fromEntries(
+      rows.map((row) => [row.name, JSON.parse(row.request_schema).auth as { type: string }]),
+    )
+    const distinct = new Set(Object.values(authsByName).map((a) => a.type))
+    expect(distinct.size).toBeGreaterThan(1)  // not every endpoint is 'none'
+    expect([...distinct]).toEqual(expect.arrayContaining(['bearer']))
   })
 })
 

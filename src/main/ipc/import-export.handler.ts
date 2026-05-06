@@ -44,7 +44,16 @@ interface OpenApiPath {
         content?: Record<string, { schema?: Record<string, unknown> }>
       }
     >
+    security?: Array<Record<string, string[]>>
   }
+}
+
+interface OpenApiSecurityScheme {
+  type: 'http' | 'apiKey' | 'oauth2' | 'openIdConnect'
+  scheme?: string  // for type:'http' — 'basic', 'bearer'
+  bearerFormat?: string
+  in?: 'header' | 'query' | 'cookie'  // for type:'apiKey'
+  name?: string  // for type:'apiKey'
 }
 
 interface OpenApiDoc {
@@ -57,6 +66,12 @@ interface OpenApiDoc {
   schemes?: string[]
   paths?: Record<string, OpenApiPath>
   tags?: Array<{ name: string; description?: string }>
+  security?: Array<Record<string, string[]>>
+  components?: {
+    securitySchemes?: Record<string, OpenApiSecurityScheme>
+  }
+  // Swagger 2.0 securityDefinitions
+  securityDefinitions?: Record<string, OpenApiSecurityScheme & { flow?: string }>
 }
 
 export function registerImportExportHandlers(): void {
@@ -373,6 +388,49 @@ export function registerImportExportHandlers(): void {
   )
 }
 
+/**
+ * Map OpenAPI / Swagger security requirements to the app's AuthConfig shape.
+ * Picks the FIRST scheme listed (OpenAPI's `security[]` is an OR-list, so
+ * any one works; user can switch later in the UI).
+ */
+function mapOpenApiSecurityToAuth(
+  securityRef: Array<Record<string, string[]>> | undefined,
+  schemes: Record<string, OpenApiSecurityScheme> | undefined,
+): Record<string, unknown> {
+  if (!securityRef || !schemes || securityRef.length === 0) {
+    return { type: 'none' }
+  }
+  // securityRef[0] is the first OR-alternative — keys are scheme names.
+  const firstAlt = securityRef[0]
+  const schemeName = Object.keys(firstAlt)[0]
+  if (!schemeName) return { type: 'none' }
+  const scheme = schemes[schemeName]
+  if (!scheme) return { type: 'none' }
+
+  if (scheme.type === 'http') {
+    if (scheme.scheme === 'bearer') {
+      return { type: 'bearer', bearer: { token: '' } }
+    }
+    if (scheme.scheme === 'basic') {
+      return { type: 'basic', basic: { username: '', password: '' } }
+    }
+  }
+  if (scheme.type === 'apiKey') {
+    return {
+      type: 'apiKey',
+      apiKey: {
+        key: scheme.name ?? '',
+        value: '',
+        in: scheme.in === 'query' ? 'query' : 'header',
+      },
+    }
+  }
+  if (scheme.type === 'oauth2') {
+    return { type: 'oauth2', oauth2: { token: '' } }
+  }
+  return { type: 'none' }
+}
+
 async function importOpenApi(
   projectId: string,
   content: string,
@@ -531,6 +589,12 @@ async function importOpenApi(
           }
         }
 
+        // Resolve auth from operation-level OR doc-level `security[]`
+        // pointing into components.securitySchemes / Swagger securityDefinitions.
+        const securityRef = operation.security ?? doc.security
+        const schemes = doc.components?.securitySchemes ?? doc.securityDefinitions
+        const auth = mapOpenApiSecurityToAuth(securityRef, schemes)
+
         // Build request_schema in app's expected format
         const requestSchema = {
           method: method.toUpperCase(),
@@ -538,7 +602,7 @@ async function importOpenApi(
           params,
           headers,
           body,
-          auth: { type: 'none' },
+          auth,
         }
 
         // Build response schemas
