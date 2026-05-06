@@ -72,6 +72,14 @@ export interface KeyValuePair {
   value: string
   description?: string
   enabled: boolean
+  /**
+   * Form-data field type. Defaults to 'text' when undefined for backwards
+   * compatibility. When set to 'file', `value` holds the original file name
+   * for display purposes and `filePath` holds the absolute disk path used
+   * by the main process to stream the file during multipart upload.
+   */
+  type?: 'text' | 'file'
+  filePath?: string
 }
 
 export interface SecretKeyValuePair extends KeyValuePair {

@@ -30,6 +30,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'kv.value': 'Value',
     'kv.description': 'Description',
     'kv.addNew': 'Add new...',
+    'kv.type': 'Type',
+
+    // Form-data file uploads
+    'formdata.text': 'Text',
+    'formdata.file': 'File',
+    'formdata.chooseFile': 'Choose file...',
+    'formdata.noFile': 'No file selected',
+    'formdata.clearFile': 'Clear file',
 
     // Tree context menu
     'tree.addRequest': 'Add Request',
@@ -772,6 +780,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'kv.value': 'Değer',
     'kv.description': 'Açıklama',
     'kv.addNew': 'Yeni ekle...',
+    'kv.type': 'Tür',
+
+    // Form-data file uploads
+    'formdata.text': 'Metin',
+    'formdata.file': 'Dosya',
+    'formdata.chooseFile': 'Dosya seç...',
+    'formdata.noFile': 'Dosya seçilmedi',
+    'formdata.clearFile': 'Dosyayı temizle',
 
     // Tree context menu
     'tree.addRequest': 'İstek Ekle',

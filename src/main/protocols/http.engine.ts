@@ -7,6 +7,9 @@ import https from 'https'
 import { URL } from 'url'
 import dns from 'dns'
 import { performance } from 'perf_hooks'
+import FormData from 'form-data'
+import { createReadStream, statSync } from 'fs'
+import { basename } from 'path'
 
 // ─── Types (main-process local, mirrors renderer types) ──────
 
@@ -16,6 +19,9 @@ interface KeyValuePair {
   value: string
   description?: string
   enabled: boolean
+  // Form-data field type — text or file. Defaults to 'text' when undefined.
+  type?: 'text' | 'file'
+  filePath?: string
 }
 
 interface RequestBody {
@@ -400,7 +406,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     }
 
     // Build body
-    let data: string | URLSearchParams | undefined
+    let data: string | URLSearchParams | FormData | undefined
     let contentType: string | undefined
 
     if (options.body && options.body.type !== 'none') {
@@ -439,16 +445,52 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
           break
         }
         case 'form-data': {
-          const formParams = new URLSearchParams()
+          // Build a streaming multipart body so file uploads don't have to
+          // be loaded into memory. The `form-data` package emits the proper
+          // boundary header which axios then forwards as Content-Type.
+          const form = new FormData()
+          let hasFileField = false
           if (options.body.formData) {
             for (const item of options.body.formData) {
-              if (item.enabled) {
-                formParams.append(item.key, item.value)
+              if (!item.enabled || !item.key) continue
+              if (item.type === 'file') {
+                if (!item.filePath) continue
+                try {
+                  // Validate the file exists & is regular before opening a stream.
+                  const stat = statSync(item.filePath)
+                  if (!stat.isFile()) continue
+                  const stream = createReadStream(item.filePath)
+                  form.append(item.key, stream, {
+                    filename: basename(item.filePath),
+                    knownLength: stat.size,
+                  })
+                  hasFileField = true
+                } catch {
+                  // Skip files that can't be read; the caller will see a
+                  // server-side error if the field was required.
+                }
+              } else {
+                form.append(item.key, item.value ?? '')
               }
             }
           }
-          data = formParams
-          contentType = 'multipart/form-data'
+          data = form
+          // Let `form-data` set the Content-Type with the right boundary —
+          // copy its computed headers so axios uses them verbatim.
+          const fdHeaders = form.getHeaders()
+          for (const [k, v] of Object.entries(fdHeaders)) {
+            // Don't clobber an explicit Content-Type override unless we have
+            // a file (which requires the boundary parameter).
+            if (k.toLowerCase() === 'content-type') {
+              if (hasFileField || !headers['Content-Type']) {
+                headers[k] = String(v)
+              }
+            } else {
+              headers[k] = String(v)
+            }
+          }
+          // Sentinel so the default Content-Type assignment below skips us.
+          contentType = headers['Content-Type'] ?? 'multipart/form-data'
           break
         }
         case 'binary':
@@ -486,6 +528,9 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       responseType: 'text',
       transformResponse: [(d: string) => d], // Prevent auto JSON parse
       signal: options.signal,
+      // Allow streaming arbitrary-size multipart uploads.
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
     }
 
     // SSL + certificate configuration
@@ -593,12 +638,33 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     const bodyStr = response.data ?? ''
     const bodySize = Buffer.byteLength(bodyStr, 'utf-8')
 
-    // Actual request info
+    // Actual request info — for FormData multipart bodies show a readable
+    // summary (the raw multipart stream is binary and not useful in the UI).
+    let actualBody: string | undefined
+    if (typeof data === 'string') {
+      actualBody = data
+    } else if (data instanceof FormData) {
+      const summary: string[] = []
+      if (options.body?.formData) {
+        for (const item of options.body.formData) {
+          if (!item.enabled || !item.key) continue
+          if (item.type === 'file') {
+            const fname = item.filePath ? basename(item.filePath) : item.value
+            summary.push(`${item.key}: <file ${fname}>`)
+          } else {
+            summary.push(`${item.key}: ${item.value ?? ''}`)
+          }
+        }
+      }
+      actualBody = summary.join('\n')
+    } else if (data) {
+      actualBody = data.toString()
+    }
     const actualRequest: ActualRequestInfo = {
       method: options.method.toUpperCase(),
       url: response.request?.res?.responseUrl ?? options.url,
       headers: config.headers as Record<string, string>,
-      body: typeof data === 'string' ? data : data?.toString()
+      body: actualBody
     }
 
     return {

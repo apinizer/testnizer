@@ -184,6 +184,7 @@ export default function BodyTab() {
             onRemove={handleFormDataRemove}
             onAdd={handleFormDataAdd}
             addLabel="+ Add Field"
+            enableFileType
           />
         </div>
       )}

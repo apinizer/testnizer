@@ -9,6 +9,7 @@ import {
   mapInsomniaAuthToUi,
   extractPostmanEventScripts,
   normalizeInsomniaScript,
+  bodyToPostman,
 } from '../../src/main/ipc/import-export.handler'
 
 // ─── Postman URL reconstruction ────────────────────────────
@@ -101,12 +102,90 @@ describe('mapPostmanBodyToUi', () => {
     expect(result.formData![1]).toMatchObject({ key: 'off', enabled: false })
   })
 
-  it('maps form file uploads (src)', () => {
+  it('maps form file uploads (src) into type=file with filePath', () => {
     const result = mapPostmanBodyToUi({
       mode: 'formdata',
-      formdata: [{ key: 'file', type: 'file', src: '/tmp/x.bin' }],
+      formdata: [{ key: 'avatar', type: 'file', src: '/tmp/photo.png' }],
     })
-    expect(result.formData![0].value).toBe('/tmp/x.bin')
+    expect(result.formData).toHaveLength(1)
+    const row = result.formData![0]
+    expect(row.type).toBe('file')
+    expect(row.filePath).toBe('/tmp/photo.png')
+    // Display value should be the basename, not the full path.
+    expect(row.value).toBe('photo.png')
+    expect(row.enabled).toBe(true)
+  })
+
+  it('maps text fields with explicit type=text', () => {
+    const result = mapPostmanBodyToUi({
+      mode: 'formdata',
+      formdata: [{ key: 'description', value: 'demo', type: 'text' }],
+    })
+    expect(result.formData![0]).toMatchObject({
+      key: 'description',
+      value: 'demo',
+      type: 'text',
+    })
+    expect(result.formData![0].filePath).toBeUndefined()
+  })
+
+  it('maps Windows-style file paths', () => {
+    const result = mapPostmanBodyToUi({
+      mode: 'formdata',
+      formdata: [{ key: 'doc', type: 'file', src: 'C:\\Users\\x\\report.pdf' }],
+    })
+    expect(result.formData![0].type).toBe('file')
+    expect(result.formData![0].filePath).toBe('C:\\Users\\x\\report.pdf')
+    expect(result.formData![0].value).toBe('report.pdf')
+  })
+
+  it('round-trips formdata file fields through bodyToPostman → mapPostmanBodyToUi', () => {
+    const exported = bodyToPostman({
+      type: 'form-data',
+      formData: [
+        { key: 'caption', value: 'My photo', enabled: true, type: 'text' },
+        {
+          key: 'avatar',
+          value: 'photo.png',
+          enabled: true,
+          type: 'file',
+          filePath: '/tmp/photo.png',
+        },
+        {
+          key: 'disabled-text',
+          value: 'skip',
+          enabled: false,
+          type: 'text',
+        },
+      ],
+    })
+    expect(exported?.mode).toBe('formdata')
+    expect(exported?.formdata).toHaveLength(3)
+    // Text field
+    expect(exported?.formdata![0]).toMatchObject({
+      key: 'caption',
+      value: 'My photo',
+      type: 'text',
+    })
+    // File field — Postman v2.1 wants `src`, not `value`.
+    expect(exported?.formdata![1]).toMatchObject({
+      key: 'avatar',
+      type: 'file',
+      src: '/tmp/photo.png',
+    })
+    // Disabled flag survives.
+    expect(exported?.formdata![2].disabled).toBe(true)
+
+    // Re-import and verify the file row keeps its identity.
+    const reImported = mapPostmanBodyToUi(exported)
+    expect(reImported.type).toBe('form-data')
+    const fileRow = reImported.formData!.find((r) => r.key === 'avatar')!
+    expect(fileRow.type).toBe('file')
+    expect(fileRow.filePath).toBe('/tmp/photo.png')
+    expect(fileRow.value).toBe('photo.png')
+    const textRow = reImported.formData!.find((r) => r.key === 'caption')!
+    expect(textRow.type).toBe('text')
+    expect(textRow.filePath).toBeUndefined()
   })
 
   it('maps urlencoded body', () => {
@@ -246,6 +325,22 @@ describe('mapInsomniaBodyToUi', () => {
     expect(r.type).toBe('form-data')
     expect(r.formData).toHaveLength(2)
     expect(r.formData![1].enabled).toBe(false)
+  })
+
+  it('maps multipart file fields with type=file', () => {
+    const r = mapInsomniaBodyToUi({
+      mimeType: 'multipart/form-data',
+      params: [
+        { name: 'caption', value: 'demo', type: 'text' },
+        { name: 'attachment', value: '', type: 'file', fileName: '/var/data/report.pdf' },
+      ],
+    })
+    expect(r.type).toBe('form-data')
+    expect(r.formData).toHaveLength(2)
+    expect(r.formData![0].type).toBe('text')
+    expect(r.formData![1].type).toBe('file')
+    expect(r.formData![1].filePath).toBe('/var/data/report.pdf')
+    expect(r.formData![1].value).toBe('report.pdf')
   })
 
   it('maps urlencoded', () => {

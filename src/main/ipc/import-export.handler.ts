@@ -931,7 +931,14 @@ function extractPath(url: string): string {
 export function mapPostmanBodyToUi(body: PostmanBody | undefined): {
   type: string
   content?: string
-  formData?: Array<{ id: string; key: string; value: string; enabled: boolean }>
+  formData?: Array<{
+    id: string
+    key: string
+    value: string
+    enabled: boolean
+    type?: 'text' | 'file'
+    filePath?: string
+  }>
   urlEncoded?: Array<{ id: string; key: string; value: string; enabled: boolean }>
 } {
   if (!body || !body.mode) return { type: 'none' }
@@ -963,12 +970,30 @@ export function mapPostmanBodyToUi(body: PostmanBody | undefined): {
       return { type: 'json', content: payload }
     }
     case 'formdata': {
-      const formData = (body.formdata ?? []).map((fd) => ({
-        id: genKvId(),
-        key: fd.key ?? '',
-        value: fd.value ?? (Array.isArray(fd.src) ? fd.src.join(',') : (fd.src ?? '')),
-        enabled: !fd.disabled,
-      }))
+      const formData = (body.formdata ?? []).map((fd) => {
+        const isFile = (fd.type ?? '').toLowerCase() === 'file'
+        const filePath = Array.isArray(fd.src) ? fd.src[0] : fd.src
+        if (isFile) {
+          // For file fields the human-readable filename goes in `value`
+          // and the path the main process opens lives in `filePath`.
+          const fileName = filePath ? filePath.split(/[\\/]/).pop() ?? filePath : ''
+          return {
+            id: genKvId(),
+            key: fd.key ?? '',
+            value: fileName,
+            enabled: !fd.disabled,
+            type: 'file' as const,
+            filePath: filePath ?? undefined,
+          }
+        }
+        return {
+          id: genKvId(),
+          key: fd.key ?? '',
+          value: fd.value ?? (Array.isArray(fd.src) ? fd.src.join(',') : (fd.src ?? '')),
+          enabled: !fd.disabled,
+          type: 'text' as const,
+        }
+      })
       return { type: 'form-data', formData }
     }
     case 'urlencoded': {
@@ -1226,6 +1251,8 @@ interface UiKeyValuePair {
   value: string
   description?: string
   enabled?: boolean
+  type?: 'text' | 'file'
+  filePath?: string
 }
 
 interface UiRequestSchema {
@@ -1276,7 +1303,7 @@ function buildPostmanUrl(rawUrl: string, params: UiKeyValuePair[] = []): Postman
   return result
 }
 
-function bodyToPostman(body: UiRequestSchema['body']): PostmanBody | undefined {
+export function bodyToPostman(body: UiRequestSchema['body']): PostmanBody | undefined {
   if (!body || !body.type || body.type === 'none') return undefined
   switch (body.type) {
     case 'json':
@@ -1292,12 +1319,23 @@ function bodyToPostman(body: UiRequestSchema['body']): PostmanBody | undefined {
     case 'form-data':
       return {
         mode: 'formdata',
-        formdata: (body.formData ?? []).map((kv) => ({
-          key: kv.key,
-          value: kv.value,
-          disabled: kv.enabled === false ? true : undefined,
-          type: 'text',
-        })),
+        formdata: (body.formData ?? []).map((kv) => {
+          if (kv.type === 'file') {
+            // Postman v2.1 file field: `{ key, type: 'file', src: '...' }`.
+            return {
+              key: kv.key,
+              type: 'file',
+              src: kv.filePath ?? kv.value ?? '',
+              disabled: kv.enabled === false ? true : undefined,
+            }
+          }
+          return {
+            key: kv.key,
+            value: kv.value,
+            disabled: kv.enabled === false ? true : undefined,
+            type: 'text',
+          }
+        }),
       }
     case 'urlencoded':
       return {
@@ -1492,7 +1530,13 @@ interface CurlExportRequest {
   body?: {
     type: string
     content?: string
-    formData?: Array<{ key: string; value: string; enabled: boolean }>
+    formData?: Array<{
+      key: string
+      value: string
+      enabled: boolean
+      type?: 'text' | 'file'
+      filePath?: string
+    }>
     urlEncoded?: Array<{ key: string; value: string; enabled: boolean }>
   }
   auth?: {
@@ -1845,7 +1889,11 @@ function exportAsCurl(request: CurlExportRequest): string {
       case 'form-data': {
         if (request.body.formData) {
           for (const item of request.body.formData) {
-            if (item.enabled) {
+            if (!item.enabled) continue
+            if (item.type === 'file' && item.filePath) {
+              // cURL convention for file uploads: -F 'field=@/path/to/file'
+              parts.push(`-F '${item.key}=@${item.filePath}'`)
+            } else {
               parts.push(`-F '${item.key}=${item.value}'`)
             }
           }
@@ -2432,7 +2480,14 @@ function importInsomniaV5(
 export function mapInsomniaBodyToUi(body: InsomniaBody | undefined): {
   type: string
   content?: string
-  formData?: Array<{ id: string; key: string; value: string; enabled: boolean }>
+  formData?: Array<{
+    id: string
+    key: string
+    value: string
+    enabled: boolean
+    type?: 'text' | 'file'
+    filePath?: string
+  }>
   urlEncoded?: Array<{ id: string; key: string; value: string; enabled: boolean }>
 } {
   if (!body) return { type: 'none' }
@@ -2454,12 +2509,28 @@ export function mapInsomniaBodyToUi(body: InsomniaBody | undefined): {
     case 'multipart/form-data':
       return {
         type: 'form-data',
-        formData: (body.params ?? []).map((p) => ({
-          id: genKvId(),
-          key: p.name,
-          value: p.value ?? p.fileName ?? '',
-          enabled: !(p as { disabled?: boolean }).disabled,
-        })),
+        formData: (body.params ?? []).map((p) => {
+          const isFile = (p.type ?? '').toLowerCase() === 'file'
+          if (isFile) {
+            const fp = p.fileName ?? ''
+            const fname = fp ? fp.split(/[\\/]/).pop() ?? fp : ''
+            return {
+              id: genKvId(),
+              key: p.name,
+              value: fname,
+              enabled: !(p as { disabled?: boolean }).disabled,
+              type: 'file' as const,
+              filePath: fp || undefined,
+            }
+          }
+          return {
+            id: genKvId(),
+            key: p.name,
+            value: p.value ?? p.fileName ?? '',
+            enabled: !(p as { disabled?: boolean }).disabled,
+            type: 'text' as const,
+          }
+        }),
       }
     case 'application/x-www-form-urlencoded':
       return {

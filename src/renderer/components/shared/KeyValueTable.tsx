@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, X } from 'lucide-react'
+import { Check, X, Upload } from 'lucide-react'
 import type { KeyValuePair } from '../../types'
 import VariableAutocompleteInput from './VariableAutocompleteInput'
 import { useTranslation } from '../../lib/i18n'
@@ -82,6 +82,12 @@ interface KeyValueTableProps {
   addLabel?: string
   valueColor?: string
   enableAutocomplete?: boolean
+  /**
+   * When true, render a Type column (Text / File) and turn the Value cell
+   * into a file picker for rows where `type === 'file'`. Used by the
+   * multipart/form-data body editor.
+   */
+  enableFileType?: boolean
 }
 
 interface AutocompleteState {
@@ -139,6 +145,7 @@ function AutocompleteDropdown({
 }
 
 const GRID_COLS = '28px minmax(100px, 1fr) minmax(100px, 1fr) minmax(80px, 0.5fr) 28px'
+const GRID_COLS_FILE = '28px minmax(100px, 1fr) 76px minmax(120px, 1fr) minmax(80px, 0.5fr) 28px'
 
 export default function KeyValueTable({
   rows,
@@ -148,6 +155,7 @@ export default function KeyValueTable({
   addLabel,
   valueColor,
   enableAutocomplete = false,
+  enableFileType = false,
 }: KeyValueTableProps) {
   const { t } = useTranslation()
   const resolvedAddLabel = addLabel ?? `+ ${t('kv.key')} / ${t('kv.value')}`
@@ -248,6 +256,44 @@ export default function KeyValueTable({
     setAutocomplete(null)
   }
 
+  /**
+   * Open the native file dialog and apply the chosen file to a row. The main
+   * process returns a `{ filePath, fileName, size }` payload — we store
+   * `filePath` (used by http.engine for streaming) and put the human-readable
+   * name into `value` so the renderer/IDB still has something to display.
+   */
+  async function handlePickFile(rowId: string): Promise<void> {
+    try {
+      const api = (window as unknown as {
+        api?: {
+          dialog?: {
+            openFile: (opts?: unknown) => Promise<{
+              success: boolean
+              data?: { filePath: string; fileName: string; size?: number }
+              error?: string
+            }>
+          }
+        }
+      }).api
+      const result = await api?.dialog?.openFile({ title: t('formdata.chooseFile') })
+      if (result && result.success && result.data) {
+        onUpdate(rowId, {
+          type: 'file',
+          filePath: result.data.filePath,
+          value: result.data.fileName,
+        })
+      }
+    } catch {
+      // Cancelled or main-process error — leave row unchanged.
+    }
+  }
+
+  function clearFile(rowId: string): void {
+    onUpdate(rowId, { filePath: undefined, value: '' })
+  }
+
+  const gridCols = enableFileType ? GRID_COLS_FILE : GRID_COLS
+
   return (
     <div>
       <div className="overflow-visible rounded-md border border-[var(--border)]" style={{ background: 'var(--white)' }}>
@@ -255,13 +301,14 @@ export default function KeyValueTable({
         <div
           className="grid text-[var(--hint)]"
           style={{
-            gridTemplateColumns: GRID_COLS,
+            gridTemplateColumns: gridCols,
             borderBottom: '1px solid var(--border)',
             background: 'var(--surface)',
           }}
         >
           <div />
           <div className="px-2.5 py-1">{t('kv.key')}</div>
+          {enableFileType && <div className="px-2.5 py-1">{t('kv.type')}</div>}
           <div className="px-2.5 py-1">{t('kv.value')}</div>
           <div className="px-2.5 py-1">{t('kv.description')}</div>
           <div />
@@ -273,7 +320,7 @@ export default function KeyValueTable({
             key={row.id}
             className="group grid"
             style={{
-              gridTemplateColumns: GRID_COLS,
+              gridTemplateColumns: gridCols,
               borderBottom: idx < rows.length - 1 ? '1px solid var(--border)' : 'none',
               opacity: row.enabled ? 1 : 0.45,
             }}
@@ -315,16 +362,73 @@ export default function KeyValueTable({
               />
             </div>
 
+            {/* Type column (form-data only) */}
+            {enableFileType && (
+              <div
+                className="relative flex items-center"
+                style={{ borderRight: '1px solid var(--border)' }}
+              >
+                <select
+                  value={row.type === 'file' ? 'file' : 'text'}
+                  onChange={(e) => {
+                    const next = e.target.value as 'text' | 'file'
+                    if (next === 'text') {
+                      onUpdate(row.id, { type: 'text', filePath: undefined, value: '' })
+                    } else {
+                      onUpdate(row.id, { type: 'file' })
+                    }
+                  }}
+                  className="w-full cursor-pointer border-none bg-transparent px-2.5 py-[5px] text-[var(--text)] outline-none"
+                  style={{ appearance: 'none' }}
+                >
+                  <option value="text">{t('formdata.text')}</option>
+                  <option value="file">{t('formdata.file')}</option>
+                </select>
+              </div>
+            )}
+
             {/* Value */}
             <div className="relative" style={{ borderRight: '1px solid var(--border)' }}>
-              <VariableAutocompleteInput
-                value={row.value}
-                onChange={(val) => handleValueInputChange(row.id, row.key, val, null)}
-                onKeyDown={handleKeyDown}
-                className="w-full border-none bg-transparent px-2.5 py-[5px] outline-none"
-                style={{ color: valueColor || 'var(--text)' }}
-                placeholder={t('kv.value')}
-              />
+              {enableFileType && row.type === 'file' ? (
+                row.filePath ? (
+                  <div className="flex items-center gap-1 px-2.5 py-[5px]">
+                    <span
+                      className="truncate text-[var(--text)]"
+                      title={row.filePath}
+                      style={{ flex: 1 }}
+                    >
+                      {row.value || row.filePath}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => clearFile(row.id)}
+                      className="cursor-pointer text-[var(--hint)] hover:text-[var(--accent)]"
+                      style={{ background: 'transparent', border: 'none', padding: 2 }}
+                      title={t('formdata.clearFile')}
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handlePickFile(row.id)}
+                    className="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-2.5 py-[5px] text-[var(--muted)] outline-none hover:text-[var(--accent)]"
+                  >
+                    <Upload size={12} />
+                    {t('formdata.chooseFile')}
+                  </button>
+                )
+              ) : (
+                <VariableAutocompleteInput
+                  value={row.value}
+                  onChange={(val) => handleValueInputChange(row.id, row.key, val, null)}
+                  onKeyDown={handleKeyDown}
+                  className="w-full border-none bg-transparent px-2.5 py-[5px] outline-none"
+                  style={{ color: valueColor || 'var(--text)' }}
+                  placeholder={t('kv.value')}
+                />
+              )}
             </div>
 
             {/* Description */}
@@ -357,7 +461,7 @@ export default function KeyValueTable({
         <div
           className="grid cursor-pointer"
           style={{
-            gridTemplateColumns: GRID_COLS,
+            gridTemplateColumns: gridCols,
             borderTop: rows.length > 0 ? '1px solid var(--border)' : 'none',
           }}
           onClick={onAdd}
@@ -366,6 +470,7 @@ export default function KeyValueTable({
           <div className="px-2.5 py-[5px] text-[var(--hint)]">
             {t('kv.addNew')}
           </div>
+          {enableFileType && <div />}
           <div />
           <div />
           <div />
