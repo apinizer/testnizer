@@ -2,7 +2,7 @@
 
 Cross-platform offline API testing and protocol-debugging desktop app.
 
-[![Build](https://github.com/apinizer-cloud/testnizer/actions/workflows/build.yml/badge.svg)](https://github.com/apinizer-cloud/testnizer/actions/workflows/build.yml)
+[![Build](https://github.com/apinizer/testnizer/actions/workflows/build.yml/badge.svg)](https://github.com/apinizer/testnizer/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## What it is
@@ -38,7 +38,7 @@ for the full sprint-by-sprint readiness tracker. As of v1.0 beta:
 
 ## Install
 
-Pre-built packages: see the [Releases page](https://github.com/apinizer-cloud/testnizer/releases).
+Pre-built packages: see the [Releases page](https://github.com/apinizer/testnizer-releases/releases).
 
 | Platform | Format | Note |
 |---|---|---|
@@ -52,7 +52,7 @@ Pre-built packages: see the [Releases page](https://github.com/apinizer-cloud/te
 
 ```bash
 # Requirements: Node 20+, Git
-git clone https://github.com/apinizer-cloud/testnizer.git
+git clone https://github.com/apinizer/testnizer.git
 cd testnizer
 
 npm install              # postinstall renames Electron.app → Testnizer.app

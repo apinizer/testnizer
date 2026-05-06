@@ -8,7 +8,7 @@ Tekrarlanan operasyonel görevlerin adım adım komut listesi. Yeni ekip üyesi 
 
 ```bash
 # Repo klon (private kaynak repo)
-git clone https://github.com/apinizer-cloud/testnizer.git
+git clone https://github.com/apinizer/testnizer.git
 cd testnizer
 
 # Bağımlılıklar (postinstall otomatik electron-rebuild + Testnizer.app rename çalışır)

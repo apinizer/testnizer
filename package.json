@@ -248,7 +248,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "apinizer-cloud",
+      "owner": "apinizer",
       "repo": "testnizer-releases",
       "releaseType": "release"
     }
