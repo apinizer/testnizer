@@ -55,6 +55,29 @@ interface OpenApiPath {
   }
 }
 
+/**
+ * Round-trip metadata captured from an imported OpenAPI doc and stashed under
+ * `request_schema.openApi`. Lets the exporter rebuild the original spec as
+ * faithfully as possible. All fields are optional; older rows without this
+ * namespace fall back to sensible defaults during export.
+ */
+interface OpenApiRoundtripMeta {
+  /** First operation tag — exporter emits as `operation.tags[0]`. */
+  tags?: string[]
+  /** Original `operationId`. Falls back to a slug of the endpoint name. */
+  operationId?: string
+  /** Security scheme name(s) referenced from operation-level `security[]`. */
+  securitySchemeNames?: string[]
+  /**
+   * Parameter metadata keyed by `${in}:${name}`. Captures `required` and
+   * `schema.type` so the exporter doesn't blanket-default every param to
+   * `required:false, type:'string'`.
+   */
+  parameters?: Record<string, { required?: boolean; type?: string }>
+  /** Original requestBody content keyed by media type — used to round-trip xml/html. */
+  requestBodyContent?: Record<string, string>
+}
+
 interface OpenApiSecurityScheme {
   type: 'http' | 'apiKey' | 'oauth2' | 'openIdConnect'
   scheme?: string  // for type:'http' — 'basic', 'bearer'
@@ -624,6 +647,48 @@ async function importOpenApi(
         const securityRef = operation.security ?? doc.security
         const schemes = doc.components?.securitySchemes ?? doc.securityDefinitions
         const auth = mapOpenApiSecurityToAuth(securityRef, schemes)
+        // Capture the scheme names that were actually referenced — exporter
+        // uses these to round-trip the operation-level `security[]` block and
+        // rebuild `components.securitySchemes` with the original names.
+        const securitySchemeNames: string[] = []
+        if (securityRef && securityRef.length > 0) {
+          for (const alt of securityRef) {
+            for (const name of Object.keys(alt)) {
+              if (!securitySchemeNames.includes(name)) securitySchemeNames.push(name)
+            }
+          }
+        }
+
+        // Build round-trip metadata for the exporter. Stored under a dedicated
+        // `openApi` namespace so other importers (Postman, Insomnia, …) don't
+        // bump into it.
+        const paramMeta: Record<string, { required?: boolean; type?: string }> = {}
+        if (operation.parameters) {
+          for (const p of operation.parameters) {
+            paramMeta[`${p.in}:${p.name}`] = {
+              required: p.required ?? false,
+              type: p.schema?.type ?? 'string',
+            }
+          }
+        }
+        const requestBodyContent: Record<string, string> = {}
+        if (operation.requestBody?.content) {
+          for (const [mt, entry] of Object.entries(operation.requestBody.content)) {
+            const e = entry as { example?: unknown }
+            if (e.example !== undefined) {
+              requestBodyContent[mt] =
+                typeof e.example === 'string' ? e.example : JSON.stringify(e.example, null, 2)
+            }
+          }
+        }
+        const openApiMeta: OpenApiRoundtripMeta = {
+          tags: operation.tags && operation.tags.length > 0 ? [...operation.tags] : undefined,
+          operationId: operation.operationId,
+          securitySchemeNames: securitySchemeNames.length > 0 ? securitySchemeNames : undefined,
+          parameters: Object.keys(paramMeta).length > 0 ? paramMeta : undefined,
+          requestBodyContent:
+            Object.keys(requestBodyContent).length > 0 ? requestBodyContent : undefined,
+        }
 
         // Build request_schema in app's expected format
         const requestSchema = {
@@ -633,6 +698,7 @@ async function importOpenApi(
           headers,
           body,
           auth,
+          openApi: openApiMeta,
         }
 
         // Build response schemas
@@ -678,6 +744,48 @@ async function importOpenApi(
   }
 }
 
+/** Slugify an endpoint name into a usable operationId fallback. */
+function slugifyOperationId(name: string, method: string, path: string): string {
+  const base = (name || `${method} ${path}`).trim()
+  const slug = base
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return slug.length > 0 ? slug : `${method.toLowerCase()}_endpoint`
+}
+
+/**
+ * Map an in-memory AuthConfig back to an OpenAPI `securitySchemes[]` entry.
+ * Returns null when the auth type isn't expressible in OpenAPI 3.0.3.
+ */
+function authToOpenApiScheme(
+  auth: { type?: string; apiKey?: { key?: string; in?: string } } | undefined,
+): { name: string; scheme: OpenApiSecurityScheme } | null {
+  if (!auth || !auth.type || auth.type === 'none') return null
+  switch (auth.type) {
+    case 'bearer':
+      return { name: 'bearerAuth', scheme: { type: 'http', scheme: 'bearer' } }
+    case 'basic':
+      return { name: 'basicAuth', scheme: { type: 'http', scheme: 'basic' } }
+    // Importer emits 'apiKey'; renderer also has 'api-key' — handle both.
+    case 'apiKey':
+    case 'api-key':
+      return {
+        name: 'apiKeyAuth',
+        scheme: {
+          type: 'apiKey',
+          in: auth.apiKey?.in === 'query' ? 'query' : 'header',
+          name: auth.apiKey?.key || 'X-API-Key',
+        },
+      }
+    case 'oauth2':
+      // Minimal placeholder — full flows would require client/token URLs we
+      // don't necessarily have. Emit so consumers see auth was required.
+      return { name: 'oauth2Auth', scheme: { type: 'oauth2' } }
+    default:
+      return null
+  }
+}
+
 function exportProjectAsOpenApi(projectId: string): string {
   const db = getDb()
 
@@ -695,6 +803,7 @@ function exportProjectAsOpenApi(projectId: string): string {
   const endpoints = db
     .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
     .all(projectId) as Array<{
+    folder_id: string | null
     method: string | null
     path: string
     name: string
@@ -702,6 +811,14 @@ function exportProjectAsOpenApi(projectId: string): string {
     request_schema: string | null
     response_schemas: string | null
   }>
+
+  // Build folder lookup so operations can carry a `tags: [folderName]` entry
+  // that mirrors what the importer does in reverse.
+  const folderRows = db
+    .prepare('SELECT id, name FROM folders WHERE project_id = ?')
+    .all(projectId) as Array<{ id: string; name: string }>
+  const folderNameById = new Map<string, string>()
+  for (const f of folderRows) folderNameById.set(f.id, f.name)
 
   // Pull a base server URL from the first endpoint's full URL (renderer stores
   // it in request_schema.url) so the exported spec is browseable.
@@ -725,18 +842,35 @@ function exportProjectAsOpenApi(projectId: string): string {
   }
 
   const paths: Record<string, Record<string, unknown>> = {}
+  // Accumulate distinct security schemes across all endpoints so we can emit a
+  // single `components.securitySchemes` block at the end.
+  const securitySchemes: Record<string, OpenApiSecurityScheme> = {}
 
   // Strip the server prefix off the stored URL so the path keys are valid
   // OpenAPI paths (e.g. /pets/{id}) rather than full URLs.
   function stripServer(rawPath: string): string {
     if (!rawPath) return '/'
     if (rawPath.startsWith('/')) return rawPath
+    // Substitute *both* `{{envVar}}` and `{pathParam}` with placeholders so
+    // `new URL()` doesn't choke on the braces and so the curly braces don't
+    // get percent-encoded inside the resulting pathname.
+    const ENV_PH = '__ENV_PLACEHOLDER__'
+    const PATH_PH_OPEN = '__PATH_OPEN__'
+    const PATH_PH_CLOSE = '__PATH_CLOSE__'
+    const pathParams: string[] = []
+    const safe = rawPath
+      .replace(/\{\{[^}]+\}\}/g, ENV_PH)
+      .replace(/\{([^}]+)\}/g, (_match, name: string) => {
+        pathParams.push(name)
+        return `${PATH_PH_OPEN}${name}${PATH_PH_CLOSE}`
+      })
     try {
-      const u = new URL(rawPath.replace(/\{\{[^}]+\}\}/g, 'placeholder'))
-      // Restore any {{var}} that landed inside the pathname when we substituted
-      // the placeholder above.
+      const u = new URL(safe)
       const tail = `${u.pathname}${u.search}` || '/'
+      // Decode our path-param placeholders back into `{name}` form.
       return tail
+        .replace(new RegExp(PATH_PH_OPEN, 'g'), '{')
+        .replace(new RegExp(PATH_PH_CLOSE, 'g'), '}')
     } catch {
       // Templated URL or path-only — return as-is so the caller can decide.
       return rawPath
@@ -757,31 +891,42 @@ function exportProjectAsOpenApi(projectId: string): string {
         : { '200': { description: 'OK' } },
     }
 
+    // Tags from the round-trip metadata, falling back to the parent folder
+    // name. This keeps imported docs round-trippable even after the user
+    // moves an endpoint between folders.
+    let openApiMeta: OpenApiRoundtripMeta | undefined
+    let storedAuth: UiRequestSchema['auth'] | undefined
     if (ep.request_schema) {
       const schema = JSON.parse(ep.request_schema) as UiRequestSchema
+      openApiMeta = schema.openApi
+      storedAuth = schema.auth
       const params: Array<Record<string, unknown>> = []
+      const paramMeta = openApiMeta?.parameters ?? {}
 
-      // Path templating from `{vars}` in URL
+      // Path templating from `{vars}` in URL — these are always required by
+      // definition. Honour stored type info if present.
       const pathVarRe = /\{([^}]+)\}/g
       let m: RegExpExecArray | null
       while ((m = pathVarRe.exec(path)) !== null) {
+        const meta = paramMeta[`path:${m[1]}`]
         params.push({
           name: m[1],
           in: 'path',
           required: true,
-          schema: { type: 'string' },
+          schema: { type: meta?.type ?? 'string' },
         })
       }
 
       // Query params
       for (const p of schema.params ?? []) {
         if (p.enabled === false) continue
+        const meta = paramMeta[`query:${p.key}`]
         params.push({
           name: p.key,
           in: 'query',
           description: p.description,
-          required: false,
-          schema: { type: 'string', default: p.value },
+          required: meta?.required ?? false,
+          schema: { type: meta?.type ?? 'string', default: p.value },
         })
       }
 
@@ -790,12 +935,13 @@ function exportProjectAsOpenApi(projectId: string): string {
         if (h.enabled === false) continue
         // Skip headers OpenAPI doesn't want (Content-Type covered by requestBody)
         if (h.key.toLowerCase() === 'content-type') continue
+        const meta = paramMeta[`header:${h.key}`]
         params.push({
           name: h.key,
           in: 'header',
           description: h.description,
-          required: false,
-          schema: { type: 'string', default: h.value },
+          required: meta?.required ?? false,
+          schema: { type: meta?.type ?? 'string', default: h.value },
         })
       }
 
@@ -846,11 +992,70 @@ function exportProjectAsOpenApi(projectId: string): string {
               [mediaType]: { schema: { type: 'object', properties } },
             },
           }
+        } else if (body.type === 'xml' || body.type === 'html') {
+          // For non-JSON text bodies, prefer the original content captured at
+          // import time, then any current `body.content`, then a small
+          // placeholder so consumers see *some* example payload.
+          const original = openApiMeta?.requestBodyContent?.[mediaType]
+          const content =
+            original ?? (typeof example === 'string' && example.length > 0 ? example : '')
+          operation.requestBody = {
+            content: {
+              [mediaType]: {
+                schema: { type: 'string' },
+                example:
+                  content.length > 0
+                    ? content
+                    : body.type === 'xml'
+                      ? '<!-- payload -->'
+                      : '<!-- html payload -->',
+              },
+            },
+          }
         } else if (exampleObj !== undefined) {
           operation.requestBody = {
             content: { [mediaType]: { example: exampleObj } },
           }
         }
+      }
+    }
+
+    // Tags — prefer round-trip metadata, fall back to folder name.
+    const tagsToEmit =
+      openApiMeta?.tags && openApiMeta.tags.length > 0
+        ? openApiMeta.tags
+        : ep.folder_id && folderNameById.has(ep.folder_id)
+          ? [folderNameById.get(ep.folder_id)!]
+          : undefined
+    if (tagsToEmit) operation.tags = tagsToEmit
+
+    // operationId — round-trip if available, else slug of name.
+    operation.operationId =
+      openApiMeta?.operationId ?? slugifyOperationId(ep.name, ep.method ?? 'GET', path)
+
+    // Security — prefer the original scheme names from the imported doc; if
+    // none are stored but the endpoint has a non-none auth, emit a synthesised
+    // entry so the auth survives the round-trip.
+    if (openApiMeta?.securitySchemeNames && openApiMeta.securitySchemeNames.length > 0) {
+      const opSec: Array<Record<string, string[]>> = []
+      const synth = authToOpenApiScheme(storedAuth as { type?: string; apiKey?: { key?: string; in?: string } } | undefined)
+      for (const name of openApiMeta.securitySchemeNames) {
+        opSec.push({ [name]: [] })
+        // Re-register the scheme using the live auth shape when available so
+        // apiKey header names etc. round-trip. If `authToOpenApiScheme`
+        // returns a different default name, prefer the original.
+        if (synth && !securitySchemes[name]) {
+          securitySchemes[name] = synth.scheme
+        } else if (!securitySchemes[name]) {
+          securitySchemes[name] = { type: 'http', scheme: 'bearer' }
+        }
+      }
+      operation.security = opSec
+    } else {
+      const synth = authToOpenApiScheme(storedAuth as { type?: string; apiKey?: { key?: string; in?: string } } | undefined)
+      if (synth) {
+        securitySchemes[synth.name] = synth.scheme
+        operation.security = [{ [synth.name]: [] }]
       }
     }
 
@@ -867,6 +1072,9 @@ function exportProjectAsOpenApi(projectId: string): string {
     paths,
   }
   if (baseServer) doc.servers = [{ url: baseServer }]
+  if (Object.keys(securitySchemes).length > 0) {
+    doc.components = { securitySchemes }
+  }
 
   return JSON.stringify(doc, null, 2)
 }
@@ -1499,6 +1707,13 @@ interface UiRequestSchema {
   auth?: Record<string, unknown>
   preScript?: string
   postScript?: string
+  /**
+   * OpenAPI round-trip metadata. Populated by `importOpenApi`; consumed by
+   * `exportProjectAsOpenApi` to preserve tags / operationId / security /
+   * parameter `required` flags / xml body content. Optional — older rows
+   * exported just fine without it (with sensible fallbacks).
+   */
+  openApi?: OpenApiRoundtripMeta
 }
 
 function buildPostmanUrl(rawUrl: string, params: UiKeyValuePair[] = []): PostmanUrl {

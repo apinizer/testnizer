@@ -799,6 +799,139 @@ describe('Round-trip import → export → re-import', () => {
     expect(doc.info.title).toBe('EmptyProj')
     expect(doc.paths).toEqual({})
   })
+
+  it('round-trip preserves tags on operations', async () => {
+    const projectId = randomUUID()
+    seedProject(projectId, 'TagProj')
+    await importOpenApi(projectId, JSON.stringify(petstoreSpec))
+    const exported = JSON.parse((await exportOpenApi(projectId)).data!)
+
+    // Walk every operation and assert each one carries a tag (the petstore
+    // spec puts every op into either 'pets' or 'store').
+    const tagsSeen = new Set<string>()
+    for (const pathKey of Object.keys(exported.paths)) {
+      for (const method of Object.keys(exported.paths[pathKey])) {
+        const op = exported.paths[pathKey][method]
+        expect(op.tags).toBeDefined()
+        expect(Array.isArray(op.tags)).toBe(true)
+        for (const t of op.tags) tagsSeen.add(t)
+      }
+    }
+    expect([...tagsSeen].sort()).toEqual(['pets', 'store'])
+  })
+
+  it('round-trip preserves operationId', async () => {
+    const projectId = randomUUID()
+    seedProject(projectId, 'OpIdProj')
+    await importOpenApi(projectId, JSON.stringify(petstoreSpec))
+    const exported = JSON.parse((await exportOpenApi(projectId)).data!)
+
+    const operationIds: string[] = []
+    for (const pathKey of Object.keys(exported.paths)) {
+      for (const method of Object.keys(exported.paths[pathKey])) {
+        operationIds.push(exported.paths[pathKey][method].operationId)
+      }
+    }
+    // Petstore spec defines listPets, createPet, getPet, deletePet, getInventory.
+    expect(operationIds).toEqual(
+      expect.arrayContaining(['listPets', 'createPet', 'getPet', 'deletePet', 'getInventory']),
+    )
+  })
+
+  it('round-trip preserves security and emits components.securitySchemes', async () => {
+    const projectId = randomUUID()
+    seedProject(projectId, 'SecProj')
+    await importOpenApi(projectId, JSON.stringify(petstoreSpec))
+    const exported = JSON.parse((await exportOpenApi(projectId)).data!)
+
+    // Top-level securitySchemes must contain the schemes referenced by ops.
+    expect(exported.components?.securitySchemes).toBeDefined()
+    const schemeNames = Object.keys(exported.components.securitySchemes)
+    expect(schemeNames.length).toBeGreaterThan(0)
+
+    // Find at least one op that has security[] referencing a known scheme.
+    let foundOpWithSec = false
+    for (const pathKey of Object.keys(exported.paths)) {
+      for (const method of Object.keys(exported.paths[pathKey])) {
+        const op = exported.paths[pathKey][method]
+        if (Array.isArray(op.security) && op.security.length > 0) {
+          foundOpWithSec = true
+          // Each entry's key should be in the top-level schemes.
+          for (const alt of op.security) {
+            for (const k of Object.keys(alt)) {
+              expect(schemeNames).toContain(k)
+            }
+          }
+        }
+      }
+    }
+    expect(foundOpWithSec).toBe(true)
+  })
+
+  it('round-trip honours parameter required flag for path params', async () => {
+    const projectId = randomUUID()
+    seedProject(projectId, 'ReqProj')
+    await importOpenApi(projectId, JSON.stringify(petstoreSpec))
+    const exported = JSON.parse((await exportOpenApi(projectId)).data!)
+
+    // Locate the GET op whose path includes /pets/{petId} — path param
+    // must round-trip with required:true.
+    let petIdParam: { name: string; in: string; required: boolean } | undefined
+    for (const pathKey of Object.keys(exported.paths)) {
+      if (!pathKey.includes('/pets/{petId}')) continue
+      const op = exported.paths[pathKey].get
+      if (!op?.parameters) continue
+      petIdParam = op.parameters.find((p: { name: string }) => p.name === 'petId')
+      if (petIdParam) break
+    }
+    expect(petIdParam).toBeDefined()
+    expect(petIdParam!.in).toBe('path')
+    expect(petIdParam!.required).toBe(true)
+  })
+
+  it('round-trip preserves XML body content', async () => {
+    const projectId = randomUUID()
+    seedProject(projectId)
+    const xmlPayload = '<?xml version="1.0"?><Pet><name>Rex</name></Pet>'
+    const spec = {
+      openapi: '3.0.3',
+      info: { title: 'XmlBody', version: '1' },
+      servers: [{ url: 'https://x.example.com' }],
+      paths: {
+        '/pets': {
+          post: {
+            summary: 'Create pet (xml)',
+            operationId: 'createPetXml',
+            requestBody: {
+              content: {
+                'application/xml': {
+                  schema: { type: 'string' },
+                  example: xmlPayload,
+                },
+              },
+            },
+            responses: { '200': { description: 'OK' } },
+          },
+        },
+      },
+    }
+    await importOpenApi(projectId, JSON.stringify(spec))
+    const exported = JSON.parse((await exportOpenApi(projectId)).data!)
+
+    let xmlEntry: { example?: string } | undefined
+    for (const pathKey of Object.keys(exported.paths)) {
+      const op = exported.paths[pathKey].post
+      if (op?.requestBody?.content?.['application/xml']) {
+        xmlEntry = op.requestBody.content['application/xml']
+      }
+    }
+    expect(xmlEntry).toBeDefined()
+    // Either the original payload survived, or at least a non-empty example
+    // is emitted (never the legacy empty string).
+    expect(typeof xmlEntry!.example).toBe('string')
+    expect(xmlEntry!.example!.length).toBeGreaterThan(0)
+    expect(xmlEntry!.example).toContain('Rex')
+  })
 })
 
 // ─── Edge: invalid input ───────────────────────────────────────
