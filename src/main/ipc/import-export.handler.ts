@@ -1481,7 +1481,7 @@ function authToPostman(auth: UiRequestSchema['auth']): PostmanAuth | undefined {
   }
 }
 
-function exportAsPostman(projectId: string): string {
+export function exportAsPostman(projectId: string): string {
   const db = getDb()
 
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
