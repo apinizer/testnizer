@@ -278,6 +278,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         // History metadata
         _workspaceId: wsStore.activeWorkspaceId || undefined,
         _projectId: wsStore.activeProjectId || undefined,
+        _tabId: activeTabId || undefined,
       })
 
       // Convert resolved headers to Record<string,string> for console/history
@@ -288,6 +289,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         url: resolvedUrl,
         headers: headerRecord,
         body: resolvedBody?.content,
+        tabId: activeTabId || undefined,
+        protocol: 'http' as const,
       }
 
       if (result?.success && result.data) {
@@ -348,10 +351,18 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         timing: { total: 0 },
       }
       responseStore.setResponse(errResp)
-      useConsoleStore.getState().addFromResponse(
-        { method, url, headers: {} },
-        errResp
-      )
+      // IPC layer broken — main never logged anything. Push a synthetic
+      // entry so the user can see the failure in the console panel.
+      useConsoleStore.getState().addEntry({
+        protocol: 'http',
+        level: 'error',
+        category: 'response',
+        method,
+        url,
+        message: 'Request failed — IPC not available',
+        tabId: activeTabId || undefined,
+        details: { error: { message: 'Request failed — IPC not available' } },
+      })
     } finally {
       responseStore.setLoading(false)
       if (activeTabId) {
