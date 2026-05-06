@@ -419,3 +419,70 @@ describe('round-trip: parseCurl -> exportAsCurl -> parseCurl', () => {
     expect(r2.body).toContain('desc=hello')
   })
 })
+// ─── Single-quote escaping (bug fixes) ─────────────────────
+
+describe("single-quote escaping in exportAsCurl + round-trip", () => {
+  it("URL containing ' survives parse -> export -> parse", () => {
+    // The export must wrap the URL in '...' with internal ' rewritten as '\''
+    // so the shell tokenizer can rebuild the original string verbatim.
+    const original = `curl 'https://api.example.com/search?q=it%27s'`
+    // Use a URL that legitimately contains a single quote (e.g. an exotic
+    // path component that some servers accept).
+    const tricky = `https://api.example.com/path/o'reilly`
+    const exported = exportAsCurl({ method: 'GET', url: tricky })
+    expect(exported).toContain(`'https://api.example.com/path/o'\\''reilly'`)
+    const reparsed = parseCurlCommand(exported)
+    expect(reparsed.url).toBe(tricky)
+    // sanity-check baseline parse still works
+    expect(parseCurlCommand(original).url).toContain('search')
+  })
+
+  it("header value containing ' survives round-trip", () => {
+    const headerValue = `it's-a-value`
+    const exported = exportAsCurl({
+      method: 'GET',
+      url: 'https://x',
+      headers: [{ key: 'X-Quote', value: headerValue, enabled: true }],
+    })
+    // Encoded as: -H 'X-Quote: it'\''s-a-value'
+    expect(exported).toContain(`-H 'X-Quote: it'\\''s-a-value'`)
+    const reparsed = parseCurlCommand(exported)
+    expect(reparsed.headers['X-Quote']).toBe(headerValue)
+  })
+
+  it("cookie + basic-auth password with ' survive round-trip", () => {
+    const cookie = `sess='abc';u=42`
+    const password = `p'wd`
+    const exported = exportAsCurl({
+      method: 'GET',
+      url: 'https://x',
+      auth: { type: 'basic', basic: { username: 'alice', password } },
+      cookies: cookie,
+    })
+    // Each ' must be escaped as '\''
+    expect(exported).toContain(`-u 'alice:p'\\''wd'`)
+    expect(exported).toContain(`-b 'sess='\\''abc'\\'';u=42'`)
+    const reparsed = parseCurlCommand(exported)
+    expect(reparsed.auth?.basic?.password).toBe(password)
+    expect(reparsed.cookies).toBe(cookie)
+  })
+})
+
+// ─── -d auto Content-Type ──────────────────────────────────
+
+describe('parseCurlCommand: -d implies application/x-www-form-urlencoded', () => {
+  it("-d 'foo=bar' without -H adds Content-Type", () => {
+    const r = parseCurlCommand(`curl -d 'foo=bar' https://x`)
+    expect(r.method).toBe('POST')
+    expect(r.body).toBe('foo=bar')
+    expect(r.headers['Content-Type']).toBe('application/x-www-form-urlencoded')
+  })
+
+  it("-d with explicit -H 'Content-Type: text/plain' keeps user value", () => {
+    const r = parseCurlCommand(
+      `curl -d 'foo=bar' -H 'Content-Type: text/plain' https://x`,
+    )
+    expect(r.body).toBe('foo=bar')
+    expect(r.headers['Content-Type']).toBe('text/plain')
+  })
+})

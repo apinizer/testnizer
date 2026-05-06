@@ -2144,6 +2144,12 @@ export function parseCurlCommand(command: string): ParsedCurl {
     insecure: false,
   }
 
+  // Track whether the body was set via -d/--data/--data-raw/--data-binary so we
+  // can auto-add Content-Type: application/x-www-form-urlencoded at the end of
+  // parsing if the user did not provide one. This matches cURL's actual
+  // behaviour for these flags.
+  let bodyFromDataFlag = false
+
   const tokens = tokenizeCurl(normalized)
 
   let i = 0
@@ -2187,6 +2193,7 @@ export function parseCurlCommand(command: string): ParsedCurl {
         i++
         if (i < tokens.length) {
           result.body = tokens[i]
+          bodyFromDataFlag = true
           // If method is still GET, change to POST
           if (result.method === 'GET') {
             result.method = 'POST'
@@ -2312,7 +2319,22 @@ export function parseCurlCommand(command: string): ParsedCurl {
     i++
   }
 
+  // cURL behaviour: -d / --data / --data-raw / --data-binary all imply
+  // Content-Type: application/x-www-form-urlencoded when the user did not
+  // supply one explicitly via -H. We only add the default after all tokens
+  // have been processed so a later -H overrides nothing.
+  if (bodyFromDataFlag && !hasContentTypeHeader(result.headers)) {
+    result.headers['Content-Type'] = 'application/x-www-form-urlencoded'
+  }
+
   return result
+}
+
+function hasContentTypeHeader(headers: Record<string, string>): boolean {
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === 'content-type') return true
+  }
+  return false
 }
 
 export function tokenizeCurl(command: string): string[] {
@@ -2366,6 +2388,19 @@ export function tokenizeCurl(command: string): string[] {
 
 // ─── cURL Export ────────────────────────────────────────────
 
+/**
+ * POSIX-shell-quote a value for use inside a cURL command line. Returns the
+ * value wrapped in single quotes, with any internal `'` rewritten as `'\''`
+ * (close-quote, escaped quote, reopen-quote). This is the canonical way to
+ * embed arbitrary text in a single-quoted bash word and is what cURL itself
+ * expects when round-tripping. Always pass user-controlled strings (URL,
+ * header values, cookies, passwords, body content, form values) through this
+ * helper before interpolating them into the output.
+ */
+function shellEscape(s: string): string {
+  return `'${s.replace(/'/g, "'\\''")}'`
+}
+
 export function exportAsCurl(request: CurlExportRequest): string {
   const parts: string[] = ['curl']
 
@@ -2375,13 +2410,13 @@ export function exportAsCurl(request: CurlExportRequest): string {
   }
 
   // URL
-  parts.push(`'${request.url}'`)
+  parts.push(shellEscape(request.url))
 
   // Headers
   if (request.headers) {
     for (const h of request.headers) {
       if (h.enabled && h.key) {
-        parts.push(`-H '${h.key}: ${h.value}'`)
+        parts.push(`-H ${shellEscape(`${h.key}: ${h.value}`)}`)
       }
     }
   }
@@ -2389,10 +2424,12 @@ export function exportAsCurl(request: CurlExportRequest): string {
   // Auth
   if (request.auth) {
     if (request.auth.type === 'basic' && request.auth.basic) {
-      parts.push(`-u '${request.auth.basic.username}:${request.auth.basic.password}'`)
+      parts.push(
+        `-u ${shellEscape(`${request.auth.basic.username}:${request.auth.basic.password}`)}`,
+      )
     } else if (request.auth.type === 'bearer' && request.auth.bearer) {
       const prefix = request.auth.bearer.prefix || 'Bearer'
-      parts.push(`-H 'Authorization: ${prefix} ${request.auth.bearer.token}'`)
+      parts.push(`-H ${shellEscape(`Authorization: ${prefix} ${request.auth.bearer.token}`)}`)
     }
   }
 
@@ -2405,8 +2442,7 @@ export function exportAsCurl(request: CurlExportRequest): string {
       case 'html':
       case 'javascript': {
         if (request.body.content) {
-          const escaped = request.body.content.replace(/'/g, "'\\''")
-          parts.push(`-d '${escaped}'`)
+          parts.push(`-d ${shellEscape(request.body.content)}`)
         }
         break
       }
@@ -2414,7 +2450,7 @@ export function exportAsCurl(request: CurlExportRequest): string {
         if (request.body.urlEncoded) {
           for (const item of request.body.urlEncoded) {
             if (item.enabled) {
-              parts.push(`--data-urlencode '${item.key}=${item.value}'`)
+              parts.push(`--data-urlencode ${shellEscape(`${item.key}=${item.value}`)}`)
             }
           }
         }
@@ -2426,9 +2462,9 @@ export function exportAsCurl(request: CurlExportRequest): string {
             if (!item.enabled) continue
             if (item.type === 'file' && item.filePath) {
               // cURL convention for file uploads: -F 'field=@/path/to/file'
-              parts.push(`-F '${item.key}=@${item.filePath}'`)
+              parts.push(`-F ${shellEscape(`${item.key}=@${item.filePath}`)}`)
             } else {
-              parts.push(`-F '${item.key}=${item.value}'`)
+              parts.push(`-F ${shellEscape(`${item.key}=${item.value}`)}`)
             }
           }
         }
@@ -2439,7 +2475,7 @@ export function exportAsCurl(request: CurlExportRequest): string {
 
   // Cookies
   if (request.cookies) {
-    parts.push(`-b '${request.cookies}'`)
+    parts.push(`-b ${shellEscape(request.cookies)}`)
   }
 
   // SSL
