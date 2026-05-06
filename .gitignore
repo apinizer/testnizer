@@ -33,3 +33,6 @@ resources/third-party-licenses.json
 
 # Local Playwright trace dumps
 **/trace.zip
+
+# Claude Code agent worktrees (managed externally)
+.claude/worktrees/

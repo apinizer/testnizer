@@ -9,6 +9,7 @@ import WebSocketEditor from '../protocols/WebSocketEditor'
 import GraphQLEditor from '../protocols/GraphQLEditor'
 import GrpcEditor from '../protocols/GrpcEditor'
 import SseEditor from '../protocols/SseEditor'
+import AiChatEditor from '../protocols/AiChatEditor'
 import RunnerTab from '../runner/RunnerTab'
 import JwtTool from '../tools/JwtTool'
 import JsonFormatTool from '../tools/JsonFormatTool'
@@ -470,6 +471,15 @@ export default function Workbench() {
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
         <SseEditor />
+      </div>
+    )
+  }
+
+  if (protocol === 'ai') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <AiChatEditor />
       </div>
     )
   }

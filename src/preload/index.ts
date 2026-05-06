@@ -464,6 +464,49 @@ const api = {
       }
     },
   },
+
+  // ─── AI Chat ────────────────────────────────────────────────
+  aiChat: {
+    send: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('aichat:send', payload),
+    cancel: (messageId: string): Promise<unknown> =>
+      ipcRenderer.invoke('aichat:cancel', messageId),
+    onChunk: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('aichat:chunk', handler)
+      return () => {
+        ipcRenderer.removeListener('aichat:chunk', handler)
+      }
+    },
+    onDone: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('aichat:done', handler)
+      return () => {
+        ipcRenderer.removeListener('aichat:done', handler)
+      }
+    },
+    onError: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('aichat:error', handler)
+      return () => {
+        ipcRenderer.removeListener('aichat:error', handler)
+      }
+    },
+    onCancelled: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('aichat:cancelled', handler)
+      return () => {
+        ipcRenderer.removeListener('aichat:cancelled', handler)
+      }
+    },
+  },
 }
 
 if (process.contextIsolated) {

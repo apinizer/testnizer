@@ -24,7 +24,7 @@ export default function ProjectWelcome() {
 
   function createTab(
     name: string,
-    protocol: 'http' | 'soap' | 'websocket' | 'graphql' | 'sse' | 'grpc',
+    protocol: 'http' | 'soap' | 'websocket' | 'graphql' | 'sse' | 'grpc' | 'ai',
     method?: string,
   ) {
     const id = makeTabId()
@@ -67,7 +67,7 @@ export default function ProjectWelcome() {
       iconBg: '#EDE7F6',
       iconColor: '#5E35B1',
       label: t('welcome.aiSse'),
-      onClick: () => createTab(t('welcome.aiSseName'), 'sse'),
+      onClick: () => createTab(t('welcome.aiSseName'), 'ai'),
     },
     {
       icon: <Hexagon size={32} strokeWidth={1.5} />,

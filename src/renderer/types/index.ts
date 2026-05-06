@@ -10,6 +10,7 @@ export type Protocol =
   | 'graphql'
   | 'grpc'
   | 'sse'
+  | 'ai'
   | 'runner'
   | 'tools.jwt'
   | 'tools.jsonFormat'

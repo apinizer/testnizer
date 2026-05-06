@@ -92,7 +92,7 @@ export default function NewDropdown() {
       icon: '\uD83E\uDD16',
       label: t('newDropdown.aiSse'),
       bg: '#ede7f6',
-      action: () => createProtocolTab('sse', t('welcome.aiSseName')),
+      action: () => createProtocolTab('ai', t('welcome.aiSseName')),
     },
     {
       icon: '\u2B21',

@@ -12,6 +12,7 @@ import { registerRunnerHandlers } from './runner.handler'
 import { registerGraphqlHandlers } from './graphql.handler'
 import { registerGrpcHandlers } from './grpc.handler'
 import { registerSseHandlers } from './sse.handler'
+import { registerAiChatHandlers } from './ai-chat.handler'
 import { registerBranchHandlers } from './branch.handler'
 import { registerSaveHandlers } from './save.handler'
 import { registerSchedulerHandlers, startAllSchedulers } from './scheduler.handler'
@@ -39,6 +40,7 @@ export function registerAllHandlers(): void {
   registerGraphqlHandlers()
   registerGrpcHandlers()
   registerSseHandlers()
+  registerAiChatHandlers()
   registerBranchHandlers()
   registerSaveHandlers()
   registerSchedulerHandlers()

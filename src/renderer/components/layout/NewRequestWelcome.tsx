@@ -51,7 +51,7 @@ export default function NewRequestWelcome() {
 
   function createAiSse() {
     const id = makeTabId()
-    openTab({ id, name: t('welcome.aiSseName'), protocol: 'sse', url: '' })
+    openTab({ id, name: t('welcome.aiSseName'), protocol: 'ai', url: '' })
   }
 
   function createGrpc() {

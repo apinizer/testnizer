@@ -725,6 +725,43 @@ interface SseApi {
   onEvent(callback: (event: SseEventPayload) => void): () => void
 }
 
+// ─── AI Chat ────────────────────────────────────────────────────
+
+type AiProviderId = 'openai' | 'anthropic' | 'openrouter' | 'custom'
+
+interface AiChatSendPayload {
+  provider: AiProviderId
+  url?: string
+  apiKey: string
+  model: string
+  messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>
+  temperature?: number
+  maxTokens?: number
+}
+
+interface AiChatChunkEvent {
+  messageId: string
+  delta: string
+}
+
+interface AiChatDoneEvent {
+  messageId: string
+}
+
+interface AiChatErrorEvent {
+  messageId: string
+  error: string
+}
+
+interface AiChatApi {
+  send(payload: AiChatSendPayload): Promise<IpcResult<{ messageId: string }>>
+  cancel(messageId: string): Promise<IpcResult<{ cancelled: boolean }>>
+  onChunk(callback: (event: AiChatChunkEvent) => void): () => void
+  onDone(callback: (event: AiChatDoneEvent) => void): () => void
+  onError(callback: (event: AiChatErrorEvent) => void): () => void
+  onCancelled(callback: (event: AiChatDoneEvent) => void): () => void
+}
+
 // ─── Updater ──────────────────────────────────────────────────────
 
 interface UpdaterEventPayload {
@@ -886,6 +923,7 @@ interface ApiBridge {
   graphql: GraphqlApi
   grpc: GrpcApi
   sse: SseApi
+  aiChat: AiChatApi
   updater: UpdaterApi
   branch: BranchApi
   save: SaveApi
