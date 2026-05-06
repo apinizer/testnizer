@@ -1302,6 +1302,72 @@ export async function importPostman(
     }
   }
 
+  // Persist collection-level variables to a project-scoped environment so that
+  // the export round-trip is lossless. Postman's `collection.variable[]` has no
+  // first-class equivalent in our schema — the closest analogue is a per-project
+  // environment. We create (or reuse) one named after the collection, stamp it
+  // active, and write each variable as a row. On export we read from the active
+  // environment for this project.
+  if (collection.variable && collection.variable.length > 0) {
+    const projectRow = db
+      .prepare('SELECT workspace_id FROM projects WHERE id = ?')
+      .get(projectId) as { workspace_id: string } | undefined
+    if (projectRow) {
+      const envName = `${collection.info.name} (imported)`
+      // Reuse existing env with the same name if we've already imported this
+      // collection — avoids exploding env count on re-imports.
+      let envRow = db
+        .prepare(
+          'SELECT id FROM environments WHERE project_id = ? AND name = ?',
+        )
+        .get(projectId, envName) as { id: string } | undefined
+      let envId: string
+      if (envRow) {
+        envId = envRow.id
+        db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(
+          envId,
+        )
+      } else {
+        envId = randomUUID()
+        // If the project has no active env yet, mark this one active.
+        const hasActive = db
+          .prepare(
+            'SELECT 1 AS x FROM environments WHERE project_id = ? AND is_active = 1',
+          )
+          .get(projectId) as { x: number } | undefined
+        db.prepare(
+          `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          envId,
+          projectRow.workspace_id,
+          projectId,
+          envName,
+          hasActive ? 0 : 1,
+          now,
+          now,
+        )
+      }
+      const insertVar = db.prepare(
+        `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      for (const v of collection.variable) {
+        if (!v.key) continue
+        insertVar.run(
+          randomUUID(),
+          envId,
+          v.key,
+          v.value ?? '',
+          null,
+          1,
+          0,
+          v.value ?? null,
+        )
+      }
+    }
+  }
+
   function processItems(items: PostmanItem[], parentFolderId: string | null): void {
     for (const item of items) {
       const isFolder = Array.isArray(item.item) && !item.request
@@ -1693,6 +1759,41 @@ export function exportAsPostman(projectId: string): string {
     }
   }
 
+  // Pick the variable source: the project's active environment, falling back
+  // to the first one created. Globals are intentionally excluded — they belong
+  // to a different scope and round-tripping them as collection-level vars
+  // would leak across collections.
+  const envRow =
+    (db
+      .prepare(
+        `SELECT id FROM environments WHERE project_id = ? AND is_active = 1
+         ORDER BY created_at ASC LIMIT 1`,
+      )
+      .get(projectId) as { id: string } | undefined) ??
+    (db
+      .prepare(
+        `SELECT id FROM environments WHERE project_id = ?
+         ORDER BY created_at ASC LIMIT 1`,
+      )
+      .get(projectId) as { id: string } | undefined)
+
+  let variables: PostmanVariable[] | undefined
+  if (envRow) {
+    const rows = db
+      .prepare(
+        `SELECT key, value FROM environment_variables WHERE environment_id = ?
+         ORDER BY rowid ASC`,
+      )
+      .all(envRow.id) as Array<{ key: string; value: string | null }>
+    if (rows.length > 0) {
+      variables = rows.map((r) => ({
+        key: r.key,
+        value: r.value ?? '',
+        type: 'string',
+      }))
+    }
+  }
+
   const collection: PostmanCollection = {
     info: {
       name: project.name,
@@ -1701,6 +1802,7 @@ export function exportAsPostman(projectId: string): string {
     },
     item: rootItems,
   }
+  if (variables) collection.variable = variables
 
   return JSON.stringify(collection, null, 2)
 }

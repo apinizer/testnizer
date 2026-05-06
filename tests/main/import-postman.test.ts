@@ -64,6 +64,25 @@ beforeEach(async () => {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+    CREATE TABLE environments (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      project_id TEXT,
+      name TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE environment_variables (
+      id TEXT PRIMARY KEY,
+      environment_id TEXT NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL DEFAULT '',
+      description TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      secret INTEGER NOT NULL DEFAULT 0,
+      initial_value TEXT
+    );
   `)
   // seed a project to import into
   memDb
@@ -406,11 +425,49 @@ describe('Postman round-trip: import → exportAsPostman → re-import', () => {
     expect(allEvents.some((e) => e.listen === 'test')).toBe(true)
   })
 
-  it('BUG: collection-level variable[] is LOST on round-trip', async () => {
+  it('emits collection-level variable[] sourced from active project env', async () => {
     await importPostman('proj-1', JSON.stringify(buildRealisticCollection()))
     const exported = JSON.parse(exportAsPostman('proj-1'))
-    // Documents the regression: exporter should emit variable[].
-    expect(exported.variable).toBeUndefined()
+    expect(Array.isArray(exported.variable)).toBe(true)
+    const keys = (exported.variable as Array<{ key: string }>).map((v) => v.key).sort()
+    expect(keys).toEqual(['apiVersion', 'baseUrl'])
+    const baseUrl = (exported.variable as Array<{ key: string; value: string }>).find(
+      (v) => v.key === 'baseUrl',
+    )
+    expect(baseUrl?.value).toBe('https://api.example.com')
+  })
+
+  it('round-trips collection.variable[] losslessly (import → export → import)', async () => {
+    await importPostman('proj-1', JSON.stringify(buildRealisticCollection()))
+    const exported = exportAsPostman('proj-1')
+
+    memDb
+      .prepare(
+        `INSERT INTO projects (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run('proj-rt', 'ws-1', 'Round-trip', Date.now(), Date.now())
+    const round = await importPostman('proj-rt', exported)
+    expect(round.success).toBe(true)
+    expect(round.suggestedEnvVars).toEqual({
+      baseUrl: 'https://api.example.com',
+      apiVersion: 'v1',
+    })
+  })
+
+  it('reuses a single imported environment when the same collection is re-imported', async () => {
+    const collection = JSON.stringify(buildRealisticCollection())
+    await importPostman('proj-1', collection)
+    await importPostman('proj-1', collection)
+
+    const envs = memDb
+      .prepare('SELECT id FROM environments WHERE project_id = ?')
+      .all('proj-1') as Array<{ id: string }>
+    expect(envs).toHaveLength(1)
+    const vars = memDb
+      .prepare('SELECT key FROM environment_variables WHERE environment_id = ?')
+      .all(envs[0].id) as Array<{ key: string }>
+    // No duplicates — imported variables were replaced, not appended.
+    expect(vars.map((v) => v.key).sort()).toEqual(['apiVersion', 'baseUrl'])
   })
 
   it('preserves form-data file rows on round-trip (type:file + src)', async () => {
