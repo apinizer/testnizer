@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import type { KeyValuePair, ApiResponse } from '../types'
 import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
+import { useEnvironmentStore } from './environment.store'
+import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 
 function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
@@ -201,12 +203,20 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     responseStore.clearResponse()
     if (activeTabId) tabsStore.markLoading(activeTabId, true)
 
+    const activeVars = useEnvironmentStore.getState().getActiveVariables()
+    const resolvedAddress = resolveVariables(address, activeVars)
+    const resolvedBody = resolveVariables(requestBody, activeVars)
+    const resolvedMetadata = resolveKeyValuePairs(
+      metadata.filter((m) => m.enabled && m.key.trim()),
+      activeVars,
+    )
+
     try {
       const result = await window.api?.request?.send({
         method: 'GRPC_CALL',
-        url: `${useTls ? 'grpcs' : 'grpc'}://${address}/${selectedService}/${selectedMethod}`,
-        headers: metadata.filter((m) => m.enabled && m.key.trim()),
-        body: { type: 'json', content: requestBody },
+        url: `${useTls ? 'grpcs' : 'grpc'}://${resolvedAddress}/${selectedService}/${selectedMethod}`,
+        headers: resolvedMetadata,
+        body: { type: 'json', content: resolvedBody },
       })
 
       if (result?.success && result.data) {

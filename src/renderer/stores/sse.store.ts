@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import type { KeyValuePair, SseEvent } from '../types'
+import { useEnvironmentStore } from './environment.store'
+import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 
 function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
@@ -70,16 +72,25 @@ export const useSseStore = create<SseStore>((set, get) => ({
 
     set({ connectionState: 'connecting', errorMessage: null })
 
-    try {
-      const headers = customHeaders.filter((h) => h.enabled && h.key.trim())
-      if (lastEventId.trim()) {
-        headers.push({ id: makeId(), key: 'Last-Event-ID', value: lastEventId, enabled: true })
-      }
+    const activeVars = useEnvironmentStore.getState().getActiveVariables()
+    const resolvedUrl = resolveVariables(url, activeVars)
+    const resolvedLastEventId = resolveVariables(lastEventId, activeVars)
+    const baseHeaders = customHeaders.filter((h) => h.enabled && h.key.trim())
+    const resolvedHeaders = resolveKeyValuePairs(baseHeaders, activeVars)
+    if (resolvedLastEventId.trim()) {
+      resolvedHeaders.push({
+        id: makeId(),
+        key: 'Last-Event-ID',
+        value: resolvedLastEventId,
+        enabled: true,
+      } as KeyValuePair)
+    }
 
+    try {
       const result = await window.api?.request?.send({
         method: 'SSE_CONNECT',
-        url,
-        headers,
+        url: resolvedUrl,
+        headers: resolvedHeaders,
       })
 
       if (result?.success && result.data) {

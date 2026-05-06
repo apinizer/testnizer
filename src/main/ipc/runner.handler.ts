@@ -643,6 +643,32 @@ function resolveRequestOptions(
     } as HttpRequestOptions['body']
   }
 
+  if (resolved.auth) {
+    const a = resolved.auth as AuthConfig
+    const r = (s: string | undefined) =>
+      s === undefined ? s : resolveRunnerVariables(s, vars)
+    const next: AuthConfig = { type: a.type }
+    if (a.basic) next.basic = { username: r(a.basic.username) ?? '', password: r(a.basic.password) ?? '' }
+    if (a.bearer) next.bearer = { token: r(a.bearer.token) ?? '', prefix: r(a.bearer.prefix) }
+    if (a.apiKey) next.apiKey = { key: r(a.apiKey.key) ?? '', value: r(a.apiKey.value) ?? '', in: a.apiKey.in }
+    if (a.digest) next.digest = { username: r(a.digest.username) ?? '', password: r(a.digest.password) ?? '' }
+    if (a.ntlm) next.ntlm = {
+      username: r(a.ntlm.username) ?? '',
+      password: r(a.ntlm.password) ?? '',
+      domain: r(a.ntlm.domain),
+      workstation: r(a.ntlm.workstation),
+    }
+    if (a.hawk) next.hawk = { authId: r(a.hawk.authId) ?? '', authKey: r(a.hawk.authKey) ?? '', algorithm: a.hawk.algorithm }
+    if (a.awsSignature) next.awsSignature = {
+      accessKey: r(a.awsSignature.accessKey) ?? '',
+      secretKey: r(a.awsSignature.secretKey) ?? '',
+      region: r(a.awsSignature.region) ?? '',
+      service: r(a.awsSignature.service) ?? '',
+    }
+    if (a.oauth2) next.oauth2 = { token: r(a.oauth2.token) }
+    resolved.auth = next as HttpRequestOptions['auth']
+  }
+
   return resolved
 }
 

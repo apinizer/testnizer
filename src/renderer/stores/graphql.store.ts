@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import type { KeyValuePair, ApiResponse, SseEvent } from '../types'
 import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
+import { useEnvironmentStore } from './environment.store'
+import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 
 function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
@@ -198,9 +200,18 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     responseStore.clearResponse()
     if (activeTabId) tabsStore.markLoading(activeTabId, true)
 
+    const activeVars = useEnvironmentStore.getState().getActiveVariables()
+    const resolvedUrl = resolveVariables(url, activeVars)
+    const resolvedQuery = resolveVariables(query, activeVars)
+    const resolvedVarsRaw = resolveVariables(variables || '', activeVars)
+    const resolvedHeaders = resolveKeyValuePairs(
+      headers.filter((h) => h.enabled && h.key.trim()),
+      activeVars,
+    )
+
     let parsedVars: Record<string, unknown> = {}
     try {
-      parsedVars = JSON.parse(variables || '{}')
+      parsedVars = JSON.parse(resolvedVarsRaw || '{}')
     } catch {
       // ignore parse errors, send empty
     }
@@ -208,11 +219,11 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     try {
       const result = await window.api?.request?.send({
         method: 'POST',
-        url,
-        headers: headers.filter((h) => h.enabled && h.key.trim()),
+        url: resolvedUrl,
+        headers: resolvedHeaders,
         body: {
           type: 'json',
-          content: JSON.stringify({ query, variables: parsedVars }),
+          content: JSON.stringify({ query: resolvedQuery, variables: parsedVars }),
         },
       })
 
@@ -271,11 +282,18 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
 
     set({ isIntrospecting: true, introspectError: null })
 
+    const introVars = useEnvironmentStore.getState().getActiveVariables()
+    const introUrl = resolveVariables(url, introVars)
+    const introHeaders = resolveKeyValuePairs(
+      headers.filter((h) => h.enabled && h.key.trim()),
+      introVars,
+    )
+
     try {
       const result = await window.api?.request?.send({
         method: 'POST',
-        url,
-        headers: headers.filter((h) => h.enabled && h.key.trim()),
+        url: introUrl,
+        headers: introHeaders,
         body: {
           type: 'json',
           content: JSON.stringify({ query: INTROSPECTION_QUERY }),
@@ -403,11 +421,15 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
 
     set({ subscriptionState: 'connecting', subscriptionEvents: [] })
 
+    const subVars = useEnvironmentStore.getState().getActiveVariables()
+    const subUrl = resolveVariables(url, subVars)
+    const subQuery = resolveVariables(query, subVars)
+
     try {
       const result = await window.api?.request?.send({
         method: 'GQL_SUBSCRIBE',
-        url,
-        body: { type: 'json', content: JSON.stringify({ query }) },
+        url: subUrl,
+        body: { type: 'json', content: JSON.stringify({ query: subQuery }) },
       })
 
       if (result?.success) {

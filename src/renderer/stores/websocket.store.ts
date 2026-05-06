@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import type { WsMessage, KeyValuePair } from '../types'
+import { useEnvironmentStore } from './environment.store'
+import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 
 function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
@@ -59,11 +61,18 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
 
     set({ connectionState: 'connecting', errorMessage: null })
 
+    const activeVars = useEnvironmentStore.getState().getActiveVariables()
+    const resolvedUrl = resolveVariables(url, activeVars)
+    const resolvedHeaders = resolveKeyValuePairs(
+      customHeaders.filter((h) => h.enabled && h.key.trim()),
+      activeVars,
+    )
+
     try {
       const result = await window.api?.request?.send({
         method: 'WS_CONNECT',
-        url,
-        headers: customHeaders.filter((h) => h.enabled && h.key.trim()),
+        url: resolvedUrl,
+        headers: resolvedHeaders,
       })
 
       if (result?.success && result.data) {
@@ -124,10 +133,13 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
       }
     }
 
+    const activeVars = useEnvironmentStore.getState().getActiveVariables()
+    const resolvedContent = resolveVariables(composerContent, activeVars)
+
     const sentMsg: WsMessage = {
       id: makeId(),
       direction: 'sent',
-      content: composerContent,
+      content: resolvedContent,
       contentType,
       timestamp: Date.now(),
     }
@@ -138,7 +150,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
       await window.api?.request?.send({
         method: 'WS_SEND',
         url: `__internal__:ws:send:${connectionId}`,
-        body: { type: 'text', content: composerContent },
+        body: { type: 'text', content: resolvedContent },
       })
     } catch {
       // Demo mode: echo the message back
@@ -146,7 +158,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
         get().addMessage({
           id: makeId(),
           direction: 'received',
-          content: composerContent,
+          content: resolvedContent,
           contentType,
           timestamp: Date.now(),
         })

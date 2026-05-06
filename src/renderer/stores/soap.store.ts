@@ -9,6 +9,8 @@ import type {
 } from '../types'
 import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
+import { useEnvironmentStore } from './environment.store'
+import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 
 function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
@@ -318,21 +320,38 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     const port = get().getSelectedPort()
     const endpointUrl = port?.endpointUrl || parsedWsdl?.endpointUrl || get().endpointUrl || ''
 
+    const activeVars = useEnvironmentStore.getState().getActiveVariables()
+    const resolvedUrl = resolveVariables(endpointUrl, activeVars)
+    const resolvedXml = resolveVariables(rawXml, activeVars)
+    const resolvedSoapAction = resolveVariables(op?.soapAction || '', activeVars)
+    const resolvedHeaders = resolveKeyValuePairs(
+      [
+        { key: 'Content-Type', value: 'text/xml; charset=utf-8', enabled: true },
+        { key: 'SOAPAction', value: resolvedSoapAction, enabled: true },
+      ],
+      activeVars,
+    )
+    const resolvedWsseUsername = resolveVariables(
+      wsSecurity.usernameToken?.username || wsSecurity.username || '',
+      activeVars,
+    )
+    const resolvedWssePassword = resolveVariables(
+      wsSecurity.usernameToken?.password || wsSecurity.password || '',
+      activeVars,
+    )
+
     try {
       const result = await window.api?.request?.send({
         method: 'POST',
-        url: endpointUrl,
-        headers: [
-          { id: '1', key: 'Content-Type', value: 'text/xml; charset=utf-8', enabled: true },
-          { id: '2', key: 'SOAPAction', value: op?.soapAction || '', enabled: true },
-        ],
-        body: { type: 'xml', content: rawXml },
+        url: resolvedUrl,
+        headers: resolvedHeaders,
+        body: { type: 'xml', content: resolvedXml },
         auth: wsSecurity.enabled
           ? {
               type: 'basic',
               basic: {
-                username: wsSecurity.usernameToken?.username || wsSecurity.username || '',
-                password: wsSecurity.usernameToken?.password || wsSecurity.password || '',
+                username: resolvedWsseUsername,
+                password: resolvedWssePassword,
               },
             }
           : undefined,

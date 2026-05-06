@@ -13,7 +13,7 @@ import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
 import { useConsoleStore } from './console.store'
-import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
+import { resolveVariables, resolveKeyValuePairs, resolveAuth } from '../lib/variable-resolver'
 import { runAssertions, runScript, createPmApi } from '../lib/test-runner'
 
 function makeId(): string {
@@ -238,6 +238,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     const resolvedBody = body.content
       ? { ...body, content: resolveVariables(body.content, activeVars) }
       : body
+    const resolvedAuth = resolveAuth(auth, activeVars)
 
     responseStore.setLoading(true)
     responseStore.clearResponse()
@@ -270,7 +271,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         params: resolvedParams as unknown[],
         headers: resolvedHeaders as unknown[],
         body: resolvedBody,
-        auth,
+        auth: resolvedAuth,
         timeout: netSettings.requestTimeout,
         sslVerification: netSettings.sslVerification,
         followRedirects: netSettings.followRedirects,
