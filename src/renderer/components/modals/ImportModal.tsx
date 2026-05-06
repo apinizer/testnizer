@@ -353,6 +353,12 @@ export default function ImportModal() {
           content: pendingFileContent || '',
           folderId,
         }) as { success: boolean; error?: string } | undefined
+      } else if (fmtId === 'soapui') {
+        importResult = await window.api?.importExport?.importSoapUi({
+          projectId: pid,
+          content: pendingFileContent || '',
+          folderId,
+        }) as { success: boolean; error?: string } | undefined
       } else {
         setImportError('Import not yet implemented for this format')
         setImporting(false)

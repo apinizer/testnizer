@@ -359,6 +359,11 @@ interface ImportExportApi {
     wsdlContent?: string
     parsedWsdl?: WsdlParseResult
   }): Promise<IpcResult<ImportResult>>
+  importSoapUi(payload: {
+    projectId: string
+    content: string
+    folderId?: string | null
+  }): Promise<IpcResult<ImportResult>>
   importRaml(payload: {
     projectId: string
     content: string

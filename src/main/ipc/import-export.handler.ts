@@ -328,6 +328,26 @@ export function registerImportExportHandlers(): void {
     },
   )
 
+  // ─── SoapUI / ReadyAPI Project Import ───────────────────
+  ipcMain.handle(
+    'import:soapui',
+    async (
+      _event,
+      payload: {
+        projectId: string
+        content: string
+        folderId?: string | null
+      },
+    ) => {
+      try {
+        const result = await importSoapUi(payload)
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
+
   // ─── RAML 1.0 Import ────────────────────────────────────
   ipcMain.handle(
     'import:raml',
