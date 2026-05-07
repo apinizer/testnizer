@@ -583,8 +583,10 @@ describe('OpenAPI examples', () => {
 // ─── $ref schemas ──────────────────────────────────────────────
 
 describe('OpenAPI $ref handling', () => {
-  it('falls back to schema (with $ref) when no example is provided', async () => {
-    // Spec without an `example` field — body should contain the raw $ref.
+  it('falls back to a generated JSON example when no example is provided', async () => {
+    // Spec without an `example` field — body should contain a sample value
+    // generated from the dereferenced schema (no raw $ref dump). This behavior
+    // landed in v1.0.5 because raw schema JSON is unhelpful as a starter body.
     const projectId = randomUUID()
     seedProject(projectId)
     const noExampleSpec = {
@@ -617,8 +619,12 @@ describe('OpenAPI $ref handling', () => {
       .prepare('SELECT request_schema FROM endpoints WHERE name = ?')
       .get('Create widget') as { request_schema: string }
     const schema = JSON.parse(createWidget.request_schema)
-    expect(schema.body.content).toContain('$ref')
-    expect(schema.body.content).toContain('#/components/schemas/Widget')
+    // Body content must be valid JSON (parseable) — not a raw schema dump.
+    const body = JSON.parse(schema.body.content)
+    expect(body).toHaveProperty('id')
+    expect(typeof body.id).toBe('number')
+    // $ref should be dereferenced, not echoed.
+    expect(schema.body.content).not.toContain('$ref')
   })
 
   it('does not crash on deeply nested $refs / circular schemas', async () => {
