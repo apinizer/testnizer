@@ -86,8 +86,10 @@
     "js-yaml": "^4.1.0",
     "jsonpath-plus": "^10.4.0",
     "monaco-editor": "^0.55.1",
+    "react-markdown": "^10.1.0",
     "readable-stream": "^4.7.0",
     "readdir-glob": "^3.0.0",
+    "remark-gfm": "^4.0.1",
     "simple-git": "^3.35.2",
     "soap": "^1.9.0",
     "tar-stream": "^3.2.0",
@@ -184,6 +186,14 @@
         "to": "resources/",
         "filter": [
           "**/*"
+        ]
+      },
+      {
+        "from": "docs/legal/",
+        "to": "docs/legal/",
+        "filter": [
+          "eula.md",
+          "privacy-policy.md"
         ]
       }
     ],

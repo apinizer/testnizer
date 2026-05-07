@@ -30,6 +30,14 @@ const api = {
     openExternal: (url: string): Promise<unknown> => ipcRenderer.invoke('app:openExternal', url),
   },
 
+  // ─── EULA / Privacy consent gate ────────────────────────
+  eula: {
+    state: (): Promise<unknown> => ipcRenderer.invoke('eula:state'),
+    accept: (): Promise<unknown> => ipcRenderer.invoke('eula:accept'),
+    decline: (): Promise<unknown> => ipcRenderer.invoke('eula:decline'),
+    reset: (): Promise<unknown> => ipcRenderer.invoke('eula:reset'),
+  },
+
   // ─── Dialog ─────────────────────────────────────────────
   dialog: {
     openFile: (options?: {
@@ -497,8 +505,7 @@ const api = {
   // ─── AI Chat ────────────────────────────────────────────────
   aiChat: {
     send: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('aichat:send', payload),
-    cancel: (messageId: string): Promise<unknown> =>
-      ipcRenderer.invoke('aichat:cancel', messageId),
+    cancel: (messageId: string): Promise<unknown> => ipcRenderer.invoke('aichat:cancel', messageId),
     onChunk: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)

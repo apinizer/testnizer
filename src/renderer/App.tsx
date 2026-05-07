@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import AppShell from './components/layout/AppShell'
+import EulaConsentGate from './components/eula/EulaConsentGate'
 import { useUIStore } from './stores/ui.store'
 import { initUpdaterListeners } from './stores/updater.store'
 import { initConsoleListeners } from './stores/console.store'
@@ -15,7 +16,11 @@ function App(): React.JSX.Element {
       cleanupConsole()
     }
   }, [hydrateFromSettings])
-  return <AppShell />
+  return (
+    <EulaConsentGate>
+      <AppShell />
+    </EulaConsentGate>
+  )
 }
 
 export default App

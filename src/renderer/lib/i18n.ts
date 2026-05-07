@@ -13,6 +13,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'header.about': 'About',
 
     // About modal
+    'about.title': 'About',
+    'about.version': 'Version',
     'about.homepage': 'Homepage',
     'about.thirdPartyLicenses': 'Third-party Licenses',
     'about.privacyPolicy': 'Privacy Policy',
@@ -21,6 +23,21 @@ const translations: Record<Locale, Record<string, string>> = {
     'about.licensesLoading': 'Loading licenses…',
     'about.licensesError': 'Failed to load license list',
     'about.licensesCount': '{count} packages',
+    'about.consentAccepted': 'Legal terms accepted on {date} (v{version})',
+
+    // EULA / Privacy consent gate
+    'eula.welcome': 'Welcome to Testnizer',
+    'eula.intro':
+      'Please review and accept the End User License Agreement and Privacy Policy to continue.',
+    'eula.tabEula': 'End User License Agreement',
+    'eula.tabPrivacy': 'Privacy Policy',
+    'eula.checkbox': 'I have read and accept the End User License Agreement and Privacy Policy',
+    'eula.accept': 'Accept and Continue',
+    'eula.decline': 'Decline and Quit',
+    'eula.declineConfirm': 'Declining closes Testnizer. Are you sure you want to continue?',
+    'eula.declineQuit': 'Quit Testnizer',
+    'eula.cancel': 'Cancel',
+    'eula.lastUpdated': 'Last updated: {date}',
 
     // Welcome panels
     // Tests panel
@@ -832,6 +849,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'header.about': 'Hakkında',
 
     // About modal
+    'about.title': 'Hakkında',
+    'about.version': 'Sürüm',
     'about.homepage': 'Web sitesi',
     'about.thirdPartyLicenses': 'Üçüncü Taraf Lisansları',
     'about.privacyPolicy': 'Gizlilik Politikası',
@@ -840,6 +859,23 @@ const translations: Record<Locale, Record<string, string>> = {
     'about.licensesLoading': 'Lisanslar yükleniyor…',
     'about.licensesError': 'Lisans listesi yüklenemedi',
     'about.licensesCount': '{count} paket',
+    'about.consentAccepted': 'Yasal şartlar {date} tarihinde kabul edildi (v{version})',
+
+    // EULA / Gizlilik onay ekranı
+    'eula.welcome': "Testnizer'a Hoş Geldiniz",
+    'eula.intro':
+      "Devam etmek için lütfen Son Kullanıcı Lisans Sözleşmesi ve Gizlilik Politikası'nı inceleyip kabul edin.",
+    'eula.tabEula': 'Son Kullanıcı Lisans Sözleşmesi',
+    'eula.tabPrivacy': 'Gizlilik Politikası',
+    'eula.checkbox':
+      "Son Kullanıcı Lisans Sözleşmesi ve Gizlilik Politikası'nı okudum ve kabul ediyorum",
+    'eula.accept': 'Kabul Et ve Devam Et',
+    'eula.decline': 'Reddet ve Kapat',
+    'eula.declineConfirm':
+      'Reddederseniz Testnizer kapanacak. Devam etmek istediğinizden emin misiniz?',
+    'eula.declineQuit': "Testnizer'ı Kapat",
+    'eula.cancel': 'İptal',
+    'eula.lastUpdated': 'Son güncelleme: {date}',
 
     // Welcome panels
     // Tests panel
