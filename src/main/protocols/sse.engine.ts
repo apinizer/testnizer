@@ -1,4 +1,4 @@
-import EventSource from 'eventsource'
+import { EventSource, type ErrorEvent, type EventSourceFetchInit } from 'eventsource'
 import { randomUUID } from 'crypto'
 import { BrowserWindow } from 'electron'
 import { applyDefaultUserAgent } from '../lib/user-agent'
@@ -15,7 +15,7 @@ export interface SseConnectOptions {
   /**
    * HTTP method. Defaults to `'GET'`. When set to anything other than `GET`
    * (or when `body` is provided) the engine uses a manual fetch + streaming
-   * reader path, since `eventsource@2` is GET-only.
+   * reader path, since `eventsource@3` is GET-only.
    */
   method?: SseHttpMethod
   /**
@@ -67,17 +67,25 @@ const HTTP_STATUS_HINTS: Record<number, string> = {
 }
 
 /**
- * `eventsource@2` exposes errors as an `Event`-like object carrying optional
- * `status` (HTTP code from the response) and `message` (HTTP status text OR a
- * lower-level socket error like "connect ECONNREFUSED 127.0.0.1:9"). We squash
- * both into a single user-facing string and, when present, the numeric status.
+ * `eventsource@3` exposes errors as an `ErrorEvent` carrying optional `code`
+ * (HTTP status from the failed handshake) and `message` (HTTP status text OR a
+ * lower-level socket error like "connect ECONNREFUSED 127.0.0.1:9"). For
+ * historical reasons (and the manual fetch path that synthesizes `status`) we
+ * accept either field and squash them into a single user-facing string and,
+ * when present, the numeric status.
  */
 export function describeSseError(err: {
   status?: unknown
+  code?: unknown
   message?: unknown
   data?: unknown
 }): { message: string; httpStatus?: number } {
-  const rawStatus = typeof err.status === 'number' ? err.status : undefined
+  const rawStatus =
+    typeof err.status === 'number'
+      ? err.status
+      : typeof err.code === 'number'
+        ? err.code
+        : undefined
   const rawMessage =
     typeof err.message === 'string' && err.message.trim()
       ? err.message.trim()
@@ -148,8 +156,10 @@ function sendEventToRenderer(windowId: number, event: SseEventPayload): void {
 
 /**
  * Connects to an SSE endpoint. Dispatches to one of two implementations:
- *   - **EventSource path** (default): plain GET, no body — uses `eventsource@2`
- *     for built-in auto-reconnect + Last-Event-ID semantics.
+ *   - **EventSource path** (default): plain GET, no body — uses `eventsource@3`
+ *     for built-in auto-reconnect + Last-Event-ID semantics. All named SSE
+ *     events (e.g. Wikimedia's `recentchange`) are forwarded to the renderer
+ *     via a `dispatchEvent` interception, not just the default `message` type.
  *   - **Fetch path**: any non-GET method, or any method with a body —
  *     manual `fetch` + streaming reader. No auto-reconnect (caller handles).
  */
@@ -172,23 +182,33 @@ function connectEventSource(
   return new Promise((resolve, reject) => {
     const connectionId = randomUUID()
 
-    const initDict: EventSource.EventSourceInitDict = {
-      headers: { ...(options.headers ?? {}) },
-      withCredentials: options.withCredentials ?? false
-    }
+    // `eventsource@3` no longer accepts a `headers` field on the init dict.
+    // Custom request headers must be merged in via a custom `fetch`
+    // implementation that overrides `globalThis.fetch`. We assemble the
+    // caller's headers (plus Last-Event-ID + default User-Agent) once here
+    // and let the wrapper splice them onto every (re)connect attempt.
+    const customHeaders: Record<string, string> = { ...(options.headers ?? {}) }
+    if (options.lastEventId) customHeaders['Last-Event-ID'] = options.lastEventId
+    applyDefaultUserAgent(customHeaders)
 
-    // Include Last-Event-ID header if provided
-    if (options.lastEventId) {
-      const headers = initDict.headers as Record<string, string>
-      headers['Last-Event-ID'] = options.lastEventId
+    const wrappedFetch = (
+      url: string | URL,
+      init: EventSourceFetchInit
+    ): Promise<Response> => {
+      // `init.headers` is a plain object literal in v3; merge ours on top so
+      // the library's defaults (Accept, Last-Event-ID auto-bookkeeping after
+      // reconnects) win when there's a collision. Caller-provided values for
+      // these headers are still honored on the first connect.
+      const merged: Record<string, string> = { ...customHeaders, ...init.headers }
+      return fetch(url, { ...init, headers: merged } as RequestInit)
     }
-
-    // Inject default User-Agent unless the caller supplied one (any case).
-    applyDefaultUserAgent(initDict.headers as Record<string, string>)
 
     let eventSource: EventSource
     try {
-      eventSource = new EventSource(options.url, initDict)
+      eventSource = new EventSource(options.url, {
+        withCredentials: options.withCredentials ?? false,
+        fetch: wrappedFetch,
+      })
     } catch (err) {
       reject(err instanceof Error ? err : new Error(String(err)))
       return
@@ -230,26 +250,35 @@ function connectEventSource(
       })
     }
 
-    eventSource.onmessage = (event: MessageEvent) => {
-      sendEventToRenderer(windowId, {
-        connectionId,
-        type: 'event',
-        eventType: 'message',
-        data: typeof event.data === 'string' ? event.data : String(event.data),
-        id: event.lastEventId || undefined,
-        timestamp: Date.now()
-      })
+    // `eventsource@3` dispatches a `MessageEvent` whose `type` is the named
+    // SSE `event:` field (or `'message'` when omitted). Intercepting
+    // `dispatchEvent` is the only zero-config way to capture *every* event
+    // type without enumerating them up-front — Wikimedia's recentchange
+    // stream, for example, emits `event: recentchange` lines that the
+    // previous `eventsource@2` `onmessage`-only path silently dropped.
+    const originalDispatch = eventSource.dispatchEvent.bind(eventSource)
+    eventSource.dispatchEvent = (evt: Event): boolean => {
+      if (evt instanceof MessageEvent) {
+        sendEventToRenderer(windowId, {
+          connectionId,
+          type: 'event',
+          eventType: evt.type || 'message',
+          data: typeof evt.data === 'string' ? evt.data : String(evt.data),
+          id: evt.lastEventId || undefined,
+          timestamp: Date.now(),
+        })
+      }
+      return originalDispatch(evt)
     }
 
-    eventSource.onerror = (err: MessageEvent) => {
+    eventSource.onerror = (err: ErrorEvent) => {
       clearTimeout(timeout)
 
-      // `eventsource@2` types `onerror` as `MessageEvent`, but at runtime it
-      // actually emits a plain `Event` augmented with `{status, message}`
-      // for HTTP failures, or `{message}` for transport errors. Cast and
-      // read defensively.
-      const raw = err as unknown as { status?: unknown; message?: unknown; data?: unknown }
-      const { message, httpStatus } = describeSseError(raw)
+      // `eventsource@3` emits `ErrorEvent { code?: number, message?: string }`.
+      const { message, httpStatus } = describeSseError({
+        code: err.code,
+        message: err.message,
+      })
 
       sendEventToRenderer(windowId, {
         connectionId,

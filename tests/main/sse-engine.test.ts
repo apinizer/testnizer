@@ -2,7 +2,7 @@
  * Integration tests for `src/main/protocols/sse.engine.ts`.
  *
  * Spins up an in-process Node `http` SSE server and drives the engine via the
- * real `eventsource@2` client. `electron`'s `BrowserWindow` is mocked so we
+ * real `eventsource@3` client. `electron`'s `BrowserWindow` is mocked so we
  * intercept `sendEventToRenderer` payloads without booting Electron.
  */
 
@@ -133,18 +133,26 @@ describe('sse.engine — message delivery', () => {
     disconnect(info.connectionId)
   })
 
-  it('does NOT surface named events through onmessage (eventsource@2 limitation)', async () => {
-    // The engine wires only `onmessage`, which fires solely for the default
-    // event type. Pinning this so a future EventSource upgrade or
-    // addEventListener-based fix is a deliberate change.
+  it('forwards named SSE events to the renderer (eventsource@3 dispatchEvent capture)', async () => {
+    // Wikimedia-style streams emit `event: recentchange` lines. With the
+    // engine's `dispatchEvent` interception we now surface every named event
+    // alongside the default `message` type, with the original event name
+    // preserved on `eventType`.
     const info = await connect({ url: srv.url + '/' }, 1)
     srv.push('{"x":1}', { eventType: 'recentchange', id: 'rc-1' })
     srv.push('default-payload', { id: 'd-1' })
 
     await waitFor(() => sseEvents().some((e) => e.type === 'event' && e.data === 'default-payload'))
     const eventPayloads = sseEvents().filter((e) => e.type === 'event')
-    expect(eventPayloads.some((e) => e.data === 'default-payload')).toBe(true)
-    expect(eventPayloads.some((e) => e.data === '{"x":1}')).toBe(false)
+
+    const named = eventPayloads.find((e) => e.data === '{"x":1}')
+    expect(named).toBeDefined()
+    expect(named!.eventType).toBe('recentchange')
+    expect(named!.id).toBe('rc-1')
+
+    const defaultEvt = eventPayloads.find((e) => e.data === 'default-payload')
+    expect(defaultEvt).toBeDefined()
+    expect(defaultEvt!.eventType).toBe('message')
 
     disconnect(info.connectionId)
   })
@@ -266,7 +274,7 @@ describe('sse.engine — connection timeout branch', () => {
 
 // ─── Fetch path: non-GET methods + request body ─────────────────
 //
-// `eventsource@2` is GET-only and won't accept a body, so the engine routes
+// `eventsource@3` is GET-only and won't accept a body, so the engine routes
 // any non-GET method (or any body) through a manual `fetch` + ReadableStream
 // reader. These tests spin up a tiny SSE server that asserts the inbound
 // request shape (method, headers, body) before flushing one SSE event.

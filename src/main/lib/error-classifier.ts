@@ -184,7 +184,7 @@ interface AxiosLikeError {
 
 /**
  * Best-effort transport error classifier. Accepts axios errors, plain `Error`
- * objects, and the loosely-typed `Event`-like payloads from `eventsource@2`.
+ * objects, and the loosely-typed `Event`-like payloads from `eventsource@3`.
  *
  * The message format is `<prefix> — <raw>` so the original error text is
  * always preserved (helps with diagnosis), while the prefix turns the raw
