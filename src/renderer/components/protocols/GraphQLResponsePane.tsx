@@ -3,6 +3,7 @@ import { useGraphQLStore } from '../../stores/graphql.store'
 import { useResponseStore } from '../../stores/response.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import GraphQLSchemaExplorer from './GraphQLSchemaExplorer'
+import { extractGraphQLErrors } from '../../lib/graphql-errors'
 
 type TabId = 'response' | 'schema'
 
@@ -91,6 +92,10 @@ function ResponseTab({
     )
   }
 
+  // GraphQL responses can return HTTP 200 with an `errors[]` array — surface
+  // those as a banner above the body so users don't miss them buried in JSON.
+  const gqlErrors = extractGraphQLErrors(response.body ?? '')
+
   return (
     <div className="flex h-full flex-col">
       {/* Meta bar */}
@@ -118,6 +123,38 @@ function ResponseTab({
         )}
       </div>
 
+      {/* GraphQL-level errors banner — shown for HTTP-200 responses that
+          carry an `errors[]` array. Listed individually so each `path` and
+          `message` is visible at a glance without scrolling the body. */}
+      {gqlErrors.length > 0 && (
+        <div
+          className="shrink-0 border-b border-[var(--border)] px-3.5 py-2"
+          style={{
+            background: 'rgba(239,68,68,0.08)',
+            borderLeft: '3px solid #cc2200',
+          }}
+        >
+          <div className="font-medium" style={{ color: '#cc2200' }}>
+            GraphQL errors ({gqlErrors.length})
+          </div>
+          <ul className="mt-1 space-y-0.5">
+            {gqlErrors.slice(0, 5).map((err, i) => (
+              <li key={i} className="text-[var(--text)]">
+                <span className="font-mono text-[var(--muted)]">
+                  {err.path ? `${err.path}: ` : ''}
+                </span>
+                {err.message}
+              </li>
+            ))}
+            {gqlErrors.length > 5 && (
+              <li className="text-[var(--muted)] italic">
+                +{gqlErrors.length - 5} more — see body
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
+
       {/* Body */}
       <div className="flex-1 min-h-0">
         <MonacoWrapper
@@ -130,3 +167,4 @@ function ResponseTab({
     </div>
   )
 }
+

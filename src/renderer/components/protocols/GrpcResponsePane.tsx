@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import { Trash2 } from 'lucide-react'
 import { useGrpcStore } from '../../stores/grpc.store'
 import { useResponseStore } from '../../stores/response.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
@@ -86,10 +85,26 @@ function UnaryView({
   }
 
   if (response.error && !response.body) {
+    // gRPC error: response.status carries the gRPC status code (mapped from
+    // grpcStatus by grpc.store), response.statusText carries the details
+    // string. Surface a status badge alongside the message so the
+    // human-readable code (UNAVAILABLE / UNAUTHENTICATED / ...) the engine
+    // produced is easy to read.
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 bg-[var(--white)] p-4">
-        <span className="font-medium text-red-500">Error</span>
-        <span className="text-center text-[var(--muted)]">{response.error}</span>
+        <span className="font-medium text-red-500">
+          {typeof response.status === 'number'
+            ? `gRPC error (code ${response.status})`
+            : 'gRPC error'}
+        </span>
+        <span className="max-w-[600px] text-center text-[var(--muted)]">
+          {response.error}
+        </span>
+        {response.statusText && response.statusText !== response.error && (
+          <span className="max-w-[600px] text-center text-[var(--hint)]">
+            {response.statusText}
+          </span>
+        )}
       </div>
     )
   }

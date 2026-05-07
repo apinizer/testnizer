@@ -3,6 +3,7 @@ import * as protoLoader from '@grpc/proto-loader'
 import { randomUUID } from 'crypto'
 import { performance } from 'perf_hooks'
 import { BrowserWindow } from 'electron'
+import { describeGrpcStatus } from '../lib/error-classifier'
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -531,7 +532,7 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
               requestId,
               protocol: 'grpc',
               timing: { total: Math.round(endTime - startTime) },
-              error: err.message,
+              error: describeGrpcStatus(err.code, err.details ?? err.message).message,
               grpcStatus: err.code,
               grpcStatusMessage: err.details,
               actualRequest: {
@@ -650,7 +651,7 @@ export async function executeServerStream(
       sendStreamEvent(windowId, {
         streamId,
         type: 'error',
-        error: err.message,
+        error: describeGrpcStatus(err.code, err.details ?? err.message).message,
         grpcStatus: err.code,
         grpcStatusMessage: err.details,
         timestamp: Date.now()
@@ -917,7 +918,7 @@ export async function executeClientStream(
               requestId,
               protocol: 'grpc',
               timing: { total: Math.round(endTime - startTime) },
-              error: err.message,
+              error: describeGrpcStatus(err.code, err.details ?? err.message).message,
               grpcStatus: err.code,
               grpcStatusMessage: err.details,
               actualRequest: {
@@ -1044,7 +1045,7 @@ export async function startBidiStream(
       sendStreamEvent(windowId, {
         streamId,
         type: 'error',
-        error: err.message,
+        error: describeGrpcStatus(err.code, err.details ?? err.message).message,
         grpcStatus: err.code,
         grpcStatusMessage: err.details,
         timestamp: Date.now()

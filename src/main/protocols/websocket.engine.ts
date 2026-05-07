@@ -1,6 +1,7 @@
 import WebSocket from 'ws'
 import { randomUUID } from 'crypto'
 import { BrowserWindow } from 'electron'
+import { classifyTransportError, hintForHttpStatus } from '../lib/error-classifier'
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -50,6 +51,32 @@ function sendEventToRenderer(windowId: number, event: WsEventPayload): void {
   if (win && !win.isDestroyed()) {
     win.webContents.send('ws:event', event)
   }
+}
+
+// ─── Error message enrichment ───────────────────────────────
+
+/**
+ * `ws` reports handshake failures as `Error("Unexpected server response: 401")`
+ * and transport failures as `Error("connect ECONNREFUSED ...")` — the latter
+ * also carry a `.code` property. We normalize both shapes through the shared
+ * classifier and bolt on an HTTP status hint when one is recoverable from
+ * the handshake message (so a user staring at "401" gets "check Authorization").
+ */
+export function describeWebSocketError(err: unknown): string {
+  const e = err as { message?: unknown }
+  const msg = typeof e?.message === 'string' ? e.message : String(err)
+
+  const m = msg.match(/Unexpected server response:\s*(\d{3})/i)
+  if (m) {
+    const status = Number(m[1])
+    const hint = hintForHttpStatus(status)
+    return hint
+      ? `WebSocket handshake failed: HTTP ${status} ${hint}`
+      : `WebSocket handshake failed: HTTP ${status}`
+  }
+
+  const classified = classifyTransportError(err)
+  return classified.message
 }
 
 // ─── Public API ─────────────────────────────────────────────
@@ -161,17 +188,19 @@ export function connect(
     ws.on('error', (err: Error) => {
       clearTimeout(timeout)
 
+      const message = describeWebSocketError(err)
       sendEventToRenderer(windowId, {
         connectionId,
         type: 'error',
-        data: err.message,
+        data: message,
         timestamp: Date.now()
       })
 
-      // If we haven't connected yet, reject the promise
+      // If we haven't connected yet, reject the promise with the enriched
+      // message so the renderer surfaces the same text as the error event.
       if (!connections.has(connectionId)) {
         connections.delete(connectionId)
-        reject(err)
+        reject(new Error(message))
       }
     })
   })

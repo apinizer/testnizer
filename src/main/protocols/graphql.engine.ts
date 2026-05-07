@@ -6,6 +6,7 @@ import http from 'http'
 import { createClient, Client } from 'graphql-ws'
 import WebSocket from 'ws'
 import { BrowserWindow } from 'electron'
+import { classifyTransportError } from '../lib/error-classifier'
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -270,11 +271,12 @@ export async function executeQuery(
     }
   } catch (err) {
     const endTime = performance.now()
+    const classified = classifyTransportError(err)
     return {
       requestId,
       protocol: 'graphql',
       timing: { total: Math.round(endTime - startTime) },
-      error: (err as Error).message
+      error: classified.message
     }
   }
 }

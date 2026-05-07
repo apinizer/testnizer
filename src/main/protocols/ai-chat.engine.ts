@@ -209,7 +209,15 @@ export async function* streamChatCompletion(
   })
 
   if (!response.ok || !response.body) {
-    let errText = `HTTP ${response.status} ${response.statusText}`
+    // Surface a status-aware hint so common provider failures (bad key, rate
+    // limit, missing model) are immediately actionable instead of just
+    // showing the bare HTTP code. Keep the upstream body too — providers
+    // frequently include {error: {message: "..."}} JSON that helps diagnose.
+    const { hintForHttpStatus } = await import('../lib/error-classifier')
+    const hint = hintForHttpStatus(response.status)
+    let errText = hint
+      ? `HTTP ${response.status} ${hint}`
+      : `HTTP ${response.status} ${response.statusText}`
     try {
       const text = await response.text()
       if (text) errText += `\n${text.slice(0, 500)}`
