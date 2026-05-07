@@ -28,14 +28,12 @@ export type ConsoleProtocol =
   | 'websocket'
   | 'graphql'
   | 'sse'
+  | 'mcp'
+  | 'socketio'
+  | 'ai'
 
 export type ConsoleLevel = 'info' | 'success' | 'warning' | 'error'
-export type ConsoleCategory =
-  | 'request'
-  | 'response'
-  | 'event'
-  | 'connection'
-  | 'system'
+export type ConsoleCategory = 'request' | 'response' | 'event' | 'connection' | 'system'
 
 export interface ConsoleLogEntryWire {
   id: string
@@ -67,7 +65,10 @@ function clip(text: string | undefined): string | undefined {
   if (text == null) return undefined
   if (typeof text !== 'string') return undefined
   if (text.length <= MAX_PAYLOAD_BYTES) return text
-  return text.slice(0, MAX_PAYLOAD_BYTES) + `\n…[truncated, ${text.length - MAX_PAYLOAD_BYTES} more chars]`
+  return (
+    text.slice(0, MAX_PAYLOAD_BYTES) +
+    `\n…[truncated, ${text.length - MAX_PAYLOAD_BYTES} more chars]`
+  )
 }
 
 function levelFromStatus(status?: number, hasError?: boolean): ConsoleLevel {
@@ -120,9 +121,7 @@ export function logRequest(args: LogRequestArgs): void {
     tabId: args.tabId,
     method: args.method,
     url: args.url,
-    message:
-      args.message ??
-      [args.method, args.url].filter(Boolean).join(' '),
+    message: args.message ?? [args.method, args.url].filter(Boolean).join(' '),
     details: {
       requestHeaders: args.headers,
       requestBody: clip(args.body),

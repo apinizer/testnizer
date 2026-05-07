@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { useConsoleStore } from './console.store'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 
 export type McpTransport = 'http' | 'sse' | 'stdio'
@@ -154,41 +153,21 @@ export const useMcpStore = create<McpStore>((set, get) => ({
         serverName: res.data.serverName ?? null,
         errorMessage: null,
       })
-      useConsoleStore.getState().addEntry({
-        protocol: 'mcp',
-        level: 'success',
-        category: 'request',
-        url,
-        message: `MCP bağlandı: ${res.data.serverName ?? url}`,
-      })
       // Auto-list tools on connect
       get().listTools()
     } else {
-      const errMsg = res.error ?? 'Connection failed'
-      set({ connectionState: 'error', errorMessage: errMsg })
-      useConsoleStore.getState().addEntry({
-        protocol: 'mcp',
-        level: 'error',
-        category: 'request',
-        url,
-        message: `MCP bağlantı hatası: ${errMsg}`,
-        details: { error: { message: errMsg } },
-      })
+      set({ connectionState: 'error', errorMessage: res.error ?? 'Connection failed' })
     }
+    // Console logging is handled by the main-process handler so every
+    // protocol routes through the same `console:log` channel — see
+    // src/main/ipc/mcp.handler.ts.
   },
 
   disconnect: async () => {
-    const { connectionId, url } = get()
+    const { connectionId } = get()
     if (!connectionId) return
     const api = getMcpApi()
     await api?.disconnect(connectionId)
-    useConsoleStore.getState().addEntry({
-      protocol: 'mcp',
-      level: 'info',
-      category: 'request',
-      url,
-      message: `MCP bağlantısı kesildi`,
-    })
     set({ ...emptyState(), transport: get().transport, url: get().url })
   },
 
@@ -222,25 +201,8 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     const res = await api.callTool(connectionId, selectedTool, args)
     if (res.success) {
       set({ result: res.data, resultError: null, isInvoking: false })
-      useConsoleStore.getState().addEntry({
-        protocol: 'mcp',
-        level: 'success',
-        category: 'response',
-        url: get().url,
-        message: `MCP tool ${selectedTool} → başarılı`,
-        details: { responseBody: JSON.stringify(res.data) },
-      })
     } else {
-      const errMsg = res.error ?? 'Tool call failed'
-      set({ result: null, resultError: errMsg, isInvoking: false })
-      useConsoleStore.getState().addEntry({
-        protocol: 'mcp',
-        level: 'error',
-        category: 'response',
-        url: get().url,
-        message: `MCP tool ${selectedTool} hata: ${errMsg}`,
-        details: { error: { message: errMsg } },
-      })
+      set({ result: null, resultError: res.error ?? 'Tool call failed', isInvoking: false })
     }
   },
 

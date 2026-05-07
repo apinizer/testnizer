@@ -86,10 +86,8 @@ message ErrorResponse {
 `
 
 let reflectionRoot: protobuf.Root | null = null
-let descriptorRoot: protobuf.Root | null = null
 let RequestType: protobuf.Type | null = null
 let ResponseType: protobuf.Type | null = null
-let FileDescriptorProtoType: protobuf.Type | null = null
 
 function ensureProtoTypes(): void {
   if (!reflectionRoot) {
@@ -97,12 +95,63 @@ function ensureProtoTypes(): void {
     RequestType = reflectionRoot.lookupType('grpc.reflection.v1.ServerReflectionRequest')
     ResponseType = reflectionRoot.lookupType('grpc.reflection.v1.ServerReflectionResponse')
   }
-  if (!descriptorRoot) {
-    descriptorRoot = protobuf.loadSync(
-      require.resolve('protobufjs/google/protobuf/descriptor.proto'),
-    )
-    FileDescriptorProtoType = descriptorRoot.lookupType('google.protobuf.FileDescriptorProto')
+}
+
+/**
+ * Minimal hand-rolled `FileDescriptorProto` parser. We only need the `name`
+ * (field 1) and `dependency` (field 3) entries to walk the import graph;
+ * decoding the full proto via `protobufjs.loadSync('descriptor.proto')` would
+ * require the descriptor file at runtime, which is not bundled into the
+ * Electron build (`require.resolve(...)` returns null and crashes inside
+ * `readFileSync`).
+ */
+function parseFileDescriptorMinimal(buf: Buffer): { name?: string; dependency: string[] } {
+  const result: { name?: string; dependency: string[] } = { dependency: [] }
+  let offset = 0
+  while (offset < buf.length) {
+    const tagInfo = readVarintBuf(buf, offset)
+    offset += tagInfo.length
+    const fieldNumber = tagInfo.value >>> 3
+    const wireType = tagInfo.value & 0x7
+
+    if (wireType === 2) {
+      const lenInfo = readVarintBuf(buf, offset)
+      offset += lenInfo.length
+      const end = offset + lenInfo.value
+      if (fieldNumber === 1) {
+        result.name = buf.subarray(offset, end).toString('utf-8')
+      } else if (fieldNumber === 3) {
+        result.dependency.push(buf.subarray(offset, end).toString('utf-8'))
+      }
+      offset = end
+    } else if (wireType === 0) {
+      const v = readVarintBuf(buf, offset)
+      offset += v.length
+    } else if (wireType === 1) {
+      offset += 8
+    } else if (wireType === 5) {
+      offset += 4
+    } else {
+      // Unsupported wire type — bail out rather than risk reading past EOF.
+      break
+    }
   }
+  return result
+}
+
+function readVarintBuf(buf: Buffer, offset: number): { value: number; length: number } {
+  let value = 0
+  let shift = 0
+  let length = 0
+  while (offset + length < buf.length) {
+    const byte = buf[offset + length]
+    value |= (byte & 0x7f) << shift
+    length++
+    if ((byte & 0x80) === 0) return { value: value >>> 0, length }
+    shift += 7
+    if (shift > 35) throw new Error('Varint too long')
+  }
+  throw new Error('Unexpected end of buffer reading varint')
 }
 
 // Re-export for the engine to build a FileDescriptorSet.
@@ -157,7 +206,7 @@ export async function fetchReflection(
   reflectionService = 'grpc.reflection.v1.ServerReflection',
 ): Promise<ReflectionResult> {
   ensureProtoTypes()
-  if (!RequestType || !ResponseType || !FileDescriptorProtoType) {
+  if (!RequestType || !ResponseType) {
     throw new Error('Failed to bootstrap reflection proto types')
   }
 
@@ -289,11 +338,7 @@ export async function fetchReflection(
             : typeof raw === 'string'
               ? Buffer.from(raw, 'base64')
               : Buffer.from(raw as Uint8Array)
-          const decoded = FileDescriptorProtoType!.toObject(FileDescriptorProtoType!.decode(buf), {
-            defaults: false,
-            arrays: true,
-            longs: String,
-          }) as { name?: string; dependency?: string[] }
+          const decoded = parseFileDescriptorMinimal(buf)
           const fileName = decoded.name ?? `unknown-${fetchedFiles.size}.proto`
 
           if (!fetchedFiles.has(fileName)) {

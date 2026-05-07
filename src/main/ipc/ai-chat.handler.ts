@@ -5,6 +5,7 @@ import {
   type AiProvider,
   type AiChatMessage,
 } from '../protocols/ai-chat.engine'
+import { logRequest, logResponse, logEvent } from '../lib/console-logger'
 
 interface AiChatSendPayload {
   provider: AiProvider
@@ -44,9 +45,32 @@ export function registerAiChatHandlers(): void {
       const controller = new AbortController()
       activeStreams.set(messageId, { controller, windowId: win.id })
 
+      const lastUserMsg = payload.messages.filter((m) => m.role === 'user').slice(-1)[0]
+      const promptPreview = lastUserMsg?.content?.slice(0, 200) ?? ''
+      const started = Date.now()
+      const targetUrl = payload.url ?? `${payload.provider}://chat/completions`
+
+      logRequest({
+        protocol: 'ai',
+        method: 'CHAT',
+        url: targetUrl,
+        body: promptPreview,
+        message: `AI ${payload.provider}/${payload.model} → ${promptPreview.slice(0, 60)}${
+          promptPreview.length > 60 ? '…' : ''
+        }`,
+        meta: {
+          provider: payload.provider,
+          model: payload.model,
+          messageCount: payload.messages.length,
+          temperature: payload.temperature ?? 0,
+        },
+      })
+
       // Drive streaming in the background — the IPC call resolves immediately
       // with the messageId so the renderer can route subsequent chunk events.
       void (async () => {
+        let fullText = ''
+        let chunkCount = 0
         try {
           const stream = streamChatCompletion({
             provider: payload.provider,
@@ -61,13 +85,32 @@ export function registerAiChatHandlers(): void {
 
           for await (const chunk of stream) {
             if (controller.signal.aborted) break
+            chunkCount++
+            fullText += chunk.delta ?? ''
             emit(win.id, 'aichat:chunk', { messageId, delta: chunk.delta })
           }
 
           if (controller.signal.aborted) {
             emit(win.id, 'aichat:cancelled', { messageId })
+            logEvent({
+              protocol: 'ai',
+              category: 'event',
+              message: `AI ${payload.provider}/${payload.model} cancelled (${chunkCount} chunks, ${fullText.length} chars)`,
+              direction: 'in',
+            })
           } else {
             emit(win.id, 'aichat:done', { messageId })
+            logResponse({
+              protocol: 'ai',
+              method: 'CHAT',
+              url: targetUrl,
+              status: 200,
+              statusText: 'OK',
+              durationMs: Date.now() - started,
+              sizeBytes: Buffer.byteLength(fullText, 'utf-8'),
+              responseBody: fullText,
+              meta: { chunks: chunkCount, model: payload.model },
+            })
           }
         } catch (e) {
           // Distinguish abort errors from real failures.
@@ -82,6 +125,16 @@ export function registerAiChatHandlers(): void {
             emit(win.id, 'aichat:error', {
               messageId,
               error: err?.message ?? String(e),
+            })
+            logResponse({
+              protocol: 'ai',
+              method: 'CHAT',
+              url: targetUrl,
+              status: -1,
+              statusText: err?.message ?? 'AI chat failed',
+              durationMs: Date.now() - started,
+              error: { message: err?.message ?? String(e), stack: err?.stack },
+              meta: { provider: payload.provider, model: payload.model },
             })
           }
         } finally {

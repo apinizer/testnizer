@@ -275,7 +275,9 @@ function EndpointTabBar() {
                 <path d="M3 15h6" />
               </svg>
             )}
-            {tab.method && tab.protocol !== 'runner' && <MethodBadge method={tab.method} small />}
+            {tab.method && (tab.protocol === 'http' || tab.protocol === 'soap') && (
+              <MethodBadge method={tab.method} small />
+            )}
             {renamingTabId === tab.id ? (
               <input
                 ref={renameInputRef}
