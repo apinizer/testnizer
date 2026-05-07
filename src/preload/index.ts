@@ -354,6 +354,8 @@ const api = {
   // ─── gRPC ───────────────────────────────────────────────────
   grpc: {
     loadProto: (): Promise<unknown> => ipcRenderer.invoke('grpc:loadProto'),
+    loadProtoFromUrl: (url: string): Promise<unknown> =>
+      ipcRenderer.invoke('grpc:loadProtoFromUrl', url),
     execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('grpc:execute', options),
     serverStream: (options: unknown): Promise<unknown> =>
       ipcRenderer.invoke('grpc:serverStream', options),

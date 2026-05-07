@@ -29,9 +29,7 @@ export function normalizeGrpcAddress(input: string, useTls: boolean): string {
   const slashIdx = s.indexOf('/')
   if (slashIdx >= 0) s = s.slice(0, slashIdx)
   if (!s) return ''
-  const hasPort = s.includes(']')
-    ? /]:\d+$/.test(s)
-    : /:\d+$/.test(s)
+  const hasPort = s.includes(']') ? /]:\d+$/.test(s) : /:\d+$/.test(s)
   if (!hasPort) {
     s = `${s}:${useTls ? 443 : 80}`
   }
@@ -41,12 +39,18 @@ export function normalizeGrpcAddress(input: string, useTls: boolean): string {
 /**
  * Maps the user-facing GrpcMethodType to the IPC dispatch channel.
  */
-export function dispatchChannelFor(type: GrpcMethodType): 'execute' | 'serverStream' | 'clientStream' | 'bidiStream' {
+export function dispatchChannelFor(
+  type: GrpcMethodType,
+): 'execute' | 'serverStream' | 'clientStream' | 'bidiStream' {
   switch (type) {
-    case 'server_streaming': return 'serverStream'
-    case 'client_streaming': return 'clientStream'
-    case 'bidi_streaming':   return 'bidiStream'
-    default:                  return 'execute'
+    case 'server_streaming':
+      return 'serverStream'
+    case 'client_streaming':
+      return 'clientStream'
+    case 'bidi_streaming':
+      return 'bidiStream'
+    default:
+      return 'execute'
   }
 }
 
@@ -77,10 +81,18 @@ interface GrpcStreamPayload {
 
 /** Shape of `window.api.grpc` we depend on. Kept narrow to the methods we call. */
 interface GrpcBridge {
-  execute: (options: unknown) => Promise<{ success: boolean; data?: GrpcEngineResponse; error?: string }>
-  serverStream: (options: unknown) => Promise<{ success: boolean; data?: { streamId: string }; error?: string }>
-  clientStream: (options: unknown) => Promise<{ success: boolean; data?: GrpcEngineResponse; error?: string }>
-  bidiStream: (options: unknown) => Promise<{ success: boolean; data?: { streamId: string }; error?: string }>
+  execute: (
+    options: unknown,
+  ) => Promise<{ success: boolean; data?: GrpcEngineResponse; error?: string }>
+  serverStream: (
+    options: unknown,
+  ) => Promise<{ success: boolean; data?: { streamId: string }; error?: string }>
+  clientStream: (
+    options: unknown,
+  ) => Promise<{ success: boolean; data?: GrpcEngineResponse; error?: string }>
+  bidiStream: (
+    options: unknown,
+  ) => Promise<{ success: boolean; data?: { streamId: string }; error?: string }>
   sendStreamMessage: (streamId: string, message: unknown) => Promise<unknown>
   cancelStream: (streamId: string) => Promise<unknown>
   onStreamEvent: (cb: (event: GrpcStreamPayload) => void) => () => void
@@ -170,9 +182,13 @@ export interface GrpcStreamEvent {
  * Snapshot of gRPC state for per-tab caching. `services` is per-tab too —
  * each tab can load its own .proto file without overwriting siblings.
  */
+export type ProtoSource = 'reflection' | 'url' | 'file'
+
 interface TabGrpcState {
   address: string
   useTls: boolean
+  protoSource: ProtoSource
+  protoUrl: string
   protoLoaded: boolean
   protoPath: string | null
   services: GrpcService[]
@@ -199,7 +215,11 @@ interface GrpcStore extends TabGrpcState {
 
   setAddress: (address: string) => void
   setUseTls: (useTls: boolean) => void
+  setProtoSource: (source: ProtoSource) => void
+  setProtoUrl: (url: string) => void
   loadProto: () => Promise<void>
+  loadProtoFromUrl: () => Promise<void>
+  loadFromReflection: () => Promise<void>
   selectService: (name: string) => void
   selectMethod: (name: string) => void
   setRequestBody: (body: string) => void
@@ -227,6 +247,8 @@ function emptyTabState(): TabGrpcState {
   return {
     address: 'localhost:50051',
     useTls: false,
+    protoSource: 'reflection',
+    protoUrl: '',
     protoLoaded: false,
     protoPath: null,
     services: [],
@@ -248,6 +270,8 @@ function extractState(s: GrpcStore): TabGrpcState {
   return {
     address: s.address,
     useTls: s.useTls,
+    protoSource: s.protoSource,
+    protoUrl: s.protoUrl,
     protoLoaded: s.protoLoaded,
     protoPath: s.protoPath,
     services: s.services,
@@ -272,15 +296,23 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
 
   setAddress: (address) => set({ address: stripGrpcScheme(address) }),
   setUseTls: (useTls) => set({ useTls }),
+  setProtoSource: (protoSource) => set({ protoSource }),
+  setProtoUrl: (protoUrl) => set({ protoUrl }),
 
   loadProto: async () => {
     set({ isLoading: true, errorMessage: null })
 
-    const grpcApi = (window as unknown as { api?: { grpc?: GrpcBridge & { loadProto: () => Promise<{ success: boolean; data?: unknown; error?: string }> } } }).api?.grpc
+    const grpcApi = (
+      window as unknown as {
+        api?: {
+          grpc?: GrpcBridge & {
+            loadProto: () => Promise<{ success: boolean; data?: unknown; error?: string }>
+          }
+        }
+      }
+    ).api?.grpc
     try {
-      const result = grpcApi
-        ? await grpcApi.loadProto()
-        : null
+      const result = grpcApi ? await grpcApi.loadProto() : null
 
       if (result?.success && result.data) {
         const services = mapEngineServices(result.data as EngineLoadProtoResult)
@@ -318,17 +350,42 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         {
           name: 'greeter.GreeterService',
           methods: [
-            { name: 'SayHello', type: 'unary', requestType: 'HelloRequest', responseType: 'HelloReply' },
-            { name: 'SayHelloServerStream', type: 'server_streaming', requestType: 'HelloRequest', responseType: 'HelloReply' },
-            { name: 'SayHelloClientStream', type: 'client_streaming', requestType: 'HelloRequest', responseType: 'HelloReply' },
-            { name: 'SayHelloBidi', type: 'bidi_streaming', requestType: 'HelloRequest', responseType: 'HelloReply' },
+            {
+              name: 'SayHello',
+              type: 'unary',
+              requestType: 'HelloRequest',
+              responseType: 'HelloReply',
+            },
+            {
+              name: 'SayHelloServerStream',
+              type: 'server_streaming',
+              requestType: 'HelloRequest',
+              responseType: 'HelloReply',
+            },
+            {
+              name: 'SayHelloClientStream',
+              type: 'client_streaming',
+              requestType: 'HelloRequest',
+              responseType: 'HelloReply',
+            },
+            {
+              name: 'SayHelloBidi',
+              type: 'bidi_streaming',
+              requestType: 'HelloRequest',
+              responseType: 'HelloReply',
+            },
           ],
         },
         {
           name: 'user.UserService',
           methods: [
             { name: 'GetUser', type: 'unary', requestType: 'GetUserRequest', responseType: 'User' },
-            { name: 'ListUsers', type: 'server_streaming', requestType: 'ListUsersRequest', responseType: 'User' },
+            {
+              name: 'ListUsers',
+              type: 'server_streaming',
+              requestType: 'ListUsersRequest',
+              responseType: 'User',
+            },
           ],
         },
       ]
@@ -340,6 +397,101 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         isLoading: false,
         selectedService: demoServices[0].name,
         selectedMethod: demoServices[0].methods[0].name,
+      })
+    }
+  },
+
+  loadProtoFromUrl: async () => {
+    const { protoUrl } = get()
+    if (!protoUrl.trim()) {
+      set({ errorMessage: 'URL is required' })
+      return
+    }
+    set({ isLoading: true, errorMessage: null })
+
+    const grpcApi = (
+      window as unknown as {
+        api?: {
+          grpc?: {
+            loadProtoFromUrl?: (
+              url: string,
+            ) => Promise<{ success: boolean; data?: unknown; error?: string }>
+          }
+        }
+      }
+    ).api?.grpc
+    if (!grpcApi?.loadProtoFromUrl) {
+      set({ isLoading: false, errorMessage: 'gRPC bridge not available' })
+      return
+    }
+    const result = await grpcApi.loadProtoFromUrl(protoUrl.trim())
+    if (result.success && result.data) {
+      const data = result.data as EngineLoadProtoResult
+      const services = mapEngineServices(data)
+      set({
+        services,
+        protoPath: data.protoPath,
+        protoLoaded: true,
+        isLoading: false,
+        errorMessage: null,
+      })
+      if (services.length > 0) {
+        const svc = services[0]
+        set({ selectedService: svc.name })
+        if (svc.methods.length > 0) set({ selectedMethod: svc.methods[0].name })
+      }
+    } else {
+      set({
+        errorMessage: result.error || 'Failed to download proto from URL',
+        isLoading: false,
+      })
+    }
+  },
+
+  loadFromReflection: async () => {
+    const { address, useTls } = get()
+    if (!address.trim()) {
+      set({ errorMessage: 'Server address is required' })
+      return
+    }
+    set({ isLoading: true, errorMessage: null })
+
+    const grpcApi = (
+      window as unknown as {
+        api?: {
+          grpc?: {
+            reflect?: (
+              addr: string,
+              useTls?: boolean,
+            ) => Promise<{ success: boolean; data?: unknown; error?: string }>
+          }
+        }
+      }
+    ).api?.grpc
+    if (!grpcApi?.reflect) {
+      set({ isLoading: false, errorMessage: 'gRPC bridge not available' })
+      return
+    }
+    const result = await grpcApi.reflect(address.trim(), useTls)
+    if (result.success && result.data) {
+      const data = result.data as EngineLoadProtoResult
+      const services = mapEngineServices(data)
+      set({
+        services,
+        protoPath: data.protoPath,
+        protoLoaded: true,
+        isLoading: false,
+        errorMessage: null,
+      })
+      if (services.length > 0) {
+        const svc = services[0]
+        set({ selectedService: svc.name })
+        if (svc.methods.length > 0) set({ selectedMethod: svc.methods[0].name })
+      }
+    } else {
+      set({
+        errorMessage: result.error || 'Server reflection failed',
+        isLoading: false,
       })
     }
   },
@@ -356,19 +508,18 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
 
   setRequestBody: (body) => set({ requestBody: body }),
 
-  addMetadata: () =>
-    set((state) => ({ metadata: [...state.metadata, defaultKv()] })),
+  addMetadata: () => set((state) => ({ metadata: [...state.metadata, defaultKv()] })),
 
   updateMetadata: (id, updates) =>
     set((state) => ({
       metadata: state.metadata.map((m) => (m.id === id ? { ...m, ...updates } : m)),
     })),
 
-  removeMetadata: (id) =>
-    set((state) => ({ metadata: state.metadata.filter((m) => m.id !== id) })),
+  removeMetadata: (id) => set((state) => ({ metadata: state.metadata.filter((m) => m.id !== id) })),
 
   execute: async () => {
-    const { address, useTls, selectedService, selectedMethod, requestBody, metadata, protoPath } = get()
+    const { address, useTls, selectedService, selectedMethod, requestBody, metadata, protoPath } =
+      get()
     if (!address.trim() || !selectedService || !selectedMethod) return
 
     const method = get().getSelectedMethod()
@@ -419,7 +570,12 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         error: 'gRPC bridge unavailable',
         timing: { total: 0 },
       }
-      set({ response: errResp, isLoading: false, isStreaming: false, errorMessage: errResp.error ?? null })
+      set({
+        response: errResp,
+        isLoading: false,
+        isStreaming: false,
+        errorMessage: errResp.error ?? null,
+      })
       responseStore.setResponse(errResp)
       responseStore.setLoading(false)
       if (activeTabId) tabsStore.markLoading(activeTabId, false)
@@ -460,10 +616,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         const existing = map.get(ownerTabId) ?? emptyTabState()
         map.set(ownerTabId, {
           ...existing,
-          streamEvents: [
-            ...existing.streamEvents,
-            { ...evt, index: existing.streamEvents.length },
-          ],
+          streamEvents: [...existing.streamEvents, { ...evt, index: existing.streamEvents.length }],
         })
         set({ _tabStates: map })
       }
@@ -492,7 +645,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
 
     try {
       if (method?.type === 'unary') {
-        const result = await grpcApi.execute({ ...baseOptions, requestBody: resolvedBody }) as
+        const result = (await grpcApi.execute({ ...baseOptions, requestBody: resolvedBody })) as
           | { success: true; data: GrpcEngineResponse }
           | { success: false; error: string }
 
@@ -545,9 +698,10 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       applyToOwner({ streamUnsubscribe: unsubscribe })
 
       if (method?.type === 'server_streaming') {
-        const result = await grpcApi.serverStream({ ...baseOptions, requestBody: resolvedBody }) as
-          | { success: true; data: { streamId: string } }
-          | { success: false; error: string }
+        const result = (await grpcApi.serverStream({
+          ...baseOptions,
+          requestBody: resolvedBody,
+        })) as { success: true; data: { streamId: string } } | { success: false; error: string }
         if (result.success) {
           applyToOwner({ activeStreamId: result.data.streamId })
         } else {
@@ -555,9 +709,10 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         }
       } else if (method?.type === 'client_streaming') {
         // Single message for now — the UI doesn't yet expose multi-message client streaming.
-        const result = await grpcApi.clientStream({ ...baseOptions, messages: [resolvedBody] }) as
-          | { success: true; data: GrpcEngineResponse }
-          | { success: false; error: string }
+        const result = (await grpcApi.clientStream({
+          ...baseOptions,
+          messages: [resolvedBody],
+        })) as { success: true; data: GrpcEngineResponse } | { success: false; error: string }
         if (result.success) {
           finishUnary(grpcResponseToApi(result.data))
         } else {
@@ -569,7 +724,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
           })
         }
       } else if (method?.type === 'bidi_streaming') {
-        const result = await grpcApi.bidiStream(baseOptions) as
+        const result = (await grpcApi.bidiStream(baseOptions)) as
           | { success: true; data: { streamId: string } }
           | { success: false; error: string }
         if (result.success) {
@@ -589,7 +744,12 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         error: (err as Error).message,
         timing: { total: 0 },
       }
-      applyToOwner({ response: errResp, isLoading: false, isStreaming: false, errorMessage: errResp.error ?? null })
+      applyToOwner({
+        response: errResp,
+        isLoading: false,
+        isStreaming: false,
+        errorMessage: errResp.error ?? null,
+      })
       const cur = get()
       if (cur._currentTabId === ownerTabId) {
         responseStore.setResponse(errResp)

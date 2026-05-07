@@ -1,8 +1,12 @@
 import * as grpc from '@grpc/grpc-js'
 import * as protoLoader from '@grpc/proto-loader'
-import { randomUUID } from 'crypto'
+import { randomUUID, createHash } from 'crypto'
 import { performance } from 'perf_hooks'
 import { BrowserWindow } from 'electron'
+import { tmpdir } from 'os'
+import { join as joinPath } from 'path'
+import { writeFile, mkdir } from 'fs/promises'
+import axios from 'axios'
 import { describeGrpcStatus } from '../lib/error-classifier'
 
 // ─── Types ───────────────────────────────────────────────────
@@ -110,7 +114,7 @@ async function loadOrGetProto(protoPath: string): Promise<LoadedProto> {
     longs: String,
     enums: String,
     defaults: true,
-    oneofs: true
+    oneofs: true,
   })
 
   const grpcObject = grpc.loadPackageDefinition(packageDefinition)
@@ -118,7 +122,7 @@ async function loadOrGetProto(protoPath: string): Promise<LoadedProto> {
   const loaded: LoadedProto = {
     packageDefinition,
     grpcObject,
-    protoPath
+    protoPath,
   }
 
   protoCache.set(protoPath, loaded)
@@ -129,15 +133,18 @@ async function loadOrGetProto(protoPath: string): Promise<LoadedProto> {
 
 function findServiceClient(
   grpcObject: grpc.GrpcObject,
-  serviceName: string
+  serviceName: string,
 ): grpc.ServiceClientConstructor | null {
   // serviceName can be "package.ServiceName" or just "ServiceName"
   const parts = serviceName.split('.')
-  let current: grpc.GrpcObject | grpc.ServiceClientConstructor | grpc.ProtobufTypeDefinition = grpcObject
+  let current: grpc.GrpcObject | grpc.ServiceClientConstructor | grpc.ProtobufTypeDefinition =
+    grpcObject
 
   for (const part of parts) {
     if (current && typeof current === 'object' && part in current) {
-      current = (current as grpc.GrpcObject)[part] as grpc.GrpcObject | grpc.ServiceClientConstructor
+      current = (current as grpc.GrpcObject)[part] as
+        | grpc.GrpcObject
+        | grpc.ServiceClientConstructor
     } else {
       return null
     }
@@ -207,7 +214,7 @@ interface ProtoEnumType {
  * package context to attempt scoped + fully-qualified resolution.
  */
 export type ProtoTypeLookup = (
-  typeName: string
+  typeName: string,
 ) => protoLoader.MessageTypeDefinition | protoLoader.EnumTypeDefinition | undefined
 
 /**
@@ -261,7 +268,7 @@ function zeroValueForScalar(type: string): unknown {
 export function buildJsonSkeletonFromProtoMessage(
   message: protoLoader.MessageTypeDefinition,
   lookup?: ProtoTypeLookup,
-  seen: Set<string> = new Set()
+  seen: Set<string> = new Set(),
 ): Record<string, unknown> {
   const skeleton: Record<string, unknown> = {}
   const messageType = message.type as ProtoMessageType | undefined
@@ -290,11 +297,15 @@ export function buildJsonSkeletonFromProtoMessage(
     if (t === 'TYPE_MESSAGE') {
       const refName = field.typeName ?? ''
       const resolved = lookup?.(refName)
-      if (resolved && (resolved as protoLoader.MessageTypeDefinition).format === 'Protocol Buffer 3 DescriptorProto') {
+      if (
+        resolved &&
+        (resolved as protoLoader.MessageTypeDefinition).format ===
+          'Protocol Buffer 3 DescriptorProto'
+      ) {
         skeleton[fieldName] = buildJsonSkeletonFromProtoMessage(
           resolved as protoLoader.MessageTypeDefinition,
           lookup,
-          nextSeen
+          nextSeen,
         )
       } else {
         // Unresolved / well-known type (Any, Empty, ...) → graceful empty object
@@ -306,8 +317,14 @@ export function buildJsonSkeletonFromProtoMessage(
     if (t === 'TYPE_ENUM') {
       const refName = field.typeName ?? ''
       const resolved = lookup?.(refName)
-      if (resolved && (resolved as protoLoader.EnumTypeDefinition).format === 'Protocol Buffer 3 EnumDescriptorProto') {
-        const enumType = (resolved as protoLoader.EnumTypeDefinition).type as ProtoEnumType | undefined
+      if (
+        resolved &&
+        (resolved as protoLoader.EnumTypeDefinition).format ===
+          'Protocol Buffer 3 EnumDescriptorProto'
+      ) {
+        const enumType = (resolved as protoLoader.EnumTypeDefinition).type as
+          | ProtoEnumType
+          | undefined
         const firstValue = enumType?.value?.[0]?.name
         skeleton[fieldName] = firstValue ?? ''
       } else {
@@ -331,7 +348,7 @@ export function buildJsonSkeletonFromProtoMessage(
  */
 export function makeProtoTypeLookup(
   packageDefinition: protoLoader.PackageDefinition,
-  currentPackage: string
+  currentPackage: string,
 ): ProtoTypeLookup {
   return (typeName: string) => {
     if (!typeName) return undefined
@@ -343,14 +360,17 @@ export function makeProtoTypeLookup(
     // 2) Scoped to current package
     if (currentPackage) {
       const scoped = packageDefinition[`${currentPackage}.${typeName}`]
-      if (scoped) return scoped as protoLoader.MessageTypeDefinition | protoLoader.EnumTypeDefinition
+      if (scoped)
+        return scoped as protoLoader.MessageTypeDefinition | protoLoader.EnumTypeDefinition
     }
 
     // 3) Best-effort suffix match (e.g. nested type lookups)
     const suffix = `.${typeName}`
     for (const key of Object.keys(packageDefinition)) {
       if (key === typeName || key.endsWith(suffix)) {
-        return packageDefinition[key] as protoLoader.MessageTypeDefinition | protoLoader.EnumTypeDefinition
+        return packageDefinition[key] as
+          | protoLoader.MessageTypeDefinition
+          | protoLoader.EnumTypeDefinition
       }
     }
     return undefined
@@ -359,9 +379,10 @@ export function makeProtoTypeLookup(
 
 // ─── Helper: extract services from package definition ───────
 
-function extractServices(
-  packageDefinition: protoLoader.PackageDefinition
-): { packageName: string; services: GrpcServiceInfo[] } {
+function extractServices(packageDefinition: protoLoader.PackageDefinition): {
+  packageName: string
+  services: GrpcServiceInfo[]
+} {
   const services: GrpcServiceInfo[] = []
   let packageName = ''
 
@@ -373,7 +394,11 @@ function extractServices(
     // Heuristic: a service entry has at least one MethodDefinition-shaped value.
     const sd = def as Record<string, unknown>
     const looksLikeService = Object.values(sd).some(
-      (v) => v && typeof v === 'object' && 'requestType' in (v as object) && 'responseType' in (v as object)
+      (v) =>
+        v &&
+        typeof v === 'object' &&
+        'requestType' in (v as object) &&
+        'responseType' in (v as object),
     )
     if (looksLikeService && fullName.includes('.')) {
       packageName = fullName.slice(0, fullName.lastIndexOf('.'))
@@ -397,12 +422,14 @@ function extractServices(
     let isService = false
 
     for (const [methodName, methodDef] of Object.entries(serviceDef)) {
-      const method = methodDef as {
-        requestType?: protoLoader.MessageTypeDefinition
-        responseType?: protoLoader.MessageTypeDefinition
-        requestStream?: boolean
-        responseStream?: boolean
-      } | undefined
+      const method = methodDef as
+        | {
+            requestType?: protoLoader.MessageTypeDefinition
+            responseType?: protoLoader.MessageTypeDefinition
+            requestStream?: boolean
+            responseStream?: boolean
+          }
+        | undefined
 
       if (method?.requestType && method?.responseType) {
         isService = true
@@ -425,7 +452,7 @@ function extractServices(
           responseType: resTypeName,
           requestStream: method.requestStream ?? false,
           responseStream: method.responseStream ?? false,
-          requestSkeleton
+          requestSkeleton,
         })
       }
     }
@@ -440,7 +467,7 @@ function extractServices(
       services.push({
         name: serviceName,
         fullName,
-        methods
+        methods,
       })
     }
   }
@@ -457,8 +484,48 @@ export async function loadProto(protoPath: string): Promise<GrpcServiceDescripti
   return {
     protoPath,
     packageName,
-    services
+    services,
   }
+}
+
+/**
+ * Download a .proto file from a URL into a stable cache directory and load it.
+ * The URL is hashed so identical URLs reuse the same on-disk file (and therefore
+ * the same protoCache entry).
+ */
+export async function loadProtoFromUrl(url: string): Promise<GrpcServiceDescription> {
+  const trimmed = url.trim()
+  if (!/^https?:\/\//i.test(trimmed)) {
+    throw new Error('URL must start with http:// or https://')
+  }
+
+  const cacheDir = joinPath(tmpdir(), 'testnizer-grpc-protos')
+  await mkdir(cacheDir, { recursive: true })
+
+  const hash = createHash('sha1').update(trimmed).digest('hex').slice(0, 16)
+  const fileName = `${hash}.proto`
+  const filePath = joinPath(cacheDir, fileName)
+
+  const response = await axios.get<string>(trimmed, {
+    timeout: 15000,
+    responseType: 'text',
+    transformResponse: [(data) => data], // disable JSON parsing
+    validateStatus: (status) => status >= 200 && status < 400,
+  })
+
+  if (typeof response.data !== 'string' || response.data.length === 0) {
+    throw new Error('Downloaded proto file is empty')
+  }
+  if (!/(^|\n)\s*(syntax|service|message|package|import)\s/.test(response.data)) {
+    throw new Error('URL did not return a valid .proto file (no syntax/service/message keywords)')
+  }
+
+  await writeFile(filePath, response.data, 'utf-8')
+
+  // Invalidate any cached entry for this path so the new content is parsed.
+  protoCache.delete(filePath)
+
+  return loadProto(filePath)
 }
 
 export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcResponse> {
@@ -474,7 +541,7 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
         requestId,
         protocol: 'grpc',
         timing: { total: Math.round(performance.now() - startTime) },
-        error: `Service not found: ${options.serviceName}`
+        error: `Service not found: ${options.serviceName}`,
       }
     }
 
@@ -491,7 +558,7 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
         requestId,
         protocol: 'grpc',
         timing: { total: Math.round(performance.now() - startTime) },
-        error: 'Invalid JSON in request body'
+        error: 'Invalid JSON in request body',
       }
     }
 
@@ -505,7 +572,7 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
             request: Record<string, unknown>,
             metadata: grpc.Metadata,
             options: { deadline: Date },
-            callback: (err: grpc.ServiceError | null, response: unknown) => void
+            callback: (err: grpc.ServiceError | null, response: unknown) => void,
           ) => grpc.ClientUnaryCall)
         | undefined
 
@@ -514,7 +581,7 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
           requestId,
           protocol: 'grpc',
           timing: { total: Math.round(performance.now() - startTime) },
-          error: `Method not found: ${options.methodName}`
+          error: `Method not found: ${options.methodName}`,
         })
         return
       }
@@ -539,8 +606,8 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
                 method: options.methodName,
                 url: `${options.serverAddress}/${options.serviceName}/${options.methodName}`,
                 headers: options.metadata ?? {},
-                body: options.requestBody
-              }
+                body: options.requestBody,
+              },
             })
             return
           }
@@ -560,10 +627,10 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
               method: options.methodName,
               url: `${options.serverAddress}/${options.serviceName}/${options.methodName}`,
               headers: options.metadata ?? {},
-              body: options.requestBody
-            }
+              body: options.requestBody,
+            },
           })
-        }
+        },
       )
 
       // Extract response metadata
@@ -578,14 +645,14 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
       requestId,
       protocol: 'grpc',
       timing: { total: Math.round(performance.now() - startTime) },
-      error: (err as Error).message
+      error: (err as Error).message,
     }
   }
 }
 
 export async function executeServerStream(
   options: GrpcExecuteOptions,
-  windowId: number
+  windowId: number,
 ): Promise<string> {
   const streamId = randomUUID()
 
@@ -616,7 +683,7 @@ export async function executeServerStream(
       | ((
           request: Record<string, unknown>,
           metadata: grpc.Metadata,
-          options: { deadline: Date }
+          options: { deadline: Date },
         ) => grpc.ClientReadableStream<unknown>)
       | undefined
 
@@ -633,7 +700,7 @@ export async function executeServerStream(
         streamId,
         type: 'data',
         data: JSON.stringify(chunk, null, 2),
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
     })
 
@@ -642,7 +709,7 @@ export async function executeServerStream(
       sendStreamEvent(windowId, {
         streamId,
         type: 'end',
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
     })
 
@@ -654,7 +721,7 @@ export async function executeServerStream(
         error: describeGrpcStatus(err.code, err.details ?? err.message).message,
         grpcStatus: err.code,
         grpcStatusMessage: err.details,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
     })
 
@@ -664,7 +731,7 @@ export async function executeServerStream(
         type: 'status',
         grpcStatus: status.code,
         grpcStatusMessage: status.details,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
     })
 
@@ -674,7 +741,7 @@ export async function executeServerStream(
       streamId,
       type: 'error',
       error: (err as Error).message,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     })
     return streamId
   }
@@ -725,14 +792,14 @@ interface ReflectionResponse {
 
 export async function loadFromReflection(
   address: string,
-  useTls?: boolean
+  useTls?: boolean,
 ): Promise<GrpcServiceDescription> {
   const credentials = createCredentials(useTls)
 
   // Try v1 first, then fall back to v1alpha
   const reflectionServiceNames = [
     'grpc.reflection.v1.ServerReflection',
-    'grpc.reflection.v1alpha.ServerReflection'
+    'grpc.reflection.v1alpha.ServerReflection',
   ]
 
   for (const reflectionService of reflectionServiceNames) {
@@ -750,7 +817,7 @@ export async function loadFromReflection(
 async function tryReflection(
   address: string,
   credentials: grpc.ChannelCredentials,
-  reflectionServiceName: string
+  reflectionServiceName: string,
 ): Promise<GrpcServiceDescription> {
   return new Promise<GrpcServiceDescription>((resolve, reject) => {
     // Build the reflection client manually using makeGenericClientConstructor
@@ -768,7 +835,7 @@ async function tryReflection(
       (arg: Record<string, unknown>) => Buffer.from(JSON.stringify(arg)),
       (buf: Buffer) => JSON.parse(buf.toString()) as ReflectionResponseValue,
       new grpc.Metadata(),
-      { deadline: new Date(Date.now() + 10000) }
+      { deadline: new Date(Date.now() + 10000) },
     )
 
     const serviceNames: string[] = []
@@ -818,7 +885,7 @@ async function tryReflection(
           services.push({
             name: shortName,
             fullName: serviceName,
-            methods: [] // Methods will be populated when user selects a service
+            methods: [], // Methods will be populated when user selects a service
           })
         }
       }
@@ -828,10 +895,9 @@ async function tryReflection(
       if (listReceived) {
         resolve({
           protoPath: `reflection://${address}`,
-          packageName: serviceNames.length > 0
-            ? serviceNames[0].split('.').slice(0, -1).join('.')
-            : '',
-          services
+          packageName:
+            serviceNames.length > 0 ? serviceNames[0].split('.').slice(0, -1).join('.') : '',
+          services,
         })
       } else {
         reject(new Error('No response received from reflection service'))
@@ -860,9 +926,7 @@ export interface GrpcClientStreamOptions {
   useTls?: boolean
 }
 
-export async function executeClientStream(
-  options: GrpcClientStreamOptions
-): Promise<GrpcResponse> {
+export async function executeClientStream(options: GrpcClientStreamOptions): Promise<GrpcResponse> {
   const requestId = randomUUID()
   const startTime = performance.now()
 
@@ -875,7 +939,7 @@ export async function executeClientStream(
         requestId,
         protocol: 'grpc',
         timing: { total: Math.round(performance.now() - startTime) },
-        error: `Service not found: ${options.serviceName}`
+        error: `Service not found: ${options.serviceName}`,
       }
     }
 
@@ -892,7 +956,7 @@ export async function executeClientStream(
         | ((
             metadata: grpc.Metadata,
             options: { deadline: Date },
-            callback: (err: grpc.ServiceError | null, response: unknown) => void
+            callback: (err: grpc.ServiceError | null, response: unknown) => void,
           ) => grpc.ClientWritableStream<unknown>)
         | undefined
 
@@ -901,7 +965,7 @@ export async function executeClientStream(
           requestId,
           protocol: 'grpc',
           timing: { total: Math.round(performance.now() - startTime) },
-          error: `Method not found: ${options.methodName}`
+          error: `Method not found: ${options.methodName}`,
         })
         return
       }
@@ -925,8 +989,8 @@ export async function executeClientStream(
                 method: options.methodName,
                 url: `${options.serverAddress}/${options.serviceName}/${options.methodName}`,
                 headers: options.metadata ?? {},
-                body: JSON.stringify(options.messages)
-              }
+                body: JSON.stringify(options.messages),
+              },
             })
             return
           }
@@ -946,10 +1010,10 @@ export async function executeClientStream(
               method: options.methodName,
               url: `${options.serverAddress}/${options.serviceName}/${options.methodName}`,
               headers: options.metadata ?? {},
-              body: JSON.stringify(options.messages)
-            }
+              body: JSON.stringify(options.messages),
+            },
           })
-        }
+        },
       )
 
       // Write all messages then end the stream
@@ -968,7 +1032,7 @@ export async function executeClientStream(
       requestId,
       protocol: 'grpc',
       timing: { total: Math.round(performance.now() - startTime) },
-      error: (err as Error).message
+      error: (err as Error).message,
     }
   }
 }
@@ -987,7 +1051,7 @@ export interface GrpcBidiStreamOptions {
 
 export async function startBidiStream(
   options: GrpcBidiStreamOptions,
-  windowId: number
+  windowId: number,
 ): Promise<string> {
   const streamId = randomUUID()
 
@@ -1010,7 +1074,7 @@ export async function startBidiStream(
     const methodFn = (client as Record<string, unknown>)[options.methodName] as
       | ((
           metadata: grpc.Metadata,
-          options: { deadline: Date }
+          options: { deadline: Date },
         ) => grpc.ClientDuplexStream<unknown, unknown>)
       | undefined
 
@@ -1027,7 +1091,7 @@ export async function startBidiStream(
         streamId,
         type: 'data',
         data: JSON.stringify(chunk, null, 2),
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
     })
 
@@ -1036,7 +1100,7 @@ export async function startBidiStream(
       sendStreamEvent(windowId, {
         streamId,
         type: 'end',
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
     })
 
@@ -1048,7 +1112,7 @@ export async function startBidiStream(
         error: describeGrpcStatus(err.code, err.details ?? err.message).message,
         grpcStatus: err.code,
         grpcStatusMessage: err.details,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
     })
 
@@ -1058,7 +1122,7 @@ export async function startBidiStream(
         type: 'status',
         grpcStatus: status.code,
         grpcStatusMessage: status.details,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
     })
 
@@ -1068,7 +1132,7 @@ export async function startBidiStream(
       streamId,
       type: 'error',
       error: (err as Error).message,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     })
     return streamId
   }

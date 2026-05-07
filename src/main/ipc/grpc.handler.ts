@@ -1,6 +1,7 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import {
   loadProto,
+  loadProtoFromUrl,
   executeUnary,
   executeServerStream,
   executeClientStream,
@@ -11,7 +12,7 @@ import {
   loadFromReflection,
   type GrpcExecuteOptions,
   type GrpcClientStreamOptions,
-  type GrpcBidiStreamOptions
+  type GrpcBidiStreamOptions,
 } from '../protocols/grpc.engine'
 import { logRequest, logResponse, logEvent } from '../lib/console-logger'
 
@@ -70,9 +71,9 @@ export function registerGrpcHandlers(): void {
         title: 'Select Proto File',
         filters: [
           { name: 'Proto Files', extensions: ['proto'] },
-          { name: 'All Files', extensions: ['*'] }
+          { name: 'All Files', extensions: ['*'] },
         ],
-        properties: ['openFile']
+        properties: ['openFile'],
       })
 
       if (result.canceled || result.filePaths.length === 0) {
@@ -81,6 +82,19 @@ export function registerGrpcHandlers(): void {
 
       const protoPath = result.filePaths[0]
       const serviceDescription = await loadProto(protoPath)
+      return { success: true, data: serviceDescription }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── Load proto file from a URL ─────────────────────────────
+  ipcMain.handle('grpc:loadProtoFromUrl', async (_event, url: string) => {
+    try {
+      if (!url || typeof url !== 'string') {
+        return { success: false, error: 'URL is required' }
+      }
+      const serviceDescription = await loadProtoFromUrl(url)
       return { success: true, data: serviceDescription }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -99,7 +113,7 @@ export function registerGrpcHandlers(): void {
         metadata: payload.metadata,
         timeout: payload.timeout,
         useTls: payload.useTls,
-        sslVerification: payload.sslVerification
+        sslVerification: payload.sslVerification,
       }
 
       const fullMethod = `${payload.serviceName}/${payload.methodName}`
@@ -129,7 +143,7 @@ export function registerGrpcHandlers(): void {
         responseBody: response.body,
         error: response.error
           ? { message: response.error }
-          : (response.grpcStatus != null && response.grpcStatus !== 0)
+          : response.grpcStatus != null && response.grpcStatus !== 0
             ? { message: response.grpcStatusMessage || `gRPC code ${response.grpcStatus}` }
             : undefined,
         tabId: payload._tabId,
@@ -159,7 +173,7 @@ export function registerGrpcHandlers(): void {
         metadata: payload.metadata,
         timeout: payload.timeout,
         useTls: payload.useTls,
-        sslVerification: payload.sslVerification
+        sslVerification: payload.sslVerification,
       }
 
       const fullMethod = `${payload.serviceName}/${payload.methodName}`
@@ -211,7 +225,7 @@ export function registerGrpcHandlers(): void {
         messages: payload.messages,
         metadata: payload.metadata,
         timeout: payload.timeout,
-        useTls: payload.useTls
+        useTls: payload.useTls,
       }
 
       const response = await executeClientStream(options)
@@ -236,7 +250,7 @@ export function registerGrpcHandlers(): void {
         methodName: payload.methodName,
         metadata: payload.metadata,
         timeout: payload.timeout,
-        useTls: payload.useTls
+        useTls: payload.useTls,
       }
 
       const streamId = await startBidiStream(options, win.id)
