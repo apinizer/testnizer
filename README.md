@@ -48,7 +48,9 @@ through a Node main-process IPC handler that you, the user, control.
 - **GraphQL** — query / mutation / subscription, schema introspection, variables JSON
 - **gRPC** — `.proto` import, unary + server-stream + client-stream + bidi-stream, metadata, JSON skeleton from message fields
 - **Server-Sent Events** — long-lived streams with `Last-Event-ID` resume
-- **AI Chat** *(new)* — 14 providers (OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq, Perplexity, Cerebras, Cohere, Fireworks, DeepInfra, Together, OpenRouter) + Custom URL, streaming, multi-turn, env-var resolution
+- **Socket.IO** *(new)* — `socket.io-client`, namespaces, auth (`auth.token`), extra headers, emit + subscribe, bidirectional event timeline
+- **MCP (Model Context Protocol)** *(new)* — Testnizer is an MCP **client**: connect to MCP servers over Streamable HTTP, SSE (legacy), or stdio (local subprocess); list and invoke tools with JSON arguments. Built on `@modelcontextprotocol/sdk`.
+- **AI Chat** — 14 providers (OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq, Perplexity, Cerebras, Cohere, Fireworks, DeepInfra, Together, OpenRouter) + Custom URL, streaming, multi-turn, env-var resolution
 
 ### 🔐 WS-Security (XML Signature & Encryption)
 - UsernameToken: Password Text + Password Digest with nonce/created

@@ -42,7 +42,9 @@ Paketleme (dmg/exe/deb/AppImage/zip) için **`.claude/commands/package.md`**'dek
 | WebSocket | ws ^8 |
 | GraphQL | graphql ^16 + graphql-ws |
 | gRPC | @grpc/grpc-js + @grpc/proto-loader |
-| SSE | eventsource ^2 |
+| SSE | eventsource ^3 |
+| Socket.IO | socket.io-client ^4 |
+| MCP | @modelcontextprotocol/sdk ^1 |
 | OpenAPI parse | @readme/openapi-parser + js-yaml + fast-xml-parser |
 | Git entegrasyonu | simple-git |
 | Packaging | electron-builder ^25 |
@@ -166,10 +168,10 @@ testnizer/
 │   │   │   ├── http.engine.ts → protocols/  (referans)
 │   │   │   └── {auth, workspace, project, branch, endpoint, environment,
 │   │   │        history, certificate, git, import-export, save, settings,
-│   │   │        soap, websocket, graphql, grpc, sse,
+│   │   │        soap, websocket, graphql, grpc, sse, socketio, mcp,
 │   │   │        runner, scheduler, test-suite}.handler.ts
 │   │   ├── protocols/                 # Protokol motorları
-│   │   │   └── {http, soap, websocket, graphql, grpc, sse}.engine.ts
+│   │   │   └── {http, soap, websocket, graphql, grpc, sse, socketio, mcp}.engine.ts
 │   │   └── db/                        # better-sqlite3 + migrations
 │   │       ├── database.ts            # Init + schema + migrations
 │   │       └── {workspace, project, branch, endpoint, environment,
@@ -186,14 +188,14 @@ testnizer/
 │       │   ├── sidebar/               # TreeView, TreeNode, NewDropdown
 │       │   ├── request/               # RequestEditor + Params/Auth/Headers/Body/Pre/Tests
 │       │   ├── response/              # ResponsePane + Body/Cookie/Console/ActualRequest
-│       │   ├── protocols/             # SOAP/WS/GraphQL/gRPC/SSE editörleri
+│       │   ├── protocols/             # SOAP/WS/GraphQL/gRPC/SSE/Socket.IO/MCP editörleri
 │       │   ├── runner/                # Collection runner UI
 │       │   ├── modals/                # Import, Environment, Settings, vb.
 │       │   └── shared/                # MethodBadge, StatusBadge, MonacoEditor, vb.
 │       ├── stores/                    # Zustand — feature başına bir store
 │       │   └── {auth, workspace, branch, tabs, request, response, environment,
 │       │        history, console, ui, runner, updater,
-│       │        soap, websocket, graphql, grpc, sse}.store.ts
+│       │        soap, websocket, graphql, grpc, sse, socketio, mcp}.store.ts
 │       ├── lib/
 │       │   ├── variable-resolver.ts   # {{var}} substitution
 │       │   ├── dynamic-values.ts      # {{$randomInt}} vb.
@@ -233,6 +235,8 @@ testnizer/
 | Collection Runner | `runner.handler.ts` | `runner.store.ts` | Çoklu endpoint sequential run + HTML rapor |
 | Scheduler | `scheduler.handler.ts` | — | Zamanlanmış görevler |
 | Test Suite | `test-suite.handler.ts` | — | Çoklu koleksiyon test setleri |
+| Socket.IO | `socketio.handler.ts` | `socketio.store.ts` | `socket.io-client`; namespace, `auth.token`, emit/subscribe, bidi event timeline |
+| MCP (Model Context Protocol) | `mcp.handler.ts` | `mcp.store.ts` | `@modelcontextprotocol/sdk` — Streamable HTTP / SSE / stdio; tools/list + callTool |
 | Updater | (`src/main/updater.ts`) | `updater.store.ts` | electron-updater |
 
 ---

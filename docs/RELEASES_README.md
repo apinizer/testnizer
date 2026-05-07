@@ -79,6 +79,8 @@ auto-update without consent.
 - **GraphQL** — query, mutation, subscription, schema introspection
 - **gRPC** — `.proto` import, all four streaming modes, metadata, JSON skeleton from proto fields
 - **Server-Sent Events** — long-lived streams with `Last-Event-ID` resume
+- **Socket.IO** — `socket.io-client`, namespaces, `auth.token`, custom upgrade headers, emit + subscribe, bidirectional event timeline
+- **MCP (Model Context Protocol)** — MCP client with Streamable HTTP / SSE / stdio transports; list and invoke tools advertised by the server (built on `@modelcontextprotocol/sdk`)
 - **AI Chat** — 14 providers (OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq, Perplexity, Cerebras, Cohere, Fireworks, DeepInfra, Together, OpenRouter) plus Custom URL — streaming, multi-turn
 
 ### 🛠 Built-in offline tools
