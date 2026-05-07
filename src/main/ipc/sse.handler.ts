@@ -2,7 +2,8 @@ import { ipcMain, BrowserWindow } from 'electron'
 import {
   connect,
   disconnect,
-  type SseConnectOptions
+  type SseConnectOptions,
+  type SseHttpMethod
 } from '../protocols/sse.engine'
 import { logEvent } from '../lib/console-logger'
 
@@ -11,6 +12,8 @@ interface SseConnectPayload {
   headers?: Record<string, string>
   lastEventId?: string
   withCredentials?: boolean
+  method?: SseHttpMethod
+  body?: string
   _tabId?: string
 }
 
@@ -29,13 +32,15 @@ export function registerSseHandlers(): void {
         url: payload.url,
         headers: payload.headers,
         lastEventId: payload.lastEventId,
-        withCredentials: payload.withCredentials
+        withCredentials: payload.withCredentials,
+        method: payload.method,
+        body: payload.body,
       }
 
       logEvent({
         protocol: 'sse',
         category: 'connection',
-        message: `SSE connecting → ${payload.url}`,
+        message: `SSE connecting (${payload.method ?? 'GET'}) → ${payload.url}`,
         url: payload.url,
         tabId: payload._tabId,
       })

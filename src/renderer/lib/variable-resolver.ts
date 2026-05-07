@@ -1,5 +1,5 @@
 import { resolveDynamicValue } from './dynamic-values'
-import type { AuthConfig } from '../types'
+import type { AuthConfig, RequestBody } from '../types'
 
 /**
  * Resolves {{variable}} placeholders in a template string.
@@ -49,6 +49,50 @@ export function resolveKeyValuePairs(
     key: resolveVariables(pair.key, envVars, globalVars),
     value: resolveVariables(pair.value, envVars, globalVars),
   }))
+}
+
+/**
+ * Resolve {{var}} in every substitutable field of a RequestBody:
+ * `content` (raw/json/xml/text/etc.), `formData` rows, `urlEncoded` rows,
+ * and `binaryPath` (so users can `{{fixturesDir}}/foo.bin`).
+ * `formData` rows of `{ type: 'file', filePath }` get their `filePath` resolved
+ * via the generic key-walker — KeyValuePair is structurally permissive enough.
+ */
+export function resolveRequestBody(
+  body: RequestBody | undefined,
+  envVars: Record<string, string>,
+  globalVars: Record<string, string> = {},
+): RequestBody | undefined {
+  if (!body) return body
+  const r = (s: string | undefined) =>
+    s === undefined ? s : resolveVariables(s, envVars, globalVars)
+  const result: RequestBody = { ...body }
+  if (body.content !== undefined) {
+    result.content = r(body.content)
+  }
+  if (body.formData) {
+    result.formData = body.formData.map((row) => {
+      const next: typeof row = { ...row }
+      if (typeof next.key === 'string') next.key = r(next.key) ?? ''
+      if (typeof next.value === 'string') next.value = r(next.value) ?? ''
+      const filePath = (next as { filePath?: string }).filePath
+      if (typeof filePath === 'string') {
+        ;(next as { filePath?: string }).filePath = r(filePath)
+      }
+      return next
+    })
+  }
+  if (body.urlEncoded) {
+    result.urlEncoded = body.urlEncoded.map((row) => ({
+      ...row,
+      key: r(row.key) ?? '',
+      value: r(row.value) ?? '',
+    }))
+  }
+  if (body.binaryPath !== undefined) {
+    result.binaryPath = r(body.binaryPath)
+  }
+  return result
 }
 
 /**

@@ -13,6 +13,43 @@ function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
+/** Shape of payloads emitted by the main process on the `ws:event` channel. */
+interface WsEvent {
+  connectionId: string
+  type: 'open' | 'message' | 'close' | 'error'
+  data?: string
+  code?: number
+  reason?: string
+  timestamp: number
+  messageId?: string
+  contentType?: 'text' | 'json' | 'binary'
+}
+
+interface WsApi {
+  connect: (options: {
+    url: string
+    headers?: Record<string, string>
+    protocols?: string[]
+  }) => Promise<{
+    success: boolean
+    data?: { connectionId: string }
+    error?: string
+  }>
+  disconnect: (
+    connectionId: string,
+  ) => Promise<{ success: boolean; data?: boolean; error?: string }>
+  send: (
+    connectionId: string,
+    message: string,
+  ) => Promise<{ success: boolean; data?: boolean; error?: string }>
+  onEvent: (cb: (event: WsEvent) => void) => () => void
+}
+
+function getWsApi(): WsApi | undefined {
+  const w = window as unknown as { api?: { ws?: WsApi } }
+  return w.api?.ws
+}
+
 interface WebSocketStore {
   url: string
   connectionId: string | null
@@ -23,6 +60,8 @@ interface WebSocketStore {
   composerContent: string
   composerMode: 'json' | 'text'
   autoScroll: boolean
+  /** Subscription returned by `ws.onEvent` — call to remove the listener. */
+  _unsubscribe?: () => void
 
   setUrl: (url: string) => void
   connect: () => Promise<void>
@@ -52,6 +91,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
   composerContent: '{\n  "type": "ping",\n  "payload": "hello"\n}',
   composerMode: 'json',
   autoScroll: true,
+  _unsubscribe: undefined,
 
   setUrl: (url) => set({ url }),
 
@@ -59,69 +99,130 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
     const { url, customHeaders } = get()
     if (!url.trim()) return
 
-    set({ connectionState: 'connecting', errorMessage: null })
+    set({ connectionState: 'connecting', errorMessage: null, messages: [] })
 
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedUrl = resolveVariables(url, activeVars)
-    const resolvedHeaders = resolveKeyValuePairs(
+    const resolvedHeaderRows = resolveKeyValuePairs(
       customHeaders.filter((h) => h.enabled && h.key.trim()),
       activeVars,
     )
+    const headerMap: Record<string, string> = {}
+    for (const row of resolvedHeaderRows) headerMap[row.key] = row.value
+
+    const ws = getWsApi()
+    if (!ws) {
+      set({ connectionState: 'error', errorMessage: 'WebSocket bridge unavailable' })
+      return
+    }
+
+    // Subscribe BEFORE awaiting connect — main fires the 'open' event from
+    // inside `connect()`, so attaching after would race against the event.
+    const prevUnsub = get()._unsubscribe
+    if (prevUnsub) prevUnsub()
+    const unsub = ws.onEvent((evt) => {
+      const expected = get().connectionId
+      // Ignore stray events from older connections (rapid reconnect).
+      if (expected && evt.connectionId !== expected) return
+
+      switch (evt.type) {
+        case 'open':
+          set({ connectionState: 'connected', errorMessage: null })
+          break
+        case 'message': {
+          const contentType: WsMessage['contentType'] =
+            evt.contentType === 'binary'
+              ? 'text'
+              : evt.contentType === 'json'
+                ? 'json'
+                : 'text'
+          get().addMessage({
+            id: evt.messageId ?? makeId(),
+            direction: 'received',
+            content: evt.data ?? '',
+            contentType,
+            timestamp: evt.timestamp,
+          })
+          break
+        }
+        case 'close':
+          set({
+            connectionState: 'disconnected',
+            connectionId: null,
+            errorMessage:
+              evt.code && evt.code !== 1000
+                ? `Closed (${evt.code}${evt.reason ? `: ${evt.reason}` : ''})`
+                : null,
+          })
+          break
+        case 'error':
+          set({
+            connectionState: 'error',
+            errorMessage: evt.data || 'WebSocket error',
+          })
+          break
+      }
+    })
+    set({ _unsubscribe: unsub })
 
     try {
-      const result = await window.api?.request?.send({
-        method: 'WS_CONNECT',
+      const result = await ws.connect({
         url: resolvedUrl,
-        headers: resolvedHeaders,
+        headers: headerMap,
       })
 
       if (result?.success && result.data) {
-        const connId = (result.data as unknown as { connectionId: string }).connectionId
-        set({ connectionId: connId, connectionState: 'connected' })
+        // The `open` event from main may have already fired by the time the
+        // promise resolves — keep `connected` state if it did, otherwise wait
+        // for it. We always set the connectionId so the listener filter
+        // accepts subsequent events.
+        set((state) => ({
+          connectionId: result.data!.connectionId,
+          connectionState:
+            state.connectionState === 'connected' ? 'connected' : 'connecting',
+        }))
       } else {
+        unsub()
         set({
+          _unsubscribe: undefined,
           connectionState: 'error',
           errorMessage: result?.error || 'Connection failed',
         })
       }
-    } catch {
-      // Demo mode: simulate connection
-      const connId = `ws-${makeId()}`
-      set({ connectionId: connId, connectionState: 'connected' })
-
-      // Simulate a welcome message after short delay
-      setTimeout(() => {
-        const state = get()
-        if (state.connectionState === 'connected') {
-          state.addMessage({
-            id: makeId(),
-            direction: 'received',
-            content: JSON.stringify({ type: 'welcome', message: 'Connected to WebSocket server' }),
-            contentType: 'json',
-            timestamp: Date.now(),
-          })
-        }
-      }, 500)
+    } catch (e) {
+      unsub()
+      set({
+        _unsubscribe: undefined,
+        connectionState: 'error',
+        errorMessage: (e as Error).message,
+      })
     }
   },
 
   disconnect: async () => {
-    const { connectionId } = get()
+    const { connectionId, _unsubscribe } = get()
+    const ws = getWsApi()
 
-    try {
-      if (connectionId) {
-        await window.api?.request?.cancel(connectionId)
+    if (ws && connectionId) {
+      try {
+        await ws.disconnect(connectionId)
+      } catch {
+        // Engine already cleaned up — fall through to local state reset.
       }
-    } catch {
-      // Ignore disconnect errors
     }
+    if (_unsubscribe) _unsubscribe()
 
-    set({ connectionState: 'disconnected', connectionId: null, errorMessage: null })
+    set({
+      connectionState: 'disconnected',
+      connectionId: null,
+      errorMessage: null,
+      _unsubscribe: undefined,
+    })
   },
 
   sendMessage: async () => {
     const { connectionId, composerContent, composerMode, connectionState } = get()
-    if (connectionState !== 'connected' || !composerContent.trim()) return
+    if (connectionState !== 'connected' || !connectionId || !composerContent.trim()) return
 
     let contentType: 'text' | 'json' = 'text'
     if (composerMode === 'json') {
@@ -146,23 +247,15 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
 
     set((state) => ({ messages: [...state.messages, sentMsg] }))
 
+    const ws = getWsApi()
+    if (!ws) return
     try {
-      await window.api?.request?.send({
-        method: 'WS_SEND',
-        url: `__internal__:ws:send:${connectionId}`,
-        body: { type: 'text', content: resolvedContent },
-      })
-    } catch {
-      // Demo mode: echo the message back
-      setTimeout(() => {
-        get().addMessage({
-          id: makeId(),
-          direction: 'received',
-          content: resolvedContent,
-          contentType,
-          timestamp: Date.now(),
-        })
-      }, 200)
+      const result = await ws.send(connectionId, resolvedContent)
+      if (!result?.success && result?.error) {
+        set({ errorMessage: result.error })
+      }
+    } catch (e) {
+      set({ errorMessage: (e as Error).message })
     }
   },
 
@@ -195,7 +288,9 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
   setConnectionState: (connectionState) => set({ connectionState }),
   setErrorMessage: (errorMessage) => set({ errorMessage }),
 
-  reset: () =>
+  reset: () => {
+    const { _unsubscribe } = get()
+    if (_unsubscribe) _unsubscribe()
     set({
       url: 'wss://echo.websocket.org',
       connectionId: null,
@@ -206,5 +301,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
       composerContent: '{\n  "type": "ping",\n  "payload": "hello"\n}',
       composerMode: 'json',
       autoScroll: true,
-    }),
+      _unsubscribe: undefined,
+    })
+  },
 }))

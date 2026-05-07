@@ -10,6 +10,8 @@ import {
   migrateLegacyConfig,
   type WsSecurityConfig as WsseConfig,
 } from './wsse.engine'
+import { applyDefaultUserAgent } from '../lib/user-agent'
+import { classifyTransportError } from '../lib/error-classifier'
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -247,6 +249,181 @@ function detectSoapVersion(wsdlXml: string): SoapVersion {
   return 'soap11'
 }
 
+// ─── WSDL XML structure parser ──────────────────────────────
+// `soap` library's `client.describe()` collapses operations across bindings
+// that share a portType (e.g. SOAP 1.1 + SOAP 1.2 binding for the same
+// portType — dneonline Calculator). We re-derive the per-port operation
+// list directly from the WSDL XML so we never lose operations.
+
+interface WsdlXmlStructure {
+  /** binding name (no NS prefix) → portType name (no NS prefix) */
+  bindingToPortType: Map<string, string>
+  /** portType name (no NS prefix) → operation names */
+  portTypeToOps: Map<string, string[]>
+  /** service name (no NS prefix) → ports */
+  services: Map<
+    string,
+    Array<{ name: string; bindingName: string; address?: string }>
+  >
+  /** binding name + opName → soapAction */
+  bindingOpSoapAction: Map<string, string>
+}
+
+function stripNsPrefix(qname: string | undefined): string {
+  if (!qname) return ''
+  const idx = qname.indexOf(':')
+  return idx === -1 ? qname : qname.slice(idx + 1)
+}
+
+function asArray<T>(v: T | T[] | undefined): T[] {
+  if (v === undefined || v === null) return []
+  return Array.isArray(v) ? v : [v]
+}
+
+/**
+ * Walk parsed WSDL XML (fast-xml-parser output, namespace prefixes preserved)
+ * and collect portType/binding/service structures.
+ */
+function parseWsdlXmlStructure(wsdlXml: string): WsdlXmlStructure {
+  const result: WsdlXmlStructure = {
+    bindingToPortType: new Map(),
+    portTypeToOps: new Map(),
+    services: new Map(),
+    bindingOpSoapAction: new Map(),
+  }
+
+  let parsed: Record<string, unknown>
+  try {
+    parsed = xmlParser.parse(wsdlXml) as Record<string, unknown>
+  } catch {
+    return result
+  }
+
+  // Find <wsdl:definitions> or <definitions> root
+  const definitions = findElementByLocalName(parsed, 'definitions') as
+    | Record<string, unknown>
+    | undefined
+  if (!definitions) return result
+
+  // portTypes — operation names live here
+  for (const portType of getChildrenByLocalName(definitions, 'portType')) {
+    const ptName = (portType['@_name'] as string | undefined) ?? ''
+    if (!ptName) continue
+    const ops: string[] = []
+    for (const op of getChildrenByLocalName(portType, 'operation')) {
+      const opName = (op['@_name'] as string | undefined) ?? ''
+      if (opName) ops.push(opName)
+    }
+    if (ops.length > 0) result.portTypeToOps.set(ptName, ops)
+  }
+
+  // bindings — link binding name → portType, and capture soapAction per op
+  for (const binding of getChildrenByLocalName(definitions, 'binding')) {
+    const bName = (binding['@_name'] as string | undefined) ?? ''
+    const bType = stripNsPrefix(binding['@_type'] as string | undefined)
+    if (!bName || !bType) continue
+    result.bindingToPortType.set(bName, bType)
+
+    for (const op of getChildrenByLocalName(binding, 'operation')) {
+      const opName = (op['@_name'] as string | undefined) ?? ''
+      if (!opName) continue
+      // soap:operation soapAction lives as a sibling element
+      const soapOp = findChildByLocalName(op, 'operation', /\bsoap\b/i)
+      if (soapOp) {
+        const action = soapOp['@_soapAction'] as string | undefined
+        if (typeof action === 'string') {
+          result.bindingOpSoapAction.set(`${bName}::${opName}`, action)
+        }
+      }
+    }
+  }
+
+  // services — port → binding + endpoint address
+  for (const service of getChildrenByLocalName(definitions, 'service')) {
+    const sName = (service['@_name'] as string | undefined) ?? ''
+    if (!sName) continue
+    const ports: Array<{ name: string; bindingName: string; address?: string }> = []
+    for (const port of getChildrenByLocalName(service, 'port')) {
+      const pName = (port['@_name'] as string | undefined) ?? ''
+      const bRef = stripNsPrefix(port['@_binding'] as string | undefined)
+      if (!pName || !bRef) continue
+      // <soap:address location="..."> sibling
+      const addrEl = findChildByLocalName(port, 'address', /\bsoap\b/i)
+      const address = addrEl
+        ? (addrEl['@_location'] as string | undefined)
+        : undefined
+      ports.push({ name: pName, bindingName: bRef, address })
+    }
+    if (ports.length > 0) result.services.set(sName, ports)
+  }
+
+  return result
+}
+
+/** Find first descendant whose local name (after NS prefix) matches `localName`. */
+function findElementByLocalName(
+  obj: unknown,
+  localName: string,
+): Record<string, unknown> | undefined {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return undefined
+  const record = obj as Record<string, unknown>
+  for (const key of Object.keys(record)) {
+    if (stripNsPrefix(key) === localName) {
+      const val = record[key]
+      if (val && typeof val === 'object' && !Array.isArray(val)) {
+        return val as Record<string, unknown>
+      }
+    }
+  }
+  for (const key of Object.keys(record)) {
+    const found = findElementByLocalName(record[key], localName)
+    if (found) return found
+  }
+  return undefined
+}
+
+/**
+ * Return all direct children of `parent` whose local name matches `localName`.
+ * Handles fast-xml-parser's array-or-object shape and any namespace prefix.
+ */
+function getChildrenByLocalName(
+  parent: Record<string, unknown>,
+  localName: string,
+): Array<Record<string, unknown>> {
+  const result: Array<Record<string, unknown>> = []
+  for (const key of Object.keys(parent)) {
+    if (stripNsPrefix(key) === localName) {
+      for (const item of asArray(parent[key])) {
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          result.push(item as Record<string, unknown>)
+        }
+      }
+    }
+  }
+  return result
+}
+
+/** Find first child by local name; if `prefixHint` provided, key must include it. */
+function findChildByLocalName(
+  parent: Record<string, unknown>,
+  localName: string,
+  prefixHint?: RegExp,
+): Record<string, unknown> | undefined {
+  for (const key of Object.keys(parent)) {
+    if (stripNsPrefix(key) !== localName) continue
+    if (prefixHint && !prefixHint.test(key)) continue
+    const val = parent[key]
+    const items = asArray(val)
+    if (items.length > 0) {
+      const first = items[0]
+      if (first && typeof first === 'object' && !Array.isArray(first)) {
+        return first as Record<string, unknown>
+      }
+    }
+  }
+  return undefined
+}
+
 // ─── Parse WSDL ─────────────────────────────────────────────
 
 interface DescribeOperation {
@@ -267,11 +444,23 @@ interface DescribeResult {
 }
 
 export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
-  const client = await soap.createClientAsync(wsdlUrl, {
-    disableCache: true,
-    escapeXML: false,
-    forceSoap12Headers: false,
-  })
+  let client: soap.Client
+  try {
+    client = await soap.createClientAsync(wsdlUrl, {
+      disableCache: true,
+      escapeXML: false,
+      forceSoap12Headers: false,
+    })
+  } catch (err) {
+    // `soap.createClientAsync` lumps fetch failures and XML parse errors
+    // together as plain Errors — split them so the user knows which side broke.
+    const raw = err instanceof Error ? err.message : String(err)
+    if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ESOCKETTIMEDOUT|ENETUNREACH|EAI_AGAIN|status code|Invalid URL|fetch failed/i.test(raw)) {
+      const classified = classifyTransportError(err)
+      throw new Error(`WSDL fetch failed: ${classified.message}`)
+    }
+    throw new Error(`WSDL parse error: ${raw}`)
+  }
 
   const description = client.describe() as DescribeResult
   // Access wsdl.xml via index signature to avoid private access error
@@ -279,26 +468,66 @@ export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
   const wsdlXml = (wsdlObj['xml'] as string) ?? ''
   const soapVersion = detectSoapVersion(wsdlXml)
 
+  // Re-derive structure directly from WSDL XML — `client.describe()` can
+  // collapse operations when two bindings share a portType (e.g. SOAP 1.1
+  // + SOAP 1.2 over the same Calculator portType, dropping ops to ~2).
+  const xmlStructure = parseWsdlXmlStructure(wsdlXml)
+
   const services: WsdlService[] = []
   let firstEndpointUrl = ''
 
-  for (const [serviceName, serviceDesc] of Object.entries(description)) {
-    const ports: WsdlPort[] = []
+  // Prefer the canonical service list from the XML when available — covers
+  // the multi-binding case where describe() returns fewer entries.
+  const serviceNames =
+    xmlStructure.services.size > 0
+      ? Array.from(xmlStructure.services.keys())
+      : Object.keys(description)
 
-    for (const [portName, portDesc] of Object.entries(serviceDesc)) {
-      const operations: WsdlOperation[] = []
-      // Try to get the endpoint URL from the WSDL definition
-      const portEndpoint = extractPortEndpoint(client, serviceName, portName) || wsdlUrl
+  for (const serviceName of serviceNames) {
+    const ports: WsdlPort[] = []
+    const xmlPorts = xmlStructure.services.get(serviceName) ?? []
+    const describePorts = description[serviceName] ?? {}
+
+    // Union of port names from XML and describe()
+    const portNames = Array.from(
+      new Set([
+        ...xmlPorts.map((p) => p.name),
+        ...Object.keys(describePorts),
+      ]),
+    )
+
+    for (const portName of portNames) {
+      const xmlPort = xmlPorts.find((p) => p.name === portName)
+      const describePort = describePorts[portName] ?? {}
+      const portEndpoint =
+        xmlPort?.address ||
+        extractPortEndpoint(client, serviceName, portName) ||
+        wsdlUrl
 
       if (!firstEndpointUrl) {
         firstEndpointUrl = portEndpoint
       }
 
-      for (const [opName, opDesc] of Object.entries(portDesc)) {
+      // Build canonical op list: prefer portType ops (XML), fallback to describe
+      const ptName = xmlPort
+        ? xmlStructure.bindingToPortType.get(xmlPort.bindingName)
+        : undefined
+      const xmlOps = ptName ? xmlStructure.portTypeToOps.get(ptName) ?? [] : []
+      const opNames = Array.from(
+        new Set([...xmlOps, ...Object.keys(describePort)]),
+      )
+
+      const operations: WsdlOperation[] = []
+      for (const opName of opNames) {
+        const opDesc = describePort[opName] ?? {}
         const inputSchema = (opDesc.input ?? {}) as Record<string, unknown>
         const outputSchema = (opDesc.output ?? {}) as Record<string, unknown>
 
-        const soapAction = extractSoapAction(client, portName, opName)
+        // soapAction: prefer binding-specific value from XML; fallback to soap lib helper
+        const xmlAction =
+          xmlPort &&
+          xmlStructure.bindingOpSoapAction.get(`${xmlPort.bindingName}::${opName}`)
+        const soapAction = xmlAction || extractSoapAction(client, portName, opName)
         const exampleRequest = generateEnvelope(
           opName,
           buildExampleParams(inputSchema),
@@ -433,7 +662,7 @@ export function generateEnvelope(
   operationName: string,
   params: Record<string, unknown>,
   soapVersion: SoapVersion,
-  soapAction?: string,
+  _soapAction?: string,
   namespace?: string,
 ): string {
   const ns = namespace || 'http://tempuri.org/'
@@ -543,6 +772,9 @@ export async function executeSoap(options: SoapExecuteOptions): Promise<SoapApiR
       requestHeaders['SOAPAction'] = `"${options.operationName}"`
     }
 
+    // Inject default User-Agent unless the caller supplied one (any case).
+    applyDefaultUserAgent(requestHeaders)
+
     // Execute via axios for full control
     const response = await axios.post<string>(options.endpointUrl, envelope, {
       headers: requestHeaders,
@@ -599,11 +831,15 @@ export async function executeSoap(options: SoapExecuteOptions): Promise<SoapApiR
     const endTime = performance.now()
     const totalTime = Math.round(endTime - startTime)
 
+    // Reuse the shared transport classifier so SOAP shows the same TLS / DNS /
+    // refused-connection messaging as HTTP. Falls back to the raw error text
+    // for non-axios shapes (e.g. WSDL parse exceptions thrown above).
+    const classified = classifyTransportError(err)
     return {
       requestId,
       protocol: 'soap',
       timing: { total: totalTime },
-      error: err instanceof Error ? err.message : String(err),
+      error: classified.message,
     }
   }
 }

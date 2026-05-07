@@ -1480,6 +1480,23 @@ export async function importPostman(
     }
   }
 
+  // Detect Postman v1 (legacy) — has `requests[]` + top-level `name`/`id` but
+  // no `info.schema` and no `item[]`. Convert to a more actionable error so
+  // users know to re-export from Postman as v2.1 instead of guessing.
+  const root = collection as unknown as Record<string, unknown>
+  const hasV1Markers =
+    typeof root['name'] === 'string' &&
+    Array.isArray(root['requests']) &&
+    !Array.isArray(root['item'])
+  if (hasV1Markers) {
+    return {
+      success: false,
+      error:
+        'Postman v1 collections are not supported. Re-export the collection from Postman as v2.1 ' +
+        '(Collections → ⋯ → Export → Collection v2.1) and import the resulting file.',
+    }
+  }
+
   if (
     !collection.info ||
     typeof collection.info.name !== 'string' ||
@@ -1524,7 +1541,7 @@ export async function importPostman(
       const envName = `${collection.info.name} (imported)`
       // Reuse existing env with the same name if we've already imported this
       // collection — avoids exploding env count on re-imports.
-      let envRow = db
+      const envRow = db
         .prepare(
           'SELECT id FROM environments WHERE project_id = ? AND name = ?',
         )
@@ -2080,10 +2097,51 @@ function importCurl(
   const requestSchema: Record<string, unknown> = {}
 
   if (parsed.headers && Object.keys(parsed.headers).length > 0) {
-    requestSchema.headers = parsed.headers
+    // Persist as KeyValuePair[] so the renderer's request store can load it
+    // directly without an ad-hoc map → array conversion at every read site.
+    requestSchema.headers = Object.entries(parsed.headers).map(([key, value]) => ({
+      id: randomUUID(),
+      key,
+      value,
+      enabled: true,
+    }))
   }
-  if (parsed.body) {
-    requestSchema.body = parsed.body
+  if (parsed.formData && parsed.formData.length > 0) {
+    requestSchema.body = {
+      type: 'form-data',
+      formData: parsed.formData.map((row) => ({
+        id: randomUUID(),
+        key: row.key,
+        value: row.value,
+        enabled: true,
+        type: row.type,
+        filePath: row.filePath,
+      })),
+    }
+  } else if (parsed.body) {
+    // Best-effort: classify the raw body string by header content-type so the
+    // user lands on the right body tab in the UI.
+    const ct = parsed.headers['Content-Type'] ?? parsed.headers['content-type'] ?? ''
+    if (/application\/x-www-form-urlencoded/i.test(ct)) {
+      const urlEncoded = parsed.body.split('&').map((pair) => {
+        const eq = pair.indexOf('=')
+        const key = eq === -1 ? pair : pair.slice(0, eq)
+        const value = eq === -1 ? '' : pair.slice(eq + 1)
+        return {
+          id: randomUUID(),
+          key: decodeURIComponent(key),
+          value: decodeURIComponent(value),
+          enabled: true,
+        }
+      })
+      requestSchema.body = { type: 'urlencoded', urlEncoded }
+    } else if (/json/i.test(ct)) {
+      requestSchema.body = { type: 'json', content: parsed.body }
+    } else if (/xml/i.test(ct)) {
+      requestSchema.body = { type: 'xml', content: parsed.body }
+    } else {
+      requestSchema.body = { type: 'raw', content: parsed.body }
+    }
   }
   if (parsed.auth) {
     requestSchema.auth = parsed.auth
@@ -2125,6 +2183,18 @@ interface ParsedCurl {
   url: string
   headers: Record<string, string>
   body?: string
+  /**
+   * Multipart `-F` rows parsed structurally so the importer can persist a
+   * proper UI body shape (`{ type: 'form-data', formData: KeyValuePair[] }`)
+   * instead of joining everything into a body string. `type: 'file'` rows
+   * carry the source path in `filePath` for the main-process upload stream.
+   */
+  formData?: Array<{
+    key: string
+    value: string
+    type?: 'text' | 'file'
+    filePath?: string
+  }>
   auth?: { type: string; basic?: { username: string; password: string } }
   insecure: boolean
   cookies?: string
@@ -2289,17 +2359,17 @@ export function parseCurlCommand(command: string): ParsedCurl {
       case '--form': {
         i++
         if (i < tokens.length) {
-          // Multipart form data
-          if (!result.headers['Content-Type']) {
-            result.headers['Content-Type'] = 'multipart/form-data'
-          }
+          // Multipart form data — content-type boundary is set by the HTTP
+          // client when it builds the multipart body, so we don't pre-fill
+          // `Content-Type` from the importer.
           const formPart = tokens[i]
           const eqIdx = formPart.indexOf('=')
           if (eqIdx > 0) {
-            // Collect form data in body as key=value pairs separated by &
-            const existing = result.body || ''
-            const sep = existing ? '&' : ''
-            result.body = existing + sep + formPart
+            const fieldName = formPart.slice(0, eqIdx)
+            const rawValue = formPart.slice(eqIdx + 1)
+            const row = parseCurlFormPart(fieldName, rawValue)
+            if (!result.formData) result.formData = []
+            result.formData.push(row)
           }
           if (result.method === 'GET') {
             result.method = 'POST'
@@ -2337,19 +2407,67 @@ function hasContentTypeHeader(headers: Record<string, string>): boolean {
   return false
 }
 
+/**
+ * Parse a single cURL `-F` value (everything after `field=`).
+ * - `@/path/to/file`     → `{ type: 'file', filePath: '/path/to/file', value: <basename> }`
+ * - `@/path;type=...`    → file row, the `;type=`/`;filename=` modifiers are noted in `value` only as basename
+ * - `<value>`            → text row with the literal value
+ * `<` (read-from-file then send as text) is rare; we fall back to text.
+ */
+function parseCurlFormPart(
+  fieldName: string,
+  rawValue: string,
+): { key: string; value: string; type?: 'text' | 'file'; filePath?: string } {
+  if (rawValue.startsWith('@')) {
+    // Strip `;type=...;filename=...` modifiers that aren't part of the path
+    const semiIdx = rawValue.indexOf(';')
+    const path = semiIdx === -1 ? rawValue.slice(1) : rawValue.slice(1, semiIdx)
+    const baseName = path.split(/[/\\]/).pop() ?? path
+    return { key: fieldName, value: baseName, type: 'file', filePath: path }
+  }
+  return { key: fieldName, value: rawValue, type: 'text' }
+}
+
 export function tokenizeCurl(command: string): string[] {
   const tokens: string[] = []
   let current = ''
   let inSingle = false
   let inDouble = false
+  let inAnsiC = false // bash $'...' — backslash escapes interpreted
   let escaped = false
 
   for (let i = 0; i < command.length; i++) {
     const ch = command[i]
 
     if (escaped) {
-      current += ch
+      // Inside $'...': decode common bash ANSI-C escapes; elsewhere preserve verbatim.
+      if (inAnsiC) {
+        current += decodeAnsiCEscape(ch)
+      } else {
+        current += ch
+      }
       escaped = false
+      continue
+    }
+
+    // ANSI-C quoting opener: $'...'
+    if (ch === '$' && !inSingle && !inDouble && !inAnsiC && command[i + 1] === "'") {
+      inAnsiC = true
+      i++ // skip the opening single quote
+      continue
+    }
+
+    // Inside $'...': only \ and the closing ' are special; spaces are literal.
+    if (inAnsiC) {
+      if (ch === '\\') {
+        escaped = true
+        continue
+      }
+      if (ch === "'") {
+        inAnsiC = false
+        continue
+      }
+      current += ch
       continue
     }
 
@@ -2384,6 +2502,27 @@ export function tokenizeCurl(command: string): string[] {
   }
 
   return tokens
+}
+
+/** Decode a single character that follows `\` inside a bash `$'...'` literal. */
+function decodeAnsiCEscape(ch: string | undefined): string {
+  switch (ch) {
+    case 'n': return '\n'
+    case 't': return '\t'
+    case 'r': return '\r'
+    case 'a': return '\x07'
+    case 'b': return '\b'
+    case 'f': return '\f'
+    case 'v': return '\v'
+    case '0': return '\0'
+    case '\\': return '\\'
+    case "'": return "'"
+    case '"': return '"'
+    case '?': return '?'
+    case 'e':
+    case 'E': return '\x1b'
+    default: return ch ?? ''
+  }
 }
 
 // ─── cURL Export ────────────────────────────────────────────

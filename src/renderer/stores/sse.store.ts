@@ -13,8 +13,51 @@ function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
+export type SseHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+export type SseBodyType = 'json' | 'text'
+
+/** Shape of payloads emitted by the main process on the `sse:event` channel. */
+interface SsePayload {
+  connectionId: string
+  type: 'open' | 'event' | 'error'
+  eventType?: string
+  data?: string
+  id?: string
+  retry?: number
+  /** Present on `error` payloads when the SSE handshake returned an HTTP status. */
+  httpStatus?: number
+  timestamp: number
+}
+
+interface SseApi {
+  connect: (options: {
+    url: string
+    headers?: Record<string, string>
+    lastEventId?: string
+    withCredentials?: boolean
+    method?: SseHttpMethod
+    body?: string
+  }) => Promise<{
+    success: boolean
+    data?: { connectionId: string }
+    error?: string
+  }>
+  disconnect: (
+    connectionId: string,
+  ) => Promise<{ success: boolean; data?: boolean; error?: string }>
+  onEvent: (cb: (event: SsePayload) => void) => () => void
+}
+
+function getSseApi(): SseApi | undefined {
+  const w = window as unknown as { api?: { sse?: SseApi } }
+  return w.api?.sse
+}
+
 interface SseStore {
   url: string
+  method: SseHttpMethod
+  body: string
+  bodyType: SseBodyType
   connectionState: ConnectionState
   connectionId: string | null
   errorMessage: string | null
@@ -24,8 +67,13 @@ interface SseStore {
   eventTypeFilter: string
   autoScroll: boolean
   connectedAt: number | null
+  /** Subscription handle from `sse.onEvent` — cleared on disconnect/reset. */
+  _unsubscribe?: () => void
 
   setUrl: (url: string) => void
+  setMethod: (method: SseHttpMethod) => void
+  setBody: (body: string) => void
+  setBodyType: (bodyType: SseBodyType) => void
   setLastEventId: (id: string) => void
   setEventTypeFilter: (filter: string) => void
   setAutoScroll: (auto: boolean) => void
@@ -50,7 +98,10 @@ interface SseStore {
 }
 
 export const useSseStore = create<SseStore>((set, get) => ({
-  url: 'https://example.com/events',
+  url: 'https://stream.wikimedia.org/v2/stream/recentchange',
+  method: 'GET',
+  body: '',
+  bodyType: 'json',
   connectionState: 'disconnected',
   connectionId: null,
   errorMessage: null,
@@ -60,108 +111,142 @@ export const useSseStore = create<SseStore>((set, get) => ({
   eventTypeFilter: '',
   autoScroll: true,
   connectedAt: null,
+  _unsubscribe: undefined,
 
   setUrl: (url) => set({ url }),
+  setMethod: (method) => set({ method }),
+  setBody: (body) => set({ body }),
+  setBodyType: (bodyType) => set({ bodyType }),
   setLastEventId: (id) => set({ lastEventId: id }),
   setEventTypeFilter: (filter) => set({ eventTypeFilter: filter }),
   setAutoScroll: (auto) => set({ autoScroll: auto }),
 
   connect: async () => {
-    const { url, customHeaders, lastEventId } = get()
+    const { url, customHeaders, lastEventId, method, body, bodyType } = get()
     if (!url.trim()) return
 
-    set({ connectionState: 'connecting', errorMessage: null })
+    set({ connectionState: 'connecting', errorMessage: null, events: [] })
 
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedUrl = resolveVariables(url, activeVars)
     const resolvedLastEventId = resolveVariables(lastEventId, activeVars)
-    const baseHeaders = customHeaders.filter((h) => h.enabled && h.key.trim())
-    const resolvedHeaders = resolveKeyValuePairs(baseHeaders, activeVars)
-    if (resolvedLastEventId.trim()) {
-      resolvedHeaders.push({
-        id: makeId(),
-        key: 'Last-Event-ID',
-        value: resolvedLastEventId,
-        enabled: true,
-      } as KeyValuePair)
+    const resolvedBody = resolveVariables(body, activeVars)
+    const resolvedHeaderRows = resolveKeyValuePairs(
+      customHeaders.filter((h) => h.enabled && h.key.trim()),
+      activeVars,
+    )
+    const headerMap: Record<string, string> = {}
+    for (const row of resolvedHeaderRows) headerMap[row.key] = row.value
+    // For non-GET methods carrying a body, default Content-Type unless the
+    // user already supplied one (case-insensitive). Mirrors what curl/Postman do.
+    const sendBody = method !== 'GET' && resolvedBody.trim().length > 0
+    if (sendBody) {
+      const hasContentType = Object.keys(headerMap).some(
+        (k) => k.toLowerCase() === 'content-type',
+      )
+      if (!hasContentType) {
+        headerMap['Content-Type'] =
+          bodyType === 'json' ? 'application/json' : 'text/plain'
+      }
     }
 
-    try {
-      const result = await window.api?.request?.send({
-        method: 'SSE_CONNECT',
-        url: resolvedUrl,
-        headers: resolvedHeaders,
-      })
+    const sse = getSseApi()
+    if (!sse) {
+      set({ connectionState: 'error', errorMessage: 'SSE bridge unavailable' })
+      return
+    }
 
+    // Subscribe BEFORE awaiting connect — main fires the 'open' event from
+    // inside `connect()`, attaching after would race against the event.
+    const prevUnsub = get()._unsubscribe
+    if (prevUnsub) prevUnsub()
+    const unsub = sse.onEvent((evt) => {
+      const expected = get().connectionId
+      if (expected && evt.connectionId !== expected) return
+
+      switch (evt.type) {
+        case 'open':
+          set({
+            connectionState: 'connected',
+            connectedAt: Date.now(),
+            errorMessage: null,
+          })
+          break
+        case 'event':
+          get().addEvent({
+            id: evt.id ?? makeId(),
+            type: evt.eventType || 'message',
+            data: evt.data ?? '',
+            timestamp: evt.timestamp,
+          })
+          break
+        case 'error':
+          // The eventsource library reconnects automatically on transient
+          // failures, so we only escalate to `error` while still connecting.
+          // Once connected, we surface the error string but keep the state
+          // until an explicit close/disconnect arrives.
+          if (get().connectionState !== 'connected') {
+            set({
+              connectionState: 'error',
+              errorMessage: evt.data || 'SSE connection error',
+            })
+          } else {
+            set({ errorMessage: evt.data || 'SSE error' })
+          }
+          break
+      }
+    })
+    set({ _unsubscribe: unsub })
+
+    try {
+      const result = await sse.connect({
+        url: resolvedUrl,
+        headers: headerMap,
+        lastEventId: resolvedLastEventId.trim() || undefined,
+        method,
+        body: sendBody ? resolvedBody : undefined,
+      })
       if (result?.success && result.data) {
-        const connId = (result.data as unknown as { connectionId: string }).connectionId
-        set({ connectionId: connId, connectionState: 'connected', connectedAt: Date.now() })
+        set((state) => ({
+          connectionId: result.data!.connectionId,
+          // Keep the state set by the 'open' event when it has already fired.
+          connectionState:
+            state.connectionState === 'connected' ? 'connected' : 'connecting',
+        }))
       } else {
+        unsub()
         set({
+          _unsubscribe: undefined,
           connectionState: 'error',
           errorMessage: result?.error || 'SSE connection failed',
         })
       }
-    } catch {
-      // Demo mode: simulate SSE connection
-      const connId = `sse-${makeId()}`
-      set({ connectionId: connId, connectionState: 'connected', connectedAt: Date.now() })
-
-      // Simulate events
-      const eventTypes = ['message', 'update', 'notification', 'heartbeat']
-      let eventIndex = 0
-
-      const interval = setInterval(() => {
-        const state = get()
-        if (state.connectionState !== 'connected') {
-          clearInterval(interval)
-          return
-        }
-
-        const type = eventTypes[eventIndex % eventTypes.length]
-        let data: string
-        if (type === 'heartbeat') {
-          data = 'ping'
-        } else {
-          data = JSON.stringify({
-            id: makeId(),
-            type,
-            message: `Demo ${type} event #${eventIndex + 1}`,
-            timestamp: new Date().toISOString(),
-          })
-        }
-
-        state.addEvent({
-          id: String(eventIndex + 1),
-          type,
-          data,
-          timestamp: Date.now(),
-        })
-        eventIndex++
-      }, 2500)
-
-      // Cleanup check
-      const cleanupCheck = setInterval(() => {
-        if (get().connectionState !== 'connected') {
-          clearInterval(interval)
-          clearInterval(cleanupCheck)
-        }
-      }, 500)
+    } catch (e) {
+      unsub()
+      set({
+        _unsubscribe: undefined,
+        connectionState: 'error',
+        errorMessage: (e as Error).message,
+      })
     }
   },
 
   disconnect: async () => {
-    const { connectionId } = get()
-
-    try {
-      if (connectionId) {
-        await window.api?.request?.cancel(connectionId)
+    const { connectionId, _unsubscribe } = get()
+    const sse = getSseApi()
+    if (sse && connectionId) {
+      try {
+        await sse.disconnect(connectionId)
+      } catch {
+        // engine already cleaned up — proceed to local reset
       }
-    } catch {
-      // Ignore
     }
-
-    set({ connectionState: 'disconnected', connectionId: null })
+    if (_unsubscribe) _unsubscribe()
+    set({
+      connectionState: 'disconnected',
+      connectionId: null,
+      _unsubscribe: undefined,
+    })
   },
 
   reconnect: async () => {
@@ -204,9 +289,14 @@ export const useSseStore = create<SseStore>((set, get) => ({
     return Array.from(types).sort()
   },
 
-  reset: () =>
+  reset: () => {
+    const { _unsubscribe } = get()
+    if (_unsubscribe) _unsubscribe()
     set({
-      url: 'https://example.com/events',
+      url: 'https://stream.wikimedia.org/v2/stream/recentchange',
+      method: 'GET',
+      body: '',
+      bodyType: 'json',
       connectionState: 'disconnected',
       connectionId: null,
       errorMessage: null,
@@ -216,5 +306,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
       eventTypeFilter: '',
       autoScroll: true,
       connectedAt: null,
-    }),
+      _unsubscribe: undefined,
+    })
+  },
 }))
