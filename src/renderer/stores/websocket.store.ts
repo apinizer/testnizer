@@ -50,18 +50,26 @@ function getWsApi(): WsApi | undefined {
   return w.api?.ws
 }
 
-interface WebSocketStore {
+/** Snapshot of WebSocket state for per-tab caching. */
+interface TabWsState {
   url: string
-  connectionId: string | null
-  connectionState: ConnectionState
-  errorMessage: string | null
-  messages: WsMessage[]
   customHeaders: KeyValuePair[]
   composerContent: string
   composerMode: 'json' | 'text'
   autoScroll: boolean
-  /** Subscription returned by `ws.onEvent` — call to remove the listener. */
+  messages: WsMessage[]
+  connectionId: string | null
+  connectionState: ConnectionState
+  errorMessage: string | null
+  connectedAt: number | null
+  /** Per-tab subscription handle returned by `ws.onEvent`. */
   _unsubscribe?: () => void
+}
+
+interface WebSocketStore extends TabWsState {
+  /** Per-tab state cache */
+  _tabStates: Map<string, TabWsState>
+  _currentTabId: string | null
 
   setUrl: (url: string) => void
   connect: () => Promise<void>
@@ -78,20 +86,51 @@ interface WebSocketStore {
   addMessage: (msg: WsMessage) => void
   setConnectionState: (state: ConnectionState) => void
   setErrorMessage: (msg: string | null) => void
+
+  /** Switch active tab — saves current state and loads target tab state. */
+  switchToTab: (tabId: string) => void
+  /** Remove cached state for a closed tab. Tears down its `_unsubscribe`. */
+  removeTabState: (tabId: string) => void
+
   reset: () => void
 }
 
+function emptyTabState(): TabWsState {
+  return {
+    url: 'wss://echo.websocket.org',
+    customHeaders: [defaultKv()],
+    composerContent: '{\n  "type": "ping",\n  "payload": "hello"\n}',
+    composerMode: 'json',
+    autoScroll: true,
+    messages: [],
+    connectionId: null,
+    connectionState: 'disconnected',
+    errorMessage: null,
+    connectedAt: null,
+    _unsubscribe: undefined,
+  }
+}
+
+function extractState(s: WebSocketStore): TabWsState {
+  return {
+    url: s.url,
+    customHeaders: s.customHeaders,
+    composerContent: s.composerContent,
+    composerMode: s.composerMode,
+    autoScroll: s.autoScroll,
+    messages: s.messages,
+    connectionId: s.connectionId,
+    connectionState: s.connectionState,
+    errorMessage: s.errorMessage,
+    connectedAt: s.connectedAt,
+    _unsubscribe: s._unsubscribe,
+  }
+}
+
 export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
-  url: 'wss://echo.websocket.org',
-  connectionId: null,
-  connectionState: 'disconnected',
-  errorMessage: null,
-  messages: [],
-  customHeaders: [defaultKv()],
-  composerContent: '{\n  "type": "ping",\n  "payload": "hello"\n}',
-  composerMode: 'json',
-  autoScroll: true,
-  _unsubscribe: undefined,
+  ...emptyTabState(),
+  _tabStates: new Map(),
+  _currentTabId: null,
 
   setUrl: (url) => set({ url }),
 
@@ -116,18 +155,47 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
       return
     }
 
+    // Capture the tabId at connect time. Events for this connection are routed
+    // back into the *same* tab's slot even if the user has since switched
+    // tabs (in which case we update the cached entry rather than the live
+    // top-level state).
+    const ownerTabId = get()._currentTabId
+
+    const applyToOwner = (patch: Partial<TabWsState>): void => {
+      const current = get()
+      if (current._currentTabId === ownerTabId) {
+        set(patch as Partial<WebSocketStore>)
+      } else if (ownerTabId !== null) {
+        const map = new Map(current._tabStates)
+        const existing = map.get(ownerTabId) ?? emptyTabState()
+        map.set(ownerTabId, { ...existing, ...patch })
+        set({ _tabStates: map })
+      }
+    }
+
     // Subscribe BEFORE awaiting connect — main fires the 'open' event from
     // inside `connect()`, so attaching after would race against the event.
     const prevUnsub = get()._unsubscribe
     if (prevUnsub) prevUnsub()
     const unsub = ws.onEvent((evt) => {
-      const expected = get().connectionId
+      // Look up the expected connectionId from the owning tab's state
+      // (live or cached) — if the user has switched tabs we still want
+      // events to land in the right tab.
+      const live = get()
+      let expected: string | null
+      if (live._currentTabId === ownerTabId) {
+        expected = live.connectionId
+      } else if (ownerTabId !== null) {
+        expected = live._tabStates.get(ownerTabId)?.connectionId ?? null
+      } else {
+        expected = live.connectionId
+      }
       // Ignore stray events from older connections (rapid reconnect).
       if (expected && evt.connectionId !== expected) return
 
       switch (evt.type) {
         case 'open':
-          set({ connectionState: 'connected', errorMessage: null })
+          applyToOwner({ connectionState: 'connected', errorMessage: null, connectedAt: Date.now() })
           break
         case 'message': {
           const contentType: WsMessage['contentType'] =
@@ -136,17 +204,27 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
               : evt.contentType === 'json'
                 ? 'json'
                 : 'text'
-          get().addMessage({
+          const newMsg: WsMessage = {
             id: evt.messageId ?? makeId(),
             direction: 'received',
             content: evt.data ?? '',
             contentType,
             timestamp: evt.timestamp,
-          })
+          }
+          // Append to the owning tab's messages array.
+          const current = get()
+          if (current._currentTabId === ownerTabId) {
+            set({ messages: [...current.messages, newMsg] })
+          } else if (ownerTabId !== null) {
+            const map = new Map(current._tabStates)
+            const existing = map.get(ownerTabId) ?? emptyTabState()
+            map.set(ownerTabId, { ...existing, messages: [...existing.messages, newMsg] })
+            set({ _tabStates: map })
+          }
           break
         }
         case 'close':
-          set({
+          applyToOwner({
             connectionState: 'disconnected',
             connectionId: null,
             errorMessage:
@@ -156,7 +234,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
           })
           break
         case 'error':
-          set({
+          applyToOwner({
             connectionState: 'error',
             errorMessage: evt.data || 'WebSocket error',
           })
@@ -176,14 +254,28 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
         // promise resolves — keep `connected` state if it did, otherwise wait
         // for it. We always set the connectionId so the listener filter
         // accepts subsequent events.
-        set((state) => ({
-          connectionId: result.data!.connectionId,
-          connectionState:
-            state.connectionState === 'connected' ? 'connected' : 'connecting',
-        }))
+        const newId = result.data.connectionId
+        const current = get()
+        if (current._currentTabId === ownerTabId) {
+          set({
+            connectionId: newId,
+            connectionState:
+              current.connectionState === 'connected' ? 'connected' : 'connecting',
+          })
+        } else if (ownerTabId !== null) {
+          const map = new Map(current._tabStates)
+          const existing = map.get(ownerTabId) ?? emptyTabState()
+          map.set(ownerTabId, {
+            ...existing,
+            connectionId: newId,
+            connectionState:
+              existing.connectionState === 'connected' ? 'connected' : 'connecting',
+          })
+          set({ _tabStates: map })
+        }
       } else {
         unsub()
-        set({
+        applyToOwner({
           _unsubscribe: undefined,
           connectionState: 'error',
           errorMessage: result?.error || 'Connection failed',
@@ -191,7 +283,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
       }
     } catch (e) {
       unsub()
-      set({
+      applyToOwner({
         _unsubscribe: undefined,
         connectionState: 'error',
         errorMessage: (e as Error).message,
@@ -288,20 +380,45 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
   setConnectionState: (connectionState) => set({ connectionState }),
   setErrorMessage: (errorMessage) => set({ errorMessage }),
 
+  switchToTab: (tabId) => {
+    const state = get()
+    const tabStates = new Map(state._tabStates)
+
+    // Save current tab state under its own key
+    const currentKey = state._currentTabId === null ? '__null__' : state._currentTabId
+    tabStates.set(currentKey, extractState(state))
+
+    // Load target tab (or empty for new tabs)
+    const target = tabStates.get(tabId) || emptyTabState()
+
+    set({
+      ...target,
+      _tabStates: tabStates,
+      _currentTabId: tabId,
+    })
+  },
+
+  removeTabState: (tabId) => {
+    const tabStates = new Map(get()._tabStates)
+    const removed = tabStates.get(tabId)
+    if (removed?._unsubscribe) {
+      removed._unsubscribe()
+    }
+    tabStates.delete(tabId)
+    set({ _tabStates: tabStates })
+
+    // If the closed tab was also the live one, also tear down live listener
+    // (it may already be the same function reference, so guard with a flag).
+    if (get()._currentTabId === tabId) {
+      const liveUnsub = get()._unsubscribe
+      if (liveUnsub && liveUnsub !== removed?._unsubscribe) liveUnsub()
+      set({ _unsubscribe: undefined })
+    }
+  },
+
   reset: () => {
     const { _unsubscribe } = get()
     if (_unsubscribe) _unsubscribe()
-    set({
-      url: 'wss://echo.websocket.org',
-      connectionId: null,
-      connectionState: 'disconnected',
-      errorMessage: null,
-      messages: [],
-      customHeaders: [defaultKv()],
-      composerContent: '{\n  "type": "ping",\n  "payload": "hello"\n}',
-      composerMode: 'json',
-      autoScroll: true,
-      _unsubscribe: undefined,
-    })
+    set({ ...emptyTabState() })
   },
 }))

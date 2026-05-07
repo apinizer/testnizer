@@ -41,58 +41,24 @@ import EnvironmentSelector from '../shared/EnvironmentSelector'
 import { T } from '../../styles/tokens'
 
 /**
- * Tear down state belonging to a tab being closed. HTTP and SOAP keep
- * per-tab caches keyed on tabId; the rest (WS / SSE / gRPC / GraphQL /
- * AI Chat) are singleton stores. For singletons we only `reset()` (and
- * close any live connection / stream) when the tab being closed is the
- * LAST tab of that protocol — otherwise we'd nuke a sibling tab that's
- * still using the same store.
+ * Tear down state belonging to a tab being closed. Every protocol store now
+ * keeps a per-tab cache keyed on `tabId`; calling `removeTabState(tabId)`
+ * disposes any live subscription/connection that tab owns. The SOAP/HTTP
+ * stores have always been per-tab; WS/SSE/gRPC/GraphQL/AI Chat were converted
+ * to the same pattern so two tabs of the same protocol no longer share state.
  */
 function cleanupTabState(tabId: string): void {
   const allTabs = useTabsStore.getState().tabs
   const closing = allTabs.find((t) => t.id === tabId)
   if (!closing) return
 
-  // HTTP + SOAP — per-tab cache, always remove for this tabId
   useRequestStore.getState().removeTabState(tabId)
   useSoapStore.getState().removeTabState(tabId)
-
-  // Singleton stores — only clean up if this is the last tab of its kind
-  const remainingOfType = allTabs.filter(
-    (t) => t.id !== tabId && t.protocol === closing.protocol,
-  )
-  if (remainingOfType.length > 0) return
-
-  switch (closing.protocol) {
-    case 'websocket': {
-      const ws = useWebSocketStore.getState()
-      ws.disconnect().catch(() => undefined)
-      ws.reset()
-      break
-    }
-    case 'sse': {
-      const sse = useSseStore.getState()
-      sse.disconnect().catch(() => undefined)
-      sse.reset()
-      break
-    }
-    case 'grpc': {
-      const grpc = useGrpcStore.getState()
-      grpc.cancelStream().catch(() => undefined)
-      grpc.reset()
-      break
-    }
-    case 'graphql': {
-      const gql = useGraphQLStore.getState()
-      gql.unsubscribe().catch(() => undefined)
-      gql.reset()
-      break
-    }
-    case 'ai': {
-      useAiChatStore.getState().clearConversation()
-      break
-    }
-  }
+  useWebSocketStore.getState().removeTabState(tabId)
+  useSseStore.getState().removeTabState(tabId)
+  useGrpcStore.getState().removeTabState(tabId)
+  useGraphQLStore.getState().removeTabState(tabId)
+  useAiChatStore.getState().removeTabState(tabId)
 }
 
 function EndpointTabBar() {
@@ -194,11 +160,16 @@ function EndpointTabBar() {
 
   function handleSwitchTab(tabId: string) {
     if (tabId === activeTabId) return
-    // HTTP and SOAP each keep their own per-tab cache — switch both so the
-    // editor for the activated tab loads the right state. The SOAP store
-    // ignores tabs that never had any SOAP state (no-op on the first call).
+    // Each protocol store keeps its own per-tab cache — switch them all so
+    // every editor renders the activated tab's saved state. Stores that have
+    // never seen this tab fall back to their empty/default state.
     switchToTab(tabId)
     useSoapStore.getState().switchToTab(tabId)
+    useWebSocketStore.getState().switchToTab(tabId)
+    useSseStore.getState().switchToTab(tabId)
+    useGrpcStore.getState().switchToTab(tabId)
+    useGraphQLStore.getState().switchToTab(tabId)
+    useAiChatStore.getState().switchToTab(tabId)
     clearResponse()
     setActiveTab(tabId)
   }
@@ -211,6 +182,11 @@ function EndpointTabBar() {
     if (newActiveId) {
       switchToTab(newActiveId)
       useSoapStore.getState().switchToTab(newActiveId)
+      useWebSocketStore.getState().switchToTab(newActiveId)
+      useSseStore.getState().switchToTab(newActiveId)
+      useGrpcStore.getState().switchToTab(newActiveId)
+      useGraphQLStore.getState().switchToTab(newActiveId)
+      useAiChatStore.getState().switchToTab(newActiveId)
       clearResponse()
     }
   }

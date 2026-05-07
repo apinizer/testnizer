@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { KeyValuePair, ApiResponse, SseEvent } from '../types'
+import type { KeyValuePair, ApiResponse } from '../types'
 import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
@@ -55,7 +55,12 @@ export interface GqlSubscriptionEvent {
 
 type SubscriptionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
-interface GraphQLStore {
+/**
+ * Snapshot of GraphQL state for per-tab caching. `schemaData` /
+ * `isIntrospecting` / `introspectError` are intentionally NOT in this set —
+ * the schema is keyed off the endpoint URL and lives in a separate global cache.
+ */
+interface TabGraphQLState {
   url: string
   query: string
   variables: string
@@ -64,13 +69,19 @@ interface GraphQLStore {
   isLoading: boolean
   /** request:send IPC id for the in-flight GraphQL query — used by cancelQuery. */
   _inflightRequestId: string | null
+  subscriptionState: SubscriptionState
+  subscriptionEvents: GqlSubscriptionEvent[]
+}
 
+interface GraphQLStore extends TabGraphQLState {
+  // Global schema state (shared across tabs — schema is keyed by URL externally).
   schemaData: GqlSchema | null
   isIntrospecting: boolean
   introspectError: string | null
 
-  subscriptionState: SubscriptionState
-  subscriptionEvents: GqlSubscriptionEvent[]
+  /** Per-tab state cache */
+  _tabStates: Map<string, TabGraphQLState>
+  _currentTabId: string | null
 
   setUrl: (url: string) => void
   setQuery: (query: string) => void
@@ -85,6 +96,11 @@ interface GraphQLStore {
   subscribe: () => Promise<void>
   unsubscribe: () => Promise<void>
   clearSubscriptionEvents: () => void
+
+  /** Switch active tab — saves current state and loads target tab state. */
+  switchToTab: (tabId: string) => void
+  /** Remove cached state for a closed tab. */
+  removeTabState: (tabId: string) => void
 
   reset: () => void
 }
@@ -160,21 +176,43 @@ function parseIntrospectionResult(data: Record<string, unknown>): GqlSchema | nu
   return { queryType, mutationType, subscriptionType, types }
 }
 
+function emptyTabState(): TabGraphQLState {
+  return {
+    url: 'https://countries.trevorblades.com/graphql',
+    query: DEFAULT_QUERY,
+    variables: '{}',
+    headers: [defaultKv('Content-Type', 'application/json', true)],
+    response: null,
+    isLoading: false,
+    _inflightRequestId: null,
+    subscriptionState: 'disconnected',
+    subscriptionEvents: [],
+  }
+}
+
+function extractState(s: GraphQLStore): TabGraphQLState {
+  return {
+    url: s.url,
+    query: s.query,
+    variables: s.variables,
+    headers: s.headers,
+    response: s.response,
+    isLoading: s.isLoading,
+    _inflightRequestId: s._inflightRequestId,
+    subscriptionState: s.subscriptionState,
+    subscriptionEvents: s.subscriptionEvents,
+  }
+}
+
 export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
-  url: 'https://countries.trevorblades.com/graphql',
-  query: DEFAULT_QUERY,
-  variables: '{}',
-  headers: [defaultKv('Content-Type', 'application/json', true)],
-  response: null,
-  isLoading: false,
-  _inflightRequestId: null,
+  ...emptyTabState(),
 
   schemaData: null,
   isIntrospecting: false,
   introspectError: null,
 
-  subscriptionState: 'disconnected',
-  subscriptionEvents: [],
+  _tabStates: new Map(),
+  _currentTabId: null,
 
   setUrl: (url) => set({ url }),
   setQuery: (query) => set({ query }),
@@ -198,6 +236,10 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const activeTabId = tabsStore.activeTabId
+
+    // Owner tab — async response routes back to this tab even if user
+    // switches away while the request is in flight.
+    const ownerTabId = get()._currentTabId
 
     set({ isLoading: true })
     responseStore.setLoading(true)
@@ -223,6 +265,18 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     const requestId = makeId()
     set({ _inflightRequestId: requestId })
 
+    const applyToOwner = (patch: Partial<TabGraphQLState>): void => {
+      const current = get()
+      if (current._currentTabId === ownerTabId) {
+        set(patch as Partial<GraphQLStore>)
+      } else if (ownerTabId !== null) {
+        const map = new Map(current._tabStates)
+        const existing = map.get(ownerTabId) ?? emptyTabState()
+        map.set(ownerTabId, { ...existing, ...patch })
+        set({ _tabStates: map })
+      }
+    }
+
     try {
       const result = await window.api?.request?.send({
         method: 'POST',
@@ -238,8 +292,10 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
 
       if (result?.success && result.data) {
         const apiResp = result.data as ApiResponse
-        set({ response: apiResp })
-        responseStore.setResponse(apiResp)
+        applyToOwner({ response: apiResp })
+        if (get()._currentTabId === ownerTabId) {
+          responseStore.setResponse(apiResp)
+        }
       } else {
         const errResp: ApiResponse = {
           requestId: makeId(),
@@ -247,8 +303,10 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
           error: result?.error || 'GraphQL query failed',
           timing: { total: 0 },
         }
-        set({ response: errResp })
-        responseStore.setResponse(errResp)
+        applyToOwner({ response: errResp })
+        if (get()._currentTabId === ownerTabId) {
+          responseStore.setResponse(errResp)
+        }
       }
     } catch {
       // Demo mode
@@ -276,13 +334,29 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
           body: JSON.stringify({ query, variables: parsedVars }),
         },
       }
-      set({ response: demoResp })
-      responseStore.setResponse(demoResp)
+      applyToOwner({ response: demoResp })
+      if (get()._currentTabId === ownerTabId) {
+        responseStore.setResponse(demoResp)
+      }
     } finally {
-      set((s) => ({
-        isLoading: false,
-        _inflightRequestId: s._inflightRequestId === requestId ? null : s._inflightRequestId,
-      }))
+      const current = get()
+      const ownerIsLive = current._currentTabId === ownerTabId
+      if (ownerIsLive) {
+        set((s) => ({
+          isLoading: false,
+          _inflightRequestId: s._inflightRequestId === requestId ? null : s._inflightRequestId,
+        }))
+      } else if (ownerTabId !== null) {
+        const map = new Map(current._tabStates)
+        const existing = map.get(ownerTabId) ?? emptyTabState()
+        map.set(ownerTabId, {
+          ...existing,
+          isLoading: false,
+          _inflightRequestId:
+            existing._inflightRequestId === requestId ? null : existing._inflightRequestId,
+        })
+        set({ _tabStates: map })
+      }
       responseStore.setLoading(false)
       if (activeTabId) tabsStore.markLoading(activeTabId, false)
     }
@@ -504,18 +578,33 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
 
   clearSubscriptionEvents: () => set({ subscriptionEvents: [] }),
 
+  switchToTab: (tabId) => {
+    const state = get()
+    const tabStates = new Map(state._tabStates)
+
+    const currentKey = state._currentTabId === null ? '__null__' : state._currentTabId
+    tabStates.set(currentKey, extractState(state))
+
+    const target = tabStates.get(tabId) || emptyTabState()
+
+    set({
+      ...target,
+      _tabStates: tabStates,
+      _currentTabId: tabId,
+    })
+  },
+
+  removeTabState: (tabId) => {
+    const tabStates = new Map(get()._tabStates)
+    tabStates.delete(tabId)
+    set({ _tabStates: tabStates })
+  },
+
   reset: () =>
     set({
-      url: 'https://countries.trevorblades.com/graphql',
-      query: DEFAULT_QUERY,
-      variables: '{}',
-      headers: [defaultKv('Content-Type', 'application/json', true)],
-      response: null,
-      isLoading: false,
+      ...emptyTabState(),
       schemaData: null,
       isIntrospecting: false,
       introspectError: null,
-      subscriptionState: 'disconnected',
-      subscriptionEvents: [],
     }),
 }))

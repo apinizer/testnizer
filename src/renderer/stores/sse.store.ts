@@ -53,22 +53,29 @@ function getSseApi(): SseApi | undefined {
   return w.api?.sse
 }
 
-interface SseStore {
+/** Snapshot of SSE state for per-tab caching. */
+interface TabSseState {
   url: string
   method: SseHttpMethod
   body: string
   bodyType: SseBodyType
-  connectionState: ConnectionState
-  connectionId: string | null
-  errorMessage: string | null
-  events: SseEvent[]
   customHeaders: KeyValuePair[]
   lastEventId: string
   eventTypeFilter: string
   autoScroll: boolean
+  connectionId: string | null
+  connectionState: ConnectionState
+  errorMessage: string | null
+  events: SseEvent[]
   connectedAt: number | null
-  /** Subscription handle from `sse.onEvent` — cleared on disconnect/reset. */
+  /** Per-tab subscription returned by `sse.onEvent`. */
   _unsubscribe?: () => void
+}
+
+interface SseStore extends TabSseState {
+  /** Per-tab state cache */
+  _tabStates: Map<string, TabSseState>
+  _currentTabId: string | null
 
   setUrl: (url: string) => void
   setMethod: (method: SseHttpMethod) => void
@@ -94,24 +101,56 @@ interface SseStore {
   getFilteredEvents: () => SseEvent[]
   getEventTypes: () => string[]
 
+  /** Switch active tab — saves current state and loads target tab state. */
+  switchToTab: (tabId: string) => void
+  /** Remove cached state for a closed tab. Tears down its `_unsubscribe`. */
+  removeTabState: (tabId: string) => void
+
   reset: () => void
 }
 
+function emptyTabState(): TabSseState {
+  return {
+    url: 'https://stream.wikimedia.org/v2/stream/recentchange',
+    method: 'GET',
+    body: '',
+    bodyType: 'json',
+    customHeaders: [defaultKv()],
+    lastEventId: '',
+    eventTypeFilter: '',
+    autoScroll: true,
+    connectionId: null,
+    connectionState: 'disconnected',
+    errorMessage: null,
+    events: [],
+    connectedAt: null,
+    _unsubscribe: undefined,
+  }
+}
+
+function extractState(s: SseStore): TabSseState {
+  return {
+    url: s.url,
+    method: s.method,
+    body: s.body,
+    bodyType: s.bodyType,
+    customHeaders: s.customHeaders,
+    lastEventId: s.lastEventId,
+    eventTypeFilter: s.eventTypeFilter,
+    autoScroll: s.autoScroll,
+    connectionId: s.connectionId,
+    connectionState: s.connectionState,
+    errorMessage: s.errorMessage,
+    events: s.events,
+    connectedAt: s.connectedAt,
+    _unsubscribe: s._unsubscribe,
+  }
+}
+
 export const useSseStore = create<SseStore>((set, get) => ({
-  url: 'https://stream.wikimedia.org/v2/stream/recentchange',
-  method: 'GET',
-  body: '',
-  bodyType: 'json',
-  connectionState: 'disconnected',
-  connectionId: null,
-  errorMessage: null,
-  events: [],
-  customHeaders: [defaultKv()],
-  lastEventId: '',
-  eventTypeFilter: '',
-  autoScroll: true,
-  connectedAt: null,
-  _unsubscribe: undefined,
+  ...emptyTabState(),
+  _tabStates: new Map(),
+  _currentTabId: null,
 
   setUrl: (url) => set({ url }),
   setMethod: (method) => set({ method }),
@@ -156,24 +195,70 @@ export const useSseStore = create<SseStore>((set, get) => ({
       return
     }
 
+    // Owner tab — events for this connection always route into this tab's
+    // state (live or cached), not the currently-active tab.
+    const ownerTabId = get()._currentTabId
+
+    const applyToOwner = (patch: Partial<TabSseState>): void => {
+      const current = get()
+      if (current._currentTabId === ownerTabId) {
+        set(patch as Partial<SseStore>)
+      } else if (ownerTabId !== null) {
+        const map = new Map(current._tabStates)
+        const existing = map.get(ownerTabId) ?? emptyTabState()
+        map.set(ownerTabId, { ...existing, ...patch })
+        set({ _tabStates: map })
+      }
+    }
+
+    const appendEventToOwner = (event: SseEvent): void => {
+      const current = get()
+      if (current._currentTabId === ownerTabId) {
+        set({ events: [...current.events, event] })
+      } else if (ownerTabId !== null) {
+        const map = new Map(current._tabStates)
+        const existing = map.get(ownerTabId) ?? emptyTabState()
+        map.set(ownerTabId, { ...existing, events: [...existing.events, event] })
+        set({ _tabStates: map })
+      }
+    }
+
+    const getOwnerConnectionState = (): ConnectionState => {
+      const current = get()
+      if (current._currentTabId === ownerTabId) return current.connectionState
+      if (ownerTabId !== null) {
+        return current._tabStates.get(ownerTabId)?.connectionState ?? 'disconnected'
+      }
+      return current.connectionState
+    }
+
+    const getOwnerConnectionId = (): string | null => {
+      const current = get()
+      if (current._currentTabId === ownerTabId) return current.connectionId
+      if (ownerTabId !== null) {
+        return current._tabStates.get(ownerTabId)?.connectionId ?? null
+      }
+      return current.connectionId
+    }
+
     // Subscribe BEFORE awaiting connect — main fires the 'open' event from
     // inside `connect()`, attaching after would race against the event.
     const prevUnsub = get()._unsubscribe
     if (prevUnsub) prevUnsub()
     const unsub = sse.onEvent((evt) => {
-      const expected = get().connectionId
+      const expected = getOwnerConnectionId()
       if (expected && evt.connectionId !== expected) return
 
       switch (evt.type) {
         case 'open':
-          set({
+          applyToOwner({
             connectionState: 'connected',
             connectedAt: Date.now(),
             errorMessage: null,
           })
           break
         case 'event':
-          get().addEvent({
+          appendEventToOwner({
             id: evt.id ?? makeId(),
             type: evt.eventType || 'message',
             data: evt.data ?? '',
@@ -185,13 +270,13 @@ export const useSseStore = create<SseStore>((set, get) => ({
           // failures, so we only escalate to `error` while still connecting.
           // Once connected, we surface the error string but keep the state
           // until an explicit close/disconnect arrives.
-          if (get().connectionState !== 'connected') {
-            set({
+          if (getOwnerConnectionState() !== 'connected') {
+            applyToOwner({
               connectionState: 'error',
               errorMessage: evt.data || 'SSE connection error',
             })
           } else {
-            set({ errorMessage: evt.data || 'SSE error' })
+            applyToOwner({ errorMessage: evt.data || 'SSE error' })
           }
           break
       }
@@ -207,15 +292,29 @@ export const useSseStore = create<SseStore>((set, get) => ({
         body: sendBody ? resolvedBody : undefined,
       })
       if (result?.success && result.data) {
-        set((state) => ({
-          connectionId: result.data!.connectionId,
-          // Keep the state set by the 'open' event when it has already fired.
-          connectionState:
-            state.connectionState === 'connected' ? 'connected' : 'connecting',
-        }))
+        const newId = result.data.connectionId
+        const current = get()
+        if (current._currentTabId === ownerTabId) {
+          set({
+            connectionId: newId,
+            // Keep the state set by the 'open' event when it has already fired.
+            connectionState:
+              current.connectionState === 'connected' ? 'connected' : 'connecting',
+          })
+        } else if (ownerTabId !== null) {
+          const map = new Map(current._tabStates)
+          const existing = map.get(ownerTabId) ?? emptyTabState()
+          map.set(ownerTabId, {
+            ...existing,
+            connectionId: newId,
+            connectionState:
+              existing.connectionState === 'connected' ? 'connected' : 'connecting',
+          })
+          set({ _tabStates: map })
+        }
       } else {
         unsub()
-        set({
+        applyToOwner({
           _unsubscribe: undefined,
           connectionState: 'error',
           errorMessage: result?.error || 'SSE connection failed',
@@ -223,7 +322,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
       }
     } catch (e) {
       unsub()
-      set({
+      applyToOwner({
         _unsubscribe: undefined,
         connectionState: 'error',
         errorMessage: (e as Error).message,
@@ -289,24 +388,41 @@ export const useSseStore = create<SseStore>((set, get) => ({
     return Array.from(types).sort()
   },
 
+  switchToTab: (tabId) => {
+    const state = get()
+    const tabStates = new Map(state._tabStates)
+
+    const currentKey = state._currentTabId === null ? '__null__' : state._currentTabId
+    tabStates.set(currentKey, extractState(state))
+
+    const target = tabStates.get(tabId) || emptyTabState()
+
+    set({
+      ...target,
+      _tabStates: tabStates,
+      _currentTabId: tabId,
+    })
+  },
+
+  removeTabState: (tabId) => {
+    const tabStates = new Map(get()._tabStates)
+    const removed = tabStates.get(tabId)
+    if (removed?._unsubscribe) {
+      removed._unsubscribe()
+    }
+    tabStates.delete(tabId)
+    set({ _tabStates: tabStates })
+
+    if (get()._currentTabId === tabId) {
+      const liveUnsub = get()._unsubscribe
+      if (liveUnsub && liveUnsub !== removed?._unsubscribe) liveUnsub()
+      set({ _unsubscribe: undefined })
+    }
+  },
+
   reset: () => {
     const { _unsubscribe } = get()
     if (_unsubscribe) _unsubscribe()
-    set({
-      url: 'https://stream.wikimedia.org/v2/stream/recentchange',
-      method: 'GET',
-      body: '',
-      bodyType: 'json',
-      connectionState: 'disconnected',
-      connectionId: null,
-      errorMessage: null,
-      events: [],
-      customHeaders: [defaultKv()],
-      lastEventId: '',
-      eventTypeFilter: '',
-      autoScroll: true,
-      connectedAt: null,
-      _unsubscribe: undefined,
-    })
+    set({ ...emptyTabState() })
   },
 }))

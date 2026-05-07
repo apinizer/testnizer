@@ -67,11 +67,6 @@ export interface AiModelOption {
 }
 
 /**
- * Static model lists per provider. We deliberately do not call provider APIs
- * to enumerate models — the renderer is forbidden from making network calls,
- * and listing models would leak the API key into the model-list call too.
- */
-/**
  * Curated current model lists (Jan 2026). Manual model names are also
  * accepted in the editor — this is just an autocomplete list.
  */
@@ -208,7 +203,8 @@ function makeId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
-interface AiChatStore {
+/** Snapshot of AI Chat state for per-tab caching. */
+interface TabAiChatState {
   provider: AiProvider
   customUrl: string
   apiKey: string
@@ -219,6 +215,12 @@ interface AiChatStore {
   pendingResponseId: string | null
   pendingMessageId: string | null
   errorMessage: string | null
+}
+
+interface AiChatStore extends TabAiChatState {
+  /** Per-tab state cache */
+  _tabStates: Map<string, TabAiChatState>
+  _currentTabId: string | null
 
   setProvider: (provider: AiProvider) => void
   setCustomUrl: (url: string) => void
@@ -235,19 +237,68 @@ interface AiChatStore {
   _onDone: (messageId: string) => void
   _onError: (messageId: string, error: string) => void
   _onCancelled: (messageId: string) => void
+
+  /** Switch active tab — saves current state and loads target tab state. */
+  switchToTab: (tabId: string) => void
+  /** Remove cached state for a closed tab. */
+  removeTabState: (tabId: string) => void
+}
+
+function emptyTabState(): TabAiChatState {
+  return {
+    provider: 'openai',
+    customUrl: '',
+    apiKey: '',
+    model: defaultModelFor('openai'),
+    systemPrompt: '',
+    messages: [],
+    streaming: false,
+    pendingResponseId: null,
+    pendingMessageId: null,
+    errorMessage: null,
+  }
+}
+
+function extractState(s: AiChatStore): TabAiChatState {
+  return {
+    provider: s.provider,
+    customUrl: s.customUrl,
+    apiKey: s.apiKey,
+    model: s.model,
+    systemPrompt: s.systemPrompt,
+    messages: s.messages,
+    streaming: s.streaming,
+    pendingResponseId: s.pendingResponseId,
+    pendingMessageId: s.pendingMessageId,
+    errorMessage: s.errorMessage,
+  }
+}
+
+/**
+ * Walk every tab (live + cached) looking for the one whose `pendingMessageId`
+ * matches the streaming chunk we just received from main. The streaming pump
+ * is global, so we may need to route a delta into a tab that isn't the
+ * currently active one.
+ */
+function findTabByPendingId(
+  state: AiChatStore,
+  messageId: string,
+): { isLive: boolean; tabKey?: string; snapshot: TabAiChatState } | null {
+  if (state.pendingMessageId === messageId) {
+    return { isLive: true, snapshot: extractState(state) }
+  }
+  for (const [key, snap] of state._tabStates.entries()) {
+    if (snap.pendingMessageId === messageId) {
+      return { isLive: false, tabKey: key, snapshot: snap }
+    }
+  }
+  return null
 }
 
 export const useAiChatStore = create<AiChatStore>((set, get) => ({
-  provider: 'openai',
-  customUrl: '',
-  apiKey: '',
-  model: defaultModelFor('openai'),
-  systemPrompt: '',
-  messages: [],
-  streaming: false,
-  pendingResponseId: null,
-  pendingMessageId: null,
-  errorMessage: null,
+  ...emptyTabState(),
+  _tabStates: new Map(),
+  _currentTabId: null,
 
   setProvider: (provider) => {
     // Switching provider auto-selects a sensible default model unless the
@@ -358,35 +409,103 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
 
   _onChunk: (messageId, delta) => {
     const state = get()
-    if (state.pendingMessageId !== messageId) return
-    set({
-      messages: state.messages.map((m) =>
-        m.id === state.pendingResponseId ? { ...m, content: m.content + delta } : m,
-      ),
-    })
+    const found = findTabByPendingId(state, messageId)
+    if (!found) return
+    const updatedMessages = found.snapshot.messages.map((m) =>
+      m.id === found.snapshot.pendingResponseId
+        ? { ...m, content: m.content + delta }
+        : m,
+    )
+    if (found.isLive) {
+      set({ messages: updatedMessages })
+    } else if (found.tabKey !== undefined) {
+      const map = new Map(state._tabStates)
+      map.set(found.tabKey, { ...found.snapshot, messages: updatedMessages })
+      set({ _tabStates: map })
+    }
   },
 
   _onDone: (messageId) => {
-    if (get().pendingMessageId !== messageId) return
-    set({ streaming: false, pendingResponseId: null, pendingMessageId: null })
+    const state = get()
+    const found = findTabByPendingId(state, messageId)
+    if (!found) return
+    if (found.isLive) {
+      set({ streaming: false, pendingResponseId: null, pendingMessageId: null })
+    } else if (found.tabKey !== undefined) {
+      const map = new Map(state._tabStates)
+      map.set(found.tabKey, {
+        ...found.snapshot,
+        streaming: false,
+        pendingResponseId: null,
+        pendingMessageId: null,
+      })
+      set({ _tabStates: map })
+    }
   },
 
   _onError: (messageId, error) => {
     const state = get()
-    if (state.pendingMessageId !== messageId) return
-    set({
-      streaming: false,
-      pendingResponseId: null,
-      pendingMessageId: null,
-      errorMessage: error,
-    })
+    const found = findTabByPendingId(state, messageId)
+    if (!found) return
+    if (found.isLive) {
+      set({
+        streaming: false,
+        pendingResponseId: null,
+        pendingMessageId: null,
+        errorMessage: error,
+      })
+    } else if (found.tabKey !== undefined) {
+      const map = new Map(state._tabStates)
+      map.set(found.tabKey, {
+        ...found.snapshot,
+        streaming: false,
+        pendingResponseId: null,
+        pendingMessageId: null,
+        errorMessage: error,
+      })
+      set({ _tabStates: map })
+    }
   },
 
   _onCancelled: (messageId) => {
     const state = get()
-    if (state.pendingMessageId !== messageId) return
+    const found = findTabByPendingId(state, messageId)
+    if (!found) return
     // Keep whatever was streamed so far; just stop streaming state.
-    set({ streaming: false, pendingResponseId: null, pendingMessageId: null })
+    if (found.isLive) {
+      set({ streaming: false, pendingResponseId: null, pendingMessageId: null })
+    } else if (found.tabKey !== undefined) {
+      const map = new Map(state._tabStates)
+      map.set(found.tabKey, {
+        ...found.snapshot,
+        streaming: false,
+        pendingResponseId: null,
+        pendingMessageId: null,
+      })
+      set({ _tabStates: map })
+    }
+  },
+
+  switchToTab: (tabId) => {
+    const state = get()
+    const tabStates = new Map(state._tabStates)
+
+    const currentKey = state._currentTabId === null ? '__null__' : state._currentTabId
+    tabStates.set(currentKey, extractState(state))
+
+    const target = tabStates.get(tabId) || emptyTabState()
+
+    set({
+      ...target,
+      _tabStates: tabStates,
+      _currentTabId: tabId,
+    })
+  },
+
+  removeTabState: (tabId) => {
+    const tabStates = new Map(get()._tabStates)
+    tabStates.delete(tabId)
+    set({ _tabStates: tabStates })
   },
 }))
 

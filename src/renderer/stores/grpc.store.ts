@@ -14,24 +14,9 @@ function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
 }
 
 /**
- * Normalizes a user-entered server address to the `host:port` form expected by
- * `@grpc/grpc-js` (which rejects URLs with schemes like `grpc://` or `https://`).
- *
- * Accepts: `host`, `host:port`, `grpc://host`, `grpcs://host:port`,
- * `http://host`, `https://host:port` — strips the scheme. If no port is
- * present, defaults to `443` when `useTls` is true, else `80`.
- *
- * Returned value is safe to pass directly as the `serverAddress` argument
- * to `grpc.Client`. Exported (separately from the store) so it can be unit
- * tested without standing up Zustand / Electron.
- */
-/**
  * Strips a leading URL scheme (`grpc://`, `grpcs://`, `http://`, `https://`)
  * from the user-entered address. Does NOT add a default port — that happens in
  * `normalizeGrpcAddress` at send time, since the user may still be typing.
- *
- * Used by `setAddress` so a paste like `grpc://demo.connectrpc.com` shows up
- * in the input as `demo.connectrpc.com` immediately.
  */
 export function stripGrpcScheme(input: string): string {
   return (input ?? '').replace(/^(grpcs?|https?):\/\//i, '')
@@ -40,15 +25,10 @@ export function stripGrpcScheme(input: string): string {
 export function normalizeGrpcAddress(input: string, useTls: boolean): string {
   let s = (input ?? '').trim()
   if (!s) return ''
-  // Strip any of the known schemes — even an `https://` paste should work.
   s = s.replace(/^(grpcs?|https?):\/\//i, '')
-  // Drop any path/query the user might have copied in.
   const slashIdx = s.indexOf('/')
   if (slashIdx >= 0) s = s.slice(0, slashIdx)
   if (!s) return ''
-  // If there's no explicit port, append the TLS default (443) or plaintext default (80).
-  // Detect IPv6 [::1]:port vs ipv6 without port etc — keep it simple: if there's a `:` after
-  // the last `]` or anywhere when no `[` present, we treat that as a port.
   const hasPort = s.includes(']')
     ? /]:\d+$/.test(s)
     : /:\d+$/.test(s)
@@ -60,7 +40,6 @@ export function normalizeGrpcAddress(input: string, useTls: boolean): string {
 
 /**
  * Maps the user-facing GrpcMethodType to the IPC dispatch channel.
- * Pure helper so the dispatch logic can be unit-tested in isolation.
  */
 export function dispatchChannelFor(type: GrpcMethodType): 'execute' | 'serverStream' | 'clientStream' | 'bidiStream' {
   switch (type) {
@@ -128,11 +107,6 @@ interface EngineLoadProtoResult {
   services: EngineServiceInfo[]
 }
 
-/**
- * Translate `loadProto`'s engine output (which describes streaming via
- * `requestStream`/`responseStream` booleans) into the renderer store's
- * GrpcService shape (which uses the `type` enum). Pure helper, exported for tests.
- */
 export function mapEngineServices(result: EngineLoadProtoResult): GrpcService[] {
   return (result.services ?? []).map((svc) => ({
     name: svc.fullName || svc.name,
@@ -152,11 +126,6 @@ function streamingFlagsToType(reqStream: boolean, resStream: boolean): GrpcMetho
   return 'unary'
 }
 
-/**
- * Translate the engine's GrpcResponse into the renderer's ApiResponse shape so
- * the standard ResponsePane can render it. gRPC status maps to `status` /
- * `statusText` for symmetry with HTTP responses.
- */
 export function grpcResponseToApi(resp: GrpcEngineResponse): ApiResponse {
   return {
     requestId: resp.requestId,
@@ -195,9 +164,13 @@ export interface GrpcStreamEvent {
   index: number
 }
 
-// ─── Store ───────────────────────────────────────────────────
+// ─── Per-tab state shape ─────────────────────────────────────
 
-interface GrpcStore {
+/**
+ * Snapshot of gRPC state for per-tab caching. `services` is per-tab too —
+ * each tab can load its own .proto file without overwriting siblings.
+ */
+interface TabGrpcState {
   address: string
   useTls: boolean
   protoLoaded: boolean
@@ -205,19 +178,24 @@ interface GrpcStore {
   services: GrpcService[]
   selectedService: string | null
   selectedMethod: string | null
-
   requestBody: string
   metadata: KeyValuePair[]
-
   response: ApiResponse | null
   streamEvents: GrpcStreamEvent[]
-  /** Active streamId for any in-flight server / bidi stream. */
   activeStreamId: string | null
-  /** Disposer for the `grpc:streamEvent` listener (returned by `onStreamEvent`). */
+  /** Per-tab disposer for the `grpc:streamEvent` listener. */
   streamUnsubscribe: (() => void) | null
   isLoading: boolean
   isStreaming: boolean
   errorMessage: string | null
+}
+
+// ─── Store ───────────────────────────────────────────────────
+
+interface GrpcStore extends TabGrpcState {
+  /** Per-tab state cache */
+  _tabStates: Map<string, TabGrpcState>
+  _currentTabId: string | null
 
   setAddress: (address: string) => void
   setUseTls: (useTls: boolean) => void
@@ -235,30 +213,62 @@ interface GrpcStore {
   getSelectedService: () => GrpcService | undefined
   getSelectedMethod: () => GrpcMethod | undefined
 
+  /** Switch active tab — saves current state and loads target tab state. */
+  switchToTab: (tabId: string) => void
+  /** Remove cached state for a closed tab. Tears down any stream subscription. */
+  removeTabState: (tabId: string) => void
+
   reset: () => void
 }
 
 const DEFAULT_REQUEST = '{\n  \n}'
 
+function emptyTabState(): TabGrpcState {
+  return {
+    address: 'localhost:50051',
+    useTls: false,
+    protoLoaded: false,
+    protoPath: null,
+    services: [],
+    selectedService: null,
+    selectedMethod: null,
+    requestBody: DEFAULT_REQUEST,
+    metadata: [defaultKv()],
+    response: null,
+    streamEvents: [],
+    activeStreamId: null,
+    streamUnsubscribe: null,
+    isLoading: false,
+    isStreaming: false,
+    errorMessage: null,
+  }
+}
+
+function extractState(s: GrpcStore): TabGrpcState {
+  return {
+    address: s.address,
+    useTls: s.useTls,
+    protoLoaded: s.protoLoaded,
+    protoPath: s.protoPath,
+    services: s.services,
+    selectedService: s.selectedService,
+    selectedMethod: s.selectedMethod,
+    requestBody: s.requestBody,
+    metadata: s.metadata,
+    response: s.response,
+    streamEvents: s.streamEvents,
+    activeStreamId: s.activeStreamId,
+    streamUnsubscribe: s.streamUnsubscribe,
+    isLoading: s.isLoading,
+    isStreaming: s.isStreaming,
+    errorMessage: s.errorMessage,
+  }
+}
+
 export const useGrpcStore = create<GrpcStore>((set, get) => ({
-  address: 'localhost:50051',
-  useTls: false,
-  protoLoaded: false,
-  protoPath: null,
-  services: [],
-  selectedService: null,
-  selectedMethod: null,
-
-  requestBody: DEFAULT_REQUEST,
-  metadata: [defaultKv()],
-
-  response: null,
-  streamEvents: [],
-  activeStreamId: null,
-  streamUnsubscribe: null,
-  isLoading: false,
-  isStreaming: false,
-  errorMessage: null,
+  ...emptyTabState(),
+  _tabStates: new Map(),
+  _currentTabId: null,
 
   setAddress: (address) => set({ address: stripGrpcScheme(address) }),
   setUseTls: (useTls) => set({ useTls }),
@@ -372,6 +382,10 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     const prevUnsub = get().streamUnsubscribe
     if (prevUnsub) prevUnsub()
 
+    // Owner tab — stream events for this call always route into this tab's
+    // state (live or cached).
+    const ownerTabId = get()._currentTabId
+
     set({
       isLoading: true,
       errorMessage: null,
@@ -421,11 +435,59 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       useTls,
     }
 
+    // Helper that writes a partial state into the owning tab — either live
+    // or cached, depending on which tab is currently active.
+    const applyToOwner = (patch: Partial<TabGrpcState>): void => {
+      const current = get()
+      if (current._currentTabId === ownerTabId) {
+        set(patch as Partial<GrpcStore>)
+      } else if (ownerTabId !== null) {
+        const map = new Map(current._tabStates)
+        const existing = map.get(ownerTabId) ?? emptyTabState()
+        map.set(ownerTabId, { ...existing, ...patch })
+        set({ _tabStates: map })
+      }
+    }
+
+    const appendStreamEventToOwner = (evt: GrpcStreamEvent): void => {
+      const current = get()
+      if (current._currentTabId === ownerTabId) {
+        set((s) => ({
+          streamEvents: [...s.streamEvents, { ...evt, index: s.streamEvents.length }],
+        }))
+      } else if (ownerTabId !== null) {
+        const map = new Map(current._tabStates)
+        const existing = map.get(ownerTabId) ?? emptyTabState()
+        map.set(ownerTabId, {
+          ...existing,
+          streamEvents: [
+            ...existing.streamEvents,
+            { ...evt, index: existing.streamEvents.length },
+          ],
+        })
+        set({ _tabStates: map })
+      }
+    }
+
+    const getOwnerActiveStreamId = (): string | null => {
+      const current = get()
+      if (current._currentTabId === ownerTabId) return current.activeStreamId
+      if (ownerTabId !== null) {
+        return current._tabStates.get(ownerTabId)?.activeStreamId ?? null
+      }
+      return current.activeStreamId
+    }
+
     const finishUnary = (apiResp: ApiResponse): void => {
-      set({ response: apiResp, isLoading: false })
-      responseStore.setResponse(apiResp)
-      responseStore.setLoading(false)
-      if (activeTabId) tabsStore.markLoading(activeTabId, false)
+      applyToOwner({ response: apiResp, isLoading: false })
+      // Only push into the global response pane if THIS tab is currently
+      // active — otherwise the user is looking at another tab's response.
+      const current = get()
+      if (current._currentTabId === ownerTabId) {
+        responseStore.setResponse(apiResp)
+        responseStore.setLoading(false)
+        if (activeTabId) tabsStore.markLoading(activeTabId, false)
+      }
     }
 
     try {
@@ -450,40 +512,46 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       // Streaming paths — subscribe before invoking so 'data' events that arrive
       // before our await resolves are not lost.
       const unsubscribe = grpcApi.onStreamEvent((evt: GrpcStreamPayload) => {
-        const expected = get().activeStreamId
+        const expected = getOwnerActiveStreamId()
         if (expected && evt.streamId !== expected) return
         if (evt.type === 'data' && evt.data) {
-          set((s) => ({
-            streamEvents: [
-              ...s.streamEvents,
-              { id: makeId(), data: evt.data!, timestamp: evt.timestamp, index: s.streamEvents.length },
-            ],
-          }))
+          appendStreamEventToOwner({
+            id: makeId(),
+            data: evt.data,
+            timestamp: evt.timestamp,
+            index: 0, // overwritten by appendStreamEventToOwner
+          })
         } else if (evt.type === 'end') {
-          set({ isStreaming: false, isLoading: false, activeStreamId: null })
-          responseStore.setLoading(false)
-          if (activeTabId) tabsStore.markLoading(activeTabId, false)
+          applyToOwner({ isStreaming: false, isLoading: false, activeStreamId: null })
+          const cur = get()
+          if (cur._currentTabId === ownerTabId) {
+            responseStore.setLoading(false)
+            if (activeTabId) tabsStore.markLoading(activeTabId, false)
+          }
         } else if (evt.type === 'error') {
-          set({
+          applyToOwner({
             isStreaming: false,
             isLoading: false,
             errorMessage: evt.error ?? 'gRPC stream error',
             activeStreamId: null,
           })
-          responseStore.setLoading(false)
-          if (activeTabId) tabsStore.markLoading(activeTabId, false)
+          const cur = get()
+          if (cur._currentTabId === ownerTabId) {
+            responseStore.setLoading(false)
+            if (activeTabId) tabsStore.markLoading(activeTabId, false)
+          }
         }
       })
-      set({ streamUnsubscribe: unsubscribe })
+      applyToOwner({ streamUnsubscribe: unsubscribe })
 
       if (method?.type === 'server_streaming') {
         const result = await grpcApi.serverStream({ ...baseOptions, requestBody: resolvedBody }) as
           | { success: true; data: { streamId: string } }
           | { success: false; error: string }
         if (result.success) {
-          set({ activeStreamId: result.data.streamId })
+          applyToOwner({ activeStreamId: result.data.streamId })
         } else {
-          set({ isStreaming: false, isLoading: false, errorMessage: result.error })
+          applyToOwner({ isStreaming: false, isLoading: false, errorMessage: result.error })
         }
       } else if (method?.type === 'client_streaming') {
         // Single message for now — the UI doesn't yet expose multi-message client streaming.
@@ -505,13 +573,13 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
           | { success: true; data: { streamId: string } }
           | { success: false; error: string }
         if (result.success) {
-          set({ activeStreamId: result.data.streamId })
+          applyToOwner({ activeStreamId: result.data.streamId })
           // Push the initial message immediately if the user typed one.
           if (resolvedBody.trim() && resolvedBody.trim() !== '{}') {
             await grpcApi.sendStreamMessage(result.data.streamId, resolvedBody).catch(() => {})
           }
         } else {
-          set({ isStreaming: false, isLoading: false, errorMessage: result.error })
+          applyToOwner({ isStreaming: false, isLoading: false, errorMessage: result.error })
         }
       }
     } catch (err) {
@@ -521,10 +589,13 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         error: (err as Error).message,
         timing: { total: 0 },
       }
-      set({ response: errResp, isLoading: false, isStreaming: false, errorMessage: errResp.error ?? null })
-      responseStore.setResponse(errResp)
-      responseStore.setLoading(false)
-      if (activeTabId) tabsStore.markLoading(activeTabId, false)
+      applyToOwner({ response: errResp, isLoading: false, isStreaming: false, errorMessage: errResp.error ?? null })
+      const cur = get()
+      if (cur._currentTabId === ownerTabId) {
+        responseStore.setResponse(errResp)
+        responseStore.setLoading(false)
+        if (activeTabId) tabsStore.markLoading(activeTabId, false)
+      }
     }
   },
 
@@ -560,26 +631,41 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     return svc?.methods.find((m) => m.name === get().selectedMethod)
   },
 
+  switchToTab: (tabId) => {
+    const state = get()
+    const tabStates = new Map(state._tabStates)
+
+    const currentKey = state._currentTabId === null ? '__null__' : state._currentTabId
+    tabStates.set(currentKey, extractState(state))
+
+    const target = tabStates.get(tabId) || emptyTabState()
+
+    set({
+      ...target,
+      _tabStates: tabStates,
+      _currentTabId: tabId,
+    })
+  },
+
+  removeTabState: (tabId) => {
+    const tabStates = new Map(get()._tabStates)
+    const removed = tabStates.get(tabId)
+    if (removed?.streamUnsubscribe) {
+      removed.streamUnsubscribe()
+    }
+    tabStates.delete(tabId)
+    set({ _tabStates: tabStates })
+
+    if (get()._currentTabId === tabId) {
+      const liveUnsub = get().streamUnsubscribe
+      if (liveUnsub && liveUnsub !== removed?.streamUnsubscribe) liveUnsub()
+      set({ streamUnsubscribe: null })
+    }
+  },
+
   reset: () => {
     const prev = get().streamUnsubscribe
     if (prev) prev()
-    set({
-      address: 'localhost:50051',
-      useTls: false,
-      protoLoaded: false,
-      protoPath: null,
-      services: [],
-      selectedService: null,
-      selectedMethod: null,
-      requestBody: DEFAULT_REQUEST,
-      metadata: [defaultKv()],
-      response: null,
-      streamEvents: [],
-      activeStreamId: null,
-      streamUnsubscribe: null,
-      isLoading: false,
-      isStreaming: false,
-      errorMessage: null,
-    })
+    set({ ...emptyTabState() })
   },
 }))
