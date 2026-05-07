@@ -11,6 +11,7 @@ import {
   Download,
   Code2,
   Cloud,
+  Zap,
 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useTabsStore } from '../../stores/tabs.store'
@@ -138,7 +139,7 @@ export default function NewDropdown() {
       action: () => createProtocolTab('mcp', t('welcome.mcp')),
     },
     {
-      icon: <Radio size={16} strokeWidth={1.75} />,
+      icon: <Zap size={16} strokeWidth={1.75} />,
       iconColor: '#E65100',
       label: t('newDropdown.socketio'),
       bg: '#FFF3E0',

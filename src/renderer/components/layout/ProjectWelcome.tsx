@@ -1,4 +1,4 @@
-import { Globe, Radio, Cpu, Bot, FileCode2, Hexagon, Activity, Cloud } from 'lucide-react'
+import { Globe, Radio, Cpu, Bot, FileCode2, Hexagon, Activity, Cloud, Zap } from 'lucide-react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
@@ -100,7 +100,7 @@ export default function ProjectWelcome() {
       onClick: () => createTab(t('welcome.mcp'), 'mcp'),
     },
     {
-      icon: <Radio size={32} strokeWidth={1.5} />,
+      icon: <Zap size={32} strokeWidth={1.5} />,
       iconBg: '#FFF3E0',
       iconColor: '#E65100',
       label: t('welcome.socketio'),
