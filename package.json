@@ -91,7 +91,7 @@
     "simple-git": "^3.35.2",
     "soap": "^1.9.0",
     "tar-stream": "^3.2.0",
-    "tough-cookie": "^4.1.4",
+    "tough-cookie": "^5.1.2",
     "ws": "^8.18.0",
     "wsse": "^6.0.0",
     "xml-crypto": "^6.1.2",
