@@ -973,12 +973,19 @@ function exportProjectAsOpenApi(projectId: string): string {
       paths[path] = {}
     }
     const method = (ep.method || 'GET').toLowerCase()
+    let parsedResponses: unknown = { '200': { description: 'OK' } }
+    if (ep.response_schemas) {
+      try {
+        parsedResponses = JSON.parse(ep.response_schemas)
+      } catch {
+        // Corrupted row — fall back to a 200 stub so the rest of the export
+        // succeeds. Exported spec is still valid OpenAPI.
+      }
+    }
     const operation: Record<string, unknown> = {
       summary: ep.name,
       description: ep.description || undefined,
-      responses: ep.response_schemas
-        ? JSON.parse(ep.response_schemas)
-        : { '200': { description: 'OK' } },
+      responses: parsedResponses,
     }
 
     // Tags from the round-trip metadata, falling back to the parent folder
@@ -987,7 +994,13 @@ function exportProjectAsOpenApi(projectId: string): string {
     let openApiMeta: OpenApiRoundtripMeta | undefined
     let storedAuth: UiRequestSchema['auth'] | undefined
     if (ep.request_schema) {
-      const schema = JSON.parse(ep.request_schema) as UiRequestSchema
+      let schema: UiRequestSchema = {}
+      try {
+        schema = JSON.parse(ep.request_schema) as UiRequestSchema
+      } catch {
+        // Skip schema-derived fields for this endpoint; basic operation
+        // (summary/responses) still emits.
+      }
       openApiMeta = schema.openApi
       storedAuth = schema.auth
       const params: Array<Record<string, unknown>> = []
