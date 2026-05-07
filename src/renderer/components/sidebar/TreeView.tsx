@@ -5,7 +5,15 @@ import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
-import type { TreeNode as TreeNodeType, HttpMethod, Protocol, KeyValuePair, RequestBody, AuthConfig } from '../../types'
+import type {
+  TreeNode as TreeNodeType,
+  HttpMethod,
+  Protocol,
+  KeyValuePair,
+  RequestBody,
+  AuthConfig,
+  TestAssertion,
+} from '../../types'
 import TreeNodeComponent from './TreeNode'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 
@@ -21,11 +29,7 @@ interface FlatNode {
  * Flatten tree into a list of visible nodes based on open/closed state.
  * Only expanded folder children are included.
  */
-function flattenTree(
-  nodes: TreeNode[],
-  openIds: Set<string>,
-  depth: number = 0
-): FlatNode[] {
+function flattenTree(nodes: TreeNode[], openIds: Set<string>, depth: number = 0): FlatNode[] {
   const result: FlatNode[] = []
   for (const node of nodes) {
     result.push({ node, depth })
@@ -55,10 +59,7 @@ export default function TreeView() {
 
   const parentRef = useRef<HTMLDivElement>(null)
 
-  const flatNodes = useMemo(
-    () => flattenTree(treeData, openNodeIds),
-    [treeData, openNodeIds]
-  )
+  const flatNodes = useMemo(() => flattenTree(treeData, openNodeIds), [treeData, openNodeIds])
 
   const virtualizer = useVirtualizer({
     count: flatNodes.length,
@@ -85,12 +86,21 @@ export default function TreeView() {
       if (node.type === 'request') {
         // Load full saved request data from DB
         try {
-          const result = await window.api?.savedRequest?.get(node.id) as {
+          const result = (await window.api?.savedRequest?.get(node.id)) as {
             success: boolean
             data?: {
-              id: string; name: string; method: string; url: string; protocol: string
-              params?: string; headers?: string; body?: string; auth?: string
-              pre_script?: string; post_script?: string; assertions?: string
+              id: string
+              name: string
+              method: string
+              url: string
+              protocol: string
+              params?: string
+              headers?: string
+              body?: string
+              auth?: string
+              pre_script?: string
+              post_script?: string
+              assertions?: string
             }
           }
           if (result?.success && result.data) {
@@ -99,6 +109,8 @@ export default function TreeView() {
             const parsedHeaders: KeyValuePair[] = sr.headers ? JSON.parse(sr.headers) : []
             const parsedBody: RequestBody = sr.body ? JSON.parse(sr.body) : { type: 'none' }
             const parsedAuth: AuthConfig = sr.auth ? JSON.parse(sr.auth) : { type: 'none' }
+            // Saved requests carry preScript/postScript/assertions in dedicated columns.
+            const parsedAsserts = sr.assertions ? JSON.parse(sr.assertions) : []
 
             openPreviewTab({
               id: tabId,
@@ -119,6 +131,9 @@ export default function TreeView() {
               headers: parsedHeaders,
               body: parsedBody,
               auth: parsedAuth,
+              preScript: sr.pre_script ?? '',
+              postScript: sr.post_script ?? '',
+              assertions: parsedAsserts,
             })
             return
           }
@@ -130,10 +145,14 @@ export default function TreeView() {
       if (node.type === 'endpoint') {
         // Load full endpoint data from DB
         try {
-          const result = await window.api?.endpoint?.get(node.id) as {
+          const result = (await window.api?.endpoint?.get(node.id)) as {
             success: boolean
             data?: {
-              id: string; name: string; method: string; path: string; protocol: string
+              id: string
+              name: string
+              method: string
+              path: string
+              protocol: string
               request_schema?: string
             }
           }
@@ -144,6 +163,9 @@ export default function TreeView() {
             let headers: KeyValuePair[] = []
             let body: RequestBody = { type: 'none' }
             let auth: AuthConfig = { type: 'none' }
+            let preScript = ''
+            let postScript = ''
+            let endpointAssertions: TestAssertion[] = []
             let soapMeta: Record<string, unknown> | undefined
             let schemaUrl = ep.path
             let schemaMethod = ep.method || 'GET'
@@ -155,13 +177,19 @@ export default function TreeView() {
                 headers = schema.headers || []
                 body = schema.body || { type: 'none' }
                 auth = schema.auth || { type: 'none' }
+                preScript = schema.preScript ?? ''
+                postScript = schema.postScript ?? ''
+                endpointAssertions = schema.assertions ?? []
                 soapMeta = schema.soap
                 if (schema.url) schemaUrl = schema.url
                 if (schema.method) schemaMethod = schema.method
-              } catch { /* ignore */ }
+              } catch {
+                /* ignore */
+              }
             }
 
-            const effectiveProtocol = (protocol === 'soap' && soapMeta) ? 'http' as Protocol : protocol
+            const effectiveProtocol =
+              protocol === 'soap' && soapMeta ? ('http' as Protocol) : protocol
 
             openPreviewTab({
               id: tabId,
@@ -192,6 +220,9 @@ export default function TreeView() {
                 headers,
                 body,
                 auth,
+                preScript,
+                postScript,
+                assertions: endpointAssertions,
               })
             }
             return
@@ -217,36 +248,40 @@ export default function TreeView() {
         url: node.path || '',
       })
     },
-    [setActiveNode, loadFromEndpoint, openPreviewTab, switchToTab, clearResponse, loadSoapFromEndpoint, switchSoapToTab]
+    [
+      setActiveNode,
+      loadFromEndpoint,
+      openPreviewTab,
+      switchToTab,
+      clearResponse,
+      loadSoapFromEndpoint,
+      switchSoapToTab,
+    ],
   )
 
   // Delete confirmation dialog state
   const [deleteTarget, setDeleteTarget] = useState<TreeNode | null>(null)
 
-  const handleDeleteRequest = useCallback(
-    (node: TreeNode) => {
-      setDeleteTarget(node)
-    },
-    []
-  )
+  const handleDeleteRequest = useCallback((node: TreeNode) => {
+    setDeleteTarget(node)
+  }, [])
 
-  const handleDeleteConfirm = useCallback(
-    async () => {
-      if (!deleteTarget) return
-      try {
-        if (deleteTarget.type === 'request') {
-          await window.api?.savedRequest?.delete(deleteTarget.id)
-        } else if (deleteTarget.type === 'endpoint') {
-          await window.api?.endpoint?.delete(deleteTarget.id)
-        } else if (deleteTarget.type === 'folder') {
-          await window.api?.folder?.delete(deleteTarget.id)
-        }
-        await refreshTree()
-      } catch { /* ignore */ }
-      setDeleteTarget(null)
-    },
-    [deleteTarget, refreshTree]
-  )
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteTarget) return
+    try {
+      if (deleteTarget.type === 'request') {
+        await window.api?.savedRequest?.delete(deleteTarget.id)
+      } else if (deleteTarget.type === 'endpoint') {
+        await window.api?.endpoint?.delete(deleteTarget.id)
+      } else if (deleteTarget.type === 'folder') {
+        await window.api?.folder?.delete(deleteTarget.id)
+      }
+      await refreshTree()
+    } catch {
+      /* ignore */
+    }
+    setDeleteTarget(null)
+  }, [deleteTarget, refreshTree])
 
   const handleDeleteCancel = useCallback(() => {
     setDeleteTarget(null)
@@ -263,9 +298,11 @@ export default function TreeView() {
           await window.api?.savedRequest?.update(node.id, { name: newName })
         }
         await refreshTree()
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     },
-    [refreshTree]
+    [refreshTree],
   )
 
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
@@ -283,9 +320,11 @@ export default function TreeView() {
           protocol: 'http',
         })
         await refreshTree()
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     },
-    [activeProjectId, refreshTree]
+    [activeProjectId, refreshTree],
   )
 
   const handleAddFolder = useCallback(
@@ -299,16 +338,21 @@ export default function TreeView() {
           name: 'New Folder',
         })
         await refreshTree()
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     },
-    [activeProjectId, refreshTree]
+    [activeProjectId, refreshTree],
   )
 
   const handleDuplicate = useCallback(
     async (node: TreeNode) => {
       try {
         if (node.type === 'request') {
-          const result = await window.api?.savedRequest?.get(node.id) as { success: boolean; data?: Record<string, unknown> }
+          const result = (await window.api?.savedRequest?.get(node.id)) as {
+            success: boolean
+            data?: Record<string, unknown>
+          }
           if (result?.success && result.data) {
             const sr = result.data as Record<string, unknown> & { name: string; url: string }
             await window.api?.savedRequest?.create({
@@ -317,9 +361,16 @@ export default function TreeView() {
             } as Parameters<typeof window.api.savedRequest.create>[0])
           }
         } else if (node.type === 'endpoint') {
-          const result = await window.api?.endpoint?.get(node.id) as { success: boolean; data?: Record<string, unknown> }
+          const result = (await window.api?.endpoint?.get(node.id)) as {
+            success: boolean
+            data?: Record<string, unknown>
+          }
           if (result?.success && result.data) {
-            const ep = result.data as Record<string, unknown> & { name: string; project_id: string; path: string }
+            const ep = result.data as Record<string, unknown> & {
+              name: string
+              project_id: string
+              path: string
+            }
             await window.api?.endpoint?.create({
               ...ep,
               name: `${ep.name} (copy)`,
@@ -327,9 +378,11 @@ export default function TreeView() {
           }
         }
         await refreshTree()
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     },
-    [refreshTree]
+    [refreshTree],
   )
 
   const openTab = useTabsStore((s) => s.openTab)
@@ -344,33 +397,33 @@ export default function TreeView() {
         folderId: node.id,
       })
     },
-    [openTab]
+    [openTab],
   )
 
-  const handleExport = useCallback(
-    async (node: TreeNode) => {
-      try {
-        if (node.type !== 'folder' && node.type !== 'module') return
-        const result = await window.api?.save?.exportFolder?.(node.id) as { success: boolean; error?: string }
-        if (!result?.success && result?.error && result.error !== 'Cancelled') {
-          console.error('Export folder failed:', result.error)
-        }
-      } catch (err) {
-        console.error(err)
+  const handleExport = useCallback(async (node: TreeNode) => {
+    try {
+      if (node.type !== 'folder' && node.type !== 'module') return
+      const result = (await window.api?.save?.exportFolder?.(node.id)) as {
+        success: boolean
+        error?: string
       }
-    },
-    []
-  )
+      if (!result?.success && result?.error && result.error !== 'Cancelled') {
+        console.error('Export folder failed:', result.error)
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }, [])
 
   const handleImportFolder = useCallback(
     async (node: TreeNode) => {
       if (!activeProjectId) return
       try {
         const parentId = node.type === 'folder' ? node.id : null
-        const result = await window.api?.save?.importFolder?.({
+        const result = (await window.api?.save?.importFolder?.({
           projectId: activeProjectId,
           parentFolderId: parentId,
-        }) as { success: boolean; error?: string }
+        })) as { success: boolean; error?: string }
         if (result?.success) {
           await refreshTree()
         } else if (result?.error && result.error !== 'Cancelled') {
@@ -380,7 +433,7 @@ export default function TreeView() {
         console.error(err)
       }
     },
-    [activeProjectId, refreshTree]
+    [activeProjectId, refreshTree],
   )
 
   return (

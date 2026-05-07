@@ -1,7 +1,7 @@
 // src/renderer/lib/test-runner.ts
 // Testnizer — Test Runner (renderer process library)
 
-import type { TestAssertion, TestResult, ApiResponse, ConsoleLog, KeyValuePair } from '../types'
+import type { TestAssertion, TestResult, ApiResponse, ConsoleLog } from '../types'
 
 // ─── JSONPath Evaluator ──────────────────────────────────────────
 
@@ -293,6 +293,7 @@ interface BeChain {
   an(type: string): void
   above(n: number): void
   below(n: number): void
+  oneOf(values: unknown[]): void
   true: void
   false: void
   null: void
@@ -353,12 +354,24 @@ export interface PmApi {
     set(key: string, value: string): void
     get(key: string): string | undefined
   }
+  collectionVariables: {
+    set(key: string, value: string): void
+    get(key: string): string | undefined
+    has(key: string): boolean
+    unset(key: string): void
+  }
   variables: {
     set(key: string, value: string): void
     get(key: string): string | undefined
   }
+  info: {
+    eventName: string
+    requestName: string
+  }
   expect(value: unknown): AssertionChain
   test(name: string, fn: () => void): void
+  /** No-op: requests are sent by the host runner; scripts cannot interrupt. */
+  sendRequest(_options: unknown, _cb: (err: Error | null, res: unknown) => void): void
   _testResults: PmTestResult[]
   _envUpdates: Map<string, string>
   _globalUpdates: Map<string, string>
@@ -561,6 +574,27 @@ export function createPmApi(
         return globalVars.get(key)
       },
     },
+    // Postman exposes `pm.collectionVariables` for collection-scoped vars.
+    // Testnizer persists imported Postman collection variables as a per-project
+    // environment (see importPostman in import-export.handler.ts), so the same
+    // backing store powers both `pm.environment` and `pm.collectionVariables`.
+    // Writes go through the env-update map so changes persist after the run.
+    collectionVariables: {
+      set(key: string, value: string): void {
+        envVars.set(key, value)
+        envUpdates.set(key, value)
+      },
+      get(key: string): string | undefined {
+        return envVars.get(key)
+      },
+      has(key: string): boolean {
+        return envVars.has(key)
+      },
+      unset(key: string): void {
+        envVars.delete(key)
+        envUpdates.set(key, '')
+      },
+    },
     variables: {
       set(key: string, value: string): void {
         localVars.set(key, value)
@@ -568,6 +602,10 @@ export function createPmApi(
       get(key: string): string | undefined {
         return localVars.get(key) ?? envVars.get(key) ?? globalVars.get(key)
       },
+    },
+    info: {
+      eventName: 'test',
+      requestName: '',
     },
     expect(value: unknown): AssertionChain {
       return createExpectChain(value)
@@ -578,6 +616,16 @@ export function createPmApi(
         testResults.push({ name, passed: true })
       } catch (e) {
         testResults.push({ name, passed: false, error: (e as Error).message })
+      }
+    },
+    sendRequest(_options: unknown, cb: (err: Error | null, res: unknown) => void): void {
+      // Postman's pm.sendRequest fires an arbitrary HTTP call mid-script. We
+      // don't model that — scripts are pure post/pre hooks here. Fail loud so
+      // the user sees a clear "not supported" rather than a silent no-op.
+      try {
+        cb(new Error('pm.sendRequest is not supported in Testnizer scripts'), null)
+      } catch {
+        /* swallow callback errors so they don't break the script run */
       }
     },
     _testResults: testResults,
@@ -611,6 +659,11 @@ function createExpectChain(value: unknown): AssertionChain {
     below(n: number): void {
       if (typeof value !== 'number' || value >= n) {
         assertionError(`Expected ${String(value)} to be below ${n}`)
+      }
+    },
+    oneOf(values: unknown[]): void {
+      if (!Array.isArray(values) || !values.includes(value)) {
+        assertionError(`Expected ${String(value)} to be one of [${values.map(String).join(', ')}]`)
       }
     },
     get true() {
@@ -722,9 +775,11 @@ export function runScript(script: string, pmApi: PmApi): ScriptRunResult {
   }
 
   try {
-    // Use new Function to create a sandboxed execution context
-    const fn = new Function('pm', 'console', script)
-    fn(pmApi, captureConsole)
+    // `t` is a Testnizer-branded alias for `pm`. Both bind to the same API so
+    // imported Postman scripts (which use `pm.*`) keep working unchanged, while
+    // new Testnizer scripts can opt into the shorter `t.*` form.
+    const fn = new Function('pm', 't', 'console', script)
+    fn(pmApi, pmApi, captureConsole)
   } catch (e) {
     consoleLogs.push({
       level: 'error',

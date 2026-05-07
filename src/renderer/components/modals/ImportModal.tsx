@@ -1,9 +1,18 @@
 import { useState } from 'react'
-import { X, Upload, FileText, Globe2, Loader2, FolderPlus, FolderOpen, ChevronRight, Check } from 'lucide-react'
+import {
+  X,
+  Upload,
+  FileText,
+  Globe2,
+  Loader2,
+  FolderPlus,
+  FolderOpen,
+  ChevronRight,
+  Check,
+} from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
-import { useTabsStore } from '../../stores/tabs.store'
-import { useSoapStore } from '../../stores/soap.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
+import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
 import type { WsdlParseResult, TreeNode } from '../../types'
 
@@ -30,7 +39,16 @@ const IMPORT_FORMATS: ImportFormat[] = [
 ]
 
 const URL_IMPORTABLE = ['openapi', 'wsdl', 'raml']
-const FILE_IMPORTABLE = ['openapi', 'postman', 'insomnia', 'curl', 'raml', 'wsdl', 'proto', 'soapui']
+const FILE_IMPORTABLE = [
+  'openapi',
+  'postman',
+  'insomnia',
+  'curl',
+  'raml',
+  'wsdl',
+  'proto',
+  'soapui',
+]
 
 function FormatIcon({ fmt }: { fmt: ImportFormat }) {
   if (fmt.mono) {
@@ -81,7 +99,10 @@ function FormatIcon({ fmt }: { fmt: ImportFormat }) {
 
 /** Recursively collect all folders from tree for the folder picker.
  *  Recurses into module/folder nodes to find nested folders. */
-function collectFolders(nodes: TreeNode[], depth: number = 0): Array<{ node: TreeNode; depth: number }> {
+function collectFolders(
+  nodes: TreeNode[],
+  depth: number = 0,
+): Array<{ node: TreeNode; depth: number }> {
   const result: Array<{ node: TreeNode; depth: number }> = []
   for (const n of nodes) {
     if (n.type === 'folder') {
@@ -203,11 +224,14 @@ export default function ImportModal() {
         // For URL-importable formats, fetch content from URL
         const url = importUrl.trim()
         try {
-          const fetchResult = (await window.api?.importExport?.fetchUrl?.(url)) as { success: boolean; data?: unknown; error?: string } | undefined
+          const fetchResult = (await window.api?.importExport?.fetchUrl?.(url)) as
+            | { success: boolean; data?: unknown; error?: string }
+            | undefined
           if (fetchResult?.success && fetchResult.data) {
-            const content = typeof fetchResult.data === 'string'
-              ? fetchResult.data
-              : JSON.stringify(fetchResult.data, null, 2)
+            const content =
+              typeof fetchResult.data === 'string'
+                ? fetchResult.data
+                : JSON.stringify(fetchResult.data, null, 2)
             setPendingFileContent(content)
             setPendingSourceUrl(url)
           } else {
@@ -292,7 +316,9 @@ export default function ImportModal() {
         if (folderResult?.success && folderResult.data) {
           folderId = (folderResult.data as { id: string }).id
         }
-      } catch { /* continue without folder */ }
+      } catch {
+        /* continue without folder */
+      }
     } else if (folderMode === 'existing' && targetFolderId) {
       folderId = targetFolderId
     }
@@ -302,63 +328,63 @@ export default function ImportModal() {
       let importResult: { success: boolean; error?: string } | undefined
 
       if (fmtId === 'wsdl') {
-        importResult = await window.api?.importExport?.importWsdl({
+        importResult = (await window.api?.importExport?.importWsdl({
           projectId: pid,
           targetFolderId: folderId,
           createNewFolder: false, // folder already created above if needed
           wsdlUrl: importUrl.trim() || undefined,
           parsedWsdl: wsdlParsed!,
-        }) as { success: boolean; error?: string } | undefined
+        })) as { success: boolean; error?: string } | undefined
       } else if (fmtId === 'openapi') {
-        importResult = await window.api?.importExport?.importOpenApi({
+        importResult = (await window.api?.importExport?.importOpenApi({
           projectId: pid,
           content: pendingFileContent || '',
           format: 'openapi',
           folderId,
           sourceUrl: pendingSourceUrl || undefined,
-        }) as { success: boolean; error?: string } | undefined
+        })) as { success: boolean; error?: string } | undefined
       } else if (fmtId === 'postman') {
-        importResult = await window.api?.importExport?.importPostman({
+        importResult = (await window.api?.importExport?.importPostman({
           projectId: pid,
           content: pendingFileContent || '',
           folderId,
-        }) as { success: boolean; error?: string } | undefined
+        })) as { success: boolean; error?: string } | undefined
       } else if (fmtId === 'insomnia') {
-        importResult = await window.api?.importExport?.importInsomnia({
+        importResult = (await window.api?.importExport?.importInsomnia({
           projectId: pid,
           content: pendingFileContent || '',
           folderId,
-        }) as { success: boolean; error?: string } | undefined
+        })) as { success: boolean; error?: string } | undefined
       } else if (fmtId === 'curl') {
-        importResult = await window.api?.importExport?.importCurl({
+        importResult = (await window.api?.importExport?.importCurl({
           projectId: pid,
           curlCommand: pendingFileContent || '',
           folderId,
-        }) as { success: boolean; error?: string } | undefined
+        })) as { success: boolean; error?: string } | undefined
       } else if (fmtId === 'proto') {
         if (!pendingFilePath) {
           setImportError('Proto file path missing — please re-select the file')
           setImporting(false)
           return
         }
-        importResult = await window.api?.importExport?.importProto({
+        importResult = (await window.api?.importExport?.importProto({
           projectId: pid,
           protoPath: pendingFilePath,
           folderId,
           serverAddress: protoServerAddress.trim() || undefined,
-        }) as { success: boolean; error?: string } | undefined
+        })) as { success: boolean; error?: string } | undefined
       } else if (fmtId === 'raml') {
-        importResult = await window.api?.importExport?.importRaml({
+        importResult = (await window.api?.importExport?.importRaml({
           projectId: pid,
           content: pendingFileContent || '',
           folderId,
-        }) as { success: boolean; error?: string } | undefined
+        })) as { success: boolean; error?: string } | undefined
       } else if (fmtId === 'soapui') {
-        importResult = await window.api?.importExport?.importSoapUi({
+        importResult = (await window.api?.importExport?.importSoapUi({
           projectId: pid,
           content: pendingFileContent || '',
           folderId,
-        }) as { success: boolean; error?: string } | undefined
+        })) as { success: boolean; error?: string } | undefined
       } else {
         setImportError('Import not yet implemented for this format')
         setImporting(false)
@@ -367,6 +393,12 @@ export default function ImportModal() {
 
       if (importResult?.success) {
         await refreshTree()
+        // Postman/Insomnia imports may create a project-scoped environment for
+        // collection variables. Refresh the env store so the new env shows up
+        // in the selector without requiring an app reload.
+        if (fmtId === 'postman' || fmtId === 'insomnia') {
+          await useEnvironmentStore.getState().fetchEnvironments()
+        }
         handleClose()
       } else {
         setImportError(importResult?.error || 'Import failed')
@@ -432,7 +464,7 @@ export default function ImportModal() {
                 {step > s ? <Check size={12} /> : s}
               </div>
               <span
-                               style={{
+                style={{
                   color: step >= s ? 'var(--text)' : 'var(--hint)',
                   fontWeight: step === s ? 600 : 400,
                 }}
@@ -440,7 +472,10 @@ export default function ImportModal() {
                 {s === 1 ? 'Format' : s === 2 ? 'Source' : 'Destination'}
               </span>
               {s < 3 && (
-                <div className="mx-1 h-px w-8" style={{ background: step > s ? 'var(--accent)' : 'var(--border)' }} />
+                <div
+                  className="mx-1 h-px w-8"
+                  style={{ background: step > s ? 'var(--accent)' : 'var(--border)' }}
+                />
               )}
             </div>
           ))}
@@ -502,7 +537,9 @@ export default function ImportModal() {
                       type="text"
                       value={importUrl}
                       onChange={(e) => setImportUrl(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleImportUrl() }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleImportUrl()
+                      }}
                       placeholder={
                         selectedFormat.id === 'wsdl'
                           ? 'https://example.com/service?wsdl'
@@ -516,7 +553,11 @@ export default function ImportModal() {
                       disabled={importLoading || !importUrl.trim()}
                       className="flex cursor-pointer items-center gap-1.5 rounded-lg border-none bg-[var(--accent)] px-3 py-1.5 font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {importLoading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                      {importLoading ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Upload size={14} />
+                      )}
                       Next
                     </button>
                   </div>
@@ -544,7 +585,11 @@ export default function ImportModal() {
                     className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[var(--border2)] py-4 text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ background: 'transparent' }}
                   >
-                    {importLoading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                    {importLoading ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Upload size={16} />
+                    )}
                     Click to select a {selectedFormat.name} file
                   </button>
                 </div>
@@ -598,7 +643,8 @@ export default function ImportModal() {
                         <span className="font-medium text-[var(--text)]">{svc.name}</span>
                         {svc.ports.map((port) => (
                           <div key={port.name} className="ml-4">
-                            {port.name} — {port.operations.length} operation{port.operations.length !== 1 ? 's' : ''}
+                            {port.name} — {port.operations.length} operation
+                            {port.operations.length !== 1 ? 's' : ''}
                           </div>
                         ))}
                       </div>
@@ -622,9 +668,7 @@ export default function ImportModal() {
 
               {/* Folder Selection */}
               <div>
-                <div className="mb-3 font-semibold text-[var(--text)]">
-                  Import Destination
-                </div>
+                <div className="mb-3 font-semibold text-[var(--text)]">Import Destination</div>
 
                 {/* New folder */}
                 <label
@@ -684,8 +728,10 @@ export default function ImportModal() {
                         className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-[var(--accent-light)]"
                         style={{
                           paddingLeft: 8 + depth * 16,
-                          background: targetFolderId === folder.id ? 'var(--accent-light)' : 'transparent',
-                          color: targetFolderId === folder.id ? 'var(--accent-text)' : 'var(--text)',
+                          background:
+                            targetFolderId === folder.id ? 'var(--accent-light)' : 'transparent',
+                          color:
+                            targetFolderId === folder.id ? 'var(--accent-text)' : 'var(--text)',
                           border: 'none',
                         }}
                       >
@@ -731,7 +777,8 @@ export default function ImportModal() {
                     className="w-full rounded-lg border border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                   />
                   <span className="text-[11px] text-[var(--hint)]">
-                    Used as the default server for every imported method. Leave empty to use localhost:50051.
+                    Used as the default server for every imported method. Leave empty to use
+                    localhost:50051.
                   </span>
                 </div>
               )}
@@ -769,7 +816,11 @@ export default function ImportModal() {
                   disabled={importing || (folderMode === 'existing' && !targetFolderId)}
                   className="flex cursor-pointer items-center gap-1.5 rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  {importing ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Upload size={14} />
+                  )}
                   Import
                 </button>
               </div>

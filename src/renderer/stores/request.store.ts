@@ -104,6 +104,9 @@ interface RequestStore extends TabRequestState {
     headers?: KeyValuePair[]
     body?: RequestBody
     auth?: AuthConfig
+    preScript?: string
+    postScript?: string
+    assertions?: TestAssertion[]
   }) => void
 
   /** Switch active tab — saves current state and loads target tab state */
@@ -511,6 +514,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       headers: data.headers || [],
       body: data.body || { type: 'none' },
       auth: data.auth || { type: 'none' },
+      preScript: data.preScript ?? '',
+      postScript: data.postScript ?? '',
+      assertions: data.assertions ?? [],
     })
   },
 }))

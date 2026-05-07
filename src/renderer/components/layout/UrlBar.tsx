@@ -64,7 +64,13 @@ export default function UrlBar() {
     const response = useResponseStore.getState().response
     if (response?.body) {
       const ct = response.headers?.['content-type'] || 'application/octet-stream'
-      const ext = ct.includes('json') ? '.json' : ct.includes('xml') ? '.xml' : ct.includes('html') ? '.html' : '.txt'
+      const ext = ct.includes('json')
+        ? '.json'
+        : ct.includes('xml')
+          ? '.xml'
+          : ct.includes('html')
+            ? '.html'
+            : '.txt'
       const blob = new Blob([response.body], { type: ct })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -113,7 +119,14 @@ export default function UrlBar() {
           }}
         >
           <MethodBadge method={method} />
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.ghost} strokeWidth="2">
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={T.ghost}
+            strokeWidth="2"
+          >
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </div>
@@ -150,8 +163,12 @@ export default function UrlBar() {
                   borderRadius: 5,
                   cursor: 'pointer',
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = T.surface }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                onMouseEnter={(e) => {
+                  ;(e.currentTarget as HTMLElement).style.background = T.surface
+                }}
+                onMouseLeave={(e) => {
+                  ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                }}
               >
                 <MethodBadge method={m} small />
               </div>
@@ -163,7 +180,10 @@ export default function UrlBar() {
       {/* URL input — Postman style: flush with method dropdown */}
       <VariableAutocompleteInput
         value={url}
-        onChange={(v) => { pinIfPreview(); setUrl(v) }}
+        onChange={(v) => {
+          pinIfPreview()
+          setUrl(v)
+        }}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
             sendRequest()
@@ -207,14 +227,28 @@ export default function UrlBar() {
         >
           {isLoading ? (
             <>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="2">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="white"
+                stroke="white"
+                strokeWidth="2"
+              >
                 <rect x="6" y="6" width="12" height="12" rx="1" />
               </svg>
               {t('urlBar.cancel')}
             </>
           ) : (
             <>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                strokeWidth="2"
+              >
                 <line x1="22" y1="2" x2="11" y2="13" />
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
@@ -247,7 +281,14 @@ export default function UrlBar() {
             opacity: isLoading ? 0.75 : 1,
           }}
         >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="white"
+            strokeWidth="2.5"
+          >
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
@@ -282,10 +323,21 @@ export default function UrlBar() {
                 fontSize: 13,
                 color: T.text,
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = T.surface }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+              onMouseEnter={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = T.surface
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+              }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="22" y1="2" x2="11" y2="13" />
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
@@ -306,10 +358,21 @@ export default function UrlBar() {
                 fontSize: 13,
                 color: T.text,
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = T.surface }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+              onMouseEnter={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = T.surface
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+              }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
@@ -349,7 +412,17 @@ export default function UrlBar() {
               await window.api?.endpoint?.update(activeTab.endpointId, {
                 method,
                 path: url,
-                request_schema: JSON.stringify({ params, headers, body, auth }),
+                request_schema: JSON.stringify({
+                  url,
+                  method,
+                  params,
+                  headers,
+                  body,
+                  auth,
+                  preScript,
+                  postScript,
+                  assertions,
+                }),
               })
             }
             // Update tab
@@ -358,7 +431,9 @@ export default function UrlBar() {
             await refreshTree()
             setSaveOk(true)
             setTimeout(() => setSaveOk(false), 1500)
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
           setSaveLoading(false)
         }}
         disabled={saveLoading}
@@ -371,7 +446,14 @@ export default function UrlBar() {
           color: saveOk ? 'var(--green)' : undefined,
         }}
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
           <polyline points="17 21 17 13 7 13 7 21" />
           <polyline points="7 3 7 8 15 8" />

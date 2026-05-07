@@ -5,10 +5,14 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 type ScriptSection = 'pre-request' | 'post-response'
 
 const PRE_REQUEST_PLACEHOLDER = `// Pre-request script runs before the request is sent.
-// Use pm.environment.set() / pm.variables.set() to configure.
+// Both \`pm\` (Postman-compatible) and \`t\` (Testnizer alias) are available.
+// Examples:
+//   pm.environment.set('token', 'abc');
+//   t.variables.set('userId', '42');
 `
 
-const POST_RESPONSE_PLACEHOLDER = `pm.test("Status code is 200", function () {
+const POST_RESPONSE_PLACEHOLDER = `// \`pm\` (Postman-compatible) and \`t\` (Testnizer alias) are interchangeable.
+pm.test("Status code is 200", function () {
     pm.response.to.have.status(200);
 });
 `
@@ -60,9 +64,7 @@ export default function ScriptsTab() {
         <div className="flex-1" />
 
         {/* Snippet helper */}
-        <span style={{ color: 'var(--hint)' }}>
-          JavaScript
-        </span>
+        <span style={{ color: 'var(--hint)' }}>JavaScript</span>
       </div>
 
       {/* Editor */}
