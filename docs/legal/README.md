@@ -1,35 +1,63 @@
-# Testnizer — Legal Documents (Drafts)
+# Testnizer — Legal Documents
 
-This directory contains **draft** legal documents for the Testnizer app.
-They reflect how the Software actually behaves (offline-first, no telemetry
-by default, MIT-licensed open source) but are **not** a substitute for
-professional legal advice.
+**Status:** FINAL — pending counsel review
+**Last harmonized:** 2026-05-07
+
+This directory contains the **authoritative legal text** for the Testnizer
+application. These documents are surfaced to the end-user through the
+in-application consent gate (`<EulaConsentGate>`) on first launch and
+again whenever either document changes.
 
 ## Files
 
-- `privacy-policy.md` — How Testnizer handles data (spoiler: it does not
-  collect any by default).
-- `eula.md` — End-User License Agreement, complementary to the MIT License
-  in the repository root.
+- `eula.md` — End-User License Agreement, governing the **binary
+  distribution** of the Software. The source code is governed separately by
+  the MIT License in the repository root (`LICENSE`).
+- `privacy-policy.md` — How Testnizer handles data: it does not collect any
+  by default, with a small number of well-defined opt-in or user-initiated
+  exceptions (auto-update, optional Sentry telemetry, AI Chat).
+- `COMPARISON.md` — Reconciliation report comparing this directory with the
+  live website at `https://www.testnizer.com/license/`.
 
-## Before publishing
+## Source of truth
 
-These drafts **must** be reviewed by qualified legal counsel familiar with
-your target jurisdictions (Türkiye, EU/GDPR, US, etc.) before being shipped
-or referenced from the application.
+**`docs/legal/eula.md` and `docs/legal/privacy-policy.md` are the
+authoritative legal text.** The website at
+`https://www.testnizer.com/license/` MUST mirror the contents of these two
+documents verbatim (or with a faithful translation when a Turkish version
+is added). Any change to either document requires a corresponding update
+to the website. The website should also expose `/privacy/` as a separate
+page mirroring `privacy-policy.md`.
 
-## Placeholders to fill in
+## Consent-gate behavior
 
-All placeholders are wrapped in `[brackets]`. Search for them and replace
-with finalized values:
+The Software computes a SHA-256 hash of each document at build time and
+stores the hash the user accepted. When either document changes:
 
-- `[YYYY-MM-DD]` — effective and last-updated dates
-- `[Apinizer Yazılım A.Ş.]` — final legal entity name
-- `[İstanbul, Türkiye]` — registered business address
-- `[Turkey]` — governing-law jurisdiction (in EULA Section 12)
-- `[support@apinizer.com]` / `[legal@apinizer.com]` — contact emails
+1. The new build ships with new hashes.
+2. On next launch, the consent gate detects the mismatch and re-prompts
+   the user to accept the updated text.
+3. If the user declines, the application exits.
+
+This means: **any edit to either document — even a typo fix — invalidates
+the previous consent and forces a re-prompt.** Coordinate edits with
+release planning so users are not re-prompted unnecessarily.
+
+## Counsel review
+
+Although these documents are written to be internally consistent, factually
+accurate, and reflect actual application behavior, they have not yet been
+reviewed by qualified legal counsel. Before publishing to the website or
+shipping a new version that materially relies on them, the user should
+have these documents reviewed by counsel familiar with:
+
+- Republic of Türkiye law (the chosen governing jurisdiction)
+- EU GDPR (for European users)
+- US consumer-protection law (for US distribution)
+- Export-control law (Türkiye, EU, US)
 
 ## Where these are surfaced in-app
 
-The About modal (Phase 1.1) links to these documents — update those links
-if file names change.
+- First-launch consent gate (`<EulaConsentGate>`)
+- About modal — links to both documents
+- Settings → Legal — full-text viewer
