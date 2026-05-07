@@ -5,7 +5,7 @@
 **Applies to:** Testnizer v1.0.3 and later
 
 This End-User License Agreement ("Agreement") is a binding contract between
-**you** ("Licensee", "you") and **Apinizer Yazılım A.Ş.** ("Licensor", "we",
+**you** ("Licensee", "you") and **Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş.** ("Licensor", "we",
 "our"), located in **İstanbul, Republic of Türkiye**, concerning your use of
 the **Testnizer** desktop application — the pre-built binary distribution
 (DMG, EXE, AppImage, deb, zip, or any other packaged installer obtained from
@@ -164,7 +164,7 @@ granted to you by those upstream licenses.
 
 ## 8. Trademarks
 
-"Testnizer" and the Testnizer logo are trademarks of Apinizer Yazılım A.Ş.
+"Testnizer" and the Testnizer logo are trademarks of Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş.
 You may refer to the Software by its name in editorial, journalistic, or
 educational contexts. You may not use Licensor's name, logo, or trademarks
 to endorse, promote, or imply affiliation with any product or service
@@ -293,7 +293,7 @@ This Agreement is governed by the laws of the **Republic of Türkiye**,
 without regard to its conflict-of-laws principles. Any dispute, controversy,
 or claim arising out of or relating to this Agreement, or the breach,
 termination, or invalidity thereof, shall be submitted to the exclusive
-jurisdiction of the courts and execution offices of **İstanbul, Türkiye**,
+jurisdiction of the courts and execution offices of **Ankara, Türkiye**,
 except where mandatory consumer-protection laws of your place of residence
 provide otherwise.
 
@@ -345,12 +345,11 @@ terms of the version of this Agreement to which you most recently consented.
 For questions about this Agreement, including legal, compliance, or
 intellectual-property inquiries:
 
-- **Legal & privacy:** legal@testnizer.com (with fallback to
-  info@testnizer.com)
-- **General support:** info@testnizer.com
+- **Legal & privacy:** info@apinizer.com
+- **General support:** info@apinizer.com
 - **Source repository:** https://github.com/apinizer/testnizer
 - **Website:** https://www.testnizer.com
-- **Postal:** Apinizer Yazılım A.Ş., İstanbul, Türkiye
+- **Postal:** Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş., İstanbul, Türkiye
 
-Copyright © 2026 Apinizer Yazılım A.Ş. All rights reserved with respect to
+Copyright © 2026 Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş. All rights reserved with respect to
 the binary distribution. Source code rights are governed by the MIT License.
