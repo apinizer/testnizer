@@ -11,6 +11,8 @@ export type Protocol =
   | 'grpc'
   | 'sse'
   | 'ai'
+  | 'mcp'
+  | 'socketio'
   | 'runner'
   | 'tools.jwt'
   | 'tools.jsonFormat'

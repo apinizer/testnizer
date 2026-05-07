@@ -1,8 +1,21 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Globe, Radio, Activity, Cpu, Bot, FileCode2, Hexagon, Download, Code2 } from 'lucide-react'
+import {
+  Globe,
+  Radio,
+  Activity,
+  Cpu,
+  Bot,
+  FileCode2,
+  Hexagon,
+  Download,
+  Code2,
+  Cloud,
+} from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useTabsStore } from '../../stores/tabs.store'
+import { useRequestStore } from '../../stores/request.store'
+import { useResponseStore } from '../../stores/response.store'
 import { useTranslation } from '../../lib/i18n'
 import type { Protocol } from '../../types'
 
@@ -31,6 +44,8 @@ export default function NewDropdown() {
   function createProtocolTab(protocol: Protocol, name: string, method?: string) {
     const id = makeTabId()
     openTab({ id, name, protocol, method, url: '' })
+    useRequestStore.getState().switchToTab(id)
+    useResponseStore.getState().clearResponse()
     setOpen(false)
   }
 
@@ -114,6 +129,20 @@ export default function NewDropdown() {
       label: t('newDropdown.sse'),
       bg: '#E1F5FE',
       action: () => createProtocolTab('sse', t('welcome.sse')),
+    },
+    {
+      icon: <Cloud size={16} strokeWidth={1.75} />,
+      iconColor: '#0277BD',
+      label: t('newDropdown.mcp'),
+      bg: '#E1F5FE',
+      action: () => createProtocolTab('mcp', t('welcome.mcp')),
+    },
+    {
+      icon: <Radio size={16} strokeWidth={1.75} />,
+      iconColor: '#E65100',
+      label: t('newDropdown.socketio'),
+      bg: '#FFF3E0',
+      action: () => createProtocolTab('socketio', t('welcome.socketio')),
     },
   ]
 

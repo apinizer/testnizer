@@ -23,6 +23,8 @@ import { registerCertificateHandlers } from './certificate.handler'
 import { registerWsseHandlers } from './wsse.handler'
 import { registerDialogHandlers } from './dialog.handler'
 import { registerEulaHandlers } from './eula.handler'
+import { registerMcpHandlers } from './mcp.handler'
+import { registerSocketIOHandlers } from './socketio.handler'
 import { registerDiagnosticsHandlers } from '../diagnostics'
 
 export function registerAllHandlers(): void {
@@ -51,6 +53,8 @@ export function registerAllHandlers(): void {
   registerWsseHandlers()
   registerDialogHandlers()
   registerEulaHandlers()
+  registerMcpHandlers()
+  registerSocketIOHandlers()
   registerDiagnosticsHandlers()
 
   // Start scheduled task timers after all handlers are registered

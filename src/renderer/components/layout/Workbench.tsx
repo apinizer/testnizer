@@ -10,6 +10,8 @@ import GraphQLEditor from '../protocols/GraphQLEditor'
 import GrpcEditor from '../protocols/GrpcEditor'
 import SseEditor from '../protocols/SseEditor'
 import AiChatEditor from '../protocols/AiChatEditor'
+import McpEditor from '../protocols/McpEditor'
+import SocketIOEditor from '../protocols/SocketIOEditor'
 import RunnerTab from '../runner/RunnerTab'
 import JwtTool from '../tools/JwtTool'
 import JsonFormatTool from '../tools/JsonFormatTool'
@@ -33,6 +35,8 @@ import { useSseStore } from '../../stores/sse.store'
 import { useGrpcStore } from '../../stores/grpc.store'
 import { useGraphQLStore } from '../../stores/graphql.store'
 import { useAiChatStore } from '../../stores/ai-chat.store'
+import { useMcpStore } from '../../stores/mcp.store'
+import { useSocketIOStore } from '../../stores/socketio.store'
 import NewRequestWelcome from './NewRequestWelcome'
 import ProjectWelcome from './ProjectWelcome'
 import AddEndpointsView from '../runner/AddEndpointsView'
@@ -59,6 +63,8 @@ function cleanupTabState(tabId: string): void {
   useGrpcStore.getState().removeTabState(tabId)
   useGraphQLStore.getState().removeTabState(tabId)
   useAiChatStore.getState().removeTabState(tabId)
+  useMcpStore.getState().removeTabState(tabId)
+  useSocketIOStore.getState().removeTabState(tabId)
 }
 
 function EndpointTabBar() {
@@ -103,7 +109,8 @@ function EndpointTabBar() {
     if (idx < 0) return
     const idsToClose: string[] = []
     if (action === 'close') idsToClose.push(tabId)
-    else if (action === 'closeOthers') idsToClose.push(...allTabs.filter((t) => t.id !== tabId).map((t) => t.id))
+    else if (action === 'closeOthers')
+      idsToClose.push(...allTabs.filter((t) => t.id !== tabId).map((t) => t.id))
     else if (action === 'closeRight') idsToClose.push(...allTabs.slice(idx + 1).map((t) => t.id))
     else if (action === 'closeLeft') idsToClose.push(...allTabs.slice(0, idx).map((t) => t.id))
     else if (action === 'closeAll') idsToClose.push(...allTabs.map((t) => t.id))
@@ -170,6 +177,8 @@ function EndpointTabBar() {
     useGrpcStore.getState().switchToTab(tabId)
     useGraphQLStore.getState().switchToTab(tabId)
     useAiChatStore.getState().switchToTab(tabId)
+    useMcpStore.getState().switchToTab(tabId)
+    useSocketIOStore.getState().switchToTab(tabId)
     clearResponse()
     setActiveTab(tabId)
   }
@@ -187,6 +196,8 @@ function EndpointTabBar() {
       useGrpcStore.getState().switchToTab(newActiveId)
       useGraphQLStore.getState().switchToTab(newActiveId)
       useAiChatStore.getState().switchToTab(newActiveId)
+      useMcpStore.getState().switchToTab(newActiveId)
+      useSocketIOStore.getState().switchToTab(newActiveId)
       clearResponse()
     }
   }
@@ -611,6 +622,24 @@ export default function Workbench() {
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
         <WsSecurityTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'mcp') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <McpEditor />
+      </div>
+    )
+  }
+
+  if (protocol === 'socketio') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <SocketIOEditor />
       </div>
     )
   }

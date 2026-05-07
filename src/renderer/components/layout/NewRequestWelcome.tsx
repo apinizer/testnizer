@@ -1,4 +1,4 @@
-import { Globe, FileText, Bot, FileCode2, Cpu, Hexagon, Activity } from 'lucide-react'
+import { Globe, FileText, Bot, FileCode2, Cpu, Hexagon, Activity, Cloud, Radio } from 'lucide-react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
 
@@ -64,6 +64,16 @@ export default function NewRequestWelcome() {
     openTab({ id, name: t('welcome.sse'), protocol: 'sse', url: '' })
   }
 
+  function createMcp() {
+    const id = makeTabId()
+    openTab({ id, name: t('welcome.mcp'), protocol: 'mcp', url: '' })
+  }
+
+  function createSocketIO() {
+    const id = makeTabId()
+    openTab({ id, name: t('welcome.socketio'), protocol: 'socketio', url: '' })
+  }
+
   const actions: QuickAction[] = [
     {
       icon: <Globe size={28} strokeWidth={1.5} />,
@@ -107,10 +117,25 @@ export default function NewRequestWelcome() {
       label: t('welcome.sse'),
       onClick: createSse,
     },
+    {
+      icon: <Cloud size={28} strokeWidth={1.5} />,
+      iconBg: '#E1F5FE',
+      label: t('welcome.mcp'),
+      onClick: createMcp,
+    },
+    {
+      icon: <Radio size={28} strokeWidth={1.5} />,
+      iconBg: '#FFF3E0',
+      label: t('welcome.socketio'),
+      onClick: createSocketIO,
+    },
   ]
 
   return (
-    <div className="flex h-full flex-col items-center justify-center" style={{ background: 'var(--white)' }}>
+    <div
+      className="flex h-full flex-col items-center justify-center"
+      style={{ background: 'var(--white)' }}
+    >
       <div className="flex flex-wrap items-center justify-center gap-5" style={{ maxWidth: 720 }}>
         {actions.map((action) => (
           <button
@@ -118,7 +143,12 @@ export default function NewRequestWelcome() {
             type="button"
             onClick={action.onClick}
             className="flex cursor-pointer flex-col items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-6 py-8 transition-all hover:border-[var(--accent)] hover:shadow-md"
-            style={{ width: 160, minHeight: 140, background: 'var(--surface)', border: '1px solid var(--border)' }}
+            style={{
+              width: 160,
+              minHeight: 140,
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+            }}
           >
             <div
               className="flex items-center justify-center rounded-xl"
@@ -126,9 +156,7 @@ export default function NewRequestWelcome() {
             >
               <span style={{ color: 'var(--accent)' }}>{action.icon}</span>
             </div>
-            <span className="text-center font-medium text-[var(--text)]">
-              {action.label}
-            </span>
+            <span className="text-center font-medium text-[var(--text)]">{action.label}</span>
           </button>
         ))}
       </div>

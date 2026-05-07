@@ -1,4 +1,4 @@
-import { Globe, Radio, Cpu, Bot, FileCode2, Hexagon, Activity } from 'lucide-react'
+import { Globe, Radio, Cpu, Bot, FileCode2, Hexagon, Activity, Cloud } from 'lucide-react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
@@ -24,7 +24,16 @@ export default function ProjectWelcome() {
 
   function createTab(
     name: string,
-    protocol: 'http' | 'soap' | 'websocket' | 'graphql' | 'sse' | 'grpc' | 'ai',
+    protocol:
+      | 'http'
+      | 'soap'
+      | 'websocket'
+      | 'graphql'
+      | 'sse'
+      | 'grpc'
+      | 'ai'
+      | 'mcp'
+      | 'socketio',
     method?: string,
   ) {
     const id = makeTabId()
@@ -83,10 +92,27 @@ export default function ProjectWelcome() {
       label: t('welcome.sse'),
       onClick: () => createTab(t('welcome.sse'), 'sse'),
     },
+    {
+      icon: <Cloud size={32} strokeWidth={1.5} />,
+      iconBg: '#E1F5FE',
+      iconColor: '#0277BD',
+      label: t('welcome.mcp'),
+      onClick: () => createTab(t('welcome.mcp'), 'mcp'),
+    },
+    {
+      icon: <Radio size={32} strokeWidth={1.5} />,
+      iconBg: '#FFF3E0',
+      iconColor: '#E65100',
+      label: t('welcome.socketio'),
+      onClick: () => createTab(t('welcome.socketio'), 'socketio'),
+    },
   ]
 
   return (
-    <div className="flex h-full flex-col items-center justify-center" style={{ background: 'var(--white)' }}>
+    <div
+      className="flex h-full flex-col items-center justify-center"
+      style={{ background: 'var(--white)' }}
+    >
       <div className="flex flex-wrap items-center justify-center gap-5" style={{ maxWidth: 800 }}>
         {actions.map((action) => (
           <button
@@ -102,11 +128,12 @@ export default function ProjectWelcome() {
               border: '1px solid var(--border)',
             }}
             onMouseOver={(e) => {
-              (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'
-              ;(e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(124,115,230,0.10)'
+              ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'
+              ;(e.currentTarget as HTMLElement).style.boxShadow =
+                '0 4px 12px rgba(124,115,230,0.10)'
             }}
             onMouseOut={(e) => {
-              (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'
+              ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'
               ;(e.currentTarget as HTMLElement).style.boxShadow = 'none'
             }}
           >
@@ -116,7 +143,10 @@ export default function ProjectWelcome() {
             >
               <span style={{ color: action.iconColor }}>{action.icon}</span>
             </div>
-            <span className="text-center" style={{ color: 'var(--text)', fontSize: 13, fontWeight: 500 }}>
+            <span
+              className="text-center"
+              style={{ color: 'var(--text)', fontSize: 13, fontWeight: 500 }}
+            >
               {action.label}
             </span>
           </button>

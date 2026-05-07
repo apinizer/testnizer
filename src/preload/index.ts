@@ -543,6 +543,40 @@ const api = {
       }
     },
   },
+
+  // ─── MCP ────────────────────────────────────────────────────
+  mcp: {
+    connect: (options: unknown): Promise<unknown> => ipcRenderer.invoke('mcp:connect', options),
+    disconnect: (connectionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:disconnect', connectionId),
+    listTools: (connectionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:listTools', connectionId),
+    callTool: (connectionId: string, toolName: string, args: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:callTool', connectionId, toolName, args),
+  },
+
+  // ─── Socket.IO ──────────────────────────────────────────────
+  socketio: {
+    connect: (options: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('socketio:connect', options),
+    disconnect: (connectionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('socketio:disconnect', connectionId),
+    emit: (connectionId: string, eventName: string, data: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('socketio:emit', connectionId, eventName, data),
+    subscribe: (connectionId: string, eventName: string): Promise<unknown> =>
+      ipcRenderer.invoke('socketio:subscribe', connectionId, eventName),
+    unsubscribe: (connectionId: string, eventName: string): Promise<unknown> =>
+      ipcRenderer.invoke('socketio:unsubscribe', connectionId, eventName),
+    onEvent: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('socketio:event', handler)
+      return () => {
+        ipcRenderer.removeListener('socketio:event', handler)
+      }
+    },
+  },
 }
 
 if (process.contextIsolated) {
