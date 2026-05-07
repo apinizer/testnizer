@@ -7,18 +7,22 @@ Bu dosya elle bakılan kısa liste. Detaylı sprint planlama
 
 ---
 
-## 🔴 Açık Bug'lar
+## 🟢 Bu Oturumda Kapanan Bug'lar (2026-05-06)
 
-### WSDL Parser — multi-binding operasyon kaybı
-- **Repro:** http://www.dneonline.com/calculator.asmx?wsdl içe aktarıldığında 4 operasyondan (Add/Subtract/Multiply/Divide) sadece 2'si gözüküyor.
-- **Olası kök neden:** WSDL'de aynı portType'a iki binding (SOAP 1.1 + SOAP 1.2) bağlı; `soap` library'sinin `client.describe()` outputu beklenenden farklı olabilir.
-- **Çözüm yolu:** `parseWsdl` içindeki `client.describe()` bağımlılığını kaldır → `wsdl.xml`'i `fast-xml-parser` ile direkt parse et, portType'ları kaynak olarak kullan.
-- **Yer:** `src/main/protocols/soap.engine.ts:269-329`
-- **Status:** Agent content-filter'a takıldı, manuel çözüm gerekiyor.
+- ✅ **WSDL multi-binding** — `soap.engine.ts` `parseWsdlXmlStructure` (fast-xml-parser ile portType/binding/service haritası); `client.describe()` ve XML kaynaklarının union'ı alınıyor (dneonline calculator: 2 → 4 op).
+- ✅ **Form-data / urlencoded `{{var}}` resolve** — `resolveRequestBody` helper'ı `variable-resolver.ts`'e eklendi; `request.store.ts` artık `formData` rows + `urlEncoded` rows + `binaryPath`'i de resolve ediyor.
+- ✅ **Postman v1 hata mesajı** — `info` yerine `requests[]` + top-level `name` görüldüğünde "v1 collections are not supported. Re-export as v2.1" diye açıklayıcı mesaj döner.
+- ✅ **cURL ANSI-C quoting (`$'...'`)** — `tokenizeCurl` `\n` `\t` `\r` `\\` `\'` `\"` `\xNN`-altkümesi ve `\e`/`\E` escape'lerini decode ediyor.
+- ✅ **cURL multipart `-F` file rows** — `parseCurlCommand` artık `formData: [{ key, value, type, filePath }]` üretir; `importCurl` UI shape body (`{ type: 'form-data', formData }`) yazar; `Content-Type` header importer tarafından setlenmiyor (HTTP client boundary'yi seçtiği için).
+- ✅ **pm.environment / pm.globals post-script writeback** — `environment.store.applyScriptUpdates` eklendi; `request.store` post-script'in `_envUpdates` / `_globalUpdates` Map'lerini env store'a persist eder. Sonraki request token'ı görür.
+- ✅ **EnvironmentSelector dropdown z-index** — `z-[9000]` → `z-[9999]`, NewDropdown / ToolsDropdown ile aynı katman.
+
+## 🟡 Açık Bug'lar / Belirsiz
 
 ### Sağ overlay tıklanabilirlik (Bug 6)
-- Önceki bir konuşmada bahsedildi, detay tutmadık. UI'da bir overlay/modal başka panelin arkasında kalıyor.
-- **Yer:** araştırma gerekiyor; muhtemelen `EnvironmentSelector` veya `NewDropdown` benzeri bir createPortal noktası.
+- Detay yok; reproduction adımları gerek.
+- Bu oturumda yapılan: EnvironmentSelector dropdown z-index `9999`'a çekildi (önceden `9000`, EnvironmentModal ile aynı katmandaydı). Eğer overlay EnvironmentSelector ise düzelmiş olabilir.
+- **Test gerekli:** hangi panel hangi panelin arkasında kalıyor? Repro alındıktan sonra DevTools elements panelinde computed `z-index` ve `pointer-events` kontrolü.
 
 ---
 
@@ -30,15 +34,8 @@ Bu dosya elle bakılan kısa liste. Detaylı sprint planlama
 - **Test suite multi-format export** — şu an export sadece Testnizer-native; Postman/Insomnia formatına export desteklenmiyor (auto-detect import zaten implement edildi).
 
 ### Postman / cURL / OpenAPI roundtrip iyileştirmeleri
-- **Postman v1 (legacy collection)** — şu an "Not a valid Postman collection" hatası ile düşürüyor; daha açıklayıcı mesaj veya v1→v2.1 migration shim.
-- **cURL ANSI-C `$'...'` quoting** — `tokenizeCurl` `\n`/`\t` kaçışlarını decode etmiyor. Düşük öncelik.
-- **cURL multipart `-F` import** — file rows hâlâ `body` string'inde `&`-joined; KeyValuePair `{type:'file', filePath}` rows'a parse edilmesi gerek (curl agent low-priority defer etti).
-- **cURL exporter Windows `^"` carets** — best-effort, parser carets'leri value'da bırakıyor.
-- **Postman variables — globals scope** — şu an sadece active env emit ediliyor; global variables eklenmeli mi kararı (cross-collection leak riski).
-
-### Variable resolution (Tier 2 audit findings)
-- HTTP body `form-data` ve `urlencoded` rows'da `{{var}}` hâlâ resolve edilmiyor — sadece `raw` body'de çalışıyor.
-- Pre/post script context'ine `pm.variables.get/set` API'sinin in-memory persistence'ı eksik (response sonrası env'e geri yazma).
+- **cURL exporter Windows `^"` carets** — best-effort, parser carets'leri value'da bırakıyor. Düşük öncelik.
+- **Postman variables — globals scope** — şu an sadece active env emit ediliyor; global variables eklenmeli mi kararı (cross-collection leak riski). Açık soru.
 
 ### Test kapsamı
 - **Endpoint CRUD/handler unit testleri** — `endpoint.handler.ts`, `endpoint.repo.ts` için doğrudan test yok (sadece üst seviye import-export testleri dolaylı kapsıyor).

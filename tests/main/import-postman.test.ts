@@ -612,7 +612,7 @@ describe('importPostman — edge cases', () => {
     expect(result.error).toContain('Failed to parse Postman collection JSON')
   })
 
-  it('rejects Postman v1 collection (missing item[]) gracefully — no crash', async () => {
+  it('rejects Postman v1 collection with an actionable migration message', async () => {
     // v1 used `id`, `name`, `requests[]` instead of `info`, `item[]`.
     const v1 = {
       id: 'old-id',
@@ -622,7 +622,9 @@ describe('importPostman — edge cases', () => {
     }
     const result = await importPostman('proj-1', JSON.stringify(v1))
     expect(result.success).toBe(false)
-    expect(result.error).toContain('Not a valid Postman collection')
+    // The new v1 detector should fire and tell the user to re-export as v2.1
+    expect(result.error).toMatch(/v1 collections are not supported/i)
+    expect(result.error).toMatch(/v2\.1/i)
   })
 
   it('warns on unknown schema URL', async () => {

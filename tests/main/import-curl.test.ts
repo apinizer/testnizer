@@ -163,17 +163,22 @@ describe('parseCurlCommand: multipart -F', () => {
       `curl -F 'name=John' -F 'age=30' https://x/upload`,
     )
     expect(r.method).toBe('POST')
-    expect(r.headers['Content-Type']).toBe('multipart/form-data')
-    expect(r.body).toContain('name=John')
-    expect(r.body).toContain('age=30')
+    // -F now produces structured rows; the HTTP client picks the boundary +
+    // Content-Type, so the importer no longer pre-fills the header.
+    expect(r.formData).toEqual([
+      { key: 'name', value: 'John', type: 'text' },
+      { key: 'age', value: '30', type: 'text' },
+    ])
   })
 
   it('captures @file path', () => {
     const r = parseCurlCommand(
       `curl -F 'file=@/tmp/data.bin' -F 'desc=hello' https://x/upload`,
     )
-    expect(r.body).toContain('file=@/tmp/data.bin')
-    expect(r.body).toContain('desc=hello')
+    expect(r.formData).toEqual([
+      { key: 'file', value: 'data.bin', type: 'file', filePath: '/tmp/data.bin' },
+      { key: 'desc', value: 'hello', type: 'text' },
+    ])
   })
 })
 
@@ -214,13 +219,14 @@ describe('parseCurlCommand: quoting', () => {
     expect(r.body).toBe('{"a":"b"}')
   })
 
-  it("$'...'-style ANSI-C quoting (KNOWN BUG: $ kept, escapes not decoded)", () => {
-    // bash $'...' supports escapes (\n, \t...). The current tokenizer treats
-    // $ as a literal char and only the ' pair as quotes -> produces "$hello".
-    // Documented as a known limitation; assertion locks the current shape so
-    // we notice if behavior changes.
-    const r = parseCurlCommand(`curl -d $'hello' https://x`)
-    expect(r.body).toBe('$hello')
+  it("$'...'-style ANSI-C quoting decodes \\n / \\t / \\\\ escapes", () => {
+    const r = parseCurlCommand(`curl -d $'a\\nb\\tc' https://x`)
+    expect(r.body).toBe('a\nb\tc')
+  })
+
+  it("$'...' preserves literal text without escapes", () => {
+    const r = parseCurlCommand(`curl -d $'hello world' https://x`)
+    expect(r.body).toBe('hello world')
   })
 })
 
@@ -395,16 +401,15 @@ describe('round-trip: parseCurl -> exportAsCurl -> parseCurl', () => {
   it('round-trips multipart with file path', () => {
     const original = `curl -X POST 'https://x/upload' -F 'file=@/tmp/a.bin' -F 'desc=hello'`
     const r1 = parseCurlCommand(original)
-    // Reconstruct an export request from parsed body
-    const fields = (r1.body || '').split('&').map((kv) => {
-      const eq = kv.indexOf('=')
-      const key = eq > 0 ? kv.slice(0, eq) : kv
-      const value = eq > 0 ? kv.slice(eq + 1) : ''
-      if (value.startsWith('@')) {
-        return { key, value: '', enabled: true, type: 'file' as const, filePath: value.slice(1) }
-      }
-      return { key, value, enabled: true, type: 'text' as const }
-    })
+    // -F rows now come back as structured KeyValuePair-shaped entries; map
+    // them straight into a UI body without splitting an `&`-joined string.
+    const fields = (r1.formData ?? []).map((row) => ({
+      key: row.key,
+      value: row.value,
+      enabled: true,
+      type: row.type,
+      filePath: row.filePath,
+    }))
     const exported = exportAsCurl({
       method: 'POST',
       url: r1.url,
@@ -415,8 +420,9 @@ describe('round-trip: parseCurl -> exportAsCurl -> parseCurl', () => {
 
     const r2 = parseCurlCommand(exported)
     expect(r2.url).toBe('https://x/upload')
-    expect(r2.body).toContain('file=@/tmp/a.bin')
-    expect(r2.body).toContain('desc=hello')
+    const r2Map = Object.fromEntries((r2.formData ?? []).map((row) => [row.key, row]))
+    expect(r2Map.file).toMatchObject({ type: 'file', filePath: '/tmp/a.bin' })
+    expect(r2Map.desc).toMatchObject({ type: 'text', value: 'hello' })
   })
 })
 // ─── Single-quote escaping (bug fixes) ─────────────────────

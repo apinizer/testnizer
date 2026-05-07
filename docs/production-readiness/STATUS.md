@@ -1,7 +1,7 @@
 # Testnizer — Production Readiness Status
 
-Son güncelleme: 2026-05-05
-Aktif sprint: **Sprint 6 + 6.5–6.7 hot-fix'ler tamamlandı — Sprint 7 (cert tedariki + production polish)**
+Son güncelleme: 2026-05-06
+Aktif sprint: **Sprint 6 + 6.5–6.7 hot-fix'ler + WSDL multi-binding fix tamamlandı — Sprint 7 (cert tedariki + production polish)**
 
 > **Format:** her madde checkbox + (varsa) PR/commit ref + kısa not. Tamamlandığında işaretle, "Tamamlanma" sütununa tarih düş.
 
@@ -9,14 +9,14 @@ Aktif sprint: **Sprint 6 + 6.5–6.7 hot-fix'ler tamamlandı — Sprint 7 (cert 
 
 | Metrik | Değer |
 |---|---|
-| Birim test | **328** (15 dosya, hepsi geçiyor) |
+| Birim test | **548** (29 dosya, hepsi geçiyor) |
 | E2E test | **3 smoke + 48 HTTP + 3 WSSE** geçiyor |
 | Tools | **10** (JWT, JSON, XML, Encode/Decode, Diff, JSONPath, XPath, XSLT, Jolt, WS-Security) |
 | Protokoller (UI) | HTTP, SOAP (WSDL + Manual + WSSE), WebSocket, GraphQL, gRPC, SSE |
-| Import formatları | OpenAPI 3 / Swagger 2 / Postman v2.0+v2.1 / Insomnia v4+v5 / HAR / cURL / WSDL / **gRPC Proto** |
+| Import formatları | OpenAPI 3 / Swagger 2 / Postman v2.0+v2.1 / Insomnia v4+v5 / HAR / cURL / WSDL (multi-binding fix) / **gRPC Proto** / RAML 1.0 / SoapUI |
 | Export formatları | OpenAPI 3 / Postman v2.1 / Insomnia v4 / cURL |
 | Runner | iterations + iteration data (JSON/CSV) + delay + pre/post script (pm + insomnia API) + skipRequest + setNextRequest |
-| Lint | 0 error / 69 warning (tümü `^_` allowed-unused) |
+| Lint | 0 error / 70 warning (tümü `^_` allowed-unused) |
 | Bundle | 10.3 MB renderer; Sprint 7'de Monaco lazy-import + analyzer |
 | Signing | macOS ad-hoc (beta) / Windows unsigned (beta) — production Sprint 7 |
 | Auto-update | GitHub Releases + electron-updater wired (UI + main) |
@@ -84,8 +84,8 @@ Aktif sprint: **Sprint 6 + 6.5–6.7 hot-fix'ler tamamlandı — Sprint 7 (cert 
 | C.2.2 | `win.signtoolOptions` veya `azuresigntool` | ⬜ | 7 | |
 | C.3.1 | Linux .deb için `debSign` (opsiyonel) | ⬜ | 7 | |
 | S7.1 | About modal UI (third-party licenses listesi) | ⬜ | 7 | IPC kuruldu (D.6); React modal Sprint 7 |
-| S7.2 | gRPC import UI bağlama (NewDropdown / Import modal) | ⬜ | 7 | IPC kuruldu (IE.13); UI Sprint 7 |
-| S7.3 | Postman/Insomnia full round-trip e2e | ⬜ | 7 | DB-based Playwright testi |
+| S7.2 | gRPC import UI bağlama (NewDropdown / Import modal) | ✅ | 6.7 | `ImportModal.tsx`'te `.proto file` format kartı + `importProto` IPC dispatch + opsiyonel server address inputu |
+| S7.3 | Postman/Insomnia full round-trip e2e | ✅ | 6.7 | `import-postman.test.ts` + `import-insomnia.test.ts` + `import-openapi.test.ts`'te export → re-import round-trip kapsamı |
 | S7.4 | Monaco lazy import (D.9) | ⬜ | 7 | bundle azaltma |
 | S7.5 | Bundle analyzer baseline (D.8) | ⬜ | 7 | post-Monaco lazy |
 | S7.6 | README screenshots (D.3) | ⬜ | 7 | beta release sırasında |
@@ -186,8 +186,9 @@ Aktif sprint: **Sprint 6 + 6.5–6.7 hot-fix'ler tamamlandı — Sprint 7 (cert 
 | IE.12 | OpenAPI export UI shape okuma | ✅ | 6.7 | params/headers/body → OpenAPI 3 (path templating + form-data + urlencoded + binary) |
 | IE.13 | gRPC/Proto collection import | ✅ | 6.7 | `import:proto` IPC; her service folder + her method endpoint (streamingType: unary/server/client/bidi) |
 | IE.14 | OpenAPI 3.0 / Swagger 2.0 / WSDL fixture testleri | ✅ | 6.7 | 3 yeni fixture, parse + UI shape doğrulandı |
-| IE.15 | Postman/Insomnia round-trip e2e (export → re-import) | ⬜ | 7 | unit testlerde helpers OK; full DB roundtrip e2e Sprint 7 |
-| IE.16 | gRPC import için UI menü öğesi (NewDropdown / Import modal) | ⬜ | 7 | Backend tam, UI bağlanması Sprint 7 |
+| IE.15 | Postman/Insomnia round-trip e2e (export → re-import) | ✅ | 6.7 | `import-postman.test.ts` + `import-insomnia.test.ts` round-trip kapsamı eklendi |
+| IE.16 | gRPC import için UI menü öğesi (NewDropdown / Import modal) | ✅ | 6.7 | `ImportModal.tsx` `.proto file` format kartı + `importProto` dispatch |
+| IE.17 | WSDL multi-binding portType operasyon kaybı | ✅ | 6.7 | `soap.engine.ts` `parseWsdlXmlStructure` — XML'den portType/binding/service'i doğrudan parse, `client.describe()`'ın 2 binding'in aynı portType'ı paylaştığında collapse ettiği op'ları kurtarır (dneonline calculator: 2 → 4 op) |
 
 ---
 
@@ -232,21 +233,23 @@ Aktif sprint: **Sprint 6 + 6.5–6.7 hot-fix'ler tamamlandı — Sprint 7 (cert 
 | Sprint 4 | WSSE + SOAP UX (18 madde: WSSE 6 + BP 12) | 18 | 17 | 1 | ✅ (BP.4.1 P2.9'a ertelendi) |
 | Sprint 5 | Faz C — Beta dağıtım (10) + CI (3) | 13 | 13 | 0 | ✅ |
 | Sprint 6 | Faz D — Polish | 10 | 7 | 3 | ⚠ D.5/D.8/D.9/D.10 Sprint 7'de |
-| Sprint 6.5–6.7 | Import/Export hot-fix'ler | 16 | 14 | 2 | ⚠ IE.15/IE.16 Sprint 7'de |
-| **Sprint 7** | **Production sign + polish kalanı** | **16** | **0** | **16** | ⏳ Tedarik bağımlı |
+| Sprint 6.5–6.7 | Import/Export hot-fix'ler | 17 | 17 | 0 | ✅ IE.15/IE.16/IE.17 (WSDL multi-binding) tamamlandı |
+| **Sprint 7** | **Production sign + polish kalanı** | **16** | **2** | **14** | ⏳ S7.2/S7.3 6.7'ye düştü; cert tedariki bekleniyor |
 
-**Toplam (Sprint 0 → 6.7) madde:** 98
-**Tamamlanan:** 88 (≈ %90)
-**Sprint 7'ye taşınan kalan madde:** 10 (4 A.2.x + 1 D.5 + 2 D.8/D.9 + 1 D.10 + 1 IE.15 + 1 IE.16)
-**Sprint 7'nin kendi maddesi:** 16 (C.1.x + C.2.x + C.3.1 + S7.1–S7.10)
-**Beta release için bekleyen toplam:** 26
+**Toplam (Sprint 0 → 6.7) madde:** 99
+**Tamamlanan:** 91 (≈ %92)
+**Sprint 7'ye taşınan kalan madde:** 8 (4 A.2.x + 1 D.5 + 2 D.8/D.9 + 1 D.10)
+**Sprint 7'nin kendi maddesi (kalan):** 14 (C.1.x + C.2.x + C.3.1 + S7.1 + S7.4–S7.10)
+**Beta release için bekleyen toplam:** 22
 
 **Kritik yol (beta release için):**
 1. Apple Dev + Windows EV cert tedariki (C.1.1, C.2.1) — tedarik
 2. Signing config (C.1.3, C.2.2) — cert geldikten sonra
-3. About modal UI + gRPC import UI (S7.1, S7.2) — backend hazır
+3. About modal UI (S7.1) — backend hazır
 4. Privacy + EULA (D.5/S7.7) — hukuk metni
-5. Beta release tag (S7.8)
+5. README screenshots (S7.6/D.3 polish) — beta sırasında
+6. Monaco lazy + bundle analyzer (S7.4/S7.5/D.8/D.9) — performans iyileştirme
+7. Beta release tag (S7.8)
 
 ---
 
@@ -254,6 +257,7 @@ Aktif sprint: **Sprint 6 + 6.5–6.7 hot-fix'ler tamamlandı — Sprint 7 (cert 
 
 | Tarih | Değişiklik |
 |---|---|
+| 2026-05-06 | STATUS.md doğrulama ve hot-fix güncelleme: 548 birim test (29 dosya) — STATUS sayacı 328 → 548 düzeltildi; 1 lint error (`prefer-const` `envRow`) düzeltildi → 0 error / 70 warning. **WSDL multi-binding fix** (`soap.engine.ts` IE.17): `client.describe()` aynı portType'ı paylaşan iki binding (SOAP 1.1 + 1.2) için operasyon listesini collapse ediyordu (dneonline calculator 4 op → 2 op). Yeni `parseWsdlXmlStructure` fast-xml-parser ile WSDL XML'inden portType/binding/service haritasını çıkarır; `parseWsdl` artık describe ve XML kaynaklarının union'ını alır. Doğrulanan tamamlananlar ✅'ye çekildi: **S7.2/IE.16** (gRPC `.proto` import UI — `ImportModal.tsx` zaten kuruluymuş), **S7.3/IE.15** (Postman/Insomnia/OpenAPI round-trip e2e — unit test paketinde mevcut). |
 | 2026-05-05 | STATUS.md kapsamlı güncelleme: özet anlık-görüntü tablosu (test/format/lint sayaçları), sprint başına tamamlanma tablosu (Sprint 0–6.7 toplam 98 madde, 88 ✅ ≈ %90), Sprint 6.5–6.7 hot-fix'leri için ayrı IE.* checklist (16 madde), Sprint 7 listesi 6 → 16 maddeye genişletildi (S7.1–S7.10 kalan polish), P2 listesi genişletildi (Saxon-JS XSLT 3, SOAP inline panel, Universal binary), açık sorular Q4–Q6 eklendi (BP.4.1 ertelendi, EN+TR karar). Kritik yol netleşti: cert tedariki + signing → UI eklemeleri → privacy/EULA → beta release. |
 | 2026-05-05 | İlk sürüm — Sprint 0 başlangıcı, plan onaylı |
 | 2026-05-05 | Sprint 1 tamamlandı: appId güncellendi, audit fix critical 1→0, ESLint/Prettier/Husky kuruldu, Vitest 29 test + Playwright 3 e2e geçiyor, CI'a quality gate eklendi. Ertelenen: A.1.5 (Sprint 2), A.2.2-2.5 (Sprint 5). |
