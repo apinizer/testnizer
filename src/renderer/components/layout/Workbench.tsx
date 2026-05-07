@@ -27,12 +27,73 @@ import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
+import { useSoapStore } from '../../stores/soap.store'
+import { useWebSocketStore } from '../../stores/websocket.store'
+import { useSseStore } from '../../stores/sse.store'
+import { useGrpcStore } from '../../stores/grpc.store'
+import { useGraphQLStore } from '../../stores/graphql.store'
+import { useAiChatStore } from '../../stores/ai-chat.store'
 import NewRequestWelcome from './NewRequestWelcome'
 import ProjectWelcome from './ProjectWelcome'
 import AddEndpointsView from '../runner/AddEndpointsView'
 import MethodBadge from '../shared/MethodBadge'
 import EnvironmentSelector from '../shared/EnvironmentSelector'
 import { T } from '../../styles/tokens'
+
+/**
+ * Tear down state belonging to a tab being closed. HTTP and SOAP keep
+ * per-tab caches keyed on tabId; the rest (WS / SSE / gRPC / GraphQL /
+ * AI Chat) are singleton stores. For singletons we only `reset()` (and
+ * close any live connection / stream) when the tab being closed is the
+ * LAST tab of that protocol — otherwise we'd nuke a sibling tab that's
+ * still using the same store.
+ */
+function cleanupTabState(tabId: string): void {
+  const allTabs = useTabsStore.getState().tabs
+  const closing = allTabs.find((t) => t.id === tabId)
+  if (!closing) return
+
+  // HTTP + SOAP — per-tab cache, always remove for this tabId
+  useRequestStore.getState().removeTabState(tabId)
+  useSoapStore.getState().removeTabState(tabId)
+
+  // Singleton stores — only clean up if this is the last tab of its kind
+  const remainingOfType = allTabs.filter(
+    (t) => t.id !== tabId && t.protocol === closing.protocol,
+  )
+  if (remainingOfType.length > 0) return
+
+  switch (closing.protocol) {
+    case 'websocket': {
+      const ws = useWebSocketStore.getState()
+      ws.disconnect().catch(() => undefined)
+      ws.reset()
+      break
+    }
+    case 'sse': {
+      const sse = useSseStore.getState()
+      sse.disconnect().catch(() => undefined)
+      sse.reset()
+      break
+    }
+    case 'grpc': {
+      const grpc = useGrpcStore.getState()
+      grpc.cancelStream().catch(() => undefined)
+      grpc.reset()
+      break
+    }
+    case 'graphql': {
+      const gql = useGraphQLStore.getState()
+      gql.unsubscribe().catch(() => undefined)
+      gql.reset()
+      break
+    }
+    case 'ai': {
+      useAiChatStore.getState().clearConversation()
+      break
+    }
+  }
+}
 
 function EndpointTabBar() {
   const tabs = useTabsStore((s) => s.tabs)
@@ -43,7 +104,6 @@ function EndpointTabBar() {
   const pinTab = useTabsStore((s) => s.pinTab)
   const updateTab = useTabsStore((s) => s.updateTab)
   const switchToTab = useRequestStore((s) => s.switchToTab)
-  const removeTabState = useRequestStore((s) => s.removeTabState)
   const clearResponse = useResponseStore((s) => s.clearResponse)
   const refreshTree = useWorkspaceStore((s) => s.refreshTree)
 
@@ -87,7 +147,7 @@ function EndpointTabBar() {
       return
     }
     for (const id of idsToClose) {
-      removeTabState(id)
+      cleanupTabState(id)
       closeTab(id)
     }
   }
@@ -134,18 +194,23 @@ function EndpointTabBar() {
 
   function handleSwitchTab(tabId: string) {
     if (tabId === activeTabId) return
+    // HTTP and SOAP each keep their own per-tab cache — switch both so the
+    // editor for the activated tab loads the right state. The SOAP store
+    // ignores tabs that never had any SOAP state (no-op on the first call).
     switchToTab(tabId)
+    useSoapStore.getState().switchToTab(tabId)
     clearResponse()
     setActiveTab(tabId)
   }
 
   function handleCloseTab(tabId: string, e: React.MouseEvent) {
     e.stopPropagation()
-    removeTabState(tabId)
+    cleanupTabState(tabId)
     closeTab(tabId)
     const newActiveId = useTabsStore.getState().activeTabId
     if (newActiveId) {
       switchToTab(newActiveId)
+      useSoapStore.getState().switchToTab(newActiveId)
       clearResponse()
     }
   }

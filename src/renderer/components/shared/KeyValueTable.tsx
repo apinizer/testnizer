@@ -4,58 +4,7 @@ import { Check, X, Upload } from 'lucide-react'
 import type { KeyValuePair } from '../../types'
 import VariableAutocompleteInput from './VariableAutocompleteInput'
 import { useTranslation } from '../../lib/i18n'
-
-const COMMON_HEADERS = [
-  'Accept',
-  'Accept-Charset',
-  'Accept-Encoding',
-  'Accept-Language',
-  'Authorization',
-  'Cache-Control',
-  'Connection',
-  'Content-Disposition',
-  'Content-Encoding',
-  'Content-Length',
-  'Content-Type',
-  'Cookie',
-  'Date',
-  'ETag',
-  'Expect',
-  'Forwarded',
-  'From',
-  'Host',
-  'If-Match',
-  'If-Modified-Since',
-  'If-None-Match',
-  'If-Range',
-  'If-Unmodified-Since',
-  'Keep-Alive',
-  'Origin',
-  'Pragma',
-  'Proxy-Authorization',
-  'Range',
-  'Referer',
-  'SOAPAction',
-  'Set-Cookie',
-  'TE',
-  'Trailer',
-  'Transfer-Encoding',
-  'Upgrade',
-  'User-Agent',
-  'Via',
-  'Warning',
-  'X-API-Key',
-  'X-API-Version',
-  'X-Content-Type-Options',
-  'X-Correlation-ID',
-  'X-Forwarded-For',
-  'X-Forwarded-Host',
-  'X-Forwarded-Proto',
-  'X-Frame-Options',
-  'X-Request-ID',
-  'X-Requested-With',
-  'X-XSS-Protection',
-]
+import { filterHeaderSuggestions } from '../../lib/http-headers'
 
 const CONTENT_TYPE_VALUES = [
   'application/json',
@@ -81,7 +30,20 @@ interface KeyValueTableProps {
   onAdd: () => void
   addLabel?: string
   valueColor?: string
+  /**
+   * When true, the value cell offers context-sensitive suggestions
+   * (currently: Content-Type values). Independent of `keyAutocompleteEntries`.
+   */
   enableAutocomplete?: boolean
+  /**
+   * Header-name suggestions for the key column. When provided and the user
+   * has typed at least one character (and is not in the middle of a `{{var}}`
+   * expression), a prefix-matched suggestion popup is shown.
+   *
+   * Callers pass this only when the table represents an HTTP-style header
+   * list — query-param tables omit it so the popup never appears there.
+   */
+  keyAutocompleteEntries?: readonly string[]
   /**
    * When true, render a Type column (Text / File) and turn the Value cell
    * into a file picker for rows where `type === 'file'`. Used by the
@@ -155,8 +117,11 @@ export default function KeyValueTable({
   addLabel,
   valueColor,
   enableAutocomplete = false,
+  keyAutocompleteEntries,
   enableFileType = false,
 }: KeyValueTableProps) {
+  const keyAutocompleteEnabled =
+    !!keyAutocompleteEntries && keyAutocompleteEntries.length > 0
   const { t } = useTranslation()
   const resolvedAddLabel = addLabel ?? `+ ${t('kv.key')} / ${t('kv.value')}`
   const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(null)
@@ -176,25 +141,38 @@ export default function KeyValueTable({
     }
   }, [autocomplete])
 
+  /**
+   * Returns true when the cursor (assumed at end-of-value here, since the
+   * native input doesn't expose caret data through onChange) is inside an
+   * unclosed `{{...` expression. In that case we skip header-name autocomplete
+   * so the variable autocomplete (handled by VariableAutocompleteInput on the
+   * value side, and by the user's typing pattern on the key side) takes
+   * precedence and we don't pollute the popup with header names.
+   */
+  function isInsideVariableExpression(value: string): boolean {
+    const lastOpen = value.lastIndexOf('{{')
+    if (lastOpen === -1) return false
+    const lastClose = value.lastIndexOf('}}')
+    return lastClose < lastOpen
+  }
+
   const handleKeyInputChange = useCallback(
     (rowId: string, value: string, ref: HTMLInputElement | null) => {
       onUpdate(rowId, { key: value })
-      if (!enableAutocomplete) return
+      if (!keyAutocompleteEnabled || !keyAutocompleteEntries) return
       activeInputRef.current = ref
-      if (value.length > 0) {
-        const filtered = COMMON_HEADERS.filter((h) =>
-          h.toLowerCase().includes(value.toLowerCase())
-        )
-        if (filtered.length > 0) {
-          setAutocomplete({ rowId, field: 'key', suggestions: filtered, selectedIndex: 0 })
-        } else {
-          setAutocomplete(null)
-        }
+      if (value.length === 0 || isInsideVariableExpression(value)) {
+        setAutocomplete(null)
+        return
+      }
+      const filtered = filterHeaderSuggestions(value, keyAutocompleteEntries)
+      if (filtered.length > 0) {
+        setAutocomplete({ rowId, field: 'key', suggestions: filtered, selectedIndex: 0 })
       } else {
         setAutocomplete(null)
       }
     },
-    [enableAutocomplete, onUpdate]
+    [keyAutocompleteEnabled, keyAutocompleteEntries, onUpdate]
   )
 
   const handleValueInputChange = useCallback(
@@ -346,11 +324,14 @@ export default function KeyValueTable({
                 value={row.key}
                 onChange={(e) => handleKeyInputChange(row.id, e.target.value, e.currentTarget)}
                 onFocus={(e) => {
-                  if (enableAutocomplete && row.key.length > 0) {
+                  if (
+                    keyAutocompleteEnabled &&
+                    keyAutocompleteEntries &&
+                    row.key.length > 0 &&
+                    !isInsideVariableExpression(row.key)
+                  ) {
                     activeInputRef.current = e.currentTarget
-                    const filtered = COMMON_HEADERS.filter((h) =>
-                      h.toLowerCase().includes(row.key.toLowerCase())
-                    )
+                    const filtered = filterHeaderSuggestions(row.key, keyAutocompleteEntries)
                     if (filtered.length > 0) {
                       setAutocomplete({ rowId: row.id, field: 'key', suggestions: filtered, selectedIndex: 0 })
                     }

@@ -1,5 +1,6 @@
 import { useRequestStore } from '../../stores/request.store'
 import KeyValueTable from '../shared/KeyValueTable'
+import { STANDARD_HTTP_HEADERS } from '../../lib/http-headers'
 
 export default function HeadersTab() {
   const headers = useRequestStore((s) => s.headers)
@@ -16,6 +17,7 @@ export default function HeadersTab() {
         onAdd={addHeader}
         addLabel="+ Add Header"
         enableAutocomplete
+        keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
       />
     </div>
   )

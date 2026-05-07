@@ -12,6 +12,7 @@ import { useGrpcStore } from '../../stores/grpc.store'
 import type { GrpcMethodType } from '../../stores/grpc.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
+import { STANDARD_HTTP_HEADERS } from '../../lib/http-headers'
 
 const METHOD_TYPE_COLORS: Record<GrpcMethodType, { bg: string; color: string; label: string }> = {
   unary: { bg: '#e8f4ff', color: '#0066cc', label: 'Unary' },
@@ -207,6 +208,7 @@ export default function GrpcRequestPane() {
                   onRemove={removeMetadata}
                   onAdd={addMetadata}
                   addLabel="+ Add Metadata"
+                  keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
                 />
               </div>
             )}

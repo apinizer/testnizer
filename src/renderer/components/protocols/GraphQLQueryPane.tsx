@@ -3,6 +3,7 @@ import { Play, Search, ChevronDown, ChevronRight, Settings2 } from 'lucide-react
 import { useGraphQLStore } from '../../stores/graphql.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
+import { STANDARD_HTTP_HEADERS } from '../../lib/http-headers'
 
 export default function GraphQLQueryPane() {
   const url = useGraphQLStore((s) => s.url)
@@ -18,6 +19,7 @@ export default function GraphQLQueryPane() {
   const isLoading = useGraphQLStore((s) => s.isLoading)
   const isIntrospecting = useGraphQLStore((s) => s.isIntrospecting)
   const executeQuery = useGraphQLStore((s) => s.executeQuery)
+  const cancelQuery = useGraphQLStore((s) => s.cancelQuery)
   const introspect = useGraphQLStore((s) => s.introspect)
   const subscriptionState = useGraphQLStore((s) => s.subscriptionState)
   const subscribe = useGraphQLStore((s) => s.subscribe)
@@ -78,13 +80,13 @@ export default function GraphQLQueryPane() {
         ) : (
           <button
             type="button"
-            onClick={executeQuery}
-            disabled={isLoading || !url.trim()}
+            onClick={() => (isLoading ? cancelQuery() : executeQuery())}
+            disabled={!url.trim()}
             className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ background: 'var(--accent)', border: 'none' }}
+            style={{ background: isLoading ? '#cc2200' : 'var(--accent)', border: 'none' }}
           >
             <Play size={13} />
-            {isLoading ? 'Running...' : 'Run'}
+            {isLoading ? 'Cancel' : 'Run'}
           </button>
         )}
 
@@ -165,6 +167,7 @@ export default function GraphQLQueryPane() {
                 onRemove={removeHeader}
                 onAdd={addHeader}
                 addLabel="+ Add Header"
+                keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
               />
             </div>
           )}

@@ -112,7 +112,7 @@ export default function EnvironmentSelector() {
         createPortal(
           <div
             ref={dropdownRef}
-            className="fixed z-[9000] overflow-hidden rounded-[8px]"
+            className="fixed z-[9999] overflow-hidden rounded-[8px]"
             style={{
               top: pos.top,
               right: pos.right,

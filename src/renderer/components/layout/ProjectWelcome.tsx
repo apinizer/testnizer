@@ -1,4 +1,4 @@
-import { Globe, Radio, Cpu, Bot, FileCode2, Hexagon } from 'lucide-react'
+import { Globe, Radio, Cpu, Bot, FileCode2, Hexagon, Activity } from 'lucide-react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
@@ -75,6 +75,13 @@ export default function ProjectWelcome() {
       iconColor: '#2E7D32',
       label: t('welcome.grpc'),
       onClick: () => createTab(t('welcome.grpc'), 'grpc'),
+    },
+    {
+      icon: <Activity size={32} strokeWidth={1.5} />,
+      iconBg: '#E1F5FE',
+      iconColor: '#0277BD',
+      label: t('welcome.sse'),
+      onClick: () => createTab(t('welcome.sse'), 'sse'),
     },
   ]
 

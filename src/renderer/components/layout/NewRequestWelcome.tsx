@@ -1,4 +1,4 @@
-import { Globe, FileText, Bot, FileCode2, Cpu, Hexagon } from 'lucide-react'
+import { Globe, FileText, Bot, FileCode2, Cpu, Hexagon, Activity } from 'lucide-react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
 
@@ -59,6 +59,11 @@ export default function NewRequestWelcome() {
     openTab({ id, name: t('welcome.grpc'), protocol: 'grpc', method: 'POST', url: '' })
   }
 
+  function createSse() {
+    const id = makeTabId()
+    openTab({ id, name: t('welcome.sse'), protocol: 'sse', url: '' })
+  }
+
   const actions: QuickAction[] = [
     {
       icon: <Globe size={28} strokeWidth={1.5} />,
@@ -95,6 +100,12 @@ export default function NewRequestWelcome() {
       iconBg: '#E8F5E9',
       label: t('welcome.grpc'),
       onClick: createGrpc,
+    },
+    {
+      icon: <Activity size={28} strokeWidth={1.5} />,
+      iconBg: '#E1F5FE',
+      label: t('welcome.sse'),
+      onClick: createSse,
     },
   ]
 

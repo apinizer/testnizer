@@ -117,6 +117,7 @@ const translations: Record<Locale, Record<string, string>> = {
     // URL Bar
     'urlBar.send': 'Send',
     'urlBar.sending': 'Sending...',
+    'urlBar.cancel': 'Cancel',
     'urlBar.save': 'Save',
     'urlBar.import': 'Import',
     'urlBar.enterUrl': 'Enter URL...',
@@ -916,6 +917,7 @@ const translations: Record<Locale, Record<string, string>> = {
     // URL Bar
     'urlBar.send': 'Gonder',
     'urlBar.sending': 'Gonderiliyor...',
+    'urlBar.cancel': 'Iptal',
     'urlBar.save': 'Kaydet',
     'urlBar.import': 'Iceri Aktar',
     'urlBar.enterUrl': 'URL girin...',

@@ -30,6 +30,7 @@ function RawXmlBodyEditor() {
 export default function SoapEditor() {
   const parsedWsdl = useSoapStore((s) => s.parsedWsdl)
   const sendSoap = useSoapStore((s) => s.sendSoap)
+  const cancelSoap = useSoapStore((s) => s.cancelSoap)
   const rawXml = useSoapStore((s) => s.rawXml)
   const isLoading = useResponseStore((s) => s.isLoading)
   const selectedOperation = useSoapStore((s) => s.selectedOperation)
@@ -165,13 +166,13 @@ export default function SoapEditor() {
           <div className="shrink-0 border-t border-[var(--border)] px-4 py-2 flex gap-2">
             <button
               type="button"
-              onClick={sendSoap}
-              disabled={isLoading || (!!parsedWsdl && !selectedOperation)}
+              onClick={() => (isLoading ? cancelSoap() : sendSoap())}
+              disabled={!isLoading && !!parsedWsdl && !selectedOperation}
               className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-              style={{ background: 'var(--accent)', border: 'none' }}
+              style={{ background: isLoading ? '#cc2200' : 'var(--accent)', border: 'none' }}
             >
               <Send size={14} />
-              {isLoading ? 'Sending...' : 'Send SOAP Request'}
+              {isLoading ? 'Cancel' : 'Send SOAP Request'}
             </button>
             <button
               type="button"

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, Settings2 } from 'lucide-react'
 import { useWebSocketStore } from '../../stores/websocket.store'
 import KeyValueTable from '../shared/KeyValueTable'
+import { STANDARD_HTTP_HEADERS } from '../../lib/http-headers'
 import WsConnectionBar from './WsConnectionBar'
 import WsComposer from './WsComposer'
 import WsMessageLog from './WsMessageLog'
@@ -63,6 +64,7 @@ export default function WebSocketEditor() {
                 onRemove={removeHeader}
                 onAdd={addHeader}
                 addLabel="+ Add Header"
+                keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
               />
             </div>
           )}

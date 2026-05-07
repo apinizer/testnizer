@@ -33,6 +33,17 @@ interface EnvironmentStore {
   deleteGlobalVariable: (id: string) => Promise<void>
   setGlobalVariables: (vars: GlobalVariable[]) => void
   /**
+   * Persist `pm.environment.set(...)` / `pm.globals.set(...)` calls made by a
+   * post-response script. Upserts each entry into the active environment (or
+   * globals) so subsequent requests in the same workspace pick up the values.
+   * Performs a single round-trip per variable through the existing IPC layer
+   * — adequate for the 1–N writes a script typically does.
+   */
+  applyScriptUpdates: (
+    envUpdates: Record<string, string>,
+    globalUpdates: Record<string, string>,
+  ) => Promise<void>
+  /**
    * Resolve active variables (globals first, then active env — env wins).
    * Uses `value` (current), falling back to `initialValue` when current is
    * empty.
@@ -418,6 +429,74 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
   },
 
   setGlobalVariables: (vars) => set({ globalVariables: vars }),
+
+  applyScriptUpdates: async (envUpdates, globalUpdates) => {
+    const envEntries = Object.entries(envUpdates)
+    const globalEntries = Object.entries(globalUpdates)
+    if (envEntries.length === 0 && globalEntries.length === 0) return
+
+    // ── Active environment writes ──────────────────────────
+    if (envEntries.length > 0) {
+      const state = get()
+      const activeEnv = state.environments.find((e) => e.id === state.activeEnvironmentId)
+      if (activeEnv) {
+        const nextVars: EnvironmentVariable[] = activeEnv.variables.map((ev) => ({ ...ev }))
+        for (const [key, value] of envEntries) {
+          const existing = nextVars.find((ev) => ev.key === key)
+          if (existing) {
+            existing.value = value
+          } else {
+            nextVars.push({
+              id: newId(),
+              key,
+              value,
+              enabled: true,
+              secret: false,
+            })
+          }
+        }
+        // Optimistic local update
+        set((s) => ({
+          environments: s.environments.map((e) =>
+            e.id === activeEnv.id ? { ...e, variables: nextVars, updated_at: Date.now() } : e,
+          ),
+        }))
+        // Persist: per-row create / update so we don't churn the whole list
+        for (const [key, value] of envEntries) {
+          const existing = activeEnv.variables.find((ev) => ev.key === key)
+          try {
+            if (existing) {
+              await window.api?.envVariable?.update(existing.id, { value })
+            } else {
+              await window.api?.envVariable?.create({
+                environment_id: activeEnv.id,
+                key,
+                value,
+                enabled: true,
+                secret: false,
+              })
+            }
+          } catch (e) {
+            console.error('[environment.store] applyScriptUpdates env write failed:', e)
+          }
+        }
+      }
+    }
+
+    // ── Globals writes ────────────────────────────────────
+    for (const [key, value] of globalEntries) {
+      const existing = get().globalVariables.find((gv) => gv.key === key)
+      try {
+        if (existing) {
+          await get().updateGlobalVariable(existing.id, { value })
+        } else {
+          await get().addGlobalVariable({ key, value, enabled: true, secret: false })
+        }
+      } catch (e) {
+        console.error('[environment.store] applyScriptUpdates global write failed:', e)
+      }
+    }
+  },
 
   getActiveVariables: () => {
     const state = get()

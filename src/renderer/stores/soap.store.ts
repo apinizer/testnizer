@@ -50,6 +50,8 @@ interface SoapStore {
   parsedWsdl: WsdlParseResult | null
   isLoading: boolean
   parseError: string | null
+  /** request:send IPC id for the in-flight SOAP call (used for cancel). */
+  _inflightRequestId: string | null
 
   selectedService: string | null
   selectedPort: string | null
@@ -80,6 +82,7 @@ interface SoapStore {
   setEndpointUrl: (url: string) => void
   setWsSecurity: (config: Partial<WsSecurityConfig>) => void
   sendSoap: () => Promise<void>
+  cancelSoap: () => Promise<void>
   reset: () => void
 
   /** Load SOAP data from an imported endpoint's request_schema */
@@ -161,6 +164,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
   parsedWsdl: null,
   isLoading: false,
   parseError: null,
+  _inflightRequestId: null,
 
   selectedService: null,
   selectedPort: null,
@@ -340,6 +344,8 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
       activeVars,
     )
 
+    const requestId = makeId()
+    set({ _inflightRequestId: requestId })
     try {
       const result = await window.api?.request?.send({
         method: 'POST',
@@ -355,6 +361,8 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
               },
             }
           : undefined,
+        _protocol: 'soap',
+        _requestId: requestId,
       })
 
       if (result?.success && result.data) {
@@ -393,7 +401,19 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     } finally {
       responseStore.setLoading(false)
       if (activeTabId) tabsStore.markLoading(activeTabId, false)
+      set((s) => (s._inflightRequestId === requestId ? { _inflightRequestId: null } : s))
     }
+  },
+
+  cancelSoap: async () => {
+    const id = get()._inflightRequestId
+    if (!id) return
+    try {
+      await window.api?.request?.cancel(id)
+    } catch {
+      // engine already finished
+    }
+    set({ _inflightRequestId: null })
   },
 
   loadFromEndpoint: (data) => {

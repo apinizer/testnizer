@@ -62,6 +62,8 @@ interface GraphQLStore {
   headers: KeyValuePair[]
   response: ApiResponse | null
   isLoading: boolean
+  /** request:send IPC id for the in-flight GraphQL query — used by cancelQuery. */
+  _inflightRequestId: string | null
 
   schemaData: GqlSchema | null
   isIntrospecting: boolean
@@ -78,6 +80,7 @@ interface GraphQLStore {
   removeHeader: (id: string) => void
 
   executeQuery: () => Promise<void>
+  cancelQuery: () => Promise<void>
   introspect: () => Promise<void>
   subscribe: () => Promise<void>
   unsubscribe: () => Promise<void>
@@ -164,6 +167,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   headers: [defaultKv('Content-Type', 'application/json', true)],
   response: null,
   isLoading: false,
+  _inflightRequestId: null,
 
   schemaData: null,
   isIntrospecting: false,
@@ -216,6 +220,9 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
       // ignore parse errors, send empty
     }
 
+    const requestId = makeId()
+    set({ _inflightRequestId: requestId })
+
     try {
       const result = await window.api?.request?.send({
         method: 'POST',
@@ -225,6 +232,8 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
           type: 'json',
           content: JSON.stringify({ query: resolvedQuery, variables: parsedVars }),
         },
+        _protocol: 'graphql',
+        _requestId: requestId,
       })
 
       if (result?.success && result.data) {
@@ -270,10 +279,24 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
       set({ response: demoResp })
       responseStore.setResponse(demoResp)
     } finally {
-      set({ isLoading: false })
+      set((s) => ({
+        isLoading: false,
+        _inflightRequestId: s._inflightRequestId === requestId ? null : s._inflightRequestId,
+      }))
       responseStore.setLoading(false)
       if (activeTabId) tabsStore.markLoading(activeTabId, false)
     }
+  },
+
+  cancelQuery: async () => {
+    const id = get()._inflightRequestId
+    if (!id) return
+    try {
+      await window.api?.request?.cancel(id)
+    } catch {
+      // engine already finished
+    }
+    set({ _inflightRequestId: null, isLoading: false })
   },
 
   introspect: async () => {

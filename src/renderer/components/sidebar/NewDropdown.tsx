@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Globe, Radio, Cpu, Bot, FileCode2, Hexagon, Download, Code2 } from 'lucide-react'
+import { Globe, Radio, Activity, Cpu, Bot, FileCode2, Hexagon, Download, Code2 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
@@ -107,6 +107,13 @@ export default function NewDropdown() {
       label: t('newDropdown.grpc'),
       bg: '#E8F5E9',
       action: () => createProtocolTab('grpc', t('welcome.grpc'), 'POST'),
+    },
+    {
+      icon: <Activity size={16} strokeWidth={1.75} />,
+      iconColor: '#0277BD',
+      label: t('newDropdown.sse'),
+      bg: '#E1F5FE',
+      action: () => createProtocolTab('sse', t('welcome.sse')),
     },
   ]
 

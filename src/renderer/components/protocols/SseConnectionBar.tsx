@@ -1,5 +1,5 @@
 import { Plug, Unplug, RefreshCw } from 'lucide-react'
-import { useSseStore } from '../../stores/sse.store'
+import { useSseStore, type SseHttpMethod } from '../../stores/sse.store'
 
 const STATE_INDICATORS: Record<string, { color: string; bg: string; label: string }> = {
   disconnected: { color: '#888888', bg: '#f0f0f0', label: 'Disconnected' },
@@ -8,9 +8,13 @@ const STATE_INDICATORS: Record<string, { color: string; bg: string; label: strin
   error: { color: '#cc2200', bg: '#fff0f0', label: 'Error' },
 }
 
+const METHODS: SseHttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+
 export default function SseConnectionBar() {
   const url = useSseStore((s) => s.url)
   const setUrl = useSseStore((s) => s.setUrl)
+  const method = useSseStore((s) => s.method)
+  const setMethod = useSseStore((s) => s.setMethod)
   const connectionState = useSseStore((s) => s.connectionState)
   const errorMessage = useSseStore((s) => s.errorMessage)
   const connect = useSseStore((s) => s.connect)
@@ -40,6 +44,20 @@ export default function SseConnectionBar() {
             {indicator.label}
           </span>
         </div>
+
+        {/* Method dropdown */}
+        <select
+          value={method}
+          onChange={(e) => setMethod(e.target.value as SseHttpMethod)}
+          disabled={isConnected || isConnecting}
+          className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--white)] px-2 py-2 font-mono font-medium text-[var(--text)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-60"
+        >
+          {METHODS.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
 
         {/* URL input */}
         <input
