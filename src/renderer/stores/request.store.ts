@@ -25,6 +25,15 @@ function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
 }
 
+function markActiveDirty(): void {
+  const { activeTabId, tabs, markDirty } = useTabsStore.getState()
+  if (!activeTabId) return
+  const tab = tabs.find((t) => t.id === activeTabId)
+  if (tab?.endpointId || tab?.savedRequestId) {
+    markDirty(activeTabId, true)
+  }
+}
+
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
 }
@@ -122,32 +131,75 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   _currentTabId: null,
   _inflightRequestId: null,
 
-  setMethod: (method) => set({ method }),
-  setUrl: (url) => set({ url }),
+  setMethod: (method) => {
+    set({ method })
+    markActiveDirty()
+  },
+  setUrl: (url) => {
+    set({ url })
+    markActiveDirty()
+  },
 
-  setParams: (params) => set({ params }),
-  addParam: () => set((state) => ({ params: [...state.params, defaultKv()] })),
-  updateParam: (id, updates) =>
+  setParams: (params) => {
+    set({ params })
+    markActiveDirty()
+  },
+  addParam: () => {
+    set((state) => ({ params: [...state.params, defaultKv()] }))
+    markActiveDirty()
+  },
+  updateParam: (id, updates) => {
     set((state) => ({
       params: state.params.map((p) => (p.id === id ? { ...p, ...updates } : p)),
-    })),
-  removeParam: (id) => set((state) => ({ params: state.params.filter((p) => p.id !== id) })),
+    }))
+    markActiveDirty()
+  },
+  removeParam: (id) => {
+    set((state) => ({ params: state.params.filter((p) => p.id !== id) }))
+    markActiveDirty()
+  },
 
-  setHeaders: (headers) => set({ headers }),
-  addHeader: () => set((state) => ({ headers: [...state.headers, defaultKv()] })),
-  updateHeader: (id, updates) =>
+  setHeaders: (headers) => {
+    set({ headers })
+    markActiveDirty()
+  },
+  addHeader: () => {
+    set((state) => ({ headers: [...state.headers, defaultKv()] }))
+    markActiveDirty()
+  },
+  updateHeader: (id, updates) => {
     set((state) => ({
       headers: state.headers.map((h) => (h.id === id ? { ...h, ...updates } : h)),
-    })),
-  removeHeader: (id) => set((state) => ({ headers: state.headers.filter((h) => h.id !== id) })),
+    }))
+    markActiveDirty()
+  },
+  removeHeader: (id) => {
+    set((state) => ({ headers: state.headers.filter((h) => h.id !== id) }))
+    markActiveDirty()
+  },
 
-  setBody: (body) => set({ body }),
-  setAuth: (auth) => set({ auth }),
-  setPreScript: (script) => set({ preScript: script }),
-  setPostScript: (script) => set({ postScript: script }),
-  setAssertions: (assertions) => set({ assertions }),
+  setBody: (body) => {
+    set({ body })
+    markActiveDirty()
+  },
+  setAuth: (auth) => {
+    set({ auth })
+    markActiveDirty()
+  },
+  setPreScript: (script) => {
+    set({ preScript: script })
+    markActiveDirty()
+  },
+  setPostScript: (script) => {
+    set({ postScript: script })
+    markActiveDirty()
+  },
+  setAssertions: (assertions) => {
+    set({ assertions })
+    markActiveDirty()
+  },
 
-  addAssertion: () =>
+  addAssertion: () => {
     set((state) => ({
       assertions: [
         ...state.assertions,
@@ -159,12 +211,16 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           expected: 200,
         },
       ],
-    })),
+    }))
+    markActiveDirty()
+  },
 
-  removeAssertion: (id) =>
+  removeAssertion: (id) => {
     set((state) => ({
       assertions: state.assertions.filter((a) => a.id !== id),
-    })),
+    }))
+    markActiveDirty()
+  },
 
   switchToTab: (tabId) => {
     const state = get()

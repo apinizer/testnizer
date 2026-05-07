@@ -4,6 +4,7 @@ import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useConsoleStore } from '../../stores/console.store'
 import { T } from '../../styles/tokens'
+import { useTranslation } from '../../lib/i18n'
 
 export default function Footer() {
   const environments = useEnvironmentStore((s) => s.environments)
@@ -16,6 +17,7 @@ export default function Footer() {
   const errorCount = consoleEntries.filter(
     (e) => e.level === 'error' || (e.status != null && e.status >= 400),
   ).length
+  const { t } = useTranslation()
 
   return (
     <footer
@@ -35,15 +37,22 @@ export default function Footer() {
       {/* Left */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: T.muted }}>
         <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.POST.color }} />
-        Hazır
+        {t('footer.ready')}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: T.muted }}>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
           <circle cx="12" cy="12" r="10" />
           <line x1="2" y1="12" x2="22" y2="12" />
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
         </svg>
-        {activeEnv?.name || 'Üretim'}
+        {activeEnv?.name || t('footer.noEnvironment')}
       </div>
 
       <div style={{ flex: 1 }} />
@@ -51,9 +60,11 @@ export default function Footer() {
       {/* Right */}
       <span
         style={{ color: T.ghost, cursor: 'pointer', fontFamily: 'inherit' }}
-        onClick={() => openTab({ id: 'runner-all-' + Date.now(), name: 'Runner', protocol: 'runner' })}
+        onClick={() =>
+          openTab({ id: 'runner-all-' + Date.now(), name: 'Runner', protocol: 'runner' })
+        }
       >
-        ▶ Çalıştır
+        ▶ {t('footer.runner')}
       </span>
       <button
         type="button"
@@ -75,7 +86,7 @@ export default function Footer() {
         }}
       >
         <Terminal size={11} />
-        Konsol
+        {t('footer.console')}
         {errorCount > 0 && (
           <span
             style={{
@@ -91,7 +102,6 @@ export default function Footer() {
           </span>
         )}
       </button>
-      <span style={{ color: T.ghost, cursor: 'pointer', fontFamily: 'inherit' }}>?</span>
     </footer>
   )
 }

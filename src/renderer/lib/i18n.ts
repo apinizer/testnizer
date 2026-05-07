@@ -1040,8 +1040,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'tests.jsonPathEquals': 'JSON yolu esittir',
 
     // Footer
-    'footer.ready': 'Hazir',
-    'footer.runner': 'Calistirici',
+    'footer.ready': 'Hazır',
+    'footer.runner': 'Runner',
     'footer.console': 'Konsol',
     'footer.cookies': 'Cerezler',
     'footer.noEnvironment': 'Ortam Yok',

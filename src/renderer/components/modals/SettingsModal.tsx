@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useUpdaterStore } from '../../stores/updater.store'
@@ -15,6 +15,14 @@ interface SettingsState {
   proxyMode: 'system' | 'none' | 'custom'
   proxyHost: string
   proxyPort: string
+}
+
+type SettingsApi = {
+  getAll?: () => Promise<{ success: boolean; data?: unknown }>
+  setAll?: (s: unknown) => Promise<{ success: boolean }>
+}
+function getSettingsApi(): SettingsApi | null {
+  return (window as unknown as { api?: { settings?: SettingsApi } }).api?.settings ?? null
 }
 
 export default function SettingsModal() {
@@ -43,6 +51,33 @@ export default function SettingsModal() {
     proxyPort: '',
   })
 
+  useEffect(() => {
+    if (!show) return
+    const api = getSettingsApi()
+    if (!api?.getAll) return
+    api
+      .getAll()
+      .then((res) => {
+        if (!res?.success || !res.data) return
+        const s = res.data as {
+          defaultTimeout?: number
+          sslVerification?: boolean
+          autoUpdate?: boolean
+          proxy?: { mode?: string; host?: string; port?: number }
+        }
+        setSettings((prev) => ({
+          ...prev,
+          timeout: s.defaultTimeout ?? prev.timeout,
+          sslVerification: s.sslVerification ?? prev.sslVerification,
+          autoUpdate: s.autoUpdate ?? prev.autoUpdate,
+          proxyMode: (s.proxy?.mode as SettingsState['proxyMode']) ?? prev.proxyMode,
+          proxyHost: s.proxy?.host ?? prev.proxyHost,
+          proxyPort: s.proxy?.port != null ? String(s.proxy.port) : prev.proxyPort,
+        }))
+      })
+      .catch(() => {})
+  }, [show])
+
   if (!show) return null
 
   const update = (partial: Partial<SettingsState>) => {
@@ -59,6 +94,21 @@ export default function SettingsModal() {
     setTheme(settings.theme)
     setLocale(settings.language)
     setFontSize(settings.fontSize)
+    const api = getSettingsApi()
+    if (api?.setAll) {
+      api
+        .setAll({
+          defaultTimeout: settings.timeout,
+          sslVerification: settings.sslVerification,
+          autoUpdate: settings.autoUpdate,
+          proxy: {
+            mode: settings.proxyMode,
+            ...(settings.proxyHost ? { host: settings.proxyHost } : {}),
+            ...(settings.proxyPort ? { port: Number(settings.proxyPort) } : {}),
+          },
+        })
+        .catch(() => {})
+    }
     setShow(false)
   }
 
@@ -81,7 +131,9 @@ export default function SettingsModal() {
       >
         {/* Header */}
         <div className="mb-5 flex items-center justify-between">
-          <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{t('settings.title')}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+            {t('settings.title')}
+          </span>
           <button
             type="button"
             onClick={() => setShow(false)}
@@ -233,27 +285,30 @@ export default function SettingsModal() {
         <div className="mt-6 flex items-center justify-between gap-2.5 border-t border-[var(--border)] pt-4">
           <button
             type="button"
-            onClick={() => { setShow(false); setShowAboutModal(true) }}
+            onClick={() => {
+              setShow(false)
+              setShowAboutModal(true)
+            }}
             className="cursor-pointer rounded-[7px] border-none bg-transparent px-1 py-1 text-[var(--muted)] underline-offset-2 hover:underline"
             style={{ fontSize: 13 }}
           >
             {t('header.about')}
           </button>
           <div className="flex gap-2.5">
-          <button
-            type="button"
-            onClick={() => setShow(false)}
-            className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[#555] transition-colors hover:bg-[var(--bg)]"
-          >
-            {t('settings.cancel')}
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
-          >
-            {t('settings.save')}
-          </button>
+            <button
+              type="button"
+              onClick={() => setShow(false)}
+              className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[#555] transition-colors hover:bg-[var(--bg)]"
+            >
+              {t('settings.cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
+            >
+              {t('settings.save')}
+            </button>
           </div>
         </div>
       </div>

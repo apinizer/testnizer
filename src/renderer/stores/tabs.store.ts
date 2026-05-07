@@ -66,22 +66,31 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
     const existingPreview = state.tabs.find((t) => t.isPreview)
 
     if (existingPreview) {
-      // Replace the existing preview tab's content
-      set((s) => ({
-        tabs: s.tabs.map((t) =>
-          t.id === existingPreview.id
-            ? {
-                ...t,
-                ...tab,
-                id: existingPreview.id,
-                isDirty: false,
-                isLoading: false,
-                isPreview: true,
-              }
-            : t,
-        ),
-        activeTabId: existingPreview.id,
-      }))
+      if (existingPreview.isDirty) {
+        // Pin the dirty preview so its changes aren't lost, then open a fresh preview
+        set((s) => ({
+          tabs: s.tabs.map((t) => (t.id === existingPreview.id ? { ...t, isPreview: false } : t)),
+        }))
+        const newTab: Tab = { ...tab, isDirty: false, isLoading: false, isPreview: true }
+        set((s) => ({ tabs: [...s.tabs, newTab], activeTabId: newTab.id }))
+      } else {
+        // Replace the existing (clean) preview tab's content
+        set((s) => ({
+          tabs: s.tabs.map((t) =>
+            t.id === existingPreview.id
+              ? {
+                  ...t,
+                  ...tab,
+                  id: existingPreview.id,
+                  isDirty: false,
+                  isLoading: false,
+                  isPreview: true,
+                }
+              : t,
+          ),
+          activeTabId: existingPreview.id,
+        }))
+      }
     } else {
       // Create a new preview tab
       const newTab: Tab = { ...tab, isDirty: false, isLoading: false, isPreview: true }

@@ -80,10 +80,10 @@ interface OpenApiRoundtripMeta {
 
 interface OpenApiSecurityScheme {
   type: 'http' | 'apiKey' | 'oauth2' | 'openIdConnect'
-  scheme?: string  // for type:'http' — 'basic', 'bearer'
+  scheme?: string // for type:'http' — 'basic', 'bearer'
   bearerFormat?: string
-  in?: 'header' | 'query' | 'cookie'  // for type:'apiKey'
-  name?: string  // for type:'apiKey'
+  in?: 'header' | 'query' | 'cookie' // for type:'apiKey'
+  name?: string // for type:'apiKey'
 }
 
 interface OpenApiDoc {
@@ -99,9 +99,88 @@ interface OpenApiDoc {
   security?: Array<Record<string, string[]>>
   components?: {
     securitySchemes?: Record<string, OpenApiSecurityScheme>
+    schemas?: Record<string, JsonSchema>
   }
+  // Swagger 2.0 schema definitions
+  definitions?: Record<string, JsonSchema>
   // Swagger 2.0 securityDefinitions
   securityDefinitions?: Record<string, OpenApiSecurityScheme & { flow?: string }>
+}
+
+type JsonSchema = Record<string, unknown>
+
+/**
+ * Produces a sample JSON value from a JSON Schema definition.
+ * Used as a fallback when an OpenAPI spec has no inline `example`/`examples`.
+ * Keeps generated payloads human-readable instead of dumping raw schema JSON.
+ */
+function generateJsonExample(
+  schema: JsonSchema,
+  schemas?: Record<string, JsonSchema> | null,
+  _visited: Set<string> = new Set(),
+): unknown {
+  if (!schema || typeof schema !== 'object') return null
+
+  // $ref resolution
+  const ref = schema['$ref'] as string | undefined
+  if (ref) {
+    const name = ref.replace('#/components/schemas/', '').replace('#/definitions/', '')
+    if (_visited.has(name)) return {}
+    const resolved = schemas?.[name] as JsonSchema | undefined
+    if (resolved) {
+      const next = new Set(_visited)
+      next.add(name)
+      return generateJsonExample(resolved, schemas, next)
+    }
+    return {}
+  }
+
+  // allOf / oneOf / anyOf → use first sub-schema
+  for (const key of ['allOf', 'oneOf', 'anyOf'] as const) {
+    const arr = schema[key]
+    if (Array.isArray(arr) && arr.length > 0) {
+      return generateJsonExample(arr[0] as JsonSchema, schemas, _visited)
+    }
+  }
+
+  // enum
+  const enumVals = schema['enum']
+  if (Array.isArray(enumVals) && enumVals.length > 0) return enumVals[0]
+
+  const type = schema['type'] as string | string[] | undefined
+  const resolvedType = Array.isArray(type) ? type[0] : type
+
+  if (resolvedType === 'object' || schema['properties']) {
+    const props = schema['properties'] as Record<string, JsonSchema> | undefined
+    if (!props) return {}
+    const out: Record<string, unknown> = {}
+    for (const [key, propSchema] of Object.entries(props)) {
+      out[key] = generateJsonExample(propSchema, schemas, _visited)
+    }
+    return out
+  }
+
+  if (resolvedType === 'array') {
+    const items = schema['items'] as JsonSchema | undefined
+    if (items) return [generateJsonExample(items, schemas, _visited)]
+    return []
+  }
+
+  if (resolvedType === 'string') {
+    const format = schema['format'] as string | undefined
+    if (format === 'date-time') return new Date().toISOString()
+    if (format === 'date') return new Date().toISOString().slice(0, 10)
+    if (format === 'uuid') return '00000000-0000-0000-0000-000000000000'
+    if (format === 'email') return 'user@example.com'
+    if (format === 'uri') return 'https://example.com'
+    return ''
+  }
+
+  if (resolvedType === 'integer' || resolvedType === 'number') return 0
+  if (resolvedType === 'boolean') return false
+  if (resolvedType === 'null') return null
+
+  return null
 }
 
 export function registerImportExportHandlers(): void {
@@ -613,7 +692,11 @@ async function importOpenApi(
           const contentTypes = Object.keys(operation.requestBody.content)
           const pickExample = (mt: string): string | undefined => {
             const entry = operation.requestBody!.content![mt] as
-              | { example?: unknown; examples?: Record<string, { value?: unknown }>; schema?: Record<string, unknown> }
+              | {
+                  example?: unknown
+                  examples?: Record<string, { value?: unknown }>
+                  schema?: Record<string, unknown>
+                }
               | undefined
             if (!entry) return undefined
             if (entry.example !== undefined) {
@@ -629,7 +712,16 @@ async function importOpenApi(
                   : JSON.stringify(first.value, null, 2)
               }
             }
-            return entry.schema ? JSON.stringify(entry.schema, null, 2) : undefined
+            return entry.schema
+              ? JSON.stringify(
+                  generateJsonExample(entry.schema, {
+                    ...doc.definitions,
+                    ...doc.components?.schemas,
+                  }),
+                  null,
+                  2,
+                )
+              : undefined
           }
           if (contentTypes.some((ct) => ct.includes('json'))) {
             const content = pickExample('application/json') ?? '{}'
@@ -747,9 +839,7 @@ async function importOpenApi(
 /** Slugify an endpoint name into a usable operationId fallback. */
 function slugifyOperationId(name: string, method: string, path: string): string {
   const base = (name || `${method} ${path}`).trim()
-  const slug = base
-    .replace(/[^A-Za-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
+  const slug = base.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
   return slug.length > 0 ? slug : `${method.toLowerCase()}_endpoint`
 }
 
@@ -1038,7 +1128,9 @@ function exportProjectAsOpenApi(projectId: string): string {
     // entry so the auth survives the round-trip.
     if (openApiMeta?.securitySchemeNames && openApiMeta.securitySchemeNames.length > 0) {
       const opSec: Array<Record<string, string[]>> = []
-      const synth = authToOpenApiScheme(storedAuth as { type?: string; apiKey?: { key?: string; in?: string } } | undefined)
+      const synth = authToOpenApiScheme(
+        storedAuth as { type?: string; apiKey?: { key?: string; in?: string } } | undefined,
+      )
       for (const name of openApiMeta.securitySchemeNames) {
         opSec.push({ [name]: [] })
         // Re-register the scheme using the live auth shape when available so
@@ -1052,7 +1144,9 @@ function exportProjectAsOpenApi(projectId: string): string {
       }
       operation.security = opSec
     } else {
-      const synth = authToOpenApiScheme(storedAuth as { type?: string; apiKey?: { key?: string; in?: string } } | undefined)
+      const synth = authToOpenApiScheme(
+        storedAuth as { type?: string; apiKey?: { key?: string; in?: string } } | undefined,
+      )
       if (synth) {
         securitySchemes[synth.name] = synth.scheme
         operation.security = [{ [synth.name]: [] }]
@@ -1345,7 +1439,7 @@ export function mapPostmanBodyToUi(body: PostmanBody | undefined): {
         if (isFile) {
           // For file fields the human-readable filename goes in `value`
           // and the path the main process opens lives in `filePath`.
-          const fileName = filePath ? filePath.split(/[\\/]/).pop() ?? filePath : ''
+          const fileName = filePath ? (filePath.split(/[\\/]/).pop() ?? filePath) : ''
           return {
             id: genKvId(),
             key: fd.key ?? '',
@@ -1542,36 +1636,22 @@ export async function importPostman(
       // Reuse existing env with the same name if we've already imported this
       // collection — avoids exploding env count on re-imports.
       const envRow = db
-        .prepare(
-          'SELECT id FROM environments WHERE project_id = ? AND name = ?',
-        )
+        .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
         .get(projectId, envName) as { id: string } | undefined
       let envId: string
       if (envRow) {
         envId = envRow.id
-        db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(
-          envId,
-        )
+        db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(envId)
       } else {
         envId = randomUUID()
         // If the project has no active env yet, mark this one active.
         const hasActive = db
-          .prepare(
-            'SELECT 1 AS x FROM environments WHERE project_id = ? AND is_active = 1',
-          )
+          .prepare('SELECT 1 AS x FROM environments WHERE project_id = ? AND is_active = 1')
           .get(projectId) as { x: number } | undefined
         db.prepare(
           `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        ).run(
-          envId,
-          projectRow.workspace_id,
-          projectId,
-          envName,
-          hasActive ? 0 : 1,
-          now,
-          now,
-        )
+        ).run(envId, projectRow.workspace_id, projectId, envName, hasActive ? 0 : 1, now, now)
       }
       const insertVar = db.prepare(
         `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
@@ -1579,16 +1659,7 @@ export async function importPostman(
       )
       for (const v of collection.variable) {
         if (!v.key) continue
-        insertVar.run(
-          randomUUID(),
-          envId,
-          v.key,
-          v.value ?? '',
-          null,
-          1,
-          0,
-          v.value ?? null,
-        )
+        insertVar.run(randomUUID(), envId, v.key, v.value ?? '', null, 1, 0, v.value ?? null)
       }
     }
   }
@@ -1967,7 +2038,10 @@ export function exportAsPostman(projectId: string): string {
     if (auth) item.request!.auth = auth
 
     // Pre-request and test scripts → Postman event[]
-    const events: Array<{ listen: 'prerequest' | 'test'; script: { type: string; exec: string[] } }> = []
+    const events: Array<{
+      listen: 'prerequest' | 'test'
+      script: { type: string; exec: string[] }
+    }> = []
     if (schema.preScript && schema.preScript.trim()) {
       events.push({
         listen: 'prerequest',
@@ -2507,21 +2581,35 @@ export function tokenizeCurl(command: string): string[] {
 /** Decode a single character that follows `\` inside a bash `$'...'` literal. */
 function decodeAnsiCEscape(ch: string | undefined): string {
   switch (ch) {
-    case 'n': return '\n'
-    case 't': return '\t'
-    case 'r': return '\r'
-    case 'a': return '\x07'
-    case 'b': return '\b'
-    case 'f': return '\f'
-    case 'v': return '\v'
-    case '0': return '\0'
-    case '\\': return '\\'
-    case "'": return "'"
-    case '"': return '"'
-    case '?': return '?'
+    case 'n':
+      return '\n'
+    case 't':
+      return '\t'
+    case 'r':
+      return '\r'
+    case 'a':
+      return '\x07'
+    case 'b':
+      return '\b'
+    case 'f':
+      return '\f'
+    case 'v':
+      return '\v'
+    case '0':
+      return '\0'
+    case '\\':
+      return '\\'
+    case "'":
+      return "'"
+    case '"':
+      return '"'
+    case '?':
+      return '?'
     case 'e':
-    case 'E': return '\x1b'
-    default: return ch ?? ''
+    case 'E':
+      return '\x1b'
+    default:
+      return ch ?? ''
   }
 }
 
@@ -3245,7 +3333,7 @@ export function mapInsomniaBodyToUi(body: InsomniaBody | undefined): {
           const isFile = (p.type ?? '').toLowerCase() === 'file'
           if (isFile) {
             const fp = p.fileName ?? ''
-            const fname = fp ? fp.split(/[\\/]/).pop() ?? fp : ''
+            const fname = fp ? (fp.split(/[\\/]/).pop() ?? fp) : ''
             return {
               id: genKvId(),
               key: p.name,
@@ -3906,18 +3994,20 @@ export function parseSoapUiProject(content: string): SoapUiParseResult {
   }
 
   const projectName = readSoapUiAttr(project, 'name') || 'SoapUI Import'
-  const rawInterfaces = asSoapUiArray(
-    project['con:interface'] ?? project['interface'],
-  ) as Record<string, unknown>[]
+  const rawInterfaces = asSoapUiArray(project['con:interface'] ?? project['interface']) as Record<
+    string,
+    unknown
+  >[]
 
   const interfaces: SoapUiInterface[] = []
   for (const iface of rawInterfaces) {
     const ifaceName = readSoapUiAttr(iface, 'name') || 'Interface'
     const definition = readSoapUiAttr(iface, 'definition')
 
-    const rawOps = asSoapUiArray(
-      iface['con:operation'] ?? iface['operation'],
-    ) as Record<string, unknown>[]
+    const rawOps = asSoapUiArray(iface['con:operation'] ?? iface['operation']) as Record<
+      string,
+      unknown
+    >[]
 
     const operations: SoapUiOperation[] = []
     for (const op of rawOps) {
@@ -3926,18 +4016,16 @@ export function parseSoapUiProject(content: string): SoapUiParseResult {
       // `soapAction` (legacy). Tolerate both.
       const soapAction = readSoapUiAttr(op, 'action', 'soapAction')
 
-      const rawCalls = asSoapUiArray(
-        op['con:call'] ?? op['call'],
-      ) as Record<string, unknown>[]
+      const rawCalls = asSoapUiArray(op['con:call'] ?? op['call']) as Record<string, unknown>[]
 
       const calls: SoapUiCall[] = []
       for (const call of rawCalls) {
         const callName = readSoapUiAttr(call, 'name') || 'Request'
         const endpointUrl = readSoapUiText(call['con:endpoint'] ?? call['endpoint'])
 
-        const requestNodes = asSoapUiArray(
-          call['con:request'] ?? call['request'],
-        ) as Array<Record<string, unknown> | string>
+        const requestNodes = asSoapUiArray(call['con:request'] ?? call['request']) as Array<
+          Record<string, unknown> | string
+        >
 
         if (requestNodes.length === 0) {
           calls.push({ name: callName, endpointUrl, rawXml: '', soapAction })
@@ -3957,8 +4045,7 @@ export function parseSoapUiProject(content: string): SoapUiParseResult {
             else rawXml = readSoapUiText(node)
           }
 
-          const variantName =
-            requestNodes.length > 1 ? `${callName} - request ${i + 1}` : callName
+          const variantName = requestNodes.length > 1 ? `${callName} - request ${i + 1}` : callName
 
           calls.push({
             name: variantName,
@@ -4172,9 +4259,10 @@ function extractRamlNamedFields(
   return out
 }
 
-function extractRamlBody(
-  raw: unknown,
-): { type: 'none' | 'json' | 'xml' | 'text'; content?: string } {
+function extractRamlBody(raw: unknown): {
+  type: 'none' | 'json' | 'xml' | 'text'
+  content?: string
+} {
   if (!isPlainObject(raw)) return { type: 'none' }
 
   // Media-type-keyed form: body: { application/json: { ... } }
