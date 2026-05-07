@@ -140,8 +140,8 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
       activeEnvironmentId: null,
     })
     if (projectId) {
-      await get().fetchEnvironments()
-      await get().fetchGlobalVariables()
+      // Independent fetches — run in parallel to halve setCurrentProject latency.
+      await Promise.all([get().fetchEnvironments(), get().fetchGlobalVariables()])
     }
   },
 

@@ -21,10 +21,7 @@ import {
   resolveRequestBody,
 } from '../lib/variable-resolver'
 import { runAssertions, runScript, createPmApi } from '../lib/test-runner'
-
-function makeId(): string {
-  return Math.random().toString(36).substring(2, 10)
-}
+import { makeId } from '../lib/utils'
 
 function markActiveDirty(): void {
   const { activeTabId, tabs, markDirty } = useTabsStore.getState()

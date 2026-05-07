@@ -12,10 +12,7 @@ import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
-
-function makeId(): string {
-  return Math.random().toString(36).substring(2, 10)
-}
+import { makeId } from '../lib/utils'
 
 /** SOAP metadata stored in endpoint request_schema.soap */
 interface SoapEndpointMeta {

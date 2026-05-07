@@ -5,10 +5,7 @@ import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
-
-function makeId(): string {
-  return Math.random().toString(36).substring(2, 10)
-}
+import { makeId } from '../lib/utils'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }

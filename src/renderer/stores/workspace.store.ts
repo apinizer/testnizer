@@ -23,9 +23,27 @@ interface WorkspaceStore {
   fetchWorkspaces: () => Promise<void>
   createWorkspace: (name: string, description?: string) => Promise<void>
   fetchProjects: (workspaceId: string) => Promise<void>
-  createProject: (name: string, type: 'http' | 'grpc' | 'websocket', saveMode?: string, localPath?: string, iconEmoji?: string, iconColor?: string, displayName?: string) => Promise<string | null>
+  createProject: (
+    name: string,
+    type: 'http' | 'grpc' | 'websocket',
+    saveMode?: string,
+    localPath?: string,
+    iconEmoji?: string,
+    iconColor?: string,
+    displayName?: string,
+  ) => Promise<string | null>
   renameProject: (id: string, newName: string) => Promise<void>
-  updateProject: (id: string, data: { name?: string; display_name?: string | null; save_mode?: string; local_path?: string | null; icon_emoji?: string | null; icon_color?: string | null }) => Promise<void>
+  updateProject: (
+    id: string,
+    data: {
+      name?: string
+      display_name?: string | null
+      save_mode?: string
+      local_path?: string | null
+      icon_emoji?: string | null
+      icon_color?: string | null
+    },
+  ) => Promise<void>
   deleteProject: (id: string) => Promise<void>
   goHome: () => void
   /** Reload tree data from DB for active project */
@@ -62,17 +80,24 @@ interface SavedRequestRow {
 
 async function buildTreeFromDB(projectId: string, projectName: string): Promise<TreeNode[]> {
   try {
-    // Load folders
-    const foldersResult = await window.api?.folder?.list(projectId) as { success: boolean; data?: FolderRow[] }
-    const folders: FolderRow[] = foldersResult?.success && foldersResult.data ? foldersResult.data : []
-
-    // Load endpoints
-    const endpointsResult = await window.api?.endpoint?.listByProject(projectId) as { success: boolean; data?: EndpointRow[] }
-    const endpoints: EndpointRow[] = endpointsResult?.success && endpointsResult.data ? endpointsResult.data : []
-
-    // Load saved requests
-    const savedResult = await window.api?.savedRequest?.list(projectId) as { success: boolean; data?: SavedRequestRow[] }
-    const savedRequests: SavedRequestRow[] = savedResult?.success && savedResult.data ? savedResult.data : []
+    // Three independent IPC calls — fan out in parallel.
+    const [foldersResult, endpointsResult, savedResult] = await Promise.all([
+      window.api?.folder?.list(projectId) as Promise<{ success: boolean; data?: FolderRow[] }>,
+      window.api?.endpoint?.listByProject(projectId) as Promise<{
+        success: boolean
+        data?: EndpointRow[]
+      }>,
+      window.api?.savedRequest?.list(projectId) as Promise<{
+        success: boolean
+        data?: SavedRequestRow[]
+      }>,
+    ])
+    const folders: FolderRow[] =
+      foldersResult?.success && foldersResult.data ? foldersResult.data : []
+    const endpoints: EndpointRow[] =
+      endpointsResult?.success && endpointsResult.data ? endpointsResult.data : []
+    const savedRequests: SavedRequestRow[] =
+      savedResult?.success && savedResult.data ? savedResult.data : []
 
     // Build folder map (id → TreeNode) with direct children (endpoints + saved requests)
     const folderMap = new Map<string, TreeNode>()

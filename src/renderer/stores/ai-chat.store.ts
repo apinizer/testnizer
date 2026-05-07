@@ -6,6 +6,7 @@ import { create } from 'zustand'
 import { resolveVariables } from '../lib/variable-resolver'
 import { useEnvironmentStore } from './environment.store'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import { makeId } from '../lib/utils'
 
 export type AiProvider =
   | 'openai'
@@ -201,10 +202,6 @@ export const PROVIDER_MODELS: Record<AiProvider, AiModelOption[]> = {
 
 function defaultModelFor(provider: AiProvider): string {
   return PROVIDER_MODELS[provider][0]?.value ?? ''
-}
-
-function makeId(): string {
-  return Math.random().toString(36).slice(2, 10)
 }
 
 /** Snapshot of AI Chat state for per-tab caching. */
