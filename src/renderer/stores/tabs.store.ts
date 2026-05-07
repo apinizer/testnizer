@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Tab, ToolProtocol } from '../types'
+import { loadJson, saveJson } from '../lib/persist-helpers'
 
 interface TabsStore {
   tabs: Tab[]
@@ -20,9 +21,20 @@ interface TabsStore {
   markLoading: (id: string, loading: boolean) => void
 }
 
+const STORAGE_KEY = 'testnizer-tabs'
+
+interface PersistedTabs {
+  tabs: Tab[]
+  activeTabId: string | null
+}
+
+const persisted = loadJson<PersistedTabs>(STORAGE_KEY)
+const initialTabs: Tab[] = (persisted?.tabs ?? []).map((t) => ({ ...t, isLoading: false }))
+const initialActiveTabId = persisted?.activeTabId ?? null
+
 export const useTabsStore = create<TabsStore>((set, get) => ({
-  tabs: [],
-  activeTabId: null,
+  tabs: initialTabs,
+  activeTabId: initialActiveTabId,
 
   openTab: (tab) => {
     // Only match existing tabs if the incoming tab references a specific endpoint/savedRequest
@@ -158,3 +170,12 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
       tabs: state.tabs.map((t) => (t.id === id ? { ...t, isLoading: loading } : t)),
     })),
 }))
+
+// Persist on every change. `isLoading` is dropped so a tab that was mid-flight
+// when the app closed does not come back stuck in a loading spinner.
+useTabsStore.subscribe((state) => {
+  saveJson(STORAGE_KEY, {
+    tabs: state.tabs.map((t) => ({ ...t, isLoading: false })),
+    activeTabId: state.activeTabId,
+  })
+})

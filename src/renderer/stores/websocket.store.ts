@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { WsMessage, KeyValuePair } from '../types'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
+import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 
 function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
@@ -127,10 +128,19 @@ function extractState(s: WebSocketStore): TabWsState {
   }
 }
 
+const STORAGE_KEY = 'testnizer-websocket'
+const persisted = loadTabbedState<TabWsState>(STORAGE_KEY, emptyTabState)
+
 export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
-  ...emptyTabState(),
-  _tabStates: new Map(),
-  _currentTabId: null,
+  ...persisted.current,
+  _tabStates: persisted._tabStates,
+  _currentTabId: persisted._currentTabId,
+  // Cached `_unsubscribe` references aren't valid across reloads; force-clear
+  // them so the store's idle state matches a freshly-opened renderer.
+  _unsubscribe: undefined,
+  connectionId: null,
+  connectionState: 'disconnected',
+  events: [],
 
   setUrl: (url) => set({ url }),
 
@@ -195,15 +205,15 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
 
       switch (evt.type) {
         case 'open':
-          applyToOwner({ connectionState: 'connected', errorMessage: null, connectedAt: Date.now() })
+          applyToOwner({
+            connectionState: 'connected',
+            errorMessage: null,
+            connectedAt: Date.now(),
+          })
           break
         case 'message': {
           const contentType: WsMessage['contentType'] =
-            evt.contentType === 'binary'
-              ? 'text'
-              : evt.contentType === 'json'
-                ? 'json'
-                : 'text'
+            evt.contentType === 'binary' ? 'text' : evt.contentType === 'json' ? 'json' : 'text'
           const newMsg: WsMessage = {
             id: evt.messageId ?? makeId(),
             direction: 'received',
@@ -259,8 +269,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
         if (current._currentTabId === ownerTabId) {
           set({
             connectionId: newId,
-            connectionState:
-              current.connectionState === 'connected' ? 'connected' : 'connecting',
+            connectionState: current.connectionState === 'connected' ? 'connected' : 'connecting',
           })
         } else if (ownerTabId !== null) {
           const map = new Map(current._tabStates)
@@ -268,8 +277,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
           map.set(ownerTabId, {
             ...existing,
             connectionId: newId,
-            connectionState:
-              existing.connectionState === 'connected' ? 'connected' : 'connecting',
+            connectionState: existing.connectionState === 'connected' ? 'connected' : 'connecting',
           })
           set({ _tabStates: map })
         }
@@ -357,14 +365,11 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
   setComposerMode: (mode) => set({ composerMode: mode }),
   setAutoScroll: (auto) => set({ autoScroll: auto }),
 
-  addHeader: () =>
-    set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] })),
+  addHeader: () => set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] })),
 
   updateHeader: (id, updates) =>
     set((state) => ({
-      customHeaders: state.customHeaders.map((h) =>
-        h.id === id ? { ...h, ...updates } : h
-      ),
+      customHeaders: state.customHeaders.map((h) => (h.id === id ? { ...h, ...updates } : h)),
     })),
 
   removeHeader: (id) =>
@@ -374,8 +379,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
 
   setHeaders: (headers) => set({ customHeaders: headers }),
 
-  addMessage: (msg) =>
-    set((state) => ({ messages: [...state.messages, msg] })),
+  addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
 
   setConnectionState: (connectionState) => set({ connectionState }),
   setErrorMessage: (errorMessage) => set({ errorMessage }),
@@ -421,4 +425,9 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
     if (_unsubscribe) _unsubscribe()
     set({ ...emptyTabState() })
   },
+}))
+
+attachTabbedPersist(useWebSocketStore, STORAGE_KEY, extractState, (s) => ({
+  _tabStates: s._tabStates,
+  _currentTabId: s._currentTabId,
 }))

@@ -4,6 +4,7 @@ import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
+import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 
 function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
@@ -205,15 +206,17 @@ function extractState(s: GraphQLStore): TabGraphQLState {
   }
 }
 
+const STORAGE_KEY = 'testnizer-graphql'
+const persisted = loadTabbedState<TabGraphQLState>(STORAGE_KEY, emptyTabState)
+
 export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
-  ...emptyTabState(),
+  ...persisted.current,
+  _tabStates: persisted._tabStates,
+  _currentTabId: persisted._currentTabId,
 
   schemaData: null,
   isIntrospecting: false,
   introspectError: null,
-
-  _tabStates: new Map(),
-  _currentTabId: null,
 
   setUrl: (url) => set({ url }),
   setQuery: (query) => set({ query }),
@@ -619,4 +622,9 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
       isIntrospecting: false,
       introspectError: null,
     }),
+}))
+
+attachTabbedPersist(useGraphQLStore, STORAGE_KEY, extractState, (s) => ({
+  _tabStates: s._tabStates,
+  _currentTabId: s._currentTabId,
 }))

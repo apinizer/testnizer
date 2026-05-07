@@ -8,6 +8,7 @@ import type {
   ApiResponse,
   ConsoleLog,
 } from '../types'
+import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
@@ -125,10 +126,14 @@ function extractState(s: RequestStore): TabRequestState {
   }
 }
 
+// ─── Persistence ──────────────────────────────────────────────
+const STORAGE_KEY = 'testnizer-request'
+const persisted = loadTabbedState<TabRequestState>(STORAGE_KEY, emptyTabState)
+
 export const useRequestStore = create<RequestStore>((set, get) => ({
-  ...emptyTabState(),
-  _tabStates: new Map(),
-  _currentTabId: null,
+  ...persisted.current,
+  _tabStates: persisted._tabStates,
+  _currentTabId: persisted._currentTabId,
   _inflightRequestId: null,
 
   setMethod: (method) => {
@@ -508,4 +513,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       auth: data.auth || { type: 'none' },
     })
   },
+}))
+
+attachTabbedPersist(useRequestStore, STORAGE_KEY, extractState, (s) => ({
+  _tabStates: s._tabStates,
+  _currentTabId: s._currentTabId,
 }))

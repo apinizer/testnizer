@@ -4,6 +4,7 @@ import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
+import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 
 function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
@@ -289,10 +290,13 @@ function extractState(s: GrpcStore): TabGrpcState {
   }
 }
 
+const STORAGE_KEY = 'testnizer-grpc'
+const persisted = loadTabbedState<TabGrpcState>(STORAGE_KEY, emptyTabState)
+
 export const useGrpcStore = create<GrpcStore>((set, get) => ({
-  ...emptyTabState(),
-  _tabStates: new Map(),
-  _currentTabId: null,
+  ...persisted.current,
+  _tabStates: persisted._tabStates,
+  _currentTabId: persisted._currentTabId,
 
   setAddress: (address) => set({ address: stripGrpcScheme(address) }),
   setUseTls: (useTls) => set({ useTls }),
@@ -828,4 +832,9 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     if (prev) prev()
     set({ ...emptyTabState() })
   },
+}))
+
+attachTabbedPersist(useGrpcStore, STORAGE_KEY, extractState, (s) => ({
+  _tabStates: s._tabStates,
+  _currentTabId: s._currentTabId,
 }))

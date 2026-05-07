@@ -5,6 +5,7 @@
 import { create } from 'zustand'
 import { resolveVariables } from '../lib/variable-resolver'
 import { useEnvironmentStore } from './environment.store'
+import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 
 export type AiProvider =
   | 'openai'
@@ -37,21 +38,21 @@ export interface AiProviderInfo {
  * (large frontier labs first, then aggregators, then specialized providers).
  */
 export const AI_PROVIDERS: AiProviderInfo[] = [
-  { id: 'openai',     label: 'OpenAI',     color: '#10A37F', letter: 'O' },
-  { id: 'anthropic',  label: 'Anthropic',  color: '#D97757', letter: 'A' },
-  { id: 'google',     label: 'Google',     color: '#4285F4', letter: 'G' },
-  { id: 'xai',        label: 'xAI',        color: '#000000', letter: 'X' },
-  { id: 'deepseek',   label: 'DeepSeek',   color: '#4D6BFE', letter: 'D' },
-  { id: 'mistral',    label: 'Mistral',    color: '#FF7000', letter: 'M' },
-  { id: 'groq',       label: 'Groq',       color: '#F55036', letter: 'G' },
+  { id: 'openai', label: 'OpenAI', color: '#10A37F', letter: 'O' },
+  { id: 'anthropic', label: 'Anthropic', color: '#D97757', letter: 'A' },
+  { id: 'google', label: 'Google', color: '#4285F4', letter: 'G' },
+  { id: 'xai', label: 'xAI', color: '#000000', letter: 'X' },
+  { id: 'deepseek', label: 'DeepSeek', color: '#4D6BFE', letter: 'D' },
+  { id: 'mistral', label: 'Mistral', color: '#FF7000', letter: 'M' },
+  { id: 'groq', label: 'Groq', color: '#F55036', letter: 'G' },
   { id: 'perplexity', label: 'Perplexity', color: '#1F6FEB', letter: 'P' },
-  { id: 'cerebras',   label: 'Cerebras',   color: '#F26522', letter: 'C' },
-  { id: 'cohere',     label: 'Cohere',     color: '#39594D', letter: 'C' },
-  { id: 'fireworks',  label: 'Fireworks',  color: '#5B5BD6', letter: 'F' },
-  { id: 'deepinfra',  label: 'DeepInfra',  color: '#5C46E1', letter: 'D' },
-  { id: 'together',   label: 'Together',   color: '#0F6FFF', letter: 'T' },
+  { id: 'cerebras', label: 'Cerebras', color: '#F26522', letter: 'C' },
+  { id: 'cohere', label: 'Cohere', color: '#39594D', letter: 'C' },
+  { id: 'fireworks', label: 'Fireworks', color: '#5B5BD6', letter: 'F' },
+  { id: 'deepinfra', label: 'DeepInfra', color: '#5C46E1', letter: 'D' },
+  { id: 'together', label: 'Together', color: '#0F6FFF', letter: 'T' },
   { id: 'openrouter', label: 'OpenRouter', color: '#6E56CF', letter: 'R' },
-  { id: 'custom',     label: 'Custom',     color: '#8A8FA3', letter: '⚙' },
+  { id: 'custom', label: 'Custom', color: '#8A8FA3', letter: '⚙' },
 ]
 
 export interface AiChatMessage {
@@ -168,7 +169,10 @@ export const PROVIDER_MODELS: Record<AiProvider, AiModelOption[]> = {
   fireworks: [
     { value: 'accounts/fireworks/models/deepseek-v3', label: 'deepseek-v3' },
     { value: 'accounts/fireworks/models/deepseek-r1', label: 'deepseek-r1' },
-    { value: 'accounts/fireworks/models/llama-v3p3-70b-instruct', label: 'llama-v3p3-70b-instruct' },
+    {
+      value: 'accounts/fireworks/models/llama-v3p3-70b-instruct',
+      label: 'llama-v3p3-70b-instruct',
+    },
     { value: 'accounts/fireworks/models/qwen2p5-72b-instruct', label: 'qwen2p5-72b-instruct' },
     { value: 'accounts/fireworks/models/qwen2p5-coder-32b-instruct', label: 'qwen2p5-coder-32b' },
     { value: 'accounts/fireworks/models/mixtral-8x22b-instruct', label: 'mixtral-8x22b-instruct' },
@@ -295,10 +299,13 @@ function findTabByPendingId(
   return null
 }
 
+const STORAGE_KEY = 'testnizer-ai-chat'
+const persisted = loadTabbedState<TabAiChatState>(STORAGE_KEY, emptyTabState)
+
 export const useAiChatStore = create<AiChatStore>((set, get) => ({
-  ...emptyTabState(),
-  _tabStates: new Map(),
-  _currentTabId: null,
+  ...persisted.current,
+  _tabStates: persisted._tabStates,
+  _currentTabId: persisted._currentTabId,
 
   setProvider: (provider) => {
     // Switching provider auto-selects a sensible default model unless the
@@ -327,9 +334,7 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     // Resolve {{var}} substitutions against active env + globals.
     const envVars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedContent = resolveVariables(trimmed, envVars)
-    const resolvedSystem = state.systemPrompt
-      ? resolveVariables(state.systemPrompt, envVars)
-      : ''
+    const resolvedSystem = state.systemPrompt ? resolveVariables(state.systemPrompt, envVars) : ''
     const resolvedUrl = state.customUrl
       ? resolveVariables(state.customUrl, envVars)
       : state.customUrl
@@ -412,9 +417,7 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     const found = findTabByPendingId(state, messageId)
     if (!found) return
     const updatedMessages = found.snapshot.messages.map((m) =>
-      m.id === found.snapshot.pendingResponseId
-        ? { ...m, content: m.content + delta }
-        : m,
+      m.id === found.snapshot.pendingResponseId ? { ...m, content: m.content + delta } : m,
     )
     if (found.isLive) {
       set({ messages: updatedMessages })
@@ -507,6 +510,11 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     tabStates.delete(tabId)
     set({ _tabStates: tabStates })
   },
+}))
+
+attachTabbedPersist(useAiChatStore, STORAGE_KEY, extractState, (s) => ({
+  _tabStates: s._tabStates,
+  _currentTabId: s._currentTabId,
 }))
 
 // ─── IPC subscriptions ──────────────────────────────────────

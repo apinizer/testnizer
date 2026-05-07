@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useConsoleStore } from './console.store'
+import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -92,10 +93,18 @@ function extractState(s: SocketIOStore): TabSioState {
   }
 }
 
+const STORAGE_KEY = 'testnizer-socketio'
+const persisted = loadTabbedState<TabSioState>(STORAGE_KEY, emptyState)
+
 export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
-  ...emptyState(),
-  _tabStates: new Map(),
-  _currentTabId: null,
+  ...persisted.current,
+  _tabStates: persisted._tabStates,
+  _currentTabId: persisted._currentTabId,
+  // transient — never restored from disk
+  connectionId: null,
+  connectionState: 'disconnected',
+  errorMessage: null,
+  events: [],
 
   setUrl: (url) => set({ url }),
   setNamespace: (namespace) => set({ namespace }),
@@ -240,4 +249,9 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
     tabStates.delete(tabId)
     set({ _tabStates: tabStates })
   },
+}))
+
+attachTabbedPersist(useSocketIOStore, STORAGE_KEY, extractState, (s) => ({
+  _tabStates: s._tabStates,
+  _currentTabId: s._currentTabId,
 }))

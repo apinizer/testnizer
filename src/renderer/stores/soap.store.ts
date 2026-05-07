@@ -8,6 +8,7 @@ import type {
   ApiResponse,
 } from '../types'
 import { useResponseStore } from './response.store'
+import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
@@ -159,27 +160,17 @@ function emptySoapTabState(): TabSoapState {
   }
 }
 
+const STORAGE_KEY = 'testnizer-soap'
+const persisted = loadTabbedState<TabSoapState>(STORAGE_KEY, emptySoapTabState)
+
 export const useSoapStore = create<SoapStore>((set, get) => ({
-  wsdlUrl: '',
-  parsedWsdl: null,
+  ...persisted.current,
+  // Transient — never restored
   isLoading: false,
   parseError: null,
   _inflightRequestId: null,
-
-  selectedService: null,
-  selectedPort: null,
-  selectedOperation: null,
-
-  formValues: {},
-  rawXml: '',
-  bodyMode: 'raw',
-
-  wsSecurity: { ...defaultWsSecurity },
-
-  endpointUrl: '',
-
-  _tabStates: new Map(),
-  _currentTabId: null,
+  _tabStates: persisted._tabStates,
+  _currentTabId: persisted._currentTabId,
 
   setWsdlUrl: (url) => set({ wsdlUrl: url }),
 
@@ -538,6 +529,11 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     const port = get().getSelectedPort()
     return port?.operations.find((o) => o.name === get().selectedOperation)
   },
+}))
+
+attachTabbedPersist(useSoapStore, STORAGE_KEY, extractSoapTabState, (s) => ({
+  _tabStates: s._tabStates,
+  _currentTabId: s._currentTabId,
 }))
 
 function flattenSchema(schema: Record<string, unknown>): Record<string, string> {

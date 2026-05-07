@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useConsoleStore } from './console.store'
+import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 
 export type McpTransport = 'http' | 'sse' | 'stdio'
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
@@ -110,10 +111,21 @@ function extractState(s: McpStore): TabMcpState {
   }
 }
 
+const STORAGE_KEY = 'testnizer-mcp'
+const persisted = loadTabbedState<TabMcpState>(STORAGE_KEY, emptyState)
+
 export const useMcpStore = create<McpStore>((set, get) => ({
-  ...emptyState(),
-  _tabStates: new Map(),
-  _currentTabId: null,
+  ...persisted.current,
+  _tabStates: persisted._tabStates,
+  _currentTabId: persisted._currentTabId,
+  // transient — never restored from disk
+  connectionId: null,
+  connectionState: 'disconnected',
+  errorMessage: null,
+  tools: [],
+  result: null,
+  resultError: null,
+  isInvoking: false,
 
   setTransport: (transport) => set({ transport }),
   setUrl: (url) => set({ url }),
@@ -251,4 +263,9 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     tabStates.delete(tabId)
     set({ _tabStates: tabStates })
   },
+}))
+
+attachTabbedPersist(useMcpStore, STORAGE_KEY, extractState, (s) => ({
+  _tabStates: s._tabStates,
+  _currentTabId: s._currentTabId,
 }))

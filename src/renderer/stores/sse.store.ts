@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { KeyValuePair, SseEvent } from '../types'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
+import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 
 function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
@@ -147,10 +148,13 @@ function extractState(s: SseStore): TabSseState {
   }
 }
 
+const STORAGE_KEY = 'testnizer-sse'
+const persisted = loadTabbedState<TabSseState>(STORAGE_KEY, emptyTabState)
+
 export const useSseStore = create<SseStore>((set, get) => ({
-  ...emptyTabState(),
-  _tabStates: new Map(),
-  _currentTabId: null,
+  ...persisted.current,
+  _tabStates: persisted._tabStates,
+  _currentTabId: persisted._currentTabId,
 
   setUrl: (url) => set({ url }),
   setMethod: (method) => set({ method }),
@@ -180,12 +184,9 @@ export const useSseStore = create<SseStore>((set, get) => ({
     // user already supplied one (case-insensitive). Mirrors what curl/Postman do.
     const sendBody = method !== 'GET' && resolvedBody.trim().length > 0
     if (sendBody) {
-      const hasContentType = Object.keys(headerMap).some(
-        (k) => k.toLowerCase() === 'content-type',
-      )
+      const hasContentType = Object.keys(headerMap).some((k) => k.toLowerCase() === 'content-type')
       if (!hasContentType) {
-        headerMap['Content-Type'] =
-          bodyType === 'json' ? 'application/json' : 'text/plain'
+        headerMap['Content-Type'] = bodyType === 'json' ? 'application/json' : 'text/plain'
       }
     }
 
@@ -298,8 +299,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
           set({
             connectionId: newId,
             // Keep the state set by the 'open' event when it has already fired.
-            connectionState:
-              current.connectionState === 'connected' ? 'connected' : 'connecting',
+            connectionState: current.connectionState === 'connected' ? 'connected' : 'connecting',
           })
         } else if (ownerTabId !== null) {
           const map = new Map(current._tabStates)
@@ -307,8 +307,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
           map.set(ownerTabId, {
             ...existing,
             connectionId: newId,
-            connectionState:
-              existing.connectionState === 'connected' ? 'connected' : 'connecting',
+            connectionState: existing.connectionState === 'connected' ? 'connected' : 'connecting',
           })
           set({ _tabStates: map })
         }
@@ -355,14 +354,11 @@ export const useSseStore = create<SseStore>((set, get) => ({
 
   clearEvents: () => set({ events: [] }),
 
-  addHeader: () =>
-    set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] })),
+  addHeader: () => set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] })),
 
   updateHeader: (id, updates) =>
     set((state) => ({
-      customHeaders: state.customHeaders.map((h) =>
-        h.id === id ? { ...h, ...updates } : h
-      ),
+      customHeaders: state.customHeaders.map((h) => (h.id === id ? { ...h, ...updates } : h)),
     })),
 
   removeHeader: (id) =>
@@ -370,8 +366,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
       customHeaders: state.customHeaders.filter((h) => h.id !== id),
     })),
 
-  addEvent: (event) =>
-    set((state) => ({ events: [...state.events, event] })),
+  addEvent: (event) => set((state) => ({ events: [...state.events, event] })),
 
   setConnectionState: (connectionState) => set({ connectionState }),
   setErrorMessage: (errorMessage) => set({ errorMessage }),
@@ -425,4 +420,9 @@ export const useSseStore = create<SseStore>((set, get) => ({
     if (_unsubscribe) _unsubscribe()
     set({ ...emptyTabState() })
   },
+}))
+
+attachTabbedPersist(useSseStore, STORAGE_KEY, extractState, (s) => ({
+  _tabStates: s._tabStates,
+  _currentTabId: s._currentTabId,
 }))
