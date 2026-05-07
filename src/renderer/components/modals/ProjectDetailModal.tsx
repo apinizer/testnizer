@@ -66,8 +66,10 @@ type Tab =
 
 const DEFAULT_SETTINGS: ProjectSettings = {
   auth: { type: 'none' },
-  preScript: '// Runs before every request in this project\n// pm.environment.set("timestamp", Date.now())\n',
-  testScript: '// Runs after every response in this project\n// pm.test("Status is 2xx", () => pm.response.to.be.ok)\n',
+  preScript:
+    '// Runs before every request in this project\n// pm.environment.set("timestamp", Date.now())\n',
+  testScript:
+    '// Runs after every response in this project\n// pm.test("Status is 2xx", () => pm.response.to.be.ok)\n',
   // Postman-style general settings (apply per-project)
   requestTimeout: 30000,
   maxResponseSizeMb: 50,
@@ -118,7 +120,12 @@ export default function ProjectDetailModal() {
   const [editGitToken, setEditGitToken] = useState('')
   const [showToken, setShowToken] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [gitConfig, setGitConfig] = useState<{ repoUrl?: string; username?: string; branch?: string; token?: string } | null>(null)
+  const [gitConfig, setGitConfig] = useState<{
+    repoUrl?: string
+    username?: string
+    branch?: string
+    token?: string
+  } | null>(null)
 
   const [editIconEmoji, setEditIconEmoji] = useState('')
   const [editIconColor, setEditIconColor] = useState('#2D5FA0')
@@ -160,7 +167,10 @@ export default function ProjectDetailModal() {
 
   async function loadGitConfig(projectId: string) {
     try {
-      const result = await window.api?.settings?.get(`git.${projectId}`) as { success: boolean; data?: { repoUrl?: string; username?: string; branch?: string; token?: string } }
+      const result = (await window.api?.settings?.get(`git.${projectId}`)) as {
+        success: boolean
+        data?: { repoUrl?: string; username?: string; branch?: string; token?: string }
+      }
       if (result?.success && result.data) {
         setGitConfig(result.data)
         setEditGitUrl(result.data.repoUrl || '')
@@ -177,7 +187,7 @@ export default function ProjectDetailModal() {
 
   async function loadProjectSettings(projectId: string) {
     try {
-      const result = await window.api?.settings?.get(`project.${projectId}.settings`) as {
+      const result = (await window.api?.settings?.get(`project.${projectId}.settings`)) as {
         success: boolean
         data?: Partial<ProjectSettings>
       }
@@ -199,7 +209,10 @@ export default function ProjectDetailModal() {
   }
 
   async function handleSelectDir() {
-    const result = await window.api?.save?.selectDirectory() as { success: boolean; data?: string }
+    const result = (await window.api?.save?.selectDirectory()) as {
+      success: boolean
+      data?: string
+    }
     if (result?.success && result.data) {
       setEditLocalPath(result.data)
     }
@@ -230,14 +243,23 @@ export default function ProjectDetailModal() {
             branch: editGitBranch,
             token: editGitToken || '',
           })
-          setGitConfig({ repoUrl: editGitUrl, username: editGitUser, branch: editGitBranch, token: editGitToken || gitConfig?.token })
-        } catch { /* non-critical */ }
+          setGitConfig({
+            repoUrl: editGitUrl,
+            username: editGitUser,
+            branch: editGitBranch,
+            token: editGitToken || gitConfig?.token,
+          })
+        } catch {
+          /* non-critical */
+        }
       }
     }
 
     try {
       await window.api?.settings?.set(`project.${activeProject.id}.settings`, projSettings)
-    } catch { /* non-critical */ }
+    } catch {
+      /* non-critical */
+    }
 
     setSaving(false)
   }
@@ -382,9 +404,7 @@ export default function ProjectDetailModal() {
                 updatedAt={activeProject.updated_at}
               />
             )}
-            {tab === 'authorization' && (
-              <AuthPane auth={projSettings.auth} onChange={updateAuth} />
-            )}
+            {tab === 'authorization' && <AuthPane auth={projSettings.auth} onChange={updateAuth} />}
             {tab === 'preRequest' && (
               <ScriptPane
                 title={t('tab.preRequest')}
@@ -466,11 +486,13 @@ export default function ProjectDetailModal() {
               />
             )}
             {tab === 'certificates' && (
-              <CertificatesPane projectId={activeProject.id} />
+              <CertificatesPane
+                projectId={activeProject.id}
+                settings={projSettings}
+                onChange={updateProjSettings}
+              />
             )}
-            {tab === 'proxy' && (
-              <ProxyPane settings={projSettings} onChange={updateProjSettings} />
-            )}
+            {tab === 'proxy' && <ProxyPane settings={projSettings} onChange={updateProjSettings} />}
             {tab === 'update' && (
               <UpdatePane
                 settings={projSettings}

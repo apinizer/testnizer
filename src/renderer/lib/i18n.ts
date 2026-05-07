@@ -114,7 +114,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'aiChat.showKey': 'Show API key',
     'aiChat.hideKey': 'Hide API key',
     'aiChat.systemPrompt': 'System prompt',
-    'aiChat.systemPromptPlaceholder': 'Optional — guide the assistant\'s behavior',
+    'aiChat.systemPromptPlaceholder': "Optional — guide the assistant's behavior",
     'aiChat.customUrlOptional': 'Custom URL (optional override)',
     'aiChat.customUrlRequired': 'Custom URL (required)',
     'aiChat.send': 'Send',
@@ -441,6 +441,28 @@ const translations: Record<Locale, Record<string, string>> = {
     'certs.save': 'Save certificate',
     'certs.none': 'No certificates yet.',
     'certs.addFirst': 'Add your first certificate.',
+
+    // TLS protocol / cipher overrides (lives inside Certificates pane)
+    'tls.title': 'TLS protocol & ciphers',
+    'tls.subtitle':
+      'Override TLS version range and cipher suites for legacy or deliberately-broken servers.',
+    'tls.verifyHint':
+      'Disable only when connecting to test servers with self-signed or expired certificates.',
+    'tls.minVersion': 'Min TLS version',
+    'tls.maxVersion': 'Max TLS version',
+    'tls.auto': 'Auto (Node default)',
+    'tls.cipherPreset': 'Cipher preset',
+    'tls.presetModern': 'Modern',
+    'tls.presetIntermediate': 'Intermediate',
+    'tls.presetLegacy': 'Legacy (UNSAFE)',
+    'tls.presetCustom': 'Custom',
+    'tls.legacyWarn':
+      'Legacy preset enables RC4 / 3DES / NULL ciphers and DH < 2048. Use only against test servers.',
+    'tls.ciphersPlaceholder': 'ECDHE-RSA-AES128-GCM-SHA256:HIGH:!aNULL:!MD5:!RC4',
+    'tls.ciphersHint':
+      'OpenSSL cipher string. Append "@SECLEVEL=0" if you need RC4 / 3DES / DH < 2048.',
+    'tls.revocationDisclaimer':
+      'Certificate revocation (CRL / OCSP) checks are not yet implemented — revoked certs may appear valid.',
 
     // Proxy tab
     'proxy.title': 'Proxy',
@@ -1238,6 +1260,28 @@ const translations: Record<Locale, Record<string, string>> = {
     'certs.save': 'Sertifikayı kaydet',
     'certs.none': 'Henüz sertifika yok.',
     'certs.addFirst': 'İlk sertifikanızı ekleyin.',
+
+    // TLS protokol / şifre suite override (Sertifikalar panel'i içinde)
+    'tls.title': 'TLS protokolü & şifreler',
+    'tls.subtitle':
+      "Eski veya kasıtlı bozuk sunucular için TLS sürüm aralığını ve şifre suite'lerini geçersiz kılın.",
+    'tls.verifyHint':
+      'Yalnızca self-signed veya süresi dolmuş sertifikalı test sunucularına bağlanırken kapatın.',
+    'tls.minVersion': 'Min TLS sürümü',
+    'tls.maxVersion': 'Max TLS sürümü',
+    'tls.auto': 'Otomatik (Node varsayılanı)',
+    'tls.cipherPreset': 'Şifre preset',
+    'tls.presetModern': 'Modern',
+    'tls.presetIntermediate': 'Orta',
+    'tls.presetLegacy': 'Eski (GÜVENSİZ)',
+    'tls.presetCustom': 'Özel',
+    'tls.legacyWarn':
+      "Eski preset RC4 / 3DES / NULL şifrelerini ve DH < 2048'i etkinleştirir. Yalnızca test sunucularına karşı kullanın.",
+    'tls.ciphersPlaceholder': 'ECDHE-RSA-AES128-GCM-SHA256:HIGH:!aNULL:!MD5:!RC4',
+    'tls.ciphersHint':
+      'OpenSSL şifre dizisi. RC4 / 3DES / DH < 2048 gerekirse "@SECLEVEL=0" ekleyin.',
+    'tls.revocationDisclaimer':
+      'Sertifika iptal kontrolleri (CRL / OCSP) henüz implemente edilmedi — iptal edilmiş sertifikalar geçerli görünebilir.',
 
     // Proxy tab
     'proxy.title': 'Proxy',

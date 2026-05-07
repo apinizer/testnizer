@@ -270,6 +270,17 @@ interface RequestApi {
     followRedirects?: boolean
     sslVerification?: boolean
     proxy?: unknown
+    /**
+     * Per-project TLS overrides (resolved into engine-shape `tls` in the
+     * request handler). The renderer sends preset names; the main process
+     * maps them to the actual OpenSSL cipher string.
+     */
+    tls?: {
+      minVersion?: string
+      maxVersion?: string
+      cipherPreset?: 'modern' | 'intermediate' | 'legacy' | 'custom'
+      ciphersCustom?: string
+    }
     _workspaceId?: string
     _projectId?: string
     _endpointId?: string

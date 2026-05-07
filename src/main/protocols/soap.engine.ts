@@ -12,6 +12,7 @@ import {
 } from './wsse.engine'
 import { applyDefaultUserAgent } from '../lib/user-agent'
 import { classifyTransportError } from '../lib/error-classifier'
+import { normaliseTlsVersion, type TlsOptions } from '../lib/tls-presets'
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -78,6 +79,12 @@ export interface SoapExecuteOptions {
   wsSecurity?: WsSecurityConfig
   timeout?: number
   sslVerification?: boolean
+  /**
+   * TLS protocol / cipher override (same shape as `HttpRequestOptions.tls`).
+   * Lets SOAP requests reach legacy WS-* endpoints that still mandate TLS 1.0
+   * / 1.1 or non-default cipher suites.
+   */
+  tls?: TlsOptions
 }
 
 export interface SoapApiResponse {
@@ -261,10 +268,7 @@ interface WsdlXmlStructure {
   /** portType name (no NS prefix) → operation names */
   portTypeToOps: Map<string, string[]>
   /** service name (no NS prefix) → ports */
-  services: Map<
-    string,
-    Array<{ name: string; bindingName: string; address?: string }>
-  >
+  services: Map<string, Array<{ name: string; bindingName: string; address?: string }>>
   /** binding name + opName → soapAction */
   bindingOpSoapAction: Map<string, string>
 }
@@ -349,9 +353,7 @@ function parseWsdlXmlStructure(wsdlXml: string): WsdlXmlStructure {
       if (!pName || !bRef) continue
       // <soap:address location="..."> sibling
       const addrEl = findChildByLocalName(port, 'address', /\bsoap\b/i)
-      const address = addrEl
-        ? (addrEl['@_location'] as string | undefined)
-        : undefined
+      const address = addrEl ? (addrEl['@_location'] as string | undefined) : undefined
       ports.push({ name: pName, bindingName: bRef, address })
     }
     if (ports.length > 0) result.services.set(sName, ports)
@@ -455,7 +457,11 @@ export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
     // `soap.createClientAsync` lumps fetch failures and XML parse errors
     // together as plain Errors — split them so the user knows which side broke.
     const raw = err instanceof Error ? err.message : String(err)
-    if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ESOCKETTIMEDOUT|ENETUNREACH|EAI_AGAIN|status code|Invalid URL|fetch failed/i.test(raw)) {
+    if (
+      /ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ESOCKETTIMEDOUT|ENETUNREACH|EAI_AGAIN|status code|Invalid URL|fetch failed/i.test(
+        raw,
+      )
+    ) {
       const classified = classifyTransportError(err)
       throw new Error(`WSDL fetch failed: ${classified.message}`)
     }
@@ -490,32 +496,23 @@ export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
 
     // Union of port names from XML and describe()
     const portNames = Array.from(
-      new Set([
-        ...xmlPorts.map((p) => p.name),
-        ...Object.keys(describePorts),
-      ]),
+      new Set([...xmlPorts.map((p) => p.name), ...Object.keys(describePorts)]),
     )
 
     for (const portName of portNames) {
       const xmlPort = xmlPorts.find((p) => p.name === portName)
       const describePort = describePorts[portName] ?? {}
       const portEndpoint =
-        xmlPort?.address ||
-        extractPortEndpoint(client, serviceName, portName) ||
-        wsdlUrl
+        xmlPort?.address || extractPortEndpoint(client, serviceName, portName) || wsdlUrl
 
       if (!firstEndpointUrl) {
         firstEndpointUrl = portEndpoint
       }
 
       // Build canonical op list: prefer portType ops (XML), fallback to describe
-      const ptName = xmlPort
-        ? xmlStructure.bindingToPortType.get(xmlPort.bindingName)
-        : undefined
-      const xmlOps = ptName ? xmlStructure.portTypeToOps.get(ptName) ?? [] : []
-      const opNames = Array.from(
-        new Set([...xmlOps, ...Object.keys(describePort)]),
-      )
+      const ptName = xmlPort ? xmlStructure.bindingToPortType.get(xmlPort.bindingName) : undefined
+      const xmlOps = ptName ? (xmlStructure.portTypeToOps.get(ptName) ?? []) : []
+      const opNames = Array.from(new Set([...xmlOps, ...Object.keys(describePort)]))
 
       const operations: WsdlOperation[] = []
       for (const opName of opNames) {
@@ -525,8 +522,7 @@ export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
 
         // soapAction: prefer binding-specific value from XML; fallback to soap lib helper
         const xmlAction =
-          xmlPort &&
-          xmlStructure.bindingOpSoapAction.get(`${xmlPort.bindingName}::${opName}`)
+          xmlPort && xmlStructure.bindingOpSoapAction.get(`${xmlPort.bindingName}::${opName}`)
         const soapAction = xmlAction || extractSoapAction(client, portName, opName)
         const exampleRequest = generateEnvelope(
           opName,
@@ -775,6 +771,22 @@ export async function executeSoap(options: SoapExecuteOptions): Promise<SoapApiR
     // Inject default User-Agent unless the caller supplied one (any case).
     applyDefaultUserAgent(requestHeaders)
 
+    // Build https.Agent with optional TLS protocol/cipher overrides so SOAP
+    // requests can reach legacy WS-* endpoints (TLS 1.0/1.1, custom ciphers)
+    // the same way HTTP requests can.
+    const httpsAgentOpts: https.AgentOptions = {
+      rejectUnauthorized: options.sslVerification !== false,
+    }
+    if (options.tls) {
+      const min = normaliseTlsVersion(options.tls.minVersion)
+      const max = normaliseTlsVersion(options.tls.maxVersion)
+      if (min) httpsAgentOpts.minVersion = min
+      if (max) httpsAgentOpts.maxVersion = max
+      if (options.tls.ciphers && options.tls.ciphers.trim()) {
+        httpsAgentOpts.ciphers = options.tls.ciphers.trim()
+      }
+    }
+
     // Execute via axios for full control
     const response = await axios.post<string>(options.endpointUrl, envelope, {
       headers: requestHeaders,
@@ -782,9 +794,7 @@ export async function executeSoap(options: SoapExecuteOptions): Promise<SoapApiR
       responseType: 'text',
       transformResponse: [(d: string) => d],
       validateStatus: () => true,
-      httpsAgent: new https.Agent({
-        rejectUnauthorized: options.sslVerification !== false,
-      }),
+      httpsAgent: new https.Agent(httpsAgentOpts),
       httpAgent: new http.Agent(),
     })
 

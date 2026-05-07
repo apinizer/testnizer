@@ -28,6 +28,20 @@ export interface ProjectProxy {
   auth?: { username: string; password: string }
 }
 
+export type TlsVersionLabel = 'TLSv1' | 'TLSv1.1' | 'TLSv1.2' | 'TLSv1.3'
+export type CipherPresetName = 'modern' | 'intermediate' | 'legacy' | 'custom'
+
+export interface ProjectTls {
+  /** Lowest acceptable protocol; empty string / undefined → Node default. */
+  minVersion?: TlsVersionLabel | ''
+  /** Highest acceptable protocol; empty string / undefined → Node default. */
+  maxVersion?: TlsVersionLabel | ''
+  /** Cipher preset selector. `custom` reads `ciphersCustom`. */
+  cipherPreset?: CipherPresetName
+  /** Free-form OpenSSL cipher string, used when `cipherPreset === 'custom'`. */
+  ciphersCustom?: string
+}
+
 export interface ProjectSettings {
   auth: ProjectAuth
   preScript: string
@@ -45,6 +59,8 @@ export interface ProjectSettings {
   sslVerification: boolean
   followRedirects: boolean
   workingDirectory: string
+  // TLS protocol / cipher overrides — surfaced in Certificates pane
+  tls?: ProjectTls
   // Proxy
   proxy: ProjectProxy
   // Update
@@ -63,13 +79,42 @@ export const BASE_INP: React.CSSProperties = {
   boxSizing: 'border-box',
 }
 
-const COLORS = ['#2D5FA0', '#e85d4a', '#f5a623', '#1a7a4a', '#0066cc', '#7c4dff', '#e91e63', '#00897b', '#555555']
-const EMOJIS = ['🚀', '⚡', '🔥', '🎯', '🌐', '🔌', '💻', '📡', '🛡️', '⚙️', '📦', '🗄️', '🔑', '💡', '🤖', '🌊']
+const COLORS = [
+  '#2D5FA0',
+  '#e85d4a',
+  '#f5a623',
+  '#1a7a4a',
+  '#0066cc',
+  '#7c4dff',
+  '#e91e63',
+  '#00897b',
+  '#555555',
+]
+const EMOJIS = [
+  '🚀',
+  '⚡',
+  '🔥',
+  '🎯',
+  '🌐',
+  '🔌',
+  '💻',
+  '📡',
+  '🛡️',
+  '⚙️',
+  '📦',
+  '🗄️',
+  '🔑',
+  '💡',
+  '🤖',
+  '🌊',
+]
 
 export function PaneHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div className="mb-5">
-      <div className="text-[16px] font-semibold" style={{ color: 'var(--heading)' }}>{title}</div>
+      <div className="text-[16px] font-semibold" style={{ color: 'var(--heading)' }}>
+        {title}
+      </div>
       {subtitle && (
         <div className="mt-0.5" style={{ color: 'var(--muted)' }}>
           {subtitle}
@@ -102,7 +147,10 @@ function SectionCard({ title, children }: { title?: string; children: React.Reac
       style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
     >
       {title && (
-        <div className="mb-3 font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+        <div
+          className="mb-3 font-semibold uppercase tracking-wide"
+          style={{ color: 'var(--muted)' }}
+        >
           {title}
         </div>
       )}
@@ -136,7 +184,9 @@ function Toggle({
       <div className="flex-1">
         <div style={{ color: 'var(--text)' }}>{label}</div>
         {hint && (
-          <div className="mt-0.5" style={{ color: 'var(--muted)' }}>{hint}</div>
+          <div className="mt-0.5" style={{ color: 'var(--muted)' }}>
+            {hint}
+          </div>
         )}
       </div>
     </label>
@@ -220,7 +270,10 @@ export function OverviewPane(props: {
             <div className="mb-2 flex gap-2">
               <button
                 type="button"
-                onClick={() => { props.onIconModeChange('auto'); props.onIconEmojiChange('') }}
+                onClick={() => {
+                  props.onIconModeChange('auto')
+                  props.onIconEmojiChange('')
+                }}
                 className="flex-1 cursor-pointer rounded-[7px] py-1.5"
                 style={{
                   border: `1.5px solid ${props.iconMode === 'auto' ? 'var(--accent)' : 'var(--border2)'}`,
@@ -297,8 +350,14 @@ export function OverviewPane(props: {
           style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
         >
           <MetaField label={t('overview.type')} value={props.typeLabel} />
-          <MetaField label={t('overview.created')} value={new Date(props.createdAt).toLocaleDateString()} />
-          <MetaField label={t('overview.updated')} value={new Date(props.updatedAt).toLocaleDateString()} />
+          <MetaField
+            label={t('overview.created')}
+            value={new Date(props.createdAt).toLocaleDateString()}
+          />
+          <MetaField
+            label={t('overview.updated')}
+            value={new Date(props.updatedAt).toLocaleDateString()}
+          />
         </div>
       </div>
     </div>
@@ -308,8 +367,12 @@ export function OverviewPane(props: {
 function MetaField({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="uppercase tracking-wide" style={{ color: 'var(--hint)' }}>{label}</div>
-      <div className="mt-0.5" style={{ color: 'var(--text)' }}>{value}</div>
+      <div className="uppercase tracking-wide" style={{ color: 'var(--hint)' }}>
+        {label}
+      </div>
+      <div className="mt-0.5" style={{ color: 'var(--text)' }}>
+        {value}
+      </div>
     </div>
   )
 }
@@ -498,9 +561,14 @@ export function VariablesPane({
 
       <div
         className="mt-5 rounded-[8px] p-4"
-        style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+        style={{
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          color: 'var(--muted)',
+        }}
       >
-        {t('variablesPane.refHint')} <code style={{ color: 'var(--json-string)' }}>{'{{variableName}}'}</code>{' '}
+        {t('variablesPane.refHint')}{' '}
+        <code style={{ color: 'var(--json-string)' }}>{'{{variableName}}'}</code>{' '}
         {t('variablesPane.refHintEnd')}
       </div>
     </div>
@@ -513,8 +581,12 @@ function StatCard({ label, value }: { label: string; value: number }) {
       className="rounded-[8px] p-4"
       style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
     >
-      <div className="uppercase tracking-wide" style={{ color: 'var(--muted)' }}>{label}</div>
-      <div className="mt-1 text-[24px] font-semibold" style={{ color: 'var(--heading)' }}>{value}</div>
+      <div className="uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+        {label}
+      </div>
+      <div className="mt-1 text-[24px] font-semibold" style={{ color: 'var(--heading)' }}>
+        {value}
+      </div>
     </div>
   )
 }
@@ -618,7 +690,11 @@ export function StoragePane(props: {
                 type="button"
                 onClick={props.onSelectDir}
                 className="cursor-pointer rounded-[7px] px-3"
-                style={{ background: 'var(--surface)', border: '1.5px solid var(--border2)', color: 'var(--text)' }}
+                style={{
+                  background: 'var(--surface)',
+                  border: '1.5px solid var(--border2)',
+                  color: 'var(--text)',
+                }}
               >
                 {t('storage.browse')}
               </button>
@@ -631,7 +707,10 @@ export function StoragePane(props: {
             className="flex flex-col gap-3 rounded-[8px] p-4"
             style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
           >
-            <div className="font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+            <div
+              className="font-semibold uppercase tracking-wide"
+              style={{ color: 'var(--muted)' }}
+            >
               {t('storage.gitRepository')}
             </div>
             <div>
@@ -646,7 +725,11 @@ export function StoragePane(props: {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label text={t('storage.username')} />
-                <input value={props.gitUser} onChange={(e) => props.onGitUserChange(e.target.value)} style={BASE_INP} />
+                <input
+                  value={props.gitUser}
+                  onChange={(e) => props.onGitUserChange(e.target.value)}
+                  style={BASE_INP}
+                />
               </div>
               <div>
                 <Label text={t('storage.branch')} />
@@ -671,7 +754,11 @@ export function StoragePane(props: {
                   type="button"
                   onClick={props.onToggleShowToken}
                   className="cursor-pointer rounded-[7px] px-3"
-                  style={{ background: 'var(--white)', border: '1.5px solid var(--border2)', color: 'var(--muted)' }}
+                  style={{
+                    background: 'var(--white)',
+                    border: '1.5px solid var(--border2)',
+                    color: 'var(--muted)',
+                  }}
                 >
                   {props.showToken ? <EyeOff size={13} /> : <Eye size={13} />}
                 </button>
@@ -707,7 +794,11 @@ export function BranchesPane({
         {branches.length === 0 && (
           <div
             className="rounded-[8px] p-6 text-center"
-            style={{ background: 'var(--surface)', border: '1px dashed var(--border2)', color: 'var(--hint)' }}
+            style={{
+              background: 'var(--surface)',
+              border: '1px dashed var(--border2)',
+              color: 'var(--hint)',
+            }}
           >
             {t('branches.none')}
           </div>
@@ -725,11 +816,17 @@ export function BranchesPane({
               }}
             >
               <GitBranch size={13} />
-              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: isActive ? 600 : 400 }}>{branch.name}</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: isActive ? 600 : 400 }}>
+                {branch.name}
+              </span>
               {branch.isRemote && (
                 <span
                   className="rounded px-1.5 py-[1px] font-semibold"
-                  style={{ background: 'var(--surface)', color: 'var(--muted)', border: '1px solid var(--border)' }}
+                  style={{
+                    background: 'var(--surface)',
+                    color: 'var(--muted)',
+                    border: '1px solid var(--border)',
+                  }}
                 >
                   remote
                 </span>
@@ -737,7 +834,11 @@ export function BranchesPane({
               {isActive && (
                 <span
                   className="rounded px-1.5 py-[1px] font-semibold"
-                  style={{ background: 'var(--green-bg)', color: 'var(--green)', border: '1px solid var(--green-border)' }}
+                  style={{
+                    background: 'var(--green-bg)',
+                    color: 'var(--green)',
+                    border: '1px solid var(--green-border)',
+                  }}
                 >
                   {t('branches.active')}
                 </span>
@@ -779,7 +880,9 @@ export function GeneralPane({
                 max={600000}
                 suffix="ms"
               />
-              <div className="mt-1" style={{ color: 'var(--hint)' }}>{t('general.requestTimeoutHint')}</div>
+              <div className="mt-1" style={{ color: 'var(--hint)' }}>
+                {t('general.requestTimeoutHint')}
+              </div>
             </div>
             <div>
               <Label text={t('general.maxResponseSize')} />
@@ -790,7 +893,9 @@ export function GeneralPane({
                 max={4096}
                 suffix="MB"
               />
-              <div className="mt-1" style={{ color: 'var(--hint)' }}>{t('general.maxResponseHint')}</div>
+              <div className="mt-1" style={{ color: 'var(--hint)' }}>
+                {t('general.maxResponseHint')}
+              </div>
             </div>
           </div>
           <div className="mt-3">
@@ -854,7 +959,9 @@ export function GeneralPane({
               placeholder={t('general.workingDirectoryHint')}
               style={{ ...BASE_INP, fontFamily: 'var(--font-mono)' }}
             />
-            <div className="mt-1" style={{ color: 'var(--hint)' }}>{t('general.workingDirectoryHint')}</div>
+            <div className="mt-1" style={{ color: 'var(--hint)' }}>
+              {t('general.workingDirectoryHint')}
+            </div>
           </div>
         </SectionCard>
       </div>
@@ -988,7 +1095,9 @@ export function ThemesPane({
               )
             })}
           </div>
-          <div className="mt-1" style={{ color: 'var(--hint)' }}>{t('themes.fontAppliesEverywhere')}</div>
+          <div className="mt-1" style={{ color: 'var(--hint)' }}>
+            {t('themes.fontAppliesEverywhere')}
+          </div>
         </div>
 
         <div>
@@ -1057,22 +1166,27 @@ export function ShortcutsPane() {
   return (
     <div className="p-6">
       <PaneHeader title={t('shortcuts.title')} subtitle={t('shortcuts.subtitle')} />
-      <div
-        className="overflow-hidden rounded-[8px]"
-        style={{ border: '1px solid var(--border)' }}
-      >
+      <div className="overflow-hidden rounded-[8px]" style={{ border: '1px solid var(--border)' }}>
         <table className="w-full" style={{ borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'var(--surface)' }}>
               <th
                 className="px-4 py-2 text-left uppercase tracking-wide"
-                style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)', fontWeight: 600 }}
+                style={{
+                  color: 'var(--muted)',
+                  borderBottom: '1px solid var(--border)',
+                  fontWeight: 600,
+                }}
               >
                 {t('shortcuts.action')}
               </th>
               <th
                 className="px-4 py-2 text-right uppercase tracking-wide"
-                style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)', fontWeight: 600 }}
+                style={{
+                  color: 'var(--muted)',
+                  borderBottom: '1px solid var(--border)',
+                  fontWeight: 600,
+                }}
               >
                 {t('shortcuts.key')}
               </th>
@@ -1081,7 +1195,9 @@ export function ShortcutsPane() {
           <tbody>
             {rows.map((r) => (
               <tr key={r.action} style={{ borderTop: '1px solid var(--border)' }}>
-                <td className="px-4 py-2" style={{ color: 'var(--text)' }}>{r.action}</td>
+                <td className="px-4 py-2" style={{ color: 'var(--text)' }}>
+                  {r.action}
+                </td>
                 <td className="px-4 py-2 text-right">
                   <span
                     className="inline-block rounded-[6px] px-2 py-0.5"
@@ -1185,7 +1301,9 @@ function DataRow({
     >
       <div>
         <div style={{ fontWeight: 600, color: 'var(--text)' }}>{title}</div>
-        <div className="mt-0.5" style={{ color: 'var(--muted)' }}>{description}</div>
+        <div className="mt-0.5" style={{ color: 'var(--muted)' }}>
+          {description}
+        </div>
       </div>
       <button
         type="button"
@@ -1222,15 +1340,29 @@ interface CertRow {
   created_at: number
 }
 
-export function CertificatesPane({ projectId }: { projectId: string }) {
+export function CertificatesPane({
+  projectId,
+  settings,
+  onChange,
+}: {
+  projectId: string
+  settings: ProjectSettings
+  onChange: (patch: Partial<ProjectSettings>) => void
+}) {
   const { t } = useTranslation()
   const [certs, setCerts] = useState<CertRow[]>([])
   const [loading, setLoading] = useState(false)
+  const tls: ProjectTls = settings.tls ?? {}
+  function patchTls(patch: Partial<ProjectTls>) {
+    onChange({ tls: { ...tls, ...patch } })
+  }
 
   async function reload() {
     setLoading(true)
     try {
-      const res = await window.api?.certificate?.list(projectId) as { success: boolean; data?: CertRow[] } | undefined
+      const res = (await window.api?.certificate?.list(projectId)) as
+        | { success: boolean; data?: CertRow[] }
+        | undefined
       if (res?.success && res.data) setCerts(res.data)
     } catch (err) {
       console.error(err)
@@ -1238,7 +1370,9 @@ export function CertificatesPane({ projectId }: { projectId: string }) {
     setLoading(false)
   }
 
-  useEffect(() => { void reload() }, [projectId])
+  useEffect(() => {
+    void reload()
+  }, [projectId])
 
   async function handleAdd(kind: 'ca' | 'client') {
     try {
@@ -1253,12 +1387,18 @@ export function CertificatesPane({ projectId }: { projectId: string }) {
         enabled?: boolean
       } = { projectId, kind }
       if (kind === 'ca') {
-        const pick = await window.api?.certificate?.pickFile('ca') as { success: boolean; data?: string }
+        const pick = (await window.api?.certificate?.pickFile('ca')) as {
+          success: boolean
+          data?: string
+        }
         if (!pick?.success || !pick.data) return
         payload.crtPath = pick.data
       } else {
         // For simplicity add with a single cert file; user can edit via remove/re-add
-        const pick = await window.api?.certificate?.pickFile('crt') as { success: boolean; data?: string }
+        const pick = (await window.api?.certificate?.pickFile('crt')) as {
+          success: boolean
+          data?: string
+        }
         if (!pick?.success || !pick.data) return
         payload.crtPath = pick.data
         payload.host = ''
@@ -1299,13 +1439,17 @@ export function CertificatesPane({ projectId }: { projectId: string }) {
 
   async function handlePickClientFile(c: CertRow, kind: 'crt' | 'key' | 'pfx') {
     try {
-      const pick = await window.api?.certificate?.pickFile(kind) as { success: boolean; data?: string }
+      const pick = (await window.api?.certificate?.pickFile(kind)) as {
+        success: boolean
+        data?: string
+      }
       if (!pick?.success || !pick.data) return
-      const patch = kind === 'crt'
-        ? { id: c.id, crtPath: pick.data }
-        : kind === 'key'
-        ? { id: c.id, keyPath: pick.data }
-        : { id: c.id, pfxPath: pick.data }
+      const patch =
+        kind === 'crt'
+          ? { id: c.id, crtPath: pick.data }
+          : kind === 'key'
+            ? { id: c.id, keyPath: pick.data }
+            : { id: c.id, pfxPath: pick.data }
       await window.api?.certificate?.update(patch)
       await reload()
     } catch (err) {
@@ -1325,20 +1469,137 @@ export function CertificatesPane({ projectId }: { projectId: string }) {
   const caCerts = certs.filter((c) => c.kind === 'ca')
   const clientCerts = certs.filter((c) => c.kind === 'client')
 
+  const cipherPreset: CipherPresetName = tls.cipherPreset ?? 'modern'
+  const PRESET_OPTIONS: Array<{ id: CipherPresetName; labelKey: string }> = [
+    { id: 'modern', labelKey: 'tls.presetModern' },
+    { id: 'intermediate', labelKey: 'tls.presetIntermediate' },
+    { id: 'legacy', labelKey: 'tls.presetLegacy' },
+    { id: 'custom', labelKey: 'tls.presetCustom' },
+  ]
+  const TLS_VERSION_OPTIONS: Array<{ id: TlsVersionLabel | ''; label: string }> = [
+    { id: '', label: t('tls.auto') },
+    { id: 'TLSv1', label: 'TLS 1.0' },
+    { id: 'TLSv1.1', label: 'TLS 1.1' },
+    { id: 'TLSv1.2', label: 'TLS 1.2' },
+    { id: 'TLSv1.3', label: 'TLS 1.3' },
+  ]
+
   return (
     <div className="p-6">
       <PaneHeader title={t('certs.title')} subtitle={t('certs.subtitle')} />
 
       <div className="flex flex-col gap-5">
+        <SectionCard title={t('tls.title')}>
+          <div style={{ color: 'var(--muted)', marginBottom: 12 }}>{t('tls.subtitle')}</div>
+
+          <Toggle
+            label={t('general.sslVerification')}
+            hint={t('tls.verifyHint')}
+            checked={settings.sslVerification}
+            onChange={(v) => onChange({ sslVerification: v })}
+          />
+
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <Label text={t('tls.minVersion')} />
+              <select
+                value={tls.minVersion ?? ''}
+                onChange={(e) => patchTls({ minVersion: e.target.value as TlsVersionLabel | '' })}
+                style={{ ...BASE_INP, cursor: 'pointer' }}
+              >
+                {TLS_VERSION_OPTIONS.map((o) => (
+                  <option key={`min-${o.id}`} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label text={t('tls.maxVersion')} />
+              <select
+                value={tls.maxVersion ?? ''}
+                onChange={(e) => patchTls({ maxVersion: e.target.value as TlsVersionLabel | '' })}
+                style={{ ...BASE_INP, cursor: 'pointer' }}
+              >
+                {TLS_VERSION_OPTIONS.map((o) => (
+                  <option key={`max-${o.id}`} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <Label text={t('tls.cipherPreset')} />
+            <div className="flex gap-2">
+              {PRESET_OPTIONS.map((opt) => {
+                const active = cipherPreset === opt.id
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => patchTls({ cipherPreset: opt.id })}
+                    className="flex-1 cursor-pointer rounded-[7px] px-2 py-2"
+                    style={{
+                      border: `2px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                      background: active ? 'var(--accent-light)' : 'var(--white)',
+                      color: active ? 'var(--accent-text)' : 'var(--text)',
+                      fontWeight: active ? 600 : 400,
+                    }}
+                  >
+                    {t(opt.labelKey)}
+                  </button>
+                )
+              })}
+            </div>
+            {cipherPreset === 'legacy' && (
+              <div
+                className="mt-2 rounded-[7px] p-2"
+                style={{
+                  background: 'var(--red-bg, #fff0f0)',
+                  border: '1px solid var(--red, #cc2200)',
+                  color: 'var(--red, #cc2200)',
+                }}
+              >
+                {t('tls.legacyWarn')}
+              </div>
+            )}
+            {cipherPreset === 'custom' && (
+              <div className="mt-2">
+                <textarea
+                  value={tls.ciphersCustom ?? ''}
+                  onChange={(e) => patchTls({ ciphersCustom: e.target.value })}
+                  placeholder={t('tls.ciphersPlaceholder')}
+                  rows={3}
+                  spellCheck={false}
+                  style={{ ...BASE_INP, fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+                />
+                <div className="mt-1" style={{ color: 'var(--hint)' }}>
+                  {t('tls.ciphersHint')}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div
+            className="mt-3 rounded-[7px] p-2"
+            style={{
+              background: 'var(--surface)',
+              border: '1px dashed var(--border2)',
+              color: 'var(--muted)',
+            }}
+          >
+            {t('tls.revocationDisclaimer')}
+          </div>
+        </SectionCard>
         <CertSection
           title={t('certs.ca')}
           description={t('certs.caDesc')}
           addLabel={t('certs.caAdd')}
           onAdd={() => handleAdd('ca')}
         >
-          {caCerts.length === 0 && !loading && (
-            <EmptyCerts text={t('certs.none')} />
-          )}
+          {caCerts.length === 0 && !loading && <EmptyCerts text={t('certs.none')} />}
           {caCerts.map((c) => (
             <div
               key={c.id}
@@ -1351,14 +1612,21 @@ export function CertificatesPane({ projectId }: { projectId: string }) {
                 onChange={(e) => handleToggle(c, e.target.checked)}
                 style={{ accentColor: 'var(--accent)' }}
               />
-              <div className="flex-1 truncate" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>
+              <div
+                className="flex-1 truncate"
+                style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)' }}
+              >
                 {c.crt_path || '—'}
               </div>
               <button
                 type="button"
                 onClick={() => handleDelete(c.id)}
                 className="cursor-pointer rounded-[6px] p-1.5"
-                style={{ background: 'transparent', color: 'var(--red)', border: '1px solid var(--border)' }}
+                style={{
+                  background: 'transparent',
+                  color: 'var(--red)',
+                  border: '1px solid var(--border)',
+                }}
                 title={t('certs.remove')}
               >
                 <Trash2 size={14} />
@@ -1373,9 +1641,7 @@ export function CertificatesPane({ projectId }: { projectId: string }) {
           addLabel={t('certs.clientAdd')}
           onAdd={() => handleAdd('client')}
         >
-          {clientCerts.length === 0 && !loading && (
-            <EmptyCerts text={t('certs.none')} />
-          )}
+          {clientCerts.length === 0 && !loading && <EmptyCerts text={t('certs.none')} />}
           {clientCerts.map((c) => (
             <div
               key={c.id}
@@ -1399,7 +1665,11 @@ export function CertificatesPane({ projectId }: { projectId: string }) {
                   type="button"
                   onClick={() => handleDelete(c.id)}
                   className="cursor-pointer rounded-[6px] p-1.5"
-                  style={{ background: 'transparent', color: 'var(--red)', border: '1px solid var(--border)' }}
+                  style={{
+                    background: 'transparent',
+                    color: 'var(--red)',
+                    border: '1px solid var(--border)',
+                  }}
                   title={t('certs.remove')}
                 >
                   <Trash2 size={14} />
@@ -1457,15 +1727,25 @@ function CertSection({
       <div className="mb-3 flex items-center justify-between gap-4">
         <div>
           <div style={{ fontWeight: 600, color: 'var(--text)' }}>{title}</div>
-          <div className="mt-0.5" style={{ color: 'var(--muted)' }}>{description}</div>
+          <div className="mt-0.5" style={{ color: 'var(--muted)' }}>
+            {description}
+          </div>
         </div>
         <button
           type="button"
           onClick={onAdd}
           className="cursor-pointer rounded-[7px] px-3 py-2"
-          style={{ background: 'var(--accent)', color: '#fff', border: 'none', fontWeight: 600, whiteSpace: 'nowrap' }}
+          style={{
+            background: 'var(--accent)',
+            color: '#fff',
+            border: 'none',
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+          }}
         >
-          <span className="mr-1 inline-flex items-center"><Plus size={13} /></span>
+          <span className="mr-1 inline-flex items-center">
+            <Plus size={13} />
+          </span>
           {addLabel}
         </button>
       </div>
@@ -1491,7 +1771,11 @@ function CertFileField({
         type="button"
         onClick={onPick}
         className="flex w-full cursor-pointer items-center gap-2 rounded-[7px] px-2 py-2 text-left"
-        style={{ background: 'var(--surface)', border: '1px dashed var(--border2)', color: path ? 'var(--text)' : 'var(--hint)' }}
+        style={{
+          background: 'var(--surface)',
+          border: '1px dashed var(--border2)',
+          color: path ? 'var(--text)' : 'var(--hint)',
+        }}
       >
         <FileUp size={13} />
         <span className="truncate" style={{ fontFamily: 'var(--font-mono)' }}>
@@ -1506,7 +1790,11 @@ function EmptyCerts({ text }: { text: string }) {
   return (
     <div
       className="rounded-[8px] p-4 text-center"
-      style={{ background: 'var(--white)', border: '1px dashed var(--border2)', color: 'var(--hint)' }}
+      style={{
+        background: 'var(--white)',
+        border: '1px dashed var(--border2)',
+        color: 'var(--hint)',
+      }}
     >
       {text}
     </div>
@@ -1537,11 +1825,13 @@ export function ProxyPane({
         <div>
           <Label text={t('proxy.mode')} />
           <div className="flex gap-2">
-            {([
-              { id: 'system', label: t('proxy.useSystem') },
-              { id: 'none', label: t('proxy.noProxy') },
-              { id: 'custom', label: t('proxy.custom') },
-            ] as const).map((m) => (
+            {(
+              [
+                { id: 'system', label: t('proxy.useSystem') },
+                { id: 'none', label: t('proxy.noProxy') },
+                { id: 'custom', label: t('proxy.custom') },
+              ] as const
+            ).map((m) => (
               <button
                 key={m.id}
                 type="button"
@@ -1603,7 +1893,10 @@ export function ProxyPane({
                 style={{ ...BASE_INP, fontFamily: 'var(--font-mono)' }}
               />
             </div>
-            <div className="mt-4 font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+            <div
+              className="mt-4 font-semibold uppercase tracking-wide"
+              style={{ color: 'var(--muted)' }}
+            >
               {t('proxy.auth')}
             </div>
             <div className="mt-2 grid grid-cols-2 gap-3">
@@ -1612,7 +1905,9 @@ export function ProxyPane({
                 <input
                   value={proxy.auth?.username || ''}
                   onChange={(e) =>
-                    update({ auth: { username: e.target.value, password: proxy.auth?.password || '' } })
+                    update({
+                      auth: { username: e.target.value, password: proxy.auth?.password || '' },
+                    })
                   }
                   style={BASE_INP}
                 />
@@ -1623,7 +1918,9 @@ export function ProxyPane({
                   type="password"
                   value={proxy.auth?.password || ''}
                   onChange={(e) =>
-                    update({ auth: { username: proxy.auth?.username || '', password: e.target.value } })
+                    update({
+                      auth: { username: proxy.auth?.username || '', password: e.target.value },
+                    })
                   }
                   style={BASE_INP}
                 />
@@ -1685,11 +1982,19 @@ export function UpdatePane({
 
 export function AboutPane() {
   const { t } = useTranslation()
-  const [versions, setVersions] = useState<{ app?: string; electron?: string; node?: string; chrome?: string; platform?: string }>({})
+  const [versions, setVersions] = useState<{
+    app?: string
+    electron?: string
+    node?: string
+    chrome?: string
+    platform?: string
+  }>({})
 
   useEffect(() => {
     try {
-      const w = window as unknown as { electron?: { process?: { versions?: Record<string, string>; platform?: string } } }
+      const w = window as unknown as {
+        electron?: { process?: { versions?: Record<string, string>; platform?: string } }
+      }
       const v = w.electron?.process?.versions
       setVersions({
         app: v?.app,
@@ -1698,7 +2003,9 @@ export function AboutPane() {
         chrome: v?.chrome,
         platform: w.electron?.process?.platform,
       })
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, [])
 
   const rows: Array<{ label: string; value: string | undefined }> = [
@@ -1720,12 +2027,19 @@ export function AboutPane() {
         <div className="text-[18px] font-semibold" style={{ color: 'var(--heading)' }}>
           {t('about.appName')}
         </div>
-        <div className="mt-1" style={{ color: 'var(--muted)' }}>{t('about.appTagline')}</div>
+        <div className="mt-1" style={{ color: 'var(--muted)' }}>
+          {t('about.appTagline')}
+        </div>
         <div className="mt-4 grid grid-cols-2 gap-3">
           {rows.map((r) => (
             <div key={r.label}>
-              <div className="uppercase tracking-wide" style={{ color: 'var(--hint)' }}>{r.label}</div>
-              <div className="mt-0.5" style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>
+              <div className="uppercase tracking-wide" style={{ color: 'var(--hint)' }}>
+                {r.label}
+              </div>
+              <div
+                className="mt-0.5"
+                style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}
+              >
                 {r.value || '—'}
               </div>
             </div>

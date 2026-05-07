@@ -13,7 +13,12 @@ import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
 import { useConsoleStore } from './console.store'
-import { resolveVariables, resolveKeyValuePairs, resolveAuth, resolveRequestBody } from '../lib/variable-resolver'
+import {
+  resolveVariables,
+  resolveKeyValuePairs,
+  resolveAuth,
+  resolveRequestBody,
+} from '../lib/variable-resolver'
 import { runAssertions, runScript, createPmApi } from '../lib/test-runner'
 
 function makeId(): string {
@@ -121,24 +126,20 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   setUrl: (url) => set({ url }),
 
   setParams: (params) => set({ params }),
-  addParam: () =>
-    set((state) => ({ params: [...state.params, defaultKv()] })),
+  addParam: () => set((state) => ({ params: [...state.params, defaultKv()] })),
   updateParam: (id, updates) =>
     set((state) => ({
       params: state.params.map((p) => (p.id === id ? { ...p, ...updates } : p)),
     })),
-  removeParam: (id) =>
-    set((state) => ({ params: state.params.filter((p) => p.id !== id) })),
+  removeParam: (id) => set((state) => ({ params: state.params.filter((p) => p.id !== id) })),
 
   setHeaders: (headers) => set({ headers }),
-  addHeader: () =>
-    set((state) => ({ headers: [...state.headers, defaultKv()] })),
+  addHeader: () => set((state) => ({ headers: [...state.headers, defaultKv()] })),
   updateHeader: (id, updates) =>
     set((state) => ({
       headers: state.headers.map((h) => (h.id === id ? { ...h, ...updates } : h)),
     })),
-  removeHeader: (id) =>
-    set((state) => ({ headers: state.headers.filter((h) => h.id !== id) })),
+  removeHeader: (id) => set((state) => ({ headers: state.headers.filter((h) => h.id !== id) })),
 
   setBody: (body) => set({ body }),
   setAuth: (auth) => set({ auth }),
@@ -238,11 +239,11 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     const resolvedUrl = resolveVariables(url, activeVars)
     const resolvedParams = resolveKeyValuePairs(
       params.filter((p) => p.enabled),
-      activeVars
+      activeVars,
     )
     const resolvedHeaders = resolveKeyValuePairs(
       headers.filter((h) => h.enabled),
-      activeVars
+      activeVars,
     )
     const resolvedBody = resolveRequestBody(body, activeVars) ?? body
     const resolvedAuth = resolveAuth(auth, activeVars)
@@ -253,23 +254,49 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       tabsStore.markLoading(activeTabId, true)
     }
 
-    // Pull project-level request settings (timeout/ssl/proxy) if available.
+    // Pull project-level request settings (timeout/ssl/proxy/tls) if available.
     // These are persisted by ProjectDetailModal under project.<id>.settings.
     interface ProjectNetSettings {
       requestTimeout?: number
       sslVerification?: boolean
       followRedirects?: boolean
-      proxy?: { mode?: 'system' | 'none' | 'custom'; host?: string; port?: number; bypass?: string; auth?: { username: string; password: string } }
+      proxy?: {
+        mode?: 'system' | 'none' | 'custom'
+        host?: string
+        port?: number
+        bypass?: string
+        auth?: { username: string; password: string }
+      }
+      tls?: {
+        minVersion?: string
+        maxVersion?: string
+        cipherPreset?: 'modern' | 'intermediate' | 'legacy' | 'custom'
+        ciphersCustom?: string
+      }
     }
     let netSettings: ProjectNetSettings = {}
     if (wsStore.activeProjectId) {
       try {
-        const res = await window.api?.settings?.get(`project.${wsStore.activeProjectId}.settings`) as
-          | { success: boolean; data?: ProjectNetSettings }
-          | undefined
+        const res = (await window.api?.settings?.get(
+          `project.${wsStore.activeProjectId}.settings`,
+        )) as { success: boolean; data?: ProjectNetSettings } | undefined
         if (res?.success && res.data) netSettings = res.data
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
+
+    // Forward TLS settings as-is — the main process (request handler) resolves
+    // the cipher preset via `getCipherPreset` so the renderer never has to
+    // import the main-process TLS preset constants.
+    const tlsForEngine = netSettings.tls
+      ? {
+          minVersion: netSettings.tls.minVersion || undefined,
+          maxVersion: netSettings.tls.maxVersion || undefined,
+          cipherPreset: netSettings.tls.cipherPreset,
+          ciphersCustom: netSettings.tls.ciphersCustom,
+        }
+      : undefined
 
     // Generate a per-call requestId so the user can hit Cancel during a slow
     // network round-trip. The main process tracks this id in its
@@ -290,6 +317,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         sslVerification: netSettings.sslVerification,
         followRedirects: netSettings.followRedirects,
         proxy: netSettings.proxy,
+        tls: tlsForEngine,
         // History metadata
         _workspaceId: wsStore.activeWorkspaceId || undefined,
         _projectId: wsStore.activeProjectId || undefined,
@@ -346,10 +374,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
             Object.keys(scriptResult.envUpdates).length > 0 ||
             Object.keys(scriptResult.globalUpdates).length > 0
           ) {
-            void envStore.applyScriptUpdates(
-              scriptResult.envUpdates,
-              scriptResult.globalUpdates,
-            )
+            void envStore.applyScriptUpdates(scriptResult.envUpdates, scriptResult.globalUpdates)
           }
         }
 
@@ -397,9 +422,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       if (activeTabId) {
         tabsStore.markLoading(activeTabId, false)
       }
-      set((s) =>
-        s._inflightRequestId === requestId ? { _inflightRequestId: null } : s,
-      )
+      set((s) => (s._inflightRequestId === requestId ? { _inflightRequestId: null } : s))
     }
   },
 

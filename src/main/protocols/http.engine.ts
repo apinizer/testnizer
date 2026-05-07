@@ -13,6 +13,7 @@ import { basename } from 'path'
 import { applyDefaultUserAgent } from '../lib/user-agent'
 import { parseSseBody } from '../lib/sse-body-parser'
 import { classifyTransportError, hintForHttpStatus } from '../lib/error-classifier'
+import { normaliseTlsVersion, type TlsOptions } from '../lib/tls-presets'
 
 // ─── Types (main-process local, mirrors renderer types) ──────
 
@@ -136,6 +137,12 @@ export interface HttpRequestOptions {
       passphrase?: string
     }
   }
+  /**
+   * Override TLS protocol/cipher selection. Used by the BadSSL test matrix
+   * (talking to deliberately-broken servers) and by enterprise users whose
+   * legacy backends still require TLS 1.0 / RC4 / weak DH parameters.
+   */
+  tls?: TlsOptions
   signal?: AbortSignal
 }
 
@@ -151,13 +158,14 @@ async function getJarCookieHeader(url: string): Promise<string> {
   }
 }
 
-async function storeResponseCookies(url: string, headers: Record<string, string | string[] | undefined>): Promise<void> {
+async function storeResponseCookies(
+  url: string,
+  headers: Record<string, string | string[] | undefined>,
+): Promise<void> {
   const setCookieHeaders = headers['set-cookie']
   if (!setCookieHeaders) return
 
-  const cookies = Array.isArray(setCookieHeaders)
-    ? setCookieHeaders
-    : [setCookieHeaders]
+  const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders]
 
   for (const cookie of cookies) {
     try {
@@ -174,14 +182,14 @@ function applyAuth(
   config: AxiosRequestConfig,
   auth: AuthConfig,
   method: string,
-  url: string
+  url: string,
 ): void {
   switch (auth.type) {
     case 'basic': {
       if (auth.basic) {
         config.auth = {
           username: auth.basic.username,
-          password: auth.basic.password
+          password: auth.basic.password,
         }
       }
       break
@@ -217,7 +225,7 @@ function applyAuth(
       if (auth.digest) {
         config.auth = {
           username: auth.digest.username,
-          password: auth.digest.password
+          password: auth.digest.password,
         }
       }
       break
@@ -229,7 +237,7 @@ function applyAuth(
           url,
           auth.hawk.authId,
           auth.hawk.authKey,
-          auth.hawk.algorithm
+          auth.hawk.algorithm,
         )
         config.headers = config.headers || {}
         config.headers['Authorization'] = hawkHeader
@@ -245,7 +253,7 @@ function applyAuth(
           auth.awsSignature.secretKey,
           auth.awsSignature.region,
           auth.awsSignature.service,
-          (config.data as string) ?? ''
+          (config.data as string) ?? '',
         )
         config.headers = { ...config.headers, ...awsHeaders }
       }
@@ -257,7 +265,7 @@ function applyAuth(
           username: auth.ntlm.domain
             ? `${auth.ntlm.domain}\\${auth.ntlm.username}`
             : auth.ntlm.username,
-          password: auth.ntlm.password
+          password: auth.ntlm.password,
         }
       }
       break
@@ -270,24 +278,25 @@ function generateHawkHeader(
   url: string,
   id: string,
   key: string,
-  algorithm: 'sha1' | 'sha256'
+  algorithm: 'sha1' | 'sha256',
 ): string {
   const parsed = new URL(url)
   const ts = Math.floor(Date.now() / 1000)
   const nonce = randomUUID().slice(0, 8)
   const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80')
 
-  const normalized = [
-    'hawk.1.header',
-    ts.toString(),
-    nonce,
-    method.toUpperCase(),
-    parsed.pathname + parsed.search,
-    parsed.hostname,
-    port,
-    '', // hash (empty for no payload validation)
-    ''  // ext
-  ].join('\n') + '\n'
+  const normalized =
+    [
+      'hawk.1.header',
+      ts.toString(),
+      nonce,
+      method.toUpperCase(),
+      parsed.pathname + parsed.search,
+      parsed.hostname,
+      port,
+      '', // hash (empty for no payload validation)
+      '', // ext
+    ].join('\n') + '\n'
 
   const mac = createHmac(algorithm === 'sha1' ? 'sha1' : 'sha256', key)
     .update(normalized)
@@ -303,12 +312,15 @@ function generateAwsSignatureHeaders(
   secretKey: string,
   region: string,
   service: string,
-  body: string
+  body: string,
 ): Record<string, string> {
   const parsed = new URL(url)
   const now = new Date()
   const dateStamp = now.toISOString().replace(/[-:]/g, '').slice(0, 8)
-  const amzDate = now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+  const amzDate = now
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}/, '')
 
   const payloadHash = createHash('sha256').update(body).digest('hex')
 
@@ -321,7 +333,7 @@ function generateAwsSignatureHeaders(
     parsed.search ? parsed.search.slice(1) : '',
     canonicalHeaders,
     signedHeaders,
-    payloadHash
+    payloadHash,
   ].join('\n')
 
   const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`
@@ -329,7 +341,7 @@ function generateAwsSignatureHeaders(
     'AWS4-HMAC-SHA256',
     amzDate,
     credentialScope,
-    createHash('sha256').update(canonicalRequest).digest('hex')
+    createHash('sha256').update(canonicalRequest).digest('hex'),
   ].join('\n')
 
   const signingKey = getAwsSignatureKey(secretKey, dateStamp, region, service)
@@ -338,9 +350,9 @@ function generateAwsSignatureHeaders(
   const authHeader = `AWS4-HMAC-SHA256 Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
 
   return {
-    'Authorization': authHeader,
+    Authorization: authHeader,
     'X-Amz-Date': amzDate,
-    'X-Amz-Content-Sha256': payloadHash
+    'X-Amz-Content-Sha256': payloadHash,
   }
 }
 
@@ -348,7 +360,7 @@ function getAwsSignatureKey(
   key: string,
   dateStamp: string,
   region: string,
-  service: string
+  service: string,
 ): Buffer {
   const kDate = createHmac('sha256', `AWS4${key}`).update(dateStamp).digest()
   const kRegion = createHmac('sha256', kDate).update(region).digest()
@@ -359,7 +371,10 @@ function getAwsSignatureKey(
 
 // ─── Parse Set-Cookie headers into structured cookies ──────
 
-function parseSetCookieHeaders(url: string, rawHeaders: Record<string, string | string[] | undefined>): ResponseCookie[] {
+function parseSetCookieHeaders(
+  url: string,
+  rawHeaders: Record<string, string | string[] | undefined>,
+): ResponseCookie[] {
   const cookies: ResponseCookie[] = []
   const setCookieValues = rawHeaders['set-cookie']
   if (!setCookieValues) return cookies
@@ -375,7 +390,7 @@ function parseSetCookieHeaders(url: string, rawHeaders: Record<string, string | 
 
       const cookie: ResponseCookie = {
         name: nameValue.slice(0, eqIdx),
-        value: nameValue.slice(eqIdx + 1)
+        value: nameValue.slice(eqIdx + 1),
       }
 
       for (let i = 1; i < parts.length; i++) {
@@ -389,7 +404,11 @@ function parseSetCookieHeaders(url: string, rawHeaders: Record<string, string | 
       }
 
       if (!cookie.domain) {
-        try { cookie.domain = new URL(url).hostname } catch { /* skip */ }
+        try {
+          cookie.domain = new URL(url).hostname
+        } catch {
+          /* skip */
+        }
       }
 
       cookies.push(cookie)
@@ -534,9 +553,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     // Add cookies from jar
     const jarCookies = await getJarCookieHeader(options.url)
     if (jarCookies) {
-      headers['Cookie'] = headers['Cookie']
-        ? `${headers['Cookie']}; ${jarCookies}`
-        : jarCookies
+      headers['Cookie'] = headers['Cookie'] ? `${headers['Cookie']}; ${jarCookies}` : jarCookies
     }
 
     // Build axios config
@@ -574,6 +591,19 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
         if (clientCert.passphrase) httpsAgentOpts.passphrase = clientCert.passphrase
       }
     }
+    // TLS protocol / cipher override — needed for BadSSL `tlsv10`/`tlsv11`,
+    // `rc4`/`threedes`/`nullcipher`, and `dh480`/`dh512` scenarios. Passing
+    // these straight through to the agent lets users talk to legacy backends
+    // without forking the engine.
+    if (options.tls) {
+      const min = normaliseTlsVersion(options.tls.minVersion)
+      const max = normaliseTlsVersion(options.tls.maxVersion)
+      if (min) httpsAgentOpts.minVersion = min
+      if (max) httpsAgentOpts.maxVersion = max
+      if (options.tls.ciphers && options.tls.ciphers.trim()) {
+        httpsAgentOpts.ciphers = options.tls.ciphers.trim()
+      }
+    }
     config.httpsAgent = new https.Agent(httpsAgentOpts)
     config.httpAgent = new http.Agent()
 
@@ -582,10 +612,12 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       config.proxy = {
         host: options.proxy.host,
         port: options.proxy.port ?? 8080,
-        auth: options.proxy.auth ? {
-          username: options.proxy.auth.username,
-          password: options.proxy.auth.password
-        } : undefined
+        auth: options.proxy.auth
+          ? {
+              username: options.proxy.auth.username,
+              password: options.proxy.auth.password,
+            }
+          : undefined,
       }
     } else if (options.proxy && options.proxy.mode === 'none') {
       config.proxy = false
@@ -634,12 +666,15 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     }
 
     // Store cookies from response into jar
-    await storeResponseCookies(options.url, response.headers as Record<string, string | string[] | undefined>)
+    await storeResponseCookies(
+      options.url,
+      response.headers as Record<string, string | string[] | undefined>,
+    )
 
     // Parse cookies for response display
     const cookies = parseSetCookieHeaders(
       options.url,
-      response.headers as Record<string, string | string[] | undefined>
+      response.headers as Record<string, string | string[] | undefined>,
     )
 
     // Also include cookies already in the jar for this URL
@@ -671,8 +706,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     // handled by `sse.engine.ts`; this is post-processing of the buffered
     // body for one-shot requests that happen to return text/event-stream.
     let sseEvents: SseEventPayload[] | undefined
-    const respContentType =
-      responseHeaders['content-type'] ?? responseHeaders['Content-Type']
+    const respContentType = responseHeaders['content-type'] ?? responseHeaders['Content-Type']
     if (isEventStreamContentType(respContentType) && bodyStr) {
       const parsed = parseSseBody(bodyStr)
       if (parsed.length > 0) {
@@ -713,7 +747,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       method: options.method.toUpperCase(),
       url: response.request?.res?.responseUrl ?? options.url,
       headers: config.headers as Record<string, string>,
-      body: actualBody
+      body: actualBody,
     }
 
     return {
@@ -730,7 +764,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
         tcp: timings.tcp,
         tls: timings.tls,
         ttfb: timings.ttfb,
-        download: timings.download
+        download: timings.download,
       },
       cookies,
       actualRequest,
@@ -761,11 +795,12 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
         status,
         statusText: axiosErr.response.statusText,
         headers: responseHeaders,
-        body: typeof axiosErr.response.data === 'string'
-          ? axiosErr.response.data
-          : JSON.stringify(axiosErr.response.data),
+        body:
+          typeof axiosErr.response.data === 'string'
+            ? axiosErr.response.data
+            : JSON.stringify(axiosErr.response.data),
         timing: { total: Math.round(endTime - startTime) },
-        error: errorLine
+        error: errorLine,
       }
     }
 
@@ -776,7 +811,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       requestId,
       protocol: 'http',
       timing: { total: Math.round(endTime - startTime) },
-      error: classified.message
+      error: classified.message,
     }
   }
 }
