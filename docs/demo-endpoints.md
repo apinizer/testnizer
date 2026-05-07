@@ -96,6 +96,76 @@ curl -i --http1.1 \
 
 ---
 
+## MCP (Model Context Protocol)
+
+| Transport | URL | Method / Mesaj | Doğrulama | Sonuç |
+|---|---|---|---|---|
+| Streamable HTTP | `https://mcp.context7.com/mcp` | POST `initialize` | `curl -X POST -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' https://mcp.context7.com/mcp` | **200** + `{"result":{"protocolVersion":"2024-11-05","capabilities":{...},"serverInfo":{"name":"Context7","version":"2.2.4"}}}` |
+| Streamable HTTP | `https://mcp.context7.com/mcp` | POST `tools/list` | Connection ID alındıktan sonra `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}` | **200** + tool listesi (resolve-library-id, get-library-docs) |
+| Streamable HTTP | `https://mcp.context7.com/mcp` | POST `tools/call` | `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"resolve-library-id","arguments":{"libraryName":"react"}}}` | **200** + `{"content":[{"type":"text","text":"/facebook/react"}]}` |
+
+**Testnizer'da örnek akış:**
+```
+Transport: Streamable HTTP
+URL: https://mcp.context7.com/mcp
+```
+→ **Connect** → Tool listesi otomatik yüklenir → `resolve-library-id` seç → Arguments: `{"libraryName":"react"}` → **Call Tool** → Yanıt: `/facebook/react`
+
+> Not: Context7, ücretsiz ve kayıtsız MCP sunucusudur. Rate-limit uygulanabilir; bağlantı hatası alınırsa birkaç saniye bekleyip tekrar deneyin.
+
+Ek test komutu — sunucu canlı mı kontrol:
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}' \
+  https://mcp.context7.com/mcp
+# Beklenen çıktı: 200
+```
+
+---
+
+## Socket.IO
+
+Güvenilir **ücretsiz kamuya açık** Socket.IO sunucusu mevcut değildir — protokol özel namespace, auth token ve event şeması gerektirdiğinden herkese açık stabil sunucu yoktur.
+
+### Yerel test sunucusu (node — ~1 satır)
+
+Node.js ve `socket.io` paketi kurulu sistemde:
+
+```bash
+node -e "
+const http = require('http');
+const { Server } = require('socket.io');
+const srv = http.createServer().listen(3001, () => console.log('Socket.IO dinleniyor: http://localhost:3001'));
+new Server(srv, { cors: { origin: '*' } }).on('connection', socket => {
+  console.log('Bağlandı:', socket.id);
+  socket.onAny((event, data) => {
+    console.log('<-- Gelen:', event, data);
+    socket.emit('echo', { event, data });   // her event'i 'echo' olarak geri gönder
+  });
+});
+"
+```
+
+Testnizer'da:
+```
+URL:       http://localhost:3001
+Namespace: /   (varsayılan)
+Auth:      {}  (boş — bu demo için)
+```
+→ **Connect** → Subscribe: `echo` → Emit: event=`ping` data=`{"msg":"merhaba"}` → `echo` kanalında `{"event":"ping","data":{"msg":"merhaba"}}` görünür.
+
+### Ücretli/kurumsal test ortamları
+
+| Servis | URL | Notlar |
+|---|---|---|
+| Socket.IO resmi playground | (henüz yok) | Proje, kamuya açık demo sunmamaktadır |
+| Ably sandbox | `wss://realtime.ably.io` | Socket.IO adapter mevcut, ücretsiz plan var |
+| Pusher Channels | `wss://ws-us3.pusher.com/app/<key>` | Socket.IO benzeri, ayrı protokol — doğrudan uyumlu değil |
+
+---
+
 ## AI Chat (anahtar kullanıcıdan)
 
 Bu protokol Testnizer'da kullanıcının kendi API anahtarını ister; ortak bir demo endpoint **yok**. Connectivity sağlık kontrolleri:
@@ -118,3 +188,5 @@ Bu protokol Testnizer'da kullanıcının kendi API anahtarını ister; ortak bir
 - **gRPC / Connect-RPC** — "gRPC" → endpoint `demo.connectrpc.com:443` (TLS açık), Eliza .proto'yu yükle, method `Say` seç, payload `{"sentence":"hi"}`, **Invoke**. Connect-RPC modunda yol otomatik `/connectrpc.eliza.v1.ElizaService/Say`.
 - **SSE** — "SSE" → URL `https://stream.wikimedia.org/v2/stream/recentchange` → **Connect**. Event listesi saniyeler içinde dolar; "Filter" ile `data` içeriğine arama yapabilirsin. Durdurmak için **Disconnect**.
 - **AI Chat** — Settings → AI Providers'da kendi anahtarını gir (OpenAI/Anthropic/Groq), sonra "AI Chat" tab'ında modeli seç, mesajı yaz, **Send**. Stream cevap baloncukta canlı yazılır.
+- **MCP** — Yeni request → "MCP" → Transport: `Streamable HTTP`, URL: `https://mcp.context7.com/mcp` → **Connect**. Tool listesi otomatik yüklenir. Bir tool seç (örn. `resolve-library-id`), Arguments kutusuna `{"libraryName":"react"}` yaz, **Call Tool**.
+- **Socket.IO** — Önce terminalde yukarıdaki yerel sunucu komutunu çalıştır (port 3001). Yeni request → "Socket.IO" → URL: `http://localhost:3001` → **Connect**. "Subscribe" sekmesinde `echo` event'ini ekle. "Emit" sekmesinde event=`ping`, data=`{"msg":"test"}` yaz → **Emit**. Event log'unda gelen echo cevabını gör.
