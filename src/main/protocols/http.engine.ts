@@ -10,6 +10,9 @@ import { performance } from 'perf_hooks'
 import FormData from 'form-data'
 import { createReadStream, statSync } from 'fs'
 import { basename } from 'path'
+import { applyDefaultUserAgent } from '../lib/user-agent'
+import { parseSseBody } from '../lib/sse-body-parser'
+import { classifyTransportError, hintForHttpStatus } from '../lib/error-classifier'
 
 // ─── Types (main-process local, mirrors renderer types) ──────
 
@@ -78,6 +81,15 @@ interface ActualRequestInfo {
   body?: string
 }
 
+interface SseEventPayload {
+  id?: string
+  type: string
+  data: string
+  /** Wall-clock timestamp the event was parsed (ms since epoch). */
+  timestamp: number
+  retry?: number
+}
+
 interface ApiResponse {
   requestId: string
   protocol: 'http'
@@ -90,6 +102,18 @@ interface ApiResponse {
   error?: string
   cookies?: ResponseCookie[]
   actualRequest?: ActualRequestInfo
+  /** Populated when the response Content-Type is `text/event-stream`. */
+  sseEvents?: SseEventPayload[]
+}
+
+/**
+ * Returns true when the raw `Content-Type` value (which may include
+ * parameters like `; charset=utf-8`) starts with `text/event-stream`.
+ */
+function isEventStreamContentType(contentType: string | undefined): boolean {
+  if (!contentType) return false
+  const mime = contentType.split(';')[0]?.trim().toLowerCase()
+  return mime === 'text/event-stream'
 }
 
 export interface HttpRequestOptions {
@@ -572,6 +596,10 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       applyAuth(config, options.auth, options.method, options.url)
     }
 
+    // Inject default User-Agent unless the caller supplied one (any case).
+    config.headers = config.headers || {}
+    applyDefaultUserAgent(config.headers as Record<string, string>)
+
     // DNS timing
     const dnsStart = performance.now()
     const parsedUrl = new URL(options.url)
@@ -638,6 +666,27 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     const bodyStr = response.data ?? ''
     const bodySize = Buffer.byteLength(bodyStr, 'utf-8')
 
+    // Parse Server-Sent Events bodies into a structured event list so the
+    // renderer can show a Postman-style "Events" tab. Real-time streaming is
+    // handled by `sse.engine.ts`; this is post-processing of the buffered
+    // body for one-shot requests that happen to return text/event-stream.
+    let sseEvents: SseEventPayload[] | undefined
+    const respContentType =
+      responseHeaders['content-type'] ?? responseHeaders['Content-Type']
+    if (isEventStreamContentType(respContentType) && bodyStr) {
+      const parsed = parseSseBody(bodyStr)
+      if (parsed.length > 0) {
+        const now = Date.now()
+        sseEvents = parsed.map((e) => ({
+          id: e.id,
+          type: e.type,
+          data: e.data,
+          retry: e.retry,
+          timestamp: now,
+        }))
+      }
+    }
+
     // Actual request info — for FormData multipart bodies show a readable
     // summary (the raw multipart stream is binary and not useful in the UI).
     let actualBody: string | undefined
@@ -684,7 +733,8 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
         download: timings.download
       },
       cookies,
-      actualRequest
+      actualRequest,
+      sseEvents,
     }
   } catch (err) {
     const endTime = performance.now()
@@ -698,25 +748,35 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
         }
       }
 
+      // Server returned a non-2xx with a body — keep the body as-is and surface
+      // a status-aware hint (e.g. "401 Unauthorized — check Authorization
+      // header") so the user knows why the request was rejected without
+      // having to read the body.
+      const status = axiosErr.response.status
+      const hint = hintForHttpStatus(status) ?? axiosErr.response.statusText
+      const errorLine = hint ? `HTTP ${status} ${hint}` : `HTTP ${status}`
       return {
         requestId,
         protocol: 'http',
-        status: axiosErr.response.status,
+        status,
         statusText: axiosErr.response.statusText,
         headers: responseHeaders,
         body: typeof axiosErr.response.data === 'string'
           ? axiosErr.response.data
           : JSON.stringify(axiosErr.response.data),
         timing: { total: Math.round(endTime - startTime) },
-        error: axiosErr.message
+        error: errorLine
       }
     }
 
+    // Transport-layer failure (DNS / TCP / TLS / abort) — classify into a
+    // human-readable line preserving the raw libuv code for diagnostic value.
+    const classified = classifyTransportError(err)
     return {
       requestId,
       protocol: 'http',
       timing: { total: Math.round(endTime - startTime) },
-      error: (err as Error).message
+      error: classified.message
     }
   }
 }

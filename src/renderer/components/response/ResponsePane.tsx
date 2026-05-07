@@ -8,6 +8,7 @@ import ConsoleTab from './ConsoleTab'
 import HeadersTab from './HeadersTab'
 import TestResultsTab from './TestResultsTab'
 import ActualRequestTab from './ActualRequestTab'
+import EventsTab from './EventsTab'
 import WsseResponsePanel from './WsseResponsePanel'
 import { useTabsStore } from '../../stores/tabs.store'
 import EmptyState from '../shared/EmptyState'
@@ -17,6 +18,7 @@ import type { ApiResponse } from '../../types'
 
 type ResTabKey =
   | 'body'
+  | 'events'
   | 'cookies'
   | 'headers'
   | 'testResults'
@@ -162,6 +164,17 @@ export default function ResponsePane() {
   const networkPopRef = useRef<HTMLDivElement>(null)
   const { t } = useTranslation()
 
+  // When a new response arrives that contains parsed SSE events, jump to
+  // the Events tab so users notice the stream immediately. Keyed on
+  // requestId so re-renders of the same response don't override navigation.
+  const responseRequestId = response?.requestId
+  const sseEventCount = response?.sseEvents?.length ?? 0
+  useEffect(() => {
+    if (sseEventCount > 0) {
+      setActiveTab('events')
+    }
+  }, [responseRequestId, sseEventCount])
+
   // Close network popover on outside click
   useEffect(() => {
     if (!showNetworkInfo) return
@@ -242,6 +255,7 @@ export default function ResponsePane() {
   }
 
   const isSoapResponse = activeProtocolTab?.protocol === 'soap' || response.protocol === 'soap'
+  const eventCount = response.sseEvents?.length ?? 0
 
   const TABS: Array<{
     key: ResTabKey
@@ -251,6 +265,9 @@ export default function ResponsePane() {
     countColor?: string
   }> = [
     { key: 'body', label: 'Body' },
+    ...(eventCount > 0
+      ? [{ key: 'events' as ResTabKey, label: 'Events', count: eventCount }]
+      : []),
     { key: 'cookies', label: 'Cookies', count: cookieCount },
     { key: 'headers', label: 'Headers', count: headerCount },
     {
@@ -369,6 +386,7 @@ export default function ResponsePane() {
       {/* Content */}
       <div className="flex-1 overflow-hidden bg-[var(--white)]">
         {activeTab === 'body' && <ResponseBody />}
+        {activeTab === 'events' && <EventsTab />}
         {activeTab === 'cookies' && <CookieTab />}
         {activeTab === 'headers' && <HeadersTab />}
         {activeTab === 'testResults' && <TestResultsTab />}

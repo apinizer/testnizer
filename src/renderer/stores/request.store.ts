@@ -13,7 +13,7 @@ import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
 import { useConsoleStore } from './console.store'
-import { resolveVariables, resolveKeyValuePairs, resolveAuth } from '../lib/variable-resolver'
+import { resolveVariables, resolveKeyValuePairs, resolveAuth, resolveRequestBody } from '../lib/variable-resolver'
 import { runAssertions, runScript, createPmApi } from '../lib/test-runner'
 
 function makeId(): string {
@@ -55,6 +55,12 @@ interface RequestStore extends TabRequestState {
   /** Per-tab state cache */
   _tabStates: Map<string, TabRequestState>
   _currentTabId: string | null
+  /**
+   * Identifier of an in-flight `request:send` IPC call, if any. Set right
+   * before `window.api.request.send(...)` is dispatched and cleared in the
+   * `finally` of the same call. `cancelRequest` reads this to abort.
+   */
+  _inflightRequestId: string | null
 
   setMethod: (method: HttpMethod) => void
   setUrl: (url: string) => void
@@ -74,6 +80,8 @@ interface RequestStore extends TabRequestState {
   addAssertion: () => void
   removeAssertion: (id: string) => void
   sendRequest: () => Promise<void>
+  /** Abort the in-flight HTTP request, if any. No-op when nothing is in flight. */
+  cancelRequest: () => Promise<void>
   loadFromEndpoint: (data: {
     method: HttpMethod
     url: string
@@ -107,6 +115,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   ...emptyTabState(),
   _tabStates: new Map(),
   _currentTabId: null,
+  _inflightRequestId: null,
 
   setMethod: (method) => set({ method }),
   setUrl: (url) => set({ url }),
@@ -235,9 +244,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       headers.filter((h) => h.enabled),
       activeVars
     )
-    const resolvedBody = body.content
-      ? { ...body, content: resolveVariables(body.content, activeVars) }
-      : body
+    const resolvedBody = resolveRequestBody(body, activeVars) ?? body
     const resolvedAuth = resolveAuth(auth, activeVars)
 
     responseStore.setLoading(true)
@@ -264,6 +271,13 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       } catch { /* ignore */ }
     }
 
+    // Generate a per-call requestId so the user can hit Cancel during a slow
+    // network round-trip. The main process tracks this id in its
+    // `pendingRequests` map and aborts the underlying axios request when
+    // `request:cancel` arrives.
+    const requestId = makeId()
+    set({ _inflightRequestId: requestId })
+
     try {
       const result = await window.api?.request?.send({
         method,
@@ -280,6 +294,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         _workspaceId: wsStore.activeWorkspaceId || undefined,
         _projectId: wsStore.activeProjectId || undefined,
         _tabId: activeTabId || undefined,
+        _requestId: requestId,
       })
 
       // Convert resolved headers to Record<string,string> for console/history
@@ -323,6 +338,19 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           const scriptResult = runScript(ps, pmApi)
           allTestResults.push(...scriptResult.results)
           allConsoleLogs.push(...scriptResult.consoleLogs)
+
+          // Persist `pm.environment.set(...)` / `pm.globals.set(...)` writes
+          // back to the env store. Without this, scripts that capture a token
+          // from the response would silently lose it on the next request.
+          if (
+            Object.keys(scriptResult.envUpdates).length > 0 ||
+            Object.keys(scriptResult.globalUpdates).length > 0
+          ) {
+            void envStore.applyScriptUpdates(
+              scriptResult.envUpdates,
+              scriptResult.globalUpdates,
+            )
+          }
         }
 
         // Merge test results and console logs into response
@@ -369,7 +397,26 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       if (activeTabId) {
         tabsStore.markLoading(activeTabId, false)
       }
+      set((s) =>
+        s._inflightRequestId === requestId ? { _inflightRequestId: null } : s,
+      )
     }
+  },
+
+  cancelRequest: async () => {
+    const inflightId = get()._inflightRequestId
+    if (!inflightId) return
+    try {
+      await window.api?.request?.cancel(inflightId)
+    } catch {
+      // Main may have already finished — local state will reset via the
+      // sendRequest finally block; ignore the error here.
+    }
+    // The aborted axios call surfaces in the same sendRequest as a thrown
+    // error, which falls into the catch above and renders an error response.
+    // Clear the inflight marker eagerly so the UI flips back to "Send" even
+    // if the abort beats the IPC reply.
+    set({ _inflightRequestId: null })
   },
 
   loadFromEndpoint: (data) => {

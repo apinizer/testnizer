@@ -25,6 +25,7 @@ export default function UrlBar() {
   const setMethod = useRequestStore((s) => s.setMethod)
   const setUrl = useRequestStore((s) => s.setUrl)
   const sendRequest = useRequestStore((s) => s.sendRequest)
+  const cancelRequest = useRequestStore((s) => s.cancelRequest)
   const isLoading = useResponseStore((s) => s.isLoading)
   const setShowEndpointSaveModal = useUIStore((s) => s.setShowEndpointSaveModal)
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
@@ -186,21 +187,30 @@ export default function UrlBar() {
       <div ref={sendDropRef} style={{ position: 'relative', display: 'flex', marginLeft: 8 }}>
         <button
           type="button"
-          onClick={() => { pinIfPreview(); sendRequest() }}
-          disabled={isLoading}
+          onClick={() => {
+            if (isLoading) {
+              cancelRequest()
+            } else {
+              pinIfPreview()
+              sendRequest()
+            }
+          }}
+          title={isLoading ? t('urlBar.cancel') : undefined}
           style={{
             ...BTN_P,
             height: 32,
             borderRadius: '8px 0 0 8px',
-            opacity: isLoading ? 0.75 : 1,
+            // Switch to a "stop" treatment while in flight — same width so the
+            // button does not jump when the user clicks Cancel.
+            background: isLoading ? '#cc2200' : (BTN_P as { background?: string }).background,
           }}
         >
           {isLoading ? (
             <>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" style={{ animation: 'spin 0.8s linear infinite' }}>
-                <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="8" />
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="2">
+                <rect x="6" y="6" width="12" height="12" rx="1" />
               </svg>
-              {t('urlBar.sending')}
+              {t('urlBar.cancel')}
             </>
           ) : (
             <>
