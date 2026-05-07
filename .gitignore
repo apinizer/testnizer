@@ -36,3 +36,7 @@ resources/third-party-licenses.json
 
 # Claude Code agent worktrees (managed externally)
 .claude/worktrees/
+
+# Stray scaffolds occasionally created by `npx create-*` runs that
+# misinterpret a flag (e.g. `--typescript`) as a target directory name.
+website/--*
