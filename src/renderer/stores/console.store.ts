@@ -23,14 +23,12 @@ export type ConsoleProtocol =
   | 'websocket'
   | 'graphql'
   | 'sse'
+  | 'mcp'
+  | 'socketio'
+  | 'ai'
 
 export type ConsoleLevel = 'info' | 'success' | 'warning' | 'error'
-export type ConsoleCategory =
-  | 'request'
-  | 'response'
-  | 'event'
-  | 'connection'
-  | 'system'
+export type ConsoleCategory = 'request' | 'response' | 'event' | 'connection' | 'system'
 
 export interface ConsoleLogDirection {
   /** 'in' = received from server, 'out' = sent to server */
@@ -101,6 +99,9 @@ export type ConsoleLogFilter =
   | 'graphql'
   | 'soap'
   | 'sse'
+  | 'mcp'
+  | 'socketio'
+  | 'ai'
 
 interface ConsoleStore {
   entries: ConsoleLogEntry[]
@@ -178,9 +179,10 @@ export const useConsoleStore = create<ConsoleStore>((set) => ({
         details: entry.details,
         scriptLogs: entry.scriptLogs,
       }
-      const next = state.entries.length >= MAX_ENTRIES
-        ? [...state.entries.slice(state.entries.length - MAX_ENTRIES + 1), newEntry]
-        : [...state.entries, newEntry]
+      const next =
+        state.entries.length >= MAX_ENTRIES
+          ? [...state.entries.slice(state.entries.length - MAX_ENTRIES + 1), newEntry]
+          : [...state.entries, newEntry]
       return { entries: next }
     }),
 
@@ -197,8 +199,7 @@ export const useConsoleStore = create<ConsoleStore>((set) => ({
         return { entries: state.entries }
       }
       const protocol: ConsoleProtocol =
-        req.protocol ??
-        ((res.protocol as ConsoleProtocol | undefined) ?? 'http')
+        req.protocol ?? (res.protocol as ConsoleProtocol | undefined) ?? 'http'
       const entry: ConsoleLogEntry = {
         id: makeId(),
         timestamp: Date.now(),
@@ -215,9 +216,10 @@ export const useConsoleStore = create<ConsoleStore>((set) => ({
           timestamp: l.timestamp,
         })),
       }
-      const next = state.entries.length >= MAX_ENTRIES
-        ? [...state.entries.slice(state.entries.length - MAX_ENTRIES + 1), entry]
-        : [...state.entries, entry]
+      const next =
+        state.entries.length >= MAX_ENTRIES
+          ? [...state.entries.slice(state.entries.length - MAX_ENTRIES + 1), entry]
+          : [...state.entries, entry]
       return { entries: next }
     }),
 
@@ -259,15 +261,11 @@ export function selectFilteredEntries(
 
   switch (filter) {
     case 'error':
-      list = list.filter(
-        (e) => e.level === 'error' || (e.status != null && e.status >= 400),
-      )
+      list = list.filter((e) => e.level === 'error' || (e.status != null && e.status >= 400))
       break
     case 'warn':
       list = list.filter(
-        (e) =>
-          e.level === 'warning' ||
-          (e.status != null && e.status >= 300 && e.status < 400),
+        (e) => e.level === 'warning' || (e.status != null && e.status >= 300 && e.status < 400),
       )
       break
     case 'http':
@@ -276,6 +274,9 @@ export function selectFilteredEntries(
     case 'graphql':
     case 'soap':
     case 'sse':
+    case 'mcp':
+    case 'socketio':
+    case 'ai':
       list = list.filter((e) => e.protocol === filter)
       break
     case 'log':
@@ -364,9 +365,7 @@ interface GraphqlSubscriptionEventPayload {
  */
 export function initConsoleListeners(): () => void {
   const api: WindowApi | undefined =
-    (typeof window !== 'undefined'
-      ? (window as unknown as { api?: WindowApi }).api
-      : undefined)
+    typeof window !== 'undefined' ? (window as unknown as { api?: WindowApi }).api : undefined
   const cleanups: Array<() => void> = []
   if (!api) return () => {}
 
@@ -529,6 +528,39 @@ export function initConsoleListeners(): () => void {
             message: 'GraphQL subscription complete',
           })
         }
+      }),
+    )
+  }
+
+  // 6) Socket.IO events
+  if (
+    (api as unknown as Record<string, { onEvent?: (cb: (e: unknown) => void) => () => void }>)
+      .socketio?.onEvent
+  ) {
+    const sioApi = (
+      api as unknown as Record<string, { onEvent: (cb: (e: unknown) => void) => () => void }>
+    ).socketio
+    cleanups.push(
+      sioApi.onEvent((data: unknown) => {
+        const ev = data as {
+          direction?: string
+          event?: string
+          data?: unknown
+          connectionId?: string
+        }
+        if (!ev || !ev.event) return
+        const add = useConsoleStore.getState().addEntry
+        add({
+          protocol: 'socketio',
+          level: 'info',
+          category: 'event',
+          message: `Socket.IO ${ev.direction === 'in' ? '←' : '→'} ${ev.event}: ${truncate(JSON.stringify(ev.data), 80)}`,
+          details: {
+            direction: ev.direction === 'in' ? 'in' : 'out',
+            eventName: ev.event,
+            responseBody: JSON.stringify(ev.data),
+          },
+        })
       }),
     )
   }

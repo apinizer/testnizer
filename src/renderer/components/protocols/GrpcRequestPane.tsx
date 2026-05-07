@@ -1,13 +1,5 @@
 import { useState } from 'react'
-import {
-  Upload,
-  Play,
-  Lock,
-  Unlock,
-  ChevronDown,
-  ChevronRight,
-  Settings2,
-} from 'lucide-react'
+import { Upload, Play, Lock, Unlock, ChevronDown, ChevronRight, Settings2 } from 'lucide-react'
 import { useGrpcStore } from '../../stores/grpc.store'
 import type { GrpcMethodType } from '../../stores/grpc.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
@@ -112,6 +104,37 @@ export default function GrpcRequestPane() {
             </button>
           </div>
         </div>
+
+        {/* Proto not loaded guidance */}
+        {!protoLoaded && !errorMessage && (
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--muted)]">
+            <p className="mb-1 font-semibold text-[var(--text)]">Nasıl kullanılır?</p>
+            <ol className="list-inside list-decimal space-y-1">
+              <li>
+                Sunucu adresini girin (ör.{' '}
+                <span className="font-mono">demo.connectrpc.com:443</span>)
+              </li>
+              <li>TLS gerekiyorsa kilit simgesine tıklayın</li>
+              <li>
+                <strong>Load Proto</strong> ile <code>.proto</code> dosyasını seçin
+              </li>
+              <li>
+                Service / Method seçin, payload doldurun, <strong>Execute</strong>
+              </li>
+            </ol>
+            <p className="mt-2 text-xs text-[var(--hint)]">
+              Demo sunucu: <span className="font-mono">demo.connectrpc.com:443</span> — Eliza
+              servisi (
+              <a
+                href="https://github.com/connectrpc/examples-go/blob/main/proto/connectrpc/eliza/v1/eliza.proto"
+                className="underline"
+              >
+                eliza.proto
+              </a>
+              )
+            </p>
+          </div>
+        )}
 
         {/* Proto path indicator */}
         {protoPath && (

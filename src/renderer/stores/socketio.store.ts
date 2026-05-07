@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useConsoleStore } from './console.store'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -138,15 +139,38 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
         errorMessage: null,
         _unsubscribePush: unsub,
       })
+      useConsoleStore.getState().addEntry({
+        protocol: 'socketio',
+        level: 'success',
+        category: 'request',
+        url,
+        message: `Socket.IO bağlandı: ${url}${namespace !== '/' ? namespace : ''}`,
+      })
     } else {
-      set({ connectionState: 'error', errorMessage: res.error ?? 'Connection failed' })
+      const errMsg = res.error ?? 'Connection failed'
+      set({ connectionState: 'error', errorMessage: errMsg })
+      useConsoleStore.getState().addEntry({
+        protocol: 'socketio',
+        level: 'error',
+        category: 'request',
+        url,
+        message: `Socket.IO bağlantı hatası: ${errMsg}`,
+        details: { error: { message: errMsg } },
+      })
     }
   },
 
   disconnect: async () => {
-    const { connectionId, _unsubscribePush } = get()
+    const { connectionId, url, _unsubscribePush } = get()
     if (connectionId) await getSioApi()?.disconnect(connectionId)
     _unsubscribePush?.()
+    useConsoleStore.getState().addEntry({
+      protocol: 'socketio',
+      level: 'info',
+      category: 'request',
+      url,
+      message: `Socket.IO bağlantısı kesildi`,
+    })
     set({
       ...emptyState(),
       url: get().url,
@@ -156,7 +180,7 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
   },
 
   emit: async () => {
-    const { connectionId, emitEvent, emitPayload } = get()
+    const { connectionId, emitEvent, emitPayload, url } = get()
     if (!connectionId || !emitEvent.trim()) return
     let data: unknown = emitPayload
     try {
@@ -164,7 +188,17 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
     } catch {
       /* send as string */
     }
-    await getSioApi()?.emit(connectionId, emitEvent, data)
+    const res = await getSioApi()?.emit(connectionId, emitEvent, data)
+    if (res && !res.success) {
+      useConsoleStore.getState().addEntry({
+        protocol: 'socketio',
+        level: 'error',
+        category: 'event',
+        url,
+        message: `Socket.IO emit hatası (${emitEvent}): ${res.error}`,
+        details: { error: { message: res.error ?? 'emit failed' } },
+      })
+    }
   },
 
   subscribe: async () => {

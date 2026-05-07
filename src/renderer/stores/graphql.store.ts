@@ -106,8 +106,9 @@ interface GraphQLStore extends TabGraphQLState {
 }
 
 const DEFAULT_QUERY = `# Write your GraphQL query here
+# Example (countries API): { country(code: "TR") { name capital } }
 query {
-  hello
+
 }
 `
 
@@ -218,16 +219,14 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   setQuery: (query) => set({ query }),
   setVariables: (vars) => set({ variables: vars }),
 
-  addHeader: () =>
-    set((state) => ({ headers: [...state.headers, defaultKv()] })),
+  addHeader: () => set((state) => ({ headers: [...state.headers, defaultKv()] })),
 
   updateHeader: (id, updates) =>
     set((state) => ({
       headers: state.headers.map((h) => (h.id === id ? { ...h, ...updates } : h)),
     })),
 
-  removeHeader: (id) =>
-    set((state) => ({ headers: state.headers.filter((h) => h.id !== id) })),
+  removeHeader: (id) => set((state) => ({ headers: state.headers.filter((h) => h.id !== id) })),
 
   executeQuery: async () => {
     const { url, query, variables, headers } = get()
@@ -323,7 +322,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
             },
           },
           null,
-          2
+          2,
         ),
         bodySize: 52,
         timing: { total: 89 },
@@ -466,7 +465,12 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
             kind: 'OBJECT',
             description: 'Root subscription type',
             fields: [
-              { name: 'onMessage', type: 'Message', args: [], description: 'Listen for new messages' },
+              {
+                name: 'onMessage',
+                type: 'Message',
+                args: [],
+                description: 'Listen for new messages',
+              },
             ],
           },
           {
@@ -549,7 +553,15 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
             ...s.subscriptionEvents,
             {
               id: makeId(),
-              data: JSON.stringify({ data: { onMessage: { id: makeId(), text: `Event at ${new Date().toISOString()}` } } }, null, 2),
+              data: JSON.stringify(
+                {
+                  data: {
+                    onMessage: { id: makeId(), text: `Event at ${new Date().toISOString()}` },
+                  },
+                },
+                null,
+                2,
+              ),
               timestamp: Date.now(),
             },
           ],

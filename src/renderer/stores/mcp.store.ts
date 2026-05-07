@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useConsoleStore } from './console.store'
 
 export type McpTransport = 'http' | 'sse' | 'stdio'
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
@@ -10,9 +11,7 @@ export interface McpTool {
 }
 
 interface McpApi {
-  connect: (
-    options: unknown,
-  ) => Promise<{
+  connect: (options: unknown) => Promise<{
     success: boolean
     data?: { connectionId: string; serverName?: string }
     error?: string
@@ -78,6 +77,22 @@ function emptyState(): TabMcpState {
   }
 }
 
+function generateExampleArgs(schema: Record<string, unknown>): Record<string, unknown> {
+  const props = (schema.properties as Record<string, Record<string, unknown>> | undefined) ?? {}
+  const result: Record<string, unknown> = {}
+  for (const [key, def] of Object.entries(props)) {
+    const type = def.type as string | undefined
+    if (def.enum && Array.isArray(def.enum)) result[key] = def.enum[0]
+    else if (type === 'string') result[key] = ''
+    else if (type === 'integer' || type === 'number') result[key] = 0
+    else if (type === 'boolean') result[key] = false
+    else if (type === 'array') result[key] = []
+    else if (type === 'object') result[key] = {}
+    else result[key] = null
+  }
+  return result
+}
+
 function extractState(s: McpStore): TabMcpState {
   return {
     transport: s.transport,
@@ -102,8 +117,12 @@ export const useMcpStore = create<McpStore>((set, get) => ({
 
   setTransport: (transport) => set({ transport }),
   setUrl: (url) => set({ url }),
-  setSelectedTool: (selectedTool) =>
-    set({ selectedTool, toolArgs: '{}', result: null, resultError: null }),
+  setSelectedTool: (selectedTool) => {
+    const tool = selectedTool ? get().tools.find((t) => t.name === selectedTool) : undefined
+    const example = tool?.inputSchema ? generateExampleArgs(tool.inputSchema) : {}
+    const toolArgs = JSON.stringify(example, null, 2)
+    set({ selectedTool, toolArgs, result: null, resultError: null })
+  },
   setToolArgs: (toolArgs) => set({ toolArgs }),
 
   connect: async () => {
@@ -123,18 +142,41 @@ export const useMcpStore = create<McpStore>((set, get) => ({
         serverName: res.data.serverName ?? null,
         errorMessage: null,
       })
+      useConsoleStore.getState().addEntry({
+        protocol: 'mcp',
+        level: 'success',
+        category: 'request',
+        url,
+        message: `MCP bağlandı: ${res.data.serverName ?? url}`,
+      })
       // Auto-list tools on connect
       get().listTools()
     } else {
-      set({ connectionState: 'error', errorMessage: res.error ?? 'Connection failed' })
+      const errMsg = res.error ?? 'Connection failed'
+      set({ connectionState: 'error', errorMessage: errMsg })
+      useConsoleStore.getState().addEntry({
+        protocol: 'mcp',
+        level: 'error',
+        category: 'request',
+        url,
+        message: `MCP bağlantı hatası: ${errMsg}`,
+        details: { error: { message: errMsg } },
+      })
     }
   },
 
   disconnect: async () => {
-    const { connectionId } = get()
+    const { connectionId, url } = get()
     if (!connectionId) return
     const api = getMcpApi()
     await api?.disconnect(connectionId)
+    useConsoleStore.getState().addEntry({
+      protocol: 'mcp',
+      level: 'info',
+      category: 'request',
+      url,
+      message: `MCP bağlantısı kesildi`,
+    })
     set({ ...emptyState(), transport: get().transport, url: get().url })
   },
 
@@ -168,8 +210,25 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     const res = await api.callTool(connectionId, selectedTool, args)
     if (res.success) {
       set({ result: res.data, resultError: null, isInvoking: false })
+      useConsoleStore.getState().addEntry({
+        protocol: 'mcp',
+        level: 'success',
+        category: 'response',
+        url: get().url,
+        message: `MCP tool ${selectedTool} → başarılı`,
+        details: { responseBody: JSON.stringify(res.data) },
+      })
     } else {
-      set({ result: null, resultError: res.error ?? 'Tool call failed', isInvoking: false })
+      const errMsg = res.error ?? 'Tool call failed'
+      set({ result: null, resultError: errMsg, isInvoking: false })
+      useConsoleStore.getState().addEntry({
+        protocol: 'mcp',
+        level: 'error',
+        category: 'response',
+        url: get().url,
+        message: `MCP tool ${selectedTool} hata: ${errMsg}`,
+        details: { error: { message: errMsg } },
+      })
     }
   },
 
