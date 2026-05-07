@@ -40,6 +40,7 @@ interface UIStore {
   showHistoryPanel: boolean
   showConsolePanel: boolean
   showProfileModal: boolean
+  showAboutModal: boolean
   gitLoading: string | null  // null = idle, string = message to display
   addEndpointsSuiteId: string | null
   addEndpointsSuiteName: string | null
@@ -71,6 +72,7 @@ interface UIStore {
   setShowConsolePanel: (show: boolean) => void
   toggleConsolePanel: () => void
   setShowProfileModal: (show: boolean) => void
+  setShowAboutModal: (show: boolean) => void
   setGitLoading: (msg: string | null) => void
   setAddEndpointsSuite: (suiteId: string | null, suiteName?: string | null) => void
   setRightPanelCollapsed: (collapsed: boolean) => void
@@ -139,6 +141,7 @@ export const useUIStore = create<UIStore>((set) => ({
   showHistoryPanel: false,
   showConsolePanel: false,
   showProfileModal: false,
+  showAboutModal: false,
   gitLoading: null,
   addEndpointsSuiteId: null,
   addEndpointsSuiteName: null,
@@ -246,6 +249,7 @@ export const useUIStore = create<UIStore>((set) => ({
   setShowConsolePanel: (show) => set({ showConsolePanel: show }),
   toggleConsolePanel: () => set((s) => ({ showConsolePanel: !s.showConsolePanel })),
   setShowProfileModal: (show) => set({ showProfileModal: show }),
+  setShowAboutModal: (show) => set({ showAboutModal: show }),
   setGitLoading: (msg) => set({ gitLoading: msg }),
   setAddEndpointsSuite: (suiteId, suiteName) => set({ addEndpointsSuiteId: suiteId, addEndpointsSuiteName: suiteName ?? null }),
   setRightPanelCollapsed: (collapsed) => set({ rightPanelCollapsed: collapsed }),

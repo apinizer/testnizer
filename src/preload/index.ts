@@ -24,6 +24,12 @@ const api = {
     toggleMaximize: (): Promise<unknown> => ipcRenderer.invoke('window:toggleMaximize'),
   },
 
+  // ─── App ────────────────────────────────────────────────
+  app: {
+    version: (): Promise<unknown> => ipcRenderer.invoke('app:version'),
+    openExternal: (url: string): Promise<unknown> => ipcRenderer.invoke('app:openExternal', url),
+  },
+
   // ─── Dialog ─────────────────────────────────────────────
   dialog: {
     openFile: (options?: {

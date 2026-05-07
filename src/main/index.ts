@@ -125,6 +125,29 @@ ipcMain.handle('window:toggleMaximize', (event) => {
   return { success: true }
 })
 
+// App metadata + safe external URL opener (used by About modal etc.)
+ipcMain.handle('app:version', () => {
+  try {
+    return { success: true, data: { version: app.getVersion(), name: app.name } }
+  } catch (e) {
+    return { success: false, error: (e as Error).message }
+  }
+})
+
+ipcMain.handle('app:openExternal', async (_event, url: unknown) => {
+  try {
+    if (typeof url !== 'string') return { success: false, error: 'invalid url' }
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { success: false, error: 'unsupported protocol' }
+    }
+    await shell.openExternal(url)
+    return { success: true, data: null }
+  } catch (e) {
+    return { success: false, error: (e as Error).message }
+  }
+})
+
 // Set app name early so macOS dock/menu shows correct name + migrate legacy data
 migrateLegacyUserData()
 initLogging()

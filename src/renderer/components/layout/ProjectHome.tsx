@@ -97,12 +97,31 @@ export default function ProjectHome() {
 
   const authUser = useAuthStore((s) => s.user)
   const setShowProfileModal = useUIStore((s) => s.setShowProfileModal)
+  const setShowAboutModal = useUIStore((s) => s.setShowAboutModal)
 
   return (
     <div
       className="relative flex h-full w-full flex-col items-center overflow-y-auto"
       style={{ background: 'var(--bg)' }}
     >
+      {/* About button — top left (always visible) */}
+      <button
+        type="button"
+        onClick={() => setShowAboutModal(true)}
+        className="absolute left-5 top-4 z-10 cursor-pointer rounded-md border bg-transparent px-2.5 py-1 transition-colors"
+        style={{ borderColor: 'var(--border)', color: 'var(--muted)', fontSize: 13 }}
+        onMouseEnter={(e) => {
+          ;(e.currentTarget as HTMLElement).style.color = 'var(--text)'
+          ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'
+        }}
+        onMouseLeave={(e) => {
+          ;(e.currentTarget as HTMLElement).style.color = 'var(--muted)'
+          ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'
+        }}
+      >
+        {t('header.about')}
+      </button>
+
       {/* Profile avatar — top right */}
       {authUser && (
         <div

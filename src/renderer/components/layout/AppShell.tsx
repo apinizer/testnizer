@@ -15,6 +15,7 @@ import NewProjectModal from '../modals/NewProjectModal'
 import EndpointSaveModal from '../modals/EndpointSaveModal'
 import ProjectDetailModal from '../modals/ProjectDetailModal'
 import ProfileModal from '../modals/ProfileModal'
+import AboutModal from '../modals/AboutModal'
 import ConsolePanel from './ConsolePanel'
 import LoginScreen from '../auth/LoginScreen'
 import QuickTestShell from './QuickTestShell'
@@ -140,6 +141,7 @@ export default function AppShell() {
         <UpdateModal />
         <NewProjectModal />
         <ProfileModal />
+        <AboutModal />
       </div>
     )
   }
@@ -182,6 +184,7 @@ export default function AppShell() {
       <EndpointSaveModal />
       <ProjectDetailModal />
       <ProfileModal />
+      <AboutModal />
 
       {/* Git loading overlay */}
       <GitLoadingOverlay />

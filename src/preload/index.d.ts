@@ -849,6 +849,11 @@ interface WindowApi {
   toggleMaximize(): Promise<IpcResult<boolean>>
 }
 
+interface AppApi {
+  version(): Promise<IpcResult<{ version: string; name: string }>>
+  openExternal(url: string): Promise<IpcResult<null>>
+}
+
 // ─── Branch ──────────────────────────────────────────────────────
 
 interface BranchApi {
@@ -965,6 +970,7 @@ interface SaveApi {
 
 interface ApiBridge {
   window: WindowApi
+  app: AppApi
   request: RequestApi
   console: ConsoleApi
   workspace: WorkspaceApi

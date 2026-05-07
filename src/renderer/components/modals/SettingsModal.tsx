@@ -27,6 +27,7 @@ export default function SettingsModal() {
   const setLocale = useUIStore((s) => s.setLocale)
   const setFontSize = useUIStore((s) => s.setFontSize)
   const setShowUpdateModal = useUIStore((s) => s.setShowUpdateModal)
+  const setShowAboutModal = useUIStore((s) => s.setShowAboutModal)
   const checkForUpdates = useUpdaterStore((s) => s.check)
   const { t } = useTranslation()
 
@@ -229,7 +230,16 @@ export default function SettingsModal() {
         </div>
 
         {/* Footer */}
-        <div className="mt-6 flex justify-end gap-2.5 border-t border-[var(--border)] pt-4">
+        <div className="mt-6 flex items-center justify-between gap-2.5 border-t border-[var(--border)] pt-4">
+          <button
+            type="button"
+            onClick={() => { setShow(false); setShowAboutModal(true) }}
+            className="cursor-pointer rounded-[7px] border-none bg-transparent px-1 py-1 text-[var(--muted)] underline-offset-2 hover:underline"
+            style={{ fontSize: 13 }}
+          >
+            {t('header.about')}
+          </button>
+          <div className="flex gap-2.5">
           <button
             type="button"
             onClick={() => setShow(false)}
@@ -244,6 +254,7 @@ export default function SettingsModal() {
           >
             {t('settings.save')}
           </button>
+          </div>
         </div>
       </div>
     </div>

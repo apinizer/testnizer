@@ -10,6 +10,17 @@ const translations: Record<Locale, Record<string, string>> = {
     // Header
     'header.apiTester': 'API Tester',
     'header.newProject': 'New Project',
+    'header.about': 'About',
+
+    // About modal
+    'about.homepage': 'Homepage',
+    'about.thirdPartyLicenses': 'Third-party Licenses',
+    'about.privacyPolicy': 'Privacy Policy',
+    'about.eula': 'End User License Agreement',
+    'about.comingSoon': 'Coming soon',
+    'about.licensesLoading': 'Loading licenses…',
+    'about.licensesError': 'Failed to load license list',
+    'about.licensesCount': '{count} packages',
 
     // Welcome panels
     // Tests panel
@@ -455,20 +466,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'updateTab.autoInstall': 'Automatically download updates',
     'updateTab.checkNow': 'Check for updates',
 
-    // About tab
-    'about.title': 'About',
-    'about.subtitle': 'Information about this application.',
-    'about.appName': 'Testnizer',
-    'about.appTagline': 'Cross-platform API testing for teams.',
-    'about.version': 'Version',
-    'about.platform': 'Platform',
-    'about.electron': 'Electron',
-    'about.node': 'Node.js',
-    'about.chrome': 'Chrome',
-    'about.license': 'License',
-    'about.website': 'Website',
-    'about.support': 'Support',
-
     // Modal footer
     'modal.saveChanges': 'Save Changes',
     'modal.saving': 'Saving…',
@@ -810,6 +807,17 @@ const translations: Record<Locale, Record<string, string>> = {
     // Header
     'header.apiTester': 'API Tester',
     'header.newProject': 'Yeni Proje',
+    'header.about': 'Hakkında',
+
+    // About modal
+    'about.homepage': 'Web sitesi',
+    'about.thirdPartyLicenses': 'Üçüncü Taraf Lisansları',
+    'about.privacyPolicy': 'Gizlilik Politikası',
+    'about.eula': 'Son Kullanıcı Lisans Sözleşmesi',
+    'about.comingSoon': 'Yakında',
+    'about.licensesLoading': 'Lisanslar yükleniyor…',
+    'about.licensesError': 'Lisans listesi yüklenemedi',
+    'about.licensesCount': '{count} paket',
 
     // Welcome panels
     // Tests panel
@@ -1254,20 +1262,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'updateTab.autoCheck': 'Güncellemeleri otomatik kontrol et',
     'updateTab.autoInstall': 'Güncellemeleri otomatik indir',
     'updateTab.checkNow': 'Güncellemeleri kontrol et',
-
-    // About tab
-    'about.title': 'Hakkında',
-    'about.subtitle': 'Bu uygulama hakkında bilgi.',
-    'about.appName': 'Testnizer',
-    'about.appTagline': 'Ekipler için platformdan bağımsız API testi.',
-    'about.version': 'Sürüm',
-    'about.platform': 'Platform',
-    'about.electron': 'Electron',
-    'about.node': 'Node.js',
-    'about.chrome': 'Chrome',
-    'about.license': 'Lisans',
-    'about.website': 'Web sitesi',
-    'about.support': 'Destek',
 
     // Modal footer
     'modal.saveChanges': 'Değişiklikleri Kaydet',
