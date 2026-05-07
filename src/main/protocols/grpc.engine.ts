@@ -8,6 +8,7 @@ import { join as joinPath } from 'path'
 import { writeFile, mkdir } from 'fs/promises'
 import axios from 'axios'
 import { describeGrpcStatus } from '../lib/error-classifier'
+import { fetchReflection } from './grpc-reflection'
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -770,147 +771,70 @@ export function clearProtoCache(): void {
 
 // ─── Server Reflection ──────────────────────────────────────
 
-interface ReflectionListResponse {
-  listServicesResponse?: {
-    service?: Array<{ name: string }>
-  }
-}
-
-interface ReflectionFileResponse {
-  fileDescriptorResponse?: {
-    fileDescriptorProto?: Array<Buffer | Uint8Array>
-  }
-}
-
-type ReflectionResponseValue = ReflectionListResponse | ReflectionFileResponse
-
-interface ReflectionResponse {
-  listServicesResponse?: ReflectionListResponse['listServicesResponse']
-  fileDescriptorResponse?: ReflectionFileResponse['fileDescriptorResponse']
-  errorResponse?: { errorCode: number; errorMessage: string }
-}
-
+/**
+ * Loads a fully populated `GrpcServiceDescription` (services + methods +
+ * request/response types) from a server that exposes the standard gRPC
+ * reflection service.
+ *
+ * Tries `grpc.reflection.v1.ServerReflection` first and falls back to the
+ * older `v1alpha` package for legacy servers.
+ *
+ * The returned descriptor is also cached under `reflection://<address>` so
+ * subsequent `executeUnary` / streaming calls can reuse the parsed
+ * `PackageDefinition` without re-fetching descriptors over the wire.
+ */
 export async function loadFromReflection(
   address: string,
   useTls?: boolean,
 ): Promise<GrpcServiceDescription> {
   const credentials = createCredentials(useTls)
-
-  // Try v1 first, then fall back to v1alpha
   const reflectionServiceNames = [
     'grpc.reflection.v1.ServerReflection',
     'grpc.reflection.v1alpha.ServerReflection',
   ]
 
-  for (const reflectionService of reflectionServiceNames) {
+  let lastError: Error | null = null
+  for (const svc of reflectionServiceNames) {
     try {
-      const result = await tryReflection(address, credentials, reflectionService)
-      return result
-    } catch {
-      // Try next reflection version
+      const reflection = await fetchReflection(address, credentials, svc)
+      const packageDefinition = protoLoader.loadFileDescriptorSetFromBuffer(
+        reflection.fileDescriptorSetBuffer,
+        {
+          keepCase: true,
+          longs: String,
+          enums: String,
+          defaults: true,
+          oneofs: true,
+        },
+      )
+      const grpcObject = grpc.loadPackageDefinition(packageDefinition)
+      const protoPath = `reflection://${address}`
+      protoCache.set(protoPath, { packageDefinition, grpcObject, protoPath })
+
+      const { packageName, services } = extractServices(packageDefinition)
+      // If the descriptor parse produced no services but the server listed
+      // some, fall back to bare service names with empty methods so the UI
+      // still surfaces something useful.
+      if (services.length === 0 && reflection.serviceNames.length > 0) {
+        return {
+          protoPath,
+          packageName: reflection.serviceNames[0].split('.').slice(0, -1).join('.'),
+          services: reflection.serviceNames.map((name) => ({
+            name: name.split('.').pop() || name,
+            fullName: name,
+            methods: [],
+          })),
+        }
+      }
+      return { protoPath, packageName, services }
+    } catch (err) {
+      lastError = err as Error
     }
   }
 
-  throw new Error('Server does not support gRPC reflection (tried v1 and v1alpha)')
-}
-
-async function tryReflection(
-  address: string,
-  credentials: grpc.ChannelCredentials,
-  reflectionServiceName: string,
-): Promise<GrpcServiceDescription> {
-  return new Promise<GrpcServiceDescription>((resolve, reject) => {
-    // Build the reflection client manually using makeGenericClientConstructor
-    const reflectionMethodName = 'ServerReflectionInfo'
-
-    const servicePath = reflectionServiceName
-    const methodPath = `/${servicePath}/${reflectionMethodName}`
-
-    // Create a generic client
-    const client = new grpc.Client(address, credentials, {})
-
-    // List services via reflection bidirectional stream
-    const call = client.makeBidiStreamRequest(
-      methodPath,
-      (arg: Record<string, unknown>) => Buffer.from(JSON.stringify(arg)),
-      (buf: Buffer) => JSON.parse(buf.toString()) as ReflectionResponseValue,
-      new grpc.Metadata(),
-      { deadline: new Date(Date.now() + 10000) },
-    )
-
-    const serviceNames: string[] = []
-    const services: GrpcServiceInfo[] = []
-    let listReceived = false
-
-    call.on('data', (response: ReflectionResponse) => {
-      if (response.errorResponse) {
-        call.end()
-        reject(new Error(response.errorResponse.errorMessage))
-        return
-      }
-
-      if (response.listServicesResponse?.service) {
-        listReceived = true
-        for (const svc of response.listServicesResponse.service) {
-          // Skip internal reflection services
-          if (!svc.name.startsWith('grpc.reflection.')) {
-            serviceNames.push(svc.name)
-          }
-        }
-
-        // Now request file descriptors for each service
-        if (serviceNames.length === 0) {
-          call.end()
-          return
-        }
-
-        for (const name of serviceNames) {
-          call.write({ file_containing_symbol: name })
-        }
-      }
-
-      if (response.fileDescriptorResponse?.fileDescriptorProto) {
-        // Parse service info from descriptor bytes
-        // Since we don't have protobuf descriptor parser here,
-        // we extract what we can from the service names
-        for (const serviceName of serviceNames) {
-          const parts = serviceName.split('.')
-          const shortName = parts[parts.length - 1]
-
-          // Check if we already added this service
-          if (services.some((s) => s.fullName === serviceName)) {
-            continue
-          }
-
-          services.push({
-            name: shortName,
-            fullName: serviceName,
-            methods: [], // Methods will be populated when user selects a service
-          })
-        }
-      }
-    })
-
-    call.on('end', () => {
-      if (listReceived) {
-        resolve({
-          protoPath: `reflection://${address}`,
-          packageName:
-            serviceNames.length > 0 ? serviceNames[0].split('.').slice(0, -1).join('.') : '',
-          services,
-        })
-      } else {
-        reject(new Error('No response received from reflection service'))
-      }
-    })
-
-    call.on('error', (err: grpc.ServiceError) => {
-      reject(new Error(`Reflection failed: ${err.message}`))
-    })
-
-    // Send initial list services request
-    call.write({ list_services: '' })
-  })
+  throw new Error(
+    `Server does not support gRPC reflection (tried v1 and v1alpha): ${lastError?.message ?? 'unknown error'}`,
+  )
 }
 
 // ─── Client Streaming ───────────────────────────────────────

@@ -12,6 +12,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:socketio-echo": "node scripts/socketio-echo-server.cjs",
     "icons": "node scripts/generate-icons.mjs",
     "licenses": "node scripts/generate-licenses.mjs",
     "build": "electron-vite build",

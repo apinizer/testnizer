@@ -129,24 +129,24 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 
 Güvenilir **ücretsiz kamuya açık** Socket.IO sunucusu mevcut değildir — protokol özel namespace, auth token ve event şeması gerektirdiğinden herkese açık stabil sunucu yoktur.
 
-### Yerel test sunucusu (node — ~1 satır)
+### Yerel test sunucusu (`scripts/socketio-echo-server.cjs`)
 
-Node.js ve `socket.io` paketi kurulu sistemde:
+Repo içinde hazır bir echo sunucusu var. Başlatmak için:
 
 ```bash
-node -e "
-const http = require('http');
-const { Server } = require('socket.io');
-const srv = http.createServer().listen(3001, () => console.log('Socket.IO dinleniyor: http://localhost:3001'));
-new Server(srv, { cors: { origin: '*' } }).on('connection', socket => {
-  console.log('Bağlandı:', socket.id);
-  socket.onAny((event, data) => {
-    console.log('<-- Gelen:', event, data);
-    socket.emit('echo', { event, data });   // her event'i 'echo' olarak geri gönder
-  });
-});
-"
+npm run dev:socketio-echo
+# veya doğrudan:
+node scripts/socketio-echo-server.cjs
+# port'u değiştirmek:  PORT=3005 npm run dev:socketio-echo
 ```
+
+Sunucu:
+- `welcome` event'i (bağlantı sonrası, sunucu zamanı + socket id)
+- Herhangi bir event → `echo` `{ event, data, receivedAt }` olarak geri döner
+- `ping` → `pong` `{ ts }`
+- `whoami` → `{ id, namespace, address }`
+- `broadcast` → tüm bağlı client'lara `broadcast` event'i gönderir
+- Health: `curl http://localhost:3001/health`
 
 Testnizer'da:
 ```
