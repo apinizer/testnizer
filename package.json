@@ -1,7 +1,7 @@
 {
   "name": "testnizer",
   "productName": "Testnizer",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Testnizer — Cross-platform desktop API testing application",
   "main": "./out/main/index.js",
   "homepage": "https://apinizer.com",
