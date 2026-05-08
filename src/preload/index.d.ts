@@ -737,6 +737,11 @@ interface GrpcBidiStreamPayload {
   metadata?: Record<string, string>
   timeout?: number
   useTls?: boolean
+  /**
+   * `false` for `client_streaming` (unary response delivered via callback);
+   * `true` (or omitted) for `bidi_streaming` (server emits a stream).
+   */
+  responseStream?: boolean
 }
 
 interface GrpcApi {

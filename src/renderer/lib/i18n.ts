@@ -841,6 +841,28 @@ const translations: Record<Locale, Record<string, string>> = {
     'tools.common.compare': 'Compare',
     'tools.common.empty': '— press the button to run —',
 
+    // Common buttons / actions
+    'common.cancel': 'Cancel',
+    'common.save': 'Save',
+    'common.saving': 'Saving…',
+    'common.close': 'Close',
+    'common.delete': 'Delete',
+    'common.create': 'Create',
+
+    // Endpoint save modal
+    'endpointSave.title': 'Save Endpoint',
+    'endpointSave.titleUpdate': 'Update Endpoint',
+    'endpointSave.endpointName': 'Endpoint Name',
+    'endpointSave.saveToFolder': 'Save to Folder',
+    'endpointSave.noFolders': 'No folders yet',
+    'endpointSave.createFolder': 'Create new folder',
+    'endpointSave.folderNamePlaceholder': 'Folder name…',
+    'endpointSave.alreadySavedHint':
+      'Already saved. Saving again will overwrite the existing endpoint and move it to the chosen folder.',
+    'endpointSave.update': 'Update',
+    'endpointSave.updating': 'Updating…',
+    'endpointSave.defaultName': 'New Endpoint',
+
     // gRPC editor
     'grpc.serverAddress': 'Server Address',
     'grpc.serverAddressPlaceholder': 'localhost:50051',
@@ -861,6 +883,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'grpc.requestMessage': 'Request Message (JSON)',
     'grpc.metadata': 'Metadata',
     'grpc.execute': 'Execute',
+    'grpc.send': 'Send',
+    'grpc.endStreaming': 'End Streaming',
+    'grpc.streamHalfClosed': 'Stream half-closed — waiting for server to finish',
     'grpc.calling': 'Calling…',
     'grpc.cancelStream': 'Cancel Stream',
     'grpc.guide.title': 'How to use',
@@ -1709,6 +1734,28 @@ const translations: Record<Locale, Record<string, string>> = {
     'tools.common.compare': 'Karşılaştır',
     'tools.common.empty': '— çalıştırmak için butona basın —',
 
+    // Common buttons / actions
+    'common.cancel': 'İptal',
+    'common.save': 'Kaydet',
+    'common.saving': 'Kaydediliyor…',
+    'common.close': 'Kapat',
+    'common.delete': 'Sil',
+    'common.create': 'Oluştur',
+
+    // Endpoint save modal
+    'endpointSave.title': "Endpoint'i Kaydet",
+    'endpointSave.titleUpdate': "Endpoint'i Güncelle",
+    'endpointSave.endpointName': 'Endpoint Adı',
+    'endpointSave.saveToFolder': 'Klasöre Kaydet',
+    'endpointSave.noFolders': 'Henüz klasör yok',
+    'endpointSave.createFolder': 'Yeni klasör oluştur',
+    'endpointSave.folderNamePlaceholder': 'Klasör adı…',
+    'endpointSave.alreadySavedHint':
+      'Bu endpoint zaten kayıtlı. Tekrar kaydedince mevcut endpoint güncellenir ve seçtiğiniz klasöre taşınır.',
+    'endpointSave.update': 'Güncelle',
+    'endpointSave.updating': 'Güncelleniyor…',
+    'endpointSave.defaultName': 'Yeni Endpoint',
+
     // gRPC editor
     'grpc.serverAddress': 'Sunucu Adresi',
     'grpc.serverAddressPlaceholder': 'localhost:50051',
@@ -1729,6 +1776,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'grpc.requestMessage': 'İstek Mesajı (JSON)',
     'grpc.metadata': 'Metadata',
     'grpc.execute': 'Çalıştır',
+    'grpc.send': 'Gönder',
+    'grpc.endStreaming': 'Akışı Bitir',
+    'grpc.streamHalfClosed': 'Akış yarı kapatıldı — sunucunun bitirmesi bekleniyor',
     'grpc.calling': 'Çağrılıyor…',
     'grpc.cancelStream': 'Akışı İptal Et',
     'grpc.guide.title': 'Nasıl kullanılır?',

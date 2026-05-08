@@ -69,7 +69,7 @@ export default function Footer() {
       <button
         type="button"
         onClick={toggleConsolePanel}
-        title="Console (Alt+Ctrl+C)"
+        title={`${t('footer.console')} (Alt+Ctrl+C)`}
         style={{
           display: 'inline-flex',
           alignItems: 'center',

@@ -61,6 +61,7 @@ interface GrpcBidiStreamPayload {
   metadata?: Record<string, string>
   timeout?: number
   useTls?: boolean
+  responseStream?: boolean
 }
 
 export function registerGrpcHandlers(): void {
@@ -251,6 +252,7 @@ export function registerGrpcHandlers(): void {
         metadata: payload.metadata,
         timeout: payload.timeout,
         useTls: payload.useTls,
+        responseStream: payload.responseStream,
       }
 
       const streamId = await startBidiStream(options, win.id)

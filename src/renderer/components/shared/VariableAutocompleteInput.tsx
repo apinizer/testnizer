@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useEnvironmentStore } from '../../stores/environment.store'
+import { useUIStore } from '../../stores/ui.store'
 
 /** Built-in dynamic variables with $ prefix */
 const BUILTIN_DYNAMIC_VARS: { name: string; description: string }[] = [
@@ -62,6 +63,74 @@ export default function VariableAutocompleteInput({
   const environments = useEnvironmentStore((s) => s.environments)
   const activeEnvironmentId = useEnvironmentStore((s) => s.activeEnvironmentId)
   const globalVariables = useEnvironmentStore((s) => s.globalVariables)
+  const setShowEnvironmentModal = useUIStore((s) => s.setShowEnvironmentModal)
+
+  // Hover tooltip state — shown when cursor sits over a `{{var}}` segment.
+  const [hoverInfo, setHoverInfo] = useState<{
+    name: string
+    value: string | null
+    category: VariableCategory | 'unresolved'
+    envName: string | null
+    rect: DOMRect
+  } | null>(null)
+  // Debounce unmount when the cursor leaves the `{{var}}` span. The tooltip
+  // sits a few px below the token; without this debounce the cursor crosses
+  // the gap, the leave fires synchronously, the portal unmounts, and the
+  // tooltip's own onMouseEnter never fires — making the Edit button
+  // unreachable.
+  const hoverCloseTimer = useRef<number | null>(null)
+  const cancelHoverClose = useCallback(() => {
+    if (hoverCloseTimer.current !== null) {
+      window.clearTimeout(hoverCloseTimer.current)
+      hoverCloseTimer.current = null
+    }
+  }, [])
+  const scheduleHoverClose = useCallback(() => {
+    cancelHoverClose()
+    hoverCloseTimer.current = window.setTimeout(() => setHoverInfo(null), 120)
+  }, [cancelHoverClose])
+  useEffect(() => () => cancelHoverClose(), [cancelHoverClose])
+
+  const lookupVariable = useCallback(
+    (
+      name: string,
+    ): {
+      value: string | null
+      category: VariableCategory | 'unresolved'
+      envName: string | null
+    } => {
+      const trimmed = name.trim()
+
+      // Dynamic ($randomInt, $timestamp, …) — resolved at request time
+      if (trimmed.startsWith('$')) {
+        return { value: '(generated at send time)', category: 'dynamic', envName: null }
+      }
+
+      // Active environment first (matches resolveVariables precedence)
+      const env = environments.find((e) => e.id === activeEnvironmentId)
+      if (env) {
+        const v = env.variables.find((ev) => ev.enabled && ev.key === trimmed)
+        if (v) {
+          return {
+            value: v.value || v.initialValue || '',
+            category: 'environment',
+            envName: env.name,
+          }
+        }
+      }
+      // Globals
+      const g = globalVariables.find((gv) => gv.enabled && gv.key === trimmed)
+      if (g) {
+        return {
+          value: g.value || g.initialValue || '',
+          category: 'global',
+          envName: null,
+        }
+      }
+      return { value: null, category: 'unresolved', envName: null }
+    },
+    [environments, activeEnvironmentId, globalVariables],
+  )
 
   const getActiveEnvVars = useCallback((): Suggestion[] => {
     const env = environments.find((e) => e.id === activeEnvironmentId)
@@ -98,13 +167,11 @@ export default function VariableAutocompleteInput({
     (query: string) => {
       const all = [...getActiveEnvVars(), ...getGlobalVars(), ...getDynamicVars()]
       const q = query.toLowerCase()
-      const filtered = q
-        ? all.filter((s) => s.name.toLowerCase().includes(q))
-        : all
+      const filtered = q ? all.filter((s) => s.name.toLowerCase().includes(q)) : all
       setSuggestions(filtered)
       setSelectedIndex(0)
     },
-    [getActiveEnvVars, getGlobalVars, getDynamicVars]
+    [getActiveEnvVars, getGlobalVars, getDynamicVars],
   )
 
   const updateDropdownPosition = useCallback(() => {
@@ -144,7 +211,7 @@ export default function VariableAutocompleteInput({
       setSuggestions([])
       setQueryStart(-1)
     },
-    [onChange, updateSuggestions, updateDropdownPosition]
+    [onChange, updateSuggestions, updateDropdownPosition],
   )
 
   const selectSuggestion = useCallback(
@@ -170,7 +237,7 @@ export default function VariableAutocompleteInput({
         }
       })
     },
-    [queryStart, value, onChange]
+    [queryStart, value, onChange],
   )
 
   const handleKeyDown = useCallback(
@@ -201,7 +268,7 @@ export default function VariableAutocompleteInput({
       }
       externalKeyDown?.(e)
     },
-    [suggestions, selectedIndex, selectSuggestion, externalKeyDown]
+    [suggestions, selectedIndex, selectSuggestion, externalKeyDown],
   )
 
   // Close on outside click
@@ -272,6 +339,10 @@ export default function VariableAutocompleteInput({
     position: 'absolute',
     inset: 0,
     pointerEvents: 'none',
+    // Stack above the input (zIndex:1) so individual var spans with
+    // pointerEvents:auto can intercept hover. Without this, the input
+    // sibling paints on top and the tooltip never opens.
+    zIndex: 2,
     overflow: 'hidden',
     whiteSpace: 'pre',
     display: 'flex',
@@ -296,7 +367,10 @@ export default function VariableAutocompleteInput({
   // Hide the real text in the input so only the overlay shows colored text,
   // but keep the caret visible.
   const inputOverlayHider: React.CSSProperties = value
-    ? { color: 'transparent', caretColor: (inputStyle as React.CSSProperties).color as string || 'var(--text)' }
+    ? {
+        color: 'transparent',
+        caretColor: ((inputStyle as React.CSSProperties).color as string) || 'var(--text)',
+      }
     : {}
 
   return (
@@ -328,13 +402,43 @@ export default function VariableAutocompleteInput({
           className={className}
         />
         <div ref={overlayRef} aria-hidden="true" style={overlayStyle}>
-          {segments.map((seg, i) =>
-            seg.isVar ? (
-              <span key={i} style={{ color: 'var(--variable-color, #0066cc)', fontWeight: 500 }}>{seg.text}</span>
-            ) : (
-              <span key={i}>{seg.text}</span>
+          {segments.map((seg, i) => {
+            if (!seg.isVar) return <span key={i}>{seg.text}</span>
+            // Strip the surrounding `{{` `}}` to extract the bare name.
+            const varName = seg.text.slice(2, -2)
+            const info = lookupVariable(varName)
+            const unresolved = info.category === 'unresolved'
+            return (
+              <span
+                key={i}
+                style={{
+                  color: unresolved
+                    ? 'var(--delete-color, #cc2200)'
+                    : 'var(--variable-color, #0066cc)',
+                  fontWeight: 500,
+                  // Re-enable pointer events on the overlay token so the
+                  // tooltip can fire even though the wrapper is pointer-none.
+                  pointerEvents: 'auto',
+                  cursor: 'help',
+                  textDecoration: unresolved ? 'underline dotted' : undefined,
+                  textUnderlineOffset: 2,
+                }}
+                onMouseEnter={(e) => {
+                  cancelHoverClose()
+                  setHoverInfo({
+                    name: varName,
+                    value: info.value,
+                    category: info.category,
+                    envName: info.envName,
+                    rect: (e.currentTarget as HTMLElement).getBoundingClientRect(),
+                  })
+                }}
+                onMouseLeave={scheduleHoverClose}
+              >
+                {seg.text}
+              </span>
             )
-          )}
+          })}
         </div>
       </span>
       {isOpen &&
@@ -435,7 +539,142 @@ export default function VariableAutocompleteInput({
               </div>
             )}
           </div>,
-          document.body
+          document.body,
+        )}
+      {hoverInfo &&
+        !isOpen &&
+        createPortal(
+          <div
+            onMouseEnter={cancelHoverClose}
+            onMouseLeave={scheduleHoverClose}
+            style={{
+              position: 'fixed',
+              top: hoverInfo.rect.bottom + 6,
+              left: hoverInfo.rect.left,
+              zIndex: 999998,
+              minWidth: 240,
+              maxWidth: 360,
+              background: 'var(--white)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              boxShadow: '0 6px 24px rgba(0,0,0,0.12)',
+              padding: '8px 10px',
+              fontSize: 12,
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+              {hoverInfo.category === 'unresolved' ? (
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 16,
+                    height: 16,
+                    borderRadius: 4,
+                    background: '#fff0f0',
+                    color: '#cc2200',
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  !
+                </span>
+              ) : (
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 16,
+                    height: 16,
+                    borderRadius: 4,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: CATEGORY_CONFIG[hoverInfo.category as VariableCategory].color,
+                    background: CATEGORY_CONFIG[hoverInfo.category as VariableCategory].bg,
+                  }}
+                >
+                  {CATEGORY_CONFIG[hoverInfo.category as VariableCategory].label}
+                </span>
+              )}
+              <span
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 600,
+                  color: 'var(--text)',
+                }}
+              >
+                {hoverInfo.name}
+              </span>
+            </div>
+
+            {hoverInfo.category === 'unresolved' ? (
+              <div style={{ color: '#cc2200', marginBottom: 8 }}>
+                Not defined in the active environment or globals.
+              </div>
+            ) : (
+              <>
+                <div style={{ color: 'var(--muted)', marginBottom: 2 }}>Value</div>
+                <div
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    color: 'var(--text)',
+                    background: 'var(--surface)',
+                    padding: '4px 6px',
+                    borderRadius: 4,
+                    wordBreak: 'break-all',
+                    marginBottom: 8,
+                    maxHeight: 80,
+                    overflow: 'auto',
+                  }}
+                >
+                  {hoverInfo.value || <em style={{ color: 'var(--muted)' }}>(empty)</em>}
+                </div>
+                {hoverInfo.envName && (
+                  <div style={{ color: 'var(--muted)', marginBottom: 8 }}>
+                    Environment:{' '}
+                    <strong style={{ color: 'var(--text)' }}>{hoverInfo.envName}</strong>
+                  </div>
+                )}
+              </>
+            )}
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                borderTop: '1px solid var(--border)',
+                paddingTop: 6,
+                marginTop: 4,
+              }}
+            >
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  // mousedown rather than click so the input doesn't lose focus
+                  // and re-trigger blur side-effects before the modal opens.
+                  e.preventDefault()
+                  setHoverInfo(null)
+                  setShowEnvironmentModal(true)
+                }}
+                style={{
+                  background: 'var(--accent)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '4px 10px',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                Edit →
+              </button>
+            </div>
+          </div>,
+          document.body,
         )}
     </>
   )

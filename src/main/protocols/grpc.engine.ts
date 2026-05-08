@@ -91,7 +91,10 @@ const protoCache = new Map<string, LoadedProto>()
 
 interface ManagedStream {
   streamId: string
-  call: grpc.ClientReadableStream<unknown> | grpc.ClientDuplexStream<unknown, unknown>
+  call:
+    | grpc.ClientReadableStream<unknown>
+    | grpc.ClientDuplexStream<unknown, unknown>
+    | grpc.ClientWritableStream<unknown>
   windowId: number
 }
 
@@ -971,6 +974,67 @@ export interface GrpcBidiStreamOptions {
   metadata?: Record<string, string>
   timeout?: number
   useTls?: boolean
+  /**
+   * Whether the server returns a stream (`true` — true bidi) or a single
+   * response (`false` — client_streaming). When false, grpc-js's stub is
+   * `(metadata, options, callback) → ClientWritableStream`; the unary
+   * response is delivered to the callback, never as a 'data' event. We
+   * synthesize a 'data' + 'end' pair from the callback so downstream
+   * listeners see the same shape regardless of method type.
+   *
+   * Defaults to true to preserve the original bidi behaviour.
+   */
+  responseStream?: boolean
+}
+
+type BidiStreamStub = (
+  metadata: grpc.Metadata,
+  opts: { deadline: Date },
+) => grpc.ClientDuplexStream<unknown, unknown>
+
+type ClientStreamStub = (
+  metadata: grpc.Metadata,
+  opts: { deadline: Date },
+  callback: (err: grpc.ServiceError | null, response: unknown) => void,
+) => grpc.ClientWritableStream<unknown>
+
+/**
+ * Wires lifecycle events ('end', 'error', 'status') common to both bidi-duplex
+ * and client-stream calls. 'data' is wired separately because the duplex
+ * variant emits it natively while the client_streaming variant synthesizes it
+ * from the unary callback.
+ */
+function attachStreamLifecycleEvents(
+  call: grpc.ClientDuplexStream<unknown, unknown> | grpc.ClientWritableStream<unknown>,
+  streamId: string,
+  windowId: number,
+): void {
+  call.on('end', () => {
+    activeStreams.delete(streamId)
+    sendStreamEvent(windowId, { streamId, type: 'end', timestamp: Date.now() })
+  })
+
+  call.on('error', (err: grpc.ServiceError) => {
+    activeStreams.delete(streamId)
+    sendStreamEvent(windowId, {
+      streamId,
+      type: 'error',
+      error: describeGrpcStatus(err.code, err.details ?? err.message).message,
+      grpcStatus: err.code,
+      grpcStatusMessage: err.details,
+      timestamp: Date.now(),
+    })
+  })
+
+  call.on('status', (status: grpc.StatusObject) => {
+    sendStreamEvent(windowId, {
+      streamId,
+      type: 'status',
+      grpcStatus: status.code,
+      grpcStatusMessage: status.details,
+      timestamp: Date.now(),
+    })
+  })
 }
 
 export async function startBidiStream(
@@ -995,60 +1059,64 @@ export async function startBidiStream(
       ? new Date(Date.now() + options.timeout)
       : new Date(Date.now() + 300000) // 5 min default for bidi
 
-    const methodFn = (client as Record<string, unknown>)[options.methodName] as
-      | ((
-          metadata: grpc.Metadata,
-          options: { deadline: Date },
-        ) => grpc.ClientDuplexStream<unknown, unknown>)
-      | undefined
-
-    if (!methodFn || typeof methodFn !== 'function') {
+    const rawMethodFn = (client as Record<string, unknown>)[options.methodName]
+    if (!rawMethodFn || typeof rawMethodFn !== 'function') {
       throw new Error(`Method not found: ${options.methodName}`)
     }
 
-    const call = methodFn.call(client, metadata, { deadline })
+    // Default true keeps the historical bidi behaviour for callers that
+    // don't supply the flag (renderer pre-fix, tests, etc.).
+    const isResponseStream = options.responseStream !== false
 
-    activeStreams.set(streamId, { streamId, call, windowId })
+    if (isResponseStream) {
+      const methodFn = rawMethodFn as BidiStreamStub
+      const call = methodFn.call(client, metadata, { deadline })
+      activeStreams.set(streamId, { streamId, call, windowId })
 
-    call.on('data', (chunk: unknown) => {
-      sendStreamEvent(windowId, {
-        streamId,
-        type: 'data',
-        data: JSON.stringify(chunk, null, 2),
-        timestamp: Date.now(),
+      call.on('data', (chunk: unknown) => {
+        sendStreamEvent(windowId, {
+          streamId,
+          type: 'data',
+          data: JSON.stringify(chunk, null, 2),
+          timestamp: Date.now(),
+        })
       })
-    })
 
-    call.on('end', () => {
-      activeStreams.delete(streamId)
-      sendStreamEvent(windowId, {
-        streamId,
-        type: 'end',
-        timestamp: Date.now(),
+      attachStreamLifecycleEvents(call, streamId, windowId)
+    } else {
+      // client_streaming: writable stream + unary callback. We surface the
+      // unary response as a synthetic 'data' event so the renderer's
+      // streamEvents pipeline sees the same shape as bidi.
+      const methodFn = rawMethodFn as ClientStreamStub
+      const call = methodFn.call(client, metadata, { deadline }, (err, response) => {
+        if (err) {
+          activeStreams.delete(streamId)
+          sendStreamEvent(windowId, {
+            streamId,
+            type: 'error',
+            error: describeGrpcStatus(err.code, err.details ?? err.message).message,
+            grpcStatus: err.code,
+            grpcStatusMessage: err.details,
+            timestamp: Date.now(),
+          })
+          return
+        }
+        sendStreamEvent(windowId, {
+          streamId,
+          type: 'data',
+          data: JSON.stringify(response, null, 2),
+          timestamp: Date.now(),
+        })
+        sendStreamEvent(windowId, { streamId, type: 'end', timestamp: Date.now() })
+        activeStreams.delete(streamId)
       })
-    })
+      activeStreams.set(streamId, { streamId, call, windowId })
 
-    call.on('error', (err: grpc.ServiceError) => {
-      activeStreams.delete(streamId)
-      sendStreamEvent(windowId, {
-        streamId,
-        type: 'error',
-        error: describeGrpcStatus(err.code, err.details ?? err.message).message,
-        grpcStatus: err.code,
-        grpcStatusMessage: err.details,
-        timestamp: Date.now(),
-      })
-    })
-
-    call.on('status', (status: grpc.StatusObject) => {
-      sendStreamEvent(windowId, {
-        streamId,
-        type: 'status',
-        grpcStatus: status.code,
-        grpcStatusMessage: status.details,
-        timestamp: Date.now(),
-      })
-    })
+      // Status / transport-level error events still fire on the writable
+      // stream itself; wire those (no native 'data'/'end' — those come from
+      // the callback above).
+      attachStreamLifecycleEvents(call, streamId, windowId)
+    }
 
     return streamId
   } catch (err) {

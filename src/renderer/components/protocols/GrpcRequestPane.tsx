@@ -50,12 +50,14 @@ export default function GrpcRequestPane() {
   const removeMetadata = useGrpcStore((s) => s.removeMetadata)
   const isLoading = useGrpcStore((s) => s.isLoading)
   const isStreaming = useGrpcStore((s) => s.isStreaming)
+  const halfClosed = useGrpcStore((s) => s.halfClosed)
   const errorMessage = useGrpcStore((s) => s.errorMessage)
   const loadProto = useGrpcStore((s) => s.loadProto)
   const loadProtoFromUrl = useGrpcStore((s) => s.loadProtoFromUrl)
   const loadFromReflection = useGrpcStore((s) => s.loadFromReflection)
   const execute = useGrpcStore((s) => s.execute)
   const cancelStream = useGrpcStore((s) => s.cancelStream)
+  const endClientStream = useGrpcStore((s) => s.endClientStream)
   const getSelectedMethod = useGrpcStore((s) => s.getSelectedMethod)
 
   const [metadataExpanded, setMetadataExpanded] = useState(false)
@@ -333,14 +335,54 @@ export default function GrpcRequestPane() {
         {protoLoaded && (
           <div>
             {isStreaming ? (
-              <button
-                type="button"
-                onClick={cancelStream}
-                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity"
-                style={{ background: '#cc2200', border: 'none' }}
-              >
-                {t('grpc.cancelStream')}
-              </button>
+              // Bidi / client-stream: keep Send live so the user can push more
+              // messages, plus an "End Streaming" half-close and a Cancel.
+              // Server-stream: only Cancel makes sense (no client writes).
+              methodType === 'bidi_streaming' || methodType === 'client_streaming' ? (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={execute}
+                    disabled={!selectedService || !selectedMethod || halfClosed}
+                    title={halfClosed ? t('grpc.streamHalfClosed') : undefined}
+                    className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{ background: 'var(--accent)', border: 'none' }}
+                  >
+                    <Play size={14} />
+                    {t('grpc.send')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={endClientStream}
+                    disabled={halfClosed}
+                    className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 py-2.5 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{
+                      borderColor: 'var(--border)',
+                      background: 'transparent',
+                      color: 'var(--text)',
+                    }}
+                  >
+                    {t('grpc.endStreaming')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelStream}
+                    className="flex cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 px-3 font-medium text-white transition-opacity"
+                    style={{ background: '#cc2200', border: 'none' }}
+                  >
+                    {t('grpc.cancelStream')}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={cancelStream}
+                  className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity"
+                  style={{ background: '#cc2200', border: 'none' }}
+                >
+                  {t('grpc.cancelStream')}
+                </button>
+              )
             ) : (
               <button
                 type="button"

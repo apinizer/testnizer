@@ -46,16 +46,17 @@ export default function DeleteConfirmDialog({
         onCancel()
       }
     },
-    [value, requireTyping, onConfirm, onCancel]
+    [value, requireTyping, onConfirm, onCancel],
   )
 
   if (!open) return null
 
   const canConfirm = !requireTyping || value.toLowerCase() === 'delete'
 
-  const defaultDesc = itemType === 'folder'
-    ? 'This will permanently delete the folder and all its contents.'
-    : 'This action cannot be undone.'
+  const defaultDesc =
+    itemType === 'folder'
+      ? 'This will permanently delete the folder and all its contents.'
+      : 'This action cannot be undone.'
 
   return (
     <div
@@ -70,19 +71,39 @@ export default function DeleteConfirmDialog({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center gap-2.5 border-b px-5 py-4" style={{ borderColor: 'var(--border)' }}>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: '#fff0f0' }}>
+        <div
+          className="flex items-center gap-2.5 border-b px-5 py-4"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          <div
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+            style={{
+              background: 'rgba(204, 34, 0, 0.12)',
+              border: '1px solid rgba(204, 34, 0, 0.35)',
+            }}
+          >
             <AlertTriangle size={16} style={{ color: '#cc2200' }} />
           </div>
-          <div>
-            <h3 className="font-semibold" style={{ fontSize: 13, color: 'var(--text)' }}>Delete {itemType}</h3>
-            <p className="mt-0.5" style={{ fontSize: 13, color: 'var(--muted)' }}>{description || defaultDesc}</p>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold" style={{ fontSize: 13, color: 'var(--text)' }}>
+              Delete {itemType}
+            </h3>
+            <p className="mt-0.5" style={{ fontSize: 13, color: 'var(--muted)' }}>
+              {description || defaultDesc}
+            </p>
           </div>
         </div>
 
         {/* Body */}
         <div className="px-5 py-4">
-          <p style={{ fontSize: 13, color: 'var(--text)' }}>
+          <p
+            style={{
+              fontSize: 13,
+              color: 'var(--text)',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+            }}
+          >
             Are you sure you want to delete <strong>{itemName}</strong>?
           </p>
 
@@ -110,13 +131,21 @@ export default function DeleteConfirmDialog({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 border-t px-5 py-3" style={{ borderColor: 'var(--border)' }}>
+        <div
+          className="flex justify-end gap-2 border-t px-5 py-3"
+          style={{ borderColor: 'var(--border)' }}
+        >
           <button
             ref={cancelRef}
             type="button"
             onClick={onCancel}
             className="cursor-pointer rounded-md border px-3.5 py-1.5 font-medium transition-colors hover:opacity-80"
-            style={{ fontSize: 13, borderColor: 'var(--border)', background: 'var(--white)', color: 'var(--text)' }}
+            style={{
+              fontSize: 13,
+              borderColor: 'var(--border)',
+              background: 'var(--white)',
+              color: 'var(--text)',
+            }}
           >
             Cancel
           </button>

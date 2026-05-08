@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import UrlBar from './UrlBar'
+import UrlPreview from './UrlPreview'
 import RequestEditor from '../request/RequestEditor'
 import ResponsePane from '../response/ResponsePane'
 import SoapEditor from '../protocols/SoapEditor'
@@ -797,6 +798,9 @@ export default function Workbench() {
 
         {/* URL Bar */}
         <UrlBar />
+
+        {/* URL Preview — shows resolved variables (Postman-style) */}
+        <UrlPreview />
 
         {/* Split pane: Request (top) | Response (bottom) */}
         <PanelGroup direction="vertical" className="flex-1">

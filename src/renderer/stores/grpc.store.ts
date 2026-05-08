@@ -95,6 +95,7 @@ interface GrpcBridge {
     options: unknown,
   ) => Promise<{ success: boolean; data?: { streamId: string }; error?: string }>
   sendStreamMessage: (streamId: string, message: unknown) => Promise<unknown>
+  endStream: (streamId: string) => Promise<unknown>
   cancelStream: (streamId: string) => Promise<unknown>
   onStreamEvent: (cb: (event: GrpcStreamPayload) => void) => () => void
 }
@@ -204,6 +205,14 @@ interface TabGrpcState {
   streamUnsubscribe: (() => void) | null
   isLoading: boolean
   isStreaming: boolean
+  /**
+   * True after the user clicks End Streaming on a client/bidi RPC. The
+   * client side is half-closed (no more writes allowed) but the server may
+   * still push events (bidi) or deliver the unary response (client_streaming).
+   * Send / End buttons gate on this so we don't write-after-end or call
+   * `.end()` twice.
+   */
+  halfClosed: boolean
   errorMessage: string | null
 }
 
@@ -229,6 +238,14 @@ interface GrpcStore extends TabGrpcState {
   removeMetadata: (id: string) => void
 
   execute: () => Promise<void>
+  /**
+   * Push another message into the active client/bidi stream. No-op if no
+   * stream is active (i.e. unary or server-streaming methods, or the stream
+   * already ended).
+   */
+  sendStreamMessage: () => Promise<void>
+  /** Half-close the client-side of an active client/bidi stream. */
+  endClientStream: () => Promise<void>
   cancelStream: () => Promise<void>
 
   getSelectedService: () => GrpcService | undefined
@@ -263,6 +280,7 @@ function emptyTabState(): TabGrpcState {
     streamUnsubscribe: null,
     isLoading: false,
     isStreaming: false,
+    halfClosed: false,
     errorMessage: null,
   }
 }
@@ -286,6 +304,7 @@ function extractState(s: GrpcStore): TabGrpcState {
     streamUnsubscribe: s.streamUnsubscribe,
     isLoading: s.isLoading,
     isStreaming: s.isStreaming,
+    halfClosed: s.halfClosed,
     errorMessage: s.errorMessage,
   }
 }
@@ -529,6 +548,23 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     const method = get().getSelectedMethod()
     const isStream = method?.type !== 'unary'
 
+    // ── Streaming send-multiple branch ──
+    // If a client/bidi stream is already open and the user clicked Send again,
+    // forward the new payload over the same stream instead of starting over.
+    // This matches Postman's behaviour and is the only way to feed multiple
+    // messages into a single client/bidi RPC. Skipped once the user has
+    // half-closed the stream — at that point Send must be a no-op (or open a
+    // fresh call) since writing after `.end()` raises ERR_STREAM_WRITE_AFTER_END.
+    const existingStreamId = get().activeStreamId
+    if (
+      existingStreamId &&
+      !get().halfClosed &&
+      (method?.type === 'client_streaming' || method?.type === 'bidi_streaming')
+    ) {
+      await get().sendStreamMessage()
+      return
+    }
+
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const activeTabId = tabsStore.activeTabId
@@ -548,6 +584,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       streamEvents: [],
       activeStreamId: null,
       streamUnsubscribe: null,
+      halfClosed: false,
     })
     if (isStream) set({ isStreaming: true })
     responseStore.setLoading(true)
@@ -679,7 +716,12 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
             index: 0, // overwritten by appendStreamEventToOwner
           })
         } else if (evt.type === 'end') {
-          applyToOwner({ isStreaming: false, isLoading: false, activeStreamId: null })
+          applyToOwner({
+            isStreaming: false,
+            isLoading: false,
+            activeStreamId: null,
+            halfClosed: false,
+          })
           const cur = get()
           if (cur._currentTabId === ownerTabId) {
             responseStore.setLoading(false)
@@ -691,6 +733,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
             isLoading: false,
             errorMessage: evt.error ?? 'gRPC stream error',
             activeStreamId: null,
+            halfClosed: false,
           })
           const cur = get()
           if (cur._currentTabId === ownerTabId) {
@@ -712,25 +755,28 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
           applyToOwner({ isStreaming: false, isLoading: false, errorMessage: result.error })
         }
       } else if (method?.type === 'client_streaming') {
-        // Single message for now — the UI doesn't yet expose multi-message client streaming.
-        const result = (await grpcApi.clientStream({
-          ...baseOptions,
-          messages: [resolvedBody],
-        })) as { success: true; data: GrpcEngineResponse } | { success: false; error: string }
+        // Reuse the bidi IPC channel — the engine branches on `responseStream`
+        // and uses grpc-js's writable-stream + unary-callback shape, which is
+        // what client_streaming actually requires. The single response is
+        // surfaced as a synthetic 'data' + 'end' event so this listener and
+        // the renderer pipeline don't need to know which method type ran.
+        const result = (await grpcApi.bidiStream({
+          ...(baseOptions as Record<string, unknown>),
+          responseStream: false,
+        })) as { success: true; data: { streamId: string } } | { success: false; error: string }
         if (result.success) {
-          finishUnary(grpcResponseToApi(result.data))
+          applyToOwner({ activeStreamId: result.data.streamId })
+          if (resolvedBody.trim() && resolvedBody.trim() !== '{}') {
+            await grpcApi.sendStreamMessage(result.data.streamId, resolvedBody).catch(() => {})
+          }
         } else {
-          finishUnary({
-            requestId: makeId(),
-            protocol: 'grpc',
-            error: result.error || 'gRPC client-stream failed',
-            timing: { total: 0 },
-          })
+          applyToOwner({ isStreaming: false, isLoading: false, errorMessage: result.error })
         }
       } else if (method?.type === 'bidi_streaming') {
-        const result = (await grpcApi.bidiStream(baseOptions)) as
-          | { success: true; data: { streamId: string } }
-          | { success: false; error: string }
+        const result = (await grpcApi.bidiStream({
+          ...(baseOptions as Record<string, unknown>),
+          responseStream: true,
+        })) as { success: true; data: { streamId: string } } | { success: false; error: string }
         if (result.success) {
           applyToOwner({ activeStreamId: result.data.streamId })
           // Push the initial message immediately if the user typed one.
@@ -763,9 +809,56 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     }
   },
 
+  /**
+   * Push the current `requestBody` as another message into the active stream.
+   * Used by client_streaming + bidi_streaming methods after the stream is
+   * already open. For unary / server-streaming this is a no-op.
+   */
+  sendStreamMessage: async () => {
+    const { activeStreamId, requestBody, halfClosed } = get()
+    if (!activeStreamId) return
+    // Refuse to write after the user has half-closed the stream — Node's
+    // Writable would emit ERR_STREAM_WRITE_AFTER_END here and the user would
+    // see only an opaque error.
+    if (halfClosed) return
+    const grpcApi = (window as unknown as { api?: { grpc?: GrpcBridge } }).api?.grpc
+    if (!grpcApi) return
+    const activeVars = useEnvironmentStore.getState().getActiveVariables()
+    const resolvedBody = resolveVariables(requestBody, activeVars)
+    try {
+      await grpcApi.sendStreamMessage(activeStreamId, resolvedBody)
+    } catch (err) {
+      set({ errorMessage: (err as Error).message })
+    }
+  },
+
+  /**
+   * Half-close the client side of an active client/bidi stream so the server
+   * can finish responding. Server stream events will continue to arrive (for
+   * bidi) until the server closes its side.
+   */
+  endClientStream: async () => {
+    const { activeStreamId, halfClosed } = get()
+    if (!activeStreamId) return
+    // Idempotent — ignore double clicks. Without this the second `.end()`
+    // call on grpc-js's writable can emit a transport-level error.
+    if (halfClosed) return
+    const grpcApi = (window as unknown as { api?: { grpc?: GrpcBridge } }).api?.grpc
+    if (!grpcApi) return
+    try {
+      await grpcApi.endStream(activeStreamId)
+      // Stay subscribed to the receive side: bidi server can still push,
+      // and client_streaming's unary response is still pending. We just
+      // block further writes until the stream actually closes.
+      set({ halfClosed: true })
+    } catch (err) {
+      set({ errorMessage: (err as Error).message })
+    }
+  },
+
   cancelStream: async () => {
     const { activeStreamId, streamUnsubscribe } = get()
-    set({ isStreaming: false, isLoading: false })
+    set({ isStreaming: false, isLoading: false, halfClosed: false })
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const activeTabId = tabsStore.activeTabId
