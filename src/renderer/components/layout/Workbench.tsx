@@ -99,30 +99,87 @@ function EndpointTabBar() {
     }
   }, [contextMenu])
 
-  function handleTabContextAction(
-    tabId: string,
-    action: 'close' | 'closeOthers' | 'closeRight' | 'closeLeft' | 'closeAll' | 'rename',
-  ) {
+  type TabContextAction =
+    | 'newRequest'
+    | 'duplicate'
+    | 'close'
+    | 'closeForce'
+    | 'closeOthers'
+    | 'closeLeft'
+    | 'closeRight'
+    | 'closeAll'
+    | 'closeAllForce'
+
+  function handleTabContextAction(tabId: string, action: TabContextAction) {
     setContextMenu(null)
+    if (action === 'newRequest') {
+      handleNewTab()
+      return
+    }
+    if (action === 'duplicate') {
+      handleDuplicateTab(tabId)
+      return
+    }
+
     const allTabs = useTabsStore.getState().tabs
     const idx = allTabs.findIndex((t) => t.id === tabId)
     if (idx < 0) return
     const idsToClose: string[] = []
-    if (action === 'close') idsToClose.push(tabId)
-    else if (action === 'closeOthers')
+    if (action === 'close' || action === 'closeForce') {
+      idsToClose.push(tabId)
+    } else if (action === 'closeOthers') {
       idsToClose.push(...allTabs.filter((t) => t.id !== tabId).map((t) => t.id))
-    else if (action === 'closeRight') idsToClose.push(...allTabs.slice(idx + 1).map((t) => t.id))
-    else if (action === 'closeLeft') idsToClose.push(...allTabs.slice(0, idx).map((t) => t.id))
-    else if (action === 'closeAll') idsToClose.push(...allTabs.map((t) => t.id))
-    else if (action === 'rename') {
-      const target = allTabs.find((t) => t.id === tabId)
-      if (target) handleStartRename(tabId, target.name)
-      return
+    } else if (action === 'closeLeft') {
+      idsToClose.push(...allTabs.slice(0, idx).map((t) => t.id))
+    } else if (action === 'closeRight') {
+      idsToClose.push(...allTabs.slice(idx + 1).map((t) => t.id))
+    } else if (action === 'closeAll' || action === 'closeAllForce') {
+      idsToClose.push(...allTabs.map((t) => t.id))
     }
+
+    // Non-force variants prompt before discarding unsaved changes. Force
+    // variants skip the confirm — meant for "I know, just close them".
+    const isForce = action === 'closeForce' || action === 'closeAllForce'
+    if (!isForce) {
+      const dirtyCount = idsToClose.filter((id) => allTabs.find((t) => t.id === id)?.isDirty).length
+      if (dirtyCount > 0) {
+        const ok = window.confirm(
+          dirtyCount === 1
+            ? 'This tab has unsaved changes. Close anyway?'
+            : `${dirtyCount} tabs have unsaved changes. Close anyway?`,
+        )
+        if (!ok) return
+      }
+    }
+
     for (const id of idsToClose) {
       cleanupTabState(id)
       closeTab(id)
     }
+  }
+
+  function handleDuplicateTab(tabId: string) {
+    const src = useTabsStore.getState().tabs.find((t) => t.id === tabId)
+    if (!src) return
+    const newId = 'tab-' + Math.random().toString(36).substring(2, 10)
+    // Open with the same metadata. The unsaved/edited state lives in protocol
+    // stores keyed on tabId — clone the source's cache into the new id so
+    // unsaved edits travel with the duplicate. Only the request store has a
+    // public cloneTabState today; other protocols start from the persisted
+    // metadata, which is acceptable until they grow the same hook.
+    openTab({
+      id: newId,
+      name: `${src.name} (copy)`,
+      protocol: src.protocol,
+      method: src.method,
+      url: src.url,
+      endpointId: src.endpointId,
+      savedRequestId: src.savedRequestId,
+      folderId: src.folderId,
+    })
+    useRequestStore.getState().cloneTabState(tabId, newId)
+    // Switch every store onto the new tab so stale per-tab caches are loaded.
+    handleSwitchTab(newId)
   }
 
   useEffect(() => {
@@ -370,7 +427,7 @@ function EndpointTabBar() {
             style={{
               top: contextMenu.y,
               left: contextMenu.x,
-              minWidth: 200,
+              minWidth: 220,
               background: 'var(--white)',
               border: '1px solid var(--border)',
               boxShadow: 'var(--shadow-drop)',
@@ -383,15 +440,27 @@ function EndpointTabBar() {
             }}
           >
             <ContextMenuItem
-              label="Rename"
-              onClick={() => handleTabContextAction(contextMenu.tabId, 'rename')}
+              label="New Request"
+              shortcut={cmdOrCtrl('T')}
+              onClick={() => handleTabContextAction(contextMenu.tabId, 'newRequest')}
             />
             <ContextMenuItem
-              label="Close"
+              label="Duplicate Tab"
+              onClick={() => handleTabContextAction(contextMenu.tabId, 'duplicate')}
+            />
+            <div style={{ height: 1, background: 'var(--border-split)', margin: '4px 0' }} />
+            <ContextMenuItem
+              label="Close Tab"
+              shortcut={cmdOrCtrl('W')}
               onClick={() => handleTabContextAction(contextMenu.tabId, 'close')}
             />
             <ContextMenuItem
-              label="Close Others"
+              label="Force Close Tab"
+              shortcut={altCmdOrCtrl('W')}
+              onClick={() => handleTabContextAction(contextMenu.tabId, 'closeForce')}
+            />
+            <ContextMenuItem
+              label="Close Other Tabs"
               onClick={() => handleTabContextAction(contextMenu.tabId, 'closeOthers')}
             />
             <ContextMenuItem
@@ -402,11 +471,14 @@ function EndpointTabBar() {
               label="Close to the Right"
               onClick={() => handleTabContextAction(contextMenu.tabId, 'closeRight')}
             />
-            <div style={{ height: 1, background: 'var(--border-split)', margin: '4px 0' }} />
             <ContextMenuItem
-              label="Close All"
-              danger
+              label="Close All Tabs"
               onClick={() => handleTabContextAction(contextMenu.tabId, 'closeAll')}
+            />
+            <ContextMenuItem
+              label="Force Close All Tabs"
+              danger
+              onClick={() => handleTabContextAction(contextMenu.tabId, 'closeAllForce')}
             />
           </div>,
           document.body,
@@ -415,26 +487,37 @@ function EndpointTabBar() {
   )
 }
 
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+function cmdOrCtrl(key: string): string {
+  return isMac ? `⌘${key}` : `Ctrl+${key}`
+}
+function altCmdOrCtrl(key: string): string {
+  return isMac ? `⌥⌘${key}` : `Ctrl+Alt+${key}`
+}
+
 function ContextMenuItem({
   label,
   onClick,
   danger,
+  shortcut,
 }: {
   label: string
   onClick: () => void
   danger?: boolean
+  shortcut?: string
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full cursor-pointer items-center rounded-md text-left"
+      className="flex w-full cursor-pointer items-center justify-between rounded-md text-left"
       style={{
         background: 'transparent',
         border: 'none',
         padding: '6px 10px',
         fontSize: 13,
         color: danger ? '#cc2200' : 'var(--text)',
+        gap: 24,
       }}
       onMouseEnter={(e) => {
         ;(e.currentTarget as HTMLElement).style.background = danger ? '#fff0f0' : 'var(--surface)'
@@ -443,7 +526,12 @@ function ContextMenuItem({
         ;(e.currentTarget as HTMLElement).style.background = 'transparent'
       }}
     >
-      {label}
+      <span>{label}</span>
+      {shortcut && (
+        <span style={{ color: 'var(--muted)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>
+          {shortcut}
+        </span>
+      )}
     </button>
   )
 }
@@ -454,6 +542,47 @@ export default function Workbench() {
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const protocol = activeTab?.protocol || 'http'
   const addEndpointsSuiteId = useUIStore((s) => s.addEndpointsSuiteId)
+
+  // Global tab keyboard shortcuts (mirror the labels shown in the tab
+  // right-click menu). Mounted once at workbench scope so they fire
+  // regardless of which tab/editor has focus.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey
+      if (!mod) return
+      // Skip when typing inside Monaco / inputs unless the modifier combo is
+      // unambiguous — Cmd+W is special-cased so users can close tabs from
+      // anywhere.
+      if (e.key === 't' || e.key === 'T') {
+        if (e.altKey || e.shiftKey) return
+        e.preventDefault()
+        const id = 'tab-' + Math.random().toString(36).substring(2, 10)
+        useTabsStore.getState().openTab({
+          id,
+          name: 'New Request',
+          protocol: 'http',
+          method: 'GET',
+          url: '',
+        })
+        return
+      }
+      if (e.key === 'w' || e.key === 'W') {
+        const force = e.altKey
+        const currentId = useTabsStore.getState().activeTabId
+        if (!currentId) return
+        e.preventDefault()
+        const target = useTabsStore.getState().tabs.find((t) => t.id === currentId)
+        if (!force && target?.isDirty) {
+          const ok = window.confirm('This tab has unsaved changes. Close anyway?')
+          if (!ok) return
+        }
+        cleanupTabState(currentId)
+        useTabsStore.getState().closeTab(currentId)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // Add Endpoints view — takes over the workbench content area
   if (addEndpointsSuiteId) {

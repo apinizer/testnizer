@@ -110,6 +110,12 @@ interface RequestStore extends TabRequestState {
   switchToTab: (tabId: string) => void
   /** Remove cached state for a closed tab */
   removeTabState: (tabId: string) => void
+  /**
+   * Copy a tab's cached state to a new tab id. Used by the tab bar's
+   * "Duplicate Tab" action so the cloned tab inherits unsaved edits, not
+   * just the metadata stored on the Tab object.
+   */
+  cloneTabState: (srcTabId: string, dstTabId: string) => void
 }
 
 function extractState(s: RequestStore): TabRequestState {
@@ -249,6 +255,25 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   removeTabState: (tabId) => {
     const tabStates = new Map(get()._tabStates)
     tabStates.delete(tabId)
+    set({ _tabStates: tabStates })
+  },
+
+  cloneTabState: (srcTabId, dstTabId) => {
+    const state = get()
+    // Pull from cache, but if the source tab is the currently-loaded one its
+    // latest edits live on the live state — not in the cache yet.
+    const srcState =
+      state._currentTabId === srcTabId ? extractState(state) : state._tabStates.get(srcTabId)
+    if (!srcState) return
+    const tabStates = new Map(state._tabStates)
+    // KV/asssertion arrays carry stable ids — re-stamp them so future edits
+    // on the duplicate don't accidentally mutate the source via a shared id.
+    tabStates.set(dstTabId, {
+      ...srcState,
+      params: srcState.params.map((p) => ({ ...p, id: makeId() })),
+      headers: srcState.headers.map((h) => ({ ...h, id: makeId() })),
+      assertions: srcState.assertions.map((a) => ({ ...a, id: makeId() })),
+    })
     set({ _tabStates: tabStates })
   },
 
