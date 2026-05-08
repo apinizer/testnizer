@@ -36,6 +36,16 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      # The postinstall step ran `electron-builder install-app-deps`, which
+      # rebuilds better-sqlite3's native binding against Electron's Node ABI
+      # (NODE_MODULE_VERSION 130). Vitest runs on the runner's system Node 20
+      # (NODE_MODULE_VERSION 115), so loading that binding throws
+      # "Module did not self-register". Rebuild against system Node here so
+      # the unit tests can open the in-memory SQLite database. The platform
+      # build jobs below run their own electron-rebuild and are unaffected.
+      - name: Rebuild better-sqlite3 for system Node
+        run: npm rebuild better-sqlite3
+
       - name: Typecheck
         run: npm run typecheck
 
