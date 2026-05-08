@@ -614,11 +614,16 @@ export default function Workbench() {
     )
   }
 
+  // Each protocol editor below is keyed by `activeTab.id` so a fast tab
+  // switch remounts the editor with the new tab's state. Without this, local
+  // component state (Monaco models, useState in sub-tabs, scroll positions)
+  // from the previous tab can leak into the next. Zustand state is already
+  // tab-aware; this pins the React tree to the same boundary.
   if (protocol === 'soap') {
     return (
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
-        <SoapEditor />
+        <SoapEditor key={activeTab.id} />
       </div>
     )
   }
@@ -627,7 +632,7 @@ export default function Workbench() {
     return (
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
-        <WebSocketEditor />
+        <WebSocketEditor key={activeTab.id} />
       </div>
     )
   }
@@ -636,7 +641,7 @@ export default function Workbench() {
     return (
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
-        <GraphQLEditor />
+        <GraphQLEditor key={activeTab.id} />
       </div>
     )
   }
@@ -645,7 +650,7 @@ export default function Workbench() {
     return (
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
-        <GrpcEditor />
+        <GrpcEditor key={activeTab.id} />
       </div>
     )
   }
@@ -654,7 +659,7 @@ export default function Workbench() {
     return (
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
-        <SseEditor />
+        <SseEditor key={activeTab.id} />
       </div>
     )
   }
@@ -663,7 +668,7 @@ export default function Workbench() {
     return (
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
-        <AiChatEditor />
+        <AiChatEditor key={activeTab.id} />
       </div>
     )
   }
@@ -762,7 +767,7 @@ export default function Workbench() {
     return (
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
-        <McpEditor />
+        <McpEditor key={activeTab.id} />
       </div>
     )
   }
@@ -771,7 +776,7 @@ export default function Workbench() {
     return (
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
-        <SocketIOEditor />
+        <SocketIOEditor key={activeTab.id} />
       </div>
     )
   }
@@ -802,10 +807,19 @@ export default function Workbench() {
         {/* URL Preview — shows resolved variables (Postman-style) */}
         <UrlPreview />
 
-        {/* Split pane: Request (top) | Response (bottom) */}
+        {/* Split pane: Request (top) | Response (bottom).
+         *
+         * `key={activeTab.id}` is intentional — it forces RequestEditor and
+         * ResponsePane to remount on every tab switch. Without this, the
+         * Monaco editor inside RequestEditor and any local component state
+         * (`useState` in BodyTab, ResultRow, ResponsePane sub-tabs) would
+         * survive across tabs and could leak the previous request's content
+         * into the next one when the user switches quickly. The Zustand
+         * stores are already tab-aware, but the React component instances
+         * are not — this is the simplest atomic fix. */}
         <PanelGroup direction="vertical" className="flex-1">
           <Panel defaultSize={65} minSize={25} maxSize={85}>
-            <RequestEditor />
+            <RequestEditor key={activeTab.id} />
           </Panel>
 
           <PanelResizeHandle
@@ -814,7 +828,7 @@ export default function Workbench() {
           />
 
           <Panel defaultSize={35} minSize={15} maxSize={75}>
-            <ResponsePane />
+            <ResponsePane key={activeTab.id} />
           </Panel>
         </PanelGroup>
       </div>
