@@ -265,7 +265,14 @@ Her feature için bu sırayı izle:
 
 ## Gotchas
 
-- **Native rebuild**: `better-sqlite3` arch-specific derleme gerektirir. Dev'de `electron-builder install-app-deps` postinstall'da çalışır. Çapraz mimari paketleme için **mutlaka** `.claude/commands/package.md` sırasını izle (yoksa macOS DMG'sinden Windows DLL çıkabilir).
+- **Native ABI yönetimi (`better-sqlite3`)**: Native module hem **arch-specific** hem **ABI-specific** derleme gerektirir; tek `.node` binary'si var ve `npm rebuild` ↔ `electron-builder install-app-deps` birbirini ezer. `scripts/ensure-native-abi.js` + npm pre-hook'ları bunu otomatize eder:
+  - `pretest:unit` / `pretest` → ABI **node** (vitest sistem Node'da koşar — NODE_MODULE_VERSION = `process.versions.modules`)
+  - `predev` / `prebuild:*` → ABI **electron** (Electron 33 = NODE_MODULE_VERSION 130)
+  - `postinstall` → `install-app-deps` + `ensure-native-abi.js electron --mark-only`
+  - Marker: `node_modules/better-sqlite3/build/Release/.testnizer-abi`; aynı target tekrar çağrıldığında <10 ms'de skip
+  - Her electron rebuild'i `@electron/rebuild --force --only better-sqlite3` üzerinden geçer (stale `.forge-meta` bug'ı için)
+  - **Manuel adım yok** — `npm test`, `npm run dev`, `npm run build:mac:arm64` ardarda çağrılabilir, ABI otomatik flip
+  - Çapraz mimari paketleme (macOS host'ta Windows DLL gibi) için yine `.claude/commands/package.md` sırasını izle
 - **Dev launcher rename**: İlk `npm install` sonrası `Electron.app` → `Testnizer.app` olarak yeniden adlandırılır. Dock/menüde "Testnizer" görünür. `npm run icons` `Testnizer.app/electron.icns`'i de günceller.
 - **Renderer'dan dış ağ yok**: CSP `connect-src 'self'`. Yeni bir HTTP çağrısı eklenecekse main process'te engine + IPC handler oluşturulmalı.
 - **Tailwind v4**: `tailwind.config.*` yok, `@tailwindcss/vite` plugin'i kullanılıyor. v3 dokümantasyonuna güvenme.
