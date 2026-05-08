@@ -165,6 +165,15 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential python3 libopenjp2-tools rpm fakeroot dpkg
 
+      # electron-builder ships a Linux x86 fpm binary that cannot execute on
+      # arm64 runners ("Exec format error"). Install fpm via the system Ruby
+      # and tell electron-builder to use it (USE_SYSTEM_FPM=true).
+      - name: Install system fpm (arm64 only)
+        if: matrix.arch == 'arm64'
+        run: |
+          sudo apt-get install -y --no-install-recommends ruby ruby-dev rubygems
+          sudo gem install --no-document fpm
+
       - name: Install deps (host arch only)
         run: npm ci
 
@@ -172,6 +181,10 @@ jobs:
         run: npm run build
 
       - name: Package (AppImage + deb, ${{ matrix.arch }})
+        env:
+          # On the arm64 runner the bundled fpm is x86 and won't run; force
+          # electron-builder to call the fpm we installed via gem above.
+          USE_SYSTEM_FPM: ${{ matrix.arch == 'arm64' && 'true' || '' }}
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             npx electron-builder --linux --${{ matrix.arch }} --publish always
