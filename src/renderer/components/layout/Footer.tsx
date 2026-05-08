@@ -1,4 +1,4 @@
-import { Terminal, AlertCircle } from 'lucide-react'
+import { Terminal, AlertCircle, Building2 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTabsStore } from '../../stores/tabs.store'
@@ -58,6 +58,29 @@ export default function Footer() {
       <div style={{ flex: 1 }} />
 
       {/* Right */}
+      <button
+        type="button"
+        onClick={() => {
+          void window.api?.app?.openExternal?.(`mailto:${t('about.enterpriseContact')}`)
+        }}
+        title={t('about.enterpriseTitle')}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          background: 'transparent',
+          border: 'none',
+          padding: '2px 6px',
+          borderRadius: 4,
+          color: T.ghost,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          fontSize: 13,
+        }}
+      >
+        <Building2 size={11} />
+        {t('footer.enterprise')}
+      </button>
       <span
         style={{ color: T.ghost, cursor: 'pointer', fontFamily: 'inherit' }}
         onClick={() =>

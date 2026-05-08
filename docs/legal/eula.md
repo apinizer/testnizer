@@ -1,7 +1,7 @@
 # Testnizer — End-User License Agreement (EULA)
 
 **Effective date:** 2026-05-07
-**Last updated:** 2026-05-07
+**Last updated:** 2026-05-08
 **Applies to:** Testnizer v1.0.3 and later
 
 This End-User License Agreement ("Agreement") is a binding contract between
@@ -88,6 +88,14 @@ You may use the Software to:
   targets;
 - redistribute, modify, and fork the **source code** under the terms of the
   MIT License.
+
+The Software is a developer-side testing tool that requires **no Licensor
+backend service** and **no Licensor account** to function. It may be
+installed and operated entirely on a single device, including in fully
+isolated, network-segmented, or air-gapped environments where the
+auto-update channel and any optional telemetry are unreachable. In such
+environments the Software remains fully usable subject to the version of
+this Agreement to which you most recently consented.
 
 ---
 
@@ -203,7 +211,53 @@ you alone are responsible.
 
 ---
 
-## 10. Limitation of Liability
+## 10. No Maintenance, No Patch Obligation
+
+The Software is distributed free of charge and on a best-effort basis. The
+Licensor has **no obligation** under this Agreement, under the MIT License
+covering the source code, or under any related communication, to:
+
+(a) provide technical support, maintenance, error correction, or any form
+    of help-desk service;
+(b) issue, prepare, develop, or release any update, upgrade, patch,
+    hotfix, or new version, whether to add functionality, restore
+    compatibility with third-party services or operating systems, or for
+    any other reason;
+(c) investigate, acknowledge, triage, or remediate any defect, bug, error,
+    incompatibility, or **security vulnerability** — including critical
+    vulnerabilities that may permit data disclosure, code execution,
+    privilege escalation, denial of service, or any other adverse
+    impact — whether disclosed publicly, reported privately to the
+    Licensor, or affecting any open-source component embedded in the
+    Software;
+(d) honor any service-level objective, response time, severity rating, or
+    remediation deadline, including those that may otherwise be customary
+    in commercial software;
+(e) maintain backward or forward compatibility with prior versions of the
+    Software, with stored data files produced by prior versions, or with
+    any third-party tool, file format, protocol, or service.
+
+The Licensor may, **at its sole and unfettered discretion** and at any
+time, choose to release fixes or new versions, or to abandon all further
+development of the Software. You acknowledge that this is a free-of-charge
+distribution and that any decision regarding maintenance is made entirely
+on a voluntary basis. You waive any claim premised on an asserted
+obligation to update, support, or remediate the Software.
+
+If a security-relevant defect materially affects your use of the Software,
+your **sole remedy** is to cease using the Software, uninstall it, and (if
+desired) deploy a different tool. You may also exercise the rights granted
+by the MIT License to fork the source code and apply your own corrections
+at your own expense.
+
+This Section is an essential basis of the bargain: in exchange for
+receiving the Software at no charge and under a permissive source-code
+license, you accept that no maintenance, support, or security-patch
+commitment is being made.
+
+---
+
+## 11. Limitation of Liability
 
 The Software is distributed free of charge. You have not paid any fee to
 obtain the Software.
@@ -229,7 +283,7 @@ above to the extent so required.
 
 ---
 
-## 11. Indemnification
+## 12. Indemnification
 
 You agree to defend, indemnify, and hold harmless the Licensor, its
 affiliates, officers, directors, employees, contractors, agents, and
@@ -252,7 +306,7 @@ in asserting any available defenses.
 
 ---
 
-## 12. Termination
+## 13. Termination
 
 This Agreement is effective until terminated. It will terminate automatically
 without notice if you fail to comply with its terms. Upon termination you
@@ -262,13 +316,13 @@ Software and deleting the user-data directory described in the Privacy
 Policy.
 
 Sections 5 (Restrictions), 8 (Trademarks), 9 (Disclaimer of Warranties),
-10 (Limitation of Liability), 11 (Indemnification), 13 (Export Control),
-14 (Governing Law), 16 (Severability / Entire Agreement), and 17 (Contact)
-survive termination.
+10 (No Maintenance, No Patch Obligation), 11 (Limitation of Liability),
+12 (Indemnification), 14 (Export Control), 15 (Governing Law),
+17 (Severability / Entire Agreement), and 18 (Contact) survive termination.
 
 ---
 
-## 13. Export Control
+## 14. Export Control
 
 You agree to comply with all applicable export-control and trade-sanctions
 laws and regulations, including those of the Republic of Türkiye, the
@@ -287,7 +341,7 @@ Council. You represent and warrant that:
 
 ---
 
-## 14. Governing Law and Jurisdiction
+## 15. Governing Law and Jurisdiction
 
 This Agreement is governed by the laws of the **Republic of Türkiye**,
 without regard to its conflict-of-laws principles. Any dispute, controversy,
@@ -303,7 +357,7 @@ preserved.
 
 ---
 
-## 15. Changes to this EULA
+## 16. Changes to this EULA
 
 The Licensor may update this Agreement from time to time. Material changes
 are reflected by updating the **Last updated** date at the top of this
@@ -320,7 +374,7 @@ terms of the version of this Agreement to which you most recently consented.
 
 ---
 
-## 16. Severability and Entire Agreement
+## 17. Severability and Entire Agreement
 
 - **Entire agreement.** This Agreement, the Privacy Policy, and (with
   respect to the source code) the MIT License together constitute the entire
@@ -340,16 +394,21 @@ terms of the version of this Agreement to which you most recently consented.
 
 ---
 
-## 17. Contact
+## 18. Contact
 
 For questions about this Agreement, including legal, compliance, or
 intellectual-property inquiries:
 
 - **Legal & privacy:** info@apinizer.com
 - **General support:** info@apinizer.com
+- **Enterprise / commercial support, SLAs, on-premise deployment, training:** info@apinizer.com
 - **Source repository:** https://github.com/apinizer/testnizer
 - **Website:** https://www.testnizer.com
 - **Postal:** Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş., İstanbul, Türkiye
+
+The general distribution of the Software is, and will remain, free of charge.
+Enterprise / commercial support is offered on a separate contractual basis
+and is **not** a precondition of using the free binary distribution.
 
 Copyright © 2026 Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş. All rights reserved with respect to
 the binary distribution. Source code rights are governed by the MIT License.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { X, ExternalLink, FileText, Shield } from 'lucide-react'
+import { X, ExternalLink, FileText, Shield, Building2 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEulaStore } from '../../stores/eula.store'
 import { useTranslation } from '../../lib/i18n'
@@ -178,6 +178,30 @@ export default function AboutModal() {
                   .replace('{version}', consentState.acceptedVersion || '—')}
               </div>
             )}
+          </div>
+
+          {/* Enterprise support */}
+          <div
+            className="flex flex-col gap-1.5 border-t px-5 py-3"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <div
+              className="flex items-center gap-1.5"
+              style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}
+            >
+              <Building2 size={13} /> {t('about.enterpriseTitle')}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
+              {t('about.enterpriseBody')}
+            </div>
+            <button
+              type="button"
+              onClick={() => openExternal(`mailto:${t('about.enterpriseContact')}`)}
+              className="flex cursor-pointer items-center gap-1.5 self-start rounded-md border-none bg-transparent p-0"
+              style={{ color: 'var(--accent-text)', fontSize: 13 }}
+            >
+              <ExternalLink size={13} /> {t('about.enterpriseContact')}
+            </button>
           </div>
 
           {/* Licenses */}

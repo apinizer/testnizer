@@ -138,7 +138,13 @@ ipcMain.handle('app:openExternal', async (_event, url: unknown) => {
   try {
     if (typeof url !== 'string') return { success: false, error: 'invalid url' }
     const parsed = new URL(url)
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    // Only allow http/https for browsing and mailto: for the enterprise
+    // contact link in the About modal. Anything else (file:, javascript:,
+    // shell:) is rejected — the renderer must never trigger arbitrary OS
+    // handlers.
+    const allowed =
+      parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'mailto:'
+    if (!allowed) {
       return { success: false, error: 'unsupported protocol' }
     }
     await shell.openExternal(url)

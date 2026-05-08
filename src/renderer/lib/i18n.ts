@@ -24,6 +24,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'about.licensesError': 'Failed to load license list',
     'about.licensesCount': '{count} packages',
     'about.consentAccepted': 'Legal terms accepted on {date} (v{version})',
+    'about.enterpriseTitle': 'Enterprise support',
+    'about.enterpriseBody':
+      'For paid support, SLAs, on-premise deployment assistance, training, or custom development requests, contact us.',
+    'about.enterpriseContact': 'info@apinizer.com',
 
     // EULA / Privacy consent gate
     'eula.welcome': 'Welcome to Testnizer',
@@ -207,6 +211,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'footer.console': 'Console',
     'footer.cookies': 'Cookies',
     'footer.noEnvironment': 'No Environment',
+    'footer.enterprise': 'Enterprise',
 
     // Console panel
     'console.title': 'Console',
@@ -914,6 +919,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'about.licensesError': 'Lisans listesi yüklenemedi',
     'about.licensesCount': '{count} paket',
     'about.consentAccepted': 'Yasal şartlar {date} tarihinde kabul edildi (v{version})',
+    'about.enterpriseTitle': 'Kurumsal destek',
+    'about.enterpriseBody':
+      'Ücretli destek, SLA, lokal kurulum asistanlığı, eğitim veya özel geliştirme talepleri için bizimle iletişime geçin.',
+    'about.enterpriseContact': 'info@apinizer.com',
 
     // EULA / Gizlilik onay ekranı
     'eula.welcome': "Testnizer'a Hoş Geldiniz",
@@ -1099,6 +1108,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'footer.console': 'Konsol',
     'footer.cookies': 'Cerezler',
     'footer.noEnvironment': 'Ortam Yok',
+    'footer.enterprise': 'Kurumsal',
 
     // Console panel
     'console.title': 'Konsol',

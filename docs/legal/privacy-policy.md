@@ -1,7 +1,7 @@
 # Testnizer — Privacy Policy
 
 **Effective date:** 2026-05-07
-**Last updated:** 2026-05-07
+**Last updated:** 2026-05-08
 **Applies to:** Testnizer v1.0.3 and later
 
 This Privacy Policy explains how **Testnizer** ("the Software", "we", "our")
@@ -37,6 +37,12 @@ in any way.
      default). See Section 5.
 - We have no user accounts, host nothing on your behalf, and do not see
   your traffic.
+- The Software is designed to operate **fully offline / air-gapped**.
+  Disabling the auto-update check (the only outbound connection initiated
+  by the Software in its default configuration) leaves the application
+  fully functional. Organizations with strict network-egress policies
+  may install and operate the Software inside isolated networks without
+  any loss of functionality.
 
 ---
 
@@ -115,6 +121,15 @@ GitHub's own privacy policy
 You can disable the auto-updater in **Settings → Updates**. Disabling it has
 no effect on the Software's other functionality; the Software remains fully
 usable offline.
+
+For deployments inside isolated, network-segmented, or air-gapped
+environments — common in regulated sectors such as banking, public
+administration, defense, healthcare, and critical infrastructure — the
+Software requires **no outbound connectivity to any Licensor-operated
+service** to function. The auto-update check is the only network call the
+Software initiates by default; once disabled (or once the host network
+blocks GitHub egress), the Software performs only the requests you
+explicitly issue against your own targets.
 
 **Lawful basis (GDPR Art. 6(1)(f)):** legitimate interest in delivering
 security and stability fixes to installed binaries. This processing
@@ -387,6 +402,7 @@ how Testnizer handles data:
 
 - **Privacy & legal:** info@apinizer.com
 - **General support:** info@apinizer.com
+- **Enterprise / commercial support inquiries:** info@apinizer.com
 - **Source repository:** https://github.com/apinizer/testnizer
 - **Website:** https://www.testnizer.com
 - **Postal:** Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş., İstanbul, Türkiye
