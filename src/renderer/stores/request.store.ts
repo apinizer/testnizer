@@ -308,8 +308,12 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       // Pre-request scripts don't read response — supply an empty shell so the
       // pm API contract is satisfied.
       const emptyResp: ApiResponse = { requestId: makeId(), protocol: 'http', timing: { total: 0 } }
-      const pmApi = createPmApi(emptyResp, envMap, globalMap)
-      const scriptResult = runScript(preScript, pmApi)
+      const requestName = tabsStore.tabs.find((tt) => tt.id === activeTabId)?.name ?? ''
+      const pmApi = createPmApi(emptyResp, envMap, globalMap, {
+        eventName: 'prerequest',
+        requestName,
+      })
+      const scriptResult = await runScript(preScript, pmApi)
       // test-runner emits 'info'/'debug' via console.info/debug — flatten those
       // into 'log' so they satisfy ConsoleLog's narrower level union.
       for (const log of scriptResult.consoleLogs) {
@@ -448,8 +452,12 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
             if (gv.enabled) globalMap.set(gv.key, gv.value || gv.initialValue || '')
           }
 
-          const pmApi = createPmApi(apiResp, envMap, globalMap)
-          const scriptResult = runScript(ps, pmApi)
+          const requestName = tabsStore.tabs.find((tt) => tt.id === activeTabId)?.name ?? ''
+          const pmApi = createPmApi(apiResp, envMap, globalMap, {
+            eventName: 'test',
+            requestName,
+          })
+          const scriptResult = await runScript(ps, pmApi)
           allTestResults.push(...scriptResult.results)
           allConsoleLogs.push(...scriptResult.consoleLogs)
 

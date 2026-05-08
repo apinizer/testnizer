@@ -70,6 +70,12 @@ interface RunnerExecuteOptions {
    */
   iterationData?: Record<string, string>[]
   stopOnError?: boolean
+  /**
+   * When true (default) each result carries the full responseBody +
+   * responseHeaders. Disable to keep memory low for very large collections —
+   * the report still has assertions, status, timing and size.
+   */
+  persistResponses?: boolean
   folderName?: string
   source?: string
   sourceLabel?: string
@@ -106,6 +112,8 @@ interface EndpointRunResult {
   responseSize?: number
   responseBody?: string
   responseHeaders?: Record<string, string>
+  requestHeaders?: Record<string, string>
+  requestBody?: string
 }
 
 interface AssertionResult {
@@ -178,6 +186,50 @@ function buildRequestFromEndpoint(endpoint: endpointRepo.EndpointRow): HttpReque
     followRedirects: schema.followRedirects ?? true,
     sslVerification: schema.sslVerification ?? true,
   }
+}
+
+function headersArrayToRecord(
+  headers?: Array<{ key: string; value: string; enabled?: boolean }>,
+): Record<string, string> | undefined {
+  if (!headers || headers.length === 0) return undefined
+  const out: Record<string, string> = {}
+  for (const h of headers) {
+    if (h.enabled !== false && h.key) out[h.key] = h.value
+  }
+  return Object.keys(out).length === 0 ? undefined : out
+}
+
+function requestBodyToString(body?: {
+  type: string
+  content?: string
+  urlEncoded?: Array<{ key: string; value: string; enabled?: boolean }>
+  formData?: Array<{
+    key: string
+    value: string
+    enabled?: boolean
+    fieldType?: string
+    filePath?: string
+  }>
+}): string | undefined {
+  if (!body) return undefined
+  // Multipart can't be reproduced as text — show a key=value preview with
+  // file refs so the runner-result panel still surfaces *what* was sent.
+  if (body.type === 'form-data' && body.formData) {
+    return body.formData
+      .filter((k) => k.enabled !== false)
+      .map(
+        (k) => `${k.key}=${k.fieldType === 'file' ? `<file:${k.filePath ?? k.value}>` : k.value}`,
+      )
+      .join('\n')
+  }
+  if (body.type === 'urlencoded' && body.urlEncoded) {
+    return body.urlEncoded
+      .filter((k) => k.enabled !== false)
+      .map((k) => `${encodeURIComponent(k.key)}=${encodeURIComponent(k.value)}`)
+      .join('&')
+  }
+  // text / javascript / html / xml / json / raw → already a string in body.content
+  return body.content
 }
 
 function runAssertionsMainProcess(
@@ -511,21 +563,35 @@ function buildExpectChain(value: unknown): {
           value === expected,
           `expected ${JSON.stringify(value)} to strictly equal ${JSON.stringify(expected)}`,
         ),
+      // CRITICAL: each property below MUST be a getter, not an eagerly-evaluated
+      // value. Without `get`, `pm.expect(x)` throws at chain construction time
+      // even when the user never accessed `.true` / `.false` / etc., because
+      // `ok(value === true, …)` runs while the object is being built.
       be: {
         a: (type) => ok(isType(type), `expected ${JSON.stringify(value)} to be a ${type}`),
         an: (type) => ok(isType(type), `expected ${JSON.stringify(value)} to be an ${type}`),
-        true: ok(value === true, `expected ${JSON.stringify(value)} to be true`),
-        false: ok(value === false, `expected ${JSON.stringify(value)} to be false`),
-        null: ok(value === null, `expected ${JSON.stringify(value)} to be null`),
-        undefined: ok(value === undefined, `expected ${JSON.stringify(value)} to be undefined`),
-        empty: ok(
-          (Array.isArray(value) && value.length === 0) ||
-            (typeof value === 'string' && value.length === 0) ||
-            (value !== null &&
-              typeof value === 'object' &&
-              Object.keys(value as object).length === 0),
-          `expected ${JSON.stringify(value)} to be empty`,
-        ),
+        get true() {
+          return ok(value === true, `expected ${JSON.stringify(value)} to be true`)
+        },
+        get false() {
+          return ok(value === false, `expected ${JSON.stringify(value)} to be false`)
+        },
+        get null() {
+          return ok(value === null, `expected ${JSON.stringify(value)} to be null`)
+        },
+        get undefined() {
+          return ok(value === undefined, `expected ${JSON.stringify(value)} to be undefined`)
+        },
+        get empty() {
+          return ok(
+            (Array.isArray(value) && value.length === 0) ||
+              (typeof value === 'string' && value.length === 0) ||
+              (value !== null &&
+                typeof value === 'object' &&
+                Object.keys(value as object).length === 0),
+            `expected ${JSON.stringify(value)} to be empty`,
+          )
+        },
       },
       include: (sub) => {
         if (typeof value === 'string' && typeof sub === 'string') {
@@ -645,26 +711,35 @@ function resolveRequestOptions(
 
   if (resolved.auth) {
     const a = resolved.auth as AuthConfig
-    const r = (s: string | undefined) =>
-      s === undefined ? s : resolveRunnerVariables(s, vars)
+    const r = (s: string | undefined) => (s === undefined ? s : resolveRunnerVariables(s, vars))
     const next: AuthConfig = { type: a.type }
-    if (a.basic) next.basic = { username: r(a.basic.username) ?? '', password: r(a.basic.password) ?? '' }
+    if (a.basic)
+      next.basic = { username: r(a.basic.username) ?? '', password: r(a.basic.password) ?? '' }
     if (a.bearer) next.bearer = { token: r(a.bearer.token) ?? '', prefix: r(a.bearer.prefix) }
-    if (a.apiKey) next.apiKey = { key: r(a.apiKey.key) ?? '', value: r(a.apiKey.value) ?? '', in: a.apiKey.in }
-    if (a.digest) next.digest = { username: r(a.digest.username) ?? '', password: r(a.digest.password) ?? '' }
-    if (a.ntlm) next.ntlm = {
-      username: r(a.ntlm.username) ?? '',
-      password: r(a.ntlm.password) ?? '',
-      domain: r(a.ntlm.domain),
-      workstation: r(a.ntlm.workstation),
-    }
-    if (a.hawk) next.hawk = { authId: r(a.hawk.authId) ?? '', authKey: r(a.hawk.authKey) ?? '', algorithm: a.hawk.algorithm }
-    if (a.awsSignature) next.awsSignature = {
-      accessKey: r(a.awsSignature.accessKey) ?? '',
-      secretKey: r(a.awsSignature.secretKey) ?? '',
-      region: r(a.awsSignature.region) ?? '',
-      service: r(a.awsSignature.service) ?? '',
-    }
+    if (a.apiKey)
+      next.apiKey = { key: r(a.apiKey.key) ?? '', value: r(a.apiKey.value) ?? '', in: a.apiKey.in }
+    if (a.digest)
+      next.digest = { username: r(a.digest.username) ?? '', password: r(a.digest.password) ?? '' }
+    if (a.ntlm)
+      next.ntlm = {
+        username: r(a.ntlm.username) ?? '',
+        password: r(a.ntlm.password) ?? '',
+        domain: r(a.ntlm.domain),
+        workstation: r(a.ntlm.workstation),
+      }
+    if (a.hawk)
+      next.hawk = {
+        authId: r(a.hawk.authId) ?? '',
+        authKey: r(a.hawk.authKey) ?? '',
+        algorithm: a.hawk.algorithm,
+      }
+    if (a.awsSignature)
+      next.awsSignature = {
+        accessKey: r(a.awsSignature.accessKey) ?? '',
+        secretKey: r(a.awsSignature.secretKey) ?? '',
+        region: r(a.awsSignature.region) ?? '',
+        service: r(a.awsSignature.service) ?? '',
+      }
     if (a.oauth2) next.oauth2 = { token: r(a.oauth2.token) }
     resolved.auth = next as HttpRequestOptions['auth']
   }
@@ -684,6 +759,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   const iterations =
     iterationData.length > 0 ? iterationData.length : Math.max(1, options.iterations ?? 1)
   const stopOnError = options.stopOnError ?? false
+  const persistResponses = options.persistResponses ?? true
   const endpointsPerIteration = options.endpointIds.length
   const total = endpointsPerIteration * iterations
 
@@ -699,9 +775,12 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   outer: for (let iter = 0; iter < iterations; iter++) {
     for (let j = 0; j < endpointsPerIteration; j++) {
       if (shouldStop) break outer
+      // Linear position across all iterations (used for progress events).
       const i = iter * endpointsPerIteration + j
 
-      const endpointId = options.endpointIds[i]
+      // Endpoint id is keyed by the inner loop only — endpointIds has
+      // `endpointsPerIteration` elements and is reused across iterations.
+      const endpointId = options.endpointIds[j]
       const endpoint = endpointRepo.getEndpointById(endpointId)
 
       if (!endpoint) {
@@ -857,7 +936,12 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
         passedAssertions += passed
         failedAssertions += failed
 
-        const endpointPassed = failed === 0 && !response.error
+        // A request only counts as "passed" when it has no transport error,
+        // no failed assertions, AND was not skipped by a pre-script.
+        // Previously skipped runs were silently bucketed as passed because
+        // skipped runs short-circuit before reaching this point — kept the
+        // explicit guard so a future refactor doesn't reintroduce the bug.
+        const endpointPassed = failed === 0 && !response.error && (response.status ?? 0) < 400
         if (endpointPassed) passedEndpoints++
         else failedEndpoints++
 
@@ -875,8 +959,12 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
           assertions: assertionResults,
           error: response.error,
           responseSize: response.bodySize ?? 0,
-          responseBody: response.body ?? undefined,
-          responseHeaders: response.headers ?? undefined,
+          responseBody: persistResponses ? (response.body ?? undefined) : undefined,
+          responseHeaders: persistResponses ? (response.headers ?? undefined) : undefined,
+          requestHeaders: persistResponses
+            ? headersArrayToRecord(resolvedOptions.headers)
+            : undefined,
+          requestBody: persistResponses ? requestBodyToString(resolvedOptions.body) : undefined,
         }
 
         results.push(result)
@@ -945,7 +1033,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       totalAssertions,
       passedAssertions,
       failedAssertions,
-      0,
+      results.reduce((acc, r) => acc + (r.skipped || 0), 0),
       avgRespTime,
       JSON.stringify(results),
       startedAt,

@@ -35,6 +35,8 @@ export interface EndpointRunResult {
   responseSize?: number
   responseBody?: string
   responseHeaders?: Record<string, string>
+  requestHeaders?: Record<string, string>
+  requestBody?: string
 }
 
 export interface RunnerReport {
@@ -138,18 +140,26 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
     const selected = state.endpoints.filter((ep) => ep.selected)
     if (selected.length === 0) return
 
+    // total = endpoints × iterations so progress % reflects the real run.
+    const expectedTotal = selected.length * Math.max(1, state.iterations)
+
     set({
       view: 'results',
       isRunning: true,
       results: [],
       report: null,
       currentIndex: 0,
-      totalCount: selected.length,
+      totalCount: expectedTotal,
       runStartedAt: Date.now(),
     })
 
-    // Listen for progress events
+    // Stop accepting progress events once the final report has arrived; the
+    // queued events would otherwise duplicate-append into `results` and race
+    // with the final report's `results: report.results` overwrite.
+    let acceptProgress = true
+
     const unsubscribe = window.api?.runner?.onProgress?.((progress: unknown) => {
+      if (!acceptProgress) return
       const p = progress as { current: number; total: number; result: EndpointRunResult }
       set((s) => ({
         currentIndex: p.current,
@@ -167,7 +177,10 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
         delay: state.delay,
         iterations: state.iterations,
         stopOnError: state.stopOnError,
+        persistResponses: state.persistResponses,
       })
+
+      acceptProgress = false
 
       if (result?.success && result.data) {
         const report = result.data as RunnerReport
@@ -179,9 +192,15 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
         })
       }
     } catch {
-      // Error handled via results
+      // Error handled via results — but ensure we stop accepting late progress
+      // even when execute() rejects so zombie events don't surface.
+      acceptProgress = false
     } finally {
-      unsubscribe?.()
+      try {
+        unsubscribe?.()
+      } catch {
+        // ignore
+      }
       set({ isRunning: false })
     }
   },

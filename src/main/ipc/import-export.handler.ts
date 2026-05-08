@@ -1853,6 +1853,26 @@ function buildPostmanUrl(rawUrl: string, params: UiKeyValuePair[] = []): Postman
 
 export function bodyToPostman(body: UiRequestSchema['body']): PostmanBody | undefined {
   if (!body || !body.type || body.type === 'none') return undefined
+  // GraphQL requests imported from Postman are stored as `{type:'json', content:
+  // '{"query":"...","variables":{...}}'}` (see line 1435). Detect that shape on
+  // the way out so a Postman → Testnizer → Postman round-trip preserves the
+  // GraphQL editor mode rather than degrading to a raw JSON body.
+  if (body.type === 'json' && body.content) {
+    try {
+      const parsed = JSON.parse(body.content) as { query?: unknown; variables?: unknown }
+      if (typeof parsed?.query === 'string') {
+        return {
+          mode: 'graphql',
+          graphql: {
+            query: parsed.query,
+            variables: parsed.variables !== undefined ? JSON.stringify(parsed.variables) : '{}',
+          },
+        }
+      }
+    } catch {
+      // Not valid JSON — fall through to raw json export.
+    }
+  }
   switch (body.type) {
     case 'json':
       return { mode: 'raw', raw: body.content ?? '', options: { raw: { language: 'json' } } }
@@ -2740,12 +2760,15 @@ interface HarEntry {
     method: string
     url: string
     httpVersion?: string
-    headers: Array<{ name: string; value: string }>
-    queryString: Array<{ name: string; value: string }>
+    // HAR 1.2 doesn't define a `disabled` field, but some exporters (e.g.
+    // browser extensions, request capture tools) include one — honor it on
+    // import so a captured-but-disabled header doesn't get re-sent on replay.
+    headers: Array<{ name: string; value: string; disabled?: boolean }>
+    queryString: Array<{ name: string; value: string; disabled?: boolean }>
     postData?: {
       mimeType?: string
       text?: string
-      params?: Array<{ name: string; value: string }>
+      params?: Array<{ name: string; value: string; disabled?: boolean }>
     }
   }
   response?: {
@@ -2820,7 +2843,7 @@ async function importHar(projectId: string, content: string): Promise<ImportResu
         id: genKvId(),
         key: q.name,
         value: q.value,
-        enabled: true,
+        enabled: !q.disabled,
       }))
     }
 
@@ -2837,7 +2860,7 @@ async function importHar(projectId: string, content: string): Promise<ImportResu
         if (lowerName.startsWith(':') || lowerName === 'host' || lowerName === 'connection') {
           continue
         }
-        headerList.push({ id: genKvId(), key: h.name, value: h.value, enabled: true })
+        headerList.push({ id: genKvId(), key: h.name, value: h.value, enabled: !h.disabled })
       }
       if (headerList.length > 0) requestSchema.headers = headerList
     }
@@ -2860,7 +2883,7 @@ async function importHar(projectId: string, content: string): Promise<ImportResu
               id: genKvId(),
               key: p.name,
               value: p.value,
-              enabled: true,
+              enabled: !p.disabled,
             })),
           }
         } else {
@@ -2873,7 +2896,7 @@ async function importHar(projectId: string, content: string): Promise<ImportResu
             id: genKvId(),
             key: p.name,
             value: p.value,
-            enabled: true,
+            enabled: !p.disabled,
           })),
         }
       } else if (postData.text && postData.text.length > 1_000_000) {
@@ -3385,6 +3408,26 @@ export function mapInsomniaBodyToUi(body: InsomniaBody | undefined): {
 
 function bodyToInsomnia(body: UiRequestSchema['body']): InsomniaBody | undefined {
   if (!body || !body.type || body.type === 'none') return undefined
+  // Insomnia represents GraphQL with `mimeType: 'application/graphql'` (or the
+  // newer `'graphql/json'`) and a `text` field carrying `{"query","variables"}`.
+  // Detect imported-from-Postman GraphQL bodies the same way we do for the
+  // Postman exporter so round-tripping doesn't lose the editor mode.
+  if (body.type === 'json' && body.content) {
+    try {
+      const parsed = JSON.parse(body.content) as { query?: unknown; variables?: unknown }
+      if (typeof parsed?.query === 'string') {
+        return {
+          mimeType: 'application/graphql',
+          text: JSON.stringify({
+            query: parsed.query,
+            variables: parsed.variables ?? {},
+          }),
+        }
+      }
+    } catch {
+      // Not valid JSON — fall through to raw json export.
+    }
+  }
   switch (body.type) {
     case 'json':
       return { mimeType: 'application/json', text: body.content ?? '' }

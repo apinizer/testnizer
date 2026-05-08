@@ -375,17 +375,23 @@ export interface PmApi {
   _testResults: PmTestResult[]
   _envUpdates: Map<string, string>
   _globalUpdates: Map<string, string>
+  /** Promises returned from async `pm.test()` callbacks. Callers should
+   *  `await Promise.allSettled(pm._pendingTests)` before reading
+   *  `_testResults` so async failures aren't silently lost. */
+  _pendingTests: Promise<void>[]
 }
 
 export function createPmApi(
   response: ApiResponse,
   envVars: Map<string, string>,
   globalVars: Map<string, string>,
+  meta?: { requestName?: string; eventName?: 'prerequest' | 'test' },
 ): PmApi {
   const testResults: PmTestResult[] = []
   const envUpdates = new Map<string, string>()
   const globalUpdates = new Map<string, string>()
   const localVars = new Map<string, string>()
+  const pendingTests: Promise<void>[] = []
 
   // Build Chai-BDD style chain for pm.response.to.have.status() etc.
   function assertionError(msg: string): never {
@@ -406,11 +412,19 @@ export function createPmApi(
         assertionError(`expected header "${name}" to equal "${value}" but got "${entry[1]}"`)
       }
     },
-    jsonBody(_path?: string): void {
+    jsonBody(path?: string): void {
+      let parsed: unknown
       try {
-        JSON.parse(response.body ?? '')
+        parsed = JSON.parse(response.body ?? '')
       } catch {
         assertionError('expected response to have a JSON body')
+        return
+      }
+      if (path) {
+        const value = evaluateJsonPath(parsed, path)
+        if (value === undefined) {
+          assertionError(`expected response JSON to have path "${path}"`)
+        }
       }
     },
     body(expected?: string): void {
@@ -604,15 +618,36 @@ export function createPmApi(
       },
     },
     info: {
-      eventName: 'test',
-      requestName: '',
+      eventName: meta?.eventName ?? 'test',
+      requestName: meta?.requestName ?? '',
     },
     expect(value: unknown): AssertionChain {
       return createExpectChain(value)
     },
-    test(name: string, fn: () => void): void {
+    test(name: string, fn: () => void | Promise<void>): void {
       try {
-        fn()
+        const result = fn()
+        if (result && typeof (result as Promise<void>).then === 'function') {
+          // Async pm.test callbacks: register a placeholder result that will be
+          // resolved when the promise settles. Callers can await
+          // `pm._pendingTests` (see PmApi) to wait for completion.
+          const idx = testResults.length
+          testResults.push({ name, passed: true })
+          const pending = (result as Promise<void>).then(
+            () => {
+              // already optimistically passed; nothing to do.
+            },
+            (e: unknown) => {
+              testResults[idx] = {
+                name,
+                passed: false,
+                error: e instanceof Error ? e.message : String(e),
+              }
+            },
+          )
+          pendingTests.push(pending)
+          return
+        }
         testResults.push({ name, passed: true })
       } catch (e) {
         testResults.push({ name, passed: false, error: (e as Error).message })
@@ -631,6 +666,7 @@ export function createPmApi(
     _testResults: testResults,
     _envUpdates: envUpdates,
     _globalUpdates: globalUpdates,
+    _pendingTests: pendingTests,
   }
 
   return pmApi
@@ -746,7 +782,7 @@ export interface ScriptRunResult {
   globalUpdates: Record<string, string>
 }
 
-export function runScript(script: string, pmApi: PmApi): ScriptRunResult {
+export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRunResult> {
   const consoleLogs: ConsoleLog[] = []
 
   // Create console capture
@@ -786,6 +822,13 @@ export function runScript(script: string, pmApi: PmApi): ScriptRunResult {
       message: `Script error: ${(e as Error).message}`,
       timestamp: Date.now(),
     })
+  }
+
+  // Wait for any async `pm.test(name, async () => {...})` callbacks to settle
+  // so their assertion failures land in `_testResults` before we map them
+  // to the TestResult shape below.
+  if (pmApi._pendingTests.length > 0) {
+    await Promise.allSettled(pmApi._pendingTests)
   }
 
   // Convert pm test results to TestResult format

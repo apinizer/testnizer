@@ -482,6 +482,9 @@ interface RunnerExecuteOptions {
   iterations?: number
   iterationData?: Record<string, string>[]
   stopOnError?: boolean
+  /** Persist requestHeaders/requestBody/responseHeaders/responseBody on each
+   *  result. Default true; set false to keep memory low for very large runs. */
+  persistResponses?: boolean
   folderName?: string
   sourceLabel?: string
 }
@@ -499,6 +502,11 @@ interface EndpointRunResult {
   skipped: number
   assertions: RunnerAssertionResult[]
   error?: string
+  responseSize?: number
+  responseBody?: string
+  responseHeaders?: Record<string, string>
+  requestHeaders?: Record<string, string>
+  requestBody?: string
 }
 
 interface RunnerAssertionResult {
