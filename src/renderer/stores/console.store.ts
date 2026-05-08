@@ -408,6 +408,7 @@ export function initConsoleListeners(): () => void {
             level: 'info',
             category: 'event',
             message: `WS ← ${truncate(ev.data ?? '', 80)}`,
+            sizeBytes: ev.data != null ? byteLengthUtf8(ev.data) : undefined,
             details: {
               direction: 'in',
               eventName: ev.contentType,
@@ -434,6 +435,7 @@ export function initConsoleListeners(): () => void {
             level: 'info',
             category: 'event',
             message: `SSE event ${ev.eventType ?? 'message'}${ev.id ? ` #${ev.id}` : ''}`,
+            sizeBytes: ev.data != null ? byteLengthUtf8(ev.data) : undefined,
             details: {
               direction: 'in',
               eventName: ev.eventType,
@@ -466,6 +468,7 @@ export function initConsoleListeners(): () => void {
             level: 'info',
             category: 'event',
             message: `gRPC chunk: ${truncate(ev.data ?? '', 80)}`,
+            sizeBytes: ev.data != null ? byteLengthUtf8(ev.data) : undefined,
             details: { direction: 'in', responseBody: ev.data },
           })
         } else if (ev.type === 'end') {
@@ -550,15 +553,17 @@ export function initConsoleListeners(): () => void {
         }
         if (!ev || !ev.event) return
         const add = useConsoleStore.getState().addEntry
+        const payload = JSON.stringify(ev.data)
         add({
           protocol: 'socketio',
           level: 'info',
           category: 'event',
-          message: `Socket.IO ${ev.direction === 'in' ? '←' : '→'} ${ev.event}: ${truncate(JSON.stringify(ev.data), 80)}`,
+          message: `Socket.IO ${ev.direction === 'in' ? '←' : '→'} ${ev.event}: ${truncate(payload, 80)}`,
+          sizeBytes: payload != null ? byteLengthUtf8(payload) : undefined,
           details: {
             direction: ev.direction === 'in' ? 'in' : 'out',
             eventName: ev.event,
-            responseBody: JSON.stringify(ev.data),
+            responseBody: payload,
           },
         })
       }),
@@ -579,4 +584,14 @@ export function initConsoleListeners(): () => void {
 function truncate(s: string, max: number): string {
   if (!s) return ''
   return s.length > max ? s.slice(0, max) + '…' : s
+}
+
+function byteLengthUtf8(s: string): number {
+  // Renderer-side equivalent of Buffer.byteLength(s, 'utf-8'). TextEncoder is
+  // a Web standard available in Electron renderer windows.
+  try {
+    return new TextEncoder().encode(s).length
+  } catch {
+    return s.length
+  }
 }

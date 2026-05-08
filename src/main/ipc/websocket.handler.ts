@@ -3,7 +3,7 @@ import {
   connect,
   disconnect,
   sendMessage,
-  type WsConnectOptions
+  type WsConnectOptions,
 } from '../protocols/websocket.engine'
 import { logEvent } from '../lib/console-logger'
 
@@ -15,9 +15,10 @@ interface WsConnectPayload {
   _tabId?: string
 }
 
-// Map connectionId -> { url, tabId } so disconnect / send events can carry
-// the originating-tab info for ConsolePanel filtering.
-const wsContext = new Map<string, { url: string; tabId?: string }>()
+// Map connectionId -> { url, tabId, connectedAt } so disconnect / send events
+// can carry the originating-tab info for ConsolePanel filtering AND so we can
+// compute total connection lifetime + per-event timing deltas.
+const wsContext = new Map<string, { url: string; tabId?: string; connectedAt: number }>()
 
 export function registerWebSocketHandlers(): void {
   // ─── Connect to WebSocket ─────────────────────────────────
@@ -32,9 +33,10 @@ export function registerWebSocketHandlers(): void {
         url: payload.url,
         headers: payload.headers,
         protocols: payload.protocols,
-        rejectUnauthorized: payload.rejectUnauthorized
+        rejectUnauthorized: payload.rejectUnauthorized,
       }
 
+      const connectStart = Date.now()
       logEvent({
         protocol: 'websocket',
         category: 'connection',
@@ -46,9 +48,11 @@ export function registerWebSocketHandlers(): void {
 
       try {
         const connectionInfo = await connect(options, win.id)
+        const connectedAt = Date.now()
         wsContext.set(connectionInfo.connectionId, {
           url: payload.url,
           tabId: payload._tabId,
+          connectedAt,
         })
         logEvent({
           protocol: 'websocket',
@@ -57,6 +61,9 @@ export function registerWebSocketHandlers(): void {
           message: `WS connected → ${payload.url}`,
           url: payload.url,
           tabId: payload._tabId,
+          status: 101,
+          statusText: 'Switching Protocols',
+          durationMs: connectedAt - connectStart,
         })
         return { success: true, data: connectionInfo }
       } catch (err) {
@@ -67,6 +74,7 @@ export function registerWebSocketHandlers(): void {
           message: `WS connection failed: ${(err as Error).message}`,
           url: payload.url,
           tabId: payload._tabId,
+          durationMs: Date.now() - connectStart,
           error: { message: (err as Error).message },
         })
         throw err
@@ -87,6 +95,7 @@ export function registerWebSocketHandlers(): void {
         message: `WS disconnected${ctx?.url ? ` ← ${ctx.url}` : ''}`,
         url: ctx?.url,
         tabId: ctx?.tabId,
+        durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
       })
       wsContext.delete(connectionId)
       return { success: true, data: result }
@@ -108,6 +117,8 @@ export function registerWebSocketHandlers(): void {
         body: message,
         url: ctx?.url,
         tabId: ctx?.tabId,
+        sizeBytes: Buffer.byteLength(message, 'utf-8'),
+        durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
       })
       return { success: true, data: result }
     } catch (e) {

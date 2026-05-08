@@ -69,43 +69,69 @@ export interface AiModelOption {
 }
 
 /**
- * Curated current model lists (Jan 2026). Manual model names are also
+ * Default chat-completions endpoints per provider — mirror of the same map in
+ * `src/main/protocols/ai-chat.engine.ts:55-70`. Renderer cannot import from
+ * the main process across the IPC boundary, so we duplicate; URLs change
+ * rarely and any update is a single coordinated edit in both files.
+ */
+export const PROVIDER_DEFAULT_URLS: Record<Exclude<AiProvider, 'custom'>, string> = {
+  openai: 'https://api.openai.com/v1/chat/completions',
+  anthropic: 'https://api.anthropic.com/v1/messages',
+  openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+  google: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+  deepseek: 'https://api.deepseek.com/chat/completions',
+  xai: 'https://api.x.ai/v1/chat/completions',
+  mistral: 'https://api.mistral.ai/v1/chat/completions',
+  groq: 'https://api.groq.com/openai/v1/chat/completions',
+  perplexity: 'https://api.perplexity.ai/chat/completions',
+  cerebras: 'https://api.cerebras.ai/v1/chat/completions',
+  cohere: 'https://api.cohere.com/compatibility/v1/chat/completions',
+  fireworks: 'https://api.fireworks.ai/inference/v1/chat/completions',
+  deepinfra: 'https://api.deepinfra.com/v1/openai/chat/completions',
+  together: 'https://api.together.xyz/v1/chat/completions',
+}
+
+export function resolveDefaultUrl(provider: AiProvider): string {
+  if (provider === 'custom') return ''
+  return PROVIDER_DEFAULT_URLS[provider]
+}
+
+/**
+ * Curated current model lists (May 2026). Manual model names are also
  * accepted in the editor — this is just an autocomplete list.
  */
 export const PROVIDER_MODELS: Record<AiProvider, AiModelOption[]> = {
   openai: [
-    { value: 'gpt-4.5-preview', label: 'gpt-4.5-preview' },
+    { value: 'gpt-5', label: 'gpt-5' },
+    { value: 'gpt-5-mini', label: 'gpt-5-mini' },
+    { value: 'gpt-5-nano', label: 'gpt-5-nano' },
     { value: 'gpt-4o', label: 'gpt-4o' },
     { value: 'gpt-4o-mini', label: 'gpt-4o-mini' },
-    { value: 'o1', label: 'o1' },
-    { value: 'o1-mini', label: 'o1-mini' },
-    { value: 'o1-pro', label: 'o1-pro' },
+    { value: 'o4', label: 'o4' },
+    { value: 'o4-mini', label: 'o4-mini' },
     { value: 'o3', label: 'o3' },
     { value: 'o3-mini', label: 'o3-mini' },
-    { value: 'o4-mini', label: 'o4-mini' },
     { value: 'gpt-4-turbo', label: 'gpt-4-turbo' },
   ],
   anthropic: [
+    { value: 'claude-opus-4-7', label: 'claude-opus-4-7' },
+    { value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6' },
+    { value: 'claude-haiku-4-5', label: 'claude-haiku-4-5' },
     { value: 'claude-opus-4-5', label: 'claude-opus-4-5' },
     { value: 'claude-sonnet-4-5', label: 'claude-sonnet-4-5' },
-    { value: 'claude-haiku-4-5', label: 'claude-haiku-4-5' },
-    { value: 'claude-opus-4', label: 'claude-opus-4' },
-    { value: 'claude-sonnet-4', label: 'claude-sonnet-4' },
     { value: 'claude-3-7-sonnet-latest', label: 'claude-3-7-sonnet-latest' },
-    { value: 'claude-3-5-sonnet-latest', label: 'claude-3-5-sonnet-latest' },
     { value: 'claude-3-5-haiku-latest', label: 'claude-3-5-haiku-latest' },
   ],
   openrouter: [
-    { value: 'anthropic/claude-opus-4-5', label: 'anthropic/claude-opus-4-5' },
-    { value: 'anthropic/claude-sonnet-4-5', label: 'anthropic/claude-sonnet-4-5' },
+    { value: 'anthropic/claude-opus-4-7', label: 'anthropic/claude-opus-4-7' },
+    { value: 'anthropic/claude-sonnet-4-6', label: 'anthropic/claude-sonnet-4-6' },
+    { value: 'openai/gpt-5', label: 'openai/gpt-5' },
     { value: 'openai/gpt-4o', label: 'openai/gpt-4o' },
-    { value: 'openai/o3-mini', label: 'openai/o3-mini' },
+    { value: 'openai/o4-mini', label: 'openai/o4-mini' },
     { value: 'google/gemini-2.5-pro', label: 'google/gemini-2.5-pro' },
-    { value: 'google/gemini-2.5-flash', label: 'google/gemini-2.5-flash' },
-    { value: 'x-ai/grok-3', label: 'x-ai/grok-3' },
+    { value: 'x-ai/grok-4', label: 'x-ai/grok-4' },
     { value: 'deepseek/deepseek-chat', label: 'deepseek/deepseek-chat' },
-    { value: 'deepseek/deepseek-r1', label: 'deepseek/deepseek-r1' },
-    { value: 'meta-llama/llama-3.3-70b-instruct', label: 'meta-llama/llama-3.3-70b-instruct' },
+    { value: 'meta-llama/llama-4-maverick', label: 'meta-llama/llama-4-maverick' },
     { value: 'mistralai/mistral-large-2411', label: 'mistralai/mistral-large' },
   ],
   google: [
@@ -114,38 +140,33 @@ export const PROVIDER_MODELS: Record<AiProvider, AiModelOption[]> = {
     { value: 'gemini-2.5-flash-lite', label: 'gemini-2.5-flash-lite' },
     { value: 'gemini-2.0-flash', label: 'gemini-2.0-flash' },
     { value: 'gemini-2.0-flash-thinking-exp', label: 'gemini-2.0-flash-thinking-exp' },
-    { value: 'gemini-2.0-pro-exp', label: 'gemini-2.0-pro-exp' },
-    { value: 'gemini-1.5-pro', label: 'gemini-1.5-pro' },
-    { value: 'gemini-1.5-flash', label: 'gemini-1.5-flash' },
   ],
   deepseek: [
     { value: 'deepseek-chat', label: 'deepseek-chat (V3)' },
     { value: 'deepseek-reasoner', label: 'deepseek-reasoner (R1)' },
   ],
   xai: [
+    { value: 'grok-4', label: 'grok-4' },
+    { value: 'grok-4-fast', label: 'grok-4-fast' },
     { value: 'grok-3', label: 'grok-3' },
     { value: 'grok-3-mini', label: 'grok-3-mini' },
     { value: 'grok-3-fast', label: 'grok-3-fast' },
-    { value: 'grok-2-latest', label: 'grok-2-latest' },
-    { value: 'grok-2-vision-latest', label: 'grok-2-vision-latest' },
   ],
   mistral: [
     { value: 'mistral-large-latest', label: 'mistral-large-latest' },
     { value: 'mistral-medium-latest', label: 'mistral-medium-latest' },
     { value: 'mistral-small-latest', label: 'mistral-small-latest' },
-    { value: 'mistral-saba-latest', label: 'mistral-saba-latest' },
     { value: 'codestral-latest', label: 'codestral-latest' },
     { value: 'pixtral-large-latest', label: 'pixtral-large-latest' },
     { value: 'ministral-8b-latest', label: 'ministral-8b-latest' },
     { value: 'ministral-3b-latest', label: 'ministral-3b-latest' },
   ],
   groq: [
+    { value: 'llama-4-scout-17b-16e-instruct', label: 'llama-4-scout-17b-16e-instruct' },
+    { value: 'llama-4-maverick-17b-128e-instruct', label: 'llama-4-maverick-17b-128e-instruct' },
     { value: 'llama-3.3-70b-versatile', label: 'llama-3.3-70b-versatile' },
-    { value: 'llama-3.1-8b-instant', label: 'llama-3.1-8b-instant' },
-    { value: 'llama-3.2-90b-vision-preview', label: 'llama-3.2-90b-vision-preview' },
+    { value: 'qwen-3-32b', label: 'qwen-3-32b' },
     { value: 'deepseek-r1-distill-llama-70b', label: 'deepseek-r1-distill-llama-70b' },
-    { value: 'qwen-2.5-32b', label: 'qwen-2.5-32b' },
-    { value: 'qwen-2.5-coder-32b', label: 'qwen-2.5-coder-32b' },
     { value: 'gemma2-9b-it', label: 'gemma2-9b-it' },
   ],
   perplexity: [
@@ -156,8 +177,8 @@ export const PROVIDER_MODELS: Record<AiProvider, AiModelOption[]> = {
     { value: 'sonar-deep-research', label: 'sonar-deep-research' },
   ],
   cerebras: [
+    { value: 'llama-4-scout', label: 'llama-4-scout' },
     { value: 'llama-3.3-70b', label: 'llama-3.3-70b' },
-    { value: 'llama3.1-70b', label: 'llama3.1-70b' },
     { value: 'llama3.1-8b', label: 'llama3.1-8b' },
     { value: 'deepseek-r1-distill-llama-70b', label: 'deepseek-r1-distill-llama-70b' },
   ],
@@ -171,32 +192,35 @@ export const PROVIDER_MODELS: Record<AiProvider, AiModelOption[]> = {
     { value: 'accounts/fireworks/models/deepseek-v3', label: 'deepseek-v3' },
     { value: 'accounts/fireworks/models/deepseek-r1', label: 'deepseek-r1' },
     {
-      value: 'accounts/fireworks/models/llama-v3p3-70b-instruct',
-      label: 'llama-v3p3-70b-instruct',
+      value: 'accounts/fireworks/models/llama4-scout-instruct-basic',
+      label: 'llama4-scout-instruct',
     },
-    { value: 'accounts/fireworks/models/qwen2p5-72b-instruct', label: 'qwen2p5-72b-instruct' },
-    { value: 'accounts/fireworks/models/qwen2p5-coder-32b-instruct', label: 'qwen2p5-coder-32b' },
+    {
+      value: 'accounts/fireworks/models/qwen3-coder-30b-a3b-instruct',
+      label: 'qwen3-coder-30b',
+    },
     { value: 'accounts/fireworks/models/mixtral-8x22b-instruct', label: 'mixtral-8x22b-instruct' },
   ],
   deepinfra: [
     { value: 'deepseek-ai/DeepSeek-V3', label: 'DeepSeek-V3' },
     { value: 'deepseek-ai/DeepSeek-R1', label: 'DeepSeek-R1' },
-    { value: 'meta-llama/Llama-3.3-70B-Instruct', label: 'Llama-3.3-70B-Instruct' },
-    { value: 'Qwen/Qwen2.5-72B-Instruct', label: 'Qwen2.5-72B-Instruct' },
-    { value: 'Qwen/Qwen2.5-Coder-32B-Instruct', label: 'Qwen2.5-Coder-32B' },
-    { value: 'mistralai/Mistral-Small-24B-Instruct-2501', label: 'Mistral-Small-24B-Instruct' },
+    { value: 'meta-llama/Llama-4-Scout-17B-16E-Instruct', label: 'Llama-4-Scout-17B' },
+    { value: 'Qwen/Qwen3-32B', label: 'Qwen3-32B' },
+    { value: 'mistralai/Mistral-Small-24B-Instruct-2501', label: 'Mistral-Small-24B' },
   ],
   together: [
     { value: 'deepseek-ai/DeepSeek-V3', label: 'DeepSeek-V3' },
     { value: 'deepseek-ai/DeepSeek-R1', label: 'DeepSeek-R1' },
-    { value: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', label: 'Llama-3.3-70B-Instruct-Turbo' },
-    { value: 'Qwen/Qwen2.5-72B-Instruct-Turbo', label: 'Qwen2.5-72B-Instruct-Turbo' },
-    { value: 'Qwen/QwQ-32B', label: 'QwQ-32B' },
+    {
+      value: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8',
+      label: 'Llama-4-Maverick-17B',
+    },
+    { value: 'Qwen/Qwen3-32B', label: 'Qwen3-32B' },
     { value: 'mistralai/Mixtral-8x22B-Instruct-v0.1', label: 'Mixtral-8x22B-Instruct' },
   ],
   custom: [
-    { value: 'gpt-4o', label: 'gpt-4o' },
-    { value: 'claude-sonnet-4-5', label: 'claude-sonnet-4-5' },
+    { value: 'gpt-5', label: 'gpt-5' },
+    { value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6' },
   ],
 }
 
@@ -248,7 +272,7 @@ interface AiChatStore extends TabAiChatState {
 function emptyTabState(): TabAiChatState {
   return {
     provider: 'openai',
-    customUrl: '',
+    customUrl: resolveDefaultUrl('openai'),
     apiKey: '',
     model: defaultModelFor('openai'),
     systemPrompt: '',
@@ -306,11 +330,17 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
 
   setProvider: (provider) => {
     // Switching provider auto-selects a sensible default model unless the
-    // current model is already in the new provider's list.
+    // current model is already in the new provider's list, and pre-fills the
+    // endpoint URL with that provider's default so the user always sees where
+    // requests will go. For `custom`, the existing customUrl is preserved.
     const models = PROVIDER_MODELS[provider]
-    const current = get().model
-    const stillValid = models.some((m) => m.value === current)
-    set({ provider, model: stillValid ? current : defaultModelFor(provider) })
+    const state = get()
+    const stillValid = models.some((m) => m.value === state.model)
+    set({
+      provider,
+      model: stillValid ? state.model : defaultModelFor(provider),
+      customUrl: provider === 'custom' ? state.customUrl : resolveDefaultUrl(provider),
+    })
   },
   setCustomUrl: (customUrl) => set({ customUrl }),
   setApiKey: (apiKey) => set({ apiKey }),

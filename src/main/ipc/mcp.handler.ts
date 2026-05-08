@@ -8,6 +8,11 @@ import {
 } from '../protocols/mcp.engine'
 import { logRequest, logResponse, logEvent } from '../lib/console-logger'
 
+// Track when each connection was opened so the disconnect log can carry the
+// connection lifetime — useful for spotting servers that drop early or
+// clients that linger.
+const mcpContext = new Map<string, { url: string; connectedAt: number }>()
+
 export function registerMcpHandlers(): void {
   ipcMain.handle(
     'mcp:connect',
@@ -30,6 +35,7 @@ export function registerMcpHandlers(): void {
       })
       try {
         const data = await mcpConnect(options)
+        mcpContext.set(data.connectionId, { url: options.url, connectedAt: Date.now() })
         logResponse({
           protocol: 'mcp',
           method: 'CONNECT',
@@ -41,6 +47,7 @@ export function registerMcpHandlers(): void {
           meta: {
             serverName: data.serverName ?? 'unknown',
             serverVersion: data.serverVersion ?? 'unknown',
+            transport: options.transport,
           },
         })
         return { success: true, data }
@@ -62,13 +69,17 @@ export function registerMcpHandlers(): void {
 
   ipcMain.handle('mcp:disconnect', async (_event, connectionId: string) => {
     try {
+      const ctx = mcpContext.get(connectionId)
       await mcpDisconnect(connectionId)
       logEvent({
         protocol: 'mcp',
         category: 'connection',
         message: `MCP disconnected (${connectionId})`,
+        url: ctx?.url,
         direction: 'out',
+        durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
       })
+      mcpContext.delete(connectionId)
       return { success: true, data: true }
     } catch (e) {
       const err = e as Error
@@ -116,24 +127,29 @@ export function registerMcpHandlers(): void {
     'mcp:callTool',
     async (_event, connectionId: string, toolName: string, args: Record<string, unknown>) => {
       const started = Date.now()
+      const argsBody = JSON.stringify(args)
+      const ctx = mcpContext.get(connectionId)
+      const targetUrl = ctx ? `${ctx.url}/${toolName}` : `${connectionId}/${toolName}`
       logRequest({
         protocol: 'mcp',
         method: 'CALL_TOOL',
-        url: `${connectionId}/${toolName}`,
-        body: JSON.stringify(args),
+        url: targetUrl,
+        body: argsBody,
         message: `MCP call ${toolName}`,
       })
       try {
         const data = await mcpCallTool(connectionId, toolName, args)
+        const responseBody = JSON.stringify(data)
         logResponse({
           protocol: 'mcp',
           method: 'CALL_TOOL',
-          url: `${connectionId}/${toolName}`,
+          url: targetUrl,
           status: 0,
           statusText: 'OK',
           durationMs: Date.now() - started,
-          requestBody: JSON.stringify(args),
-          responseBody: JSON.stringify(data),
+          sizeBytes: Buffer.byteLength(responseBody, 'utf-8'),
+          requestBody: argsBody,
+          responseBody,
         })
         return { success: true, data }
       } catch (e) {
@@ -141,11 +157,11 @@ export function registerMcpHandlers(): void {
         logResponse({
           protocol: 'mcp',
           method: 'CALL_TOOL',
-          url: `${connectionId}/${toolName}`,
+          url: targetUrl,
           status: -1,
           statusText: err.message,
           durationMs: Date.now() - started,
-          requestBody: JSON.stringify(args),
+          requestBody: argsBody,
           error: { message: err.message, stack: err.stack },
         })
         return { success: false, error: err.message }

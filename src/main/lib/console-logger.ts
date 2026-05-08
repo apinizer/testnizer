@@ -187,6 +187,12 @@ export interface LogEventArgs {
   direction?: 'in' | 'out'
   eventName?: string
   body?: string
+  /** Time since the connection opened (or since the previous event), in ms. */
+  durationMs?: number
+  /** Payload size in bytes (raw frame for binary, UTF-8 byte length for text). */
+  sizeBytes?: number
+  status?: number
+  statusText?: string
   tabId?: string
   meta?: Record<string, string | number | boolean>
   error?: { message: string; stack?: string }
@@ -201,6 +207,10 @@ export function logEvent(args: LogEventArgs): void {
     category: args.category ?? 'event',
     tabId: args.tabId,
     url: args.url,
+    status: args.status,
+    statusText: args.statusText,
+    durationMs: args.durationMs,
+    sizeBytes: args.sizeBytes,
     message: args.message,
     details: {
       direction: args.direction,

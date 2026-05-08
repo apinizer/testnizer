@@ -71,6 +71,7 @@ export function registerAiChatHandlers(): void {
       void (async () => {
         let fullText = ''
         let chunkCount = 0
+        let firstChunkAt: number | null = null
         try {
           const stream = streamChatCompletion({
             provider: payload.provider,
@@ -86,9 +87,14 @@ export function registerAiChatHandlers(): void {
           for await (const chunk of stream) {
             if (controller.signal.aborted) break
             chunkCount++
+            if (firstChunkAt === null) firstChunkAt = Date.now()
             fullText += chunk.delta ?? ''
             emit(win.id, 'aichat:chunk', { messageId, delta: chunk.delta })
           }
+
+          const elapsed = Date.now() - started
+          const ttfb = firstChunkAt ? firstChunkAt - started : 0
+          const totalBytes = Buffer.byteLength(fullText, 'utf-8')
 
           if (controller.signal.aborted) {
             emit(win.id, 'aichat:cancelled', { messageId })
@@ -97,6 +103,14 @@ export function registerAiChatHandlers(): void {
               category: 'event',
               message: `AI ${payload.provider}/${payload.model} cancelled (${chunkCount} chunks, ${fullText.length} chars)`,
               direction: 'in',
+              durationMs: elapsed,
+              sizeBytes: totalBytes,
+              meta: {
+                chunks: chunkCount,
+                ttfbMs: ttfb,
+                provider: payload.provider,
+                model: payload.model,
+              },
             })
           } else {
             emit(win.id, 'aichat:done', { messageId })
@@ -106,10 +120,15 @@ export function registerAiChatHandlers(): void {
               url: targetUrl,
               status: 200,
               statusText: 'OK',
-              durationMs: Date.now() - started,
-              sizeBytes: Buffer.byteLength(fullText, 'utf-8'),
+              durationMs: elapsed,
+              sizeBytes: totalBytes,
               responseBody: fullText,
-              meta: { chunks: chunkCount, model: payload.model },
+              meta: {
+                chunks: chunkCount,
+                ttfbMs: ttfb,
+                avgChunkBytes: chunkCount > 0 ? Math.round(totalBytes / chunkCount) : 0,
+                model: payload.model,
+              },
             })
           }
         } catch (e) {

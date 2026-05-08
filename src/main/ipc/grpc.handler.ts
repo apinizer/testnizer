@@ -141,6 +141,7 @@ export function registerGrpcHandlers(): void {
         sizeBytes: response.bodySize,
         requestHeaders: payload.metadata,
         requestBody: payload.requestBody,
+        responseHeaders: response.responseMetadata,
         responseBody: response.body,
         error: response.error
           ? { message: response.error }

@@ -590,6 +590,12 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
         return
       }
 
+      // Captured before the promise resolves (the 'metadata' / 'status' events
+      // can fire before *or* after the unary callback depending on grpc-js
+      // internals); we merge whatever we have at resolve time.
+      let initialHeaders: Record<string, string> = {}
+      let trailers: Record<string, string> = {}
+
       const call = methodFn.call(
         client,
         requestMessage,
@@ -597,6 +603,7 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
         { deadline },
         (err: grpc.ServiceError | null, response: unknown) => {
           const endTime = performance.now()
+          const responseMetadata = { ...initialHeaders, ...trailers }
 
           if (err) {
             resolve({
@@ -606,6 +613,8 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
               error: describeGrpcStatus(err.code, err.details ?? err.message).message,
               grpcStatus: err.code,
               grpcStatusMessage: err.details,
+              responseMetadata:
+                Object.keys(responseMetadata).length > 0 ? responseMetadata : undefined,
               actualRequest: {
                 method: options.methodName,
                 url: `${options.serverAddress}/${options.serviceName}/${options.methodName}`,
@@ -627,6 +636,8 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
             timing: { total: Math.round(endTime - startTime) },
             grpcStatus: grpc.status.OK,
             grpcStatusMessage: 'OK',
+            responseMetadata:
+              Object.keys(responseMetadata).length > 0 ? responseMetadata : undefined,
             actualRequest: {
               method: options.methodName,
               url: `${options.serverAddress}/${options.serviceName}/${options.methodName}`,
@@ -637,11 +648,13 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
         },
       )
 
-      // Extract response metadata
+      // Initial metadata (server's first response headers, e.g. content-type,
+      // grpc-encoding) and trailing status metadata.
       call.on('metadata', (meta: grpc.Metadata) => {
-        // metadata is captured but we can't modify the promise resolve at this point
-        // It will be available in the response
-        void extractMetadata(meta)
+        initialHeaders = extractMetadata(meta)
+      })
+      call.on('status', (s: grpc.StatusObject) => {
+        if (s.metadata) trailers = extractMetadata(s.metadata)
       })
     })
   } catch (err) {

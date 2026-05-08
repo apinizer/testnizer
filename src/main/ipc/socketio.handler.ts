@@ -14,6 +14,10 @@ function getWindow(): BrowserWindow | null {
   return BrowserWindow.getAllWindows()[0] ?? null
 }
 
+// Track per-connection metadata so emit/disconnect events can carry
+// `durationMs` deltas relative to the original connect.
+const sioContext = new Map<string, { url: string; connectedAt: number }>()
+
 function previewJson(value: unknown, max = 80): string {
   let s: string
   try {
@@ -50,6 +54,7 @@ export function registerSocketIOHandlers(): void {
       })
       try {
         const data = await socketIOConnect(options)
+        sioContext.set(data.connectionId, { url: fullTarget, connectedAt: Date.now() })
         // Wire event push back to renderer
         socketIOSetEventCallback(data.connectionId, (event: SocketIOEvent) => {
           getWindow()?.webContents.send('socketio:event', {
@@ -85,13 +90,17 @@ export function registerSocketIOHandlers(): void {
 
   ipcMain.handle('socketio:disconnect', (_event, connectionId: string) => {
     try {
+      const ctx = sioContext.get(connectionId)
       socketIODisconnect(connectionId)
       logEvent({
         protocol: 'socketio',
         category: 'connection',
         message: `Socket.IO disconnected (${connectionId})`,
+        url: ctx?.url,
         direction: 'out',
+        durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
       })
+      sioContext.delete(connectionId)
       return { success: true, data: true }
     } catch (e) {
       const err = e as Error
@@ -110,13 +119,18 @@ export function registerSocketIOHandlers(): void {
     (_event, connectionId: string, eventName: string, data: unknown) => {
       try {
         socketIOEmit(connectionId, eventName, data)
+        const ctx = sioContext.get(connectionId)
+        const body = typeof data === 'string' ? data : JSON.stringify(data)
         logEvent({
           protocol: 'socketio',
           category: 'event',
           message: `Socket.IO → ${eventName}: ${previewJson(data)}`,
           direction: 'out',
           eventName,
-          body: typeof data === 'string' ? data : JSON.stringify(data),
+          body,
+          url: ctx?.url,
+          sizeBytes: Buffer.byteLength(body, 'utf-8'),
+          durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
         })
         return { success: true, data: true }
       } catch (e) {

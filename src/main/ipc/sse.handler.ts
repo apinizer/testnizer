@@ -3,7 +3,7 @@ import {
   connect,
   disconnect,
   type SseConnectOptions,
-  type SseHttpMethod
+  type SseHttpMethod,
 } from '../protocols/sse.engine'
 import { logEvent } from '../lib/console-logger'
 
@@ -17,7 +17,7 @@ interface SseConnectPayload {
   _tabId?: string
 }
 
-const sseContext = new Map<string, { url: string; tabId?: string }>()
+const sseContext = new Map<string, { url: string; tabId?: string; connectedAt: number }>()
 
 export function registerSseHandlers(): void {
   // ─── Connect to SSE endpoint ────────────────────────────────
@@ -37,6 +37,7 @@ export function registerSseHandlers(): void {
         body: payload.body,
       }
 
+      const connectStart = Date.now()
       logEvent({
         protocol: 'sse',
         category: 'connection',
@@ -47,7 +48,12 @@ export function registerSseHandlers(): void {
 
       try {
         const connectionInfo = await connect(options, win.id)
-        sseContext.set(connectionInfo.connectionId, { url: payload.url, tabId: payload._tabId })
+        const connectedAt = Date.now()
+        sseContext.set(connectionInfo.connectionId, {
+          url: payload.url,
+          tabId: payload._tabId,
+          connectedAt,
+        })
         logEvent({
           protocol: 'sse',
           category: 'connection',
@@ -55,6 +61,9 @@ export function registerSseHandlers(): void {
           message: `SSE connected → ${payload.url}`,
           url: payload.url,
           tabId: payload._tabId,
+          status: 200,
+          statusText: 'OK',
+          durationMs: connectedAt - connectStart,
         })
         return { success: true, data: connectionInfo }
       } catch (err) {
@@ -65,6 +74,7 @@ export function registerSseHandlers(): void {
           message: `SSE connection failed: ${(err as Error).message}`,
           url: payload.url,
           tabId: payload._tabId,
+          durationMs: Date.now() - connectStart,
           error: { message: (err as Error).message },
         })
         throw err
@@ -85,6 +95,7 @@ export function registerSseHandlers(): void {
         message: `SSE disconnected${ctx?.url ? ` ← ${ctx.url}` : ''}`,
         url: ctx?.url,
         tabId: ctx?.tabId,
+        durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
       })
       sseContext.delete(connectionId)
       return { success: true, data: result }

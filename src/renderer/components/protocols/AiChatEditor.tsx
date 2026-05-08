@@ -1,16 +1,34 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown, ChevronRight, Eye, EyeOff, Send, Square, Trash2, Bot, User } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Send,
+  Square,
+  Trash2,
+  Bot,
+  User,
+} from 'lucide-react'
 import {
   useAiChatStore,
   PROVIDER_MODELS,
   AI_PROVIDERS,
+  resolveDefaultUrl,
   type AiProvider,
   type AiProviderInfo,
 } from '../../stores/ai-chat.store'
 import { useTranslation } from '../../lib/i18n'
 
-function ProviderAvatar({ info, size = 18 }: { info: AiProviderInfo; size?: number }): ReactElement {
+function ProviderAvatar({
+  info,
+  size = 18,
+}: {
+  info: AiProviderInfo
+  size?: number
+}): ReactElement {
   return (
     <span
       className="flex shrink-0 items-center justify-center rounded-md font-bold text-white"
@@ -114,8 +132,7 @@ function ProviderSelect({
                       (e.currentTarget as HTMLElement).style.background = 'var(--surface)'
                   }}
                   onMouseLeave={(e) => {
-                    if (!isActive)
-                      (e.currentTarget as HTMLElement).style.background = 'transparent'
+                    if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'
                   }}
                 >
                   <ProviderAvatar info={p} />
@@ -172,7 +189,10 @@ function MarkdownText({ text }: { text: string }): ReactElement {
             style={{ fontSize: 12.5 }}
           >
             {seg.lang && (
-              <div className="mb-2 uppercase tracking-wider text-[var(--muted)]" style={{ fontSize: 11 }}>
+              <div
+                className="mb-2 uppercase tracking-wider text-[var(--muted)]"
+                style={{ fontSize: 11 }}
+              >
                 {seg.lang}
               </div>
             )}
@@ -306,7 +326,10 @@ export default function AiChatEditor(): ReactElement {
         >
           {settingsExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           <span>{t('aiChat.settings')}</span>
-          <span className="ml-1 flex items-center gap-1.5 text-[var(--muted)]" style={{ fontSize: 12 }}>
+          <span
+            className="ml-1 flex items-center gap-1.5 text-[var(--muted)]"
+            style={{ fontSize: 12 }}
+          >
             <ProviderAvatar info={providerInfo} size={14} />
             {providerInfo.label} · {model || '—'}
           </span>
@@ -343,25 +366,30 @@ export default function AiChatEditor(): ReactElement {
               </datalist>
             </label>
 
-            {/* Custom URL (or override) */}
+            {/* Endpoint URL — always editable, pre-filled with the provider's default. */}
             <label className="flex flex-col gap-1" style={{ gridColumn: '1 / -1' }}>
               <span className="text-[var(--muted)]" style={{ fontSize: 12 }}>
-                {provider === 'custom'
-                  ? t('aiChat.customUrlRequired')
-                  : t('aiChat.customUrlOptional')}
+                {t('aiChat.endpointUrl')}
               </span>
               <input
                 type="text"
                 value={customUrl}
                 onChange={(e) => setCustomUrl(e.target.value)}
-                placeholder={
-                  provider === 'custom'
-                    ? 'https://your-host/v1/chat/completions'
-                    : 'https://… (override default URL)'
-                }
+                placeholder={t('aiChat.endpointUrlPlaceholder')}
+                spellCheck={false}
                 className="rounded-md border border-[var(--border)] bg-[var(--white)] px-2 py-1.5 font-mono text-[var(--text)] outline-none focus:border-[var(--accent)]"
                 style={{ fontSize: 13 }}
               />
+              {provider !== 'custom' && customUrl !== resolveDefaultUrl(provider) && (
+                <button
+                  type="button"
+                  onClick={() => setCustomUrl(resolveDefaultUrl(provider))}
+                  className="cursor-pointer self-start border-none bg-transparent p-0 text-[var(--accent-text)]"
+                  style={{ fontSize: 11 }}
+                >
+                  {t('aiChat.resetToDefault')}
+                </button>
+              )}
             </label>
 
             {/* API Key */}
@@ -488,9 +516,7 @@ export default function AiChatEditor(): ReactElement {
 
       {/* Prompt input */}
       <div className="shrink-0 border-t border-[var(--border)] p-3.5">
-        <div
-          className="flex items-end gap-2 rounded-lg border border-[var(--border)] bg-[var(--white)] p-2 focus-within:border-[var(--accent)]"
-        >
+        <div className="flex items-end gap-2 rounded-lg border border-[var(--border)] bg-[var(--white)] p-2 focus-within:border-[var(--accent)]">
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}

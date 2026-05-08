@@ -70,9 +70,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
 
   const errorCount = useMemo(
     () =>
-      filtered.filter(
-        (e) => e.level === 'error' || (e.status != null && e.status >= 400),
-      ).length,
+      filtered.filter((e) => e.level === 'error' || (e.status != null && e.status >= 400)).length,
     [filtered],
   )
 
@@ -84,6 +82,9 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
     { key: 'grpc', label: 'gRPC' },
     { key: 'websocket', label: 'WebSocket' },
     { key: 'sse', label: 'SSE' },
+    { key: 'socketio', label: 'Socket.IO' },
+    { key: 'mcp', label: 'MCP' },
+    { key: 'ai', label: 'AI Chat' },
     { key: 'warn', label: 'Warnings' },
     { key: 'error', label: 'Errors' },
   ]
@@ -93,8 +94,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
   const virtualizer = useVirtualizer({
     count: filtered.length,
     getScrollElement: () => scrollerRef.current,
-    estimateSize: (index) =>
-      expandedIds.has(filtered[index]?.id) ? 320 : 28,
+    estimateSize: (index) => (expandedIds.has(filtered[index]?.id) ? 320 : 28),
     overscan: 8,
     measureElement: (el) => el.getBoundingClientRect().height,
   })
@@ -169,9 +169,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
         >
           <Terminal size={13} />
           Console
-          <span style={{ color: 'var(--muted)', fontWeight: 400 }}>
-            {filtered.length}
-          </span>
+          <span style={{ color: 'var(--muted)', fontWeight: 400 }}>{filtered.length}</span>
         </span>
 
         <div className="flex-1" />
@@ -227,7 +225,10 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
                   <button
                     key={o.key}
                     type="button"
-                    onClick={() => { setFilter(o.key); setFilterOpen(false) }}
+                    onClick={() => {
+                      setFilter(o.key)
+                      setFilterOpen(false)
+                    }}
                     className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--item-hover)]"
                     style={{
                       background: 'transparent',
@@ -290,7 +291,10 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
           />
           <button
             type="button"
-            onClick={() => { setSearchTerm(''); setShowFind(false) }}
+            onClick={() => {
+              setSearchTerm('')
+              setShowFind(false)
+            }}
             className="cursor-pointer"
             style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
           >
@@ -365,13 +369,20 @@ function statusColor(status?: number, level?: string): string {
 
 function protocolBadgeColor(protocol: string): string {
   switch (protocol) {
-    case 'http': return 'var(--blue)'
-    case 'soap': return 'var(--accent)'
-    case 'graphql': return '#e535ab'
-    case 'grpc': return '#0a7a5a'
-    case 'websocket': return 'var(--orange)'
-    case 'sse': return 'var(--green)'
-    default: return 'var(--muted)'
+    case 'http':
+      return 'var(--blue)'
+    case 'soap':
+      return 'var(--accent)'
+    case 'graphql':
+      return '#e535ab'
+    case 'grpc':
+      return '#0a7a5a'
+    case 'websocket':
+      return 'var(--orange)'
+    case 'sse':
+      return 'var(--green)'
+    default:
+      return 'var(--muted)'
   }
 }
 
@@ -399,15 +410,17 @@ function ConsoleEntryRow({
         onClick={onToggle}
         className="flex cursor-pointer items-center gap-2 px-3 py-1 font-mono"
         style={{ color: 'var(--text)', fontSize: 12, lineHeight: '20px', minHeight: 28 }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--item-hover)' }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+        onMouseEnter={(e) => {
+          ;(e.currentTarget as HTMLElement).style.background = 'var(--item-hover)'
+        }}
+        onMouseLeave={(e) => {
+          ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+        }}
       >
         <span style={{ color: 'var(--muted)' }}>
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
-        <span style={{ color: 'var(--hint)', minWidth: 90 }}>
-          {formatTime(entry.timestamp)}
-        </span>
+        <span style={{ color: 'var(--hint)', minWidth: 90 }}>{formatTime(entry.timestamp)}</span>
         <span
           style={{
             background: protocolBadgeColor(entry.protocol),
@@ -470,7 +483,11 @@ function ConsoleEntryRow({
             <KV k="Protocol" v={entry.protocol} />
             <KV k="Category" v={entry.category} />
             {entry.status != null && (
-              <KV k="Status" v={String(entry.status)} valueColor={statusColor(entry.status, entry.level)} />
+              <KV
+                k="Status"
+                v={String(entry.status)}
+                valueColor={statusColor(entry.status, entry.level)}
+              />
             )}
             {entry.statusText && <KV k="Status Text" v={entry.statusText} />}
             {entry.durationMs != null && <KV k="Duration" v={`${entry.durationMs} ms`} />}
@@ -490,7 +507,10 @@ function ConsoleEntryRow({
           )}
           {entry.details?.requestBody && (
             <Section title="Request Body">
-              <pre className="m-0 max-h-[240px] overflow-auto whitespace-pre-wrap" style={{ color: 'var(--json-string, #b35a00)' }}>
+              <pre
+                className="m-0 max-h-[240px] overflow-auto whitespace-pre-wrap"
+                style={{ color: 'var(--json-string, #b35a00)' }}
+              >
                 {entry.details.requestBody}
               </pre>
             </Section>
