@@ -76,6 +76,11 @@ async function startSseServer(): Promise<TestServer> {
 
 function stopServer(t: TestServer): Promise<void> {
   t.killAll()
+  // Force-close any keep-alive sockets the platform leaves dangling. Without
+  // this, `server.close()` waits for them and the afterAll hook can exceed the
+  // default 10s on slower CI runners (the test passes locally because macOS /
+  // Linux desktops drain the socket pool faster than GitHub-hosted Ubuntu).
+  t.server.closeAllConnections?.()
   return new Promise((resolve) => t.server.close(() => resolve()))
 }
 
