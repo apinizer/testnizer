@@ -25,6 +25,7 @@ import { registerDialogHandlers } from './dialog.handler'
 import { registerEulaHandlers } from './eula.handler'
 import { registerMcpHandlers } from './mcp.handler'
 import { registerSocketIOHandlers } from './socketio.handler'
+import { registerMockHandlers } from './mock.handler'
 import { registerDiagnosticsHandlers } from '../diagnostics'
 
 export function registerAllHandlers(): void {
@@ -55,6 +56,7 @@ export function registerAllHandlers(): void {
   registerEulaHandlers()
   registerMcpHandlers()
   registerSocketIOHandlers()
+  registerMockHandlers()
   registerDiagnosticsHandlers()
 
   // Start scheduled task timers after all handlers are registered

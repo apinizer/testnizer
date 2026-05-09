@@ -4,6 +4,9 @@ import {
   jwtVerify,
   importSPKI,
   importPKCS8,
+  generateKeyPair,
+  exportPKCS8,
+  exportSPKI,
 } from 'jose'
 
 export type JwtAlgorithm =
@@ -231,4 +234,140 @@ function base64UrlEncodeJson(obj: unknown): string {
   let bin = ''
   for (const b of bytes) bin += String.fromCharCode(b)
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+/**
+ * Whether an algorithm uses an asymmetric key pair (private/public PEM)
+ * vs a shared HMAC secret string.
+ */
+export function isAsymmetric(algorithm: JwtAlgorithm): boolean {
+  return (
+    algorithm.startsWith('RS') ||
+    algorithm.startsWith('PS') ||
+    algorithm.startsWith('ES') ||
+    algorithm === 'EdDSA'
+  )
+}
+
+export type SampleMaterial = {
+  token: string
+  algorithm: JwtAlgorithm
+  /** Shared HMAC secret (HS*) */
+  secret?: string
+  /** PEM-encoded private key (asymmetric algos) */
+  privateKey?: string
+  /** PEM-encoded public key (asymmetric algos) */
+  publicKey?: string
+}
+
+/**
+ * Generate a runnable sample JWT for the given algorithm.
+ * For HMAC algos, also returns the shared secret used.
+ * For asymmetric algos, returns a freshly generated PEM key pair.
+ * For `none`, returns an unsigned token.
+ */
+export async function generateSampleJwt(
+  algorithm: JwtAlgorithm,
+): Promise<{ ok: true; sample: SampleMaterial } | { ok: false; error: string }> {
+  const payload: Record<string, unknown> = {
+    sub: '1234567890',
+    name: 'John Doe',
+    admin: true,
+    iat: Math.floor(Date.now() / 1000),
+  }
+  try {
+    if (algorithm === 'none') {
+      const signed = await signJwt(payload, '', 'none')
+      if (!signed.ok) return { ok: false, error: signed.error }
+      return { ok: true, sample: { token: signed.token, algorithm } }
+    }
+    if (algorithm.startsWith('HS')) {
+      const secret = `${algorithm.toLowerCase()}-sample-secret-key-at-least-256-bits-long-${Math.random()
+        .toString(36)
+        .slice(2, 10)}`
+      const signed = await signJwt(payload, secret, algorithm)
+      if (!signed.ok) return { ok: false, error: signed.error }
+      return { ok: true, sample: { token: signed.token, algorithm, secret } }
+    }
+
+    const { privateKey, publicKey } = await generateKeyPair(algorithm, { extractable: true })
+    const privatePem = await exportPKCS8(privateKey)
+    const publicPem = await exportSPKI(publicKey)
+    const signed = await signJwt(payload, privatePem, algorithm)
+    if (!signed.ok) return { ok: false, error: signed.error }
+    return {
+      ok: true,
+      sample: {
+        token: signed.token,
+        algorithm,
+        privateKey: privatePem,
+        publicKey: publicPem,
+      },
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** Standard registered JWT claim descriptions (RFC 7519 §4.1 + common public claims). */
+export const STANDARD_CLAIMS: Record<string, string> = {
+  iss: 'Issuer — who created the token',
+  sub: 'Subject — who/what the token is about',
+  aud: 'Audience — intended recipient(s)',
+  exp: 'Expiration time (seconds since epoch)',
+  nbf: 'Not before (seconds since epoch)',
+  iat: 'Issued at (seconds since epoch)',
+  jti: 'JWT ID — unique identifier',
+  typ: 'Token type',
+  alg: 'Signing algorithm',
+  kid: 'Key ID',
+  cty: 'Content type',
+  name: 'Full name',
+  email: 'Email address',
+  email_verified: 'Email verification status',
+  preferred_username: 'Preferred username',
+  given_name: 'First name',
+  family_name: 'Last name',
+  locale: 'Locale',
+  zoneinfo: 'Time zone',
+  azp: 'Authorized party',
+  auth_time: 'Authentication time',
+  nonce: 'Replay-protection nonce',
+  scope: 'Granted scopes',
+  scp: 'Granted scopes',
+  roles: 'Granted roles',
+  groups: 'Group memberships',
+  admin: 'Administrator flag',
+}
+
+export type ClaimRow = {
+  key: string
+  /** Stringified value for display. */
+  value: string
+  /** Original raw value. */
+  raw: unknown
+  /** Human-readable date for numeric date claims (exp/iat/nbf/auth_time). */
+  iso?: string
+  description?: string
+}
+
+/** Flatten a JWT payload (or header) into table rows for the table view. */
+export function claimsToTable(obj: Record<string, unknown>): ClaimRow[] {
+  const rows: ClaimRow[] = []
+  for (const [key, raw] of Object.entries(obj)) {
+    const row: ClaimRow = {
+      key,
+      raw,
+      value: typeof raw === 'string' ? raw : JSON.stringify(raw),
+      description: STANDARD_CLAIMS[key],
+    }
+    if (
+      typeof raw === 'number' &&
+      (key === 'exp' || key === 'iat' || key === 'nbf' || key === 'auth_time')
+    ) {
+      row.iso = new Date(raw * 1000).toISOString()
+    }
+    rows.push(row)
+  }
+  return rows
 }

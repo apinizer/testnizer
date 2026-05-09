@@ -5,7 +5,7 @@ import type { Tab } from '../../types'
 import { T } from '../../styles/tokens'
 import ProjectIcon from '../shared/ProjectIcon'
 
-type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'tools' | 'settings'
+type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'tools' | 'mocks' | 'settings'
 
 interface NavItem {
   id: SidebarPage
@@ -16,7 +16,15 @@ interface NavItem {
 
 function GlobeIcon({ active }: { active: boolean }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.7} strokeLinecap="round">
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2 : 1.7}
+      strokeLinecap="round"
+    >
       <circle cx="12" cy="12" r="10" />
       <line x1="2" y1="12" x2="22" y2="12" />
       <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
@@ -26,7 +34,15 @@ function GlobeIcon({ active }: { active: boolean }) {
 
 function CheckIcon({ active }: { active: boolean }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.7} strokeLinecap="round">
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2 : 1.7}
+      strokeLinecap="round"
+    >
       <polyline points="9 11 12 14 22 4" />
       <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
     </svg>
@@ -35,7 +51,15 @@ function CheckIcon({ active }: { active: boolean }) {
 
 function ClockIcon({ active }: { active: boolean }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.7} strokeLinecap="round">
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2 : 1.7}
+      strokeLinecap="round"
+    >
       <circle cx="12" cy="12" r="10" />
       <polyline points="12 6 12 12 16 14" />
     </svg>
@@ -44,15 +68,53 @@ function ClockIcon({ active }: { active: boolean }) {
 
 function WrenchIcon({ active }: { active: boolean }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.7} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2 : 1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+    </svg>
+  )
+}
+
+function ServerIcon({ active }: { active: boolean }) {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2 : 1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="2" y="2" width="20" height="8" rx="2" />
+      <rect x="2" y="14" width="20" height="8" rx="2" />
+      <line x1="6" y1="6" x2="6.01" y2="6" />
+      <line x1="6" y1="18" x2="6.01" y2="18" />
     </svg>
   )
 }
 
 function CogIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
       <circle cx="12" cy="12" r="3" />
     </svg>
@@ -71,12 +133,18 @@ export default function IconSidebar() {
   const topItems: NavItem[] = [
     { id: 'apis', label: 'APIs', icon: (a) => <GlobeIcon active={a} /> },
     { id: 'tests', label: 'Tests', icon: (a) => <CheckIcon active={a} /> },
+    { id: 'mocks', label: 'Mocks', icon: (a) => <ServerIcon active={a} /> },
     { id: 'history', label: 'History', icon: (a) => <ClockIcon active={a} /> },
     { id: 'tools', label: 'Tools', icon: (a) => <WrenchIcon active={a} /> },
   ]
 
   const bottomItems: NavItem[] = [
-    { id: 'settings', label: 'Settings', icon: () => <CogIcon />, action: () => setShowProjectDetailModal(true) },
+    {
+      id: 'settings',
+      label: 'Settings',
+      icon: () => <CogIcon />,
+      action: () => setShowProjectDetailModal(true),
+    },
   ]
 
   function handleClick(item: NavItem) {
@@ -127,7 +195,16 @@ export default function IconSidebar() {
       </div>
 
       {/* Top nav */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flex: 1, width: '100%' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 2,
+          flex: 1,
+          width: '100%',
+        }}
+      >
         {topItems.map((item) => {
           const active = activePage === item.id
           return (
@@ -156,14 +233,25 @@ export default function IconSidebar() {
               }}
             >
               {item.icon(active)}
-              <span style={{ fontSize: 13, fontWeight: active ? 600 : 400, fontFamily: 'inherit' }}>{item.label}</span>
+              <span style={{ fontSize: 13, fontWeight: active ? 600 : 400, fontFamily: 'inherit' }}>
+                {item.label}
+              </span>
             </div>
           )
         })}
       </div>
 
       {/* Bottom nav */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingBottom: 10, width: '100%' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 2,
+          paddingBottom: 10,
+          width: '100%',
+        }}
+      >
         {bottomItems.map((item) => (
           <div
             key={item.id}
@@ -181,8 +269,12 @@ export default function IconSidebar() {
               margin: '0 4px',
               transition: 'background 0.15s',
             }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = T.surface }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+            onMouseEnter={(e) => {
+              ;(e.currentTarget as HTMLElement).style.background = T.surface
+            }}
+            onMouseLeave={(e) => {
+              ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+            }}
           >
             {item.icon(false)}
             <span style={{ fontSize: 13, fontFamily: 'inherit' }}>{item.label}</span>

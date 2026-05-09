@@ -1,26 +1,11 @@
 import { useState } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
-import { transformXslt } from '../../lib/tools/xslt'
+import { transformXslt, XSLT_EXAMPLES } from '../../lib/tools/xslt'
 import { useTranslation } from '../../lib/i18n'
 
-const SAMPLE_XML = `<?xml version="1.0"?>
-<catalog>
-  <book><title>Sayings</title><author>Nigel Rees</author></book>
-  <book><title>Moby Dick</title><author>Herman Melville</author></book>
-</catalog>`
-
-const SAMPLE_XSL = `<?xml version="1.0"?>
-<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
-  <xsl:output method="html"/>
-  <xsl:template match="/">
-    <ul>
-      <xsl:for-each select="catalog/book">
-        <li><xsl:value-of select="title"/> — <xsl:value-of select="author"/></li>
-      </xsl:for-each>
-    </ul>
-  </xsl:template>
-</xsl:stylesheet>`
+const SAMPLE_XML = XSLT_EXAMPLES[0].xml
+const SAMPLE_XSL = XSLT_EXAMPLES[0].xsl
 
 export default function XsltTool() {
   const { t } = useTranslation()
@@ -44,14 +29,44 @@ export default function XsltTool() {
   }
 
   const toolbar = (
-    <button
-      onClick={handleTransform}
-      disabled={busy}
-      className="rounded px-3 py-1 text-xs font-medium"
-      style={{ background: 'var(--accent)', color: '#fff', opacity: busy ? 0.6 : 1 }}
-    >
-      {busy ? '…' : t('tools.xslt.transform')}
-    </button>
+    <>
+      <select
+        onChange={(e) => {
+          const i = Number(e.target.value)
+          if (Number.isFinite(i) && i >= 0 && i < XSLT_EXAMPLES.length) {
+            const ex = XSLT_EXAMPLES[i]
+            setXml(ex.xml)
+            setXsl(ex.xsl)
+            setOutput('')
+            setError(null)
+          }
+          e.target.value = ''
+        }}
+        defaultValue=""
+        className="rounded border px-2 py-1 text-xs"
+        style={{
+          background: 'var(--white)',
+          borderColor: 'var(--border)',
+          color: 'var(--text)',
+          maxWidth: 280,
+        }}
+      >
+        <option value="">{t('tools.common.loadSample')}</option>
+        {XSLT_EXAMPLES.map((ex, i) => (
+          <option key={i} value={i}>
+            {ex.label}
+          </option>
+        ))}
+      </select>
+      <button
+        onClick={handleTransform}
+        disabled={busy}
+        className="rounded px-3 py-1 text-xs font-medium"
+        style={{ background: 'var(--accent)', color: '#fff', opacity: busy ? 0.6 : 1 }}
+      >
+        {busy ? '…' : t('tools.xslt.transform')}
+      </button>
+    </>
   )
 
   return (

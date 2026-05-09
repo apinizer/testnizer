@@ -24,6 +24,14 @@ import XPathTool from '../tools/XPathTool'
 import XsltTool from '../tools/XsltTool'
 import JoltTool from '../tools/JoltTool'
 import WsSecurityTool from '../tools/WsSecurityTool'
+import HashTool from '../tools/HashTool'
+import HmacTool from '../tools/HmacTool'
+import JsonSchemaTool from '../tools/JsonSchemaTool'
+import JsonXmlTool from '../tools/JsonXmlTool'
+import EpochTool from '../tools/EpochTool'
+import HttpStatusTool from '../tools/HttpStatusTool'
+import BaseConverterTool from '../tools/BaseConverterTool'
+import MockServerEditor from '../mock/MockServerEditor'
 import RightPanel from './RightPanel'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
@@ -759,6 +767,79 @@ export default function Workbench() {
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
         <WsSecurityTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.hash') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <HashTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.hmac') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <HmacTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.jsonSchema') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <JsonSchemaTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.jsonXml') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <JsonXmlTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.epoch') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <EpochTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.httpStatus') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <HttpStatusTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.base') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <BaseConverterTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'mockServer') {
+    const id = activeTab.mockServerId ?? ''
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <MockServerEditor key={id} serverId={id} />
       </div>
     )
   }

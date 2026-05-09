@@ -3,17 +3,29 @@ import type { Theme, Language } from '../types'
 import { setLocale as setI18nLocale } from '../lib/i18n'
 
 type Locale = Language
-type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'tools' | 'settings'
+type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'tools' | 'mocks' | 'settings'
 export type RightPanelTab = 'variables' | 'code'
 
 // Preset font stacks offered as quick picks. The stored `fontFamily` is always
 // a raw CSS font-family value — users may type any stack they like.
 export const FONT_PRESETS: Array<{ id: string; label: string; stack: string }> = [
   { id: 'inter', label: 'Inter', stack: "Inter, -apple-system, 'Segoe UI', system-ui, sans-serif" },
-  { id: 'system', label: 'System', stack: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" },
+  {
+    id: 'system',
+    label: 'System',
+    stack: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
+  },
   { id: 'sfpro', label: 'SF Pro', stack: "'SF Pro Text', -apple-system, system-ui, sans-serif" },
-  { id: 'roboto', label: 'Roboto', stack: "Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif" },
-  { id: 'jetbrains', label: 'JetBrains Mono', stack: "'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace" },
+  {
+    id: 'roboto',
+    label: 'Roboto',
+    stack: "Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif",
+  },
+  {
+    id: 'jetbrains',
+    label: 'JetBrains Mono',
+    stack: "'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace",
+  },
 ]
 export const DEFAULT_FONT_FAMILY = FONT_PRESETS[0].stack
 
@@ -41,7 +53,7 @@ interface UIStore {
   showConsolePanel: boolean
   showProfileModal: boolean
   showAboutModal: boolean
-  gitLoading: string | null  // null = idle, string = message to display
+  gitLoading: string | null // null = idle, string = message to display
   addEndpointsSuiteId: string | null
   addEndpointsSuiteName: string | null
   rightPanelCollapsed: boolean
@@ -81,9 +93,12 @@ interface UIStore {
 }
 
 function applyTheme(theme: Theme): void {
-  const resolved = theme === 'system'
-    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    : theme
+  const resolved =
+    theme === 'system'
+      ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'
+      : theme
   document.documentElement.setAttribute('data-theme', resolved)
 }
 
@@ -115,7 +130,11 @@ function settingsApi(): SettingsApi | null {
   return w.api?.settings ?? null
 }
 async function persistSetting(key: string, value: unknown): Promise<void> {
-  try { await settingsApi()?.set?.(key, value) } catch { /* noop */ }
+  try {
+    await settingsApi()?.set?.(key, value)
+  } catch {
+    /* noop */
+  }
 }
 
 export const useUIStore = create<UIStore>((set) => ({
@@ -183,7 +202,13 @@ export const useUIStore = create<UIStore>((set) => ({
     try {
       const api = settingsApi()
       if (!api?.get) return
-      const keys = ['ui.theme', 'ui.locale', 'ui.fontSize', 'ui.fontFamily', 'ui.accentColor'] as const
+      const keys = [
+        'ui.theme',
+        'ui.locale',
+        'ui.fontSize',
+        'ui.fontFamily',
+        'ui.accentColor',
+      ] as const
       const results = await Promise.all(keys.map((k) => api.get!(k)))
       const [themeRes, localeRes, sizeRes, familyRes, accentRes] = results
       const patch: Partial<UIStore> = {}
@@ -219,17 +244,16 @@ export const useUIStore = create<UIStore>((set) => ({
         patch.accentColor = accentVal
       }
       set(patch)
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
   },
 
-  setLeftPanelWidth: (width) =>
-    set({ leftPanelWidth: Math.max(180, Math.min(400, width)) }),
+  setLeftPanelWidth: (width) => set({ leftPanelWidth: Math.max(180, Math.min(400, width)) }),
 
-  setSplitPosition: (position) =>
-    set({ splitPosition: Math.max(22, Math.min(78, position)) }),
+  setSplitPosition: (position) => set({ splitPosition: Math.max(22, Math.min(78, position)) }),
 
-  toggleLeftPanel: () =>
-    set((state) => ({ isLeftPanelCollapsed: !state.isLeftPanelCollapsed })),
+  toggleLeftPanel: () => set((state) => ({ isLeftPanelCollapsed: !state.isLeftPanelCollapsed })),
 
   setLeftPanelCollapsed: (collapsed) => set({ isLeftPanelCollapsed: collapsed }),
 
@@ -251,7 +275,8 @@ export const useUIStore = create<UIStore>((set) => ({
   setShowProfileModal: (show) => set({ showProfileModal: show }),
   setShowAboutModal: (show) => set({ showAboutModal: show }),
   setGitLoading: (msg) => set({ gitLoading: msg }),
-  setAddEndpointsSuite: (suiteId, suiteName) => set({ addEndpointsSuiteId: suiteId, addEndpointsSuiteName: suiteName ?? null }),
+  setAddEndpointsSuite: (suiteId, suiteName) =>
+    set({ addEndpointsSuiteId: suiteId, addEndpointsSuiteName: suiteName ?? null }),
   setRightPanelCollapsed: (collapsed) => set({ rightPanelCollapsed: collapsed }),
   toggleRightPanel: () => set((s) => ({ rightPanelCollapsed: !s.rightPanelCollapsed })),
   setRightPanelTab: (tab) => set({ rightPanelTab: tab, rightPanelCollapsed: false }),

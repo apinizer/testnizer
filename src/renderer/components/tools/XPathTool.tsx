@@ -1,22 +1,12 @@
 import { useMemo, useState } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
-import { evaluateXPath } from '../../lib/tools/xpath'
+import { evaluateXPath, XPATH_EXAMPLES, XPATH_SAMPLE_DOC } from '../../lib/tools/xpath'
 import { useTranslation } from '../../lib/i18n'
 
 type XPathResult = ReturnType<typeof evaluateXPath>
 
-const SAMPLE = `<?xml version="1.0"?>
-<library>
-  <book id="1">
-    <title>Sayings</title>
-    <author>Nigel Rees</author>
-  </book>
-  <book id="2">
-    <title>Moby Dick</title>
-    <author>Herman Melville</author>
-  </book>
-</library>`
+const SAMPLE = XPATH_SAMPLE_DOC
 
 interface NsRow {
   id: string
@@ -63,6 +53,33 @@ export default function XPathTool() {
           color: 'var(--text)',
         }}
       />
+      <select
+        onChange={(e) => {
+          const i = Number(e.target.value)
+          if (Number.isFinite(i) && i >= 0 && i < XPATH_EXAMPLES.length) {
+            const ex = XPATH_EXAMPLES[i]
+            setExpr(ex.expression)
+            if (ex.xml) setXml(ex.xml)
+            setResult(null)
+          }
+          e.target.value = ''
+        }}
+        defaultValue=""
+        className="rounded border px-2 py-1 text-xs"
+        style={{
+          background: 'var(--white)',
+          borderColor: 'var(--border)',
+          color: 'var(--text)',
+          maxWidth: 280,
+        }}
+      >
+        <option value="">{t('tools.common.loadSample')}</option>
+        {XPATH_EXAMPLES.map((ex, i) => (
+          <option key={i} value={i}>
+            {ex.label}
+          </option>
+        ))}
+      </select>
       <button
         onClick={() =>
           setNamespaces((arr) => [...arr, { id: `ns-${Date.now()}`, prefix: '', uri: '' }])

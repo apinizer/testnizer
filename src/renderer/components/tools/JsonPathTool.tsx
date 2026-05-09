@@ -1,29 +1,14 @@
 import { useState } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
-import { evaluateJsonPath, JSONPATH_EXAMPLES } from '../../lib/tools/jsonpath'
+import { evaluateJsonPath, JSONPATH_EXAMPLES, JSONPATH_SAMPLE_DOC } from '../../lib/tools/jsonpath'
 import { useTranslation } from '../../lib/i18n'
 
 type JsonPathResult = ReturnType<typeof evaluateJsonPath>
 
-const SAMPLE = JSON.stringify(
-  {
-    store: {
-      book: [
-        { category: 'reference', author: 'Nigel Rees', title: 'Sayings', price: 8.95 },
-        { category: 'fiction', author: 'Evelyn Waugh', title: 'Sword of Honour', price: 12.99 },
-        { category: 'fiction', author: 'Herman Melville', title: 'Moby Dick', price: 8.99 },
-      ],
-      bicycle: { color: 'red', price: 19.95 },
-    },
-  },
-  null,
-  2,
-)
-
 export default function JsonPathTool() {
   const { t } = useTranslation()
-  const [json, setJson] = useState(SAMPLE)
+  const [json, setJson] = useState(JSONPATH_SAMPLE_DOC)
   const [expr, setExpr] = useState('$..author')
   const [result, setResult] = useState<JsonPathResult | null>(null)
 
@@ -53,18 +38,27 @@ export default function JsonPathTool() {
       />
       <select
         onChange={(e) => {
-          if (e.target.value) {
-            setExpr(e.target.value)
-            e.target.value = ''
+          const i = Number(e.target.value)
+          if (Number.isFinite(i) && i >= 0 && i < JSONPATH_EXAMPLES.length) {
+            const ex = JSONPATH_EXAMPLES[i]
+            setExpr(ex.path)
+            if (ex.json) setJson(ex.json)
+            setResult(null)
           }
+          e.target.value = ''
         }}
         defaultValue=""
         className="rounded border px-2 py-1 text-xs"
-        style={{ background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--text)' }}
+        style={{
+          background: 'var(--white)',
+          borderColor: 'var(--border)',
+          color: 'var(--text)',
+          maxWidth: 280,
+        }}
       >
         <option value="">{t('tools.jsonpath.examples')}</option>
-        {JSONPATH_EXAMPLES.map((ex) => (
-          <option key={ex.path} value={ex.path}>
+        {JSONPATH_EXAMPLES.map((ex, i) => (
+          <option key={i} value={i}>
             {ex.label}
           </option>
         ))}

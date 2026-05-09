@@ -68,6 +68,98 @@ export function evaluateXPath(
   return { ok: false, error: 'Unexpected XPath result type' }
 }
 
+/** Canonical sample document used by the XPath examples below. */
+export const XPATH_SAMPLE_DOC = `<?xml version="1.0" encoding="UTF-8"?>
+<bookstore>
+  <book id="bk101" category="reference">
+    <title lang="en">XPath Reference</title>
+    <author>Nigel Rees</author>
+    <price>9.99</price>
+  </book>
+  <book id="bk111" category="cooking">
+    <title lang="en">Everyday Italian</title>
+    <author>Giada De Laurentiis</author>
+    <price>30.00</price>
+  </book>
+  <book id="bk201" category="fiction">
+    <title lang="fr">Les Misérables</title>
+    <author>Victor Hugo</author>
+    <price>40.00</price>
+  </book>
+  <book id="bk301" category="fiction">
+    <title lang="en">Harry Potter</title>
+    <author>J K. Rowling</author>
+    <price>29.99</price>
+  </book>
+  <inventory>
+    <snack>
+      <price>2.50</price>
+    </snack>
+  </inventory>
+  <items>
+    <item productID="A1"><price>5</price><quality>3</quality></item>
+    <item productID="B2"><price>2</price><quality>9</quality></item>
+    <item productID="C3"><price>1.5</price><quality>7</quality></item>
+  </items>
+  <students>
+    <student gender="Female"><name>Alice</name></student>
+    <student gender="Male"><name>Bob</name></student>
+  </students>
+</bookstore>`
+
+export interface XPathExample {
+  label: string
+  expression: string
+  /** Optional document — when picked, replaces the document too. */
+  xml?: string
+}
+
+export const XPATH_EXAMPLES: XPathExample[] = [
+  { label: '1. The first book', expression: '/bookstore/book[1]', xml: XPATH_SAMPLE_DOC },
+  {
+    label: '2. Currency of the book whose price is more than 35',
+    expression: '/bookstore/book[price>35]/title/@lang',
+    xml: XPATH_SAMPLE_DOC,
+  },
+  { label: '3. Item in the current node set', expression: '//item', xml: XPATH_SAMPLE_DOC },
+  {
+    label: '4. Title elements with lang="en"',
+    expression: '//title[@lang="en"]',
+    xml: XPATH_SAMPLE_DOC,
+  },
+  {
+    label: '5. Price of the snack child of inventory',
+    expression: '/bookstore/inventory/snack/price',
+    xml: XPATH_SAMPLE_DOC,
+  },
+  {
+    label: '6. Author of the book whose price is less than 30',
+    expression: '/bookstore/book[price<30]/author',
+    xml: XPATH_SAMPLE_DOC,
+  },
+  { label: '7. The last book', expression: '/bookstore/book[last()]', xml: XPATH_SAMPLE_DOC },
+  {
+    label: '8. Penultimate book',
+    expression: '/bookstore/book[last()-1]',
+    xml: XPATH_SAMPLE_DOC,
+  },
+  {
+    label: '9. The price of the book whose id is bk111',
+    expression: '/bookstore/book[@id="bk111"]/price',
+    xml: XPATH_SAMPLE_DOC,
+  },
+  {
+    label: '10. ProductID where price < 3 and quality > 5',
+    expression: '//item[price<3 and quality>5]/@productID',
+    xml: XPATH_SAMPLE_DOC,
+  },
+  {
+    label: '11. Name of student whose gender is not "Male"',
+    expression: '//student[@gender!="Male"]/name',
+    xml: XPATH_SAMPLE_DOC,
+  },
+]
+
 function serializeNode(node: Node): string {
   // text nodes
   if (node.nodeType === 3 || node.nodeType === 4) return (node.nodeValue ?? '').toString()

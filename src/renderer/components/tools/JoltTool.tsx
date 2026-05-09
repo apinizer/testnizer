@@ -1,28 +1,13 @@
 import { useState } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
-import { transformJolt } from '../../lib/tools/jolt'
+import { transformJolt, JOLT_EXAMPLES } from '../../lib/tools/jolt'
 import { useTranslation } from '../../lib/i18n'
 
 type JoltResult = ReturnType<typeof transformJolt>
 
-const SAMPLE_INPUT = JSON.stringify(
-  { user: { firstName: 'Alice', lastName: 'Smith', email: 'alice@example.com' } },
-  null,
-  2,
-)
-
-const SAMPLE_SPEC = JSON.stringify(
-  [
-    {
-      operation: 'shift',
-      spec: { user: { firstName: 'profile.name', email: 'profile.contact' } },
-    },
-    { operation: 'default', spec: { profile: { active: true } } },
-  ],
-  null,
-  2,
-)
+const SAMPLE_INPUT = JOLT_EXAMPLES[0].input
+const SAMPLE_SPEC = JOLT_EXAMPLES[0].spec
 
 export default function JoltTool() {
   const { t } = useTranslation()
@@ -37,13 +22,42 @@ export default function JoltTool() {
   }
 
   const toolbar = (
-    <button
-      onClick={handleTransform}
-      className="rounded px-3 py-1 text-xs font-medium"
-      style={{ background: 'var(--accent)', color: '#fff' }}
-    >
-      {t('tools.common.transform')}
-    </button>
+    <>
+      <select
+        onChange={(e) => {
+          const i = Number(e.target.value)
+          if (Number.isFinite(i) && i >= 0 && i < JOLT_EXAMPLES.length) {
+            const ex = JOLT_EXAMPLES[i]
+            setInput(ex.input)
+            setSpec(ex.spec)
+            setResult(null)
+          }
+          e.target.value = ''
+        }}
+        defaultValue=""
+        className="rounded border px-2 py-1 text-xs"
+        style={{
+          background: 'var(--white)',
+          borderColor: 'var(--border)',
+          color: 'var(--text)',
+          maxWidth: 280,
+        }}
+      >
+        <option value="">{t('tools.common.loadSample')}</option>
+        {JOLT_EXAMPLES.map((ex, i) => (
+          <option key={i} value={i}>
+            {ex.label}
+          </option>
+        ))}
+      </select>
+      <button
+        onClick={handleTransform}
+        className="rounded px-3 py-1 text-xs font-medium"
+        style={{ background: 'var(--accent)', color: '#fff' }}
+      >
+        {t('tools.common.transform')}
+      </button>
+    </>
   )
 
   return (

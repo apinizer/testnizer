@@ -580,6 +580,60 @@ const api = {
       }
     },
   },
+
+  // ─── Mock Server ────────────────────────────────────────────
+  mock: {
+    server: {
+      list: (projectId: string): Promise<unknown> =>
+        ipcRenderer.invoke('mock:server:list', projectId),
+      get: (id: string): Promise<unknown> => ipcRenderer.invoke('mock:server:get', id),
+      create: (input: unknown): Promise<unknown> => ipcRenderer.invoke('mock:server:create', input),
+      update: (id: string, patch: unknown): Promise<unknown> =>
+        ipcRenderer.invoke('mock:server:update', id, patch),
+      delete: (id: string): Promise<unknown> => ipcRenderer.invoke('mock:server:delete', id),
+      start: (id: string): Promise<unknown> => ipcRenderer.invoke('mock:server:start', id),
+      stop: (id: string): Promise<unknown> => ipcRenderer.invoke('mock:server:stop', id),
+      status: (id: string): Promise<unknown> => ipcRenderer.invoke('mock:server:status', id),
+    },
+    endpoint: {
+      list: (serverId: string): Promise<unknown> =>
+        ipcRenderer.invoke('mock:endpoint:list', serverId),
+      get: (id: string): Promise<unknown> => ipcRenderer.invoke('mock:endpoint:get', id),
+      create: (input: unknown): Promise<unknown> =>
+        ipcRenderer.invoke('mock:endpoint:create', input),
+      update: (id: string, patch: unknown): Promise<unknown> =>
+        ipcRenderer.invoke('mock:endpoint:update', id, patch),
+      delete: (id: string): Promise<unknown> => ipcRenderer.invoke('mock:endpoint:delete', id),
+    },
+    response: {
+      list: (endpointId: string): Promise<unknown> =>
+        ipcRenderer.invoke('mock:response:list', endpointId),
+      create: (input: unknown): Promise<unknown> =>
+        ipcRenderer.invoke('mock:response:create', input),
+      update: (id: string, patch: unknown): Promise<unknown> =>
+        ipcRenderer.invoke('mock:response:update', id, patch),
+      delete: (id: string): Promise<unknown> => ipcRenderer.invoke('mock:response:delete', id),
+    },
+    logs: {
+      get: (serverId: string): Promise<unknown> => ipcRenderer.invoke('mock:logs:get', serverId),
+      clear: (serverId: string): Promise<unknown> =>
+        ipcRenderer.invoke('mock:logs:clear', serverId),
+    },
+    importOpenApi: (serverId: string, source: string): Promise<unknown> =>
+      ipcRenderer.invoke('mock:import:openapi', serverId, source),
+    importPostman: (serverId: string, source: string): Promise<unknown> =>
+      ipcRenderer.invoke('mock:import:postman', serverId, source),
+    onLog: (callback: (entry: unknown) => void): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, data: unknown): void => callback(data)
+      ipcRenderer.on('mock:log', handler)
+      return () => ipcRenderer.removeListener('mock:log', handler)
+    },
+    onStatus: (callback: (info: unknown) => void): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, data: unknown): void => callback(data)
+      ipcRenderer.on('mock:status', handler)
+      return () => ipcRenderer.removeListener('mock:status', handler)
+    },
+  },
 }
 
 if (process.contextIsolated) {

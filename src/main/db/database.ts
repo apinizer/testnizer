@@ -239,7 +239,9 @@ function runMigrations(database: Database.Database): void {
   const gvColNames = gvCols.map((c) => c.name)
   if (!gvColNames.includes('project_id')) {
     database.exec(`ALTER TABLE global_variables ADD COLUMN project_id TEXT`)
-    database.exec(`CREATE INDEX IF NOT EXISTS idx_global_vars_project ON global_variables(project_id)`)
+    database.exec(
+      `CREATE INDEX IF NOT EXISTS idx_global_vars_project ON global_variables(project_id)`,
+    )
   }
 
   // Scheduled tasks table
@@ -381,7 +383,99 @@ function runMigrations(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_tse_suite ON test_suite_endpoints(suite_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tse_unique ON test_suite_endpoints(suite_id, endpoint_id);
+
+    CREATE TABLE IF NOT EXISTS mock_servers (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      host TEXT NOT NULL DEFAULT '127.0.0.1',
+      port INTEGER NOT NULL,
+      base_path TEXT NOT NULL DEFAULT '',
+      auto_start INTEGER NOT NULL DEFAULT 0,
+      cors_enabled INTEGER NOT NULL DEFAULT 0,
+      cors_allow_origins TEXT NOT NULL DEFAULT '*',
+      cors_allow_methods TEXT NOT NULL DEFAULT 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS',
+      cors_allow_headers TEXT NOT NULL DEFAULT '*',
+      cors_allow_credentials INTEGER NOT NULL DEFAULT 0,
+      cors_max_age INTEGER NOT NULL DEFAULT 600,
+      auth_config TEXT NOT NULL DEFAULT '{"type":"none"}',
+      failure_config TEXT NOT NULL DEFAULT '{"enabled":false,"probability":0,"mode":"status","status":500,"timeoutMs":30000}',
+      rate_limit_config TEXT NOT NULL DEFAULT '{"enabled":false,"requestsPerWindow":100,"windowMs":60000,"scope":"ip"}',
+      echo_enabled INTEGER NOT NULL DEFAULT 0,
+      proxy_enabled INTEGER NOT NULL DEFAULT 0,
+      proxy_target TEXT NOT NULL DEFAULT '',
+      proxy_record INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mock_servers_project ON mock_servers(project_id);
+
+    CREATE TABLE IF NOT EXISTS mock_endpoints (
+      id TEXT PRIMARY KEY,
+      server_id TEXT NOT NULL,
+      method TEXT NOT NULL DEFAULT 'GET',
+      path TEXT NOT NULL,
+      path_mode TEXT NOT NULL DEFAULT 'exact',
+      description TEXT NOT NULL DEFAULT '',
+      priority INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      auth_override TEXT NOT NULL DEFAULT '',
+      schema_validation TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (server_id) REFERENCES mock_servers(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mock_endpoints_server ON mock_endpoints(server_id);
+
+    CREATE TABLE IF NOT EXISTS mock_responses (
+      id TEXT PRIMARY KEY,
+      endpoint_id TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '',
+      status_code INTEGER NOT NULL DEFAULT 200,
+      headers TEXT NOT NULL DEFAULT '[]',
+      body_type TEXT NOT NULL DEFAULT 'json',
+      body TEXT NOT NULL DEFAULT '',
+      delay_ms INTEGER NOT NULL DEFAULT 0,
+      condition TEXT NOT NULL DEFAULT '{"type":"always"}',
+      script TEXT NOT NULL DEFAULT '',
+      response_order INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (endpoint_id) REFERENCES mock_endpoints(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mock_responses_endpoint ON mock_responses(endpoint_id);
   `)
+
+  // Idempotent column additions for existing installs. Each ALTER is wrapped
+  // in its own try/catch — SQLite errors when a column already exists.
+  const alters = [
+    `ALTER TABLE mock_responses ADD COLUMN script TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE mock_servers ADD COLUMN cors_allow_methods TEXT NOT NULL DEFAULT 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS'`,
+    `ALTER TABLE mock_servers ADD COLUMN cors_allow_headers TEXT NOT NULL DEFAULT '*'`,
+    `ALTER TABLE mock_servers ADD COLUMN cors_allow_credentials INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE mock_servers ADD COLUMN cors_max_age INTEGER NOT NULL DEFAULT 600`,
+    `ALTER TABLE mock_servers ADD COLUMN auth_config TEXT NOT NULL DEFAULT '{"type":"none"}'`,
+    `ALTER TABLE mock_servers ADD COLUMN failure_config TEXT NOT NULL DEFAULT '{"enabled":false,"probability":0,"mode":"status","status":500,"timeoutMs":30000}'`,
+    `ALTER TABLE mock_servers ADD COLUMN rate_limit_config TEXT NOT NULL DEFAULT '{"enabled":false,"requestsPerWindow":100,"windowMs":60000,"scope":"ip"}'`,
+    `ALTER TABLE mock_endpoints ADD COLUMN auth_override TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE mock_endpoints ADD COLUMN schema_validation TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE mock_servers ADD COLUMN echo_enabled INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE mock_servers ADD COLUMN proxy_enabled INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE mock_servers ADD COLUMN proxy_target TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE mock_servers ADD COLUMN proxy_record INTEGER NOT NULL DEFAULT 0`,
+  ]
+  for (const sql of alters) {
+    try {
+      database.exec(sql)
+    } catch {
+      // Column already exists — fine.
+    }
+  }
 }
 
 function seedDefaults(database: Database.Database): void {
@@ -392,15 +486,23 @@ function seedDefaults(database: Database.Database): void {
   const workspaceId = randomUUID()
   const projectId = randomUUID()
 
-  database.prepare(`
+  database
+    .prepare(
+      `
     INSERT INTO workspaces (id, name, description, color, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(workspaceId, 'Default Workspace', 'Your first workspace', '#2D5FA0', now, now)
+  `,
+    )
+    .run(workspaceId, 'Default Workspace', 'Your first workspace', '#2D5FA0', now, now)
 
-  database.prepare(`
+  database
+    .prepare(
+      `
     INSERT INTO projects (id, workspace_id, name, description, type, sort_order, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(projectId, workspaceId, 'My Project', 'Default project', 'http', 0, now, now)
+  `,
+    )
+    .run(projectId, workspaceId, 'My Project', 'Default project', 'http', 0, now, now)
 }
 
 export function closeDatabase(): void {

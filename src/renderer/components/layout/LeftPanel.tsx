@@ -7,6 +7,7 @@ import NewDropdown from '../sidebar/NewDropdown'
 import HistoryListPanel from '../sidebar/HistoryListPanel'
 import TestsPanel from '../sidebar/TestsPanel'
 import ToolsPanel from '../sidebar/ToolsPanel'
+import MockServersPanel from '../mock/MockServersPanel'
 
 export default function LeftPanel() {
   const searchQuery = useWorkspaceStore((s) => s.searchQuery)
@@ -33,6 +34,8 @@ export default function LeftPanel() {
         <TestsPanel />
       ) : activeSidebarPage === 'tools' ? (
         <ToolsPanel />
+      ) : activeSidebarPage === 'mocks' ? (
+        <MockServersPanel />
       ) : (
         <>
           {/* Panel header — 44px */}

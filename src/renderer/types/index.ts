@@ -14,6 +14,7 @@ export type Protocol =
   | 'mcp'
   | 'socketio'
   | 'runner'
+  | 'mockServer'
   | 'tools.jwt'
   | 'tools.jsonFormat'
   | 'tools.xmlFormat'
@@ -24,6 +25,13 @@ export type Protocol =
   | 'tools.xslt'
   | 'tools.jolt'
   | 'tools.wsSecurity'
+  | 'tools.hash'
+  | 'tools.hmac'
+  | 'tools.jsonSchema'
+  | 'tools.jsonXml'
+  | 'tools.epoch'
+  | 'tools.httpStatus'
+  | 'tools.base'
 
 export const TOOL_PROTOCOLS = [
   'tools.jwt',
@@ -36,6 +44,13 @@ export const TOOL_PROTOCOLS = [
   'tools.xslt',
   'tools.jolt',
   'tools.wsSecurity',
+  'tools.hash',
+  'tools.hmac',
+  'tools.jsonSchema',
+  'tools.jsonXml',
+  'tools.epoch',
+  'tools.httpStatus',
+  'tools.base',
 ] as const satisfies readonly Protocol[]
 export type ToolProtocol = (typeof TOOL_PROTOCOLS)[number]
 export function isToolProtocol(p: Protocol): p is ToolProtocol {
@@ -563,6 +578,8 @@ export interface Tab {
   url?: string
   endpointId?: string
   savedRequestId?: string
+  /** Mock server ID — used by mockServer tab to identify which server is open */
+  mockServerId?: string
   /** Folder/module ID — used by runner tab to scope endpoints */
   folderId?: string
   /** Opaque key — changing this forces the runner tab to re-read sessionStorage */
@@ -645,4 +662,149 @@ export interface GitRepoFile {
   name: string
   path: string
   size: number
+}
+
+// ─── Mock Server ────────────────────────────────────────────────
+
+export type MockHost = '127.0.0.1' | '0.0.0.0'
+
+export type MockAuthConfig =
+  | { type: 'none' }
+  | { type: 'bearer'; tokens: string[] }
+  | { type: 'basic'; users: { username: string; password: string }[] }
+  | { type: 'apiKey'; in: 'header' | 'query'; name: string; keys: string[] }
+
+export type MockFailureMode = 'status' | 'timeout' | 'random'
+
+export interface MockFailureConfig {
+  enabled: boolean
+  probability: number
+  mode: MockFailureMode
+  status?: number
+  timeoutMs?: number
+}
+
+export interface MockRateLimitConfig {
+  enabled: boolean
+  requestsPerWindow: number
+  windowMs: number
+  scope: 'global' | 'ip'
+}
+
+export interface MockSchemaValidation {
+  enabled: boolean
+  schema: Record<string, unknown>
+}
+
+export interface MockServer {
+  id: string
+  projectId: string
+  name: string
+  description: string
+  host: MockHost
+  port: number
+  basePath: string
+  autoStart: boolean
+  corsEnabled: boolean
+  corsAllowOrigins: string
+  corsAllowMethods: string
+  corsAllowHeaders: string
+  corsAllowCredentials: boolean
+  corsMaxAge: number
+  authConfig: MockAuthConfig
+  failureConfig: MockFailureConfig
+  rateLimitConfig: MockRateLimitConfig
+  /** When enabled, requests to GET /__echo (or any method) reflect the request as the response body. */
+  echoEnabled: boolean
+  /** When enabled, requests not matched by any endpoint forward to `proxyTarget`. */
+  proxyEnabled: boolean
+  proxyTarget: string
+  /** When enabled together with proxy, captured upstream responses are saved as new mock endpoints. */
+  proxyRecord: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export type MockMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS' | 'ANY'
+
+export type MockPathMode = 'exact' | 'param' | 'wildcard' | 'regex'
+
+export interface MockEndpoint {
+  id: string
+  serverId: string
+  method: MockMethod
+  path: string
+  pathMode: MockPathMode
+  description: string
+  priority: number
+  enabled: boolean
+  sortOrder: number
+  /** When set, overrides server-level auth for this endpoint. */
+  authOverride: MockAuthConfig | null
+  /** When enabled, the request body must match this JSON Schema. */
+  schemaValidation: MockSchemaValidation | null
+  createdAt: number
+  updatedAt: number
+}
+
+export type MockBodyType = 'json' | 'xml' | 'text' | 'html'
+
+export type MockConditionOp = 'eq' | 'neq' | 'contains' | 'regex' | 'exists'
+
+export type MockCondition =
+  | { type: 'always' }
+  | { type: 'header'; name: string; op: MockConditionOp; value: string }
+  | { type: 'query'; name: string; op: MockConditionOp; value: string }
+  | { type: 'pathParam'; name: string; op: MockConditionOp; value: string }
+  | { type: 'jsonPath'; path: string; op: MockConditionOp; value?: string }
+  | { type: 'xpath'; expression: string; op: MockConditionOp; value?: string }
+  | { type: 'method'; method: string }
+  | { type: 'and'; conditions: MockCondition[] }
+  | { type: 'or'; conditions: MockCondition[] }
+
+export interface MockResponseHeader {
+  name: string
+  value: string
+}
+
+export interface MockResponse {
+  id: string
+  endpointId: string
+  name: string
+  statusCode: number
+  headers: MockResponseHeader[]
+  bodyType: MockBodyType
+  body: string
+  delayMs: number
+  condition: MockCondition
+  /** Optional pre-response JS executed in a sandbox. May mutate `state`/`response`. */
+  script: string
+  order: number
+  enabled: boolean
+}
+
+export type MockServerStatus = 'stopped' | 'starting' | 'running' | 'error'
+
+export interface MockServerRuntimeInfo {
+  serverId: string
+  status: MockServerStatus
+  port: number | null
+  startedAt: number | null
+  errorMessage: string | null
+}
+
+export interface MockLogEntry {
+  id: string
+  serverId: string
+  ts: number
+  method: string
+  path: string
+  query: string
+  statusCode: number
+  latencyMs: number
+  matchedEndpointId: string | null
+  matchedResponseId: string | null
+  request: { headers: Record<string, string>; body: string }
+  response: { headers: Record<string, string>; body: string }
+  error: string | null
 }

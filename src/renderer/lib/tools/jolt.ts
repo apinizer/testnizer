@@ -219,3 +219,152 @@ function applyRemove(input: JsonValue, spec: Record<string, unknown>): JsonValue
 function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
+
+// ───────────────────────────────────────────────────────────────────
+// Sample library
+// ───────────────────────────────────────────────────────────────────
+
+export interface JoltExample {
+  label: string
+  input: string
+  spec: string
+}
+
+const J = (v: unknown) => JSON.stringify(v, null, 2)
+
+/**
+ * Jolt samples adapted from Bazaarvoice Jolt's reference set.
+ * Restricted to the operators supported by our engine: shift / default / remove.
+ */
+export const JOLT_EXAMPLES: JoltExample[] = [
+  {
+    label: '1. Inception (basic shift)',
+    input: J({ rating: { primary: { value: 3 }, quality: { value: 3 } } }),
+    spec: J([
+      {
+        operation: 'shift',
+        spec: {
+          rating: {
+            primary: { value: 'Rating' },
+            '*': { value: 'SecondaryRatings.&1.Value', $: 'SecondaryRatings.&1.Id' },
+          },
+        },
+      },
+    ]),
+  },
+  {
+    label: '2. Convert nested data to "prefix soup"',
+    input: J({ author: { name: 'Joe', age: 42 } }),
+    spec: J([{ operation: 'shift', spec: { author: { '*': 'author_&' } } }]),
+  },
+  {
+    label: '3. Convert "prefix soup" back to nested data',
+    input: J({ author_name: 'Joe', author_age: 42 }),
+    spec: J([
+      {
+        operation: 'shift',
+        spec: { author_name: 'author.name', author_age: 'author.age' },
+      },
+    ]),
+  },
+  {
+    label: '4. Grab LHS key values',
+    input: J({ Joe: { age: 42 }, Sue: { age: 25 } }),
+    spec: J([{ operation: 'shift', spec: { '*': { age: 'people.&1.age', $: 'people.&1.name' } } }]),
+  },
+  {
+    label: '5. Map → list',
+    input: J({ items: { a: { qty: 1 }, b: { qty: 2 } } }),
+    spec: J([{ operation: 'shift', spec: { items: { '*': { qty: 'list.qty' } } } }]),
+  },
+  {
+    label: '6. List → map',
+    input: J({
+      list: [
+        { id: 'a', v: 1 },
+        { id: 'b', v: 2 },
+      ],
+    }),
+    spec: J([{ operation: 'shift', spec: { list: { '*': { v: 'map.&(1,id)' } } } }]),
+  },
+  {
+    label: '7. On a match, apply a String default',
+    input: J({ user: { firstName: 'Alice' } }),
+    spec: J([
+      { operation: 'shift', spec: { user: { firstName: 'name' } } },
+      { operation: 'default', spec: { active: true, role: 'guest' } },
+    ]),
+  },
+  {
+    label: '8. Base case simple Transpose',
+    input: J({ a: 1, b: 2, c: 3 }),
+    spec: J([{ operation: 'shift', spec: { a: 'x', b: 'y', c: 'z' } }]),
+  },
+  {
+    label: '9. Filter data from an Array (leaf level)',
+    input: J({
+      items: [
+        { keep: true, v: 1 },
+        { keep: false, v: 2 },
+        { keep: true, v: 3 },
+      ],
+    }),
+    spec: J([
+      { operation: 'shift', spec: { items: { '*': { keep: { true: { '@2,v': 'kept' } } } } } },
+    ]),
+  },
+  {
+    label: '10. Remove a field',
+    input: J({ user: { name: 'Alice', secret: 'hide-me', email: 'a@b.com' } }),
+    spec: J([{ operation: 'remove', spec: { user: { secret: '' } } }]),
+  },
+  {
+    label: '11. Default missing values',
+    input: J({ user: { name: 'Alice' } }),
+    spec: J([
+      {
+        operation: 'default',
+        spec: { user: { active: true, role: 'guest', tags: [] } },
+      },
+    ]),
+  },
+  {
+    label: '12. Multi-step pipeline',
+    input: J({ user: { firstName: 'Alice', lastName: 'Smith', secret: 'x', email: 'a@b.com' } }),
+    spec: J([
+      {
+        operation: 'shift',
+        spec: { user: { firstName: 'profile.name', email: 'profile.contact' } },
+      },
+      { operation: 'default', spec: { profile: { active: true } } },
+      { operation: 'remove', spec: { profile: { secret: '' } } },
+    ]),
+  },
+  {
+    label: '13. Wildcard shift on every key',
+    input: J({ alpha: 1, beta: 2, gamma: 3 }),
+    spec: J([{ operation: 'shift', spec: { '*': 'numbers.&' } }]),
+  },
+  {
+    label: '14. Pull values out of an array',
+    input: J({ books: [{ title: 'A' }, { title: 'B' }, { title: 'C' }] }),
+    spec: J([{ operation: 'shift', spec: { books: { '*': { title: 'titles' } } } }]),
+  },
+  {
+    label: '15. String concatenation by destination',
+    input: J({ rating: { stars: 4 }, votes: 100 }),
+    spec: J([
+      { operation: 'shift', spec: { rating: { stars: 'summary.stars' }, votes: 'summary.votes' } },
+    ]),
+  },
+  {
+    label: '16. Type Conversion (move number into string field)',
+    input: J({ count: 42 }),
+    spec: J([{ operation: 'shift', spec: { count: 'meta.totalAsString' } }]),
+  },
+  {
+    label: '17. Reorder a map',
+    input: J({ z: 1, a: 2, m: 3 }),
+    spec: J([{ operation: 'shift', spec: { a: 'a', m: 'm', z: 'z' } }]),
+  },
+]

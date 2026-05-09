@@ -10,6 +10,13 @@ import {
   FileCode,
   Shuffle,
   Shield,
+  Hash,
+  Fingerprint,
+  FileJson,
+  Repeat,
+  Clock,
+  ListChecks,
+  Calculator,
 } from 'lucide-react'
 import type { ToolProtocol } from '../types'
 
@@ -21,6 +28,28 @@ export interface ToolCatalogItem {
   color: string
 }
 
+/**
+ * Tools menu order — content/format tools first, utilities at the bottom.
+ *
+ *   1. JWT Debugger          most common — almost every API session uses tokens
+ *   2. JSON Formatter        constant — pretty-print / minify response bodies
+ *   3. XML Formatter         counterpart of JSON formatter for XML / SOAP
+ *   4. Encode / Decode       Base64 / URL encoding everywhere
+ *   5. Text Diff             compare two response bodies / contracts
+ *   6. JSON Schema Generator infer schemas from samples
+ *   7. JSONPath Evaluator    extract from JSON responses
+ *   8. XPath Evaluator       extract from XML / SOAP responses
+ *   9. JSON ↔ XML            interop bridge for SOAP ↔ REST teams
+ *  10. XSLT Evaluator        transformation
+ *  11. Jolt Evaluator        spec-driven JSON shaping
+ *  12. WS-Security           SOAP-only, niche
+ *  ── utility calculators ──
+ *  13. Hash Calculator       checksums, signature debugging
+ *  14. HMAC Generator        request signing (AWS, webhooks, etc.)
+ *  15. Epoch Converter       JWT iat/exp, log timestamps
+ *  16. HTTP Status Codes     daily reference
+ *  17. Base Converter        bin / dec / hex / ASCII for byte-level debugging
+ */
 export const TOOL_CATALOG: ToolCatalogItem[] = [
   {
     protocol: 'tools.jwt',
@@ -58,6 +87,13 @@ export const TOOL_CATALOG: ToolCatalogItem[] = [
     color: '#cc2200',
   },
   {
+    protocol: 'tools.jsonSchema',
+    Icon: FileJson,
+    labelKey: 'tools.jsonSchema.title',
+    bg: '#e8f4ff',
+    color: '#0066cc',
+  },
+  {
     protocol: 'tools.jsonpath',
     Icon: Search,
     labelKey: 'tools.jsonpath.title',
@@ -70,6 +106,13 @@ export const TOOL_CATALOG: ToolCatalogItem[] = [
     labelKey: 'tools.xpath.title',
     bg: '#fff4e0',
     color: '#b35a00',
+  },
+  {
+    protocol: 'tools.jsonXml',
+    Icon: Repeat,
+    labelKey: 'tools.jsonXml.title',
+    bg: '#eeecfe',
+    color: '#5b52d4',
   },
   {
     protocol: 'tools.xslt',
@@ -91,5 +134,41 @@ export const TOOL_CATALOG: ToolCatalogItem[] = [
     labelKey: 'tools.wsse.title',
     bg: '#e8f4ff',
     color: '#0066cc',
+  },
+  // ── utility calculators ──
+  {
+    protocol: 'tools.hash',
+    Icon: Hash,
+    labelKey: 'tools.hash.title',
+    bg: '#f0faf5',
+    color: '#0a7a5a',
+  },
+  {
+    protocol: 'tools.hmac',
+    Icon: Fingerprint,
+    labelKey: 'tools.hmac.title',
+    bg: '#fff4e0',
+    color: '#b35a00',
+  },
+  {
+    protocol: 'tools.epoch',
+    Icon: Clock,
+    labelKey: 'tools.epoch.title',
+    bg: '#e8f4ff',
+    color: '#0066cc',
+  },
+  {
+    protocol: 'tools.httpStatus',
+    Icon: ListChecks,
+    labelKey: 'tools.httpStatus.title',
+    bg: '#fff0f0',
+    color: '#cc2200',
+  },
+  {
+    protocol: 'tools.base',
+    Icon: Calculator,
+    labelKey: 'tools.base.title',
+    bg: '#f0faf5',
+    color: '#0a7a5a',
   },
 ]

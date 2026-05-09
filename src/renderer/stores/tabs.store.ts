@@ -37,15 +37,16 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   activeTabId: initialActiveTabId,
 
   openTab: (tab) => {
-    // Only match existing tabs if the incoming tab references a specific endpoint/savedRequest
-    if (tab.endpointId || tab.savedRequestId) {
+    // Match existing tabs that reference the same logical resource so we don't
+    // open multiple tabs for one endpoint, saved request, or mock server.
+    if (tab.endpointId || tab.savedRequestId || tab.mockServerId) {
       const existing = get().tabs.find(
         (t) =>
           (tab.endpointId && t.endpointId === tab.endpointId) ||
-          (tab.savedRequestId && t.savedRequestId === tab.savedRequestId),
+          (tab.savedRequestId && t.savedRequestId === tab.savedRequestId) ||
+          (tab.mockServerId && t.mockServerId === tab.mockServerId),
       )
       if (existing) {
-        // If found an existing preview tab, pin it
         set((state) => ({
           activeTabId: existing.id,
           tabs: state.tabs.map((t) => (t.id === existing.id ? { ...t, isPreview: false } : t)),
