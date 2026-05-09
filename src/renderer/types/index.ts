@@ -32,6 +32,9 @@ export type Protocol =
   | 'tools.epoch'
   | 'tools.httpStatus'
   | 'tools.base'
+  | 'tools.uuid'
+  | 'tools.regex'
+  | 'tools.yamlJson'
 
 export const TOOL_PROTOCOLS = [
   'tools.jwt',
@@ -51,6 +54,9 @@ export const TOOL_PROTOCOLS = [
   'tools.epoch',
   'tools.httpStatus',
   'tools.base',
+  'tools.uuid',
+  'tools.regex',
+  'tools.yamlJson',
 ] as const satisfies readonly Protocol[]
 export type ToolProtocol = (typeof TOOL_PROTOCOLS)[number]
 export function isToolProtocol(p: Protocol): p is ToolProtocol {

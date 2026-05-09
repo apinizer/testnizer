@@ -31,6 +31,9 @@ import JsonXmlTool from '../tools/JsonXmlTool'
 import EpochTool from '../tools/EpochTool'
 import HttpStatusTool from '../tools/HttpStatusTool'
 import BaseConverterTool from '../tools/BaseConverterTool'
+import UuidTool from '../tools/UuidTool'
+import RegexTool from '../tools/RegexTool'
+import YamlJsonTool from '../tools/YamlJsonTool'
 import MockServerEditor from '../mock/MockServerEditor'
 import RightPanel from './RightPanel'
 import { useTabsStore } from '../../stores/tabs.store'
@@ -830,6 +833,33 @@ export default function Workbench() {
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
         <BaseConverterTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.uuid') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <UuidTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.regex') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <RegexTool />
+      </div>
+    )
+  }
+
+  if (protocol === 'tools.yamlJson') {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
+        <EndpointTabBar />
+        <YamlJsonTool />
       </div>
     )
   }

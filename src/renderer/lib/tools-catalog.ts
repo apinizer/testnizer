@@ -17,6 +17,9 @@ import {
   Clock,
   ListChecks,
   Calculator,
+  Tag,
+  Regex,
+  ArrowLeftRight,
 } from 'lucide-react'
 import type { ToolProtocol } from '../types'
 
@@ -170,5 +173,26 @@ export const TOOL_CATALOG: ToolCatalogItem[] = [
     labelKey: 'tools.base.title',
     bg: '#f0faf5',
     color: '#0a7a5a',
+  },
+  {
+    protocol: 'tools.uuid',
+    Icon: Tag,
+    labelKey: 'tools.uuid.title',
+    bg: '#eeecfe',
+    color: '#5b52d4',
+  },
+  {
+    protocol: 'tools.regex',
+    Icon: Regex,
+    labelKey: 'tools.regex.title',
+    bg: '#fff0f0',
+    color: '#cc2200',
+  },
+  {
+    protocol: 'tools.yamlJson',
+    Icon: ArrowLeftRight,
+    labelKey: 'tools.yamlJson.title',
+    bg: '#e8f4ff',
+    color: '#0066cc',
   },
 ]
