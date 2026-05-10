@@ -55,8 +55,27 @@ export default function MergeConflictModal() {
     if (!r.success) setError(r.error || t('mergeConflict.abortFailed'))
   }
 
-  const ours = current.stats.ours
-  const theirs = current.stats.theirs
+  const sides = [
+    {
+      side: 'ours' as const,
+      title: t('mergeConflict.ours'),
+      subtitle: t('mergeConflict.oursSubtitle'),
+      stats: current.stats.ours,
+      accent: '#0066cc',
+      accentBg: '#e8f4ff',
+    },
+    {
+      side: 'theirs' as const,
+      title: t('mergeConflict.theirs'),
+      subtitle:
+        conflict.origin === 'merge'
+          ? (conflict.sourceBranch ?? '')
+          : t('mergeConflict.theirsSubtitlePull'),
+      stats: current.stats.theirs,
+      accent: '#1a7a4a',
+      accentBg: '#e8f9f1',
+    },
+  ]
 
   return (
     <div
@@ -129,32 +148,20 @@ export default function MergeConflictModal() {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <SideCard
-              title={t('mergeConflict.ours')}
-              subtitle={t('mergeConflict.oursSubtitle')}
-              stats={ours}
-              accent="#0066cc"
-              accentBg="#e8f4ff"
-              onPick={() => pick('ours')}
-              disabled={busy !== null}
-              picking={busy === 'resolving'}
-              t={t}
-            />
-            <SideCard
-              title={t('mergeConflict.theirs')}
-              subtitle={
-                conflict.origin === 'merge'
-                  ? `${conflict.sourceBranch}`
-                  : t('mergeConflict.theirsSubtitlePull')
-              }
-              stats={theirs}
-              accent="#1a7a4a"
-              accentBg="#e8f9f1"
-              onPick={() => pick('theirs')}
-              disabled={busy !== null}
-              picking={busy === 'resolving'}
-              t={t}
-            />
+            {sides.map((s) => (
+              <SideCard
+                key={s.side}
+                title={s.title}
+                subtitle={s.subtitle}
+                stats={s.stats}
+                accent={s.accent}
+                accentBg={s.accentBg}
+                onPick={() => pick(s.side)}
+                disabled={busy !== null}
+                picking={busy === 'resolving'}
+                t={t}
+              />
+            ))}
           </div>
 
           {error && (

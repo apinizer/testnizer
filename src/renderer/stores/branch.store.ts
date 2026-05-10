@@ -21,8 +21,6 @@ export interface ConflictStats {
 
 export interface ConflictEntry {
   file: string
-  ours: string
-  theirs: string
   stats: { ours: ConflictStats; theirs: ConflictStats }
 }
 

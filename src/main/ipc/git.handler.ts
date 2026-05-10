@@ -152,60 +152,6 @@ async function getCurrentBranch(
   }
 }
 
-/**
- * Walk the working tree's conflicted files and pull each side's content via
- * `git show :2:<file>` (ours) and `:3:<file>` (theirs). Returns null when the
- * tree is clean — used after a merge / pull that reported a conflict.
- *
- * For project.json (the file the rest of the app cares about) we also extract
- * a compact stats summary so the resolution UI can show "12 endpoints vs 14"
- * without sending two megabytes back over IPC.
- */
-async function collectConflictInfo(git: SimpleGit): Promise<Array<{
-  file: string
-  ours: string
-  theirs: string
-  stats: {
-    ours: ConflictStats
-    theirs: ConflictStats
-  }
-}> | null> {
-  const status = await git.status()
-  if (status.conflicted.length === 0) return null
-
-  const conflicts: Array<{
-    file: string
-    ours: string
-    theirs: string
-    stats: { ours: ConflictStats; theirs: ConflictStats }
-  }> = []
-
-  for (const file of status.conflicted) {
-    let ours = ''
-    let theirs = ''
-    try {
-      ours = await git.show([`:2:${file}`])
-    } catch {
-      // File didn't exist on our side (added in theirs only).
-    }
-    try {
-      theirs = await git.show([`:3:${file}`])
-    } catch {
-      // File didn't exist on their side.
-    }
-    conflicts.push({
-      file,
-      ours,
-      theirs,
-      stats: {
-        ours: summarizeProjectJson(ours),
-        theirs: summarizeProjectJson(theirs),
-      },
-    })
-  }
-  return conflicts
-}
-
 interface ConflictStats {
   endpoints: number
   savedRequests: number
@@ -216,6 +162,37 @@ interface ConflictStats {
   environments: number
   certificates: number
   parsable: boolean
+}
+
+interface ConflictEntry {
+  file: string
+  stats: { ours: ConflictStats; theirs: ConflictStats }
+}
+
+// Reads each conflicted file's ours/theirs from git's index (`:2:` / `:3:`)
+// in parallel — both per-file and across files — and returns only compact
+// stats. The full content strings are NOT included in the return value
+// because the renderer modal renders only counts; sending raw JSON could
+// push MB-scale payloads over IPC for large project files.
+async function collectConflictInfo(git: SimpleGit): Promise<ConflictEntry[] | null> {
+  const status = await git.status()
+  if (status.conflicted.length === 0) return null
+
+  return Promise.all(
+    status.conflicted.map(async (file) => {
+      const [ours, theirs] = await Promise.all([
+        git.show([`:2:${file}`]).catch(() => ''),
+        git.show([`:3:${file}`]).catch(() => ''),
+      ])
+      return {
+        file,
+        stats: {
+          ours: summarizeProjectJson(ours),
+          theirs: summarizeProjectJson(theirs),
+        },
+      }
+    }),
+  )
 }
 
 function summarizeProjectJson(content: string): ConflictStats {
@@ -246,6 +223,40 @@ function summarizeProjectJson(content: string): ConflictStats {
     }
   } catch {
     return empty
+  }
+}
+
+// Wraps a git operation that can fail with a CONFLICTS error from simple-git.
+// On conflict, the working tree is left half-merged and we surface the
+// structured conflict info so the renderer can prompt for resolution.
+async function runGitOpWithConflictHandling(
+  git: SimpleGit,
+  op: () => Promise<unknown>,
+): Promise<{ ok: true } | { conflicts: ConflictEntry[] } | { error: string }> {
+  try {
+    await op()
+    return { ok: true }
+  } catch (err) {
+    const conflicts = await collectConflictInfo(git)
+    if (conflicts && conflicts.length > 0) return { conflicts }
+    return { error: (err as Error).message }
+  }
+}
+
+// Centralises the "find the project's exported JSON file in `dir` and import
+// it back into SQLite" sequence used after pull / branch-switch / conflict
+// resolution. Returns true if anything was imported.
+function reimportProjectFromDir(dir: string, projectId: string): boolean {
+  try {
+    const jsonFiles = readDirSync(dir).filter(
+      (f: string) => f.endsWith('.json') && f !== 'package.json',
+    )
+    if (jsonFiles.length === 0) return false
+    const jsonContent = readFileSync(join(dir, jsonFiles[0]), 'utf-8')
+    importProjectDataFromJson(jsonContent, projectId)
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -415,14 +426,7 @@ export function registerGitHandlers(): void {
           await git.checkout(['-b', payload.branchName, `origin/${payload.branchName}`])
         }
 
-        // Import data from the switched branch into DB
-        const jsonFiles = readDirSync(config.localPath).filter(
-          (f: string) => f.endsWith('.json') && f !== 'package.json',
-        )
-        if (jsonFiles.length > 0) {
-          const jsonContent = readFileSync(join(config.localPath, jsonFiles[0]), 'utf-8')
-          importProjectDataFromJson(jsonContent, payload.projectId)
-        }
+        reimportProjectFromDir(config.localPath, payload.projectId)
 
         return { success: true, data: { branch: payload.branchName } }
       } catch (e) {
@@ -470,11 +474,10 @@ export function registerGitHandlers(): void {
           /* offline OK */
         }
 
-        // Merge — wrap in try/catch so conflicts surface as structured data
-        // rather than a thrown error. simple-git throws when CONFLICTS appear,
-        // but the working tree IS in a half-merged state that we can resolve.
-        try {
-          const mergeResult = await git.merge([payload.sourceBranch])
+        const outcome = await runGitOpWithConflictHandling(git, () =>
+          git.merge([payload.sourceBranch]),
+        )
+        if ('ok' in outcome) {
           return {
             success: true,
             data: {
@@ -482,28 +485,22 @@ export function registerGitHandlers(): void {
               state: 'clean',
               currentBranch: currentBranch.trim(),
               sourceBranch: payload.sourceBranch,
-              result: mergeResult.result,
             },
           }
-        } catch (mergeErr) {
-          const msg = (mergeErr as Error).message
-          // Real conflict — collect both sides and surface to the renderer.
-          const conflicts = await collectConflictInfo(git)
-          if (conflicts && conflicts.length > 0) {
-            return {
-              success: true,
-              data: {
-                merged: false,
-                state: 'conflicted',
-                currentBranch: currentBranch.trim(),
-                sourceBranch: payload.sourceBranch,
-                conflicts,
-              },
-            }
-          }
-          // Some other failure — propagate.
-          return { success: false, error: msg }
         }
+        if ('conflicts' in outcome) {
+          return {
+            success: true,
+            data: {
+              merged: false,
+              state: 'conflicted',
+              currentBranch: currentBranch.trim(),
+              sourceBranch: payload.sourceBranch,
+              conflicts: outcome.conflicts,
+            },
+          }
+        }
+        return { success: false, error: outcome.error }
       } catch (e) {
         return { success: false, error: (e as Error).message }
       }
@@ -553,17 +550,7 @@ export function registerGitHandlers(): void {
 
           // After committing, re-import the merged project.json so the DB
           // reflects whichever side the user picked.
-          try {
-            const jsonFiles = readDirSync(config.localPath).filter(
-              (f: string) => f.endsWith('.json') && f !== 'package.json',
-            )
-            if (jsonFiles.length > 0) {
-              const jsonContent = readFileSync(join(config.localPath, jsonFiles[0]), 'utf-8')
-              importProjectDataFromJson(jsonContent, payload.projectId)
-            }
-          } catch {
-            // Re-import is best-effort; the file is already committed.
-          }
+          reimportProjectFromDir(config.localPath, payload.projectId)
         }
 
         return {
@@ -677,36 +664,25 @@ export function registerGitHandlers(): void {
         await git.commit('Auto-save before pull')
       }
 
-      try {
-        await git.pull('origin', currentBranch)
-      } catch (pullErr) {
-        // Pull failed — most commonly because the merge step it runs
-        // internally hit a conflict. Surface conflict info so the renderer
-        // can let the user resolve it.
-        const conflicts = await collectConflictInfo(git)
-        if (conflicts && conflicts.length > 0) {
-          return {
-            success: true,
-            data: {
-              pulled: false,
-              state: 'conflicted',
-              branch: currentBranch,
-              conflicts,
-            },
-          }
-        }
-        return { success: false, error: (pullErr as Error).message }
-      }
-
-      // Import pulled data into DB — find the project .json file
-      const jsonFiles = readDirSync(config.localPath).filter(
-        (f: string) => f.endsWith('.json') && f !== 'package.json',
+      const outcome = await runGitOpWithConflictHandling(git, () =>
+        git.pull('origin', currentBranch),
       )
-      if (jsonFiles.length > 0) {
-        const jsonContent = readFileSync(join(config.localPath, jsonFiles[0]), 'utf-8')
-        importProjectDataFromJson(jsonContent, projectId)
+      if ('conflicts' in outcome) {
+        return {
+          success: true,
+          data: {
+            pulled: false,
+            state: 'conflicted',
+            branch: currentBranch,
+            conflicts: outcome.conflicts,
+          },
+        }
+      }
+      if ('error' in outcome) {
+        return { success: false, error: outcome.error }
       }
 
+      reimportProjectFromDir(config.localPath, projectId)
       return { success: true, data: { pulled: true, state: 'clean', branch: currentBranch } }
     } catch (e) {
       return { success: false, error: (e as Error).message }
