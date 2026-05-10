@@ -9,6 +9,7 @@ import {
   type SocketIOEvent,
 } from '../protocols/socketio.engine'
 import { logRequest, logResponse, logEvent } from '../lib/console-logger'
+import * as historyRepo from '../db/history.repo'
 
 function getWindow(): BrowserWindow | null {
   return BrowserWindow.getAllWindows()[0] ?? null
@@ -38,6 +39,9 @@ export function registerSocketIOHandlers(): void {
         namespace?: string
         auth?: Record<string, unknown>
         extraHeaders?: Record<string, string>
+        _workspaceId?: string
+        _projectId?: string
+        _endpointId?: string
       },
     ) => {
       const started = Date.now()
@@ -54,7 +58,8 @@ export function registerSocketIOHandlers(): void {
       })
       try {
         const data = await socketIOConnect(options)
-        sioContext.set(data.connectionId, { url: fullTarget, connectedAt: Date.now() })
+        const connectedAt = Date.now()
+        sioContext.set(data.connectionId, { url: fullTarget, connectedAt })
         // Wire event push back to renderer
         socketIOSetEventCallback(data.connectionId, (event: SocketIOEvent) => {
           getWindow()?.webContents.send('socketio:event', {
@@ -68,21 +73,66 @@ export function registerSocketIOHandlers(): void {
           url: fullTarget,
           status: 0,
           statusText: 'connected',
-          durationMs: Date.now() - started,
+          durationMs: connectedAt - started,
           meta: { connectionId: data.connectionId },
         })
+        try {
+          historyRepo.addHistory({
+            workspace_id: options._workspaceId,
+            project_id: options._projectId,
+            endpoint_id: options._endpointId,
+            protocol: 'socketio',
+            method: 'CONNECT',
+            url: fullTarget,
+            status_code: 0,
+            duration_ms: connectedAt - started,
+            request_snapshot: JSON.stringify({
+              url: options.url,
+              namespace: options.namespace,
+              hasAuth: !!options.auth,
+              extraHeaders: options.extraHeaders,
+            }),
+            response_snapshot: JSON.stringify({
+              connectionId: data.connectionId,
+              connectedAt,
+              status: 'connected',
+            }),
+          })
+        } catch {
+          /* ignore */
+        }
         return { success: true, data }
       } catch (e) {
         const err = e as Error
+        const failedAt = Date.now()
         logResponse({
           protocol: 'socketio',
           method: 'CONNECT',
           url: fullTarget,
           status: -1,
           statusText: err.message,
-          durationMs: Date.now() - started,
+          durationMs: failedAt - started,
           error: { message: err.message, stack: err.stack },
         })
+        try {
+          historyRepo.addHistory({
+            workspace_id: options._workspaceId,
+            project_id: options._projectId,
+            endpoint_id: options._endpointId,
+            protocol: 'socketio',
+            method: 'CONNECT',
+            url: fullTarget,
+            status_code: -1,
+            duration_ms: failedAt - started,
+            request_snapshot: JSON.stringify({
+              url: options.url,
+              namespace: options.namespace,
+            }),
+            response_snapshot: JSON.stringify({ error: err.message }),
+          })
+        } catch {
+          /* ignore */
+        }
         return { success: false, error: err.message }
       }
     },

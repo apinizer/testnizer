@@ -6,9 +6,10 @@ import {
   generateEnvelope,
   type SoapExecuteOptions,
   type SoapVersion,
-  type WsSecurityConfig
+  type WsSecurityConfig,
 } from '../protocols/soap.engine'
 import { logRequest, logResponse } from '../lib/console-logger'
+import * as historyRepo from '../db/history.repo'
 
 interface SoapExecutePayload {
   wsdlUrl: string
@@ -23,6 +24,9 @@ interface SoapExecutePayload {
   timeout?: number
   sslVerification?: boolean
   _tabId?: string
+  _workspaceId?: string
+  _projectId?: string
+  _endpointId?: string
 }
 
 interface GenerateEnvelopePayload {
@@ -68,7 +72,7 @@ export function registerSoapHandlers(): void {
         headers: payload.headers,
         wsSecurity: payload.wsSecurity,
         timeout: payload.timeout,
-        sslVerification: payload.sslVerification
+        sslVerification: payload.sslVerification,
       }
 
       logRequest({
@@ -115,6 +119,42 @@ export function registerSoapHandlers(): void {
         },
       })
 
+      try {
+        historyRepo.addHistory({
+          workspace_id: payload._workspaceId,
+          project_id: payload._projectId,
+          endpoint_id: payload._endpointId,
+          protocol: 'soap',
+          method: 'POST',
+          url: payload.endpointUrl,
+          status_code: result.status,
+          duration_ms: result.timing?.total ? Math.round(result.timing.total) : undefined,
+          request_snapshot: JSON.stringify({
+            wsdlUrl: payload.wsdlUrl,
+            endpointUrl: payload.endpointUrl,
+            operationName: payload.operationName,
+            serviceName: payload.serviceName,
+            portName: payload.portName,
+            soapVersion: payload.soapVersion,
+            params: payload.params,
+            headers: result.actualRequest?.headers ?? payload.headers,
+            envelope: result.actualRequest?.body,
+          }),
+          response_snapshot: JSON.stringify({
+            status: result.status,
+            statusText: result.statusText,
+            headers: result.headers,
+            body: result.body && result.body.length <= 500_000 ? result.body : undefined,
+            bodySize: result.bodySize,
+            timing: result.timing,
+            fault: isFault,
+            error: result.error,
+          }),
+        })
+      } catch {
+        // Never let history failures break the request result.
+      }
+
       return { success: true, data: result }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -129,7 +169,7 @@ export function registerSoapHandlers(): void {
         payload.params,
         payload.soapVersion,
         payload.soapAction,
-        payload.namespace
+        payload.namespace,
       )
       return { success: true, data: envelope }
     } catch (e) {

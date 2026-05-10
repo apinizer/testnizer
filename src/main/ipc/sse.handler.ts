@@ -6,6 +6,7 @@ import {
   type SseHttpMethod,
 } from '../protocols/sse.engine'
 import { logEvent } from '../lib/console-logger'
+import * as historyRepo from '../db/history.repo'
 
 interface SseConnectPayload {
   url: string
@@ -15,6 +16,9 @@ interface SseConnectPayload {
   method?: SseHttpMethod
   body?: string
   _tabId?: string
+  _workspaceId?: string
+  _projectId?: string
+  _endpointId?: string
 }
 
 const sseContext = new Map<string, { url: string; tabId?: string; connectedAt: number }>()
@@ -65,8 +69,36 @@ export function registerSseHandlers(): void {
           statusText: 'OK',
           durationMs: connectedAt - connectStart,
         })
+        try {
+          historyRepo.addHistory({
+            workspace_id: payload._workspaceId,
+            project_id: payload._projectId,
+            endpoint_id: payload._endpointId,
+            protocol: 'sse',
+            method: payload.method ?? 'GET',
+            url: payload.url,
+            status_code: 200,
+            duration_ms: connectedAt - connectStart,
+            request_snapshot: JSON.stringify({
+              url: payload.url,
+              method: payload.method ?? 'GET',
+              headers: payload.headers,
+              lastEventId: payload.lastEventId,
+              body: payload.body,
+            }),
+            response_snapshot: JSON.stringify({
+              status: 200,
+              statusText: 'OK',
+              connectionId: connectionInfo.connectionId,
+              connectedAt,
+            }),
+          })
+        } catch {
+          /* never propagate history failures */
+        }
         return { success: true, data: connectionInfo }
       } catch (err) {
+        const failedAt = Date.now()
         logEvent({
           protocol: 'sse',
           category: 'connection',
@@ -74,9 +106,29 @@ export function registerSseHandlers(): void {
           message: `SSE connection failed: ${(err as Error).message}`,
           url: payload.url,
           tabId: payload._tabId,
-          durationMs: Date.now() - connectStart,
+          durationMs: failedAt - connectStart,
           error: { message: (err as Error).message },
         })
+        try {
+          historyRepo.addHistory({
+            workspace_id: payload._workspaceId,
+            project_id: payload._projectId,
+            endpoint_id: payload._endpointId,
+            protocol: 'sse',
+            method: payload.method ?? 'GET',
+            url: payload.url,
+            status_code: -1,
+            duration_ms: failedAt - connectStart,
+            request_snapshot: JSON.stringify({
+              url: payload.url,
+              method: payload.method ?? 'GET',
+              headers: payload.headers,
+            }),
+            response_snapshot: JSON.stringify({ error: (err as Error).message }),
+          })
+        } catch {
+          /* ignore */
+        }
         throw err
       }
     } catch (e) {

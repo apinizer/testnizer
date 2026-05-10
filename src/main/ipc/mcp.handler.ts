@@ -7,6 +7,7 @@ import {
   type McpTransport,
 } from '../protocols/mcp.engine'
 import { logRequest, logResponse, logEvent } from '../lib/console-logger'
+import * as historyRepo from '../db/history.repo'
 
 // Track when each connection was opened so the disconnect log can carry the
 // connection lifetime — useful for spotting servers that drop early or
@@ -125,7 +126,13 @@ export function registerMcpHandlers(): void {
 
   ipcMain.handle(
     'mcp:callTool',
-    async (_event, connectionId: string, toolName: string, args: Record<string, unknown>) => {
+    async (
+      _event,
+      connectionId: string,
+      toolName: string,
+      args: Record<string, unknown>,
+      ctxOpts?: { workspaceId?: string; projectId?: string; endpointId?: string },
+    ) => {
       const started = Date.now()
       const argsBody = JSON.stringify(args)
       const ctx = mcpContext.get(connectionId)
@@ -140,30 +147,69 @@ export function registerMcpHandlers(): void {
       try {
         const data = await mcpCallTool(connectionId, toolName, args)
         const responseBody = JSON.stringify(data)
+        const durationMs = Date.now() - started
         logResponse({
           protocol: 'mcp',
           method: 'CALL_TOOL',
           url: targetUrl,
           status: 0,
           statusText: 'OK',
-          durationMs: Date.now() - started,
+          durationMs,
           sizeBytes: Buffer.byteLength(responseBody, 'utf-8'),
           requestBody: argsBody,
           responseBody,
         })
+        try {
+          historyRepo.addHistory({
+            workspace_id: ctxOpts?.workspaceId,
+            project_id: ctxOpts?.projectId,
+            endpoint_id: ctxOpts?.endpointId,
+            protocol: 'mcp',
+            method: 'CALL_TOOL',
+            url: targetUrl,
+            status_code: 0,
+            duration_ms: durationMs,
+            request_snapshot: JSON.stringify({
+              connectionId,
+              toolName,
+              args,
+              transport: ctx ? 'unknown' : 'unknown',
+            }),
+            response_snapshot: responseBody.length <= 500_000 ? responseBody : undefined,
+          })
+        } catch {
+          // history failure is never fatal
+        }
         return { success: true, data }
       } catch (e) {
         const err = e as Error
+        const durationMs = Date.now() - started
         logResponse({
           protocol: 'mcp',
           method: 'CALL_TOOL',
           url: targetUrl,
           status: -1,
           statusText: err.message,
-          durationMs: Date.now() - started,
+          durationMs,
           requestBody: argsBody,
           error: { message: err.message, stack: err.stack },
         })
+        try {
+          historyRepo.addHistory({
+            workspace_id: ctxOpts?.workspaceId,
+            project_id: ctxOpts?.projectId,
+            endpoint_id: ctxOpts?.endpointId,
+            protocol: 'mcp',
+            method: 'CALL_TOOL',
+            url: targetUrl,
+            status_code: -1,
+            duration_ms: durationMs,
+            request_snapshot: JSON.stringify({ connectionId, toolName, args }),
+            response_snapshot: JSON.stringify({ error: err.message }),
+          })
+        } catch {
+          /* ignore */
+        }
         return { success: false, error: err.message }
       }
     },

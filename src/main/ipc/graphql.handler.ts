@@ -5,9 +5,10 @@ import {
   subscribe,
   unsubscribe,
   type GraphqlExecuteOptions,
-  type GraphqlSubscribeOptions
+  type GraphqlSubscribeOptions,
 } from '../protocols/graphql.engine'
 import { logRequest, logResponse, logEvent } from '../lib/console-logger'
+import * as historyRepo from '../db/history.repo'
 
 interface GraphqlExecutePayload {
   url: string
@@ -31,6 +32,9 @@ interface GraphqlExecutePayload {
   timeout?: number
   sslVerification?: boolean
   _tabId?: string
+  _workspaceId?: string
+  _projectId?: string
+  _endpointId?: string
 }
 
 interface GraphqlIntrospectPayload {
@@ -62,7 +66,7 @@ export function registerGraphqlHandlers(): void {
         headers: payload.headers,
         auth: payload.auth,
         timeout: payload.timeout,
-        sslVerification: payload.sslVerification
+        sslVerification: payload.sslVerification,
       }
 
       const opName = payload.operationName || 'anonymous'
@@ -112,6 +116,39 @@ export function registerGraphqlHandlers(): void {
         meta: { operation: opName, gqlErrors: hasGqlErrors },
       })
 
+      try {
+        historyRepo.addHistory({
+          workspace_id: payload._workspaceId,
+          project_id: payload._projectId,
+          endpoint_id: payload._endpointId,
+          protocol: 'graphql',
+          method: 'POST',
+          url: payload.url,
+          status_code: response.status,
+          duration_ms: response.timing?.total ? Math.round(response.timing.total) : undefined,
+          request_snapshot: JSON.stringify({
+            url: payload.url,
+            query: payload.query,
+            variables: payload.variables,
+            operationName: payload.operationName,
+            headers: response.actualRequest?.headers,
+            body: response.actualRequest?.body,
+          }),
+          response_snapshot: JSON.stringify({
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+            body: response.body && response.body.length <= 500_000 ? response.body : undefined,
+            bodySize: response.bodySize,
+            timing: response.timing,
+            gqlErrors: hasGqlErrors,
+            error: response.error,
+          }),
+        })
+      } catch {
+        // History failure is never fatal.
+      }
+
       return { success: true, data: response }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -121,11 +158,7 @@ export function registerGraphqlHandlers(): void {
   // ─── Introspect schema ──────────────────────────────────────
   ipcMain.handle('graphql:introspect', async (_event, payload: GraphqlIntrospectPayload) => {
     try {
-      const result = await introspect(
-        payload.url,
-        payload.headers,
-        payload.sslVerification
-      )
+      const result = await introspect(payload.url, payload.headers, payload.sslVerification)
       return { success: true, data: result }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -147,7 +180,7 @@ export function registerGraphqlHandlers(): void {
         variables: payload.variables,
         operationName: payload.operationName,
         headers: payload.headers,
-        sslVerification: payload.sslVerification
+        sslVerification: payload.sslVerification,
       }
 
       logEvent({

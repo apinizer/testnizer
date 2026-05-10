@@ -6,6 +6,7 @@ import {
   type WsConnectOptions,
 } from '../protocols/websocket.engine'
 import { logEvent } from '../lib/console-logger'
+import * as historyRepo from '../db/history.repo'
 
 interface WsConnectPayload {
   url: string
@@ -13,6 +14,9 @@ interface WsConnectPayload {
   protocols?: string[]
   rejectUnauthorized?: boolean
   _tabId?: string
+  _workspaceId?: string
+  _projectId?: string
+  _endpointId?: string
 }
 
 // Map connectionId -> { url, tabId, connectedAt } so disconnect / send events
@@ -65,8 +69,35 @@ export function registerWebSocketHandlers(): void {
           statusText: 'Switching Protocols',
           durationMs: connectedAt - connectStart,
         })
+        try {
+          historyRepo.addHistory({
+            workspace_id: payload._workspaceId,
+            project_id: payload._projectId,
+            endpoint_id: payload._endpointId,
+            protocol: 'websocket',
+            method: 'CONNECT',
+            url: payload.url,
+            status_code: 101,
+            duration_ms: connectedAt - connectStart,
+            request_snapshot: JSON.stringify({
+              url: payload.url,
+              headers: payload.headers,
+              protocols: payload.protocols,
+              rejectUnauthorized: payload.rejectUnauthorized,
+            }),
+            response_snapshot: JSON.stringify({
+              status: 101,
+              statusText: 'Switching Protocols',
+              connectionId: connectionInfo.connectionId,
+              connectedAt,
+            }),
+          })
+        } catch {
+          /* never propagate history failures */
+        }
         return { success: true, data: connectionInfo }
       } catch (err) {
+        const failedAt = Date.now()
         logEvent({
           protocol: 'websocket',
           category: 'connection',
@@ -74,9 +105,29 @@ export function registerWebSocketHandlers(): void {
           message: `WS connection failed: ${(err as Error).message}`,
           url: payload.url,
           tabId: payload._tabId,
-          durationMs: Date.now() - connectStart,
+          durationMs: failedAt - connectStart,
           error: { message: (err as Error).message },
         })
+        try {
+          historyRepo.addHistory({
+            workspace_id: payload._workspaceId,
+            project_id: payload._projectId,
+            endpoint_id: payload._endpointId,
+            protocol: 'websocket',
+            method: 'CONNECT',
+            url: payload.url,
+            status_code: -1,
+            duration_ms: failedAt - connectStart,
+            request_snapshot: JSON.stringify({
+              url: payload.url,
+              headers: payload.headers,
+              protocols: payload.protocols,
+            }),
+            response_snapshot: JSON.stringify({ error: (err as Error).message }),
+          })
+        } catch {
+          /* ignore */
+        }
         throw err
       }
     } catch (e) {

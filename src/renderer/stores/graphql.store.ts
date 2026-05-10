@@ -3,6 +3,7 @@ import type { KeyValuePair, ApiResponse } from '../types'
 import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
+import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { makeId } from '../lib/utils'
@@ -277,6 +278,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     }
 
     try {
+      const ws = useWorkspaceStore.getState()
       const result = await window.api?.request?.send({
         method: 'POST',
         url: resolvedUrl,
@@ -287,6 +289,8 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
         },
         _protocol: 'graphql',
         _requestId: requestId,
+        _workspaceId: ws.activeWorkspaceId || undefined,
+        _projectId: ws.activeProjectId || undefined,
       })
 
       if (result?.success && result.data) {

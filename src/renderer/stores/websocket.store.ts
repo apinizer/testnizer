@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { WsMessage, KeyValuePair } from '../types'
 import { useEnvironmentStore } from './environment.store'
+import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { makeId } from '../lib/utils'
@@ -28,6 +29,9 @@ interface WsApi {
     url: string
     headers?: Record<string, string>
     protocols?: string[]
+    _workspaceId?: string
+    _projectId?: string
+    _endpointId?: string
   }) => Promise<{
     success: boolean
     data?: { connectionId: string }
@@ -251,9 +255,12 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
     set({ _unsubscribe: unsub })
 
     try {
+      const wsStore = useWorkspaceStore.getState()
       const result = await ws.connect({
         url: resolvedUrl,
         headers: headerMap,
+        _workspaceId: wsStore.activeWorkspaceId || undefined,
+        _projectId: wsStore.activeProjectId || undefined,
       })
 
       if (result?.success && result.data) {

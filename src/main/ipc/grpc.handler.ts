@@ -15,6 +15,7 @@ import {
   type GrpcBidiStreamOptions,
 } from '../protocols/grpc.engine'
 import { logRequest, logResponse, logEvent } from '../lib/console-logger'
+import * as historyRepo from '../db/history.repo'
 
 interface GrpcExecutePayload {
   serverAddress: string
@@ -27,6 +28,9 @@ interface GrpcExecutePayload {
   useTls?: boolean
   sslVerification?: boolean
   _tabId?: string
+  _workspaceId?: string
+  _projectId?: string
+  _endpointId?: string
 }
 
 interface GrpcServerStreamPayload {
@@ -151,6 +155,39 @@ export function registerGrpcHandlers(): void {
         tabId: payload._tabId,
         meta: { method: fullMethod },
       })
+
+      try {
+        historyRepo.addHistory({
+          workspace_id: payload._workspaceId,
+          project_id: payload._projectId,
+          endpoint_id: payload._endpointId,
+          protocol: 'grpc',
+          method: 'unary',
+          url: `${payload.serverAddress}/${fullMethod}`,
+          status_code: response.grpcStatus ?? undefined,
+          duration_ms: response.timing?.total ? Math.round(response.timing.total) : undefined,
+          request_snapshot: JSON.stringify({
+            serverAddress: payload.serverAddress,
+            protoPath: payload.protoPath,
+            serviceName: payload.serviceName,
+            methodName: payload.methodName,
+            metadata: payload.metadata,
+            requestBody: payload.requestBody,
+            useTls: payload.useTls,
+          }),
+          response_snapshot: JSON.stringify({
+            grpcStatus: response.grpcStatus,
+            grpcStatusMessage: response.grpcStatusMessage,
+            responseMetadata: response.responseMetadata,
+            body: response.body && response.body.length <= 500_000 ? response.body : undefined,
+            bodySize: response.bodySize,
+            timing: response.timing,
+            error: response.error,
+          }),
+        })
+      } catch {
+        // never propagate history failures
+      }
 
       return { success: true, data: response }
     } catch (e) {

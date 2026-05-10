@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { KeyValuePair, SseEvent } from '../types'
 import { useEnvironmentStore } from './environment.store'
+import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { makeId } from '../lib/utils'
@@ -35,6 +36,9 @@ interface SseApi {
     withCredentials?: boolean
     method?: SseHttpMethod
     body?: string
+    _workspaceId?: string
+    _projectId?: string
+    _endpointId?: string
   }) => Promise<{
     success: boolean
     data?: { connectionId: string }
@@ -282,12 +286,15 @@ export const useSseStore = create<SseStore>((set, get) => ({
     set({ _unsubscribe: unsub })
 
     try {
+      const wsStore = useWorkspaceStore.getState()
       const result = await sse.connect({
         url: resolvedUrl,
         headers: headerMap,
         lastEventId: resolvedLastEventId.trim() || undefined,
         method,
         body: sendBody ? resolvedBody : undefined,
+        _workspaceId: wsStore.activeWorkspaceId || undefined,
+        _projectId: wsStore.activeProjectId || undefined,
       })
       if (result?.success && result.data) {
         const newId = result.data.connectionId

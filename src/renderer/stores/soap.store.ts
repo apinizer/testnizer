@@ -11,6 +11,7 @@ import { useResponseStore } from './response.store'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
+import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { makeId } from '../lib/utils'
 
@@ -335,6 +336,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     const requestId = makeId()
     set({ _inflightRequestId: requestId })
     try {
+      const ws = useWorkspaceStore.getState()
       const result = await window.api?.request?.send({
         method: 'POST',
         url: resolvedUrl,
@@ -351,6 +353,8 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
           : undefined,
         _protocol: 'soap',
         _requestId: requestId,
+        _workspaceId: ws.activeWorkspaceId || undefined,
+        _projectId: ws.activeProjectId || undefined,
       })
 
       if (result?.success && result.data) {

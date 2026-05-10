@@ -104,12 +104,21 @@ export default function ProjectHome() {
       className="relative flex h-full w-full flex-col items-center overflow-y-auto"
       style={{ background: 'var(--bg)' }}
     >
-      {/* About button — top left (always visible) */}
+      {/* About button — top left.
+          On macOS the renderer sits flush against the window edge under
+          `titleBarStyle: hiddenInset`, and the traffic lights at x=12
+          occupy roughly 12-82px. Push the button past that on mac so it
+          doesn't slip under the close/min/max controls. */}
       <button
         type="button"
         onClick={() => setShowAboutModal(true)}
-        className="absolute left-5 top-4 z-10 cursor-pointer rounded-md border bg-transparent px-2.5 py-1 transition-colors"
-        style={{ borderColor: 'var(--border)', color: 'var(--muted)', fontSize: 13 }}
+        className="absolute top-4 z-10 cursor-pointer rounded-md border bg-transparent px-2.5 py-1 transition-colors"
+        style={{
+          left: navigator.userAgent.includes('Mac') ? 92 : 20,
+          borderColor: 'var(--border)',
+          color: 'var(--muted)',
+          fontSize: 13,
+        }}
         onMouseEnter={(e) => {
           ;(e.currentTarget as HTMLElement).style.color = 'var(--text)'
           ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'

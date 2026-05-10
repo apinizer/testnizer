@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import { useWorkspaceStore } from './workspace.store'
 
 export type McpTransport = 'http' | 'sse' | 'stdio'
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
@@ -22,6 +23,7 @@ interface McpApi {
     id: string,
     name: string,
     args: unknown,
+    ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
   ) => Promise<{ success: boolean; data?: unknown; error?: string }>
 }
 
@@ -198,7 +200,11 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       set({ isInvoking: false, resultError: 'Invalid JSON in arguments' })
       return
     }
-    const res = await api.callTool(connectionId, selectedTool, args)
+    const ws = useWorkspaceStore.getState()
+    const res = await api.callTool(connectionId, selectedTool, args, {
+      workspaceId: ws.activeWorkspaceId || undefined,
+      projectId: ws.activeProjectId || undefined,
+    })
     if (res.success) {
       set({ result: res.data, resultError: null, isInvoking: false })
     } else {

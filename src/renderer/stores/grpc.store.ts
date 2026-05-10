@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { KeyValuePair, ApiResponse } from '../types'
 import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
+import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
@@ -623,6 +624,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       return
     }
 
+    const ws = useWorkspaceStore.getState()
     const baseOptions = {
       serverAddress,
       protoPath: protoPath ?? '',
@@ -630,6 +632,8 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       methodName: selectedMethod,
       metadata: metadataMap,
       useTls,
+      _workspaceId: ws.activeWorkspaceId || undefined,
+      _projectId: ws.activeProjectId || undefined,
     }
 
     // Helper that writes a partial state into the owning tab — either live

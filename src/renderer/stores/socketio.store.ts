@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import { useWorkspaceStore } from './workspace.store'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -122,10 +123,13 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
       return
     }
 
+    const ws = useWorkspaceStore.getState()
     const res = await api.connect({
       url,
       namespace: namespace || '/',
       auth: bearerToken ? { token: bearerToken } : undefined,
+      _workspaceId: ws.activeWorkspaceId || undefined,
+      _projectId: ws.activeProjectId || undefined,
     })
 
     if (res.success && res.data) {

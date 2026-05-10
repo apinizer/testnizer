@@ -554,8 +554,12 @@ const api = {
       ipcRenderer.invoke('mcp:disconnect', connectionId),
     listTools: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('mcp:listTools', connectionId),
-    callTool: (connectionId: string, toolName: string, args: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('mcp:callTool', connectionId, toolName, args),
+    callTool: (
+      connectionId: string,
+      toolName: string,
+      args: unknown,
+      ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
+    ): Promise<unknown> => ipcRenderer.invoke('mcp:callTool', connectionId, toolName, args, ctx),
   },
 
   // ─── Socket.IO ──────────────────────────────────────────────
