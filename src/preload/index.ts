@@ -429,6 +429,13 @@ const api = {
     deleteBranch: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('git:deleteBranch', payload),
     log: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('git:log', payload),
+    resolveConflict: (payload: {
+      projectId: string
+      file: string
+      side: 'ours' | 'theirs'
+    }): Promise<unknown> => ipcRenderer.invoke('git:resolveConflict', payload),
+    abortMerge: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:abortMerge', projectId),
   },
 
   // ─── Save ───────────────────────────────────────────────────

@@ -16,6 +16,7 @@ import EndpointSaveModal from '../modals/EndpointSaveModal'
 import ProjectDetailModal from '../modals/ProjectDetailModal'
 import ProfileModal from '../modals/ProfileModal'
 import AboutModal from '../modals/AboutModal'
+import MergeConflictModal from '../modals/MergeConflictModal'
 import ConsolePanel from './ConsolePanel'
 import LoginScreen from '../auth/LoginScreen'
 import QuickTestShell from './QuickTestShell'
@@ -39,8 +40,11 @@ function GitLoadingOverlay() {
       >
         <div
           style={{
-            width: 36, height: 36, border: '3px solid var(--border)',
-            borderTopColor: 'var(--accent)', borderRadius: '50%',
+            width: 36,
+            height: 36,
+            border: '3px solid var(--border)',
+            borderTopColor: 'var(--accent)',
+            borderRadius: '50%',
             animation: 'spin 0.8s linear infinite',
           }}
         />
@@ -76,7 +80,6 @@ export default function AppShell() {
     }
   }, [initialize, isAuthenticated, isGuest])
 
-
   // Auth loading state
   if (authLoading) {
     return (
@@ -86,8 +89,11 @@ export default function AppShell() {
       >
         <div
           style={{
-            width: 32, height: 32, border: '3px solid var(--border)',
-            borderTopColor: 'var(--accent)', borderRadius: '50%',
+            width: 32,
+            height: 32,
+            border: '3px solid var(--border)',
+            borderTopColor: 'var(--accent)',
+            borderRadius: '50%',
             animation: 'spin 0.8s linear infinite',
           }}
         />
@@ -135,7 +141,10 @@ export default function AppShell() {
   // No project selected — show home/project selection
   if (!activeProjectId) {
     return (
-      <div className="flex h-screen w-screen overflow-hidden" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+      <div
+        className="flex h-screen w-screen overflow-hidden"
+        style={{ background: 'var(--bg)', color: 'var(--text)' }}
+      >
         <ProjectHome />
         <SettingsModal />
         <UpdateModal />
@@ -161,7 +170,9 @@ export default function AppShell() {
         <IconSidebar />
 
         {/* Left Panel — collection tree or history */}
-        {(!isLeftPanelCollapsed || activeSidebarPage === 'history' || activeSidebarPage === 'tests') && <LeftPanel />}
+        {(!isLeftPanelCollapsed ||
+          activeSidebarPage === 'history' ||
+          activeSidebarPage === 'tests') && <LeftPanel />}
 
         {/* Workbench — flex:1 */}
         <Workbench />
@@ -185,6 +196,7 @@ export default function AppShell() {
       <ProjectDetailModal />
       <ProfileModal />
       <AboutModal />
+      <MergeConflictModal />
 
       {/* Git loading overlay */}
       <GitLoadingOverlay />
