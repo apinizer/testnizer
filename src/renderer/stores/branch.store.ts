@@ -32,7 +32,13 @@ export interface ConflictContext {
   conflicts: ConflictEntry[]
 }
 
-type Resolution = { success: boolean; error?: string; conflict?: ConflictContext }
+// Discriminated union — callers can `if (r.success)` for the happy path and,
+// on failure, narrow further via `'conflict' in r` vs `'error' in r` instead
+// of optional-chaining gymnastics.
+export type Resolution =
+  | { success: true }
+  | { success: false; conflict: ConflictContext }
+  | { success: false; error: string }
 
 interface BranchStore {
   branches: GitBranch[]
@@ -63,8 +69,12 @@ interface BranchStore {
   resolveConflict: (
     file: string,
     side: 'ours' | 'theirs',
+    commitMessage?: string,
   ) => Promise<{ success: boolean; error?: string; complete: boolean }>
   abortConflict: () => Promise<{ success: boolean; error?: string }>
+  // Clear any in-flight conflict context. Called by the project switcher so
+  // a stale conflict from project A doesn't bleed into project B's UI.
+  clearPendingConflict: () => void
   setActiveBranch: (id: string) => void
   getActiveBranch: () => { id: string; name: string; is_default: number } | null
   fetchSaveHistory: (projectId: string) => Promise<void>
@@ -212,7 +222,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
             conflicts: data.conflicts,
           }
           set({ pendingConflict: conflict })
-          return { success: false, conflict, error: 'Conflict needs resolution' }
+          return { success: false, conflict }
         }
         await get().fetchBranches(projectId)
         return { success: true }
@@ -252,7 +262,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
             conflicts: data.conflicts,
           }
           set({ pendingConflict: conflict })
-          return { success: false, conflict, error: 'Conflict needs resolution' }
+          return { success: false, conflict }
         }
         await get().fetchBranches(projectId)
         return { success: true }
@@ -263,7 +273,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
     }
   },
 
-  resolveConflict: async (file, side) => {
+  resolveConflict: async (file, side, commitMessage) => {
     const conflict = get().pendingConflict
     if (!conflict) return { success: false, error: 'No conflict in progress', complete: false }
     try {
@@ -271,6 +281,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
         projectId: conflict.projectId,
         file,
         side,
+        commitMessage,
       })
       if (!result?.success) {
         return {
@@ -296,6 +307,8 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
       return { success: false, error: (e as Error).message, complete: false }
     }
   },
+
+  clearPendingConflict: () => set({ pendingConflict: null }),
 
   abortConflict: async () => {
     const conflict = get().pendingConflict

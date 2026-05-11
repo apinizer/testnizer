@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync as read
 import { join } from 'path'
 import { getDb } from '../db/database'
 import { exportProjectData, importProjectDataFromJson } from './save.handler'
+import { asConflictAwareGit, runGitOpWithConflictHandling } from '../lib/git-conflict'
 import type { SimpleGit, BranchSummaryBranch } from 'simple-git'
 
 // ─── Helpers ─────────────────────────────────────────────────────
@@ -152,112 +153,20 @@ async function getCurrentBranch(
   }
 }
 
-interface ConflictStats {
-  endpoints: number
-  savedRequests: number
-  folders: number
-  testSuites: number
-  mockServers: number
-  mockEndpoints: number
-  environments: number
-  certificates: number
-  parsable: boolean
-}
-
-interface ConflictEntry {
-  file: string
-  stats: { ours: ConflictStats; theirs: ConflictStats }
-}
-
-// Reads each conflicted file's ours/theirs from git's index (`:2:` / `:3:`)
-// in parallel — both per-file and across files — and returns only compact
-// stats. The full content strings are NOT included in the return value
-// because the renderer modal renders only counts; sending raw JSON could
-// push MB-scale payloads over IPC for large project files.
-async function collectConflictInfo(git: SimpleGit): Promise<ConflictEntry[] | null> {
-  const status = await git.status()
-  if (status.conflicted.length === 0) return null
-
-  return Promise.all(
-    status.conflicted.map(async (file) => {
-      const [ours, theirs] = await Promise.all([
-        git.show([`:2:${file}`]).catch(() => ''),
-        git.show([`:3:${file}`]).catch(() => ''),
-      ])
-      return {
-        file,
-        stats: {
-          ours: summarizeProjectJson(ours),
-          theirs: summarizeProjectJson(theirs),
-        },
-      }
-    }),
-  )
-}
-
-function summarizeProjectJson(content: string): ConflictStats {
-  const empty: ConflictStats = {
-    endpoints: 0,
-    savedRequests: 0,
-    folders: 0,
-    testSuites: 0,
-    mockServers: 0,
-    mockEndpoints: 0,
-    environments: 0,
-    certificates: 0,
-    parsable: false,
-  }
-  if (!content) return empty
-  try {
-    const data = JSON.parse(content) as Record<string, unknown[]>
-    return {
-      endpoints: Array.isArray(data.endpoints) ? data.endpoints.length : 0,
-      savedRequests: Array.isArray(data.savedRequests) ? data.savedRequests.length : 0,
-      folders: Array.isArray(data.folders) ? data.folders.length : 0,
-      testSuites: Array.isArray(data.testSuites) ? data.testSuites.length : 0,
-      mockServers: Array.isArray(data.mockServers) ? data.mockServers.length : 0,
-      mockEndpoints: Array.isArray(data.mockEndpoints) ? data.mockEndpoints.length : 0,
-      environments: Array.isArray(data.environments) ? data.environments.length : 0,
-      certificates: Array.isArray(data.certificates) ? data.certificates.length : 0,
-      parsable: true,
-    }
-  } catch {
-    return empty
-  }
-}
-
-// Wraps a git operation that can fail with a CONFLICTS error from simple-git.
-// On conflict, the working tree is left half-merged and we surface the
-// structured conflict info so the renderer can prompt for resolution.
-async function runGitOpWithConflictHandling(
-  git: SimpleGit,
-  op: () => Promise<unknown>,
-): Promise<{ ok: true } | { conflicts: ConflictEntry[] } | { error: string }> {
-  try {
-    await op()
-    return { ok: true }
-  } catch (err) {
-    const conflicts = await collectConflictInfo(git)
-    if (conflicts && conflicts.length > 0) return { conflicts }
-    return { error: (err as Error).message }
-  }
-}
-
-// Centralises the "find the project's exported JSON file in `dir` and import
-// it back into SQLite" sequence used after pull / branch-switch / conflict
-// resolution. Returns true if anything was imported.
+// Finds the project's exported .json in `dir` and imports it into SQLite.
+// On a parse/import error this THROWS so callers can surface a meaningful
+// message — most paths (branch-switch, resolve) wrap this in their own
+// try/catch when failure isn't fatal; pull lets the error propagate so the
+// user knows the pull succeeded on disk but the DB sync didn't.
+// Returns false (not throwing) only when no .json file is found.
 function reimportProjectFromDir(dir: string, projectId: string): boolean {
-  try {
-    const jsonFiles = readDirSync(dir).filter(
-      (f: string) => f.endsWith('.json') && f !== 'package.json',
-    )
-    if (jsonFiles.length === 0) return false
-    const jsonContent = readFileSync(join(dir, jsonFiles[0]), 'utf-8')
-    importProjectDataFromJson(jsonContent, projectId)
-    return true
-  } catch {
-    return false
-  }
+  const jsonFiles = readDirSync(dir).filter(
+    (f: string) => f.endsWith('.json') && f !== 'package.json',
+  )
+  if (jsonFiles.length === 0) return false
+  const jsonContent = readFileSync(join(dir, jsonFiles[0]), 'utf-8')
+  importProjectDataFromJson(jsonContent, projectId)
+  return true
 }
 
 // ─── Register handlers ──────────────────────────────────────────
@@ -426,7 +335,13 @@ export function registerGitHandlers(): void {
           await git.checkout(['-b', payload.branchName, `origin/${payload.branchName}`])
         }
 
-        reimportProjectFromDir(config.localPath, payload.projectId)
+        // Best-effort: the branch switch itself succeeded, so a stale DB is
+        // recoverable (Git Branches → Pull) and shouldn't fail the operation.
+        try {
+          reimportProjectFromDir(config.localPath, payload.projectId)
+        } catch (e) {
+          console.error('[git:switchBranch] reimport failed:', (e as Error).message)
+        }
 
         return { success: true, data: { branch: payload.branchName } }
       } catch (e) {
@@ -474,7 +389,7 @@ export function registerGitHandlers(): void {
           /* offline OK */
         }
 
-        const outcome = await runGitOpWithConflictHandling(git, () =>
+        const outcome = await runGitOpWithConflictHandling(asConflictAwareGit(git), () =>
           git.merge([payload.sourceBranch]),
         )
         if ('ok' in outcome) {
@@ -519,12 +434,19 @@ export function registerGitHandlers(): void {
         projectId: string
         file: string
         side: 'ours' | 'theirs'
+        // Renderer passes a locale-aware commit message — main has no i18n.
+        commitMessage?: string
       },
     ) => {
       try {
         const config = await getProjectGitConfig(payload.projectId)
         if (!config?.localPath) {
           return { success: false, error: 'Git yapılandırması bulunamadı.' }
+        }
+        // Defence-in-depth: the side string is built into a CLI flag via
+        // template literal; reject anything that's not the expected literal.
+        if (payload.side !== 'ours' && payload.side !== 'theirs') {
+          return { success: false, error: `Invalid side: ${payload.side}` }
         }
         const { simpleGit } = await import('simple-git')
         const git = simpleGit(config.localPath)
@@ -540,7 +462,7 @@ export function registerGitHandlers(): void {
         let committed = false
         if (!stillConflicted) {
           try {
-            await git.commit(`Resolve merge conflict (${payload.side})`)
+            await git.commit(payload.commitMessage || `Resolve merge conflict (${payload.side})`)
             committed = true
           } catch {
             // Commit may fail if there are no staged changes (e.g., merge
@@ -549,8 +471,13 @@ export function registerGitHandlers(): void {
           }
 
           // After committing, re-import the merged project.json so the DB
-          // reflects whichever side the user picked.
-          reimportProjectFromDir(config.localPath, payload.projectId)
+          // reflects whichever side the user picked. Best-effort — the commit
+          // itself is already in git, so the worst case is a stale DB.
+          try {
+            reimportProjectFromDir(config.localPath, payload.projectId)
+          } catch (e) {
+            console.error('[git:resolveConflict] reimport failed:', (e as Error).message)
+          }
         }
 
         return {
@@ -664,7 +591,7 @@ export function registerGitHandlers(): void {
         await git.commit('Auto-save before pull')
       }
 
-      const outcome = await runGitOpWithConflictHandling(git, () =>
+      const outcome = await runGitOpWithConflictHandling(asConflictAwareGit(git), () =>
         git.pull('origin', currentBranch),
       )
       if ('conflicts' in outcome) {
@@ -682,7 +609,16 @@ export function registerGitHandlers(): void {
         return { success: false, error: outcome.error }
       }
 
-      reimportProjectFromDir(config.localPath, projectId)
+      // Pull landed on disk; let any reimport failure surface explicitly so
+      // the user doesn't see "pull succeeded" while the DB is silently stale.
+      try {
+        reimportProjectFromDir(config.localPath, projectId)
+      } catch (e) {
+        return {
+          success: false,
+          error: `Pull succeeded but importing the new state failed: ${(e as Error).message}`,
+        }
+      }
       return { success: true, data: { pulled: true, state: 'clean', branch: currentBranch } }
     } catch (e) {
       return { success: false, error: (e as Error).message }

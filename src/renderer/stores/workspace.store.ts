@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Workspace, Project, TreeNode, Folder, Endpoint, SavedRequest } from '../types'
 import { useEnvironmentStore } from './environment.store'
+import { useBranchStore } from './branch.store'
 
 interface WorkspaceStore {
   initialized: boolean
@@ -235,6 +236,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
   setActiveProject: async (id) => {
+    // Any in-flight merge conflict belongs to the project we're leaving;
+    // dropping it here keeps the modal from re-appearing for a project the
+    // user isn't looking at anymore.
+    useBranchStore.getState().clearPendingConflict()
     set({ activeProjectId: id })
     // Reload environments/globals for the new scope
     await useEnvironmentStore.getState().setCurrentProject(id)

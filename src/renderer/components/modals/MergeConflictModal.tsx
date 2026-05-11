@@ -1,29 +1,59 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useBranchStore, type ConflictEntry, type ConflictStats } from '../../stores/branch.store'
 import { useTranslation } from '../../lib/i18n'
 
 /**
  * Renders when a merge or pull leaves the working tree with at least one
- * conflicted file. We deliberately do NOT offer three-way manual merging —
- * the project state is one big JSON, and a binary "use mine / use theirs"
- * choice resolves the realistic case (two collaborators saved divergent
- * collections) without asking the user to read structural diffs.
+ * conflicted file. Three-way manual editing is intentionally not offered —
+ * project state is one big JSON, and a binary "use mine / use theirs"
+ * choice resolves the realistic case (divergent collections) without
+ * asking the user to read structural diffs.
  *
  * Lifecycle:
  *  - branch.store.pendingConflict is set after a merge/pull returns conflicts
  *  - This modal is mounted unconditionally in AppShell; visibility is driven
- *    purely by `pendingConflict !== null`
+ *    by `pendingConflict !== null`
  *  - Resolution per file calls store.resolveConflict; once the last conflict
  *    clears, the store nulls out pendingConflict and we unmount
  */
+// Busy state is a per-side tag so the UI can disable BOTH cards while
+// resolving but show the spinner only on the one being processed. `null`
+// means idle; `aborting` blocks both cards too.
+type BusyState = { kind: 'resolving'; side: 'ours' | 'theirs' } | { kind: 'aborting' } | null
+
 export default function MergeConflictModal() {
   const { t } = useTranslation()
   const conflict = useBranchStore((s) => s.pendingConflict)
   const resolveConflict = useBranchStore((s) => s.resolveConflict)
   const abortConflict = useBranchStore((s) => s.abortConflict)
   const [activeFileIdx, setActiveFileIdx] = useState(0)
-  const [busy, setBusy] = useState<'resolving' | 'aborting' | null>(null)
+  const [busy, setBusy] = useState<BusyState>(null)
   const [error, setError] = useState<string | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  // Move focus into the modal on open so screen readers announce it and
+  // keyboard users start inside the dialog rather than on background tabs.
+  useEffect(() => {
+    if (conflict && dialogRef.current) {
+      dialogRef.current.focus()
+    }
+  }, [conflict])
+
+  // Escape triggers abort — same effect as clicking the footer button.
+  // We listen at the window level so the handler fires regardless of
+  // which interactive element currently has focus inside the dialog.
+  useEffect(() => {
+    if (!conflict) return
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === 'Escape' && busy === null) {
+        void abort()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // `abort` is stable via the store; busy is the only changing dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conflict, busy])
 
   if (!conflict) return null
 
@@ -34,21 +64,25 @@ export default function MergeConflictModal() {
 
   async function pick(side: 'ours' | 'theirs'): Promise<void> {
     if (!current) return
-    setBusy('resolving')
+    setBusy({ kind: 'resolving', side })
     setError(null)
-    const r = await resolveConflict(current.file, side)
+    const r = await resolveConflict(
+      current.file,
+      side,
+      // Locale-aware so collaborators see the commit message in whichever
+      // language the resolver uses. Falls back inside the handler if blank.
+      `${t('mergeConflict.commitMessage')} (${t(`mergeConflict.${side}`)})`,
+    )
     setBusy(null)
     if (!r.success) {
       setError(r.error || t('mergeConflict.resolveFailed'))
       return
     }
-    // If more files remain, jump to the next one. The store has already
-    // dropped the resolved file from the list, so index 0 is safe.
     if (!r.complete) setActiveFileIdx(0)
   }
 
   async function abort(): Promise<void> {
-    setBusy('aborting')
+    setBusy({ kind: 'aborting' })
     setError(null)
     const r = await abortConflict()
     setBusy(null)
@@ -83,7 +117,12 @@ export default function MergeConflictModal() {
       style={{ background: 'rgba(0,0,0,0.45)' }}
     >
       <div
-        className="flex w-[640px] max-w-[92vw] flex-col rounded-lg shadow-xl"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="merge-conflict-title"
+        tabIndex={-1}
+        className="flex w-[640px] max-w-[92vw] flex-col rounded-lg shadow-xl outline-none"
         style={{ background: 'var(--white)', border: '1px solid var(--border)' }}
       >
         {/* Header */}
@@ -92,9 +131,15 @@ export default function MergeConflictModal() {
           style={{ borderColor: 'var(--border)' }}
         >
           <div className="flex items-center gap-2">
-            <span style={{ fontSize: 18 }}>⚠️</span>
+            <span style={{ fontSize: 18 }} aria-hidden="true">
+              ⚠️
+            </span>
             <div>
-              <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+              <div
+                id="merge-conflict-title"
+                className="text-sm font-semibold"
+                style={{ color: 'var(--text)' }}
+              >
                 {conflict.origin === 'merge'
                   ? t('mergeConflict.titleMerge')
                   : t('mergeConflict.titlePull')}
@@ -158,7 +203,7 @@ export default function MergeConflictModal() {
                 accentBg={s.accentBg}
                 onPick={() => pick(s.side)}
                 disabled={busy !== null}
-                picking={busy === 'resolving'}
+                picking={busy?.kind === 'resolving' && busy.side === s.side}
                 t={t}
               />
             ))}
@@ -198,7 +243,7 @@ export default function MergeConflictModal() {
               cursor: busy !== null ? 'not-allowed' : 'pointer',
             }}
           >
-            {busy === 'aborting' ? t('mergeConflict.aborting') : t('mergeConflict.abort')}
+            {busy?.kind === 'aborting' ? t('mergeConflict.aborting') : t('mergeConflict.abort')}
           </button>
         </div>
       </div>

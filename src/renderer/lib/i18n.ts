@@ -1192,6 +1192,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mergeConflict.footerHint': 'You can resolve other files one by one.',
     'mergeConflict.resolveFailed': 'Could not resolve this file.',
     'mergeConflict.abortFailed': 'Could not abort the merge.',
+    'mergeConflict.commitMessage': 'Resolve merge conflict',
   },
 
   tr: {
@@ -2383,6 +2384,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mergeConflict.footerHint': 'Diğer dosyaları teker teker çözebilirsiniz.',
     'mergeConflict.resolveFailed': 'Bu dosya çözülemedi.',
     'mergeConflict.abortFailed': 'Merge iptal edilemedi.',
+    'mergeConflict.commitMessage': 'Merge çakışması çözüldü',
   },
 }
 
