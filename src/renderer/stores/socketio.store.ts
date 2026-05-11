@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { useWorkspaceStore } from './workspace.store'
+import { useEnvironmentStore } from './environment.store'
+import { resolveVariables } from '../lib/variable-resolver'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -124,10 +126,18 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
     }
 
     const ws = useWorkspaceStore.getState()
+    // Resolve `{{var}}` in URL / namespace / bearer token so users can
+    // share connection details via env (`wss://{{host}}/ws`,
+    // `Bearer {{authToken}}`, etc.) — matches the HTTP/SOAP/GraphQL
+    // behaviour at the editor's Send moment.
+    const vars = useEnvironmentStore.getState().getActiveVariables()
+    const resolvedUrl = resolveVariables(url, vars)
+    const resolvedNamespace = resolveVariables(namespace || '/', vars)
+    const resolvedToken = resolveVariables(bearerToken || '', vars)
     const res = await api.connect({
-      url,
-      namespace: namespace || '/',
-      auth: bearerToken ? { token: bearerToken } : undefined,
+      url: resolvedUrl,
+      namespace: resolvedNamespace || '/',
+      auth: resolvedToken ? { token: resolvedToken } : undefined,
       _workspaceId: ws.activeWorkspaceId || undefined,
       _projectId: ws.activeProjectId || undefined,
     })
@@ -173,13 +183,16 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
   emit: async () => {
     const { connectionId, emitEvent, emitPayload } = get()
     if (!connectionId || !emitEvent.trim()) return
-    let data: unknown = emitPayload
+    const vars = useEnvironmentStore.getState().getActiveVariables()
+    const resolvedEvent = resolveVariables(emitEvent, vars)
+    const resolvedPayload = resolveVariables(emitPayload, vars)
+    let data: unknown = resolvedPayload
     try {
-      data = JSON.parse(emitPayload)
+      data = JSON.parse(resolvedPayload)
     } catch {
       /* send as string */
     }
-    await getSioApi()?.emit(connectionId, emitEvent, data)
+    await getSioApi()?.emit(connectionId, resolvedEvent, data)
   },
 
   subscribe: async () => {

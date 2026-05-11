@@ -1,20 +1,21 @@
 /**
  * Templating layer for mock-server response bodies and headers.
  *
- * Two-pass render:
- *   1. Handlebars template (supports {{#if}}, {{#each}}, {{lookup}}, {{> partial}}, …)
- *   2. Variable resolver-style substitutions for built-in dynamic values:
- *        {{$timestamp}}, {{$isoTimestamp}}, {{$randomUUID}},
- *        {{$randomInt}}, {{$randomInt(min,max)}}, {{$randomEmail}},
- *        {{$randomString}}, {{$randomString(n)}}.
+ * Three-pass render:
+ *   1. Dynamic values: `{{$timestamp}}`, `{{$randomUUID}}`, `{{$randomInt}}`,
+ *      `{{$randomString(n)}}` etc.
+ *   2. Environment variables: `{{baseUrl}}` etc. — resolved against the
+ *      project's active env + globals so mock responses pick up the same
+ *      values as "Send" in the request editor.
+ *   3. Handlebars: `{{#if}}`, `{{#each}}`, `{{request.path}}`, `{{state.x}}`
+ *      and our small helper set (json, eq, neq, upper, lower, default).
  *
- * The first pass runs first because Handlebars treats `$timestamp` as a missing
- * helper and would emit empty strings — so we delay the dynamic-value replacement
- * to a post-step that operates on Handlebars output. Templates without Handlebars
- * markup pass through unchanged.
+ * Steps 1 and 2 run before Handlebars sees the template — Handlebars would
+ * treat `{{baseUrl}}` as a context lookup and emit empty strings otherwise.
  */
 
 import Handlebars from 'handlebars'
+import { resolveVariables } from '../lib/variable-resolver'
 
 export interface TemplateContext {
   request: {
@@ -28,6 +29,12 @@ export interface TemplateContext {
   }
   /** When true, response body is also surfaced (used by interceptors). */
   state?: Record<string, unknown>
+  /**
+   * Project env vars + globals. Pre-applied to the template before
+   * Handlebars compiles it so plain `{{baseUrl}}` placeholders work the
+   * same way they do in the request editor.
+   */
+  envVars?: Record<string, string>
 }
 
 const hb = Handlebars.create()
@@ -41,12 +48,18 @@ hb.registerHelper('lower', (s: unknown) => String(s ?? '').toLowerCase())
 hb.registerHelper('default', (a: unknown, b: unknown) => ((a ?? '') === '' ? b : a))
 
 /** Render a template against a context. Errors return the literal source.
- *  Order matters: we apply dynamic values FIRST, before Handlebars compiles
- *  the template. Handlebars treats `{{$randomUUID}}` as a missing context
- *  lookup and would emit empty strings; pre-resolving them sidesteps that. */
+ *
+ *  Pass order: dynamic values → env vars → Handlebars. Both pre-passes
+ *  happen before Handlebars compiles the template so plain `{{baseUrl}}`
+ *  / `{{$randomUUID}}` placeholders aren't treated as Handlebars context
+ *  lookups (which would emit empty strings). */
 export function renderTemplate(source: string, ctx: TemplateContext): string {
   if (!source) return ''
-  const stage0 = applyDynamicValues(source)
+  // `resolveVariables` from the shared resolver handles both `{{$dynamic}}`
+  // and plain `{{varName}}` against the provided env map. If no env vars
+  // were supplied, fall back to the standalone dynamic-only pass so
+  // existing tests / call sites keep working.
+  const stage0 = ctx.envVars ? resolveVariables(source, ctx.envVars) : applyDynamicValues(source)
   try {
     const compiled = hb.compile(stage0, { noEscape: true })
     return compiled(ctx)

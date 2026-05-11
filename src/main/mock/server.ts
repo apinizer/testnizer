@@ -15,6 +15,7 @@ import { EventEmitter } from 'node:events'
 import { matchEndpoint, type MatchableEndpoint } from './matcher'
 import { evaluateCondition } from './condition'
 import { renderTemplate, type TemplateContext } from './template'
+import { loadEnvVars } from '../lib/env-vars'
 import { getState, clearState } from './state'
 import { runScript, type ScriptResponse } from './script'
 import { checkAuth, resolveAuthConfig } from './auth'
@@ -84,6 +85,12 @@ export interface MockServerDef {
   proxyTarget: string
   proxyRecord: boolean
   endpoints: MockEndpointDef[]
+  /**
+   * Project + workspace the server belongs to. Used at request time to
+   * load env / globals so response templates can use `{{baseUrl}}` etc.
+   */
+  projectId?: string
+  workspaceId?: string
 }
 
 interface RunningServer {
@@ -481,7 +488,20 @@ class MockServerManager extends EventEmitter {
     // Apply optional latency.
     if (picked.delayMs > 0) await delay(picked.delayMs)
 
-    // Render templates against the request context.
+    // Render templates against the request context. Env vars resolved
+    // per-request so projects that change their active environment mid-run
+    // pick up the new values without restarting the mock server.
+    let envVars: Record<string, string> | undefined
+    if (s.def.projectId) {
+      try {
+        envVars = loadEnvVars({
+          projectId: s.def.projectId,
+          workspaceId: s.def.workspaceId,
+        })
+      } catch {
+        /* fall through with no env — mock still responds */
+      }
+    }
     const ctx: TemplateContext = {
       request: {
         method,
@@ -493,6 +513,7 @@ class MockServerManager extends EventEmitter {
         bodyText,
       },
       state: getState(s.def.id),
+      envVars,
     }
     const renderedBody = renderTemplate(picked.body, ctx)
     const renderedHeaders: Record<string, string> = {}

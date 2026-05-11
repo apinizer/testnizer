@@ -94,6 +94,19 @@ function buildServerDef(serverId: string): MockServerDef | null {
     proxyEnabled: !!snap.server.proxy_enabled,
     proxyTarget: snap.server.proxy_target,
     proxyRecord: !!snap.server.proxy_record,
+    projectId: snap.server.project_id,
+    // Look up workspace from the project — mock_servers doesn't store it
+    // directly and the env-var loader needs both scopes.
+    workspaceId: (() => {
+      try {
+        const proj = require('../db/project.repo').getProjectById(snap.server.project_id) as
+          | { workspace_id: string }
+          | undefined
+        return proj?.workspace_id
+      } catch {
+        return undefined
+      }
+    })(),
     endpoints: snap.endpoints.map(({ endpoint, responses }) => ({
       id: endpoint.id,
       method: endpoint.method as MockMethod,

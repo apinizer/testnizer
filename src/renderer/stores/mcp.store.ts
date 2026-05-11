@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { useWorkspaceStore } from './workspace.store'
+import { useEnvironmentStore } from './environment.store'
+import { resolveVariables } from '../lib/variable-resolver'
 
 export type McpTransport = 'http' | 'sse' | 'stdio'
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
@@ -147,7 +149,12 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       set({ connectionState: 'error', errorMessage: 'API not available' })
       return
     }
-    const res = await api.connect({ transport, url })
+    // Resolve `{{var}}` placeholders in the server URL the same way HTTP /
+    // SOAP / GraphQL do — otherwise users can't parameterise local stdio /
+    // SSE endpoints via environments.
+    const vars = useEnvironmentStore.getState().getActiveVariables()
+    const resolvedUrl = resolveVariables(url, vars)
+    const res = await api.connect({ transport, url: resolvedUrl })
     if (res.success && res.data) {
       set({
         connectionId: res.data.connectionId,
@@ -193,9 +200,13 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       set({ isInvoking: false })
       return
     }
+    // Resolve `{{var}}` in the JSON text before parsing so users can put
+    // env / global / dynamic placeholders anywhere in the args body.
+    const vars = useEnvironmentStore.getState().getActiveVariables()
+    const resolvedArgsText = resolveVariables(toolArgs, vars)
     let args: Record<string, unknown> = {}
     try {
-      args = JSON.parse(toolArgs)
+      args = JSON.parse(resolvedArgsText)
     } catch {
       set({ isInvoking: false, resultError: 'Invalid JSON in arguments' })
       return

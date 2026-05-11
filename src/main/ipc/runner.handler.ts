@@ -8,6 +8,7 @@ import * as historyRepo from '../db/history.repo'
 import { getDb } from '../db/database'
 import { isRunnableInProject } from '../lib/ownership'
 import { resolveVariables } from '../lib/variable-resolver'
+import { loadEnvVars } from '../lib/env-vars'
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -302,26 +303,42 @@ function runAssertionsMainProcess(
     bodySize?: number
     timing: ResponseTiming
   },
+  envVars: Record<string, string>,
 ): AssertionResult[] {
+  // Inline helpers — the assertion's `expected` field is sometimes a string
+  // (body_contains, header_equals) and sometimes a number (status_equals,
+  // response_time_under). Both forms can contain `{{var}}` so we resolve
+  // through the string form and let the caller coerce as needed.
+  const resolveStr = (v: unknown): string =>
+    typeof v === 'string' ? resolveVariables(v, envVars) : v == null ? '' : String(v)
+  const resolveNum = (v: unknown, fallback: number): number => {
+    const resolved =
+      typeof v === 'string' ? resolveVariables(v, envVars) : v == null ? '' : String(v)
+    const n = Number(resolved)
+    return Number.isFinite(n) ? n : fallback
+  }
   return assertions
     .filter((a) => a.enabled)
     .map((assertion) => {
       try {
         switch (assertion.type) {
           case 'status_equals': {
-            const expected = Number(assertion.expected)
+            const expected = resolveNum(assertion.expected, NaN)
             const actual = response.status ?? 0
             return { name: assertion.name, passed: actual === expected, actual }
           }
           case 'status_in_range': {
             const actual = response.status ?? 0
-            const min = assertion.rangeMin ?? 0
-            const max = assertion.rangeMax ?? 999
+            // rangeMin / rangeMax are typed as number but the form fields
+            // accept text input, so the user may smuggle a `{{var}}` in
+            // there too — coerce defensively.
+            const min = resolveNum(assertion.rangeMin, 0)
+            const max = resolveNum(assertion.rangeMax, 999)
             return { name: assertion.name, passed: actual >= min && actual <= max, actual }
           }
           case 'body_contains': {
             const body = response.body ?? ''
-            const expected = String(assertion.expected ?? '')
+            const expected = resolveStr(assertion.expected)
             return {
               name: assertion.name,
               passed: body.includes(expected),
@@ -329,35 +346,35 @@ function runAssertionsMainProcess(
             }
           }
           case 'header_exists': {
-            const headerName = (assertion.headerName ?? '').toLowerCase()
+            const headerName = resolveStr(assertion.headerName).toLowerCase()
             const headers = response.headers ?? {}
             const found = Object.keys(headers).some((k) => k.toLowerCase() === headerName)
             return { name: assertion.name, passed: found, actual: found ? 'exists' : 'not found' }
           }
           case 'header_equals': {
-            const headerName = (assertion.headerName ?? '').toLowerCase()
+            const headerName = resolveStr(assertion.headerName).toLowerCase()
             const headers = response.headers ?? {}
             const entry = Object.entries(headers).find(([k]) => k.toLowerCase() === headerName)
             const actual = entry ? entry[1] : ''
-            const expected = String(assertion.expected ?? '')
+            const expected = resolveStr(assertion.expected)
             return { name: assertion.name, passed: actual === expected, actual }
           }
           case 'header_contains': {
-            const headerName = (assertion.headerName ?? '').toLowerCase()
+            const headerName = resolveStr(assertion.headerName).toLowerCase()
             const headers = response.headers ?? {}
             const entry = Object.entries(headers).find(([k]) => k.toLowerCase() === headerName)
             const actual = entry ? entry[1] : ''
-            const expected = String(assertion.expected ?? '')
+            const expected = resolveStr(assertion.expected)
             return { name: assertion.name, passed: actual.includes(expected), actual }
           }
           case 'response_time_under': {
             const actual = response.timing.total
-            const expected = Number(assertion.expected ?? 0)
+            const expected = resolveNum(assertion.expected, 0)
             return { name: assertion.name, passed: actual < expected, actual }
           }
           case 'response_size_under': {
             const actual = response.bodySize ?? 0
-            const expected = Number(assertion.expected ?? 0)
+            const expected = resolveNum(assertion.expected, 0)
             return { name: assertion.name, passed: actual < expected, actual }
           }
           default:
@@ -698,49 +715,15 @@ function delay(ms: number): Promise<void> {
 
 // ─── Variable Resolution ─────────────────────────────────────────
 
+// Variable loading lives in `lib/env-vars.ts` so the mock server can share
+// the exact same scope-merge logic as the runner. Inline thin wrapper kept
+// for the existing call site below.
 function loadEnvironmentVariables(
   environmentId: string | undefined,
   workspaceId: string | undefined,
   projectId: string | undefined,
 ): Record<string, string> {
-  const vars: Record<string, string> = {}
-  const db = getDb()
-
-  // Layer 1: workspace-level globals (broadest scope, lowest priority).
-  if (workspaceId) {
-    const globals = db
-      .prepare('SELECT key, value FROM global_variables WHERE workspace_id = ? AND enabled = 1')
-      .all(workspaceId) as Array<{ key: string; value: string }>
-    for (const g of globals) {
-      vars[g.key] = g.value
-    }
-  }
-
-  // Layer 2: project-level globals. The renderer's resolver loads these via
-  // `environment.store.loadAll(projectId)`, so omitting them here was the
-  // reason runner output diverged from "Send".
-  if (projectId) {
-    const projGlobals = db
-      .prepare('SELECT key, value FROM global_variables WHERE project_id = ? AND enabled = 1')
-      .all(projectId) as Array<{ key: string; value: string }>
-    for (const g of projGlobals) {
-      vars[g.key] = g.value
-    }
-  }
-
-  // Layer 3: environment variables (highest priority).
-  if (environmentId) {
-    const envVars = db
-      .prepare(
-        'SELECT key, value FROM environment_variables WHERE environment_id = ? AND enabled = 1',
-      )
-      .all(environmentId) as Array<{ key: string; value: string }>
-    for (const v of envVars) {
-      vars[v.key] = v.value
-    }
-  }
-
-  return vars
+  return loadEnvVars({ environmentId, workspaceId, projectId })
 }
 
 // Renamed for clarity — `resolveVariables` from the shared resolver handles
@@ -1013,14 +996,20 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
           )
           const assertions = schema.assertions ?? []
 
-          const declarativeAssertions = runAssertionsMainProcess(assertions, {
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers,
-            body: response.body,
-            bodySize: response.bodySize,
-            timing: response.timing,
-          })
+          const declarativeAssertions = runAssertionsMainProcess(
+            assertions,
+            {
+              status: response.status,
+              statusText: response.statusText,
+              headers: response.headers,
+              body: response.body,
+              bodySize: response.bodySize,
+              timing: response.timing,
+            },
+            // envVars at this point reflects any pre-script `pm.environment.set`
+            // calls — assertions see the same variable space the request did.
+            envVars,
+          )
           const assertionResults = [...declarativeAssertions, ...scriptTestResults]
 
           const passed = assertionResults.filter((a) => a.passed).length
