@@ -7,6 +7,7 @@ import * as endpointRepo from '../db/endpoint.repo'
 import * as historyRepo from '../db/history.repo'
 import { getDb } from '../db/database'
 import { isRunnableInProject } from '../lib/ownership'
+import { resolveVariables } from '../lib/variable-resolver'
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -698,13 +699,14 @@ function delay(ms: number): Promise<void> {
 // ─── Variable Resolution ─────────────────────────────────────────
 
 function loadEnvironmentVariables(
-  environmentId?: string,
-  workspaceId?: string,
+  environmentId: string | undefined,
+  workspaceId: string | undefined,
+  projectId: string | undefined,
 ): Record<string, string> {
   const vars: Record<string, string> = {}
   const db = getDb()
 
-  // Load global variables
+  // Layer 1: workspace-level globals (broadest scope, lowest priority).
   if (workspaceId) {
     const globals = db
       .prepare('SELECT key, value FROM global_variables WHERE workspace_id = ? AND enabled = 1')
@@ -714,7 +716,19 @@ function loadEnvironmentVariables(
     }
   }
 
-  // Load environment variables (override globals)
+  // Layer 2: project-level globals. The renderer's resolver loads these via
+  // `environment.store.loadAll(projectId)`, so omitting them here was the
+  // reason runner output diverged from "Send".
+  if (projectId) {
+    const projGlobals = db
+      .prepare('SELECT key, value FROM global_variables WHERE project_id = ? AND enabled = 1')
+      .all(projectId) as Array<{ key: string; value: string }>
+    for (const g of projGlobals) {
+      vars[g.key] = g.value
+    }
+  }
+
+  // Layer 3: environment variables (highest priority).
   if (environmentId) {
     const envVars = db
       .prepare(
@@ -729,13 +743,11 @@ function loadEnvironmentVariables(
   return vars
 }
 
+// Renamed for clarity — `resolveVariables` from the shared resolver handles
+// `{{$dynamicValue}}` + chained refs that the old runner-local function
+// silently skipped.
 function resolveRunnerVariables(template: string, vars: Record<string, string>): string {
-  if (!template) return template
-  return template.replace(/\{\{([^}]+)\}\}/g, (_match, expression: string) => {
-    const trimmed = expression.trim()
-    if (trimmed in vars) return vars[trimmed]
-    return `{{${trimmed}}}`
-  })
+  return resolveVariables(template, vars)
 }
 
 function resolveRequestOptions(
@@ -823,8 +835,26 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   const endpointsPerIteration = options.endpointIds.length
   const total = endpointsPerIteration * iterations
 
-  // Load environment variables for interpolation
-  const envVars = loadEnvironmentVariables(options.environmentId, options.workspaceId)
+  // Load environment variables for interpolation.
+  //
+  // Auto-run paths (right-click → Run from APIs tree, Suite Run from Tests
+  // panel) don't carry an explicit `environmentId`. Without a fallback the
+  // runner ran with empty env vars and produced unresolved `{{var}}`
+  // payloads — the headline bug for this commit. Fall back to whatever the
+  // project has registered as the active environment so the runner output
+  // matches what "Send" would produce for the same request.
+  let effectiveEnvId = options.environmentId
+  if (!effectiveEnvId && options.projectId) {
+    try {
+      const row = getDb()
+        .prepare('SELECT id FROM environments WHERE project_id = ? AND is_active = 1 LIMIT 1')
+        .get(options.projectId) as { id: string } | undefined
+      effectiveEnvId = row?.id || undefined
+    } catch {
+      /* no active env — fall through with globals-only resolution */
+    }
+  }
+  const envVars = loadEnvironmentVariables(effectiveEnvId, options.workspaceId, options.projectId)
 
   let totalAssertions = 0
   let passedAssertions = 0

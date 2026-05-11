@@ -97,6 +97,17 @@ function EndpointTabBar() {
   const [contextMenu, setContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(
     null,
   )
+  // Drag-and-drop reorder. `dropBeforeId === null` means "drop after the
+  // last tab" — drawn as a marker on the right edge of the strip.
+  const [dropBeforeId, setDropBeforeId] = useState<string | null | undefined>(undefined)
+  const moveTab = useTabsStore((s) => s.moveTab)
+
+  const TAB_DND_MIME = 'application/testnizer-tab'
+
+  function readDraggedTabId(e: React.DragEvent): string | null {
+    const raw = e.dataTransfer.getData(TAB_DND_MIME)
+    return raw || null
+  }
 
   useEffect(() => {
     if (!contextMenu) return
@@ -293,10 +304,46 @@ function EndpointTabBar() {
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId
         const isPreview = tab.isPreview
+        const isDropTarget = dropBeforeId === tab.id
         return (
           <div
             key={tab.id}
             className="group"
+            draggable={renamingTabId !== tab.id}
+            onDragStart={(e) => {
+              e.dataTransfer.setData(TAB_DND_MIME, tab.id)
+              e.dataTransfer.effectAllowed = 'move'
+            }}
+            onDragOver={(e) => {
+              if (!e.dataTransfer.types.includes(TAB_DND_MIME)) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+              // Left half of the tab → insert before this tab; right half →
+              // insert before the NEXT tab. We just toggle the marker; the
+              // store call happens on drop.
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+              const before = e.clientX - rect.left < rect.width / 2
+              const targetId = before ? tab.id : null /* placeholder, replaced below */
+              if (!before) {
+                const idx = tabs.findIndex((t) => t.id === tab.id)
+                const next = tabs[idx + 1]
+                setDropBeforeId(next ? next.id : null)
+              } else {
+                setDropBeforeId(targetId)
+              }
+            }}
+            onDragLeave={() => {
+              // Defer so we don't flicker when the cursor crosses into an
+              // adjacent tab's onDragOver. Cleared on drop anyway.
+            }}
+            onDrop={(e) => {
+              if (!e.dataTransfer.types.includes(TAB_DND_MIME)) return
+              e.preventDefault()
+              const draggedId = readDraggedTabId(e)
+              setDropBeforeId(undefined)
+              if (!draggedId || draggedId === tab.id) return
+              moveTab(draggedId, dropBeforeId === undefined ? tab.id : dropBeforeId)
+            }}
             onClick={() => handleSwitchTab(tab.id)}
             onDoubleClick={() => {
               // Double-click pins preview tab (Postman behavior)
@@ -323,6 +370,8 @@ function EndpointTabBar() {
               fontWeight: isActive ? 500 : 400,
               fontStyle: isPreview ? 'italic' : 'normal',
               borderBottom: isActive ? `2px solid ${T.accent}` : '2px solid transparent',
+              // Left-edge marker for drop-before-this-tab.
+              boxShadow: isDropTarget ? `inset 2px 0 0 0 ${T.accent}` : undefined,
               color: isActive ? T.text : T.muted,
               whiteSpace: 'nowrap',
               flexShrink: 0,
@@ -424,8 +473,24 @@ function EndpointTabBar() {
         +
       </div>
 
-      {/* Push environment selector to right end */}
-      <div style={{ flex: 1 }} />
+      {/* Drop zone for "move tab to end" — covers the empty space to the
+          right of the + button so users can drop past every existing tab. */}
+      <div
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes(TAB_DND_MIME)) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          if (dropBeforeId !== null) setDropBeforeId(null)
+        }}
+        onDrop={(e) => {
+          if (!e.dataTransfer.types.includes(TAB_DND_MIME)) return
+          e.preventDefault()
+          const draggedId = readDraggedTabId(e)
+          setDropBeforeId(undefined)
+          if (draggedId) moveTab(draggedId, null)
+        }}
+        style={{ flex: 1, height: '100%' }}
+      />
 
       {/* Environment selector (Postman parity — right end of tab bar) */}
       <div className="flex shrink-0 items-center" style={{ paddingRight: 10, paddingLeft: 8 }}>

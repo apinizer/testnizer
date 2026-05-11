@@ -18,6 +18,12 @@ interface TabsStore {
   /** Drop every open tab — used on project switch to prevent stale endpoint
    * references from leaking across project boundaries. */
   closeAllTabs: () => void
+  /**
+   * Reorder tabs by drag-drop. Moves `tabId` to the position immediately
+   * before `beforeTabId`; pass `null` to move it to the end. No-op when the
+   * source/target are the same id or when either id isn't currently open.
+   */
+  moveTab: (tabId: string, beforeTabId: string | null) => void
   setActiveTab: (id: string | null) => void
   updateTab: (id: string, updates: Partial<Tab>) => void
   markDirty: (id: string, dirty: boolean) => void
@@ -158,6 +164,24 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
     }),
 
   closeAllTabs: () => set({ tabs: [], activeTabId: null }),
+
+  moveTab: (tabId, beforeTabId) =>
+    set((state) => {
+      if (tabId === beforeTabId) return state
+      const fromIdx = state.tabs.findIndex((t) => t.id === tabId)
+      if (fromIdx < 0) return state
+      const moved = state.tabs[fromIdx]
+      const without = state.tabs.filter((t) => t.id !== tabId)
+      const insertAt =
+        beforeTabId === null
+          ? without.length
+          : (() => {
+              const idx = without.findIndex((t) => t.id === beforeTabId)
+              return idx < 0 ? without.length : idx
+            })()
+      const next = [...without.slice(0, insertAt), moved, ...without.slice(insertAt)]
+      return { tabs: next }
+    }),
 
   setActiveTab: (id) => set({ activeTabId: id || null }),
 
