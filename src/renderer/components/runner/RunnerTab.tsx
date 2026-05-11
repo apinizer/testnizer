@@ -165,6 +165,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const treeData = useWorkspaceStore((s) => s.treeData)
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
+  // Share the right-panel collapse flag with the API workbench so the
+  // "All variables" toggle behaves identically across screens.
+  const rightPanelCollapsed = useUIStore((s) => s.rightPanelCollapsed)
 
   const [endpoints, setEndpoints] = useState<RunnerEndpointItem[]>([])
   const [folderGroups, setFolderGroups] = useState<RunnerFolderGroup[]>([])
@@ -654,13 +657,70 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         )}
       </div>
 
-      {/* Resize divider for variables panel */}
-      <ResizeDivider onDrag={handleVariablesResize} />
-
-      {/* Right: All Variables — resizable */}
-      <div style={{ width: variablesWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
-        <RunnerVariables environmentId={environmentId} fillParent />
-      </div>
+      {/* Right: All Variables — collapsible (mirrors the API request screen's
+          right-panel toggle so users get the same hide/show behaviour
+          everywhere). Resize handle is hidden while collapsed. */}
+      {!rightPanelCollapsed && <ResizeDivider onDrag={handleVariablesResize} />}
+      {rightPanelCollapsed ? (
+        <div
+          className="flex shrink-0 flex-col items-center gap-1 border-l border-[var(--border)] bg-[var(--bg)] py-2"
+          style={{ width: 40 }}
+        >
+          <button
+            type="button"
+            onClick={() => useUIStore.getState().setRightPanelCollapsed(false)}
+            title="Show variables"
+            className="flex cursor-pointer items-center justify-center rounded p-1.5 text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--accent)]"
+            style={{ background: 'transparent', border: 'none' }}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4 11h16M4 17h16M4 5h16" />
+            </svg>
+          </button>
+        </div>
+      ) : (
+        <div
+          style={{
+            width: variablesWidth,
+            flexShrink: 0,
+            overflow: 'hidden',
+            display: 'flex',
+            position: 'relative',
+          }}
+        >
+          <RunnerVariables environmentId={environmentId} fillParent />
+          {/* Collapse button — top-right of the variables panel */}
+          <button
+            type="button"
+            onClick={() => useUIStore.getState().setRightPanelCollapsed(true)}
+            title="Collapse panel"
+            className="absolute right-1 top-1 z-10 flex cursor-pointer items-center justify-center rounded p-1 text-[var(--muted)] hover:text-[var(--text)]"
+            style={{ background: 'transparent', border: 'none' }}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   )
 }

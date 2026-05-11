@@ -7,6 +7,7 @@ export default function HeadersTab() {
   const updateHeader = useRequestStore((s) => s.updateHeader)
   const removeHeader = useRequestStore((s) => s.removeHeader)
   const addHeader = useRequestStore((s) => s.addHeader)
+  const setHeaders = useRequestStore((s) => s.setHeaders)
 
   return (
     <div>
@@ -15,6 +16,7 @@ export default function HeadersTab() {
         onUpdate={updateHeader}
         onRemove={removeHeader}
         onAdd={addHeader}
+        onReplaceAll={setHeaders}
         addLabel="+ Add Header"
         enableAutocomplete
         keyAutocompleteEntries={STANDARD_HTTP_HEADERS}

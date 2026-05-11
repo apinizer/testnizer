@@ -63,6 +63,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'kv.description': 'Description',
     'kv.addNew': 'Add new...',
     'kv.type': 'Type',
+    'kv.bulkEdit': 'Bulk Edit',
+    'kv.keyValueEdit': 'Key-Value Edit',
 
     // Form-data file uploads
     'formdata.text': 'Text',
@@ -1266,6 +1268,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'kv.description': 'Açıklama',
     'kv.addNew': 'Yeni ekle...',
     'kv.type': 'Tür',
+    'kv.bulkEdit': 'Toplu Düzenle',
+    'kv.keyValueEdit': 'Anahtar-Değer Düzenle',
 
     // Form-data file uploads
     'formdata.text': 'Metin',

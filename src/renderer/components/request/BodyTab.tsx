@@ -42,7 +42,9 @@ export default function BodyTab() {
       try {
         const formatted = JSON.stringify(JSON.parse(body.content), null, 2)
         setBody({ ...body, content: formatted })
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     if (body.type === 'xml' && body.content) {
       // Basic XML prettify
@@ -54,7 +56,13 @@ export default function BodyTab() {
           const trimmed = line.trim()
           if (trimmed.startsWith('</')) indent = Math.max(0, indent - 1)
           const padded = '  '.repeat(indent) + trimmed
-          if (trimmed.startsWith('<') && !trimmed.startsWith('</') && !trimmed.startsWith('<?') && !trimmed.endsWith('/>') && !trimmed.includes('</')) {
+          if (
+            trimmed.startsWith('<') &&
+            !trimmed.startsWith('</') &&
+            !trimmed.startsWith('<?') &&
+            !trimmed.endsWith('/>') &&
+            !trimmed.includes('</')
+          ) {
             indent++
           }
           return padded
@@ -66,7 +74,7 @@ export default function BodyTab() {
 
   const handleFormDataUpdate = (id: string, updates: Partial<KeyValuePair>) => {
     const formData = (body.formData || []).map((item) =>
-      item.id === id ? { ...item, ...updates } : item
+      item.id === id ? { ...item, ...updates } : item,
     )
     setBody({ ...body, formData })
   }
@@ -82,7 +90,7 @@ export default function BodyTab() {
 
   const handleUrlEncodedUpdate = (id: string, updates: Partial<KeyValuePair>) => {
     const urlEncoded = (body.urlEncoded || []).map((item) =>
-      item.id === id ? { ...item, ...updates } : item
+      item.id === id ? { ...item, ...updates } : item,
     )
     setBody({ ...body, urlEncoded })
   }
@@ -113,19 +121,31 @@ export default function BodyTab() {
     setBody({ ...body, urlEncoded: [...(body.urlEncoded || []), newItem] })
   }
 
-  const monacoLanguage = body.type === 'xml' ? 'xml'
-    : body.type === 'json' ? 'json'
-    : body.type === 'html' ? 'html'
-    : body.type === 'javascript' ? 'javascript'
-    : 'plaintext'
+  const handleUrlEncodedReplaceAll = (rows: KeyValuePair[]): void => {
+    setBody({ ...body, urlEncoded: rows })
+  }
+
+  const monacoLanguage =
+    body.type === 'xml'
+      ? 'xml'
+      : body.type === 'json'
+        ? 'json'
+        : body.type === 'html'
+          ? 'html'
+          : body.type === 'javascript'
+            ? 'javascript'
+            : 'plaintext'
 
   // Determine which top-level radio is selected
-  const activeRadio = isRawType(body.type) ? 'json' as BodyType : body.type
+  const activeRadio = isRawType(body.type) ? ('json' as BodyType) : body.type
 
   return (
     <div className="flex h-full flex-col">
       {/* Body type selector — Postman-style radio buttons */}
-      <div className="flex shrink-0 items-center gap-3 pb-1.5" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div
+        className="flex shrink-0 items-center gap-3 pb-1.5"
+        style={{ borderBottom: '1px solid var(--border)' }}
+      >
         {BODY_OPTIONS.map((opt) => {
           const isActive = opt.value === activeRadio
           return (
@@ -156,7 +176,9 @@ export default function BodyTab() {
               className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg)] px-1.5 py-px font-medium text-[var(--accent-text)] outline-none"
             >
               {RAW_FORMATS.map((f) => (
-                <option key={f.value} value={f.value}>{f.label}</option>
+                <option key={f.value} value={f.value}>
+                  {f.label}
+                </option>
               ))}
             </select>
           </>
@@ -213,6 +235,7 @@ export default function BodyTab() {
             onUpdate={handleUrlEncodedUpdate}
             onRemove={handleUrlEncodedRemove}
             onAdd={handleUrlEncodedAdd}
+            onReplaceAll={handleUrlEncodedReplaceAll}
             addLabel="+ Add Field"
           />
         </div>
@@ -230,7 +253,9 @@ export default function BodyTab() {
             </button>
             {body.binaryPath && (
               <div className="mt-1.5 flex items-center justify-center gap-2 text-[var(--muted)]">
-                <span className="truncate" style={{ maxWidth: 360 }}>{body.binaryPath}</span>
+                <span className="truncate" style={{ maxWidth: 360 }}>
+                  {body.binaryPath}
+                </span>
                 <button
                   type="button"
                   onClick={handleBinaryClear}

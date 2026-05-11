@@ -6,6 +6,7 @@ export default function ParamsTab() {
   const updateParam = useRequestStore((s) => s.updateParam)
   const removeParam = useRequestStore((s) => s.removeParam)
   const addParam = useRequestStore((s) => s.addParam)
+  const setParams = useRequestStore((s) => s.setParams)
 
   return (
     <div>
@@ -17,6 +18,7 @@ export default function ParamsTab() {
         onUpdate={updateParam}
         onRemove={removeParam}
         onAdd={addParam}
+        onReplaceAll={setParams}
         addLabel="+ Add Parameter"
       />
     </div>
