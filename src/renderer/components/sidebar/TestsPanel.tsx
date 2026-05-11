@@ -25,6 +25,7 @@ import type { Tab } from '../../types'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import MethodBadge from '../shared/MethodBadge'
 import { useTranslation } from '../../lib/i18n'
+import { openEndpointTab } from '../../lib/open-endpoint-tab'
 
 /* ── Types ─────────────────────────────────────────────────── */
 
@@ -748,15 +749,28 @@ function EndpointItem({
 }) {
   const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
+
+  // Clicking a suite endpoint should land the user in the same editor they'd
+  // get from the APIs tree — including assertions/scripts tabs — so they
+  // can edit it in-place. Without this the row was read-only and users
+  // couldn't reach the request body / assertion configuration at all.
+  const handleOpen = useCallback(() => {
+    // Switch the sidebar to APIs so the freshly-opened tab is on-screen.
+    useUIStore.getState().setActiveSidebarPage('apis')
+    void openEndpointTab(endpoint.id)
+  }, [endpoint.id])
+
   return (
     <div
-      className="flex items-center gap-2 py-[3px] pr-3"
+      className="flex cursor-pointer items-center gap-2 py-[3px] pr-3"
       style={{
         paddingLeft: indent + 28,
         background: hovered ? 'var(--item-hover)' : 'transparent',
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={handleOpen}
+      title={t('testsPanel.openEndpoint')}
     >
       {endpoint.method ? (
         <MethodBadge method={endpoint.method} small />

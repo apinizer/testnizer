@@ -1,21 +1,31 @@
 import { useEffect } from 'react'
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
-import UrlBar from './UrlBar'
-import RequestEditor from '../request/RequestEditor'
-import ResponsePane from '../response/ResponsePane'
-import { useRequestStore } from '../../stores/request.store'
+import Workbench from './Workbench'
+import { useTabsStore } from '../../stores/tabs.store'
 import { useAuthStore } from '../../stores/auth.store'
 import { LogOut } from 'lucide-react'
 
+/**
+ * Guest-mode shell. Previously this rendered an HTTP-only editor with no way
+ * to reach the other 8 protocols. It now reuses the main Workbench, which
+ * gives quick-test users the same 9-protocol welcome screen + tabs the
+ * authenticated app has — minus project/workspace concerns.
+ */
 export default function QuickTestShell() {
   const logout = useAuthStore((s) => s.logout)
 
-  // Initialize request store with defaults for quick test
+  // Seed an empty HTTP tab so Workbench renders NewRequestWelcome (the
+  // protocol picker) immediately — without this the user sees a blank pane
+  // on first launch.
   useEffect(() => {
-    const rs = useRequestStore.getState()
-    if (!rs.url) {
-      rs.setMethod('GET')
-      rs.setUrl('')
+    const { tabs, openTab } = useTabsStore.getState()
+    if (tabs.length === 0) {
+      openTab({
+        id: 'quick-test-' + Math.random().toString(36).slice(2, 10),
+        name: 'New Request',
+        protocol: 'http',
+        method: 'GET',
+        url: '',
+      })
     }
   }, [])
 
@@ -24,7 +34,7 @@ export default function QuickTestShell() {
       className="relative flex h-screen w-screen flex-col overflow-hidden"
       style={{ background: 'var(--bg)', color: 'var(--text)' }}
     >
-      {/* Minimal header */}
+      {/* Minimal header — kept lightweight so the protocol picker dominates */}
       <div
         className="drag-region flex shrink-0 items-center justify-between"
         style={{
@@ -36,7 +46,16 @@ export default function QuickTestShell() {
         }}
       >
         <div className="no-drag flex items-center gap-2">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
           </svg>
           <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Quick Test</span>
@@ -61,24 +80,10 @@ export default function QuickTestShell() {
         </button>
       </div>
 
-      {/* URL Bar */}
-      <UrlBar />
-
-      {/* Split pane: Request | Response */}
-      <PanelGroup direction="vertical" className="flex-1">
-        <Panel defaultSize={50} minSize={20} maxSize={80}>
-          <RequestEditor />
-        </Panel>
-
-        <PanelResizeHandle
-          className="shrink-0"
-          style={{ height: 1, background: 'var(--border)', cursor: 'row-resize' }}
-        />
-
-        <Panel defaultSize={50} minSize={20} maxSize={80}>
-          <ResponsePane />
-        </Panel>
-      </PanelGroup>
+      {/* Full workbench — protocol picker + per-protocol editors handled there */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <Workbench />
+      </div>
     </div>
   )
 }

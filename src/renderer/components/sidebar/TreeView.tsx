@@ -545,13 +545,7 @@ export default function TreeView() {
       }
 
       try {
-        // Cast through narrow shape — tree:* bridge isn't typed in ApiBridge yet.
-        const treeBridge = (
-          window as unknown as {
-            api: { tree: { move: (p: unknown) => Promise<{ success: boolean; error?: string }> } }
-          }
-        ).api.tree
-        const r = await treeBridge.move({
+        const r = await window.api?.tree?.move({
           nodeId: payload.id,
           nodeType: payload.nodeType,
           targetFolderId,
@@ -575,43 +569,14 @@ export default function TreeView() {
       const ids = collectRequestIdsRecursive(folderNode)
       if (ids.length === 0) return
       try {
-        // The mock IPC bridge isn't in the ApiBridge type yet, so cast through
-        // the same narrow shape mock.store.ts uses.
-        const mockApi = (
-          window as unknown as {
-            api: {
-              mock: {
-                server: {
-                  list: (
-                    projectId: string,
-                  ) => Promise<{ success: boolean; data?: Array<{ port: number }> }>
-                  create: (input: {
-                    projectId: string
-                    name: string
-                    host?: string
-                    port: number
-                  }) => Promise<{ success: boolean; data?: { id: string } }>
-                }
-                endpoint: {
-                  create: (input: {
-                    serverId: string
-                    method?: string
-                    path: string
-                  }) => Promise<{ success: boolean }>
-                }
-              }
-            }
-          }
-        ).api.mock
-
         // Pick the next free port above 8080 (project-scoped). Mock-server
         // ports are bound to 127.0.0.1 so we don't need a global registry.
-        const listRes = await mockApi.server.list(activeProjectId)
+        const listRes = await window.api?.mock?.server?.list(activeProjectId)
         const usedPorts = new Set((listRes?.data ?? []).map((s) => s.port))
         let port = 8080
         while (usedPorts.has(port) && port < 65535) port++
 
-        const serverRes = await mockApi.server.create({
+        const serverRes = await window.api?.mock?.server?.create({
           projectId: activeProjectId,
           name: folderNode.label,
           host: '127.0.0.1',
@@ -652,7 +617,7 @@ export default function TreeView() {
             }
           }
           if (!path) continue
-          await mockApi.endpoint.create({
+          await window.api?.mock?.endpoint?.create({
             serverId: serverRes.data.id,
             method,
             path,

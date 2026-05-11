@@ -1023,6 +1023,8 @@ interface ApiBridge {
   save: SaveApi
   certificate: CertificateApi
   testSuite: TestSuiteApi
+  tree: TreeApi
+  mock: MockApi
   dialog: DialogApi
 }
 
@@ -1134,6 +1136,39 @@ interface TestSuiteApi {
   listEndpoints: (suiteId: string) => Promise<IpcResult<unknown[]>>
   addEndpoints: (payload: unknown) => Promise<IpcResult<unknown>>
   removeEndpoint: (payload: unknown) => Promise<IpcResult<boolean>>
+}
+
+interface TreeApi {
+  move: (payload: {
+    nodeId: string
+    nodeType: 'folder' | 'endpoint' | 'request'
+    targetFolderId: string | null
+    insertBeforeId?: string | null
+  }) => Promise<IpcResult<true>>
+}
+
+interface MockServerApi {
+  list: (projectId: string) => Promise<IpcResult<Array<{ id: string; port: number; name: string }>>>
+  create: (input: {
+    projectId: string
+    name: string
+    host?: string
+    port: number
+    description?: string
+  }) => Promise<IpcResult<{ id: string }>>
+}
+
+interface MockEndpointApi {
+  create: (input: {
+    serverId: string
+    method?: string
+    path: string
+  }) => Promise<IpcResult<{ id: string }>>
+}
+
+interface MockApi {
+  server: MockServerApi
+  endpoint: MockEndpointApi
 }
 
 declare global {

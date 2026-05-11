@@ -15,6 +15,9 @@ interface TabsStore {
   /** Pin (persist) the current preview tab so it won't be replaced */
   pinTab: (id: string) => void
   closeTab: (id: string) => void
+  /** Drop every open tab — used on project switch to prevent stale endpoint
+   * references from leaking across project boundaries. */
+  closeAllTabs: () => void
   setActiveTab: (id: string | null) => void
   updateTab: (id: string, updates: Partial<Tab>) => void
   markDirty: (id: string, dirty: boolean) => void
@@ -153,6 +156,8 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
       }
       return { tabs: filtered, activeTabId: nextActive }
     }),
+
+  closeAllTabs: () => set({ tabs: [], activeTabId: null }),
 
   setActiveTab: (id) => set({ activeTabId: id || null }),
 

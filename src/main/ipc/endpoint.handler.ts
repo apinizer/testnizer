@@ -259,8 +259,43 @@ export function registerEndpointHandlers(): void {
         const { nodeId, nodeType, targetFolderId } = payload
         const insertBeforeId = payload.insertBeforeId ?? null
 
+        // Resolve the source node's project_id so we can refuse cross-project
+        // moves. Without this guard a malicious or buggy renderer payload
+        // could splice an endpoint from project A into project B (review
+        // finding HIGH #1).
+        let sourceProjectId: string | null = null
+        if (nodeType === 'folder') {
+          const f = projectRepo.getFolderById(nodeId)
+          sourceProjectId = f?.project_id ?? null
+        } else if (nodeType === 'endpoint') {
+          const e = endpointRepo.getEndpointById(nodeId)
+          sourceProjectId = e?.project_id ?? null
+        } else {
+          const r = endpointRepo.getSavedRequestById(nodeId)
+          sourceProjectId = r?.project_id ?? null
+        }
+        if (!sourceProjectId) {
+          return { success: false, error: 'Source node not found' }
+        }
+
+        // If the move targets a specific folder, verify the folder belongs to
+        // the same project. Root drops (targetFolderId === null) stay in
+        // whatever project the node already belongs to.
+        if (targetFolderId !== null) {
+          const targetFolder = projectRepo.getFolderById(targetFolderId)
+          if (!targetFolder) {
+            return { success: false, error: 'Target folder not found' }
+          }
+          if (targetFolder.project_id !== sourceProjectId) {
+            return { success: false, error: 'Cannot move node across projects' }
+          }
+        }
+
         // Guard against dropping a folder into itself or one of its descendants.
         if (nodeType === 'folder' && targetFolderId) {
+          if (targetFolderId === nodeId) {
+            return { success: false, error: 'Cannot move a folder into itself' }
+          }
           let cur: string | null = targetFolderId
           const seen = new Set<string>()
           while (cur && !seen.has(cur)) {
@@ -318,12 +353,18 @@ export function registerEndpointHandlers(): void {
           // requested position so we know the final ordering.
           const without = siblings.filter((s) => s.id !== nodeId)
           const moved: Sibling = { id: nodeId, kind: nodeType, sort_order: 0 }
-          const insertIdx = insertBeforeId
-            ? Math.max(
-                0,
-                without.findIndex((s) => s.id === insertBeforeId),
-              )
-            : without.length
+          // If `insertBeforeId` is stale (e.g. drag started before tree was
+          // refreshed) findIndex returns -1. Falling back to "append at end"
+          // is safer than silently inserting at position 0 — the user almost
+          // never expects a missing reference to land at the very top
+          // (review finding MEDIUM #4).
+          let insertIdx: number
+          if (insertBeforeId) {
+            const idx = without.findIndex((s) => s.id === insertBeforeId)
+            insertIdx = idx >= 0 ? idx : without.length
+          } else {
+            insertIdx = without.length
+          }
           const ordered = [...without.slice(0, insertIdx), moved, ...without.slice(insertIdx)]
 
           // Renumber

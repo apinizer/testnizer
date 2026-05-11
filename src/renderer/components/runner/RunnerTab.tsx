@@ -4,6 +4,8 @@ import type { TreeNode, HttpMethod } from '../../types'
 import RunnerSequence from './RunnerSequence'
 import RunnerConfig from './RunnerConfig'
 import RunnerResults from './RunnerResults'
+import { openEndpointTab } from '../../lib/open-endpoint-tab'
+import { useUIStore } from '../../stores/ui.store'
 import RunnerVariables from './RunnerVariables'
 import RunnerHistory from './RunnerHistory'
 import ScheduledTasksView from './ScheduledTasksView'
@@ -641,6 +643,13 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             onViewAllRuns={handleViewAllRuns}
             selectedResultId={selectedResultId}
             onSelectResult={setSelectedResultId}
+            onOpenEndpoint={(endpointId) => {
+              // Jump to the APIs workbench so the newly opened tab is
+              // visible — without this the tab opens in the background
+              // and the user thinks nothing happened.
+              useUIStore.getState().setActiveSidebarPage('apis')
+              void openEndpointTab(endpointId)
+            }}
           />
         )}
       </div>

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Workspace, Project, TreeNode, Folder, Endpoint, SavedRequest } from '../types'
 import { useEnvironmentStore } from './environment.store'
 import { useBranchStore } from './branch.store'
+import { useTabsStore } from './tabs.store'
 
 interface WorkspaceStore {
   initialized: boolean
@@ -236,10 +237,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
   setActiveProject: async (id) => {
+    const prevId = get().activeProjectId
     // Any in-flight merge conflict belongs to the project we're leaving;
     // dropping it here keeps the modal from re-appearing for a project the
     // user isn't looking at anymore.
     useBranchStore.getState().clearPendingConflict()
+    // Tabs (endpoint editors, runner sessions, mock servers, etc.) hold
+    // references — sessionStorage keys, endpoint IDs, runner result blobs —
+    // that belong to the previous project. Carrying them into a new project
+    // surfaces stale data and (worse) lets the user execute a runner whose
+    // endpointIds were resolved against the wrong project. Reset on switch.
+    if (prevId && prevId !== id) {
+      useTabsStore.getState().closeAllTabs()
+    }
     set({ activeProjectId: id })
     // Reload environments/globals for the new scope
     await useEnvironmentStore.getState().setCurrentProject(id)

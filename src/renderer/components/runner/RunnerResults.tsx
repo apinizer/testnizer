@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { RotateCcw, Plus, X } from 'lucide-react'
+import { RotateCcw, Plus, X, ExternalLink } from 'lucide-react'
 import { getMethodColors } from '../../styles/tokens'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
@@ -20,6 +20,10 @@ interface RunnerResultsProps {
   onViewAllRuns: () => void
   selectedResultId: string | null
   onSelectResult: (id: string | null) => void
+  /** When provided, the result detail header shows an "Open endpoint" button
+   * that navigates the user to the endpoint editor tab so they can fix the
+   * request without leaving the runner. */
+  onOpenEndpoint?: (endpointId: string) => void
 }
 
 export default function RunnerResults({
@@ -36,35 +40,46 @@ export default function RunnerResults({
   onViewAllRuns,
   selectedResultId,
   onSelectResult,
+  onOpenEndpoint,
 }: RunnerResultsProps) {
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
   const [detailTab, setDetailTab] = useState<'response' | 'headers' | 'request'>('response')
 
-  const totalPassed = results.filter((r) => !r.error && r.failed === 0 && r.status !== null && r.status < 400).length
-  const totalFailed = results.filter((r) => r.error || r.failed > 0 || (r.status !== null && r.status >= 400)).length
+  const totalPassed = results.filter(
+    (r) => !r.error && r.failed === 0 && r.status !== null && r.status < 400,
+  ).length
+  const totalFailed = results.filter(
+    (r) => r.error || r.failed > 0 || (r.status !== null && r.status >= 400),
+  ).length
   const totalDuration = report
     ? report.completedAt - report.startedAt
     : results.reduce((acc, r) => acc + r.duration, 0)
   const totalTests = results.length
   const totalErrors = results.filter((r) => r.error).length
-  const avgRespTime = results.length > 0
-    ? Math.round(results.reduce((acc, r) => acc + r.duration, 0) / results.length)
-    : 0
+  const avgRespTime =
+    results.length > 0
+      ? Math.round(results.reduce((acc, r) => acc + r.duration, 0) / results.length)
+      : 0
   const progress = totalCount > 0 ? (currentIndex / totalCount) * 100 : 0
 
   const selectedResult = useMemo(
     () => results.find((r) => r.endpointId === selectedResultId),
-    [results, selectedResultId]
+    [results, selectedResultId],
   )
 
   const filteredResults = useMemo(() => {
     return results.filter((r) => {
       switch (activeFilter) {
-        case 'passed': return !r.error && r.failed === 0 && r.status !== null && r.status < 400
-        case 'failed': return r.error || r.failed > 0 || (r.status !== null && r.status >= 400)
-        case 'errors': return !!r.error
-        case 'skipped': return false
-        default: return true
+        case 'passed':
+          return !r.error && r.failed === 0 && r.status !== null && r.status < 400
+        case 'failed':
+          return r.error || r.failed > 0 || (r.status !== null && r.status >= 400)
+        case 'errors':
+          return !!r.error
+        case 'skipped':
+          return false
+        default:
+          return true
       }
     })
   }, [results, activeFilter])
@@ -80,7 +95,11 @@ export default function RunnerResults({
 
   const formatTime = (ts: number | null) => {
     if (!ts) return ''
-    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    return new Date(ts).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
   }
 
   const formatDuration = (ms: number) => {
@@ -96,7 +115,9 @@ export default function RunnerResults({
     try {
       const parsed = JSON.parse(body)
       return JSON.stringify(parsed, null, 2)
-    } catch { /* not JSON */ }
+    } catch {
+      /* not JSON */
+    }
     // Try XML pretty-print
     if (body.trimStart().startsWith('<')) {
       return formatXml(body)
@@ -138,7 +159,9 @@ export default function RunnerResults({
           <div className="shrink-0 border-b border-[var(--border)] px-5 py-3">
             {/* Title + actions */}
             <div className="mb-2 flex items-center justify-between">
-              <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>Run results</span>
+              <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
+                Run results
+              </span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -167,9 +190,7 @@ export default function RunnerResults({
                 className="inline-block h-2.5 w-2.5 rounded-full"
                 style={{ background: totalFailed > 0 ? '#cc2200' : '#1a7a4a' }}
               />
-              <span style={{ color: 'var(--muted)' }}>
-                Ran today at {formatTime(runStartedAt)}
-              </span>
+              <span style={{ color: 'var(--muted)' }}>Ran today at {formatTime(runStartedAt)}</span>
               <button
                 type="button"
                 onClick={onViewAllRuns}
@@ -187,7 +208,11 @@ export default function RunnerResults({
               <StatCell label="Iterations" value="1" />
               <StatCell label="Duration" value={formatDuration(totalDuration)} />
               <StatCell label="All tests" value={String(totalTests)} />
-              <StatCell label="Errors" value={String(totalErrors)} color={totalErrors > 0 ? '#cc2200' : undefined} />
+              <StatCell
+                label="Errors"
+                value={String(totalErrors)}
+                color={totalErrors > 0 ? '#cc2200' : undefined}
+              />
               <StatCell label="Avg. Resp. Time" value={`${avgRespTime} ms`} />
             </div>
           </div>
@@ -206,7 +231,8 @@ export default function RunnerResults({
                   fontSize: 13,
                   color: activeFilter === tab.key ? 'var(--text)' : 'var(--muted)',
                   fontWeight: activeFilter === tab.key ? 600 : 400,
-                  borderBottom: activeFilter === tab.key ? '2px solid var(--accent)' : '2px solid transparent',
+                  borderBottom:
+                    activeFilter === tab.key ? '2px solid var(--accent)' : '2px solid transparent',
                   marginBottom: -1,
                 }}
               >
@@ -224,7 +250,10 @@ export default function RunnerResults({
 
         {/* Iteration header */}
         {results.length > 0 && !isRunning && (
-          <div className="shrink-0 px-5 py-2" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+          <div
+            className="shrink-0 px-5 py-2"
+            style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}
+          >
             Iteration 1
           </div>
         )}
@@ -236,9 +265,9 @@ export default function RunnerResults({
               key={`${result.endpointId}-${idx}`}
               result={result}
               isSelected={result.endpointId === selectedResultId}
-              onClick={() => onSelectResult(
-                result.endpointId === selectedResultId ? null : result.endpointId
-              )}
+              onClick={() =>
+                onSelectResult(result.endpointId === selectedResultId ? null : result.endpointId)
+              }
             />
           ))}
         </div>
@@ -253,9 +282,23 @@ export default function RunnerResults({
               {filteredResults.findIndex((r) => r.endpointId === selectedResultId) + 1}
             </span>
             <MethodLabel method={selectedResult.method} />
-            <span className="flex-1 truncate" style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>
+            <span
+              className="flex-1 truncate"
+              style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}
+            >
               {selectedResult.endpointName}
             </span>
+            {onOpenEndpoint && (
+              <button
+                type="button"
+                onClick={() => onOpenEndpoint(selectedResult.endpointId)}
+                className="flex cursor-pointer items-center gap-1 rounded border-none bg-transparent p-1 text-[var(--hint)] hover:text-[var(--accent)]"
+                title="Open endpoint editor"
+              >
+                <ExternalLink size={14} />
+                <span style={{ fontSize: 12 }}>Open endpoint</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onSelectResult(null)}
@@ -277,7 +320,8 @@ export default function RunnerResults({
                   fontSize: 13,
                   color: detailTab === tab ? 'var(--accent-text)' : 'var(--muted)',
                   fontWeight: detailTab === tab ? 600 : 400,
-                  borderBottom: detailTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
+                  borderBottom:
+                    detailTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
                   marginBottom: -1,
                 }}
               >
@@ -301,7 +345,9 @@ export default function RunnerResults({
               {selectedResult.responseSize != null && selectedResult.responseSize > 0 && (
                 <>
                   <span style={{ color: 'var(--hint)' }}>·</span>
-                  <span style={{ color: 'var(--muted)' }}>{formatBytes(selectedResult.responseSize)}</span>
+                  <span style={{ color: 'var(--muted)' }}>
+                    {formatBytes(selectedResult.responseSize)}
+                  </span>
                 </>
               )}
             </div>
@@ -311,7 +357,9 @@ export default function RunnerResults({
           {detailTab === 'response' && (
             <div className="flex flex-1 flex-col overflow-hidden">
               {selectedResult.error ? (
-                <div className="p-4" style={{ fontSize: 13, color: '#cc2200' }}>{selectedResult.error}</div>
+                <div className="p-4" style={{ fontSize: 13, color: '#cc2200' }}>
+                  {selectedResult.error}
+                </div>
               ) : selectedResult.responseBody ? (
                 <>
                   {/* Pretty bar */}
@@ -339,15 +387,21 @@ export default function RunnerResults({
               )}
               {selectedResult.assertions.length > 0 && (
                 <div className="shrink-0 border-t border-[var(--border)] px-4 py-3">
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>Tests</div>
+                  <div
+                    style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}
+                  >
+                    Tests
+                  </div>
                   {selectedResult.assertions.map((a, i) => (
-                    <div key={i} className="flex items-center gap-1.5 py-0.5" style={{ fontSize: 13 }}>
+                    <div
+                      key={i}
+                      className="flex items-center gap-1.5 py-0.5"
+                      style={{ fontSize: 13 }}
+                    >
                       <span style={{ color: a.passed ? '#1a7a4a' : '#cc2200' }}>
                         {a.passed ? '✓' : '✗'}
                       </span>
-                      <span style={{ color: a.passed ? 'var(--text)' : '#cc2200' }}>
-                        {a.name}
-                      </span>
+                      <span style={{ color: a.passed ? 'var(--text)' : '#cc2200' }}>{a.name}</span>
                     </div>
                   ))}
                 </div>
@@ -358,25 +412,45 @@ export default function RunnerResults({
           {/* ── Headers tab ── */}
           {detailTab === 'headers' && (
             <div className="flex-1 overflow-auto p-4">
-              {selectedResult.responseHeaders && Object.keys(selectedResult.responseHeaders).length > 0 ? (
+              {selectedResult.responseHeaders &&
+              Object.keys(selectedResult.responseHeaders).length > 0 ? (
                 <table className="w-full" style={{ fontSize: 13 }}>
                   <thead>
                     <tr className="border-b border-[var(--border)]">
-                      <th className="py-2 pr-4 text-left" style={{ fontWeight: 600, color: 'var(--muted)' }}>Key</th>
-                      <th className="py-2 text-left" style={{ fontWeight: 600, color: 'var(--muted)' }}>Value</th>
+                      <th
+                        className="py-2 pr-4 text-left"
+                        style={{ fontWeight: 600, color: 'var(--muted)' }}
+                      >
+                        Key
+                      </th>
+                      <th
+                        className="py-2 text-left"
+                        style={{ fontWeight: 600, color: 'var(--muted)' }}
+                      >
+                        Value
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {Object.entries(selectedResult.responseHeaders).map(([key, value]) => (
                       <tr key={key} className="border-b border-[var(--border)]">
-                        <td className="py-2 pr-4" style={{ fontWeight: 500, color: 'var(--text)' }}>{key}</td>
-                        <td className="py-2" style={{ color: 'var(--muted)', wordBreak: 'break-all' }}>{value}</td>
+                        <td className="py-2 pr-4" style={{ fontWeight: 500, color: 'var(--text)' }}>
+                          {key}
+                        </td>
+                        <td
+                          className="py-2"
+                          style={{ color: 'var(--muted)', wordBreak: 'break-all' }}
+                        >
+                          {value}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               ) : (
-                <div style={{ fontSize: 13, color: 'var(--hint)' }}>No response headers available.</div>
+                <div style={{ fontSize: 13, color: 'var(--hint)' }}>
+                  No response headers available.
+                </div>
               )}
             </div>
           )}
@@ -388,7 +462,7 @@ export default function RunnerResults({
               <div
                 style={{
                   color: 'var(--text)',
-                  fontFamily: "var(--font-mono)",
+                  fontFamily: 'var(--font-mono)',
                   marginBottom: 16,
                 }}
               >
@@ -398,7 +472,7 @@ export default function RunnerResults({
               <div
                 style={{
                   color: 'var(--text)',
-                  fontFamily: "var(--font-mono)",
+                  fontFamily: 'var(--font-mono)',
                   wordBreak: 'break-all',
                 }}
               >
@@ -431,7 +505,7 @@ function MethodLabel({ method }: { method: string }) {
         fontSize: 13,
         fontWeight: 700,
         color: mc.color,
-        fontFamily: "var(--font-mono)",
+        fontFamily: 'var(--font-mono)',
         letterSpacing: '0.02em',
         flexShrink: 0,
       }}
@@ -451,11 +525,14 @@ function ResultRow({
   onClick: () => void
 }) {
   const mc = getMethodColors(result.method)
-  const statusColor = result.status === null
-    ? '#cc2200'
-    : result.status < 300 ? '#1a7a4a'
-    : result.status < 500 ? '#b35a00'
-    : '#cc2200'
+  const statusColor =
+    result.status === null
+      ? '#cc2200'
+      : result.status < 300
+        ? '#1a7a4a'
+        : result.status < 500
+          ? '#b35a00'
+          : '#cc2200'
 
   return (
     <div
@@ -470,13 +547,23 @@ function ResultRow({
             fontSize: 13,
             fontWeight: 700,
             color: mc.color,
-            fontFamily: "var(--font-mono)",
+            fontFamily: 'var(--font-mono)',
             flexShrink: 0,
           }}
         >
           {result.method}
         </span>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: 'var(--text)',
+            flex: 1,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
           {result.endpointName}
         </span>
         {result.status !== null && (
@@ -485,7 +572,9 @@ function ResultRow({
           </span>
         )}
         {result.error && result.status === null && (
-          <span style={{ fontSize: 13, fontWeight: 500, color: '#cc2200', flexShrink: 0 }}>Error</span>
+          <span style={{ fontSize: 13, fontWeight: 500, color: '#cc2200', flexShrink: 0 }}>
+            Error
+          </span>
         )}
       </div>
 
@@ -507,7 +596,11 @@ function ResultRow({
       {result.assertions.length > 0 ? (
         <div>
           {result.assertions.map((a, i) => (
-            <div key={i} className="flex items-center gap-1.5" style={{ fontSize: 13, paddingTop: 1, paddingBottom: 1 }}>
+            <div
+              key={i}
+              className="flex items-center gap-1.5"
+              style={{ fontSize: 13, paddingTop: 1, paddingBottom: 1 }}
+            >
               <span style={{ color: a.passed ? '#1a7a4a' : '#cc2200' }}>
                 {a.passed ? '✓' : '✗'}
               </span>
@@ -537,7 +630,12 @@ function formatXml(xml: string): string {
     }
     formatted += pad.repeat(indent) + trimmed + '\n'
     // Opening tag that is not self-closing and not a declaration
-    if (trimmed.startsWith('<') && !trimmed.startsWith('</') && !trimmed.startsWith('<?') && !trimmed.endsWith('/>')) {
+    if (
+      trimmed.startsWith('<') &&
+      !trimmed.startsWith('</') &&
+      !trimmed.startsWith('<?') &&
+      !trimmed.endsWith('/>')
+    ) {
       // Check it's not a tag with content on the same line like <tag>value</tag>
       if (!/<\/[^>]+>$/.test(trimmed)) {
         indent++

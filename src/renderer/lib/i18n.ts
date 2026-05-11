@@ -169,6 +169,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'request.headers': 'Headers',
     'request.body': 'Body',
     'request.scripts': 'Scripts',
+    'request.tests': 'Tests',
     'request.settings': 'Settings',
 
     // Response tabs
@@ -770,6 +771,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'testsPanel.import': 'Import…',
     'testsPanel.duplicate': 'Duplicate',
     'testsPanel.delete': 'Delete',
+    'testsPanel.openEndpoint': 'Open endpoint editor',
     'testsPanel.noEndpointsHint': 'No endpoints. Right-click to add.',
     'testsPanel.removeFromSuite': 'Remove from suite',
     'testsPanel.testSuiteLabel': 'test suite',
@@ -1370,6 +1372,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'request.headers': 'Basliklar',
     'request.body': 'Govde',
     'request.scripts': 'Betikler',
+    'request.tests': 'Testler',
     'request.settings': 'Ayarlar',
 
     // Response tabs
@@ -1972,6 +1975,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'testsPanel.import': 'İçe Aktar…',
     'testsPanel.duplicate': 'Çoğalt',
     'testsPanel.delete': 'Sil',
+    'testsPanel.openEndpoint': 'Endpoint editörünü aç',
     'testsPanel.noEndpointsHint': 'Uç nokta yok. Eklemek için sağ tıklayın.',
     'testsPanel.removeFromSuite': 'Paketten kaldır',
     'testsPanel.testSuiteLabel': 'test paketi',
