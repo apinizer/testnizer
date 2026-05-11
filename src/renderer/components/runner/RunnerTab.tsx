@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { Braces, ChevronRight } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import type { TreeNode, HttpMethod } from '../../types'
 import RunnerSequence from './RunnerSequence'
@@ -168,6 +169,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // Share the right-panel collapse flag with the API workbench so the
   // "All variables" toggle behaves identically across screens.
   const rightPanelCollapsed = useUIStore((s) => s.rightPanelCollapsed)
+  const setRightPanelCollapsed = useUIStore((s) => s.setRightPanelCollapsed)
 
   const [endpoints, setEndpoints] = useState<RunnerEndpointItem[]>([])
   const [folderGroups, setFolderGroups] = useState<RunnerFolderGroup[]>([])
@@ -668,23 +670,13 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         >
           <button
             type="button"
-            onClick={() => useUIStore.getState().setRightPanelCollapsed(false)}
+            onClick={() => setRightPanelCollapsed(false)}
             title="Show variables"
+            aria-label="Show variables panel"
             className="flex cursor-pointer items-center justify-center rounded p-1.5 text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--accent)]"
             style={{ background: 'transparent', border: 'none' }}
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M4 11h16M4 17h16M4 5h16" />
-            </svg>
+            <Braces size={16} />
           </button>
         </div>
       ) : (
@@ -701,23 +693,13 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           {/* Collapse button — top-right of the variables panel */}
           <button
             type="button"
-            onClick={() => useUIStore.getState().setRightPanelCollapsed(true)}
+            onClick={() => setRightPanelCollapsed(true)}
             title="Collapse panel"
+            aria-label="Collapse variables panel"
             className="absolute right-1 top-1 z-10 flex cursor-pointer items-center justify-center rounded p-1 text-[var(--muted)] hover:text-[var(--text)]"
             style={{ background: 'transparent', border: 'none' }}
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
+            <ChevronRight size={14} />
           </button>
         </div>
       )}

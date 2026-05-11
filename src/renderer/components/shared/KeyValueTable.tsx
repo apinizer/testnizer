@@ -5,6 +5,7 @@ import type { KeyValuePair } from '../../types'
 import VariableAutocompleteInput from './VariableAutocompleteInput'
 import { useTranslation } from '../../lib/i18n'
 import { filterHeaderSuggestions } from '../../lib/http-headers'
+import { rowsToBulkText, bulkTextToRows } from '../../lib/key-value-bulk'
 
 const CONTENT_TYPE_VALUES = [
   'application/json',
@@ -119,47 +120,6 @@ function AutocompleteDropdown({
 
 const GRID_COLS = '28px minmax(100px, 1fr) minmax(100px, 1fr) minmax(80px, 0.5fr) 28px'
 const GRID_COLS_FILE = '28px minmax(100px, 1fr) 76px minmax(120px, 1fr) minmax(80px, 0.5fr) 28px'
-
-/**
- * Serialize rows into the Postman-style bulk-edit format:
- *   key:value          (enabled row)
- *   //key:value        (disabled row)
- * Empty keys are skipped so the textarea isn't polluted with the empty
- * "placeholder" row most callers keep at the bottom of the list.
- */
-function rowsToBulkText(rows: KeyValuePair[]): string {
-  return rows
-    .filter((r) => r.key.length > 0 || r.value.length > 0)
-    .map((r) => `${r.enabled ? '' : '//'}${r.key}:${r.value}`)
-    .join('\n')
-}
-
-/**
- * Parse a Postman-style bulk text back into KeyValuePair rows. Lines without
- * a `:` become a row whose `value` is empty (matching Postman's behaviour
- * where typing a bare key creates a header with no value yet).
- */
-function bulkTextToRows(text: string): KeyValuePair[] {
-  const out: KeyValuePair[] = []
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.replace(/\s+$/, '')
-    if (line.length === 0) continue
-    const disabled = line.startsWith('//')
-    const trimmed = disabled ? line.slice(2) : line
-    const colon = trimmed.indexOf(':')
-    const key = colon === -1 ? trimmed.trim() : trimmed.slice(0, colon).trim()
-    const value = colon === -1 ? '' : trimmed.slice(colon + 1).trim()
-    if (!key && !value) continue
-    out.push({
-      id: `kv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      key,
-      value,
-      description: '',
-      enabled: !disabled,
-    })
-  }
-  return out
-}
 
 export default function KeyValueTable({
   rows,
@@ -338,21 +298,21 @@ export default function KeyValueTable({
   const bulkEditEnabled = !!onReplaceAll && !enableFileType
   const [bulkMode, setBulkMode] = useState(false)
   const [bulkText, setBulkText] = useState('')
+  // Snapshot rows on entry so repeated commits (blur → edit → blur) still
+  // see the original descriptions instead of losing them on first commit.
+  const bulkSnapshotRef = useRef<KeyValuePair[]>([])
 
-  // When entering bulk mode (or when rows update while in bulk mode and the
-  // user hasn't typed anything yet), re-serialize from rows so the textarea
-  // reflects whatever the table currently shows.
   useEffect(() => {
     if (!bulkMode) return
+    bulkSnapshotRef.current = rows
     setBulkText(rowsToBulkText(rows))
-    // Intentionally only when entering bulk mode — once the user starts
-    // editing, we hold their text until they commit (blur).
+    // Only re-snapshot when entering bulk mode; preserve user's typing afterwards.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bulkMode])
 
   function commitBulk(): void {
     if (!onReplaceAll) return
-    onReplaceAll(bulkTextToRows(bulkText))
+    onReplaceAll(bulkTextToRows(bulkText, bulkSnapshotRef.current))
   }
 
   return (
