@@ -14,7 +14,7 @@ import type {
   AuthConfig,
   TestAssertion,
 } from '../../types'
-import TreeNodeComponent from './TreeNode'
+import TreeNodeComponent, { type DragPayload, type DropPosition } from './TreeNode'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 
 // Re-alias for flattenTree signature
@@ -307,17 +307,31 @@ export default function TreeView() {
 
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const handleAddRequest = useCallback(
-    async (parentNode: TreeNode) => {
+    async (parentNode: TreeNode, protocol: Protocol = 'http') => {
       if (!activeProjectId) return
       try {
         const folderId = parentNode.type === 'folder' ? parentNode.id : null
+        // Default name + method follow the same conventions as the global
+        // "+ New" dropdown (UX 4 — same operation, same defaults everywhere).
+        const defaultsByProtocol: Partial<Record<Protocol, { name: string; method: string }>> = {
+          http: { name: 'New Request', method: 'GET' },
+          soap: { name: 'New SOAP Method', method: 'POST' },
+          websocket: { name: 'New WebSocket', method: 'GET' },
+          graphql: { name: 'New GraphQL', method: 'POST' },
+          grpc: { name: 'New gRPC', method: 'POST' },
+          sse: { name: 'New SSE', method: 'GET' },
+          ai: { name: 'New AI Chat', method: 'POST' },
+          mcp: { name: 'New MCP', method: 'GET' },
+          socketio: { name: 'New Socket.IO', method: 'GET' },
+        }
+        const d = defaultsByProtocol[protocol] ?? defaultsByProtocol.http!
         await window.api?.savedRequest?.create({
           project_id: activeProjectId,
           folder_id: folderId,
-          name: 'New Request',
-          method: 'GET',
+          name: d.name,
+          method: d.method,
           url: '',
-          protocol: 'http',
+          protocol,
         })
         await refreshTree()
       } catch {
@@ -436,6 +450,223 @@ export default function TreeView() {
     [activeProjectId, refreshTree],
   )
 
+  /**
+   * Recursively gather every request/endpoint id under a folder, including
+   * descendants in nested sub-folders. Operates on the in-memory tree so we
+   * don't need a new IPC for "list endpoints recursively" (UX 6).
+   */
+  const collectRequestIdsRecursive = useCallback((folderNode: TreeNode): string[] => {
+    const ids: string[] = []
+    function walk(n: TreeNode): void {
+      if (n.type === 'endpoint' || n.type === 'request') ids.push(n.id)
+      if (n.children) for (const c of n.children) walk(c)
+    }
+    walk(folderNode)
+    return ids
+  }, [])
+
+  const setActiveSidebarPage = (() => {
+    // Late-import via dynamic require so we don't pull the store at module top
+    // and break tree-shaking; lazily resolved when the user actually clicks.
+    return (page: string) => {
+      void import('../../stores/ui.store').then((m) =>
+        m.useUIStore.getState().setActiveSidebarPage(page as never),
+      )
+    }
+  })()
+
+  const handleCreateTestSuite = useCallback(
+    async (folderNode: TreeNode) => {
+      if (!activeProjectId) return
+      const ids = collectRequestIdsRecursive(folderNode)
+      if (ids.length === 0) return
+      try {
+        const createRes = (await window.api?.testSuite?.create({
+          project_id: activeProjectId,
+          name: folderNode.label,
+        })) as { success: boolean; data?: { id: string } }
+        if (!createRes?.success || !createRes.data) return
+        await window.api?.testSuite?.addEndpoints({
+          suite_id: createRes.data.id,
+          endpoint_ids: ids,
+        })
+        // Hand the user off to the Tests workbench so they can see the result.
+        setActiveSidebarPage('tests')
+      } catch (err) {
+        console.error('createTestSuite from folder failed:', err)
+      }
+    },
+    [activeProjectId, collectRequestIdsRecursive],
+  )
+
+  /**
+   * Resolve which parent folder + insertBeforeId to use given a drop target
+   * and a position. Folders are the only nodes that can host children, so
+   * "drop inside a request" doesn't happen — the request's parent folder
+   * receives the moved node instead. Returns null if the operation would
+   * be a no-op (e.g. dropping a node onto itself's children).
+   */
+  const findParentFolderId = useCallback(
+    (targetId: string): string | null => {
+      function walk(
+        nodes: TreeNode[],
+        parentId: string | null,
+      ): { found: boolean; parent: string | null } {
+        for (const n of nodes) {
+          if (n.id === targetId) return { found: true, parent: parentId }
+          if (n.children) {
+            const r = walk(n.children, n.type === 'folder' ? n.id : parentId)
+            if (r.found) return r
+          }
+        }
+        return { found: false, parent: null }
+      }
+      return walk(treeData, null).parent
+    },
+    [treeData],
+  )
+
+  const handleDrop = useCallback(
+    async (target: TreeNode, payload: DragPayload, position: DropPosition) => {
+      // Determine target folder + insertBeforeId from the drop intent.
+      let targetFolderId: string | null
+      let insertBeforeId: string | null = null
+
+      if (target.type === 'folder' && position === 'inside') {
+        targetFolderId = target.id
+        insertBeforeId = null // append at end
+      } else if (target.type === 'module' && position === 'inside') {
+        targetFolderId = null // project root
+        insertBeforeId = null
+      } else {
+        // "before" / "after" — target becomes a sibling.
+        targetFolderId = findParentFolderId(target.id)
+        insertBeforeId = position === 'before' ? target.id : null
+      }
+
+      try {
+        // Cast through narrow shape — tree:* bridge isn't typed in ApiBridge yet.
+        const treeBridge = (
+          window as unknown as {
+            api: { tree: { move: (p: unknown) => Promise<{ success: boolean; error?: string }> } }
+          }
+        ).api.tree
+        const r = await treeBridge.move({
+          nodeId: payload.id,
+          nodeType: payload.nodeType,
+          targetFolderId,
+          insertBeforeId,
+        })
+        if (!r?.success) {
+          console.error('tree:move failed:', r?.error)
+          return
+        }
+        await refreshTree()
+      } catch (err) {
+        console.error('tree:move threw:', err)
+      }
+    },
+    [findParentFolderId, refreshTree],
+  )
+
+  const handleCreateMockServer = useCallback(
+    async (folderNode: TreeNode) => {
+      if (!activeProjectId) return
+      const ids = collectRequestIdsRecursive(folderNode)
+      if (ids.length === 0) return
+      try {
+        // The mock IPC bridge isn't in the ApiBridge type yet, so cast through
+        // the same narrow shape mock.store.ts uses.
+        const mockApi = (
+          window as unknown as {
+            api: {
+              mock: {
+                server: {
+                  list: (
+                    projectId: string,
+                  ) => Promise<{ success: boolean; data?: Array<{ port: number }> }>
+                  create: (input: {
+                    projectId: string
+                    name: string
+                    host?: string
+                    port: number
+                  }) => Promise<{ success: boolean; data?: { id: string } }>
+                }
+                endpoint: {
+                  create: (input: {
+                    serverId: string
+                    method?: string
+                    path: string
+                  }) => Promise<{ success: boolean }>
+                }
+              }
+            }
+          }
+        ).api.mock
+
+        // Pick the next free port above 8080 (project-scoped). Mock-server
+        // ports are bound to 127.0.0.1 so we don't need a global registry.
+        const listRes = await mockApi.server.list(activeProjectId)
+        const usedPorts = new Set((listRes?.data ?? []).map((s) => s.port))
+        let port = 8080
+        while (usedPorts.has(port) && port < 65535) port++
+
+        const serverRes = await mockApi.server.create({
+          projectId: activeProjectId,
+          name: folderNode.label,
+          host: '127.0.0.1',
+          port,
+        })
+        if (!serverRes?.success || !serverRes.data) return
+
+        // Pull each endpoint's method+path, then mirror as mock endpoints.
+        // We deliberately don't copy bodies — mock responses are configured
+        // separately and this flow just scaffolds the URL surface.
+        for (const id of ids) {
+          // saved requests and imported endpoints both live in the tree,
+          // walk both APIs to find them. Endpoint lookup is preferred since
+          // imported endpoints carry richer metadata.
+          let path = ''
+          let method = 'GET'
+          const ep = (await window.api?.endpoint?.get?.(id)) as {
+            success: boolean
+            data?: { path?: string; method?: string }
+          }
+          if (ep?.success && ep.data) {
+            path = ep.data.path || ''
+            method = ep.data.method || 'GET'
+          } else {
+            const sr = (await window.api?.savedRequest?.get?.(id)) as {
+              success: boolean
+              data?: { url?: string; method?: string }
+            }
+            if (sr?.success && sr.data) {
+              // Strip protocol/host so the mock binds the path portion only.
+              try {
+                const u = new URL(sr.data.url || '', 'http://placeholder')
+                path = u.pathname || sr.data.url || ''
+              } catch {
+                path = sr.data.url || ''
+              }
+              method = sr.data.method || 'GET'
+            }
+          }
+          if (!path) continue
+          await mockApi.endpoint.create({
+            serverId: serverRes.data.id,
+            method,
+            path,
+          })
+        }
+
+        setActiveSidebarPage('mocks')
+      } catch (err) {
+        console.error('createMockServer from folder failed:', err)
+      }
+    },
+    [activeProjectId, collectRequestIdsRecursive],
+  )
+
   return (
     <div ref={parentRef} className="flex-1 overflow-y-auto px-1.5 py-2">
       <div
@@ -473,6 +704,9 @@ export default function TreeView() {
                 onRunFolder={handleRunFolder}
                 onExport={handleExport}
                 onImport={handleImportFolder}
+                onCreateTestSuite={handleCreateTestSuite}
+                onCreateMockServer={handleCreateMockServer}
+                onDrop={handleDrop}
                 openIds={openNodeIds}
                 isFlat
               />

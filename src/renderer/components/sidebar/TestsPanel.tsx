@@ -19,6 +19,7 @@ import {
   Home,
   Download,
   Upload,
+  Copy,
 } from 'lucide-react'
 import type { Tab } from '../../types'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
@@ -56,6 +57,9 @@ const api = () => (window as any).api
 export default function TestsPanel() {
   const { t } = useTranslation()
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
+  // Subscribe to the project tree so suite endpoint lists refresh when a
+  // folder/endpoint is added or moved elsewhere (Bug 3).
+  const treeData = useWorkspaceStore((s) => s.treeData)
   const openTab = useTabsStore((s) => s.openTab)
   const addEndpointsSuiteId = useUIStore((s) => s.addEndpointsSuiteId)
 
@@ -75,11 +79,12 @@ export default function TestsPanel() {
   const renameRef = useRef<HTMLInputElement>(null)
 
   // Context menu
-  const [contextMenu, setContextMenu] = useState<{ suiteId: string; x: number; y: number } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ suiteId: string; x: number; y: number } | null>(
+    null,
+  )
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<TestSuite | null>(null)
-
 
   // ─── Load suites ──────────────────────────────────────────
   const loadSuites = useCallback(async () => {
@@ -88,7 +93,9 @@ export default function TestsPanel() {
     if (result?.success && result.data) setSuites(result.data)
   }, [activeProjectId])
 
-  useEffect(() => { loadSuites() }, [loadSuites])
+  useEffect(() => {
+    loadSuites()
+  }, [loadSuites])
 
   // ─── Load endpoints for a suite ───────────────────────────
   const loadSuiteEndpoints = useCallback(async (suiteId: string) => {
@@ -106,6 +113,18 @@ export default function TestsPanel() {
       }
     }
   }, [expandedSuites, suiteEndpoints, loadSuiteEndpoints])
+
+  // When the project tree changes (folder/endpoint added/moved elsewhere),
+  // refresh every currently expanded suite so its tree reflects reality (Bug 3).
+  useEffect(() => {
+    for (const suiteId of Object.keys(expandedSuites)) {
+      if (expandedSuites[suiteId]) loadSuiteEndpoints(suiteId)
+    }
+    // Intentionally depend on `treeData` only — we want to refire when the
+    // project tree mutates, not when local expansion state changes (that's
+    // handled by the effect above).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [treeData])
 
   // Reload suite endpoints when AddEndpoints view closes (addEndpointsSuiteId goes null)
   const prevAddSuiteIdRef = useRef<string | null>(null)
@@ -150,47 +169,59 @@ export default function TestsPanel() {
   }, [renamingSuiteId, renameValue, loadSuites])
 
   // ─── Run suite ────────────────────────────────────────────
-  const handleRunSuite = useCallback(async (suite: TestSuite) => {
-    const eps = suiteEndpoints[suite.id] || []
-    if (eps.length === 0) {
-      // Load first
-      const result = await api().testSuite.listEndpoints(suite.id)
-      if (!result?.success || !result.data?.length) return
-      const endpointIds = (result.data as SuiteEndpoint[]).map((e: SuiteEndpoint) => e.id)
-      runEndpoints(endpointIds, suite.name)
-    } else {
-      runEndpoints(eps.map((e) => e.id), suite.name)
-    }
-    setContextMenu(null)
-  }, [suiteEndpoints])
+  const handleRunSuite = useCallback(
+    async (suite: TestSuite) => {
+      const eps = suiteEndpoints[suite.id] || []
+      if (eps.length === 0) {
+        // Load first
+        const result = await api().testSuite.listEndpoints(suite.id)
+        if (!result?.success || !result.data?.length) return
+        const endpointIds = (result.data as SuiteEndpoint[]).map((e: SuiteEndpoint) => e.id)
+        runEndpoints(endpointIds, suite.name)
+      } else {
+        runEndpoints(
+          eps.map((e) => e.id),
+          suite.name,
+        )
+      }
+      setContextMenu(null)
+    },
+    [suiteEndpoints],
+  )
 
   // ─── Open / reuse the runner tab with optional session data ─
-  const openOrReuseRunnerTab = useCallback((sessionData?: Record<string, unknown>) => {
-    const tabs = useTabsStore.getState().tabs
-    const existing = tabs.find((t: Tab) => t.protocol === 'runner')
-    const tabId = existing ? existing.id : 'runner-main'
-    const sessionKey = String(Date.now())
+  const openOrReuseRunnerTab = useCallback(
+    (sessionData?: Record<string, unknown>) => {
+      const tabs = useTabsStore.getState().tabs
+      const existing = tabs.find((t: Tab) => t.protocol === 'runner')
+      const tabId = existing ? existing.id : 'runner-main'
+      const sessionKey = String(Date.now())
 
-    if (sessionData) {
-      sessionStorage.setItem(`runner-report-${tabId}`, JSON.stringify(sessionData))
-    }
+      if (sessionData) {
+        sessionStorage.setItem(`runner-report-${tabId}`, JSON.stringify(sessionData))
+      }
 
-    if (existing) {
-      useTabsStore.getState().setActiveTab(existing.id)
-      useTabsStore.getState().updateTab(existing.id, { sessionKey })
-    } else {
-      openTab({ id: tabId, name: t('testsPanel.runnerName'), protocol: 'runner', sessionKey })
-    }
-  }, [openTab])
+      if (existing) {
+        useTabsStore.getState().setActiveTab(existing.id)
+        useTabsStore.getState().updateTab(existing.id, { sessionKey })
+      } else {
+        openTab({ id: tabId, name: t('testsPanel.runnerName'), protocol: 'runner', sessionKey })
+      }
+    },
+    [openTab],
+  )
 
-  const runEndpoints = useCallback((endpointIds: string[], suiteName: string) => {
-    openOrReuseRunnerTab({
-      autoRun: true,
-      endpointIds,
-      folderName: suiteName,
-      sourceType: 'suite',
-    })
-  }, [openOrReuseRunnerTab])
+  const runEndpoints = useCallback(
+    (endpointIds: string[], suiteName: string) => {
+      openOrReuseRunnerTab({
+        autoRun: true,
+        endpointIds,
+        folderName: suiteName,
+        sourceType: 'suite',
+      })
+    },
+    [openOrReuseRunnerTab],
+  )
 
   const openTestsHome = useCallback(() => {
     openOrReuseRunnerTab({ viewHome: true })
@@ -205,10 +236,13 @@ export default function TestsPanel() {
   }, [openOrReuseRunnerTab])
 
   // ─── Remove endpoint from suite ───────────────────────────
-  const handleRemoveEndpoint = useCallback(async (suiteId: string, endpointId: string) => {
-    await api().testSuite.removeEndpoint({ suite_id: suiteId, endpoint_id: endpointId })
-    await loadSuiteEndpoints(suiteId)
-  }, [loadSuiteEndpoints])
+  const handleRemoveEndpoint = useCallback(
+    async (suiteId: string, endpointId: string) => {
+      await api().testSuite.removeEndpoint({ suite_id: suiteId, endpoint_id: endpointId })
+      await loadSuiteEndpoints(suiteId)
+    },
+    [loadSuiteEndpoints],
+  )
 
   // ─── Export suite ─────────────────────────────────────────
   const handleExportSuite = useCallback(async (suiteId: string) => {
@@ -237,6 +271,22 @@ export default function TestsPanel() {
       console.error(err)
     }
   }, [activeProjectId, loadSuites])
+
+  // ─── Duplicate suite ──────────────────────────────────────
+  // Single IPC clones suite + every junction row in one transaction so the
+  // copy appears with the same endpoint set (UX 9).
+  const handleDuplicateSuite = useCallback(
+    async (suiteId: string) => {
+      try {
+        const result = await api().testSuite.duplicate(suiteId)
+        if (result?.success) await loadSuites()
+      } catch (err) {
+        console.error('Duplicate suite failed:', err)
+      }
+      setContextMenu(null)
+    },
+    [loadSuites],
+  )
 
   // ─── Focus new suite input ────────────────────────────────
   useEffect(() => {
@@ -267,19 +317,30 @@ export default function TestsPanel() {
         className="flex shrink-0 items-center gap-2 border-b px-3"
         style={{ height: 44, borderColor: T.border }}
       >
-        <span style={{ flex: 1, fontSize: 15, fontWeight: 700, color: T.text }}>{t('tests.title')}</span>
+        <span style={{ flex: 1, fontSize: 15, fontWeight: 700, color: T.text }}>
+          {t('tests.title')}
+        </span>
         <button
           type="button"
           onClick={handleImportSuite}
           className="flex cursor-pointer items-center justify-center rounded-[7px] border"
-          style={{ width: 28, height: 28, background: 'var(--surface)', borderColor: T.border2, color: 'var(--text)' }}
+          style={{
+            width: 28,
+            height: 28,
+            background: 'var(--surface)',
+            borderColor: T.border2,
+            color: 'var(--text)',
+          }}
           title={t('tests.importSuite')}
         >
           <Upload size={13} strokeWidth={2.2} />
         </button>
         <button
           type="button"
-          onClick={() => { setShowNewSuiteInput(true); setNewSuiteName('') }}
+          onClick={() => {
+            setShowNewSuiteInput(true)
+            setNewSuiteName('')
+          }}
           className="flex cursor-pointer items-center justify-center rounded-[7px] border-none"
           style={{ width: 28, height: 28, background: 'var(--accent)', color: '#fff' }}
           title={t('tests.newSuite')}
@@ -352,19 +413,30 @@ export default function TestsPanel() {
               }}
               placeholder={t('tests.newSuitePlaceholder')}
               className="flex-1 rounded border px-2 py-1 outline-none"
-              style={{ fontSize: 13, borderColor: 'var(--accent)', background: 'var(--input-bg)', color: 'var(--text)' }}
+              style={{
+                fontSize: 13,
+                borderColor: 'var(--accent)',
+                background: 'var(--input-bg)',
+                color: 'var(--text)',
+              }}
             />
           </div>
         )}
 
         {/* Suite list */}
         {filteredSuites.length === 0 && !showNewSuiteInput ? (
-          <div className="mx-3 mt-4 rounded-[7px] border border-dashed py-6 text-center" style={{ borderColor: T.border2 }}>
+          <div
+            className="mx-3 mt-4 rounded-[7px] border border-dashed py-6 text-center"
+            style={{ borderColor: T.border2 }}
+          >
             <FolderOpen size={28} style={{ color: 'var(--hint)', margin: '0 auto 8px' }} />
             <div style={{ color: 'var(--hint)', fontSize: 13 }}>{t('tests.noSuites')}</div>
             <button
               type="button"
-              onClick={() => { setShowNewSuiteInput(true); setNewSuiteName('') }}
+              onClick={() => {
+                setShowNewSuiteInput(true)
+                setNewSuiteName('')
+              }}
               className="mt-2 cursor-pointer border-none bg-transparent font-medium"
               style={{ color: 'var(--accent)', fontSize: 13 }}
             >
@@ -396,59 +468,76 @@ export default function TestsPanel() {
       </div>
 
       {/* Context menu */}
-      {contextMenu && (() => {
-        const suite = suites.find((s) => s.id === contextMenu.suiteId)
-        if (!suite) return null
-        return (
-          <div
-            className="fixed z-[500] rounded-lg border py-1"
-            style={{
-              left: contextMenu.x,
-              top: contextMenu.y,
-              background: 'var(--white)',
-              borderColor: 'var(--border)',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-              minWidth: 160,
-            }}
-          >
-            <ContextMenuItem
-              icon={<Play size={13} />}
-              label={t('testsPanel.runSuite')}
-              onClick={() => handleRunSuite(suite)}
-            />
-            <ContextMenuItem
-              icon={<Plus size={13} />}
-              label={t('testsPanel.addEndpoints')}
-              onClick={() => {
-                setContextMenu(null)
-                useUIStore.getState().setAddEndpointsSuite(suite.id, suite.name)
+      {contextMenu &&
+        (() => {
+          const suite = suites.find((s) => s.id === contextMenu.suiteId)
+          if (!suite) return null
+          return (
+            <div
+              className="fixed z-[500] rounded-lg border py-1"
+              style={{
+                left: contextMenu.x,
+                top: contextMenu.y,
+                background: 'var(--white)',
+                borderColor: 'var(--border)',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                minWidth: 160,
               }}
-            />
-            <ContextMenuItem
-              icon={<Pencil size={13} />}
-              label={t('testsPanel.rename')}
-              onClick={() => {
-                setRenamingSuiteId(suite.id)
-                setRenameValue(suite.name)
-                setContextMenu(null)
-              }}
-            />
-            <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-            <ContextMenuItem
-              icon={<Download size={13} />}
-              label={t('testsPanel.export')}
-              onClick={() => handleExportSuite(suite.id)}
-            />
-            <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-            <ContextMenuItem
-              icon={<Trash2 size={13} />}
-              label={t('testsPanel.delete')}
-              danger
-              onClick={() => { setDeleteTarget(suite); setContextMenu(null) }}
-            />
-          </div>
-        )
-      })()}
+            >
+              <ContextMenuItem
+                icon={<Play size={13} />}
+                label={t('testsPanel.runSuite')}
+                onClick={() => handleRunSuite(suite)}
+              />
+              <ContextMenuItem
+                icon={<Plus size={13} />}
+                label={t('testsPanel.addEndpoints')}
+                onClick={() => {
+                  setContextMenu(null)
+                  useUIStore.getState().setAddEndpointsSuite(suite.id, suite.name)
+                }}
+              />
+              <ContextMenuItem
+                icon={<Pencil size={13} />}
+                label={t('testsPanel.rename')}
+                onClick={() => {
+                  setRenamingSuiteId(suite.id)
+                  setRenameValue(suite.name)
+                  setContextMenu(null)
+                }}
+              />
+              <ContextMenuItem
+                icon={<Copy size={13} />}
+                label={t('testsPanel.duplicate')}
+                onClick={() => handleDuplicateSuite(suite.id)}
+              />
+              <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+              <ContextMenuItem
+                icon={<Download size={13} />}
+                label={t('testsPanel.export')}
+                onClick={() => handleExportSuite(suite.id)}
+              />
+              <ContextMenuItem
+                icon={<Upload size={13} />}
+                label={t('testsPanel.import')}
+                onClick={() => {
+                  setContextMenu(null)
+                  handleImportSuite()
+                }}
+              />
+              <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+              <ContextMenuItem
+                icon={<Trash2 size={13} />}
+                label={t('testsPanel.delete')}
+                danger
+                onClick={() => {
+                  setDeleteTarget(suite)
+                  setContextMenu(null)
+                }}
+              />
+            </div>
+          )
+        })()}
 
       {/* Delete confirm */}
       <DeleteConfirmDialog
@@ -465,8 +554,17 @@ export default function TestsPanel() {
 /* ── Suite node (folder) ──────────────────────────────────── */
 
 function SuiteNode({
-  suite, expanded, endpoints, isRenaming, renameValue, renameRef,
-  onToggle, onContextMenu, onRenameChange, onRenameSubmit, onRenameCancel,
+  suite,
+  expanded,
+  endpoints,
+  isRenaming,
+  renameValue,
+  renameRef,
+  onToggle,
+  onContextMenu,
+  onRenameChange,
+  onRenameSubmit,
+  onRenameCancel,
   onRemoveEndpoint,
 }: {
   suite: TestSuite
@@ -513,10 +611,18 @@ function SuiteNode({
             onBlur={onRenameSubmit}
             onClick={(e) => e.stopPropagation()}
             className="flex-1 rounded border px-1.5 py-0.5 outline-none"
-            style={{ fontSize: 13, borderColor: 'var(--accent)', background: 'var(--input-bg)', color: 'var(--text)' }}
+            style={{
+              fontSize: 13,
+              borderColor: 'var(--accent)',
+              background: 'var(--input-bg)',
+              color: 'var(--text)',
+            }}
           />
         ) : (
-          <span className="flex-1 truncate" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+          <span
+            className="flex-1 truncate"
+            style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}
+          >
             {suite.name}
           </span>
         )}
@@ -528,7 +634,10 @@ function SuiteNode({
         {hovered && !isRenaming && (
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onContextMenu(e) }}
+            onClick={(e) => {
+              e.stopPropagation()
+              onContextMenu(e)
+            }}
             className="flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0"
             style={{ color: T.ghost }}
           >
@@ -555,7 +664,10 @@ function SuiteNode({
 
 /* ── Suite endpoint tree (grouped by folder) ──────────────── */
 
-function SuiteEndpointTree({ endpoints, onRemoveEndpoint }: {
+function SuiteEndpointTree({
+  endpoints,
+  onRemoveEndpoint,
+}: {
   endpoints: SuiteEndpoint[]
   onRemoveEndpoint: (endpointId: string) => void
 }) {
@@ -597,16 +709,27 @@ function SuiteEndpointTree({ endpoints, onRemoveEndpoint }: {
               </span>
             </div>
             {/* Endpoints in folder */}
-            {!collapsed && eps.map((ep) => (
-              <EndpointItem key={ep.id} endpoint={ep} onRemove={() => onRemoveEndpoint(ep.id)} indent={20} />
-            ))}
+            {!collapsed &&
+              eps.map((ep) => (
+                <EndpointItem
+                  key={ep.id}
+                  endpoint={ep}
+                  onRemove={() => onRemoveEndpoint(ep.id)}
+                  indent={20}
+                />
+              ))}
           </div>
         )
       })}
 
       {/* Ungrouped endpoints */}
       {ungrouped.map((ep) => (
-        <EndpointItem key={ep.id} endpoint={ep} onRemove={() => onRemoveEndpoint(ep.id)} indent={10} />
+        <EndpointItem
+          key={ep.id}
+          endpoint={ep}
+          onRemove={() => onRemoveEndpoint(ep.id)}
+          indent={10}
+        />
       ))}
     </>
   )
@@ -614,13 +737,24 @@ function SuiteEndpointTree({ endpoints, onRemoveEndpoint }: {
 
 /* ── Endpoint item in suite ───────────────────────────────── */
 
-function EndpointItem({ endpoint, onRemove, indent = 10 }: { endpoint: SuiteEndpoint; onRemove: () => void; indent?: number }) {
+function EndpointItem({
+  endpoint,
+  onRemove,
+  indent = 10,
+}: {
+  endpoint: SuiteEndpoint
+  onRemove: () => void
+  indent?: number
+}) {
   const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
   return (
     <div
       className="flex items-center gap-2 py-[3px] pr-3"
-      style={{ paddingLeft: indent + 28, background: hovered ? 'var(--item-hover)' : 'transparent' }}
+      style={{
+        paddingLeft: indent + 28,
+        background: hovered ? 'var(--item-hover)' : 'transparent',
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -635,7 +769,10 @@ function EndpointItem({ endpoint, onRemove, indent = 10 }: { endpoint: SuiteEndp
       {hovered && (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onRemove() }}
+          onClick={(e) => {
+            e.stopPropagation()
+            onRemove()
+          }}
           className="flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0"
           title={t('testsPanel.removeFromSuite')}
           style={{ color: '#cc2200' }}
@@ -649,13 +786,24 @@ function EndpointItem({ endpoint, onRemove, indent = 10 }: { endpoint: SuiteEndp
 
 /* ── Context menu item ────────────────────────────────────── */
 
-function ContextMenuItem({ icon, label, danger, onClick }: {
-  icon: React.ReactNode; label: string; danger?: boolean; onClick: () => void
+function ContextMenuItem({
+  icon,
+  label,
+  danger,
+  onClick,
+}: {
+  icon: React.ReactNode
+  label: string
+  danger?: boolean
+  onClick: () => void
 }) {
   return (
     <button
       type="button"
-      onClick={(e) => { e.stopPropagation(); onClick() }}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
       className="flex w-full cursor-pointer items-center gap-2 border-none bg-transparent px-3 py-1.5 text-left transition-colors hover:bg-[var(--surface)]"
       style={{ fontSize: 13, color: danger ? '#cc2200' : 'var(--text)' }}
     >
@@ -667,8 +815,14 @@ function ContextMenuItem({ icon, label, danger, onClick }: {
 
 /* ── Sidebar nav item (All Runs / Scheduled Tasks) ────────── */
 
-function NavItem({ icon, label, onClick }: {
-  icon: React.ReactNode; label: string; onClick: () => void
+function NavItem({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
 }) {
   const [hovered, setHovered] = useState(false)
   return (
@@ -694,4 +848,3 @@ function NavItem({ icon, label, onClick }: {
     </button>
   )
 }
-

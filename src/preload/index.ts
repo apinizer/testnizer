@@ -120,6 +120,11 @@ const api = {
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('savedRequest:delete', id),
   },
 
+  // ─── Tree drag-drop ──────────────────────────────────────
+  tree: {
+    move: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('tree:move', payload),
+  },
+
   // ─── Environment ─────────────────────────────────────────
   environment: {
     list: (workspaceId: string): Promise<unknown> =>
@@ -311,6 +316,7 @@ const api = {
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('testSuite:update', id, payload),
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuite:delete', id),
+    duplicate: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuite:duplicate', id),
     listEndpoints: (suiteId: string): Promise<unknown> =>
       ipcRenderer.invoke('testSuite:listEndpoints', suiteId),
     addEndpoints: (payload: unknown): Promise<unknown> =>

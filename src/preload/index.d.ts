@@ -1130,6 +1130,7 @@ interface TestSuiteApi {
   create: (payload: unknown) => Promise<IpcResult<unknown>>
   update: (id: string, payload: unknown) => Promise<IpcResult<unknown>>
   delete: (id: string) => Promise<IpcResult<boolean>>
+  duplicate: (id: string) => Promise<IpcResult<unknown>>
   listEndpoints: (suiteId: string) => Promise<IpcResult<unknown[]>>
   addEndpoints: (payload: unknown) => Promise<IpcResult<unknown>>
   removeEndpoint: (payload: unknown) => Promise<IpcResult<boolean>>

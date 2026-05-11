@@ -34,6 +34,9 @@ export default function AddEndpointsView() {
   const close = useCallback(() => useUIStore.getState().setAddEndpointsSuite(null), [])
 
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
+  // Subscribe to the tree so this view re-fetches when the user adds a
+  // folder/endpoint elsewhere (Bug 3 — new APIs-side folders not surfacing).
+  const treeData = useWorkspaceStore((s) => s.treeData)
 
   const [allEndpoints, setAllEndpoints] = useState<EndpointWithFolder[]>([])
   const [folders, setFolders] = useState<FolderInfo[]>([])
@@ -43,32 +46,69 @@ export default function AddEndpointsView() {
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(false)
 
-  // Load data
+  // Load data — re-runs whenever the project tree changes so newly created
+  // folders/endpoints in the APIs workbench become available without
+  // closing and reopening this view.
   useEffect(() => {
     if (!activeProjectId || !suiteId) return
 
-    // Load all endpoints
-    api().endpoint.listByProject(activeProjectId).then((r: { success: boolean; data?: EndpointWithFolder[] }) => {
-      if (r?.success && r.data) setAllEndpoints(r.data)
+    // Load imported endpoints AND manually saved requests in parallel, then
+    // merge — the picker has to surface both so suites can include manually
+    // created requests too (Bug 7).
+    Promise.all([
+      api().endpoint.listByProject(activeProjectId) as Promise<{
+        success: boolean
+        data?: EndpointWithFolder[]
+      }>,
+      api().savedRequest.list(activeProjectId) as Promise<{
+        success: boolean
+        data?: Array<{
+          id: string
+          name: string
+          method: string | null
+          url: string
+          folder_id: string | null
+        }>
+      }>,
+    ]).then(([epResult, savedResult]) => {
+      const fromEndpoints = epResult?.success && epResult.data ? epResult.data : []
+      const fromSaved =
+        savedResult?.success && savedResult.data
+          ? savedResult.data.map((r) => ({
+              id: r.id,
+              name: r.name,
+              method: r.method,
+              path: r.url,
+              folder_id: r.folder_id,
+            }))
+          : []
+      setAllEndpoints([...fromEndpoints, ...fromSaved])
     })
 
     // Load folders
-    api().folder.list(activeProjectId).then((r: { success: boolean; data?: FolderInfo[] }) => {
-      if (r?.success && r.data) {
-        setFolders(r.data)
-        // Expand all by default
-        const exp: Record<string, boolean> = {}
-        for (const f of r.data) exp[f.id] = true
-        exp['_root'] = true
-        setExpandedFolders(exp)
-      }
-    })
+    api()
+      .folder.list(activeProjectId)
+      .then((r: { success: boolean; data?: FolderInfo[] }) => {
+        if (r?.success && r.data) {
+          setFolders(r.data)
+          // Expand all by default (only on first load; keep user's later choices)
+          setExpandedFolders((prev) => {
+            if (Object.keys(prev).length > 0) return prev
+            const exp: Record<string, boolean> = {}
+            for (const f of r.data!) exp[f.id] = true
+            exp['_root'] = true
+            return exp
+          })
+        }
+      })
 
     // Load existing endpoints in suite
-    api().testSuite.listEndpoints(suiteId).then((r: { success: boolean; data?: Array<{ id: string }> }) => {
-      if (r?.success && r.data) setExistingIds(new Set(r.data.map((e: { id: string }) => e.id)))
-    })
-  }, [activeProjectId, suiteId])
+    api()
+      .testSuite.listEndpoints(suiteId)
+      .then((r: { success: boolean; data?: Array<{ id: string }> }) => {
+        if (r?.success && r.data) setExistingIds(new Set(r.data.map((e: { id: string }) => e.id)))
+      })
+  }, [activeProjectId, suiteId, treeData])
 
   // Filter endpoints not already in suite
   const availableEndpoints = allEndpoints.filter((e) => !existingIds.has(e.id))
@@ -98,10 +138,11 @@ export default function AddEndpointsView() {
   // name in the endpoint's folder ancestry.
   const searchLc = search.trim().toLowerCase()
   const filtered = searchLc
-    ? availableEndpoints.filter((e) =>
-        e.name.toLowerCase().includes(searchLc) ||
-        e.path.toLowerCase().includes(searchLc) ||
-        folderPathTokens(e.folder_id).includes(searchLc)
+    ? availableEndpoints.filter(
+        (e) =>
+          e.name.toLowerCase().includes(searchLc) ||
+          e.path.toLowerCase().includes(searchLc) ||
+          folderPathTokens(e.folder_id).includes(searchLc),
       )
     : availableEndpoints
 
@@ -144,7 +185,6 @@ export default function AddEndpointsView() {
   }
 
   const toggleFolder = (folderId: string | null) => {
-    const key = folderId || '_root'
     const eps = folderId
       ? filtered.filter((e) => e.folder_id === folderId)
       : filtered.filter((e) => !e.folder_id)
@@ -200,8 +240,14 @@ export default function AddEndpointsView() {
       </div>
 
       {/* Search + select all */}
-      <div className="flex shrink-0 items-center gap-3 border-b px-5 py-2.5" style={{ borderColor: 'var(--border)' }}>
-        <div className="flex flex-1 items-center gap-2 rounded-lg px-3 py-1.5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div
+        className="flex shrink-0 items-center gap-3 border-b px-5 py-2.5"
+        style={{ borderColor: 'var(--border)' }}
+      >
+        <div
+          className="flex flex-1 items-center gap-2 rounded-lg px-3 py-1.5"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+        >
           <Search size={14} style={{ color: 'var(--hint)' }} />
           <input
             value={search}
@@ -220,7 +266,9 @@ export default function AddEndpointsView() {
             className="cursor-pointer"
           />
           <span style={{ fontSize: 13, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-            {selected.size > 0 ? `${selected.size} ${t('addEndpoints.selected')}` : t('addEndpoints.selectAll')}
+            {selected.size > 0
+              ? `${selected.size} ${t('addEndpoints.selected')}`
+              : t('addEndpoints.selectAll')}
           </span>
         </label>
       </div>
@@ -228,113 +276,142 @@ export default function AddEndpointsView() {
       {/* Endpoint list grouped by folder */}
       <div className="flex-1 overflow-y-auto px-3 py-2">
         {groups.length === 0 && rootEndpoints.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16" style={{ color: 'var(--hint)' }}>
+          <div
+            className="flex flex-col items-center justify-center py-16"
+            style={{ color: 'var(--hint)' }}
+          >
             <div style={{ fontSize: 14 }}>
-              {allEndpoints.length === 0 ? t('addEndpoints.noEndpoints') : availableEndpoints.length === 0 ? t('addEndpoints.allAlreadyIn') : t('addEndpoints.noMatches')}
+              {allEndpoints.length === 0
+                ? t('addEndpoints.noEndpoints')
+                : availableEndpoints.length === 0
+                  ? t('addEndpoints.allAlreadyIn')
+                  : t('addEndpoints.noMatches')}
             </div>
           </div>
         ) : (
           <>
-          {/* Folder groups */}
-          {groups.map((group) => {
-            const key = group.folder?.id || '_root'
-            const expanded = expandedFolders[key] !== false
-            const folderEps = group.endpoints
-            const allChecked = folderEps.every((e) => selected.has(e.id))
-            const someChecked = folderEps.some((e) => selected.has(e.id))
+            {/* Folder groups */}
+            {groups.map((group) => {
+              const key = group.folder?.id || '_root'
+              const expanded = expandedFolders[key] !== false
+              const folderEps = group.endpoints
+              const allChecked = folderEps.every((e) => selected.has(e.id))
+              const someChecked = folderEps.some((e) => selected.has(e.id))
 
-            return (
-              <div key={key} className="mb-1">
-                {/* Folder header */}
-                <div
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-[var(--surface)]"
-                  onClick={() => setExpandedFolders((s) => ({ ...s, [key]: !expanded }))}
-                >
-                  <span style={{ color: 'var(--hint)' }}>
-                    {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={allChecked}
-                    ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked }}
-                    onChange={(e) => { e.stopPropagation(); toggleFolder(group.folder?.id || null) }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="cursor-pointer"
-                  />
-                  <FolderOpen size={14} style={{ color: 'var(--accent)' }} />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-                    {group.folder?.name || t('addEndpoints.ungrouped')}
-                  </span>
-                  <span style={{ fontSize: 13, color: 'var(--hint)' }}>
-                    ({folderEps.length})
-                  </span>
-                </div>
-
-                {/* Endpoints */}
-                {expanded && (
-                  <div className="ml-4">
-                    {folderEps.map((ep) => (
-                      <label
-                        key={ep.id}
-                        className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-1.5 transition-colors hover:bg-[var(--surface)]"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected.has(ep.id)}
-                          onChange={() => toggleEndpoint(ep.id)}
-                          className="cursor-pointer"
-                        />
-                        {ep.method && <MethodBadge method={ep.method} small />}
-                        <span className="flex-1 truncate" style={{ fontSize: 13, color: 'var(--text)' }}>
-                          {ep.name}
-                        </span>
-                        <span className="truncate" style={{ fontSize: 13, color: 'var(--hint)', maxWidth: 240 }}>
-                          {ep.path}
-                        </span>
-                      </label>
-                    ))}
+              return (
+                <div key={key} className="mb-1">
+                  {/* Folder header */}
+                  <div
+                    className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-[var(--surface)]"
+                    onClick={() => setExpandedFolders((s) => ({ ...s, [key]: !expanded }))}
+                  >
+                    <span style={{ color: 'var(--hint)' }}>
+                      {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someChecked && !allChecked
+                      }}
+                      onChange={(e) => {
+                        e.stopPropagation()
+                        toggleFolder(group.folder?.id || null)
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="cursor-pointer"
+                    />
+                    <FolderOpen size={14} style={{ color: 'var(--accent)' }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                      {group.folder?.name || t('addEndpoints.ungrouped')}
+                    </span>
+                    <span style={{ fontSize: 13, color: 'var(--hint)' }}>({folderEps.length})</span>
                   </div>
-                )}
-              </div>
-            )
-          })}
 
-          {/* Root endpoints (no folder) — show flat */}
-          {rootEndpoints.map((ep) => (
-            <label
-              key={ep.id}
-              className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-1.5 transition-colors hover:bg-[var(--surface)]"
-            >
-              <input
-                type="checkbox"
-                checked={selected.has(ep.id)}
-                onChange={() => toggleEndpoint(ep.id)}
-                className="cursor-pointer"
-              />
-              {ep.method && <MethodBadge method={ep.method} small />}
-              <span className="flex-1 truncate" style={{ fontSize: 13, color: 'var(--text)' }}>
-                {ep.name}
-              </span>
-              <span className="truncate" style={{ fontSize: 13, color: 'var(--hint)', maxWidth: 240 }}>
-                {ep.path}
-              </span>
-            </label>
-          ))}
+                  {/* Endpoints */}
+                  {expanded && (
+                    <div className="ml-4">
+                      {folderEps.map((ep) => (
+                        <label
+                          key={ep.id}
+                          className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-1.5 transition-colors hover:bg-[var(--surface)]"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected.has(ep.id)}
+                            onChange={() => toggleEndpoint(ep.id)}
+                            className="cursor-pointer"
+                          />
+                          {ep.method && <MethodBadge method={ep.method} small />}
+                          <span
+                            className="flex-1 truncate"
+                            style={{ fontSize: 13, color: 'var(--text)' }}
+                          >
+                            {ep.name}
+                          </span>
+                          <span
+                            className="truncate"
+                            style={{ fontSize: 13, color: 'var(--hint)', maxWidth: 240 }}
+                          >
+                            {ep.path}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            {/* Root endpoints (no folder) — show flat */}
+            {rootEndpoints.map((ep) => (
+              <label
+                key={ep.id}
+                className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-1.5 transition-colors hover:bg-[var(--surface)]"
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.has(ep.id)}
+                  onChange={() => toggleEndpoint(ep.id)}
+                  className="cursor-pointer"
+                />
+                {ep.method && <MethodBadge method={ep.method} small />}
+                <span className="flex-1 truncate" style={{ fontSize: 13, color: 'var(--text)' }}>
+                  {ep.name}
+                </span>
+                <span
+                  className="truncate"
+                  style={{ fontSize: 13, color: 'var(--hint)', maxWidth: 240 }}
+                >
+                  {ep.path}
+                </span>
+              </label>
+            ))}
           </>
         )}
       </div>
 
       {/* Footer */}
-      <div className="flex shrink-0 items-center justify-between border-t px-5 py-3" style={{ borderColor: 'var(--border)' }}>
+      <div
+        className="flex shrink-0 items-center justify-between border-t px-5 py-3"
+        style={{ borderColor: 'var(--border)' }}
+      >
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>
-          {filtered.length} {filtered.length !== 1 ? t('addEndpoints.endpoints') : t('addEndpoints.endpoint')} {t('addEndpoints.available')}
+          {filtered.length}{' '}
+          {filtered.length !== 1 ? t('addEndpoints.endpoints') : t('addEndpoints.endpoint')}{' '}
+          {t('addEndpoints.available')}
         </span>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={close}
             className="cursor-pointer rounded-lg border px-4 py-1.5"
-            style={{ background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--text)', fontSize: 13 }}
+            style={{
+              background: 'var(--white)',
+              borderColor: 'var(--border)',
+              color: 'var(--text)',
+              fontSize: 13,
+            }}
           >
             {t('addEndpoints.cancel')}
           </button>
@@ -345,7 +422,10 @@ export default function AddEndpointsView() {
             className="cursor-pointer rounded-lg border-none px-5 py-1.5 font-medium text-white disabled:opacity-50"
             style={{ background: 'var(--accent)', fontSize: 13 }}
           >
-            {t('addEndpoints.add')} {selected.size > 0 ? `${selected.size} ${selected.size > 1 ? t('addEndpoints.endpoints') : t('addEndpoints.endpoint')}` : ''}
+            {t('addEndpoints.add')}{' '}
+            {selected.size > 0
+              ? `${selected.size} ${selected.size > 1 ? t('addEndpoints.endpoints') : t('addEndpoints.endpoint')}`
+              : ''}
           </button>
         </div>
       </div>

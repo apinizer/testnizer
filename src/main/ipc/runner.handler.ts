@@ -188,6 +188,57 @@ function buildRequestFromEndpoint(endpoint: endpointRepo.EndpointRow): HttpReque
   }
 }
 
+/**
+ * Adapt a manually saved request (saved_requests table) into the same shape
+ * the runner uses for imported endpoints. Without this, manual requests come
+ * back as "Endpoint not found" when the runner tries `getEndpointById` —
+ * because they live in a separate table (Bug 7).
+ *
+ * The synthesized `request_schema` mirrors what an imported endpoint stores,
+ * so the assertion / pre-script / post-script logic downstream just works.
+ */
+function savedRequestToEndpoint(saved: endpointRepo.SavedRequestRow): endpointRepo.EndpointRow {
+  const synthesizedSchema = JSON.stringify({
+    method: saved.method ?? 'GET',
+    url: saved.url,
+    params: parseJsonSafe<unknown[]>(saved.params, []),
+    headers: parseJsonSafe<unknown[]>(saved.headers, []),
+    body: saved.body ? parseJsonSafe<unknown>(saved.body, null) : undefined,
+    auth: saved.auth ? parseJsonSafe<unknown>(saved.auth, null) : undefined,
+    preScript: saved.pre_script ?? undefined,
+    postScript: saved.post_script ?? undefined,
+    assertions: parseJsonSafe<unknown[]>(saved.assertions, []),
+  })
+  return {
+    id: saved.id,
+    project_id: saved.project_id ?? '',
+    folder_id: saved.folder_id,
+    name: saved.name,
+    description: null,
+    protocol: saved.protocol,
+    method: saved.method,
+    path: saved.url,
+    status: 'developing',
+    request_schema: synthesizedSchema,
+    response_schemas: null,
+    sort_order: saved.sort_order,
+    created_at: saved.created_at,
+    updated_at: saved.updated_at,
+  }
+}
+
+/**
+ * Look up a runnable entity by ID — supports both imported endpoints and
+ * manually saved requests, transparent to callers (Bug 7).
+ */
+function getRunnableEntity(id: string): endpointRepo.EndpointRow | undefined {
+  const endpoint = endpointRepo.getEndpointById(id)
+  if (endpoint) return endpoint
+  const saved = endpointRepo.getSavedRequestById(id)
+  if (saved) return savedRequestToEndpoint(saved)
+  return undefined
+}
+
 function headersArrayToRecord(
   headers?: Array<{ key: string; value: string; enabled?: boolean }>,
 ): Record<string, string> | undefined {
@@ -781,7 +832,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       // Endpoint id is keyed by the inner loop only — endpointIds has
       // `endpointsPerIteration` elements and is reused across iterations.
       const endpointId = options.endpointIds[j]
-      const endpoint = endpointRepo.getEndpointById(endpointId)
+      const endpoint = getRunnableEntity(endpointId)
 
       if (!endpoint) {
         const result: EndpointRunResult = {

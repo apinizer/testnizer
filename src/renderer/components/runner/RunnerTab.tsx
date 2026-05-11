@@ -1,6 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
-import { useEnvironmentStore } from '../../stores/environment.store'
 import type { TreeNode, HttpMethod } from '../../types'
 import RunnerSequence from './RunnerSequence'
 import RunnerConfig from './RunnerConfig'
@@ -206,6 +205,31 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     sourceType?: 'suite' | 'apis' | 'runner'
   } | null>(null)
 
+  // When the tab was opened from a Test Suite, hold onto the suite's endpoint
+  // IDs for the lifetime of the tab — the tree-collection effect must keep
+  // filtering even after the initial auto-run completes (Bug 2). Lazy init
+  // reads sessionStorage so the filter is correct on the FIRST render, but
+  // the value is also re-derived in the sessionStorage effect below whenever
+  // the tab is reused with a fresh sessionKey (switching between suites).
+  const [suiteFilterIds, setSuiteFilterIds] = useState<Set<string> | null>(() => {
+    if (!tabId) return null
+    try {
+      const stored = sessionStorage.getItem(`runner-report-${tabId}`)
+      if (!stored) return null
+      const data = JSON.parse(stored) as {
+        autoRun?: boolean
+        sourceType?: string
+        endpointIds?: string[]
+      }
+      if (data.autoRun && data.sourceType === 'suite' && Array.isArray(data.endpointIds)) {
+        return new Set(data.endpointIds)
+      }
+    } catch {
+      /* ignore */
+    }
+    return null
+  })
+
   // Check for pre-loaded report data or viewAllRuns from sidebar
   useEffect(() => {
     if (!tabId) return
@@ -229,8 +253,15 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             sourceType: data.sourceType,
           }
           if (data.folderName) setRunFolderName(data.folderName)
-          if (data.sourceType === 'suite') setRunOrigin('suite')
-          else if (data.sourceType === 'apis') setRunOrigin('apis')
+          if (data.sourceType === 'suite') {
+            setRunOrigin('suite')
+            setSuiteFilterIds(new Set(data.endpointIds as string[]))
+          } else if (data.sourceType === 'apis') {
+            setRunOrigin('apis')
+            setSuiteFilterIds(null)
+          } else {
+            setSuiteFilterIds(null)
+          }
         } else {
           const typed = data as {
             results: EndpointRunResult[]
@@ -323,24 +354,39 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           setIsRunning(false)
         })
     }, 100)
-  }, [endpoints, activeProjectId, activeWorkspaceId, environmentId, delay, runFolderName, folderId])
+  }, [
+    endpoints,
+    activeProjectId,
+    activeWorkspaceId,
+    environmentId,
+    delay,
+    iterations,
+    iterationData,
+    runFolderName,
+    folderId,
+  ])
 
-  // Collect endpoints and folder groups from the target folder/module
+  // Collect endpoints and folder groups from the target folder/module.
+  // When the tab was opened from a Test Suite, only the suite's endpoints
+  // are surfaced — otherwise the user would see (and be able to re-run)
+  // every endpoint in the project (Bug 2).
   useEffect(() => {
     if (!folderId) {
       const all: RunnerEndpointItem[] = []
       for (const root of treeData) {
         all.push(...collectEndpointsFromNode(root))
       }
-      setEndpoints(all)
-      setFolderGroups(collectFolderGroups(treeData))
-      setRunFolderName(treeData[0]?.label || 'All')
+      const eps = suiteFilterIds ? all.filter((ep) => suiteFilterIds.has(ep.id)) : all
+      setEndpoints(eps)
+      setFolderGroups(suiteFilterIds ? [] : collectFolderGroups(treeData))
+      setRunFolderName(suiteFilterIds ? runFolderName || 'Suite' : treeData[0]?.label || 'All')
       return
     }
 
     const node = findNodeById(treeData, folderId)
     if (node) {
-      const eps = collectEndpointsFromNode(node)
+      const collected = collectEndpointsFromNode(node)
+      const eps = suiteFilterIds ? collected.filter((ep) => suiteFilterIds.has(ep.id)) : collected
       setEndpoints(eps)
       setRunFolderName(node.label)
       if (node.type === 'folder' || node.type === 'module') {
@@ -353,7 +399,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         )
       }
     }
-  }, [folderId, treeData])
+  }, [folderId, treeData, suiteFilterIds])
 
   const toggleEndpoint = useCallback((id: string) => {
     setEndpoints((eps) => eps.map((ep) => (ep.id === id ? { ...ep, selected: !ep.selected } : ep)))
@@ -447,6 +493,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     activeWorkspaceId,
     environmentId,
     delay,
+    iterations,
+    iterationData,
     runFolderName,
     runOrigin,
   ])

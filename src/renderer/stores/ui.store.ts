@@ -257,7 +257,14 @@ export const useUIStore = create<UIStore>((set) => ({
 
   setLeftPanelCollapsed: (collapsed) => set({ isLeftPanelCollapsed: collapsed }),
 
-  setActiveSidebarPage: (page) => set({ activeSidebarPage: page }),
+  setActiveSidebarPage: (page) =>
+    set((state) => ({
+      activeSidebarPage: page,
+      // Tests-only overlays must not survive a workbench switch — otherwise
+      // the Workbench keeps rendering the AddEndpoints view over the new page.
+      addEndpointsSuiteId: page === 'tests' ? state.addEndpointsSuiteId : null,
+      addEndpointsSuiteName: page === 'tests' ? state.addEndpointsSuiteName : null,
+    })),
 
   setShowImportModal: (show) => set({ showImportModal: show }),
   setShowEnvironmentModal: (show) => set({ showEnvironmentModal: show }),
