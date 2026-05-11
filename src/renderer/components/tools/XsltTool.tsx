@@ -17,14 +17,23 @@ export default function XsltTool() {
 
   const handleTransform = async () => {
     setBusy(true)
-    const r = await transformXslt(xml, xsl)
-    setBusy(false)
-    if (r.ok) {
-      setOutput(r.output)
-      setError(null)
-    } else {
+    try {
+      const r = await transformXslt(xml, xsl)
+      if (r.ok) {
+        setOutput(r.output)
+        setError(null)
+      } else {
+        setOutput('')
+        setError(r.error)
+      }
+    } catch (err) {
+      // transformXslt is expected to return {ok:false,error} but if it
+      // throws synchronously (e.g. a parser regression), the spinner
+      // previously stuck forever. try/finally guarantees re-enable.
       setOutput('')
-      setError(r.error)
+      setError((err as Error).message || String(err))
+    } finally {
+      setBusy(false)
     }
   }
 

@@ -3,6 +3,7 @@ import type { Workspace, Project, TreeNode, Folder, Endpoint, SavedRequest } fro
 import { useEnvironmentStore } from './environment.store'
 import { useBranchStore } from './branch.store'
 import { useTabsStore } from './tabs.store'
+import { useConsoleStore } from './console.store'
 
 interface WorkspaceStore {
   initialized: boolean
@@ -234,7 +235,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ initialized: true })
   },
 
-  setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
+  setActiveWorkspace: (id) => {
+    const prev = get().activeWorkspaceId
+    // Mirror setActiveProject's cleanup so tabs, console entries, branch
+    // state, and merge-conflict overlays don't leak across workspace
+    // boundaries (workspaces contain projects, so anything project-scoped
+    // is implicitly workspace-scoped too).
+    if (prev && prev !== id) {
+      useTabsStore.getState().closeAllTabs()
+      useConsoleStore.getState().clear()
+      useBranchStore.getState().clearPendingConflict()
+    }
+    set({ activeWorkspaceId: id, activeProjectId: null })
+  },
 
   setActiveProject: async (id) => {
     const prevId = get().activeProjectId
@@ -249,6 +262,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // endpointIds were resolved against the wrong project. Reset on switch.
     if (prevId && prevId !== id) {
       useTabsStore.getState().closeAllTabs()
+      // Console entries are tagged with tabId references that now point at
+      // closed tabs — clearing avoids stale "tab X" badges in the panel.
+      useConsoleStore.getState().clear()
     }
     set({ activeProjectId: id })
     // Reload environments/globals for the new scope

@@ -79,6 +79,15 @@ export function matchPath(
   }
 
   if (mode === 'regex') {
+    // Reject obviously dangerous patterns before compiling — ReDoS via
+    // nested quantifiers (`(a+)+`, `(.*)*`, `(.+)*`) can freeze the main
+    // process for seconds on a crafted path. Pattern length is also
+    // bounded so an attacker can't blow stack with deeply nested groups.
+    if (template.length > 512) return null
+    if (/(\([^)]+\)|\[[^\]]+\])[+*]{1,2}\s*[+*]/.test(template)) return null
+    // Cap input length too — pathological matchers on multi-KB paths
+    // hurt regardless of the pattern.
+    if (actual.length > 8192) return null
     try {
       const re = new RegExp(template)
       const m = re.exec(actual)

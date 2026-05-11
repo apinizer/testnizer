@@ -145,8 +145,15 @@ interface RunnerReport {
 
 // ─── State ───────────────────────────────────────────────────────
 
-let isRunning = false
-let shouldStop = false
+// Each in-flight run is tracked independently so that stopping one Runner
+// tab doesn't abort runs started from a different tab, and an exception in
+// `executeCollection` doesn't leave a permanent "already running" flag
+// stuck (review findings BLOCKER + HIGH on runner concurrency).
+interface RunState {
+  shouldStop: boolean
+}
+const activeRuns = new Map<string, RunState>()
+let nextRunId = 1
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -801,8 +808,9 @@ function resolveRequestOptions(
 // ─── Runner Execution ────────────────────────────────────────────
 
 async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerReport> {
-  isRunning = true
-  shouldStop = false
+  const runId = String(nextRunId++)
+  const runState: RunState = { shouldStop: false }
+  activeRuns.set(runId, runState)
 
   const startedAt = Date.now()
   const results: EndpointRunResult[] = []
@@ -823,235 +831,243 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   let passedEndpoints = 0
   let failedEndpoints = 0
 
-  outer: for (let iter = 0; iter < iterations; iter++) {
-    for (let j = 0; j < endpointsPerIteration; j++) {
-      if (shouldStop) break outer
-      // Linear position across all iterations (used for progress events).
-      const i = iter * endpointsPerIteration + j
+  try {
+    outer: for (let iter = 0; iter < iterations; iter++) {
+      for (let j = 0; j < endpointsPerIteration; j++) {
+        if (runState.shouldStop) break outer
+        // Linear position across all iterations (used for progress events).
+        const i = iter * endpointsPerIteration + j
 
-      // Endpoint id is keyed by the inner loop only — endpointIds has
-      // `endpointsPerIteration` elements and is reused across iterations.
-      const endpointId = options.endpointIds[j]
-      const endpoint = getRunnableEntity(endpointId)
+        // Endpoint id is keyed by the inner loop only — endpointIds has
+        // `endpointsPerIteration` elements and is reused across iterations.
+        const endpointId = options.endpointIds[j]
+        const endpoint = getRunnableEntity(endpointId)
 
-      if (!endpoint) {
-        const result: EndpointRunResult = {
-          endpointId,
-          endpointName: 'Unknown',
-          method: 'GET',
-          url: '',
-          status: null,
-          statusText: '',
-          duration: 0,
-          passed: 0,
-          failed: 0,
-          skipped: 0,
-          assertions: [],
-          error: 'Endpoint not found',
-        }
-        results.push(result)
-        failedEndpoints++
-        sendProgress({ current: i + 1, total, endpointId, result })
-        continue
-      }
-
-      const requestOptions = buildRequestFromEndpoint(endpoint)
-
-      if (!requestOptions) {
-        const result: EndpointRunResult = {
-          endpointId,
-          endpointName: endpoint.name,
-          method: endpoint.method ?? 'GET',
-          url: endpoint.path,
-          status: null,
-          statusText: '',
-          duration: 0,
-          passed: 0,
-          failed: 0,
-          skipped: 0,
-          assertions: [],
-          error: 'No URL configured for endpoint',
-        }
-        results.push(result)
-        failedEndpoints++
-        sendProgress({ current: i + 1, total, endpointId, result })
-        continue
-      }
-
-      try {
-        // Run pre-request script (Postman event[prerequest] / Insomnia preRequest)
-        const schemaForScripts = parseJsonSafe<{ preScript?: string; postScript?: string }>(
-          endpoint.request_schema,
-          {},
-        )
-        const scriptCtx = newScriptContext(envVars, iterationData[iter] ?? {}, iter, iterations)
-        if (schemaForScripts.preScript) {
-          runUserScript(schemaForScripts.preScript, scriptCtx, null)
-          // Push script env updates back into the global env vars map.
-          for (const [k, v] of Object.entries(scriptCtx.envUpdates)) {
-            envVars[k] = v
+        if (!endpoint) {
+          const result: EndpointRunResult = {
+            endpointId,
+            endpointName: 'Unknown',
+            method: 'GET',
+            url: '',
+            status: null,
+            statusText: '',
+            duration: 0,
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+            assertions: [],
+            error: 'Endpoint not found',
           }
-          if (scriptCtx.skipRequest) {
-            const skipResult: EndpointRunResult = {
-              endpointId,
-              endpointName: endpoint.name,
-              method: requestOptions.method,
-              url: requestOptions.url,
-              status: null,
-              statusText: 'SKIPPED',
-              duration: 0,
-              passed: 0,
-              failed: 0,
-              skipped: 1,
-              assertions: [],
-            }
-            results.push(skipResult)
-            sendProgress({ current: i + 1, total, endpointId, result: skipResult })
-            if (options.delay && options.delay > 0 && i < total - 1 && !shouldStop) {
-              await delay(options.delay)
-            }
-            continue
-          }
+          results.push(result)
+          failedEndpoints++
+          sendProgress({ current: i + 1, total, endpointId, result })
+          continue
         }
 
-        // Resolve environment variables in request
-        const resolvedOptions = resolveRequestOptions(requestOptions, envVars)
-        const response = await executeHttpRequest(resolvedOptions)
+        const requestOptions = buildRequestFromEndpoint(endpoint)
 
-        // Run post-response (test) script
-        const scriptTestResults: AssertionResult[] = []
-        if (schemaForScripts.postScript) {
-          scriptCtx.envUpdates = {}
-          runUserScript(schemaForScripts.postScript, scriptCtx, {
+        if (!requestOptions) {
+          const result: EndpointRunResult = {
+            endpointId,
+            endpointName: endpoint.name,
+            method: endpoint.method ?? 'GET',
+            url: endpoint.path,
+            status: null,
+            statusText: '',
+            duration: 0,
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+            assertions: [],
+            error: 'No URL configured for endpoint',
+          }
+          results.push(result)
+          failedEndpoints++
+          sendProgress({ current: i + 1, total, endpointId, result })
+          continue
+        }
+
+        try {
+          // Run pre-request script (Postman event[prerequest] / Insomnia preRequest)
+          const schemaForScripts = parseJsonSafe<{ preScript?: string; postScript?: string }>(
+            endpoint.request_schema,
+            {},
+          )
+          const scriptCtx = newScriptContext(envVars, iterationData[iter] ?? {}, iter, iterations)
+          if (schemaForScripts.preScript) {
+            runUserScript(schemaForScripts.preScript, scriptCtx, null)
+            // Push script env updates back into the global env vars map.
+            for (const [k, v] of Object.entries(scriptCtx.envUpdates)) {
+              envVars[k] = v
+            }
+            if (scriptCtx.skipRequest) {
+              const skipResult: EndpointRunResult = {
+                endpointId,
+                endpointName: endpoint.name,
+                method: requestOptions.method,
+                url: requestOptions.url,
+                status: null,
+                statusText: 'SKIPPED',
+                duration: 0,
+                passed: 0,
+                failed: 0,
+                skipped: 1,
+                assertions: [],
+              }
+              results.push(skipResult)
+              sendProgress({ current: i + 1, total, endpointId, result: skipResult })
+              if (options.delay && options.delay > 0 && i < total - 1 && !runState.shouldStop) {
+                await delay(options.delay)
+              }
+              continue
+            }
+          }
+
+          // Resolve environment variables in request
+          const resolvedOptions = resolveRequestOptions(requestOptions, envVars)
+          const response = await executeHttpRequest(resolvedOptions)
+
+          // Run post-response (test) script
+          const scriptTestResults: AssertionResult[] = []
+          if (schemaForScripts.postScript) {
+            scriptCtx.envUpdates = {}
+            runUserScript(schemaForScripts.postScript, scriptCtx, {
+              status: response.status,
+              statusText: response.statusText,
+              headers: response.headers,
+              body: response.body,
+              bodySize: response.bodySize,
+            })
+            for (const [k, v] of Object.entries(scriptCtx.envUpdates)) {
+              envVars[k] = v
+            }
+            for (const t of scriptCtx.testResults) {
+              scriptTestResults.push({
+                name: t.name,
+                passed: t.passed,
+                error: t.error,
+              })
+            }
+          }
+
+          // Auto-save to history
+          try {
+            historyRepo.addHistory({
+              workspace_id: options.workspaceId,
+              project_id: options.projectId,
+              endpoint_id: endpointId,
+              protocol: endpoint.protocol || 'http',
+              method: resolvedOptions.method,
+              url: resolvedOptions.url,
+              status_code: response.status,
+              duration_ms: response.timing?.total ? Math.round(response.timing.total) : undefined,
+              request_snapshot: JSON.stringify({
+                method: resolvedOptions.method,
+                url: resolvedOptions.url,
+              }),
+              response_snapshot: JSON.stringify({
+                status: response.status,
+                statusText: response.statusText,
+                timing: response.timing,
+              }),
+            })
+          } catch {
+            // History save failure should not affect runner
+          }
+
+          // Parse assertions from request schema
+          const schema = parseJsonSafe<{ assertions?: TestAssertion[] }>(
+            endpoint.request_schema,
+            {},
+          )
+          const assertions = schema.assertions ?? []
+
+          const declarativeAssertions = runAssertionsMainProcess(assertions, {
             status: response.status,
             statusText: response.statusText,
             headers: response.headers,
             body: response.body,
             bodySize: response.bodySize,
+            timing: response.timing,
           })
-          for (const [k, v] of Object.entries(scriptCtx.envUpdates)) {
-            envVars[k] = v
+          const assertionResults = [...declarativeAssertions, ...scriptTestResults]
+
+          const passed = assertionResults.filter((a) => a.passed).length
+          const failed = assertionResults.filter((a) => !a.passed).length
+
+          totalAssertions += assertionResults.length
+          passedAssertions += passed
+          failedAssertions += failed
+
+          // A request only counts as "passed" when it has no transport error,
+          // no failed assertions, AND was not skipped by a pre-script.
+          // Previously skipped runs were silently bucketed as passed because
+          // skipped runs short-circuit before reaching this point — kept the
+          // explicit guard so a future refactor doesn't reintroduce the bug.
+          const endpointPassed = failed === 0 && !response.error && (response.status ?? 0) < 400
+          if (endpointPassed) passedEndpoints++
+          else failedEndpoints++
+
+          const result: EndpointRunResult = {
+            endpointId,
+            endpointName: endpoint.name,
+            method: requestOptions.method,
+            url: requestOptions.url,
+            status: response.status ?? null,
+            statusText: response.statusText ?? '',
+            duration: response.timing.total,
+            passed,
+            failed,
+            skipped: 0,
+            assertions: assertionResults,
+            error: response.error,
+            responseSize: response.bodySize ?? 0,
+            responseBody: persistResponses ? (response.body ?? undefined) : undefined,
+            responseHeaders: persistResponses ? (response.headers ?? undefined) : undefined,
+            requestHeaders: persistResponses
+              ? headersArrayToRecord(resolvedOptions.headers)
+              : undefined,
+            requestBody: persistResponses ? requestBodyToString(resolvedOptions.body) : undefined,
           }
-          for (const t of scriptCtx.testResults) {
-            scriptTestResults.push({
-              name: t.name,
-              passed: t.passed,
-              error: t.error,
-            })
+
+          results.push(result)
+          sendProgress({ current: i + 1, total, endpointId, result })
+
+          if (stopOnError && !endpointPassed) break outer
+        } catch (e) {
+          const result: EndpointRunResult = {
+            endpointId,
+            endpointName: endpoint.name,
+            method: requestOptions.method,
+            url: requestOptions.url,
+            status: null,
+            statusText: '',
+            duration: 0,
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+            assertions: [],
+            error: (e as Error).message,
           }
+          results.push(result)
+          failedEndpoints++
+          sendProgress({ current: i + 1, total, endpointId, result })
+
+          if (stopOnError) break outer
         }
 
-        // Auto-save to history
-        try {
-          historyRepo.addHistory({
-            workspace_id: options.workspaceId,
-            project_id: options.projectId,
-            endpoint_id: endpointId,
-            protocol: endpoint.protocol || 'http',
-            method: resolvedOptions.method,
-            url: resolvedOptions.url,
-            status_code: response.status,
-            duration_ms: response.timing?.total ? Math.round(response.timing.total) : undefined,
-            request_snapshot: JSON.stringify({
-              method: resolvedOptions.method,
-              url: resolvedOptions.url,
-            }),
-            response_snapshot: JSON.stringify({
-              status: response.status,
-              statusText: response.statusText,
-              timing: response.timing,
-            }),
-          })
-        } catch {
-          // History save failure should not affect runner
+        // Delay between requests if configured
+        if (options.delay && options.delay > 0 && i < total - 1 && !runState.shouldStop) {
+          await delay(options.delay)
         }
-
-        // Parse assertions from request schema
-        const schema = parseJsonSafe<{ assertions?: TestAssertion[] }>(endpoint.request_schema, {})
-        const assertions = schema.assertions ?? []
-
-        const declarativeAssertions = runAssertionsMainProcess(assertions, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: response.headers,
-          body: response.body,
-          bodySize: response.bodySize,
-          timing: response.timing,
-        })
-        const assertionResults = [...declarativeAssertions, ...scriptTestResults]
-
-        const passed = assertionResults.filter((a) => a.passed).length
-        const failed = assertionResults.filter((a) => !a.passed).length
-
-        totalAssertions += assertionResults.length
-        passedAssertions += passed
-        failedAssertions += failed
-
-        // A request only counts as "passed" when it has no transport error,
-        // no failed assertions, AND was not skipped by a pre-script.
-        // Previously skipped runs were silently bucketed as passed because
-        // skipped runs short-circuit before reaching this point — kept the
-        // explicit guard so a future refactor doesn't reintroduce the bug.
-        const endpointPassed = failed === 0 && !response.error && (response.status ?? 0) < 400
-        if (endpointPassed) passedEndpoints++
-        else failedEndpoints++
-
-        const result: EndpointRunResult = {
-          endpointId,
-          endpointName: endpoint.name,
-          method: requestOptions.method,
-          url: requestOptions.url,
-          status: response.status ?? null,
-          statusText: response.statusText ?? '',
-          duration: response.timing.total,
-          passed,
-          failed,
-          skipped: 0,
-          assertions: assertionResults,
-          error: response.error,
-          responseSize: response.bodySize ?? 0,
-          responseBody: persistResponses ? (response.body ?? undefined) : undefined,
-          responseHeaders: persistResponses ? (response.headers ?? undefined) : undefined,
-          requestHeaders: persistResponses
-            ? headersArrayToRecord(resolvedOptions.headers)
-            : undefined,
-          requestBody: persistResponses ? requestBodyToString(resolvedOptions.body) : undefined,
-        }
-
-        results.push(result)
-        sendProgress({ current: i + 1, total, endpointId, result })
-
-        if (stopOnError && !endpointPassed) break outer
-      } catch (e) {
-        const result: EndpointRunResult = {
-          endpointId,
-          endpointName: endpoint.name,
-          method: requestOptions.method,
-          url: requestOptions.url,
-          status: null,
-          statusText: '',
-          duration: 0,
-          passed: 0,
-          failed: 0,
-          skipped: 0,
-          assertions: [],
-          error: (e as Error).message,
-        }
-        results.push(result)
-        failedEndpoints++
-        sendProgress({ current: i + 1, total, endpointId, result })
-
-        if (stopOnError) break outer
-      }
-
-      // Delay between requests if configured
-      if (options.delay && options.delay > 0 && i < total - 1 && !shouldStop) {
-        await delay(options.delay)
       }
     }
+  } finally {
+    // Always release the run slot, even on exception — without this an
+    // unhandled error would leave the run permanently registered and
+    // any "is this run still going?" check would forever say yes.
+    activeRuns.delete(runId)
   }
-
-  isRunning = false
 
   const completedAt = Date.now()
   const durationMs = completedAt - startedAt
@@ -1199,24 +1215,55 @@ export async function executeCollectionForScheduler(
 export function registerRunnerHandlers(): void {
   ipcMain.handle('runner:execute', async (_event, options: RunnerExecuteOptions) => {
     try {
-      if (isRunning) {
-        return { success: false, error: 'A collection run is already in progress' }
+      // Basic payload validation — the renderer is trusted but a bad
+      // sessionStorage payload (corrupted by another tab, downgrade from a
+      // previous version) shouldn't crash the main process.
+      if (!options || !Array.isArray(options.endpointIds) || options.endpointIds.length === 0) {
+        return { success: false, error: 'No endpoints to run' }
+      }
+      if (typeof options.projectId !== 'string' || !options.projectId) {
+        return { success: false, error: 'Missing projectId' }
+      }
+      for (const id of options.endpointIds) {
+        if (typeof id !== 'string' || !id) {
+          return { success: false, error: 'Invalid endpoint id in payload' }
+        }
+      }
+      // Cross-project guard: each endpoint/saved-request id must belong to
+      // the project the run claims to target. Without this a stale
+      // sessionStorage payload from a previous project (after a project
+      // switch) could run requests against the wrong workspace.
+      for (const id of options.endpointIds) {
+        const ep = endpointRepo.getEndpointById(id)
+        const sr = ep ? null : endpointRepo.getSavedRequestById(id)
+        const owner = ep?.project_id ?? sr?.project_id ?? null
+        if (owner && owner !== options.projectId) {
+          return {
+            success: false,
+            error: 'Endpoint does not belong to the requested project — refusing to run',
+          }
+        }
       }
       const report = await executeCollection(options)
       return { success: true, data: report }
     } catch (e) {
-      isRunning = false
       return { success: false, error: (e as Error).message }
     }
   })
 
   ipcMain.handle('runner:stop', async () => {
     try {
-      if (!isRunning) {
-        return { success: true, data: false }
+      // Stop every in-flight run. Today the renderer doesn't pass a run id,
+      // and there's no UI affordance to target one of several concurrent
+      // runs, so "Stop" is project-wide by design. The shouldStop flag is
+      // per-RunState now, so this only nudges currently-registered runs
+      // — finished runs are no longer in the map.
+      let stopped = 0
+      for (const run of activeRuns.values()) {
+        run.shouldStop = true
+        stopped++
       }
-      shouldStop = true
-      return { success: true, data: true }
+      return { success: true, data: stopped > 0 }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

@@ -42,6 +42,7 @@ export default function UrlBar() {
   const [showSendDrop, setShowSendDrop] = useState(false)
   const [saveLoading, setSaveLoading] = useState(false)
   const [saveOk, setSaveOk] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const dropRef = useRef<HTMLDivElement>(null)
   const sendDropRef = useRef<HTMLDivElement>(null)
 
@@ -395,9 +396,10 @@ export default function UrlBar() {
           }
           // Already saved — update in place
           setSaveLoading(true)
+          setSaveError(null)
           try {
             if (activeTab.savedRequestId) {
-              await window.api?.savedRequest?.update(activeTab.savedRequestId, {
+              const r = (await window.api?.savedRequest?.update(activeTab.savedRequestId, {
                 method,
                 url,
                 params: JSON.stringify(params),
@@ -407,9 +409,10 @@ export default function UrlBar() {
                 pre_script: preScript,
                 post_script: postScript,
                 assertions: JSON.stringify(assertions),
-              })
+              })) as { success: boolean; error?: string }
+              if (r && r.success === false) throw new Error(r.error || 'Save failed')
             } else if (activeTab.endpointId) {
-              await window.api?.endpoint?.update(activeTab.endpointId, {
+              const r = (await window.api?.endpoint?.update(activeTab.endpointId, {
                 method,
                 path: url,
                 request_schema: JSON.stringify({
@@ -423,7 +426,8 @@ export default function UrlBar() {
                   postScript,
                   assertions,
                 }),
-              })
+              })) as { success: boolean; error?: string }
+              if (r && r.success === false) throw new Error(r.error || 'Save failed')
             }
             // Update tab
             useTabsStore.getState().updateTab(activeTab.id, { method, url })
@@ -431,19 +435,24 @@ export default function UrlBar() {
             await refreshTree()
             setSaveOk(true)
             setTimeout(() => setSaveOk(false), 1500)
-          } catch {
-            /* ignore */
+          } catch (e) {
+            // Silent swallow → user thought their work was saved when it
+            // wasn't. Surface the failure as a transient error chip.
+            setSaveError((e as Error).message || 'Save failed')
+            setTimeout(() => setSaveError(null), 4000)
+          } finally {
+            setSaveLoading(false)
           }
-          setSaveLoading(false)
         }}
         disabled={saveLoading}
+        title={saveError ?? undefined}
         style={{
           ...BTN_S,
           height: 32,
           borderRadius: 8,
           marginLeft: 6,
-          borderColor: saveOk ? 'var(--green)' : undefined,
-          color: saveOk ? 'var(--green)' : undefined,
+          borderColor: saveError ? 'var(--red, #cc2200)' : saveOk ? 'var(--green)' : undefined,
+          color: saveError ? 'var(--red, #cc2200)' : saveOk ? 'var(--green)' : undefined,
         }}
       >
         <svg
@@ -458,7 +467,7 @@ export default function UrlBar() {
           <polyline points="17 21 17 13 7 13 7 21" />
           <polyline points="7 3 7 8 15 8" />
         </svg>
-        {saveOk ? '✓' : t('urlBar.save')}
+        {saveError ? '✗' : saveOk ? '✓' : t('urlBar.save')}
       </button>
     </div>
   )

@@ -144,15 +144,39 @@ export interface HttpRequestOptions {
    */
   tls?: TlsOptions
   signal?: AbortSignal
+  /**
+   * Project id scope for the cookie jar. Two requests from different
+   * projects to the same host get isolated cookie state — without this,
+   * a Bearer-equivalent Set-Cookie from project A would auto-attach to
+   * project B's requests.
+   */
+  projectId?: string | null
 }
 
 // ─── Cookie Jar (manual management — no axios-cookiejar-support) ─────
+//
+// Cookie state is scoped per project so that auth cookies from one project
+// don't leak into requests fired from another (audit finding: a shared
+// singleton jar was exfiltrating Bearer-equivalent Set-Cookie tokens
+// across project boundaries on the same host).
+//
+// A `null` projectId falls back to a "_default" jar — used by Quick Test
+// and any callsite that hasn't been retrofitted to pass projectId yet.
+const cookieJars = new Map<string, CookieJar>()
 
-const cookieJar = new CookieJar()
+function jarFor(projectId: string | null | undefined): CookieJar {
+  const key = projectId || '_default'
+  let jar = cookieJars.get(key)
+  if (!jar) {
+    jar = new CookieJar()
+    cookieJars.set(key, jar)
+  }
+  return jar
+}
 
-async function getJarCookieHeader(url: string): Promise<string> {
+async function getJarCookieHeader(url: string, projectId?: string | null): Promise<string> {
   try {
-    return await cookieJar.getCookieString(url)
+    return await jarFor(projectId).getCookieString(url)
   } catch {
     return ''
   }
@@ -161,15 +185,17 @@ async function getJarCookieHeader(url: string): Promise<string> {
 async function storeResponseCookies(
   url: string,
   headers: Record<string, string | string[] | undefined>,
+  projectId?: string | null,
 ): Promise<void> {
   const setCookieHeaders = headers['set-cookie']
   if (!setCookieHeaders) return
 
   const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders]
+  const jar = jarFor(projectId)
 
   for (const cookie of cookies) {
     try {
-      await cookieJar.setCookie(cookie, url)
+      await jar.setCookie(cookie, url)
     } catch {
       // Ignore malformed cookies
     }
@@ -551,7 +577,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     }
 
     // Add cookies from jar
-    const jarCookies = await getJarCookieHeader(options.url)
+    const jarCookies = await getJarCookieHeader(options.url, options.projectId)
     if (jarCookies) {
       headers['Cookie'] = headers['Cookie'] ? `${headers['Cookie']}; ${jarCookies}` : jarCookies
     }
@@ -669,6 +695,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     await storeResponseCookies(
       options.url,
       response.headers as Record<string, string | string[] | undefined>,
+      options.projectId,
     )
 
     // Parse cookies for response display
@@ -679,7 +706,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
 
     // Also include cookies already in the jar for this URL
     try {
-      const jarCookieObjs = await cookieJar.getCookies(options.url)
+      const jarCookieObjs = await jarFor(options.projectId).getCookies(options.url)
       for (const c of jarCookieObjs) {
         const exists = cookies.some((rc) => rc.name === c.key)
         if (!exists) {

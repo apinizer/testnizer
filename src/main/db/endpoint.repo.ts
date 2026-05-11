@@ -56,16 +56,16 @@ export interface SavedRequestRow {
 
 export function getEndpointsByProject(projectId: string): EndpointRow[] {
   const db = getDb()
-  return db.prepare(
-    'SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC'
-  ).all(projectId) as EndpointRow[]
+  return db
+    .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as EndpointRow[]
 }
 
 export function getEndpointsByFolder(folderId: string): EndpointRow[] {
   const db = getDb()
-  return db.prepare(
-    'SELECT * FROM endpoints WHERE folder_id = ? ORDER BY sort_order ASC'
-  ).all(folderId) as EndpointRow[]
+  return db
+    .prepare('SELECT * FROM endpoints WHERE folder_id = ? ORDER BY sort_order ASC')
+    .all(folderId) as EndpointRow[]
 }
 
 export function getEndpointById(id: string): EndpointRow | undefined {
@@ -89,14 +89,18 @@ export function createEndpoint(data: {
   const now = Date.now()
   const id = randomUUID()
 
-  const maxOrder = db.prepare(
-    'SELECT COALESCE(MAX(sort_order), -1) as max_order FROM endpoints WHERE project_id = ?'
-  ).get(data.project_id) as { max_order: number }
+  const maxOrder = db
+    .prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) as max_order FROM endpoints WHERE project_id = ?',
+    )
+    .get(data.project_id) as { max_order: number }
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `,
+  ).run(
     id,
     data.project_id,
     data.folder_id ?? null,
@@ -110,32 +114,37 @@ export function createEndpoint(data: {
     data.response_schemas ?? null,
     maxOrder.max_order + 1,
     now,
-    now
+    now,
   )
   return getEndpointById(id)!
 }
 
-export function updateEndpoint(id: string, data: {
-  name?: string
-  description?: string
-  folder_id?: string | null
-  protocol?: string
-  method?: string
-  path?: string
-  status?: string
-  request_schema?: string
-  response_schemas?: string
-  sort_order?: number
-}): EndpointRow | undefined {
+export function updateEndpoint(
+  id: string,
+  data: {
+    name?: string
+    description?: string
+    folder_id?: string | null
+    protocol?: string
+    method?: string
+    path?: string
+    status?: string
+    request_schema?: string
+    response_schemas?: string
+    sort_order?: number
+  },
+): EndpointRow | undefined {
   const db = getDb()
   const now = Date.now()
   const existing = getEndpointById(id)
   if (!existing) return undefined
 
-  db.prepare(`
+  db.prepare(
+    `
     UPDATE endpoints SET name = ?, description = ?, folder_id = ?, protocol = ?, method = ?, path = ?, status = ?, request_schema = ?, response_schemas = ?, sort_order = ?, updated_at = ?
     WHERE id = ?
-  `).run(
+  `,
+  ).run(
     data.name ?? existing.name,
     data.description ?? existing.description,
     data.folder_id !== undefined ? data.folder_id : existing.folder_id,
@@ -147,14 +156,23 @@ export function updateEndpoint(id: string, data: {
     data.response_schemas ?? existing.response_schemas,
     data.sort_order ?? existing.sort_order,
     now,
-    id
+    id,
   )
   return getEndpointById(id)
 }
 
 export function deleteEndpoint(id: string): boolean {
   const db = getDb()
-  const result = db.prepare('DELETE FROM endpoints WHERE id = ?').run(id)
+  // Cascade junction + per-endpoint child rows ourselves — the schema
+  // doesn't enforce FK constraints, so without this the row is gone but
+  // test suites + endpoint cases keep dangling references that the
+  // runner later treats as "Endpoint not found".
+  const txn = db.transaction(() => {
+    db.prepare('DELETE FROM test_suite_endpoints WHERE endpoint_id = ?').run(id)
+    db.prepare('DELETE FROM endpoint_cases WHERE endpoint_id = ?').run(id)
+    return db.prepare('DELETE FROM endpoints WHERE id = ?').run(id)
+  })
+  const result = txn()
   return result.changes > 0
 }
 
@@ -162,14 +180,16 @@ export function deleteEndpoint(id: string): boolean {
 
 export function getCasesByEndpoint(endpointId: string): EndpointCaseRow[] {
   const db = getDb()
-  return db.prepare(
-    'SELECT * FROM endpoint_cases WHERE endpoint_id = ? ORDER BY created_at ASC'
-  ).all(endpointId) as EndpointCaseRow[]
+  return db
+    .prepare('SELECT * FROM endpoint_cases WHERE endpoint_id = ? ORDER BY created_at ASC')
+    .all(endpointId) as EndpointCaseRow[]
 }
 
 export function getCaseById(id: string): EndpointCaseRow | undefined {
   const db = getDb()
-  return db.prepare('SELECT * FROM endpoint_cases WHERE id = ?').get(id) as EndpointCaseRow | undefined
+  return db.prepare('SELECT * FROM endpoint_cases WHERE id = ?').get(id) as
+    | EndpointCaseRow
+    | undefined
 }
 
 export function createCase(data: {
@@ -186,10 +206,12 @@ export function createCase(data: {
   const now = Date.now()
   const id = randomUUID()
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO endpoint_cases (id, endpoint_id, name, params, headers, body, auth, assertions, is_default, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `,
+  ).run(
     id,
     data.endpoint_id,
     data.name,
@@ -199,7 +221,7 @@ export function createCase(data: {
     data.auth ?? null,
     data.assertions ?? null,
     data.is_default ? 1 : 0,
-    now
+    now,
   )
   return getCaseById(id)!
 }
@@ -214,14 +236,16 @@ export function deleteCase(id: string): boolean {
 
 export function getSavedRequestsByProject(projectId: string): SavedRequestRow[] {
   const db = getDb()
-  return db.prepare(
-    'SELECT * FROM saved_requests WHERE project_id = ? ORDER BY sort_order ASC'
-  ).all(projectId) as SavedRequestRow[]
+  return db
+    .prepare('SELECT * FROM saved_requests WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as SavedRequestRow[]
 }
 
 export function getSavedRequestById(id: string): SavedRequestRow | undefined {
   const db = getDb()
-  return db.prepare('SELECT * FROM saved_requests WHERE id = ?').get(id) as SavedRequestRow | undefined
+  return db.prepare('SELECT * FROM saved_requests WHERE id = ?').get(id) as
+    | SavedRequestRow
+    | undefined
 }
 
 export function createSavedRequest(data: {
@@ -244,10 +268,12 @@ export function createSavedRequest(data: {
   const now = Date.now()
   const id = randomUUID()
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO saved_requests (id, project_id, folder_id, name, protocol, method, url, params, headers, body, auth, pre_script, post_script, assertions, metadata, sort_order, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `,
+  ).run(
     id,
     data.project_id ?? null,
     data.folder_id ?? null,
@@ -265,36 +291,41 @@ export function createSavedRequest(data: {
     data.metadata ?? null,
     0,
     now,
-    now
+    now,
   )
   return getSavedRequestById(id)!
 }
 
-export function updateSavedRequest(id: string, data: {
-  name?: string
-  protocol?: string
-  method?: string
-  url?: string
-  params?: string
-  headers?: string
-  body?: string
-  auth?: string
-  pre_script?: string
-  post_script?: string
-  assertions?: string
-  metadata?: string
-  folder_id?: string | null
-  sort_order?: number
-}): SavedRequestRow | undefined {
+export function updateSavedRequest(
+  id: string,
+  data: {
+    name?: string
+    protocol?: string
+    method?: string
+    url?: string
+    params?: string
+    headers?: string
+    body?: string
+    auth?: string
+    pre_script?: string
+    post_script?: string
+    assertions?: string
+    metadata?: string
+    folder_id?: string | null
+    sort_order?: number
+  },
+): SavedRequestRow | undefined {
   const db = getDb()
   const now = Date.now()
   const existing = getSavedRequestById(id)
   if (!existing) return undefined
 
-  db.prepare(`
+  db.prepare(
+    `
     UPDATE saved_requests SET name = ?, protocol = ?, method = ?, url = ?, params = ?, headers = ?, body = ?, auth = ?, pre_script = ?, post_script = ?, assertions = ?, metadata = ?, folder_id = ?, sort_order = ?, updated_at = ?
     WHERE id = ?
-  `).run(
+  `,
+  ).run(
     data.name ?? existing.name,
     data.protocol ?? existing.protocol,
     data.method ?? existing.method,
@@ -310,13 +341,19 @@ export function updateSavedRequest(id: string, data: {
     data.folder_id !== undefined ? data.folder_id : existing.folder_id,
     data.sort_order ?? existing.sort_order,
     now,
-    id
+    id,
   )
   return getSavedRequestById(id)
 }
 
 export function deleteSavedRequest(id: string): boolean {
   const db = getDb()
-  const result = db.prepare('DELETE FROM saved_requests WHERE id = ?').run(id)
+  // Same junction cleanup as deleteEndpoint — saved requests can also be
+  // members of a test suite via the unified test_suite_endpoints table.
+  const txn = db.transaction(() => {
+    db.prepare('DELETE FROM test_suite_endpoints WHERE endpoint_id = ?').run(id)
+    return db.prepare('DELETE FROM saved_requests WHERE id = ?').run(id)
+  })
+  const result = txn()
   return result.changes > 0
 }

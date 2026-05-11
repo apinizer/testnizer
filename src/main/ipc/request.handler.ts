@@ -5,6 +5,7 @@ import { listCertificatesForHost } from '../db/certificate.repo'
 import { URL } from 'url'
 import { readFileSync } from 'fs'
 import { resolve, extname } from 'path'
+import { realpathSync, statSync } from 'fs'
 import { decryptSecret } from '../lib/secure-storage'
 import { logRequest, logResponse } from '../lib/console-logger'
 import { getCipherPreset, normaliseTlsVersion } from '../lib/tls-presets'
@@ -42,11 +43,21 @@ function resolveTlsPayload(payload: TlsPayload | undefined): HttpRequestOptions[
 // at a system file, we simply refuse to touch it.
 const ALLOWED_CERT_EXTS = new Set(['.crt', '.cer', '.pem', '.key', '.pfx', '.p12'])
 
+// Cap cert file size so a corrupted DB row pointing at e.g. a multi-GB log
+// file can't OOM the main process.
+const MAX_CERT_BYTES = 1024 * 1024 // 1 MiB
+
 function safeReadCertFile(filePath: string): Buffer | null {
   try {
-    const abs = resolve(filePath)
+    // Resolve symlinks first so an attacker can't bypass the extension
+    // whitelist by symlinking `attack.pem -> /etc/passwd` (the *target*
+    // is what matters for file content, not the link name).
+    const abs = realpathSync(resolve(filePath))
     const ext = extname(abs).toLowerCase()
     if (!ALLOWED_CERT_EXTS.has(ext)) return null
+    const st = statSync(abs)
+    if (!st.isFile()) return null
+    if (st.size > MAX_CERT_BYTES) return null
     return readFileSync(abs)
   } catch {
     return null
