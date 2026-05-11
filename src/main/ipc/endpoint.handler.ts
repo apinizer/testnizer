@@ -2,40 +2,26 @@ import { ipcMain } from 'electron'
 import * as endpointRepo from '../db/endpoint.repo'
 import * as projectRepo from '../db/project.repo'
 import { getDb } from '../db/database'
+import { ipcResult } from '../lib/ipc-helpers'
 
 export function registerEndpointHandlers(): void {
   // ─── Endpoints ───────────────────────────────────────────
 
-  ipcMain.handle('endpoint:listByProject', async (_event, projectId: string) => {
-    try {
-      const data = endpointRepo.getEndpointsByProject(projectId)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle('endpoint:listByProject', (_event, projectId: string) =>
+    ipcResult(() => endpointRepo.getEndpointsByProject(projectId)),
+  )
 
-  ipcMain.handle('endpoint:listByFolder', async (_event, folderId: string) => {
-    try {
-      const data = endpointRepo.getEndpointsByFolder(folderId)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle('endpoint:listByFolder', (_event, folderId: string) =>
+    ipcResult(() => endpointRepo.getEndpointsByFolder(folderId)),
+  )
 
-  ipcMain.handle('endpoint:get', async (_event, id: string) => {
-    try {
-      const data = endpointRepo.getEndpointById(id)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle('endpoint:get', (_event, id: string) =>
+    ipcResult(() => endpointRepo.getEndpointById(id)),
+  )
 
   ipcMain.handle(
     'endpoint:create',
-    async (
+    (
       _event,
       payload: {
         project_id: string
@@ -49,19 +35,12 @@ export function registerEndpointHandlers(): void {
         request_schema?: string
         response_schemas?: string
       },
-    ) => {
-      try {
-        const data = endpointRepo.createEndpoint(payload)
-        return { success: true, data }
-      } catch (e) {
-        return { success: false, error: (e as Error).message }
-      }
-    },
+    ) => ipcResult(() => endpointRepo.createEndpoint(payload)),
   )
 
   ipcMain.handle(
     'endpoint:update',
-    async (
+    (
       _event,
       id: string,
       payload: {
@@ -76,48 +55,42 @@ export function registerEndpointHandlers(): void {
         response_schemas?: string
         sort_order?: number
       },
-    ) => {
-      try {
-        const data = endpointRepo.updateEndpoint(id, payload)
-        return { success: true, data }
-      } catch (e) {
-        return { success: false, error: (e as Error).message }
-      }
-    },
+    ) =>
+      ipcResult(() => {
+        // Cross-project guard: if the renderer is moving the endpoint into
+        // a new folder, make sure that folder belongs to the same project.
+        // Otherwise a corrupted payload could splice an endpoint into a
+        // foreign project's tree.
+        if (payload.folder_id !== undefined && payload.folder_id !== null) {
+          const ep = endpointRepo.getEndpointById(id)
+          if (!ep) throw new Error('Endpoint not found')
+          const folder = projectRepo.getFolderById(payload.folder_id)
+          if (!folder) throw new Error('Target folder not found')
+          if (folder.project_id !== ep.project_id) {
+            throw new Error('Cannot move endpoint across projects')
+          }
+        }
+        return endpointRepo.updateEndpoint(id, payload)
+      }),
   )
 
-  ipcMain.handle('endpoint:delete', async (_event, id: string) => {
-    try {
-      const data = endpointRepo.deleteEndpoint(id)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle('endpoint:delete', (_event, id: string) =>
+    ipcResult(() => endpointRepo.deleteEndpoint(id)),
+  )
 
   // ─── Endpoint Cases ──────────────────────────────────────
 
-  ipcMain.handle('endpointCase:list', async (_event, endpointId: string) => {
-    try {
-      const data = endpointRepo.getCasesByEndpoint(endpointId)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle('endpointCase:list', (_event, endpointId: string) =>
+    ipcResult(() => endpointRepo.getCasesByEndpoint(endpointId)),
+  )
 
-  ipcMain.handle('endpointCase:get', async (_event, id: string) => {
-    try {
-      const data = endpointRepo.getCaseById(id)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle('endpointCase:get', (_event, id: string) =>
+    ipcResult(() => endpointRepo.getCaseById(id)),
+  )
 
   ipcMain.handle(
     'endpointCase:create',
-    async (
+    (
       _event,
       payload: {
         endpoint_id: string
@@ -129,48 +102,26 @@ export function registerEndpointHandlers(): void {
         assertions?: string
         is_default?: boolean
       },
-    ) => {
-      try {
-        const data = endpointRepo.createCase(payload)
-        return { success: true, data }
-      } catch (e) {
-        return { success: false, error: (e as Error).message }
-      }
-    },
+    ) => ipcResult(() => endpointRepo.createCase(payload)),
   )
 
-  ipcMain.handle('endpointCase:delete', async (_event, id: string) => {
-    try {
-      const data = endpointRepo.deleteCase(id)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle('endpointCase:delete', (_event, id: string) =>
+    ipcResult(() => endpointRepo.deleteCase(id)),
+  )
 
   // ─── Saved Requests ──────────────────────────────────────
 
-  ipcMain.handle('savedRequest:list', async (_event, projectId: string) => {
-    try {
-      const data = endpointRepo.getSavedRequestsByProject(projectId)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle('savedRequest:list', (_event, projectId: string) =>
+    ipcResult(() => endpointRepo.getSavedRequestsByProject(projectId)),
+  )
 
-  ipcMain.handle('savedRequest:get', async (_event, id: string) => {
-    try {
-      const data = endpointRepo.getSavedRequestById(id)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle('savedRequest:get', (_event, id: string) =>
+    ipcResult(() => endpointRepo.getSavedRequestById(id)),
+  )
 
   ipcMain.handle(
     'savedRequest:create',
-    async (
+    (
       _event,
       payload: {
         project_id?: string | null
@@ -188,19 +139,12 @@ export function registerEndpointHandlers(): void {
         assertions?: string
         metadata?: string
       },
-    ) => {
-      try {
-        const data = endpointRepo.createSavedRequest(payload)
-        return { success: true, data }
-      } catch (e) {
-        return { success: false, error: (e as Error).message }
-      }
-    },
+    ) => ipcResult(() => endpointRepo.createSavedRequest(payload)),
   )
 
   ipcMain.handle(
     'savedRequest:update',
-    async (
+    (
       _event,
       id: string,
       payload: {
@@ -219,24 +163,26 @@ export function registerEndpointHandlers(): void {
         folder_id?: string | null
         sort_order?: number
       },
-    ) => {
-      try {
-        const data = endpointRepo.updateSavedRequest(id, payload)
-        return { success: true, data }
-      } catch (e) {
-        return { success: false, error: (e as Error).message }
-      }
-    },
+    ) =>
+      ipcResult(() => {
+        // Same cross-project guard as endpoint:update — saved requests can
+        // be moved between folders too.
+        if (payload.folder_id !== undefined && payload.folder_id !== null) {
+          const sr = endpointRepo.getSavedRequestById(id)
+          if (!sr) throw new Error('Saved request not found')
+          const folder = projectRepo.getFolderById(payload.folder_id)
+          if (!folder) throw new Error('Target folder not found')
+          if (sr.project_id && folder.project_id !== sr.project_id) {
+            throw new Error('Cannot move saved request across projects')
+          }
+        }
+        return endpointRepo.updateSavedRequest(id, payload)
+      }),
   )
 
-  ipcMain.handle('savedRequest:delete', async (_event, id: string) => {
-    try {
-      const data = endpointRepo.deleteSavedRequest(id)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle('savedRequest:delete', (_event, id: string) =>
+    ipcResult(() => endpointRepo.deleteSavedRequest(id)),
+  )
 
   // ─── Tree drag-drop reparent ─────────────────────────────
   // Handles moving any tree node (folder, endpoint, or saved request) into a

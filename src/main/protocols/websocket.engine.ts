@@ -81,26 +81,19 @@ export function describeWebSocketError(err: unknown): string {
 
 // ─── Public API ─────────────────────────────────────────────
 
-export function connect(
-  options: WsConnectOptions,
-  windowId: number
-): Promise<WsConnectionInfo> {
+export function connect(options: WsConnectOptions, windowId: number): Promise<WsConnectionInfo> {
   return new Promise((resolve, reject) => {
     const connectionId = randomUUID()
 
     const wsOptions: WebSocket.ClientOptions = {
       headers: options.headers ?? {},
-      rejectUnauthorized: options.rejectUnauthorized !== false
+      rejectUnauthorized: options.rejectUnauthorized !== false,
     }
 
     let ws: WebSocket
 
     try {
-      ws = new WebSocket(
-        options.url,
-        options.protocols ?? [],
-        wsOptions
-      )
+      ws = new WebSocket(options.url, options.protocols ?? [], wsOptions)
     } catch (err) {
       reject(err instanceof Error ? err : new Error(String(err)))
       return
@@ -111,7 +104,7 @@ export function connect(
       connectionId,
       url: options.url,
       connectedAt: Date.now(),
-      windowId
+      windowId,
     }
 
     // Set a connection timeout
@@ -130,14 +123,14 @@ export function connect(
       sendEventToRenderer(windowId, {
         connectionId,
         type: 'open',
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
 
       resolve({
         connectionId,
         url: options.url,
         readyState: ws.readyState,
-        connectedAt: managed.connectedAt
+        connectedAt: managed.connectedAt,
       })
     })
 
@@ -169,7 +162,7 @@ export function connect(
         data: content,
         timestamp: Date.now(),
         messageId,
-        contentType
+        contentType,
       })
     })
 
@@ -181,7 +174,7 @@ export function connect(
         type: 'close',
         code,
         reason: reason.toString(),
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
     })
 
@@ -193,7 +186,7 @@ export function connect(
         connectionId,
         type: 'error',
         data: message,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
 
       // If we haven't connected yet, reject the promise with the enriched
@@ -244,7 +237,7 @@ export function getConnectionInfo(connectionId: string): WsConnectionInfo | null
     connectionId: managed.connectionId,
     url: managed.url,
     readyState: managed.ws.readyState,
-    connectedAt: managed.connectedAt
+    connectedAt: managed.connectedAt,
   }
 }
 
@@ -255,7 +248,7 @@ export function getActiveConnections(): WsConnectionInfo[] {
       connectionId: managed.connectionId,
       url: managed.url,
       readyState: managed.ws.readyState,
-      connectedAt: managed.connectedAt
+      connectedAt: managed.connectedAt,
     })
   }
   return result

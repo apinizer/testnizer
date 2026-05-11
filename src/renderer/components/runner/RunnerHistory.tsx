@@ -31,7 +31,12 @@ const PAGE_SIZE = 20
 interface RunnerHistoryProps {
   onBack: () => void
   onNewRun?: () => void
-  onViewReport?: (results: EndpointRunResult[], report: RunnerReport, startedAt: number, sourceLabel?: string) => void
+  onViewReport?: (
+    results: EndpointRunResult[],
+    report: RunnerReport,
+    startedAt: number,
+    sourceLabel?: string,
+  ) => void
 }
 
 export default function RunnerHistory({ onBack, onNewRun, onViewReport }: RunnerHistoryProps) {
@@ -39,6 +44,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
   const [runs, setRuns] = useState<RunHistoryRow[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [activeTab, setActiveTab] = useState<HistoryTab>('Functional')
   const [page, setPage] = useState(0)
@@ -47,19 +53,36 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
   const loadRuns = useCallback(() => {
     if (!activeProjectId) return
     setLoading(true)
-    window.api?.runner?.history({
-      projectId: activeProjectId,
-      tab: activeTab,
-      limit: PAGE_SIZE,
-      offset: page * PAGE_SIZE,
-    }).then((result: unknown) => {
-      const res = result as { success: boolean; data?: { rows: RunHistoryRow[]; total: number } }
-      if (res?.success && res.data) {
-        setRuns(res.data.rows)
-        setTotal(res.data.total)
-      }
-      setLoading(false)
-    }).catch(() => setLoading(false))
+    setLoadError(null)
+    window.api?.runner
+      ?.history({
+        projectId: activeProjectId,
+        tab: activeTab,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+      })
+      .then((result: unknown) => {
+        const res = result as {
+          success: boolean
+          data?: { rows: RunHistoryRow[]; total: number }
+          error?: string
+        }
+        if (res?.success && res.data) {
+          setRuns(res.data.rows)
+          setTotal(res.data.total)
+        } else if (res?.error) {
+          // Without this branch the user just saw an empty list when the
+          // DB query failed and had no way to know something went wrong.
+          setLoadError(res.error)
+          setRuns([])
+          setTotal(0)
+        }
+        setLoading(false)
+      })
+      .catch((err) => {
+        setLoadError(err instanceof Error ? err.message : String(err))
+        setLoading(false)
+      })
   }, [activeProjectId, activeTab, page])
 
   useEffect(() => {
@@ -104,7 +127,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
     setShowDeleteConfirm(false)
     const ids = Array.from(selectedIds)
     try {
-      const res = await window.api?.runner?.deleteHistory(ids) as { success: boolean }
+      const res = (await window.api?.runner?.deleteHistory(ids)) as { success: boolean }
       if (res?.success) {
         setSelectedIds(new Set())
         // Reset to first page if current page would be empty after deletion
@@ -141,9 +164,10 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
     }
   }
 
-  const tabDescription = activeTab === 'Scheduled'
-    ? 'Runs triggered automatically via Scheduled Tasks.'
-    : 'Runs triggered for this collection via Collection Runner.'
+  const tabDescription =
+    activeTab === 'Scheduled'
+      ? 'Runs triggered automatically via Scheduled Tasks.'
+      : 'Runs triggered for this collection via Collection Runner.'
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden" style={{ fontSize: 13 }}>
@@ -157,7 +181,9 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
           <ArrowLeft size={14} />
           Back
         </button>
-        <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', margin: 0, flex: 1 }}>All Runs</h2>
+        <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', margin: 0, flex: 1 }}>
+          All Runs
+        </h2>
         {onNewRun && (
           <button
             type="button"
@@ -176,7 +202,11 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
           <button
             key={tab}
             type="button"
-            onClick={() => { setActiveTab(tab); setSelectedIds(new Set()); setPage(0) }}
+            onClick={() => {
+              setActiveTab(tab)
+              setSelectedIds(new Set())
+              setPage(0)
+            }}
             className="cursor-pointer border-none bg-transparent px-3 py-2"
             style={{
               color: activeTab === tab ? 'var(--text)' : 'var(--muted)',
@@ -222,6 +252,19 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
       <div className="flex-1 overflow-auto px-5">
         {loading ? (
           <div className="py-8 text-center text-[var(--hint)]">Loading...</div>
+        ) : loadError ? (
+          <div className="py-8 text-center" style={{ color: 'var(--red, #cc2200)' }}>
+            Failed to load history: {loadError}
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={() => loadRuns()}
+                className="cursor-pointer rounded border border-[var(--border)] bg-[var(--white)] px-3 py-1 text-[var(--text)] hover:bg-[var(--surface)]"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
         ) : runs.length === 0 ? (
           <div className="py-8 text-center text-[var(--hint)]">
             {activeTab === 'Scheduled'
@@ -244,16 +287,36 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
                     className="h-[14px] w-[14px] cursor-pointer accent-[var(--accent)]"
                   />
                 </th>
-                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>Start time</th>
-                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>Source</th>
-                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>Environment</th>
-                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>Iterations</th>
-                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>Duration</th>
-                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>All tests</th>
-                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>Passed</th>
-                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>Failed</th>
-                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>Skipped</th>
-                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>Avg. Resp. Time</th>
+                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
+                  Start time
+                </th>
+                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
+                  Source
+                </th>
+                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
+                  Environment
+                </th>
+                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
+                  Iterations
+                </th>
+                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
+                  Duration
+                </th>
+                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
+                  All tests
+                </th>
+                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
+                  Passed
+                </th>
+                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
+                  Failed
+                </th>
+                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
+                  Skipped
+                </th>
+                <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
+                  Avg. Resp. Time
+                </th>
                 <th className="w-16 py-2" />
               </tr>
             </thead>
@@ -285,7 +348,12 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={page === 0}
               className="flex cursor-pointer items-center gap-1 rounded-[6px] border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
-              style={{ borderColor: 'var(--border)', background: 'var(--white)', color: 'var(--text)', fontSize: 13 }}
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--white)',
+                color: 'var(--text)',
+                fontSize: 13,
+              }}
             >
               <ChevronLeft size={14} />
               Prev
@@ -295,10 +363,15 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
             </span>
             <button
               type="button"
-              onClick={() => setPage((p) => (p + 1) * PAGE_SIZE < total ? p + 1 : p)}
+              onClick={() => setPage((p) => ((p + 1) * PAGE_SIZE < total ? p + 1 : p))}
               disabled={(page + 1) * PAGE_SIZE >= total}
               className="flex cursor-pointer items-center gap-1 rounded-[6px] border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
-              style={{ borderColor: 'var(--border)', background: 'var(--white)', color: 'var(--text)', fontSize: 13 }}
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--white)',
+                color: 'var(--text)',
+                fontSize: 13,
+              }}
             >
               Next
               <ChevronRight size={14} />
@@ -327,7 +400,23 @@ function HistoryRow({
   onViewReport,
   hasViewReport,
 }: {
-  run: { id: string; started_at: number; source: string; source_label: string | null; environment_name: string | null; iterations: number; duration_ms: number; total_endpoints: number; passed_endpoints: number; failed_endpoints: number; total_tests: number; passed_tests: number; failed_tests: number; skipped_tests: number; avg_resp_time: number }
+  run: {
+    id: string
+    started_at: number
+    source: string
+    source_label: string | null
+    environment_name: string | null
+    iterations: number
+    duration_ms: number
+    total_endpoints: number
+    passed_endpoints: number
+    failed_endpoints: number
+    total_tests: number
+    passed_tests: number
+    failed_tests: number
+    skipped_tests: number
+    avg_resp_time: number
+  }
   isSelected: boolean
   onToggle: () => void
   onViewReport: () => void
@@ -338,8 +427,11 @@ function HistoryRow({
 
   const formatDate = (ts: number) => {
     const d = new Date(ts)
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
-      ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    return (
+      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+      ' ' +
+      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    )
   }
 
   const formatDuration = (ms: number) => {
@@ -397,7 +489,10 @@ function HistoryRow({
         {(hovered || isSelected) && hasViewReport && (
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onViewReport() }}
+            onClick={(e) => {
+              e.stopPropagation()
+              onViewReport()
+            }}
             title="View Report"
             className="flex cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent p-1 text-[var(--muted)] hover:text-[var(--accent)]"
           >

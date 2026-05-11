@@ -7,6 +7,8 @@ import { registerAllHandlers } from './ipc'
 import { initAutoUpdater } from './updater'
 import { initLogging } from './diagnostics'
 import { maybeInitTelemetry } from './telemetry'
+import { disconnectAll as wsDisconnectAll } from './protocols/websocket.engine'
+import { mcpDisconnectAll } from './protocols/mcp.engine'
 
 /**
  * Migrate userData from the legacy "Apinizer" directory to the new "Testnizer"
@@ -217,5 +219,17 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  // Tear down long-lived connections before the DB so any final writes
+  // (e.g. WS disconnect side-effects) still have a working repo.
+  try {
+    wsDisconnectAll()
+  } catch {
+    /* ignore — best-effort cleanup */
+  }
+  try {
+    mcpDisconnectAll()
+  } catch {
+    /* ignore */
+  }
   closeDatabase()
 })

@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { randomUUID } from 'crypto'
 import { getDb } from '../db/database'
+import { projectIdOfRunnable } from '../lib/ownership'
 
 interface TestSuiteRow {
   id: string
@@ -234,6 +235,29 @@ export function registerTestSuiteHandlers(): void {
     ) => {
       try {
         const db = getDb()
+        // Verify the suite exists + capture its project_id so we can refuse
+        // foreign-project endpoint references (which would later run-time
+        // fail as "Endpoint not found" with no signal to the user).
+        const suite = db
+          .prepare('SELECT project_id FROM test_suites WHERE id = ?')
+          .get(payload.suite_id) as { project_id: string } | undefined
+        if (!suite) return { success: false, error: 'Suite not found' }
+
+        // Filter to ids that actually exist + belong to the suite's project.
+        // INSERT OR IGNORE alone would just silently drop bad refs; this
+        // surfaces the count so the renderer can warn the user.
+        const valid: string[] = []
+        const rejected: string[] = []
+        for (const eid of payload.endpoint_ids) {
+          if (typeof eid !== 'string' || !eid) continue
+          const owner = projectIdOfRunnable(eid)
+          if (owner && owner === suite.project_id) {
+            valid.push(eid)
+          } else {
+            rejected.push(eid)
+          }
+        }
+
         const maxOrder = db
           .prepare(
             'SELECT COALESCE(MAX(sort_order), -1) as mx FROM test_suite_endpoints WHERE suite_id = ?',
@@ -246,11 +270,14 @@ export function registerTestSuiteHandlers(): void {
         VALUES (?, ?, ?, ?)
       `)
 
-        for (const eid of payload.endpoint_ids) {
+        for (const eid of valid) {
           stmt.run(randomUUID(), payload.suite_id, eid, order++)
         }
 
-        return { success: true, data: true }
+        return {
+          success: true,
+          data: { added: valid.length, rejected: rejected.length, rejectedIds: rejected },
+        }
       } catch (e) {
         return { success: false, error: (e as Error).message }
       }

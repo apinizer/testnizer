@@ -6,6 +6,7 @@ import { executeHttpRequest, HttpRequestOptions } from '../protocols/http.engine
 import * as endpointRepo from '../db/endpoint.repo'
 import * as historyRepo from '../db/history.repo'
 import { getDb } from '../db/database'
+import { isRunnableInProject } from '../lib/ownership'
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -1228,19 +1229,11 @@ export function registerRunnerHandlers(): void {
         if (typeof id !== 'string' || !id) {
           return { success: false, error: 'Invalid endpoint id in payload' }
         }
-      }
-      // Cross-project guard: each endpoint/saved-request id must belong to
-      // the project the run claims to target. Without this a stale
-      // sessionStorage payload from a previous project (after a project
-      // switch) could run requests against the wrong workspace.
-      for (const id of options.endpointIds) {
-        const ep = endpointRepo.getEndpointById(id)
-        const sr = ep ? null : endpointRepo.getSavedRequestById(id)
-        const owner = ep?.project_id ?? sr?.project_id ?? null
-        if (owner && owner !== options.projectId) {
+        // Cross-project guard via the shared ownership helper.
+        if (!isRunnableInProject(id, options.projectId)) {
           return {
             success: false,
-            error: 'Endpoint does not belong to the requested project — refusing to run',
+            error: `Endpoint ${id} does not belong to project ${options.projectId} — refusing to run`,
           }
         }
       }
@@ -1304,7 +1297,11 @@ export function registerRunnerHandlers(): void {
           return { success: true, data: rows }
         }
 
-        const { projectId, limit = 20, offset = 0, tab } = arg
+        const { projectId, tab } = arg
+        // Clamp renderer-supplied paging so a corrupted payload can't ask
+        // for a million rows + blow main-process memory.
+        const limit = Math.max(1, Math.min(500, arg.limit ?? 20))
+        const offset = Math.max(0, arg.offset ?? 0)
         const sourceFilter =
           tab === 'Scheduled'
             ? "source = 'Scheduler'"

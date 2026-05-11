@@ -123,6 +123,23 @@ class MockServerManager extends EventEmitter {
 
   /** Start (or restart) a server with the given configuration. */
   async start(def: MockServerDef): Promise<{ ok: true } | { ok: false; error: string }> {
+    // Pre-bind check: refuse to start if another running server is bound
+    // to the same port. listen() would otherwise emit EADDRINUSE
+    // asynchronously and we'd surface a confusing message to the user.
+    for (const [otherId, s] of this.servers) {
+      if (
+        otherId !== def.id &&
+        s.def.port === def.port &&
+        s.def.host === def.host &&
+        (s.status === 'running' || s.status === 'starting')
+      ) {
+        return {
+          ok: false,
+          error: `Port ${def.port} is already in use by another mock server in this project`,
+        }
+      }
+    }
+
     // If something is running for this id, stop it first.
     if (this.servers.has(def.id)) {
       await this.stop(def.id)

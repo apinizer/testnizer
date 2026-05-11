@@ -5,6 +5,20 @@ import { useBranchStore } from './branch.store'
 import { useTabsStore } from './tabs.store'
 import { useConsoleStore } from './console.store'
 
+/**
+ * Wipe state that's scoped to a single project before switching contexts.
+ * Tabs hold endpoint/saved-request IDs that no longer exist in the new
+ * project, console entries reference closed tab ids, and any in-flight
+ * merge-conflict modal belongs to the project being left. Centralising
+ * here keeps the four call-sites (setActiveWorkspace, setActiveProject,
+ * deleteProject, deleteWorkspace) honest about what gets cleared.
+ */
+function resetProjectScopedState(): void {
+  useTabsStore.getState().closeAllTabs()
+  useConsoleStore.getState().clear()
+  useBranchStore.getState().clearPendingConflict()
+}
+
 interface WorkspaceStore {
   initialized: boolean
   workspaces: Workspace[]
@@ -237,35 +251,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setActiveWorkspace: (id) => {
     const prev = get().activeWorkspaceId
-    // Mirror setActiveProject's cleanup so tabs, console entries, branch
-    // state, and merge-conflict overlays don't leak across workspace
-    // boundaries (workspaces contain projects, so anything project-scoped
-    // is implicitly workspace-scoped too).
-    if (prev && prev !== id) {
-      useTabsStore.getState().closeAllTabs()
-      useConsoleStore.getState().clear()
-      useBranchStore.getState().clearPendingConflict()
-    }
+    if (prev && prev !== id) resetProjectScopedState()
     set({ activeWorkspaceId: id, activeProjectId: null })
   },
 
   setActiveProject: async (id) => {
     const prevId = get().activeProjectId
-    // Any in-flight merge conflict belongs to the project we're leaving;
-    // dropping it here keeps the modal from re-appearing for a project the
-    // user isn't looking at anymore.
-    useBranchStore.getState().clearPendingConflict()
-    // Tabs (endpoint editors, runner sessions, mock servers, etc.) hold
-    // references — sessionStorage keys, endpoint IDs, runner result blobs —
-    // that belong to the previous project. Carrying them into a new project
-    // surfaces stale data and (worse) lets the user execute a runner whose
-    // endpointIds were resolved against the wrong project. Reset on switch.
-    if (prevId && prevId !== id) {
-      useTabsStore.getState().closeAllTabs()
-      // Console entries are tagged with tabId references that now point at
-      // closed tabs — clearing avoids stale "tab X" badges in the panel.
-      useConsoleStore.getState().clear()
-    }
+    if (prevId && prevId !== id) resetProjectScopedState()
     set({ activeProjectId: id })
     // Reload environments/globals for the new scope
     await useEnvironmentStore.getState().setCurrentProject(id)
@@ -402,8 +394,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       if (wsId) {
         await get().fetchProjects(wsId)
       }
+      // If we just deleted the project we were viewing, drop all
+      // project-scoped state (tabs / console / branch) so the UI stops
+      // rendering against a dead row.
       if (get().activeProjectId === id) {
-        set({ activeProjectId: null })
+        resetProjectScopedState()
+        set({ activeProjectId: null, treeData: emptyTree() })
       }
     } catch {
       // IPC not available

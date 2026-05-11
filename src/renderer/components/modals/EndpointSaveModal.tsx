@@ -32,6 +32,7 @@ export default function EndpointSaveModal() {
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [folders, setFolders] = useState<Folder[]>([])
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({})
 
@@ -119,6 +120,7 @@ export default function EndpointSaveModal() {
   async function handleSave() {
     if (!activeProjectId) return
     setSaving(true)
+    setSaveError(null)
     try {
       const payload = {
         name: endpointName.trim() || 'Untitled',
@@ -173,11 +175,15 @@ export default function EndpointSaveModal() {
         }
         handleClose()
       }
-    } catch {
+    } catch (e) {
       // IPC threw — keep modal open so the user can retry; tab state is
-      // intact because we never reached the updateTab call above.
+      // intact because we never reached the updateTab call above. Surface
+      // the failure so the user knows why nothing happened (previously
+      // silently swallowed → modal looked frozen).
+      setSaveError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   return (
@@ -533,9 +539,26 @@ export default function EndpointSaveModal() {
             borderTop: '1px solid var(--border)',
             display: 'flex',
             gap: 8,
+            alignItems: 'center',
             justifyContent: 'flex-end',
           }}
         >
+          {saveError && (
+            <span
+              style={{
+                color: 'var(--red, #cc2200)',
+                fontSize: 12,
+                marginRight: 'auto',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: 380,
+              }}
+              title={saveError}
+            >
+              {saveError}
+            </span>
+          )}
           <button
             type="button"
             onClick={handleClose}
