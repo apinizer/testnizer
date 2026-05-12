@@ -771,7 +771,15 @@ export default function TreeNodeComponent({
             }}
           />
         ) : (
-          <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+          // `draggable={false}` on the label span keeps Chrome from treating
+          // the text as its own selection-drag source — the parent row is
+          // already `draggable={true}` and we want that gesture to win.
+          // Without this, mouse-down on the label sometimes swallows the
+          // drag-start before the parent receives it.
+          <span
+            draggable={false}
+            className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+          >
             {node.label}
           </span>
         )}

@@ -375,6 +375,11 @@ function EndpointTabBar() {
               color: isActive ? T.text : T.muted,
               whiteSpace: 'nowrap',
               flexShrink: 0,
+              // Without this, mousedown on the tab label can start a text
+              // selection that pre-empts the drag gesture — Chrome's drag
+              // policy prefers an in-progress selection over a draggable
+              // ancestor. `none` keeps the drag the only thing that can fire.
+              userSelect: 'none',
             }}
           >
             {tab.protocol === 'runner' && (
@@ -420,7 +425,14 @@ function EndpointTabBar() {
                 }}
               />
             ) : (
+              // `draggable={false}` here is critical: an inner span carrying
+              // text is treated by Chrome as a "selection-drag" source, which
+              // races against the parent's draggable=true and can swallow the
+              // tab-drag gesture entirely (the SOAP tab in particular sees
+              // the user mouse-down on this label). Forcing the span out of
+              // the drag-source set lets the gesture bubble to the parent.
               <span
+                draggable={false}
                 onDoubleClick={(e) => {
                   e.stopPropagation()
                   if (isPreview) {
