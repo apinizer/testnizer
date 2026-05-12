@@ -288,12 +288,38 @@ jobs:
           find artifacts -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \) -exec cp {} release/ \;
           ls -la release/
 
+      # Pull the release-notes block for this tag out of the website's
+      # changelog (single source of truth — same content the /docs/changelog/
+      # page renders). awk slurps the section starting at `## v<tag>` and
+      # stops at the next `## ` header. Falls back to a one-line stub if the
+      # tag isn't documented yet, so the release still drafts.
+      - name: Extract release notes from website changelog
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer ${{ secrets.RELEASE_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3.raw" \
+            "https://api.github.com/repos/apinizer/testnizer-website/contents/src/content/docs/changelog.md" \
+            -o changelog.md
+          TAG="${{ github.ref_name }}"
+          awk -v tag="$TAG" '
+            $0 == "## " tag { capture = 1; next }
+            capture && /^## / { exit }
+            capture { print }
+          ' changelog.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "Release notes for $TAG not yet published — see https://www.testnizer.com/docs/changelog/" > release-notes.md
+          fi
+          echo "----- release-notes.md -----"
+          cat release-notes.md
+
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
           files: release/*
           repository: apinizer/testnizer-releases
           tag_name: ${{ github.ref_name }}
+          name: Testnizer ${{ github.ref_name }}
+          body_path: release-notes.md
           token: ${{ secrets.RELEASE_TOKEN }}
 
       # Kick the website rebuild so the /download page picks up the new
