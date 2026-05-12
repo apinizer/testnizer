@@ -32,11 +32,15 @@ interface WsApi {
     _workspaceId?: string
     _projectId?: string
     _endpointId?: string
+    _pendingId?: string
   }) => Promise<{
     success: boolean
     data?: { connectionId: string }
     error?: string
   }>
+  cancelConnect: (
+    pendingId: string,
+  ) => Promise<{ success: boolean; data?: { canceled: boolean }; error?: string }>
   disconnect: (
     connectionId: string,
   ) => Promise<{ success: boolean; data?: boolean; error?: string }>
@@ -66,6 +70,12 @@ interface TabWsState {
   connectedAt: number | null
   /** Per-tab subscription handle returned by `ws.onEvent`. */
   _unsubscribe?: () => void
+  /**
+   * Renderer-generated id sent to the engine before connect so a stalled
+   * handshake can be cancelled by calling `ws.cancelConnect(id)`. Cleared
+   * once the connection opens or fails.
+   */
+  _pendingConnectId?: string
 }
 
 interface WebSocketStore extends TabWsState {
@@ -110,6 +120,7 @@ function emptyTabState(): TabWsState {
     errorMessage: null,
     connectedAt: null,
     _unsubscribe: undefined,
+    _pendingConnectId: undefined,
   }
 }
 
@@ -126,6 +137,7 @@ function extractState(s: WebSocketStore): TabWsState {
     errorMessage: s.errorMessage,
     connectedAt: s.connectedAt,
     _unsubscribe: s._unsubscribe,
+    _pendingConnectId: s._pendingConnectId,
   }
 }
 
@@ -149,7 +161,13 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
     const { url, customHeaders } = get()
     if (!url.trim()) return
 
-    set({ connectionState: 'connecting', errorMessage: null, messages: [] })
+    const pendingConnectId = makeId()
+    set({
+      connectionState: 'connecting',
+      errorMessage: null,
+      messages: [],
+      _pendingConnectId: pendingConnectId,
+    })
 
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedUrl = resolveVariables(url, activeVars)
@@ -261,6 +279,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
         headers: headerMap,
         _workspaceId: wsStore.activeWorkspaceId || undefined,
         _projectId: wsStore.activeProjectId || undefined,
+        _pendingId: pendingConnectId,
       })
 
       if (result?.success && result.data) {
@@ -274,6 +293,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
           set({
             connectionId: newId,
             connectionState: current.connectionState === 'connected' ? 'connected' : 'connecting',
+            _pendingConnectId: undefined,
           })
         } else if (ownerTabId !== null) {
           const map = new Map(current._tabStates)
@@ -282,6 +302,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
             ...existing,
             connectionId: newId,
             connectionState: existing.connectionState === 'connected' ? 'connected' : 'connecting',
+            _pendingConnectId: undefined,
           })
           set({ _tabStates: map })
         }
@@ -289,6 +310,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
         unsub()
         applyToOwner({
           _unsubscribe: undefined,
+          _pendingConnectId: undefined,
           connectionState: 'error',
           errorMessage: result?.error || 'Connection failed',
         })
@@ -297,6 +319,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
       unsub()
       applyToOwner({
         _unsubscribe: undefined,
+        _pendingConnectId: undefined,
         connectionState: 'error',
         errorMessage: (e as Error).message,
       })
@@ -304,14 +327,27 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
   },
 
   disconnect: async () => {
-    const { connectionId, _unsubscribe } = get()
+    const { connectionId, _unsubscribe, _pendingConnectId, connectionState } = get()
     const ws = getWsApi()
 
-    if (ws && connectionId) {
-      try {
-        await ws.disconnect(connectionId)
-      } catch {
-        // Engine already cleaned up — fall through to local state reset.
+    if (ws) {
+      // Two paths: a connection already opened → `disconnect`; a handshake is
+      // still in flight → `cancelConnect`. Connection-state is the canonical
+      // indicator; we also fall through to `disconnect` if the connectionId
+      // arrived between state updates.
+      if (connectionState === 'connecting' && _pendingConnectId) {
+        try {
+          await ws.cancelConnect(_pendingConnectId)
+        } catch {
+          // Engine already finished the handshake — disconnect path catches it.
+        }
+      }
+      if (connectionId) {
+        try {
+          await ws.disconnect(connectionId)
+        } catch {
+          // Engine already cleaned up — fall through to local state reset.
+        }
       }
     }
     if (_unsubscribe) _unsubscribe()
@@ -321,6 +357,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
       connectionId: null,
       errorMessage: null,
       _unsubscribe: undefined,
+      _pendingConnectId: undefined,
     })
   },
 

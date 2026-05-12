@@ -251,6 +251,8 @@ const api = {
   // ─── WebSocket ────────────────────────────────────────────
   ws: {
     connect: (options: unknown): Promise<unknown> => ipcRenderer.invoke('ws:connect', options),
+    cancelConnect: (pendingId: string): Promise<unknown> =>
+      ipcRenderer.invoke('ws:cancelConnect', pendingId),
     disconnect: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('ws:disconnect', connectionId),
     send: (connectionId: string, message: string): Promise<unknown> =>
@@ -377,6 +379,8 @@ const api = {
       ipcRenderer.invoke('grpc:endStream', streamId),
     cancelStream: (streamId: string): Promise<unknown> =>
       ipcRenderer.invoke('grpc:cancelStream', streamId),
+    cancelUnary: (requestId: string): Promise<unknown> =>
+      ipcRenderer.invoke('grpc:cancelUnary', requestId),
     onStreamEvent: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)
@@ -505,6 +509,8 @@ const api = {
   // ─── SSE ────────────────────────────────────────────────────
   sse: {
     connect: (options: unknown): Promise<unknown> => ipcRenderer.invoke('sse:connect', options),
+    cancelConnect: (pendingId: string): Promise<unknown> =>
+      ipcRenderer.invoke('sse:cancelConnect', pendingId),
     disconnect: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('sse:disconnect', connectionId),
     onEvent: (callback: (event: unknown) => void): (() => void) => {
@@ -563,6 +569,8 @@ const api = {
   // ─── MCP ────────────────────────────────────────────────────
   mcp: {
     connect: (options: unknown): Promise<unknown> => ipcRenderer.invoke('mcp:connect', options),
+    cancelConnect: (pendingId: string): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:cancelConnect', pendingId),
     disconnect: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('mcp:disconnect', connectionId),
     listTools: (connectionId: string): Promise<unknown> =>
@@ -579,6 +587,8 @@ const api = {
   socketio: {
     connect: (options: unknown): Promise<unknown> =>
       ipcRenderer.invoke('socketio:connect', options),
+    cancelConnect: (pendingId: string): Promise<unknown> =>
+      ipcRenderer.invoke('socketio:cancelConnect', pendingId),
     disconnect: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('socketio:disconnect', connectionId),
     emit: (connectionId: string, eventName: string, data: unknown): Promise<unknown> =>

@@ -466,6 +466,7 @@ interface WsEventPayload {
 
 interface WsApi {
   connect(options: WsConnectOptions): Promise<IpcResult<WsConnectionInfo>>
+  cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
   disconnect(connectionId: string): Promise<IpcResult<boolean>>
   send(connectionId: string, message: string): Promise<IpcResult<boolean>>
   onEvent(callback: (event: WsEventPayload) => void): () => void
@@ -762,6 +763,7 @@ interface GrpcApi {
   sendStreamMessage(streamId: string, message: string): Promise<IpcResult<boolean>>
   endStream(streamId: string): Promise<IpcResult<boolean>>
   cancelStream(streamId: string): Promise<IpcResult<boolean>>
+  cancelUnary(requestId: string): Promise<IpcResult<{ canceled: boolean }>>
   onStreamEvent(callback: (event: GrpcStreamEvent) => void): () => void
 }
 
@@ -793,6 +795,7 @@ interface SseEventPayload {
 
 interface SseApi {
   connect(options: SseConnectPayload): Promise<IpcResult<SseConnectionInfo>>
+  cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
   disconnect(connectionId: string): Promise<IpcResult<boolean>>
   onEvent(callback: (event: SseEventPayload) => void): () => void
 }

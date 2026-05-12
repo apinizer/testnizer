@@ -3,6 +3,7 @@ import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables } from '../lib/variable-resolver'
+import { makeId } from '../lib/utils'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -17,6 +18,9 @@ interface SocketIOApi {
   connect: (
     options: unknown,
   ) => Promise<{ success: boolean; data?: { connectionId: string }; error?: string }>
+  cancelConnect: (
+    pendingId: string,
+  ) => Promise<{ success: boolean; data?: { canceled: boolean }; error?: string }>
   disconnect: (id: string) => Promise<{ success: boolean; error?: string }>
   emit: (id: string, event: string, data: unknown) => Promise<{ success: boolean; error?: string }>
   subscribe: (id: string, event: string) => Promise<{ success: boolean; error?: string }>
@@ -40,6 +44,8 @@ interface TabSioState {
   emitEvent: string
   emitPayload: string
   newSubscription: string
+  /** Renderer-supplied id so a stalled handshake can be cancelled. */
+  _pendingConnectId?: string
 }
 
 interface SocketIOStore extends TabSioState {
@@ -76,6 +82,7 @@ function emptyState(): TabSioState {
     emitEvent: 'message',
     emitPayload: '{}',
     newSubscription: '',
+    _pendingConnectId: undefined,
   }
 }
 
@@ -92,6 +99,7 @@ function extractState(s: SocketIOStore): TabSioState {
     emitEvent: s.emitEvent,
     emitPayload: s.emitPayload,
     newSubscription: s.newSubscription,
+    _pendingConnectId: s._pendingConnectId,
   }
 }
 
@@ -118,10 +126,19 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
   connect: async () => {
     const { url, namespace, bearerToken } = get()
     if (!url.trim()) return
-    set({ connectionState: 'connecting', errorMessage: null })
+    const pendingConnectId = makeId()
+    set({
+      connectionState: 'connecting',
+      errorMessage: null,
+      _pendingConnectId: pendingConnectId,
+    })
     const api = getSioApi()
     if (!api) {
-      set({ connectionState: 'error', errorMessage: 'API not available' })
+      set({
+        connectionState: 'error',
+        errorMessage: 'API not available',
+        _pendingConnectId: undefined,
+      })
       return
     }
 
@@ -140,6 +157,7 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
       auth: resolvedToken ? { token: resolvedToken } : undefined,
       _workspaceId: ws.activeWorkspaceId || undefined,
       _projectId: ws.activeProjectId || undefined,
+      _pendingId: pendingConnectId,
     })
 
     if (res.success && res.data) {
@@ -160,17 +178,32 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
         connectionState: 'connected',
         errorMessage: null,
         _unsubscribePush: unsub,
+        _pendingConnectId: undefined,
       })
     } else {
-      set({ connectionState: 'error', errorMessage: res.error ?? 'Connection failed' })
+      set({
+        connectionState: 'error',
+        errorMessage: res.error ?? 'Connection failed',
+        _pendingConnectId: undefined,
+      })
     }
     // Logging is done in main (src/main/ipc/socketio.handler.ts) so all
     // protocols funnel through the same console:log channel.
   },
 
   disconnect: async () => {
-    const { connectionId, _unsubscribePush } = get()
-    if (connectionId) await getSioApi()?.disconnect(connectionId)
+    const { connectionId, _unsubscribePush, _pendingConnectId, connectionState } = get()
+    const api = getSioApi()
+    if (api) {
+      if (connectionState === 'connecting' && _pendingConnectId) {
+        try {
+          await api.cancelConnect(_pendingConnectId)
+        } catch {
+          // Engine already finished — disconnect catches it.
+        }
+      }
+      if (connectionId) await api.disconnect(connectionId)
+    }
     _unsubscribePush?.()
     set({
       ...emptyState(),

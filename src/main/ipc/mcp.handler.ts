@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import {
   mcpConnect,
   mcpDisconnect,
+  mcpCancelConnect,
   mcpListTools,
   mcpCallTool,
   type McpTransport,
@@ -24,6 +25,7 @@ export function registerMcpHandlers(): void {
         url: string
         command?: string
         args?: string[]
+        _pendingId?: string
       },
     ) => {
       const started = Date.now()
@@ -35,7 +37,13 @@ export function registerMcpHandlers(): void {
         meta: { transport: options.transport },
       })
       try {
-        const data = await mcpConnect(options)
+        const data = await mcpConnect({
+          transport: options.transport,
+          url: options.url,
+          command: options.command,
+          args: options.args,
+          pendingId: options._pendingId,
+        })
         mcpContext.set(data.connectionId, { url: options.url, connectedAt: Date.now() })
         logResponse({
           protocol: 'mcp',
@@ -67,6 +75,18 @@ export function registerMcpHandlers(): void {
       }
     },
   )
+
+  ipcMain.handle('mcp:cancelConnect', async (_event, pendingId: string) => {
+    const ok = await mcpCancelConnect(pendingId)
+    if (ok) {
+      logEvent({
+        protocol: 'mcp',
+        category: 'connection',
+        message: 'MCP handshake cancelled by user',
+      })
+    }
+    return { success: true, data: { canceled: ok } }
+  })
 
   ipcMain.handle('mcp:disconnect', async (_event, connectionId: string) => {
     try {

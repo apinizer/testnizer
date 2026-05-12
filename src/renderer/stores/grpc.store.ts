@@ -98,6 +98,7 @@ interface GrpcBridge {
   sendStreamMessage: (streamId: string, message: unknown) => Promise<unknown>
   endStream: (streamId: string) => Promise<unknown>
   cancelStream: (streamId: string) => Promise<unknown>
+  cancelUnary: (requestId: string) => Promise<unknown>
   onStreamEvent: (cb: (event: GrpcStreamPayload) => void) => () => void
 }
 
@@ -215,6 +216,13 @@ interface TabGrpcState {
    */
   halfClosed: boolean
   errorMessage: string | null
+  /**
+   * Renderer-side id for an in-flight unary call. Set when `execute()` fires
+   * a unary method; the `cancelUnary` action uses it to call
+   * `grpc:cancelUnary` on the main process so the user can abort a stalled
+   * deadline (e.g. unreachable server).
+   */
+  _unaryRequestId: string | null
 }
 
 // ─── Store ───────────────────────────────────────────────────
@@ -248,6 +256,8 @@ interface GrpcStore extends TabGrpcState {
   /** Half-close the client-side of an active client/bidi stream. */
   endClientStream: () => Promise<void>
   cancelStream: () => Promise<void>
+  /** Abort an in-flight unary call. No-op when no unary call is in flight. */
+  cancelUnary: () => Promise<void>
 
   getSelectedService: () => GrpcService | undefined
   getSelectedMethod: () => GrpcMethod | undefined
@@ -283,6 +293,7 @@ function emptyTabState(): TabGrpcState {
     isStreaming: false,
     halfClosed: false,
     errorMessage: null,
+    _unaryRequestId: null,
   }
 }
 
@@ -307,6 +318,7 @@ function extractState(s: GrpcStore): TabGrpcState {
     isStreaming: s.isStreaming,
     halfClosed: s.halfClosed,
     errorMessage: s.errorMessage,
+    _unaryRequestId: s._unaryRequestId,
   }
 }
 
@@ -690,19 +702,29 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
 
     try {
       if (method?.type === 'unary') {
-        const result = (await grpcApi.execute({ ...baseOptions, requestBody: resolvedBody })) as
-          | { success: true; data: GrpcEngineResponse }
-          | { success: false; error: string }
+        const unaryRequestId = makeId()
+        applyToOwner({ _unaryRequestId: unaryRequestId })
+        try {
+          const result = (await grpcApi.execute({
+            ...baseOptions,
+            requestBody: resolvedBody,
+            _requestId: unaryRequestId,
+          })) as { success: true; data: GrpcEngineResponse } | { success: false; error: string }
 
-        if (result.success) {
-          finishUnary(grpcResponseToApi(result.data))
-        } else {
-          finishUnary({
-            requestId: makeId(),
-            protocol: 'grpc',
-            error: result.error || 'gRPC call failed',
-            timing: { total: 0 },
-          })
+          if (result.success) {
+            finishUnary(grpcResponseToApi(result.data))
+          } else {
+            finishUnary({
+              requestId: makeId(),
+              protocol: 'grpc',
+              error: result.error || 'gRPC call failed',
+              timing: { total: 0 },
+            })
+          }
+        } finally {
+          // Clear the id whether the call resolved, errored, or was cancelled,
+          // so a follow-up cancelUnary() doesn't fire against a stale id.
+          applyToOwner({ _unaryRequestId: null })
         }
         return
       }
@@ -880,6 +902,21 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       if (streamUnsubscribe) streamUnsubscribe()
       set({ activeStreamId: null, streamUnsubscribe: null })
     }
+  },
+
+  cancelUnary: async () => {
+    const id = get()._unaryRequestId
+    if (!id) return
+    const grpcApi = (window as unknown as { api?: { grpc?: GrpcBridge } }).api?.grpc
+    try {
+      if (grpcApi) await grpcApi.cancelUnary(id)
+    } catch {
+      // Best-effort — the engine may have already finished.
+    }
+    // The execute() try/finally clears _unaryRequestId, but if the request
+    // already finished without us catching the resolution (race), clear here
+    // defensively so the UI flips back to "Send".
+    set({ _unaryRequestId: null })
   },
 
   getSelectedService: () => {

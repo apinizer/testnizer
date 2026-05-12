@@ -1,4 +1,4 @@
-import { Plug, Unplug, RefreshCw } from 'lucide-react'
+import { Plug, Unplug, RefreshCw, X } from 'lucide-react'
 import { useSseStore, type SseHttpMethod } from '../../stores/sse.store'
 
 const STATE_INDICATORS: Record<string, { color: string; bg: string; label: string }> = {
@@ -72,7 +72,7 @@ export default function SseConnectionBar() {
           }}
         />
 
-        {/* Connect / Disconnect button */}
+        {/* Connect / Cancel / Disconnect button */}
         {isConnected ? (
           <button
             type="button"
@@ -83,16 +83,26 @@ export default function SseConnectionBar() {
             <Unplug size={14} />
             Disconnect
           </button>
+        ) : isConnecting ? (
+          <button
+            type="button"
+            onClick={disconnect}
+            className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg px-4 py-2 font-medium text-white transition-opacity"
+            style={{ background: '#cc2200', border: 'none' }}
+          >
+            <X size={14} />
+            Cancel
+          </button>
         ) : (
           <button
             type="button"
             onClick={connect}
-            disabled={isConnecting || !url.trim()}
+            disabled={!url.trim()}
             className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg px-4 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
             style={{ background: 'var(--accent)', border: 'none' }}
           >
             <Plug size={14} />
-            {isConnecting ? 'Connecting...' : 'Connect'}
+            Connect
           </button>
         )}
 

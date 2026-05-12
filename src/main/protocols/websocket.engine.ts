@@ -10,6 +10,13 @@ export interface WsConnectOptions {
   headers?: Record<string, string>
   protocols?: string[]
   rejectUnauthorized?: boolean
+  /**
+   * Renderer-generated id that can later be passed to `cancelConnect()` so
+   * the user can abort a long handshake. Optional — when omitted the
+   * connection is uncancellable until it opens (after which `disconnect()`
+   * works normally).
+   */
+  pendingId?: string
 }
 
 export interface WsConnectionInfo {
@@ -41,6 +48,14 @@ interface ManagedConnection {
 }
 
 const connections = new Map<string, ManagedConnection>()
+
+/**
+ * Pending WebSocket handshakes keyed by the renderer-supplied `pendingId`.
+ * Once a connection opens (or rejects) it leaves this map. `cancelConnect`
+ * looks up the entry, terminates the underlying socket, and the in-flight
+ * `connect()` promise rejects through the existing 'error' / timeout path.
+ */
+const pendingConnects = new Map<string, WebSocket>()
 
 function getWindow(windowId: number): BrowserWindow | null {
   return BrowserWindow.fromId(windowId) ?? null
@@ -99,6 +114,12 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
       return
     }
 
+    // Register against the renderer-supplied pendingId so `cancelConnect`
+    // can terminate a long handshake before 'open' fires.
+    if (options.pendingId) {
+      pendingConnects.set(options.pendingId, ws)
+    }
+
     const managed: ManagedConnection = {
       ws,
       connectionId,
@@ -118,6 +139,7 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
 
     ws.on('open', () => {
       clearTimeout(timeout)
+      if (options.pendingId) pendingConnects.delete(options.pendingId)
       connections.set(connectionId, managed)
 
       sendEventToRenderer(windowId, {
@@ -180,6 +202,7 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
 
     ws.on('error', (err: Error) => {
       clearTimeout(timeout)
+      if (options.pendingId) pendingConnects.delete(options.pendingId)
 
       const message = describeWebSocketError(err)
       sendEventToRenderer(windowId, {
@@ -197,6 +220,23 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
       }
     })
   })
+}
+
+/**
+ * Abort an in-flight `connect()` whose handshake hasn't completed. Returns
+ * true when a pending connection was found and terminated, false otherwise
+ * (already open, already failed, or unknown id).
+ */
+export function cancelConnect(pendingId: string): boolean {
+  const ws = pendingConnects.get(pendingId)
+  if (!ws) return false
+  pendingConnects.delete(pendingId)
+  try {
+    ws.terminate()
+  } catch {
+    // Best-effort — the socket may already be torn down.
+  }
+  return true
 }
 
 export function disconnect(connectionId: string): boolean {

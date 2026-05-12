@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron'
 import {
   connect,
   disconnect,
+  cancelConnect,
   sendMessage,
   type WsConnectOptions,
 } from '../protocols/websocket.engine'
@@ -17,6 +18,8 @@ interface WsConnectPayload {
   _workspaceId?: string
   _projectId?: string
   _endpointId?: string
+  /** Renderer-supplied id so `ws:cancelConnect(id)` can abort the handshake. */
+  _pendingId?: string
 }
 
 // Map connectionId -> { url, tabId, connectedAt } so disconnect / send events
@@ -38,6 +41,7 @@ export function registerWebSocketHandlers(): void {
         headers: payload.headers,
         protocols: payload.protocols,
         rejectUnauthorized: payload.rejectUnauthorized,
+        pendingId: payload._pendingId,
       }
 
       const connectStart = Date.now()
@@ -133,6 +137,19 @@ export function registerWebSocketHandlers(): void {
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
+  })
+
+  // ─── Cancel an in-flight WebSocket handshake ──────────────
+  ipcMain.handle('ws:cancelConnect', async (_event, pendingId: string) => {
+    const ok = cancelConnect(pendingId)
+    if (ok) {
+      logEvent({
+        protocol: 'websocket',
+        category: 'connection',
+        message: 'WS handshake cancelled by user',
+      })
+    }
+    return { success: true, data: { canceled: ok } }
   })
 
   // ─── Disconnect WebSocket ─────────────────────────────────

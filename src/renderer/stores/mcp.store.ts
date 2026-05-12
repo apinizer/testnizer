@@ -3,6 +3,7 @@ import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables } from '../lib/variable-resolver'
+import { makeId } from '../lib/utils'
 
 export type McpTransport = 'http' | 'sse' | 'stdio'
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
@@ -19,6 +20,9 @@ interface McpApi {
     data?: { connectionId: string; serverName?: string }
     error?: string
   }>
+  cancelConnect: (
+    pendingId: string,
+  ) => Promise<{ success: boolean; data?: { canceled: boolean }; error?: string }>
   disconnect: (id: string) => Promise<{ success: boolean; error?: string }>
   listTools: (id: string) => Promise<{ success: boolean; data?: McpTool[]; error?: string }>
   callTool: (
@@ -46,6 +50,8 @@ interface TabMcpState {
   result: unknown
   resultError: string | null
   isInvoking: boolean
+  /** Renderer-supplied id so a stalled handshake can be cancelled. */
+  _pendingConnectId?: string
 }
 
 interface McpStore extends TabMcpState {
@@ -78,6 +84,7 @@ function emptyState(): TabMcpState {
     result: null,
     resultError: null,
     isInvoking: false,
+    _pendingConnectId: undefined,
   }
 }
 
@@ -111,6 +118,7 @@ function extractState(s: McpStore): TabMcpState {
     result: s.result,
     resultError: s.resultError,
     isInvoking: s.isInvoking,
+    _pendingConnectId: s._pendingConnectId,
   }
 }
 
@@ -143,10 +151,19 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   connect: async () => {
     const { transport, url } = get()
     if (!url.trim()) return
-    set({ connectionState: 'connecting', errorMessage: null })
+    const pendingConnectId = makeId()
+    set({
+      connectionState: 'connecting',
+      errorMessage: null,
+      _pendingConnectId: pendingConnectId,
+    })
     const api = getMcpApi()
     if (!api) {
-      set({ connectionState: 'error', errorMessage: 'API not available' })
+      set({
+        connectionState: 'error',
+        errorMessage: 'API not available',
+        _pendingConnectId: undefined,
+      })
       return
     }
     // Resolve `{{var}}` placeholders in the server URL the same way HTTP /
@@ -154,18 +171,27 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     // SSE endpoints via environments.
     const vars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedUrl = resolveVariables(url, vars)
-    const res = await api.connect({ transport, url: resolvedUrl })
+    const res = await api.connect({
+      transport,
+      url: resolvedUrl,
+      _pendingId: pendingConnectId,
+    })
     if (res.success && res.data) {
       set({
         connectionId: res.data.connectionId,
         connectionState: 'connected',
         serverName: res.data.serverName ?? null,
         errorMessage: null,
+        _pendingConnectId: undefined,
       })
       // Auto-list tools on connect
       get().listTools()
     } else {
-      set({ connectionState: 'error', errorMessage: res.error ?? 'Connection failed' })
+      set({
+        connectionState: 'error',
+        errorMessage: res.error ?? 'Connection failed',
+        _pendingConnectId: undefined,
+      })
     }
     // Console logging is handled by the main-process handler so every
     // protocol routes through the same `console:log` channel — see
@@ -173,10 +199,18 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   },
 
   disconnect: async () => {
-    const { connectionId } = get()
-    if (!connectionId) return
+    const { connectionId, _pendingConnectId, connectionState } = get()
     const api = getMcpApi()
-    await api?.disconnect(connectionId)
+    if (api) {
+      if (connectionState === 'connecting' && _pendingConnectId) {
+        try {
+          await api.cancelConnect(_pendingConnectId)
+        } catch {
+          // Engine already finished — disconnect catches it.
+        }
+      }
+      if (connectionId) await api.disconnect(connectionId)
+    }
     set({ ...emptyState(), transport: get().transport, url: get().url })
   },
 

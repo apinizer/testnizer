@@ -35,6 +35,14 @@ interface Connection {
 }
 
 const connections = new Map<string, Connection>()
+/**
+ * In-flight Socket.IO handshakes keyed by the renderer-supplied pendingId.
+ * Removed once the connection opens (resolve) or fails (reject).
+ * `socketIOCancelConnect` looks the entry up and disconnects, which causes
+ * the pending `connect` promise to reject through the existing
+ * `connect_error` path.
+ */
+const pendingConnects = new Map<string, Socket>()
 let nextId = 1
 
 function makeId(): string {
@@ -46,6 +54,11 @@ export async function socketIOConnect(options: {
   namespace?: string
   auth?: Record<string, unknown>
   extraHeaders?: Record<string, string>
+  /**
+   * Renderer-supplied id so `socketIOCancelConnect(id)` can abort a stalled
+   * handshake. Cleared once the connection opens or fails.
+   */
+  pendingId?: string
 }): Promise<SocketIOConnectionInfo> {
   return new Promise((resolve, reject) => {
     const connectionId = makeId()
@@ -60,6 +73,10 @@ export async function socketIOConnect(options: {
       transports: ['websocket', 'polling'],
     })
 
+    if (options.pendingId) {
+      pendingConnects.set(options.pendingId, socket)
+    }
+
     const info: SocketIOConnectionInfo = {
       connectionId,
       url: options.url,
@@ -67,6 +84,7 @@ export async function socketIOConnect(options: {
     }
 
     socket.once('connect', () => {
+      if (options.pendingId) pendingConnects.delete(options.pendingId)
       const conn: Connection = {
         socket,
         info,
@@ -94,10 +112,28 @@ export async function socketIOConnect(options: {
     })
 
     socket.once('connect_error', (err) => {
+      if (options.pendingId) pendingConnects.delete(options.pendingId)
       socket.disconnect()
       reject(new Error(err.message))
     })
   })
+}
+
+/**
+ * Abort an in-flight Socket.IO handshake. Returns true when a pending entry
+ * was found and torn down (which will reject the pending promise through the
+ * `connect_error` path), false otherwise.
+ */
+export function socketIOCancelConnect(pendingId: string): boolean {
+  const socket = pendingConnects.get(pendingId)
+  if (!socket) return false
+  pendingConnects.delete(pendingId)
+  try {
+    socket.disconnect()
+  } catch {
+    // Best-effort.
+  }
+  return true
 }
 
 export function socketIODisconnect(connectionId: string): void {

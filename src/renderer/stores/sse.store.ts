@@ -39,11 +39,15 @@ interface SseApi {
     _workspaceId?: string
     _projectId?: string
     _endpointId?: string
+    _pendingId?: string
   }) => Promise<{
     success: boolean
     data?: { connectionId: string }
     error?: string
   }>
+  cancelConnect: (
+    pendingId: string,
+  ) => Promise<{ success: boolean; data?: { canceled: boolean }; error?: string }>
   disconnect: (
     connectionId: string,
   ) => Promise<{ success: boolean; data?: boolean; error?: string }>
@@ -72,6 +76,11 @@ interface TabSseState {
   connectedAt: number | null
   /** Per-tab subscription returned by `sse.onEvent`. */
   _unsubscribe?: () => void
+  /**
+   * Renderer-supplied id used to cancel an in-flight handshake before the
+   * `open` event fires. Cleared on success / failure.
+   */
+  _pendingConnectId?: string
 }
 
 interface SseStore extends TabSseState {
@@ -127,6 +136,7 @@ function emptyTabState(): TabSseState {
     events: [],
     connectedAt: null,
     _unsubscribe: undefined,
+    _pendingConnectId: undefined,
   }
 }
 
@@ -146,6 +156,7 @@ function extractState(s: SseStore): TabSseState {
     events: s.events,
     connectedAt: s.connectedAt,
     _unsubscribe: s._unsubscribe,
+    _pendingConnectId: s._pendingConnectId,
   }
 }
 
@@ -169,7 +180,13 @@ export const useSseStore = create<SseStore>((set, get) => ({
     const { url, customHeaders, lastEventId, method, body, bodyType } = get()
     if (!url.trim()) return
 
-    set({ connectionState: 'connecting', errorMessage: null, events: [] })
+    const pendingConnectId = makeId()
+    set({
+      connectionState: 'connecting',
+      errorMessage: null,
+      events: [],
+      _pendingConnectId: pendingConnectId,
+    })
 
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedUrl = resolveVariables(url, activeVars)
@@ -295,6 +312,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
         body: sendBody ? resolvedBody : undefined,
         _workspaceId: wsStore.activeWorkspaceId || undefined,
         _projectId: wsStore.activeProjectId || undefined,
+        _pendingId: pendingConnectId,
       })
       if (result?.success && result.data) {
         const newId = result.data.connectionId
@@ -304,6 +322,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
             connectionId: newId,
             // Keep the state set by the 'open' event when it has already fired.
             connectionState: current.connectionState === 'connected' ? 'connected' : 'connecting',
+            _pendingConnectId: undefined,
           })
         } else if (ownerTabId !== null) {
           const map = new Map(current._tabStates)
@@ -312,6 +331,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
             ...existing,
             connectionId: newId,
             connectionState: existing.connectionState === 'connected' ? 'connected' : 'connecting',
+            _pendingConnectId: undefined,
           })
           set({ _tabStates: map })
         }
@@ -319,6 +339,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
         unsub()
         applyToOwner({
           _unsubscribe: undefined,
+          _pendingConnectId: undefined,
           connectionState: 'error',
           errorMessage: result?.error || 'SSE connection failed',
         })
@@ -327,6 +348,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
       unsub()
       applyToOwner({
         _unsubscribe: undefined,
+        _pendingConnectId: undefined,
         connectionState: 'error',
         errorMessage: (e as Error).message,
       })
@@ -334,13 +356,22 @@ export const useSseStore = create<SseStore>((set, get) => ({
   },
 
   disconnect: async () => {
-    const { connectionId, _unsubscribe } = get()
+    const { connectionId, _unsubscribe, _pendingConnectId, connectionState } = get()
     const sse = getSseApi()
-    if (sse && connectionId) {
-      try {
-        await sse.disconnect(connectionId)
-      } catch {
-        // engine already cleaned up — proceed to local reset
+    if (sse) {
+      if (connectionState === 'connecting' && _pendingConnectId) {
+        try {
+          await sse.cancelConnect(_pendingConnectId)
+        } catch {
+          // Engine already finished the handshake — disconnect catches it.
+        }
+      }
+      if (connectionId) {
+        try {
+          await sse.disconnect(connectionId)
+        } catch {
+          // engine already cleaned up — proceed to local reset
+        }
       }
     }
     if (_unsubscribe) _unsubscribe()
@@ -348,6 +379,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
       connectionState: 'disconnected',
       connectionId: null,
       _unsubscribe: undefined,
+      _pendingConnectId: undefined,
     })
   },
 

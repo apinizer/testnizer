@@ -24,6 +24,11 @@ export interface SseConnectOptions {
    * JSON / form data and setting the matching `Content-Type` header.
    */
   body?: string
+  /**
+   * Renderer-supplied id so the in-flight handshake can be cancelled via
+   * `cancelConnect()`. Cleared once the connection opens or errors out.
+   */
+  pendingId?: string
 }
 
 export interface SseConnectionInfo {
@@ -145,6 +150,15 @@ type ManagedSseConnection = ManagedEventSourceConnection | ManagedFetchConnectio
 
 const connections = new Map<string, ManagedSseConnection>()
 
+/**
+ * In-flight SSE handshakes keyed by the renderer-supplied pendingId. The
+ * value is a teardown closure that cancels the handshake — it calls
+ * `eventSource.close()` (EventSource path) or `controller.abort()` (fetch
+ * path). After the connection opens or errors, the entry is removed so
+ * subsequent `cancelConnect` calls are no-ops.
+ */
+const pendingConnects = new Map<string, () => void>()
+
 function sendEventToRenderer(windowId: number, event: SseEventPayload): void {
   const win = BrowserWindow.fromId(windowId)
   if (win && !win.isDestroyed()) {
@@ -163,10 +177,7 @@ function sendEventToRenderer(windowId: number, event: SseEventPayload): void {
  *   - **Fetch path**: any non-GET method, or any method with a body —
  *     manual `fetch` + streaming reader. No auto-reconnect (caller handles).
  */
-export function connect(
-  options: SseConnectOptions,
-  windowId: number
-): Promise<SseConnectionInfo> {
+export function connect(options: SseConnectOptions, windowId: number): Promise<SseConnectionInfo> {
   const method = (options.method ?? 'GET').toUpperCase() as SseHttpMethod
   const hasBody = typeof options.body === 'string' && options.body.length > 0
   if (method !== 'GET' || hasBody) {
@@ -177,7 +188,7 @@ export function connect(
 
 function connectEventSource(
   options: SseConnectOptions,
-  windowId: number
+  windowId: number,
 ): Promise<SseConnectionInfo> {
   return new Promise((resolve, reject) => {
     const connectionId = randomUUID()
@@ -191,10 +202,7 @@ function connectEventSource(
     if (options.lastEventId) customHeaders['Last-Event-ID'] = options.lastEventId
     applyDefaultUserAgent(customHeaders)
 
-    const wrappedFetch = (
-      url: string | URL,
-      init: EventSourceFetchInit
-    ): Promise<Response> => {
+    const wrappedFetch = (url: string | URL, init: EventSourceFetchInit): Promise<Response> => {
       // `init.headers` is a plain object literal in v3; merge ours on top so
       // the library's defaults (Accept, Last-Event-ID auto-bookkeeping after
       // reconnects) win when there's a collision. Caller-provided values for
@@ -214,13 +222,17 @@ function connectEventSource(
       return
     }
 
+    if (options.pendingId) {
+      pendingConnects.set(options.pendingId, () => eventSource.close())
+    }
+
     const managed: ManagedEventSourceConnection = {
       kind: 'eventsource',
       connectionId,
       eventSource,
       url: options.url,
       connectedAt: Date.now(),
-      windowId
+      windowId,
     }
 
     // Connection timeout
@@ -234,19 +246,20 @@ function connectEventSource(
 
     eventSource.onopen = () => {
       clearTimeout(timeout)
+      if (options.pendingId) pendingConnects.delete(options.pendingId)
       connections.set(connectionId, managed)
 
       sendEventToRenderer(windowId, {
         connectionId,
         type: 'open',
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
 
       resolve({
         connectionId,
         url: options.url,
         readyState: eventSource.readyState,
-        connectedAt: managed.connectedAt
+        connectedAt: managed.connectedAt,
       })
     }
 
@@ -273,6 +286,7 @@ function connectEventSource(
 
     eventSource.onerror = (err: ErrorEvent) => {
       clearTimeout(timeout)
+      if (options.pendingId) pendingConnects.delete(options.pendingId)
 
       // `eventsource@3` emits `ErrorEvent { code?: number, message?: string }`.
       const { message, httpStatus } = describeSseError({
@@ -285,7 +299,7 @@ function connectEventSource(
         type: 'error',
         data: message,
         httpStatus,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
 
       // If not yet connected, reject
@@ -369,7 +383,7 @@ function createSseParser(onEvent: (e: SseLineEvent) => void): (chunk: string) =>
     buffer += chunk
     // Split on \r\n, \n, or \r per spec.
     let idx: number
-    // eslint-disable-next-line no-cond-assign
+
     while ((idx = buffer.search(/\r\n|\r|\n/)) !== -1) {
       const line = buffer.slice(0, idx)
       const sep = buffer[idx] === '\r' && buffer[idx + 1] === '\n' ? 2 : 1
@@ -381,7 +395,7 @@ function createSseParser(onEvent: (e: SseLineEvent) => void): (chunk: string) =>
 
 function connectStreaming(
   options: SseConnectOptions & { method: SseHttpMethod },
-  windowId: number
+  windowId: number,
 ): Promise<SseConnectionInfo> {
   return new Promise((resolve, reject) => {
     const connectionId = randomUUID()
@@ -403,6 +417,10 @@ function connectStreaming(
       }
     }, 15000)
 
+    if (options.pendingId) {
+      pendingConnects.set(options.pendingId, () => controller.abort())
+    }
+
     const connectedAt = Date.now()
     const fetchInit: RequestInit = {
       method: options.method,
@@ -421,6 +439,7 @@ function connectStreaming(
             message: response.statusText,
           })
           clearTimeout(timeout)
+          if (options.pendingId) pendingConnects.delete(options.pendingId)
           sendEventToRenderer(windowId, {
             connectionId,
             type: 'error',
@@ -446,6 +465,7 @@ function connectStreaming(
 
         // Handshake succeeded → register, fire `open`, resolve.
         clearTimeout(timeout)
+        if (options.pendingId) pendingConnects.delete(options.pendingId)
         const managed: ManagedFetchConnection = {
           kind: 'fetch',
           connectionId,
@@ -483,7 +503,6 @@ function connectStreaming(
         })
 
         try {
-          // eslint-disable-next-line no-constant-condition
           while (true) {
             const { value, done } = await reader.read()
             if (done) break
@@ -520,7 +539,12 @@ function connectStreaming(
       })
       .catch((err: unknown) => {
         clearTimeout(timeout)
-        const e = err as { name?: string; message?: string; cause?: { code?: string; message?: string } }
+        if (options.pendingId) pendingConnects.delete(options.pendingId)
+        const e = err as {
+          name?: string
+          message?: string
+          cause?: { code?: string; message?: string }
+        }
         if (e?.name === 'AbortError' && connections.has(connectionId)) {
           // Already handled by disconnect; nothing to surface.
           return
@@ -543,6 +567,22 @@ function connectStreaming(
         }
       })
   })
+}
+
+/**
+ * Abort an in-flight SSE handshake (before `open` fires). Returns true when
+ * a pending connection was found and torn down, false otherwise.
+ */
+export function cancelConnect(pendingId: string): boolean {
+  const teardown = pendingConnects.get(pendingId)
+  if (!teardown) return false
+  pendingConnects.delete(pendingId)
+  try {
+    teardown()
+  } catch {
+    // Best-effort.
+  }
+  return true
 }
 
 export function disconnect(connectionId: string): boolean {
@@ -569,7 +609,7 @@ export function getConnectionInfo(connectionId: string): SseConnectionInfo | nul
     connectionId: managed.connectionId,
     url: managed.url,
     readyState,
-    connectedAt: managed.connectedAt
+    connectedAt: managed.connectedAt,
   }
 }
 

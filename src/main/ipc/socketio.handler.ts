@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron'
 import {
   socketIOConnect,
   socketIODisconnect,
+  socketIOCancelConnect,
   socketIOEmit,
   socketIOSubscribe,
   socketIOUnsubscribe,
@@ -42,6 +43,7 @@ export function registerSocketIOHandlers(): void {
         _workspaceId?: string
         _projectId?: string
         _endpointId?: string
+        _pendingId?: string
       },
     ) => {
       const started = Date.now()
@@ -57,7 +59,13 @@ export function registerSocketIOHandlers(): void {
         },
       })
       try {
-        const data = await socketIOConnect(options)
+        const data = await socketIOConnect({
+          url: options.url,
+          namespace: options.namespace,
+          auth: options.auth,
+          extraHeaders: options.extraHeaders,
+          pendingId: options._pendingId,
+        })
         const connectedAt = Date.now()
         sioContext.set(data.connectionId, { url: fullTarget, connectedAt })
         // Wire event push back to renderer
@@ -137,6 +145,18 @@ export function registerSocketIOHandlers(): void {
       }
     },
   )
+
+  ipcMain.handle('socketio:cancelConnect', (_event, pendingId: string) => {
+    const ok = socketIOCancelConnect(pendingId)
+    if (ok) {
+      logEvent({
+        protocol: 'socketio',
+        category: 'connection',
+        message: 'Socket.IO handshake cancelled by user',
+      })
+    }
+    return { success: true, data: { canceled: ok } }
+  })
 
   ipcMain.handle('socketio:disconnect', (_event, connectionId: string) => {
     try {

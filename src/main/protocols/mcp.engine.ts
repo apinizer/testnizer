@@ -25,6 +25,12 @@ interface Connection {
 }
 
 const connections = new Map<string, Connection>()
+/**
+ * In-flight MCP handshakes keyed by the renderer-supplied pendingId. The
+ * value is a teardown closure that closes the transport so the in-flight
+ * `client.connect()` rejects. Removed once the connection opens or fails.
+ */
+const pendingConnects = new Map<string, () => Promise<void>>()
 let nextId = 1
 
 function makeId(): string {
@@ -37,6 +43,12 @@ export async function mcpConnect(options: {
   command?: string
   args?: string[]
   env?: Record<string, string>
+  /**
+   * Renderer-supplied id so `mcpCancelConnect(id)` can abort the handshake
+   * before `client.connect()` resolves. Cleared once the connection opens
+   * or fails.
+   */
+  pendingId?: string
 }): Promise<McpConnectionInfo> {
   const connectionId = makeId()
   const client = new Client({ name: 'Testnizer', version: '1.0.0' })
@@ -58,7 +70,27 @@ export async function mcpConnect(options: {
     })
   }
 
-  await client.connect(transport)
+  // Register before the connect() promise so a fast cancel still finds the
+  // entry. Teardown calls transport.close() — this is what causes
+  // `client.connect()` to reject for HTTP / SSE / stdio transports.
+  if (options.pendingId) {
+    pendingConnects.set(options.pendingId, async () => {
+      try {
+        await transport.close()
+      } catch {
+        // Best-effort: socket may already be torn down.
+      }
+    })
+  }
+
+  try {
+    await client.connect(transport)
+  } catch (err) {
+    if (options.pendingId) pendingConnects.delete(options.pendingId)
+    throw err
+  }
+
+  if (options.pendingId) pendingConnects.delete(options.pendingId)
 
   const serverInfo = client.getServerVersion()
   const info: McpConnectionInfo = {
@@ -71,6 +103,19 @@ export async function mcpConnect(options: {
 
   connections.set(connectionId, { client, info })
   return info
+}
+
+/**
+ * Abort an in-flight `mcpConnect()`. Returns true when a pending handshake
+ * was found and the underlying transport torn down. The original `mcpConnect`
+ * promise will reject through the existing error path.
+ */
+export async function mcpCancelConnect(pendingId: string): Promise<boolean> {
+  const teardown = pendingConnects.get(pendingId)
+  if (!teardown) return false
+  pendingConnects.delete(pendingId)
+  await teardown()
+  return true
 }
 
 export async function mcpDisconnect(connectionId: string): Promise<void> {

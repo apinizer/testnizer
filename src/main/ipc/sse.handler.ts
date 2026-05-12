@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron'
 import {
   connect,
   disconnect,
+  cancelConnect,
   type SseConnectOptions,
   type SseHttpMethod,
 } from '../protocols/sse.engine'
@@ -19,6 +20,8 @@ interface SseConnectPayload {
   _workspaceId?: string
   _projectId?: string
   _endpointId?: string
+  /** Renderer-supplied id so `sse:cancelConnect(id)` can abort the handshake. */
+  _pendingId?: string
 }
 
 const sseContext = new Map<string, { url: string; tabId?: string; connectedAt: number }>()
@@ -39,6 +42,7 @@ export function registerSseHandlers(): void {
         withCredentials: payload.withCredentials,
         method: payload.method,
         body: payload.body,
+        pendingId: payload._pendingId,
       }
 
       const connectStart = Date.now()
@@ -134,6 +138,19 @@ export function registerSseHandlers(): void {
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
+  })
+
+  // ─── Cancel an in-flight SSE handshake ─────────────────────
+  ipcMain.handle('sse:cancelConnect', async (_event, pendingId: string) => {
+    const ok = cancelConnect(pendingId)
+    if (ok) {
+      logEvent({
+        protocol: 'sse',
+        category: 'connection',
+        message: 'SSE handshake cancelled by user',
+      })
+    }
+    return { success: true, data: { canceled: ok } }
   })
 
   // ─── Disconnect SSE ─────────────────────────────────────────

@@ -91,22 +91,21 @@ export default function SocketIOEditor() {
         />
         <button
           type="button"
-          onClick={isConnected ? () => store.disconnect() : () => store.connect()}
-          disabled={isConnecting}
+          onClick={isConnected || isConnecting ? () => store.disconnect() : () => store.connect()}
           style={{
             height: 32,
             padding: '0 16px',
             borderRadius: 6,
             border: 'none',
-            background: isConnected ? T.DELETE.color : T.accent,
+            background: isConnected || isConnecting ? T.DELETE.color : T.accent,
             color: '#fff',
             fontSize: 13,
             fontWeight: 600,
-            cursor: isConnecting ? 'not-allowed' : 'pointer',
+            cursor: 'pointer',
             flexShrink: 0,
           }}
         >
-          {isConnecting ? 'Connecting…' : isConnected ? 'Disconnect' : 'Connect'}
+          {isConnecting ? 'Cancel' : isConnected ? 'Disconnect' : 'Connect'}
         </button>
         {store.connectionState === 'error' && store.errorMessage && (
           <span style={{ fontSize: 12, color: T.DELETE.color }}>{store.errorMessage}</span>

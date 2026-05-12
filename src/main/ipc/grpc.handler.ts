@@ -16,6 +16,9 @@ import {
 } from '../protocols/grpc.engine'
 import { logRequest, logResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
+import { createPendingRegistry } from '../lib/pending-cancellables'
+
+const pendingUnaryRequests = createPendingRegistry()
 
 interface GrpcExecutePayload {
   serverAddress: string
@@ -31,6 +34,8 @@ interface GrpcExecutePayload {
   _workspaceId?: string
   _projectId?: string
   _endpointId?: string
+  /** Renderer-generated id so `grpc:cancelUnary(id)` can abort this call. */
+  _requestId?: string
 }
 
 interface GrpcServerStreamPayload {
@@ -108,7 +113,13 @@ export function registerGrpcHandlers(): void {
 
   // ─── Execute unary call ─────────────────────────────────────
   ipcMain.handle('grpc:execute', async (_event, payload: GrpcExecutePayload) => {
+    const requestId = payload._requestId
+    let controller: AbortController | undefined
     try {
+      if (requestId) {
+        controller = new AbortController()
+        pendingUnaryRequests.register(requestId, () => controller?.abort())
+      }
       const options: GrpcExecuteOptions = {
         serverAddress: payload.serverAddress,
         protoPath: payload.protoPath,
@@ -119,6 +130,7 @@ export function registerGrpcHandlers(): void {
         timeout: payload.timeout,
         useTls: payload.useTls,
         sslVerification: payload.sslVerification,
+        signal: controller?.signal,
       }
 
       const fullMethod = `${payload.serviceName}/${payload.methodName}`
@@ -192,7 +204,18 @@ export function registerGrpcHandlers(): void {
       return { success: true, data: response }
     } catch (e) {
       return { success: false, error: (e as Error).message }
+    } finally {
+      if (requestId) pendingUnaryRequests.dispose(requestId)
     }
+  })
+
+  // ─── Cancel an in-flight unary call ─────────────────────────
+  // Streaming methods already have `grpc:cancelStream` (registered below);
+  // unary uses a separate registry because the engine surfaces no streamId
+  // until the call has effectively completed.
+  ipcMain.handle('grpc:cancelUnary', async (_event, requestId: string) => {
+    const ok = pendingUnaryRequests.cancel(requestId)
+    return { success: true, data: { canceled: ok } }
   })
 
   // ─── Server stream ──────────────────────────────────────────

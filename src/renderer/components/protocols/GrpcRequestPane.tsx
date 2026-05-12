@@ -57,6 +57,7 @@ export default function GrpcRequestPane() {
   const loadFromReflection = useGrpcStore((s) => s.loadFromReflection)
   const execute = useGrpcStore((s) => s.execute)
   const cancelStream = useGrpcStore((s) => s.cancelStream)
+  const cancelUnary = useGrpcStore((s) => s.cancelUnary)
   const endClientStream = useGrpcStore((s) => s.endClientStream)
   const getSelectedMethod = useGrpcStore((s) => s.getSelectedMethod)
 
@@ -386,13 +387,16 @@ export default function GrpcRequestPane() {
             ) : (
               <button
                 type="button"
-                onClick={execute}
-                disabled={isLoading || !selectedService || !selectedMethod}
+                onClick={() => (isLoading ? cancelUnary() : execute())}
+                disabled={!isLoading && (!selectedService || !selectedMethod)}
                 className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-                style={{ background: 'var(--accent)', border: 'none' }}
+                style={{
+                  background: isLoading ? '#cc2200' : 'var(--accent)',
+                  border: 'none',
+                }}
               >
                 <Play size={14} />
-                {isLoading ? t('grpc.calling') : t('grpc.execute')}
+                {isLoading ? t('grpc.cancel') : t('grpc.execute')}
               </button>
             )}
           </div>

@@ -47,6 +47,11 @@ export interface GrpcExecuteOptions {
   timeout?: number
   useTls?: boolean
   sslVerification?: boolean
+  /**
+   * Optional abort signal — when fired, the in-flight unary call is
+   * `.cancel()`ed and the engine resolves with a CANCELLED gRPC status.
+   */
+  signal?: AbortSignal
 }
 
 export interface GrpcResponse {
@@ -656,6 +661,18 @@ export async function executeUnary(options: GrpcExecuteOptions): Promise<GrpcRes
       call.on('status', (s: grpc.StatusObject) => {
         if (s.metadata) trailers = extractMetadata(s.metadata)
       })
+
+      // Wire user cancellation: `call.cancel()` aborts the request and the
+      // callback above receives a CANCELLED error, which resolves the
+      // promise — no extra `resolve` here so the rejection path stays in
+      // one place.
+      if (options.signal) {
+        if (options.signal.aborted) {
+          call.cancel()
+        } else {
+          options.signal.addEventListener('abort', () => call.cancel(), { once: true })
+        }
+      }
     })
   } catch (err) {
     return {
