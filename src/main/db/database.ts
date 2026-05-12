@@ -358,6 +358,11 @@ function runMigrations(database: Database.Database): void {
   `)
 
   // ─── Test Suites ──────────────────────────────────────────
+  // Self-contained item model: suites own folders + items (full request
+  // snapshots), and items are decoupled from APIs-tree endpoints once
+  // imported. This replaced the old `test_suite_endpoints` junction; the
+  // legacy table is dropped below as part of the same migration so
+  // dev-mode users boot up clean.
   database.exec(`
     CREATE TABLE IF NOT EXISTS test_suites (
       id TEXT PRIMARY KEY,
@@ -372,17 +377,51 @@ function runMigrations(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_test_suites_project ON test_suites(project_id);
 
-    CREATE TABLE IF NOT EXISTS test_suite_endpoints (
+    -- Folders that organise items inside a suite. Optional parent_id for
+    -- nesting. Cascading delete: dropping a suite or parent folder removes
+    -- everything beneath.
+    CREATE TABLE IF NOT EXISTS test_suite_folders (
       id TEXT PRIMARY KEY,
       suite_id TEXT NOT NULL,
-      endpoint_id TEXT NOT NULL,
+      parent_id TEXT,
+      name TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
       FOREIGN KEY (suite_id) REFERENCES test_suites(id) ON DELETE CASCADE,
-      FOREIGN KEY (endpoint_id) REFERENCES endpoints(id) ON DELETE CASCADE
+      FOREIGN KEY (parent_id) REFERENCES test_suite_folders(id) ON DELETE CASCADE
     );
+    CREATE INDEX IF NOT EXISTS idx_tsf_suite ON test_suite_folders(suite_id);
+    CREATE INDEX IF NOT EXISTS idx_tsf_parent ON test_suite_folders(parent_id);
 
-    CREATE INDEX IF NOT EXISTS idx_tse_suite ON test_suite_endpoints(suite_id);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_tse_unique ON test_suite_endpoints(suite_id, endpoint_id);
+    -- One row per inline request in a suite. Carries the entire request
+    -- (URL, method, headers, body, scripts, assertions) so a suite is fully
+    -- self-describing and survives deletion of the original endpoint it was
+    -- imported from. source_endpoint_id is advisory only -- no FK.
+    CREATE TABLE IF NOT EXISTS test_suite_items (
+      id TEXT PRIMARY KEY,
+      suite_id TEXT NOT NULL,
+      folder_id TEXT,
+      protocol TEXT NOT NULL,
+      name TEXT NOT NULL,
+      method TEXT,
+      url TEXT,
+      request_schema TEXT NOT NULL,
+      assertions TEXT,
+      source_endpoint_id TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (suite_id) REFERENCES test_suites(id) ON DELETE CASCADE,
+      FOREIGN KEY (folder_id) REFERENCES test_suite_folders(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_tsi_suite ON test_suite_items(suite_id);
+    CREATE INDEX IF NOT EXISTS idx_tsi_folder ON test_suite_items(folder_id);
+    CREATE INDEX IF NOT EXISTS idx_tsi_suite_sort ON test_suite_items(suite_id, sort_order);
+
+    -- One-shot drop of the legacy junction. Dev phase only — production
+    -- migration would have moved rows into test_suite_items first; here we
+    -- just discard. Idempotent.
+    DROP TABLE IF EXISTS test_suite_endpoints;
 
     CREATE TABLE IF NOT EXISTS mock_servers (
       id TEXT PRIMARY KEY,

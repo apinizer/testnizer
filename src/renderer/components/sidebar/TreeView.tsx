@@ -486,7 +486,7 @@ export default function TreeView() {
           name: folderNode.label,
         })) as { success: boolean; data?: { id: string } }
         if (!createRes?.success || !createRes.data) return
-        await window.api?.testSuite?.addEndpoints({
+        await window.api?.testSuite?.importEndpoints({
           suite_id: createRes.data.id,
           endpoint_ids: ids,
         })

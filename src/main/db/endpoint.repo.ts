@@ -163,12 +163,12 @@ export function updateEndpoint(
 
 export function deleteEndpoint(id: string): boolean {
   const db = getDb()
-  // Cascade junction + per-endpoint child rows ourselves — the schema
-  // doesn't enforce FK constraints, so without this the row is gone but
-  // test suites + endpoint cases keep dangling references that the
-  // runner later treats as "Endpoint not found".
+  // Cascade endpoint_cases ourselves — the schema doesn't enforce FK
+  // constraints, so without this the row is gone but per-endpoint cases
+  // keep dangling references the runner later treats as "Endpoint not found".
+  // test_suite_items snapshots are by design decoupled from the source
+  // endpoint, so no cleanup is needed there (source_endpoint_id is advisory).
   const txn = db.transaction(() => {
-    db.prepare('DELETE FROM test_suite_endpoints WHERE endpoint_id = ?').run(id)
     db.prepare('DELETE FROM endpoint_cases WHERE endpoint_id = ?').run(id)
     return db.prepare('DELETE FROM endpoints WHERE id = ?').run(id)
   })

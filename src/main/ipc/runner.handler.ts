@@ -4,6 +4,7 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { executeHttpRequest, HttpRequestOptions } from '../protocols/http.engine'
 import * as endpointRepo from '../db/endpoint.repo'
+import * as tsiRepo from '../db/test-suite-item.repo'
 import * as historyRepo from '../db/history.repo'
 import { getDb } from '../db/database'
 import { isRunnableInProject } from '../lib/ownership'
@@ -238,14 +239,53 @@ function savedRequestToEndpoint(saved: endpointRepo.SavedRequestRow): endpointRe
 }
 
 /**
- * Look up a runnable entity by ID — supports both imported endpoints and
- * manually saved requests, transparent to callers (Bug 7).
+ * Adapt a test_suite_items row into the EndpointRow shape the runner uses.
+ * Suite items carry their own snapshot of the request (URL, method, params,
+ * headers, body, scripts, assertions) — that snapshot is parsed and merged
+ * back into `request_schema` so downstream `buildRequestFromEndpoint` and
+ * `runAssertionsMainProcess` work unchanged.
+ *
+ * Assertions are stored on a separate column (test_suite_items.assertions)
+ * to keep them edit-able without touching the request_schema JSON; we inject
+ * them back into the schema here so the runner finds them in the usual spot.
+ */
+function suiteItemToEndpoint(item: tsiRepo.TestSuiteItemRow): endpointRepo.EndpointRow {
+  const baseSchema = parseJsonSafe<Record<string, unknown>>(item.request_schema, {})
+  const assertions = parseJsonSafe<unknown[]>(item.assertions ?? '[]', [])
+  const merged = { ...baseSchema, assertions }
+  return {
+    id: item.id,
+    // suite items don't carry project_id directly; runner doesn't read it
+    // for the request body itself, but we surface an empty string rather
+    // than null to keep the type compat.
+    project_id: '',
+    folder_id: item.folder_id,
+    name: item.name,
+    description: null,
+    protocol: item.protocol,
+    method: item.method,
+    path: item.url ?? '',
+    status: 'developing',
+    request_schema: JSON.stringify(merged),
+    response_schemas: null,
+    sort_order: item.sort_order,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+  }
+}
+
+/**
+ * Look up a runnable entity by ID — supports imported endpoints, manually
+ * saved requests, and test-suite items (each item is a fully-snapshotted
+ * request and is the source of truth for suite runs).
  */
 function getRunnableEntity(id: string): endpointRepo.EndpointRow | undefined {
   const endpoint = endpointRepo.getEndpointById(id)
   if (endpoint) return endpoint
   const saved = endpointRepo.getSavedRequestById(id)
   if (saved) return savedRequestToEndpoint(saved)
+  const suiteItem = tsiRepo.getItemById(id)
+  if (suiteItem) return suiteItemToEndpoint(suiteItem)
   return undefined
 }
 

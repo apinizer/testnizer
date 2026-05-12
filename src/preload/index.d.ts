@@ -1026,6 +1026,8 @@ interface ApiBridge {
   save: SaveApi
   certificate: CertificateApi
   testSuite: TestSuiteApi
+  testSuiteItem: TestSuiteItemApi
+  testSuiteFolder: TestSuiteFolderApi
   tree: TreeApi
   mock: MockApi
   dialog: DialogApi
@@ -1136,9 +1138,27 @@ interface TestSuiteApi {
   update: (id: string, payload: unknown) => Promise<IpcResult<unknown>>
   delete: (id: string) => Promise<IpcResult<boolean>>
   duplicate: (id: string) => Promise<IpcResult<unknown>>
-  listEndpoints: (suiteId: string) => Promise<IpcResult<unknown[]>>
-  addEndpoints: (payload: unknown) => Promise<IpcResult<unknown>>
+  /** Returns `{ items, folders }` — both arrays of repo rows. */
+  listEndpoints: (suiteId: string) => Promise<IpcResult<unknown>>
+  /** Snapshots endpoints from APIs tree and writes them as suite items. */
+  importEndpoints: (payload: unknown) => Promise<IpcResult<unknown>>
   removeEndpoint: (payload: unknown) => Promise<IpcResult<boolean>>
+}
+
+interface TestSuiteItemApi {
+  list: (suiteId: string) => Promise<IpcResult<unknown[]>>
+  get: (id: string) => Promise<IpcResult<unknown>>
+  create: (input: unknown) => Promise<IpcResult<unknown>>
+  update: (id: string, patch: unknown) => Promise<IpcResult<unknown>>
+  delete: (id: string) => Promise<IpcResult<{ deleted: boolean }>>
+  move: (payload: unknown) => Promise<IpcResult<unknown>>
+}
+
+interface TestSuiteFolderApi {
+  create: (input: unknown) => Promise<IpcResult<unknown>>
+  rename: (id: string, name: string) => Promise<IpcResult<unknown>>
+  delete: (id: string) => Promise<IpcResult<{ deleted: boolean }>>
+  move: (payload: unknown) => Promise<IpcResult<unknown>>
 }
 
 interface TreeApi {

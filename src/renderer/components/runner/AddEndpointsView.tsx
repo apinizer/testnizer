@@ -207,7 +207,13 @@ export default function AddEndpointsView() {
   const handleAdd = async () => {
     if (selected.size === 0 || !suiteId) return
     setLoading(true)
-    await api().testSuite.addEndpoints({ suite_id: suiteId, endpoint_ids: Array.from(selected) })
+    // Suite items are independent copies — importEndpoints snapshots each
+    // selected endpoint (URL, method, headers, body, assertions...) into the
+    // test_suite_items table so subsequent edits on either side are isolated.
+    await api().testSuite.importEndpoints({
+      suite_id: suiteId,
+      endpoint_ids: Array.from(selected),
+    })
     setLoading(false)
     close()
   }

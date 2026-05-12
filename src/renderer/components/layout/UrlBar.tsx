@@ -388,7 +388,8 @@ export default function UrlBar() {
       <button
         type="button"
         onClick={async () => {
-          const isSaved = activeTab?.savedRequestId || activeTab?.endpointId
+          const isSaved =
+            activeTab?.savedRequestId || activeTab?.endpointId || activeTab?.testSuiteItemId
           if (!isSaved) {
             // Not saved yet — open save modal
             setShowEndpointSaveModal(true)
@@ -398,7 +399,27 @@ export default function UrlBar() {
           setSaveLoading(true)
           setSaveError(null)
           try {
-            if (activeTab.savedRequestId) {
+            if (activeTab.testSuiteItemId) {
+              // Suite items live in their own table; the in-memory request
+              // shape is serialised back into the snapshot's request_schema
+              // and assertions columns so the next open round-trips cleanly.
+              const r = (await window.api?.testSuiteItem?.update(activeTab.testSuiteItemId, {
+                method,
+                url,
+                request_schema: JSON.stringify({
+                  url,
+                  method,
+                  params,
+                  headers,
+                  body,
+                  auth,
+                  preScript,
+                  postScript,
+                }),
+                assertions: JSON.stringify(assertions),
+              })) as { success: boolean; error?: string }
+              if (r && r.success === false) throw new Error(r.error || 'Save failed')
+            } else if (activeTab.savedRequestId) {
               const r = (await window.api?.savedRequest?.update(activeTab.savedRequestId, {
                 method,
                 url,

@@ -25,7 +25,7 @@ import type { Tab } from '../../types'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import MethodBadge from '../shared/MethodBadge'
 import { useTranslation } from '../../lib/i18n'
-import { openEndpointTab } from '../../lib/open-endpoint-tab'
+import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
 
 /* ── Types ─────────────────────────────────────────────────── */
 
@@ -39,15 +39,33 @@ interface TestSuite {
   updated_at: number
 }
 
-interface SuiteEndpoint {
+/**
+ * Renderer-side view of a test_suite_items row. The handler returns the
+ * full snapshot but the panel only needs the display fields. `url` stands
+ * in for the old `path` so existing JSX touches don't have to change.
+ */
+interface TestSuiteItem {
   id: string
+  suite_id: string
+  folder_id: string | null
+  protocol: string
   name: string
   method: string | null
-  path: string
-  protocol: string
-  folder_id: string | null
-  folder_name: string | null
+  url: string | null
   sort_order: number
+}
+
+interface TestSuiteFolder {
+  id: string
+  suite_id: string
+  parent_id: string | null
+  name: string
+  sort_order: number
+}
+
+interface SuiteContents {
+  items: TestSuiteItem[]
+  folders: TestSuiteFolder[]
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -67,7 +85,9 @@ export default function TestsPanel() {
   const [searchQuery, setSearchQuery] = useState('')
   const [suites, setSuites] = useState<TestSuite[]>([])
   const [expandedSuites, setExpandedSuites] = useState<Record<string, boolean>>({})
-  const [suiteEndpoints, setSuiteEndpoints] = useState<Record<string, SuiteEndpoint[]>>({})
+  // Suite contents — items + folders, keyed by suite id. Replaces the old
+  // `suiteEndpoints` shape which carried APIs-tree endpoint references.
+  const [suiteContents, setSuiteContents] = useState<Record<string, SuiteContents>>({})
 
   // Create suite
   const [showNewSuiteInput, setShowNewSuiteInput] = useState(false)
@@ -98,47 +118,42 @@ export default function TestsPanel() {
     loadSuites()
   }, [loadSuites])
 
-  // ─── Load endpoints for a suite ───────────────────────────
-  const loadSuiteEndpoints = useCallback(async (suiteId: string) => {
+  // ─── Load contents for a suite (items + folders) ─────────
+  const loadSuiteContents = useCallback(async (suiteId: string) => {
     const result = await api().testSuite.listEndpoints(suiteId)
     if (result?.success && result.data) {
-      setSuiteEndpoints((prev) => ({ ...prev, [suiteId]: result.data }))
+      setSuiteContents((prev) => ({ ...prev, [suiteId]: result.data }))
     }
   }, [])
 
-  // Auto-load endpoints when suite is expanded
+  // Auto-load suite contents on expand
   useEffect(() => {
     for (const suiteId of Object.keys(expandedSuites)) {
-      if (expandedSuites[suiteId] && !suiteEndpoints[suiteId]) {
-        loadSuiteEndpoints(suiteId)
+      if (expandedSuites[suiteId] && !suiteContents[suiteId]) {
+        loadSuiteContents(suiteId)
       }
     }
-  }, [expandedSuites, suiteEndpoints, loadSuiteEndpoints])
+  }, [expandedSuites, suiteContents, loadSuiteContents])
 
-  // When the project tree changes (folder/endpoint added/moved elsewhere),
-  // refresh every currently expanded suite so its tree reflects reality (Bug 3).
-  useEffect(() => {
-    for (const suiteId of Object.keys(expandedSuites)) {
-      if (expandedSuites[suiteId]) loadSuiteEndpoints(suiteId)
-    }
-    // Intentionally depend on `treeData` only — we want to refire when the
-    // project tree mutates, not when local expansion state changes (that's
-    // handled by the effect above).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [treeData])
+  // Suite items are decoupled from the APIs tree now (each item is a
+  // self-contained snapshot), so we don't need to refresh on `treeData`
+  // anymore — kept the hook stub commented for clarity. Manual refresh
+  // happens via `loadSuiteContents` from item-level mutations.
+  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  treeData
 
-  // Reload suite endpoints when AddEndpoints view closes (addEndpointsSuiteId goes null)
+  // Reload suite contents when AddEndpoints view closes (addEndpointsSuiteId goes null)
   const prevAddSuiteIdRef = useRef<string | null>(null)
   useEffect(() => {
     const prevId = prevAddSuiteIdRef.current
     prevAddSuiteIdRef.current = addEndpointsSuiteId
-    // When it transitions from a value to null, reload that suite's endpoints
+    // When it transitions from a value to null, reload that suite
     if (prevId && !addEndpointsSuiteId) {
-      loadSuiteEndpoints(prevId)
+      loadSuiteContents(prevId)
       // Auto-expand the suite
       setExpandedSuites((s) => ({ ...s, [prevId]: true }))
     }
-  }, [addEndpointsSuiteId, loadSuiteEndpoints])
+  }, [addEndpointsSuiteId, loadSuiteContents])
 
   // ─── Create suite ─────────────────────────────────────────
   const handleCreateSuite = useCallback(async () => {
@@ -170,24 +185,25 @@ export default function TestsPanel() {
   }, [renamingSuiteId, renameValue, loadSuites])
 
   // ─── Run suite ────────────────────────────────────────────
+  // The runner now resolves suite item ids directly to their snapshots in
+  // the main process (see `getRunnableEntity` in runner.handler.ts); we
+  // just pass the ordered id list.
   const handleRunSuite = useCallback(
     async (suite: TestSuite) => {
-      const eps = suiteEndpoints[suite.id] || []
-      if (eps.length === 0) {
-        // Load first
+      let items = suiteContents[suite.id]?.items
+      if (!items) {
         const result = await api().testSuite.listEndpoints(suite.id)
-        if (!result?.success || !result.data?.length) return
-        const endpointIds = (result.data as SuiteEndpoint[]).map((e: SuiteEndpoint) => e.id)
-        runEndpoints(endpointIds, suite.name)
-      } else {
-        runEndpoints(
-          eps.map((e) => e.id),
-          suite.name,
-        )
+        if (!result?.success || !result.data) return
+        items = (result.data as SuiteContents).items
       }
+      if (!items.length) return
+      runEndpoints(
+        items.map((i) => i.id),
+        suite.name,
+      )
       setContextMenu(null)
     },
-    [suiteEndpoints],
+    [suiteContents],
   )
 
   // ─── Open / reuse the runner tab with optional session data ─
@@ -236,13 +252,48 @@ export default function TestsPanel() {
     openOrReuseRunnerTab({ viewScheduledTasks: true })
   }, [openOrReuseRunnerTab])
 
-  // ─── Remove endpoint from suite ───────────────────────────
-  const handleRemoveEndpoint = useCallback(
-    async (suiteId: string, endpointId: string) => {
-      await api().testSuite.removeEndpoint({ suite_id: suiteId, endpoint_id: endpointId })
-      await loadSuiteEndpoints(suiteId)
+  // ─── Remove (delete) an item from a suite ─────────────────
+  const handleRemoveItem = useCallback(
+    async (suiteId: string, itemId: string) => {
+      await api().testSuiteItem.delete(itemId)
+      await loadSuiteContents(suiteId)
     },
-    [loadSuiteEndpoints],
+    [loadSuiteContents],
+  )
+
+  // ─── Add a fresh request directly to a suite ──────────────
+  // Creates a blank item, refreshes the suite tree, then opens the editor
+  // so the user can fill in URL/headers/body/assertions. 9-protocol picker
+  // is a follow-up; HTTP covers the dominant case today.
+  const handleAddItem = useCallback(
+    async (suite: TestSuite, protocol = 'http', method: string | null = 'GET') => {
+      const name = t('testsPanel.newRequestDefaultName')
+      const result = (await api().testSuiteItem.create({
+        suite_id: suite.id,
+        folder_id: null,
+        protocol,
+        name,
+        method,
+        url: '',
+        request_schema: JSON.stringify({
+          method,
+          url: '',
+          params: [],
+          headers: [],
+          body: { type: 'none' },
+          auth: { type: 'none' },
+          preScript: '',
+          postScript: '',
+        }),
+        assertions: '[]',
+      })) as { success: boolean; data?: { id: string } }
+      if (!result?.success || !result.data) return
+      setExpandedSuites((s) => ({ ...s, [suite.id]: true }))
+      await loadSuiteContents(suite.id)
+      void openSuiteItemTab(result.data.id)
+      setContextMenu(null)
+    },
+    [loadSuiteContents, t],
   )
 
   // ─── Export suite ─────────────────────────────────────────
@@ -450,7 +501,7 @@ export default function TestsPanel() {
               key={suite.id}
               suite={suite}
               expanded={expandedSuites[suite.id] ?? false}
-              endpoints={suiteEndpoints[suite.id] || []}
+              contents={suiteContents[suite.id] || { items: [], folders: [] }}
               isRenaming={renamingSuiteId === suite.id}
               renameValue={renameValue}
               renameRef={renameRef}
@@ -462,7 +513,7 @@ export default function TestsPanel() {
               onRenameChange={setRenameValue}
               onRenameSubmit={handleRenameSuite}
               onRenameCancel={() => setRenamingSuiteId(null)}
-              onRemoveEndpoint={(eid) => handleRemoveEndpoint(suite.id, eid)}
+              onRemoveItem={(iid) => handleRemoveItem(suite.id, iid)}
             />
           ))
         )}
@@ -492,7 +543,12 @@ export default function TestsPanel() {
               />
               <ContextMenuItem
                 icon={<Plus size={13} />}
-                label={t('testsPanel.addEndpoints')}
+                label={t('testsPanel.newRequest')}
+                onClick={() => handleAddItem(suite)}
+              />
+              <ContextMenuItem
+                icon={<Upload size={13} />}
+                label={t('testsPanel.importEndpoints')}
                 onClick={() => {
                   setContextMenu(null)
                   useUIStore.getState().setAddEndpointsSuite(suite.id, suite.name)
@@ -552,12 +608,12 @@ export default function TestsPanel() {
   )
 }
 
-/* ── Suite node (folder) ──────────────────────────────────── */
+/* ── Suite node (top-level folder) ───────────────────────── */
 
 function SuiteNode({
   suite,
   expanded,
-  endpoints,
+  contents,
   isRenaming,
   renameValue,
   renameRef,
@@ -566,11 +622,11 @@ function SuiteNode({
   onRenameChange,
   onRenameSubmit,
   onRenameCancel,
-  onRemoveEndpoint,
+  onRemoveItem,
 }: {
   suite: TestSuite
   expanded: boolean
-  endpoints: SuiteEndpoint[]
+  contents: SuiteContents
   isRenaming: boolean
   renameValue: string
   renameRef: React.RefObject<HTMLInputElement | null>
@@ -579,7 +635,7 @@ function SuiteNode({
   onRenameChange: (v: string) => void
   onRenameSubmit: () => void
   onRenameCancel: () => void
-  onRemoveEndpoint: (endpointId: string) => void
+  onRemoveItem: (itemId: string) => void
 }) {
   const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
@@ -629,7 +685,7 @@ function SuiteNode({
         )}
 
         <span style={{ fontSize: 13, color: 'var(--hint)', flexShrink: 0 }}>
-          {endpoints.length > 0 ? endpoints.length : ''}
+          {contents.items.length > 0 ? contents.items.length : ''}
         </span>
 
         {hovered && !isRenaming && (
@@ -647,15 +703,15 @@ function SuiteNode({
         )}
       </div>
 
-      {/* Endpoints grouped by folder — tree structure */}
+      {/* Items + folders below */}
       {expanded && (
         <div>
-          {endpoints.length === 0 ? (
+          {contents.items.length === 0 && contents.folders.length === 0 ? (
             <div className="py-2 pl-10 pr-3" style={{ color: 'var(--hint)', fontSize: 13 }}>
               {t('testsPanel.noEndpointsHint')}
             </div>
           ) : (
-            <SuiteEndpointTree endpoints={endpoints} onRemoveEndpoint={onRemoveEndpoint} />
+            <SuiteContentsTree contents={contents} onRemoveItem={onRemoveItem} />
           )}
         </div>
       )}
@@ -663,42 +719,43 @@ function SuiteNode({
   )
 }
 
-/* ── Suite endpoint tree (grouped by folder) ──────────────── */
+/* ── Suite contents tree (folders + items) ──────────────── */
 
-function SuiteEndpointTree({
-  endpoints,
-  onRemoveEndpoint,
+function SuiteContentsTree({
+  contents,
+  onRemoveItem,
 }: {
-  endpoints: SuiteEndpoint[]
-  onRemoveEndpoint: (endpointId: string) => void
+  contents: SuiteContents
+  onRemoveItem: (itemId: string) => void
 }) {
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({})
 
-  // Group by folder_name
-  const folderGroups = new Map<string, SuiteEndpoint[]>()
-  const ungrouped: SuiteEndpoint[] = []
-
-  for (const ep of endpoints) {
-    if (ep.folder_name) {
-      const group = folderGroups.get(ep.folder_name) || []
-      group.push(ep)
-      folderGroups.set(ep.folder_name, group)
-    } else {
-      ungrouped.push(ep)
-    }
+  // Group items by folder_id (null = suite root). Folders without items are
+  // still rendered as empty groups so the user can see structure.
+  const itemsByFolder = new Map<string | null, TestSuiteItem[]>()
+  for (const item of contents.items) {
+    const key = item.folder_id ?? null
+    const arr = itemsByFolder.get(key) ?? []
+    arr.push(item)
+    itemsByFolder.set(key, arr)
   }
+
+  // Top-level folders only (parent_id null). Nested folders are a future
+  // step — current import + create paths put items either at suite root or
+  // in a single-level folder, mirroring the APIs tree shape today.
+  const topFolders = contents.folders.filter((f) => f.parent_id === null)
+  const rootItems = itemsByFolder.get(null) ?? []
 
   return (
     <>
-      {/* Folder groups */}
-      {[...folderGroups.entries()].map(([folderName, eps]) => {
-        const collapsed = collapsedFolders[folderName] ?? false
+      {topFolders.map((folder) => {
+        const collapsed = collapsedFolders[folder.id] ?? false
+        const items = itemsByFolder.get(folder.id) ?? []
         return (
-          <div key={folderName}>
-            {/* Folder header */}
+          <div key={folder.id}>
             <div
               className="flex cursor-pointer items-center gap-1.5 py-[3px] pl-8 pr-3"
-              onClick={() => setCollapsedFolders((s) => ({ ...s, [folderName]: !collapsed }))}
+              onClick={() => setCollapsedFolders((s) => ({ ...s, [folder.id]: !collapsed }))}
               style={{ color: 'var(--muted)' }}
             >
               <span style={{ flexShrink: 0 }}>
@@ -706,16 +763,15 @@ function SuiteEndpointTree({
               </span>
               <FolderOpen size={12} style={{ color: 'var(--hint)', flexShrink: 0 }} />
               <span className="truncate" style={{ fontSize: 13, fontWeight: 500 }}>
-                {folderName}
+                {folder.name}
               </span>
             </div>
-            {/* Endpoints in folder */}
             {!collapsed &&
-              eps.map((ep) => (
-                <EndpointItem
-                  key={ep.id}
-                  endpoint={ep}
-                  onRemove={() => onRemoveEndpoint(ep.id)}
+              items.map((it) => (
+                <SuiteItemRow
+                  key={it.id}
+                  item={it}
+                  onRemove={() => onRemoveItem(it.id)}
                   indent={20}
                 />
               ))}
@@ -723,42 +779,33 @@ function SuiteEndpointTree({
         )
       })}
 
-      {/* Ungrouped endpoints */}
-      {ungrouped.map((ep) => (
-        <EndpointItem
-          key={ep.id}
-          endpoint={ep}
-          onRemove={() => onRemoveEndpoint(ep.id)}
-          indent={10}
-        />
+      {rootItems.map((it) => (
+        <SuiteItemRow key={it.id} item={it} onRemove={() => onRemoveItem(it.id)} indent={10} />
       ))}
     </>
   )
 }
 
-/* ── Endpoint item in suite ───────────────────────────────── */
+/* ── Single item row ──────────────────────────────────────── */
 
-function EndpointItem({
-  endpoint,
+function SuiteItemRow({
+  item,
   onRemove,
   indent = 10,
 }: {
-  endpoint: SuiteEndpoint
+  item: TestSuiteItem
   onRemove: () => void
   indent?: number
 }) {
   const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
 
-  // Clicking a suite endpoint should land the user in the same editor they'd
-  // get from the APIs tree — including assertions/scripts tabs — so they
-  // can edit it in-place. Without this the row was read-only and users
-  // couldn't reach the request body / assertion configuration at all.
+  // Clicking opens the inline-snapshot request in the Workbench. Save
+  // routes back to `testSuiteItem.update`, so changes never bleed into
+  // the APIs-tree endpoint the item was imported from.
   const handleOpen = useCallback(() => {
-    // Switch the sidebar to APIs so the freshly-opened tab is on-screen.
-    useUIStore.getState().setActiveSidebarPage('apis')
-    void openEndpointTab(endpoint.id)
-  }, [endpoint.id])
+    void openSuiteItemTab(item.id)
+  }, [item.id])
 
   return (
     <div
@@ -772,13 +819,13 @@ function EndpointItem({
       onClick={handleOpen}
       title={t('testsPanel.openEndpoint')}
     >
-      {endpoint.method ? (
-        <MethodBadge method={endpoint.method} small />
+      {item.method ? (
+        <MethodBadge method={item.method} small />
       ) : (
         <Globe size={12} style={{ color: 'var(--hint)' }} />
       )}
       <span className="flex-1 truncate" style={{ fontSize: 13, color: 'var(--text)' }}>
-        {endpoint.name}
+        {item.name}
       </span>
       {hovered && (
         <button

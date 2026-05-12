@@ -150,3 +150,87 @@ export async function openEndpointTab(id: string): Promise<void> {
     /* ignore — caller will see nothing change */
   }
 }
+
+/**
+ * Open a test-suite item in a tab. Items are inline request snapshots that
+ * live independently of the APIs-tree endpoints (the "copy on add" model),
+ * so the editor reads from / writes to `testSuiteItem.*` rather than
+ * `endpoint.*` / `savedRequest.*`. The tab carries `testSuiteItemId` so
+ * the Save path can route to the right IPC.
+ *
+ * For now this only wires the HTTP-family stores (params / headers / body /
+ * scripts / assertions). Protocol-specific stores (SOAP / GraphQL / gRPC /
+ * WS / SSE / Socket.IO / MCP / AI) are loaded with the same `loadFromEndpoint`
+ * shape — every protocol store accepts that input. If a protocol needs a
+ * specialised `loadFromSuiteItem` later, it can be added without breaking
+ * callers.
+ */
+export async function openSuiteItemTab(id: string): Promise<void> {
+  const tabId = `tab-${id}`
+  try {
+    const result = (await window.api?.testSuiteItem?.get(id)) as {
+      success: boolean
+      data?: {
+        id: string
+        suite_id: string
+        folder_id: string | null
+        protocol: string
+        name: string
+        method: string | null
+        url: string | null
+        request_schema: string
+        assertions: string | null
+      } | null
+    }
+    if (!result?.success || !result.data) return
+    const item = result.data
+    const protocol = (item.protocol || 'http') as Protocol
+
+    // Parse the inline snapshot. Anything missing falls back to the empty
+    // request shape so a freshly-created item (request_schema = '{}') opens
+    // cleanly in the editor.
+    let params: KeyValuePair[] = []
+    let headers: KeyValuePair[] = []
+    let body: RequestBody = { type: 'none' }
+    let auth: AuthConfig = { type: 'none' }
+    let preScript = ''
+    let postScript = ''
+    try {
+      const schema = JSON.parse(item.request_schema || '{}')
+      params = schema.params || []
+      headers = schema.headers || []
+      body = schema.body || { type: 'none' }
+      auth = schema.auth || { type: 'none' }
+      preScript = schema.preScript ?? ''
+      postScript = schema.postScript ?? ''
+    } catch {
+      /* malformed schema — keep defaults */
+    }
+    const assertions = (item.assertions ? JSON.parse(item.assertions) : []) as TestAssertion[]
+
+    useTabsStore.getState().openPreviewTab({
+      id: tabId,
+      name: item.name,
+      protocol,
+      method: item.method ?? 'GET',
+      url: item.url ?? '',
+      testSuiteItemId: item.id,
+    })
+    const realTabId = useTabsStore.getState().activeTabId || tabId
+    useRequestStore.getState().switchToTab(realTabId)
+    useResponseStore.getState().clearResponse()
+    useRequestStore.getState().loadFromEndpoint({
+      method: (item.method ?? 'GET') as HttpMethod,
+      url: item.url ?? '',
+      params,
+      headers,
+      body,
+      auth,
+      preScript,
+      postScript,
+      assertions,
+    })
+  } catch {
+    /* ignore */
+  }
+}

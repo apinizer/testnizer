@@ -321,10 +321,32 @@ const api = {
     duplicate: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuite:duplicate', id),
     listEndpoints: (suiteId: string): Promise<unknown> =>
       ipcRenderer.invoke('testSuite:listEndpoints', suiteId),
-    addEndpoints: (payload: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('testSuite:addEndpoints', payload),
+    importEndpoints: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('testSuite:importEndpoints', payload),
     removeEndpoint: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('testSuite:removeEndpoint', payload),
+  },
+
+  // ─── Test Suite Items (inline request snapshots) ─────────────
+  testSuiteItem: {
+    list: (suiteId: string): Promise<unknown> => ipcRenderer.invoke('testSuiteItem:list', suiteId),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuiteItem:get', id),
+    create: (input: unknown): Promise<unknown> => ipcRenderer.invoke('testSuiteItem:create', input),
+    update: (id: string, patch: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('testSuiteItem:update', id, patch),
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuiteItem:delete', id),
+    move: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('testSuiteItem:move', payload),
+  },
+
+  // ─── Test Suite Folders ──────────────────────────────────────
+  testSuiteFolder: {
+    create: (input: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('testSuiteFolder:create', input),
+    rename: (id: string, name: string): Promise<unknown> =>
+      ipcRenderer.invoke('testSuiteFolder:rename', id, name),
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuiteFolder:delete', id),
+    move: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('testSuiteFolder:move', payload),
   },
 
   // ─── Certificates ───────────────────────────────────────────

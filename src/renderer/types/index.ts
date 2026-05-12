@@ -586,6 +586,13 @@ export interface Tab {
   savedRequestId?: string
   /** Mock server ID — used by mockServer tab to identify which server is open */
   mockServerId?: string
+  /**
+   * Test suite item ID — when set, the tab represents an inline request
+   * inside a test suite. Save / load routes to `testSuiteItem.*` IPCs
+   * rather than `savedRequest.*` / `endpoint.*`. Mutually exclusive with
+   * `endpointId` / `savedRequestId`.
+   */
+  testSuiteItemId?: string
   /** Folder/module ID — used by runner tab to scope endpoints */
   folderId?: string
   /** Opaque key — changing this forces the runner tab to re-read sessionStorage */

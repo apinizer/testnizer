@@ -750,8 +750,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'runnerVars.selectEnv': 'Select an environment to see its variables.',
 
     // Add Endpoints to Test Suite
-    'addEndpoints.addTo': 'Add Endpoints to',
-    'addEndpoints.subtitle': 'Select endpoints from your project to include in this test suite',
+    'addEndpoints.addTo': 'Import Endpoints into',
+    'addEndpoints.subtitle':
+      "Selected endpoints are copied into the suite as independent items — edits won't affect the originals",
     'addEndpoints.searchPlaceholder': 'Search endpoints...',
     'addEndpoints.selected': 'selected',
     'addEndpoints.selectAll': 'Select all',
@@ -761,12 +762,15 @@ const translations: Record<Locale, Record<string, string>> = {
     'addEndpoints.ungrouped': 'Ungrouped',
     'addEndpoints.available': 'available',
     'addEndpoints.cancel': 'Cancel',
-    'addEndpoints.add': 'Add',
+    'addEndpoints.add': 'Import as copies',
     'addEndpoints.endpoint': 'endpoint',
     'addEndpoints.endpoints': 'endpoints',
 
     // Tests Panel (sidebar suite context menu & misc)
     'testsPanel.runSuite': 'Run Suite',
+    'testsPanel.newRequest': 'New Request',
+    'testsPanel.newRequestDefaultName': 'New Request',
+    'testsPanel.importEndpoints': 'Import endpoints from APIs…',
     'testsPanel.addEndpoints': 'Add Endpoints',
     'testsPanel.rename': 'Rename',
     'testsPanel.export': 'Export',
@@ -1957,8 +1961,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'runnerVars.selectEnv': 'Değişkenleri görmek için bir ortam seçin.',
 
     // Add Endpoints to Test Suite
-    'addEndpoints.addTo': 'Uç Nokta Ekle:',
-    'addEndpoints.subtitle': 'Bu test paketine dahil etmek için projenizden uç noktaları seçin',
+    'addEndpoints.addTo': 'Uç Noktaları İçe Aktar:',
+    'addEndpoints.subtitle':
+      'Seçilen uç noktalar pakete bağımsız öğeler olarak kopyalanır — düzenlemeler orijinalleri etkilemez',
     'addEndpoints.searchPlaceholder': 'Uç nokta ara...',
     'addEndpoints.selected': 'seçili',
     'addEndpoints.selectAll': 'Tümünü seç',
@@ -1968,12 +1973,15 @@ const translations: Record<Locale, Record<string, string>> = {
     'addEndpoints.ungrouped': 'Gruplanmamış',
     'addEndpoints.available': 'kullanılabilir',
     'addEndpoints.cancel': 'İptal',
-    'addEndpoints.add': 'Ekle',
+    'addEndpoints.add': 'Kopya olarak içe aktar',
     'addEndpoints.endpoint': 'uç nokta',
     'addEndpoints.endpoints': 'uç nokta',
 
     // Tests Panel (sidebar suite context menu & misc)
     'testsPanel.runSuite': 'Paketi Çalıştır',
+    'testsPanel.newRequest': 'Yeni İstek',
+    'testsPanel.newRequestDefaultName': 'Yeni İstek',
+    'testsPanel.importEndpoints': "APIs'ten uç nokta içe aktar…",
     'testsPanel.addEndpoints': 'Uç Nokta Ekle',
     'testsPanel.rename': 'Yeniden Adlandır',
     'testsPanel.export': 'Dışa Aktar',
