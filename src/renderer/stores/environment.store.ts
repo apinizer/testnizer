@@ -324,16 +324,17 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
               pv.description !== nv.description
             if (changed) {
               try {
-                // Handler expects snake_case `initial_value`; coerce through unknown.
-                const payload = {
+                // Handler expects snake_case `initial_value` — the preload
+                // bridge declares this alongside the camelCase fields so
+                // we can pass both.
+                await window.api?.envVariable?.update(nv.id, {
                   key: nv.key,
                   value: nv.value,
                   initial_value: nv.initialValue,
                   enabled: nv.enabled,
                   secret: nv.secret,
                   description: nv.description,
-                } as unknown as Partial<EnvironmentVariable>
-                await window.api?.envVariable?.update(nv.id, payload)
+                })
               } catch {
                 /* keep local */
               }

@@ -22,7 +22,13 @@ import {
   Copy,
   ExternalLink,
 } from 'lucide-react'
-import type { Tab } from '../../types'
+import type {
+  Tab,
+  TestSuiteRow,
+  TestSuiteItemRow,
+  TestSuiteFolderRow,
+  TestSuiteContents,
+} from '../../types'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import MethodBadge from '../shared/MethodBadge'
 import { useTranslation } from '../../lib/i18n'
@@ -30,50 +36,13 @@ import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
 
 /* ── Types ─────────────────────────────────────────────────── */
 
-interface TestSuite {
-  id: string
-  project_id: string
-  name: string
-  description: string | null
-  sort_order: number
-  created_at: number
-  updated_at: number
-}
+// Renderer-side aliases for the test-suite row shapes shared with preload.
+type TestSuite = TestSuiteRow
+type TestSuiteItem = TestSuiteItemRow
+type TestSuiteFolder = TestSuiteFolderRow
+type SuiteContents = TestSuiteContents
 
-/**
- * Renderer-side view of a test_suite_items row. The handler returns the
- * full snapshot but the panel only needs the display fields. `url` stands
- * in for the old `path` so existing JSX touches don't have to change.
- */
-interface TestSuiteItem {
-  id: string
-  suite_id: string
-  folder_id: string | null
-  protocol: string
-  name: string
-  method: string | null
-  url: string | null
-  request_schema: string
-  assertions: string | null
-  source_endpoint_id: string | null
-  sort_order: number
-}
-
-interface TestSuiteFolder {
-  id: string
-  suite_id: string
-  parent_id: string | null
-  name: string
-  sort_order: number
-}
-
-interface SuiteContents {
-  items: TestSuiteItem[]
-  folders: TestSuiteFolder[]
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const api = () => (window as any).api
+const api = () => window.api
 
 /* ── Main panel ────────────────────────────────────────────── */
 
@@ -139,7 +108,8 @@ export default function TestsPanel() {
   const loadSuiteContents = useCallback(async (suiteId: string) => {
     const result = await api().testSuite.listEndpoints(suiteId)
     if (result?.success && result.data) {
-      setSuiteContents((prev) => ({ ...prev, [suiteId]: result.data }))
+      const data = result.data
+      setSuiteContents((prev) => ({ ...prev, [suiteId]: data }))
     }
   }, [])
 
@@ -225,7 +195,7 @@ export default function TestsPanel() {
       if (!items) {
         const result = await api().testSuite.listEndpoints(suite.id)
         if (!result?.success || !result.data) return
-        items = (result.data as SuiteContents).items
+        items = result.data.items
       }
       if (!items.length) return
       runEndpoints(
@@ -391,7 +361,7 @@ export default function TestsPanel() {
   const handleAddItem = useCallback(
     async (suite: TestSuite, protocol = 'http', method: string | null = 'GET') => {
       const name = t('testsPanel.newRequestDefaultName')
-      const result = (await api().testSuiteItem.create({
+      const result = await api().testSuiteItem.create({
         suite_id: suite.id,
         folder_id: null,
         protocol,
@@ -409,7 +379,7 @@ export default function TestsPanel() {
           postScript: '',
         }),
         assertions: '[]',
-      })) as { success: boolean; data?: { id: string } }
+      })
       if (!result?.success || !result.data) return
       setExpandedSuites((s) => ({ ...s, [suite.id]: true }))
       await loadSuiteContents(suite.id)

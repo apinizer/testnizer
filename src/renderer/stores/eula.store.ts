@@ -30,34 +30,8 @@ interface EulaState {
   decline: () => Promise<void>
 }
 
-interface EulaIpcResult {
-  success: boolean
-  error?: string
-  data?: {
-    state: ConsentRecord
-    currentDocsHash: string
-    currentVersion: string
-    consentValid: boolean
-    warning?: string
-  }
-}
-
-interface SimpleResult {
-  success: boolean
-  error?: string
-}
-
-type EulaApi = {
-  state: () => Promise<EulaIpcResult>
-  accept: () => Promise<SimpleResult>
-  decline: () => Promise<SimpleResult>
-}
-
-function api(): EulaApi | null {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const w = (window as any).api
-  if (w && w.eula) return w.eula as EulaApi
-  return null
+function api() {
+  return window.api?.eula ?? null
 }
 
 const EMPTY: ConsentRecord = {

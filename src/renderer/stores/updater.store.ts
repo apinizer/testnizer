@@ -92,25 +92,26 @@ export const useUpdaterStore = create<UpdaterStore>((set) => ({
 export function initUpdaterListeners(): (() => void) | undefined {
   if (!window.api?.updater?.onEvent) return undefined
 
-  const cleanup = window.api.updater.onEvent((raw) => {
-    const event = raw as unknown as Record<string, unknown>
+  const cleanup = window.api.updater.onEvent((event) => {
     const store = useUpdaterStore.getState()
-    const type = event.type as string
 
-    switch (type) {
+    switch (event.type) {
       case 'checking':
         store.setStatus('checking')
         break
       case 'available':
         store.setStatus('available')
-        if (event.version) store.setVersion(event.version as string)
-        if (event.releaseNotes) store.setReleaseNotes(event.releaseNotes as string)
+        if (event.version) store.setVersion(event.version)
+        if (event.releaseNotes) {
+          // releaseNotes can be string or array of {version, note}; only the
+          // string form is meaningful for our single-line status display.
+          if (typeof event.releaseNotes === 'string') store.setReleaseNotes(event.releaseNotes)
+        }
         break
       case 'not-available':
         store.setStatus('idle')
         break
       case 'downloading':
-      case 'download-progress':
         store.setStatus('downloading')
         if (typeof event.percent === 'number') store.setDownloadPercent(event.percent)
         break
@@ -119,7 +120,7 @@ export function initUpdaterListeners(): (() => void) | undefined {
         store.setDownloadPercent(100)
         break
       case 'error':
-        store.setError((event.error as string) || (event.message as string) || 'Unknown error')
+        store.setError(event.error || event.message || 'Unknown error')
         break
     }
   })

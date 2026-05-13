@@ -81,27 +81,6 @@ interface GrpcStreamPayload {
   timestamp: number
 }
 
-/** Shape of `window.api.grpc` we depend on. Kept narrow to the methods we call. */
-interface GrpcBridge {
-  execute: (
-    options: unknown,
-  ) => Promise<{ success: boolean; data?: GrpcEngineResponse; error?: string }>
-  serverStream: (
-    options: unknown,
-  ) => Promise<{ success: boolean; data?: { streamId: string }; error?: string }>
-  clientStream: (
-    options: unknown,
-  ) => Promise<{ success: boolean; data?: GrpcEngineResponse; error?: string }>
-  bidiStream: (
-    options: unknown,
-  ) => Promise<{ success: boolean; data?: { streamId: string }; error?: string }>
-  sendStreamMessage: (streamId: string, message: unknown) => Promise<unknown>
-  endStream: (streamId: string) => Promise<unknown>
-  cancelStream: (streamId: string) => Promise<unknown>
-  cancelUnary: (requestId: string) => Promise<unknown>
-  onStreamEvent: (cb: (event: GrpcStreamPayload) => void) => () => void
-}
-
 interface EngineMethodInfo {
   name: string
   requestType: string
@@ -338,21 +317,13 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
   loadProto: async () => {
     set({ isLoading: true, errorMessage: null })
 
-    const grpcApi = (
-      window as unknown as {
-        api?: {
-          grpc?: GrpcBridge & {
-            loadProto: () => Promise<{ success: boolean; data?: unknown; error?: string }>
-          }
-        }
-      }
-    ).api?.grpc
+    const grpcApi = window.api?.grpc
     try {
       const result = grpcApi ? await grpcApi.loadProto() : null
 
       if (result?.success && result.data) {
-        const services = mapEngineServices(result.data as EngineLoadProtoResult)
-        const data = result.data as EngineLoadProtoResult
+        const data = result.data
+        const services = mapEngineServices(data)
         set({
           services,
           protoPath: data.protoPath,
@@ -445,24 +416,14 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     }
     set({ isLoading: true, errorMessage: null })
 
-    const grpcApi = (
-      window as unknown as {
-        api?: {
-          grpc?: {
-            loadProtoFromUrl?: (
-              url: string,
-            ) => Promise<{ success: boolean; data?: unknown; error?: string }>
-          }
-        }
-      }
-    ).api?.grpc
+    const grpcApi = window.api?.grpc
     if (!grpcApi?.loadProtoFromUrl) {
       set({ isLoading: false, errorMessage: 'gRPC bridge not available' })
       return
     }
     const result = await grpcApi.loadProtoFromUrl(protoUrl.trim())
     if (result.success && result.data) {
-      const data = result.data as EngineLoadProtoResult
+      const data = result.data
       const services = mapEngineServices(data)
       set({
         services,
@@ -492,25 +453,14 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     }
     set({ isLoading: true, errorMessage: null })
 
-    const grpcApi = (
-      window as unknown as {
-        api?: {
-          grpc?: {
-            reflect?: (
-              addr: string,
-              useTls?: boolean,
-            ) => Promise<{ success: boolean; data?: unknown; error?: string }>
-          }
-        }
-      }
-    ).api?.grpc
+    const grpcApi = window.api?.grpc
     if (!grpcApi?.reflect) {
       set({ isLoading: false, errorMessage: 'gRPC bridge not available' })
       return
     }
     const result = await grpcApi.reflect(address.trim(), useTls)
     if (result.success && result.data) {
-      const data = result.data as EngineLoadProtoResult
+      const data = result.data
       const services = mapEngineServices(data)
       set({
         services,
@@ -616,7 +566,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     const metadataMap: Record<string, string> = {}
     for (const m of resolvedMetadata) metadataMap[m.key] = m.value
 
-    const grpcApi = (window as unknown as { api?: { grpc?: GrpcBridge } }).api?.grpc
+    const grpcApi = window.api?.grpc
     if (!grpcApi) {
       const errResp: ApiResponse = {
         requestId: makeId(),
@@ -705,13 +655,13 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         const unaryRequestId = makeId()
         applyToOwner({ _unaryRequestId: unaryRequestId })
         try {
-          const result = (await grpcApi.execute({
+          const result = await grpcApi.execute({
             ...baseOptions,
             requestBody: resolvedBody,
             _requestId: unaryRequestId,
-          })) as { success: true; data: GrpcEngineResponse } | { success: false; error: string }
+          })
 
-          if (result.success) {
+          if (result.success && result.data) {
             finishUnary(grpcResponseToApi(result.data))
           } else {
             finishUnary({
@@ -771,11 +721,11 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       applyToOwner({ streamUnsubscribe: unsubscribe })
 
       if (method?.type === 'server_streaming') {
-        const result = (await grpcApi.serverStream({
+        const result = await grpcApi.serverStream({
           ...baseOptions,
           requestBody: resolvedBody,
-        })) as { success: true; data: { streamId: string } } | { success: false; error: string }
-        if (result.success) {
+        })
+        if (result.success && result.data) {
           applyToOwner({ activeStreamId: result.data.streamId })
         } else {
           applyToOwner({ isStreaming: false, isLoading: false, errorMessage: result.error })
@@ -786,11 +736,11 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         // what client_streaming actually requires. The single response is
         // surfaced as a synthetic 'data' + 'end' event so this listener and
         // the renderer pipeline don't need to know which method type ran.
-        const result = (await grpcApi.bidiStream({
-          ...(baseOptions as Record<string, unknown>),
+        const result = await grpcApi.bidiStream({
+          ...baseOptions,
           responseStream: false,
-        })) as { success: true; data: { streamId: string } } | { success: false; error: string }
-        if (result.success) {
+        })
+        if (result.success && result.data) {
           applyToOwner({ activeStreamId: result.data.streamId })
           if (resolvedBody.trim() && resolvedBody.trim() !== '{}') {
             await grpcApi.sendStreamMessage(result.data.streamId, resolvedBody).catch(() => {})
@@ -799,11 +749,11 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
           applyToOwner({ isStreaming: false, isLoading: false, errorMessage: result.error })
         }
       } else if (method?.type === 'bidi_streaming') {
-        const result = (await grpcApi.bidiStream({
-          ...(baseOptions as Record<string, unknown>),
+        const result = await grpcApi.bidiStream({
+          ...baseOptions,
           responseStream: true,
-        })) as { success: true; data: { streamId: string } } | { success: false; error: string }
-        if (result.success) {
+        })
+        if (result.success && result.data) {
           applyToOwner({ activeStreamId: result.data.streamId })
           // Push the initial message immediately if the user typed one.
           if (resolvedBody.trim() && resolvedBody.trim() !== '{}') {
@@ -847,7 +797,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     // Writable would emit ERR_STREAM_WRITE_AFTER_END here and the user would
     // see only an opaque error.
     if (halfClosed) return
-    const grpcApi = (window as unknown as { api?: { grpc?: GrpcBridge } }).api?.grpc
+    const grpcApi = window.api?.grpc
     if (!grpcApi) return
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedBody = resolveVariables(requestBody, activeVars)
@@ -869,7 +819,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     // Idempotent — ignore double clicks. Without this the second `.end()`
     // call on grpc-js's writable can emit a transport-level error.
     if (halfClosed) return
-    const grpcApi = (window as unknown as { api?: { grpc?: GrpcBridge } }).api?.grpc
+    const grpcApi = window.api?.grpc
     if (!grpcApi) return
     try {
       await grpcApi.endStream(activeStreamId)
@@ -891,7 +841,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     responseStore.setLoading(false)
     if (activeTabId) tabsStore.markLoading(activeTabId, false)
 
-    const grpcApi = (window as unknown as { api?: { grpc?: GrpcBridge } }).api?.grpc
+    const grpcApi = window.api?.grpc
     try {
       if (activeStreamId && grpcApi) {
         await grpcApi.cancelStream(activeStreamId)
@@ -907,7 +857,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
   cancelUnary: async () => {
     const id = get()._unaryRequestId
     if (!id) return
-    const grpcApi = (window as unknown as { api?: { grpc?: GrpcBridge } }).api?.grpc
+    const grpcApi = window.api?.grpc
     try {
       if (grpcApi) await grpcApi.cancelUnary(id)
     } catch {

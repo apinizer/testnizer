@@ -64,8 +64,7 @@ interface TestsHomeProps {
   ) => void
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const api = () => (window as any).api
+const api = () => window.api
 
 export default function TestsHome({
   onViewAllRuns,

@@ -19,8 +19,7 @@ export default function ProjectHome() {
   const setShowNewProjectModal = useUIStore((s) => s.setShowNewProjectModal)
   const { t } = useTranslation()
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const api = () => (window as any).api
+  const api = () => window.api
 
   async function handleImportProject() {
     if (!activeWorkspaceId) return

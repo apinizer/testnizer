@@ -657,9 +657,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       if (selected.length === 0) return
 
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const api = window.api as any
-        const result = await api.scheduler.create({
+        const result = await window.api.scheduler.create({
           projectId: activeProjectId || '',
           name: `Scheduled Run ${new Date().toLocaleString()}`,
           endpointIds: selected.map((ep) => ep.id),

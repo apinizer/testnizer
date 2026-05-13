@@ -384,13 +384,11 @@ export default function AuthTab() {
                   Username
                 </div>
                 <input
-                  value={
-                    ((auth.oauth2 as unknown as Record<string, unknown>)?.username as string) || ''
-                  }
+                  value={auth.oauth2?.username || ''}
                   onChange={(e) =>
                     setAuth({
                       ...auth,
-                      oauth2: { ...auth.oauth2!, username: e.target.value } as typeof auth.oauth2,
+                      oauth2: { ...auth.oauth2!, username: e.target.value },
                     })
                   }
                   className={INPUT}
@@ -403,13 +401,11 @@ export default function AuthTab() {
                   Password
                 </div>
                 <PasswordInput
-                  value={
-                    ((auth.oauth2 as unknown as Record<string, unknown>)?.password as string) || ''
-                  }
+                  value={auth.oauth2?.password || ''}
                   onChange={(v) =>
                     setAuth({
                       ...auth,
-                      oauth2: { ...auth.oauth2!, password: v } as typeof auth.oauth2,
+                      oauth2: { ...auth.oauth2!, password: v },
                     })
                   }
                   placeholder="Resource owner password"

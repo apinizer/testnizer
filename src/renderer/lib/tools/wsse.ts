@@ -15,16 +15,6 @@ import type {
   WsEncryptConfig,
 } from '../../types'
 
-interface IpcSuccess<T> {
-  success: true
-  data: T
-}
-interface IpcFailure {
-  success: false
-  error: string
-}
-type IpcResult<T> = IpcSuccess<T> | IpcFailure
-
 interface VerifyResult {
   valid: boolean
   reason?: string
@@ -37,33 +27,26 @@ interface VerifyResult {
   }
 }
 
-interface WsseBridge {
-  apply: (payload: { envelope: string; config: WsSecurityConfig }) => Promise<IpcResult<string>>
-  verify: (payload: { envelope: string; certPem: string }) => Promise<IpcResult<VerifyResult>>
-  decrypt: (payload: {
-    envelope: string
-    privateKeyPem: string
-    passphrase?: string
-  }) => Promise<IpcResult<string>>
-}
-
-function getBridge(): WsseBridge {
-  const w = window as unknown as { api?: { wsse?: WsseBridge } }
-  if (!w.api?.wsse) {
+function getBridge() {
+  if (!window.api?.wsse) {
     throw new Error('WS-Security IPC bridge unavailable (renderer not connected to main process)')
   }
-  return w.api.wsse
+  return window.api.wsse
 }
 
 export async function applyWsSecurity(envelope: string, config: WsSecurityConfig): Promise<string> {
   const result = await getBridge().apply({ envelope, config })
-  if (!result.success) throw new Error(result.error)
+  if (!result.success || result.data === undefined) {
+    throw new Error(result.error ?? 'apply failed')
+  }
   return result.data
 }
 
 export async function verifySignature(envelope: string, certPem: string): Promise<VerifyResult> {
   const result = await getBridge().verify({ envelope, certPem })
-  if (!result.success) throw new Error(result.error)
+  if (!result.success || result.data === undefined) {
+    throw new Error(result.error ?? 'verify failed')
+  }
   return result.data
 }
 
@@ -73,7 +56,9 @@ export async function decryptEnvelope(
   passphrase?: string,
 ): Promise<string> {
   const result = await getBridge().decrypt({ envelope, privateKeyPem, passphrase })
-  if (!result.success) throw new Error(result.error)
+  if (!result.success || result.data === undefined) {
+    throw new Error(result.error ?? 'decrypt failed')
+  }
   return result.data
 }
 

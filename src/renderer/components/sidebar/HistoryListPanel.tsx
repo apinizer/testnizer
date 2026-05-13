@@ -33,7 +33,11 @@ interface RunHistoryRow {
   avg_resp_time: number
   results_json: string | null
   started_at: number
-  folder_name: string | null
+  /**
+   * Optional in the SQLite row — present only after the `folder_name`
+   * column migration, so we accept undefined too.
+   */
+  folder_name?: string | null
 }
 
 /**
@@ -77,9 +81,8 @@ export default function HistoryListPanel() {
     if (!activeProjectId) return
     window.api?.runner
       ?.history(activeProjectId)
-      .then((result: unknown) => {
-        const res = result as { success: boolean; data?: RunHistoryRow[] }
-        if (res?.success && res.data) setRunHistory(res.data)
+      .then((result) => {
+        if (result?.success && result.data) setRunHistory(result.data)
       })
       .catch(() => {})
   }, [activeProjectId])

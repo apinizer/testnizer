@@ -121,13 +121,8 @@ function applyAccent(color: string): void {
 }
 
 // Safe settings bridge
-interface SettingsApi {
-  get?: (key: string) => Promise<{ success: boolean; data?: unknown }>
-  set?: (key: string, value: unknown) => Promise<{ success: boolean }>
-}
-function settingsApi(): SettingsApi | null {
-  const w = window as unknown as { api?: { settings?: SettingsApi } }
-  return w.api?.settings ?? null
+function settingsApi() {
+  return window.api?.settings ?? null
 }
 async function persistSetting(key: string, value: unknown): Promise<void> {
   try {

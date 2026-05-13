@@ -17,22 +17,12 @@ interface Props {
   className?: string
 }
 
-interface AppApi {
-  openExternal: (url: string) => Promise<unknown>
-}
-function appApi(): AppApi | null {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const w = (window as any).api
-  if (w && w.app && typeof w.app.openExternal === 'function') return w.app as AppApi
-  return null
-}
-
 export default function LegalMarkdown({ text, className }: Props) {
   const onLinkClick = useCallback((e: MouseEvent<HTMLAnchorElement>, href?: string) => {
     e.preventDefault()
     if (!href) return
     if (!/^https?:\/\//i.test(href)) return
-    void appApi()?.openExternal(href)
+    void window.api?.app?.openExternal(href)
   }, [])
 
   return (

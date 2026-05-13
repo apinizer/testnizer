@@ -7,76 +7,7 @@ import type {
   MockLogEntry,
 } from '../types'
 
-// Narrow shape of the window.api.mock bridge we use here.
-interface IpcResult<T> {
-  success: boolean
-  data?: T
-  error?: string
-}
-
-interface MockApi {
-  server: {
-    list: (projectId: string) => Promise<IpcResult<MockServer[]>>
-    create: (
-      input: Partial<MockServer> & { projectId: string; name: string; port: number },
-    ) => Promise<IpcResult<MockServer>>
-    update: (id: string, patch: Partial<MockServer>) => Promise<IpcResult<MockServer>>
-    delete: (id: string) => Promise<IpcResult<boolean>>
-    start: (id: string) => Promise<IpcResult<{ status: MockServerStatus; port: number }>>
-    stop: (id: string) => Promise<IpcResult<{ status: MockServerStatus }>>
-    status: (id: string) => Promise<IpcResult<{ status: MockServerStatus }>>
-  }
-  endpoint: {
-    list: (serverId: string) => Promise<IpcResult<MockEndpoint[]>>
-    create: (
-      input: Partial<MockEndpoint> & { serverId: string; path: string },
-    ) => Promise<IpcResult<MockEndpoint>>
-    update: (id: string, patch: Partial<MockEndpoint>) => Promise<IpcResult<MockEndpoint>>
-    delete: (id: string) => Promise<IpcResult<boolean>>
-  }
-  response: {
-    list: (endpointId: string) => Promise<IpcResult<MockResponse[]>>
-    create: (
-      input: Partial<MockResponse> & { endpointId: string },
-    ) => Promise<IpcResult<MockResponse>>
-    update: (id: string, patch: Partial<MockResponse>) => Promise<IpcResult<MockResponse>>
-    delete: (id: string) => Promise<IpcResult<boolean>>
-  }
-  logs: {
-    get: (serverId: string) => Promise<IpcResult<MockLogEntry[]>>
-    clear: (serverId: string) => Promise<IpcResult<boolean>>
-  }
-  importOpenApi: (
-    serverId: string,
-    source: string,
-  ) => Promise<
-    IpcResult<{
-      ok: boolean
-      endpointsCreated: number
-      responsesCreated: number
-      warnings: string[]
-      error?: string
-    }>
-  >
-  importPostman: (
-    serverId: string,
-    source: string,
-  ) => Promise<
-    IpcResult<{
-      ok: boolean
-      endpointsCreated: number
-      responsesCreated: number
-      warnings: string[]
-      error?: string
-    }>
-  >
-  onLog: (cb: (entry: MockLogEntry) => void) => () => void
-  onStatus: (
-    cb: (info: { serverId: string; status: MockServerStatus; errorMessage: string | null }) => void,
-  ) => () => void
-}
-
-const api = (window as unknown as { api: { mock: MockApi } }).api.mock
+const api = window.api.mock
 
 export interface MockState {
   servers: MockServer[]

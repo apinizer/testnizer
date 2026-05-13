@@ -190,11 +190,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     set({ isLoading: true, parseError: null, parsedWsdl: null })
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const api = (window as any).api
-      const result = (await api?.soap?.parseWsdl(normalizedUrl)) as
-        | { success: boolean; data?: WsdlParseResult; error?: string }
-        | undefined
+      const result = await window.api?.soap?.parseWsdl(normalizedUrl)
 
       if (result?.success && result.data) {
         const parsed = result.data

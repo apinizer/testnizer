@@ -261,6 +261,9 @@ export interface OAuth2Config {
   token?: string
   refreshToken?: string
   tokenExpiry?: number
+  /** Resource-owner credentials — only used when `grantType` is 'password'. */
+  username?: string
+  password?: string
 }
 
 // ─── SOAP ────────────────────────────────────────────────────
@@ -635,7 +638,8 @@ export interface Branch {
   name: string
   parent_branch_id: string | null
   created_at: number
-  is_default: boolean
+  /** SQLite stores boolean as int (0/1). */
+  is_default: number
 }
 
 // ─── Save / Git ─────────────────────────────────────────────
@@ -794,6 +798,47 @@ export interface MockResponse {
   script: string
   order: number
   enabled: boolean
+}
+
+// ─── Test Suite (renderer-facing row shapes) ─────────────────
+
+export interface TestSuiteRow {
+  id: string
+  project_id: string
+  name: string
+  description: string | null
+  sort_order: number
+  created_at: number
+  updated_at: number
+}
+
+export interface TestSuiteItemRow {
+  id: string
+  suite_id: string
+  folder_id: string | null
+  protocol: string
+  name: string
+  method: string | null
+  url: string | null
+  request_schema: string
+  assertions: string | null
+  source_endpoint_id: string | null
+  sort_order: number
+  created_at?: number
+  updated_at?: number
+}
+
+export interface TestSuiteFolderRow {
+  id: string
+  suite_id: string
+  parent_id: string | null
+  name: string
+  sort_order: number
+}
+
+export interface TestSuiteContents {
+  items: TestSuiteItemRow[]
+  folders: TestSuiteFolderRow[]
 }
 
 export type MockServerStatus = 'stopped' | 'starting' | 'running' | 'error'

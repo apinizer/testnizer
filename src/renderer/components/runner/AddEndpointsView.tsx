@@ -24,8 +24,7 @@ interface FolderGroup {
   endpoints: EndpointWithFolder[]
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const api = () => (window as any).api
+const api = () => window.api
 
 export default function AddEndpointsView() {
   const { t } = useTranslation()
@@ -56,28 +55,25 @@ export default function AddEndpointsView() {
     // merge — the picker has to surface both so suites can include manually
     // created requests too (Bug 7).
     Promise.all([
-      api().endpoint.listByProject(activeProjectId) as Promise<{
-        success: boolean
-        data?: EndpointWithFolder[]
-      }>,
-      api().savedRequest.list(activeProjectId) as Promise<{
-        success: boolean
-        data?: Array<{
-          id: string
-          name: string
-          method: string | null
-          url: string
-          folder_id: string | null
-        }>
-      }>,
+      api().endpoint.listByProject(activeProjectId),
+      api().savedRequest.list(activeProjectId),
     ]).then(([epResult, savedResult]) => {
-      const fromEndpoints = epResult?.success && epResult.data ? epResult.data : []
-      const fromSaved =
+      const fromEndpoints: EndpointWithFolder[] =
+        epResult?.success && epResult.data
+          ? epResult.data.map((e) => ({
+              id: e.id,
+              name: e.name,
+              method: e.method ?? null,
+              path: e.path,
+              folder_id: e.folder_id,
+            }))
+          : []
+      const fromSaved: EndpointWithFolder[] =
         savedResult?.success && savedResult.data
           ? savedResult.data.map((r) => ({
               id: r.id,
               name: r.name,
-              method: r.method,
+              method: r.method ?? null,
               path: r.url,
               folder_id: r.folder_id,
             }))
@@ -88,14 +84,15 @@ export default function AddEndpointsView() {
     // Load folders
     api()
       .folder.list(activeProjectId)
-      .then((r: { success: boolean; data?: FolderInfo[] }) => {
+      .then((r) => {
         if (r?.success && r.data) {
-          setFolders(r.data)
+          const folderRows = r.data
+          setFolders(folderRows)
           // Expand all by default (only on first load; keep user's later choices)
           setExpandedFolders((prev) => {
             if (Object.keys(prev).length > 0) return prev
             const exp: Record<string, boolean> = {}
-            for (const f of r.data!) exp[f.id] = true
+            for (const f of folderRows) exp[f.id] = true
             exp['_root'] = true
             return exp
           })
@@ -108,19 +105,14 @@ export default function AddEndpointsView() {
     // endpoint id at all.
     api()
       .testSuite.listEndpoints(suiteId)
-      .then(
-        (r: {
-          success: boolean
-          data?: { items?: Array<{ source_endpoint_id?: string | null }> }
-        }) => {
-          if (r?.success && r.data?.items) {
-            const sources = r.data.items
-              .map((i) => i.source_endpoint_id)
-              .filter((id): id is string => !!id)
-            setExistingIds(new Set(sources))
-          }
-        },
-      )
+      .then((r) => {
+        if (r?.success && r.data?.items) {
+          const sources = r.data.items
+            .map((i) => i.source_endpoint_id)
+            .filter((id): id is string => !!id)
+          setExistingIds(new Set(sources))
+        }
+      })
   }, [activeProjectId, suiteId, treeData])
 
   // Filter endpoints not already in suite

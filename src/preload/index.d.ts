@@ -15,11 +15,94 @@ import type {
   AppSettings,
   ImportResult,
   WsdlParseResult,
-  SoapMetadata,
   WsSecurityConfig,
   WsMessage,
   Branch,
+  MockServer,
+  MockEndpoint,
+  MockResponse,
+  MockServerStatus,
+  MockLogEntry,
+  SaveHistoryEntry,
+  TestSuiteRow,
+  TestSuiteItemRow,
+  TestSuiteFolderRow,
+  TestSuiteContents,
 } from '../renderer/types'
+
+// ─── Auth ────────────────────────────────────────────────────────
+
+interface AuthUser {
+  id: string
+  email: string
+  username: string
+  displayName: string | null
+  avatarUrl: string | null
+  authProvider: string
+  recoveryEmail: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+interface AuthSession {
+  token: string
+  userId: string
+  createdAt?: number
+  expiresAt?: number
+}
+
+interface AuthSessionInfo {
+  user: AuthUser
+  session: AuthSession
+}
+
+interface AuthApi {
+  hasPassword(): Promise<IpcResult<{ hasPassword: boolean }>>
+  setPassword(payload: {
+    password: string
+    recoveryEmail?: string
+  }): Promise<IpcResult<AuthSessionInfo>>
+  login(payload: { password: string }): Promise<IpcResult<AuthSessionInfo>>
+  getSession(token: string): Promise<IpcResult<AuthSessionInfo | null>>
+  logout(token: string): Promise<IpcResult<boolean>>
+  changePassword(payload: {
+    userId: string
+    currentPassword: string
+    newPassword: string
+  }): Promise<IpcResult<boolean>>
+  disablePassword(payload: { userId: string; currentPassword: string }): Promise<IpcResult<boolean>>
+  recoverPassword(payload: {
+    osPassword: string
+    newPassword: string
+  }): Promise<IpcResult<AuthSessionInfo>>
+  listUsers(): Promise<IpcResult<AuthUser[]>>
+}
+
+// ─── EULA / Privacy ──────────────────────────────────────────────
+
+interface EulaConsentRecord {
+  accepted: boolean
+  acceptedAt: number
+  acceptedVersion: string
+  acceptedDocsHash: string
+}
+
+interface EulaStateData {
+  state: EulaConsentRecord
+  currentDocsHash: string
+  currentVersion: string
+  consentValid: boolean
+  warning?: string
+}
+
+interface EulaApi {
+  state(): Promise<IpcResult<EulaStateData>>
+  accept(): Promise<IpcResult<EulaConsentRecord>>
+  decline(): Promise<IpcResult<{ quitting: boolean }>>
+  reset(): Promise<IpcResult<boolean>>
+}
+
+// ─── Workspace / Project / Folder ────────────────────────────────
 
 interface WorkspaceApi {
   list(): Promise<IpcResult<Workspace[]>>
@@ -193,7 +276,7 @@ interface EnvVariableApi {
   }): Promise<IpcResult<EnvironmentVariable>>
   update(
     id: string,
-    payload: Partial<EnvironmentVariable>,
+    payload: Partial<EnvironmentVariable> & { initial_value?: string },
   ): Promise<IpcResult<EnvironmentVariable | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
 }
@@ -250,6 +333,8 @@ interface HistoryApi {
   prune(limit: number, workspaceId?: string): Promise<IpcResult<number>>
 }
 
+// ─── Settings ────────────────────────────────────────────────────
+
 interface SettingsApi {
   getAll(): Promise<IpcResult<AppSettings>>
   get(key: string): Promise<IpcResult<unknown>>
@@ -257,6 +342,8 @@ interface SettingsApi {
   setAll(settings: Partial<AppSettings>): Promise<IpcResult<AppSettings>>
   reset(): Promise<IpcResult<AppSettings>>
 }
+
+// ─── Request ─────────────────────────────────────────────────────
 
 interface RequestApi {
   send(options: {
@@ -291,7 +378,7 @@ interface RequestApi {
   cancel(requestId: string): Promise<IpcResult<boolean>>
 }
 
-// ─── Console (Postman-style streaming logs) ───────────────────────
+// ─── Console (Postman-style streaming logs) ──────────────────────
 
 interface ConsoleLogEntryDto {
   id: string
@@ -326,6 +413,8 @@ interface ConsoleApi {
    */
   onLog(callback: (entry: ConsoleLogEntryDto) => void): () => void
 }
+
+// ─── Import / Export ─────────────────────────────────────────────
 
 interface ImportExportApi {
   openFile(): Promise<IpcResult<{ filePath: string; content: string } | null>>
@@ -410,6 +499,8 @@ interface CurlExportRequest {
   cookies?: string
 }
 
+// ─── SOAP ────────────────────────────────────────────────────────
+
 interface SoapExecutePayload {
   wsdlUrl: string
   endpointUrl: string
@@ -439,11 +530,17 @@ interface SoapApi {
   generateEnvelope(options: GenerateEnvelopePayload): Promise<IpcResult<string>>
 }
 
+// ─── WebSocket ───────────────────────────────────────────────────
+
 interface WsConnectOptions {
   url: string
   headers?: Record<string, string>
   protocols?: string[]
   rejectUnauthorized?: boolean
+  _workspaceId?: string
+  _projectId?: string
+  _endpointId?: string
+  _pendingId?: string
 }
 
 interface WsConnectionInfo {
@@ -472,7 +569,7 @@ interface WsApi {
   onEvent(callback: (event: WsEventPayload) => void): () => void
 }
 
-// ─── Collection Runner ──────────────────────────────────────────
+// ─── Collection Runner ───────────────────────────────────────────
 
 interface RunnerExecuteOptions {
   projectId: string
@@ -542,20 +639,42 @@ interface RunnerExportOptions {
   format: 'json' | 'html'
 }
 
+/**
+ * Row shape returned by `runner:history`. Mirrors the `runner_history` DB
+ * table; assertion counters use the legacy `*_tests` field names because
+ * the underlying SQLite schema predates the renaming.
+ */
 interface RunnerHistoryEntry {
   id: string
   project_id: string
-  folder_name?: string | null
-  started_at: number
-  completed_at: number
+  environment_name: string | null
+  source: string
+  source_label: string | null
+  iterations: number
+  duration_ms: number
   total_endpoints: number
   passed_endpoints: number
   failed_endpoints: number
-  total_assertions: number
-  passed_assertions: number
-  failed_assertions: number
-  iterations: number
-  report: string
+  total_tests: number
+  passed_tests: number
+  failed_tests: number
+  skipped_tests: number
+  avg_resp_time: number
+  results_json: string | null
+  started_at: number
+  folder_name?: string | null
+}
+
+interface RunnerHistoryPage {
+  rows: RunnerHistoryEntry[]
+  total: number
+}
+
+interface RunnerHistoryStats {
+  runs: number
+  totalEndpoints: number
+  passedEndpoints: number
+  failedEndpoints: number
 }
 
 interface RunnerApi {
@@ -563,13 +682,62 @@ interface RunnerApi {
   stop(): Promise<IpcResult<boolean>>
   export(options: RunnerExportOptions): Promise<IpcResult<string>>
   onProgress(callback: (progress: RunnerProgress) => void): () => void
-  history(
-    arg:
-      | string
-      | { projectId: string; limit?: number; offset?: number; tab?: 'Functional' | 'Scheduled' },
-  ): Promise<IpcResult<RunnerHistoryEntry[]>>
-  historyStats(projectId: string): Promise<IpcResult<unknown>>
+  /**
+   * String argument → returns a flat `RunnerHistoryEntry[]` (legacy shape).
+   * Object argument → returns `{ rows, total }` for paginated views.
+   */
+  history(arg: string): Promise<IpcResult<RunnerHistoryEntry[]>>
+  history(arg: {
+    projectId: string
+    limit?: number
+    offset?: number
+    tab?: 'Functional' | 'Scheduled'
+  }): Promise<IpcResult<RunnerHistoryPage>>
+  historyStats(projectId: string): Promise<IpcResult<RunnerHistoryStats>>
   deleteHistory(ids: string | string[]): Promise<IpcResult<boolean>>
+}
+
+// ─── Scheduler ───────────────────────────────────────────────────
+
+interface ScheduledTaskRow {
+  id: string
+  project_id: string
+  name: string
+  endpoint_ids: string
+  folder_id: string | null
+  environment_id: string | null
+  interval_value: number
+  interval_unit: string
+  delay_ms: number
+  enabled: number
+  last_run_at: number | null
+  next_run_at: number | null
+  created_at: number
+}
+
+interface SchedulerCreatePayload {
+  projectId: string
+  name: string
+  endpointIds: string[]
+  folderId?: string
+  environmentId?: string
+  intervalValue: number
+  intervalUnit: 'minutes' | 'hours' | 'days'
+  delayMs?: number
+}
+
+interface SchedulerRunCompletedEvent {
+  taskId: string
+  taskName: string
+  report: RunnerReport
+}
+
+interface SchedulerApi {
+  create(payload: SchedulerCreatePayload): Promise<IpcResult<ScheduledTaskRow>>
+  list(projectId: string): Promise<IpcResult<ScheduledTaskRow[]>>
+  delete(taskId: string): Promise<IpcResult<boolean>>
+  toggle(taskId: string): Promise<IpcResult<ScheduledTaskRow | undefined>>
+  onRunCompleted(callback: (event: SchedulerRunCompletedEvent) => void): () => void
 }
 
 // ─── GraphQL ─────────────────────────────────────────────────────
@@ -683,6 +851,7 @@ interface GrpcServiceDescription {
       responseType: string
       requestStream: boolean
       responseStream: boolean
+      requestSkeleton?: string
     }>
   }>
 }
@@ -697,6 +866,10 @@ interface GrpcExecutePayload {
   timeout?: number
   useTls?: boolean
   sslVerification?: boolean
+  _workspaceId?: string
+  _projectId?: string
+  _endpointId?: string
+  _requestId?: string
 }
 
 interface GrpcResponse {
@@ -755,6 +928,7 @@ interface GrpcBidiStreamPayload {
 
 interface GrpcApi {
   loadProto(): Promise<IpcResult<GrpcServiceDescription | null>>
+  loadProtoFromUrl(url: string): Promise<IpcResult<GrpcServiceDescription>>
   execute(options: GrpcExecutePayload): Promise<IpcResult<GrpcResponse>>
   serverStream(options: GrpcExecutePayload): Promise<IpcResult<{ streamId: string }>>
   reflect(address: string, useTls?: boolean): Promise<IpcResult<GrpcServiceDescription>>
@@ -774,6 +948,12 @@ interface SseConnectPayload {
   headers?: Record<string, string>
   lastEventId?: string
   withCredentials?: boolean
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  body?: string
+  _workspaceId?: string
+  _projectId?: string
+  _endpointId?: string
+  _pendingId?: string
 }
 
 interface SseConnectionInfo {
@@ -790,6 +970,7 @@ interface SseEventPayload {
   data?: string
   id?: string
   retry?: number
+  httpStatus?: number
   timestamp: number
 }
 
@@ -800,7 +981,7 @@ interface SseApi {
   onEvent(callback: (event: SseEventPayload) => void): () => void
 }
 
-// ─── AI Chat ────────────────────────────────────────────────────
+// ─── AI Chat ─────────────────────────────────────────────────────
 
 type AiProviderId =
   | 'openai'
@@ -852,7 +1033,68 @@ interface AiChatApi {
   onCancelled(callback: (event: AiChatDoneEvent) => void): () => void
 }
 
-// ─── Updater ──────────────────────────────────────────────────────
+// ─── MCP ─────────────────────────────────────────────────────────
+
+interface McpConnectOptions {
+  transport: 'http' | 'sse' | 'stdio'
+  url: string
+  _pendingId?: string
+}
+
+interface McpToolDto {
+  name: string
+  description?: string
+  inputSchema: Record<string, unknown>
+}
+
+interface McpApi {
+  connect(
+    options: McpConnectOptions,
+  ): Promise<IpcResult<{ connectionId: string; serverName?: string }>>
+  cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
+  disconnect(connectionId: string): Promise<IpcResult<boolean>>
+  listTools(connectionId: string): Promise<IpcResult<McpToolDto[]>>
+  callTool(
+    connectionId: string,
+    toolName: string,
+    args: unknown,
+    ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
+  ): Promise<IpcResult<unknown>>
+}
+
+// ─── Socket.IO ───────────────────────────────────────────────────
+
+interface SocketIOConnectOptions {
+  url: string
+  namespace?: string
+  bearerToken?: string
+  /** Socket.IO `auth.*` payload sent during the namespace handshake. */
+  auth?: Record<string, unknown>
+  _workspaceId?: string
+  _projectId?: string
+  _endpointId?: string
+  _pendingId?: string
+}
+
+interface SocketIOEventPayload {
+  connectionId: string
+  direction: 'in' | 'out'
+  event: string
+  data: unknown
+  timestamp: number
+}
+
+interface SocketIOApi {
+  connect(options: SocketIOConnectOptions): Promise<IpcResult<{ connectionId: string }>>
+  cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
+  disconnect(connectionId: string): Promise<IpcResult<boolean>>
+  emit(connectionId: string, eventName: string, data: unknown): Promise<IpcResult<boolean>>
+  subscribe(connectionId: string, eventName: string): Promise<IpcResult<boolean>>
+  unsubscribe(connectionId: string, eventName: string): Promise<IpcResult<boolean>>
+  onEvent(callback: (event: SocketIOEventPayload) => void): () => void
+}
+
+// ─── Updater ─────────────────────────────────────────────────────
 
 interface UpdaterEventPayload {
   type: 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
@@ -863,6 +1105,7 @@ interface UpdaterEventPayload {
   transferred?: number
   total?: number
   error?: string
+  message?: string
 }
 
 interface UpdaterApi {
@@ -881,7 +1124,7 @@ interface AppApi {
   openExternal(url: string): Promise<IpcResult<null>>
 }
 
-// ─── Branch ──────────────────────────────────────────────────────
+// ─── Branch (DB-backed, non-Git) ─────────────────────────────────
 
 interface BranchApi {
   list(projectId: string): Promise<IpcResult<Branch[]>>
@@ -894,6 +1137,126 @@ interface BranchApi {
   rename(id: string, name: string): Promise<IpcResult<Branch | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
   ensureDefault(projectId: string): Promise<IpcResult<Branch>>
+}
+
+// ─── Git (real Git operations) ───────────────────────────────────
+
+interface GitBranchInfo {
+  name: string
+  current: boolean
+  isRemote: boolean
+}
+
+interface GitConflictInfo {
+  file: string
+  stats: {
+    ours: GitConflictStats
+    theirs: GitConflictStats
+  }
+}
+
+interface GitConflictStats {
+  endpoints: number
+  savedRequests: number
+  folders: number
+  testSuites: number
+  mockServers: number
+  mockEndpoints: number
+  environments: number
+  certificates: number
+  parsable: boolean
+}
+
+interface GitListBranchesResult {
+  branches: GitBranchInfo[]
+  current: string
+}
+
+interface GitMergeResult {
+  merged: boolean
+  state: 'clean' | 'conflicted'
+  currentBranch: string
+  sourceBranch: string
+  conflicts?: GitConflictInfo[]
+}
+
+interface GitPullOutcome {
+  pulled: boolean
+  state: 'clean' | 'conflicted'
+  branch: string
+  conflicts?: GitConflictInfo[]
+}
+
+interface GitPushOutcome {
+  branch: string
+  pushed: boolean
+}
+
+interface GitStatusResult {
+  branch: string
+  modified: string[]
+  not_added: string[]
+  created: string[]
+  deleted: string[]
+  staged: string[]
+  conflicted: string[]
+  commits: Array<{
+    hash: string
+    message: string
+    date: string
+    author: string
+  }>
+}
+
+interface GitResolveConflictResult {
+  file: string
+  side: 'ours' | 'theirs'
+  stillConflicted: boolean
+  committed: boolean
+  remainingConflicts: string[]
+}
+
+interface GitLogEntry {
+  hash: string
+  fullHash: string
+  message: string
+  date: string
+  author: string
+}
+
+interface GitHasConfigResult {
+  hasGit: boolean
+}
+
+interface GitApi {
+  hasConfig(projectId: string): Promise<IpcResult<GitHasConfigResult>>
+  listBranches(projectId: string): Promise<IpcResult<GitListBranchesResult>>
+  currentBranch(projectId: string): Promise<IpcResult<string>>
+  createBranch(payload: {
+    projectId: string
+    branchName: string
+    baseBranch?: string
+  }): Promise<IpcResult<{ branch: string }>>
+  switchBranch(payload: {
+    projectId: string
+    branchName: string
+  }): Promise<IpcResult<{ branch: string }>>
+  merge(payload: { projectId: string; sourceBranch: string }): Promise<IpcResult<GitMergeResult>>
+  push(projectId: string): Promise<IpcResult<GitPushOutcome>>
+  pull(projectId: string): Promise<IpcResult<GitPullOutcome>>
+  status(projectId: string): Promise<IpcResult<GitStatusResult>>
+  deleteBranch(payload: {
+    projectId: string
+    branchName: string
+  }): Promise<IpcResult<{ deleted: string }>>
+  log(payload: { projectId: string; count?: number }): Promise<IpcResult<GitLogEntry[]>>
+  resolveConflict(payload: {
+    projectId: string
+    file: string
+    side: 'ours' | 'theirs'
+    commitMessage?: string
+  }): Promise<IpcResult<GitResolveConflictResult>>
+  abortMerge(projectId: string): Promise<IpcResult<{ aborted: boolean }>>
 }
 
 // ─── Save ────────────────────────────────────────────────────────
@@ -978,7 +1341,7 @@ interface SaveApi {
   gitCleanup(tmpDir: string): Promise<IpcResult<undefined>>
   getGitCredentials(): Promise<IpcResult<Record<string, unknown>>>
   gitDiff(payload: { projectId: string; direction: 'push' | 'pull' }): Promise<IpcResult<unknown>>
-  history(projectId: string): Promise<IpcResult<SaveHistoryRow[]>>
+  history(projectId: string): Promise<IpcResult<SaveHistoryEntry[]>>
   exportProject(projectId: string): Promise<IpcResult<{ path: string }>>
   exportFolder(folderId: string): Promise<IpcResult<{ path: string }>>
   exportTestSuite(suiteId: string): Promise<IpcResult<{ path: string }>>
@@ -992,10 +1355,315 @@ interface SaveApi {
   }): Promise<IpcResult<{ foldersImported: number; endpointsImported: number }>>
   importTestSuite(payload: {
     projectId: string
+    content?: string
+    suiteName?: string
   }): Promise<IpcResult<{ suiteId: string; itemsImported: number }>>
 }
 
+// ─── Test Suite ──────────────────────────────────────────────────
+
+interface CreateTestSuitePayload {
+  project_id: string
+  name: string
+  description?: string | null
+}
+
+interface UpdateTestSuitePayload {
+  name?: string
+  description?: string | null
+  sort_order?: number
+}
+
+interface ImportEndpointsPayload {
+  suite_id: string
+  endpoint_ids: string[]
+  folder_id?: string | null
+}
+
+interface RemoveEndpointPayload {
+  suite_id: string
+  item_id: string
+}
+
+interface TestSuiteApi {
+  list(projectId: string): Promise<IpcResult<TestSuiteRow[]>>
+  get(id: string): Promise<IpcResult<TestSuiteRow | undefined>>
+  create(payload: CreateTestSuitePayload): Promise<IpcResult<TestSuiteRow>>
+  update(id: string, payload: UpdateTestSuitePayload): Promise<IpcResult<TestSuiteRow | undefined>>
+  delete(id: string): Promise<IpcResult<boolean>>
+  duplicate(id: string): Promise<IpcResult<TestSuiteRow>>
+  /** Returns `{ items, folders }` — both arrays of repo rows. */
+  listEndpoints(suiteId: string): Promise<IpcResult<TestSuiteContents>>
+  /** Snapshots endpoints from APIs tree and writes them as suite items. */
+  importEndpoints(payload: ImportEndpointsPayload): Promise<IpcResult<{ added: number }>>
+  removeEndpoint(payload: RemoveEndpointPayload): Promise<IpcResult<boolean>>
+}
+
+interface CreateTestSuiteItemInput {
+  suite_id: string
+  folder_id?: string | null
+  protocol: string
+  name: string
+  method?: string | null
+  url?: string | null
+  request_schema?: string
+  assertions?: string | null
+  source_endpoint_id?: string | null
+}
+
+interface UpdateTestSuiteItemInput {
+  name?: string
+  protocol?: string
+  method?: string | null
+  url?: string | null
+  request_schema?: string
+  assertions?: string | null
+  folder_id?: string | null
+  sort_order?: number
+}
+
+interface MoveTestSuiteItemPayload {
+  id: string
+  targetSuiteId: string
+  targetFolderId: string | null
+  insertBeforeId: string | null
+}
+
+interface TestSuiteItemApi {
+  list(suiteId: string): Promise<IpcResult<TestSuiteItemRow[]>>
+  get(id: string): Promise<IpcResult<TestSuiteItemRow | undefined>>
+  create(input: CreateTestSuiteItemInput): Promise<IpcResult<TestSuiteItemRow>>
+  update(id: string, patch: UpdateTestSuiteItemInput): Promise<IpcResult<TestSuiteItemRow>>
+  delete(id: string): Promise<IpcResult<{ deleted: boolean }>>
+  move(payload: MoveTestSuiteItemPayload): Promise<IpcResult<TestSuiteItemRow>>
+}
+
+interface CreateTestSuiteFolderInput {
+  suite_id: string
+  parent_id?: string | null
+  name: string
+}
+
+interface MoveTestSuiteFolderPayload {
+  id: string
+  targetSuiteId: string
+  targetParentId: string | null
+  insertBeforeId: string | null
+}
+
+interface TestSuiteFolderApi {
+  create(input: CreateTestSuiteFolderInput): Promise<IpcResult<TestSuiteFolderRow>>
+  rename(id: string, name: string): Promise<IpcResult<TestSuiteFolderRow>>
+  delete(id: string): Promise<IpcResult<{ deleted: boolean }>>
+  move(payload: MoveTestSuiteFolderPayload): Promise<IpcResult<TestSuiteFolderRow>>
+}
+
+// ─── Tree drag-drop ──────────────────────────────────────────────
+
+interface TreeApi {
+  move(payload: {
+    nodeId: string
+    nodeType: 'folder' | 'endpoint' | 'request'
+    targetFolderId: string | null
+    insertBeforeId?: string | null
+  }): Promise<IpcResult<true>>
+}
+
+// ─── Mock Server ─────────────────────────────────────────────────
+
+interface MockServerStatusInfo {
+  status: MockServerStatus
+  port?: number | null
+  errorMessage?: string | null
+  startedAt?: number | null
+}
+
+interface MockServerStatusEvent {
+  serverId: string
+  status: MockServerStatus
+  errorMessage: string | null
+}
+
+interface MockImportResult {
+  ok: boolean
+  endpointsCreated: number
+  responsesCreated: number
+  warnings: string[]
+  error?: string
+}
+
+interface MockServerCreatePayload {
+  projectId: string
+  name: string
+  port: number
+  host?: string
+  basePath?: string
+  description?: string
+  autoStart?: boolean
+}
+
+interface MockServerSubApi {
+  list(projectId: string): Promise<IpcResult<MockServer[]>>
+  get(id: string): Promise<IpcResult<MockServer | undefined>>
+  create(input: MockServerCreatePayload): Promise<IpcResult<MockServer>>
+  update(id: string, patch: Partial<MockServer>): Promise<IpcResult<MockServer>>
+  delete(id: string): Promise<IpcResult<boolean>>
+  start(id: string): Promise<IpcResult<MockServerStatusInfo>>
+  stop(id: string): Promise<IpcResult<MockServerStatusInfo>>
+  status(id: string): Promise<IpcResult<MockServerStatusInfo>>
+}
+
+interface MockEndpointCreatePayload {
+  serverId: string
+  path: string
+  /** Loose string since renderer may pass any HTTP method label. */
+  method?: string
+  pathMode?: 'exact' | 'param' | 'wildcard' | 'regex'
+  description?: string
+  priority?: number
+  enabled?: boolean
+  sortOrder?: number
+}
+
+interface MockEndpointSubApi {
+  list(serverId: string): Promise<IpcResult<MockEndpoint[]>>
+  get(id: string): Promise<IpcResult<MockEndpoint | undefined>>
+  create(input: MockEndpointCreatePayload): Promise<IpcResult<MockEndpoint>>
+  update(id: string, patch: Partial<MockEndpoint>): Promise<IpcResult<MockEndpoint>>
+  delete(id: string): Promise<IpcResult<boolean>>
+}
+
+interface MockResponseSubApi {
+  list(endpointId: string): Promise<IpcResult<MockResponse[]>>
+  create(input: Partial<MockResponse> & { endpointId: string }): Promise<IpcResult<MockResponse>>
+  update(id: string, patch: Partial<MockResponse>): Promise<IpcResult<MockResponse>>
+  delete(id: string): Promise<IpcResult<boolean>>
+}
+
+interface MockLogsSubApi {
+  get(serverId: string): Promise<IpcResult<MockLogEntry[]>>
+  clear(serverId: string): Promise<IpcResult<boolean>>
+}
+
+interface MockApi {
+  server: MockServerSubApi
+  endpoint: MockEndpointSubApi
+  response: MockResponseSubApi
+  logs: MockLogsSubApi
+  importOpenApi(serverId: string, source: string): Promise<IpcResult<MockImportResult>>
+  importPostman(serverId: string, source: string): Promise<IpcResult<MockImportResult>>
+  onLog(callback: (entry: MockLogEntry) => void): () => void
+  onStatus(callback: (info: MockServerStatusEvent) => void): () => void
+}
+
+// ─── Dialog ──────────────────────────────────────────────────────
+
+interface DialogFileResult {
+  filePath: string
+  fileName: string
+  size: number
+}
+
+interface DialogApi {
+  openFile(options?: {
+    title?: string
+    filters?: Array<{ name: string; extensions: string[] }>
+    multiSelections?: boolean
+  }): Promise<IpcResult<DialogFileResult | DialogFileResult[]>>
+}
+
+// ─── Certificate ─────────────────────────────────────────────────
+
+interface CertificateRowDto {
+  id: string
+  project_id: string
+  kind: 'ca' | 'client'
+  host: string | null
+  crt_path: string | null
+  key_path: string | null
+  pfx_path: string | null
+  passphrase: string | null
+  enabled: number
+  created_at: number
+}
+
+interface CertificateApi {
+  list(projectId: string): Promise<IpcResult<CertificateRowDto[]>>
+  add(payload: {
+    projectId: string
+    kind: 'ca' | 'client'
+    host?: string
+    crtPath?: string
+    keyPath?: string
+    pfxPath?: string
+    passphrase?: string
+    enabled?: boolean
+  }): Promise<IpcResult<CertificateRowDto>>
+  update(payload: {
+    id: string
+    host?: string
+    crtPath?: string
+    keyPath?: string
+    pfxPath?: string
+    passphrase?: string
+    enabled?: boolean
+  }): Promise<IpcResult<CertificateRowDto>>
+  delete(id: string): Promise<IpcResult<boolean>>
+  pickFile(kind: 'crt' | 'key' | 'pfx' | 'ca'): Promise<IpcResult<string>>
+}
+
+// ─── WSSE ────────────────────────────────────────────────────────
+
+interface WsseVerifyResultDto {
+  valid: boolean
+  reason?: string
+  signedReferences: string[]
+  certInfo?: {
+    subject?: string
+    issuer?: string
+    notAfter?: string
+    notBefore?: string
+  }
+}
+
+interface WsseApi {
+  apply(payload: { envelope: string; config: WsSecurityConfig }): Promise<IpcResult<string>>
+  verify(payload: { envelope: string; certPem: string }): Promise<IpcResult<WsseVerifyResultDto>>
+  decrypt(payload: {
+    envelope: string
+    privateKeyPem: string
+    passphrase?: string
+  }): Promise<IpcResult<string>>
+}
+
+// ─── Diagnostics ─────────────────────────────────────────────────
+
+interface ThirdPartyLicenseEntry {
+  name: string
+  version: string
+  license: string
+  repository: string | null
+  publisher: string | null
+  url: string | null
+}
+
+interface ThirdPartyLicensesManifest {
+  generatedAt: string
+  count: number
+  entries: ThirdPartyLicenseEntry[]
+}
+
+interface DiagnosticsApi {
+  export(): Promise<IpcResult<{ path: string; size: number }>>
+  revealLogs(): Promise<IpcResult<null>>
+  thirdPartyLicenses(): Promise<IpcResult<ThirdPartyLicensesManifest>>
+}
+
+// ─── Aggregate bridge ────────────────────────────────────────────
+
 interface ApiBridge {
+  auth: AuthApi
+  eula: EulaApi
   window: WindowApi
   app: AppApi
   request: RequestApi
@@ -1017,12 +1685,16 @@ interface ApiBridge {
   diagnostics: DiagnosticsApi
   ws: WsApi
   runner: RunnerApi
+  scheduler: SchedulerApi
   graphql: GraphqlApi
   grpc: GrpcApi
   sse: SseApi
   aiChat: AiChatApi
+  mcp: McpApi
+  socketio: SocketIOApi
   updater: UpdaterApi
   branch: BranchApi
+  git: GitApi
   save: SaveApi
   certificate: CertificateApi
   testSuite: TestSuiteApi
@@ -1031,167 +1703,6 @@ interface ApiBridge {
   tree: TreeApi
   mock: MockApi
   dialog: DialogApi
-}
-
-interface DialogFileResult {
-  filePath: string
-  fileName: string
-  size: number
-}
-
-interface DialogApi {
-  openFile: (options?: {
-    title?: string
-    filters?: Array<{ name: string; extensions: string[] }>
-    multiSelections?: boolean
-  }) => Promise<IpcResult<DialogFileResult | DialogFileResult[]>>
-}
-
-interface CertificateRowDto {
-  id: string
-  project_id: string
-  kind: 'ca' | 'client'
-  host: string | null
-  crt_path: string | null
-  key_path: string | null
-  pfx_path: string | null
-  passphrase: string | null
-  enabled: number
-  created_at: number
-}
-
-interface CertificateApi {
-  list: (projectId: string) => Promise<IpcResult<CertificateRowDto[]>>
-  add: (payload: {
-    projectId: string
-    kind: 'ca' | 'client'
-    host?: string
-    crtPath?: string
-    keyPath?: string
-    pfxPath?: string
-    passphrase?: string
-    enabled?: boolean
-  }) => Promise<IpcResult<CertificateRowDto>>
-  update: (payload: {
-    id: string
-    host?: string
-    crtPath?: string
-    keyPath?: string
-    pfxPath?: string
-    passphrase?: string
-    enabled?: boolean
-  }) => Promise<IpcResult<CertificateRowDto>>
-  delete: (id: string) => Promise<IpcResult<boolean>>
-  pickFile: (kind: 'crt' | 'key' | 'pfx' | 'ca') => Promise<IpcResult<string>>
-}
-
-interface WsseVerifyResultDto {
-  valid: boolean
-  reason?: string
-  signedReferences: string[]
-  certInfo?: {
-    subject?: string
-    issuer?: string
-    notAfter?: string
-    notBefore?: string
-  }
-}
-
-interface WsseApi {
-  apply: (payload: { envelope: string; config: unknown }) => Promise<IpcResult<string>>
-  verify: (payload: {
-    envelope: string
-    certPem: string
-  }) => Promise<IpcResult<WsseVerifyResultDto>>
-  decrypt: (payload: {
-    envelope: string
-    privateKeyPem: string
-    passphrase?: string
-  }) => Promise<IpcResult<string>>
-}
-
-interface ThirdPartyLicenseEntry {
-  name: string
-  version: string
-  license: string
-  repository: string | null
-  publisher: string | null
-  url: string | null
-}
-
-interface ThirdPartyLicensesManifest {
-  generatedAt: string
-  count: number
-  entries: ThirdPartyLicenseEntry[]
-}
-
-interface DiagnosticsApi {
-  export: () => Promise<IpcResult<{ path: string; size: number }>>
-  revealLogs: () => Promise<IpcResult<null>>
-  thirdPartyLicenses: () => Promise<IpcResult<ThirdPartyLicensesManifest>>
-}
-
-interface TestSuiteApi {
-  list: (projectId: string) => Promise<IpcResult<unknown[]>>
-  get: (id: string) => Promise<IpcResult<unknown>>
-  create: (payload: unknown) => Promise<IpcResult<unknown>>
-  update: (id: string, payload: unknown) => Promise<IpcResult<unknown>>
-  delete: (id: string) => Promise<IpcResult<boolean>>
-  duplicate: (id: string) => Promise<IpcResult<unknown>>
-  /** Returns `{ items, folders }` — both arrays of repo rows. */
-  listEndpoints: (suiteId: string) => Promise<IpcResult<unknown>>
-  /** Snapshots endpoints from APIs tree and writes them as suite items. */
-  importEndpoints: (payload: unknown) => Promise<IpcResult<unknown>>
-  removeEndpoint: (payload: unknown) => Promise<IpcResult<boolean>>
-}
-
-interface TestSuiteItemApi {
-  list: (suiteId: string) => Promise<IpcResult<unknown[]>>
-  get: (id: string) => Promise<IpcResult<unknown>>
-  create: (input: unknown) => Promise<IpcResult<unknown>>
-  update: (id: string, patch: unknown) => Promise<IpcResult<unknown>>
-  delete: (id: string) => Promise<IpcResult<{ deleted: boolean }>>
-  move: (payload: unknown) => Promise<IpcResult<unknown>>
-}
-
-interface TestSuiteFolderApi {
-  create: (input: unknown) => Promise<IpcResult<unknown>>
-  rename: (id: string, name: string) => Promise<IpcResult<unknown>>
-  delete: (id: string) => Promise<IpcResult<{ deleted: boolean }>>
-  move: (payload: unknown) => Promise<IpcResult<unknown>>
-}
-
-interface TreeApi {
-  move: (payload: {
-    nodeId: string
-    nodeType: 'folder' | 'endpoint' | 'request'
-    targetFolderId: string | null
-    insertBeforeId?: string | null
-  }) => Promise<IpcResult<true>>
-}
-
-interface MockServerApi {
-  list: (projectId: string) => Promise<IpcResult<Array<{ id: string; port: number; name: string }>>>
-  create: (input: {
-    projectId: string
-    name: string
-    host?: string
-    port: number
-    description?: string
-  }) => Promise<IpcResult<{ id: string }>>
-}
-
-interface MockEndpointApi {
-  create: (input: {
-    serverId: string
-    method?: string
-    path: string
-  }) => Promise<IpcResult<{ id: string }>>
-}
-
-interface MockApi {
-  server: MockServerApi
-  endpoint: MockEndpointApi
 }
 
 declare global {

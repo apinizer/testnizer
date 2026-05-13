@@ -1992,16 +1992,14 @@ export function AboutPane() {
 
   useEffect(() => {
     try {
-      const w = window as unknown as {
-        electron?: { process?: { versions?: Record<string, string>; platform?: string } }
-      }
-      const v = w.electron?.process?.versions
+      const proc = window.electron?.process
+      const v = proc?.versions
       setVersions({
         app: v?.app,
         electron: v?.electron,
         node: v?.node,
         chrome: v?.chrome,
-        platform: w.electron?.process?.platform,
+        platform: proc?.platform,
       })
     } catch {
       /* ignore */

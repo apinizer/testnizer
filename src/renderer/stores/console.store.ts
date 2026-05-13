@@ -310,51 +310,6 @@ export function selectFilteredEntries(
 
 // ─── IPC bootstrap ────────────────────────────────────────────
 
-interface ConsoleApi {
-  onLog?: (cb: (entry: unknown) => void) => () => void
-}
-
-interface WindowApi {
-  console?: ConsoleApi
-  ws?: { onEvent?: (cb: (event: unknown) => void) => () => void }
-  sse?: { onEvent?: (cb: (event: unknown) => void) => () => void }
-  grpc?: { onStreamEvent?: (cb: (event: unknown) => void) => () => void }
-  graphql?: { onSubscriptionEvent?: (cb: (event: unknown) => void) => () => void }
-}
-
-interface WsEventPayload {
-  connectionId?: string
-  type?: 'open' | 'message' | 'close' | 'error'
-  data?: string
-  code?: number
-  reason?: string
-  contentType?: 'text' | 'json' | 'binary'
-}
-
-interface SseEventPayload {
-  connectionId?: string
-  type?: 'open' | 'event' | 'error'
-  eventType?: string
-  data?: string
-  id?: string
-}
-
-interface GrpcStreamEventPayload {
-  streamId?: string
-  type?: 'data' | 'end' | 'error' | 'status'
-  data?: string
-  error?: string
-  grpcStatus?: number
-  grpcStatusMessage?: string
-}
-
-interface GraphqlSubscriptionEventPayload {
-  subscriptionId?: string
-  type?: 'data' | 'error' | 'complete'
-  data?: string
-  error?: string
-}
-
 /**
  * Wire up the renderer to receive `console:log` entries from main and to
  * mirror real-time event streams (WS messages, SSE events, gRPC stream
@@ -364,16 +319,14 @@ interface GraphqlSubscriptionEventPayload {
  * the App effect cleanup.
  */
 export function initConsoleListeners(): () => void {
-  const api: WindowApi | undefined =
-    typeof window !== 'undefined' ? (window as unknown as { api?: WindowApi }).api : undefined
+  const api = typeof window !== 'undefined' ? window.api : undefined
   const cleanups: Array<() => void> = []
   if (!api) return () => {}
 
   // 1) Direct console:log feed
   if (api.console?.onLog) {
     cleanups.push(
-      api.console.onLog((data: unknown) => {
-        const entry = data as Partial<ConsoleLogEntry>
+      api.console.onLog((entry) => {
         if (!entry || !entry.protocol) return
         useConsoleStore.getState().addEntry({
           id: entry.id,
@@ -398,8 +351,7 @@ export function initConsoleListeners(): () => void {
   // 2) WebSocket events: pipe inbound messages, open/close/error to console
   if (api.ws?.onEvent) {
     cleanups.push(
-      api.ws.onEvent((data: unknown) => {
-        const ev = data as WsEventPayload
+      api.ws.onEvent((ev) => {
         if (!ev || !ev.type) return
         const add = useConsoleStore.getState().addEntry
         if (ev.type === 'message') {
@@ -425,8 +377,7 @@ export function initConsoleListeners(): () => void {
   // 3) SSE events
   if (api.sse?.onEvent) {
     cleanups.push(
-      api.sse.onEvent((data: unknown) => {
-        const ev = data as SseEventPayload
+      api.sse.onEvent((ev) => {
         if (!ev || !ev.type) return
         const add = useConsoleStore.getState().addEntry
         if (ev.type === 'event') {
@@ -458,8 +409,7 @@ export function initConsoleListeners(): () => void {
   // 4) gRPC stream events
   if (api.grpc?.onStreamEvent) {
     cleanups.push(
-      api.grpc.onStreamEvent((data: unknown) => {
-        const ev = data as GrpcStreamEventPayload
+      api.grpc.onStreamEvent((ev) => {
         if (!ev || !ev.type) return
         const add = useConsoleStore.getState().addEntry
         if (ev.type === 'data') {
@@ -503,8 +453,7 @@ export function initConsoleListeners(): () => void {
   // 5) GraphQL subscription events
   if (api.graphql?.onSubscriptionEvent) {
     cleanups.push(
-      api.graphql.onSubscriptionEvent((data: unknown) => {
-        const ev = data as GraphqlSubscriptionEventPayload
+      api.graphql.onSubscriptionEvent((ev) => {
         if (!ev || !ev.type) return
         const add = useConsoleStore.getState().addEntry
         if (ev.type === 'data') {
@@ -536,21 +485,9 @@ export function initConsoleListeners(): () => void {
   }
 
   // 6) Socket.IO events
-  if (
-    (api as unknown as Record<string, { onEvent?: (cb: (e: unknown) => void) => () => void }>)
-      .socketio?.onEvent
-  ) {
-    const sioApi = (
-      api as unknown as Record<string, { onEvent: (cb: (e: unknown) => void) => () => void }>
-    ).socketio
+  if (api.socketio?.onEvent) {
     cleanups.push(
-      sioApi.onEvent((data: unknown) => {
-        const ev = data as {
-          direction?: string
-          event?: string
-          data?: unknown
-          connectionId?: string
-        }
+      api.socketio.onEvent((ev) => {
         if (!ev || !ev.event) return
         const add = useConsoleStore.getState().addEntry
         const payload = JSON.stringify(ev.data)

@@ -80,14 +80,7 @@ interface BranchStore {
   fetchSaveHistory: (projectId: string) => Promise<void>
 }
 
-const api = () =>
-  (window as unknown as Record<string, unknown>).api as Record<
-    string,
-    Record<
-      string,
-      (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>
-    >
-  >
+const api = () => window.api
 
 export const useBranchStore = create<BranchStore>((set, get) => ({
   branches: [],
@@ -117,7 +110,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
       try {
         const result = await api().branch.list(projectId)
         if (result?.success && result.data) {
-          const dbBranches = result.data as { id: string; name: string; is_default: number }[]
+          const dbBranches = result.data
           const branches: GitBranch[] = dbBranches.map((b, i) => ({
             name: b.name,
             current: i === 0,

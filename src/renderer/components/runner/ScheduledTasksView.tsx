@@ -31,11 +31,9 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
 
   const loadTasks = useCallback(() => {
     if (!activeProjectId) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const api = window.api as any
-    api.scheduler
+    window.api?.scheduler
       ?.list(activeProjectId)
-      .then((result: { success: boolean; data?: ScheduledTask[] }) => {
+      .then((result) => {
         if (result?.success && result.data) setTasks(result.data)
       })
       .catch(() => {})
@@ -47,9 +45,7 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
 
   // Listen for scheduled run completions
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const api = window.api as any
-    const unsub = api.scheduler?.onRunCompleted?.(() => {
+    const unsub = window.api?.scheduler?.onRunCompleted?.(() => {
       loadTasks()
     })
     return () => {
@@ -59,9 +55,7 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
 
   const toggleTask = useCallback(
     async (taskId: string) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const api = window.api as any
-      await api.scheduler?.toggle(taskId)
+      await window.api?.scheduler?.toggle(taskId)
       loadTasks()
     },
     [loadTasks],
@@ -69,9 +63,7 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
 
   const confirmDeleteTask = useCallback(async () => {
     if (!deleteTarget) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const api = window.api as any
-    await api.scheduler?.delete(deleteTarget.id)
+    await window.api?.scheduler?.delete(deleteTarget.id)
     setDeleteTarget(null)
     loadTasks()
   }, [deleteTarget, loadTasks])

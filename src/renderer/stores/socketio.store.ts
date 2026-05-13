@@ -14,22 +14,8 @@ export interface SocketIOEvent {
   timestamp: number
 }
 
-interface SocketIOApi {
-  connect: (
-    options: unknown,
-  ) => Promise<{ success: boolean; data?: { connectionId: string }; error?: string }>
-  cancelConnect: (
-    pendingId: string,
-  ) => Promise<{ success: boolean; data?: { canceled: boolean }; error?: string }>
-  disconnect: (id: string) => Promise<{ success: boolean; error?: string }>
-  emit: (id: string, event: string, data: unknown) => Promise<{ success: boolean; error?: string }>
-  subscribe: (id: string, event: string) => Promise<{ success: boolean; error?: string }>
-  unsubscribe: (id: string, event: string) => Promise<{ success: boolean; error?: string }>
-  onEvent: (cb: (e: unknown) => void) => () => void
-}
-
-function getSioApi(): SocketIOApi | undefined {
-  return (window as unknown as { api?: { socketio?: SocketIOApi } }).api?.socketio
+function getSioApi() {
+  return window.api?.socketio
 }
 
 interface TabSioState {

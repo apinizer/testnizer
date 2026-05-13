@@ -64,9 +64,6 @@ interface AuthState {
   clearError: () => void
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const api = () => (window as any).api
-
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isAuthenticated: false,
@@ -84,10 +81,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   checkHasPassword: async () => {
     try {
-      const result = (await api().auth.hasPassword()) as {
-        success: boolean
-        data?: { hasPassword: boolean }
-      }
+      const result = await window.api.auth.hasPassword()
       if (result?.success) {
         set({ hasPasswordSet: result.data?.hasPassword ?? false, isLoading: false })
       } else {
@@ -101,11 +95,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (password: string) => {
     set({ isLoading: true, error: null })
     try {
-      const result = (await api().auth.login({ password })) as {
-        success: boolean
-        data?: { user: User; session: { token: string } }
-        error?: string
-      }
+      const result = await window.api.auth.login({ password })
       if (result?.success && result.data) {
         localStorage.setItem(SESSION_TOKEN_KEY, result.data.session.token)
         localStorage.removeItem(GUEST_MODE_KEY)
@@ -126,11 +116,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const payload: { password: string; recoveryEmail?: string } = { password }
       if (recoveryEmail) payload.recoveryEmail = recoveryEmail
-      const result = (await api().auth.setPassword(payload)) as {
-        success: boolean
-        data?: { user: User; session: { token: string } }
-        error?: string
-      }
+      const result = await window.api.auth.setPassword(payload)
       if (result?.success && result.data) {
         localStorage.setItem(SESSION_TOKEN_KEY, result.data.session.token)
         localStorage.removeItem(GUEST_MODE_KEY)
@@ -161,7 +147,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const token = localStorage.getItem(SESSION_TOKEN_KEY)
     if (token) {
       try {
-        await api().auth.logout(token)
+        await window.api.auth.logout(token)
       } catch {
         /* ignore */
       }
@@ -182,11 +168,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user } = get()
     if (!user) return { success: false, error: 'Not logged in' }
     try {
-      const result = (await api().auth.changePassword({
+      const result = await window.api.auth.changePassword({
         userId: user.id,
         currentPassword,
         newPassword,
-      })) as { success: boolean; error?: string }
+      })
       if (result?.success) {
         return { success: true }
       }
@@ -200,10 +186,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user } = get()
     if (!user) return { success: false, error: 'Not logged in' }
     try {
-      const result = (await api().auth.disablePassword({
+      const result = await window.api.auth.disablePassword({
         userId: user.id,
         currentPassword,
-      })) as { success: boolean; error?: string }
+      })
       if (result?.success) {
         // Reset local state — app will show the "no password" flow next launch.
         localStorage.removeItem(SESSION_TOKEN_KEY)
@@ -227,11 +213,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   recoverPassword: async (osPassword: string, newPassword: string) => {
     set({ isLoading: true, error: null })
     try {
-      const result = (await api().auth.recoverPassword({ osPassword, newPassword })) as {
-        success: boolean
-        data?: { user: User; session: { token: string } }
-        error?: string
-      }
+      const result = await window.api.auth.recoverPassword({ osPassword, newPassword })
       if (result?.success && result.data) {
         // On success, the backend returns a fresh session so the user is
         // immediately unlocked into the app with their new password.

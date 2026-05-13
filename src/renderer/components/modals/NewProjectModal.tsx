@@ -464,16 +464,7 @@ export default function NewProjectModal() {
               })
 
               // Initial push — create main branch in remote with project data
-              const api = window.api as unknown as Record<
-                string,
-                Record<
-                  string,
-                  (
-                    ...args: unknown[]
-                  ) => Promise<{ success: boolean; data?: unknown; error?: string }>
-                >
-              >
-              await api.git.push(projectId)
+              await window.api.git.push(projectId)
             } catch {
               /* non-critical — user can push later */
             }

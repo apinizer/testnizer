@@ -12,48 +12,8 @@ function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
-/** Shape of payloads emitted by the main process on the `ws:event` channel. */
-interface WsEvent {
-  connectionId: string
-  type: 'open' | 'message' | 'close' | 'error'
-  data?: string
-  code?: number
-  reason?: string
-  timestamp: number
-  messageId?: string
-  contentType?: 'text' | 'json' | 'binary'
-}
-
-interface WsApi {
-  connect: (options: {
-    url: string
-    headers?: Record<string, string>
-    protocols?: string[]
-    _workspaceId?: string
-    _projectId?: string
-    _endpointId?: string
-    _pendingId?: string
-  }) => Promise<{
-    success: boolean
-    data?: { connectionId: string }
-    error?: string
-  }>
-  cancelConnect: (
-    pendingId: string,
-  ) => Promise<{ success: boolean; data?: { canceled: boolean }; error?: string }>
-  disconnect: (
-    connectionId: string,
-  ) => Promise<{ success: boolean; data?: boolean; error?: string }>
-  send: (
-    connectionId: string,
-    message: string,
-  ) => Promise<{ success: boolean; data?: boolean; error?: string }>
-  onEvent: (cb: (event: WsEvent) => void) => () => void
-}
-
-function getWsApi(): WsApi | undefined {
-  const w = window as unknown as { api?: { ws?: WsApi } }
-  return w.api?.ws
+function getWsApi() {
+  return window.api?.ws
 }
 
 /** Snapshot of WebSocket state for per-tab caching. */

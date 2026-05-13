@@ -18,12 +18,8 @@ interface SettingsState {
   proxyPort: string
 }
 
-type SettingsApi = {
-  getAll?: () => Promise<{ success: boolean; data?: unknown }>
-  setAll?: (s: unknown) => Promise<{ success: boolean }>
-}
-function getSettingsApi(): SettingsApi | null {
-  return (window as unknown as { api?: { settings?: SettingsApi } }).api?.settings ?? null
+function getSettingsApi() {
+  return window.api?.settings ?? null
 }
 
 export default function SettingsModal() {

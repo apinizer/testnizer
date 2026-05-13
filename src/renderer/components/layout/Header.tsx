@@ -102,19 +102,10 @@ export default function Header() {
     setStatusMsg('')
     setGitLoading('Pushing to remote...')
     try {
-      const api = window.api as unknown as Record<
-        string,
-        Record<
-          string,
-          (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>
-        >
-      >
-
-      const result = await api.git.push(activeProject.id)
+      const result = await window.api.git.push(activeProject.id)
 
       if (result?.success) {
-        const data = result.data as { branch?: string }
-        setStatusMsg(`Push başarılı (${data?.branch || 'branch'})`)
+        setStatusMsg(`Push başarılı (${result.data?.branch || 'branch'})`)
         setPushStatus('success')
         setTimeout(() => {
           setPushStatus('idle')
@@ -146,24 +137,16 @@ export default function Header() {
     setStatusMsg('')
     setGitLoading('Pulling from remote...')
     try {
-      const api = window.api as unknown as Record<
-        string,
-        Record<
-          string,
-          (...args: unknown[]) => Promise<{ success: boolean; data?: unknown; error?: string }>
-        >
-      >
-      const result = await api.git.pull(activeProject.id)
+      const result = await window.api.git.pull(activeProject.id)
 
       if (result?.success) {
-        const data = result.data as { branch?: string }
-        setStatusMsg(`Pull başarılı (${data?.branch || 'branch'})`)
+        setStatusMsg(`Pull başarılı (${result.data?.branch || 'branch'})`)
         setPullStatus('success')
 
         // Full app refresh — re-read everything from DB
         // Re-import pulled data into DB first
         try {
-          await api.save.gitPull({ projectId: activeProject.id })
+          await window.api.save.gitPull({ projectId: activeProject.id })
         } catch {
           /* pulled data may not need DB import if using file-based */
         }

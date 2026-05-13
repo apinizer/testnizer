@@ -14,27 +14,8 @@ export interface McpTool {
   inputSchema: Record<string, unknown>
 }
 
-interface McpApi {
-  connect: (options: unknown) => Promise<{
-    success: boolean
-    data?: { connectionId: string; serverName?: string }
-    error?: string
-  }>
-  cancelConnect: (
-    pendingId: string,
-  ) => Promise<{ success: boolean; data?: { canceled: boolean }; error?: string }>
-  disconnect: (id: string) => Promise<{ success: boolean; error?: string }>
-  listTools: (id: string) => Promise<{ success: boolean; data?: McpTool[]; error?: string }>
-  callTool: (
-    id: string,
-    name: string,
-    args: unknown,
-    ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
-  ) => Promise<{ success: boolean; data?: unknown; error?: string }>
-}
-
-function getMcpApi(): McpApi | undefined {
-  return (window as unknown as { api?: { mcp?: McpApi } }).api?.mcp
+function getMcpApi() {
+  return window.api?.mcp
 }
 
 interface TabMcpState {

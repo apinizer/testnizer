@@ -15,48 +15,8 @@ type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 export type SseHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 export type SseBodyType = 'json' | 'text'
 
-/** Shape of payloads emitted by the main process on the `sse:event` channel. */
-interface SsePayload {
-  connectionId: string
-  type: 'open' | 'event' | 'error'
-  eventType?: string
-  data?: string
-  id?: string
-  retry?: number
-  /** Present on `error` payloads when the SSE handshake returned an HTTP status. */
-  httpStatus?: number
-  timestamp: number
-}
-
-interface SseApi {
-  connect: (options: {
-    url: string
-    headers?: Record<string, string>
-    lastEventId?: string
-    withCredentials?: boolean
-    method?: SseHttpMethod
-    body?: string
-    _workspaceId?: string
-    _projectId?: string
-    _endpointId?: string
-    _pendingId?: string
-  }) => Promise<{
-    success: boolean
-    data?: { connectionId: string }
-    error?: string
-  }>
-  cancelConnect: (
-    pendingId: string,
-  ) => Promise<{ success: boolean; data?: { canceled: boolean }; error?: string }>
-  disconnect: (
-    connectionId: string,
-  ) => Promise<{ success: boolean; data?: boolean; error?: string }>
-  onEvent: (cb: (event: SsePayload) => void) => () => void
-}
-
-function getSseApi(): SseApi | undefined {
-  const w = window as unknown as { api?: { sse?: SseApi } }
-  return w.api?.sse
+function getSseApi() {
+  return window.api?.sse
 }
 
 /** Snapshot of SSE state for per-tab caching. */

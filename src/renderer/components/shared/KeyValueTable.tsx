@@ -259,25 +259,15 @@ export default function KeyValueTable({
    */
   async function handlePickFile(rowId: string): Promise<void> {
     try {
-      const api = (
-        window as unknown as {
-          api?: {
-            dialog?: {
-              openFile: (opts?: unknown) => Promise<{
-                success: boolean
-                data?: { filePath: string; fileName: string; size?: number }
-                error?: string
-              }>
-            }
-          }
-        }
-      ).api
-      const result = await api?.dialog?.openFile({ title: t('formdata.chooseFile') })
+      const result = await window.api?.dialog?.openFile({ title: t('formdata.chooseFile') })
       if (result && result.success && result.data) {
+        // `openFile` may return one or many results; normalize to the first.
+        const picked = Array.isArray(result.data) ? result.data[0] : result.data
+        if (!picked) return
         onUpdate(rowId, {
           type: 'file',
-          filePath: result.data.filePath,
-          value: result.data.fileName,
+          filePath: picked.filePath,
+          value: picked.fileName,
         })
       }
     } catch {
