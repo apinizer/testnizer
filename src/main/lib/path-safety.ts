@@ -29,12 +29,8 @@ export function assertTmpSubpath(rawPath: string, allowedPrefixes: readonly stri
   return resolved
 }
 
-/**
- * Allowed prefixes for git-related tmp directories. `apinizer-` is kept
- * for backward compatibility with directories created before the rebrand
- * — cleanup of stale ones is part of normal operation.
- */
-export const GIT_TMP_PREFIXES = ['testnizer-', 'apinizer-'] as const
+/** Allowed prefix for git-related tmp directories. */
+export const GIT_TMP_PREFIXES = ['testnizer-'] as const
 
 const SYSTEM_DIR_PREFIXES = [
   '/etc',
@@ -50,11 +46,15 @@ const SYSTEM_DIR_PREFIXES = [
 ]
 
 /**
- * Validate a file path supplied by the renderer for an import operation.
- * The renderer is expected to pass the path returned by the native
- * file-open dialog, but we cannot trust it — a compromised renderer
- * could supply an arbitrary path. We require: absolute, JSON extension,
- * not inside a known system directory.
+ * Validate a file path supplied by the renderer for the project-export
+ * import flow (`save:importLocal`). The renderer is expected to pass the
+ * path returned by the native file-open dialog, but we cannot trust it —
+ * a compromised renderer could supply an arbitrary path.
+ *
+ * We require: absolute, .json extension, not inside a known system dir.
+ * NOTE: this is for the *project export* importer only. Other importers
+ * (OpenAPI/Postman/Insomnia/HAR/cURL) accept .yaml/.yml/.har/.proto/...
+ * — if this validator is ever reused there, widen the extension list.
  */
 export function assertImportFilePath(rawPath: string): string {
   if (typeof rawPath !== 'string' || rawPath.length === 0) {

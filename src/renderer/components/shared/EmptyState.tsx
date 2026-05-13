@@ -10,12 +10,8 @@ type EmptyStateAction = {
 interface EmptyStateProps {
   /** Lucide icon component OR an arbitrary ReactNode (already-instantiated icon). */
   icon?: LucideIcon | ReactNode
-  /**
-   * Primary message. Accepts the legacy `message` name too for backwards
-   * compatibility with the original API (used by ResponsePane).
-   */
+  /** Primary message. */
   title?: string
-  message?: string
   description?: string
   action?: EmptyStateAction
   /**
@@ -65,7 +61,6 @@ function renderIcon(icon: LucideIcon | ReactNode, iconPx: number): ReactNode {
 export default function EmptyState({
   icon,
   title,
-  message,
   description,
   action,
   variant = 'centered',
@@ -73,7 +68,7 @@ export default function EmptyState({
   className = '',
 }: EmptyStateProps): React.JSX.Element {
   const tokens = SIZE_TOKENS[size]
-  const text = title ?? message ?? ''
+  const text = title ?? ''
 
   const containerClasses =
     variant === 'centered'

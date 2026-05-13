@@ -14,11 +14,6 @@ describe('assertTmpSubpath', () => {
     expect(assertTmpSubpath(ok, GIT_TMP_PREFIXES)).toBe(path.resolve(ok))
   })
 
-  it('accepts legacy apinizer prefix for migration window', () => {
-    const ok = path.join(tmpdir(), 'apinizer-git-123', 'file.json')
-    expect(() => assertTmpSubpath(ok, GIT_TMP_PREFIXES)).not.toThrow()
-  })
-
   it('rejects paths outside tmpdir', () => {
     expect(() => assertTmpSubpath('/etc/passwd', GIT_TMP_PREFIXES)).toThrow(/outside system temp/)
     expect(() => assertTmpSubpath('/Users/somebody/file', GIT_TMP_PREFIXES)).toThrow(

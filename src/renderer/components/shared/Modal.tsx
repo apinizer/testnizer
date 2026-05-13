@@ -1,5 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { ReactNode, CSSProperties } from 'react'
+import { Z } from '../../lib/z-index'
 
 interface ModalProps {
   open: boolean
@@ -39,7 +40,7 @@ export default function Modal({
   title,
   description,
   preventClose = false,
-  zIndex = 9999,
+  zIndex = Z.MODAL,
   contentClassName,
   contentStyle,
 }: ModalProps) {

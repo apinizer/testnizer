@@ -2,7 +2,6 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
-import { existsSync, renameSync } from 'fs'
 
 let db: Database.Database | null = null
 
@@ -13,41 +12,8 @@ export function getDb(): Database.Database {
   return db
 }
 
-/**
- * Migrate the legacy `apinizer.db` filename to `testnizer.db`. WAL and SHM
- * sidecar files are renamed alongside the main DB so SQLite can pick up
- * where it left off without journal recovery surprises. No-op when either
- * the legacy file is missing or the new file already exists.
- */
-function migrateLegacyDbFile(userDataDir: string): void {
-  const legacy = join(userDataDir, 'apinizer.db')
-  const next = join(userDataDir, 'testnizer.db')
-  if (!existsSync(legacy) || existsSync(next)) return
-  try {
-    renameSync(legacy, next)
-    for (const suffix of ['-wal', '-shm']) {
-      const legacySide = legacy + suffix
-      const nextSide = next + suffix
-      if (existsSync(legacySide) && !existsSync(nextSide)) {
-        renameSync(legacySide, nextSide)
-      }
-    }
-  } catch (e) {
-    // Best-effort. If the rename fails (filesystem permission, EBUSY on
-    // Windows because another process holds the file), fall back to the
-    // legacy path so the app still starts.
-    console.warn('[db] legacy file rename failed:', (e as Error).message)
-  }
-}
-
 export function initDatabase(): void {
-  const userData = app.getPath('userData')
-  migrateLegacyDbFile(userData)
-  const dbPath = existsSync(join(userData, 'testnizer.db'))
-    ? join(userData, 'testnizer.db')
-    : existsSync(join(userData, 'apinizer.db'))
-      ? join(userData, 'apinizer.db')
-      : join(userData, 'testnizer.db')
+  const dbPath = join(app.getPath('userData'), 'testnizer.db')
   db = new Database(dbPath)
 
   db.pragma('journal_mode = WAL')

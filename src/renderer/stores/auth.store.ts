@@ -3,28 +3,6 @@ import { create } from 'zustand'
 const SESSION_TOKEN_KEY = 'testnizer_session_token'
 const GUEST_MODE_KEY = 'testnizer_guest_mode'
 
-// Migration from the old `apinizer_*` localStorage keys. Runs once on
-// module load: existing sessions and guest-mode flags are copied to the
-// new names and the old entries are removed. Safe to leave in place —
-// after migration there's nothing for it to do.
-;(function migrateLegacyAuthKeys() {
-  try {
-    const legacySession = localStorage.getItem('apinizer_session_token')
-    if (legacySession && !localStorage.getItem(SESSION_TOKEN_KEY)) {
-      localStorage.setItem(SESSION_TOKEN_KEY, legacySession)
-    }
-    if (legacySession !== null) localStorage.removeItem('apinizer_session_token')
-
-    const legacyGuest = localStorage.getItem('apinizer_guest_mode')
-    if (legacyGuest && !localStorage.getItem(GUEST_MODE_KEY)) {
-      localStorage.setItem(GUEST_MODE_KEY, legacyGuest)
-    }
-    if (legacyGuest !== null) localStorage.removeItem('apinizer_guest_mode')
-  } catch {
-    // localStorage unavailable — no migration needed
-  }
-})()
-
 interface User {
   id: string
   email: string

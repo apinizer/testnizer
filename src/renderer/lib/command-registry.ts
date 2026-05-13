@@ -36,6 +36,7 @@ import { useRequestStore } from '../stores/request.store'
 import { useTabsStore } from '../stores/tabs.store'
 import { useUIStore } from '../stores/ui.store'
 import { useEnvironmentStore } from '../stores/environment.store'
+import { isMac } from './platform'
 import type { ToolProtocol } from '../types'
 
 export type CommandGroup = 'navigation' | 'request' | 'tools' | 'settings' | 'project' | 'help'
@@ -54,11 +55,6 @@ export interface CommandAction {
 // Single tab id generator used by every "new tab" action.
 function makeTabId(): string {
   return 'tab-' + Math.random().toString(36).substring(2, 10)
-}
-
-function isMac(): boolean {
-  if (typeof navigator === 'undefined') return false
-  return navigator.platform.toUpperCase().indexOf('MAC') >= 0
 }
 
 /** Pretty shortcut hint shown in the palette (e.g. "Cmd+K" on macOS, "Ctrl+K" elsewhere). */

@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import { useRequestStore } from '../stores/request.store'
 import { useTabsStore } from '../stores/tabs.store'
 import { useUIStore } from '../stores/ui.store'
+import { isMac } from './platform'
 
 interface ShortcutHandler {
   key: string
@@ -12,10 +13,6 @@ interface ShortcutHandler {
   shift?: boolean
   action: () => void
   description: string
-}
-
-function isMac(): boolean {
-  return navigator.platform.toUpperCase().indexOf('MAC') >= 0
 }
 
 function isModKey(e: KeyboardEvent): boolean {

@@ -1,6 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, nativeImage } from 'electron'
 import { join } from 'path'
-import { existsSync, cpSync, writeFileSync } from 'node:fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase, closeDatabase } from './db/database'
 import { registerAllHandlers } from './ipc'
@@ -9,52 +8,6 @@ import { initLogging } from './diagnostics'
 import { maybeInitTelemetry } from './telemetry'
 import { disconnectAll as wsDisconnectAll } from './protocols/websocket.engine'
 import { mcpDisconnectAll } from './protocols/mcp.engine'
-
-/**
- * Migrate userData from the legacy "Apinizer" directory to the new "Testnizer"
- * one. Runs once before app.whenReady(); writes a marker file so subsequent
- * launches skip this work.
- *
- * Triggered when:
- *   - Old `Apinizer` userData exists (user upgraded from the rebrand)
- *   - New `Testnizer` userData does not exist (fresh install — first launch)
- *   - Migration marker not yet written
- *
- * The migration is non-destructive: the old folder is left in place so the
- * user can roll back manually.
- */
-function migrateLegacyUserData(): void {
-  // Set app.name first so app.getPath('userData') resolves to "Testnizer".
-  app.name = 'Testnizer'
-
-  const newDir = app.getPath('userData')
-  const baseDir = join(newDir, '..')
-  const oldDir = join(baseDir, 'Apinizer')
-  const markerFile = join(newDir, '.migration-from-apinizer')
-
-  if (!existsSync(oldDir)) return
-  if (existsSync(markerFile)) return
-  if (existsSync(newDir)) {
-    // New userData already exists — only migrate if it's empty (e.g. tests
-    // create the dir but don't populate it). Skip otherwise to avoid
-    // overwriting user data.
-    try {
-      const fs = require('node:fs') as typeof import('node:fs')
-      const entries = fs.readdirSync(newDir).filter((e) => !e.startsWith('.'))
-      if (entries.length > 0) return
-    } catch {
-      return
-    }
-  }
-
-  try {
-    cpSync(oldDir, newDir, { recursive: true, errorOnExist: false })
-    writeFileSync(markerFile, new Date().toISOString())
-    console.log(`[migration] Copied userData from ${oldDir} to ${newDir}`)
-  } catch (err) {
-    console.warn(`[migration] Failed: ${(err as Error).message}`)
-  }
-}
 
 function getIconPath(): string {
   if (is.dev) {
@@ -156,8 +109,8 @@ ipcMain.handle('app:openExternal', async (_event, url: unknown) => {
   }
 })
 
-// Set app name early so macOS dock/menu shows correct name + migrate legacy data
-migrateLegacyUserData()
+// Set app name early so macOS dock/menu shows correct name + userData path resolves.
+app.name = 'Testnizer'
 initLogging()
 
 app.whenReady().then(() => {
