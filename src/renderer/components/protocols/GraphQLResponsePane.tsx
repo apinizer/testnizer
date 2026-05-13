@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { Send } from 'lucide-react'
 import { useGraphQLStore } from '../../stores/graphql.store'
 import { useResponseStore } from '../../stores/response.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import GraphQLSchemaExplorer from './GraphQLSchemaExplorer'
+import EmptyState from '../shared/EmptyState'
 import { extractGraphQLErrors } from '../../lib/graphql-errors'
 
 type TabId = 'response' | 'schema'
@@ -72,11 +74,7 @@ function ResponseTab({
   }
 
   if (!response) {
-    return (
-      <div className="flex h-full items-center justify-center text-[var(--hint)]">
-        Run a query to see the response
-      </div>
-    )
+    return <EmptyState icon={Send} title="Run a query to see the response" size="md" />
   }
 
   if (response.error && !response.body) {

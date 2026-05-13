@@ -21,6 +21,7 @@ import {
   type AiProviderInfo,
 } from '../../stores/ai-chat.store'
 import { useTranslation } from '../../lib/i18n'
+import EmptyState from '../shared/EmptyState'
 
 function ProviderAvatar({
   info,
@@ -439,11 +440,12 @@ export default function AiChatEditor(): ReactElement {
       {/* Conversation */}
       <div ref={conversationRef} className="flex-1 overflow-y-auto p-3.5">
         {messages.length === 0 && !errorMessage ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-[var(--muted)]">
-            <Bot size={36} strokeWidth={1.2} />
-            <div style={{ fontSize: 13 }}>{t('aiChat.emptyTitle')}</div>
-            <div style={{ fontSize: 12 }}>{t('aiChat.emptyHint')}</div>
-          </div>
+          <EmptyState
+            icon={Bot}
+            title={t('aiChat.emptyTitle')}
+            description={t('aiChat.emptyHint')}
+            size="lg"
+          />
         ) : (
           <div className="flex flex-col gap-3">
             {messages.map((m) => {

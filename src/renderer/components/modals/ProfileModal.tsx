@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react'
-import { X, Lock, LogOut, Check, AlertCircle, Eye, EyeOff, ShieldOff } from 'lucide-react'
+import { useState, useCallback, useId } from 'react'
+import { X, Lock, LogOut, Eye, EyeOff, ShieldOff } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
+import { toast } from '../../lib/toast'
 import Modal from '../shared/Modal'
 
 export default function ProfileModal() {
@@ -49,11 +50,12 @@ export default function ProfileModal() {
           </div>
           <button
             type="button"
+            aria-label={t('a11y.closeDialog')}
             onClick={() => setOpen(false)}
             className="flex cursor-pointer items-center justify-center rounded-md border-none bg-transparent p-1"
             style={{ color: 'var(--muted)' }}
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 
@@ -62,7 +64,7 @@ export default function ProfileModal() {
           className="flex shrink-0 items-center gap-1.5 border-b px-5 py-2.5"
           style={{ borderColor: 'var(--border)' }}
         >
-          <Lock size={14} style={{ color: 'var(--accent-text)' }} />
+          <Lock size={14} aria-hidden="true" style={{ color: 'var(--accent-text)' }} />
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-text)' }}>
             {t('profile.changePassword')}
           </span>
@@ -96,7 +98,7 @@ export default function ProfileModal() {
               fontSize: 13,
             }}
           >
-            <LogOut size={13} />
+            <LogOut size={13} aria-hidden="true" />
             {t('profile.signOut')}
           </button>
         </div>
@@ -117,8 +119,9 @@ function PasswordTab({
   const [newPw, setNewPw] = useState('')
   const [confirmPw, setConfirmPw] = useState('')
   const [showPw, setShowPw] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [error, setError] = useState('')
+  const currentPwId = useId()
+  const newPwId = useId()
+  const confirmPwId = useId()
 
   const passwordsMatch = newPw === confirmPw
   const hasValidNewPw = newPw.length >= 8 && /[a-zA-Z]/.test(newPw) && /[0-9]/.test(newPw)
@@ -127,47 +130,24 @@ function PasswordTab({
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault()
-      setError('')
       const result = await changePassword(currentPw, newPw)
       if (result.success) {
-        setSaved(true)
+        toast.success(t('profile.passwordChanged'))
         setCurrentPw('')
         setNewPw('')
         setConfirmPw('')
-        setTimeout(() => setSaved(false), 3000)
       } else {
-        setError(result.error || 'Password change failed')
+        toast.error(result.error || t('toast.passwordChangeFailed'))
       }
     },
-    [currentPw, newPw, changePassword],
+    [currentPw, newPw, changePassword, t],
   )
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      {error && (
-        <div
-          className="flex items-center gap-2 rounded-lg px-3 py-2"
-          style={{ background: 'rgba(185,28,28,0.08)' }}
-        >
-          <AlertCircle size={14} style={{ color: 'var(--red)' }} />
-          <span style={{ fontSize: 13, color: 'var(--red)' }}>{error}</span>
-        </div>
-      )}
-
-      {saved && (
-        <div
-          className="flex items-center gap-2 rounded-lg px-3 py-2"
-          style={{ background: 'var(--green-bg)' }}
-        >
-          <Check size={14} style={{ color: 'var(--green)' }} />
-          <span style={{ fontSize: 13, color: 'var(--green)' }}>
-            {t('profile.passwordChanged')}
-          </span>
-        </div>
-      )}
-
       <div>
         <label
+          htmlFor={currentPwId}
           style={{
             fontSize: 14,
             fontWeight: 500,
@@ -180,6 +160,7 @@ function PasswordTab({
         </label>
         <div className="relative">
           <input
+            id={currentPwId}
             type={showPw ? 'text' : 'password'}
             value={currentPw}
             onChange={(e) => setCurrentPw(e.target.value)}
@@ -199,12 +180,17 @@ function PasswordTab({
           />
           <button
             type="button"
-            tabIndex={-1}
+            aria-label={showPw ? t('a11y.hidePassword') : t('a11y.showPassword')}
+            aria-pressed={showPw}
             onClick={() => setShowPw(!showPw)}
             className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer border-none bg-transparent p-0"
             style={{ color: 'var(--hint)' }}
           >
-            {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+            {showPw ? (
+              <EyeOff size={15} aria-hidden="true" />
+            ) : (
+              <Eye size={15} aria-hidden="true" />
+            )}
           </button>
         </div>
       </div>
@@ -212,6 +198,7 @@ function PasswordTab({
       <div className="flex gap-3">
         <div className="flex-1">
           <label
+            htmlFor={newPwId}
             style={{
               fontSize: 14,
               fontWeight: 500,
@@ -223,6 +210,7 @@ function PasswordTab({
             {t('profile.newPassword')}
           </label>
           <input
+            id={newPwId}
             type={showPw ? 'text' : 'password'}
             value={newPw}
             onChange={(e) => setNewPw(e.target.value)}
@@ -244,6 +232,7 @@ function PasswordTab({
         </div>
         <div className="flex-1">
           <label
+            htmlFor={confirmPwId}
             style={{
               fontSize: 14,
               fontWeight: 500,
@@ -255,6 +244,7 @@ function PasswordTab({
             {t('profile.confirmPassword')}
           </label>
           <input
+            id={confirmPwId}
             type={showPw ? 'text' : 'password'}
             value={confirmPw}
             onChange={(e) => setConfirmPw(e.target.value)}
@@ -310,23 +300,22 @@ function DisablePasswordSection({
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
 
   const handleDisable = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault()
-      setError('')
       if (!password) return
       setLoading(true)
       const result = await disablePassword(password)
       setLoading(false)
       if (result.success) {
+        toast.success(t('toast.passwordDisabled'))
         onDisabled()
       } else {
-        setError(result.error || 'Failed to disable password')
+        toast.error(result.error || 'Failed to disable password')
       }
     },
-    [password, disablePassword, onDisabled],
+    [password, disablePassword, onDisabled, t],
   )
 
   return (
@@ -368,15 +357,6 @@ function DisablePasswordSection({
           style={{ borderColor: 'rgba(185,28,28,0.2)' }}
         >
           <div style={{ fontSize: 13, color: 'var(--text)' }}>{t('profile.confirmDisable')}</div>
-          {error && (
-            <div
-              className="flex items-center gap-2 rounded-md px-3 py-2"
-              style={{ background: 'rgba(185,28,28,0.08)' }}
-            >
-              <AlertCircle size={14} style={{ color: 'var(--red)' }} />
-              <span style={{ fontSize: 13, color: 'var(--red)' }}>{error}</span>
-            </div>
-          )}
           <div className="relative">
             <input
               type={showPw ? 'text' : 'password'}
@@ -394,12 +374,17 @@ function DisablePasswordSection({
             />
             <button
               type="button"
-              tabIndex={-1}
+              aria-label={showPw ? t('a11y.hidePassword') : t('a11y.showPassword')}
+              aria-pressed={showPw}
               onClick={() => setShowPw(!showPw)}
               className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer border-none bg-transparent p-0"
               style={{ color: 'var(--hint)' }}
             >
-              {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+              {showPw ? (
+                <EyeOff size={14} aria-hidden="true" />
+              ) : (
+                <Eye size={14} aria-hidden="true" />
+              )}
             </button>
           </div>
           <div className="flex justify-end gap-2">
@@ -408,7 +393,6 @@ function DisablePasswordSection({
               onClick={() => {
                 setExpanded(false)
                 setPassword('')
-                setError('')
               }}
               disabled={loading}
               className="cursor-pointer rounded-md border px-3 py-1.5 font-medium transition-colors disabled:opacity-50"

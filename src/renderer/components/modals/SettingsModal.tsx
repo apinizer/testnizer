@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId } from 'react'
 import { X } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useUpdaterStore } from '../../stores/updater.store'
@@ -35,6 +35,14 @@ export default function SettingsModal() {
   const setShowAboutModal = useUIStore((s) => s.setShowAboutModal)
   const checkForUpdates = useUpdaterStore((s) => s.check)
   const { t } = useTranslation()
+  const langId = useId()
+  const fontId = useId()
+  const timeoutId = useId()
+  const sslId = useId()
+  const proxyModeId = useId()
+  const proxyHostId = useId()
+  const proxyPortId = useId()
+  const autoUpdateId = useId()
 
   const [settings, setSettings] = useState<SettingsState>({
     theme: currentTheme,
@@ -128,11 +136,12 @@ export default function SettingsModal() {
           </span>
           <button
             type="button"
+            aria-label={t('a11y.closeDialog')}
             onClick={() => setShow(false)}
             className="cursor-pointer text-[var(--hint)] hover:text-[var(--text)]"
             style={{ background: 'transparent', border: 'none' }}
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 
@@ -163,10 +172,11 @@ export default function SettingsModal() {
 
           {/* Language */}
           <div>
-            <label className="mb-1.5 block font-medium text-[var(--muted)]">
+            <label htmlFor={langId} className="mb-1.5 block font-medium text-[var(--muted)]">
               {t('settings.language')}
             </label>
             <select
+              id={langId}
               value={settings.language}
               onChange={(e) => update({ language: e.target.value as Language })}
               className="rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none"
@@ -178,10 +188,11 @@ export default function SettingsModal() {
 
           {/* Font size */}
           <div>
-            <label className="mb-1.5 block font-medium text-[var(--muted)]">
+            <label htmlFor={fontId} className="mb-1.5 block font-medium text-[var(--muted)]">
               {t('settings.fontSize')}
             </label>
             <input
+              id={fontId}
               type="number"
               value={settings.fontSize}
               onChange={(e) => update({ fontSize: Number(e.target.value) })}
@@ -194,10 +205,11 @@ export default function SettingsModal() {
 
           {/* Timeout */}
           <div>
-            <label className="mb-1.5 block font-medium text-[var(--muted)]">
+            <label htmlFor={timeoutId} className="mb-1.5 block font-medium text-[var(--muted)]">
               {t('settings.timeout')}
             </label>
             <input
+              id={timeoutId}
               type="number"
               value={settings.timeout}
               onChange={(e) => update({ timeout: Number(e.target.value) })}
@@ -209,20 +221,24 @@ export default function SettingsModal() {
           {/* SSL Verification */}
           <div className="flex items-center gap-2">
             <input
+              id={sslId}
               type="checkbox"
               checked={settings.sslVerification}
               onChange={(e) => update({ sslVerification: e.target.checked })}
               className="accent-[var(--accent)]"
             />
-            <label className="text-[var(--text)]">{t('settings.sslVerification')}</label>
+            <label htmlFor={sslId} className="text-[var(--text)]">
+              {t('settings.sslVerification')}
+            </label>
           </div>
 
           {/* Proxy */}
           <div>
-            <label className="mb-1.5 block font-medium text-[var(--muted)]">
+            <label htmlFor={proxyModeId} className="mb-1.5 block font-medium text-[var(--muted)]">
               {t('settings.proxy')}
             </label>
             <select
+              id={proxyModeId}
               value={settings.proxyMode}
               onChange={(e) =>
                 update({ proxyMode: e.target.value as 'system' | 'none' | 'custom' })
@@ -237,12 +253,16 @@ export default function SettingsModal() {
             {settings.proxyMode === 'custom' && (
               <div className="mt-2 flex gap-2">
                 <input
+                  id={proxyHostId}
+                  aria-label={t('settings.host')}
                   value={settings.proxyHost}
                   onChange={(e) => update({ proxyHost: e.target.value })}
                   placeholder={t('settings.host')}
                   className="flex-1 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none"
                 />
                 <input
+                  id={proxyPortId}
+                  aria-label={t('settings.port')}
                   value={settings.proxyPort}
                   onChange={(e) => update({ proxyPort: e.target.value })}
                   placeholder={t('settings.port')}
@@ -256,12 +276,15 @@ export default function SettingsModal() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <input
+                id={autoUpdateId}
                 type="checkbox"
                 checked={settings.autoUpdate}
                 onChange={(e) => update({ autoUpdate: e.target.checked })}
                 className="accent-[var(--accent)]"
               />
-              <label className="text-[var(--text)]">{t('settings.autoUpdate')}</label>
+              <label htmlFor={autoUpdateId} className="text-[var(--text)]">
+                {t('settings.autoUpdate')}
+              </label>
             </div>
             <button
               type="button"

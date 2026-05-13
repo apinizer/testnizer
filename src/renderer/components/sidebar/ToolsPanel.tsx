@@ -61,6 +61,7 @@ export default function ToolsPanel() {
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
           <input
+            aria-label={t('leftPanel.search')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t('leftPanel.search')}
@@ -99,6 +100,7 @@ export default function ToolsPanel() {
             }}
           >
             <div
+              aria-hidden="true"
               className="flex shrink-0 items-center justify-center rounded-md"
               style={{ width: 28, height: 28, background: tool.bg }}
             >

@@ -68,11 +68,12 @@ export default function CodeGeneratorModal() {
             </button>
             <button
               type="button"
+              aria-label="Close"
               onClick={() => setShow(false)}
               className="cursor-pointer p-1 text-[var(--hint)] hover:text-[var(--text)]"
               style={{ background: 'transparent', border: 'none' }}
             >
-              <X size={18} />
+              <X size={18} aria-hidden="true" />
             </button>
           </div>
         </div>

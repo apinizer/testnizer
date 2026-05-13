@@ -106,7 +106,7 @@ export default function AboutModal() {
             className="flex cursor-pointer items-center justify-center rounded-md border-none bg-transparent p-1"
             style={{ color: 'var(--muted)' }}
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 

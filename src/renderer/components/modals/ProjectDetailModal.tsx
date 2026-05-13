@@ -376,11 +376,12 @@ export default function ProjectDetailModal() {
             </span>
             <button
               type="button"
+              aria-label="Close"
               onClick={handleClose}
               className="cursor-pointer rounded p-1"
               style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
             >
-              <X size={14} />
+              <X size={14} aria-hidden="true" />
             </button>
           </div>
         </div>

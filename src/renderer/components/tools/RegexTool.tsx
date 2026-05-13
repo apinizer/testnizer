@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import ToolShell from './ToolShell'
 import { REGEX_FLAGS, REGEX_PRESETS, runRegex, type RegexFlag } from '../../lib/tools/regex'
 import { useTranslation } from '../../lib/i18n'
@@ -26,6 +26,9 @@ export default function RegexTool() {
   const [input, setInput] = useState(DEFAULT_INPUT)
   const [replacement, setReplacement] = useState('')
   const [showReplace, setShowReplace] = useState(false)
+  const patternId = useId()
+  const inputId = useId()
+  const replacementId = useId()
 
   const flagsString = useMemo(() => Array.from(flags).join(''), [flags])
 
@@ -84,6 +87,7 @@ export default function RegexTool() {
         <div className="flex h-full flex-col overflow-auto p-4 space-y-3">
           <div>
             <label
+              htmlFor={patternId}
               className="mb-1 block text-[11px] uppercase tracking-wide"
               style={{ color: 'var(--muted)' }}
             >
@@ -93,10 +97,12 @@ export default function RegexTool() {
               <span
                 className="flex items-center px-2 font-mono text-sm"
                 style={{ color: 'var(--muted)' }}
+                aria-hidden="true"
               >
                 /
               </span>
               <input
+                id={patternId}
                 type="text"
                 value={pattern}
                 onChange={(e) => setPattern(e.target.value)}
@@ -153,6 +159,7 @@ export default function RegexTool() {
 
           <div>
             <label
+              htmlFor={inputId}
               className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-wide"
               style={{ color: 'var(--muted)' }}
             >
@@ -162,6 +169,7 @@ export default function RegexTool() {
               </span>
             </label>
             <textarea
+              id={inputId}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               rows={10}
@@ -188,6 +196,8 @@ export default function RegexTool() {
             </label>
             {showReplace && (
               <input
+                id={replacementId}
+                aria-label={t('tools.regex.replaceMode')}
                 type="text"
                 value={replacement}
                 onChange={(e) => setReplacement(e.target.value)}

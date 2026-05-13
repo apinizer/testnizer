@@ -1,4 +1,6 @@
+import { Radio } from 'lucide-react'
 import { useSocketIOStore } from '../../stores/socketio.store'
+import EmptyState from '../shared/EmptyState'
 import { T } from '../../styles/tokens'
 
 function formatTime(ts: number): string {
@@ -253,7 +255,7 @@ export default function SocketIOEditor() {
           {/* Active subscriptions */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
             {store.subscriptions.length === 0 ? (
-              <div style={{ fontSize: 12, color: T.ghost }}>No subscriptions yet</div>
+              <EmptyState icon={Radio} title="No subscriptions yet" variant="compact" size="sm" />
             ) : (
               store.subscriptions.map((sub) => (
                 <div

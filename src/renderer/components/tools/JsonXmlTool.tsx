@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { jsonToXml, xmlToJson } from '../../lib/tools/json-xml'
@@ -47,6 +47,8 @@ export default function JsonXmlTool() {
   const [rootName, setRootName] = useState('root')
   const [output, setOutput] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const rootNameId = useId()
+  const arrayPathsId = useId()
 
   function handleConvert() {
     setError(null)
@@ -135,10 +137,11 @@ export default function JsonXmlTool() {
             {direction === 'json2xml' ? (
               <>
                 <div className="flex items-center gap-2">
-                  <label style={{ color: 'var(--muted)', minWidth: 90 }}>
+                  <label htmlFor={rootNameId} style={{ color: 'var(--muted)', minWidth: 90 }}>
                     {t('tools.jsonXml.rootName')}
                   </label>
                   <input
+                    id={rootNameId}
                     type="text"
                     value={rootName}
                     onChange={(e) => setRootName(e.target.value)}
@@ -185,6 +188,7 @@ export default function JsonXmlTool() {
                 />
                 <div>
                   <label
+                    htmlFor={arrayPathsId}
                     className="mb-1 block"
                     style={{ color: 'var(--muted)' }}
                     title={t('tools.jsonXml.arrayPathsHelp')}
@@ -192,6 +196,7 @@ export default function JsonXmlTool() {
                     {t('tools.jsonXml.arrayPaths')}
                   </label>
                   <input
+                    id={arrayPathsId}
                     type="text"
                     value={arrayPaths}
                     onChange={(e) => setArrayPaths(e.target.value)}

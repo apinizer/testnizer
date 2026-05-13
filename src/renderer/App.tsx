@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Toaster } from 'sonner'
 import AppShell from './components/layout/AppShell'
 import EulaConsentGate from './components/eula/EulaConsentGate'
 import { useUIStore } from './stores/ui.store'
@@ -19,6 +20,14 @@ function App(): React.JSX.Element {
   return (
     <EulaConsentGate>
       <AppShell />
+      {/* Toaster mounted at top level so toasts can layer above any modal.
+          Modals use zIndex up to ~9999; we set 10001 to stay above. */}
+      <Toaster
+        richColors
+        position="bottom-right"
+        closeButton
+        toastOptions={{ style: { zIndex: 10001 } }}
+      />
     </EulaConsentGate>
   )
 }

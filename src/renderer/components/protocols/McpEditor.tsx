@@ -1,4 +1,6 @@
+import { Inbox } from 'lucide-react'
 import { useMcpStore, type McpTransport } from '../../stores/mcp.store'
+import EmptyState from '../shared/EmptyState'
 import { T } from '../../styles/tokens'
 
 const TRANSPORT_OPTIONS: { value: McpTransport; label: string }[] = [
@@ -291,7 +293,7 @@ export default function McpEditor() {
                     {JSON.stringify(store.result, null, 2)}
                   </pre>
                 ) : (
-                  <div style={{ color: T.ghost, fontSize: 12 }}>No result yet</div>
+                  <EmptyState icon={Inbox} title="No result yet" variant="compact" size="sm" />
                 )}
               </div>
             </>

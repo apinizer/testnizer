@@ -44,6 +44,7 @@ export default function JsonSchemaTool() {
     <>
       <input
         type="text"
+        aria-label={t('tools.jsonSchema.titlePlaceholder')}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder={t('tools.jsonSchema.titlePlaceholder')}

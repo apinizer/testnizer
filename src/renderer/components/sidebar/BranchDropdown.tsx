@@ -12,14 +12,16 @@ import {
 import { useBranchStore } from '../../stores/branch.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
+import { useTranslation } from '../../lib/i18n'
+import { toast } from '../../lib/toast'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 
 export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [merging, setMerging] = useState(false)
   const [newName, setNewName] = useState('')
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [deleteBranchTarget, setDeleteBranchTarget] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -71,26 +73,15 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     }
   }, [creating])
 
-  // Toast auto-hide
-  useEffect(() => {
-    if (toast) {
-      const t = setTimeout(() => setToast(null), 3000)
-      return () => clearTimeout(t)
-    }
-  }, [toast])
-
-  function showToast(type: 'success' | 'error', msg: string) {
-    setToast({ type, msg })
-  }
-
   async function handleCreate() {
     if (!newName.trim() || !activeProjectId) return
     setBusy(true)
-    const ok = await createBranch(activeProjectId, newName.trim(), currentBranch)
+    const name = newName.trim()
+    const ok = await createBranch(activeProjectId, name, currentBranch)
     if (ok) {
-      showToast('success', `Branch "${newName.trim()}" created`)
+      toast.success(t('toast.branchCreated').replace('{name}', name))
     } else {
-      showToast('error', 'Branch could not be created')
+      toast.error(t('toast.branchCreateFailed'))
     }
     setNewName('')
     setCreating(false)
@@ -103,12 +94,12 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     setGitLoading(`Switching to ${branchName}...`)
     const ok = await switchBranch(activeProjectId, branchName)
     if (ok) {
-      showToast('success', `Switched to "${branchName}"`)
+      toast.success(t('toast.branchSwitched').replace('{name}', branchName))
       // Full refresh after branch switch
       await refreshTree()
       await setActiveProject(activeProjectId)
     } else {
-      showToast('error', 'Could not switch branch')
+      toast.error(t('toast.branchSwitchFailed'))
     }
     setGitLoading(null)
     setBusy(false)
@@ -121,13 +112,17 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     setGitLoading(`Merging ${sourceBranch}...`)
     const result = await mergeBranch(activeProjectId, sourceBranch)
     if (result.success) {
-      showToast('success', `Merged "${sourceBranch}" into "${currentBranch}"`)
+      toast.success(
+        t('toast.branchMerged')
+          .replace('{source}', sourceBranch)
+          .replace('{target}', currentBranch),
+      )
       await refreshTree()
       await setActiveProject(activeProjectId)
     } else if ('error' in result) {
       // Real failure — surface to user. Conflicts surface via the modal
       // (driven off branch.store.pendingConflict), not a toast.
-      showToast('error', result.error || 'Merge failed')
+      toast.error(result.error || t('toast.branchMergeFailed'))
     }
     setGitLoading(null)
     setMerging(false)
@@ -140,9 +135,9 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     setGitLoading('Pushing to remote...')
     const result = await pushBranch(activeProjectId)
     if (result.success) {
-      showToast('success', 'Pushed successfully')
+      toast.success(t('toast.pushed'))
     } else {
-      showToast('error', result.error || 'Push failed')
+      toast.error(result.error || t('toast.pushFailed'))
     }
     setGitLoading(null)
     setBusy(false)
@@ -154,12 +149,12 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     setGitLoading('Pulling from remote...')
     const result = await pullBranch(activeProjectId)
     if (result.success) {
-      showToast('success', 'Pulled successfully')
+      toast.success(t('toast.pulled'))
       // Full app refresh
       await refreshTree()
       await setActiveProject(activeProjectId)
     } else if ('error' in result) {
-      showToast('error', result.error || 'Pull failed')
+      toast.error(result.error || t('toast.pullFailed'))
     }
     setGitLoading(null)
     setBusy(false)
@@ -171,13 +166,14 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
 
   async function confirmDeleteBranch() {
     if (!activeProjectId || !deleteBranchTarget) return
+    const target = deleteBranchTarget
     setDeleteBranchTarget(null)
     setBusy(true)
-    const result = await deleteBranch(activeProjectId, deleteBranchTarget)
+    const result = await deleteBranch(activeProjectId, target)
     if (result.success) {
-      showToast('success', `Branch "${deleteBranchTarget}" deleted`)
+      toast.success(t('toast.branchDeleted').replace('{name}', target))
     } else {
-      showToast('error', result.error || 'Delete failed')
+      toast.error(result.error || t('toast.branchDeleteFailed'))
     }
     setBusy(false)
   }
@@ -215,7 +211,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
           if (!open && activeProjectId) fetchBranches(activeProjectId)
         }}
       >
-        <GitBranch size={pill ? 11 : 9} />
+        <GitBranch size={pill ? 11 : 9} aria-hidden="true" />
         <span className={pill ? 'max-w-[120px] truncate' : 'max-w-[80px] truncate'}>
           {currentBranch || 'main'}
         </span>
@@ -232,23 +228,6 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
           </svg>
         )}
       </button>
-
-      {/* Toast notification */}
-      {toast && (
-        <div
-          className="fixed right-4 top-4 z-[9999] rounded-lg px-4 py-2"
-          style={{
-            fontSize: 13,
-            fontWeight: 500,
-            background: toast.type === 'success' ? 'var(--green-bg)' : '#fee2e2',
-            color: toast.type === 'success' ? 'var(--green)' : 'var(--red)',
-            border: `1px solid ${toast.type === 'success' ? 'var(--green-border)' : '#fecaca'}`,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-          }}
-        >
-          {toast.msg}
-        </div>
-      )}
 
       {/* Dropdown */}
       {open && (
@@ -287,7 +266,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                   ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                 }}
               >
-                <ArrowUpCircle size={13} />
+                <ArrowUpCircle size={13} aria-hidden="true" />
                 <span>Push</span>
               </button>
               <button
@@ -309,7 +288,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                   ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                 }}
               >
-                <ArrowDownCircle size={13} />
+                <ArrowDownCircle size={13} aria-hidden="true" />
                 <span>Pull</span>
               </button>
               <button
@@ -331,7 +310,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                   ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                 }}
               >
-                <GitMerge size={13} />
+                <GitMerge size={13} aria-hidden="true" />
                 <span>Merge</span>
               </button>
             </div>
@@ -366,7 +345,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                     ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                   }}
                 >
-                  <GitBranch size={12} />
+                  <GitBranch size={12} aria-hidden="true" />
                   {b.name}
                   {b.isRemote && <Cloud size={10} style={{ color: 'var(--hint)' }} />}
                 </button>
@@ -416,15 +395,21 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                   }
                 }}
               >
-                <GitBranch size={12} className="shrink-0" />
+                <GitBranch size={12} className="shrink-0" aria-hidden="true" />
                 <span className="flex-1 truncate">{branch.name}</span>
                 {branch.isRemote && (
-                  <Cloud size={10} className="shrink-0" style={{ color: 'var(--hint)' }} />
+                  <Cloud
+                    size={10}
+                    className="shrink-0"
+                    aria-hidden="true"
+                    style={{ color: 'var(--hint)' }}
+                  />
                 )}
-                {branch.name === currentBranch && <Check size={12} />}
+                {branch.name === currentBranch && <Check size={12} aria-hidden="true" />}
                 {branch.name !== currentBranch && branch.name !== 'main' && (
                   <button
                     type="button"
+                    aria-label={`Delete branch ${branch.name}`}
                     className="hidden shrink-0 rounded p-0.5 group-hover:block"
                     style={{ color: 'var(--muted)', background: 'transparent', border: 'none' }}
                     onClick={(e) => {
@@ -438,7 +423,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                       ;(e.currentTarget as HTMLElement).style.color = 'var(--muted)'
                     }}
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={12} aria-hidden="true" />
                   </button>
                 )}
               </div>
@@ -520,7 +505,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                 ;(e.currentTarget as HTMLElement).style.background = 'transparent'
               }}
             >
-              <Plus size={12} />
+              <Plus size={12} aria-hidden="true" />
               New Branch
             </button>
           )}

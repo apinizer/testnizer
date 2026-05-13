@@ -8,6 +8,7 @@ import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import MethodBadge from '../shared/MethodBadge'
 import Modal from '../shared/Modal'
+import EmptyState from '../shared/EmptyState'
 import type {
   HistoryEntry,
   KeyValuePair,
@@ -154,11 +155,12 @@ export default function HistoryPanel() {
           </button>
           <button
             type="button"
+            aria-label="Close"
             onClick={() => setShow(false)}
             className="cursor-pointer"
             style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
           >
-            <X size={16} />
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
 
@@ -191,9 +193,12 @@ export default function HistoryPanel() {
             style={{ borderRight: '1px solid var(--border)' }}
           >
             {groups.length === 0 && (
-              <div className="p-8 text-center" style={{ color: 'var(--hint)' }}>
-                No history yet. Send a request to build up history.
-              </div>
+              <EmptyState
+                icon={Clock}
+                title="No history yet."
+                description="Send a request to build up history."
+                size="md"
+              />
             )}
 
             {groups.map(({ label, items }) => (

@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
-import { ArrowLeft, BarChart2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ArrowLeft, BarChart2, ChevronLeft, ChevronRight, Inbox } from 'lucide-react'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
+import EmptyState from '../shared/EmptyState'
 
 interface RunHistoryRow {
   id: string
@@ -266,11 +267,16 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
             </div>
           </div>
         ) : runs.length === 0 ? (
-          <div className="py-8 text-center text-[var(--hint)]">
-            {activeTab === 'Scheduled'
-              ? 'No scheduled runs yet. Create a scheduled task to see runs here.'
-              : 'No runs yet. Start a run to see history here.'}
-          </div>
+          <EmptyState
+            icon={Inbox}
+            title={activeTab === 'Scheduled' ? 'No scheduled runs yet' : 'No runs yet'}
+            description={
+              activeTab === 'Scheduled'
+                ? 'Create a scheduled task to see runs here.'
+                : 'Start a run to see history here.'
+            }
+            size="md"
+          />
         ) : (
           <table className="w-full" style={{ fontSize: 13 }}>
             <thead>

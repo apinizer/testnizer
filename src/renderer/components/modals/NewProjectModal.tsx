@@ -949,10 +949,18 @@ export default function NewProjectModal() {
                   </div>
                   {iconOpt === 'emoji' && (
                     <>
-                      <div className="mb-1.5 flex flex-wrap gap-1">
+                      <div
+                        role="radiogroup"
+                        aria-label="Project emoji"
+                        className="mb-1.5 flex flex-wrap gap-1"
+                      >
                         {EMOJIS.map((e) => (
-                          <div
+                          <button
                             key={e}
+                            type="button"
+                            role="radio"
+                            aria-checked={selectedEmoji === e}
+                            aria-label={`Emoji ${e}`}
                             onClick={() => {
                               setSelectedEmoji(e)
                               setCustomEmoji('')
@@ -970,10 +978,11 @@ export default function NewProjectModal() {
                               background:
                                 selectedEmoji === e ? 'var(--accent-light)' : 'var(--white)',
                               transition: 'all 0.12s',
+                              padding: 0,
                             }}
                           >
                             {e}
-                          </div>
+                          </button>
                         ))}
                       </div>
                       <input
@@ -992,10 +1001,18 @@ export default function NewProjectModal() {
                 {/* Color section */}
                 <div style={{ width: 120 }}>
                   <Label text={t('newProject.color')} />
-                  <div className="flex flex-wrap gap-1.5">
+                  <div
+                    role="radiogroup"
+                    aria-label="Project color"
+                    className="flex flex-wrap gap-1.5"
+                  >
                     {COLORS.map((col) => (
-                      <div
+                      <button
                         key={col}
+                        type="button"
+                        role="radio"
+                        aria-checked={col === selectedColor}
+                        aria-label={`Color ${col}`}
                         onClick={() => setSelectedColor(col)}
                         className="cursor-pointer"
                         style={{
@@ -1006,6 +1023,7 @@ export default function NewProjectModal() {
                           border: `2px solid ${col === selectedColor ? 'var(--text)' : 'transparent'}`,
                           transform: col === selectedColor ? 'scale(1.12)' : 'scale(1)',
                           transition: 'all 0.12s',
+                          padding: 0,
                         }}
                       />
                     ))}

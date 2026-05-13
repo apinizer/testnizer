@@ -78,7 +78,7 @@ export default function Footer() {
           fontSize: 13,
         }}
       >
-        <Building2 size={11} />
+        <Building2 size={11} aria-hidden="true" />
         {t('footer.enterprise')}
       </button>
       <span
@@ -108,7 +108,7 @@ export default function Footer() {
           fontWeight: showConsolePanel ? 600 : 400,
         }}
       >
-        <Terminal size={11} />
+        <Terminal size={11} aria-hidden="true" />
         {t('footer.console')}
         {errorCount > 0 && (
           <span
@@ -120,7 +120,7 @@ export default function Footer() {
               fontWeight: 600,
             }}
           >
-            <AlertCircle size={10} />
+            <AlertCircle size={10} aria-hidden="true" />
             {errorCount}
           </span>
         )}

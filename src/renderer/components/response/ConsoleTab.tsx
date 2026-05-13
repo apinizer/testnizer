@@ -19,6 +19,7 @@ import {
   type ConsoleLogFilter,
   type ConsoleLogEntry,
 } from '../../stores/console.store'
+import EmptyState from '../shared/EmptyState'
 
 /**
  * Postman-style Console panel.
@@ -213,7 +214,12 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
           </button>
           {filterOpen && (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setFilterOpen(false)} />
+              <div
+                role="presentation"
+                aria-hidden="true"
+                className="fixed inset-0 z-40"
+                onClick={() => setFilterOpen(false)}
+              />
               <div
                 className="absolute right-0 top-full z-50 mt-1 min-w-[140px] rounded-md py-1 shadow-lg"
                 style={{
@@ -306,11 +312,16 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
       {/* Virtualized list */}
       <div ref={scrollerRef} className="flex-1 overflow-auto" data-testid="console-list">
         {filtered.length === 0 ? (
-          <div className="p-8 text-center" style={{ color: 'var(--hint)' }}>
-            {entries.length === 0
-              ? 'No console entries yet. Send a request to see it here.'
-              : 'No entries match your filter.'}
-          </div>
+          entries.length === 0 ? (
+            <EmptyState
+              icon={Terminal}
+              title="No console entries yet"
+              description="Send a request to see it here."
+              size="sm"
+            />
+          ) : (
+            <EmptyState icon={SearchIcon} title="No entries match your filter." size="sm" />
+          )
         ) : (
           <div
             style={{

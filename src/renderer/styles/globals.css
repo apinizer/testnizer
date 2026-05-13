@@ -12,7 +12,7 @@
   --heading: #111827;
   --sub: #374151;
   --muted: #6b7280;
-  --hint: #9ca3af;
+  --hint: #6b7280;
   --accent: #2d5fa0;
   --accent-light: #e8f0fa;
   --accent-text: #24507f;
@@ -90,7 +90,7 @@
   --heading: #f5f5f7;
   --sub: #d0d0d5;
   --muted: #9a9aa3;
-  --hint: #6e6e76;
+  --hint: #9a9aa3;
   --accent: #5a8fd4;
   --accent-light: rgba(45, 95, 160, 0.22);
   --accent-text: #8bb8f0;
@@ -405,4 +405,14 @@ select:focus {
 .resize-handle[data-resize-handle-active] {
   background: var(--accent);
   width: 2px;
+}
+
+/* ── Reduced motion (a11y) ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

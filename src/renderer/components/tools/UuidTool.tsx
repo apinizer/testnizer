@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import ToolShell from './ToolShell'
 import {
   detectVersion,
@@ -31,6 +31,12 @@ export default function UuidTool() {
 
   // Validator pane state
   const [validatorInput, setValidatorInput] = useState('')
+  const namespaceId = useId()
+  const namespaceCustomId = useId()
+  const nameId = useId()
+  const countId = useId()
+  const formatId = useId()
+  const validateId = useId()
 
   function handleGenerate(): void {
     const r = generateUuids(version, {
@@ -111,12 +117,14 @@ export default function UuidTool() {
             <>
               <div>
                 <label
+                  htmlFor={namespaceId}
                   className="mb-1 block text-[11px] uppercase tracking-wide"
                   style={{ color: 'var(--muted)' }}
                 >
                   {t('tools.uuid.namespace')}
                 </label>
                 <select
+                  id={namespaceId}
                   value={namespace}
                   onChange={(e) => setNamespace(e.target.value)}
                   className="w-full rounded border px-2 py-1 text-xs font-mono"
@@ -129,6 +137,8 @@ export default function UuidTool() {
                   ))}
                 </select>
                 <input
+                  id={namespaceCustomId}
+                  aria-label="Custom namespace UUID"
                   type="text"
                   value={namespace}
                   onChange={(e) => setNamespace(e.target.value)}
@@ -139,12 +149,14 @@ export default function UuidTool() {
               </div>
               <div>
                 <label
+                  htmlFor={nameId}
                   className="mb-1 block text-[11px] uppercase tracking-wide"
                   style={{ color: 'var(--muted)' }}
                 >
                   {t('tools.uuid.name')}
                 </label>
                 <input
+                  id={nameId}
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -159,12 +171,14 @@ export default function UuidTool() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label
+                htmlFor={countId}
                 className="mb-1 block text-[11px] uppercase tracking-wide"
                 style={{ color: 'var(--muted)' }}
               >
                 {t('tools.uuid.count')}
               </label>
               <input
+                id={countId}
                 type="number"
                 min={1}
                 max={1000}
@@ -176,12 +190,14 @@ export default function UuidTool() {
             </div>
             <div>
               <label
+                htmlFor={formatId}
                 className="mb-1 block text-[11px] uppercase tracking-wide"
                 style={{ color: 'var(--muted)' }}
               >
                 {t('tools.uuid.format')}
               </label>
               <select
+                id={formatId}
                 value={format}
                 onChange={(e) => setFormat(e.target.value as typeof format)}
                 className="w-full rounded border px-2 py-1 text-sm"
@@ -200,12 +216,14 @@ export default function UuidTool() {
 
           <div>
             <label
+              htmlFor={validateId}
               className="mb-1 block text-[11px] uppercase tracking-wide"
               style={{ color: 'var(--muted)' }}
             >
               {t('tools.uuid.validate')}
             </label>
             <input
+              id={validateId}
               type="text"
               value={validatorInput}
               onChange={(e) => setValidatorInput(e.target.value)}

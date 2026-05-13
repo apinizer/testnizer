@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { ArrowLeft, Clock, Trash2, ToggleLeft, ToggleRight, Play } from 'lucide-react'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
+import EmptyState from '../shared/EmptyState'
 
 interface ScheduledTask {
   id: string
@@ -122,14 +123,12 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
       {/* Table */}
       <div className="flex-1 overflow-auto">
         {tasks.length === 0 ? (
-          <div
-            className="flex flex-col items-center justify-center gap-3 py-16"
-            style={{ color: 'var(--hint)' }}
-          >
-            <Clock size={32} />
-            <div style={{ fontSize: 13 }}>No scheduled tasks yet</div>
-            <div>Use "Schedule runs" in the Runner configuration to create one.</div>
-          </div>
+          <EmptyState
+            icon={Clock}
+            title="No scheduled tasks yet"
+            description='Use "Schedule runs" in the Runner configuration to create one.'
+            size="md"
+          />
         ) : (
           <table className="w-full" style={{ borderCollapse: 'collapse' }}>
             <thead>

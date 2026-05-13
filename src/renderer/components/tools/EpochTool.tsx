@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import ToolShell from './ToolShell'
 import {
   detectUnit,
@@ -35,6 +35,9 @@ export default function EpochTool() {
   const [mi, setMi] = useState(initial.getUTCMinutes())
   const [se, setSe] = useState(initial.getUTCSeconds())
   const [zone, setZone] = useState<'gmt' | 'local'>('gmt')
+  const tsInputId = useId()
+  const tsUnitId = useId()
+  const zoneId = useId()
 
   const parsedTs = Number(tsInput)
   const tsValid = !Number.isNaN(parsedTs) && tsInput.trim() !== ''
@@ -101,11 +104,12 @@ export default function EpochTool() {
             <CopyButton text={String(now)} />
           </div>
 
-          <label className="mb-1 text-xs" style={{ color: 'var(--muted)' }}>
+          <label htmlFor={tsInputId} className="mb-1 text-xs" style={{ color: 'var(--muted)' }}>
             {t('tools.epoch.timestamp')}
           </label>
           <div className="mb-3 flex items-center gap-2">
             <input
+              id={tsInputId}
               type="text"
               value={tsInput}
               onChange={(e) => setTsInput(e.target.value)}
@@ -117,7 +121,11 @@ export default function EpochTool() {
                 color: 'var(--text)',
               }}
             />
+            <label htmlFor={tsUnitId} className="sr-only">
+              {t('tools.epoch.unitAuto')}
+            </label>
             <select
+              id={tsUnitId}
               value={tsUnit}
               onChange={(e) => setTsUnit(e.target.value as EpochUnit | 'auto')}
               className="rounded border px-2 py-1 text-xs"
@@ -185,7 +193,11 @@ export default function EpochTool() {
             <NumberField label="Hr" value={hr} setValue={setHr} width={50} />
             <NumberField label="Min" value={mi} setValue={setMi} width={50} />
             <NumberField label="Sec" value={se} setValue={setSe} width={50} />
+            <label htmlFor={zoneId} className="sr-only">
+              {t('tools.epoch.localZone')}
+            </label>
             <select
+              id={zoneId}
               value={zone}
               onChange={(e) => setZone(e.target.value as 'gmt' | 'local')}
               className="rounded border px-2 py-1"
@@ -245,12 +257,14 @@ function NumberField({
   setValue: (n: number) => void
   width: number
 }) {
+  const id = useId()
   return (
     <div className="flex flex-col">
-      <span className="text-[10px]" style={{ color: 'var(--muted)' }}>
+      <label htmlFor={id} className="text-[10px]" style={{ color: 'var(--muted)' }}>
         {label}
-      </span>
+      </label>
       <input
+        id={id}
         type="number"
         value={value}
         onChange={(e) => setValue(Number(e.target.value) || 0)}

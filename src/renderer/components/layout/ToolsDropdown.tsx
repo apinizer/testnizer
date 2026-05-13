@@ -150,7 +150,7 @@ export default function ToolsDropdown() {
           borderColor: open ? 'var(--accent)' : 'var(--border)',
         }}
       >
-        <Wrench size={14} />
+        <Wrench size={14} aria-hidden="true" />
         {t('tools.menu')}
       </button>
 
@@ -185,6 +185,7 @@ export default function ToolsDropdown() {
                 style={{ background: 'transparent', border: 'none', color: 'var(--text)' }}
               >
                 <div
+                  aria-hidden="true"
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
                   style={{ background: item.bg, color: item.color }}
                 >

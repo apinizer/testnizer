@@ -1,18 +1,8 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useId } from 'react'
 import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
-import {
-  Eye,
-  EyeOff,
-  Loader2,
-  AlertCircle,
-  Lock,
-  Shield,
-  Check,
-  X,
-  Zap,
-  KeyRound,
-} from 'lucide-react'
+import { toast } from '../../lib/toast'
+import { Eye, EyeOff, Loader2, Lock, Shield, Check, X, Zap, KeyRound } from 'lucide-react'
 import appIcon from '../../assets/icon.png'
 
 // ─── Password strength validation ────────────────────────────
@@ -121,6 +111,14 @@ export default function LoginScreen() {
     clearError()
   }, [hasPasswordSet, clearError])
 
+  // Surface auth errors as global toasts so the focused login form stays
+  // clean. We immediately clear the store so a re-render doesn't re-fire.
+  useEffect(() => {
+    if (!error) return
+    toast.error(error)
+    clearError()
+  }, [error, clearError])
+
   return (
     <div
       className="flex h-screen w-screen items-center justify-center"
@@ -228,20 +226,7 @@ export default function LoginScreen() {
 
         {/* Right - Form */}
         <div className="flex flex-1 flex-col justify-center p-8" style={{ minHeight: 520 }}>
-          {/* Error message */}
-          {error && (
-            <div
-              className="mb-5 flex items-center gap-2 rounded-lg px-3.5 py-2.5"
-              style={{
-                background: 'rgba(185,28,28,0.08)',
-                border: '1px solid rgba(185,28,28,0.15)',
-              }}
-            >
-              <AlertCircle size={15} style={{ color: 'var(--red)', flexShrink: 0 }} />
-              <span style={{ fontSize: 13, color: 'var(--red)' }}>{error}</span>
-            </div>
-          )}
-
+          {/* Auth errors surface as toasts (see effect above) */}
           {isLoading && hasPasswordSet === null ? (
             <div className="flex items-center justify-center py-10">
               <Loader2
@@ -270,6 +255,7 @@ function PasswordLoginForm() {
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [showRecover, setShowRecover] = useState(false)
+  const passwordId = useId()
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -303,6 +289,7 @@ function PasswordLoginForm() {
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
           <label
+            htmlFor={passwordId}
             style={{
               fontSize: 14,
               fontWeight: 500,
@@ -315,6 +302,7 @@ function PasswordLoginForm() {
           </label>
           <div className="relative">
             <input
+              id={passwordId}
               type={showPw ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -336,12 +324,17 @@ function PasswordLoginForm() {
             />
             <button
               type="button"
-              tabIndex={-1}
+              aria-label={showPw ? t('a11y.hidePassword') : t('a11y.showPassword')}
+              aria-pressed={showPw}
               onClick={() => setShowPw(!showPw)}
               className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer border-none bg-transparent p-0"
               style={{ color: 'var(--hint)' }}
             >
-              {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+              {showPw ? (
+                <EyeOff size={15} aria-hidden="true" />
+              ) : (
+                <Eye size={15} aria-hidden="true" />
+              )}
             </button>
           </div>
           <div className="flex justify-end" style={{ marginTop: 6 }}>
@@ -416,7 +409,9 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
   const [showOs, setShowOs] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const osPasswordId = useId()
+  const newPasswordId = useId()
+  const confirmPasswordId = useId()
 
   const pwCheck = validatePassword(newPw)
   const pwMatch = newPw === confirmPw
@@ -425,15 +420,14 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault()
-      setError('')
       if (!canSubmit) return
       setLoading(true)
       const result = await recoverPassword(osPassword, newPw)
       setLoading(false)
       // On success the store flips isAuthenticated and the login screen unmounts.
-      if (!result.success) setError(result.error || 'Recovery failed')
+      if (!result.success) toast.error(result.error || t('toast.recoveryFailed'))
     },
-    [osPassword, newPw, canSubmit, recoverPassword],
+    [osPassword, newPw, canSubmit, recoverPassword, t],
   )
 
   return (
@@ -468,19 +462,10 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        {error && (
-          <div
-            className="flex items-center gap-2 rounded-lg px-3.5 py-2.5"
-            style={{ background: 'rgba(185,28,28,0.08)', border: '1px solid rgba(185,28,28,0.15)' }}
-          >
-            <AlertCircle size={15} style={{ color: 'var(--red)', flexShrink: 0 }} />
-            <span style={{ fontSize: 13, color: 'var(--red)' }}>{error}</span>
-          </div>
-        )}
-
         {/* OS (system) password */}
         <div>
           <label
+            htmlFor={osPasswordId}
             style={{
               fontSize: 14,
               fontWeight: 500,
@@ -493,6 +478,7 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
           </label>
           <div className="relative">
             <input
+              id={osPasswordId}
               type={showOs ? 'text' : 'password'}
               value={osPassword}
               onChange={(e) => setOsPassword(e.target.value)}
@@ -515,6 +501,7 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
             />
             <KeyRound
               size={15}
+              aria-hidden="true"
               style={{
                 position: 'absolute',
                 left: 12,
@@ -525,12 +512,17 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
             />
             <button
               type="button"
-              tabIndex={-1}
+              aria-label={showOs ? t('a11y.hidePassword') : t('a11y.showPassword')}
+              aria-pressed={showOs}
               onClick={() => setShowOs(!showOs)}
               className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer border-none bg-transparent p-0"
               style={{ color: 'var(--hint)' }}
             >
-              {showOs ? <EyeOff size={15} /> : <Eye size={15} />}
+              {showOs ? (
+                <EyeOff size={15} aria-hidden="true" />
+              ) : (
+                <Eye size={15} aria-hidden="true" />
+              )}
             </button>
           </div>
           <div style={{ fontSize: 13, color: 'var(--hint)', marginTop: 4 }}>
@@ -541,6 +533,7 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
         {/* New app password */}
         <div>
           <label
+            htmlFor={newPasswordId}
             style={{
               fontSize: 14,
               fontWeight: 500,
@@ -553,6 +546,7 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
           </label>
           <div className="relative">
             <input
+              id={newPasswordId}
               type={showNew ? 'text' : 'password'}
               value={newPw}
               onChange={(e) => setNewPw(e.target.value)}
@@ -574,12 +568,17 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
             />
             <button
               type="button"
-              tabIndex={-1}
+              aria-label={showNew ? t('a11y.hidePassword') : t('a11y.showPassword')}
+              aria-pressed={showNew}
               onClick={() => setShowNew(!showNew)}
               className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer border-none bg-transparent p-0"
               style={{ color: 'var(--hint)' }}
             >
-              {showNew ? <EyeOff size={15} /> : <Eye size={15} />}
+              {showNew ? (
+                <EyeOff size={15} aria-hidden="true" />
+              ) : (
+                <Eye size={15} aria-hidden="true" />
+              )}
             </button>
           </div>
           <PasswordRules password={newPw} />
@@ -588,6 +587,7 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
         {/* Confirm new password */}
         <div>
           <label
+            htmlFor={confirmPasswordId}
             style={{
               fontSize: 14,
               fontWeight: 500,
@@ -599,6 +599,7 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
             {t('profile.confirmPassword')}
           </label>
           <input
+            id={confirmPasswordId}
             type={showNew ? 'text' : 'password'}
             value={confirmPw}
             onChange={(e) => setConfirmPw(e.target.value)}
@@ -763,6 +764,8 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
   const [password, setPassword] = useState('')
   const [confirmPw, setConfirmPw] = useState('')
   const [showPw, setShowPw] = useState(false)
+  const setPasswordId = useId()
+  const setConfirmId = useId()
 
   const pwCheck = validatePassword(password)
   const passwordsMatch = password === confirmPw
@@ -811,6 +814,7 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
           <label
+            htmlFor={setPasswordId}
             style={{
               fontSize: 14,
               fontWeight: 500,
@@ -823,6 +827,7 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
           </label>
           <div className="relative">
             <input
+              id={setPasswordId}
               type={showPw ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -844,12 +849,17 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
             />
             <button
               type="button"
-              tabIndex={-1}
+              aria-label={showPw ? t('a11y.hidePassword') : t('a11y.showPassword')}
+              aria-pressed={showPw}
               onClick={() => setShowPw(!showPw)}
               className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer border-none bg-transparent p-0"
               style={{ color: 'var(--hint)' }}
             >
-              {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+              {showPw ? (
+                <EyeOff size={15} aria-hidden="true" />
+              ) : (
+                <Eye size={15} aria-hidden="true" />
+              )}
             </button>
           </div>
           <PasswordRules password={password} />
@@ -857,6 +867,7 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
 
         <div>
           <label
+            htmlFor={setConfirmId}
             style={{
               fontSize: 14,
               fontWeight: 500,
@@ -868,6 +879,7 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
             {t('profile.confirmPassword')}
           </label>
           <input
+            id={setConfirmId}
             type={showPw ? 'text' : 'password'}
             value={confirmPw}
             onChange={(e) => setConfirmPw(e.target.value)}

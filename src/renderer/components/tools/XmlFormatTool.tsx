@@ -51,6 +51,7 @@ export default function XmlFormatTool() {
     <>
       <select
         value={indent}
+        aria-label={t('tools.json.indent2')}
         onChange={(e) => setIndent(e.target.value as IndentOption)}
         className="rounded border px-2 py-1 text-xs"
         style={{ background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--text)' }}

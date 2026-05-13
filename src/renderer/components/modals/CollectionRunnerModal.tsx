@@ -93,12 +93,13 @@ export default function CollectionRunnerModal() {
           <div className="flex-1" />
           <button
             type="button"
+            aria-label="Close"
             onClick={() => {
               if (!isRunning) setShow(false)
             }}
             className="cursor-pointer border-none bg-transparent p-2 text-[var(--hint)] hover:text-[var(--text)]"
           >
-            <X size={16} />
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
 

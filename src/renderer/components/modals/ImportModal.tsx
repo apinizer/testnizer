@@ -14,6 +14,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
+import { toast } from '../../lib/toast'
 import Modal from '../shared/Modal'
 import type { WsdlParseResult, TreeNode } from '../../types'
 
@@ -400,11 +401,18 @@ export default function ImportModal() {
         if (fmtId === 'postman' || fmtId === 'insomnia') {
           await useEnvironmentStore.getState().fetchEnvironments()
         }
+        toast.success(t('toast.imported'))
         handleClose()
       } else {
+        // Final-step import failure: surface globally so it's visible even
+        // after the modal closes on a successful retry. The parse-step
+        // errors above stay in the modal because they relate to the
+        // current input field.
+        toast.error(importResult?.error || t('toast.importFailed'))
         setImportError(importResult?.error || 'Import failed')
       }
     } catch (err) {
+      toast.error((err as Error).message || t('toast.importFailed'))
       setImportError((err as Error).message || 'Import failed')
     } finally {
       setImporting(false)
@@ -442,11 +450,12 @@ export default function ImportModal() {
           </div>
           <button
             type="button"
+            aria-label={t('a11y.closeDialog')}
             onClick={handleClose}
             className="cursor-pointer p-1 text-[1.57rem] leading-none text-[var(--hint)] hover:text-[var(--text)]"
             style={{ background: 'transparent', border: 'none' }}
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 
@@ -530,12 +539,13 @@ export default function ImportModal() {
               {canUrlImport && (
                 <div>
                   <label className="mb-2 flex items-center gap-1.5 font-medium text-[var(--text)]">
-                    <Globe2 size={15} />
+                    <Globe2 size={15} aria-hidden="true" />
                     Import from URL
                   </label>
                   <div className="flex gap-2">
                     <input
                       type="text"
+                      aria-label="Import URL"
                       value={importUrl}
                       onChange={(e) => setImportUrl(e.target.value)}
                       onKeyDown={(e) => {
@@ -555,9 +565,9 @@ export default function ImportModal() {
                       className="flex cursor-pointer items-center gap-1.5 rounded-lg border-none bg-[var(--accent)] px-3 py-1.5 font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {importLoading ? (
-                        <Loader2 size={14} className="animate-spin" />
+                        <Loader2 size={14} aria-hidden="true" className="animate-spin" />
                       ) : (
-                        <Upload size={14} />
+                        <Upload size={14} aria-hidden="true" />
                       )}
                       Next
                     </button>
@@ -576,7 +586,7 @@ export default function ImportModal() {
               {canFileImport && (
                 <div>
                   <label className="mb-2 flex items-center gap-1.5 font-medium text-[var(--text)]">
-                    <FileText size={15} />
+                    <FileText size={15} aria-hidden="true" />
                     Import from file
                   </label>
                   <button

@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, Play, Square, RefreshCw } from 'lucide-react'
 import { useMockStore } from '../../stores/mock.store'
 import { useTranslation } from '../../lib/i18n'
+import { toast } from '../../lib/toast'
 import type {
   MockEndpoint,
   MockResponse,
@@ -203,20 +204,20 @@ function EndpointsTab({ serverId }: { serverId: string }) {
         kind === 'openapi'
           ? await importOpenApi(serverId, text)
           : await importPostman(serverId, text)
+      setImportStatus(null)
       if (!result) {
-        setImportStatus(t('mock.importFailed'))
+        toast.error(t('mock.importFailed'))
         return
       }
       if (!result.ok && result.error) {
-        setImportStatus(`${t('mock.importFailed')}: ${result.error}`)
+        toast.error(`${t('mock.importFailed')}: ${result.error}`)
         return
       }
       const warn =
         result.warnings.length > 0 ? ` (${result.warnings.length} ${t('mock.warnings')})` : ''
-      setImportStatus(
+      toast.success(
         `${result.endpointsCreated} endpoints, ${result.responsesCreated} responses imported${warn}`,
       )
-      setTimeout(() => setImportStatus(null), 4000)
     }
     input.click()
   }

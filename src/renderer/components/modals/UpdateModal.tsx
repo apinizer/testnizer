@@ -31,11 +31,12 @@ export default function UpdateModal() {
           <span className="text-lg font-bold text-[var(--text)]">{t('settings.autoUpdate')}</span>
           <button
             type="button"
+            aria-label="Close"
             onClick={() => setShow(false)}
             className="cursor-pointer text-[var(--hint)] hover:text-[var(--text)]"
             style={{ background: 'transparent', border: 'none' }}
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 

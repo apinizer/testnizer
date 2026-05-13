@@ -18,6 +18,7 @@ function ArrowUpIcon() {
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
+      aria-hidden="true"
     >
       <line x1="12" y1="19" x2="12" y2="5" />
       <polyline points="5 12 12 5 19 12" />
@@ -34,6 +35,7 @@ function ArrowDownIcon() {
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
+      aria-hidden="true"
     >
       <line x1="12" y1="5" x2="12" y2="19" />
       <polyline points="19 12 12 19 5 12" />
@@ -327,7 +329,11 @@ export default function Header() {
             }}
           >
             {pullStatus === 'loading' ? (
-              <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+              <Loader2
+                size={12}
+                aria-hidden="true"
+                style={{ animation: 'spin 1s linear infinite' }}
+              />
             ) : (
               <ArrowDownIcon />
             )}
@@ -368,7 +374,11 @@ export default function Header() {
             }}
           >
             {pushStatus === 'loading' ? (
-              <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+              <Loader2
+                size={12}
+                aria-hidden="true"
+                style={{ animation: 'spin 1s linear infinite' }}
+              />
             ) : (
               <ArrowUpIcon />
             )}
@@ -406,9 +416,13 @@ export default function Header() {
           }}
         >
           {saveStatus === 'loading' ? (
-            <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+            <Loader2
+              size={12}
+              aria-hidden="true"
+              style={{ animation: 'spin 1s linear infinite' }}
+            />
           ) : (
-            <Save size={12} />
+            <Save size={12} aria-hidden="true" />
           )}
           {saveStatus === 'success' && <span style={{ fontSize: 13 }}>✓</span>}
         </button>

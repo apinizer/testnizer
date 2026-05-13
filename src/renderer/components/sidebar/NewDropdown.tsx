@@ -195,6 +195,7 @@ export default function NewDropdown() {
                 }}
               >
                 <div
+                  aria-hidden="true"
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px]"
                   style={{ background: item.bg, color: item.iconColor }}
                 >
@@ -226,7 +227,9 @@ export default function NewDropdown() {
                   if (!item.action) setOpen(false)
                 }}
               >
-                <span className="flex w-5 items-center text-[var(--muted)]">{item.icon}</span>
+                <span aria-hidden="true" className="flex w-5 items-center text-[var(--muted)]">
+                  {item.icon}
+                </span>
                 <span className="flex-1">{item.label}</span>
                 <span className="text-[var(--hint)]">{item.shortcut}</span>
               </button>
@@ -242,6 +245,9 @@ export default function NewDropdown() {
       <button
         ref={buttonRef}
         type="button"
+        aria-label={t('leftPanel.new')}
+        aria-expanded={open}
+        aria-haspopup="menu"
         onClick={(e) => {
           e.stopPropagation()
           setOpen((v) => !v)

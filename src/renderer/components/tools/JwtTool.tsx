@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import {
   decodeJwt,
@@ -292,6 +292,8 @@ function DecoderBody(props: {
   const headerRows = jwt ? claimsToTable(jwt.header) : []
   const payloadRows = jwt ? claimsToTable(jwt.payload) : []
   const asymmetric = isAsymmetric(verifyAlgorithm)
+  const algorithmId = useId()
+  const secretId = useId()
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -379,10 +381,15 @@ function DecoderBody(props: {
               </div>
 
               <div className="mb-2 flex items-center gap-2">
-                <label className="text-xs" style={{ color: 'var(--muted)', minWidth: 80 }}>
+                <label
+                  htmlFor={algorithmId}
+                  className="text-xs"
+                  style={{ color: 'var(--muted)', minWidth: 80 }}
+                >
                   {t('tools.jwt.algorithm')}
                 </label>
                 <select
+                  id={algorithmId}
                   value={verifyAlgorithm}
                   onChange={(e) => setVerifyAlgorithm(e.target.value as JwtAlgorithm)}
                   className="rounded border px-2 py-1 text-xs"
@@ -400,10 +407,15 @@ function DecoderBody(props: {
                 </select>
               </div>
 
-              <label className="mb-1 block text-xs" style={{ color: 'var(--muted)' }}>
+              <label
+                htmlFor={secretId}
+                className="mb-1 block text-xs"
+                style={{ color: 'var(--muted)' }}
+              >
                 {asymmetric ? t('tools.jwt.publicKey') : t('tools.jwt.secret')}
               </label>
               <textarea
+                id={secretId}
                 value={verifySecret}
                 onChange={(e) => setVerifySecret(e.target.value)}
                 rows={asymmetric ? 6 : 2}
@@ -483,6 +495,8 @@ function EncoderBody(props: {
     t,
   } = props
 
+  const algId = useId()
+  const signSecretId = useId()
   const headerValid = useMemo(() => {
     try {
       const v = JSON.parse(header)
@@ -564,7 +578,11 @@ function EncoderBody(props: {
               {t('tools.jwt.signJwt')}
             </span>
             <div className="flex items-center gap-2">
+              <label htmlFor={algId} className="sr-only">
+                {t('tools.jwt.algorithm')}
+              </label>
               <select
+                id={algId}
                 value={algorithm}
                 onChange={(e) => setAlgorithm(e.target.value as JwtAlgorithm)}
                 className="rounded border px-2 py-1 text-xs"
@@ -584,7 +602,11 @@ function EncoderBody(props: {
           </div>
 
           <div className="px-3 py-2">
-            <label className="mb-1 block text-xs" style={{ color: 'var(--muted)' }}>
+            <label
+              htmlFor={signSecretId}
+              className="mb-1 block text-xs"
+              style={{ color: 'var(--muted)' }}
+            >
               {algorithm === 'none'
                 ? t('tools.jwt.noKeyNeeded')
                 : asymmetric
@@ -593,6 +615,7 @@ function EncoderBody(props: {
             </label>
             {algorithm !== 'none' && (
               <textarea
+                id={signSecretId}
                 value={secret}
                 onChange={(e) => setSecret(e.target.value)}
                 rows={asymmetric ? 6 : 2}

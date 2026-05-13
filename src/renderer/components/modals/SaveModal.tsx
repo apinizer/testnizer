@@ -4,8 +4,6 @@ import {
   FolderOpen,
   GitBranch,
   Loader2,
-  Check,
-  AlertCircle,
   ArrowUp,
   ArrowDown,
   Plus,
@@ -15,6 +13,8 @@ import {
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
+import { toast } from '../../lib/toast'
+import { useTranslation } from '../../lib/i18n'
 import type { SaveMode, GitRepoFile } from '../../types'
 import Modal from '../shared/Modal'
 
@@ -118,6 +118,7 @@ const inputStyle: React.CSSProperties = {
 }
 
 export default function SaveModal() {
+  const { t } = useTranslation()
   const show = useUIStore((s) => s.showSaveModal)
   const setShow = useUIStore((s) => s.setShowSaveModal)
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
@@ -133,7 +134,9 @@ export default function SaveModal() {
   const [gitUsername, setGitUsername] = useState('')
   const [gitToken, setGitToken] = useState('')
   const [loading, setLoading] = useState(false)
-  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  // Diff-specific errors stay in-modal (next to the diff preview) so the user
+  // doesn't lose context. Action results (save/push/pull) go to toast.
+  const [diffError, setDiffError] = useState<string | null>(null)
 
   // Git Open state
   const [gitFiles, setGitFiles] = useState<GitRepoFile[]>([])
@@ -161,7 +164,7 @@ export default function SaveModal() {
 
   function handleClose() {
     setShow(false)
-    setStatus(null)
+    setDiffError(null)
     setGitFiles([])
     setDiffResult(null)
     setDiffLoading(false)
@@ -175,7 +178,7 @@ export default function SaveModal() {
     if (!activeProjectId) return
     setDiffLoading(true)
     setDiffResult(null)
-    setStatus(null)
+    setDiffError(null)
     try {
       const result = (await window.api?.save?.gitDiff({
         projectId: activeProjectId,
@@ -188,10 +191,10 @@ export default function SaveModal() {
       if (result?.success && result.data) {
         setDiffResult(result.data)
       } else {
-        setStatus({ type: 'error', message: result?.error || 'Failed to compute diff' })
+        setDiffError(result?.error || 'Failed to compute diff')
       }
     } catch (e) {
-      setStatus({ type: 'error', message: (e as Error).message })
+      setDiffError((e as Error).message)
     }
     setDiffLoading(false)
   }
@@ -207,7 +210,6 @@ export default function SaveModal() {
   async function handleSave() {
     if (!activeProjectId) return
     setLoading(true)
-    setStatus(null)
     try {
       if (saveMode === 'local') {
         const result = (await window.api?.save?.local({
@@ -215,16 +217,16 @@ export default function SaveModal() {
           directoryPath: localDir || undefined,
         })) as { success: boolean; data?: { path: string; fileName: string }; error?: string }
         if (result?.success && result.data) {
-          setStatus({ type: 'success', message: `Saved: ${result.data.fileName}` })
+          toast.success(`${t('toast.saved')}: ${result.data.fileName}`)
           if (result.data.path)
             setLocalDir(result.data.path.substring(0, result.data.path.lastIndexOf('/')))
           fetchSaveHistory(activeProjectId)
         } else {
-          setStatus({ type: 'error', message: result?.error || 'Save failed' })
+          toast.error(result?.error || t('toast.saveFailed'))
         }
       } else {
         if (!gitUrl || !gitUsername || !gitToken) {
-          setStatus({ type: 'error', message: 'Please fill in all Git fields' })
+          toast.error('Please fill in all Git fields')
           return
         }
         const result = (await window.api?.save?.git({
@@ -236,17 +238,17 @@ export default function SaveModal() {
           commitMessage: commitMessage || 'Update project',
         })) as { success: boolean; error?: string }
         if (result?.success) {
-          setStatus({ type: 'success', message: `Pushed to ${gitBranch}` })
+          toast.success(`${t('toast.pushed')}: ${gitBranch}`)
           fetchSaveHistory(activeProjectId)
         } else {
-          setStatus({ type: 'error', message: result?.error || 'Git push failed' })
+          toast.error(result?.error || t('toast.pushFailed'))
         }
       }
     } catch (e) {
-      setStatus({ type: 'error', message: (e as Error).message })
+      toast.error((e as Error).message)
     } finally {
-      // try/finally — without this an exception during setStatus / state
-      // update would leave the Save button permanently disabled.
+      // try/finally — without this an exception during setLoading would
+      // leave the Save button permanently disabled.
       setLoading(false)
     }
   }
@@ -254,25 +256,23 @@ export default function SaveModal() {
   async function handleGitPush() {
     if (!activeProjectId) return
     setLoading(true)
-    setStatus(null)
     try {
       const result = (await window.api?.save?.gitPush({
         projectId: activeProjectId,
         commitMessage: commitMessage || undefined,
       })) as { success: boolean; data?: { noChanges?: boolean; message?: string }; error?: string }
       if (result?.success) {
-        setStatus({
-          type: 'success',
-          message: result.data?.noChanges
+        toast.success(
+          result.data?.noChanges
             ? 'No changes to push.'
-            : `Pushed: ${result.data?.message || 'Success'}`,
-        })
+            : `${t('toast.pushed')}: ${result.data?.message || 'Success'}`,
+        )
         fetchSaveHistory(activeProjectId)
       } else {
-        setStatus({ type: 'error', message: result?.error || 'Push failed' })
+        toast.error(result?.error || t('toast.pushFailed'))
       }
     } catch (e) {
-      setStatus({ type: 'error', message: (e as Error).message })
+      toast.error((e as Error).message)
     }
     setLoading(false)
   }
@@ -280,7 +280,6 @@ export default function SaveModal() {
   async function handleGitPull() {
     if (!activeProjectId) return
     setLoading(true)
-    setStatus(null)
     try {
       const result = (await window.api?.save?.gitPull({ projectId: activeProjectId })) as {
         success: boolean
@@ -290,26 +289,25 @@ export default function SaveModal() {
       if (result?.success) {
         const imp = result.data?.imported
         const msg = imp
-          ? `Pulled: ${imp.endpoints || 0} endpoints, ${imp.savedRequests || 0} requests, ${imp.environments || 0} environments`
-          : 'Pull completed'
-        setStatus({ type: 'success', message: msg })
+          ? `${t('toast.pulled')}: ${imp.endpoints || 0} endpoints, ${imp.savedRequests || 0} requests, ${imp.environments || 0} environments`
+          : t('toast.pulled')
+        toast.success(msg)
         fetchSaveHistory(activeProjectId)
       } else {
-        setStatus({ type: 'error', message: result?.error || 'Pull failed' })
+        toast.error(result?.error || t('toast.pullFailed'))
       }
     } catch (e) {
-      setStatus({ type: 'error', message: (e as Error).message })
+      toast.error((e as Error).message)
     }
     setLoading(false)
   }
 
   async function handleGitOpen() {
     if (!gitUrl || !gitUsername || !gitToken) {
-      setStatus({ type: 'error', message: 'Please fill in all Git fields' })
+      toast.error('Please fill in all Git fields')
       return
     }
     setLoading(true)
-    setStatus(null)
     try {
       const result = (await window.api?.save?.gitListFiles({
         repoUrl: gitUrl,
@@ -320,13 +318,12 @@ export default function SaveModal() {
       if (result?.success && result.data) {
         setGitFiles(result.data.files)
         setGitTmpDir(result.data.tmpDir)
-        if (result.data.files.length === 0)
-          setStatus({ type: 'error', message: 'No JSON files found in repository' })
+        if (result.data.files.length === 0) toast.warning('No JSON files found in repository')
       } else {
-        setStatus({ type: 'error', message: result?.error || 'Failed to list files' })
+        toast.error(result?.error || 'Failed to list files')
       }
     } catch (e) {
-      setStatus({ type: 'error', message: (e as Error).message })
+      toast.error((e as Error).message)
     }
     setLoading(false)
   }
@@ -339,12 +336,12 @@ export default function SaveModal() {
         error?: string
       }
       if (result?.success) {
-        setStatus({ type: 'success', message: `Loaded: ${file.name}` })
+        toast.success(`Loaded: ${file.name}`)
       } else {
-        setStatus({ type: 'error', message: result?.error || 'Failed to read file' })
+        toast.error(result?.error || 'Failed to read file')
       }
     } catch (e) {
-      setStatus({ type: 'error', message: (e as Error).message })
+      toast.error((e as Error).message)
     }
     setLoading(false)
   }
@@ -395,7 +392,7 @@ export default function SaveModal() {
                   }}
                   onClick={() => {
                     setTabMode(tab.id)
-                    setStatus(null)
+                    setDiffError(null)
                     setGitFiles([])
                   }}
                 >
@@ -407,11 +404,12 @@ export default function SaveModal() {
           </div>
           <button
             type="button"
+            aria-label="Close"
             className="cursor-pointer"
             style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
             onClick={handleClose}
           >
-            <X size={16} />
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
 
@@ -752,17 +750,15 @@ export default function SaveModal() {
             </>
           )}
 
-          {/* Status message */}
-          {status && (
+          {/* Diff error stays in-context next to push/pull preview so the
+              user doesn't lose the comparison. Other action results (save /
+              push / pull / open) use global toasts. */}
+          {diffError && (tabMode === 'push' || tabMode === 'pull') && (
             <div
-              className="mt-3 flex items-center gap-2 rounded-md px-3 py-2"
-              style={{
-                background: status.type === 'success' ? '#e8f9f1' : '#fff0f0',
-                color: status.type === 'success' ? '#1a7a4a' : '#cc2200',
-              }}
+              className="mt-3 rounded-md px-3 py-2"
+              style={{ background: '#fff0f0', color: '#cc2200' }}
             >
-              {status.type === 'success' ? <Check size={13} /> : <AlertCircle size={13} />}
-              {status.message}
+              {diffError}
             </div>
           )}
         </div>

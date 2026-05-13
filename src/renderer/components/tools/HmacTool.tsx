@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { hmacAll, HMAC_ALGORITHMS, type HmacAlgorithm } from '../../lib/tools/hash'
@@ -11,6 +11,7 @@ export default function HmacTool() {
   const [hmacs, setHmacs] = useState<Partial<Record<HmacAlgorithm, string>>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const secretId = useId()
 
   useEffect(() => {
     let cancelled = false
@@ -64,12 +65,14 @@ export default function HmacTool() {
             style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
           >
             <label
+              htmlFor={secretId}
               className="mb-1 block text-[11px] uppercase tracking-wide"
               style={{ color: 'var(--muted)' }}
             >
               {t('tools.hmac.secret')}
             </label>
             <input
+              id={secretId}
               type="text"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}

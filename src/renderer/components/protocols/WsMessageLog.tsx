@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { ArrowUp, ArrowDown, Trash2 } from 'lucide-react'
+import { ArrowUp, ArrowDown, Trash2, MessageSquare } from 'lucide-react'
 import { useWebSocketStore } from '../../stores/websocket.store'
+import EmptyState from '../shared/EmptyState'
 import type { WsMessage } from '../../types'
 
 function formatTimestamp(ts: number): string {
@@ -51,9 +52,12 @@ export default function WsMessageLog() {
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-[var(--hint)]">
-            No messages yet. Connect and send a message to begin.
-          </div>
+          <EmptyState
+            icon={MessageSquare}
+            title="No messages yet"
+            description="Connect and send a message to begin."
+            size="md"
+          />
         ) : (
           messages.map((msg) => {
             const isSent = msg.direction === 'sent'

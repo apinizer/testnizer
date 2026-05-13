@@ -5,6 +5,7 @@ import { useEnvironmentStore } from '../../stores/environment.store'
 import type { Environment, EnvironmentVariable, GlobalVariable } from '../../types'
 import DeleteConfirmDialog from './DeleteConfirmDialog'
 import Modal from '../shared/Modal'
+import EmptyState from '../shared/EmptyState'
 
 type Pane = { kind: 'globals' } | { kind: 'env'; id: string }
 
@@ -133,11 +134,12 @@ export default function EnvironmentModal() {
             </span>
             <button
               type="button"
+              aria-label="Close"
               onClick={() => setShow(false)}
               className="cursor-pointer"
               style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
             >
-              <X size={14} />
+              <X size={14} aria-hidden="true" />
             </button>
           </div>
 
@@ -164,9 +166,7 @@ export default function EnvironmentModal() {
 
           <div className="flex-1 overflow-y-auto">
             {environments.length === 0 && !creatingEnv && (
-              <div className="px-4 py-3" style={{ color: 'var(--hint)' }}>
-                No environments yet.
-              </div>
+              <EmptyState icon={Layers} title="No environments yet." variant="compact" size="sm" />
             )}
             {environments.map((env) => (
               <button
@@ -633,6 +633,7 @@ function VarRowView({
       <button
         type="button"
         onClick={onRemove}
+        aria-label="Remove"
         className="flex cursor-pointer items-center justify-center"
         style={{ background: 'transparent', border: 'none', color: 'var(--hint)', padding: 4 }}
         onMouseEnter={(e) => {
@@ -642,7 +643,7 @@ function VarRowView({
           ;(e.currentTarget as HTMLElement).style.color = 'var(--hint)'
         }}
       >
-        <X size={12} />
+        <X size={12} aria-hidden="true" />
       </button>
     </div>
   )

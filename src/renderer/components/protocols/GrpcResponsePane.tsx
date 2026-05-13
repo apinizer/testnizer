@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
+import { Send, Radio } from 'lucide-react'
 import { useGrpcStore } from '../../stores/grpc.store'
 import { useResponseStore } from '../../stores/response.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
+import EmptyState from '../shared/EmptyState'
 
 function formatTimestamp(ts: number): string {
   const d = new Date(ts)
@@ -78,8 +80,8 @@ function UnaryView({
 
   if (!response) {
     return (
-      <div className="flex h-full items-center justify-center bg-[var(--white)] text-[var(--hint)]">
-        Execute a gRPC call to see the response
+      <div className="flex h-full items-center justify-center bg-[var(--white)]">
+        <EmptyState icon={Send} title="Execute a gRPC call to see the response" size="md" />
       </div>
     )
   }
@@ -178,9 +180,7 @@ function StreamView() {
       {/* Event list */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {streamEvents.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-[var(--hint)]">
-            Waiting for stream events...
-          </div>
+          <EmptyState icon={Radio} title="Waiting for stream events..." size="md" />
         ) : (
           streamEvents.map((event) => {
             const isExpanded = expandedId === event.id

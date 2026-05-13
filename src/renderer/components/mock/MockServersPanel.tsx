@@ -342,6 +342,7 @@ function IconBtn({
   return (
     <button
       title={title}
+      aria-label={title}
       onClick={onClick}
       style={{
         background: 'transparent',
@@ -356,7 +357,9 @@ function IconBtn({
         color,
       }}
     >
-      {children}
+      <span aria-hidden="true" style={{ display: 'inline-flex' }}>
+        {children}
+      </span>
     </button>
   )
 }

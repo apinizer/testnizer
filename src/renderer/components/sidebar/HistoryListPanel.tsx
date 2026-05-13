@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
-import { Search, Trash2, Clock, FolderClosed, Play, ChevronRight, ChevronDown } from 'lucide-react'
+import {
+  Search,
+  Trash2,
+  Clock,
+  FolderClosed,
+  Play,
+  ChevronRight,
+  ChevronDown,
+  History as HistoryIcon,
+} from 'lucide-react'
 import { useHistoryStore } from '../../stores/history.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
@@ -7,6 +16,7 @@ import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
 import MethodBadge from '../shared/MethodBadge'
+import EmptyState from '../shared/EmptyState'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import type {
   HistoryEntry,
@@ -336,9 +346,13 @@ export default function HistoryListPanel() {
 
         {/* ── Regular request history ── */}
         {groups.length === 0 && runGroups.length === 0 && (
-          <div className="px-3 py-8 text-center" style={{ color: 'var(--hint)', fontSize: 13 }}>
-            No history yet.
-          </div>
+          <EmptyState
+            icon={HistoryIcon}
+            title="No history yet."
+            description="Send a request to see it appear here."
+            variant="compact"
+            size="sm"
+          />
         )}
 
         {groups.map(({ label, items }) => (

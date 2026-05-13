@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useResponseStore } from '../../stores/response.store'
+import { useTranslation } from '../../lib/i18n'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import {
   ChevronDown,
@@ -29,6 +30,7 @@ type FormatMode = 'JSON' | 'XML' | 'HTML' | 'Text'
  *   └──────────────────────────────────────────────────────────┘
  */
 export default function ResponseBody() {
+  const { t } = useTranslation()
   const response = useResponseStore((s) => s.response)
   const [viewMode, setViewMode] = useState<ViewMode>('Pretty')
   const [formatMode, setFormatMode] = useState<FormatMode>('JSON')
@@ -258,6 +260,8 @@ export default function ResponseBody() {
         <button
           type="button"
           title={wrap ? 'Disable word wrap' : 'Enable word wrap'}
+          aria-label={wrap ? 'Disable word wrap' : 'Enable word wrap'}
+          aria-pressed={wrap}
           onClick={() => setWrap((v) => !v)}
           style={{
             ...ICON_BTN,
@@ -265,12 +269,14 @@ export default function ResponseBody() {
             background: wrap ? 'var(--accent-light)' : 'transparent',
           }}
         >
-          <WrapText size={13} />
+          <WrapText size={13} aria-hidden="true" />
         </button>
 
         <button
           type="button"
           title="Filter"
+          aria-label={t('a11y.filter')}
+          aria-pressed={showFilter}
           onClick={() => setShowFilter((v) => !v)}
           style={{
             ...ICON_BTN,
@@ -278,27 +284,33 @@ export default function ResponseBody() {
             background: showFilter ? 'var(--accent-light)' : 'transparent',
           }}
         >
-          <Filter size={13} />
+          <Filter size={13} aria-hidden="true" />
         </button>
 
-        <button type="button" title="Search" style={ICON_BTN}>
-          <Search size={13} />
+        <button type="button" title="Search" aria-label={t('a11y.search')} style={ICON_BTN}>
+          <Search size={13} aria-hidden="true" />
         </button>
 
         <button
           type="button"
           title="Copy"
+          aria-label={t('a11y.copyToClipboard')}
           onClick={handleCopy}
           style={{
             ...ICON_BTN,
             color: copied ? 'var(--green)' : 'var(--muted)',
           }}
         >
-          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
         </button>
 
-        <button type="button" title="Open in new tab" style={ICON_BTN}>
-          <ExternalLink size={13} />
+        <button
+          type="button"
+          title="Open in new tab"
+          aria-label={t('a11y.openInEditor')}
+          style={ICON_BTN}
+        >
+          <ExternalLink size={13} aria-hidden="true" />
         </button>
       </div>
 
