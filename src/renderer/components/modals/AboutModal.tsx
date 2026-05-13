@@ -4,6 +4,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useEulaStore } from '../../stores/eula.store'
 import { useTranslation } from '../../lib/i18n'
 import LegalDocModal from '../eula/LegalDocModal'
+import Modal from '../shared/Modal'
 import appIcon from '../../assets/icon.png'
 
 interface LicenseEntry {
@@ -35,16 +36,6 @@ export default function AboutModal() {
   const [legalDoc, setLegalDoc] = useState<'eula' | 'privacy' | null>(null)
   const consentState = useEulaStore((s) => s.state)
   const consentValid = useEulaStore((s) => s.consentValid)
-
-  // ESC to close
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, setOpen])
 
   // Load version + licenses on open
   useEffect(() => {
@@ -95,15 +86,10 @@ export default function AboutModal() {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.4)' }}
-      onClick={() => setOpen(false)}
-    >
+    <Modal open={open} onOpenChange={setOpen} title={t('about.title')}>
       <div
         className="flex w-[560px] flex-col overflow-hidden rounded-xl border shadow-xl"
         style={{ background: 'var(--white)', borderColor: 'var(--border)', maxHeight: '85vh' }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div
@@ -264,6 +250,6 @@ export default function AboutModal() {
         </div>
       </div>
       <LegalDocModal open={legalDoc !== null} doc={legalDoc} onClose={() => setLegalDoc(null)} />
-    </div>
+    </Modal>
   )
 }

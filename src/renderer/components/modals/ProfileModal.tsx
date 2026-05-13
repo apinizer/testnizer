@@ -3,6 +3,7 @@ import { X, Lock, LogOut, Check, AlertCircle, Eye, EyeOff, ShieldOff } from 'luc
 import { useUIStore } from '../../stores/ui.store'
 import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
+import Modal from '../shared/Modal'
 
 export default function ProfileModal() {
   const { t } = useTranslation()
@@ -16,18 +17,16 @@ export default function ProfileModal() {
   if (!open || !user) return null
 
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.4)' }}
-      onClick={() => setOpen(false)}
-    >
+    <Modal open={open} onOpenChange={setOpen} title={t('profile.changePassword')}>
       <div
         className="flex w-[520px] flex-col overflow-hidden rounded-xl border shadow-xl"
         style={{ background: 'var(--white)', borderColor: 'var(--border)', maxHeight: '85vh' }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex shrink-0 items-center justify-between border-b px-5 py-4" style={{ borderColor: 'var(--border)' }}>
+        <div
+          className="flex shrink-0 items-center justify-between border-b px-5 py-4"
+          style={{ borderColor: 'var(--border)' }}
+        >
           <div className="flex items-center gap-3">
             {/* Avatar */}
             <div
@@ -59,19 +58,30 @@ export default function ProfileModal() {
         </div>
 
         {/* Title */}
-        <div className="flex shrink-0 items-center gap-1.5 border-b px-5 py-2.5" style={{ borderColor: 'var(--border)' }}>
+        <div
+          className="flex shrink-0 items-center gap-1.5 border-b px-5 py-2.5"
+          style={{ borderColor: 'var(--border)' }}
+        >
           <Lock size={14} style={{ color: 'var(--accent-text)' }} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-text)' }}>{t('profile.changePassword')}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-text)' }}>
+            {t('profile.changePassword')}
+          </span>
         </div>
 
         {/* Body */}
         <div className="flex-1 overflow-auto px-5 py-5">
           <PasswordTab changePassword={changePassword} />
-          <DisablePasswordSection disablePassword={disablePassword} onDisabled={() => setOpen(false)} />
+          <DisablePasswordSection
+            disablePassword={disablePassword}
+            onDisabled={() => setOpen(false)}
+          />
         </div>
 
         {/* Footer */}
-        <div className="flex shrink-0 items-center justify-end border-t px-5 py-3" style={{ borderColor: 'var(--border)' }}>
+        <div
+          className="flex shrink-0 items-center justify-end border-t px-5 py-3"
+          style={{ borderColor: 'var(--border)' }}
+        >
           <button
             type="button"
             onClick={async () => {
@@ -79,14 +89,19 @@ export default function ProfileModal() {
               setOpen(false)
             }}
             className="flex cursor-pointer items-center gap-1.5 rounded-md border px-3.5 py-1.5 font-medium transition-colors hover:opacity-80"
-            style={{ borderColor: 'var(--border)', background: 'var(--white)', color: 'var(--text)', fontSize: 13 }}
+            style={{
+              borderColor: 'var(--border)',
+              background: 'var(--white)',
+              color: 'var(--text)',
+              fontSize: 13,
+            }}
           >
             <LogOut size={13} />
             {t('profile.signOut')}
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -109,39 +124,58 @@ function PasswordTab({
   const hasValidNewPw = newPw.length >= 8 && /[a-zA-Z]/.test(newPw) && /[0-9]/.test(newPw)
   const canSubmit = currentPw && newPw && confirmPw && passwordsMatch && hasValidNewPw
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    const result = await changePassword(currentPw, newPw)
-    if (result.success) {
-      setSaved(true)
-      setCurrentPw('')
-      setNewPw('')
-      setConfirmPw('')
-      setTimeout(() => setSaved(false), 3000)
-    } else {
-      setError(result.error || 'Password change failed')
-    }
-  }, [currentPw, newPw, changePassword])
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault()
+      setError('')
+      const result = await changePassword(currentPw, newPw)
+      if (result.success) {
+        setSaved(true)
+        setCurrentPw('')
+        setNewPw('')
+        setConfirmPw('')
+        setTimeout(() => setSaved(false), 3000)
+      } else {
+        setError(result.error || 'Password change failed')
+      }
+    },
+    [currentPw, newPw, changePassword],
+  )
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {error && (
-        <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: 'rgba(185,28,28,0.08)' }}>
+        <div
+          className="flex items-center gap-2 rounded-lg px-3 py-2"
+          style={{ background: 'rgba(185,28,28,0.08)' }}
+        >
           <AlertCircle size={14} style={{ color: 'var(--red)' }} />
           <span style={{ fontSize: 13, color: 'var(--red)' }}>{error}</span>
         </div>
       )}
 
       {saved && (
-        <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: 'var(--green-bg)' }}>
+        <div
+          className="flex items-center gap-2 rounded-lg px-3 py-2"
+          style={{ background: 'var(--green-bg)' }}
+        >
           <Check size={14} style={{ color: 'var(--green)' }} />
-          <span style={{ fontSize: 13, color: 'var(--green)' }}>{t('profile.passwordChanged')}</span>
+          <span style={{ fontSize: 13, color: 'var(--green)' }}>
+            {t('profile.passwordChanged')}
+          </span>
         </div>
       )}
 
       <div>
-        <label style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+        <label
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            color: 'var(--text)',
+            display: 'block',
+            marginBottom: 6,
+          }}
+        >
           {t('profile.currentPassword')}
         </label>
         <div className="relative">
@@ -150,9 +184,18 @@ function PasswordTab({
             value={currentPw}
             onChange={(e) => setCurrentPw(e.target.value)}
             className="w-full rounded-lg border py-2.5 pl-3.5 pr-10 outline-none transition-colors"
-            style={{ fontSize: 14, borderColor: 'var(--border)', background: 'var(--input-bg)', color: 'var(--text)' }}
-            onFocus={(e) => { (e.target as HTMLElement).style.borderColor = 'var(--accent)' }}
-            onBlur={(e) => { (e.target as HTMLElement).style.borderColor = 'var(--border)' }}
+            style={{
+              fontSize: 14,
+              borderColor: 'var(--border)',
+              background: 'var(--input-bg)',
+              color: 'var(--text)',
+            }}
+            onFocus={(e) => {
+              ;(e.target as HTMLElement).style.borderColor = 'var(--accent)'
+            }}
+            onBlur={(e) => {
+              ;(e.target as HTMLElement).style.borderColor = 'var(--border)'
+            }}
           />
           <button
             type="button"
@@ -168,7 +211,15 @@ function PasswordTab({
 
       <div className="flex gap-3">
         <div className="flex-1">
-          <label style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+          <label
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: 'var(--text)',
+              display: 'block',
+              marginBottom: 6,
+            }}
+          >
             {t('profile.newPassword')}
           </label>
           <input
@@ -177,13 +228,30 @@ function PasswordTab({
             onChange={(e) => setNewPw(e.target.value)}
             placeholder="Min 6 characters"
             className="w-full rounded-lg border px-3.5 py-2.5 outline-none transition-colors"
-            style={{ fontSize: 14, borderColor: 'var(--border)', background: 'var(--input-bg)', color: 'var(--text)' }}
-            onFocus={(e) => { (e.target as HTMLElement).style.borderColor = 'var(--accent)' }}
-            onBlur={(e) => { (e.target as HTMLElement).style.borderColor = 'var(--border)' }}
+            style={{
+              fontSize: 14,
+              borderColor: 'var(--border)',
+              background: 'var(--input-bg)',
+              color: 'var(--text)',
+            }}
+            onFocus={(e) => {
+              ;(e.target as HTMLElement).style.borderColor = 'var(--accent)'
+            }}
+            onBlur={(e) => {
+              ;(e.target as HTMLElement).style.borderColor = 'var(--border)'
+            }}
           />
         </div>
         <div className="flex-1">
-          <label style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+          <label
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: 'var(--text)',
+              display: 'block',
+              marginBottom: 6,
+            }}
+          >
             {t('profile.confirmPassword')}
           </label>
           <input
@@ -198,14 +266,18 @@ function PasswordTab({
               color: 'var(--text)',
             }}
             onFocus={(e) => {
-              if (!confirmPw || passwordsMatch) (e.target as HTMLElement).style.borderColor = 'var(--accent)'
+              if (!confirmPw || passwordsMatch)
+                (e.target as HTMLElement).style.borderColor = 'var(--accent)'
             }}
             onBlur={(e) => {
-              (e.target as HTMLElement).style.borderColor = confirmPw && !passwordsMatch ? 'var(--red)' : 'var(--border)'
+              ;(e.target as HTMLElement).style.borderColor =
+                confirmPw && !passwordsMatch ? 'var(--red)' : 'var(--border)'
             }}
           />
           {confirmPw && !passwordsMatch && (
-            <div style={{ fontSize: 13, color: 'var(--red)', marginTop: 4 }}>{t('profile.passwordsDoNotMatch')}</div>
+            <div style={{ fontSize: 13, color: 'var(--red)', marginTop: 4 }}>
+              {t('profile.passwordsDoNotMatch')}
+            </div>
           )}
         </div>
       </div>
@@ -240,19 +312,22 @@ function DisablePasswordSection({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const handleDisable = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    if (!password) return
-    setLoading(true)
-    const result = await disablePassword(password)
-    setLoading(false)
-    if (result.success) {
-      onDisabled()
-    } else {
-      setError(result.error || 'Failed to disable password')
-    }
-  }, [password, disablePassword, onDisabled])
+  const handleDisable = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault()
+      setError('')
+      if (!password) return
+      setLoading(true)
+      const result = await disablePassword(password)
+      setLoading(false)
+      if (result.success) {
+        onDisabled()
+      } else {
+        setError(result.error || 'Failed to disable password')
+      }
+    },
+    [password, disablePassword, onDisabled],
+  )
 
   return (
     <div
@@ -274,7 +349,12 @@ function DisablePasswordSection({
             type="button"
             onClick={() => setExpanded(true)}
             className="cursor-pointer rounded-md border px-3 py-1.5 font-medium transition-colors"
-            style={{ borderColor: 'rgba(185,28,28,0.4)', background: 'transparent', color: 'var(--red)', fontSize: 13 }}
+            style={{
+              borderColor: 'rgba(185,28,28,0.4)',
+              background: 'transparent',
+              color: 'var(--red)',
+              fontSize: 13,
+            }}
           >
             {t('profile.disableButton')}
           </button>
@@ -282,10 +362,17 @@ function DisablePasswordSection({
       </div>
 
       {expanded && (
-        <form onSubmit={handleDisable} className="flex flex-col gap-3 border-t px-4 py-3" style={{ borderColor: 'rgba(185,28,28,0.2)' }}>
+        <form
+          onSubmit={handleDisable}
+          className="flex flex-col gap-3 border-t px-4 py-3"
+          style={{ borderColor: 'rgba(185,28,28,0.2)' }}
+        >
           <div style={{ fontSize: 13, color: 'var(--text)' }}>{t('profile.confirmDisable')}</div>
           {error && (
-            <div className="flex items-center gap-2 rounded-md px-3 py-2" style={{ background: 'rgba(185,28,28,0.08)' }}>
+            <div
+              className="flex items-center gap-2 rounded-md px-3 py-2"
+              style={{ background: 'rgba(185,28,28,0.08)' }}
+            >
               <AlertCircle size={14} style={{ color: 'var(--red)' }} />
               <span style={{ fontSize: 13, color: 'var(--red)' }}>{error}</span>
             </div>
@@ -298,7 +385,12 @@ function DisablePasswordSection({
               placeholder={t('profile.currentPassword')}
               autoFocus
               className="w-full rounded-md border py-2 pl-3 pr-10 outline-none"
-              style={{ fontSize: 13, borderColor: 'var(--border)', background: 'var(--white)', color: 'var(--text)' }}
+              style={{
+                fontSize: 13,
+                borderColor: 'var(--border)',
+                background: 'var(--white)',
+                color: 'var(--text)',
+              }}
             />
             <button
               type="button"
@@ -313,10 +405,19 @@ function DisablePasswordSection({
           <div className="flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => { setExpanded(false); setPassword(''); setError('') }}
+              onClick={() => {
+                setExpanded(false)
+                setPassword('')
+                setError('')
+              }}
               disabled={loading}
               className="cursor-pointer rounded-md border px-3 py-1.5 font-medium transition-colors disabled:opacity-50"
-              style={{ borderColor: 'var(--border)', background: 'var(--white)', color: 'var(--text)', fontSize: 13 }}
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--white)',
+                color: 'var(--text)',
+                fontSize: 13,
+              }}
             >
               {t('profile.cancel')}
             </button>

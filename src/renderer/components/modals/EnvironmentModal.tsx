@@ -4,6 +4,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import type { Environment, EnvironmentVariable, GlobalVariable } from '../../types'
 import DeleteConfirmDialog from './DeleteConfirmDialog'
+import Modal from '../shared/Modal'
 
 type Pane = { kind: 'globals' } | { kind: 'env'; id: string }
 
@@ -70,11 +71,11 @@ export default function EnvironmentModal() {
   function handleVarChange(
     varId: string,
     field: 'key' | 'initialValue' | 'value' | 'enabled' | 'secret',
-    newValue: string | boolean
+    newValue: string | boolean,
   ) {
     if (!selectedEnv) return
     const updatedVars = selectedEnv.variables.map((v) =>
-      v.id === varId ? { ...v, [field]: newValue } : v
+      v.id === varId ? { ...v, [field]: newValue } : v,
     )
     updateEnvironment(selectedEnv.id, { variables: updatedVars })
   }
@@ -102,11 +103,7 @@ export default function EnvironmentModal() {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[9000] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.36)' }}
-      onClick={() => setShow(false)}
-    >
+    <Modal open={show} onOpenChange={setShow} title="Environments" zIndex={9000}>
       <div
         className="flex overflow-hidden rounded-[12px]"
         style={{
@@ -118,7 +115,6 @@ export default function EnvironmentModal() {
           boxShadow: 'var(--shadow-modal)',
           border: '1px solid var(--border)',
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Left: navigation */}
         <div
@@ -179,17 +175,21 @@ export default function EnvironmentModal() {
                 onClick={() => setPane({ kind: 'env', id: env.id })}
                 className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left"
                 style={{
-                  background: pane.kind === 'env' && pane.id === env.id ? 'var(--accent-light)' : 'transparent',
+                  background:
+                    pane.kind === 'env' && pane.id === env.id
+                      ? 'var(--accent-light)'
+                      : 'transparent',
                   border: 'none',
-                  color: pane.kind === 'env' && pane.id === env.id ? 'var(--accent-text)' : 'var(--text)',
+                  color:
+                    pane.kind === 'env' && pane.id === env.id
+                      ? 'var(--accent-text)'
+                      : 'var(--text)',
                   fontWeight: pane.kind === 'env' && pane.id === env.id ? 600 : 400,
                 }}
               >
                 <Layers size={13} style={{ color: 'var(--muted)' }} />
                 <span className="flex-1 truncate">{env.name}</span>
-                {env.id === activeEnvId && (
-                  <Check size={12} style={{ color: 'var(--green)' }} />
-                )}
+                {env.id === activeEnvId && <Check size={12} style={{ color: 'var(--green)' }} />}
               </button>
             ))}
 
@@ -218,10 +218,7 @@ export default function EnvironmentModal() {
             )}
           </div>
 
-          <div
-            className="p-3"
-            style={{ borderTop: '1px solid var(--border)' }}
-          >
+          <div className="p-3" style={{ borderTop: '1px solid var(--border)' }}>
             <button
               type="button"
               onClick={() => setCreatingEnv(true)}
@@ -259,7 +256,10 @@ export default function EnvironmentModal() {
               onRemoveVar={handleRemoveVar}
             />
           ) : (
-            <div className="flex h-full items-center justify-center" style={{ color: 'var(--hint)' }}>
+            <div
+              className="flex h-full items-center justify-center"
+              style={{ color: 'var(--hint)' }}
+            >
               Select an environment from the sidebar.
             </div>
           )}
@@ -279,7 +279,7 @@ export default function EnvironmentModal() {
         }}
         onCancel={() => setDeleteEnvTarget(null)}
       />
-    </div>
+    </Modal>
   )
 }
 
@@ -305,7 +305,9 @@ function GlobalsPane({
         style={{ borderBottom: '1px solid var(--border)' }}
       >
         <div>
-          <div className="text-[15px] font-semibold" style={{ color: 'var(--heading)' }}>Globals</div>
+          <div className="text-[15px] font-semibold" style={{ color: 'var(--heading)' }}>
+            Globals
+          </div>
           <div style={{ color: 'var(--muted)' }}>
             A global variable can be accessed anywhere inside this project.
           </div>
@@ -339,7 +341,11 @@ function EnvPane({
   isActive: boolean
   onSetActive: () => void
   onDelete: () => void
-  onVarChange: (id: string, field: 'key' | 'initialValue' | 'value' | 'enabled' | 'secret', val: string | boolean) => void
+  onVarChange: (
+    id: string,
+    field: 'key' | 'initialValue' | 'value' | 'enabled' | 'secret',
+    val: string | boolean,
+  ) => void
   onAddVar: () => void
   onRemoveVar: (id: string) => void
 }) {
@@ -367,9 +373,7 @@ function EnvPane({
               </span>
             )}
           </div>
-          <div style={{ color: 'var(--muted)' }}>
-            {env.variables.length} variables
-          </div>
+          <div style={{ color: 'var(--muted)' }}>{env.variables.length} variables</div>
         </div>
         <div className="flex items-center gap-2">
           {!isActive && (
@@ -407,7 +411,11 @@ function EnvPane({
         variables={env.variables}
         onUpdate={(id, updates) => {
           for (const k of Object.keys(updates) as Array<keyof typeof updates>) {
-            onVarChange(id, k as 'key' | 'initialValue' | 'value' | 'enabled' | 'secret', updates[k] as string | boolean)
+            onVarChange(
+              id,
+              k as 'key' | 'initialValue' | 'value' | 'enabled' | 'secret',
+              updates[k] as string | boolean,
+            )
           }
         }}
         onRemove={onRemoveVar}
@@ -544,7 +552,7 @@ function VarRowView({
       <select
         value={variable.secret ? 'secret' : 'default'}
         onChange={(e) => onUpdate({ secret: e.target.value === 'secret' })}
-               style={{
+        style={{
           background: 'transparent',
           border: '1px solid var(--border)',
           borderRadius: 4,
@@ -611,7 +619,8 @@ function VarRowView({
           cursor: variable.key ? 'pointer' : 'not-allowed',
         }}
         onMouseEnter={(e) => {
-          if (variable.key && !copied) (e.currentTarget as HTMLElement).style.color = 'var(--accent)'
+          if (variable.key && !copied)
+            (e.currentTarget as HTMLElement).style.color = 'var(--accent)'
         }}
         onMouseLeave={(e) => {
           if (!copied) (e.currentTarget as HTMLElement).style.color = 'var(--hint)'
@@ -626,8 +635,12 @@ function VarRowView({
         onClick={onRemove}
         className="flex cursor-pointer items-center justify-center"
         style={{ background: 'transparent', border: 'none', color: 'var(--hint)', padding: 4 }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--red)' }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--hint)' }}
+        onMouseEnter={(e) => {
+          ;(e.currentTarget as HTMLElement).style.color = 'var(--red)'
+        }}
+        onMouseLeave={(e) => {
+          ;(e.currentTarget as HTMLElement).style.color = 'var(--hint)'
+        }}
       >
         <X size={12} />
       </button>

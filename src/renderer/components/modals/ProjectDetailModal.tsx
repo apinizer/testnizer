@@ -29,6 +29,7 @@ import { useBranchStore } from '../../stores/branch.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
+import Modal from '../shared/Modal'
 import {
   OverviewPane,
   AuthPane,
@@ -303,13 +304,13 @@ export default function ProjectDetailModal() {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.4)' }}
-      onClick={handleClose}
+    <Modal
+      open={show}
+      onOpenChange={(o) => !o && handleClose()}
+      title={activeProject.display_name || activeProject.name}
+      zIndex={1000}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
         className="flex overflow-hidden"
         style={{
           background: 'var(--white)',
@@ -540,7 +541,7 @@ export default function ProjectDetailModal() {
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 

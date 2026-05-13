@@ -4,11 +4,11 @@
 // About modal so users can review the legal documents without re-triggering
 // the consent gate.
 
-import { useEffect } from 'react'
 import { X } from 'lucide-react'
 import eulaText from '../../../../docs/legal/eula.md?raw'
 import privacyText from '../../../../docs/legal/privacy-policy.md?raw'
 import LegalMarkdown from './LegalMarkdown'
+import Modal from '../shared/Modal'
 import { useTranslation } from '../../lib/i18n'
 
 interface Props {
@@ -20,30 +20,16 @@ interface Props {
 export default function LegalDocModal({ open, doc, onClose }: Props) {
   const { t } = useTranslation()
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
   if (!open || !doc) return null
 
   const text = doc === 'eula' ? eulaText : privacyText
   const title = doc === 'eula' ? t('about.eula') : t('about.privacyPolicy')
 
   return (
-    <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.4)' }}
-      onClick={onClose}
-    >
+    <Modal open={open} onOpenChange={(o) => !o && onClose()} title={title} zIndex={10000}>
       <div
         className="flex w-[760px] flex-col overflow-hidden rounded-xl border shadow-xl"
         style={{ background: 'var(--white)', borderColor: 'var(--border)', maxHeight: '85vh' }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div
           className="flex shrink-0 items-center justify-between border-b px-5 py-4"
@@ -64,6 +50,6 @@ export default function LegalDocModal({ open, doc, onClose }: Props) {
           <LegalMarkdown text={text} />
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

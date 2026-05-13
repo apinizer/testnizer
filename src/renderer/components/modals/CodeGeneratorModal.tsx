@@ -3,21 +3,22 @@ import { X, Copy, Check, Terminal, Code2, FileCode } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useRequestStore } from '../../stores/request.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
+import Modal from '../shared/Modal'
 import { generateCode, CODE_LANGUAGES } from '../../lib/code-generator'
 import type { CodeLanguage } from '../../types'
 
 const LANG_ICONS: Record<string, React.ReactNode> = {
-  'curl': <Terminal size={14} />,
+  curl: <Terminal size={14} />,
   'js-fetch': <FileCode size={14} />,
   'js-axios': <FileCode size={14} />,
   'python-requests': <Code2 size={14} />,
   'java-okhttp': <Code2 size={14} />,
-  'go': <Code2 size={14} />,
-  'php': <Code2 size={14} />,
-  'ruby': <Code2 size={14} />,
-  'swift': <Code2 size={14} />,
-  'kotlin': <Code2 size={14} />,
-  'csharp': <Code2 size={14} />,
+  go: <Code2 size={14} />,
+  php: <Code2 size={14} />,
+  ruby: <Code2 size={14} />,
+  swift: <Code2 size={14} />,
+  kotlin: <Code2 size={14} />,
+  csharp: <Code2 size={14} />,
 }
 
 export default function CodeGeneratorModal() {
@@ -48,15 +49,10 @@ export default function CodeGeneratorModal() {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[500] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.28)' }}
-      onClick={() => setShow(false)}
-    >
+    <Modal open={show} onOpenChange={setShow} title="Generate Code" zIndex={500}>
       <div
         className="flex h-[520px] w-[820px] max-w-[95vw] flex-col overflow-hidden rounded-[14px] bg-[var(--white)]"
         style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-3">
@@ -96,7 +92,8 @@ export default function CodeGeneratorModal() {
                   color: activeLang === lang.id ? 'var(--accent-text)' : 'var(--text)',
                   fontWeight: activeLang === lang.id ? 600 : 400,
                   border: 'none',
-                  borderLeft: activeLang === lang.id ? '2px solid var(--accent)' : '2px solid transparent',
+                  borderLeft:
+                    activeLang === lang.id ? '2px solid var(--accent)' : '2px solid transparent',
                 }}
               >
                 <span style={{ color: activeLang === lang.id ? 'var(--accent)' : 'var(--muted)' }}>
@@ -109,12 +106,7 @@ export default function CodeGeneratorModal() {
 
           {/* Code pane */}
           <div className="flex-1 overflow-hidden">
-            <MonacoWrapper
-              value={code}
-              language={monacoLang}
-              readOnly
-              height="100%"
-            />
+            <MonacoWrapper value={code} language={monacoLang} readOnly height="100%" />
           </div>
         </div>
 
@@ -129,6 +121,6 @@ export default function CodeGeneratorModal() {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

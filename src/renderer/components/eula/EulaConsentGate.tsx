@@ -16,6 +16,7 @@ import privacyText from '../../../../docs/legal/privacy-policy.md?raw'
 import { useEulaStore } from '../../stores/eula.store'
 import { useTranslation } from '../../lib/i18n'
 import LegalMarkdown from './LegalMarkdown'
+import Modal from '../shared/Modal'
 import appIcon from '../../assets/icon.png'
 
 type DocTab = 'eula' | 'privacy'
@@ -79,9 +80,12 @@ export default function EulaConsentGate({ children }: Props) {
   if (consentValid) return <>{children}</>
 
   return (
-    <div
-      className="flex h-screen w-screen items-center justify-center"
-      style={{ background: 'var(--bg)', color: 'var(--text)', padding: 24 }}
+    <Modal
+      open={true}
+      onOpenChange={() => {}}
+      title="EULA Consent"
+      zIndex={10000}
+      preventClose={true}
     >
       <div
         className="flex w-full flex-col overflow-hidden rounded-xl border shadow-xl"
@@ -207,50 +211,48 @@ export default function EulaConsentGate({ children }: Props) {
         </div>
       </div>
 
-      {confirmDecline && (
+      <Modal
+        open={confirmDecline}
+        onOpenChange={setConfirmDecline}
+        title={t('eula.decline')}
+        zIndex={10500}
+      >
         <div
-          className="fixed inset-0 z-[10000] flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.5)' }}
-          onClick={() => setConfirmDecline(false)}
+          className="flex w-[400px] flex-col gap-3 rounded-xl border p-5 shadow-xl"
+          style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
         >
-          <div
-            className="flex w-[400px] flex-col gap-3 rounded-xl border p-5 shadow-xl"
-            style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontSize: 15, fontWeight: 600 }}>{t('eula.decline')}</div>
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('eula.declineConfirm')}</div>
-            <div className="mt-2 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmDecline(false)}
-                className="cursor-pointer rounded-md border px-3 py-1.5"
-                style={{
-                  background: 'var(--white)',
-                  borderColor: 'var(--border)',
-                  color: 'var(--text)',
-                  fontSize: 13,
-                }}
-              >
-                {t('eula.cancel')}
-              </button>
-              <button
-                type="button"
-                onClick={() => void onDeclineConfirmed()}
-                className="cursor-pointer rounded-md border-none px-3 py-1.5"
-                style={{
-                  background: 'var(--red, #cc2200)',
-                  color: 'white',
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                {t('eula.declineQuit')}
-              </button>
-            </div>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>{t('eula.decline')}</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('eula.declineConfirm')}</div>
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmDecline(false)}
+              className="cursor-pointer rounded-md border px-3 py-1.5"
+              style={{
+                background: 'var(--white)',
+                borderColor: 'var(--border)',
+                color: 'var(--text)',
+                fontSize: 13,
+              }}
+            >
+              {t('eula.cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={() => void onDeclineConfirmed()}
+              className="cursor-pointer rounded-md border-none px-3 py-1.5"
+              style={{
+                background: 'var(--red, #cc2200)',
+                color: 'white',
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              {t('eula.declineQuit')}
+            </button>
           </div>
         </div>
-      )}
-    </div>
+      </Modal>
+    </Modal>
   )
 }

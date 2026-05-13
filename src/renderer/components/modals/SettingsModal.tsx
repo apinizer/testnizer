@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useUpdaterStore } from '../../stores/updater.store'
 import { useTranslation } from '../../lib/i18n'
+import Modal from '../shared/Modal'
 import type { Theme, Language } from '../../types'
 
 interface SettingsState {
@@ -119,15 +120,10 @@ export default function SettingsModal() {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[500] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.28)' }}
-      onClick={() => setShow(false)}
-    >
+    <Modal open={show} onOpenChange={setShow} title={t('settings.title')} zIndex={500}>
       <div
         className="w-[520px] max-w-[95%] rounded-[14px] bg-[var(--white)] p-7"
         style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="mb-5 flex items-center justify-between">
@@ -312,6 +308,6 @@ export default function SettingsModal() {
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

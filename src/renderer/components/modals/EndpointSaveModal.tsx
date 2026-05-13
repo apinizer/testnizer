@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
+import Modal from '../shared/Modal'
 import type { Folder } from '../../types'
 
 export default function EndpointSaveModal() {
@@ -187,20 +188,13 @@ export default function EndpointSaveModal() {
   }
 
   return (
-    <div
-      onClick={handleClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.2)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
+    <Modal
+      open={show}
+      onOpenChange={(o) => !o && handleClose()}
+      title="Save endpoint"
+      zIndex={1000}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
         style={{
           background: 'var(--white)',
           borderRadius: 14,
@@ -601,6 +595,6 @@ export default function EndpointSaveModal() {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

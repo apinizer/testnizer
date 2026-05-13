@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { AlertTriangle } from 'lucide-react'
+import Modal from '../shared/Modal'
 
 interface DeleteConfirmDialogProps {
   open: boolean
@@ -42,11 +43,9 @@ export default function DeleteConfirmDialog({
         if (!requireTyping || value.toLowerCase() === 'delete') {
           onConfirm()
         }
-      } else if (e.key === 'Escape') {
-        onCancel()
       }
     },
-    [value, requireTyping, onConfirm, onCancel],
+    [value, requireTyping, onConfirm],
   )
 
   if (!open) return null
@@ -59,16 +58,11 @@ export default function DeleteConfirmDialog({
       : 'This action cannot be undone.'
 
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.4)' }}
-      onClick={onCancel}
-      onKeyDown={handleKeyDown}
-    >
+    <Modal open={open} onOpenChange={(o) => !o && onCancel()} title="Delete confirmation">
       <div
         className="w-[420px] rounded-lg border shadow-xl"
         style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
-        onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
       >
         {/* Header */}
         <div
@@ -165,6 +159,6 @@ export default function DeleteConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

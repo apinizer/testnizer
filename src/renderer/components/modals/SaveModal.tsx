@@ -16,6 +16,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import type { SaveMode, GitRepoFile } from '../../types'
+import Modal from '../shared/Modal'
 
 type TabMode = 'save' | 'push' | 'pull' | 'open'
 
@@ -356,11 +357,7 @@ export default function SaveModal() {
   ]
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.4)' }}
-      onClick={handleClose}
-    >
+    <Modal open={show} onOpenChange={(o) => !o && handleClose()} title="Save Project" zIndex={100}>
       <div
         className="flex flex-col overflow-hidden"
         style={{
@@ -370,7 +367,6 @@ export default function SaveModal() {
           borderRadius: 12,
           boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header with tabs */}
         <div
@@ -823,6 +819,6 @@ export default function SaveModal() {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

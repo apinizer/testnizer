@@ -14,6 +14,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
+import Modal from '../shared/Modal'
 import type { WsdlParseResult, TreeNode } from '../../types'
 
 interface ImportFormat {
@@ -411,15 +412,15 @@ export default function ImportModal() {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[500] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.28)' }}
-      onClick={handleClose}
+    <Modal
+      open={showImportModal}
+      onOpenChange={(o) => !o && handleClose()}
+      title={t('import.title')}
+      zIndex={500}
     >
       <div
         className="w-[720px] max-w-[95%] rounded-[14px] bg-[var(--white)] p-7 px-8"
         style={{ boxShadow: 'var(--shadow-modal)' }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="mb-5 flex items-start justify-between">
@@ -828,6 +829,6 @@ export default function ImportModal() {
           </>
         )}
       </div>
-    </div>
+    </Modal>
   )
 }

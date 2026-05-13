@@ -7,7 +7,15 @@ import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import MethodBadge from '../shared/MethodBadge'
-import type { HistoryEntry, KeyValuePair, RequestBody, AuthConfig, HttpMethod, ApiResponse } from '../../types'
+import Modal from '../shared/Modal'
+import type {
+  HistoryEntry,
+  KeyValuePair,
+  RequestBody,
+  AuthConfig,
+  HttpMethod,
+  ApiResponse,
+} from '../../types'
 
 /**
  * Postman-style History panel — slides in from the right, shows every past
@@ -39,14 +47,20 @@ export default function HistoryPanel() {
   // Fetch on open
   useEffect(() => {
     if (show) {
-      fetch({ workspaceId: activeWorkspaceId || undefined, projectId: activeProjectId || undefined, limit: 200 })
+      fetch({
+        workspaceId: activeWorkspaceId || undefined,
+        projectId: activeProjectId || undefined,
+        limit: 200,
+      })
     }
   }, [show, activeWorkspaceId, activeProjectId, fetch])
 
   const filtered = useMemo(() => {
     if (!searchTerm.trim()) return entries
     const q = searchTerm.toLowerCase()
-    return entries.filter((e) => e.url.toLowerCase().includes(q) || (e.method || '').toLowerCase().includes(q))
+    return entries.filter(
+      (e) => e.url.toLowerCase().includes(q) || (e.method || '').toLowerCase().includes(q),
+    )
   }, [entries, searchTerm])
 
   // Group by date bucket
@@ -54,7 +68,7 @@ export default function HistoryPanel() {
 
   const selected = useMemo(
     () => filtered.find((e) => e.id === selectedId) || null,
-    [filtered, selectedId]
+    [filtered, selectedId],
   )
 
   if (!show) return null
@@ -98,17 +112,18 @@ export default function HistoryPanel() {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[600] flex items-stretch justify-end"
-      style={{ background: 'rgba(0,0,0,0.35)' }}
-      onClick={() => setShow(false)}
+    <Modal
+      open={show}
+      onOpenChange={setShow}
+      title="History"
+      zIndex={600}
+      contentClassName="fixed inset-y-0 right-0"
     >
       <div
-        onClick={(e) => e.stopPropagation()}
         className="flex h-full flex-col"
         style={{
           width: 860,
-          maxWidth: '96%',
+          maxWidth: '96vw',
           background: 'var(--white)',
           boxShadow: '-20px 0 60px rgba(0,0,0,0.4)',
           borderLeft: '1px solid var(--border)',
@@ -123,9 +138,7 @@ export default function HistoryPanel() {
           <span className="font-semibold" style={{ color: 'var(--heading)' }}>
             History
           </span>
-          <span style={{ color: 'var(--muted)' }}>
-            {entries.length} entries
-          </span>
+          <span style={{ color: 'var(--muted)' }}>{entries.length} entries</span>
           <div className="flex-1" />
           <button
             type="button"
@@ -173,7 +186,10 @@ export default function HistoryPanel() {
         {/* Body — two columns */}
         <div className="flex flex-1 overflow-hidden">
           {/* List */}
-          <div className="w-[360px] shrink-0 overflow-y-auto" style={{ borderRight: '1px solid var(--border)' }}>
+          <div
+            className="w-[360px] shrink-0 overflow-y-auto"
+            style={{ borderRight: '1px solid var(--border)' }}
+          >
             {groups.length === 0 && (
               <div className="p-8 text-center" style={{ color: 'var(--hint)' }}>
                 No history yet. Send a request to build up history.
@@ -207,10 +223,12 @@ export default function HistoryPanel() {
                         color: 'var(--text)',
                       }}
                       onMouseEnter={(e) => {
-                        if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--item-hover)'
+                        if (!isSelected)
+                          (e.currentTarget as HTMLElement).style.background = 'var(--item-hover)'
                       }}
                       onMouseLeave={(e) => {
-                        if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent'
+                        if (!isSelected)
+                          (e.currentTarget as HTMLElement).style.background = 'transparent'
                       }}
                     >
                       <MethodBadge method={entry.method || 'GET'} small />
@@ -256,14 +274,17 @@ export default function HistoryPanel() {
             {selected ? (
               <HistoryDetail entry={selected} onOpen={() => handleOpenInTab(selected)} />
             ) : (
-              <div className="flex h-full items-center justify-center" style={{ color: 'var(--hint)' }}>
+              <div
+                className="flex h-full items-center justify-center"
+                style={{ color: 'var(--hint)' }}
+              >
                 Select a history entry to preview it. Double-click to open.
               </div>
             )}
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -293,12 +314,18 @@ function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => v
       <div className="mb-3 flex items-center gap-4" style={{ color: 'var(--muted)' }}>
         {entry.status_code != null && (
           <span>
-            Status: <span className="font-semibold" style={{ color: statusColor(entry.status_code) }}>{entry.status_code}</span>
+            Status:{' '}
+            <span className="font-semibold" style={{ color: statusColor(entry.status_code) }}>
+              {entry.status_code}
+            </span>
           </span>
         )}
         {entry.duration_ms != null && (
           <span>
-            Time: <span className="font-semibold" style={{ color: 'var(--green)' }}>{entry.duration_ms} ms</span>
+            Time:{' '}
+            <span className="font-semibold" style={{ color: 'var(--green)' }}>
+              {entry.duration_ms} ms
+            </span>
           </span>
         )}
         <span>{new Date(entry.executed_at).toLocaleString()}</span>
@@ -306,7 +333,10 @@ function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => v
 
       {resp?.headers && Object.keys(resp.headers).length > 0 && (
         <div className="mb-4">
-          <div className="mb-1 font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+          <div
+            className="mb-1 font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--muted)' }}
+          >
             Response headers
           </div>
           <div
@@ -325,7 +355,10 @@ function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => v
 
       {resp?.body && (
         <div>
-          <div className="mb-1 font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+          <div
+            className="mb-1 font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--muted)' }}
+          >
             Response body
           </div>
           <pre
@@ -366,7 +399,11 @@ function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: His
       yesterday.push(e)
     } else {
       const d = new Date(e.executed_at)
-      const key = d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+      const key = d.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
       if (!earlierBuckets.has(key)) earlierBuckets.set(key, [])
       earlierBuckets.get(key)!.push(e)
     }

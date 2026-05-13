@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { useBranchStore, type ConflictEntry, type ConflictStats } from '../../stores/branch.store'
 import { useTranslation } from '../../lib/i18n'
+import Modal from '../shared/Modal'
 
 /**
  * Renders when a merge or pull leaves the working tree with at least one
@@ -29,31 +30,6 @@ export default function MergeConflictModal() {
   const [activeFileIdx, setActiveFileIdx] = useState(0)
   const [busy, setBusy] = useState<BusyState>(null)
   const [error, setError] = useState<string | null>(null)
-  const dialogRef = useRef<HTMLDivElement>(null)
-
-  // Move focus into the modal on open so screen readers announce it and
-  // keyboard users start inside the dialog rather than on background tabs.
-  useEffect(() => {
-    if (conflict && dialogRef.current) {
-      dialogRef.current.focus()
-    }
-  }, [conflict])
-
-  // Escape triggers abort — same effect as clicking the footer button.
-  // We listen at the window level so the handler fires regardless of
-  // which interactive element currently has focus inside the dialog.
-  useEffect(() => {
-    if (!conflict) return
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape' && busy === null) {
-        void abort()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-    // `abort` is stable via the store; busy is the only changing dep.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conflict, busy])
 
   if (!conflict) return null
 
@@ -112,16 +88,16 @@ export default function MergeConflictModal() {
   ]
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.45)' }}
+    <Modal
+      open={conflict !== null}
+      onOpenChange={(o) => {
+        if (!o && busy === null) void abort()
+      }}
+      title="Merge conflict"
+      zIndex={100}
+      preventClose={busy !== null}
     >
       <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="merge-conflict-title"
-        tabIndex={-1}
         className="flex w-[640px] max-w-[92vw] flex-col rounded-lg shadow-xl outline-none"
         style={{ background: 'var(--white)', border: '1px solid var(--border)' }}
       >
@@ -247,7 +223,7 @@ export default function MergeConflictModal() {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 

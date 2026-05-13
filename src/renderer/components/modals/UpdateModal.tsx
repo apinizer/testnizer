@@ -2,6 +2,7 @@ import { X, Loader2, CheckCircle2, AlertCircle, Download } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useUpdaterStore } from '../../stores/updater.store'
 import { useTranslation } from '../../lib/i18n'
+import Modal from '../shared/Modal'
 
 export default function UpdateModal() {
   const show = useUIStore((s) => s.showUpdateModal)
@@ -20,21 +21,14 @@ export default function UpdateModal() {
   if (!show) return null
 
   return (
-    <div
-      className="fixed inset-0 z-[500] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.28)' }}
-      onClick={() => setShow(false)}
-    >
+    <Modal open={show} onOpenChange={setShow} title={t('settings.autoUpdate')} zIndex={500}>
       <div
         className="w-[440px] max-w-[95%] rounded-[14px] bg-[var(--white)] p-7"
         style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="mb-5 flex items-center justify-between">
-          <span className="text-lg font-bold text-[var(--text)]">
-            {t('settings.autoUpdate')}
-          </span>
+          <span className="text-lg font-bold text-[var(--text)]">{t('settings.autoUpdate')}</span>
           <button
             type="button"
             onClick={() => setShow(false)}
@@ -69,7 +63,7 @@ export default function UpdateModal() {
           />
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -105,12 +99,8 @@ function StatusContent({
           </span>
           {releaseNotes && (
             <div className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3">
-              <div className="mb-1 font-medium text-[var(--muted)]">
-                {t('update.releaseNotes')}
-              </div>
-              <div className="max-h-24 overflow-y-auto text-[var(--text)]">
-                {releaseNotes}
-              </div>
+              <div className="mb-1 font-medium text-[var(--muted)]">{t('update.releaseNotes')}</div>
+              <div className="max-h-24 overflow-y-auto text-[var(--text)]">{releaseNotes}</div>
             </div>
           )}
         </>
@@ -133,21 +123,15 @@ function StatusContent({
       return (
         <>
           <CheckCircle2 size={32} className="text-[var(--green)]" />
-          <span className="font-medium text-[var(--text)]">
-            {t('update.ready')}
-          </span>
+          <span className="font-medium text-[var(--text)]">{t('update.ready')}</span>
         </>
       )
     case 'error':
       return (
         <>
           <AlertCircle size={32} className="text-[#cc2200]" />
-          <span className="font-medium text-[#cc2200]">
-            {t('update.error')}
-          </span>
-          {errorMessage && (
-            <span className="text-[var(--muted)]">{errorMessage}</span>
-          )}
+          <span className="font-medium text-[#cc2200]">{t('update.error')}</span>
+          {errorMessage && <span className="text-[var(--muted)]">{errorMessage}</span>}
         </>
       )
     default:
