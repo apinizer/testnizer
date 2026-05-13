@@ -17,6 +17,8 @@ import ProjectDetailModal from '../modals/ProjectDetailModal'
 import ProfileModal from '../modals/ProfileModal'
 import AboutModal from '../modals/AboutModal'
 import MergeConflictModal from '../modals/MergeConflictModal'
+import ShortcutCheatsheetModal from '../modals/ShortcutCheatsheetModal'
+import CommandPalette from '../shared/CommandPalette'
 import ConsolePanel from './ConsolePanel'
 import LoginScreen from '../auth/LoginScreen'
 import QuickTestShell from './QuickTestShell'
@@ -57,6 +59,8 @@ function GitLoadingOverlay() {
 export default function AppShell() {
   const isLeftPanelCollapsed = useUIStore((s) => s.isLeftPanelCollapsed)
   const activeSidebarPage = useUIStore((s) => s.activeSidebarPage)
+  const showCommandPalette = useUIStore((s) => s.showCommandPalette)
+  const setShowCommandPalette = useUIStore((s) => s.setShowCommandPalette)
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const initialized = useWorkspaceStore((s) => s.initialized)
   const initialize = useWorkspaceStore((s) => s.initialize)
@@ -151,6 +155,8 @@ export default function AppShell() {
         <NewProjectModal />
         <ProfileModal />
         <AboutModal />
+        <CommandPalette open={showCommandPalette} onOpenChange={setShowCommandPalette} />
+        <ShortcutCheatsheetModal />
       </div>
     )
   }
@@ -197,6 +203,8 @@ export default function AppShell() {
       <ProfileModal />
       <AboutModal />
       <MergeConflictModal />
+      <ShortcutCheatsheetModal />
+      <CommandPalette open={showCommandPalette} onOpenChange={setShowCommandPalette} />
 
       {/* Git loading overlay */}
       <GitLoadingOverlay />

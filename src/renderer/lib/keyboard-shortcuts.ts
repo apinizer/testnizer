@@ -26,10 +26,41 @@ function makeTabId(): string {
   return 'tab-' + Math.random().toString(36).substring(2, 10)
 }
 
+function isTypingInEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+  if (target.isContentEditable) return true
+  // Monaco's editor wraps a contenteditable textarea — closest('.monaco-editor') catches it.
+  if (target.closest('.monaco-editor')) return true
+  return false
+}
+
 export function useKeyboardShortcuts(): void {
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
-      // Only process when modifier key is held
+      // Cmd/Ctrl+K — command palette. Toggles open/close so power users can dismiss with the same chord.
+      if (isModKey(e) && e.key.toLowerCase() === 'k' && !e.shiftKey) {
+        e.preventDefault()
+        const ui = useUIStore.getState()
+        ui.setShowCommandPalette(!ui.showCommandPalette)
+        return
+      }
+
+      // "?" (Shift+/) — shortcut cheatsheet. Disabled when typing in an editable
+      // field or when the palette/another modal already owns focus.
+      if (
+        e.key === '?' &&
+        !isModKey(e) &&
+        !isTypingInEditableElement(e.target) &&
+        !useUIStore.getState().showCommandPalette
+      ) {
+        e.preventDefault()
+        useUIStore.getState().setShowShortcutCheatsheet(true)
+        return
+      }
+
+      // Only process the rest when modifier key is held.
       if (!isModKey(e)) return
 
       const shortcuts: ShortcutHandler[] = [

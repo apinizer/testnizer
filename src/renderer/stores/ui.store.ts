@@ -53,6 +53,8 @@ interface UIStore {
   showConsolePanel: boolean
   showProfileModal: boolean
   showAboutModal: boolean
+  showCommandPalette: boolean
+  showShortcutCheatsheet: boolean
   gitLoading: string | null // null = idle, string = message to display
   addEndpointsSuiteId: string | null
   addEndpointsSuiteName: string | null
@@ -85,6 +87,8 @@ interface UIStore {
   toggleConsolePanel: () => void
   setShowProfileModal: (show: boolean) => void
   setShowAboutModal: (show: boolean) => void
+  setShowCommandPalette: (show: boolean) => void
+  setShowShortcutCheatsheet: (show: boolean) => void
   setGitLoading: (msg: string | null) => void
   setAddEndpointsSuite: (suiteId: string | null, suiteName?: string | null) => void
   setRightPanelCollapsed: (collapsed: boolean) => void
@@ -156,6 +160,8 @@ export const useUIStore = create<UIStore>((set) => ({
   showConsolePanel: false,
   showProfileModal: false,
   showAboutModal: false,
+  showCommandPalette: false,
+  showShortcutCheatsheet: false,
   gitLoading: null,
   addEndpointsSuiteId: null,
   addEndpointsSuiteName: null,
@@ -276,6 +282,8 @@ export const useUIStore = create<UIStore>((set) => ({
   toggleConsolePanel: () => set((s) => ({ showConsolePanel: !s.showConsolePanel })),
   setShowProfileModal: (show) => set({ showProfileModal: show }),
   setShowAboutModal: (show) => set({ showAboutModal: show }),
+  setShowCommandPalette: (show) => set({ showCommandPalette: show }),
+  setShowShortcutCheatsheet: (show) => set({ showShortcutCheatsheet: show }),
   setGitLoading: (msg) => set({ gitLoading: msg }),
   setAddEndpointsSuite: (suiteId, suiteName) =>
     set({ addEndpointsSuiteId: suiteId, addEndpointsSuiteName: suiteName ?? null }),
