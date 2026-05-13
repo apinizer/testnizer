@@ -104,7 +104,7 @@ export default function EnvironmentModal() {
   }
 
   return (
-    <Modal open={show} onOpenChange={setShow} title="Environments" zIndex={9000}>
+    <Modal open={show} onOpenChange={setShow} title="Environments">
       <div
         className="flex overflow-hidden rounded-[12px]"
         style={{

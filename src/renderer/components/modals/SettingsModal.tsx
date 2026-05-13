@@ -124,7 +124,7 @@ export default function SettingsModal() {
   }
 
   return (
-    <Modal open={show} onOpenChange={setShow} title={t('settings.title')} zIndex={500}>
+    <Modal open={show} onOpenChange={setShow} title={t('settings.title')}>
       <div
         className="w-[520px] max-w-[95%] rounded-[14px] bg-[var(--white)] p-7"
         style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}

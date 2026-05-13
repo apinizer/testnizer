@@ -188,12 +188,7 @@ export default function EndpointSaveModal() {
   }
 
   return (
-    <Modal
-      open={show}
-      onOpenChange={(o) => !o && handleClose()}
-      title="Save endpoint"
-      zIndex={1000}
-    >
+    <Modal open={show} onOpenChange={(o) => !o && handleClose()} title="Save endpoint">
       <div
         style={{
           background: 'var(--white)',

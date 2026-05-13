@@ -6,6 +6,7 @@ import { useRequestStore } from '../stores/request.store'
 import { useTabsStore } from '../stores/tabs.store'
 import { useUIStore } from '../stores/ui.store'
 import { isMac } from './platform'
+import { makeTabId } from './utils'
 
 interface ShortcutHandler {
   key: string
@@ -17,10 +18,6 @@ interface ShortcutHandler {
 
 function isModKey(e: KeyboardEvent): boolean {
   return isMac() ? e.metaKey : e.ctrlKey
-}
-
-function makeTabId(): string {
-  return 'tab-' + Math.random().toString(36).substring(2, 10)
 }
 
 function isTypingInEditableElement(target: EventTarget | null): boolean {

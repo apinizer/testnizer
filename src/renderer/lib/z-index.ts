@@ -12,4 +12,6 @@ export const Z = {
   TOAST: 10001,
   /** EULA / consent gate — blocks app until accepted, above everything. */
   GATE: 10500,
+  /** Confirmation dialogs opened from inside the gate (e.g. decline prompt). */
+  GATE_DIALOG: 10502,
 } as const

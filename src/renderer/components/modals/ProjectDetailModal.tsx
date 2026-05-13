@@ -308,7 +308,6 @@ export default function ProjectDetailModal() {
       open={show}
       onOpenChange={(o) => !o && handleClose()}
       title={activeProject.display_name || activeProject.name}
-      zIndex={1000}
     >
       <div
         className="flex overflow-hidden"

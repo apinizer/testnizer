@@ -65,7 +65,6 @@ export default function CollectionRunnerModal() {
         if (!o && !isRunning) setShow(false)
       }}
       title="Collection Runner"
-      zIndex={500}
       preventClose={isRunning}
     >
       <div

@@ -37,9 +37,19 @@ import { useTabsStore } from '../stores/tabs.store'
 import { useUIStore } from '../stores/ui.store'
 import { useEnvironmentStore } from '../stores/environment.store'
 import { isMac } from './platform'
+import { makeTabId } from './utils'
 import type { ToolProtocol } from '../types'
 
-export type CommandGroup = 'navigation' | 'request' | 'tools' | 'settings' | 'project' | 'help'
+export const GROUP_LABEL_KEY = {
+  navigation: 'command.group.navigation',
+  request: 'command.group.request',
+  project: 'command.group.project',
+  tools: 'command.group.tools',
+  settings: 'command.group.settings',
+  help: 'command.group.help',
+} as const
+
+export type CommandGroup = keyof typeof GROUP_LABEL_KEY
 
 export interface CommandAction {
   id: string
@@ -50,11 +60,6 @@ export interface CommandAction {
   /** Optional free-text keywords cmdk uses for fuzzy matching. */
   keywords?: string[]
   run: () => void | Promise<void>
-}
-
-// Single tab id generator used by every "new tab" action.
-function makeTabId(): string {
-  return 'tab-' + Math.random().toString(36).substring(2, 10)
 }
 
 /** Pretty shortcut hint shown in the palette (e.g. "Cmd+K" on macOS, "Ctrl+K" elsewhere). */

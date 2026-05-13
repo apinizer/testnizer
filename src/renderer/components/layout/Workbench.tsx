@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
+import { isMac } from '../../lib/platform'
+import { makeTabId } from '../../lib/utils'
 import UrlBar from './UrlBar'
 import UrlPreview from './UrlPreview'
 import RequestEditor from '../request/RequestEditor'
@@ -225,7 +227,7 @@ function EndpointTabBar() {
       return
     }
 
-    const newId = 'tab-' + Math.random().toString(36).substring(2, 10)
+    const newId = makeTabId()
     // Open with the same metadata. The unsaved/edited state lives in protocol
     // stores keyed on tabId — clone the source's cache into the new id so
     // unsaved edits travel with the duplicate. Only the request store has a
@@ -336,7 +338,7 @@ function EndpointTabBar() {
   }
 
   function handleNewTab() {
-    const id = 'tab-' + Math.random().toString(36).substring(2, 10)
+    const id = makeTabId()
     openTab({ id, name: 'New Request', protocol: 'http', method: 'GET', url: '' })
   }
 
@@ -649,12 +651,11 @@ function EndpointTabBar() {
   )
 }
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 function cmdOrCtrl(key: string): string {
-  return isMac ? `⌘${key}` : `Ctrl+${key}`
+  return isMac() ? `⌘${key}` : `Ctrl+${key}`
 }
 function altCmdOrCtrl(key: string): string {
-  return isMac ? `⌥⌘${key}` : `Ctrl+Alt+${key}`
+  return isMac() ? `⌥⌘${key}` : `Ctrl+Alt+${key}`
 }
 
 function ContextMenuItem({
@@ -718,7 +719,7 @@ export default function Workbench() {
       if (e.key === 't' || e.key === 'T') {
         if (e.altKey || e.shiftKey) return
         e.preventDefault()
-        const id = 'tab-' + Math.random().toString(36).substring(2, 10)
+        const id = makeTabId()
         useTabsStore.getState().openTab({
           id,
           name: 'New Request',

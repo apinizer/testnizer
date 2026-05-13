@@ -94,7 +94,6 @@ export default function MergeConflictModal() {
         if (!o && busy === null) void abort()
       }}
       title="Merge conflict"
-      zIndex={100}
       preventClose={busy !== null}
     >
       <div

@@ -1,10 +1,7 @@
 import { Globe, FileText, Bot, FileCode2, Cpu, Hexagon, Activity, Cloud, Zap } from 'lucide-react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
-
-function makeTabId(): string {
-  return 'tab-' + Math.random().toString(36).substring(2, 10)
-}
+import { makeTabId } from '../../lib/utils'
 
 interface QuickAction {
   icon: React.ReactNode

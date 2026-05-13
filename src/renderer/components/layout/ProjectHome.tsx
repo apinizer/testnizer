@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
 import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
+import { isMac } from '../../lib/platform'
 import type { Project } from '../../types'
 import ProjectIcon from '../shared/ProjectIcon'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
@@ -113,7 +114,7 @@ export default function ProjectHome() {
         onClick={() => setShowAboutModal(true)}
         className="absolute top-4 z-10 cursor-pointer rounded-md border bg-transparent px-2.5 py-1 transition-colors"
         style={{
-          left: navigator.userAgent.includes('Mac') ? 92 : 20,
+          left: isMac() ? 92 : 20,
           borderColor: 'var(--border)',
           color: 'var(--muted)',
           fontSize: 13,

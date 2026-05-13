@@ -1,6 +1,7 @@
 // src/renderer/lib/i18n.ts
 // Lightweight i18n system — no external dependency
 
+import { useMemo } from 'react'
 import { useUIStore } from '../stores/ui.store'
 
 export type Locale = 'en' | 'tr'
@@ -2654,12 +2655,16 @@ export function getLocale(): Locale {
  */
 export function useTranslation(): { t: (key: string) => string; locale: Locale } {
   const locale = useUIStore((s) => s.locale)
-  // Keep module-level locale in sync
   if (locale !== currentLocale) {
     currentLocale = locale
   }
-  return {
-    t: (key: string): string => translations[locale][key] ?? key,
-    locale,
-  }
+  // Stable `t` reference per-locale so useMemo/useCallback deps relying on it
+  // don't invalidate on every render of the consumer.
+  const t = useMemo(
+    () =>
+      (key: string): string =>
+        translations[locale][key] ?? key,
+    [locale],
+  )
+  return { t, locale }
 }

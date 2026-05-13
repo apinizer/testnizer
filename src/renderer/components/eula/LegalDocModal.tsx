@@ -26,7 +26,7 @@ export default function LegalDocModal({ open, doc, onClose }: Props) {
   const title = doc === 'eula' ? t('about.eula') : t('about.privacyPolicy')
 
   return (
-    <Modal open={open} onOpenChange={(o) => !o && onClose()} title={title} zIndex={10000}>
+    <Modal open={open} onOpenChange={(o) => !o && onClose()} title={title}>
       <div
         className="flex w-[760px] flex-col overflow-hidden rounded-xl border shadow-xl"
         style={{ background: 'var(--white)', borderColor: 'var(--border)', maxHeight: '85vh' }}

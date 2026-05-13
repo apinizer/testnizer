@@ -490,12 +490,7 @@ export default function NewProjectModal() {
   ]
 
   return (
-    <Modal
-      open={show}
-      onOpenChange={(o) => !o && handleClose()}
-      title={t('newProject.title')}
-      zIndex={1000}
-    >
+    <Modal open={show} onOpenChange={(o) => !o && handleClose()} title={t('newProject.title')}>
       <div
         style={{
           background: 'var(--white)',

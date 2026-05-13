@@ -354,7 +354,7 @@ export default function SaveModal() {
   ]
 
   return (
-    <Modal open={show} onOpenChange={(o) => !o && handleClose()} title="Save Project" zIndex={100}>
+    <Modal open={show} onOpenChange={(o) => !o && handleClose()} title="Save Project">
       <div
         className="flex flex-col overflow-hidden"
         style={{

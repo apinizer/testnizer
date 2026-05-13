@@ -3,6 +3,7 @@ import { Eye, EyeOff, GitBranch, Plus, Trash2, FileUp } from 'lucide-react'
 import type { Theme, Language } from '../../types'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import { useTranslation } from '../../lib/i18n'
+import { isMac } from '../../lib/platform'
 import { FONT_PRESETS } from '../../stores/ui.store'
 
 // ════════════════════════════════════════════════════════════════
@@ -1148,9 +1149,9 @@ export function ThemesPane({
 
 export function ShortcutsPane() {
   const { t } = useTranslation()
-  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
-  const cmd = isMac ? '⌘' : 'Ctrl'
-  const alt = isMac ? '⌥' : 'Alt'
+  const mac = isMac()
+  const cmd = mac ? '⌘' : 'Ctrl'
+  const alt = mac ? '⌥' : 'Alt'
   const rows: Array<{ action: string; keys: string }> = [
     { action: t('shortcuts.sendRequest'), keys: `${cmd} + Enter` },
     { action: t('shortcuts.saveRequest'), keys: `${cmd} + S` },

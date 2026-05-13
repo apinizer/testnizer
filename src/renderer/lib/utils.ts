@@ -13,3 +13,8 @@ export function cn(...inputs: ClassValue[]): string {
 export function makeId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
+
+/** Conventional id prefix for tab entries. */
+export function makeTabId(): string {
+  return 'tab-' + makeId()
+}

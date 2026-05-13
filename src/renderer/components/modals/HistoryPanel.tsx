@@ -117,7 +117,6 @@ export default function HistoryPanel() {
       open={show}
       onOpenChange={setShow}
       title="History"
-      zIndex={600}
       contentClassName="fixed inset-y-0 right-0"
     >
       <div

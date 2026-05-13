@@ -33,6 +33,8 @@ const visuallyHidden: CSSProperties = {
   border: 0,
 }
 
+const blockEvent = (e: Event): void => e.preventDefault()
+
 export default function Modal({
   open,
   onOpenChange,
@@ -44,7 +46,7 @@ export default function Modal({
   contentClassName,
   contentStyle,
 }: ModalProps) {
-  const block = preventClose ? (e: Event) => e.preventDefault() : undefined
+  const block = preventClose ? blockEvent : undefined
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>

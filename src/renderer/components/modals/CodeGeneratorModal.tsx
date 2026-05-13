@@ -49,7 +49,7 @@ export default function CodeGeneratorModal() {
   }
 
   return (
-    <Modal open={show} onOpenChange={setShow} title="Generate Code" zIndex={500}>
+    <Modal open={show} onOpenChange={setShow} title="Generate Code">
       <div
         className="flex h-[520px] w-[820px] max-w-[95vw] flex-col overflow-hidden rounded-[14px] bg-[var(--white)]"
         style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}

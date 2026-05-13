@@ -21,7 +21,7 @@ export default function UpdateModal() {
   if (!show) return null
 
   return (
-    <Modal open={show} onOpenChange={setShow} title={t('settings.autoUpdate')} zIndex={500}>
+    <Modal open={show} onOpenChange={setShow} title={t('settings.autoUpdate')}>
       <div
         className="w-[440px] max-w-[95%] rounded-[14px] bg-[var(--white)] p-7"
         style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}

@@ -17,6 +17,7 @@ import { useEulaStore } from '../../stores/eula.store'
 import { useTranslation } from '../../lib/i18n'
 import LegalMarkdown from './LegalMarkdown'
 import Modal from '../shared/Modal'
+import { Z } from '../../lib/z-index'
 import appIcon from '../../assets/icon.png'
 
 type DocTab = 'eula' | 'privacy'
@@ -84,7 +85,7 @@ export default function EulaConsentGate({ children }: Props) {
       open={true}
       onOpenChange={() => {}}
       title="EULA Consent"
-      zIndex={10000}
+      zIndex={Z.GATE}
       preventClose={true}
     >
       <div
@@ -215,7 +216,7 @@ export default function EulaConsentGate({ children }: Props) {
         open={confirmDecline}
         onOpenChange={setConfirmDecline}
         title={t('eula.decline')}
-        zIndex={10500}
+        zIndex={Z.GATE_DIALOG}
       >
         <div
           className="flex w-[400px] flex-col gap-3 rounded-xl border p-5 shadow-xl"
