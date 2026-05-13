@@ -107,7 +107,7 @@
     "readable-stream": "^4.7.0",
     "readdir-glob": "^3.0.0",
     "remark-gfm": "^4.0.1",
-    "simple-git": "^3.35.2",
+    "simple-git": "^3.36.0",
     "soap": "^1.9.0",
     "socket.io-client": "^4.8.3",
     "tar-stream": "^3.2.0",
