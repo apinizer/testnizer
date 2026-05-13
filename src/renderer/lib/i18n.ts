@@ -27,7 +27,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'about.enterpriseTitle': 'Enterprise support',
     'about.enterpriseBody':
       'For paid support, SLAs, on-premise deployment assistance, training, or custom development requests, contact us.',
-    'about.enterpriseContact': 'info@apinizer.com',
+    'about.enterpriseContact': 'info@testnizer.com',
 
     // EULA / Privacy consent gate
     'eula.welcome': 'Welcome to Testnizer',
@@ -778,6 +778,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'testsPanel.duplicate': 'Duplicate',
     'testsPanel.delete': 'Delete',
     'testsPanel.openEndpoint': 'Open endpoint editor',
+    'testsPanel.openItem': 'Open',
     'testsPanel.noEndpointsHint': 'No endpoints. Right-click to add.',
     'testsPanel.removeFromSuite': 'Remove from suite',
     'testsPanel.testSuiteLabel': 'test suite',
@@ -1235,7 +1236,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'about.enterpriseTitle': 'Kurumsal destek',
     'about.enterpriseBody':
       'Ücretli destek, SLA, lokal kurulum asistanlığı, eğitim veya özel geliştirme talepleri için bizimle iletişime geçin.',
-    'about.enterpriseContact': 'info@apinizer.com',
+    'about.enterpriseContact': 'info@testnizer.com',
 
     // EULA / Gizlilik onay ekranı
     'eula.welcome': "Testnizer'a Hoş Geldiniz",
@@ -1989,6 +1990,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'testsPanel.duplicate': 'Çoğalt',
     'testsPanel.delete': 'Sil',
     'testsPanel.openEndpoint': 'Endpoint editörünü aç',
+    'testsPanel.openItem': 'Aç',
     'testsPanel.noEndpointsHint': 'Uç nokta yok. Eklemek için sağ tıklayın.',
     'testsPanel.removeFromSuite': 'Paketten kaldır',
     'testsPanel.testSuiteLabel': 'test paketi',

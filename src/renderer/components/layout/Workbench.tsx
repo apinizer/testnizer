@@ -53,6 +53,7 @@ import NewRequestWelcome from './NewRequestWelcome'
 import ProjectWelcome from './ProjectWelcome'
 import AddEndpointsView from '../runner/AddEndpointsView'
 import MethodBadge from '../shared/MethodBadge'
+import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import EnvironmentSelector from '../shared/EnvironmentSelector'
 import { T } from '../../styles/tokens'
 
@@ -181,9 +182,49 @@ function EndpointTabBar() {
     }
   }
 
-  function handleDuplicateTab(tabId: string) {
+  async function handleDuplicateTab(tabId: string) {
     const src = useTabsStore.getState().tabs.find((t) => t.id === tabId)
     if (!src) return
+
+    // Suite-item tabs duplicate at the DATA layer, not just the tab layer —
+    // we create a new `test_suite_items` row so the copy is editable and
+    // saveable on its own. Without this branch the old code copied only the
+    // tab metadata while leaving `testSuiteItemId` out, which orphaned the
+    // duplicate and made Save fall through to the APIs-folder modal.
+    if (src.testSuiteItemId) {
+      const itemRes = (await window.api?.testSuiteItem?.get(src.testSuiteItemId)) as {
+        success: boolean
+        data?: {
+          suite_id: string
+          folder_id: string | null
+          protocol: string
+          name: string
+          method: string | null
+          url: string | null
+          request_schema: string
+          assertions: string | null
+          source_endpoint_id: string | null
+        }
+      }
+      if (!itemRes?.success || !itemRes.data) return
+      const item = itemRes.data
+      const createRes = (await window.api?.testSuiteItem?.create({
+        suite_id: item.suite_id,
+        folder_id: item.folder_id,
+        protocol: item.protocol,
+        name: `${item.name} (copy)`,
+        method: item.method,
+        url: item.url,
+        request_schema: item.request_schema,
+        assertions: item.assertions,
+        source_endpoint_id: item.source_endpoint_id,
+      })) as { success: boolean; data?: { id: string } }
+      if (!createRes?.success || !createRes.data) return
+      await openSuiteItemTab(createRes.data.id, { pinned: true })
+      window.dispatchEvent(new CustomEvent('tests:suite-item-changed'))
+      return
+    }
+
     const newId = 'tab-' + Math.random().toString(36).substring(2, 10)
     // Open with the same metadata. The unsaved/edited state lives in protocol
     // stores keyed on tabId — clone the source's cache into the new id so
@@ -234,6 +275,18 @@ function EndpointTabBar() {
         try {
           await window.api?.endpoint?.update(tab.endpointId, { name: renameValue.trim() })
           dbUpdated = true
+        } catch {
+          /* ignore */
+        }
+      } else if (tab?.testSuiteItemId) {
+        try {
+          await window.api?.testSuiteItem?.update(tab.testSuiteItemId, {
+            name: renameValue.trim(),
+          })
+          // Suite items aren't in the APIs tree, so refreshTree() doesn't
+          // help. Signal the Tests sidebar instead — it listens for this
+          // event and reloads its currently-expanded suites.
+          window.dispatchEvent(new CustomEvent('tests:suite-item-changed'))
         } catch {
           /* ignore */
         }
@@ -396,6 +449,26 @@ function EndpointTabBar() {
                 <path d="M9 3v18" />
                 <path d="M3 9h6" />
                 <path d="M3 15h6" />
+              </svg>
+            )}
+            {/* Subtle flask icon marks tabs sourced from a Test Suite — APIs
+                tree tabs don't get one. Muted stroke, no fill, no extra
+                colour: the discriminator is the shape, not the palette. */}
+            {tab.testSuiteItemId && (
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--muted)"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ flexShrink: 0 }}
+                aria-label="Test suite item"
+              >
+                <path d="M9 3h6" />
+                <path d="M10 3v6.5L5.5 19a2 2 0 0 0 1.7 3h9.6a2 2 0 0 0 1.7-3L14 9.5V3" />
               </svg>
             )}
             {tab.method && (tab.protocol === 'http' || tab.protocol === 'soap') && (

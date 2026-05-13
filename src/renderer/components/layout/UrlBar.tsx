@@ -403,7 +403,10 @@ export default function UrlBar() {
               // Suite items live in their own table; the in-memory request
               // shape is serialised back into the snapshot's request_schema
               // and assertions columns so the next open round-trips cleanly.
+              // The tab's current name doubles as the item's display name —
+              // without persisting it, a tab rename never reaches the DB.
               const r = (await window.api?.testSuiteItem?.update(activeTab.testSuiteItemId, {
+                name: activeTab.name,
                 method,
                 url,
                 request_schema: JSON.stringify({
@@ -419,6 +422,9 @@ export default function UrlBar() {
                 assertions: JSON.stringify(assertions),
               })) as { success: boolean; error?: string }
               if (r && r.success === false) throw new Error(r.error || 'Save failed')
+              // Tell the Tests sidebar to reload expanded suite contents so
+              // the row label catches up immediately.
+              window.dispatchEvent(new CustomEvent('tests:suite-item-changed'))
             } else if (activeTab.savedRequestId) {
               const r = (await window.api?.savedRequest?.update(activeTab.savedRequestId, {
                 method,

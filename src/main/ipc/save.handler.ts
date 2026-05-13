@@ -1223,10 +1223,15 @@ function getSecureStore(): Promise<{
   get(key: string): unknown
   set(key: string, value: unknown): void
 }> {
+  // NOTE: electron-store `encryptionKey` is obfuscation, not real security
+  // (the key sits in the binary). The actual sensitive credentials should
+  // be wrapped with safeStorage at write-time — `secure-storage.ts` handles
+  // that. After the rename, existing users will see an empty credentials
+  // store and be prompted to re-enter their git token; that's the migration.
   return import('electron-store').then(({ default: Store }) => {
     return new Store({
       name: 'git-credentials',
-      encryptionKey: 'apinizer-secure-key-v1',
+      encryptionKey: 'testnizer-secure-key-v1',
     }) as unknown as { get(key: string): unknown; set(key: string, value: unknown): void }
   })
 }
@@ -1608,7 +1613,7 @@ export function registerSaveHandlers(): void {
         )
         const authUrl = buildAuthUrl(payload.repoUrl, payload.username, payload.token)
 
-        const tmpDir = join(tmpdir(), `apinizer-git-${randomUUID()}`)
+        const tmpDir = join(tmpdir(), `testnizer-git-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
         const git = simpleGit()
@@ -1719,7 +1724,7 @@ export function registerSaveHandlers(): void {
         )
         const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
 
-        const tmpDir = join(tmpdir(), `apinizer-push-${randomUUID()}`)
+        const tmpDir = join(tmpdir(), `testnizer-push-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
         const git = simpleGit()
@@ -1816,7 +1821,7 @@ export function registerSaveHandlers(): void {
 
         const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
 
-        const tmpDir = join(tmpdir(), `apinizer-pull-${randomUUID()}`)
+        const tmpDir = join(tmpdir(), `testnizer-pull-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
         const git = simpleGit()
@@ -1953,7 +1958,7 @@ export function registerSaveHandlers(): void {
 
         const authUrl = buildAuthUrl(payload.repoUrl, payload.username, payload.token)
 
-        const tmpDir = join(tmpdir(), `apinizer-git-list-${randomUUID()}`)
+        const tmpDir = join(tmpdir(), `testnizer-git-list-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
         const git = simpleGit()
@@ -2048,7 +2053,7 @@ export function registerSaveHandlers(): void {
         const { simpleGit } = await import('simple-git')
         const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
 
-        const tmpDir = join(tmpdir(), `apinizer-diff-${randomUUID()}`)
+        const tmpDir = join(tmpdir(), `testnizer-diff-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
         const git = simpleGit()

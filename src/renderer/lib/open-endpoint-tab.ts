@@ -165,7 +165,7 @@ export async function openEndpointTab(id: string): Promise<void> {
  * specialised `loadFromSuiteItem` later, it can be added without breaking
  * callers.
  */
-export async function openSuiteItemTab(id: string): Promise<void> {
+export async function openSuiteItemTab(id: string, opts?: { pinned?: boolean }): Promise<void> {
   const tabId = `tab-${id}`
   try {
     const result = (await window.api?.testSuiteItem?.get(id)) as {
@@ -208,14 +208,26 @@ export async function openSuiteItemTab(id: string): Promise<void> {
     }
     const assertions = (item.assertions ? JSON.parse(item.assertions) : []) as TestAssertion[]
 
-    useTabsStore.getState().openPreviewTab({
+    // Newly-created items (handleAddItem) want their own pinned tab so two
+    // fresh requests don't share the single preview slot. Plain click-from-
+    // tree falls through to the preview slot (one transient tab, replaced
+    // on next click). Either way the dedup check inside the tabs store
+    // matches on testSuiteItemId, so activating an already-open item just
+    // focuses its existing tab.
+    const tabsApi = useTabsStore.getState()
+    const tabPayload = {
       id: tabId,
       name: item.name,
       protocol,
       method: item.method ?? 'GET',
       url: item.url ?? '',
       testSuiteItemId: item.id,
-    })
+    }
+    if (opts?.pinned) {
+      tabsApi.openTab(tabPayload)
+    } else {
+      tabsApi.openPreviewTab(tabPayload)
+    }
     const realTabId = useTabsStore.getState().activeTabId || tabId
     useRequestStore.getState().switchToTab(realTabId)
     useResponseStore.getState().clearResponse()

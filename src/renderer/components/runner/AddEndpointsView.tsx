@@ -102,12 +102,25 @@ export default function AddEndpointsView() {
         }
       })
 
-    // Load existing endpoints in suite
+    // Load existing items in suite. Post-refactor the suite stores its own
+    // snapshots — the canonical "already imported" signal is each item's
+    // `source_endpoint_id`, since the item's own id is no longer an
+    // endpoint id at all.
     api()
       .testSuite.listEndpoints(suiteId)
-      .then((r: { success: boolean; data?: Array<{ id: string }> }) => {
-        if (r?.success && r.data) setExistingIds(new Set(r.data.map((e: { id: string }) => e.id)))
-      })
+      .then(
+        (r: {
+          success: boolean
+          data?: { items?: Array<{ source_endpoint_id?: string | null }> }
+        }) => {
+          if (r?.success && r.data?.items) {
+            const sources = r.data.items
+              .map((i) => i.source_endpoint_id)
+              .filter((id): id is string => !!id)
+            setExistingIds(new Set(sources))
+          }
+        },
+      )
   }, [activeProjectId, suiteId, treeData])
 
   // Filter endpoints not already in suite

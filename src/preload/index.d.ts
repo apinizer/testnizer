@@ -992,7 +992,7 @@ interface SaveApi {
   }): Promise<IpcResult<{ foldersImported: number; endpointsImported: number }>>
   importTestSuite(payload: {
     projectId: string
-  }): Promise<IpcResult<{ suiteId: string; endpointsImported: number }>>
+  }): Promise<IpcResult<{ suiteId: string; itemsImported: number }>>
 }
 
 interface ApiBridge {

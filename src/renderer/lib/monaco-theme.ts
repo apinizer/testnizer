@@ -1,6 +1,6 @@
 import type { editor } from 'monaco-editor'
 
-export const apinizerDarkTheme: editor.IStandaloneThemeData = {
+export const testnizerDarkTheme: editor.IStandaloneThemeData = {
   base: 'vs-dark',
   inherit: true,
   rules: [],

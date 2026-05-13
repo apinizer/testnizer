@@ -138,7 +138,7 @@ export function useKeyboardShortcuts(): void {
       if (e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault()
         // Trigger Monaco editor format — dispatches a custom event
-        document.dispatchEvent(new CustomEvent('apinizer:format-body'))
+        document.dispatchEvent(new CustomEvent('testnizer:format-body'))
         return
       }
 

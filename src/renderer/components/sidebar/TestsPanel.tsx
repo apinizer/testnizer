@@ -20,6 +20,7 @@ import {
   Download,
   Upload,
   Copy,
+  ExternalLink,
 } from 'lucide-react'
 import type { Tab } from '../../types'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
@@ -52,6 +53,9 @@ interface TestSuiteItem {
   name: string
   method: string | null
   url: string | null
+  request_schema: string
+  assertions: string | null
+  source_endpoint_id: string | null
   sort_order: number
 }
 
@@ -99,10 +103,23 @@ export default function TestsPanel() {
   const [renameValue, setRenameValue] = useState('')
   const renameRef = useRef<HTMLInputElement>(null)
 
-  // Context menu
+  // Context menu (suite-level — Run / New Request / Import / Rename / Duplicate / Export / Delete)
   const [contextMenu, setContextMenu] = useState<{ suiteId: string; x: number; y: number } | null>(
     null,
   )
+
+  // Item-level context menu + rename. Suite items are decoupled from APIs
+  // tree endpoints, so rename/duplicate/delete here only touch
+  // `test_suite_items` — never `endpoints` or `saved_requests`.
+  const [itemContextMenu, setItemContextMenu] = useState<{
+    item: TestSuiteItem
+    suiteId: string
+    x: number
+    y: number
+  } | null>(null)
+  const [renamingItemId, setRenamingItemId] = useState<string | null>(null)
+  const [renameItemValue, setRenameItemValue] = useState('')
+  const renameItemRef = useRef<HTMLInputElement>(null)
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<TestSuite | null>(null)
@@ -134,6 +151,20 @@ export default function TestsPanel() {
       }
     }
   }, [expandedSuites, suiteContents, loadSuiteContents])
+
+  // Refresh expanded suites when a suite item is renamed/edited elsewhere
+  // (URL-bar Save or tab-title rename). The producers don't know which
+  // suite owns the affected item, so we just reload every suite that's
+  // currently expanded — cheap and matches what the user can see.
+  useEffect(() => {
+    const handler = () => {
+      for (const suiteId of Object.keys(expandedSuites)) {
+        if (expandedSuites[suiteId]) loadSuiteContents(suiteId)
+      }
+    }
+    window.addEventListener('tests:suite-item-changed', handler)
+    return () => window.removeEventListener('tests:suite-item-changed', handler)
+  }, [expandedSuites, loadSuiteContents])
 
   // Suite items are decoupled from the APIs tree now (each item is a
   // self-contained snapshot), so we don't need to refresh on `treeData`
@@ -200,6 +231,7 @@ export default function TestsPanel() {
       runEndpoints(
         items.map((i) => i.id),
         suite.name,
+        suite.id,
       )
       setContextMenu(null)
     },
@@ -229,12 +261,13 @@ export default function TestsPanel() {
   )
 
   const runEndpoints = useCallback(
-    (endpointIds: string[], suiteName: string) => {
+    (endpointIds: string[], suiteName: string, suiteId?: string) => {
       openOrReuseRunnerTab({
         autoRun: true,
         endpointIds,
         folderName: suiteName,
         sourceType: 'suite',
+        suiteId,
       })
     },
     [openOrReuseRunnerTab],
@@ -243,6 +276,22 @@ export default function TestsPanel() {
   const openTestsHome = useCallback(() => {
     openOrReuseRunnerTab({ viewHome: true })
   }, [openOrReuseRunnerTab])
+
+  // Click a suite (its name, not the chevron) → open the runner with that
+  // suite preselected as the run scope. No auto-run — the user reviews the
+  // sequence and clicks Start run themselves. This mirrors how the APIs tree
+  // treats folder clicks: open the workbench scoped to that folder.
+  const openSuiteInRunner = useCallback(
+    (suite: TestSuite) => {
+      openOrReuseRunnerTab({
+        autoRun: false,
+        sourceType: 'suite',
+        folderName: suite.name,
+        suiteId: suite.id,
+      })
+    },
+    [openOrReuseRunnerTab],
+  )
 
   const openAllRuns = useCallback(() => {
     openOrReuseRunnerTab({ viewAllRuns: true })
@@ -257,6 +306,80 @@ export default function TestsPanel() {
     async (suiteId: string, itemId: string) => {
       await api().testSuiteItem.delete(itemId)
       await loadSuiteContents(suiteId)
+      // Close the tab if the deleted item was open.
+      const tabs = useTabsStore.getState().tabs
+      const openTab = tabs.find((t) => t.testSuiteItemId === itemId)
+      if (openTab) useTabsStore.getState().closeTab(openTab.id)
+    },
+    [loadSuiteContents],
+  )
+
+  // ─── Rename an item ────────────────────────────────────────
+  const handleRenameItem = useCallback(
+    async (suiteId: string) => {
+      if (!renamingItemId || !renameItemValue.trim()) {
+        setRenamingItemId(null)
+        return
+      }
+      const newName = renameItemValue.trim()
+      await api().testSuiteItem.update(renamingItemId, { name: newName })
+      await loadSuiteContents(suiteId)
+      // Reflect the new name in any open tab for this item.
+      const tabs = useTabsStore.getState().tabs
+      const openTab = tabs.find((t) => t.testSuiteItemId === renamingItemId)
+      if (openTab) useTabsStore.getState().updateTab(openTab.id, { name: newName })
+      setRenamingItemId(null)
+    },
+    [renamingItemId, renameItemValue, loadSuiteContents],
+  )
+
+  // ─── Duplicate an item ─────────────────────────────────────
+  // Snapshot every field of the source row into a new row with " (copy)"
+  // suffix. The new id is generated by the create endpoint so the tab + DB
+  // identities never collide with the source.
+  const handleDuplicateItem = useCallback(
+    async (item: TestSuiteItem, suiteId: string) => {
+      await api().testSuiteItem.create({
+        suite_id: suiteId,
+        folder_id: item.folder_id,
+        protocol: item.protocol,
+        name: `${item.name} (copy)`,
+        method: item.method,
+        url: item.url,
+        request_schema: item.request_schema,
+        assertions: item.assertions,
+        source_endpoint_id: item.source_endpoint_id,
+      })
+      await loadSuiteContents(suiteId)
+      setItemContextMenu(null)
+    },
+    [loadSuiteContents],
+  )
+
+  // Focus the rename input when an item enters rename mode.
+  useEffect(() => {
+    if (renamingItemId) renameItemRef.current?.focus()
+  }, [renamingItemId])
+
+  // ─── Reorder items within a suite (drag-drop) ──────────────
+  // Backend has `testSuiteItem.move({ id, targetSuiteId, targetFolderId,
+  // insertBeforeId })` with a single-transaction renumber, so the renderer
+  // just emits the drop target and refreshes. Cross-suite drag is blocked
+  // explicitly — moving an item to another suite is a separate UX.
+  const handleMoveItem = useCallback(
+    async (opts: {
+      itemId: string
+      suiteId: string
+      targetFolderId: string | null
+      insertBeforeId: string | null
+    }) => {
+      await api().testSuiteItem.move({
+        id: opts.itemId,
+        targetSuiteId: opts.suiteId,
+        targetFolderId: opts.targetFolderId,
+        insertBeforeId: opts.insertBeforeId,
+      })
+      await loadSuiteContents(opts.suiteId)
     },
     [loadSuiteContents],
   )
@@ -290,7 +413,11 @@ export default function TestsPanel() {
       if (!result?.success || !result.data) return
       setExpandedSuites((s) => ({ ...s, [suite.id]: true }))
       await loadSuiteContents(suite.id)
-      void openSuiteItemTab(result.data.id)
+      // Pinned so two consecutive "New Request" clicks don't both land in
+      // the single preview slot — that collision was the source of the
+      // tab-state cross-talk where renaming one item leaked into the
+      // other's tab.
+      void openSuiteItemTab(result.data.id, { pinned: true })
       setContextMenu(null)
     },
     [loadSuiteContents, t],
@@ -325,8 +452,8 @@ export default function TestsPanel() {
   }, [activeProjectId, loadSuites])
 
   // ─── Duplicate suite ──────────────────────────────────────
-  // Single IPC clones suite + every junction row in one transaction so the
-  // copy appears with the same endpoint set (UX 9).
+  // Single IPC clones the suite + every folder and every item in one
+  // transaction so the copy shows up with the same request set in place.
   const handleDuplicateSuite = useCallback(
     async (suiteId: string) => {
       try {
@@ -505,7 +632,35 @@ export default function TestsPanel() {
               isRenaming={renamingSuiteId === suite.id}
               renameValue={renameValue}
               renameRef={renameRef}
+              renamingItemId={renamingItemId}
+              renameItemValue={renameItemValue}
+              renameItemRef={renameItemRef}
+              onItemRenameChange={setRenameItemValue}
+              onItemRenameSubmit={() => handleRenameItem(suite.id)}
+              onItemRenameCancel={() => setRenamingItemId(null)}
+              onItemContextMenu={(item, e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setItemContextMenu({
+                  item,
+                  suiteId: suite.id,
+                  x: e.clientX,
+                  y: e.clientY,
+                })
+              }}
+              onItemMove={(itemId, targetFolderId, insertBeforeId) =>
+                handleMoveItem({
+                  itemId,
+                  suiteId: suite.id,
+                  targetFolderId,
+                  insertBeforeId,
+                })
+              }
               onToggle={() => setExpandedSuites((s) => ({ ...s, [suite.id]: !s[suite.id] }))}
+              onOpen={() => {
+                setExpandedSuites((s) => ({ ...s, [suite.id]: true }))
+                openSuiteInRunner(suite)
+              }}
               onContextMenu={(e) => {
                 e.preventDefault()
                 setContextMenu({ suiteId: suite.id, x: e.clientX, y: e.clientY })
@@ -596,6 +751,57 @@ export default function TestsPanel() {
           )
         })()}
 
+      {/* Item-level context menu (right-click on a request inside a suite).
+          Operates strictly on `test_suite_items` — Open / Rename / Duplicate
+          / Delete never touch the APIs `endpoints` or `saved_requests`
+          tables, so a Tests-side action can't drift into the APIs tree. */}
+      {itemContextMenu && (
+        <div
+          className="fixed z-[500] rounded-lg border py-1"
+          style={{
+            left: itemContextMenu.x,
+            top: itemContextMenu.y,
+            background: 'var(--white)',
+            borderColor: 'var(--border)',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+            minWidth: 160,
+          }}
+        >
+          <ContextMenuItem
+            icon={<ExternalLink size={13} />}
+            label={t('testsPanel.openItem')}
+            onClick={() => {
+              void openSuiteItemTab(itemContextMenu.item.id)
+              setItemContextMenu(null)
+            }}
+          />
+          <ContextMenuItem
+            icon={<Pencil size={13} />}
+            label={t('testsPanel.rename')}
+            onClick={() => {
+              setRenamingItemId(itemContextMenu.item.id)
+              setRenameItemValue(itemContextMenu.item.name)
+              setItemContextMenu(null)
+            }}
+          />
+          <ContextMenuItem
+            icon={<Copy size={13} />}
+            label={t('testsPanel.duplicate')}
+            onClick={() => handleDuplicateItem(itemContextMenu.item, itemContextMenu.suiteId)}
+          />
+          <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+          <ContextMenuItem
+            icon={<Trash2 size={13} />}
+            label={t('testsPanel.delete')}
+            danger
+            onClick={() => {
+              void handleRemoveItem(itemContextMenu.suiteId, itemContextMenu.item.id)
+              setItemContextMenu(null)
+            }}
+          />
+        </div>
+      )}
+
       {/* Delete confirm */}
       <DeleteConfirmDialog
         open={!!deleteTarget}
@@ -617,7 +823,16 @@ function SuiteNode({
   isRenaming,
   renameValue,
   renameRef,
+  renamingItemId,
+  renameItemValue,
+  renameItemRef,
+  onItemRenameChange,
+  onItemRenameSubmit,
+  onItemRenameCancel,
+  onItemContextMenu,
+  onItemMove,
   onToggle,
+  onOpen,
   onContextMenu,
   onRenameChange,
   onRenameSubmit,
@@ -630,7 +845,16 @@ function SuiteNode({
   isRenaming: boolean
   renameValue: string
   renameRef: React.RefObject<HTMLInputElement | null>
+  renamingItemId: string | null
+  renameItemValue: string
+  renameItemRef: React.RefObject<HTMLInputElement | null>
+  onItemRenameChange: (v: string) => void
+  onItemRenameSubmit: () => void
+  onItemRenameCancel: () => void
+  onItemContextMenu: (item: TestSuiteItem, e: React.MouseEvent) => void
+  onItemMove: (itemId: string, targetFolderId: string | null, insertBeforeId: string | null) => void
   onToggle: () => void
+  onOpen: () => void
   onContextMenu: (e: React.MouseEvent) => void
   onRenameChange: (v: string) => void
   onRenameSubmit: () => void
@@ -642,16 +866,24 @@ function SuiteNode({
 
   return (
     <div>
-      {/* Suite header */}
+      {/* Suite header — row click opens the runner with this suite, chevron
+          just expands/collapses. Matches APIs tree's "folder click → folder
+          workbench" pattern. */}
       <div
         className="flex items-center gap-1.5 px-3 py-[6px]"
         style={{ background: hovered ? 'var(--item-hover)' : 'transparent', cursor: 'pointer' }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        onClick={onToggle}
+        onClick={onOpen}
         onContextMenu={onContextMenu}
       >
-        <span style={{ color: T.ghost, flexShrink: 0 }}>
+        <span
+          style={{ color: T.ghost, flexShrink: 0, cursor: 'pointer' }}
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggle()
+          }}
+        >
           {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </span>
         <FolderOpen size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
@@ -711,7 +943,18 @@ function SuiteNode({
               {t('testsPanel.noEndpointsHint')}
             </div>
           ) : (
-            <SuiteContentsTree contents={contents} onRemoveItem={onRemoveItem} />
+            <SuiteContentsTree
+              contents={contents}
+              renamingItemId={renamingItemId}
+              renameItemValue={renameItemValue}
+              renameItemRef={renameItemRef}
+              onItemRenameChange={onItemRenameChange}
+              onItemRenameSubmit={onItemRenameSubmit}
+              onItemRenameCancel={onItemRenameCancel}
+              onItemContextMenu={onItemContextMenu}
+              onItemMove={onItemMove}
+              onRemoveItem={onRemoveItem}
+            />
           )}
         </div>
       )}
@@ -723,9 +966,25 @@ function SuiteNode({
 
 function SuiteContentsTree({
   contents,
+  renamingItemId,
+  renameItemValue,
+  renameItemRef,
+  onItemRenameChange,
+  onItemRenameSubmit,
+  onItemRenameCancel,
+  onItemContextMenu,
+  onItemMove,
   onRemoveItem,
 }: {
   contents: SuiteContents
+  renamingItemId: string | null
+  renameItemValue: string
+  renameItemRef: React.RefObject<HTMLInputElement | null>
+  onItemRenameChange: (v: string) => void
+  onItemRenameSubmit: () => void
+  onItemRenameCancel: () => void
+  onItemContextMenu: (item: TestSuiteItem, e: React.MouseEvent) => void
+  onItemMove: (itemId: string, targetFolderId: string | null, insertBeforeId: string | null) => void
   onRemoveItem: (itemId: string) => void
 }) {
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({})
@@ -771,8 +1030,16 @@ function SuiteContentsTree({
                 <SuiteItemRow
                   key={it.id}
                   item={it}
-                  onRemove={() => onRemoveItem(it.id)}
                   indent={20}
+                  isRenaming={renamingItemId === it.id}
+                  renameValue={renameItemValue}
+                  renameRef={renameItemRef}
+                  onRenameChange={onItemRenameChange}
+                  onRenameSubmit={onItemRenameSubmit}
+                  onRenameCancel={onItemRenameCancel}
+                  onContextMenu={(e) => onItemContextMenu(it, e)}
+                  onMove={onItemMove}
+                  onRemove={() => onRemoveItem(it.id)}
                 />
               ))}
           </div>
@@ -780,7 +1047,20 @@ function SuiteContentsTree({
       })}
 
       {rootItems.map((it) => (
-        <SuiteItemRow key={it.id} item={it} onRemove={() => onRemoveItem(it.id)} indent={10} />
+        <SuiteItemRow
+          key={it.id}
+          item={it}
+          indent={10}
+          isRenaming={renamingItemId === it.id}
+          renameValue={renameItemValue}
+          renameRef={renameItemRef}
+          onRenameChange={onItemRenameChange}
+          onRenameSubmit={onItemRenameSubmit}
+          onRenameCancel={onItemRenameCancel}
+          onContextMenu={(e) => onItemContextMenu(it, e)}
+          onMove={onItemMove}
+          onRemove={() => onRemoveItem(it.id)}
+        />
       ))}
     </>
   )
@@ -790,15 +1070,38 @@ function SuiteContentsTree({
 
 function SuiteItemRow({
   item,
-  onRemove,
   indent = 10,
+  isRenaming,
+  renameValue,
+  renameRef,
+  onRenameChange,
+  onRenameSubmit,
+  onRenameCancel,
+  onContextMenu,
+  onMove,
+  onRemove,
 }: {
   item: TestSuiteItem
-  onRemove: () => void
   indent?: number
+  isRenaming: boolean
+  renameValue: string
+  renameRef: React.RefObject<HTMLInputElement | null>
+  onRenameChange: (v: string) => void
+  onRenameSubmit: () => void
+  onRenameCancel: () => void
+  onContextMenu: (e: React.MouseEvent) => void
+  onMove: (
+    draggedItemId: string,
+    targetFolderId: string | null,
+    insertBeforeId: string | null,
+  ) => void
+  onRemove: () => void
 }) {
   const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
+  // 'before' = drop indicator above this row (insert before)
+  // 'after'  = drop indicator below this row (insert after)
+  const [dropPos, setDropPos] = useState<'before' | 'after' | null>(null)
 
   // Clicking opens the inline-snapshot request in the Workbench. Save
   // routes back to `testSuiteItem.update`, so changes never bleed into
@@ -807,40 +1110,135 @@ function SuiteItemRow({
     void openSuiteItemTab(item.id)
   }, [item.id])
 
+  const handleDragStart = (e: React.DragEvent) => {
+    if (isRenaming) return
+    e.dataTransfer.setData('application/testnizer-suite-item', item.id)
+    e.dataTransfer.effectAllowed = 'move'
+    e.stopPropagation()
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('application/testnizer-suite-item')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = e.currentTarget.getBoundingClientRect()
+    const pos = e.clientY - rect.top < rect.height / 2 ? 'before' : 'after'
+    if (dropPos !== pos) setDropPos(pos)
+  }
+
+  const handleDragLeave = () => {
+    if (dropPos !== null) setDropPos(null)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    const draggedId = e.dataTransfer.getData('application/testnizer-suite-item')
+    if (!draggedId) return
+    e.preventDefault()
+    e.stopPropagation()
+    const pos = dropPos ?? 'after'
+    setDropPos(null)
+    if (draggedId === item.id) return
+    // 'before' → insert before this row. 'after' → insert before the row that
+    // would come *after* this one — we don't have that id here, so we pass
+    // null (append). The parent renumbers in a single transaction.
+    onMove(draggedId, item.folder_id, pos === 'before' ? item.id : null)
+  }
+
   return (
-    <div
-      className="flex cursor-pointer items-center gap-2 py-[3px] pr-3"
-      style={{
-        paddingLeft: indent + 28,
-        background: hovered ? 'var(--item-hover)' : 'transparent',
-      }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onClick={handleOpen}
-      title={t('testsPanel.openEndpoint')}
-    >
-      {item.method ? (
-        <MethodBadge method={item.method} small />
-      ) : (
-        <Globe size={12} style={{ color: 'var(--hint)' }} />
-      )}
-      <span className="flex-1 truncate" style={{ fontSize: 13, color: 'var(--text)' }}>
-        {item.name}
-      </span>
-      {hovered && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onRemove()
+    <div style={{ position: 'relative' }}>
+      {dropPos === 'before' && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: indent + 28,
+            right: 8,
+            height: 2,
+            background: 'var(--accent)',
+            pointerEvents: 'none',
+            zIndex: 1,
           }}
-          className="flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0"
-          title={t('testsPanel.removeFromSuite')}
-          style={{ color: '#cc2200' }}
-        >
-          <Trash2 size={12} />
-        </button>
+        />
       )}
+      {dropPos === 'after' && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: indent + 28,
+            right: 8,
+            height: 2,
+            background: 'var(--accent)',
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        />
+      )}
+      <div
+        draggable={!isRenaming}
+        className="flex cursor-pointer items-center gap-2 py-[3px] pr-3"
+        style={{
+          paddingLeft: indent + 28,
+          background: hovered ? 'var(--item-hover)' : 'transparent',
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={handleOpen}
+        onContextMenu={onContextMenu}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        title={t('testsPanel.openEndpoint')}
+      >
+        {item.method ? (
+          <MethodBadge method={item.method} small />
+        ) : (
+          <Globe size={12} style={{ color: 'var(--hint)' }} />
+        )}
+        {isRenaming ? (
+          <input
+            ref={renameRef as React.RefObject<HTMLInputElement>}
+            value={renameValue}
+            onChange={(e) => onRenameChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onRenameSubmit()
+              if (e.key === 'Escape') onRenameCancel()
+            }}
+            onBlur={onRenameSubmit}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 rounded border px-1.5 py-0.5 outline-none"
+            style={{
+              fontSize: 13,
+              borderColor: 'var(--accent)',
+              background: 'var(--input-bg)',
+              color: 'var(--text)',
+            }}
+          />
+        ) : (
+          <span
+            draggable={false}
+            className="flex-1 truncate"
+            style={{ fontSize: 13, color: 'var(--text)' }}
+          >
+            {item.name}
+          </span>
+        )}
+        {hovered && !isRenaming && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRemove()
+            }}
+            className="flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0"
+            title={t('testsPanel.removeFromSuite')}
+            style={{ color: '#cc2200' }}
+          >
+            <Trash2 size={12} />
+          </button>
+        )}
+      </div>
     </div>
   )
 }

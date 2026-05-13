@@ -9,19 +9,30 @@
  */
 import * as endpointRepo from '../db/endpoint.repo'
 import * as projectRepo from '../db/project.repo'
+import { getDb } from '../db/database'
 
-export type RunnableKind = 'endpoint' | 'request'
+export type RunnableKind = 'endpoint' | 'request' | 'suite_item'
 
 /**
- * Resolve the project_id of either an endpoint or a saved request. Returns
- * null when the id matches nothing — caller decides whether that's a 404
- * or an authentication failure.
+ * Resolve the project_id of an endpoint, a saved request, or a test-suite
+ * item. Suite items inherit their project from the parent suite (one JOIN
+ * because test_suite_items has no project_id column). Returns null when
+ * nothing matches — caller decides whether that's a 404 or a refusal.
  */
 export function projectIdOfRunnable(id: string): string | null {
   const ep = endpointRepo.getEndpointById(id)
   if (ep) return ep.project_id
   const sr = endpointRepo.getSavedRequestById(id)
-  return sr?.project_id ?? null
+  if (sr) return sr.project_id
+  const row = getDb()
+    .prepare(
+      `SELECT s.project_id AS project_id
+         FROM test_suite_items i
+         JOIN test_suites s ON s.id = i.suite_id
+        WHERE i.id = ?`,
+    )
+    .get(id) as { project_id: string } | undefined
+  return row?.project_id ?? null
 }
 
 /**

@@ -43,7 +43,7 @@ export default function RunnerResults({
   onOpenEndpoint,
 }: RunnerResultsProps) {
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
-  const [detailTab, setDetailTab] = useState<'response' | 'headers' | 'request'>('response')
+  const [detailTab, setDetailTab] = useState<'response' | 'request'>('response')
 
   const totalPassed = results.filter(
     (r) => !r.error && r.failed === 0 && r.status !== null && r.status < 400,
@@ -310,7 +310,7 @@ export default function RunnerResults({
 
           {/* Tabs + status meta */}
           <div className="flex shrink-0 items-center border-b border-[var(--border)] px-4">
-            {(['response', 'headers', 'request'] as const).map((tab) => (
+            {(['response', 'request'] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -353,7 +353,9 @@ export default function RunnerResults({
             </div>
           </div>
 
-          {/* ── Response tab ── */}
+          {/* ── Response tab — status meta is already shown in the tab bar
+                 above; we surface body + response headers + tests here so the
+                 reader has one place for everything the server returned. */}
           {detailTab === 'response' && (
             <div className="flex flex-1 flex-col overflow-hidden">
               {selectedResult.error ? (
@@ -385,6 +387,13 @@ export default function RunnerResults({
                   No response body available.
                 </div>
               )}
+              {selectedResult.responseHeaders &&
+                Object.keys(selectedResult.responseHeaders).length > 0 && (
+                  <div className="shrink-0 border-t border-[var(--border)] px-4 py-3">
+                    <SectionLabel>Response Headers</SectionLabel>
+                    <HeadersTable headers={selectedResult.responseHeaders} />
+                  </div>
+                )}
               {selectedResult.assertions.length > 0 && (
                 <div className="shrink-0 border-t border-[var(--border)] px-4 py-3">
                   <div
@@ -409,56 +418,13 @@ export default function RunnerResults({
             </div>
           )}
 
-          {/* ── Headers tab ── */}
-          {detailTab === 'headers' && (
-            <div className="flex-1 overflow-auto p-4">
-              {selectedResult.responseHeaders &&
-              Object.keys(selectedResult.responseHeaders).length > 0 ? (
-                <table className="w-full" style={{ fontSize: 13 }}>
-                  <thead>
-                    <tr className="border-b border-[var(--border)]">
-                      <th
-                        className="py-2 pr-4 text-left"
-                        style={{ fontWeight: 600, color: 'var(--muted)' }}
-                      >
-                        Key
-                      </th>
-                      <th
-                        className="py-2 text-left"
-                        style={{ fontWeight: 600, color: 'var(--muted)' }}
-                      >
-                        Value
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(selectedResult.responseHeaders).map(([key, value]) => (
-                      <tr key={key} className="border-b border-[var(--border)]">
-                        <td className="py-2 pr-4" style={{ fontWeight: 500, color: 'var(--text)' }}>
-                          {key}
-                        </td>
-                        <td
-                          className="py-2"
-                          style={{ color: 'var(--muted)', wordBreak: 'break-all' }}
-                        >
-                          {value}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div style={{ fontSize: 13, color: 'var(--hint)' }}>
-                  No response headers available.
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Request tab ── */}
+          {/* ── Request tab — method, URL, request headers, and request body
+                 captured by the runner. Read-only for inspection; the
+                 "Open endpoint" button is the path to actually edit the
+                 underlying suite item / endpoint. */}
           {detailTab === 'request' && (
             <div className="flex-1 overflow-auto p-4" style={{ fontSize: 13 }}>
-              <div style={{ fontWeight: 600, color: 'var(--muted)', marginBottom: 4 }}>Method</div>
+              <SectionLabel>Method</SectionLabel>
               <div
                 style={{
                   color: 'var(--text)',
@@ -468,16 +434,46 @@ export default function RunnerResults({
               >
                 {selectedResult.method}
               </div>
-              <div style={{ fontWeight: 600, color: 'var(--muted)', marginBottom: 4 }}>URL</div>
+              <SectionLabel>URL</SectionLabel>
               <div
                 style={{
                   color: 'var(--text)',
                   fontFamily: 'var(--font-mono)',
                   wordBreak: 'break-all',
+                  marginBottom: 16,
                 }}
               >
                 {selectedResult.url}
               </div>
+              {selectedResult.requestHeaders &&
+                Object.keys(selectedResult.requestHeaders).length > 0 && (
+                  <>
+                    <SectionLabel>Headers</SectionLabel>
+                    <div style={{ marginBottom: 16 }}>
+                      <HeadersTable headers={selectedResult.requestHeaders} />
+                    </div>
+                  </>
+                )}
+              {selectedResult.requestBody && (
+                <>
+                  <SectionLabel>Body</SectionLabel>
+                  <pre
+                    style={{
+                      color: 'var(--text)',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 12,
+                      padding: 8,
+                      background: 'var(--surface)',
+                      borderRadius: 4,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-all',
+                      margin: 0,
+                    }}
+                  >
+                    {formatBody(selectedResult.requestBody)}
+                  </pre>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -494,6 +490,45 @@ function StatCell({ label, value, color }: { label: string; value: string; color
       <div style={{ fontSize: 13, color: 'var(--hint)', marginBottom: 2 }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 600, color: color || 'var(--text)' }}>{value}</div>
     </div>
+  )
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--muted)', marginBottom: 4 }}>
+      {children}
+    </div>
+  )
+}
+
+function HeadersTable({ headers }: { headers: Record<string, string> }) {
+  const entries = Object.entries(headers)
+  if (entries.length === 0) return null
+  return (
+    <table className="w-full" style={{ fontSize: 13 }}>
+      <thead>
+        <tr className="border-b border-[var(--border)]">
+          <th className="py-2 pr-4 text-left" style={{ fontWeight: 600, color: 'var(--muted)' }}>
+            Key
+          </th>
+          <th className="py-2 text-left" style={{ fontWeight: 600, color: 'var(--muted)' }}>
+            Value
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {entries.map(([key, value]) => (
+          <tr key={key} className="border-b border-[var(--border)]">
+            <td className="py-2 pr-4" style={{ fontWeight: 500, color: 'var(--text)' }}>
+              {key}
+            </td>
+            <td className="py-2" style={{ color: 'var(--muted)', wordBreak: 'break-all' }}>
+              {value}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
 

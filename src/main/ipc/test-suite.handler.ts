@@ -39,7 +39,7 @@ interface TestSuiteRow {
  * Returns null when the source can't be resolved — the caller treats this
  * as a hard error.
  */
-function snapshotEndpointForSuite(endpointId: string): {
+export interface SnapshotForSuite {
   protocol: string
   name: string
   method: string | null
@@ -47,7 +47,14 @@ function snapshotEndpointForSuite(endpointId: string): {
   request_schema: string
   assertions: string | null
   source_endpoint_id: string
-} | null {
+}
+
+/**
+ * Exported so the project-export importer (save.handler.ts) can turn
+ * Postman / Insomnia endpoints into self-contained test_suite_items rows
+ * instead of writing into the dropped `test_suite_endpoints` junction.
+ */
+export function snapshotEndpointForSuite(endpointId: string): SnapshotForSuite | null {
   const ep = getEndpointById(endpointId)
   if (ep) {
     // Endpoint already serialises its request shape into request_schema; we

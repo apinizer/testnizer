@@ -73,8 +73,8 @@ function verifyWindows(username: string, password: string): Promise<OsAuthResult
     // command line seen by other processes.
     const script = [
       `Add-Type -AssemblyName System.DirectoryServices.AccountManagement`,
-      `$user = $env:APINIZER_OS_USER`,
-      `$pw = $env:APINIZER_OS_PW`,
+      `$user = $env:TESTNIZER_OS_USER`,
+      `$pw = $env:TESTNIZER_OS_PW`,
       `try { $m = New-Object System.DirectoryServices.AccountManagement.PrincipalContext('Machine'); if ($m.ValidateCredentials($user, $pw)) { exit 0 } } catch { }`,
       `try { $d = New-Object System.DirectoryServices.AccountManagement.PrincipalContext('Domain'); if ($d.ValidateCredentials($user, $pw)) { exit 0 } } catch { }`,
       `exit 1`,
@@ -86,7 +86,7 @@ function verifyWindows(username: string, password: string): Promise<OsAuthResult
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
       {
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, APINIZER_OS_USER: username, APINIZER_OS_PW: password },
+        env: { ...process.env, TESTNIZER_OS_USER: username, TESTNIZER_OS_PW: password },
       },
     )
     let stderr = ''

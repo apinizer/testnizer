@@ -168,7 +168,7 @@ export function registerAuthHandlers(): void {
         `,
           ).run(
             userId,
-            'local@apinizer.app',
+            'local@testnizer.app',
             'local',
             'Local User',
             hash,

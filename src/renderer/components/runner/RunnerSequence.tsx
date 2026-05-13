@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import MethodBadge from '../shared/MethodBadge'
-import { ChevronRight, FolderClosed, GripVertical } from 'lucide-react'
+import { ChevronRight, FolderClosed } from 'lucide-react'
 import type { RunnerEndpointItem, RunnerFolderGroup } from './RunnerTab'
 
 interface RunnerSequenceProps {
@@ -10,6 +10,13 @@ interface RunnerSequenceProps {
   onSelectAll: () => void
   onDeselectAll: () => void
   onReset: () => void
+  /**
+   * When provided, rows become draggable. `insertBeforeId` is the row that
+   * should follow the dragged row after the drop; null means "append".
+   * Only wired in suite-mode today — the APIs / Runner mode keeps the
+   * tree's sort order and doesn't support inline reorder.
+   */
+  onReorder?: (draggedId: string, insertBeforeId: string | null) => void
 }
 
 /** Build a flat list with folder labels injected at transition points */
@@ -56,6 +63,7 @@ export default function RunnerSequence({
   onSelectAll,
   onDeselectAll,
   onReset,
+  onReorder,
 }: RunnerSequenceProps) {
   const rows = useMemo(() => buildSequenceRows(folderGroups, endpoints), [folderGroups, endpoints])
 
@@ -96,13 +104,15 @@ export default function RunnerSequence({
 
       {/* Endpoint list */}
       <div className="flex-1 overflow-auto">
-        {rows.map((row) => (
+        {rows.map((row, i) => (
           <EndpointRow
             key={row.endpoint.id}
             index={row.index}
             endpoint={row.endpoint}
             folderLabel={row.folderLabel}
             onToggle={() => onToggle(row.endpoint.id)}
+            onReorder={onReorder}
+            nextEndpointId={rows[i + 1]?.endpoint.id ?? null}
           />
         ))}
         {endpoints.length === 0 && (
@@ -122,24 +132,96 @@ function EndpointRow({
   endpoint,
   folderLabel,
   onToggle,
+  onReorder,
+  nextEndpointId,
 }: {
   index: number
   endpoint: RunnerEndpointItem
   folderLabel?: string
   onToggle: () => void
+  onReorder?: (draggedId: string, insertBeforeId: string | null) => void
+  nextEndpointId: string | null
 }) {
   const [hovered, setHovered] = useState(false)
+  const [dropPos, setDropPos] = useState<'before' | 'after' | null>(null)
+  const draggable = !!onReorder
+
+  const handleDragStart = (e: React.DragEvent) => {
+    if (!draggable) return
+    e.dataTransfer.setData('application/testnizer-runner-row', endpoint.id)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!draggable) return
+    if (!e.dataTransfer.types.includes('application/testnizer-runner-row')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = e.currentTarget.getBoundingClientRect()
+    const pos = e.clientY - rect.top < rect.height / 2 ? 'before' : 'after'
+    if (dropPos !== pos) setDropPos(pos)
+  }
+
+  const handleDragLeave = () => {
+    if (dropPos !== null) setDropPos(null)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    if (!draggable || !onReorder) return
+    const draggedId = e.dataTransfer.getData('application/testnizer-runner-row')
+    if (!draggedId) return
+    e.preventDefault()
+    const pos = dropPos ?? 'after'
+    setDropPos(null)
+    if (draggedId === endpoint.id) return
+    // 'before' → insert before this row. 'after' → insert before the row
+    // that immediately follows this one (null = append at end of list).
+    onReorder(draggedId, pos === 'before' ? endpoint.id : nextEndpointId)
+  }
 
   return (
     <div
-      className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-[7px]"
+      draggable={draggable}
+      className="relative flex items-center gap-2 border-b border-[var(--border)] px-3 py-[7px]"
       style={{
         background: hovered ? 'var(--surface)' : 'transparent',
         transition: 'background 0.1s',
+        cursor: draggable ? 'grab' : 'default',
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
+      {dropPos === 'before' && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 8,
+            right: 8,
+            height: 2,
+            background: 'var(--accent)',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+      {dropPos === 'after' && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 8,
+            right: 8,
+            height: 2,
+            background: 'var(--accent)',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
       {/* Row number */}
       <span style={{ width: 24, textAlign: 'right', color: 'var(--hint)', flexShrink: 0 }}>
         {index}
@@ -162,6 +244,7 @@ function EndpointRow({
       {/* Folder label (shown on first endpoint of each folder, like Postman) */}
       {folderLabel && (
         <span
+          draggable={false}
           style={{
             color: 'var(--muted)',
             fontWeight: 500,
@@ -183,7 +266,7 @@ function EndpointRow({
       <MethodBadge method={endpoint.method} />
 
       {/* Name */}
-      <span className="flex-1 truncate" style={{ color: 'var(--text)' }}>
+      <span draggable={false} className="flex-1 truncate" style={{ color: 'var(--text)' }}>
         {endpoint.name}
       </span>
     </div>

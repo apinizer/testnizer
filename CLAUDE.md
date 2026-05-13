@@ -19,6 +19,11 @@ npm run dev              # electron-vite dev — renderer http://localhost:5173,
 npm run build            # Main + preload + renderer üretim derlemesi (out/)
 npm run typecheck        # main + renderer için tsc --noEmit
 npm run icons            # build/ ve resources/ ikonlarını yeniden üretir (sharp + png2icons)
+npm test                 # vitest unit testler (pretest ABI'yi otomatik node'a flip eder)
+npm run test:e2e         # playwright E2E (önce build gerekli; test:all zinciri kullan)
+npm run test:all         # unit → build → e2e tek seferde
+npm run lint             # eslint src/ (lint:fix otomatik düzeltir)
+npm run format           # prettier src/ (format:check sadece doğrular)
 ```
 
 Paketleme (dmg/exe/deb/AppImage/zip) için **`.claude/commands/package.md`**'deki sırayı izle — native module (`better-sqlite3`) çapraz mimari rebuild'ini bozmamak için kritik.
@@ -29,7 +34,7 @@ Paketleme (dmg/exe/deb/AppImage/zip) için **`.claude/commands/package.md`**'dek
 
 | Katman | Teknoloji |
 |---|---|
-| Desktop shell | Electron ^31 |
+| Desktop shell | Electron ^33 (NODE_MODULE_VERSION 130) |
 | Build tool | electron-vite ^2 |
 | Frontend | React 19 + TypeScript 5 |
 | Styling | Tailwind CSS ^4 (`@tailwindcss/vite`) + shadcn/ui (Radix UI) |
@@ -165,17 +170,20 @@ testnizer/
 │   │   ├── ipc/                       # Protokol/feature başına bir handler
 │   │   │   ├── index.ts               # registerAllHandlers()
 │   │   │   ├── request.handler.ts     # Generic HTTP request
-│   │   │   ├── http.engine.ts → protocols/  (referans)
-│   │   │   └── {auth, workspace, project, branch, endpoint, environment,
-│   │   │        history, certificate, git, import-export, save, settings,
-│   │   │        soap, websocket, graphql, grpc, sse, socketio, mcp,
-│   │   │        runner, scheduler, test-suite}.handler.ts
+│   │   │   └── {ai-chat, auth, branch, certificate, dialog, endpoint,
+│   │   │        environment, eula, git, graphql, grpc, history,
+│   │   │        import-export, mcp, mock, project, runner, save,
+│   │   │        scheduler, settings, soap, socketio, sse, test-suite,
+│   │   │        websocket, workspace, wsse}.handler.ts
 │   │   ├── protocols/                 # Protokol motorları
-│   │   │   └── {http, soap, websocket, graphql, grpc, sse, socketio, mcp}.engine.ts
+│   │   │   ├── grpc-reflection.ts     # gRPC server reflection client
+│   │   │   └── {ai-chat, graphql, grpc, http, mcp, soap, socketio, sse,
+│   │   │        websocket, wsse}.engine.ts
 │   │   └── db/                        # better-sqlite3 + migrations
 │   │       ├── database.ts            # Init + schema + migrations
 │   │       └── {workspace, project, branch, endpoint, environment,
-│   │            history, certificate}.repo.ts
+│   │            history, certificate, mock, test-suite-folder,
+│   │            test-suite-item}.repo.ts
 │   ├── preload/
 │   │   └── index.ts                   # contextBridge — window.api köprüsü
 │   └── renderer/                      # React 19 — yalnızca UI
@@ -183,30 +191,51 @@ testnizer/
 │       ├── index.html                 # CSP: connect-src 'self'
 │       ├── components/
 │       │   ├── auth/                  # LoginScreen + password kurulum
+│       │   ├── eula/                  # EulaConsentGate, LegalDocModal, LegalMarkdown
 │       │   ├── layout/                # AppShell, Header, LeftPanel, UrlBar,
-│       │   │                          # Workbench, Footer, ProjectHome
-│       │   ├── sidebar/               # TreeView, TreeNode, NewDropdown
+│       │   │                          # Workbench, Footer, ProjectHome, IconSidebar,
+│       │   │                          # QuickTestShell, ToolsDropdown
+│       │   ├── sidebar/               # TreeView, TreeNode, NewDropdown, TestsPanel,
+│       │   │                          # ToolsPanel, BranchDropdown, HistoryListPanel
 │       │   ├── request/               # RequestEditor + Params/Auth/Headers/Body/Pre/Tests
 │       │   ├── response/              # ResponsePane + Body/Cookie/Console/ActualRequest
-│       │   ├── protocols/             # SOAP/WS/GraphQL/gRPC/SSE/Socket.IO/MCP editörleri
-│       │   ├── runner/                # Collection runner UI
-│       │   ├── modals/                # Import, Environment, Settings, vb.
+│       │   ├── protocols/             # SOAP/WS/GraphQL/gRPC/SSE/Socket.IO/MCP/AI Chat editörleri
+│       │   ├── mock/                  # MockServerEditor, MockServersPanel
+│       │   ├── tools/                 # Standalone utility'ler: JWT, JSONPath, XSLT, XPath,
+│       │   │                          # Hash, HMAC, Diff, Encoders, Regex, Epoch, UUID,
+│       │   │                          # Base/JsonXml/JsonSchema/YamlJson/JoltFormat, WsSecurity
+│       │   ├── runner/                # Collection runner UI + ScheduledTasks + TestsHome
+│       │   ├── modals/                # Import, Environment, Settings, RunnerConfig/Results vb.
 │       │   └── shared/                # MethodBadge, StatusBadge, MonacoEditor, vb.
 │       ├── stores/                    # Zustand — feature başına bir store
-│       │   └── {auth, workspace, branch, tabs, request, response, environment,
-│       │        history, console, ui, runner, updater,
-│       │        soap, websocket, graphql, grpc, sse, socketio, mcp}.store.ts
+│       │   └── {ai-chat, auth, branch, console, environment, eula, graphql, grpc,
+│       │        history, mcp, mock, request, response, runner, soap, socketio,
+│       │        sse, tabs, ui, updater, websocket, workspace}.store.ts
 │       ├── lib/
 │       │   ├── variable-resolver.ts   # {{var}} substitution
 │       │   ├── dynamic-values.ts      # {{$randomInt}} vb.
 │       │   ├── test-runner.ts         # pm API + assertions
 │       │   ├── code-generator.ts      # cURL/JS/Python snippet üretimi
 │       │   ├── i18n.ts                # EN + TR çeviriler
-│       │   ├── monaco-theme.ts, keyboard-shortcuts.ts, utils.ts
-│       └── types/index.ts             # Tüm TypeScript tipleri (tek dosya)
+│       │   ├── tools/                 # Tools panel'in saf TS implementasyonları (browser-safe)
+│       │   ├── tools-bridge.ts, tools-catalog.ts
+│       │   ├── key-value-bulk.ts, http-headers.ts, graphql-errors.ts
+│       │   ├── persist-helpers.ts, open-endpoint-tab.ts, mock-snippets.ts
+│       │   └── monaco-theme.ts, keyboard-shortcuts.ts, utils.ts
+│       └── types/index.ts             # Tüm TypeScript tipleri (tek dosya, ~820 satır)
+├── tests/
+│   ├── main/                          # vitest — handler + engine + repo testleri
+│   ├── renderer/                      # vitest + jsdom — component/store testleri
+│   ├── e2e/                           # playwright — smoke + http + wsse senaryoları
+│   ├── fixtures/                      # test verisi
+│   └── setup-renderer.ts              # jsdom + testing-library config
+├── docs/legal/                        # eula.md, privacy-policy.md (extraResources ile paketlenir)
 ├── scripts/
 │   ├── patch-electron-name.sh         # Electron.app → Testnizer.app (postinstall)
+│   ├── ensure-native-abi.js           # better-sqlite3 ABI flip (node ↔ electron)
 │   ├── generate-icons.mjs             # Logo → multi-size PNG/ICO/ICNS
+│   ├── generate-licenses.mjs          # 3rd-party lisans listesi
+│   ├── socketio-echo-server.cjs       # dev:socketio-echo — yerel test sunucusu
 │   ├── ad-hoc-sign.js                 # afterPack — yerel imzalama
 │   ├── notarize.js                    # afterSign — Apple notarize (opt-in)
 │   ├── collect-packages.js            # afterAllArtifactBuild — release/ topla
@@ -225,18 +254,26 @@ testnizer/
 | Modül | Main handler | Renderer store | Notlar |
 |---|---|---|---|
 | Auth / Login | `auth.handler.ts` | `auth.store.ts` | Opsiyonel password ile yerel veri koruma |
+| EULA / Privacy | `eula.handler.ts` | `eula.store.ts` | İlk açılışta `EulaConsentGate`; `docs/legal/` extraResources |
 | Workspace + Project | `workspace.handler.ts`, `project.handler.ts` | `workspace.store.ts` | Workspace içinde n-proje |
 | Branch + Git | `branch.handler.ts`, `git.handler.ts` | `branch.store.ts` | `simple-git`, proje başına branch |
 | Endpoint + Environment | `endpoint.handler.ts`, `environment.handler.ts` | `environment.store.ts` | Env'ler **proje scope** (Postman'den farklı), initialValue + value |
 | History | `history.handler.ts` | `history.store.ts` | Yerel SQLite |
 | Certificate | `certificate.handler.ts` | — | mTLS / client cert |
+| Dialog | `dialog.handler.ts` | — | Native open/save/message dialog köprüsü |
 | Import/Export + Save | `import-export.handler.ts`, `save.handler.ts` | — | OpenAPI/Postman/Insomnia/cURL/HAR vb. |
 | Settings | `settings.handler.ts` | `ui.store.ts` | electron-store |
 | Collection Runner | `runner.handler.ts` | `runner.store.ts` | Çoklu endpoint sequential run + HTML rapor |
 | Scheduler | `scheduler.handler.ts` | — | Zamanlanmış görevler |
-| Test Suite | `test-suite.handler.ts` | — | Çoklu koleksiyon test setleri |
+| Test Suite | `test-suite.handler.ts` | — | Çoklu koleksiyon test setleri (kendine ait folder + item repo'ları) |
+| SSE | `sse.handler.ts` | `sse.store.ts` | `eventsource` ^3; tek yön server→client event akışı |
+| WebSocket | `websocket.handler.ts` | `websocket.store.ts` | `ws` ^8; bidi mesaj timeline |
 | Socket.IO | `socketio.handler.ts` | `socketio.store.ts` | `socket.io-client`; namespace, `auth.token`, emit/subscribe, bidi event timeline |
 | MCP (Model Context Protocol) | `mcp.handler.ts` | `mcp.store.ts` | `@modelcontextprotocol/sdk` — Streamable HTTP / SSE / stdio; tools/list + callTool |
+| AI Chat | `ai-chat.handler.ts`, `ai-chat.engine.ts` | `ai-chat.store.ts` | LLM provider'lar; tools-bridge ile Tools panel entegrasyonu |
+| Mock Server | `mock.handler.ts`, `mock.repo.ts` | `mock.store.ts` | Yerel HTTP mock server (rule-based response) |
+| WSSE | `wsse.handler.ts`, `wsse.engine.ts` | — | SOAP için WS-Security imzalama/şifreleme (xml-crypto, xml-encryption) |
+| Tools panel | — (renderer-only) | — | Saf TS implementasyon (`lib/tools/`): JWT, JSONPath, XSLT, XPath, Hash, HMAC, Diff, Encoders, Regex, JSON↔XML/YAML, Jolt, JSON Schema, Base, Epoch, UUID, WsSecurity |
 | Updater | (`src/main/updater.ts`) | `updater.store.ts` | electron-updater |
 
 ---
@@ -251,6 +288,16 @@ Her feature için bu sırayı izle:
 5. `src/preload/index.ts` — bridge
 6. `src/renderer/stores/` — Zustand store
 7. `src/renderer/components/` — React UI
+
+## Testler
+
+- **Unit/integration**: `vitest` ^3 — `tests/main/` (handler/engine/repo) ve `tests/renderer/` (component/store). `pretest` hook'u `ensure-native-abi.js` çağırarak better-sqlite3'ü **node ABI**'ye flip eder.
+- **E2E**: `@playwright/test` ^1 — `tests/e2e/` (`smoke.spec.ts`, `http/`, `wsse/`). Önce `npm run build` gerekli; tam zincir `npm run test:all`.
+- **Renderer testleri**: `tests/setup-renderer.ts` jsdom + `@testing-library/react` config'i sağlar.
+- **Test fixture'ları**: `tests/fixtures/` (örn. OpenAPI/Postman JSON, WSDL).
+- **Coverage**: `npm run test:coverage` — `@vitest/coverage-v8`.
+
+---
 
 ## Kod Standartları
 

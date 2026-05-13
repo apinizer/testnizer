@@ -348,12 +348,9 @@ export function updateSavedRequest(
 
 export function deleteSavedRequest(id: string): boolean {
   const db = getDb()
-  // Same junction cleanup as deleteEndpoint — saved requests can also be
-  // members of a test suite via the unified test_suite_endpoints table.
-  const txn = db.transaction(() => {
-    db.prepare('DELETE FROM test_suite_endpoints WHERE endpoint_id = ?').run(id)
-    return db.prepare('DELETE FROM saved_requests WHERE id = ?').run(id)
-  })
-  const result = txn()
+  // Suite items are decoupled from saved_requests since v1.3 (copy-on-add
+  // model — `source_endpoint_id` is advisory only, no FK). No junction
+  // cleanup needed.
+  const result = db.prepare('DELETE FROM saved_requests WHERE id = ?').run(id)
   return result.changes > 0
 }

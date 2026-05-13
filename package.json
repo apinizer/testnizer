@@ -4,10 +4,10 @@
   "version": "1.3.0",
   "description": "Testnizer — Cross-platform desktop API testing application",
   "main": "./out/main/index.js",
-  "homepage": "https://apinizer.com",
+  "homepage": "https://testnizer.com",
   "author": {
-    "name": "Apinizer",
-    "email": "support@apinizer.com"
+    "name": "Testnizer",
+    "email": "support@testnizer.com"
   },
   "license": "MIT",
   "scripts": {

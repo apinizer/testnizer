@@ -83,13 +83,29 @@ function createSchema(db: Database.Database): void {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
-    CREATE TABLE test_suite_endpoints (
+    CREATE TABLE test_suite_folders (
       id TEXT PRIMARY KEY,
       suite_id TEXT NOT NULL,
-      endpoint_id TEXT NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0
+      parent_id TEXT,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
     );
-    CREATE UNIQUE INDEX idx_tse_unique ON test_suite_endpoints(suite_id, endpoint_id);
+    CREATE TABLE test_suite_items (
+      id TEXT PRIMARY KEY,
+      suite_id TEXT NOT NULL,
+      folder_id TEXT,
+      protocol TEXT NOT NULL,
+      name TEXT NOT NULL,
+      method TEXT,
+      url TEXT,
+      request_schema TEXT NOT NULL,
+      assertions TEXT,
+      source_endpoint_id TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `)
 }
 
@@ -150,59 +166,124 @@ describe('detectTestSuiteImportFormat', () => {
 // ─── Testnizer native round-trip ─────────────────────────────
 
 describe('importTestSuiteFromFile — Testnizer native', () => {
-  it('round-trips a native export back into a fresh suite', async () => {
-    // Seed: one suite with two endpoints.
+  it('round-trips a native export back into a fresh suite (v1.3+ snapshot model)', async () => {
+    // Seed: one suite with two self-contained items. No endpoints / no
+    // junction — that schema was dropped.
     const now = Date.now()
     const suiteId = randomUUID()
-    const ep1 = randomUUID()
-    const ep2 = randomUUID()
+    const item1 = randomUUID()
+    const item2 = randomUUID()
     testDb
       .prepare(
         `INSERT INTO test_suites (id, project_id, name, sort_order, created_at, updated_at)
          VALUES (?, ?, 'Source Suite', 0, ?, ?)`,
       )
       .run(suiteId, PROJECT_ID, now, now)
-    for (const [id, name, method] of [
-      [ep1, 'List users', 'GET'],
-      [ep2, 'Create user', 'POST'],
-    ] as const) {
-      testDb
-        .prepare(
-          `INSERT INTO endpoints (id, project_id, folder_id, name, protocol, method, path, status, sort_order, created_at, updated_at)
-           VALUES (?, ?, NULL, ?, 'http', ?, '/users', 'developing', 0, ?, ?)`,
-        )
-        .run(id, PROJECT_ID, name, method, now, now)
-    }
     testDb
       .prepare(
-        `INSERT INTO test_suite_endpoints (id, suite_id, endpoint_id, sort_order)
-         VALUES (?, ?, ?, ?)`,
+        `INSERT INTO test_suite_items
+           (id, suite_id, folder_id, protocol, name, method, url,
+            request_schema, assertions, source_endpoint_id,
+            sort_order, created_at, updated_at)
+         VALUES (?, ?, NULL, 'http', ?, ?, '/users', '{}', NULL, NULL, ?, ?, ?)`,
       )
-      .run(randomUUID(), suiteId, ep1, 0)
+      .run(item1, suiteId, 'List users', 'GET', 0, now, now)
     testDb
       .prepare(
-        `INSERT INTO test_suite_endpoints (id, suite_id, endpoint_id, sort_order)
-         VALUES (?, ?, ?, ?)`,
+        `INSERT INTO test_suite_items
+           (id, suite_id, folder_id, protocol, name, method, url,
+            request_schema, assertions, source_endpoint_id,
+            sort_order, created_at, updated_at)
+         VALUES (?, ?, NULL, 'http', ?, ?, '/users', '{}', NULL, NULL, ?, ?, ?)`,
       )
-      .run(randomUUID(), suiteId, ep2, 1)
+      .run(item2, suiteId, 'Create user', 'POST', 1, now, now)
 
     // Export, then import as a brand-new suite.
     const exported = exportTestSuiteData(suiteId)
     const out = await importTestSuiteFromFile(JSON.stringify(exported), PROJECT_ID)
 
     expect(out.format).toBe('testnizer')
-    expect(out.endpointsImported).toBe(2)
+    expect(out.itemsImported).toBe(2)
     expect(out.suiteId).not.toBe(suiteId)
 
-    const links = testDb
-      .prepare('SELECT endpoint_id FROM test_suite_endpoints WHERE suite_id = ? ORDER BY sort_order')
-      .all(out.suiteId) as { endpoint_id: string }[]
-    expect(links).toHaveLength(2)
-    // Endpoints are remapped (fresh IDs), not pointing at the originals.
-    for (const l of links) {
-      expect(l.endpoint_id).not.toBe(ep1)
-      expect(l.endpoint_id).not.toBe(ep2)
+    const items = testDb
+      .prepare(
+        'SELECT id, name, method FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order',
+      )
+      .all(out.suiteId) as { id: string; name: string; method: string }[]
+    expect(items).toHaveLength(2)
+    expect(items.map((i) => i.name)).toEqual(['List users', 'Create user'])
+    // Items are remapped (fresh IDs), not pointing at the originals.
+    for (const i of items) {
+      expect(i.id).not.toBe(item1)
+      expect(i.id).not.toBe(item2)
     }
+  })
+
+  it('preserves nested folders and remaps folder_id on items', async () => {
+    // Seed: one suite with a top-level folder, a child folder, and items at
+    // each level. Round-trip and check the tree shape survives.
+    const now = Date.now()
+    const suiteId = randomUUID()
+    const parentFolder = randomUUID()
+    const childFolder = randomUUID()
+    const rootItem = randomUUID()
+    const parentItem = randomUUID()
+    const childItem = randomUUID()
+
+    testDb
+      .prepare(
+        `INSERT INTO test_suites (id, project_id, name, sort_order, created_at, updated_at)
+         VALUES (?, ?, 'Nested Suite', 0, ?, ?)`,
+      )
+      .run(suiteId, PROJECT_ID, now, now)
+    testDb
+      .prepare(
+        `INSERT INTO test_suite_folders (id, suite_id, parent_id, name, sort_order, created_at)
+         VALUES (?, ?, NULL, 'parent', 0, ?)`,
+      )
+      .run(parentFolder, suiteId, now)
+    testDb
+      .prepare(
+        `INSERT INTO test_suite_folders (id, suite_id, parent_id, name, sort_order, created_at)
+         VALUES (?, ?, ?, 'child', 0, ?)`,
+      )
+      .run(childFolder, suiteId, parentFolder, now)
+    const insertItem = testDb.prepare(
+      `INSERT INTO test_suite_items
+         (id, suite_id, folder_id, protocol, name, method, url,
+          request_schema, assertions, source_endpoint_id,
+          sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, 'http', ?, 'GET', '/x', '{}', NULL, NULL, 0, ?, ?)`,
+    )
+    insertItem.run(rootItem, suiteId, null, 'root-level', now, now)
+    insertItem.run(parentItem, suiteId, parentFolder, 'in-parent', now, now)
+    insertItem.run(childItem, suiteId, childFolder, 'in-child', now, now)
+
+    const exported = exportTestSuiteData(suiteId)
+    const out = await importTestSuiteFromFile(JSON.stringify(exported), PROJECT_ID)
+    expect(out.itemsImported).toBe(3)
+
+    const folders = testDb
+      .prepare(
+        'SELECT id, parent_id, name FROM test_suite_folders WHERE suite_id = ? ORDER BY name',
+      )
+      .all(out.suiteId) as { id: string; parent_id: string | null; name: string }[]
+    expect(folders.map((f) => f.name).sort()).toEqual(['child', 'parent'])
+
+    const parentRow = folders.find((f) => f.name === 'parent')!
+    const childRow = folders.find((f) => f.name === 'child')!
+    // child.parent_id must remap to the NEW parent id, not the source's.
+    expect(childRow.parent_id).toBe(parentRow.id)
+    expect(parentRow.parent_id).toBeNull()
+
+    const importedItems = testDb
+      .prepare('SELECT name, folder_id FROM test_suite_items WHERE suite_id = ?')
+      .all(out.suiteId) as { name: string; folder_id: string | null }[]
+    const byName = Object.fromEntries(importedItems.map((i) => [i.name, i.folder_id]))
+    expect(byName['root-level']).toBeNull()
+    expect(byName['in-parent']).toBe(parentRow.id)
+    expect(byName['in-child']).toBe(childRow.id)
   })
 })
 
@@ -251,19 +332,22 @@ describe('importTestSuiteFromFile — Postman v2.1', () => {
 
     const out = await importTestSuiteFromFile(JSON.stringify(collection), PROJECT_ID)
     expect(out.format).toBe('postman')
-    // 2 top-level requests + 1 nested = 3 endpoints linked to the suite
-    expect(out.endpointsImported).toBe(3)
+    // 2 top-level requests + 1 nested = 3 suite items materialised.
+    expect(out.itemsImported).toBe(3)
 
-    const links = testDb
-      .prepare('SELECT endpoint_id FROM test_suite_endpoints WHERE suite_id = ?')
-      .all(out.suiteId) as { endpoint_id: string }[]
-    expect(links).toHaveLength(3)
+    // v1.3+: the snapshot lives in test_suite_items and the transient
+    // endpoint rows are deleted on the way out — the suite owns its data.
+    const items = testDb
+      .prepare('SELECT name, method FROM test_suite_items WHERE suite_id = ?')
+      .all(out.suiteId) as { name: string; method: string }[]
+    expect(items.map((r) => r.name).sort()).toEqual(['Create pet', 'Get pet', 'List pets'])
 
-    // Endpoints actually exist under the project.
-    const epRows = testDb
-      .prepare('SELECT name, method FROM endpoints WHERE project_id = ?')
-      .all(PROJECT_ID) as { name: string; method: string }[]
-    expect(epRows.map((r) => r.name).sort()).toEqual(['Create pet', 'Get pet', 'List pets'])
+    // No leftover endpoints in the APIs tree — the importer rolls them up
+    // into the suite to avoid cross-tree duplication.
+    const leftoverEndpoints = testDb
+      .prepare('SELECT COUNT(*) AS n FROM endpoints WHERE project_id = ?')
+      .get(PROJECT_ID) as { n: number }
+    expect(leftoverEndpoints.n).toBe(0)
 
     // Suite name is derived from collection.info.name.
     const suiteRow = testDb
@@ -307,22 +391,26 @@ describe('importTestSuiteFromFile — Insomnia v4', () => {
 
     const out = await importTestSuiteFromFile(JSON.stringify(doc), PROJECT_ID, 'My Insomnia Tests')
     expect(out.format).toBe('insomnia')
-    expect(out.endpointsImported).toBe(2)
+    expect(out.itemsImported).toBe(2)
 
     const suiteRow = testDb
       .prepare('SELECT name FROM test_suites WHERE id = ?')
       .get(out.suiteId) as { name: string }
     expect(suiteRow.name).toBe('My Insomnia Tests')
 
-    const links = testDb
-      .prepare('SELECT endpoint_id FROM test_suite_endpoints WHERE suite_id = ? ORDER BY sort_order')
-      .all(out.suiteId) as { endpoint_id: string }[]
-    expect(links).toHaveLength(2)
+    const items = testDb
+      .prepare(
+        'SELECT method FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order',
+      )
+      .all(out.suiteId) as { method: string }[]
+    expect(items.map((r) => r.method)).toEqual(['GET', 'POST'])
 
-    const methods = links
-      .map((l) => testDb.prepare('SELECT method FROM endpoints WHERE id = ?').get(l.endpoint_id) as { method: string })
-      .map((r) => r.method)
-    expect(methods).toEqual(['GET', 'POST'])
+    // The transient APIs-tree endpoint rows used during snapshotting are
+    // cleaned up — the suite is the only authoritative location now.
+    const leftoverEndpoints = testDb
+      .prepare('SELECT COUNT(*) AS n FROM endpoints WHERE project_id = ?')
+      .get(PROJECT_ID) as { n: number }
+    expect(leftoverEndpoints.n).toBe(0)
   })
 })
 
@@ -339,5 +427,23 @@ describe('importTestSuiteFromFile — error paths', () => {
     await expect(
       importTestSuiteFromFile(JSON.stringify({ random: 'shape' }), PROJECT_ID),
     ).rejects.toThrow(/Unknown test suite format/)
+  })
+
+  it('throws on a pre-v2 (legacy junction) Testnizer suite export', async () => {
+    // Legacy shape carried `endpoints` + `suiteEndpoints` arrays — the
+    // junction table is gone, so the importer refuses to silently produce
+    // an empty suite. The user must re-export from the current version.
+    const legacy = {
+      version: '1.0.0',
+      exportedAt: 0,
+      kind: 'testSuite',
+      suite: { name: 'old' },
+      endpoints: [{ id: 'x', name: 'old', protocol: 'http' }],
+      endpointCases: [],
+      suiteEndpoints: [{ id: 'l', suite_id: 's', endpoint_id: 'x', sort_order: 0 }],
+    }
+    await expect(
+      importTestSuiteFromFile(JSON.stringify(legacy), PROJECT_ID),
+    ).rejects.toThrow(/Unsupported Testnizer suite export/)
   })
 })

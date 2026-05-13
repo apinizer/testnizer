@@ -23,7 +23,7 @@ interface IpcResult<T> {
   error?: string
 }
 
-const HOMEPAGE_URL = 'https://apinizer.com'
+const HOMEPAGE_URL = 'https://testnizer.com'
 
 export default function AboutModal() {
   const { t } = useTranslation()

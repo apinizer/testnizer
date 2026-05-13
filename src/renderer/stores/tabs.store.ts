@@ -41,19 +41,40 @@ const persisted = loadJson<PersistedTabs>(STORAGE_KEY)
 const initialTabs: Tab[] = (persisted?.tabs ?? []).map((t) => ({ ...t, isLoading: false }))
 const initialActiveTabId = persisted?.activeTabId ?? null
 
+/**
+ * Which workspace a tab belongs to. Used to scope the preview slot — APIs
+ * and Tests are conceptually separate workspaces (independent data layer,
+ * independent sidebar trees) so a preview tab in one should NOT be replaced
+ * by a single click in the other. Each kind has its own preview slot.
+ */
+type TabKind = 'apis' | 'suite' | 'mock' | 'other'
+
+function tabKind(tab: { testSuiteItemId?: string; mockServerId?: string }): TabKind {
+  if (tab.testSuiteItemId) return 'suite'
+  if (tab.mockServerId) return 'mock'
+  // endpointId / savedRequestId / folderId / fresh requests all live in the
+  // APIs workspace. "other" covers Tools / Runner / Welcome — those don't
+  // open as previews today, but the bucket is here as a safety net.
+  return 'apis'
+}
+
 export const useTabsStore = create<TabsStore>((set, get) => ({
   tabs: initialTabs,
   activeTabId: initialActiveTabId,
 
   openTab: (tab) => {
-    // Match existing tabs that reference the same logical resource so we don't
-    // open multiple tabs for one endpoint, saved request, or mock server.
-    if (tab.endpointId || tab.savedRequestId || tab.mockServerId) {
+    // Match existing tabs that reference the same logical resource so we
+    // don't open multiple tabs for one endpoint, saved request, mock
+    // server, or test-suite item. Without the testSuiteItemId branch the
+    // pinned-create path (handleAddItem) would also re-open an already-
+    // present tab as a duplicate.
+    if (tab.endpointId || tab.savedRequestId || tab.mockServerId || tab.testSuiteItemId) {
       const existing = get().tabs.find(
         (t) =>
           (tab.endpointId && t.endpointId === tab.endpointId) ||
           (tab.savedRequestId && t.savedRequestId === tab.savedRequestId) ||
-          (tab.mockServerId && t.mockServerId === tab.mockServerId),
+          (tab.mockServerId && t.mockServerId === tab.mockServerId) ||
+          (tab.testSuiteItemId && t.testSuiteItemId === tab.testSuiteItemId),
       )
       if (existing) {
         set((state) => ({
@@ -71,12 +92,17 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   },
 
   openPreviewTab: (tab) => {
-    // If there's already a tab for this exact endpoint/savedRequest, just activate it
-    if (tab.endpointId || tab.savedRequestId) {
+    // If there's already a tab for this exact endpoint / savedRequest /
+    // testSuiteItem, just activate it. Without the testSuiteItemId branch
+    // two suite items collide on the generic "find any preview" fallback
+    // below and end up sharing one physical tab id — closing one then
+    // closes the other, and renaming one bleeds into the other.
+    if (tab.endpointId || tab.savedRequestId || tab.testSuiteItemId) {
       const existing = get().tabs.find(
         (t) =>
           (tab.endpointId && t.endpointId === tab.endpointId) ||
-          (tab.savedRequestId && t.savedRequestId === tab.savedRequestId),
+          (tab.savedRequestId && t.savedRequestId === tab.savedRequestId) ||
+          (tab.testSuiteItemId && t.testSuiteItemId === tab.testSuiteItemId),
       )
       if (existing) {
         set({ activeTabId: existing.id })
@@ -85,7 +111,11 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
     }
 
     const state = get()
-    const existingPreview = state.tabs.find((t) => t.isPreview)
+    // Scope the preview slot per workspace kind — APIs preview ≠ Tests
+    // preview ≠ Mocks preview. A click in one tree never disturbs another
+    // tree's preview tab.
+    const newKind = tabKind(tab)
+    const existingPreview = state.tabs.find((t) => t.isPreview && tabKind(t) === newKind)
 
     if (existingPreview) {
       if (existingPreview.isDirty) {
@@ -96,7 +126,15 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
         const newTab: Tab = { ...tab, isDirty: false, isLoading: false, isPreview: true }
         set((s) => ({ tabs: [...s.tabs, newTab], activeTabId: newTab.id }))
       } else {
-        // Replace the existing (clean) preview tab's content
+        // Replace the existing (clean) preview tab's content. Identity
+        // fields (endpointId / savedRequestId / mockServerId /
+        // testSuiteItemId / folderId) are mutually exclusive, so we
+        // ALWAYS overwrite each one with the new tab's value — even
+        // when that value is undefined. Without the explicit overrides
+        // a previous suite-item preview would leave `testSuiteItemId`
+        // behind, making the flask icon stick on an APIs-tree preview
+        // that opened in the same slot (and the Save router would still
+        // try to write to test_suite_items).
         set((s) => ({
           tabs: s.tabs.map((t) =>
             t.id === existingPreview.id
@@ -104,6 +142,11 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
                   ...t,
                   ...tab,
                   id: existingPreview.id,
+                  endpointId: tab.endpointId,
+                  savedRequestId: tab.savedRequestId,
+                  mockServerId: tab.mockServerId,
+                  testSuiteItemId: tab.testSuiteItemId,
+                  folderId: tab.folderId,
                   isDirty: false,
                   isLoading: false,
                   isPreview: true,

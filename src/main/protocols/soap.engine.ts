@@ -568,7 +568,7 @@ export async function parseWsdlFromContent(content: string): Promise<WsdlParseRe
   const { join } = await import('path')
   const { tmpdir } = await import('os')
 
-  const tmpFile = join(tmpdir(), `apinizer-wsdl-${randomUUID()}.wsdl`)
+  const tmpFile = join(tmpdir(), `testnizer-wsdl-${randomUUID()}.wsdl`)
   writeFileSync(tmpFile, content, 'utf-8')
 
   try {

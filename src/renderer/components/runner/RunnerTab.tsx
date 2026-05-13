@@ -5,7 +5,7 @@ import type { TreeNode, HttpMethod } from '../../types'
 import RunnerSequence from './RunnerSequence'
 import RunnerConfig from './RunnerConfig'
 import RunnerResults from './RunnerResults'
-import { openEndpointTab } from '../../lib/open-endpoint-tab'
+import { openEndpointTab, openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import { useUIStore } from '../../stores/ui.store'
 import RunnerVariables from './RunnerVariables'
 import RunnerHistory from './RunnerHistory'
@@ -224,12 +224,32 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       const stored = sessionStorage.getItem(`runner-report-${tabId}`)
       if (!stored) return null
       const data = JSON.parse(stored) as {
-        autoRun?: boolean
         sourceType?: string
         endpointIds?: string[]
       }
-      if (data.autoRun && data.sourceType === 'suite' && Array.isArray(data.endpointIds)) {
+      // Only auto-run paths bring endpointIds; the browse-only suite click
+      // leaves them undefined and the suite-items effect handles the list.
+      if (data.sourceType === 'suite' && Array.isArray(data.endpointIds)) {
         return new Set(data.endpointIds)
+      }
+    } catch {
+      /* ignore */
+    }
+    return null
+  })
+
+  // When suite items are passed (post-refactor self-contained model), they're
+  // NOT in the APIs treeData — they live in `test_suite_items`. Hold the
+  // suite id so the dedicated effect below can fetch + render them directly,
+  // bypassing the tree filter that only works for endpoint ids.
+  const [suiteIdForRunner, setSuiteIdForRunner] = useState<string | null>(() => {
+    if (!tabId) return null
+    try {
+      const stored = sessionStorage.getItem(`runner-report-${tabId}`)
+      if (!stored) return null
+      const data = JSON.parse(stored) as { sourceType?: string; suiteId?: string }
+      if (data.sourceType === 'suite' && typeof data.suiteId === 'string') {
+        return data.suiteId
       }
     } catch {
       /* ignore */
@@ -252,22 +272,43 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           setView('history')
         } else if (data.viewScheduledTasks) {
           setView('scheduled')
+        } else if (data.sourceType === 'suite' && typeof data.suiteId === 'string') {
+          // Suite mode covers both:
+          //   - auto-run from "Run Suite" (carries endpointIds)
+          //   - browse-only from clicking the suite name (no endpointIds)
+          // The suite-items effect fetches everything from `suiteId`; the
+          // pending ref only fires when auto-run is requested.
+          if (data.autoRun && Array.isArray(data.endpointIds)) {
+            pendingAutoRunRef.current = {
+              endpointIds: data.endpointIds,
+              folderName: data.folderName,
+              sourceType: 'suite',
+            }
+          }
+          if (data.folderName) setRunFolderName(data.folderName)
+          setRunOrigin('suite')
+          setSuiteFilterIds(
+            Array.isArray(data.endpointIds) ? new Set(data.endpointIds as string[]) : null,
+          )
+          setSuiteIdForRunner(data.suiteId)
+          // Force the config view — the runner tab is reused, and a previous
+          // session (TestsHome, All Runs, prior results) may have parked it
+          // on another view. Auto-run paths flip to 'results' on their own.
+          setView('config')
         } else if (data.autoRun && data.endpointIds) {
-          // Store for when endpoints are loaded
           pendingAutoRunRef.current = {
             endpointIds: data.endpointIds,
             folderName: data.folderName,
             sourceType: data.sourceType,
           }
           if (data.folderName) setRunFolderName(data.folderName)
-          if (data.sourceType === 'suite') {
-            setRunOrigin('suite')
-            setSuiteFilterIds(new Set(data.endpointIds as string[]))
-          } else if (data.sourceType === 'apis') {
+          if (data.sourceType === 'apis') {
             setRunOrigin('apis')
             setSuiteFilterIds(null)
+            setSuiteIdForRunner(null)
           } else {
             setSuiteFilterIds(null)
+            setSuiteIdForRunner(null)
           }
         } else {
           const typed = data as {
@@ -378,6 +419,10 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // are surfaced — otherwise the user would see (and be able to re-run)
   // every endpoint in the project (Bug 2).
   useEffect(() => {
+    // Suite-with-suiteId path is handled by the dedicated effect below —
+    // suite items live in their own table, not in the APIs treeData.
+    if (suiteIdForRunner) return
+
     if (!folderId) {
       const all: RunnerEndpointItem[] = []
       for (const root of treeData) {
@@ -406,7 +451,75 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         )
       }
     }
-  }, [folderId, treeData, suiteFilterIds])
+  }, [folderId, treeData, suiteFilterIds, suiteIdForRunner])
+
+  // Test-Suite path: items live in `test_suite_items`, not in APIs treeData,
+  // so fetch them directly and build the run sequence from suite-item rows.
+  // Folders (when present) become the group labels — same shape Postman uses.
+  useEffect(() => {
+    if (!suiteIdForRunner) return
+    let cancelled = false
+
+    const fetchAndApply = async () => {
+      const res = await window.api?.testSuite?.listEndpoints?.(suiteIdForRunner)
+      if (cancelled || !res?.success || !res.data) return
+      const { items = [], folders = [] } = res.data as {
+        items: Array<{
+          id: string
+          name: string
+          method: string | null
+          url: string | null
+          folder_id: string | null
+        }>
+        folders: Array<{ id: string; name: string }>
+      }
+
+      const toRunnerItem = (it: (typeof items)[number]): RunnerEndpointItem => ({
+        id: it.id,
+        name: it.name,
+        method: (it.method || 'GET').toUpperCase() as HttpMethod,
+        url: it.url || '',
+        selected: true,
+      })
+
+      setEndpoints(items.map(toRunnerItem))
+
+      if (folders.length > 0) {
+        const folderById = new Map(folders.map((f) => [f.id, f.name]))
+        const groups: RunnerFolderGroup[] = []
+        const groupByFolderId = new Map<string | 'root', RunnerFolderGroup>()
+        for (const it of items) {
+          const key = it.folder_id ?? 'root'
+          const folderName =
+            key === 'root' ? runFolderName || 'Suite' : folderById.get(it.folder_id!) || 'Folder'
+          let group = groupByFolderId.get(key)
+          if (!group) {
+            group = { folderId: String(key), folderName, endpoints: [] }
+            groupByFolderId.set(key, group)
+            groups.push(group)
+          }
+          group.endpoints.push(toRunnerItem(it))
+        }
+        setFolderGroups(groups)
+      } else {
+        setFolderGroups([])
+      }
+    }
+
+    fetchAndApply()
+
+    // Refetch whenever a suite item is renamed / reordered / created via any
+    // sibling component (TestsPanel sidebar, URL-bar Save, tab rename). The
+    // same event drives the sidebar refresh, so both surfaces stay in sync.
+    const refetch = () => {
+      void fetchAndApply()
+    }
+    window.addEventListener('tests:suite-item-changed', refetch)
+    return () => {
+      cancelled = true
+      window.removeEventListener('tests:suite-item-changed', refetch)
+    }
+  }, [suiteIdForRunner, runFolderName])
 
   const toggleEndpoint = useCallback((id: string) => {
     setEndpoints((eps) => eps.map((ep) => (ep.id === id ? { ...ep, selected: !ep.selected } : ep)))
@@ -606,6 +719,23 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 onSelectAll={selectAll}
                 onDeselectAll={deselectAll}
                 onReset={selectAll}
+                onReorder={
+                  suiteIdForRunner
+                    ? async (draggedId, insertBeforeId) => {
+                        // Persist through the suite move IPC (single
+                        // transaction renumber). The shared event drives both
+                        // the sidebar reload and the runner's suite-items
+                        // effect — one signal, both surfaces stay in sync.
+                        await window.api?.testSuiteItem?.move({
+                          id: draggedId,
+                          targetSuiteId: suiteIdForRunner,
+                          targetFolderId: null,
+                          insertBeforeId,
+                        })
+                        window.dispatchEvent(new CustomEvent('tests:suite-item-changed'))
+                      }
+                    : undefined
+                }
               />
             </div>
             <ResizeDivider onDrag={handleSequenceResize} />
@@ -648,12 +778,16 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             onViewAllRuns={handleViewAllRuns}
             selectedResultId={selectedResultId}
             onSelectResult={setSelectedResultId}
-            onOpenEndpoint={(endpointId) => {
-              // Jump to the APIs workbench so the newly opened tab is
-              // visible — without this the tab opens in the background
-              // and the user thinks nothing happened.
-              useUIStore.getState().setActiveSidebarPage('apis')
-              void openEndpointTab(endpointId)
+            onOpenEndpoint={(itemId) => {
+              // Suite runs carry test_suite_items ids — those open as suite
+              // item tabs and the sidebar stays on Tests. APIs / Runner runs
+              // carry endpoint ids and route to the APIs workbench instead.
+              if (runOrigin === 'suite') {
+                void openSuiteItemTab(itemId)
+              } else {
+                useUIStore.getState().setActiveSidebarPage('apis')
+                void openEndpointTab(itemId)
+              }
             }}
           />
         )}
