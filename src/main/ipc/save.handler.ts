@@ -14,7 +14,9 @@ import { randomUUID } from 'crypto'
 import { getDb } from '../db/database'
 import { addSaveHistory } from '../db/branch.repo'
 import { encryptSecret, decryptSecret } from '../lib/secure-storage'
+import { assertTmpSubpath, assertImportFilePath, GIT_TMP_PREFIXES } from '../lib/path-safety'
 import { importPostman, importInsomnia } from './import-export.handler'
+import { snapshotEndpointForSuite } from './test-suite.handler'
 
 // ─── Multi-format detection for test suite import ────────────────
 export type TestSuiteImportFormat = 'testnizer' | 'postman' | 'insomnia' | 'unknown'
@@ -69,10 +71,11 @@ interface ProjectExport {
   environmentVariables: Record<string, unknown>[]
   globalVariables: Record<string, unknown>[]
   testSuites?: Record<string, unknown>[]
-  testSuiteEndpoints?: Record<string, unknown>[]
-  // Added in v1.2.x — Mock servers + certificates were previously DB-only
-  // and disappeared on branch switch / push / pull. All four arrays are
-  // optional so older project.json files without them still import cleanly.
+  // Suite items + folder tree (v1.3 snapshot model). Items are
+  // self-contained — they no longer reference APIs-tree endpoints.
+  testSuiteItems?: Record<string, unknown>[]
+  testSuiteFolders?: Record<string, unknown>[]
+  // Mock servers + certificates — git-tracked since v1.2.
   mockServers?: Record<string, unknown>[]
   mockEndpoints?: Record<string, unknown>[]
   mockResponses?: Record<string, unknown>[]
@@ -90,15 +93,18 @@ interface FolderExport {
   endpointCases: Record<string, unknown>[]
 }
 
-// ─── Test Suite Export Format ────────────────────────────────────
+// ─── Test Suite Export Format (snapshot model) ──────────────────
+// Self-contained: the suite shell + every item with its inline request
+// snapshot + the folder tree that organises them. Items don't reference
+// APIs-tree endpoints. `source_endpoint_id` is advisory only and is
+// dropped on import so a copy never re-links into the target project.
 interface TestSuiteExport {
   version: string
   exportedAt: number
   kind: 'testSuite'
   suite: Record<string, unknown>
-  endpoints: Record<string, unknown>[]
-  endpointCases: Record<string, unknown>[]
-  suiteEndpoints: Record<string, unknown>[]
+  items: Record<string, unknown>[]
+  folders: Record<string, unknown>[]
 }
 
 // Columns serialised for git-tracked tables. Kept here as a single source of
@@ -222,16 +228,22 @@ export function exportProjectData(projectId: string): ProjectExport {
     .prepare('SELECT * FROM global_variables WHERE project_id = ?')
     .all(projectId) as Record<string, unknown>[]
 
-  // Test suites + M2M endpoint links
+  // Test suites + their self-contained items and folders. Switched from the
+  // dropped `test_suite_endpoints` junction (v1.0–v1.2) to the snapshot model
+  // (`test_suite_items` + `test_suite_folders`) in v1.3.
   const testSuites = db
     .prepare('SELECT * FROM test_suites WHERE project_id = ?')
     .all(projectId) as Record<string, unknown>[]
-  let testSuiteEndpoints: Record<string, unknown>[] = []
+  let testSuiteItems: Record<string, unknown>[] = []
+  let testSuiteFolders: Record<string, unknown>[] = []
   const suiteIds = testSuites.map((s) => s.id as string)
   if (suiteIds.length > 0) {
     const ph = suiteIds.map(() => '?').join(',')
-    testSuiteEndpoints = db
-      .prepare(`SELECT * FROM test_suite_endpoints WHERE suite_id IN (${ph})`)
+    testSuiteItems = db
+      .prepare(`SELECT * FROM test_suite_items WHERE suite_id IN (${ph})`)
+      .all(...suiteIds) as Record<string, unknown>[]
+    testSuiteFolders = db
+      .prepare(`SELECT * FROM test_suite_folders WHERE suite_id IN (${ph})`)
       .all(...suiteIds) as Record<string, unknown>[]
   }
 
@@ -265,7 +277,7 @@ export function exportProjectData(projectId: string): ProjectExport {
     .all(projectId) as Record<string, unknown>[]
 
   return {
-    version: '1.1.0',
+    version: 'testnizer-project/2.0',
     exportedAt: Date.now(),
     kind: 'project',
     project,
@@ -277,7 +289,8 @@ export function exportProjectData(projectId: string): ProjectExport {
     environmentVariables,
     globalVariables,
     testSuites,
-    testSuiteEndpoints,
+    testSuiteItems,
+    testSuiteFolders,
     mockServers,
     mockEndpoints,
     mockResponses,
@@ -426,13 +439,36 @@ function importProjectData(data: ProjectExport, projectId: string): void {
     ])
   }
 
-  // Import test_suite_endpoints
-  if (data.testSuiteEndpoints?.length) {
-    upsert('test_suite_endpoints', data.testSuiteEndpoints, [
+  // Import test-suite folders + items (v1.3+ snapshot model). Folders go
+  // first because items carry a folder_id FK. Legacy `testSuiteEndpoints`
+  // arrays from pre-v1.3 exports are silently ignored — that schema was
+  // dropped and the link rows reference endpoints that may not exist in
+  // the target project.
+  if (data.testSuiteFolders?.length) {
+    upsert('test_suite_folders', data.testSuiteFolders, [
       'id',
       'suite_id',
-      'endpoint_id',
+      'parent_id',
+      'name',
       'sort_order',
+      'created_at',
+    ])
+  }
+  if (data.testSuiteItems?.length) {
+    upsert('test_suite_items', data.testSuiteItems, [
+      'id',
+      'suite_id',
+      'folder_id',
+      'protocol',
+      'name',
+      'method',
+      'url',
+      'request_schema',
+      'assertions',
+      'source_endpoint_id',
+      'sort_order',
+      'created_at',
+      'updated_at',
     ])
   }
 
@@ -615,7 +651,12 @@ export function importFolderData(
   return { foldersImported: folderIdMap.size, endpointsImported: endpointIdMap.size }
 }
 
-// ─── Test Suite Export / Import ──────────────────────────────────
+// ─── Test Suite Export / Import (v1.3+ snapshot model) ─────────
+//
+// A suite export is now self-contained: the suite shell, every item with its
+// full inline request snapshot, and the folder tree that organises them.
+// Items don't reference back to APIs-tree endpoints — `source_endpoint_id`
+// is advisory only and the bond is severed on import.
 export function exportTestSuiteData(suiteId: string): TestSuiteExport {
   const db = getDb()
   const suite = db.prepare('SELECT * FROM test_suites WHERE id = ?').get(suiteId) as
@@ -623,74 +664,65 @@ export function exportTestSuiteData(suiteId: string): TestSuiteExport {
     | undefined
   if (!suite) {
     return {
-      version: '1.0.0',
+      version: 'testnizer-suite/2.0',
       exportedAt: Date.now(),
       kind: 'testSuite',
       suite: {},
-      endpoints: [],
-      endpointCases: [],
-      suiteEndpoints: [],
+      items: [],
+      folders: [],
     }
   }
 
-  const suiteEndpoints = db
-    .prepare('SELECT * FROM test_suite_endpoints WHERE suite_id = ?')
+  const items = db
+    .prepare('SELECT * FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order')
+    .all(suiteId) as Record<string, unknown>[]
+  const folders = db
+    .prepare('SELECT * FROM test_suite_folders WHERE suite_id = ? ORDER BY sort_order')
     .all(suiteId) as Record<string, unknown>[]
 
-  const endpointIds = suiteEndpoints.map((se) => se.endpoint_id as string)
-  let endpoints: Record<string, unknown>[] = []
-  let endpointCases: Record<string, unknown>[] = []
-  if (endpointIds.length > 0) {
-    const ph = endpointIds.map(() => '?').join(',')
-    endpoints = db
-      .prepare(`SELECT * FROM endpoints WHERE id IN (${ph})`)
-      .all(...endpointIds) as Record<string, unknown>[]
-    endpointCases = db
-      .prepare(`SELECT * FROM endpoint_cases WHERE endpoint_id IN (${ph})`)
-      .all(...endpointIds) as Record<string, unknown>[]
-  }
-
   return {
-    version: '1.0.0',
+    version: '2.0.0',
     exportedAt: Date.now(),
     kind: 'testSuite',
     suite,
-    endpoints,
-    endpointCases,
-    suiteEndpoints,
+    items,
+    folders,
   }
 }
 
 /**
- * Import a test suite into target project. New IDs are generated.
- * All endpoints come in without a folder (folder_id = null) to avoid
- * dangling folder references from the source project.
+ * Import a test suite into target project. New IDs are generated for the
+ * suite, every folder, and every item so the source export and the target
+ * project can coexist. Folder ids are remapped first so item.folder_id can
+ * be rewritten to point at the new folder rows.
  */
 export function importTestSuiteData(
   data: TestSuiteExport,
   projectId: string,
-): { suiteId: string; endpointsImported: number } {
+): { suiteId: string; itemsImported: number } {
   const db = getDb()
   const now = Date.now()
+  const folders = data.folders ?? []
+  const items = data.items ?? []
 
   const newSuiteId = randomUUID()
-  const endpointIdMap = new Map<string, string>()
-  for (const e of data.endpoints) endpointIdMap.set(e.id as string, randomUUID())
+  const folderIdMap = new Map<string, string>()
+  for (const f of folders) folderIdMap.set(f.id as string, randomUUID())
 
   const insertSuite = db.prepare(
     `INSERT INTO test_suites (id, project_id, name, description, sort_order, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
-  const insertEndpoint = db.prepare(
-    `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  const insertFolder = db.prepare(
+    `INSERT INTO test_suite_folders (id, suite_id, parent_id, name, sort_order, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   )
-  const insertCase = db.prepare(
-    `INSERT INTO endpoint_cases (id, endpoint_id, name, params, headers, body, auth, assertions, is_default, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-  const insertLink = db.prepare(
-    `INSERT INTO test_suite_endpoints (id, suite_id, endpoint_id, sort_order) VALUES (?, ?, ?, ?)`,
+  const insertItem = db.prepare(
+    `INSERT INTO test_suite_items
+       (id, suite_id, folder_id, protocol, name, method, url,
+        request_schema, assertions, source_endpoint_id,
+        sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
 
   const suite = data.suite
@@ -707,52 +739,46 @@ export function importTestSuiteData(
       now,
     )
 
-    for (const e of data.endpoints) {
-      const newId = endpointIdMap.get(e.id as string) as string
-      insertEndpoint.run(
+    // Folders first — items reference folder_id, so the rows must exist.
+    // parent_id is remapped through folderIdMap; a null source parent
+    // stays null (top-level folder).
+    for (const f of folders) {
+      const newId = folderIdMap.get(f.id as string) as string
+      const newParentId = f.parent_id ? (folderIdMap.get(f.parent_id as string) ?? null) : null
+      insertFolder.run(
         newId,
-        projectId,
-        null, // drop folder association on import
-        e.name,
-        e.description ?? null,
-        e.protocol || 'http',
-        e.method ?? null,
-        e.path,
-        e.status || 'developing',
-        e.request_schema ?? null,
-        e.response_schemas ?? null,
-        e.sort_order ?? 0,
-        (e.created_at as number) || now,
+        newSuiteId,
+        newParentId,
+        f.name ?? 'Folder',
+        f.sort_order ?? 0,
+        (f.created_at as number) || now,
+      )
+    }
+
+    for (const it of items) {
+      const newFolderId = it.folder_id ? (folderIdMap.get(it.folder_id as string) ?? null) : null
+      insertItem.run(
+        randomUUID(),
+        newSuiteId,
+        newFolderId,
+        it.protocol || 'http',
+        it.name ?? 'Imported request',
+        it.method ?? null,
+        it.url ?? null,
+        (it.request_schema as string) ?? '{}',
+        (it.assertions as string) ?? null,
+        // source_endpoint_id points at a row in the SOURCE project; keeping
+        // it would leak that id into the target. Drop it on import.
+        null,
+        it.sort_order ?? 0,
+        (it.created_at as number) || now,
         now,
       )
-    }
-
-    for (const c of data.endpointCases) {
-      const newEndpointId = endpointIdMap.get(c.endpoint_id as string)
-      if (!newEndpointId) continue
-      insertCase.run(
-        randomUUID(),
-        newEndpointId,
-        c.name,
-        c.params ?? null,
-        c.headers ?? null,
-        c.body ?? null,
-        c.auth ?? null,
-        c.assertions ?? null,
-        c.is_default ?? 0,
-        (c.created_at as number) || now,
-      )
-    }
-
-    for (const link of data.suiteEndpoints) {
-      const newEndpointId = endpointIdMap.get(link.endpoint_id as string)
-      if (!newEndpointId) continue
-      insertLink.run(randomUUID(), newSuiteId, newEndpointId, link.sort_order ?? 0)
     }
   })
   tx()
 
-  return { suiteId: newSuiteId, endpointsImported: endpointIdMap.size }
+  return { suiteId: newSuiteId, itemsImported: items.length }
 }
 
 /**
@@ -768,7 +794,7 @@ export async function importTestSuiteFromFile(
   suiteName?: string,
 ): Promise<{
   suiteId: string
-  endpointsImported: number
+  itemsImported: number
   format: TestSuiteImportFormat
   warnings?: string[]
 }> {
@@ -786,11 +812,19 @@ export async function importTestSuiteFromFile(
     if (data.kind !== 'testSuite' || !data.suite) {
       throw new Error('Invalid Testnizer test suite export.')
     }
+    if (!Array.isArray(data.items) || !Array.isArray(data.folders)) {
+      throw new Error('Unsupported Testnizer suite export — please re-export from this version.')
+    }
     const out = importTestSuiteData(data, projectId)
-    return { suiteId: out.suiteId, endpointsImported: out.endpointsImported, format }
+    return { suiteId: out.suiteId, itemsImported: out.itemsImported, format }
   }
 
   if (format === 'postman' || format === 'insomnia') {
+    // Step 1: reuse the existing Postman / Insomnia importer to materialise
+    // endpoint rows in the APIs tree. This is the cheapest way to get a
+    // canonical request_schema for each request (the importer already maps
+    // the source format into our shape — re-implementing that here would
+    // duplicate hundreds of lines of normalisation).
     const result =
       format === 'postman'
         ? await importPostman(projectId, content, null)
@@ -802,7 +836,6 @@ export async function importTestSuiteFromFile(
 
     const endpointIds = result.endpointIds ?? []
 
-    // Derive a friendly default suite name from the source document.
     let derivedName = suiteName
     if (!derivedName) {
       if (format === 'postman') {
@@ -818,25 +851,77 @@ export async function importTestSuiteFromFile(
     const now = Date.now()
     const newSuiteId = randomUUID()
 
-    db.prepare(
+    // Step 2: snapshot each freshly-imported endpoint into test_suite_items
+    // and delete the source endpoint row. The user's intent for a suite
+    // import is "I want these requests as a test suite" — leaving them in
+    // the APIs tree as a duplicate set creates the cross-contamination the
+    // copy-on-add model was built to prevent.
+    const insertSuite = db.prepare(
       `INSERT INTO test_suites (id, project_id, name, description, sort_order, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(newSuiteId, projectId, derivedName, null, 0, now, now)
-
-    const insertLink = db.prepare(
-      `INSERT INTO test_suite_endpoints (id, suite_id, endpoint_id, sort_order) VALUES (?, ?, ?, ?)`,
     )
-    const tx = db.transaction(() => {
-      let order = 0
-      for (const epId of endpointIds) {
-        insertLink.run(randomUUID(), newSuiteId, epId, order++)
+    const insertItem = db.prepare(
+      `INSERT INTO test_suite_items
+         (id, suite_id, folder_id, protocol, name, method, url,
+          request_schema, assertions, source_endpoint_id,
+          sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    const deleteEndpoint = db.prepare(`DELETE FROM endpoints WHERE id = ?`)
+
+    // Atomic snapshot transaction. `importPostman` / `importInsomnia` have
+    // already committed endpoint rows above; if the snapshot loop throws,
+    // we'd leave APIs-tree leftovers that the user never asked for. Catch
+    // and roll them back ourselves so the operation is all-or-nothing from
+    // the caller's perspective.
+    let itemsCreated = 0
+    try {
+      const tx = db.transaction(() => {
+        insertSuite.run(newSuiteId, projectId, derivedName, null, 0, now, now)
+        let order = 0
+        for (const epId of endpointIds) {
+          const snap = snapshotEndpointForSuite(epId)
+          if (!snap) continue
+          insertItem.run(
+            randomUUID(),
+            newSuiteId,
+            null,
+            snap.protocol,
+            snap.name,
+            snap.method,
+            snap.url,
+            snap.request_schema,
+            snap.assertions,
+            // The source endpoint is about to be deleted; don't carry a
+            // stale pointer that won't resolve.
+            null,
+            order++,
+            now,
+            now,
+          )
+          deleteEndpoint.run(epId)
+          itemsCreated++
+        }
+      })
+      tx()
+    } catch (e) {
+      // Snapshot failed mid-flight. The transaction itself rolled back, but
+      // the importPostman/Insomnia commit before it didn't — clean up the
+      // endpoint rows it created so the user doesn't see ghost imports.
+      const cleanup = db.transaction(() => {
+        for (const epId of endpointIds) deleteEndpoint.run(epId)
+      })
+      try {
+        cleanup()
+      } catch {
+        /* best effort */
       }
-    })
-    tx()
+      throw e
+    }
 
     return {
       suiteId: newSuiteId,
-      endpointsImported: endpointIds.length,
+      itemsImported: itemsCreated,
       format,
       warnings: result.warnings,
     }
@@ -1070,15 +1155,62 @@ export function importProjectAsNew(
       )
     }
 
-    // Test suite endpoints
-    const insertLink = db.prepare(
-      `INSERT INTO test_suite_endpoints (id, suite_id, endpoint_id, sort_order) VALUES (?, ?, ?, ?)`,
+    // Test suite folders + items (v1.3+ snapshot model). Folders are
+    // inserted first because items carry a folder_id FK. Folder parent_id
+    // and item folder_id are remapped through `folderIdMap` so the suite
+    // tree shape is preserved end-to-end.
+    const insertSuiteFolder = db.prepare(
+      `INSERT INTO test_suite_folders (id, suite_id, parent_id, name, sort_order, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
-    for (const link of data.testSuiteEndpoints || []) {
-      const newSuiteId = suiteIdMap.get(link.suite_id as string)
-      const newEndpointId = endpointIdMap.get(link.endpoint_id as string)
-      if (!newSuiteId || !newEndpointId) continue
-      insertLink.run(randomUUID(), newSuiteId, newEndpointId, link.sort_order ?? 0)
+    const insertSuiteItem = db.prepare(
+      `INSERT INTO test_suite_items
+         (id, suite_id, folder_id, protocol, name, method, url,
+          request_schema, assertions, source_endpoint_id,
+          sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    const suiteFolderIdMap = new Map<string, string>()
+    for (const f of data.testSuiteFolders || []) {
+      suiteFolderIdMap.set(f.id as string, randomUUID())
+    }
+    for (const f of data.testSuiteFolders || []) {
+      const newSuiteId = suiteIdMap.get(f.suite_id as string)
+      if (!newSuiteId) continue
+      const newId = suiteFolderIdMap.get(f.id as string) as string
+      const newParentId = f.parent_id ? (suiteFolderIdMap.get(f.parent_id as string) ?? null) : null
+      insertSuiteFolder.run(
+        newId,
+        newSuiteId,
+        newParentId,
+        f.name ?? 'Folder',
+        f.sort_order ?? 0,
+        (f.created_at as number) || now,
+      )
+    }
+    for (const it of data.testSuiteItems || []) {
+      const newSuiteId = suiteIdMap.get(it.suite_id as string)
+      if (!newSuiteId) continue
+      const newFolderId = it.folder_id
+        ? (suiteFolderIdMap.get(it.folder_id as string) ?? null)
+        : null
+      insertSuiteItem.run(
+        randomUUID(),
+        newSuiteId,
+        newFolderId,
+        it.protocol || 'http',
+        it.name ?? 'Imported request',
+        it.method ?? null,
+        it.url ?? null,
+        (it.request_schema as string) ?? '{}',
+        (it.assertions as string) ?? null,
+        // source_endpoint_id pointed at the source project's row — that id
+        // doesn't exist in the new project, so drop the advisory link.
+        null,
+        it.sort_order ?? 0,
+        (it.created_at as number) || now,
+        now,
+      )
     }
   })
   tx()
@@ -1410,7 +1542,8 @@ export function registerSaveHandlers(): void {
       },
     ) => {
       try {
-        const content = readFileSync(payload.filePath, 'utf-8')
+        const safePath = assertImportFilePath(payload.filePath)
+        const content = readFileSync(safePath, 'utf-8')
         const data = JSON.parse(content) as ProjectExport
         if (!data.version || !data.project) {
           return { success: false, error: 'Invalid project file format.' }
@@ -1869,10 +2002,11 @@ export function registerSaveHandlers(): void {
 
   ipcMain.handle('save:gitReadFile', async (_event, filePath: string) => {
     try {
-      if (!existsSync(filePath)) {
+      const safePath = assertTmpSubpath(filePath, GIT_TMP_PREFIXES)
+      if (!existsSync(safePath)) {
         return { success: false, error: 'File not found' }
       }
-      const content = readFileSync(filePath, 'utf-8')
+      const content = readFileSync(safePath, 'utf-8')
       const data = JSON.parse(content)
       return { success: true, data }
     } catch (e) {
@@ -1882,7 +2016,8 @@ export function registerSaveHandlers(): void {
 
   ipcMain.handle('save:gitCleanup', async (_event, tmpDir: string) => {
     try {
-      rmSync(tmpDir, { recursive: true, force: true })
+      const safeDir = assertTmpSubpath(tmpDir, GIT_TMP_PREFIXES)
+      rmSync(safeDir, { recursive: true, force: true })
       return { success: true }
     } catch (e) {
       return { success: false, error: (e as Error).message }
