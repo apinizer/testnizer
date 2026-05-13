@@ -39,12 +39,8 @@ export function getDefaultUserAgent(): string {
  * Inject the default `User-Agent` header into a header map if the caller
  * has not provided one (case-insensitive). Mutates and returns `headers`.
  */
-export function applyDefaultUserAgent(
-  headers: Record<string, string>,
-): Record<string, string> {
-  const hasUserAgent = Object.keys(headers).some(
-    (k) => k.toLowerCase() === 'user-agent',
-  )
+export function applyDefaultUserAgent(headers: Record<string, string>): Record<string, string> {
+  const hasUserAgent = Object.keys(headers).some((k) => k.toLowerCase() === 'user-agent')
   if (!hasUserAgent) {
     headers['User-Agent'] = getDefaultUserAgent()
   }

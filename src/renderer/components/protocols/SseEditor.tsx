@@ -60,9 +60,7 @@ export default function SseEditor() {
             {lastEventIdExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             <span>Last-Event-ID</span>
             {lastEventId.trim() && (
-              <span className="ml-1 truncate font-mono text-[var(--muted)]">
-                {lastEventId}
-              </span>
+              <span className="ml-1 truncate font-mono text-[var(--muted)]">{lastEventId}</span>
             )}
           </button>
           {lastEventIdExpanded && (
@@ -91,16 +89,10 @@ export default function SseEditor() {
             style={{ background: 'transparent', border: 'none' }}
             title={bodyDisabled ? 'Body is only available for non-GET methods' : undefined}
           >
-            {bodyExpanded && !bodyDisabled ? (
-              <ChevronDown size={14} />
-            ) : (
-              <ChevronRight size={14} />
-            )}
+            {bodyExpanded && !bodyDisabled ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             <FileCode2 size={14} className="text-[var(--muted)]" />
             <span>Body</span>
-            {bodyDisabled && (
-              <span className="ml-1 text-[var(--muted)]">(disabled for GET)</span>
-            )}
+            {bodyDisabled && <span className="ml-1 text-[var(--muted)]">(disabled for GET)</span>}
             {!bodyDisabled && body.trim() && (
               <span
                 className="ml-1 rounded-full px-[5px]"
@@ -121,12 +113,9 @@ export default function SseEditor() {
                     onClick={() => setBodyType(t)}
                     className="rounded-md border px-2 py-0.5 transition-colors"
                     style={{
-                      background:
-                        bodyType === t ? 'var(--accent-light)' : 'transparent',
-                      borderColor:
-                        bodyType === t ? 'var(--accent)' : 'var(--border)',
-                      color:
-                        bodyType === t ? 'var(--accent-text)' : 'var(--text)',
+                      background: bodyType === t ? 'var(--accent-light)' : 'transparent',
+                      borderColor: bodyType === t ? 'var(--accent)' : 'var(--border)',
+                      color: bodyType === t ? 'var(--accent-text)' : 'var(--text)',
                     }}
                   >
                     {t.toUpperCase()}

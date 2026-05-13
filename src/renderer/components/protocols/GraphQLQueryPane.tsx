@@ -107,12 +107,7 @@ export default function GraphQLQueryPane() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Query editor */}
         <div className="flex-1 min-h-0">
-          <MonacoWrapper
-            value={query}
-            onChange={setQuery}
-            language="graphql"
-            height="100%"
-          />
+          <MonacoWrapper value={query} onChange={setQuery} language="graphql" height="100%" />
         </div>
 
         {/* Variables (collapsible) */}

@@ -101,9 +101,7 @@ export default function EventsTab() {
                 )}
 
                 {event.id && (
-                  <span className="shrink-0 font-mono text-[var(--hint)]">
-                    id:{event.id}
-                  </span>
+                  <span className="shrink-0 font-mono text-[var(--hint)]">id:{event.id}</span>
                 )}
 
                 {event.retry != null && (

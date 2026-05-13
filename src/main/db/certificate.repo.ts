@@ -29,28 +29,32 @@ export interface CreateCertificateInput {
 
 export function listCertificates(projectId: string): CertificateRow[] {
   const db = getDb()
-  return db.prepare(
-    'SELECT * FROM certificates WHERE project_id = ? ORDER BY kind ASC, created_at ASC'
-  ).all(projectId) as CertificateRow[]
+  return db
+    .prepare('SELECT * FROM certificates WHERE project_id = ? ORDER BY kind ASC, created_at ASC')
+    .all(projectId) as CertificateRow[]
 }
 
 export function listCertificatesForHost(projectId: string, host: string): CertificateRow[] {
   const db = getDb()
-  return db.prepare(
-    `SELECT * FROM certificates
+  return db
+    .prepare(
+      `SELECT * FROM certificates
      WHERE project_id = ? AND enabled = 1
-       AND (kind = 'ca' OR host = ? OR host = '*' OR host IS NULL OR host = '')`
-  ).all(projectId, host) as CertificateRow[]
+       AND (kind = 'ca' OR host = ? OR host = '*' OR host IS NULL OR host = '')`,
+    )
+    .all(projectId, host) as CertificateRow[]
 }
 
 export function createCertificate(input: CreateCertificateInput): CertificateRow {
   const db = getDb()
   const id = randomUUID()
   const now = Date.now()
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO certificates (id, project_id, kind, host, crt_path, key_path, pfx_path, passphrase, enabled, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `,
+  ).run(
     id,
     input.project_id,
     input.kind,
@@ -65,9 +69,14 @@ export function createCertificate(input: CreateCertificateInput): CertificateRow
   return db.prepare('SELECT * FROM certificates WHERE id = ?').get(id) as CertificateRow
 }
 
-export function updateCertificate(id: string, patch: Partial<CreateCertificateInput>): CertificateRow | undefined {
+export function updateCertificate(
+  id: string,
+  patch: Partial<CreateCertificateInput>,
+): CertificateRow | undefined {
   const db = getDb()
-  const existing = db.prepare('SELECT * FROM certificates WHERE id = ?').get(id) as CertificateRow | undefined
+  const existing = db.prepare('SELECT * FROM certificates WHERE id = ?').get(id) as
+    | CertificateRow
+    | undefined
   if (!existing) return undefined
   const next = {
     host: patch.host !== undefined ? patch.host : existing.host,
@@ -75,13 +84,15 @@ export function updateCertificate(id: string, patch: Partial<CreateCertificateIn
     key_path: patch.key_path !== undefined ? patch.key_path : existing.key_path,
     pfx_path: patch.pfx_path !== undefined ? patch.pfx_path : existing.pfx_path,
     passphrase: patch.passphrase !== undefined ? patch.passphrase : existing.passphrase,
-    enabled: patch.enabled === undefined ? existing.enabled : (patch.enabled ? 1 : 0),
+    enabled: patch.enabled === undefined ? existing.enabled : patch.enabled ? 1 : 0,
   }
-  db.prepare(`
+  db.prepare(
+    `
     UPDATE certificates
        SET host = ?, crt_path = ?, key_path = ?, pfx_path = ?, passphrase = ?, enabled = ?
      WHERE id = ?
-  `).run(next.host, next.crt_path, next.key_path, next.pfx_path, next.passphrase, next.enabled, id)
+  `,
+  ).run(next.host, next.crt_path, next.key_path, next.pfx_path, next.passphrase, next.enabled, id)
   return db.prepare('SELECT * FROM certificates WHERE id = ?').get(id) as CertificateRow
 }
 

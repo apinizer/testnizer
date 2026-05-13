@@ -103,7 +103,8 @@ const TRANSPORT_HINTS: CodeHint[] = [
     }),
   },
   {
-    pattern: /DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT/i,
+    pattern:
+      /DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT/i,
     format: (raw) => ({
       message: `TLS certificate not trusted — ${raw}`,
       hint: 'Disable SSL verification or import the CA in Settings',
@@ -221,9 +222,7 @@ export function classifyTransportError(err: unknown): ClassifiedError {
   // Code-bearing transport error (axios / Node).
   const rawCode = typeof axiosErr.code === 'string' ? axiosErr.code : undefined
   const rawMessage =
-    typeof axiosErr.message === 'string' && axiosErr.message.trim()
-      ? axiosErr.message.trim()
-      : ''
+    typeof axiosErr.message === 'string' && axiosErr.message.trim() ? axiosErr.message.trim() : ''
   const probe = rawCode ? `${rawCode} ${rawMessage}` : rawMessage
 
   if (probe) {

@@ -39,9 +39,9 @@ export function getHistory(options: {
   const limit = options.limit ?? 100
   const offset = options.offset ?? 0
 
-  return db.prepare(
-    `SELECT * FROM history ${where} ORDER BY executed_at DESC LIMIT ? OFFSET ?`
-  ).all(...params, limit, offset) as HistoryRow[]
+  return db
+    .prepare(`SELECT * FROM history ${where} ORDER BY executed_at DESC LIMIT ? OFFSET ?`)
+    .all(...params, limit, offset) as HistoryRow[]
 }
 
 export function getHistoryById(id: string): HistoryRow | undefined {
@@ -65,10 +65,12 @@ export function addHistory(data: {
   const id = randomUUID()
   const now = Date.now()
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO history (id, workspace_id, project_id, endpoint_id, protocol, method, url, status_code, duration_ms, request_snapshot, response_snapshot, executed_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `,
+  ).run(
     id,
     data.workspace_id ?? null,
     data.project_id ?? null,
@@ -80,15 +82,17 @@ export function addHistory(data: {
     data.duration_ms ?? null,
     data.request_snapshot,
     data.response_snapshot ?? null,
-    now
+    now,
   )
   return getHistoryById(id)!
 }
 
-export function clearHistory(scope?: string | { workspace_id?: string; project_id?: string }): number {
+export function clearHistory(
+  scope?: string | { workspace_id?: string; project_id?: string },
+): number {
   const db = getDb()
   // Back-compat: allow passing a workspaceId string directly
-  const opts = typeof scope === 'string' ? { workspace_id: scope } : (scope || {})
+  const opts = typeof scope === 'string' ? { workspace_id: scope } : scope || {}
   if (opts.project_id) {
     const result = db.prepare('DELETE FROM history WHERE project_id = ?').run(opts.project_id)
     return result.changes
@@ -110,19 +114,27 @@ export function deleteHistoryEntry(id: string): boolean {
 export function pruneHistory(limit: number, workspaceId?: string): number {
   const db = getDb()
   if (workspaceId) {
-    const result = db.prepare(`
+    const result = db
+      .prepare(
+        `
       DELETE FROM history WHERE id IN (
         SELECT id FROM history WHERE workspace_id = ?
         ORDER BY executed_at DESC
         LIMIT -1 OFFSET ?
       )
-    `).run(workspaceId, limit)
+    `,
+      )
+      .run(workspaceId, limit)
     return result.changes
   }
-  const result = db.prepare(`
+  const result = db
+    .prepare(
+      `
     DELETE FROM history WHERE id IN (
       SELECT id FROM history ORDER BY executed_at DESC LIMIT -1 OFFSET ?
     )
-  `).run(limit)
+  `,
+    )
+    .run(limit)
   return result.changes
 }

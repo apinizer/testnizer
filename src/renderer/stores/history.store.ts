@@ -57,11 +57,11 @@ export const useHistoryStore = create<HistoryStore>((set) => ({
   fetch: async (options = {}) => {
     set({ isLoading: true })
     try {
-      const result = await window.api?.history?.list({
+      const result = (await window.api?.history?.list({
         workspace_id: options.workspaceId,
         project_id: options.projectId,
         limit: options.limit ?? 200,
-      }) as { success: boolean; data?: HistoryRow[] }
+      })) as { success: boolean; data?: HistoryRow[] }
       if (result?.success && result.data) {
         set({ entries: result.data.map(rowToEntry) })
       }
@@ -76,14 +76,18 @@ export const useHistoryStore = create<HistoryStore>((set) => ({
     try {
       await window.api?.history?.clear(workspaceId)
       set({ entries: [] })
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   },
 
   deleteEntry: async (id) => {
     try {
       await window.api?.history?.delete(id)
       set((state) => ({ entries: state.entries.filter((e) => e.id !== id) }))
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   },
 
   setSearchTerm: (term) => set({ searchTerm: term }),

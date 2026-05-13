@@ -30,9 +30,15 @@ interface AuthState {
   setPassword: (password: string, recoveryEmail?: string) => Promise<boolean>
   continueAsGuest: () => void
   logout: () => Promise<void>
-  changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<{ success: boolean; error?: string }>
   disablePassword: (currentPassword: string) => Promise<{ success: boolean; error?: string }>
-  recoverPassword: (osPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>
+  recoverPassword: (
+    osPassword: string,
+    newPassword: string,
+  ) => Promise<{ success: boolean; error?: string }>
   clearError: () => void
 }
 
@@ -56,7 +62,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   checkHasPassword: async () => {
     try {
-      const result = await api().auth.hasPassword() as {
+      const result = (await api().auth.hasPassword()) as {
         success: boolean
         data?: { hasPassword: boolean }
       }
@@ -73,7 +79,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (password: string) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api().auth.login({ password }) as {
+      const result = (await api().auth.login({ password })) as {
         success: boolean
         data?: { user: User; session: { token: string } }
         error?: string
@@ -98,7 +104,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const payload: { password: string; recoveryEmail?: string } = { password }
       if (recoveryEmail) payload.recoveryEmail = recoveryEmail
-      const result = await api().auth.setPassword(payload) as {
+      const result = (await api().auth.setPassword(payload)) as {
         success: boolean
         data?: { user: User; session: { token: string } }
         error?: string
@@ -132,22 +138,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: async () => {
     const token = localStorage.getItem(SESSION_TOKEN_KEY)
     if (token) {
-      try { await api().auth.logout(token) } catch { /* ignore */ }
+      try {
+        await api().auth.logout(token)
+      } catch {
+        /* ignore */
+      }
     }
     localStorage.removeItem(SESSION_TOKEN_KEY)
     localStorage.removeItem(GUEST_MODE_KEY)
-    set({ user: null, isAuthenticated: false, isGuest: false, isLoading: false, error: null, hasPasswordSet: null })
+    set({
+      user: null,
+      isAuthenticated: false,
+      isGuest: false,
+      isLoading: false,
+      error: null,
+      hasPasswordSet: null,
+    })
   },
 
   changePassword: async (currentPassword: string, newPassword: string) => {
     const { user } = get()
     if (!user) return { success: false, error: 'Not logged in' }
     try {
-      const result = await api().auth.changePassword({
+      const result = (await api().auth.changePassword({
         userId: user.id,
         currentPassword,
         newPassword,
-      }) as { success: boolean; error?: string }
+      })) as { success: boolean; error?: string }
       if (result?.success) {
         return { success: true }
       }
@@ -161,10 +178,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user } = get()
     if (!user) return { success: false, error: 'Not logged in' }
     try {
-      const result = await api().auth.disablePassword({
+      const result = (await api().auth.disablePassword({
         userId: user.id,
         currentPassword,
-      }) as { success: boolean; error?: string }
+      })) as { success: boolean; error?: string }
       if (result?.success) {
         // Reset local state — app will show the "no password" flow next launch.
         localStorage.removeItem(SESSION_TOKEN_KEY)
@@ -188,7 +205,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   recoverPassword: async (osPassword: string, newPassword: string) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api().auth.recoverPassword({ osPassword, newPassword }) as {
+      const result = (await api().auth.recoverPassword({ osPassword, newPassword })) as {
         success: boolean
         data?: { user: User; session: { token: string } }
         error?: string

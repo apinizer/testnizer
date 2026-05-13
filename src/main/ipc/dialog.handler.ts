@@ -26,9 +26,7 @@ export function registerDialogHandlers(): void {
     try {
       const win = BrowserWindow.getFocusedWindow()
       const result = await dialog.showOpenDialog(win!, {
-        properties: options.multiSelections
-          ? ['openFile', 'multiSelections']
-          : ['openFile'],
+        properties: options.multiSelections ? ['openFile', 'multiSelections'] : ['openFile'],
         title: options.title ?? 'Select File',
         filters: options.filters ?? [{ name: 'All Files', extensions: ['*'] }],
       })

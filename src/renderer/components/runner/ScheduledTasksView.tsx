@@ -33,9 +33,12 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
     if (!activeProjectId) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const api = window.api as any
-    api.scheduler?.list(activeProjectId).then((result: { success: boolean; data?: ScheduledTask[] }) => {
-      if (result?.success && result.data) setTasks(result.data)
-    }).catch(() => {})
+    api.scheduler
+      ?.list(activeProjectId)
+      .then((result: { success: boolean; data?: ScheduledTask[] }) => {
+        if (result?.success && result.data) setTasks(result.data)
+      })
+      .catch(() => {})
   }, [activeProjectId])
 
   useEffect(() => {
@@ -46,16 +49,23 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const api = window.api as any
-    const unsub = api.scheduler?.onRunCompleted?.(() => { loadTasks() })
-    return () => { unsub?.() }
+    const unsub = api.scheduler?.onRunCompleted?.(() => {
+      loadTasks()
+    })
+    return () => {
+      unsub?.()
+    }
   }, [loadTasks])
 
-  const toggleTask = useCallback(async (taskId: string) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const api = window.api as any
-    await api.scheduler?.toggle(taskId)
-    loadTasks()
-  }, [loadTasks])
+  const toggleTask = useCallback(
+    async (taskId: string) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const api = window.api as any
+      await api.scheduler?.toggle(taskId)
+      loadTasks()
+    },
+    [loadTasks],
+  )
 
   const confirmDeleteTask = useCallback(async () => {
     if (!deleteTarget) return
@@ -71,8 +81,11 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
     const now = new Date()
     const isToday = d.toDateString() === now.toDateString()
     if (isToday) return 'Today, ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
+    return (
+      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+      ', ' +
       d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    )
   }
 
   return (
@@ -106,14 +119,21 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
       </div>
 
       {/* Description */}
-      <div className="shrink-0 border-b border-[var(--border)] px-5 py-3" style={{ color: 'var(--muted)' }}>
-        Periodic runs scheduled on this application. Tasks will run automatically at the configured interval.
+      <div
+        className="shrink-0 border-b border-[var(--border)] px-5 py-3"
+        style={{ color: 'var(--muted)' }}
+      >
+        Periodic runs scheduled on this application. Tasks will run automatically at the configured
+        interval.
       </div>
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
         {tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16" style={{ color: 'var(--hint)' }}>
+          <div
+            className="flex flex-col items-center justify-center gap-3 py-16"
+            style={{ color: 'var(--hint)' }}
+          >
             <Clock size={32} />
             <div style={{ fontSize: 13 }}>No scheduled tasks yet</div>
             <div>Use "Schedule runs" in the Runner configuration to create one.</div>
@@ -122,19 +142,54 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
           <table className="w-full" style={{ borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
-                <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text)' }}>
+                <th
+                  style={{
+                    padding: '10px 16px',
+                    textAlign: 'left',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                  }}
+                >
                   Upcoming run
                 </th>
-                <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text)' }}>
+                <th
+                  style={{
+                    padding: '10px 16px',
+                    textAlign: 'left',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                  }}
+                >
                   Schedule
                 </th>
-                <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text)' }}>
+                <th
+                  style={{
+                    padding: '10px 16px',
+                    textAlign: 'left',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                  }}
+                >
                   Environment
                 </th>
-                <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text)' }}>
+                <th
+                  style={{
+                    padding: '10px 16px',
+                    textAlign: 'left',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                  }}
+                >
                   Endpoints
                 </th>
-                <th style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text)' }}>
+                <th
+                  style={{
+                    padding: '10px 16px',
+                    textAlign: 'right',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                  }}
+                >
                   Actions
                 </th>
               </tr>
@@ -165,7 +220,12 @@ export default function ScheduledTasksView({ onBack, onNewRun }: ScheduledTasksV
   )
 }
 
-function TaskRow({ task, formatDate, onToggle, onDelete }: {
+function TaskRow({
+  task,
+  formatDate,
+  onToggle,
+  onDelete,
+}: {
   task: ScheduledTask
   formatDate: (ts: number) => string
   onToggle: () => void
@@ -173,7 +233,11 @@ function TaskRow({ task, formatDate, onToggle, onDelete }: {
 }) {
   const [hovered, setHovered] = useState(false)
   const endpointCount = (() => {
-    try { return (JSON.parse(task.endpoint_ids) as string[]).length } catch { return 0 }
+    try {
+      return (JSON.parse(task.endpoint_ids) as string[]).length
+    } catch {
+      return 0
+    }
   })()
 
   return (
@@ -214,9 +278,7 @@ function TaskRow({ task, formatDate, onToggle, onDelete }: {
       </td>
 
       {/* Endpoints */}
-      <td style={{ padding: '12px 16px', color: 'var(--muted)' }}>
-        {endpointCount}
-      </td>
+      <td style={{ padding: '12px 16px', color: 'var(--muted)' }}>{endpointCount}</td>
 
       {/* Actions */}
       <td style={{ padding: '12px 16px', textAlign: 'right' }}>

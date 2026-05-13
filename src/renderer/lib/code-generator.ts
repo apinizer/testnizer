@@ -1,10 +1,4 @@
-import type {
-  HttpMethod,
-  KeyValuePair,
-  RequestBody,
-  AuthConfig,
-  CodeLanguage,
-} from '../types'
+import type { HttpMethod, KeyValuePair, RequestBody, AuthConfig, CodeLanguage } from '../types'
 
 export interface CodeGenRequest {
   method: HttpMethod
@@ -18,15 +12,19 @@ export interface CodeGenRequest {
 function buildFullUrl(url: string, params: KeyValuePair[]): string {
   const enabled = params.filter((p) => p.enabled && p.key)
   if (enabled.length === 0) return url
-  const qs = enabled.map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`).join('&')
+  const qs = enabled
+    .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
+    .join('&')
   return url.includes('?') ? `${url}&${qs}` : `${url}?${qs}`
 }
 
 function activeHeaders(headers: KeyValuePair[], auth?: AuthConfig): Record<string, string> {
   const h: Record<string, string> = {}
-  headers.filter((hd) => hd.enabled && hd.key).forEach((hd) => {
-    h[hd.key] = hd.value
-  })
+  headers
+    .filter((hd) => hd.enabled && hd.key)
+    .forEach((hd) => {
+      h[hd.key] = hd.value
+    })
   if (auth?.type === 'bearer' && auth.bearer?.token) {
     h['Authorization'] = `${auth.bearer.prefix || 'Bearer'} ${auth.bearer.token}`
   } else if (auth?.type === 'basic' && auth.basic) {
@@ -39,7 +37,13 @@ function activeHeaders(headers: KeyValuePair[], auth?: AuthConfig): Record<strin
 
 function bodyString(body?: RequestBody): string | null {
   if (!body || body.type === 'none') return null
-  if (body.type === 'json' || body.type === 'xml' || body.type === 'text' || body.type === 'html' || body.type === 'javascript') {
+  if (
+    body.type === 'json' ||
+    body.type === 'xml' ||
+    body.type === 'text' ||
+    body.type === 'html' ||
+    body.type === 'javascript'
+  ) {
     return body.content || null
   }
   if (body.type === 'urlencoded' && body.urlEncoded) {
@@ -97,7 +101,10 @@ function genJsAxios(req: CodeGenRequest): string {
   const fullUrl = buildFullUrl(req.url, req.params)
   const hdrs = activeHeaders(req.headers, req.auth)
   const bd = bodyString(req.body)
-  const cfg: string[] = [`  method: '${req.method.toLowerCase()}'`, `  url: '${escapeString(fullUrl)}'`]
+  const cfg: string[] = [
+    `  method: '${req.method.toLowerCase()}'`,
+    `  url: '${escapeString(fullUrl)}'`,
+  ]
   if (Object.keys(hdrs).length > 0) {
     cfg.push(`  headers: ${JSON.stringify(hdrs, null, 4).replace(/\n/g, '\n  ')}`)
   }
@@ -147,12 +154,11 @@ function genJava(req: CodeGenRequest): string {
   const fullUrl = buildFullUrl(req.url, req.params)
   const hdrs = activeHeaders(req.headers, req.auth)
   const bd = bodyString(req.body)
-  const lines: string[] = [
-    'OkHttpClient client = new OkHttpClient();',
-    '',
-  ]
+  const lines: string[] = ['OkHttpClient client = new OkHttpClient();', '']
   if (bd) {
-    lines.push(`MediaType mediaType = MediaType.parse("${req.body?.type === 'json' ? 'application/json' : 'text/plain'}");`)
+    lines.push(
+      `MediaType mediaType = MediaType.parse("${req.body?.type === 'json' ? 'application/json' : 'text/plain'}");`,
+    )
     lines.push(`RequestBody body = RequestBody.create(mediaType, ${JSON.stringify(bd)});`)
     lines.push('')
   }
@@ -173,15 +179,26 @@ function genGo(req: CodeGenRequest): string {
   const fullUrl = buildFullUrl(req.url, req.params)
   const hdrs = activeHeaders(req.headers, req.auth)
   const bd = bodyString(req.body)
-  const lines: string[] = ['package main', '', 'import (', '    "fmt"', '    "io/ioutil"', '    "net/http"']
+  const lines: string[] = [
+    'package main',
+    '',
+    'import (',
+    '    "fmt"',
+    '    "io/ioutil"',
+    '    "net/http"',
+  ]
   if (bd) lines.push('    "strings"')
   lines.push(')', '')
   lines.push('func main() {')
   if (bd) {
     lines.push(`    payload := strings.NewReader(${JSON.stringify(bd)})`)
-    lines.push(`    req, _ := http.NewRequest("${req.method}", "${escapeString(fullUrl, '"')}", payload)`)
+    lines.push(
+      `    req, _ := http.NewRequest("${req.method}", "${escapeString(fullUrl, '"')}", payload)`,
+    )
   } else {
-    lines.push(`    req, _ := http.NewRequest("${req.method}", "${escapeString(fullUrl, '"')}", nil)`)
+    lines.push(
+      `    req, _ := http.NewRequest("${req.method}", "${escapeString(fullUrl, '"')}", nil)`,
+    )
   }
   Object.entries(hdrs).forEach(([k, v]) => {
     lines.push(`    req.Header.Add("${escapeString(k, '"')}", "${escapeString(v, '"')}")`)
@@ -240,7 +257,9 @@ function genRuby(req: CodeGenRequest): string {
     lines.push(`request.body = ${JSON.stringify(bd)}`)
   }
   lines.push('')
-  lines.push('response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https") do |http|')
+  lines.push(
+    'response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https") do |http|',
+  )
   lines.push('  http.request(request)')
   lines.push('end')
   lines.push('')
@@ -260,7 +279,9 @@ function genSwift(req: CodeGenRequest): string {
     `request.httpMethod = "${req.method}"`,
   ]
   Object.entries(hdrs).forEach(([k, v]) => {
-    lines.push(`request.setValue("${escapeString(v, '"')}", forHTTPHeaderField: "${escapeString(k, '"')}")`)
+    lines.push(
+      `request.setValue("${escapeString(v, '"')}", forHTTPHeaderField: "${escapeString(k, '"')}")`,
+    )
   })
   if (bd) {
     lines.push(`request.httpBody = ${JSON.stringify(bd)}.data(using: .utf8)`)
@@ -278,12 +299,11 @@ function genKotlin(req: CodeGenRequest): string {
   const fullUrl = buildFullUrl(req.url, req.params)
   const hdrs = activeHeaders(req.headers, req.auth)
   const bd = bodyString(req.body)
-  const lines: string[] = [
-    'val client = OkHttpClient()',
-    '',
-  ]
+  const lines: string[] = ['val client = OkHttpClient()', '']
   if (bd) {
-    lines.push(`val mediaType = "${req.body?.type === 'json' ? 'application/json' : 'text/plain'}".toMediaType()`)
+    lines.push(
+      `val mediaType = "${req.body?.type === 'json' ? 'application/json' : 'text/plain'}".toMediaType()`,
+    )
     lines.push(`val body = ${JSON.stringify(bd)}.toRequestBody(mediaType)`)
     lines.push('')
   }
@@ -315,7 +335,9 @@ function genCsharp(req: CodeGenRequest): string {
     lines.push(`request.Headers.Add("${escapeString(k, '"')}", "${escapeString(v, '"')}");`)
   })
   if (bd) {
-    lines.push(`request.Content = new StringContent(${JSON.stringify(bd)}, System.Text.Encoding.UTF8, "${req.body?.type === 'json' ? 'application/json' : 'text/plain'}");`)
+    lines.push(
+      `request.Content = new StringContent(${JSON.stringify(bd)}, System.Text.Encoding.UTF8, "${req.body?.type === 'json' ? 'application/json' : 'text/plain'}");`,
+    )
   }
   lines.push('')
   lines.push('var response = await client.SendAsync(request);')
@@ -325,17 +347,17 @@ function genCsharp(req: CodeGenRequest): string {
 }
 
 const GENERATORS: Record<CodeLanguage, (req: CodeGenRequest) => string> = {
-  'curl': genCurl,
+  curl: genCurl,
   'js-fetch': genJsFetch,
   'js-axios': genJsAxios,
   'python-requests': genPython,
   'java-okhttp': genJava,
-  'go': genGo,
-  'php': genPhp,
-  'ruby': genRuby,
-  'swift': genSwift,
-  'kotlin': genKotlin,
-  'csharp': genCsharp,
+  go: genGo,
+  php: genPhp,
+  ruby: genRuby,
+  swift: genSwift,
+  kotlin: genKotlin,
+  csharp: genCsharp,
 }
 
 export function generateCode(language: CodeLanguage, req: CodeGenRequest): string {

@@ -7,12 +7,7 @@ export default function PreRequestTab() {
 
   return (
     <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]">
-      <MonacoWrapper
-        value={preScript}
-        onChange={setPreScript}
-        language="javascript"
-        height={200}
-      />
+      <MonacoWrapper value={preScript} onChange={setPreScript} language="javascript" height={200} />
     </div>
   )
 }

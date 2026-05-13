@@ -28,18 +28,24 @@ export function registerBranchHandlers(): void {
     }
   })
 
-  ipcMain.handle('branch:create', async (_event, payload: {
-    project_id: string
-    name: string
-    parent_branch_id?: string | null
-  }) => {
-    try {
-      const data = createBranch(payload)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle(
+    'branch:create',
+    async (
+      _event,
+      payload: {
+        project_id: string
+        name: string
+        parent_branch_id?: string | null
+      },
+    ) => {
+      try {
+        const data = createBranch(payload)
+        return { success: true, data }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 
   ipcMain.handle('branch:rename', async (_event, id: string, name: string) => {
     try {
@@ -69,5 +75,4 @@ export function registerBranchHandlers(): void {
       return { success: false, error: (e as Error).message }
     }
   })
-
 }

@@ -27,9 +27,7 @@ export default function ToolsPanel() {
           flexShrink: 0,
         }}
       >
-        <span style={{ fontWeight: 700, fontSize: 15, color: T.text }}>
-          {t('sidebar.tools')}
-        </span>
+        <span style={{ fontWeight: 700, fontSize: 15, color: T.text }}>{t('sidebar.tools')}</span>
       </div>
 
       {/* Search */}
@@ -51,7 +49,14 @@ export default function ToolsPanel() {
             gap: 7,
           }}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.ghost} strokeWidth="2">
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={T.ghost}
+            strokeWidth="2"
+          >
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
@@ -99,15 +104,11 @@ export default function ToolsPanel() {
             >
               <tool.Icon size={15} style={{ color: tool.color }} strokeWidth={2} />
             </div>
-            <span style={{ fontSize: 13, color: T.text, fontWeight: 500 }}>
-              {t(tool.labelKey)}
-            </span>
+            <span style={{ fontSize: 13, color: T.text, fontWeight: 500 }}>{t(tool.labelKey)}</span>
           </button>
         ))}
         {filtered.length === 0 && (
-          <div style={{ padding: 12, fontSize: 12, color: T.ghost, textAlign: 'center' }}>
-            —
-          </div>
+          <div style={{ padding: 12, fontSize: 12, color: T.ghost, textAlign: 'center' }}>—</div>
         )}
       </div>
     </div>

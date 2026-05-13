@@ -15,9 +15,7 @@ export default function WsComposer() {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="font-medium uppercase tracking-widest text-[var(--muted)]">
-          Message
-        </label>
+        <label className="font-medium uppercase tracking-widest text-[var(--muted)]">Message</label>
         <div className="flex rounded-lg border border-[var(--border)]">
           <button
             type="button"

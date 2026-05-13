@@ -39,9 +39,7 @@ interface TestSuiteRow {
  * Returns null when the source can't be resolved — the caller treats this
  * as a hard error.
  */
-function snapshotEndpointForSuite(
-  endpointId: string,
-): {
+function snapshotEndpointForSuite(endpointId: string): {
   protocol: string
   name: string
   method: string | null

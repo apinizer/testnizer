@@ -24,13 +24,12 @@ export default function ResponseMeta() {
   return (
     <div className="flex shrink-0 items-center gap-2.5 border-b border-[var(--border)] bg-[var(--white)] px-3 py-1">
       {/* Status */}
-      {response.status && (
-        <StatusBadge status={response.status} statusText={response.statusText} />
-      )}
+      {response.status && <StatusBadge status={response.status} statusText={response.statusText} />}
 
       {/* Timing */}
       <span className="text-[var(--muted)]">
-        <span className="font-semibold text-[var(--green)]">{response.timing.total}</span> {t('response.ms')}
+        <span className="font-semibold text-[var(--green)]">{response.timing.total}</span>{' '}
+        {t('response.ms')}
       </span>
 
       {/* Size */}

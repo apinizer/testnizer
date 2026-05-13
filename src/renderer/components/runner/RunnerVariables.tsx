@@ -55,7 +55,7 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
 
   const activeEnv = useMemo(
     () => environments.find((e) => e.id === resolvedEnvId),
-    [environments, resolvedEnvId]
+    [environments, resolvedEnvId],
   )
 
   const envVars = useMemo(() => {
@@ -65,20 +65,23 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
 
   const enabledGlobals = useMemo(
     () => (globalVariables || []).filter((v) => v.enabled),
-    [globalVariables]
+    [globalVariables],
   )
 
   return (
     <div
-      className={fillParent
-        ? "flex w-full flex-col overflow-hidden bg-[var(--white)]"
-        : "flex w-[240px] shrink-0 flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--white)]"
+      className={
+        fillParent
+          ? 'flex w-full flex-col overflow-hidden bg-[var(--white)]'
+          : 'flex w-[240px] shrink-0 flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--white)]'
       }
       style={{ fontSize: 13 }}
     >
       {/* Header */}
       <div className="shrink-0 border-b border-[var(--border)] px-4 py-2.5">
-        <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-text)', margin: 0 }}>{t('runnerVars.title')}</h3>
+        <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-text)', margin: 0 }}>
+          {t('runnerVars.title')}
+        </h3>
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -101,13 +104,18 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
               <table className="w-full">
                 <tbody>
                   {envVars.map((v) => (
-                    <tr key={v.id} className="group border-b border-[var(--border)] last:border-b-0">
+                    <tr
+                      key={v.id}
+                      className="group border-b border-[var(--border)] last:border-b-0"
+                    >
                       <td className="py-1.5 pr-3" style={{ fontWeight: 500, color: 'var(--text)' }}>
                         {v.key}
                       </td>
                       <td className="py-1.5" style={{ color: 'var(--muted)' }}>
                         {v.value || v.initialValue || (
-                          <span className="italic" style={{ color: 'var(--hint)' }}>{t('runnerVars.enterValue')}</span>
+                          <span className="italic" style={{ color: 'var(--hint)' }}>
+                            {t('runnerVars.enterValue')}
+                          </span>
                         )}
                       </td>
                       <td className="py-1.5 pl-2" style={{ width: 18 }}>
@@ -118,13 +126,14 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
                 </tbody>
               </table>
             ) : (
-              <div style={{ color: 'var(--hint)' }}>
-                {t('runnerVars.noVariables')}
-              </div>
+              <div style={{ color: 'var(--hint)' }}>{t('runnerVars.noVariables')}</div>
             )}
           </div>
         ) : (
-          <div className="border-b border-[var(--border)] px-4 py-3" style={{ color: 'var(--hint)' }}>
+          <div
+            className="border-b border-[var(--border)] px-4 py-3"
+            style={{ color: 'var(--hint)' }}
+          >
             {t('runnerVars.selectEnv')}
           </div>
         )}
@@ -138,7 +147,9 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
             >
               G
             </span>
-            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{t('runnerVars.globals')}</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>
+              {t('runnerVars.globals')}
+            </span>
           </div>
 
           {enabledGlobals.length > 0 ? (
@@ -151,7 +162,9 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
                     </td>
                     <td className="py-1.5" style={{ color: 'var(--muted)' }}>
                       {v.value || v.initialValue || (
-                        <span className="italic" style={{ color: 'var(--hint)' }}>Enter value</span>
+                        <span className="italic" style={{ color: 'var(--hint)' }}>
+                          Enter value
+                        </span>
                       )}
                     </td>
                     <td className="py-1.5 pl-2" style={{ width: 18 }}>

@@ -24,10 +24,7 @@ function ensureVariableStyle(): void {
 }
 
 /** Scan the model and apply variable highlight decorations. */
-function applyVariableHighlights(
-  ed: editor.IStandaloneCodeEditor,
-  prev: string[]
-): string[] {
+function applyVariableHighlights(ed: editor.IStandaloneCodeEditor, prev: string[]): string[] {
   const model = ed.getModel()
   if (!model) return prev
   const text = model.getValue()
@@ -84,7 +81,10 @@ function registerVariableCompletionProvider(monaco: Monaco) {
   if (completionDisposable) return
   completionDisposable = monaco.languages.registerCompletionItemProvider('*', {
     triggerCharacters: ['{'],
-    provideCompletionItems: (model: editor.ITextModel, position: { lineNumber: number; column: number }) => {
+    provideCompletionItems: (
+      model: editor.ITextModel,
+      position: { lineNumber: number; column: number },
+    ) => {
       const textUntilPos = model.getValueInRange({
         startLineNumber: position.lineNumber,
         startColumn: 1,
@@ -151,18 +151,16 @@ function registerVariableCompletionProvider(monaco: Monaco) {
         })
 
       // Built-in dynamic variables
-      BUILTIN_DYNAMIC_VARS
-        .filter((v) => v.name.toLowerCase().includes(query))
-        .forEach((v) => {
-          suggestions.push({
-            label: v.name,
-            kind: monaco.languages.CompletionItemKind.Function,
-            detail: `[DYNAMIC] ${v.description}`,
-            insertText: `${v.name}}}`,
-            range: replaceRange,
-            sortText: `2_${v.name}`,
-          })
+      BUILTIN_DYNAMIC_VARS.filter((v) => v.name.toLowerCase().includes(query)).forEach((v) => {
+        suggestions.push({
+          label: v.name,
+          kind: monaco.languages.CompletionItemKind.Function,
+          detail: `[DYNAMIC] ${v.description}`,
+          insertText: `${v.name}}}`,
+          range: replaceRange,
+          sortText: `2_${v.name}`,
         })
+      })
 
       return { suggestions }
     },
@@ -181,9 +179,12 @@ export default function MonacoWrapperImpl({
 }: MonacoWrapperProps) {
   const theme = useUIStore((s) => s.theme)
   const fontSize = useUIStore((s) => s.fontSize)
-  const resolvedTheme = theme === 'system'
-    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    : theme
+  const resolvedTheme =
+    theme === 'system'
+      ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'
+      : theme
   const monacoRef = useRef<Monaco | null>(null)
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
   const decoIdsRef = useRef<string[]>([])
@@ -235,7 +236,7 @@ export default function MonacoWrapperImpl({
           wordWrap: wordWrap ? 'on' : 'off',
           fontSize: fontSize - 2,
           fontWeight: '400',
-          fontFamily: "var(--font-mono)",
+          fontFamily: 'var(--font-mono)',
           fontLigatures: false,
           padding: { top: 6, bottom: 6 },
           scrollBeyondLastLine: false,

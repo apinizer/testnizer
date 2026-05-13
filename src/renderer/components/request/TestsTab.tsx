@@ -119,7 +119,9 @@ export default function TestsTab() {
     setAssertions(assertions.map((a) => (a.id === id ? { ...a, ...updates } : a)))
   }
 
-  const defaultScript = postScript || `pm.test("Status is 200", () => {
+  const defaultScript =
+    postScript ||
+    `pm.test("Status is 200", () => {
   pm.expect(pm.response.code).to.equal(200);
 });`
 

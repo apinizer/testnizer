@@ -8,6 +8,6 @@ export const apinizerDarkTheme: editor.IStandaloneThemeData = {
     'editor.background': '#1e1e2e',
     'editor.foreground': '#e2e2f0',
     'editor.lineHighlightBackground': '#252540',
-    'editorLineNumber.foreground': '#666688'
-  }
+    'editorLineNumber.foreground': '#666688',
+  },
 }

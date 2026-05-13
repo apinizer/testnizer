@@ -161,9 +161,7 @@ export default function SseEventLog() {
 
                   {/* Event ID */}
                   {event.id && (
-                    <span className="shrink-0 font-mono text-[var(--hint)]">
-                      id:{event.id}
-                    </span>
+                    <span className="shrink-0 font-mono text-[var(--hint)]">id:{event.id}</span>
                   )}
 
                   {/* Timestamp */}
@@ -191,9 +189,7 @@ export default function SseEventLog() {
             {events.length} event{events.length !== 1 ? 's' : ''}
           </span>
           {connectionState === 'connected' && connectedAt && (
-            <span className="text-[var(--hint)]">
-              {formatDuration(now - connectedAt)}
-            </span>
+            <span className="text-[var(--hint)]">{formatDuration(now - connectedAt)}</span>
           )}
         </div>
         <div className="flex items-center gap-3">

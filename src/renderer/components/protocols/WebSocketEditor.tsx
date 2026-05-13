@@ -25,7 +25,10 @@ export default function WebSocketEditor() {
           WebSocket
         </span>
         {connectionState === 'connected' && (
-          <span className="rounded-full px-2 py-0.5 font-medium" style={{ background: '#e8f9f1', color: '#1a7a4a' }}>
+          <span
+            className="rounded-full px-2 py-0.5 font-medium"
+            style={{ background: '#e8f9f1', color: '#1a7a4a' }}
+          >
             Connected
           </span>
         )}

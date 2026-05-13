@@ -55,14 +55,20 @@ export default function AssertionRow({ assertion, onUpdate, onRemove }: Assertio
             onBlur={commitName}
             onKeyDown={(e) => {
               if (e.key === 'Enter') commitName()
-              if (e.key === 'Escape') { setNameValue(assertion.name); setEditingName(false) }
+              if (e.key === 'Escape') {
+                setNameValue(assertion.name)
+                setEditingName(false)
+              }
             }}
             className="flex-1 rounded border border-[var(--accent)] bg-[var(--white)] px-1.5 py-0.5 text-[var(--text)] outline-none"
           />
         ) : (
           <span
             className="flex-1 cursor-pointer text-[var(--muted)] hover:text-[var(--text)]"
-            onClick={() => { setNameValue(assertion.name); setEditingName(true) }}
+            onClick={() => {
+              setNameValue(assertion.name)
+              setEditingName(true)
+            }}
           >
             {assertion.name}
           </span>
@@ -118,7 +124,9 @@ function AssertionFields({
             onChange={(e) => onUpdate({ expected: Number(e.target.value) })}
             className={`${inputCls} w-20`}
           />
-          <BadgePill color={display.color} bg={display.bg}>{String(assertion.expected ?? 200)}</BadgePill>
+          <BadgePill color={display.color} bg={display.bg}>
+            {String(assertion.expected ?? 200)}
+          </BadgePill>
         </div>
       )
 
@@ -279,7 +287,9 @@ function AssertionFields({
             className={`${inputCls} w-24`}
           />
           <span className="text-[var(--muted)]">ms</span>
-          <BadgePill color={display.color} bg={display.bg}>{assertion.expected ?? 2000} ms</BadgePill>
+          <BadgePill color={display.color} bg={display.bg}>
+            {assertion.expected ?? 2000} ms
+          </BadgePill>
         </div>
       )
 
@@ -294,7 +304,9 @@ function AssertionFields({
             className={`${inputCls} w-24`}
           />
           <span className="text-[var(--muted)]">bytes</span>
-          <BadgePill color={display.color} bg={display.bg}>{assertion.expected ?? 10240} B</BadgePill>
+          <BadgePill color={display.color} bg={display.bg}>
+            {assertion.expected ?? 10240} B
+          </BadgePill>
         </div>
       )
 
@@ -308,12 +320,17 @@ function AssertionFields({
   }
 }
 
-function BadgePill({ color, bg, children }: { color: string; bg: string; children: React.ReactNode }) {
+function BadgePill({
+  color,
+  bg,
+  children,
+}: {
+  color: string
+  bg: string
+  children: React.ReactNode
+}) {
   return (
-    <span
-      className="rounded px-[7px] py-[1px] font-mono"
-      style={{ color, background: bg }}
-    >
+    <span className="rounded px-[7px] py-[1px] font-mono" style={{ color, background: bg }}>
       {children}
     </span>
   )

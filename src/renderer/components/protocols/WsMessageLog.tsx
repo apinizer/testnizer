@@ -5,8 +5,16 @@ import type { WsMessage } from '../../types'
 
 function formatTimestamp(ts: number): string {
   const d = new Date(ts)
-  return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    + '.' + String(d.getMilliseconds()).padStart(3, '0')
+  return (
+    d.toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }) +
+    '.' +
+    String(d.getMilliseconds()).padStart(3, '0')
+  )
 }
 
 function formatContent(msg: WsMessage): string {
@@ -68,10 +76,14 @@ export default function WsMessageLog() {
                     {truncate(msg.content.replace(/\n/g, ' '), 80)}
                   </span>
                   {/* Type badge */}
-                  <span className="shrink-0 rounded px-1.5 py-0.5 font-medium uppercase" style={{
-                    background: msg.contentType === 'json' ? 'var(--accent-light)' : 'var(--surface)',
-                    color: msg.contentType === 'json' ? 'var(--accent-text)' : 'var(--muted)',
-                  }}>
+                  <span
+                    className="shrink-0 rounded px-1.5 py-0.5 font-medium uppercase"
+                    style={{
+                      background:
+                        msg.contentType === 'json' ? 'var(--accent-light)' : 'var(--surface)',
+                      color: msg.contentType === 'json' ? 'var(--accent-text)' : 'var(--muted)',
+                    }}
+                  >
                     {msg.contentType}
                   </span>
                   {/* Timestamp */}
@@ -94,8 +106,8 @@ export default function WsMessageLog() {
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <span className="text-[var(--muted)]">
-          {messages.length} message{messages.length !== 1 ? 's' : ''}
-          {' '}({messages.filter((m) => m.direction === 'sent').length} sent,{' '}
+          {messages.length} message{messages.length !== 1 ? 's' : ''} (
+          {messages.filter((m) => m.direction === 'sent').length} sent,{' '}
           {messages.filter((m) => m.direction === 'received').length} received)
         </span>
         <div className="flex items-center gap-3">

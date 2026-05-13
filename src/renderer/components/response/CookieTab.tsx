@@ -5,9 +5,7 @@ export default function CookieTab() {
   const cookies = response?.cookies || []
 
   if (cookies.length === 0) {
-    return (
-      <div className="p-4 text-center text-[var(--hint)]">No cookies in response.</div>
-    )
+    return <div className="p-4 text-center text-[var(--hint)]">No cookies in response.</div>
   }
 
   return (

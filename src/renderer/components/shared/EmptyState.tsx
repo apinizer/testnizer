@@ -13,13 +13,9 @@ interface EmptyStateProps {
 export default function EmptyState({ icon, message, description, action }: EmptyStateProps) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-8">
-      {icon && (
-        <div className="text-[var(--hint)]">{icon}</div>
-      )}
+      {icon && <div className="text-[var(--hint)]">{icon}</div>}
       <p className="font-medium text-[var(--muted)]">{message}</p>
-      {description && (
-        <p className="text-[var(--hint)]">{description}</p>
-      )}
+      {description && <p className="text-[var(--hint)]">{description}</p>}
       {action && (
         <button
           type="button"

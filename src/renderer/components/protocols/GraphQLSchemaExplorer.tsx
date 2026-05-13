@@ -29,15 +29,21 @@ export default function GraphQLSchemaExplorer({ schemaData, error }: Props) {
   }
 
   const filteredTypes = schemaData.types.filter((t) =>
-    t.name.toLowerCase().includes(searchTerm.toLowerCase())
+    t.name.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
   const selectedType = schemaData.types.find((t) => t.name === selectedTypeName)
 
   // Group types
-  const rootTypes = [schemaData.queryType, schemaData.mutationType, schemaData.subscriptionType].filter(Boolean)
+  const rootTypes = [
+    schemaData.queryType,
+    schemaData.mutationType,
+    schemaData.subscriptionType,
+  ].filter(Boolean)
   const queryTypes = filteredTypes.filter((t) => rootTypes.includes(t.name))
-  const objectTypes = filteredTypes.filter((t) => t.kind === 'OBJECT' && !rootTypes.includes(t.name))
+  const objectTypes = filteredTypes.filter(
+    (t) => t.kind === 'OBJECT' && !rootTypes.includes(t.name),
+  )
   const inputTypes = filteredTypes.filter((t) => t.kind === 'INPUT_OBJECT')
   const enumTypes = filteredTypes.filter((t) => t.kind === 'ENUM')
   const scalarTypes = filteredTypes.filter((t) => t.kind === 'SCALAR')
@@ -160,13 +166,7 @@ function TypeSection({
 
 // ─── Type Detail ─────────────────────────────────────────────
 
-function TypeDetail({
-  type,
-  onNavigate,
-}: {
-  type: GqlType
-  onNavigate: (name: string) => void
-}) {
+function TypeDetail({ type, onNavigate }: { type: GqlType; onNavigate: (name: string) => void }) {
   return (
     <div>
       {/* Type header */}
@@ -180,9 +180,7 @@ function TypeDetail({
             {type.kind}
           </span>
         </div>
-        {type.description && (
-          <p className="mt-1 text-[var(--muted)]">{type.description}</p>
-        )}
+        {type.description && <p className="mt-1 text-[var(--muted)]">{type.description}</p>}
       </div>
 
       {/* Enum values */}
@@ -222,34 +220,29 @@ function TypeDetail({
 
 // ─── Field Row ───────────────────────────────────────────────
 
-function FieldRow({
-  field,
-  onNavigate,
-}: {
-  field: GqlField
-  onNavigate: (name: string) => void
-}) {
+function FieldRow({ field, onNavigate }: { field: GqlField; onNavigate: (name: string) => void }) {
   const typeName = field.type.replace(/[[\]!]/g, '')
 
   return (
     <div className="rounded-lg border border-[var(--border)] px-3 py-2">
       <div className="flex items-baseline gap-2">
-        <span className="font-mono font-medium text-[var(--text)]">
-          {field.name}
-        </span>
+        <span className="font-mono font-medium text-[var(--text)]">{field.name}</span>
         <button
           type="button"
           onClick={() => onNavigate(typeName)}
           className="cursor-pointer font-mono transition-colors hover:underline"
-          style={{ color: 'var(--accent-text)', background: 'transparent', border: 'none', padding: 0 }}
+          style={{
+            color: 'var(--accent-text)',
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+          }}
         >
           {field.type}
         </button>
       </div>
 
-      {field.description && (
-        <p className="mt-0.5 text-[var(--muted)]">{field.description}</p>
-      )}
+      {field.description && <p className="mt-0.5 text-[var(--muted)]">{field.description}</p>}
 
       {field.args.length > 0 && (
         <div className="mt-1.5 space-y-0.5">
@@ -260,9 +253,7 @@ function FieldRow({
               <span className="font-mono" style={{ color: 'var(--orange)' }}>
                 {arg.type}
               </span>
-              {arg.description && (
-                <span className="text-[var(--hint)]">— {arg.description}</span>
-              )}
+              {arg.description && <span className="text-[var(--hint)]">— {arg.description}</span>}
             </div>
           ))}
         </div>

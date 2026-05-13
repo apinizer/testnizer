@@ -29,9 +29,9 @@ export interface FolderRow {
 
 export function getProjectsByWorkspace(workspaceId: string): ProjectRow[] {
   const db = getDb()
-  return db.prepare(
-    'SELECT * FROM projects WHERE workspace_id = ? ORDER BY sort_order ASC'
-  ).all(workspaceId) as ProjectRow[]
+  return db
+    .prepare('SELECT * FROM projects WHERE workspace_id = ? ORDER BY sort_order ASC')
+    .all(workspaceId) as ProjectRow[]
 }
 
 export function getProjectById(id: string): ProjectRow | undefined {
@@ -54,14 +54,18 @@ export function createProject(data: {
   const now = Date.now()
   const id = randomUUID()
 
-  const maxOrder = db.prepare(
-    'SELECT COALESCE(MAX(sort_order), -1) as max_order FROM projects WHERE workspace_id = ?'
-  ).get(data.workspace_id) as { max_order: number }
+  const maxOrder = db
+    .prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) as max_order FROM projects WHERE workspace_id = ?',
+    )
+    .get(data.workspace_id) as { max_order: number }
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO projects (id, workspace_id, name, display_name, description, type, save_mode, local_path, icon_emoji, icon_color, sort_order, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `,
+  ).run(
     id,
     data.workspace_id,
     data.name,
@@ -74,31 +78,36 @@ export function createProject(data: {
     data.icon_color ?? '#2D5FA0',
     maxOrder.max_order + 1,
     now,
-    now
+    now,
   )
   return getProjectById(id)!
 }
 
-export function updateProject(id: string, data: {
-  name?: string
-  display_name?: string | null
-  description?: string
-  type?: string
-  save_mode?: string
-  local_path?: string | null
-  icon_emoji?: string | null
-  icon_color?: string | null
-  sort_order?: number
-}): ProjectRow | undefined {
+export function updateProject(
+  id: string,
+  data: {
+    name?: string
+    display_name?: string | null
+    description?: string
+    type?: string
+    save_mode?: string
+    local_path?: string | null
+    icon_emoji?: string | null
+    icon_color?: string | null
+    sort_order?: number
+  },
+): ProjectRow | undefined {
   const db = getDb()
   const now = Date.now()
   const existing = getProjectById(id)
   if (!existing) return undefined
 
-  db.prepare(`
+  db.prepare(
+    `
     UPDATE projects SET name = ?, display_name = ?, description = ?, type = ?, save_mode = ?, local_path = ?, icon_emoji = ?, icon_color = ?, sort_order = ?, updated_at = ?
     WHERE id = ?
-  `).run(
+  `,
+  ).run(
     data.name ?? existing.name,
     data.display_name !== undefined ? data.display_name : existing.display_name,
     data.description ?? existing.description,
@@ -109,7 +118,7 @@ export function updateProject(id: string, data: {
     data.icon_color !== undefined ? data.icon_color : existing.icon_color,
     data.sort_order ?? existing.sort_order,
     now,
-    id
+    id,
   )
   return getProjectById(id)
 }
@@ -124,9 +133,9 @@ export function deleteProject(id: string): boolean {
 
 export function getFoldersByProject(projectId: string): FolderRow[] {
   const db = getDb()
-  return db.prepare(
-    'SELECT * FROM folders WHERE project_id = ? ORDER BY sort_order ASC'
-  ).all(projectId) as FolderRow[]
+  return db
+    .prepare('SELECT * FROM folders WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as FolderRow[]
 }
 
 export function getFolderById(id: string): FolderRow | undefined {
@@ -142,34 +151,41 @@ export function createFolder(data: {
   const db = getDb()
   const id = randomUUID()
 
-  const maxOrder = db.prepare(
-    'SELECT COALESCE(MAX(sort_order), -1) as max_order FROM folders WHERE project_id = ?'
-  ).get(data.project_id) as { max_order: number }
+  const maxOrder = db
+    .prepare('SELECT COALESCE(MAX(sort_order), -1) as max_order FROM folders WHERE project_id = ?')
+    .get(data.project_id) as { max_order: number }
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO folders (id, project_id, parent_id, name, sort_order)
     VALUES (?, ?, ?, ?, ?)
-  `).run(id, data.project_id, data.parent_id ?? null, data.name, maxOrder.max_order + 1)
+  `,
+  ).run(id, data.project_id, data.parent_id ?? null, data.name, maxOrder.max_order + 1)
   return getFolderById(id)!
 }
 
-export function updateFolder(id: string, data: {
-  name?: string
-  parent_id?: string | null
-  sort_order?: number
-}): FolderRow | undefined {
+export function updateFolder(
+  id: string,
+  data: {
+    name?: string
+    parent_id?: string | null
+    sort_order?: number
+  },
+): FolderRow | undefined {
   const db = getDb()
   const existing = getFolderById(id)
   if (!existing) return undefined
 
-  db.prepare(`
+  db.prepare(
+    `
     UPDATE folders SET name = ?, parent_id = ?, sort_order = ?
     WHERE id = ?
-  `).run(
+  `,
+  ).run(
     data.name ?? existing.name,
     data.parent_id !== undefined ? data.parent_id : existing.parent_id,
     data.sort_order ?? existing.sort_order,
-    id
+    id,
   )
   return getFolderById(id)
 }

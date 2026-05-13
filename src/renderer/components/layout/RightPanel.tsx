@@ -21,7 +21,7 @@ function GenerateCodePane() {
 
   const code = useMemo(
     () => generateCode(activeLang, { method, url, params, headers, body, auth }),
-    [activeLang, method, url, params, headers, body, auth]
+    [activeLang, method, url, params, headers, body, auth],
   )
 
   const monacoLang = CODE_LANGUAGES.find((l) => l.id === activeLang)?.monacoLang ?? 'plaintext'
@@ -46,7 +46,9 @@ function GenerateCodePane() {
           style={{ fontSize: 13 }}
         >
           {CODE_LANGUAGES.map((l) => (
-            <option key={l.id} value={l.id}>{l.label}</option>
+            <option key={l.id} value={l.id}>
+              {l.label}
+            </option>
           ))}
         </select>
         <button
@@ -63,7 +65,13 @@ function GenerateCodePane() {
 
       {/* Code preview */}
       <div className="flex-1 overflow-hidden">
-        <MonacoWrapper value={code} language={monacoLang} readOnly height="100%" lineNumbers="off" />
+        <MonacoWrapper
+          value={code}
+          language={monacoLang}
+          readOnly
+          height="100%"
+          lineNumbers="off"
+        />
       </div>
     </div>
   )

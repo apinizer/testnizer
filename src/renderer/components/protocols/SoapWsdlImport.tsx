@@ -10,9 +10,7 @@ export default function SoapWsdlImport() {
 
   return (
     <div className="space-y-2">
-      <label className="font-medium uppercase tracking-widest text-[var(--muted)]">
-        WSDL URL
-      </label>
+      <label className="font-medium uppercase tracking-widest text-[var(--muted)]">WSDL URL</label>
       <div className="flex gap-2">
         <input
           type="text"
@@ -31,11 +29,7 @@ export default function SoapWsdlImport() {
           className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg px-4 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
           style={{ background: 'var(--accent)', border: 'none' }}
         >
-          {isLoading ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Download size={14} />
-          )}
+          {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
           {isLoading ? 'Parsing...' : 'Import WSDL'}
         </button>
       </div>

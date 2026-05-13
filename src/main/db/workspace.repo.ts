@@ -28,32 +28,39 @@ export function createWorkspace(data: {
   const db = getDb()
   const now = Date.now()
   const id = randomUUID()
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO workspaces (id, name, description, color, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, data.name, data.description ?? null, data.color ?? null, now, now)
+  `,
+  ).run(id, data.name, data.description ?? null, data.color ?? null, now, now)
   return getWorkspaceById(id)!
 }
 
-export function updateWorkspace(id: string, data: {
-  name?: string
-  description?: string
-  color?: string
-}): WorkspaceRow | undefined {
+export function updateWorkspace(
+  id: string,
+  data: {
+    name?: string
+    description?: string
+    color?: string
+  },
+): WorkspaceRow | undefined {
   const db = getDb()
   const now = Date.now()
   const existing = getWorkspaceById(id)
   if (!existing) return undefined
 
-  db.prepare(`
+  db.prepare(
+    `
     UPDATE workspaces SET name = ?, description = ?, color = ?, updated_at = ?
     WHERE id = ?
-  `).run(
+  `,
+  ).run(
     data.name ?? existing.name,
     data.description ?? existing.description,
     data.color ?? existing.color,
     now,
-    id
+    id,
   )
   return getWorkspaceById(id)
 }

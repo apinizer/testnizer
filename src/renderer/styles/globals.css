@@ -1,131 +1,159 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* ── Light Theme (default) ── */
-:root[data-theme="light"] {
-  --bg:           #f4f4f6;
-  --white:        #ffffff;
-  --header-bg:    #f0f0f2;
-  --border:       #e5e7eb;
-  --border2:      #d1d5db;
+:root[data-theme='light'] {
+  --bg: #f4f4f6;
+  --white: #ffffff;
+  --header-bg: #f0f0f2;
+  --border: #e5e7eb;
+  --border2: #d1d5db;
   --border-split: #e5e7eb;
-  --text:         #111827;
-  --heading:      #111827;
-  --sub:          #374151;
-  --muted:        #6b7280;
-  --hint:         #9ca3af;
-  --accent:       #2D5FA0;
+  --text: #111827;
+  --heading: #111827;
+  --sub: #374151;
+  --muted: #6b7280;
+  --hint: #9ca3af;
+  --accent: #2d5fa0;
   --accent-light: #e8f0fa;
-  --accent-text:  #24507f;
-  --send-bg:      #2D5FA0;
-  --surface:      #f9fafb;
-  --green:        #15803d;
-  --green-bg:     #dcfce7;
+  --accent-text: #24507f;
+  --send-bg: #2d5fa0;
+  --surface: #f9fafb;
+  --green: #15803d;
+  --green-bg: #dcfce7;
   --green-border: #bbf7d0;
-  --blue:         #1d4ed8;
-  --orange:       #c2410c;
-  --red:          #b91c1c;
-  --item-hover:   #f3f4f6;
-  --fill-4:       #f4f4f6;
-  --fill-5:       rgba(0,0,0,0.06);
-  --input-bg:     #ffffff;
+  --blue: #1d4ed8;
+  --orange: #c2410c;
+  --red: #b91c1c;
+  --item-hover: #f3f4f6;
+  --fill-4: #f4f4f6;
+  --fill-5: rgba(0, 0, 0, 0.06);
+  --input-bg: #ffffff;
 
   /* Tree icons (same in both themes for brand consistency) */
-  --tree-folder:     #9b9b9b;
-  --tree-schemas:    #4caf82;
+  --tree-folder: #9b9b9b;
+  --tree-schemas: #4caf82;
   --tree-components: #e88c3a;
 
   /* Method badges — light */
-  --mb-get-bg:     #dbeafe; --mb-get-fg:     #1d4ed8; --mb-get-br:     #bfdbfe;
-  --mb-post-bg:    #dcfce7; --mb-post-fg:    #15803d; --mb-post-br:    #bbf7d0;
-  --mb-put-bg:     #fef3c7; --mb-put-fg:     #92400e; --mb-put-br:     #fde68a;
-  --mb-patch-bg:   #ecfdf5; --mb-patch-fg:   #065f46; --mb-patch-br:   #a7f3d0;
-  --mb-delete-bg:  #fee2e2; --mb-delete-fg:  #b91c1c; --mb-delete-br:  #fecaca;
-  --mb-head-bg:    #ede9fe; --mb-head-fg:    #5b21b6; --mb-head-br:    #ddd6fe;
-  --mb-options-bg: #e0f2fe; --mb-options-fg: #0369a1; --mb-options-br: #bae6fd;
+  --mb-get-bg: #dbeafe;
+  --mb-get-fg: #1d4ed8;
+  --mb-get-br: #bfdbfe;
+  --mb-post-bg: #dcfce7;
+  --mb-post-fg: #15803d;
+  --mb-post-br: #bbf7d0;
+  --mb-put-bg: #fef3c7;
+  --mb-put-fg: #92400e;
+  --mb-put-br: #fde68a;
+  --mb-patch-bg: #ecfdf5;
+  --mb-patch-fg: #065f46;
+  --mb-patch-br: #a7f3d0;
+  --mb-delete-bg: #fee2e2;
+  --mb-delete-fg: #b91c1c;
+  --mb-delete-br: #fecaca;
+  --mb-head-bg: #ede9fe;
+  --mb-head-fg: #5b21b6;
+  --mb-head-br: #ddd6fe;
+  --mb-options-bg: #e0f2fe;
+  --mb-options-fg: #0369a1;
+  --mb-options-br: #bae6fd;
 
   /* JSON syntax tokens */
-  --json-key:     #0550ae;
-  --json-string:  #c2410c;
-  --json-number:  #15803d;
-  --json-bool:    #1e40af;
-  --json-null:    #6b7280;
-  --json-punct:   #374151;
+  --json-key: #0550ae;
+  --json-string: #c2410c;
+  --json-number: #15803d;
+  --json-bool: #1e40af;
+  --json-null: #6b7280;
+  --json-punct: #374151;
 
   /* Variable highlight color — {{var}} tokens in inputs/editors */
   --variable-color: #0066cc;
 
   /* Sidebar (nav rail) */
-  --nav-bg:       #ffffff;
-  --nav-hover:    #f9fafb;
+  --nav-bg: #ffffff;
+  --nav-hover: #f9fafb;
   --nav-active-bg: #e8f0fa;
 
   /* Shadows */
-  --shadow-modal: 0 16px 48px rgba(0,0,0,0.14);
-  --shadow-drop:  0 8px 32px rgba(0,0,0,0.12);
+  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.14);
+  --shadow-drop: 0 8px 32px rgba(0, 0, 0, 0.12);
 }
 
 /* ── Dark Theme ── */
-:root[data-theme="dark"] {
-  --bg:           #1c1c1e;
-  --white:        #212124;
-  --header-bg:    #1a1a1c;
-  --border:       #2e2e33;
-  --border2:      #3a3a40;
+:root[data-theme='dark'] {
+  --bg: #1c1c1e;
+  --white: #212124;
+  --header-bg: #1a1a1c;
+  --border: #2e2e33;
+  --border2: #3a3a40;
   --border-split: #2a2a2f;
-  --text:         #eaeaea;
-  --heading:      #f5f5f7;
-  --sub:          #d0d0d5;
-  --muted:        #9a9aa3;
-  --hint:         #6e6e76;
-  --accent:       #5a8fd4;
-  --accent-light: rgba(45,95,160,0.22);
-  --accent-text:  #8bb8f0;
-  --send-bg:      #5a8fd4;
-  --surface:      #18181a;
-  --green:        #6bdd9a;
-  --green-bg:     rgba(107,221,154,0.14);
-  --green-border: rgba(107,221,154,0.32);
-  --blue:         #7bb9ff;
-  --orange:       #ffa94d;
-  --red:          #ff6b6b;
-  --item-hover:   #2b2b30;
-  --fill-4:       #1e1e22;
-  --fill-5:       rgba(255,255,255,0.08);
-  --input-bg:     #28282d;
+  --text: #eaeaea;
+  --heading: #f5f5f7;
+  --sub: #d0d0d5;
+  --muted: #9a9aa3;
+  --hint: #6e6e76;
+  --accent: #5a8fd4;
+  --accent-light: rgba(45, 95, 160, 0.22);
+  --accent-text: #8bb8f0;
+  --send-bg: #5a8fd4;
+  --surface: #18181a;
+  --green: #6bdd9a;
+  --green-bg: rgba(107, 221, 154, 0.14);
+  --green-border: rgba(107, 221, 154, 0.32);
+  --blue: #7bb9ff;
+  --orange: #ffa94d;
+  --red: #ff6b6b;
+  --item-hover: #2b2b30;
+  --fill-4: #1e1e22;
+  --fill-5: rgba(255, 255, 255, 0.08);
+  --input-bg: #28282d;
 
   /* Tree icons (keep brand colors but slightly lifted) */
-  --tree-folder:     #9b9b9b;
-  --tree-schemas:    #4caf82;
+  --tree-folder: #9b9b9b;
+  --tree-schemas: #4caf82;
   --tree-components: #e88c3a;
 
   /* Method badges — dark (tinted backgrounds) */
-  --mb-get-bg:     rgba(59,130,246,0.18);  --mb-get-fg:     #7bb9ff; --mb-get-br:     rgba(59,130,246,0.35);
-  --mb-post-bg:    rgba(34,197,94,0.18);   --mb-post-fg:    #6bdd9a; --mb-post-br:    rgba(34,197,94,0.35);
-  --mb-put-bg:     rgba(245,158,11,0.18);  --mb-put-fg:     #ffb84d; --mb-put-br:     rgba(245,158,11,0.35);
-  --mb-patch-bg:   rgba(20,184,166,0.18);  --mb-patch-fg:   #6dd6c2; --mb-patch-br:   rgba(20,184,166,0.35);
-  --mb-delete-bg:  rgba(239,68,68,0.18);   --mb-delete-fg:  #ff7373; --mb-delete-br:  rgba(239,68,68,0.35);
-  --mb-head-bg:    rgba(168,85,247,0.18);  --mb-head-fg:    #c99cff; --mb-head-br:    rgba(168,85,247,0.35);
-  --mb-options-bg: rgba(14,165,233,0.18);  --mb-options-fg: #70c3f0; --mb-options-br: rgba(14,165,233,0.35);
+  --mb-get-bg: rgba(59, 130, 246, 0.18);
+  --mb-get-fg: #7bb9ff;
+  --mb-get-br: rgba(59, 130, 246, 0.35);
+  --mb-post-bg: rgba(34, 197, 94, 0.18);
+  --mb-post-fg: #6bdd9a;
+  --mb-post-br: rgba(34, 197, 94, 0.35);
+  --mb-put-bg: rgba(245, 158, 11, 0.18);
+  --mb-put-fg: #ffb84d;
+  --mb-put-br: rgba(245, 158, 11, 0.35);
+  --mb-patch-bg: rgba(20, 184, 166, 0.18);
+  --mb-patch-fg: #6dd6c2;
+  --mb-patch-br: rgba(20, 184, 166, 0.35);
+  --mb-delete-bg: rgba(239, 68, 68, 0.18);
+  --mb-delete-fg: #ff7373;
+  --mb-delete-br: rgba(239, 68, 68, 0.35);
+  --mb-head-bg: rgba(168, 85, 247, 0.18);
+  --mb-head-fg: #c99cff;
+  --mb-head-br: rgba(168, 85, 247, 0.35);
+  --mb-options-bg: rgba(14, 165, 233, 0.18);
+  --mb-options-fg: #70c3f0;
+  --mb-options-br: rgba(14, 165, 233, 0.35);
 
   /* JSON syntax (dark) */
-  --json-key:     #7fb3ff;
-  --json-string:  #ff9a5c;
-  --json-number:  #6bdd9a;
-  --json-bool:    #b58bff;
-  --json-null:    #8a8a92;
-  --json-punct:   #c0c0c6;
+  --json-key: #7fb3ff;
+  --json-string: #ff9a5c;
+  --json-number: #6bdd9a;
+  --json-bool: #b58bff;
+  --json-null: #8a8a92;
+  --json-punct: #c0c0c6;
 
   /* Variable highlight color — {{var}} tokens in inputs/editors */
   --variable-color: #7bb9ff;
 
   /* Sidebar (nav rail) */
-  --nav-bg:       #171718;
-  --nav-hover:    #26262a;
-  --nav-active-bg: rgba(45,95,160,0.22);
+  --nav-bg: #171718;
+  --nav-hover: #26262a;
+  --nav-active-bg: rgba(45, 95, 160, 0.22);
 
   /* Shadows */
-  --shadow-modal: 0 16px 48px rgba(0,0,0,0.6);
-  --shadow-drop:  0 8px 32px rgba(0,0,0,0.5);
+  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.6);
+  --shadow-drop: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
 /* ── Base ──
@@ -138,7 +166,9 @@
   --font-size-title: 15px;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   margin: 0;
   padding: 0;
   height: 100%;
@@ -154,50 +184,93 @@ html, body, #root {
 }
 
 /* Force consistent font on ALL elements */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   font-family: inherit;
   font-size: inherit;
 }
-code, pre, .mono, [data-mono] {
+code,
+pre,
+.mono,
+[data-mono] {
   font-family: var(--font-mono) !important;
 }
 
 /* Standard elements inherit 13px base */
-button, input, select, textarea, label, a, span, div, p, li, td, th {
+button,
+input,
+select,
+textarea,
+label,
+a,
+span,
+div,
+p,
+li,
+td,
+th {
   font-size: inherit;
 }
 
 /* ── Scrollbar (thin) ── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 ::-webkit-scrollbar-thumb {
-  background: rgba(0,0,0,0.12);
+  background: rgba(0, 0, 0, 0.12);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0,0,0,0.2);
+  background: rgba(0, 0, 0, 0.2);
 }
-:root[data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
-:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+:root[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+}
+:root[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
 
 /* ── Focus ring (mockup style) ── */
-input:focus, textarea:focus, select:focus {
+input:focus,
+textarea:focus,
+select:focus {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 3px var(--accent-light);
 }
 
 /* ── Animations ── */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 @keyframes slideDown {
-  from { opacity: 0; transform: translateY(-6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ── Drag region for frameless window ── */
@@ -212,7 +285,9 @@ input:focus, textarea:focus, select:focus {
 .tab-item {
   position: relative;
   opacity: 0.72;
-  transition: opacity 0.15s, background 0.15s;
+  transition:
+    opacity 0.15s,
+    background 0.15s;
 }
 .tab-item:hover {
   opacity: 1;
@@ -246,7 +321,9 @@ input:focus, textarea:focus, select:focus {
   font-weight: 500;
   line-height: 1;
   gap: 6px;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
   user-select: none;
   border: none;
   background: transparent;
@@ -265,12 +342,12 @@ button {
 }
 
 /* ── Form elements — clean white inputs ── */
-input[type="text"],
-input[type="password"],
-input[type="email"],
-input[type="url"],
-input[type="number"],
-input[type="search"],
+input[type='text'],
+input[type='password'],
+input[type='email'],
+input[type='url'],
+input[type='number'],
+input[type='search'],
 input:not([type]),
 textarea {
   background: var(--white);

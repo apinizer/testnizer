@@ -37,9 +37,10 @@ export async function initAutoUpdater(): Promise<void> {
   try {
     const mod = await import('electron-updater')
     // Handle both ESM default export and named export patterns
-    const resolved = (mod as Record<string, unknown>).autoUpdater
-      ?? ((mod as Record<string, unknown>).default as Record<string, unknown>)?.autoUpdater
-      ?? (mod as Record<string, unknown>).default
+    const resolved =
+      (mod as Record<string, unknown>).autoUpdater ??
+      ((mod as Record<string, unknown>).default as Record<string, unknown>)?.autoUpdater ??
+      (mod as Record<string, unknown>).default
     autoUpdater = resolved as AutoUpdaterModule['autoUpdater']
 
     if (!autoUpdater || typeof autoUpdater.on !== 'function') {
@@ -68,7 +69,7 @@ export async function initAutoUpdater(): Promise<void> {
     sendToAllWindows('updater:event', {
       type: 'available',
       version: updateInfo.version,
-      releaseNotes: updateInfo.releaseNotes
+      releaseNotes: updateInfo.releaseNotes,
     })
   })
 
@@ -83,7 +84,7 @@ export async function initAutoUpdater(): Promise<void> {
       percent: prog.percent,
       bytesPerSecond: prog.bytesPerSecond,
       transferred: prog.transferred,
-      total: prog.total
+      total: prog.total,
     })
   })
 
@@ -94,7 +95,7 @@ export async function initAutoUpdater(): Promise<void> {
   autoUpdater.on('error', (err: unknown) => {
     sendToAllWindows('updater:event', {
       type: 'error',
-      error: (err as Error).message
+      error: (err as Error).message,
     })
   })
 
@@ -134,12 +135,15 @@ export async function initAutoUpdater(): Promise<void> {
 
 function registerStubHandlers(): void {
   ipcMain.handle('updater:check', async () => ({
-    success: false, error: 'Auto-updater not configured'
+    success: false,
+    error: 'Auto-updater not configured',
   }))
   ipcMain.handle('updater:download', async () => ({
-    success: false, error: 'Auto-updater not configured'
+    success: false,
+    error: 'Auto-updater not configured',
   }))
   ipcMain.handle('updater:install', async () => ({
-    success: false, error: 'Auto-updater not configured'
+    success: false,
+    error: 'Auto-updater not configured',
   }))
 }

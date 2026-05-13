@@ -20,7 +20,10 @@ interface SequenceRow {
   folderLabel?: string // shown only on first endpoint of a new folder
 }
 
-function buildSequenceRows(groups: RunnerFolderGroup[], endpoints: RunnerEndpointItem[]): SequenceRow[] {
+function buildSequenceRows(
+  groups: RunnerFolderGroup[],
+  endpoints: RunnerEndpointItem[],
+): SequenceRow[] {
   const rows: SequenceRow[] = []
   let idx = 0
 
@@ -130,7 +133,10 @@ function EndpointRow({
   return (
     <div
       className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-[7px]"
-      style={{ background: hovered ? 'var(--surface)' : 'transparent', transition: 'background 0.1s' }}
+      style={{
+        background: hovered ? 'var(--surface)' : 'transparent',
+        transition: 'background 0.1s',
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >

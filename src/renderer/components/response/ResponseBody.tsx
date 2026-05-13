@@ -47,7 +47,12 @@ export default function ResponseBody() {
     if (ct.includes('xml') || ct.includes('soap')) return 'XML'
     if (ct.includes('html')) return 'HTML'
     if (ct.includes('json')) return 'JSON'
-    try { JSON.parse(body); return 'JSON' } catch { /* ignore */ }
+    try {
+      JSON.parse(body)
+      return 'JSON'
+    } catch {
+      /* ignore */
+    }
     if (body.trimStart().startsWith('<')) return 'XML'
     return 'Text'
   }, [response, body])
@@ -75,7 +80,11 @@ export default function ResponseBody() {
   const prettyBody = useMemo(() => {
     if (viewMode !== 'Pretty') return body
     if (effectiveFormat === 'JSON') {
-      try { return JSON.stringify(JSON.parse(body), null, 2) } catch { return body }
+      try {
+        return JSON.stringify(JSON.parse(body), null, 2)
+      } catch {
+        return body
+      }
     }
     if (effectiveFormat === 'XML' || effectiveFormat === 'HTML') {
       return formatXml(body)
@@ -95,16 +104,24 @@ export default function ResponseBody() {
           const matches = parsed.filter((item) => JSON.stringify(item).toLowerCase().includes(f))
           return JSON.stringify(matches, null, 2)
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
-    const lines = prettyBody.split('\n').filter((l) => l.toLowerCase().includes(filter.toLowerCase()))
+    const lines = prettyBody
+      .split('\n')
+      .filter((l) => l.toLowerCase().includes(filter.toLowerCase()))
     return lines.join('\n')
   }, [prettyBody, filter, viewMode, effectiveFormat])
 
-  const monacoLang = effectiveFormat === 'XML' ? 'xml'
-    : effectiveFormat === 'HTML' ? 'html'
-    : effectiveFormat === 'JSON' ? 'json'
-    : 'plaintext'
+  const monacoLang =
+    effectiveFormat === 'XML'
+      ? 'xml'
+      : effectiveFormat === 'HTML'
+        ? 'html'
+        : effectiveFormat === 'JSON'
+          ? 'json'
+          : 'plaintext'
 
   async function handleCopy() {
     if (!body) return
@@ -112,7 +129,9 @@ export default function ResponseBody() {
       await navigator.clipboard.writeText(displayBody || body)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   const ICON_BTN: React.CSSProperties = {
@@ -167,7 +186,10 @@ export default function ResponseBody() {
                 <button
                   key={m}
                   type="button"
-                  onClick={() => { setFormatMode(m); setFormatOpen(false) }}
+                  onClick={() => {
+                    setFormatMode(m)
+                    setFormatOpen(false)
+                  }}
                   className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-[var(--item-hover)]"
                   style={{ background: 'transparent', border: 'none', color: 'var(--text)' }}
                 >
@@ -191,7 +213,10 @@ export default function ResponseBody() {
           }}
         >
           <span className="inline-flex items-center gap-1">
-            <Play size={11} style={{ color: viewMode === 'Pretty' ? 'var(--accent)' : 'var(--muted)' }} />
+            <Play
+              size={11}
+              style={{ color: viewMode === 'Pretty' ? 'var(--accent)' : 'var(--muted)' }}
+            />
             Preview
           </span>
         </button>

@@ -20,41 +20,54 @@ export function registerProjectHandlers(): void {
     }
   })
 
-  ipcMain.handle('project:create', async (_event, payload: {
-    workspace_id: string
-    name: string
-    description?: string
-    type?: string
-    save_mode?: string
-    local_path?: string
-    icon_emoji?: string
-    icon_color?: string
-  }) => {
-    try {
-      const data = projectRepo.createProject(payload)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle(
+    'project:create',
+    async (
+      _event,
+      payload: {
+        workspace_id: string
+        name: string
+        description?: string
+        type?: string
+        save_mode?: string
+        local_path?: string
+        icon_emoji?: string
+        icon_color?: string
+      },
+    ) => {
+      try {
+        const data = projectRepo.createProject(payload)
+        return { success: true, data }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 
-  ipcMain.handle('project:update', async (_event, id: string, payload: {
-    name?: string
-    description?: string
-    type?: string
-    save_mode?: string
-    local_path?: string | null
-    icon_emoji?: string | null
-    icon_color?: string | null
-    sort_order?: number
-  }) => {
-    try {
-      const data = projectRepo.updateProject(id, payload)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle(
+    'project:update',
+    async (
+      _event,
+      id: string,
+      payload: {
+        name?: string
+        description?: string
+        type?: string
+        save_mode?: string
+        local_path?: string | null
+        icon_emoji?: string | null
+        icon_color?: string | null
+        sort_order?: number
+      },
+    ) => {
+      try {
+        const data = projectRepo.updateProject(id, payload)
+        return { success: true, data }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 
   ipcMain.handle('project:delete', async (_event, id: string) => {
     try {
@@ -76,31 +89,44 @@ export function registerProjectHandlers(): void {
     }
   })
 
-  ipcMain.handle('folder:create', async (_event, payload: {
-    project_id: string
-    parent_id?: string | null
-    name: string
-  }) => {
-    try {
-      const data = projectRepo.createFolder(payload)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle(
+    'folder:create',
+    async (
+      _event,
+      payload: {
+        project_id: string
+        parent_id?: string | null
+        name: string
+      },
+    ) => {
+      try {
+        const data = projectRepo.createFolder(payload)
+        return { success: true, data }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 
-  ipcMain.handle('folder:update', async (_event, id: string, payload: {
-    name?: string
-    parent_id?: string | null
-    sort_order?: number
-  }) => {
-    try {
-      const data = projectRepo.updateFolder(id, payload)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle(
+    'folder:update',
+    async (
+      _event,
+      id: string,
+      payload: {
+        name?: string
+        parent_id?: string | null
+        sort_order?: number
+      },
+    ) => {
+      try {
+        const data = projectRepo.updateFolder(id, payload)
+        return { success: true, data }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 
   ipcMain.handle('folder:delete', async (_event, id: string) => {
     try {

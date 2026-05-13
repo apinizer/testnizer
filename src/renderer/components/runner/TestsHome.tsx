@@ -1,6 +1,14 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
-import { BarChart2, Clock, FolderOpen, Play, ChevronRight, CheckCircle2, XCircle } from 'lucide-react'
+import {
+  BarChart2,
+  Clock,
+  FolderOpen,
+  Play,
+  ChevronRight,
+  CheckCircle2,
+  XCircle,
+} from 'lucide-react'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import { useTranslation } from '../../lib/i18n'
 
@@ -48,7 +56,12 @@ interface TestsHomeProps {
   onViewAllRuns: () => void
   onViewScheduled: () => void
   onNewRun: () => void
-  onViewReport?: (results: EndpointRunResult[], report: RunnerReport, startedAt: number, sourceLabel?: string) => void
+  onViewReport?: (
+    results: EndpointRunResult[],
+    report: RunnerReport,
+    startedAt: number,
+    sourceLabel?: string,
+  ) => void
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -63,7 +76,12 @@ export default function TestsHome({
   const { t } = useTranslation()
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const [runs, setRuns] = useState<RunHistoryRow[]>([])
-  const [stats, setStats] = useState<HistoryStats>({ runs: 0, totalEndpoints: 0, passedEndpoints: 0, failedEndpoints: 0 })
+  const [stats, setStats] = useState<HistoryStats>({
+    runs: 0,
+    totalEndpoints: 0,
+    passedEndpoints: 0,
+    failedEndpoints: 0,
+  })
   const [tasks, setTasks] = useState<ScheduledTaskRow[]>([])
   const [suites, setSuites] = useState<TestSuiteRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -95,8 +113,12 @@ export default function TestsHome({
 
   // Listen for scheduled run completions to refresh data
   useEffect(() => {
-    const unsub = api().scheduler?.onRunCompleted?.(() => { load() })
-    return () => { unsub?.() }
+    const unsub = api().scheduler?.onRunCompleted?.(() => {
+      load()
+    })
+    return () => {
+      unsub?.()
+    }
   }, [load])
 
   const totalEndpointsRun = stats.totalEndpoints
@@ -124,16 +146,26 @@ export default function TestsHome({
         results,
       }
       onViewReport(results, report, run.started_at, run.source_label || run.source || 'Runner')
-    } catch { /* invalid */ }
+    } catch {
+      /* invalid */
+    }
   }
 
   const formatDate = (ts: number) => {
     const d = new Date(ts)
     const now = new Date()
     const isToday = d.toDateString() === now.toDateString()
-    if (isToday) return t('testsHome.today') + ', ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
+    if (isToday)
+      return (
+        t('testsHome.today') +
+        ', ' +
+        d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      )
+    return (
+      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+      ', ' +
       d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    )
   }
 
   const formatDuration = (ms: number) => {
@@ -167,7 +199,9 @@ export default function TestsHome({
       {/* Content */}
       <div className="flex-1 overflow-auto px-6 py-5">
         {loading ? (
-          <div className="text-center" style={{ color: 'var(--hint)' }}>{t('testsHome.loading')}</div>
+          <div className="text-center" style={{ color: 'var(--hint)' }}>
+            {t('testsHome.loading')}
+          </div>
         ) : (
           <>
             {/* Summary cards */}
@@ -196,7 +230,11 @@ export default function TestsHome({
                 iconBg="#e0f2fe"
                 label={t('testsHome.scheduledTasks')}
                 primary={String(tasks.length)}
-                sub={tasks.length > 0 ? `${activeTasks} ${t('testsHome.active')}` : t('testsHome.noScheduledTasks')}
+                sub={
+                  tasks.length > 0
+                    ? `${activeTasks} ${t('testsHome.active')}`
+                    : t('testsHome.noScheduledTasks')
+                }
                 onClick={onViewScheduled}
               />
               <SummaryCard
@@ -204,7 +242,11 @@ export default function TestsHome({
                 iconBg="var(--accent-light)"
                 label={t('testsHome.testSuites')}
                 primary={String(suites.length)}
-                sub={suites.length > 0 ? t('testsHome.manageFromSidebar') : t('testsHome.noTestSuitesYet')}
+                sub={
+                  suites.length > 0
+                    ? t('testsHome.manageFromSidebar')
+                    : t('testsHome.noTestSuitesYet')
+                }
               />
             </div>
 
@@ -238,7 +280,10 @@ export default function TestsHome({
                   style={{ borderColor: 'var(--border)', background: 'var(--white)' }}
                 >
                   {recentRuns.length === 0 ? (
-                    <div className="py-6 text-center" style={{ color: 'var(--hint)', fontSize: 13 }}>
+                    <div
+                      className="py-6 text-center"
+                      style={{ color: 'var(--hint)', fontSize: 13 }}
+                    >
                       {t('testsHome.noRunsYet')}
                     </div>
                   ) : (
@@ -263,12 +308,12 @@ export default function TestsHome({
                               {formatDate(run.started_at)}
                             </div>
                             <div style={{ color: 'var(--muted)', fontSize: 13 }}>
-                              {run.source_label || run.source} • {run.total_endpoints} {t('testsHome.endpoints')} • {run.passed_tests}/{run.total_tests} {t('testsHome.testsLabel')}
+                              {run.source_label || run.source} • {run.total_endpoints}{' '}
+                              {t('testsHome.endpoints')} • {run.passed_tests}/{run.total_tests}{' '}
+                              {t('testsHome.testsLabel')}
                             </div>
                           </div>
-                          <div
-                            style={{ color: 'var(--muted)', fontSize: 13, flexShrink: 0 }}
-                          >
+                          <div style={{ color: 'var(--muted)', fontSize: 13, flexShrink: 0 }}>
                             {formatDuration(run.duration_ms)}
                           </div>
                         </div>
@@ -287,10 +332,17 @@ export default function TestsHome({
                 </div>
                 <div
                   className="rounded-[8px] border"
-                  style={{ borderColor: 'var(--border)', background: 'var(--white)', marginBottom: 16 }}
+                  style={{
+                    borderColor: 'var(--border)',
+                    background: 'var(--white)',
+                    marginBottom: 16,
+                  }}
                 >
                   {recentSuites.length === 0 ? (
-                    <div className="py-6 text-center" style={{ color: 'var(--hint)', fontSize: 13 }}>
+                    <div
+                      className="py-6 text-center"
+                      style={{ color: 'var(--hint)', fontSize: 13 }}
+                    >
                       {t('testsHome.noTestSuitesYet')}
                     </div>
                   ) : (
@@ -334,7 +386,10 @@ export default function TestsHome({
                   style={{ borderColor: 'var(--border)', background: 'var(--white)' }}
                 >
                   {tasks.length === 0 ? (
-                    <div className="py-6 text-center" style={{ color: 'var(--hint)', fontSize: 13 }}>
+                    <div
+                      className="py-6 text-center"
+                      style={{ color: 'var(--hint)', fontSize: 13 }}
+                    >
                       {t('testsHome.noScheduledTasks')}
                     </div>
                   ) : (
@@ -349,7 +404,11 @@ export default function TestsHome({
                       >
                         <span
                           className="inline-block shrink-0 rounded-full"
-                          style={{ width: 8, height: 8, background: task.enabled ? '#1a7a4a' : '#aaa' }}
+                          style={{
+                            width: 8,
+                            height: 8,
+                            background: task.enabled ? '#1a7a4a' : '#aaa',
+                          }}
                         />
                         <div className="flex-1 truncate">
                           <div style={{ color: 'var(--text)', fontWeight: 500 }}>{task.name}</div>
@@ -375,7 +434,12 @@ export default function TestsHome({
 /* ── Summary card ──────────────────────────────────────────── */
 
 function SummaryCard({
-  icon, iconBg, label, primary, sub, onClick,
+  icon,
+  iconBg,
+  label,
+  primary,
+  sub,
+  onClick,
 }: {
   icon: React.ReactNode
   iconBg: string
@@ -397,12 +461,12 @@ function SummaryCard({
       }}
       onMouseEnter={(e) => {
         if (clickable) {
-          (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'
+          ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'
         }
       }}
       onMouseLeave={(e) => {
         if (clickable) {
-          (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'
+          ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'
         }
       }}
     >

@@ -8,7 +8,9 @@ export default function SettingsTab() {
       {/* Follow Redirects */}
       <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--white)] px-4 py-3">
         <div>
-          <div className="font-medium" style={{ color: 'var(--text)' }}>Follow redirects</div>
+          <div className="font-medium" style={{ color: 'var(--text)' }}>
+            Follow redirects
+          </div>
           <div style={{ color: 'var(--muted)' }}>Automatically follow HTTP 3xx redirects</div>
         </div>
         <label className="relative inline-flex cursor-pointer items-center">
@@ -20,7 +22,9 @@ export default function SettingsTab() {
       {/* SSL Verification */}
       <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--white)] px-4 py-3">
         <div>
-          <div className="font-medium" style={{ color: 'var(--text)' }}>Enable SSL certificate verification</div>
+          <div className="font-medium" style={{ color: 'var(--text)' }}>
+            Enable SSL certificate verification
+          </div>
           <div style={{ color: 'var(--muted)' }}>Verify SSL certificates when sending requests</div>
         </div>
         <label className="relative inline-flex cursor-pointer items-center">
@@ -31,7 +35,9 @@ export default function SettingsTab() {
 
       {/* Timeout */}
       <div className="rounded-lg border border-[var(--border)] bg-[var(--white)] px-4 py-3">
-        <div className="mb-2 font-medium" style={{ color: 'var(--text)' }}>Request timeout</div>
+        <div className="mb-2 font-medium" style={{ color: 'var(--text)' }}>
+          Request timeout
+        </div>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -47,7 +53,9 @@ export default function SettingsTab() {
 
       {/* Max Redirects */}
       <div className="rounded-lg border border-[var(--border)] bg-[var(--white)] px-4 py-3">
-        <div className="mb-2 font-medium" style={{ color: 'var(--text)' }}>Max redirects</div>
+        <div className="mb-2 font-medium" style={{ color: 'var(--text)' }}>
+          Max redirects
+        </div>
         <div className="flex items-center gap-2">
           <input
             type="number"

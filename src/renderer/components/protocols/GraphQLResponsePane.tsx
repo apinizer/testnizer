@@ -31,7 +31,8 @@ export default function GraphQLResponsePane() {
             className="cursor-pointer px-3.5 py-2 font-medium transition-colors"
             style={{
               color: activeTab === tab.id ? 'var(--accent-text)' : 'var(--muted)',
-              borderBottom: activeTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
+              borderBottom:
+                activeTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
               background: 'transparent',
               border: 'none',
               borderBottomWidth: '2px',
@@ -46,14 +47,9 @@ export default function GraphQLResponsePane() {
 
       {/* Tab content */}
       <div className="flex-1 overflow-hidden">
-        {activeTab === 'response' && (
-          <ResponseTab response={response} isLoading={isLoading} />
-        )}
+        {activeTab === 'response' && <ResponseTab response={response} isLoading={isLoading} />}
         {activeTab === 'schema' && (
-          <GraphQLSchemaExplorer
-            schemaData={schemaData}
-            error={introspectError}
-          />
+          <GraphQLSchemaExplorer schemaData={schemaData} error={introspectError} />
         )}
       </div>
     </div>
@@ -104,16 +100,16 @@ function ResponseTab({
           <span
             className="rounded-full px-2 py-0.5 font-semibold"
             style={{
-              background: response.status < 300 ? '#e8f9f1' : response.status < 400 ? '#fff4e0' : '#fff0f0',
-              color: response.status < 300 ? '#1a7a4a' : response.status < 400 ? '#b35a00' : '#cc2200',
+              background:
+                response.status < 300 ? '#e8f9f1' : response.status < 400 ? '#fff4e0' : '#fff0f0',
+              color:
+                response.status < 300 ? '#1a7a4a' : response.status < 400 ? '#b35a00' : '#cc2200',
             }}
           >
             {response.status} {response.statusText || ''}
           </span>
         )}
-        <span className="text-[var(--muted)]">
-          {response.timing.total}ms
-        </span>
+        <span className="text-[var(--muted)]">{response.timing.total}ms</span>
         {response.bodySize !== undefined && (
           <span className="text-[var(--hint)]">
             {response.bodySize > 1024
@@ -157,14 +153,8 @@ function ResponseTab({
 
       {/* Body */}
       <div className="flex-1 min-h-0">
-        <MonacoWrapper
-          value={response.body || ''}
-          readOnly
-          language="json"
-          height="100%"
-        />
+        <MonacoWrapper value={response.body || ''} readOnly language="json" height="100%" />
       </div>
     </div>
   )
 }
-

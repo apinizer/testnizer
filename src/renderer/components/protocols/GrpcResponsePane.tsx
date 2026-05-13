@@ -97,9 +97,7 @@ function UnaryView({
             ? `gRPC error (code ${response.status})`
             : 'gRPC error'}
         </span>
-        <span className="max-w-[600px] text-center text-[var(--muted)]">
-          {response.error}
-        </span>
+        <span className="max-w-[600px] text-center text-[var(--muted)]">{response.error}</span>
         {response.statusText && response.statusText !== response.error && (
           <span className="max-w-[600px] text-center text-[var(--hint)]">
             {response.statusText}
@@ -139,12 +137,7 @@ function UnaryView({
 
       {/* Body */}
       <div className="flex-1 min-h-0">
-        <MonacoWrapper
-          value={response.body || ''}
-          readOnly
-          language="json"
-          height="100%"
-        />
+        <MonacoWrapper value={response.body || ''} readOnly language="json" height="100%" />
       </div>
     </div>
   )

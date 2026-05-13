@@ -31,7 +31,8 @@ export default function TestResultsTab() {
         ? results.filter((r) => r.passed)
         : results.filter((r) => !r.passed)
 
-  const filterLabel = filter === 'all' ? 'Filter Results' : filter === 'passed' ? 'Passed' : 'Failed'
+  const filterLabel =
+    filter === 'all' ? 'Filter Results' : filter === 'passed' ? 'Passed' : 'Failed'
 
   return (
     <div className="h-full overflow-auto">
@@ -77,11 +78,18 @@ export default function TestResultsTab() {
               {(['all', 'passed', 'failed'] as FilterMode[]).map((mode) => (
                 <div
                   key={mode}
-                  onClick={() => { setFilter(mode); setShowFilterDrop(false) }}
+                  onClick={() => {
+                    setFilter(mode)
+                    setShowFilterDrop(false)
+                  }}
                   className="cursor-pointer rounded px-3 py-1.5"
                   style={{ color: 'var(--text)' }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--surface)' }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                  onMouseEnter={(e) => {
+                    ;(e.currentTarget as HTMLElement).style.background = 'var(--surface)'
+                  }}
+                  onMouseLeave={(e) => {
+                    ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                  }}
                 >
                   {mode === 'all' ? 'All Results' : mode === 'passed' ? 'Passed' : 'Failed'}
                   {mode === 'all' && ` (${results.length})`}
@@ -108,7 +116,9 @@ export default function TestResultsTab() {
               style={{
                 background: r.passed ? 'var(--green-bg)' : 'rgba(239,68,68,0.12)',
                 color: r.passed ? 'var(--green)' : 'var(--red)',
-                border: r.passed ? '1px solid var(--green-border)' : '1px solid rgba(239,68,68,0.3)',
+                border: r.passed
+                  ? '1px solid var(--green-border)'
+                  : '1px solid rgba(239,68,68,0.3)',
                 letterSpacing: '0.02em',
               }}
             >
@@ -117,9 +127,7 @@ export default function TestResultsTab() {
 
             {/* Test name + error */}
             <div className="flex-1 min-w-0">
-              <span style={{ color: 'var(--text)' }}>
-                {r.assertion.name}
-              </span>
+              <span style={{ color: 'var(--text)' }}>{r.assertion.name}</span>
               {!r.passed && r.error && (
                 <span className="ml-1" style={{ color: 'var(--muted)' }}>
                   {' | '}

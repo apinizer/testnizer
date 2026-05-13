@@ -80,9 +80,7 @@ export function useKeyboardShortcuts(): void {
           ctrl: true,
           description: 'Focus URL input',
           action: () => {
-            const urlInput = document.querySelector<HTMLInputElement>(
-              'input[placeholder*="URL"]'
-            )
+            const urlInput = document.querySelector<HTMLInputElement>('input[placeholder*="URL"]')
             urlInput?.focus()
             urlInput?.select()
           },
@@ -145,7 +143,8 @@ export function useKeyboardShortcuts(): void {
       }
 
       for (const shortcut of shortcuts) {
-        const keyMatch = e.key.toLowerCase() === shortcut.key.toLowerCase() ||
+        const keyMatch =
+          e.key.toLowerCase() === shortcut.key.toLowerCase() ||
           (shortcut.key === 'Enter' && e.key === 'Enter')
 
         const shiftMatch = shortcut.shift ? e.shiftKey : !e.shiftKey

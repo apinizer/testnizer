@@ -8,8 +8,14 @@ import {
 } from '../db/certificate.repo'
 import { encryptSecret } from '../lib/secure-storage'
 
-interface Ok<T> { success: true; data: T }
-interface Err { success: false; error: string }
+interface Ok<T> {
+  success: true
+  data: T
+}
+interface Err {
+  success: false
+  error: string
+}
 type R<T> = Ok<T> | Err
 
 function wrap<T>(fn: () => T | Promise<T>): Promise<R<T>> {
@@ -42,41 +48,52 @@ interface UpdatePayload {
 
 export function registerCertificateHandlers(): void {
   ipcMain.handle('certificate:list', (_e, projectId: string) =>
-    wrap(() => listCertificates(projectId)))
+    wrap(() => listCertificates(projectId)),
+  )
 
   ipcMain.handle('certificate:add', (_e, payload: AddPayload) =>
-    wrap(() => createCertificate({
-      project_id: payload.projectId,
-      kind: payload.kind,
-      host: payload.host,
-      crt_path: payload.crtPath,
-      key_path: payload.keyPath,
-      pfx_path: payload.pfxPath,
-      passphrase: encryptSecret(payload.passphrase),
-      enabled: payload.enabled,
-    })))
+    wrap(() =>
+      createCertificate({
+        project_id: payload.projectId,
+        kind: payload.kind,
+        host: payload.host,
+        crt_path: payload.crtPath,
+        key_path: payload.keyPath,
+        pfx_path: payload.pfxPath,
+        passphrase: encryptSecret(payload.passphrase),
+        enabled: payload.enabled,
+      }),
+    ),
+  )
 
   ipcMain.handle('certificate:update', (_e, payload: UpdatePayload) =>
-    wrap(() => updateCertificate(payload.id, {
-      host: payload.host,
-      crt_path: payload.crtPath,
-      key_path: payload.keyPath,
-      pfx_path: payload.pfxPath,
-      passphrase: payload.passphrase !== undefined
-        ? encryptSecret(payload.passphrase)
-        : undefined,
-      enabled: payload.enabled,
-    })))
+    wrap(() =>
+      updateCertificate(payload.id, {
+        host: payload.host,
+        crt_path: payload.crtPath,
+        key_path: payload.keyPath,
+        pfx_path: payload.pfxPath,
+        passphrase:
+          payload.passphrase !== undefined ? encryptSecret(payload.passphrase) : undefined,
+        enabled: payload.enabled,
+      }),
+    ),
+  )
 
   ipcMain.handle('certificate:delete', (_e, id: string) =>
-    wrap(() => { deleteCertificate(id); return true }))
+    wrap(() => {
+      deleteCertificate(id)
+      return true
+    }),
+  )
 
   ipcMain.handle('certificate:pickFile', async (_e, kind: 'crt' | 'key' | 'pfx' | 'ca') => {
-    const filters = kind === 'pfx'
-      ? [{ name: 'PFX/P12', extensions: ['pfx', 'p12'] }]
-      : kind === 'key'
-      ? [{ name: 'Key', extensions: ['key', 'pem'] }]
-      : [{ name: 'Certificate', extensions: ['crt', 'cer', 'pem'] }]
+    const filters =
+      kind === 'pfx'
+        ? [{ name: 'PFX/P12', extensions: ['pfx', 'p12'] }]
+        : kind === 'key'
+          ? [{ name: 'Key', extensions: ['key', 'pem'] }]
+          : [{ name: 'Certificate', extensions: ['crt', 'cer', 'pem'] }]
     const result = await dialog.showOpenDialog({ properties: ['openFile'], filters })
     if (result.canceled || result.filePaths.length === 0) {
       return { success: false as const, error: 'Cancelled' }

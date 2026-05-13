@@ -28,10 +28,14 @@ export async function verifyOsPassword(password: string): Promise<OsAuthResult> 
   if (!username) return { ok: false, error: 'Could not determine OS user' }
 
   switch (process.platform) {
-    case 'darwin': return verifyMacOs(username, password)
-    case 'win32':  return verifyWindows(username, password)
-    case 'linux':  return verifyLinux(username, password)
-    default:       return { ok: false, error: `Unsupported platform: ${process.platform}` }
+    case 'darwin':
+      return verifyMacOs(username, password)
+    case 'win32':
+      return verifyWindows(username, password)
+    case 'linux':
+      return verifyLinux(username, password)
+    default:
+      return { ok: false, error: `Unsupported platform: ${process.platform}` }
   }
 }
 
@@ -45,11 +49,17 @@ function verifyMacOs(username: string, password: string): Promise<OsAuthResult> 
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stderr = ''
-    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+    proc.stderr.on('data', (d: Buffer) => {
+      stderr += d.toString()
+    })
     proc.on('error', (err) => resolve({ ok: false, error: err.message }))
     proc.on('close', (code) => {
       if (code === 0) resolve({ ok: true })
-      else resolve({ ok: false, error: 'Incorrect system password' + (stderr.trim() ? ` (${stderr.trim()})` : '') })
+      else
+        resolve({
+          ok: false,
+          error: 'Incorrect system password' + (stderr.trim() ? ` (${stderr.trim()})` : ''),
+        })
     })
   })
 }
@@ -71,21 +81,28 @@ function verifyWindows(username: string, password: string): Promise<OsAuthResult
     ].join('; ')
     // PowerShell requires UTF-16LE base64 for -EncodedCommand.
     const encoded = Buffer.from(script, 'utf16le').toString('base64')
-    const proc = spawn('powershell.exe', [
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy', 'Bypass',
-      '-EncodedCommand', encoded,
-    ], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, APINIZER_OS_USER: username, APINIZER_OS_PW: password },
-    })
+    const proc = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, APINIZER_OS_USER: username, APINIZER_OS_PW: password },
+      },
+    )
     let stderr = ''
-    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+    proc.stderr.on('data', (d: Buffer) => {
+      stderr += d.toString()
+    })
     proc.on('error', (err) => resolve({ ok: false, error: err.message }))
     proc.on('close', (code) => {
       if (code === 0) resolve({ ok: true })
-      else resolve({ ok: false, error: 'Incorrect system password' + (stderr.trim() ? ` (${stderr.trim().slice(0, 200)})` : '') })
+      else
+        resolve({
+          ok: false,
+          error:
+            'Incorrect system password' +
+            (stderr.trim() ? ` (${stderr.trim().slice(0, 200)})` : ''),
+        })
     })
   })
 }
@@ -97,25 +114,30 @@ function verifyLinux(username: string, password: string): Promise<OsAuthResult> 
     // reads the password (NUL-terminated) from stdin and exits 0 on match.
     // When invoked by an unprivileged user it only authenticates that
     // user's own account, which is exactly what we want.
-    const candidates = [
-      '/usr/sbin/unix_chkpwd',
-      '/sbin/unix_chkpwd',
-      '/usr/libexec/unix_chkpwd',
-    ]
+    const candidates = ['/usr/sbin/unix_chkpwd', '/sbin/unix_chkpwd', '/usr/libexec/unix_chkpwd']
     const bin = candidates.find((p) => existsSync(p))
     if (!bin) {
-      resolve({ ok: false, error: 'System password helper (unix_chkpwd) was not found on this machine' })
+      resolve({
+        ok: false,
+        error: 'System password helper (unix_chkpwd) was not found on this machine',
+      })
       return
     }
     const proc = spawn(bin, [username, 'nullok'], {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     let stderr = ''
-    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+    proc.stderr.on('data', (d: Buffer) => {
+      stderr += d.toString()
+    })
     proc.on('error', (err) => resolve({ ok: false, error: err.message }))
     proc.on('close', (code) => {
       if (code === 0) resolve({ ok: true })
-      else resolve({ ok: false, error: 'Incorrect system password' + (stderr.trim() ? ` (${stderr.trim()})` : '') })
+      else
+        resolve({
+          ok: false,
+          error: 'Incorrect system password' + (stderr.trim() ? ` (${stderr.trim()})` : ''),
+        })
     })
     // Write password followed by a NUL terminator, as expected by unix_chkpwd.
     proc.stdin.write(password + '\0')

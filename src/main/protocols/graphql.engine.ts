@@ -127,12 +127,9 @@ function sendSubscriptionEvent(windowId: number, event: GraphqlSubscriptionEvent
 
 // ─── Helper: build headers from auth + kvp ──────────────────
 
-function buildHeaders(
-  headers?: KeyValuePair[],
-  auth?: AuthConfig
-): Record<string, string> {
+function buildHeaders(headers?: KeyValuePair[], auth?: AuthConfig): Record<string, string> {
   const result: Record<string, string> = {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
   }
 
   if (headers) {
@@ -147,9 +144,9 @@ function buildHeaders(
     switch (auth.type) {
       case 'basic': {
         if (auth.basic) {
-          const encoded = Buffer.from(
-            `${auth.basic.username}:${auth.basic.password}`
-          ).toString('base64')
+          const encoded = Buffer.from(`${auth.basic.username}:${auth.basic.password}`).toString(
+            'base64',
+          )
           result['Authorization'] = `Basic ${encoded}`
         }
         break
@@ -181,9 +178,7 @@ function buildHeaders(
 
 // ─── Public API ─────────────────────────────────────────────
 
-export async function executeQuery(
-  options: GraphqlExecuteOptions
-): Promise<GraphqlApiResponse> {
+export async function executeQuery(options: GraphqlExecuteOptions): Promise<GraphqlApiResponse> {
   const requestId = randomUUID()
   const startTime = performance.now()
 
@@ -199,13 +194,13 @@ export async function executeQuery(
           requestId,
           protocol: 'graphql',
           timing: { total: Math.round(performance.now() - startTime) },
-          error: 'Invalid JSON in variables field'
+          error: 'Invalid JSON in variables field',
         }
       }
     }
 
     const requestBody: Record<string, unknown> = {
-      query: options.query
+      query: options.query,
     }
     if (variables) {
       requestBody.variables = variables
@@ -233,9 +228,9 @@ export async function executeQuery(
       responseType: 'text',
       transformResponse: [(d: string) => d],
       httpsAgent: new https.Agent({
-        rejectUnauthorized: options.sslVerification !== false
+        rejectUnauthorized: options.sslVerification !== false,
       }),
-      httpAgent: new http.Agent()
+      httpAgent: new http.Agent(),
     }
 
     const response = await axios.request(config)
@@ -248,9 +243,8 @@ export async function executeQuery(
       }
     }
 
-    const responseBody = typeof response.data === 'string'
-      ? response.data
-      : JSON.stringify(response.data)
+    const responseBody =
+      typeof response.data === 'string' ? response.data : JSON.stringify(response.data)
     const bodySize = Buffer.byteLength(responseBody, 'utf-8')
 
     return {
@@ -266,8 +260,8 @@ export async function executeQuery(
         method: 'POST',
         url: options.url,
         headers,
-        body: bodyStr
-      }
+        body: bodyStr,
+      },
     }
   } catch (err) {
     const endTime = performance.now()
@@ -276,7 +270,7 @@ export async function executeQuery(
       requestId,
       protocol: 'graphql',
       timing: { total: Math.round(endTime - startTime) },
-      error: classified.message
+      error: classified.message,
     }
   }
 }
@@ -284,7 +278,7 @@ export async function executeQuery(
 export async function introspect(
   url: string,
   headers?: Record<string, string>,
-  sslVerification?: boolean
+  sslVerification?: boolean,
 ): Promise<GraphqlIntrospectionResult> {
   const introspectionQuery = `{
   __schema {
@@ -311,7 +305,7 @@ export async function introspect(
 
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...headers
+    ...headers,
   }
 
   const config: AxiosRequestConfig = {
@@ -322,35 +316,38 @@ export async function introspect(
     timeout: 30000,
     validateStatus: () => true,
     httpsAgent: new https.Agent({
-      rejectUnauthorized: sslVerification !== false
+      rejectUnauthorized: sslVerification !== false,
     }),
-    httpAgent: new http.Agent()
+    httpAgent: new http.Agent(),
   }
 
   const response = await axios.request(config)
-  const body = typeof response.data === 'string'
-    ? JSON.parse(response.data) as Record<string, unknown>
-    : response.data as Record<string, unknown>
+  const body =
+    typeof response.data === 'string'
+      ? (JSON.parse(response.data) as Record<string, unknown>)
+      : (response.data as Record<string, unknown>)
 
-  const data = body.data as {
-    __schema: {
-      types: Array<{
-        name: string
-        kind: string
-        fields: Array<{
-          name: string
-          type: {
-            name: string | null
+  const data = body.data as
+    | {
+        __schema: {
+          types: Array<{
+            name: string
             kind: string
-            ofType: { name: string | null; kind: string } | null
-          }
-        }> | null
-      }>
-      queryType: { name: string } | null
-      mutationType: { name: string } | null
-      subscriptionType: { name: string } | null
-    }
-  } | undefined
+            fields: Array<{
+              name: string
+              type: {
+                name: string | null
+                kind: string
+                ofType: { name: string | null; kind: string } | null
+              }
+            }> | null
+          }>
+          queryType: { name: string } | null
+          mutationType: { name: string } | null
+          subscriptionType: { name: string } | null
+        }
+      }
+    | undefined
 
   if (!data?.__schema) {
     const errors = body.errors as Array<{ message: string }> | undefined
@@ -369,32 +366,25 @@ export async function introspect(
           type: {
             name: f.type.name,
             kind: f.type.kind,
-            ofType: f.type.ofType
-              ? { name: f.type.ofType.name, kind: f.type.ofType.kind }
-              : null
-          }
+            ofType: f.type.ofType ? { name: f.type.ofType.name, kind: f.type.ofType.kind } : null,
+          },
         }))
-      : null
+      : null,
   }))
 
   return {
     types,
     queryType: schema.queryType?.name ?? null,
     mutationType: schema.mutationType?.name ?? null,
-    subscriptionType: schema.subscriptionType?.name ?? null
+    subscriptionType: schema.subscriptionType?.name ?? null,
   }
 }
 
-export function subscribe(
-  options: GraphqlSubscribeOptions,
-  windowId: number
-): string {
+export function subscribe(options: GraphqlSubscribeOptions, windowId: number): string {
   const subscriptionId = randomUUID()
 
   // Determine WS URL: replace http(s) with ws(s)
-  const wsUrl =
-    options.wsUrl ??
-    options.url.replace(/^http/, 'ws')
+  const wsUrl = options.wsUrl ?? options.url.replace(/^http/, 'ws')
 
   let variables: Record<string, unknown> | undefined
   if (options.variables) {
@@ -405,7 +395,7 @@ export function subscribe(
         subscriptionId,
         type: 'error',
         error: 'Invalid JSON in variables field',
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
       return subscriptionId
     }
@@ -417,21 +407,22 @@ export function subscribe(
     connectionParams: options.headers ?? {},
     on: {
       error: (err) => {
-        const errorMsg = err instanceof Error
-          ? err.message
-          : (err as CloseEvent)?.reason ?? 'Unknown subscription error'
+        const errorMsg =
+          err instanceof Error
+            ? err.message
+            : ((err as CloseEvent)?.reason ?? 'Unknown subscription error')
         sendSubscriptionEvent(windowId, {
           subscriptionId,
           type: 'error',
           error: errorMsg,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         })
-      }
-    }
+      },
+    },
   })
 
   const payload: { query: string; variables?: Record<string, unknown>; operationName?: string } = {
-    query: options.query
+    query: options.query,
   }
   if (variables) {
     payload.variables = variables
@@ -446,20 +437,21 @@ export function subscribe(
         subscriptionId,
         type: 'data',
         data: JSON.stringify(value),
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
     },
     error: (err) => {
-      const errorMsg = err instanceof Error
-        ? err.message
-        : Array.isArray(err)
-          ? err.map((e) => (e as Error).message).join(', ')
-          : 'Subscription error'
+      const errorMsg =
+        err instanceof Error
+          ? err.message
+          : Array.isArray(err)
+            ? err.map((e) => (e as Error).message).join(', ')
+            : 'Subscription error'
       sendSubscriptionEvent(windowId, {
         subscriptionId,
         type: 'error',
         error: errorMsg,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
       subscriptions.delete(subscriptionId)
     },
@@ -467,17 +459,17 @@ export function subscribe(
       sendSubscriptionEvent(windowId, {
         subscriptionId,
         type: 'complete',
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
       subscriptions.delete(subscriptionId)
-    }
+    },
   })
 
   subscriptions.set(subscriptionId, {
     subscriptionId,
     client,
     unsubscribe,
-    windowId
+    windowId,
   })
 
   return subscriptionId

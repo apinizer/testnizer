@@ -25,13 +25,21 @@ export const T = {
   accentText: 'var(--accent-text)',
 
   // method badge colors — use CSS vars so they adapt to dark mode (defined in globals.css)
-  GET:     { bg: 'var(--mb-get-bg)',     color: 'var(--mb-get-fg)',     border: 'var(--mb-get-br)' },
-  POST:    { bg: 'var(--mb-post-bg)',    color: 'var(--mb-post-fg)',    border: 'var(--mb-post-br)' },
-  PUT:     { bg: 'var(--mb-put-bg)',     color: 'var(--mb-put-fg)',     border: 'var(--mb-put-br)' },
-  PATCH:   { bg: 'var(--mb-patch-bg)',   color: 'var(--mb-patch-fg)',   border: 'var(--mb-patch-br)' },
-  DELETE:  { bg: 'var(--mb-delete-bg)',  color: 'var(--mb-delete-fg)',  border: 'var(--mb-delete-br)' },
-  HEAD:    { bg: 'var(--mb-head-bg)',    color: 'var(--mb-head-fg)',    border: 'var(--mb-head-br)' },
-  OPTIONS: { bg: 'var(--mb-options-bg)', color: 'var(--mb-options-fg)', border: 'var(--mb-options-br)' },
+  GET: { bg: 'var(--mb-get-bg)', color: 'var(--mb-get-fg)', border: 'var(--mb-get-br)' },
+  POST: { bg: 'var(--mb-post-bg)', color: 'var(--mb-post-fg)', border: 'var(--mb-post-br)' },
+  PUT: { bg: 'var(--mb-put-bg)', color: 'var(--mb-put-fg)', border: 'var(--mb-put-br)' },
+  PATCH: { bg: 'var(--mb-patch-bg)', color: 'var(--mb-patch-fg)', border: 'var(--mb-patch-br)' },
+  DELETE: {
+    bg: 'var(--mb-delete-bg)',
+    color: 'var(--mb-delete-fg)',
+    border: 'var(--mb-delete-br)',
+  },
+  HEAD: { bg: 'var(--mb-head-bg)', color: 'var(--mb-head-fg)', border: 'var(--mb-head-br)' },
+  OPTIONS: {
+    bg: 'var(--mb-options-bg)',
+    color: 'var(--mb-options-fg)',
+    border: 'var(--mb-options-br)',
+  },
 } as const
 
 // Standard UI font: 13px — compact desktop density.
@@ -49,7 +57,7 @@ export const BASE_INP: CSSProperties = {
 
 export const MONO_INP: CSSProperties = {
   ...BASE_INP,
-  fontFamily: "var(--font-mono)",
+  fontFamily: 'var(--font-mono)',
 }
 
 export const BTN_P: CSSProperties = {

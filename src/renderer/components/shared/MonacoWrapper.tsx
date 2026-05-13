@@ -17,12 +17,7 @@ function MonacoFallback({
   className,
 }: Pick<MonacoWrapperProps, 'height' | 'className'>) {
   return (
-    <div
-      className={className}
-      style={{ height }}
-      aria-busy="true"
-      aria-label="Loading editor"
-    >
+    <div className={className} style={{ height }} aria-busy="true" aria-label="Loading editor">
       <div
         style={{
           height: '100%',
@@ -71,11 +66,7 @@ function MonacoFallback({
 
 export default function MonacoWrapper(props: MonacoWrapperProps) {
   return (
-    <Suspense
-      fallback={
-        <MonacoFallback height={props.height} className={props.className} />
-      }
-    >
+    <Suspense fallback={<MonacoFallback height={props.height} className={props.className} />}>
       <MonacoWrapperImpl {...props} />
     </Suspense>
   )

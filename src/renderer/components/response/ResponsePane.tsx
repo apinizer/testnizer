@@ -265,9 +265,7 @@ export default function ResponsePane() {
     countColor?: string
   }> = [
     { key: 'body', label: 'Body' },
-    ...(eventCount > 0
-      ? [{ key: 'events' as ResTabKey, label: 'Events', count: eventCount }]
-      : []),
+    ...(eventCount > 0 ? [{ key: 'events' as ResTabKey, label: 'Events', count: eventCount }] : []),
     { key: 'cookies', label: 'Cookies', count: cookieCount },
     { key: 'headers', label: 'Headers', count: headerCount },
     {
@@ -390,9 +388,7 @@ export default function ResponsePane() {
         {activeTab === 'cookies' && <CookieTab />}
         {activeTab === 'headers' && <HeadersTab />}
         {activeTab === 'testResults' && <TestResultsTab />}
-        {activeTab === 'console' && (
-          <ConsoleTab tabFilterId={activeProtocolTab?.id} />
-        )}
+        {activeTab === 'console' && <ConsoleTab tabFilterId={activeProtocolTab?.id} />}
         {activeTab === 'actualRequest' && <ActualRequestTab />}
         {activeTab === 'wsse' && <WsseResponsePanel body={response.body ?? ''} />}
       </div>

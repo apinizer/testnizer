@@ -20,31 +20,44 @@ export function registerWorkspaceHandlers(): void {
     }
   })
 
-  ipcMain.handle('workspace:create', async (_event, payload: {
-    name: string
-    description?: string
-    color?: string
-  }) => {
-    try {
-      const data = workspaceRepo.createWorkspace(payload)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle(
+    'workspace:create',
+    async (
+      _event,
+      payload: {
+        name: string
+        description?: string
+        color?: string
+      },
+    ) => {
+      try {
+        const data = workspaceRepo.createWorkspace(payload)
+        return { success: true, data }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 
-  ipcMain.handle('workspace:update', async (_event, id: string, payload: {
-    name?: string
-    description?: string
-    color?: string
-  }) => {
-    try {
-      const data = workspaceRepo.updateWorkspace(id, payload)
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  ipcMain.handle(
+    'workspace:update',
+    async (
+      _event,
+      id: string,
+      payload: {
+        name?: string
+        description?: string
+        color?: string
+      },
+    ) => {
+      try {
+        const data = workspaceRepo.updateWorkspace(id, payload)
+        return { success: true, data }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 
   ipcMain.handle('workspace:delete', async (_event, id: string) => {
     try {

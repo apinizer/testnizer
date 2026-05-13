@@ -8,7 +8,15 @@ import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
 import MethodBadge from '../shared/MethodBadge'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
-import type { HistoryEntry, KeyValuePair, RequestBody, AuthConfig, HttpMethod, ApiResponse, Tab } from '../../types'
+import type {
+  HistoryEntry,
+  KeyValuePair,
+  RequestBody,
+  AuthConfig,
+  HttpMethod,
+  ApiResponse,
+  Tab,
+} from '../../types'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 
 /* ── Runner history row ───────────────────────────────────── */
@@ -57,22 +65,31 @@ export default function HistoryListPanel() {
 
   // Fetch on mount
   useEffect(() => {
-    fetch({ workspaceId: activeWorkspaceId || undefined, projectId: activeProjectId || undefined, limit: 200 })
+    fetch({
+      workspaceId: activeWorkspaceId || undefined,
+      projectId: activeProjectId || undefined,
+      limit: 200,
+    })
   }, [activeWorkspaceId, activeProjectId, fetch])
 
   // Fetch runner history
   useEffect(() => {
     if (!activeProjectId) return
-    window.api?.runner?.history(activeProjectId).then((result: unknown) => {
-      const res = result as { success: boolean; data?: RunHistoryRow[] }
-      if (res?.success && res.data) setRunHistory(res.data)
-    }).catch(() => {})
+    window.api?.runner
+      ?.history(activeProjectId)
+      .then((result: unknown) => {
+        const res = result as { success: boolean; data?: RunHistoryRow[] }
+        if (res?.success && res.data) setRunHistory(res.data)
+      })
+      .catch(() => {})
   }, [activeProjectId])
 
   const filtered = useMemo(() => {
     if (!searchTerm.trim()) return entries
     const q = searchTerm.toLowerCase()
-    return entries.filter((e) => e.url.toLowerCase().includes(q) || (e.method || '').toLowerCase().includes(q))
+    return entries.filter(
+      (e) => e.url.toLowerCase().includes(q) || (e.method || '').toLowerCase().includes(q),
+    )
   }, [entries, searchTerm])
 
   const groups = useMemo(() => groupByDate(filtered), [filtered])
@@ -117,7 +134,9 @@ export default function HistoryListPanel() {
       soapLoadFromEndpoint({
         url: entry.url,
         body: snap.body as { type: string; content?: string } | undefined,
-        headers: snap.headers as Array<{ key: string; value: string; enabled: boolean }> | undefined,
+        headers: snap.headers as
+          | Array<{ key: string; value: string; enabled: boolean }>
+          | undefined,
         soap: (snap as Record<string, unknown>).soap as Record<string, unknown> | undefined,
       })
     } else {
@@ -149,40 +168,48 @@ export default function HistoryListPanel() {
     }
   }
 
-  const handleOpenRunReport = useCallback((run: RunHistoryRow) => {
-    if (!run.results_json) return
-    try {
-      const results = JSON.parse(run.results_json) as EndpointRunResult[]
-      const tabs = useTabsStore.getState().tabs
-      const existing = tabs.find((t: Tab) => t.protocol === 'runner')
-      const tabId = existing ? existing.id : 'runner-main'
-      const newSessionKey = String(Date.now())
+  const handleOpenRunReport = useCallback(
+    (run: RunHistoryRow) => {
+      if (!run.results_json) return
+      try {
+        const results = JSON.parse(run.results_json) as EndpointRunResult[]
+        const tabs = useTabsStore.getState().tabs
+        const existing = tabs.find((t: Tab) => t.protocol === 'runner')
+        const tabId = existing ? existing.id : 'runner-main'
+        const newSessionKey = String(Date.now())
 
-      sessionStorage.setItem(`runner-report-${tabId}`, JSON.stringify({
-        results,
-        report: {
-          projectId: run.project_id,
-          startedAt: run.started_at,
-          completedAt: run.started_at + run.duration_ms,
-          totalEndpoints: run.total_endpoints,
-          passedEndpoints: run.passed_endpoints,
-          failedEndpoints: run.failed_endpoints,
-          totalAssertions: run.total_tests,
-          passedAssertions: run.total_tests - run.failed_tests,
-          failedAssertions: run.failed_tests,
-          results,
-        },
-        startedAt: run.started_at,
-      }))
+        sessionStorage.setItem(
+          `runner-report-${tabId}`,
+          JSON.stringify({
+            results,
+            report: {
+              projectId: run.project_id,
+              startedAt: run.started_at,
+              completedAt: run.started_at + run.duration_ms,
+              totalEndpoints: run.total_endpoints,
+              passedEndpoints: run.passed_endpoints,
+              failedEndpoints: run.failed_endpoints,
+              totalAssertions: run.total_tests,
+              passedAssertions: run.total_tests - run.failed_tests,
+              failedAssertions: run.failed_tests,
+              results,
+            },
+            startedAt: run.started_at,
+          }),
+        )
 
-      if (existing) {
-        useTabsStore.getState().setActiveTab(existing.id)
-        useTabsStore.getState().updateTab(existing.id, { sessionKey: newSessionKey })
-      } else {
-        openTab({ id: tabId, name: 'Runner', protocol: 'runner', sessionKey: newSessionKey })
+        if (existing) {
+          useTabsStore.getState().setActiveTab(existing.id)
+          useTabsStore.getState().updateTab(existing.id, { sessionKey: newSessionKey })
+        } else {
+          openTab({ id: tabId, name: 'Runner', protocol: 'runner', sessionKey: newSessionKey })
+        }
+      } catch {
+        /* invalid JSON */
       }
-    } catch { /* invalid JSON */ }
-  }, [openTab])
+    },
+    [openTab],
+  )
 
   return (
     <div className="flex h-full flex-col">
@@ -192,12 +219,8 @@ export default function HistoryListPanel() {
         style={{ borderBottom: '1px solid var(--border)' }}
       >
         <Clock size={13} style={{ color: 'var(--accent)' }} />
-        <span style={{ color: 'var(--text)', fontSize: 13, fontWeight: 600 }}>
-          History
-        </span>
-        <span style={{ fontSize: 13, color: 'var(--muted)' }}>
-          {entries.length}
-        </span>
+        <span style={{ color: 'var(--text)', fontSize: 13, fontWeight: 600 }}>History</span>
+        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{entries.length}</span>
         <div className="flex-1" />
         <button
           type="button"
@@ -216,10 +239,7 @@ export default function HistoryListPanel() {
       </div>
 
       {/* Search */}
-      <div
-        className="shrink-0 px-2.5 py-2"
-        style={{ borderBottom: '1px solid var(--border)' }}
-      >
+      <div className="shrink-0 px-2.5 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
         <div
           className="flex items-center gap-1.5 rounded-md px-2 py-1"
           style={{
@@ -252,12 +272,18 @@ export default function HistoryListPanel() {
                     type="button"
                     onClick={() => toggleFolder(folder)}
                     className="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-3 py-[6px] text-left"
-                    style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}
+                    style={{
+                      borderBottom: '1px solid var(--border)',
+                      background: 'var(--surface)',
+                    }}
                   >
                     <span style={{ color: 'var(--hint)', display: 'flex', alignItems: 'center' }}>
                       {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                     </span>
-                    <FolderClosed size={13} style={{ color: 'var(--tree-folder)', flexShrink: 0 }} />
+                    <FolderClosed
+                      size={13}
+                      style={{ color: 'var(--tree-folder)', flexShrink: 0 }}
+                    />
                     <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
                       {folder}
                     </span>
@@ -267,27 +293,38 @@ export default function HistoryListPanel() {
                   </button>
 
                   {/* Run entries under this folder */}
-                  {isExpanded && runs.map((run) => (
-                    <div
-                      key={run.id}
-                      onClick={() => handleOpenRunReport(run)}
-                      className="flex cursor-pointer items-center gap-2 px-3 py-[6px] pl-8"
-                      style={{ borderBottom: '1px solid var(--border)' }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--item-hover)' }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
-                    >
-                      <Play size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                      <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>
-                        {formatDate(run.started_at)}
-                      </span>
-                      <span style={{ fontSize: 13, color: run.failed_endpoints > 0 ? 'var(--red)' : 'var(--green)', flexShrink: 0 }}>
-                        {run.passed_endpoints}/{run.total_endpoints}
-                      </span>
-                      <span style={{ fontSize: 13, color: 'var(--hint)', flexShrink: 0 }}>
-                        {formatDuration(run.duration_ms)}
-                      </span>
-                    </div>
-                  ))}
+                  {isExpanded &&
+                    runs.map((run) => (
+                      <div
+                        key={run.id}
+                        onClick={() => handleOpenRunReport(run)}
+                        className="flex cursor-pointer items-center gap-2 px-3 py-[6px] pl-8"
+                        style={{ borderBottom: '1px solid var(--border)' }}
+                        onMouseEnter={(e) => {
+                          ;(e.currentTarget as HTMLElement).style.background = 'var(--item-hover)'
+                        }}
+                        onMouseLeave={(e) => {
+                          ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                        }}
+                      >
+                        <Play size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                        <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>
+                          {formatDate(run.started_at)}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 13,
+                            color: run.failed_endpoints > 0 ? 'var(--red)' : 'var(--green)',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {run.passed_endpoints}/{run.total_endpoints}
+                        </span>
+                        <span style={{ fontSize: 13, color: 'var(--hint)', flexShrink: 0 }}>
+                          {formatDuration(run.duration_ms)}
+                        </span>
+                      </div>
+                    ))}
                 </div>
               )
             })}
@@ -326,10 +363,10 @@ export default function HistoryListPanel() {
                   color: 'var(--text)',
                 }}
                 onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = 'var(--item-hover)'
+                  ;(e.currentTarget as HTMLElement).style.background = 'var(--item-hover)'
                 }}
                 onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = 'transparent'
+                  ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                 }}
               >
                 <MethodBadge method={entry.method || 'GET'} small />
@@ -401,7 +438,11 @@ function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: His
       yesterday.push(e)
     } else {
       const d = new Date(e.executed_at)
-      const key = d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+      const key = d.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
       if (!earlierBuckets.has(key)) earlierBuckets.set(key, [])
       earlierBuckets.get(key)!.push(e)
     }
@@ -425,8 +466,11 @@ function formatDate(ts: number): string {
   const now = new Date()
   const isToday = d.toDateString() === now.toDateString()
   if (isToday) return 'Today ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+  return (
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+    ' ' +
     d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  )
 }
 
 function formatDuration(ms: number): string {

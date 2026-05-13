@@ -46,10 +46,7 @@ export default function StatusBadge({ status, statusText, pill = false }: Status
 
   return (
     <span className="flex items-center gap-1 font-bold" style={{ color: fg }}>
-      <span
-        className="inline-block h-2 w-2 rounded-full"
-        style={{ background: fg }}
-      />
+      <span className="inline-block h-2 w-2 rounded-full" style={{ background: fg }} />
       {status} {statusText || ''}
     </span>
   )

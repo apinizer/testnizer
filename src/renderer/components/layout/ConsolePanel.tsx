@@ -109,8 +109,12 @@ export default function ConsolePanel() {
           borderRadius: 4,
           zIndex: 2,
         }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--item-hover)' }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+        onMouseEnter={(e) => {
+          ;(e.currentTarget as HTMLElement).style.background = 'var(--item-hover)'
+        }}
+        onMouseLeave={(e) => {
+          ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+        }}
       >
         <ChevronDown size={14} />
       </button>
@@ -122,4 +126,3 @@ export default function ConsolePanel() {
     </div>
   )
 }
-
