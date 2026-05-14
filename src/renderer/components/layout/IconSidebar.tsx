@@ -1,11 +1,9 @@
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTabsStore } from '../../stores/tabs.store'
-import type { Tab } from '../../types'
 import { T } from '../../styles/tokens'
 import ProjectIcon from '../shared/ProjectIcon'
-
-type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'tools' | 'mocks' | 'settings'
+import { tabBelongsToPage, type SidebarPage } from '../../lib/sidebar-pages'
 
 interface NavItem {
   id: SidebarPage
@@ -154,20 +152,14 @@ export default function IconSidebar() {
     }
     const page = item.id as SidebarPage
     setActivePage(page)
-
-    // When entering Tests page, open/activate the tests overview in content
-    if (page === 'tests') {
-      const tabsApi = useTabsStore.getState()
-      const existing = tabsApi.tabs.find((t: Tab) => t.protocol === 'runner')
-      const tabId = existing ? existing.id : 'runner-main'
-      const sessionKey = String(Date.now())
-      sessionStorage.setItem(`runner-report-${tabId}`, JSON.stringify({ viewHome: true }))
-      if (existing) {
-        tabsApi.setActiveTab(existing.id)
-        tabsApi.updateTab(existing.id, { sessionKey })
-      } else {
-        tabsApi.openTab({ id: tabId, name: 'Tests', protocol: 'runner', sessionKey })
-      }
+    // Tab strip stays page-scoped: switching to a page that doesn't host the
+    // currently-active tab's protocol clears the active tab so the workbench
+    // shows the page's welcome surface instead of leaking a runner/mock tab
+    // into the APIs view (and vice versa).
+    const tabsApi = useTabsStore.getState()
+    const active = tabsApi.tabs.find((tab) => tab.id === tabsApi.activeTabId)
+    if (active && !tabBelongsToPage(active.protocol, page)) {
+      tabsApi.setActiveTab(null)
     }
   }
 

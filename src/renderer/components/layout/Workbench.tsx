@@ -58,6 +58,7 @@ import MethodBadge from '../shared/MethodBadge'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import EnvironmentSelector from '../shared/EnvironmentSelector'
 import { T } from '../../styles/tokens'
+import { tabBelongsToPage } from '../../lib/sidebar-pages'
 
 /**
  * Tear down state belonging to a tab being closed. Every protocol store now
@@ -83,7 +84,9 @@ function cleanupTabState(tabId: string): void {
 }
 
 function EndpointTabBar() {
-  const tabs = useTabsStore((s) => s.tabs)
+  const allTabs = useTabsStore((s) => s.tabs)
+  const activePage = useUIStore((s) => s.activeSidebarPage)
+  const tabs = allTabs.filter((tab) => tabBelongsToPage(tab.protocol, activePage))
   const activeTabId = useTabsStore((s) => s.activeTabId)
   const setActiveTab = useTabsStore((s) => s.setActiveTab)
   const closeTab = useTabsStore((s) => s.closeTab)
