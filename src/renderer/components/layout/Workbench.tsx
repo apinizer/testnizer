@@ -86,7 +86,7 @@ function cleanupTabState(tabId: string): void {
 function EndpointTabBar() {
   const allTabs = useTabsStore((s) => s.tabs)
   const activePage = useUIStore((s) => s.activeSidebarPage)
-  const tabs = allTabs.filter((tab) => tabBelongsToPage(tab.protocol, activePage))
+  const tabs = allTabs.filter((tab) => tabBelongsToPage(tab, activePage))
   const activeTabId = useTabsStore((s) => s.activeTabId)
   const setActiveTab = useTabsStore((s) => s.setActiveTab)
   const closeTab = useTabsStore((s) => s.closeTab)
@@ -710,9 +710,7 @@ export default function Workbench() {
   // everything else → APIs). When the active tab belongs to a different page
   // we treat it as absent so the workbench falls through to the page-aware
   // welcome instead of leaking a runner UI into the APIs view.
-  const activeTab = tabs.find(
-    (t) => t.id === activeTabId && tabBelongsToPage(t.protocol, activeSidebarPage),
-  )
+  const activeTab = tabs.find((t) => t.id === activeTabId && tabBelongsToPage(t, activeSidebarPage))
   const protocol = activeTab?.protocol || 'http'
   const addEndpointsSuiteId = useUIStore((s) => s.addEndpointsSuiteId)
 

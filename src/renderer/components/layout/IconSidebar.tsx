@@ -158,7 +158,7 @@ export default function IconSidebar() {
     // into the APIs view (and vice versa).
     const tabsApi = useTabsStore.getState()
     const active = tabsApi.tabs.find((tab) => tab.id === tabsApi.activeTabId)
-    if (active && !tabBelongsToPage(active.protocol, page)) {
+    if (active && !tabBelongsToPage(active, page)) {
       tabsApi.setActiveTab(null)
     }
   }
