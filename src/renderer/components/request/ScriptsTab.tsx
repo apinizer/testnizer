@@ -1,6 +1,9 @@
 import { useState } from 'react'
+import { HelpCircle } from 'lucide-react'
 import { useRequestStore } from '../../stores/request.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
+import ScriptHelpModal from '../shared/ScriptHelpModal'
+import { useTranslation } from '../../lib/i18n'
 
 type ScriptSection = 'pre-request' | 'post-response'
 
@@ -25,7 +28,9 @@ pm.test("Status code is 200", function () {
 `
 
 export default function ScriptsTab() {
+  const { t } = useTranslation()
   const [activeSection, setActiveSection] = useState<ScriptSection>('post-response')
+  const [showHelp, setShowHelp] = useState(false)
   const preScript = useRequestStore((s) => s.preScript)
   const setPreScript = useRequestStore((s) => s.setPreScript)
   const postScript = useRequestStore((s) => s.postScript)
@@ -95,9 +100,31 @@ export default function ScriptsTab() {
           </button>
         )}
 
+        <button
+          type="button"
+          onClick={() => setShowHelp(true)}
+          className="flex cursor-pointer items-center gap-1 rounded px-2 py-0.5"
+          style={{
+            background: 'transparent',
+            border: '1px solid var(--border2)',
+            color: 'var(--muted)',
+            fontSize: 12,
+          }}
+          title={t('scriptHelp.title')}
+        >
+          <HelpCircle size={12} />
+          {t('scriptHelp.title')}
+        </button>
+
         {/* Snippet helper */}
         <span style={{ color: 'var(--hint)' }}>JavaScript</span>
       </div>
+
+      <ScriptHelpModal
+        open={showHelp}
+        onClose={() => setShowHelp(false)}
+        variant={activeSection === 'pre-request' ? 'pre' : 'post'}
+      />
 
       {/* Editor */}
       <div className="flex-1 overflow-hidden">

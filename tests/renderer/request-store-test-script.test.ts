@@ -121,6 +121,77 @@ describe('useRequestStore.sendRequest — post-response pm.test pipeline', () =>
   })
 
   /**
+   * Same pipeline must work when the active tab is a Test Suite item.
+   * User reported "Post-response Script results don't show, but visual
+   * assertions do" — the suspicion was that suite-item tabs took a
+   * different code path. They don't: `sendRequest()` is store-driven and
+   * doesn't branch on `testSuiteItemId`. Pin that here so a future change
+   * to suite-item tabs can't quietly break the post-script results.
+   */
+  it('runs the post-response script when the active tab is a test-suite item (regression)', async () => {
+    useTabsStore.setState({
+      tabs: [
+        {
+          id: 'tab-suite-1',
+          name: 'My Suite Item',
+          protocol: 'http',
+          method: 'GET',
+          url: 'https://example.test/echo',
+          testSuiteItemId: 'suite-item-uuid',
+          isDirty: false,
+          isLoading: false,
+        },
+      ],
+      activeTabId: 'tab-suite-1',
+    })
+    useRequestStore.setState({
+      postScript: `pm.test("status is 200", () => { pm.expect(pm.response.code).to.equal(200) })`,
+    })
+
+    await useRequestStore.getState().sendRequest()
+
+    const resp = useResponseStore.getState().response
+    expect(resp?.testResults).toBeDefined()
+    expect(resp?.testResults).toHaveLength(1)
+    expect(resp?.testResults?.[0].passed).toBe(true)
+    expect(resp?.testResults?.[0].assertion.name).toBe('status is 200')
+  })
+
+  /**
+   * Both declarative ("visual") assertions and pm.test() script tests should
+   * end up in the same `response.testResults` array — the Test Results tab
+   * + the ResponsePane tab counter both read that single source. If a future
+   * refactor split them into separate arrays, the counter would silently
+   * stop showing one side. Asserting that they merge protects that
+   * contract.
+   */
+  it('merges visual assertions with pm.test() results into a single testResults array', async () => {
+    useRequestStore.setState({
+      assertions: [
+        {
+          id: 'a1',
+          name: 'status equals 200',
+          type: 'status_equals',
+          enabled: true,
+          expected: 200,
+        },
+      ],
+      postScript: `pm.test("script: 200", () => { pm.expect(pm.response.code).to.equal(200) })`,
+    })
+
+    await useRequestStore.getState().sendRequest()
+
+    const resp = useResponseStore.getState().response
+    // 1 declarative + 1 script result = 2 entries surfaced as a single list
+    // (this is what ResponsePane reads to render the "Test Results 2/2"
+    // counter and what TestResultsTab iterates over).
+    expect(resp?.testResults?.length).toBe(2)
+    const names = resp?.testResults?.map((r) => r.assertion.name).sort()
+    expect(names).toEqual(['script: 200', 'status equals 200'])
+    expect(resp?.testResults?.every((r) => r.passed)).toBe(true)
+  })
+
+  /**
    * Regression guard for the TestsTab / ScriptsTab "placeholder lie" bug:
    * the editors used to render a fully-formed `pm.test(...)` snippet as the
    * Monaco `value` when `postScript` was empty, without ever writing it back

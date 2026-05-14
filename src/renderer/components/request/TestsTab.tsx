@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
+import { HelpCircle } from 'lucide-react'
 import { useRequestStore } from '../../stores/request.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
+import ScriptHelpModal from '../shared/ScriptHelpModal'
+import { useTranslation } from '../../lib/i18n'
 import AssertionRow from './AssertionRow'
 import type { AssertionType, TestAssertion } from '../../types'
 
@@ -77,6 +80,7 @@ function defaultsForType(type: AssertionType): Partial<TestAssertion> {
 }
 
 export default function TestsTab() {
+  const { t } = useTranslation()
   const assertions = useRequestStore((s) => s.assertions)
   const setAssertions = useRequestStore((s) => s.setAssertions)
   const removeAssertion = useRequestStore((s) => s.removeAssertion)
@@ -84,6 +88,7 @@ export default function TestsTab() {
   const setPostScript = useRequestStore((s) => s.setPostScript)
 
   const [showPicker, setShowPicker] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
 
@@ -188,21 +193,38 @@ export default function TestsTab() {
         <div className="font-medium" style={{ color: 'var(--text)' }}>
           Post-response Script
         </div>
-        {!postScript && (
+        <div className="flex items-center gap-2">
+          {!postScript && (
+            <button
+              type="button"
+              onClick={() => setPostScript(EXAMPLE_SCRIPT)}
+              className="cursor-pointer rounded px-2 py-0.5"
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--border2)',
+                color: 'var(--accent-text)',
+                fontSize: 12,
+              }}
+            >
+              + Insert example
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => setPostScript(EXAMPLE_SCRIPT)}
-            className="cursor-pointer rounded px-2 py-0.5"
+            onClick={() => setShowHelp(true)}
+            className="flex cursor-pointer items-center gap-1 rounded px-2 py-0.5"
             style={{
               background: 'transparent',
               border: '1px solid var(--border2)',
-              color: 'var(--accent-text)',
+              color: 'var(--muted)',
               fontSize: 12,
             }}
+            title={t('scriptHelp.title')}
           >
-            + Insert example
+            <HelpCircle size={12} />
+            {t('scriptHelp.title')}
           </button>
-        )}
+        </div>
       </div>
       <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--white)]">
         <MonacoWrapper
@@ -212,6 +234,8 @@ export default function TestsTab() {
           height={140}
         />
       </div>
+
+      <ScriptHelpModal open={showHelp} onClose={() => setShowHelp(false)} variant="post" />
     </div>
   )
 }
