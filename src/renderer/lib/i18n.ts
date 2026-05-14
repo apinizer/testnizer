@@ -1253,6 +1253,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.importFailed': 'Import failed',
     'toast.projectImported': 'Project imported',
     'toast.projectImportFailed': 'Project import failed',
+
+    // Workbench welcome surfaces — shown when no tab is active on the page
+    'welcome.mocks': 'Select a mock server from the left panel',
+    'welcome.history': 'Pick a history entry from the left panel',
+    'welcome.tools': 'Select a tool from the left panel',
+    'welcome.docs': 'Documentation view coming soon',
+    'welcome.settings': 'Open Settings from the left panel',
+
     'toast.passwordChanged': 'Password changed',
     'toast.passwordChangeFailed': 'Password change failed',
     'toast.passwordDisabled': 'Password protection disabled',
@@ -2576,6 +2584,13 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.importFailed': 'İçe aktarma başarısız',
     'toast.projectImported': 'Proje içe aktarıldı',
     'toast.projectImportFailed': 'Proje içe aktarılamadı',
+
+    'welcome.mocks': 'Sol panelden bir mock sunucu seçin',
+    'welcome.history': 'Sol panelden bir geçmiş kaydı seçin',
+    'welcome.tools': 'Sol panelden bir araç seçin',
+    'welcome.docs': 'Dokümantasyon görünümü yakında',
+    'welcome.settings': "Sol panelden Ayarlar'ı açın",
+
     'toast.passwordChanged': 'Parola değiştirildi',
     'toast.passwordChangeFailed': 'Parola değiştirilemedi',
     'toast.passwordDisabled': 'Parola koruması devre dışı',

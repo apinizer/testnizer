@@ -25,9 +25,9 @@ import type {
   AuthConfig,
   HttpMethod,
   ApiResponse,
-  Tab,
 } from '../../types'
-import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
+import type { EndpointRunResult } from '../../stores/runner.store'
+import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 
 /* ── Runner history row ───────────────────────────────────── */
 
@@ -65,7 +65,6 @@ export default function HistoryListPanel() {
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
   const openPreviewTab = useTabsStore((s) => s.openPreviewTab)
-  const openTab = useTabsStore((s) => s.openTab)
   const switchToTab = useRequestStore((s) => s.switchToTab)
   const loadFromEndpoint = useRequestStore((s) => s.loadFromEndpoint)
   const setResponse = useResponseStore((s) => s.setResponse)
@@ -181,48 +180,30 @@ export default function HistoryListPanel() {
     }
   }
 
-  const handleOpenRunReport = useCallback(
-    (run: RunHistoryRow) => {
-      if (!run.results_json) return
-      try {
-        const results = JSON.parse(run.results_json) as EndpointRunResult[]
-        const tabs = useTabsStore.getState().tabs
-        const existing = tabs.find((t: Tab) => t.protocol === 'runner')
-        const tabId = existing ? existing.id : 'runner-main'
-        const newSessionKey = String(Date.now())
-
-        sessionStorage.setItem(
-          `runner-report-${tabId}`,
-          JSON.stringify({
-            results,
-            report: {
-              projectId: run.project_id,
-              startedAt: run.started_at,
-              completedAt: run.started_at + run.duration_ms,
-              totalEndpoints: run.total_endpoints,
-              passedEndpoints: run.passed_endpoints,
-              failedEndpoints: run.failed_endpoints,
-              totalAssertions: run.total_tests,
-              passedAssertions: run.total_tests - run.failed_tests,
-              failedAssertions: run.failed_tests,
-              results,
-            },
-            startedAt: run.started_at,
-          }),
-        )
-
-        if (existing) {
-          useTabsStore.getState().setActiveTab(existing.id)
-          useTabsStore.getState().updateTab(existing.id, { sessionKey: newSessionKey })
-        } else {
-          openTab({ id: tabId, name: 'Runner', protocol: 'runner', sessionKey: newSessionKey })
-        }
-      } catch {
-        /* invalid JSON */
-      }
-    },
-    [openTab],
-  )
+  const handleOpenRunReport = useCallback((run: RunHistoryRow) => {
+    if (!run.results_json) return
+    try {
+      const results = JSON.parse(run.results_json) as EndpointRunResult[]
+      openOrReuseRunnerTab({
+        results,
+        report: {
+          projectId: run.project_id,
+          startedAt: run.started_at,
+          completedAt: run.started_at + run.duration_ms,
+          totalEndpoints: run.total_endpoints,
+          passedEndpoints: run.passed_endpoints,
+          failedEndpoints: run.failed_endpoints,
+          totalAssertions: run.total_tests,
+          passedAssertions: run.total_tests - run.failed_tests,
+          failedAssertions: run.failed_tests,
+          results,
+        },
+        startedAt: run.started_at,
+      })
+    } catch {
+      /* invalid JSON */
+    }
+  }, [])
 
   return (
     <div className="flex h-full flex-col">

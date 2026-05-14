@@ -52,7 +52,7 @@ import { useAiChatStore } from '../../stores/ai-chat.store'
 import { useMcpStore } from '../../stores/mcp.store'
 import { useSocketIOStore } from '../../stores/socketio.store'
 import NewRequestWelcome from './NewRequestWelcome'
-import ProjectWelcome from './ProjectWelcome'
+import PageWelcome from './PageWelcome'
 import AddEndpointsView from '../runner/AddEndpointsView'
 import MethodBadge from '../shared/MethodBadge'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
@@ -705,7 +705,14 @@ function ContextMenuItem({
 export default function Workbench() {
   const tabs = useTabsStore((s) => s.tabs)
   const activeTabId = useTabsStore((s) => s.activeTabId)
-  const activeTab = tabs.find((t) => t.id === activeTabId)
+  const activeSidebarPage = useUIStore((s) => s.activeSidebarPage)
+  // Tab "lives" on a specific sidebar page (runner → Tests, mockServer → Mocks,
+  // everything else → APIs). When the active tab belongs to a different page
+  // we treat it as absent so the workbench falls through to the page-aware
+  // welcome instead of leaking a runner UI into the APIs view.
+  const activeTab = tabs.find(
+    (t) => t.id === activeTabId && tabBelongsToPage(t.protocol, activeSidebarPage),
+  )
   const protocol = activeTab?.protocol || 'http'
   const addEndpointsSuiteId = useUIStore((s) => s.addEndpointsSuiteId)
 
@@ -759,11 +766,11 @@ export default function Workbench() {
     )
   }
 
-  // No active tab — show project welcome
+  // No active tab for the current page — show the page's welcome surface.
   if (!activeTab) {
     return (
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <ProjectWelcome />
+        <PageWelcome page={activeSidebarPage} />
       </div>
     )
   }

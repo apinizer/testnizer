@@ -23,7 +23,6 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import type {
-  Tab,
   TestSuiteRow,
   TestSuiteItemRow,
   TestSuiteFolderRow,
@@ -33,6 +32,7 @@ import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import MethodBadge from '../shared/MethodBadge'
 import { useTranslation } from '../../lib/i18n'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
+import { openOrReuseRunnerTab as sharedOpenRunnerTab } from '../../lib/open-runner-tab'
 
 /* ── Types ─────────────────────────────────────────────────── */
 
@@ -52,7 +52,6 @@ export default function TestsPanel() {
   // Subscribe to the project tree so suite endpoint lists refresh when a
   // folder/endpoint is added or moved elsewhere (Bug 3).
   const treeData = useWorkspaceStore((s) => s.treeData)
-  const openTab = useTabsStore((s) => s.openTab)
   const addEndpointsSuiteId = useUIStore((s) => s.addEndpointsSuiteId)
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -211,23 +210,9 @@ export default function TestsPanel() {
   // ─── Open / reuse the runner tab with optional session data ─
   const openOrReuseRunnerTab = useCallback(
     (sessionData?: Record<string, unknown>) => {
-      const tabs = useTabsStore.getState().tabs
-      const existing = tabs.find((t: Tab) => t.protocol === 'runner')
-      const tabId = existing ? existing.id : 'runner-main'
-      const sessionKey = String(Date.now())
-
-      if (sessionData) {
-        sessionStorage.setItem(`runner-report-${tabId}`, JSON.stringify(sessionData))
-      }
-
-      if (existing) {
-        useTabsStore.getState().setActiveTab(existing.id)
-        useTabsStore.getState().updateTab(existing.id, { sessionKey })
-      } else {
-        openTab({ id: tabId, name: t('testsPanel.runnerName'), protocol: 'runner', sessionKey })
-      }
+      sharedOpenRunnerTab(sessionData, t('testsPanel.runnerName'))
     },
-    [openTab],
+    [t],
   )
 
   const runEndpoints = useCallback(
