@@ -1,11 +1,14 @@
 import { useState, useMemo } from 'react'
-import { X, Plus, Trash2, Eye, EyeOff, Globe, Layers, Check, Copy } from 'lucide-react'
+import { X, Plus, Trash2, Eye, EyeOff, Globe, Layers, Check, Copy, Upload } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
+import { useWorkspaceStore } from '../../stores/workspace.store'
 import type { Environment, EnvironmentVariable, GlobalVariable } from '../../types'
 import DeleteConfirmDialog from './DeleteConfirmDialog'
 import Modal from '../shared/Modal'
 import EmptyState from '../shared/EmptyState'
+import { useTranslation } from '../../lib/i18n'
+import { toast } from '../../lib/toast'
 
 type Pane = { kind: 'globals' } | { kind: 'env'; id: string }
 
@@ -40,10 +43,15 @@ export default function EnvironmentModal() {
   const updateGlobalVariable = useEnvironmentStore((s) => s.updateGlobalVariable)
   const deleteGlobalVariable = useEnvironmentStore((s) => s.deleteGlobalVariable)
 
+  const fetchEnvironments = useEnvironmentStore((s) => s.fetchEnvironments)
+  const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
+  const { t } = useTranslation()
+
   const [pane, setPane] = useState<Pane>({ kind: 'globals' })
   const [creatingEnv, setCreatingEnv] = useState(false)
   const [newEnvName, setNewEnvName] = useState('')
   const [deleteEnvTarget, setDeleteEnvTarget] = useState<Environment | null>(null)
+  const [importing, setImporting] = useState(false)
 
   const selectedEnv: Environment | null = useMemo(() => {
     if (pane.kind !== 'env') return null
@@ -51,6 +59,82 @@ export default function EnvironmentModal() {
   }, [pane, environments])
 
   if (!show) return null
+
+  async function handleImportEnvironment(): Promise<void> {
+    if (importing || !activeProjectId) return
+    setImporting(true)
+    try {
+      const fileResult = (await window.api?.importExport?.openFile()) as
+        | { success: boolean; data?: { content: string } | null; error?: string }
+        | undefined
+      if (!fileResult?.success || !fileResult.data) {
+        return
+      }
+      const content = fileResult.data.content
+      const parsed: unknown = JSON.parse(content)
+      const root = parsed as Record<string, unknown>
+
+      // Auto-detect what kind of file the user picked. Postman environment
+      // exports carry `_postman_variable_scope: 'environment'`; Insomnia
+      // env-only exports aren't a real shape (Insomnia bundles envs into
+      // a collection export) so for Insomnia we route through the same
+      // importer that handles the collection — it picks up any environment
+      // resources along the way and surfaces them as suggested vars.
+      const isPostmanEnv =
+        root && typeof root === 'object' && root['_postman_variable_scope'] === 'environment'
+      const isPostmanCollection =
+        root && typeof root === 'object' && root['info'] && Array.isArray(root['item'])
+      const isInsomniaV4 =
+        root &&
+        typeof root === 'object' &&
+        root['_type'] === 'export' &&
+        Array.isArray(root['resources'])
+      const isInsomniaV5 =
+        root &&
+        typeof root === 'object' &&
+        typeof root['type'] === 'string' &&
+        /\binsomnia\.rest\b/.test(root['type'] as string)
+
+      let result:
+        | {
+            success: boolean
+            data?: { environmentName?: string; suggestedEnvVars?: Record<string, string> }
+            error?: string
+          }
+        | undefined
+
+      if (isPostmanEnv) {
+        result = (await window.api?.importExport?.importPostman({
+          projectId: activeProjectId,
+          content,
+        })) as typeof result
+      } else if (isPostmanCollection) {
+        toast.error(t('env.importPostmanCollectionHint'))
+        return
+      } else if (isInsomniaV4 || isInsomniaV5) {
+        result = (await window.api?.importExport?.importInsomnia({
+          projectId: activeProjectId,
+          content,
+        })) as typeof result
+      } else {
+        toast.error(t('env.importUnknownFormat'))
+        return
+      }
+
+      if (result?.success) {
+        await fetchEnvironments()
+        const name = result.data?.environmentName
+        toast.success(name ? `${t('env.importSuccess')}: ${name}` : t('env.importSuccess'))
+      } else {
+        toast.error(`${t('env.importFailed')}: ${result?.error || 'unknown'}`)
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      toast.error(`${t('env.importFailed')}: ${message}`)
+    } finally {
+      setImporting(false)
+    }
+  }
 
   async function handleCreateEnv() {
     const name = newEnvName.trim()
@@ -218,7 +302,7 @@ export default function EnvironmentModal() {
             )}
           </div>
 
-          <div className="p-3" style={{ borderTop: '1px solid var(--border)' }}>
+          <div className="flex flex-col gap-2 p-3" style={{ borderTop: '1px solid var(--border)' }}>
             <button
               type="button"
               onClick={() => setCreatingEnv(true)}
@@ -232,6 +316,22 @@ export default function EnvironmentModal() {
             >
               <Plus size={12} />
               New Environment
+            </button>
+            <button
+              type="button"
+              onClick={handleImportEnvironment}
+              disabled={importing || !activeProjectId}
+              className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-[6px] py-1.5 disabled:cursor-default disabled:opacity-60"
+              style={{
+                background: 'var(--white)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+                fontWeight: 500,
+              }}
+              title={t('env.importEnvironmentHint')}
+            >
+              <Upload size={12} />
+              {importing ? t('env.importing') : t('env.importEnvironment')}
             </button>
           </div>
         </div>

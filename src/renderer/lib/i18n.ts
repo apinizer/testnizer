@@ -17,6 +17,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'about.title': 'About',
     'about.version': 'Version',
     'about.homepage': 'Homepage',
+    'about.subtitle': 'Application version, runtime and license info.',
+    'about.appName': 'Testnizer',
+    'about.appTagline': 'A free, cross-platform API testing workbench.',
+    'about.platform': 'Platform',
+    'about.electron': 'Electron',
+    'about.node': 'Node',
+    'about.chrome': 'Chrome',
+    'about.license': 'License',
     'about.thirdPartyLicenses': 'Third-party Licenses',
     'about.privacyPolicy': 'Privacy Policy',
     'about.eula': 'End User License Agreement',
@@ -29,6 +37,55 @@ const translations: Record<Locale, Record<string, string>> = {
     'about.enterpriseBody':
       'For paid support, SLAs, on-premise deployment assistance, training, or custom development requests, contact us.',
     'about.enterpriseContact': 'info@testnizer.com',
+
+    // Script Help (pm.* mini guide)
+    'scriptHelp.title': 'Script Reference',
+    'scriptHelp.subtitlePost':
+      'Post-response scripts run after the response arrives. Use `pm.test()` to record assertions and `pm.environment.set()` to pass values to later requests.',
+    'scriptHelp.subtitlePre':
+      'Pre-request scripts run before the request is sent. `pm.response` is not available yet.',
+    'scriptHelp.intro':
+      'Scripts run in a sandboxed JavaScript context. The `pm.*` API is Postman-compatible — most snippets you find online work without changes. `t` is an alias for `pm` if you prefer a shorter name.',
+    'scriptHelp.section.responseChecks': 'Response checks',
+    'scriptHelp.section.preRequest': 'Pre-request basics',
+    'scriptHelp.section.variables': 'Variables',
+    'scriptHelp.section.api': 'API reference',
+    'scriptHelp.section.notes': 'Notes',
+    'scriptHelp.snippet.statusCheck': 'Assert status code',
+    'scriptHelp.snippet.jsonBody': 'Read JSON body',
+    'scriptHelp.snippet.header': 'Inspect response header',
+    'scriptHelp.snippet.responseTime': 'Check response time',
+    'scriptHelp.snippet.envSet': 'Save a value for later requests',
+    'scriptHelp.snippet.envGet': 'Read variables',
+    'scriptHelp.snippet.envCondition': 'Conditional logic on variables',
+    'scriptHelp.snippet.preSetVar': 'Set a variable before the request',
+    'scriptHelp.snippet.preSkip': 'Skip the request conditionally',
+    'scriptHelp.api.expression': 'Expression',
+    'scriptHelp.api.description': 'Description',
+    'scriptHelp.api.responseCode': 'HTTP status code (number).',
+    'scriptHelp.api.responseStatus': 'HTTP status text (e.g. "OK").',
+    'scriptHelp.api.responseJson': 'Parsed JSON body (throws if body is not JSON).',
+    'scriptHelp.api.responseText': 'Raw response body as a string.',
+    'scriptHelp.api.responseHeader': 'Response header value, case-insensitive.',
+    'scriptHelp.api.responseTime': 'Response duration in milliseconds.',
+    'scriptHelp.api.responseSize': 'Response body size in bytes.',
+    'scriptHelp.api.request': 'Read-only info about the request that was sent.',
+    'scriptHelp.api.environment':
+      'Read/write the active environment’s variables. Persists across requests in the run.',
+    'scriptHelp.api.globals': 'Read/write global variables. Visible to every project.',
+    'scriptHelp.api.variables': 'Local-then-env-then-global lookup. Set is local to this script.',
+    'scriptHelp.api.test': 'Register a named assertion. The callback can be async.',
+    'scriptHelp.api.expect':
+      'Chai-style assertions. `.to.equal`, `.include`, `.exist`, `.below`, `.above`.',
+    'scriptHelp.api.skip': 'Pre-request only — skip this request entirely.',
+    'scriptHelp.api.console': 'Logs land in the Console tab of the response panel.',
+    'scriptHelp.note.pm': '`pm` and `t` refer to the same API — either form works.',
+    'scriptHelp.note.async':
+      '`pm.test()` callbacks may return a Promise; the runner awaits them before scoring the request.',
+    'scriptHelp.note.scope':
+      'Each request gets a fresh script scope. Use `pm.environment.set` / `pm.globals.set` to share state across requests.',
+    'scriptHelp.note.console':
+      '`console.log` output is captured per-request and visible in the Console tab of the response panel.',
 
     // EULA / Privacy consent gate
     'eula.welcome': 'Welcome to Testnizer',
@@ -56,7 +113,34 @@ const translations: Record<Locale, Record<string, string>> = {
     'tests.noSuites': 'No test suites yet',
     'tests.createSuite': '+ Create Test Suite',
     'tests.importSuite': 'Import Test Suite',
+    'tests.importSuiteModalTitle': 'Import Test Suite',
+    'tests.importSuiteModalDescription':
+      'Pick a format below, then choose the file to import. The new suite will be added to the current project.',
+    'tests.importSuiteFormatTestnizer': 'Testnizer Test Suite',
+    'tests.importSuiteFormatTestnizerHint':
+      'A test suite (.json) exported from a Testnizer project.',
+    'tests.importSuiteFormatPostman': 'Postman Collection',
+    'tests.importSuiteFormatPostmanHint':
+      'Postman v2.0 / v2.1 collection (.json) — folders, scripts and auth are preserved.',
+    'tests.importSuiteFormatInsomnia': 'Insomnia Collection',
+    'tests.importSuiteFormatInsomniaHint': 'Insomnia v4 (.json) or v5 (.yaml) export.',
+    'tests.importSuiteChooseFile': 'Choose File',
+    'tests.importSuiteImporting': 'Importing…',
+    'tests.importSuiteSuccess': 'Test suite imported',
+    'tests.importSuiteFailed': 'Could not import test suite',
     'tests.newSuite': 'New Test Suite',
+
+    // Environment import
+    'env.importEnvironment': 'Import Environment',
+    'env.importEnvironmentHint':
+      'Import a Postman environment (.json) or an Insomnia export — environment variables are picked up automatically.',
+    'env.importing': 'Importing…',
+    'env.importSuccess': 'Environment imported',
+    'env.importFailed': 'Could not import environment',
+    'env.importUnknownFormat':
+      'Unrecognised file. Expected a Postman environment or an Insomnia export.',
+    'env.importPostmanCollectionHint':
+      'This looks like a Postman collection, not an environment. Use APIs → Import to bring in the requests.',
 
     // KeyValue table
     'kv.key': 'Key',
@@ -1345,6 +1429,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'about.title': 'Hakkında',
     'about.version': 'Sürüm',
     'about.homepage': 'Web sitesi',
+    'about.subtitle': 'Uygulama sürümü, çalışma zamanı ve lisans bilgisi.',
+    'about.appName': 'Testnizer',
+    'about.appTagline': 'Ücretsiz, çapraz platform API test ortamı.',
+    'about.platform': 'Platform',
+    'about.electron': 'Electron',
+    'about.node': 'Node',
+    'about.chrome': 'Chrome',
+    'about.license': 'Lisans',
     'about.thirdPartyLicenses': 'Üçüncü Taraf Lisansları',
     'about.privacyPolicy': 'Gizlilik Politikası',
     'about.eula': 'Son Kullanıcı Lisans Sözleşmesi',
@@ -1357,6 +1449,56 @@ const translations: Record<Locale, Record<string, string>> = {
     'about.enterpriseBody':
       'Ücretli destek, SLA, lokal kurulum asistanlığı, eğitim veya özel geliştirme talepleri için bizimle iletişime geçin.',
     'about.enterpriseContact': 'info@testnizer.com',
+
+    // Script Help (pm.* mini kılavuz)
+    'scriptHelp.title': 'Script Kılavuzu',
+    'scriptHelp.subtitlePost':
+      "Post-response script'leri yanıt geldikten sonra çalışır. `pm.test()` ile doğrulama kaydedin, `pm.environment.set()` ile sonraki isteklere değer aktarın.",
+    'scriptHelp.subtitlePre':
+      "Pre-request script'leri istek gönderilmeden önce çalışır. `pm.response` henüz mevcut değildir.",
+    'scriptHelp.intro':
+      "Script'ler izole bir JavaScript ortamında çalışır. `pm.*` API'si Postman uyumlu — bulduğunuz örnekler genelde değişmeden çalışır. Daha kısa istiyorsanız `t` aynı API'nin takma adıdır.",
+    'scriptHelp.section.responseChecks': 'Yanıt kontrolleri',
+    'scriptHelp.section.preRequest': 'Pre-request temelleri',
+    'scriptHelp.section.variables': 'Değişkenler',
+    'scriptHelp.section.api': 'API referansı',
+    'scriptHelp.section.notes': 'Notlar',
+    'scriptHelp.snippet.statusCheck': 'Status kodu doğrula',
+    'scriptHelp.snippet.jsonBody': 'JSON body oku',
+    'scriptHelp.snippet.header': "Yanıt header'ını incele",
+    'scriptHelp.snippet.responseTime': 'Yanıt süresini kontrol et',
+    'scriptHelp.snippet.envSet': 'Sonraki istekler için değer sakla',
+    'scriptHelp.snippet.envGet': 'Değişkenleri oku',
+    'scriptHelp.snippet.envCondition': 'Değişkenle koşullu mantık',
+    'scriptHelp.snippet.preSetVar': 'İstek öncesi değişken set et',
+    'scriptHelp.snippet.preSkip': 'İsteği koşullu olarak atla',
+    'scriptHelp.api.expression': 'İfade',
+    'scriptHelp.api.description': 'Açıklama',
+    'scriptHelp.api.responseCode': 'HTTP status kodu (sayı).',
+    'scriptHelp.api.responseStatus': 'HTTP status metni (örn. "OK").',
+    'scriptHelp.api.responseJson': 'Parse edilmiş JSON body (JSON değilse hata atar).',
+    'scriptHelp.api.responseText': "Ham yanıt body'si (string).",
+    'scriptHelp.api.responseHeader': 'Yanıt header değeri, büyük/küçük harf duyarsız.',
+    'scriptHelp.api.responseTime': 'Yanıt süresi (milisaniye).',
+    'scriptHelp.api.responseSize': 'Yanıt body boyutu (byte).',
+    'scriptHelp.api.request': 'Gönderilen istek hakkında salt-okunur bilgi.',
+    'scriptHelp.api.environment':
+      'Aktif environment değişkenlerini oku/yaz. Run boyunca istekler arasında kalıcı.',
+    'scriptHelp.api.globals': 'Global değişkenleri oku/yaz. Her projeden görünür.',
+    'scriptHelp.api.variables':
+      "Önce local, sonra env, sonra global arar. `set` yalnızca bu script'e özeldir.",
+    'scriptHelp.api.test': 'İsimli bir doğrulama kaydeder. Callback async olabilir.',
+    'scriptHelp.api.expect':
+      'Chai-style doğrulamalar. `.to.equal`, `.include`, `.exist`, `.below`, `.above`.',
+    'scriptHelp.api.skip': 'Yalnız pre-request — bu isteği tamamen atla.',
+    'scriptHelp.api.console': 'Loglar yanıt panelindeki Console sekmesinde görünür.',
+    'scriptHelp.note.pm': "`pm` ve `t` aynı API'yi gösterir — ikisi de çalışır.",
+    'scriptHelp.note.async':
+      "`pm.test()` callback'i Promise döndürebilir; runner istek skorlanmadan önce bekler.",
+    'scriptHelp.note.scope':
+      "Her istek yeni bir script scope'una sahiptir. İstekler arası state için `pm.environment.set` / `pm.globals.set` kullanın.",
+    'scriptHelp.note.console':
+      '`console.log` çıktıları her istek için yakalanır ve yanıt panelindeki Console sekmesinde görünür.',
 
     // EULA / Gizlilik onay ekranı
     'eula.welcome': "Testnizer'a Hoş Geldiniz",
@@ -1386,7 +1528,34 @@ const translations: Record<Locale, Record<string, string>> = {
     'tests.noSuites': 'Henüz test paketi yok',
     'tests.createSuite': '+ Test Paketi Oluştur',
     'tests.importSuite': 'Test Paketi İçe Aktar',
+    'tests.importSuiteModalTitle': 'Test Paketi İçe Aktar',
+    'tests.importSuiteModalDescription':
+      'Aşağıdan bir biçim seçin, ardından içe aktarılacak dosyayı belirleyin. Yeni paket mevcut projeye eklenir.',
+    'tests.importSuiteFormatTestnizer': 'Testnizer Test Paketi',
+    'tests.importSuiteFormatTestnizerHint':
+      'Bir Testnizer projesinden dışa aktarılmış test paketi (.json).',
+    'tests.importSuiteFormatPostman': 'Postman Koleksiyonu',
+    'tests.importSuiteFormatPostmanHint':
+      'Postman v2.0 / v2.1 koleksiyonu (.json) — klasörler, script ve auth korunur.',
+    'tests.importSuiteFormatInsomnia': 'Insomnia Koleksiyonu',
+    'tests.importSuiteFormatInsomniaHint': 'Insomnia v4 (.json) veya v5 (.yaml) dışa aktarımı.',
+    'tests.importSuiteChooseFile': 'Dosya Seç',
+    'tests.importSuiteImporting': 'İçe aktarılıyor…',
+    'tests.importSuiteSuccess': 'Test paketi içe aktarıldı',
+    'tests.importSuiteFailed': 'Test paketi içe aktarılamadı',
     'tests.newSuite': 'Yeni Test Paketi',
+
+    // Environment import
+    'env.importEnvironment': 'Environment İçe Aktar',
+    'env.importEnvironmentHint':
+      'Postman environment (.json) veya Insomnia dışa aktarımı — değişkenler otomatik alınır.',
+    'env.importing': 'İçe aktarılıyor…',
+    'env.importSuccess': 'Environment içe aktarıldı',
+    'env.importFailed': 'Environment içe aktarılamadı',
+    'env.importUnknownFormat':
+      'Tanınmayan dosya. Postman environment veya Insomnia dışa aktarımı bekleniyor.',
+    'env.importPostmanCollectionHint':
+      'Bu bir Postman koleksiyonu, environment değil. İstekleri içe aktarmak için APIs → Import kullanın.',
 
     // KeyValue table
     'kv.key': 'Anahtar',

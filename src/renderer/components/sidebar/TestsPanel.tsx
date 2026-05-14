@@ -29,6 +29,7 @@ import type {
   TestSuiteContents,
 } from '../../types'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
+import ImportTestSuiteModal from '../modals/ImportTestSuiteModal'
 import MethodBadge from '../shared/MethodBadge'
 import { useTranslation } from '../../lib/i18n'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
@@ -392,19 +393,17 @@ export default function TestsPanel() {
   }, [])
 
   // ─── Import suite ─────────────────────────────────────────
-  const handleImportSuite = useCallback(async () => {
+  // Opens a modal that lets the user pick a source format before the OS file
+  // dialog appears — without this step the native picker shows up cold and
+  // the user has no idea what file types are accepted (raised in QA).
+  const [showImportModal, setShowImportModal] = useState(false)
+  const handleImportSuite = useCallback(() => {
     if (!activeProjectId) return
-    try {
-      const result = await api().save?.importTestSuite?.({ projectId: activeProjectId })
-      if (result?.success) {
-        await loadSuites()
-      } else if (result?.error && result.error !== 'Cancelled') {
-        console.error('Import suite failed:', result.error)
-      }
-    } catch (err) {
-      console.error(err)
-    }
-  }, [activeProjectId, loadSuites])
+    setShowImportModal(true)
+  }, [activeProjectId])
+  const handleImported = useCallback(() => {
+    void loadSuites()
+  }, [loadSuites])
 
   // ─── Duplicate suite ──────────────────────────────────────
   // Single IPC clones the suite + every folder and every item in one
@@ -765,6 +764,16 @@ export default function TestsPanel() {
         onConfirm={handleDeleteSuite}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {/* Import suite — format picker before the OS file dialog */}
+      {activeProjectId && (
+        <ImportTestSuiteModal
+          open={showImportModal}
+          onClose={() => setShowImportModal(false)}
+          projectId={activeProjectId}
+          onImported={handleImported}
+        />
+      )}
     </div>
   )
 }
