@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<con:soapui-project id="3eb5ff0a-dfc2-474d-9b5a-d29002c86d82" activeEnvironment="Default" name="student" resourceRoot="" soapui-version="5.9.1" xmlns:con="http://eviware.com/soapui/config"><con:settings/><con:interface xsi:type="con:WsdlInterface" id="f3b25d94-3e28-451f-8813-a6e100f01215" wsaVersion="NONE" name="StudentDetailsPortSoap11" type="wsdl" bindingName="{http://www.apinizer.com/xml/school}StudentDetailsPortSoap11" soapVersion="1_1" anonymous="optional" definition="https://service.apinizer.com/service/student.wsdl" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><con:settings/><con:definitionCache type="TEXT" rootPart="https://service.apinizer.com/service/student.wsdl"><con:part><con:url>https://service.apinizer.com/service/student.wsdl</con:url><con:content><![CDATA[<wsdl:definitions targetNamespace="http://www.apinizer.com/xml/school" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:sch="http://www.apinizer.com/xml/school" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="http://www.apinizer.com/xml/school">
+  <wsdl:types>
+    <xs:schema elementFormDefault="qualified" targetNamespace="http://www.apinizer.com/xml/school" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+      <!--Student complex type-->
+      <xs:complexType name="Student">
+        <xs:sequence>
+          <xs:element name="name" type="xs:string"/>
+          <xs:element name="standard" type="xs:int"/>
+          <xs:element name="address" type="xs:string"/>
+          <xs:element minOccurs="0" name="date" type="xs:date"/>
+        </xs:sequence>
+      </xs:complexType>
+      <!--Get single student-->
+      <xs:element name="StudentDetailsRequest">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="name" type="xs:string"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="StudentDetailsResponse">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="Student" type="tns:Student"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <!--Get all students-->
+      <xs:element name="StudentDetailsList">
+        <xs:complexType/>
+      </xs:element>
+      <!--MTOM: File attachment request-->
+      <xs:element name="FileAttachmentRequest">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="fileName" type="xs:string"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <!--MTOM: File attachment response (binary data)-->
+      <xs:element name="FileAttachmentResponse">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="fileName" type="xs:string"/>
+            <xs:element name="contentType" type="xs:string"/>
+            <xs:element name="size" type="xs:long"/>
+            <xs:element name="data" type="xs:base64Binary"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <!--MTOM: File upload request (binary data in)-->
+      <xs:element name="FileUploadRequest">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="fileName" type="xs:string"/>
+            <xs:element name="contentType" type="xs:string"/>
+            <xs:element name="data" type="xs:base64Binary"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <!--MTOM: File upload response-->
+      <xs:element name="FileUploadResponse">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="status" type="xs:string"/>
+            <xs:element name="message" type="xs:string"/>
+            <xs:element name="size" type="xs:long"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </wsdl:types>
+  <wsdl:message name="StudentDetailsRequest">
+    <wsdl:part element="tns:StudentDetailsRequest" name="StudentDetailsRequest"></wsdl:part>
+  </wsdl:message>
+  <wsdl:message name="FileAttachmentRequest">
+    <wsdl:part element="tns:FileAttachmentRequest" name="FileAttachmentRequest"></wsdl:part>
+  </wsdl:message>
+  <wsdl:message name="StudentDetailsResponse">
+    <wsdl:part element="tns:StudentDetailsResponse" name="StudentDetailsResponse"></wsdl:part>
+  </wsdl:message>
+  <wsdl:message name="FileAttachmentResponse">
+    <wsdl:part element="tns:FileAttachmentResponse" name="FileAttachmentResponse"></wsdl:part>
+  </wsdl:message>
+  <wsdl:message name="FileUploadRequest">
+    <wsdl:part element="tns:FileUploadRequest" name="FileUploadRequest"></wsdl:part>
+  </wsdl:message>
+  <wsdl:message name="FileUploadResponse">
+    <wsdl:part element="tns:FileUploadResponse" name="FileUploadResponse"></wsdl:part>
+  </wsdl:message>
+  <wsdl:portType name="StudentDetailsPort">
+    <wsdl:operation name="StudentDetails">
+      <wsdl:input message="tns:StudentDetailsRequest" name="StudentDetailsRequest"></wsdl:input>
+      <wsdl:output message="tns:StudentDetailsResponse" name="StudentDetailsResponse"></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="FileAttachment">
+      <wsdl:input message="tns:FileAttachmentRequest" name="FileAttachmentRequest"></wsdl:input>
+      <wsdl:output message="tns:FileAttachmentResponse" name="FileAttachmentResponse"></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="FileUpload">
+      <wsdl:input message="tns:FileUploadRequest" name="FileUploadRequest"></wsdl:input>
+      <wsdl:output message="tns:FileUploadResponse" name="FileUploadResponse"></wsdl:output>
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="StudentDetailsPortSoap11" type="tns:StudentDetailsPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="StudentDetails">
+      <soap:operation soapAction="http://www.apinizer.com/xml/school/getStudentList"/>
+      <wsdl:input name="StudentDetailsRequest">
+        <soap:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output name="StudentDetailsResponse">
+        <soap:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="FileAttachment">
+      <soap:operation soapAction=""/>
+      <wsdl:input name="FileAttachmentRequest">
+        <soap:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output name="FileAttachmentResponse">
+        <soap:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="FileUpload">
+      <soap:operation soapAction=""/>
+      <wsdl:input name="FileUploadRequest">
+        <soap:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output name="FileUploadResponse">
+        <soap:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="StudentDetailsPortService">
+    <wsdl:port binding="tns:StudentDetailsPortSoap11" name="StudentDetailsPortSoap11">
+      <soap:address location="https://service.apinizer.com:80/service/student-details"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>]]></con:content><con:type>http://schemas.xmlsoap.org/wsdl/</con:type></con:part></con:definitionCache><con:endpoints><con:endpoint>https://service.apinizer.com:80/service/student-details</con:endpoint></con:endpoints><con:operation id="08a86661-dba1-46b0-b5c6-9f617310da0a" isOneWay="false" action="" name="FileAttachment" bindingOperationName="FileAttachment" type="Request-Response" outputName="FileAttachmentResponse" inputName="FileAttachmentRequest" receivesAttachments="false" sendsAttachments="false" anonymous="optional"><con:settings/><con:call id="b104e448-fc3b-4754-8f6d-86e10be7078a" name="Request 1"><con:settings/><con:encoding>UTF-8</con:encoding><con:endpoint>https://service.apinizer.com:80/service/student-details</con:endpoint><con:request><![CDATA[<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sch="http://www.apinizer.com/xml/school">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <sch:FileAttachmentRequest>
+         <sch:fileName>?</sch:fileName>
+      </sch:FileAttachmentRequest>
+   </soapenv:Body>
+</soapenv:Envelope>]]></con:request><con:wsaConfig mustUnderstand="NONE" version="200508" action="http://www.apinizer.com/xml/school/StudentDetailsPort/FileAttachmentRequest"/></con:call></con:operation><con:operation id="05de67cd-dbc9-4e80-9bf3-9f22088b6907" isOneWay="false" action="" name="FileUpload" bindingOperationName="FileUpload" type="Request-Response" outputName="FileUploadResponse" inputName="FileUploadRequest" receivesAttachments="false" sendsAttachments="false" anonymous="optional"><con:settings/><con:call id="e291e928-45ed-4717-89a6-4384b687f759" name="Request 1"><con:settings/><con:encoding>UTF-8</con:encoding><con:endpoint>https://service.apinizer.com:80/service/student-details</con:endpoint><con:request><![CDATA[<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sch="http://www.apinizer.com/xml/school">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <sch:FileUploadRequest>
+         <sch:fileName>?</sch:fileName>
+         <sch:contentType>?</sch:contentType>
+         <sch:data>cid:405259380809</sch:data>
+      </sch:FileUploadRequest>
+   </soapenv:Body>
+</soapenv:Envelope>]]></con:request><con:wsaConfig mustUnderstand="NONE" version="200508" action="http://www.apinizer.com/xml/school/StudentDetailsPort/FileUploadRequest"/></con:call></con:operation><con:operation id="1c9e488f-ad6c-4101-9bdf-a6c6203e6f55" isOneWay="false" action="http://www.apinizer.com/xml/school/getStudentList" name="StudentDetails" bindingOperationName="StudentDetails" type="Request-Response" outputName="StudentDetailsResponse" inputName="StudentDetailsRequest" receivesAttachments="false" sendsAttachments="false" anonymous="optional"><con:settings/><con:call id="e0ee7784-e694-4e2c-9ff1-9e396e5188bf" name="Request 1"><con:settings><con:setting id="com.eviware.soapui.impl.wsdl.WsdlRequest@request-headers">&lt;xml-fragment/></con:setting></con:settings><con:encoding>UTF-8</con:encoding><con:endpoint>https://service.apinizer.com/service/student-details</con:endpoint><con:request><![CDATA[<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sch="http://www.apinizer.com/xml/school">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <sch:StudentDetailsRequest>
+         <sch:name>?</sch:name>
+      </sch:StudentDetailsRequest>
+   </soapenv:Body>
+</soapenv:Envelope>]]></con:request><con:credentials><con:authType>No Authorization</con:authType></con:credentials><con:jmsConfig JMSDeliveryMode="PERSISTENT"/><con:jmsPropertyConfig/><con:wsaConfig mustUnderstand="NONE" version="200508" action="http://www.apinizer.com/xml/school/getStudentList"/><con:wsrmConfig version="1.2"/></con:call></con:operation></con:interface><con:properties/><con:wssContainer/><con:oAuth2ProfileContainer/><con:oAuth1ProfileContainer/></con:soapui-project>

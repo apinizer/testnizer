@@ -3161,8 +3161,13 @@ interface InsomniaV5Item {
 function isInsomniaV5(doc: unknown): doc is InsomniaV5Doc {
   if (!doc || typeof doc !== 'object') return false
   const d = doc as Record<string, unknown>
+  // Insomnia 8+ exports several document subtypes under the same shape:
+  // `collection.insomnia.rest`, `spec.insomnia.rest` (OpenAPI-spec-wrapped
+  // collections), and `proxy.insomnia.rest`. All carry a `collection: [...]`
+  // array we can walk, so we accept any of them rather than blocking the
+  // user with an "unknown format" error.
   return (
-    typeof d.type === 'string' && /collection\.insomnia/.test(d.type) && Array.isArray(d.collection)
+    typeof d.type === 'string' && /\binsomnia\.rest\b/.test(d.type) && Array.isArray(d.collection)
   )
 }
 

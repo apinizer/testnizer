@@ -1,0 +1,52 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: SSE
+meta:
+  id: wrk_874abcdde46146a38f05c3f002507c9b
+  created: 1774435499051
+  modified: 1774435499051
+  description: ""
+collection:
+  - url: https://apiqa.apinizer.com/apigateway/echo-sse
+    name: SSE Qa Test
+    meta:
+      id: req_a1291d8822224064a500f95d4e8b062f
+      created: 1774436025522
+      modified: 1774437170383
+      isPrivate: false
+      description: ""
+      sortKey: -1774436025522
+    method: GET
+    headers:
+      - name: User-Agent
+        value: insomnia/12.4.0
+        description: ""
+        disabled: false
+      - name: Accept
+        value: text/event-stream
+    scripts:
+      afterResponse: |-
+        insomnia.test("Status code is 200", function () {
+            insomnia.response.to.have.status(200);
+        });
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_808743acd5f02a810464ea1a58a8d922bb4d93be
+    created: 1774435499097
+    modified: 1774435499097
+environments:
+  name: Base Environment
+  meta:
+    id: env_808743acd5f02a810464ea1a58a8d922bb4d93be
+    created: 1774435499091
+    modified: 1774435499091
+    isPrivate: false

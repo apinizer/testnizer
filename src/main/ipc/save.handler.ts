@@ -45,10 +45,13 @@ export function detectTestSuiteImportFormat(parsed: unknown): TestSuiteImportFor
   // Insomnia v4: { _type: 'export', __export_format: 4, resources: [...] }
   if (doc._type === 'export' && Array.isArray(doc.resources)) return 'insomnia'
 
-  // Insomnia v5: { type: 'collection.insomnia.rest/...', collection: [...] }
+  // Insomnia v5: { type: 'collection.insomnia.rest/...', collection: [...] }.
+  // Insomnia 8+ also exports `spec.insomnia.rest` and `proxy.insomnia.rest`
+  // documents with the same shape — accept any `*.insomnia.rest` type so
+  // proxy-spec exports route to the same importer.
   if (
     typeof doc.type === 'string' &&
-    /collection\.insomnia/.test(doc.type) &&
+    /\binsomnia\.rest\b/.test(doc.type) &&
     Array.isArray(doc.collection)
   ) {
     return 'insomnia'
@@ -386,11 +389,14 @@ function importProjectData(data: ProjectExport, projectId: string): void {
     'updated_at',
   ])
 
-  // Import environments
+  // Import environments. `project_id` is part of the upsert column list —
+  // without it an imported env keeps the source project's id (or NULL for
+  // legacy exports) and becomes invisible to the project that imported it.
   if (data.environments?.length) {
     upsert('environments', data.environments, [
       'id',
       'workspace_id',
+      'project_id',
       'name',
       'is_active',
       'created_at',
@@ -412,11 +418,14 @@ function importProjectData(data: ProjectExport, projectId: string): void {
     ])
   }
 
-  // Import global variables
+  // Import global variables. Same project_id story as environments — when a
+  // global was scoped to a project on the source side, it must land scoped to
+  // the target project rather than leaking workspace-wide.
   if (data.globalVariables?.length) {
     upsert('global_variables', data.globalVariables, [
       'id',
       'workspace_id',
+      'project_id',
       'key',
       'value',
       'description',
@@ -801,8 +810,18 @@ export async function importTestSuiteFromFile(
   let parsed: unknown
   try {
     parsed = JSON.parse(content)
-  } catch (e) {
-    throw new Error('Could not parse file as JSON: ' + (e as Error).message)
+  } catch {
+    // Insomnia v5 ships YAML by default; fall back to js-yaml so suite import
+    // accepts the same files the APIs-tree importer already handles. We keep
+    // JSON as the fast path because it covers Testnizer-native exports and
+    // every Postman collection.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const yaml = require('js-yaml') as { load: (s: string) => unknown }
+      parsed = yaml.load(content)
+    } catch (e) {
+      throw new Error('Could not parse file as JSON or YAML: ' + (e as Error).message)
+    }
   }
 
   const format = detectTestSuiteImportFormat(parsed)

@@ -414,12 +414,36 @@ describe('importTestSuiteFromFile — Insomnia v4', () => {
   })
 })
 
+// ─── Insomnia v5 (YAML) ─────────────────────────────────────
+
+describe('importTestSuiteFromFile — Insomnia v5 YAML', () => {
+  it('imports an Insomnia v5 export shipped as YAML (not JSON)', async () => {
+    // Insomnia v5's default export is YAML — the suite importer must accept
+    // the same shape the APIs-tree importer already handles. JSON.parse fails
+    // on YAML so we fall through to js-yaml.
+    const yamlDoc = [
+      "type: collection.insomnia.rest/5.0",
+      'name: Yaml Suite',
+      'collection:',
+      '  - name: Ping',
+      '    url: https://api.example.com/ping',
+      '    method: GET',
+    ].join('\n')
+
+    const out = await importTestSuiteFromFile(yamlDoc, PROJECT_ID)
+    expect(out.format).toBe('insomnia')
+    expect(out.itemsImported).toBeGreaterThan(0)
+  })
+})
+
 // ─── Bad input ──────────────────────────────────────────────
 
 describe('importTestSuiteFromFile — error paths', () => {
-  it('throws on non-JSON input', async () => {
-    await expect(importTestSuiteFromFile('this is not json{', PROJECT_ID)).rejects.toThrow(
-      /Could not parse file as JSON/,
+  it('throws when input is neither valid JSON nor YAML', async () => {
+    // Use a string that breaks both parsers — bare braces survive YAML's
+    // lenient scalar parser, so we feed it something obviously malformed.
+    await expect(importTestSuiteFromFile('{ broken: [unclosed', PROJECT_ID)).rejects.toThrow(
+      /Could not parse file as JSON or YAML/,
     )
   })
 

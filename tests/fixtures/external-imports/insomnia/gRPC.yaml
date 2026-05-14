@@ -1,0 +1,40 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: gRPC
+meta:
+  id: wrk_09c7a31dcc0d4e3b8a8977ac3f647414
+  created: 1774437916678
+  modified: 1774963280511
+  description: ""
+collection:
+  - url: 167.86.83.73:30088
+    name: hello
+    meta:
+      id: greq_1d89840c305149beba7a31f047b28278
+      created: 1774437944076
+      modified: 1774963280509
+      isPrivate: false
+      description: ""
+      sortKey: -1774437944076
+    body:
+      text: '{"name": "Erendile"}'
+    protoFileId: pf_a444aee34a2c4be097f8ad7d67221e48
+    protoMethodName: /helloworld.Greeter/SayHello
+    reflectionApi:
+      enabled: false
+      url: https://buf.build
+      apiKey: ""
+      module: buf.build/connectrpc/eliza
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_744f5bd7d5b12d31b725592e98e0871aa950fd4f
+    created: 1778757203433
+    modified: 1778757203433
+environments:
+  name: Base Environment
+  meta:
+    id: env_744f5bd7d5b12d31b725592e98e0871aa950fd4f
+    created: 1774437916681
+    modified: 1774963280506
+    isPrivate: false

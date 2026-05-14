@@ -1,0 +1,1799 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: qa_test_nospecspec — UNIFIED RUNNER
+meta:
+  id: wrk_1c9d3a048b81438aaa4b49b2c5f4510d
+  created: 1772438914040
+  modified: 1772439015801
+  description: ""
+collection:
+  - name: qa_test_nospecspec — UNIFIED RUNNER
+    meta:
+      id: fld_0de8ccb8061e4b8ebb06d09ffc563317
+      created: 1772438914061
+      modified: 1773657518124
+      sortKey: -1772438912223
+      description: ""
+    children:
+      - name: xml-transformation
+        meta:
+          id: fld_4cf38367bee640c9839aef5dad0c4fd6
+          created: 1772438914063
+          modified: 1773657517037
+          sortKey: -1772438912222
+          description: ""
+        children:
+          - url: "{{baseUrl}}/xml-transformation"
+            name: get xml-transformation
+            meta:
+              id: req_f313e4f46b2b4b878fc1090e79046004
+              created: 1772438914066
+              modified: 1773652573311
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912221
+            method: GET
+            body:
+              mimeType: application/xml
+              text: "<UserRequest>\r
+
+                \    <Fullname>Eren Dile</Fullname>\r
+
+                \    <Email>eren@example.com</Email>\r
+
+                \    <CustomerId>12345</CustomerId>\r
+
+                </UserRequest>"
+            headers:
+              - name: Content-Type
+                value: application/xml
+            scripts:
+              preRequest: |
+                const runOnce = insomnia.iterationData.get('run_once');
+                if (runOnce !== 'yes') {
+                    insomnia.execution.skipRequest();
+                }
+              afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                \    insomnia.response.to.have.status(200);\r
+
+                });\r
+
+                \r
+
+                const responseText = insomnia.response.text();\r
+
+                \r
+
+                insomnia.test(\"Response contains MusteriKayit root element\",
+                function () {\r
+
+                \    insomnia.expect(responseText).to.include(\"<MusteriKayit>\
+                \");\r
+
+                });\r
+
+                \r
+
+                insomnia.test(\"AdSoyad field is correctly transformed\",
+                function () {\r
+
+                \    insomnia.expect(responseText).to.include(\"<AdSoyad>Eren
+                Dile</AdSoyad>\");\r
+
+                });\r
+
+                \r
+
+                insomnia.test(\"Original UserRequest fields are NOT in response
+                (transformation applied)\", function () {\r
+
+                \    insomnia.expect(responseText).to.not.include(\"<Fullname>\
+                \");\r
+
+                \    insomnia.expect(responseText).to.not.include(\"<Email>\");\
+                \r
+
+                \    insomnia.expect(responseText).to.not.include(\"<CustomerId>\
+                \");\r
+
+                });\r
+
+                \r
+
+                console.log(\"XSLT Response:\", responseText);"
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: basic
+        meta:
+          id: fld_770bee7dd8014d17a28426fb4444f777
+          created: 1772438914069
+          modified: 1773657517093
+          sortKey: -1772438912220
+          description: ""
+        children:
+          - url: "{{baseUrl}}/basic"
+            name: get basic
+            meta:
+              id: req_de67a7acdfa144aba1608bfffe1c8c38
+              created: 1772438914072
+              modified: 1773311784789
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912219
+            method: GET
+            headers:
+              - name: Authorization
+                value: Basic bWVobWV0OjEyMzQ=
+            authentication:
+              type: basic
+              username: mehmet
+              password: "1234"
+              disabled: false
+            scripts:
+              preRequest: >-
+                // Sabit endpointler sadece iteration 1'de çalışır
+
+                const runOnce = insomnia.iterationData.get('run_once');
+
+                if (runOnce !== 'yes') {
+                    console.log('[SKIP] basic — sadece ilk iterasyonda çalışır');
+                    insomnia.execution.skipRequest();
+                }
+              afterResponse: |-
+                insomnia.test('Status code is 200', function () {
+                    insomnia.response.to.have.status(200);
+                });
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: plain-text
+        meta:
+          id: fld_af385f69b5154a56a18144643c7bccd7
+          created: 1772438914075
+          modified: 1773657517173
+          sortKey: -1772438912218
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/plain-text"
+            name: get plain-text
+            meta:
+              id: req_9bb42f5aa3e34e429c7b235e5805abb0
+              created: 1772438914077
+              modified: 1772439015791
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912217
+            method: GET
+            scripts:
+              preRequest: >-
+                const testCase = insomnia.iterationData.get('auth_case');
+
+
+                if (!testCase || testCase === 'SKIP') {
+                    console.log('[SKIP] plain-text — bu iterasyonda veri yok');
+                    insomnia.execution.skipRequest();
+                    return;
+                }
+
+
+                let username, password;
+
+
+                if (testCase === 'valid') {
+                    username = 'erend';
+                    password = 'eren';
+                }
+
+
+                if (testCase === 'invalid') {
+                    username = 'wrongusername';
+                    password = 'wrongpassword';
+                }
+
+
+                insomnia.request.headers.upsert({ key: 'username', value:
+                username });
+
+                insomnia.request.headers.upsert({ key: 'password', value:
+                password });
+
+
+                console.log('Test Case:', testCase);
+
+                console.log('Username:', username);
+
+                console.log('Password:', password);
+              afterResponse: >-
+                const testCase = insomnia.iterationData.get('auth_case');
+
+
+                if (!testCase || testCase === 'SKIP') { return; }
+
+
+                console.log('Running test for:', testCase);
+
+
+                if (testCase === 'valid') {
+                    insomnia.test('Valid credentials return 200', function () {
+                        insomnia.response.to.have.status(200);
+                    });
+                }
+
+
+                if (testCase === 'invalid') {
+                    insomnia.test('Invalid credentials return 401', function () {
+                        insomnia.response.to.have.status(401);
+                    });
+
+                    const res = insomnia.response.json();
+
+                    insomnia.test('Response contains fault object', function () {
+                        insomnia.expect(res).to.have.property('fault');
+                    });
+
+                    insomnia.test('Fault status code is 401', function () {
+                        insomnia.expect(res.fault.faultStatusCode).to.eql('401');
+                    });
+
+                    insomnia.test('Fault message indicates authentication failure', function () {
+                        insomnia.expect(res.fault.faultString).to.contain('Authentication policy failed');
+                    });
+                }
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: jose-implementation
+        meta:
+          id: fld_613a61c093df4bc98b4e3c55fbd93ede
+          created: 1772438914080
+          modified: 1773657517213
+          sortKey: -1772438912216
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/jose-implementation"
+            name: get jose-implementation
+            meta:
+              id: req_679746237bd5499d9f3c6d64030a6d6b
+              created: 1772438914082
+              modified: 1772713907911
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912215
+            method: POST
+            body:
+              mimeType: application/json
+              text: "{\r
+
+                \    \"mesaj\": \"Merhaba Apinizer\",\r
+
+                \    \"durum\": \"test\"\r
+
+                }"
+            headers:
+              - name: Content-Type
+                value: application/json
+            scripts:
+              preRequest: >-
+                // Sabit endpoint — sadece iteration 1'de çalışır
+
+                const runOnce = insomnia.iterationData.get('run_once');
+
+                if (runOnce !== 'yes') {
+                    console.log('[SKIP] jose-implementation — sadece ilk iterasyonda çalışır');
+                    insomnia.execution.skipRequest();
+                }
+              afterResponse: >-
+                insomnia.test('HTTP Durum Kodu 405 veya 200 olmalı', function ()
+                {
+                    insomnia.expect(insomnia.response.code).to.be.oneOf([200, 405]);
+                });
+
+
+                insomnia.test('Authorization header mevcut', function () {
+                    insomnia.response.to.have.header('authorization');
+                });
+
+
+                const token = insomnia.response.headers.get('authorization');
+
+
+                if (token) {
+                    insomnia.test('JWT Payload ve Veri Doğruluğu', function () {
+                        const cleanToken = token.startsWith('Bearer ') ? token.split(' ')[1] : token;
+                        const parts = cleanToken.split('.');
+                        if (parts.length === 3) {
+                            const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+                            const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+                            insomnia.expect(payload).to.have.property('data');
+                            insomnia.expect(payload.data.mesaj).to.eql('Merhaba Apinizer');
+                            insomnia.expect(payload.data.durum).to.eql('test');
+                            insomnia.expect(payload).to.have.property('jti');
+                            insomnia.expect(payload).to.have.property('iat');
+                            console.log('Doğrulanan JWT ID (jti):', payload.jti);
+                        } else {
+                            insomnia.expect.fail('Header bulundu ancak geçerli bir JWT formatında değil.');
+                        }
+                    });
+                }
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: jose-validation
+        meta:
+          id: fld_6b8d23b0b2c641f4be1f9f7184d92607
+          created: 1772438914085
+          modified: 1773657517252
+          sortKey: -1772438912214
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/jose-validation"
+            name: get jose-validation
+            meta:
+              id: req_2b58297ee1134e028e0c5671c28ef95e
+              created: 1772438914089
+              modified: 1772713907911
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912213
+            method: GET
+            headers:
+              - name: Authorization
+                value: "{{current_token}}"
+            scripts:
+              preRequest: |-
+                const testCase = insomnia.iterationData.get('token_case');
+
+                if (!testCase || testCase === 'SKIP') {
+                    console.log('[SKIP] jose-validation — bu iterasyonda veri yok');
+                    insomnia.execution.skipRequest();
+                    return;
+                }
+
+                const validToken = 'eyJraWQiOiJmODA0M2MzMS0wMTZlLTQ3YmMtODMzZS1mYzZjM2RiZmNlMmIiLCJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJqb2huX2RvZSIsImRhdGEiOnsibWVzYWoiOiJNZXJoYWJhIEFwaW5pemVyIiwiZHVydW0iOiJ0ZXN0In0sImlhdCI6MTc3MjQ0Njg1MiwianRpIjoiNjgwMjlhYWItMTkyOC00YmI4LTlkNzUtMjdiN2Y4ZDQ4ZjUxIn0.4nLzsoIXXcz7GbssUIacSb1EEyn27AGsVpmvllmXfrewNyCUrGJPyZCkZYZ7oGl8SG1dKYAdx54H1S4TJb0Yhqj1vJ3GsQGXDLHYJ82qg1pUvTxEv1A28MDZlvkxQu_lUbjEYSaxP6dnyeDYLznpr1lu04WufBEXgSRfifvTiMVrfVKfrQQMBJDibYbpdFtdMw9UJvEvBOX63ApR6Y8AKCBE6_805mTKAh93rckC4Toa_w1XYQFSw0QqiQRFuhc3_H7DEKxt12NzvCgRejL7uRXXCzwxpI1PcXEoFzILCwYICoVg-xh1iNZnJZjXrA_4wgrLGU71grQTPeQVR88YRg';
+
+                const invalidToken = 'eyJraWQiOiI3NDRjZDgyZS01YTk5LTRmNWYtODczYi00NTE4NjhkYTE2YzEiLCJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJqb2huIiwiZGF0YSI6eyJtZXNhaiI6Ik1lcmhhYmEgQXBpbml6ZXIiLCJkdXJ1bSI6InRlc3QifSwiaWF0IjoxNzcxMzE0NTA3LCJqdGkiOiJmZDFhN2ExYi03MDY1LTRkZDYtODQ2MS04MmEzZDBlYjUyNDQifQ.bVJMWCLhAmjqFp8hCh0hq8Jvnf_dzc8DHTNqEmiTDMxfudM6WEudUEqJrSld8EsjQMGPOjcJtNLyMra56SS47KdEAGIE08dq94mwL4l95tIC6D_AdznN5GlttIiBHIyr9KiaPAViz5ws3O--986Y0DpAbnnbW-b58CVebUQbCrNNO5SmN2ex5PJRdQoEPmOiqFh-B4JM4tNwl4vRGFxOiq5VM7flVondY_3IxqCRgYCg-_kGXByEh3__yZNmGbJhXMc2gFchw9lv8YEsKpKqz2zzYBHG13dCN0f4gwdPwSN8gQqf115Ho4vuFyLjsyXR425Ka453TSKQU4pyEWH-qA';
+
+                let tokenToUse;
+                if (testCase === 'valid') {
+                    tokenToUse = validToken;
+                } else if (testCase === 'invalid_issuer') {
+                    tokenToUse = invalidToken;
+                }
+
+                insomnia.variables.set('current_token', tokenToUse);
+                console.log('Running Test Case:', testCase);
+              afterResponse: >-
+                const testCase = insomnia.iterationData.get('token_case');
+
+
+                if (!testCase || testCase === 'SKIP') { return; }
+
+
+                if (testCase === 'valid') {
+                    insomnia.test('Valid token returns 200 OK', function () {
+                        insomnia.response.to.have.status(200);
+                    });
+                }
+
+
+                if (testCase === 'invalid_issuer') {
+                    insomnia.test('Authentication policy failed! Invalid Credentials!', function () {
+                        insomnia.response.to.have.status(401);
+                    });
+
+                    const res = insomnia.response.json();
+
+                    insomnia.test('Fault message contains Issuer or Claim error', function () {
+                        insomnia.expect(res.fault.faultString).to.be.a('string');
+                        console.log('Apinizer Error Message:', res.fault.faultString);
+                    });
+                }
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: blocked-ip-list
+        meta:
+          id: fld_43a0003317784f38a1a3eccabecc3cd3
+          created: 1772438914091
+          modified: 1773657517295
+          sortKey: -1772438912212
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/blocked-ip-list"
+            name: get blocked-ip-list
+            meta:
+              id: req_a09be4080ef94d5c8ccde82ffa31384a
+              created: 1772438914094
+              modified: 1772439015792
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912211
+            method: GET
+            scripts:
+              preRequest: >-
+                // Sabit endpoint — sadece iteration 1'de çalışır
+
+                const runOnce = insomnia.iterationData.get('run_once');
+
+                if (runOnce !== 'yes') {
+                    console.log('[SKIP] blocked-ip-list — sadece ilk iterasyonda çalışır');
+                    insomnia.execution.skipRequest();
+                }
+              afterResponse: >-
+                insomnia.test('IP Engellendi - Erişim Yasak (403)', function ()
+                {
+                    insomnia.response.to.have.status(403);
+                });
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: allowed-ip-list
+        meta:
+          id: fld_c6af58afc83c4ffea06f57ccef79b8ad
+          created: 1772438914096
+          modified: 1773657517336
+          sortKey: -1772438912210
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/allowed-ip-list"
+            name: get allowed-ip-list
+            meta:
+              id: req_a7f846d6e7644e949aadcd5788d7df73
+              created: 1772438914099
+              modified: 1772439015793
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912209
+            method: GET
+            scripts:
+              preRequest: >-
+                // Sabit endpoint — sadece iteration 1'de çalışır
+
+                const runOnce = insomnia.iterationData.get('run_once');
+
+                if (runOnce !== 'yes') {
+                    console.log('[SKIP] allowed-ip-list — sadece ilk iterasyonda çalışır');
+                    insomnia.execution.skipRequest();
+                }
+              afterResponse: |-
+                insomnia.test('Status code is 403', function () {
+                    insomnia.response.to.have.status(403);
+                });
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: time-restriction
+        meta:
+          id: fld_35511f9996f94e5592d4c55a0b273e2f
+          created: 1772438914101
+          modified: 1773657517377
+          sortKey: -1772438912208
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/time-restriction"
+            name: get time-restriction
+            meta:
+              id: req_3b51fc939b3f4cbb9c3393e1ca31bb91
+              created: 1772438914104
+              modified: 1772439015781
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912207
+            method: GET
+            scripts:
+              preRequest: >-
+                // Sabit endpoint — sadece iteration 1'de çalışır
+
+                const runOnce = insomnia.iterationData.get('run_once');
+
+                if (runOnce !== 'yes') {
+                    console.log('[SKIP] time-restriction — sadece ilk iterasyonda çalışır');
+                    insomnia.execution.skipRequest();
+                }
+              afterResponse: >-
+                const now = new Date();
+
+                const currentHour = now.getHours();
+
+                const isWorkingHours = currentHour >= 9 && currentHour < 18;
+
+
+                console.log('Current time:', now.toLocaleTimeString('tr-TR'));
+
+                console.log('Current hour:', currentHour);
+
+                console.log('Is working hours:', isWorkingHours);
+
+                console.log('Response status:', insomnia.response.code);
+
+
+                if (isWorkingHours) {
+                    insomnia.test('Request during working hours (09:00-18:00) returns 403 - RESTRICTED', function () {
+                        insomnia.response.to.have.status(403);
+                    });
+
+                    const res = insomnia.response.json();
+
+                    insomnia.test('Fault code is ERR-024', function () {
+                        insomnia.expect(res.fault.faultCode).to.eql('ERR-024');
+                    });
+
+                    insomnia.test('Fault status code is 403', function () {
+                        insomnia.expect(res.fault.faultStatusCode).to.eql('403');
+                    });
+
+                    insomnia.test('Fault message indicates time restriction', function () {
+                        insomnia.expect(res.fault.faultString).to.contain('Time Restriction Policy Validation failed');
+                    });
+                } else {
+                    insomnia.test('Request outside working hours returns 200 - ALLOWED', function () {
+                        insomnia.response.to.have.status(200);
+                    });
+                }
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: api-based-quota
+        meta:
+          id: fld_b825b4126c564b7dbeba11e2ac52c1a1
+          created: 1772438914106
+          modified: 1773657517615
+          sortKey: -1772438912206
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/api-based-quota"
+            name: get api-based-quota
+            meta:
+              id: req_3389548861d34c7b8a895d28e7a95ca7
+              created: 1772438914109
+              modified: 1773312046781
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912205
+            method: GET
+            headers:
+              - name: username
+                value: mehmet
+            scripts:
+              preRequest: |-
+                // quota_counter'ı sıfırla — sadece iteration 1'de
+                const runOnce = insomnia.iterationData.get('run_once');
+                if (runOnce === 'yes') {
+                    insomnia.environment.set('quota_counter', 0);
+                    console.log('[INIT] quota_counter sıfırlandı');
+                }
+              afterResponse: >-
+                // api-based-quota her 5 iterasyonda da çalışır — counter
+                environment'ta tutulur
+
+                let counter = insomnia.environment.get('quota_counter');
+
+                counter = counter ? parseInt(counter) : 0;
+
+                counter++;
+
+                insomnia.environment.set('quota_counter', counter);
+
+
+                console.log('Quota request count:', counter);
+
+
+                if (counter <= 4) {
+                    insomnia.test('Request allowed within quota limit (request #' + counter + ')', function () {
+                        insomnia.response.to.have.status(200);
+                    });
+                } else {
+                    insomnia.test('Request blocked after quota limit (request #' + counter + ')', function () {
+                        insomnia.response.to.have.status(429);
+                    });
+
+                    const res = insomnia.response.json();
+
+                    insomnia.test('Fault code is ERR-227', function () {
+                        insomnia.expect(res.fault.faultCode).to.eql('ERR-227');
+                    });
+
+                    insomnia.test('Fault message indicates quota limit', function () {
+                        insomnia.expect(res.fault.faultString).to.contain('QUOTA limit');
+                    });
+                }
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: xml-schema
+        meta:
+          id: fld_b9ef7902be1a441da1ac2bf351695815
+          created: 1772438914112
+          modified: 1773657517654
+          sortKey: -1772438912204
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/xml-schema"
+            name: get xml-schema
+            meta:
+              id: req_521c0db7c39d42a48eb34afc5a51d415
+              created: 1772438914117
+              modified: 1772439015788
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912203
+            method: GET
+            body:
+              mimeType: application/xml
+              text: "{{xmlBody}}"
+            headers:
+              - name: Content-Type
+                value: application/xml
+            scripts:
+              preRequest: >-
+                const testCase = insomnia.iterationData.get('xml_case');
+
+
+                if (!testCase || testCase === 'SKIP') {
+                    console.log('[SKIP] xml-schema — bu iterasyonda veri yok');
+                    insomnia.execution.skipRequest();
+                    return;
+                }
+
+
+                let xmlBody;
+
+
+                if (testCase === 'valid') {
+                    xmlBody = `<?xml version="1.0" encoding="UTF-8"?><UserLogin><username>eren1234</username><password>12345678</password></UserLogin>`;
+                }
+
+
+                if (testCase === 'invalid_short_username') {
+                    xmlBody = `<?xml version="1.0" encoding="UTF-8"?><UserLogin><username>abc</username><password>12345678</password></UserLogin>`;
+                }
+
+
+                if (testCase === 'invalid_short_password') {
+                    xmlBody = `<?xml version="1.0" encoding="UTF-8"?><UserLogin><username>eren1234</username><password>123</password></UserLogin>`;
+                }
+
+
+                if (testCase === 'invalid_long_username') {
+                    xmlBody = `<?xml version="1.0" encoding="UTF-8"?><UserLogin><username>thisusernameiswaytoolongforschema</username><password>12345678</password></UserLogin>`;
+                }
+
+
+                insomnia.environment.set('xmlBody', xmlBody);
+
+
+                console.log('Test Case:', testCase);
+
+                console.log('XML Body:', xmlBody);
+              afterResponse: >-
+                const testCase = insomnia.iterationData.get('xml_case');
+
+
+                if (!testCase || testCase === 'SKIP') { return; }
+
+
+                console.log('Running test for:', testCase);
+
+
+                if (testCase === 'valid') {
+                    insomnia.test('Valid XML schema returns 200', function () {
+                        insomnia.response.to.have.status(200);
+                    });
+                }
+
+
+                if (testCase === 'invalid_short_username') {
+                    insomnia.test('Username shorter than 4 chars returns 403', function () {
+                        insomnia.response.to.have.status(403);
+                    });
+
+                    const res = insomnia.response.json();
+
+                    insomnia.test('Response contains fault object', function () {
+                        insomnia.expect(res).to.have.property('fault');
+                    });
+
+                    insomnia.test('Fault status code is 403', function () {
+                        insomnia.expect(res.fault.faultStatusCode).to.eql('403');
+                    });
+
+                    insomnia.test('Fault message indicates schema validation failure', function () {
+                        insomnia.expect(res.fault.faultString).to.match(/schema|validation|username|minLength/i);
+                    });
+                }
+
+
+                if (testCase === 'invalid_short_password') {
+                    insomnia.test('Password shorter than 8 chars returns 403', function () {
+                        insomnia.response.to.have.status(403);
+                    });
+
+                    const res = insomnia.response.json();
+
+                    insomnia.test('Fault status code is 403', function () {
+                        insomnia.expect(res.fault.faultStatusCode).to.eql('403');
+                    });
+
+                    insomnia.test('Fault message indicates schema validation failure', function () {
+                        insomnia.expect(res.fault.faultString).to.match(/schema|validation|password|minLength/i);
+                    });
+                }
+
+
+                if (testCase === 'invalid_long_username') {
+                    insomnia.test('Username longer than 20 chars returns 403', function () {
+                        insomnia.response.to.have.status(403);
+                    });
+
+                    const res = insomnia.response.json();
+
+                    insomnia.test('Fault status code is 403', function () {
+                        insomnia.expect(res.fault.faultStatusCode).to.eql('403');
+                    });
+
+                    insomnia.test('Fault message indicates schema validation failure', function () {
+                        insomnia.expect(res.fault.faultString).to.match(/schema|validation|username|maxLength/i);
+                    });
+                }
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: max-message-size
+        meta:
+          id: fld_386e2ee9ba2c48cfbf4ec9d3209689ec
+          created: 1772438914119
+          modified: 1773657517692
+          sortKey: -1772438912202
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/max-message-size"
+            name: get max-message-size
+            meta:
+              id: req_269b04b36b354c1a9890e41c0f18fad8
+              created: 1772438914122
+              modified: 1772439015758
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912201
+            method: GET
+            body:
+              mimeType: application/json
+              text: "{{body}}"
+            headers:
+              - name: Content-Type
+                value: application/json
+            scripts:
+              preRequest: >-
+                const testCase = insomnia.iterationData.get('max_size_case');
+
+
+                if (!testCase || testCase === 'SKIP') {
+                    console.log('[SKIP] max-message-size — bu iterasyonda veri yok');
+                    insomnia.execution.skipRequest();
+                    return;
+                }
+
+
+                let body;
+
+
+                if (testCase === 'valid') {
+                    body = { username: 'a', password: 'b' };
+                }
+
+
+                if (testCase === 'exceed') {
+                    body = { username: 'a', password: 'b', usernames: 'a', passwords: 'b' };
+                }
+
+
+                insomnia.environment.set('body', JSON.stringify(body));
+
+
+                console.log('Test Case:', testCase);
+
+                console.log('Request size (bytes):',
+                JSON.stringify(body).length);
+
+                console.log('Body:', body);
+              afterResponse: >-
+                const testCase = insomnia.iterationData.get('max_size_case');
+
+
+                if (!testCase || testCase === 'SKIP') { return; }
+
+
+                console.log('Running test for:', testCase);
+
+
+                if (testCase === 'valid') {
+                    insomnia.test('Request within max message size returns 200', function () {
+                        insomnia.response.to.have.status(200);
+                    });
+                }
+
+
+                if (testCase === 'exceed') {
+                    insomnia.test('Request exceeding max message size returns 403', function () {
+                        insomnia.response.to.have.status(403);
+                    });
+
+                    const res = insomnia.response.json();
+
+                    insomnia.test('Fault code is ERR-027', function () {
+                        insomnia.expect(res.fault.faultCode).to.eql('ERR-027');
+                    });
+
+                    insomnia.test('Fault message indicates max size violation', function () {
+                        insomnia.expect(res.fault.faultString).to.contain('Permissible max. size');
+                    });
+                }
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: min-message-size
+        meta:
+          id: fld_3fcef848c12b45ff8fe01158276c2d55
+          created: 1772438914125
+          modified: 1773657517728
+          sortKey: -1772438912200
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/min-message-size"
+            name: get min-message-size
+            meta:
+              id: req_1e799943e5534db5a943df855fa4a98d
+              created: 1772438914127
+              modified: 1772439015752
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912199
+            method: GET
+            body:
+              mimeType: application/json
+              text: "{{body}}"
+            headers:
+              - name: Content-Type
+                value: application/json
+            scripts:
+              preRequest: >-
+                // NOT: min-message-size'da 'size_case' field'ı kullanılıyor.
+
+                // 'valid' → büyük body (min sınırını geçer → 200)
+
+                // 'too_short' → küçük body (min sınırının altı → 403)
+
+                const testCase = insomnia.iterationData.get('size_case');
+
+
+                if (!testCase || testCase === 'SKIP') {
+                    console.log('[SKIP] min-message-size — bu iterasyonda veri yok');
+                    insomnia.execution.skipRequest();
+                    return;
+                }
+
+
+                let body;
+
+
+                if (testCase === 'valid') {
+                    // Büyük body: 50 byte üzeri → min size kuralını geçer
+                    body = { username: 'a', password: 'b', usernames: 'a', passwords: 'b' };
+                }
+
+
+                if (testCase === 'too_short') {
+                    // Küçük body: 50 byte altı → min size ihlali
+                    body = { username: 'a', password: 'b' };
+                }
+
+
+                insomnia.environment.set('body', JSON.stringify(body));
+
+
+                console.log('Test Case:', testCase);
+
+                console.log('Request size (bytes):',
+                JSON.stringify(body).length);
+
+                console.log('Body:', body);
+              afterResponse: >-
+                const testCase = insomnia.iterationData.get('size_case');
+
+
+                if (!testCase || testCase === 'SKIP') { return; }
+
+
+                console.log('Running Min Message Size test for:', testCase);
+
+
+                if (testCase === 'valid') {
+                    insomnia.test('Request meets minimum size returns 200', function () {
+                        insomnia.response.to.have.status(200);
+                    });
+                }
+
+
+                if (testCase === 'too_short') {
+                    insomnia.test('Request below minimum size returns 403', function () {
+                        insomnia.response.to.have.status(403);
+                    });
+
+                    const res = insomnia.response.json();
+
+                    insomnia.test('Fault code check', function () {
+                        insomnia.expect(res.fault.faultCode).to.exist;
+                    });
+                }
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: json-schema-validation
+        meta:
+          id: fld_1c47a75914e6412eb373c4bb061aa209
+          created: 1772438914131
+          modified: 1773657517764
+          sortKey: -1772438912198
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/json-schema-validation"
+            name: get json-schema-validation
+            meta:
+              id: req_c13ea0f327cc4ea4b4a12872a4dbbc2b
+              created: 1772438914133
+              modified: 1773312316702
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912197
+            method: GET
+            body:
+              mimeType: application/json
+              text: "{{body}}"
+            headers:
+              - name: Content-Type
+                value: application/json
+            scripts:
+              preRequest: >-
+                const testCase = insomnia.iterationData.get('schema_case');
+
+
+                if (!testCase || testCase === 'SKIP') {
+                    console.log('[SKIP] json-schema-validation — bu iterasyonda veri yok');
+                    insomnia.execution.skipRequest();
+                    return;
+                }
+
+
+                let body;
+
+
+                if (testCase === 'valid') {
+                    body = { username: 'eren', password: '123456' };
+                }
+
+
+                if (testCase === 'missing_password') {
+                    body = { username: 'eren' };
+                }
+
+
+                insomnia.environment.set('body', JSON.stringify(body));
+
+
+                console.log('Test Case:', testCase);
+
+                console.log('Body:', body);
+              afterResponse: >-
+                const testCase = insomnia.iterationData.get('schema_case');
+
+
+                if (!testCase || testCase === 'SKIP') { return; }
+
+
+                console.log('Running test for:', testCase);
+
+
+                if (testCase === 'valid') {
+                    insomnia.test('Valid schema request returns 200', function () {
+                        insomnia.response.to.have.status(200);
+                    });
+                }
+
+
+                if (testCase === 'missing_password') {
+                    insomnia.test('Missing password returns 400', function () {
+                        insomnia.response.to.have.status(400);
+                    });
+
+                    const res = insomnia.response.json();
+
+                    insomnia.test('Fault code is ERR-241', function () {
+                        insomnia.expect(res.fault.faultCode).to.eql('ERR-241');
+                    });
+
+                    insomnia.test('Fault message indicates missing password', function () {
+                        insomnia.expect(res.fault.faultString).to.contain('$.password');
+                    });
+                }
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: json-transformation
+        meta:
+          id: fld_e7f7b90780194d2ab3efa917c095dad0
+          created: 1772438914135
+          modified: 1773657517806
+          sortKey: -1772438912196
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/json-transformation"
+            name: get json-transformation
+            meta:
+              id: req_c7d04cd533014fd1bc2fec7df8b4444b
+              created: 1772438914139
+              modified: 1772439015795
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912195
+            method: GET
+            body:
+              mimeType: application/json
+              text: "{\r
+
+                \  \"kullaniciAdi\" : \"mehmet\",\r
+
+                \  \"sifre\" : \"123\"\r
+
+                }"
+            headers:
+              - name: Content-Type
+                value: application/json
+            scripts:
+              preRequest: "const runOnce = insomnia.iterationData.get('run_once');\r
+
+                \r
+
+                if (runOnce !== 'yes') {\r
+
+                \    insomnia.execution.skipRequest();\r
+
+                }\r
+
+                \r
+
+                console.log(\"JSON Transformation testi başlatılıyor...\");"
+              afterResponse: "// 1. Durum Kodu Kontrolü\r
+
+                insomnia.test(\"Status code is 200\", function () {\r
+
+                \    insomnia.response.to.have.status(200);\r
+
+                });\r
+
+                \r
+
+                const responseJson = insomnia.response.json();\r
+
+                \r
+
+                // 2. Yeni Alanların (Target Keys) Varlığını Kontrol Et\r
+
+                insomnia.test(\"JSON Transformation: Keys renamed correctly
+                (username/password)\", function () {\r
+
+                \    insomnia.expect(responseJson).to.have.property(\"username\
+                \");\r
+
+                \    insomnia.expect(responseJson).to.have.property(\"password\
+                \");\r
+
+                });\r
+
+                \r
+
+                // 3. Değerlerin Doğru Taşındığını Kontrol Et\r
+
+                insomnia.test(\"JSON Transformation: Values are preserved
+                accurately\", function () {\r
+
+                \    insomnia.expect(responseJson.username).to.eql(\"mehmet\");\
+                \r
+
+                \    insomnia.expect(responseJson.password).to.eql(\"123\");\r
+
+                });\r
+
+                \r
+
+                // 4. Eski Alanların Silindiğini Kontrol Et (Negative Test)\r
+
+                insomnia.test(\"Original fields are REMOVED (Transformation
+                success)\", function () {\r
+
+                \    insomnia.expect(responseJson).to.not.have.property(\"kulla\
+                niciAdi\");\r
+
+                \    insomnia.expect(responseJson).to.not.have.property(\"sifre\
+                \");\r
+
+                });\r
+
+                \r
+
+                console.log(\"Transformed Response Payload:\",
+                JSON.stringify(responseJson));"
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: throttling
+        meta:
+          id: fld_734fb643d4ad4dd390d13f242d1cdaa4
+          created: 1772438914141
+          modified: 1773657517957
+          sortKey: -1772438912194
+          description: ""
+        children:
+          - url: "{{baseUrl}}/throttling"
+            name: get throttling
+            meta:
+              id: req_90964f84ad1a4ae6832d49ba591c9c93
+              created: 1772438914143
+              modified: 1773311966793
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912193
+            method: GET
+            scripts:
+              preRequest: "// throttling_counter'ı sıfırla — sadece iteration 1'de\r
+
+                const runOnce = insomnia.iterationData.get('run_once');\r
+
+                if (runOnce === 'yes') {\r
+
+                \    insomnia.environment.set('throttling_counter', 0);\r
+
+                \    console.log('[INIT] throttling_counter sıfırlandı');\r
+
+                }"
+              afterResponse: >-
+                // Throttling sayacı environment'ta tutulur
+
+                let tCounter = insomnia.environment.get('throttling_counter');
+
+                tCounter = tCounter ? parseInt(tCounter) : 0;
+
+                tCounter++;
+
+                insomnia.environment.set('throttling_counter', tCounter);
+
+
+                console.log('Throttling request count:', tCounter);
+
+
+                if (tCounter <= 3) {
+                    // İlk 3 istek başarılı olmalı
+                    insomnia.test('Request allowed within throttling limit (request #' + tCounter + ')', function () {
+                        insomnia.response.to.have.status(200);
+                    });
+                } else {
+                    // 4. ve sonraki istekler engellenmeli
+                    insomnia.test('Request blocked after throttling limit (request #' + tCounter + ')', function () {
+                        insomnia.response.to.have.status(429);
+                    });
+
+                    const res = insomnia.response.json();
+                }
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: digital-signature
+        meta:
+          id: fld_d280f3cb6e5342a4b3c37ea09de9cdee
+          created: 1772438914146
+          modified: 1773657518010
+          sortKey: -1772438912192
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/digital-signature"
+            name: get digital-signature
+            meta:
+              id: req_daefd910c8f54ba2b7db815ff868d3f0
+              created: 1772438914148
+              modified: 1773313181652
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912191
+            method: GET
+            headers:
+              - name: password
+                value: securepswd
+            scripts:
+              preRequest: |
+                const runOnce = insomnia.iterationData.get('run_once');
+                if (runOnce !== 'yes') {
+                    insomnia.execution.skipRequest();
+                }
+              afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                \    insomnia.response.to.have.status(200);\r
+
+                });\r
+
+                \r
+
+                const signatureHeader =
+                insomnia.response.headers.get(\"username\");\r
+
+                \r
+
+                insomnia.test(\"Digital signature header is present and not
+                empty\", function () {\r
+
+                \    insomnia.expect(signatureHeader).to.be.a(\"string\").and.t\
+                o.have.length.greaterThan(0);\r
+
+                });\r
+
+                \r
+
+                insomnia.test(\"Signature is valid Base64 format\", function ()
+                {\r
+
+                \    const base64Regex = /^[A-Za-z0-9+/]+={0,2}$/;\r
+
+                \    insomnia.expect(base64Regex.test(signatureHeader)).to.be.t\
+                rue;\r
+
+                });\r
+
+                \r
+
+                insomnia.test(\"Signature length is consistent with RSA-2048
+                (344 chars)\", function () {\r
+
+                \    insomnia.expect(signatureHeader.length).to.eql(344);\r
+
+                });\r
+
+                \r
+
+                console.log(\"Digital Signature:\", signatureHeader);"
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: content-filter
+        meta:
+          id: fld_7bcd233df7ab48309b2daf4aa2d375c6
+          created: 1772438914150
+          modified: 1773657518069
+          sortKey: -1772438912190
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/content-filter"
+            name: get content-filter
+            meta:
+              id: req_34c35a61ddb54de19b7a2077093b9918
+              created: 1772438914152
+              modified: 1773312154651
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912189
+            method: GET
+            body:
+              mimeType: application/xml
+              text: "{{xmlBody}}"
+            headers:
+              - name: Content-Type
+                value: application/xml
+            scripts:
+              preRequest: "const testCase = insomnia.iterationData.get(\"filter_case\");\r
+
+                \r
+
+                if (!testCase || testCase === \"SKIP\") {\r
+
+                \    console.log(\"[SKIP] content-filter — bu iterasyonda veri
+                yok\");\r
+
+                \    insomnia.execution.skipRequest();\r
+
+                \    return;\r
+
+                }\r
+
+                \r
+
+                let xmlBody;\r
+
+                \r
+
+                if (testCase === \"valid\") {\r
+
+                \    xmlBody = `<request>\r
+
+                \    <customerId>123</customerId>\r
+
+                \    <comment>\r
+
+                \        Hello world\r
+
+                \    </comment>\r
+
+                </request>`;\r
+
+                }\r
+
+                \r
+
+                if (testCase === \"blocked_script_tag\") {\r
+
+                \    xmlBody = `<request>\r
+
+                \    <customerId>123</customerId>\r
+
+                \    <comment>\r
+
+                \        Hello world <script>alert('xss')</script>\r
+
+                \    </comment>\r
+
+                </request>`;\r
+
+                }\r
+
+                \r
+
+                if (testCase === \"blocked_script_uppercase\") {\r
+
+                \    xmlBody = `<request>\r
+
+                \    <customerId>123</customerId>\r
+
+                \    <comment>\r
+
+                \        Hello world <SCRIPT>alert('xss')</SCRIPT>\r
+
+                \    </comment>\r
+
+                </request>`;\r
+
+                }\r
+
+                \r
+
+                if (testCase === \"blocked_script_mixed\") {\r
+
+                \    xmlBody = `<request>\r
+
+                \    <customerId>123</customerId>\r
+
+                \    <comment>\r
+
+                \        Hello world <ScRiPt>alert('xss')</ScRiPt>\r
+
+                \    </comment>\r
+
+                </request>`;\r
+
+                }\r
+
+                \r
+
+                insomnia.environment.set(\"xmlBody\", xmlBody);\r
+
+                \r
+
+                console.log(\"Test Case:\", testCase);\r
+
+                console.log(\"XML Body:\", xmlBody);"
+              afterResponse: >-
+                const testCase = insomnia.iterationData.get("filter_case");
+
+
+                if (!testCase || testCase === "SKIP") { return; }
+
+
+                console.log("Running test for:", testCase);
+
+
+                if (testCase === "valid") {
+                    insomnia.test("Request without script tag returns 200", function () {
+                        insomnia.response.to.have.status(200);
+                    });
+                }
+
+
+                if (testCase === "blocked_script_tag" || 
+                    testCase === "blocked_script_uppercase" || 
+                    testCase === "blocked_script_mixed") {
+                    
+                    insomnia.test("Request with script tag returns 403 - Content Filter Blocked", function () {
+                        insomnia.response.to.have.status(403);
+                    });
+
+                    const res = insomnia.response.json();
+
+                    insomnia.test("Fault code is ERR-223", function () {
+                        insomnia.expect(res.fault.faultCode).to.eql("ERR-223");
+                    });
+
+                    insomnia.test("Fault status code is 403", function () {
+                        insomnia.expect(res.fault.faultStatusCode).to.eql("403");
+                    });
+
+                    insomnia.test("Fault message indicates content filter violation", function () {
+                        insomnia.expect(res.fault.faultString)
+                            .to.contain("Violation detected in Content Filter");
+                    });
+
+                    insomnia.test("Fault message shows rule name", function () {
+                        insomnia.expect(res.fault.faultString)
+                            .to.contain("xml_script_tag_filter");
+                    });
+                }
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: client-ban
+        meta:
+          id: fld_505a1ca616bc4b2da208556697d27d8e
+          created: 1772438914155
+          modified: 1773657518124
+          sortKey: -1772438912188
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/client-ban"
+            name: get client-ban
+            meta:
+              id: req_4c201f9a9a144a1593e5448c4ef9840c
+              created: 1772438914157
+              modified: 1772439015786
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912187
+            method: GET
+            headers:
+              - name: test
+                value: ""
+            scripts:
+              preRequest: "const testCase = insomnia.iterationData.get(\"client_ban_case\");\r
+
+                \r
+
+                if (!testCase || testCase === \"SKIP\") {\r
+
+                \    console.log(\"[SKIP] client-ban — bu iterasyonda veri
+                yok\");\r
+
+                \    insomnia.execution.skipRequest();\r
+
+                \    return;\r
+
+                }\r
+
+                \r
+
+                // Test header'ını sabit tut (aynı value ile 3 istek atacağız)\r
+
+                const testHeaderValue = \"ban_test_user_123\";\r
+
+                insomnia.request.headers.upsert({ key: \"test\", value:
+                testHeaderValue });\r
+
+                \r
+
+                console.log(\"Client Ban Test Case:\", testCase);\r
+
+                console.log(\"Test Header Value:\", testHeaderValue);\r
+
+                \r
+
+                // İlk iterasyonda ban counter'ı sıfırla\r
+
+                if (testCase === \"first_request\") {\r
+
+                \    insomnia.environment.set(\"client_ban_counter\", 0);\r
+
+                \    console.log(\"🔄 Ban counter initialized\");\r
+
+                }"
+              afterResponse: "const testCase =
+                insomnia.iterationData.get(\"client_ban_case\");\r
+
+                \r
+
+                if (!testCase || testCase === \"SKIP\") { return; }\r
+
+                \r
+
+                console.log(\"Running Client Ban test for:\", testCase);\r
+
+                \r
+
+                // Counter'ı artır\r
+
+                let counter =
+                insomnia.environment.get(\"client_ban_counter\");\r
+
+                counter = counter ? parseInt(counter) : 0;\r
+
+                counter++;\r
+
+                insomnia.environment.set(\"client_ban_counter\", counter);\r
+
+                \r
+
+                console.log(\"Client Ban Request Count:\", counter);\r
+
+                \r
+
+                if (testCase === \"first_request\") {\r
+
+                \    insomnia.test(\"Client Ban #1: First request returns 200\",
+                function () {\r
+
+                \        insomnia.response.to.have.status(200);\r
+
+                \    });\r
+
+                \    \r
+
+                \    insomnia.test(\"Client Ban #1: No ban yet\", function ()
+                {\r
+
+                \        const res = insomnia.response.text();\r
+
+                \        insomnia.expect(res).to.not.contain(\"ERR-195\");\r
+
+                \    });\r
+
+                \    \r
+
+                \    console.log(\"✅ First request successful - no ban\");\r
+
+                }\r
+
+                \r
+
+                if (testCase === \"second_request\") {\r
+
+                \    insomnia.test(\"Client Ban #2: Second request returns
+                200\", function () {\r
+
+                \        insomnia.response.to.have.status(200);\r
+
+                \    });\r
+
+                \    \r
+
+                \    insomnia.test(\"Client Ban #2: No ban yet (ban activates
+                AFTER this)\", function () {\r
+
+                \        const res = insomnia.response.text();\r
+
+                \        insomnia.expect(res).to.not.contain(\"ERR-195\");\r
+
+                \    });\r
+
+                \    \r
+
+                \    console.log(\"✅ Second request successful - user will be
+                banned now\");\r
+
+                }\r
+
+                \r
+
+                if (testCase === \"banned_request\") {\r
+
+                \    insomnia.test(\"Client Ban #3: Third request returns 403 -
+                CLIENT BANNED\", function () {\r
+
+                \        insomnia.response.to.have.status(403);\r
+
+                \    });\r
+
+                \    \r
+
+                \    const res = insomnia.response.json();\r
+
+                \    \r
+
+                \    insomnia.test(\"Client Ban #3: Fault code is ERR-195\",
+                function () {\r
+
+                \        insomnia.expect(res.fault.faultCode).to.eql(\"ERR-195\
+                \");\r
+
+                \    });\r
+
+                \    \r
+
+                \    insomnia.test(\"Client Ban #3: Fault status code is 403\",
+                function () {\r
+
+                \        insomnia.expect(res.fault.faultStatusCode).to.eql(\"403\
+                \");\r
+
+                \    });\r
+
+                \    \r
+
+                \    insomnia.test(\"Client Ban #3: Fault message indicates
+                client is banned\", function () {\r
+
+                \        insomnia.expect(res.fault.faultString).to.contain(\"Cl\
+                ient is banned\");\r
+
+                \    });\r
+
+                \    \r
+
+                \    console.log(\"🚫 Client successfully banned - ERR-195
+                received\");\r
+
+                }"
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+      - name: backend-api
+        meta:
+          id: fld_5314054758854af2bebe2cac70513879
+          created: 1773298886995
+          modified: 1773657517131
+          sortKey: -1772438912219
+          description: ""
+        children:
+          - url: "{{baseUrl}}/backend-api"
+            name: get backend-api
+            meta:
+              id: req_80eb7b73f04141dcb0d8a3782d776e11
+              created: 1773298886997
+              modified: 1773299047404
+              isPrivate: false
+              description: ""
+              sortKey: -1772438912219
+            method: GET
+            authentication:
+              type: none
+            scripts:
+              preRequest: >-
+                // Sabit endpointler sadece iteration 1'de çalışır
+
+                const runOnce = insomnia.iterationData.get('run_once');
+
+                if (runOnce !== 'yes') {
+                    console.log('[SKIP] backend-api — sadece ilk iterasyonda çalışır');
+                    insomnia.execution.skipRequest();
+                }
+              afterResponse: |-
+                insomnia.test('Status code is 200', function () {
+                    insomnia.response.to.have.status(200);
+                });
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_c41900a70f03d989a94512e604518f91a1d99691
+    created: 1772439021696
+    modified: 1773657518115
+environments:
+  name: Variables
+  meta:
+    id: env_be0057fcc99d40eabefbf62caea941ef
+    created: 1772438914159
+    modified: 1773657518120
+    isPrivate: false
+  data:
+    baseUrl: https://apiqa.apinizer.com/apigateway/promotion/prod/nospec-pet-service
+    body: '{"username":"eren"}'
+    client_ban_counter: 3
+    quota_counter: 5
+    throttling_counter: 5
+    xmlBody: |-
+      <request>
+          <customerId>123</customerId>
+          <comment>
+              Hello world <ScRiPt>alert('xss')</ScRiPt>
+          </comment>
+      </request>
+    promotionBaseUrl: https://apiqa.apinizer.com/apigateway/nospec-pet-service
