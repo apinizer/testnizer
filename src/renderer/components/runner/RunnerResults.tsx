@@ -276,7 +276,7 @@ export default function RunnerResults({
       {/* ═══ Right: Response detail pane ═══ */}
       {selectedResult && (
         <div className="flex w-[48%] min-w-[360px] flex-col overflow-hidden border-l border-[var(--border)]">
-          {/* Detail header: index + method + breadcrumb */}
+          {/* Detail header: index + method + endpoint name */}
           <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-2">
             <span style={{ fontSize: 13, color: 'var(--hint)' }}>
               {filteredResults.findIndex((r) => r.endpointId === selectedResultId) + 1}
@@ -353,29 +353,136 @@ export default function RunnerResults({
             </div>
           </div>
 
-          {/* ── Response tab — status meta is already shown in the tab bar
-                 above; we surface body + response headers + tests here so the
-                 reader has one place for everything the server returned. */}
+          {/* ── Response tab — HTTP message order: Status/Headers → Body.
+                 Headers and assertions sit above the body so the reader gets
+                 metadata first, then dives into the payload. */}
           {detailTab === 'response' && (
             <div className="flex flex-1 flex-col overflow-hidden">
               {selectedResult.error ? (
                 <div className="p-4" style={{ fontSize: 13, color: '#cc2200' }}>
                   {selectedResult.error}
                 </div>
-              ) : selectedResult.responseBody ? (
+              ) : (
                 <>
-                  {/* Pretty bar */}
+                  {selectedResult.responseHeaders &&
+                    Object.keys(selectedResult.responseHeaders).length > 0 && (
+                      <div
+                        className="shrink-0 overflow-y-auto border-b border-[var(--border)] px-4 py-3"
+                        style={{ maxHeight: 220 }}
+                      >
+                        <SectionLabel>Response Headers</SectionLabel>
+                        <HeadersTable headers={selectedResult.responseHeaders} />
+                      </div>
+                    )}
+                  {selectedResult.assertions.length > 0 && (
+                    <div className="shrink-0 border-b border-[var(--border)] px-4 py-3">
+                      <SectionLabel>Tests</SectionLabel>
+                      {selectedResult.assertions.map((a, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center gap-1.5 py-0.5"
+                          style={{ fontSize: 13 }}
+                        >
+                          <span style={{ color: a.passed ? '#1a7a4a' : '#cc2200' }}>
+                            {a.passed ? '✓' : '✗'}
+                          </span>
+                          <span style={{ color: a.passed ? 'var(--text)' : '#cc2200' }}>
+                            {a.name}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {selectedResult.responseBody ? (
+                    <>
+                      <div
+                        className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 py-1.5"
+                        style={{ fontSize: 13 }}
+                      >
+                        <SectionLabel>Body</SectionLabel>
+                        <span className="ml-auto" style={{ fontWeight: 500, color: 'var(--text)' }}>
+                          Pretty
+                        </span>
+                        <span style={{ color: 'var(--hint)' }}>∨</span>
+                      </div>
+                      <div className="flex-1 overflow-hidden">
+                        <MonacoWrapper
+                          value={formatBody(selectedResult.responseBody)}
+                          language={detectLanguage(selectedResult.responseBody)}
+                          readOnly
+                          lineNumbers="on"
+                          height="100%"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex-1 p-4" style={{ fontSize: 13, color: 'var(--hint)' }}>
+                      No response body available.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── Request tab — HTTP message order: Method/URL → Headers →
+                 Body. Mirrors the Response tab's vertical rhythm so the
+                 reader scans both panes the same way. */}
+          {detailTab === 'request' && (
+            <div className="flex flex-1 flex-col overflow-hidden">
+              {/* Summary: method + URL */}
+              <div className="shrink-0 border-b border-[var(--border)] px-4 py-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <SectionLabel>Method</SectionLabel>
+                  <span
+                    className="ml-1"
+                    style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 13 }}
+                  >
+                    {selectedResult.method}
+                  </span>
+                </div>
+                <SectionLabel>URL</SectionLabel>
+                <div
+                  style={{
+                    color: 'var(--text)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 13,
+                    wordBreak: 'break-all',
+                  }}
+                >
+                  {selectedResult.url}
+                </div>
+              </div>
+
+              {/* Headers (above body, matching Response tab order) */}
+              {selectedResult.requestHeaders &&
+                Object.keys(selectedResult.requestHeaders).length > 0 && (
+                  <div
+                    className="shrink-0 overflow-y-auto border-b border-[var(--border)] px-4 py-3"
+                    style={{ maxHeight: 220 }}
+                  >
+                    <SectionLabel>Request Headers</SectionLabel>
+                    <HeadersTable headers={selectedResult.requestHeaders} />
+                  </div>
+                )}
+
+              {/* Body */}
+              {selectedResult.requestBody ? (
+                <>
                   <div
                     className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 py-1.5"
                     style={{ fontSize: 13 }}
                   >
-                    <span style={{ fontWeight: 500, color: 'var(--text)' }}>Pretty</span>
+                    <SectionLabel>Body</SectionLabel>
+                    <span className="ml-auto" style={{ fontWeight: 500, color: 'var(--text)' }}>
+                      Pretty
+                    </span>
                     <span style={{ color: 'var(--hint)' }}>∨</span>
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <MonacoWrapper
-                      value={formatBody(selectedResult.responseBody)}
-                      language={detectLanguage(selectedResult.responseBody)}
+                      value={formatBody(selectedResult.requestBody)}
+                      language={detectLanguage(selectedResult.requestBody)}
                       readOnly
                       lineNumbers="on"
                       height="100%"
@@ -383,96 +490,9 @@ export default function RunnerResults({
                   </div>
                 </>
               ) : (
-                <div className="p-4" style={{ fontSize: 13, color: 'var(--hint)' }}>
-                  No response body available.
+                <div className="flex-1 p-4" style={{ fontSize: 13, color: 'var(--hint)' }}>
+                  No request body available.
                 </div>
-              )}
-              {selectedResult.responseHeaders &&
-                Object.keys(selectedResult.responseHeaders).length > 0 && (
-                  <div className="shrink-0 border-t border-[var(--border)] px-4 py-3">
-                    <SectionLabel>Response Headers</SectionLabel>
-                    <HeadersTable headers={selectedResult.responseHeaders} />
-                  </div>
-                )}
-              {selectedResult.assertions.length > 0 && (
-                <div className="shrink-0 border-t border-[var(--border)] px-4 py-3">
-                  <div
-                    style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}
-                  >
-                    Tests
-                  </div>
-                  {selectedResult.assertions.map((a, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-1.5 py-0.5"
-                      style={{ fontSize: 13 }}
-                    >
-                      <span style={{ color: a.passed ? '#1a7a4a' : '#cc2200' }}>
-                        {a.passed ? '✓' : '✗'}
-                      </span>
-                      <span style={{ color: a.passed ? 'var(--text)' : '#cc2200' }}>{a.name}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Request tab — method, URL, request headers, and request body
-                 captured by the runner. Read-only for inspection; the
-                 "Open endpoint" button is the path to actually edit the
-                 underlying suite item / endpoint. */}
-          {detailTab === 'request' && (
-            <div className="flex-1 overflow-auto p-4" style={{ fontSize: 13 }}>
-              <SectionLabel>Method</SectionLabel>
-              <div
-                style={{
-                  color: 'var(--text)',
-                  fontFamily: 'var(--font-mono)',
-                  marginBottom: 16,
-                }}
-              >
-                {selectedResult.method}
-              </div>
-              <SectionLabel>URL</SectionLabel>
-              <div
-                style={{
-                  color: 'var(--text)',
-                  fontFamily: 'var(--font-mono)',
-                  wordBreak: 'break-all',
-                  marginBottom: 16,
-                }}
-              >
-                {selectedResult.url}
-              </div>
-              {selectedResult.requestHeaders &&
-                Object.keys(selectedResult.requestHeaders).length > 0 && (
-                  <>
-                    <SectionLabel>Headers</SectionLabel>
-                    <div style={{ marginBottom: 16 }}>
-                      <HeadersTable headers={selectedResult.requestHeaders} />
-                    </div>
-                  </>
-                )}
-              {selectedResult.requestBody && (
-                <>
-                  <SectionLabel>Body</SectionLabel>
-                  <pre
-                    style={{
-                      color: 'var(--text)',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 12,
-                      padding: 8,
-                      background: 'var(--surface)',
-                      borderRadius: 4,
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-all',
-                      margin: 0,
-                    }}
-                  >
-                    {formatBody(selectedResult.requestBody)}
-                  </pre>
-                </>
               )}
             </div>
           )}

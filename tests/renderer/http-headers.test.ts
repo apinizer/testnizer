@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   STANDARD_HTTP_HEADERS,
   filterHeaderSuggestions,
+  filterHeaderValueSuggestions,
+  HEADER_VALUE_SUGGESTIONS,
 } from '../../src/renderer/lib/http-headers'
 
 describe('STANDARD_HTTP_HEADERS', () => {
@@ -71,5 +73,42 @@ describe('filterHeaderSuggestions', () => {
     const result = filterHeaderSuggestions('accept')
     expect(result).toContain('Accept-Encoding')
     expect(result).toContain('Accept-Language')
+  })
+})
+
+describe('filterHeaderValueSuggestions', () => {
+  it('returns the full list when value is empty so focus can preview all options', () => {
+    const result = filterHeaderValueSuggestions('Content-Type', '')
+    expect(result).toContain('application/json')
+    expect(result.length).toBe(HEADER_VALUE_SUGGESTIONS['content-type'].length)
+  })
+
+  it('matches header name case-insensitively', () => {
+    expect(filterHeaderValueSuggestions('content-type', 'json')).toContain('application/json')
+    expect(filterHeaderValueSuggestions('CONTENT-TYPE', 'json')).toContain('application/json')
+  })
+
+  it('substring-matches the value', () => {
+    const result = filterHeaderValueSuggestions('Content-Type', 'json')
+    expect(result).toEqual(['application/json'])
+  })
+
+  it('omits an exact match', () => {
+    const result = filterHeaderValueSuggestions('Content-Type', 'application/json')
+    expect(result).not.toContain('application/json')
+  })
+
+  it('returns an empty list for unrecognised header names', () => {
+    expect(filterHeaderValueSuggestions('X-Custom-Header', '')).toEqual([])
+    expect(filterHeaderValueSuggestions('', 'anything')).toEqual([])
+  })
+
+  it('covers other common headers', () => {
+    expect(filterHeaderValueSuggestions('Accept', '')).toContain('application/json')
+    expect(filterHeaderValueSuggestions('Cache-Control', 'no')).toContain('no-cache')
+    expect(filterHeaderValueSuggestions('Connection', '')).toContain('keep-alive')
+    expect(filterHeaderValueSuggestions('Authorization', '')).toEqual(
+      expect.arrayContaining(['Bearer ', 'Basic ']),
+    )
   })
 })

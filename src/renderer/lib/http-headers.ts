@@ -81,3 +81,89 @@ export function filterHeaderSuggestions(
   }
   return out
 }
+
+/**
+ * Common values for well-known request headers. Keyed by lowercased header
+ * name so callers can do `HEADER_VALUE_SUGGESTIONS[name.toLowerCase()]`
+ * without normalising at every callsite.
+ *
+ * Used by the headers KeyValueTable to surface a value-cell autocomplete:
+ * when the user types a recognised header name in the key cell, the value
+ * cell offers a substring-filtered list of plausible values.
+ */
+export const HEADER_VALUE_SUGGESTIONS: Readonly<Record<string, readonly string[]>> = {
+  'content-type': [
+    'application/json',
+    'application/xml',
+    'application/x-www-form-urlencoded',
+    'application/octet-stream',
+    'application/soap+xml',
+    'application/graphql',
+    'application/javascript',
+    'application/pdf',
+    'multipart/form-data',
+    'text/plain',
+    'text/html',
+    'text/xml',
+    'text/xml; charset=utf-8',
+    'text/csv',
+  ],
+  accept: [
+    '*/*',
+    'application/json',
+    'application/xml',
+    'application/soap+xml',
+    'application/graphql',
+    'application/octet-stream',
+    'text/plain',
+    'text/html',
+    'text/xml',
+    'text/event-stream',
+  ],
+  'accept-encoding': ['gzip', 'deflate', 'br', 'identity', 'gzip, deflate, br', '*'],
+  'accept-language': ['en-US', 'en', 'tr-TR', 'tr', '*'],
+  'accept-charset': ['utf-8', 'iso-8859-1', '*'],
+  authorization: ['Bearer ', 'Basic ', 'Digest '],
+  'cache-control': [
+    'no-cache',
+    'no-store',
+    'no-store, no-cache, must-revalidate',
+    'must-revalidate',
+    'max-age=0',
+    'max-age=3600',
+    'public',
+    'private',
+  ],
+  connection: ['keep-alive', 'close', 'Upgrade'],
+  'x-requested-with': ['XMLHttpRequest'],
+  'content-encoding': ['gzip', 'deflate', 'br', 'identity'],
+  pragma: ['no-cache'],
+  origin: ['*', 'null'],
+  dnt: ['1', '0'],
+  upgrade: ['websocket', 'h2c'],
+}
+
+/**
+ * Returns suggestions for a header value given the (possibly partial) header
+ * name and the currently-typed value. Match is case-insensitive substring;
+ * input that exactly equals an entry is dropped.
+ *
+ * Empty `value` returns the full list — callers use that to show all options
+ * on focus before the user types anything.
+ */
+export function filterHeaderValueSuggestions(headerName: string, value: string): string[] {
+  const key = headerName.trim().toLowerCase()
+  const entries = HEADER_VALUE_SUGGESTIONS[key]
+  if (!entries) return []
+
+  const query = value.trim().toLowerCase()
+  if (query.length === 0) return [...entries]
+
+  const out: string[] = []
+  for (const v of entries) {
+    const lower = v.toLowerCase()
+    if (lower === query) continue
+    if (lower.includes(query)) out.push(v)
+  }
+  return out
+}

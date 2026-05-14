@@ -4,25 +4,8 @@ import { Check, X, Upload } from 'lucide-react'
 import type { KeyValuePair } from '../../types'
 import VariableAutocompleteInput from './VariableAutocompleteInput'
 import { useTranslation } from '../../lib/i18n'
-import { filterHeaderSuggestions } from '../../lib/http-headers'
+import { filterHeaderSuggestions, filterHeaderValueSuggestions } from '../../lib/http-headers'
 import { rowsToBulkText, bulkTextToRows } from '../../lib/key-value-bulk'
-
-const CONTENT_TYPE_VALUES = [
-  'application/json',
-  'application/xml',
-  'application/x-www-form-urlencoded',
-  'application/octet-stream',
-  'application/soap+xml',
-  'application/graphql',
-  'application/javascript',
-  'application/pdf',
-  'multipart/form-data',
-  'text/plain',
-  'text/html',
-  'text/xml',
-  'text/xml; charset=utf-8',
-  'text/csv',
-]
 
 interface KeyValueTableProps {
   rows: KeyValuePair[]
@@ -74,7 +57,7 @@ function AutocompleteDropdown({
   onSelect,
   onHover,
 }: {
-  anchorRef: React.RefObject<HTMLInputElement | null>
+  anchorRef: React.RefObject<HTMLElement | null>
   suggestions: string[]
   selectedIndex: number
   onSelect: (s: string) => void
@@ -137,7 +120,9 @@ export default function KeyValueTable({
   const { t } = useTranslation()
   const resolvedAddLabel = addLabel ?? `+ ${t('kv.key')} / ${t('kv.value')}`
   const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(null)
-  const activeInputRef = useRef<HTMLInputElement | null>(null)
+  // Anchor for the dropdown — set to the focused key input or the value cell
+  // wrapper (we can't reach VariableAutocompleteInput's internal <input>).
+  const activeInputRef = useRef<HTMLElement | null>(null)
 
   // Close autocomplete on outside click
   useEffect(() => {
@@ -188,19 +173,16 @@ export default function KeyValueTable({
   )
 
   const handleValueInputChange = useCallback(
-    (rowId: string, key: string, value: string, ref: HTMLInputElement | null) => {
+    (rowId: string, key: string, value: string) => {
       onUpdate(rowId, { value })
       if (!enableAutocomplete) return
-      activeInputRef.current = ref
-      if (key.toLowerCase() === 'content-type' && value.length > 0) {
-        const filtered = CONTENT_TYPE_VALUES.filter((v) =>
-          v.toLowerCase().includes(value.toLowerCase()),
-        )
-        if (filtered.length > 0) {
-          setAutocomplete({ rowId, field: 'value', suggestions: filtered, selectedIndex: 0 })
-        } else {
-          setAutocomplete(null)
-        }
+      if (isInsideVariableExpression(value)) {
+        setAutocomplete(null)
+        return
+      }
+      const filtered = filterHeaderValueSuggestions(key, value)
+      if (filtered.length > 0) {
+        setAutocomplete({ rowId, field: 'value', suggestions: filtered, selectedIndex: 0 })
       } else {
         setAutocomplete(null)
       }
@@ -444,7 +426,28 @@ export default function KeyValueTable({
               )}
 
               {/* Value */}
-              <div className="relative" style={{ borderRight: '1px solid var(--border)' }}>
+              <div
+                className="relative"
+                style={{ borderRight: '1px solid var(--border)' }}
+                onFocusCapture={(e) => {
+                  // Anchor the dropdown to the value cell — VariableAutocompleteInput
+                  // hides its internal <input> behind an overlay wrapper, so we use the
+                  // cell DIV's bounding rect to position the popup.
+                  activeInputRef.current = e.currentTarget
+                  if (!enableAutocomplete) return
+                  if (enableFileType && row.type === 'file') return
+                  if (isInsideVariableExpression(row.value)) return
+                  const filtered = filterHeaderValueSuggestions(row.key, row.value)
+                  if (filtered.length > 0) {
+                    setAutocomplete({
+                      rowId: row.id,
+                      field: 'value',
+                      suggestions: filtered,
+                      selectedIndex: 0,
+                    })
+                  }
+                }}
+              >
                 {enableFileType && row.type === 'file' ? (
                   row.filePath ? (
                     <div className="flex items-center gap-1 px-2.5 py-[5px]">
@@ -478,7 +481,7 @@ export default function KeyValueTable({
                 ) : (
                   <VariableAutocompleteInput
                     value={row.value}
-                    onChange={(val) => handleValueInputChange(row.id, row.key, val, null)}
+                    onChange={(val) => handleValueInputChange(row.id, row.key, val)}
                     onKeyDown={handleKeyDown}
                     className="w-full border-none bg-transparent px-2.5 py-[5px] outline-none"
                     style={{ color: valueColor || 'var(--text)' }}
