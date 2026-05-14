@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
 import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
+import { toast } from '../../lib/toast'
 import { isMac } from '../../lib/platform'
 import type { Project } from '../../types'
 import ProjectIcon from '../shared/ProjectIcon'
@@ -29,11 +30,16 @@ export default function ProjectHome() {
       if (result?.success && result.data?.projectId) {
         await fetchProjects(activeWorkspaceId)
         setActiveProject(result.data.projectId)
+        toast.success(t('toast.projectImported'))
       } else if (result?.error && result.error !== 'Cancelled') {
+        // Surface the underlying reason (parse error, invalid format,
+        // missing file, etc.) so the user knows why nothing happened.
         console.error('Import project failed:', result.error)
+        toast.error(`${t('toast.projectImportFailed')}: ${result.error}`)
       }
     } catch (err) {
       console.error(err)
+      toast.error(`${t('toast.projectImportFailed')}: ${(err as Error).message || String(err)}`)
     }
   }
 

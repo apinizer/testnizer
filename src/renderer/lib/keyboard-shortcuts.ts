@@ -7,6 +7,7 @@ import { useTabsStore } from '../stores/tabs.store'
 import { useUIStore } from '../stores/ui.store'
 import { isMac } from './platform'
 import { makeTabId } from './utils'
+import { isToolProtocol } from '../types'
 
 interface ShortcutHandler {
   key: string
@@ -69,6 +70,32 @@ export function useKeyboardShortcuts(): void {
         {
           key: 's',
           ctrl: true,
+          description: 'Save endpoint',
+          action: () => {
+            // Industry-standard Cmd/Ctrl+S = save the active request (Postman,
+            // Insomnia, Apidog all do this). Falls back to the project export
+            // modal only when there is no editable request tab — e.g. when a
+            // Tools tab is active, or no tab at all. Cmd+Shift+S is the
+            // dedicated "Save project" chord (see the entry below).
+            const ui = useUIStore.getState()
+            const tabs = useTabsStore.getState()
+            const active = tabs.tabs.find((t) => t.id === tabs.activeTabId)
+            const isRequestTab =
+              !!active &&
+              !isToolProtocol(active.protocol) &&
+              active.protocol !== 'runner' &&
+              active.protocol !== 'mockServer'
+            if (isRequestTab) {
+              ui.setShowEndpointSaveModal(true)
+            } else {
+              ui.setShowSaveModal(true)
+            }
+          },
+        },
+        {
+          key: 's',
+          ctrl: true,
+          shift: true,
           description: 'Save project',
           action: () => {
             useUIStore.getState().setShowSaveModal(true)

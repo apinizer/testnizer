@@ -259,6 +259,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'import.subtitle': 'Please select the corresponding data source format',
     'import.cancel': 'Cancel',
     'import.next': 'Next',
+    'import.typeMismatch':
+      'Selected type is {expected} but file appears to be {detected}. Switch type or import a matching file.',
 
     // Settings Modal
     'settings.title': 'Settings',
@@ -1249,6 +1251,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.saveFailed': 'Save failed',
     'toast.imported': 'Imported successfully',
     'toast.importFailed': 'Import failed',
+    'toast.projectImported': 'Project imported',
+    'toast.projectImportFailed': 'Project import failed',
     'toast.passwordChanged': 'Password changed',
     'toast.passwordChangeFailed': 'Password change failed',
     'toast.passwordDisabled': 'Password protection disabled',
@@ -1285,6 +1289,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'command.action.toggleSidebar': 'Toggle sidebar',
     'command.action.send': 'Send request',
     'command.action.save': 'Save',
+    'command.action.saveEndpoint': 'Save endpoint',
+    'command.action.saveProject': 'Save project',
     'command.action.formatBody': 'Format request body',
     'command.action.import': 'Open import…',
     'command.action.openSettings': 'Open settings',
@@ -1308,6 +1314,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'command.shortcut.cheatsheet': 'Show this cheatsheet',
     'command.shortcut.send': 'Send request',
     'command.shortcut.save': 'Save',
+    'command.shortcut.saveEndpoint': 'Save endpoint',
+    'command.shortcut.saveProject': 'Save project (export)',
     'command.shortcut.newTab': 'New tab',
     'command.shortcut.closeTab': 'Close current tab',
     'command.shortcut.focusUrl': 'Focus URL input',
@@ -1573,6 +1581,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'import.subtitle': 'Lutfen ilgili veri kaynagi formatini secin',
     'import.cancel': 'Iptal',
     'import.next': 'Ileri',
+    'import.typeMismatch':
+      'Seçilen tür {expected}, fakat dosya {detected} formatında görünüyor. Türü değiştirin veya uyumlu bir dosya seçin.',
 
     // Settings Modal
     'settings.title': 'Ayarlar',
@@ -2564,6 +2574,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.saveFailed': 'Kaydetme başarısız',
     'toast.imported': 'İçe aktarıldı',
     'toast.importFailed': 'İçe aktarma başarısız',
+    'toast.projectImported': 'Proje içe aktarıldı',
+    'toast.projectImportFailed': 'Proje içe aktarılamadı',
     'toast.passwordChanged': 'Parola değiştirildi',
     'toast.passwordChangeFailed': 'Parola değiştirilemedi',
     'toast.passwordDisabled': 'Parola koruması devre dışı',
@@ -2600,6 +2612,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'command.action.toggleSidebar': 'Kenar çubuğunu aç/kapat',
     'command.action.send': 'İsteği gönder',
     'command.action.save': 'Kaydet',
+    'command.action.saveEndpoint': 'Endpoint’i kaydet',
+    'command.action.saveProject': 'Projeyi kaydet',
     'command.action.formatBody': 'İstek gövdesini biçimlendir',
     'command.action.import': 'İçe aktar…',
     'command.action.openSettings': 'Ayarları aç',
@@ -2623,6 +2637,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'command.shortcut.cheatsheet': 'Bu kılavuzu göster',
     'command.shortcut.send': 'İsteği gönder',
     'command.shortcut.save': 'Kaydet',
+    'command.shortcut.saveEndpoint': 'Endpoint’i kaydet',
+    'command.shortcut.saveProject': 'Projeyi kaydet (dışa aktar)',
     'command.shortcut.newTab': 'Yeni sekme',
     'command.shortcut.closeTab': 'Aktif sekmeyi kapat',
     'command.shortcut.focusUrl': 'URL alanına odaklan',

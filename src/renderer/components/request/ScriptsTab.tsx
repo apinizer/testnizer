@@ -4,14 +4,21 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 
 type ScriptSection = 'pre-request' | 'post-response'
 
-const PRE_REQUEST_PLACEHOLDER = `// Pre-request script runs before the request is sent.
+// Example snippets surfaced via the "Insert example" button when the relevant
+// script field is empty. Important: these are NEVER passed as the editor's
+// `value` prop — doing that would *display* the example without ever writing
+// it back into the store via `onChange`, so the runner branch in
+// `sendRequest()` would skip the script and the Test Results tab would show
+// "No tests were run for this request" even though the user can clearly see
+// a `pm.test(...)` call in the editor.
+const PRE_REQUEST_EXAMPLE = `// Pre-request script runs before the request is sent.
 // Both \`pm\` (Postman-compatible) and \`t\` (Testnizer alias) are available.
 // Examples:
 //   pm.environment.set('token', 'abc');
 //   t.variables.set('userId', '42');
 `
 
-const POST_RESPONSE_PLACEHOLDER = `// \`pm\` (Postman-compatible) and \`t\` (Testnizer alias) are interchangeable.
+const POST_RESPONSE_EXAMPLE = `// \`pm\` (Postman-compatible) and \`t\` (Testnizer alias) are interchangeable.
 pm.test("Status code is 200", function () {
     pm.response.to.have.status(200);
 });
@@ -28,6 +35,15 @@ export default function ScriptsTab() {
     { key: 'pre-request', label: 'Pre-request' },
     { key: 'post-response', label: 'Post-response' },
   ]
+
+  const showInsertExample =
+    (activeSection === 'pre-request' && !preScript) ||
+    (activeSection === 'post-response' && !postScript)
+
+  function handleInsertExample(): void {
+    if (activeSection === 'pre-request') setPreScript(PRE_REQUEST_EXAMPLE)
+    else setPostScript(POST_RESPONSE_EXAMPLE)
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -63,6 +79,22 @@ export default function ScriptsTab() {
 
         <div className="flex-1" />
 
+        {showInsertExample && (
+          <button
+            type="button"
+            onClick={handleInsertExample}
+            className="cursor-pointer rounded px-2 py-0.5"
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--border2)',
+              color: 'var(--accent-text)',
+              fontSize: 12,
+            }}
+          >
+            + Insert example
+          </button>
+        )}
+
         {/* Snippet helper */}
         <span style={{ color: 'var(--hint)' }}>JavaScript</span>
       </div>
@@ -71,7 +103,7 @@ export default function ScriptsTab() {
       <div className="flex-1 overflow-hidden">
         {activeSection === 'pre-request' && (
           <MonacoWrapper
-            value={preScript || PRE_REQUEST_PLACEHOLDER}
+            value={preScript}
             onChange={setPreScript}
             language="javascript"
             height="100%"
@@ -79,7 +111,7 @@ export default function ScriptsTab() {
         )}
         {activeSection === 'post-response' && (
           <MonacoWrapper
-            value={postScript || POST_RESPONSE_PLACEHOLDER}
+            value={postScript}
             onChange={setPostScript}
             language="javascript"
             height="100%"

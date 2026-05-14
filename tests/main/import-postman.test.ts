@@ -667,3 +667,99 @@ describe('importPostman — edge cases', () => {
     expect(ep.url).toBe('{{baseUrl}}/users/{{userId}}/posts')
   })
 })
+
+// ─── Postman Environment Import ────────────────────────────
+
+describe('importPostman — standalone environment file', () => {
+  function buildEnv(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+    return {
+      id: 'env-1',
+      name: 'Dev',
+      values: [
+        { key: 'baseUrl', value: 'https://dev.example.com', enabled: true },
+        { key: 'apiToken', value: 'secret-token', type: 'secret' },
+        { key: 'muted', value: 'x', enabled: false },
+      ],
+      _postman_variable_scope: 'environment',
+      _postman_exported_at: '2025-01-01T00:00:00.000Z',
+      _postman_exported_using: 'Postman/10.0.0',
+      ...overrides,
+    }
+  }
+
+  it('detects Postman environment files and creates a project-scoped env', async () => {
+    const result = await importPostman('proj-1', JSON.stringify(buildEnv()))
+    expect(result.success).toBe(true)
+    // Env imports report zero endpoints/folders — they only touch environments.
+    expect(result.endpointCount).toBe(0)
+    expect(result.folderCount).toBe(0)
+
+    const envs = memDb
+      .prepare('SELECT id, name, project_id, is_active FROM environments WHERE project_id = ?')
+      .all('proj-1') as Array<{ id: string; name: string; project_id: string; is_active: number }>
+    expect(envs).toHaveLength(1)
+    expect(envs[0].name).toBe('Dev')
+    // First env on the project should be flagged active.
+    expect(envs[0].is_active).toBe(1)
+  })
+
+  it('inserts every variable with the correct enabled + secret flags', async () => {
+    await importPostman('proj-1', JSON.stringify(buildEnv()))
+    const envRow = memDb
+      .prepare('SELECT id FROM environments WHERE project_id = ?')
+      .get('proj-1') as { id: string }
+    const vars = memDb
+      .prepare(
+        'SELECT key, value, enabled, secret FROM environment_variables WHERE environment_id = ? ORDER BY key',
+      )
+      .all(envRow.id) as Array<{ key: string; value: string; enabled: number; secret: number }>
+    expect(vars).toHaveLength(3)
+    const byKey = Object.fromEntries(vars.map((v) => [v.key, v]))
+    expect(byKey['baseUrl']).toMatchObject({ value: 'https://dev.example.com', enabled: 1, secret: 0 })
+    expect(byKey['apiToken']).toMatchObject({ secret: 1, enabled: 1 })
+    expect(byKey['muted']).toMatchObject({ enabled: 0 })
+  })
+
+  it('re-importing the same env name replaces variables (no duplicates)', async () => {
+    await importPostman('proj-1', JSON.stringify(buildEnv()))
+    // Re-import with the variables changed.
+    await importPostman(
+      'proj-1',
+      JSON.stringify(
+        buildEnv({
+          values: [{ key: 'baseUrl', value: 'https://prod.example.com' }],
+        }),
+      ),
+    )
+    const envs = memDb
+      .prepare('SELECT id FROM environments WHERE project_id = ?')
+      .all('proj-1') as Array<{ id: string }>
+    expect(envs).toHaveLength(1)
+    const vars = memDb
+      .prepare('SELECT key, value FROM environment_variables WHERE environment_id = ?')
+      .all(envs[0].id) as Array<{ key: string; value: string }>
+    expect(vars).toHaveLength(1)
+    expect(vars[0]).toMatchObject({ key: 'baseUrl', value: 'https://prod.example.com' })
+  })
+
+  it('rejects env files that are missing a name', async () => {
+    const broken = {
+      values: [{ key: 'k', value: 'v' }],
+      _postman_variable_scope: 'environment',
+    }
+    const result = await importPostman('proj-1', JSON.stringify(broken))
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/name/i)
+  })
+
+  it('warns when the env file has no variables', async () => {
+    const empty = {
+      name: 'Empty',
+      _postman_variable_scope: 'environment',
+      values: [],
+    }
+    const result = await importPostman('proj-1', JSON.stringify(empty))
+    expect(result.success).toBe(true)
+    expect(result.warnings?.some((w) => /no variables/i.test(w))).toBe(true)
+  })
+})

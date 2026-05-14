@@ -15,6 +15,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
+import { detectImportFormat, checkTypeMismatch } from '../../lib/import-format-detect'
 import Modal from '../shared/Modal'
 import type { WsdlParseResult, TreeNode } from '../../types'
 
@@ -234,6 +235,19 @@ export default function ImportModal() {
               typeof fetchResult.data === 'string'
                 ? fetchResult.data
                 : JSON.stringify(fetchResult.data, null, 2)
+            // Same mismatch guard as file uploads — catches the case
+            // where a `?wsdl` URL is pasted under the OpenAPI option.
+            const detected = detectImportFormat(content, url)
+            const mismatch = checkTypeMismatch(selectedFormat.id, detected)
+            if (mismatch) {
+              setImportError(
+                t('import.typeMismatch')
+                  .replace('{expected}', mismatch.expected)
+                  .replace('{detected}', mismatch.detected),
+              )
+              setImportLoading(false)
+              return
+            }
             setPendingFileContent(content)
             setPendingSourceUrl(url)
           } else {
@@ -269,6 +283,20 @@ export default function ImportModal() {
       }
 
       const fileData = result.data as { content: string; filePath: string }
+
+      // Detect the file's actual format and surface obvious mismatches
+      // BEFORE the user spends time picking a destination folder.
+      const detected = detectImportFormat(fileData.content, fileData.filePath)
+      const mismatch = checkTypeMismatch(selectedFormat.id, detected)
+      if (mismatch) {
+        setImportError(
+          t('import.typeMismatch')
+            .replace('{expected}', mismatch.expected)
+            .replace('{detected}', mismatch.detected),
+        )
+        setImportLoading(false)
+        return
+      }
 
       if (selectedFormat.id === 'wsdl') {
         const parseResult = await window.api?.importExport?.parseWsdlFileForImport(fileData.content)

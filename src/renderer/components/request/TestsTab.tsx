@@ -119,9 +119,15 @@ export default function TestsTab() {
     setAssertions(assertions.map((a) => (a.id === id ? { ...a, ...updates } : a)))
   }
 
-  const defaultScript =
-    postScript ||
-    `pm.test("Status is 200", () => {
+  // Example script used as a one-click starter when the post-response script
+  // field is empty. We intentionally do NOT pass this as the editor's `value`
+  // when `postScript` is empty: doing that would *display* the example without
+  // ever writing it back into the store via `onChange`, so `sendRequest()`
+  // would still see an empty script and the Test Results tab would show
+  // "No tests were run for this request" even though the user can clearly see
+  // a `pm.test(...)` call in the editor. Render the editor against the real
+  // value and surface the example via an explicit "Insert example" button.
+  const EXAMPLE_SCRIPT = `pm.test("Status is 200", () => {
   pm.expect(pm.response.code).to.equal(200);
 });`
 
@@ -178,9 +184,29 @@ export default function TestsTab() {
         )}
       </div>
 
+      <div className="mb-1 flex items-center justify-between">
+        <div className="font-medium" style={{ color: 'var(--text)' }}>
+          Post-response Script
+        </div>
+        {!postScript && (
+          <button
+            type="button"
+            onClick={() => setPostScript(EXAMPLE_SCRIPT)}
+            className="cursor-pointer rounded px-2 py-0.5"
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--border2)',
+              color: 'var(--accent-text)',
+              fontSize: 12,
+            }}
+          >
+            + Insert example
+          </button>
+        )}
+      </div>
       <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--white)]">
         <MonacoWrapper
-          value={defaultScript}
+          value={postScript}
           onChange={setPostScript}
           language="javascript"
           height={140}

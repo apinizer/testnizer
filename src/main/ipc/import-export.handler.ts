@@ -1299,6 +1299,27 @@ interface PostmanVariable {
   type?: string
 }
 
+/**
+ * Standalone Postman environment export — a separate file type from collection
+ * exports (Postman → Environments → Export). Detected by `_postman_variable_scope`.
+ * The `values[]` array uses the same shape as `collection.variable[]` but adds
+ * an optional `enabled` flag per entry.
+ */
+interface PostmanEnvironment {
+  id?: string
+  name: string
+  values?: Array<{
+    key: string
+    value: string
+    type?: string
+    /** Postman omits this field on enabled rows; `false` means the variable is muted. */
+    enabled?: boolean
+  }>
+  _postman_variable_scope?: string
+  _postman_exported_at?: string
+  _postman_exported_using?: string
+}
+
 // ─── Postman Import ─────────────────────────────────────────
 
 // ─── Postman / Insomnia script helpers ─────────────────────
@@ -1576,10 +1597,10 @@ export async function importPostman(
   rootFolderId: string | null = null,
 ): Promise<ImportResult> {
   const warnings: string[] = []
-  let collection: PostmanCollection
+  let parsed: unknown
 
   try {
-    collection = JSON.parse(content) as PostmanCollection
+    parsed = JSON.parse(content)
   } catch (e) {
     return {
       success: false,
@@ -1587,10 +1608,20 @@ export async function importPostman(
     }
   }
 
+  // Postman ships two distinct file shapes through the same JSON exporter:
+  // collections (info + item[]) and environments (_postman_variable_scope +
+  // values[]). Detecting the latter here lets users drag any Postman export
+  // into the same "Import → Postman" flow without us silently rejecting envs.
+  const root = parsed as Record<string, unknown>
+  if (root && typeof root === 'object' && root['_postman_variable_scope'] === 'environment') {
+    return importPostmanEnvironment(projectId, root as unknown as PostmanEnvironment)
+  }
+
+  const collection = parsed as PostmanCollection
+
   // Detect Postman v1 (legacy) — has `requests[]` + top-level `name`/`id` but
   // no `info.schema` and no `item[]`. Convert to a more actionable error so
   // users know to re-export from Postman as v2.1 instead of guessing.
-  const root = collection as unknown as Record<string, unknown>
   const hasV1Markers =
     typeof root['name'] === 'string' &&
     Array.isArray(root['requests']) &&
@@ -1776,6 +1807,105 @@ export async function importPostman(
     folderCount,
     endpointIds,
     suggestedEnvVars: Object.keys(suggestedEnvVars).length > 0 ? suggestedEnvVars : undefined,
+    warnings: warnings.length > 0 ? warnings : undefined,
+  }
+}
+
+// ─── Postman Environment Import ─────────────────────────────
+
+/**
+ * Import a standalone Postman environment export file. Creates (or replaces)
+ * a project-scoped environment whose name matches the export's `name` field.
+ * Re-importing the same environment is idempotent — existing variables are
+ * dropped and re-inserted so renames in Postman don't accumulate dead rows.
+ *
+ * Returns an ImportResult with `endpointCount: 0` (no endpoints) — callers
+ * detect environment imports by the `environmentId` field, which only the
+ * env importer populates.
+ */
+export async function importPostmanEnvironment(
+  projectId: string,
+  env: PostmanEnvironment,
+): Promise<ImportResult & { environmentId?: string; environmentName?: string }> {
+  const warnings: string[] = []
+
+  if (!env.name || typeof env.name !== 'string') {
+    return {
+      success: false,
+      error: 'Postman environment file is missing `name`',
+    }
+  }
+
+  const values = Array.isArray(env.values) ? env.values : []
+  const db = getDb()
+  const now = Date.now()
+
+  const projectRow = db.prepare('SELECT workspace_id FROM projects WHERE id = ?').get(projectId) as
+    | { workspace_id: string }
+    | undefined
+  if (!projectRow) {
+    return { success: false, error: 'Project not found: ' + projectId }
+  }
+
+  // Reuse the env when a row with the same name already exists in this project —
+  // Postman's UI never shows duplicate env names so users expect a re-import to
+  // overwrite. Variables are wiped before reinsert (no merge).
+  const existing = db
+    .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
+    .get(projectId, env.name) as { id: string } | undefined
+  let envId: string
+  if (existing) {
+    envId = existing.id
+    db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(envId)
+  } else {
+    envId = randomUUID()
+    // First env on the project becomes active automatically — matches the
+    // collection variable importer's behaviour and avoids a "select env"
+    // chore right after import.
+    const hasActive = db
+      .prepare('SELECT 1 AS x FROM environments WHERE project_id = ? AND is_active = 1')
+      .get(projectId) as { x: number } | undefined
+    db.prepare(
+      `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(envId, projectRow.workspace_id, projectId, env.name, hasActive ? 0 : 1, now, now)
+  }
+
+  const insertVar = db.prepare(
+    `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+  let varCount = 0
+  for (const v of values) {
+    if (!v || typeof v.key !== 'string' || !v.key) continue
+    // Postman flags secret variables with type "secret"; mirror that so the
+    // env modal masks them. Default enabled=true matches Postman's omitted-flag
+    // convention.
+    const isSecret = v.type === 'secret' ? 1 : 0
+    const isEnabled = v.enabled === false ? 0 : 1
+    insertVar.run(
+      randomUUID(),
+      envId,
+      v.key,
+      v.value ?? '',
+      null,
+      isEnabled,
+      isSecret,
+      v.value ?? null,
+    )
+    varCount++
+  }
+
+  if (varCount === 0) {
+    warnings.push('Postman environment had no variables — created an empty environment.')
+  }
+
+  return {
+    success: true,
+    environmentId: envId,
+    environmentName: env.name,
+    endpointCount: 0,
+    folderCount: 0,
     warnings: warnings.length > 0 ? warnings : undefined,
   }
 }

@@ -165,11 +165,20 @@ export function useCommandActions(): CommandAction[] {
     })
     actions.push({
       id: 'request.save',
-      label: t('command.action.save'),
+      label: t('command.action.saveEndpoint'),
       shortcut: shortcutLabel('S'),
       group: 'request',
       icon: Save,
-      keywords: ['save', 'project'],
+      keywords: ['save', 'endpoint', 'request'],
+      run: () => useUIStore.getState().setShowEndpointSaveModal(true),
+    })
+    actions.push({
+      id: 'project.save',
+      label: t('command.action.saveProject'),
+      shortcut: shortcutLabel('S', { shift: true }),
+      group: 'project',
+      icon: Save,
+      keywords: ['save', 'project', 'export'],
       run: () => useUIStore.getState().setShowSaveModal(true),
     })
     actions.push({
@@ -350,7 +359,8 @@ export function getShortcutEntries(): ShortcutEntry[] {
     { keys: shortcutLabel('K'), descriptionKey: 'command.shortcut.palette' },
     { keys: '?', descriptionKey: 'command.shortcut.cheatsheet' },
     { keys: shortcutLabel('Enter'), descriptionKey: 'command.shortcut.send' },
-    { keys: shortcutLabel('S'), descriptionKey: 'command.shortcut.save' },
+    { keys: shortcutLabel('S'), descriptionKey: 'command.shortcut.saveEndpoint' },
+    { keys: shortcutLabel('S', { shift: true }), descriptionKey: 'command.shortcut.saveProject' },
     { keys: shortcutLabel('T'), descriptionKey: 'command.shortcut.newTab' },
     { keys: shortcutLabel('W'), descriptionKey: 'command.shortcut.closeTab' },
     { keys: shortcutLabel('L'), descriptionKey: 'command.shortcut.focusUrl' },
