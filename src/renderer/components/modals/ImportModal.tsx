@@ -142,6 +142,11 @@ export default function ImportModal() {
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null)
   const [pendingSourceUrl, setPendingSourceUrl] = useState('')
 
+  // cURL paste buffer — separate from pendingFileContent so the textarea
+  // remains controlled while the user edits it. Committed into
+  // pendingFileContent only when "Continue" is pressed (v1.3.1 B19).
+  const [curlPasteText, setCurlPasteText] = useState('')
+
   // Proto-specific (gRPC) — optional server address override
   const [protoServerAddress, setProtoServerAddress] = useState('')
 
@@ -176,6 +181,24 @@ export default function ImportModal() {
     setTargetFolderId(null)
     setImporting(false)
     setWsdlParsed(null)
+    setCurlPasteText('')
+  }
+
+  /** Commit a pasted cURL string and advance to the folder step. */
+  function handleCurlPasteContinue() {
+    const text = curlPasteText.trim()
+    if (!text) {
+      setImportError('Paste a cURL command first.')
+      return
+    }
+    if (!/^\s*curl\b/i.test(text)) {
+      setImportError('That does not look like a cURL command (must start with "curl").')
+      return
+    }
+    setImportError('')
+    setPendingFileContent(text)
+    setPendingFileName('cURL')
+    goToFolderStep('cURL Import')
   }
 
   function handleNext() {
@@ -471,7 +494,11 @@ export default function ImportModal() {
               {step === 1
                 ? t('import.subtitle')
                 : step === 2
-                  ? `Enter a URL or upload a ${selectedFormat.name} file to import`
+                  ? selectedFormat.id === 'curl'
+                    ? 'Paste a cURL command or load it from a file'
+                    : canUrlImport
+                      ? `Enter a URL or upload a ${selectedFormat.name} file to import`
+                      : `Upload a ${selectedFormat.name} file to import`
                   : 'Choose where to import the data'}
             </div>
           </div>
@@ -563,6 +590,45 @@ export default function ImportModal() {
         {step === 2 && (
           <>
             <div className="space-y-4">
+              {selectedFormat.id === 'curl' && (
+                <div>
+                  <label className="mb-2 flex items-center gap-1.5 font-medium text-[var(--text)]">
+                    <FileText size={15} aria-hidden="true" />
+                    Paste a cURL command
+                  </label>
+                  <textarea
+                    value={curlPasteText}
+                    onChange={(e) => setCurlPasteText(e.target.value)}
+                    placeholder={`curl -X POST 'https://api.example.com/v1/users' \\\n  -H 'Authorization: Bearer ...' \\\n  -H 'Content-Type: application/json' \\\n  -d '{"name":"Alice"}'`}
+                    rows={8}
+                    spellCheck={false}
+                    className="w-full resize-y rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 font-mono text-[13px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                  />
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className="text-[var(--hint)]" style={{ fontSize: 12 }}>
+                      Or load from a file using the picker below.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCurlPasteContinue}
+                      disabled={!curlPasteText.trim() || importLoading}
+                      className="flex cursor-pointer items-center gap-1.5 rounded-lg border-none bg-[var(--accent)] px-3 py-1.5 font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Upload size={14} aria-hidden="true" />
+                      Continue
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {selectedFormat.id === 'curl' && (
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1 bg-[var(--border)]" />
+                  <span className="text-[var(--hint)]">or</span>
+                  <div className="h-px flex-1 bg-[var(--border)]" />
+                </div>
+              )}
+
               {canUrlImport && (
                 <div>
                   <label className="mb-2 flex items-center gap-1.5 font-medium text-[var(--text)]">

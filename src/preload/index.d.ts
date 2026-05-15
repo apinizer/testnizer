@@ -148,6 +148,11 @@ interface ProjectApi {
     },
   ): Promise<IpcResult<Project | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
+  duplicate(payload: {
+    projectId: string
+    workspaceId: string
+    name?: string
+  }): Promise<IpcResult<{ projectId: string }>>
 }
 
 interface FolderApi {
@@ -162,6 +167,7 @@ interface FolderApi {
     payload: { name?: string; parent_id?: string | null; sort_order?: number },
   ): Promise<IpcResult<Folder | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
+  duplicate(id: string): Promise<IpcResult<{ newFolderId: string }>>
 }
 
 interface EndpointApi {
@@ -1250,6 +1256,25 @@ interface GitApi {
     branchName: string
   }): Promise<IpcResult<{ deleted: string }>>
   log(payload: { projectId: string; count?: number }): Promise<IpcResult<GitLogEntry[]>>
+  listCommits(payload: {
+    projectId: string
+    branch?: string
+    limit?: number
+    skip?: number
+  }): Promise<
+    IpcResult<{
+      commits: Array<{
+        hash: string
+        shortHash: string
+        message: string
+        date: string
+        author: string
+        email: string
+        refs?: string
+      }>
+      total: number
+    }>
+  >
   resolveConflict(payload: {
     projectId: string
     file: string

@@ -369,6 +369,46 @@ describe('importPostman — realistic v2.1 collection', () => {
   })
 })
 
+// ─── Placeholder filter (v1.3.1 B16) ───────────────────────
+
+describe('importPostman — placeholder item filter (B16)', () => {
+  it('skips Postman items with empty URL and the "New Request" default name', async () => {
+    // Reproduces Dilek's "Oracle Employee - CRUD Test Flow" trace: the
+    // collection had 6 real endpoints but the importer surfaced a 7th
+    // "GET New Request" item with no URL — a Postman builder side-effect.
+    const collection = {
+      info: { name: 'C', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+      item: [
+        { name: 'A', request: { method: 'GET', url: 'https://api.example.com/a' } },
+        { name: 'B', request: { method: 'POST', url: 'https://api.example.com/b' } },
+        // Placeholder — empty URL + default name. Must be skipped.
+        { name: 'New Request', request: { method: 'GET', url: '' } },
+      ],
+    }
+    const result = await importPostman('proj-1', JSON.stringify(collection))
+    expect(result.success).toBe(true)
+    expect(result.endpointCount).toBe(2)
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringMatching(/placeholder/i)]),
+    )
+  })
+
+  it('keeps a real request whose name happens to be empty but URL is present', async () => {
+    // Conservative filter: ONLY drop the row when BOTH the URL is empty AND
+    // the name looks like an unedited placeholder. A real request without a
+    // name still imports — better to keep an oddly-named row than to silently
+    // delete one a user authored.
+    const collection = {
+      info: { name: 'C', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+      item: [
+        { name: '', request: { method: 'GET', url: 'https://api.example.com/c' } },
+      ],
+    }
+    const result = await importPostman('proj-1', JSON.stringify(collection))
+    expect(result.endpointCount).toBe(1)
+  })
+})
+
 // ─── Round-trip ────────────────────────────────────────────
 
 describe('Postman round-trip: import → exportAsPostman → re-import', () => {

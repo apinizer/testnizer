@@ -173,9 +173,31 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
 
   const [endpoints, setEndpoints] = useState<RunnerEndpointItem[]>([])
   const [folderGroups, setFolderGroups] = useState<RunnerFolderGroup[]>([])
-  const [view, setView] = useState<'home' | 'config' | 'results' | 'history' | 'scheduled'>(
-    'config',
-  )
+  // Persist runner view + selected run id under the tab so tab switches don't
+  // bounce the user back to "config" (v1.3.1 §5.11 E11). The key intentionally
+  // mirrors the runner-report sessionStorage prefix so cleanup stays local
+  // to RunnerTab.
+  const viewStorageKey = tabId ? `runner-view-${tabId}` : null
+  const [view, setView] = useState<'home' | 'config' | 'results' | 'history' | 'scheduled'>(() => {
+    if (viewStorageKey) {
+      const stored = sessionStorage.getItem(viewStorageKey)
+      if (
+        stored === 'home' ||
+        stored === 'config' ||
+        stored === 'results' ||
+        stored === 'history' ||
+        stored === 'scheduled'
+      ) {
+        return stored
+      }
+    }
+    return 'config'
+  })
+  // Persist the current view whenever it changes so a remount lands here.
+  useEffect(() => {
+    if (!viewStorageKey) return
+    sessionStorage.setItem(viewStorageKey, view)
+  }, [view, viewStorageKey])
   const [delay, setDelay] = useState(0)
   const [iterations, setIterations] = useState(1)
   const [iterationData, setIterationData] = useState<Record<string, string>[]>([])

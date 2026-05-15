@@ -74,6 +74,11 @@ const api = {
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('project:update', id, payload),
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('project:delete', id),
+    duplicate: (payload: {
+      projectId: string
+      workspaceId: string
+      name?: string
+    }): Promise<unknown> => ipcRenderer.invoke('project:duplicate', payload),
   },
 
   // ─── Folder ──────────────────────────────────────────────
@@ -83,6 +88,7 @@ const api = {
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('folder:update', id, payload),
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('folder:delete', id),
+    duplicate: (id: string): Promise<unknown> => ipcRenderer.invoke('folder:duplicate', id),
   },
 
   // ─── Endpoint ────────────────────────────────────────────
@@ -461,6 +467,12 @@ const api = {
     deleteBranch: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('git:deleteBranch', payload),
     log: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('git:log', payload),
+    listCommits: (payload: {
+      projectId: string
+      branch?: string
+      limit?: number
+      skip?: number
+    }): Promise<unknown> => ipcRenderer.invoke('git:listCommits', payload),
     resolveConflict: (payload: {
       projectId: string
       file: string

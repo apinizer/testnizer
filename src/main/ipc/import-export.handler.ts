@@ -4199,6 +4199,30 @@ export interface SoapUiInterface {
   /** WSDL definition URL/path if the interface declared one */
   definition: string
   operations: SoapUiOperation[]
+  /**
+   * REST methods (when the interface is `con:RestService`). SOAP interfaces
+   * leave this empty; REST interfaces leave `operations` empty. Splitting the
+   * two surfaces lets `importSoapUi` create the right endpoint shape (SOAP vs
+   * vanilla HTTP) without re-detecting the interface type.
+   */
+  restMethods: SoapUiRestMethod[]
+  /** Base path captured at the interface level (RestService → con:endpoints) */
+  baseUrl: string
+}
+
+export interface SoapUiRestMethod {
+  /** Operation-level name (resource + method label) */
+  name: string
+  /** HTTP verb */
+  method: string
+  /** Concrete path (resource path joined to base url where possible) */
+  url: string
+  /** Headers extracted from the request node (Authorization, Content-Type…) */
+  headers: Array<{ key: string; value: string }>
+  /** Optional request body (when SoapUI stored an inline body) */
+  body?: string
+  /** Optional query parameters defined at the operation level */
+  params: Array<{ key: string; value: string }>
 }
 
 export interface SoapUiParseResult {
@@ -4297,6 +4321,23 @@ export function parseSoapUiProject(content: string): SoapUiParseResult {
   for (const iface of rawInterfaces) {
     const ifaceName = readSoapUiAttr(iface, 'name') || 'Interface'
     const definition = readSoapUiAttr(iface, 'definition')
+    const ifaceType = readSoapUiAttr(iface, 'type', 'xsi:type')
+
+    // REST services live under `con:resource` with `con:method` / `con:request`
+    // children. v1.3.1 B20: the parser only walked `con:operation`, so the 6
+    // REST methods Dilek imported produced an empty interface folder. We now
+    // walk REST resources separately and collect the methods.
+    const isRestService =
+      /RestService/i.test(ifaceType) ||
+      Array.isArray(iface['con:resource']) ||
+      iface['con:resource'] !== undefined
+
+    const baseUrl = readSoapUiAttr(iface, 'basePath') || readBaseEndpoint(iface)
+
+    const restMethods: SoapUiRestMethod[] = []
+    if (isRestService) {
+      collectRestResources(iface, '', baseUrl, restMethods)
+    }
 
     const rawOps = asSoapUiArray(iface['con:operation'] ?? iface['operation']) as Record<
       string,
@@ -4353,10 +4394,121 @@ export function parseSoapUiProject(content: string): SoapUiParseResult {
       operations.push({ name: opName, soapAction, calls })
     }
 
-    interfaces.push({ name: ifaceName, definition, operations })
+    interfaces.push({
+      name: ifaceName,
+      definition,
+      operations,
+      restMethods,
+      baseUrl,
+    })
   }
 
   return { projectName, interfaces }
+}
+
+/** Walk a single SoapUI `con:endpoints` block to extract the first URL. */
+function readBaseEndpoint(iface: Record<string, unknown>): string {
+  const endpoints = iface['con:endpoints'] ?? iface['endpoints']
+  if (!endpoints) return ''
+  const list = asSoapUiArray(endpoints) as Array<Record<string, unknown> | string>
+  for (const item of list) {
+    if (typeof item === 'string') return item
+    if (item && typeof item === 'object') {
+      const inner = (item as Record<string, unknown>)['con:endpoint']
+      const text = readSoapUiText(inner ?? item)
+      if (text) return text
+    }
+  }
+  return ''
+}
+
+/**
+ * Recursively walk SoapUI REST resources. Resources can nest (one resource
+ * declaring sub-resources via further `con:resource` children) so we
+ * concatenate their paths as we descend, matching SoapUI's own URL building.
+ */
+function collectRestResources(
+  parent: Record<string, unknown>,
+  parentPath: string,
+  baseUrl: string,
+  out: SoapUiRestMethod[],
+): void {
+  const resources = asSoapUiArray(parent['con:resource'] ?? parent['resource']) as Record<
+    string,
+    unknown
+  >[]
+  for (const res of resources) {
+    const resPath = readSoapUiAttr(res, 'path')
+    const resName = readSoapUiAttr(res, 'name')
+    const combinedPath = joinUrlPath(parentPath, resPath)
+
+    const methods = asSoapUiArray(res['con:method'] ?? res['method']) as Record<string, unknown>[]
+    for (const method of methods) {
+      const httpMethod = (readSoapUiAttr(method, 'method', 'httpMethod') || 'GET').toUpperCase()
+      const methodName = readSoapUiAttr(method, 'name') || `${httpMethod} ${combinedPath}`
+
+      // SoapUI stores per-method `con:parameter` for query parameters and one
+      // or more `con:request` children for the example body / headers.
+      const params: Array<{ key: string; value: string }> = []
+      const rawParams = asSoapUiArray(method['con:parameter'] ?? method['parameter']) as Record<
+        string,
+        unknown
+      >[]
+      for (const p of rawParams) {
+        const k = readSoapUiAttr(p, 'name')
+        if (!k) continue
+        const v = readSoapUiText(p['con:value'] ?? p['value'])
+        params.push({ key: k, value: v })
+      }
+
+      const reqList = asSoapUiArray(method['con:request'] ?? method['request']) as Array<
+        Record<string, unknown> | string
+      >
+      const headers: Array<{ key: string; value: string }> = []
+      let body: string | undefined
+      if (reqList.length > 0) {
+        const first = reqList[0]
+        if (first && typeof first === 'object') {
+          const obj = first as Record<string, unknown>
+          // Headers are stored as `con:header`/`con:settings.con:setting` rows.
+          const rawHeaders = asSoapUiArray(obj['con:header'] ?? obj['header']) as Array<
+            Record<string, unknown>
+          >
+          for (const h of rawHeaders) {
+            const k = readSoapUiAttr(h, 'name')
+            const v = readSoapUiText(h['con:value'] ?? h['value'])
+            if (k) headers.push({ key: k, value: v })
+          }
+          const inlineBody = obj['con:request'] ?? obj['#cdata'] ?? obj['#text']
+          if (typeof inlineBody === 'string') body = inlineBody
+          else if (Array.isArray(inlineBody)) body = inlineBody.join('')
+        } else if (typeof first === 'string') {
+          body = first
+        }
+      }
+
+      const url = joinUrlPath(baseUrl, combinedPath)
+      out.push({
+        name: resName ? `${resName} ${methodName}` : methodName,
+        method: httpMethod,
+        url,
+        headers,
+        body,
+        params,
+      })
+    }
+
+    // Recurse into sub-resources, threading the current combined path.
+    collectRestResources(res, combinedPath, baseUrl, out)
+  }
+}
+
+function joinUrlPath(left: string, right: string): string {
+  if (!left) return right || ''
+  if (!right) return left
+  if (left.endsWith('/') && right.startsWith('/')) return left + right.slice(1)
+  if (left.endsWith('/') || right.startsWith('/')) return left + right
+  return `${left}/${right}`
 }
 
 async function importSoapUi(payload: {
@@ -4458,10 +4610,58 @@ async function importSoapUi(payload: {
         endpointCount++
       }
     }
+
+    // v1.3.1 B20: REST methods nested inside `con:resource` elements were
+    // silently dropped because we only walked `con:operation`. The parser now
+    // hands us a flat list of REST methods per interface; insert each as a
+    // plain HTTP endpoint with whatever headers/params SoapUI captured.
+    for (const restMethod of iface.restMethods) {
+      const endpointId = randomUUID()
+      if (!restMethod.url) {
+        warnings.push(`Endpoint URL missing for REST method ${iface.name}/${restMethod.name}`)
+      }
+      const requestSchema = JSON.stringify({
+        method: restMethod.method,
+        url: restMethod.url,
+        params: restMethod.params.map((p) => ({
+          id: randomUUID(),
+          key: p.key,
+          value: p.value,
+          enabled: true,
+        })),
+        headers: restMethod.headers.map((h) => ({
+          id: randomUUID(),
+          key: h.key,
+          value: h.value,
+          enabled: true,
+        })),
+        body: restMethod.body ? { type: 'json', content: restMethod.body } : { type: 'none' },
+      })
+      db.prepare(
+        `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        endpointId,
+        payload.projectId,
+        interfaceFolderId,
+        restMethod.name,
+        `SoapUI REST: ${iface.name}/${restMethod.name}`,
+        'http',
+        restMethod.method,
+        restMethod.url,
+        'developing',
+        requestSchema,
+        null,
+        endpointCount,
+        now,
+        now,
+      )
+      endpointCount++
+    }
   }
 
   if (endpointCount === 0) {
-    warnings.push('No <con:call> entries found in any interface')
+    warnings.push('No <con:call> or REST <con:method> entries found in any interface')
   }
 
   return {

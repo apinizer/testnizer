@@ -669,6 +669,57 @@ export function registerGitHandlers(): void {
     }
   })
 
+  // ─── Commit history (dedicated panel) ────────────────────
+  // v1.3.1 B8/B10: endpoint Save commits weren't reflected anywhere in the
+  // UI — there was no commit log surface for users to inspect what they'd
+  // saved. listCommits returns a paginated slice that the renderer's
+  // CommitHistoryPanel can virtualise. We deliberately reuse simple-git's
+  // `log` here (same dependency the status handler uses) instead of pulling
+  // in a heavier git library.
+  ipcMain.handle(
+    'git:listCommits',
+    async (
+      _event,
+      payload: { projectId: string; branch?: string; limit?: number; skip?: number },
+    ) => {
+      try {
+        const config = await getProjectGitConfig(payload.projectId)
+        if (!config?.repoUrl || !config.localPath) {
+          return { success: false, error: 'Git yapılandırması bulunamadı.' }
+        }
+        const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
+        const git = await ensureGitRepo(config.localPath, authUrl, config.branch)
+        const limit = Math.max(1, Math.min(500, payload.limit ?? 100))
+        const logArgs: Record<string, unknown> = { maxCount: limit }
+        if (payload.branch) {
+          logArgs.from = payload.branch
+        }
+        if (payload.skip != null && payload.skip > 0) {
+          // simple-git `log` doesn't expose a typed skip — fall through to the
+          // raw `--skip` flag for cursor-based pagination.
+          ;(logArgs as { '--skip': string })['--skip'] = String(payload.skip)
+        }
+        try {
+          const log = await git.log(logArgs)
+          const commits = log.all.map((c) => ({
+            hash: c.hash,
+            shortHash: c.hash.slice(0, 7),
+            message: c.message,
+            date: c.date,
+            author: c.author_name,
+            email: c.author_email,
+            refs: c.refs,
+          }))
+          return { success: true, data: { commits, total: log.total } }
+        } catch {
+          return { success: true, data: { commits: [], total: 0 } }
+        }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
+
   // ─── Delete branch ────────────────────────────────────────
   ipcMain.handle(
     'git:deleteBranch',

@@ -242,6 +242,19 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       tabStates.set(state._currentTabId, extractState(state))
     }
 
+    // Cap the cache at MAX_CACHED_TAB_STATES entries to keep idle memory
+    // bounded. v1.3.1 M16 reported ~560 MB resident with 7 endpoints + 1
+    // mock — most of which was per-tab Monaco state + cached request state
+    // that never got evicted. We drop the oldest entry (insertion order)
+    // when we exceed the cap, skipping the incoming tab so a brand-new
+    // switch never thrashes its own state out.
+    const MAX_CACHED_TAB_STATES = 20
+    while (tabStates.size > MAX_CACHED_TAB_STATES) {
+      const oldest = tabStates.keys().next().value
+      if (oldest === tabId || oldest === undefined) break
+      tabStates.delete(oldest)
+    }
+
     // Load target tab state (or empty for new tabs)
     const target = tabStates.get(tabId) || emptyTabState()
 

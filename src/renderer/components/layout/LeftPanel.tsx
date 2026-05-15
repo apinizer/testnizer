@@ -4,7 +4,7 @@ import { useTranslation } from '../../lib/i18n'
 import { T } from '../../styles/tokens'
 import TreeView from '../sidebar/TreeView'
 import NewDropdown from '../sidebar/NewDropdown'
-import HistoryListPanel from '../sidebar/HistoryListPanel'
+import HistorySidebar from '../sidebar/HistorySidebar'
 import TestsPanel from '../sidebar/TestsPanel'
 import ToolsPanel from '../sidebar/ToolsPanel'
 import MockServersPanel from '../mock/MockServersPanel'
@@ -29,7 +29,7 @@ export default function LeftPanel() {
       }}
     >
       {activeSidebarPage === 'history' ? (
-        <HistoryListPanel />
+        <HistorySidebar />
       ) : activeSidebarPage === 'tests' ? (
         <TestsPanel />
       ) : activeSidebarPage === 'tools' ? (

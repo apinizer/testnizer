@@ -391,14 +391,21 @@ export default function TreeView() {
               name: `${ep.name} (copy)`,
             } as Parameters<typeof window.api.endpoint.create>[0])
           }
-        } else if (node.type === 'folder' || node.type === 'module') {
-          // Folder duplication is not wired through a dedicated IPC handler
-          // yet (tracked for a follow-up). Until that lands, the right-click
-          // entry stayed silent in v1.3.1 (B5) — at least tell the user
-          // what's going on instead of pretending the action ran.
-          toast.error(
-            'Folder duplication is not yet supported. Use Export → Import as a temporary workaround.',
-          )
+        } else if (node.type === 'folder') {
+          // Server-side deep clone — single transaction inside
+          // project.handler.ts duplicateFolderDeep().
+          const result = (await window.api?.folder?.duplicate(node.id)) as
+            | { success: boolean; error?: string; data?: { newFolderId: string } }
+            | undefined
+          if (!result?.success) {
+            toast.error(result?.error || 'Folder duplication failed')
+            return
+          }
+          toast.success('Folder duplicated')
+        } else if (node.type === 'module') {
+          // Module-level (project root) duplication is handled by the
+          // project hub menu (B3), not the tree node.
+          toast.error('Use the project Duplicate action from the Project Hub.')
           return
         }
         await refreshTree()

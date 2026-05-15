@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, Trash2, MoreHorizontal, GitBranch, Pencil, Upload } from 'lucide-react'
+import { Plus, Trash2, MoreHorizontal, GitBranch, Pencil, Upload, Copy } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
 import { useAuthStore } from '../../stores/auth.store'
@@ -86,6 +86,31 @@ export default function ProjectHome() {
     setContextMenuId(null)
     setRenamingId(project.id)
     setRenameValue(project.display_name || project.name)
+  }
+
+  async function handleDuplicateProject(project: Project) {
+    setContextMenuId(null)
+    try {
+      const wsId = useWorkspaceStore.getState().activeWorkspaceId
+      if (!wsId) {
+        toast.error('No active workspace')
+        return
+      }
+      const result = (await window.api?.project?.duplicate({
+        projectId: project.id,
+        workspaceId: wsId,
+      })) as { success: boolean; error?: string; data?: { projectId: string } } | undefined
+      if (!result?.success) {
+        toast.error(result?.error || 'Project duplication failed')
+        return
+      }
+      toast.success(`Duplicated "${project.display_name || project.name}"`)
+      // Refresh project list so the new copy appears immediately.
+      const wsState = useWorkspaceStore.getState()
+      if (wsState.activeWorkspaceId) await wsState.fetchProjects(wsState.activeWorkspaceId)
+    } catch (e) {
+      toast.error('Project duplication failed: ' + (e as Error).message)
+    }
   }
 
   async function handleConfirmRename(id: string) {
@@ -399,6 +424,30 @@ export default function ProjectHome() {
                     >
                       <Pencil size={14} />
                       {t('home.rename')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void handleDuplicateProject(project)
+                      }}
+                      className="flex w-full cursor-pointer items-center gap-2 rounded-md"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: '6px 8px',
+                        color: 'var(--text)',
+                        textAlign: 'left',
+                      }}
+                      onMouseOver={(e) => {
+                        ;(e.currentTarget as HTMLElement).style.background = 'var(--surface)'
+                      }}
+                      onMouseOut={(e) => {
+                        ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                      }}
+                    >
+                      <Copy size={14} />
+                      {t('home.duplicate') || 'Duplicate'}
                     </button>
                     <button
                       type="button"

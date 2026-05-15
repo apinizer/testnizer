@@ -668,25 +668,6 @@ function buildExpectChain(value: unknown): ExpectChain {
     if (lower === 'null') return value === null
     return typeof value === lower
   }
-  const assertEmpty = (): void => {
-    if (Array.isArray(value) || typeof value === 'string') {
-      if ((value as { length: number }).length !== 0) {
-        fail(`expected ${JSON.stringify(value)} to be empty`)
-      }
-      return
-    }
-    if (value !== null && typeof value === 'object') {
-      if (Object.keys(value as object).length !== 0) {
-        fail(`expected ${JSON.stringify(value)} to be empty`)
-      }
-      return
-    }
-    fail(`expected ${JSON.stringify(value)} to be empty`)
-  }
-  const lengthOf = (n: number): void => {
-    const len = (value as { length?: number } | null | undefined)?.length
-    if (len !== n) fail(`expected length ${n} but got ${String(len)}`)
-  }
   const negated = false
 
   // Forward-declared so the getters defined inside `make()` can return `chain`
@@ -736,20 +717,26 @@ function buildExpectChain(value: unknown): ExpectChain {
         return chain
       },
       length: (n) => {
-        try {
-          lengthOf(n)
-          if (notFlag) fail(`expected length not to be ${n}`)
-        } catch (e) {
-          if (!notFlag) throw e
+        const actual = (value as { length?: number } | null | undefined)?.length
+        const match = actual === n
+        if (notFlag ? match : !match) {
+          fail(
+            notFlag
+              ? `expected length not to be ${n}`
+              : `expected length ${n} but got ${String(actual)}`,
+          )
         }
         return chain
       },
       lengthOf: (n) => {
-        try {
-          lengthOf(n)
-          if (notFlag) fail(`expected length not to be ${n}`)
-        } catch (e) {
-          if (!notFlag) throw e
+        const actual = (value as { length?: number } | null | undefined)?.length
+        const match = actual === n
+        if (notFlag ? match : !match) {
+          fail(
+            notFlag
+              ? `expected length not to be ${n}`
+              : `expected length ${n} but got ${String(actual)}`,
+          )
         }
         return chain
       },
@@ -766,11 +753,18 @@ function buildExpectChain(value: unknown): ExpectChain {
       not: { get: () => make(true), enumerable: true },
       empty: {
         get: () => {
-          try {
-            assertEmpty()
-            if (notFlag) fail(`expected ${JSON.stringify(value)} to not be empty`)
-          } catch (e) {
-            if (!notFlag) throw e
+          const isEmpty =
+            (Array.isArray(value) && value.length === 0) ||
+            (typeof value === 'string' && value.length === 0) ||
+            (value !== null &&
+              typeof value === 'object' &&
+              Object.keys(value as object).length === 0)
+          if (notFlag ? isEmpty : !isEmpty) {
+            fail(
+              notFlag
+                ? `expected ${JSON.stringify(value)} to not be empty`
+                : `expected ${JSON.stringify(value)} to be empty`,
+            )
           }
           return chain
         },

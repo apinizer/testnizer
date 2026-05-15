@@ -5,7 +5,6 @@ import { createHash, createHmac } from 'crypto'
 import http from 'http'
 import https from 'https'
 import { URL } from 'url'
-import dns from 'dns'
 import { performance } from 'perf_hooks'
 import FormData from 'form-data'
 import { createReadStream, statSync } from 'fs'
@@ -446,6 +445,66 @@ function parseSetCookieHeaders(
   return cookies
 }
 
+// ─── Socket timing instrumentation ───────────────────────────
+
+interface SocketTimings {
+  dns?: number
+  tcp?: number
+  tls?: number
+}
+
+/**
+ * Wrap an `http`/`https` agent's `createConnection` to record the timestamps
+ * of the socket lifecycle events the browser dev tools call DNS / TCP / TLS.
+ * Returns a mutable object the caller can read AFTER the request finishes —
+ * each field is the elapsed milliseconds spent in that phase. Fields stay
+ * `undefined` when the corresponding event never fires (e.g. TLS on http://).
+ *
+ * Industry reference: this mirrors what `got` / `axios-time` / Postman's
+ * own engine do — capture `lookup`, `connect`, `secureConnect` once per
+ * socket and subtract the previous timestamp to get the phase duration.
+ */
+function attachSocketTimings(httpsAgent: https.Agent, httpAgent: http.Agent): SocketTimings {
+  const timings: SocketTimings = {}
+
+  function instrument<TAgent extends http.Agent | https.Agent>(agent: TAgent): void {
+    type CreateConnFn = (
+      options: http.ClientRequestArgs,
+      callback?: (err: Error | null, socket: import('net').Socket) => void,
+    ) => import('net').Socket
+    const original = (agent as unknown as { createConnection?: CreateConnFn }).createConnection
+    if (typeof original !== 'function') return
+    ;(agent as unknown as { createConnection: CreateConnFn }).createConnection = function (
+      opts,
+      cb,
+    ): import('net').Socket {
+      const t0 = performance.now()
+      let tLookup = 0
+      let tConnect = 0
+      const socket = original.call(this as unknown as TAgent, opts, cb)
+      socket.once('lookup', () => {
+        tLookup = performance.now()
+        timings.dns = Math.round(tLookup - t0)
+      })
+      socket.once('connect', () => {
+        tConnect = performance.now()
+        // If `lookup` never fired (cached / unix socket) tLookup stays 0 and
+        // we fall back to t0 so `tcp` still reflects the post-DNS interval.
+        timings.tcp = Math.round(tConnect - (tLookup || t0))
+      })
+      socket.once('secureConnect', () => {
+        const tSecure = performance.now()
+        timings.tls = Math.round(tSecure - (tConnect || t0))
+      })
+      return socket
+    }
+  }
+
+  instrument(httpsAgent)
+  instrument(httpAgent)
+  return timings
+}
+
 // ─── Main execute function ───────────────────────────────────
 
 export async function executeHttpRequest(options: HttpRequestOptions): Promise<ApiResponse> {
@@ -630,8 +689,18 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
         httpsAgentOpts.ciphers = options.tls.ciphers.trim()
       }
     }
-    config.httpsAgent = new https.Agent(httpsAgentOpts)
-    config.httpAgent = new http.Agent()
+    // Instrument the agents so we can observe socket events (DNS lookup, TCP
+    // connect, TLS handshake) on a per-request basis. v1.3.1 M15 reported
+    // that TLS handshake showed "—" and download time dropped to <1ms for a
+    // 25MB response — symptoms of a timing formula that subtracted the wrong
+    // intervals from each other. Hooking `createConnection` is the only way
+    // to learn about the socket's lifecycle without forking the axios
+    // adapter.
+    const httpsAgent = new https.Agent(httpsAgentOpts)
+    const httpAgent = new http.Agent()
+    const socketTimings = attachSocketTimings(httpsAgent, httpAgent)
+    config.httpsAgent = httpsAgent
+    config.httpAgent = httpAgent
 
     // Proxy configuration
     if (options.proxy && options.proxy.mode === 'custom' && options.proxy.host) {
@@ -658,30 +727,41 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     config.headers = config.headers || {}
     applyDefaultUserAgent(config.headers as Record<string, string>)
 
-    // DNS timing
-    const dnsStart = performance.now()
-    const parsedUrl = new URL(options.url)
-    try {
-      await new Promise<void>((resolve, reject) => {
-        dns.lookup(parsedUrl.hostname, (err) => {
-          if (err) reject(err)
-          else resolve()
-        })
-      })
-    } catch {
-      // DNS lookup failed, but let axios try anyway
+    // Track when the first response chunk arrives so we can split the
+    // request into TTFB (server thinking) and download (body streaming).
+    // Axios calls `onDownloadProgress` for each chunk it observes — the
+    // first invocation is "first byte". For a Content-Length-0 response
+    // this never fires, in which case we fall back to "ttfb = full reply".
+    let firstByteAt: number | null = null
+    config.onDownloadProgress = () => {
+      if (firstByteAt == null) firstByteAt = performance.now()
     }
-    timings.dns = Math.round(performance.now() - dnsStart)
 
-    // Execute request using plain axios (no cookiejar wrapper)
-    const tcpStart = performance.now()
+    // Execute request using plain axios (no cookiejar wrapper).
+    const requestStart = performance.now()
     const response: AxiosResponse<string> = await axios.request(config)
     const endTime = performance.now()
 
+    // Merge per-phase numbers from the socket-level instrumentation.
+    // Anything the agent observed is authoritative; we only need to
+    // synthesise TTFB and download from request-level marks.
+    if (socketTimings.dns != null) timings.dns = socketTimings.dns
+    if (socketTimings.tcp != null) timings.tcp = socketTimings.tcp
+    if (socketTimings.tls != null) timings.tls = socketTimings.tls
+
     timings.total = Math.round(endTime - startTime)
-    timings.tcp = Math.round(endTime - tcpStart - (timings.dns ?? 0))
-    timings.ttfb = Math.round(endTime - tcpStart)
-    timings.download = Math.round(endTime - tcpStart - (timings.ttfb ?? 0))
+    // `ttfb` is "time to first byte AFTER the socket was ready". When we
+    // never saw a download chunk (Content-Length: 0) treat ttfb as the
+    // whole reply and leave download at 0.
+    const socketReady =
+      (socketTimings.dns ?? 0) + (socketTimings.tcp ?? 0) + (socketTimings.tls ?? 0)
+    if (firstByteAt != null) {
+      timings.ttfb = Math.max(0, Math.round(firstByteAt - requestStart - socketReady))
+      timings.download = Math.max(0, Math.round(endTime - firstByteAt))
+    } else {
+      timings.ttfb = Math.max(0, Math.round(endTime - requestStart - socketReady))
+      timings.download = 0
+    }
 
     // Extract response headers
     const responseHeaders: Record<string, string> = {}

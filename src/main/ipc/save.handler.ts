@@ -1458,6 +1458,30 @@ export function registerSaveHandlers(): void {
     }
   })
 
+  // ─── Duplicate Project (in same workspace, optional new name) ──
+  // v1.3.1 B3: the project-level "..." menu only offered Rename + Delete,
+  // even though the folder context menu already had Duplicate. We reuse the
+  // export → importProjectAsNew pipeline so the clone is a true deep copy
+  // (folders, endpoints, environments, test suites, mocks, certificates).
+  ipcMain.handle(
+    'project:duplicate',
+    async (_event, payload: { projectId: string; workspaceId: string; name?: string }) => {
+      try {
+        const data = exportProjectData(payload.projectId)
+        if (!data.project || Object.keys(data.project).length === 0) {
+          return { success: false, error: 'Source project not found' }
+        }
+        const baseName =
+          payload.name ||
+          `${(data.project.display_name as string) || (data.project.name as string) || 'Project'} (copy)`
+        const res = importProjectAsNew(data, payload.workspaceId, { name: baseName })
+        return { success: true, data: { projectId: res.projectId } }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
+
   // ─── Import Project (as NEW project in workspace) ──────────
   ipcMain.handle(
     'save:importProject',

@@ -218,8 +218,13 @@ export default function TestsPanel() {
 
   const runEndpoints = useCallback(
     (endpointIds: string[], suiteName: string, suiteId?: string) => {
+      // v1.3.1 §5.6 (E6): right-click "Run" now lands on the configuration
+      // view of the runner tab so the user reviews iterations/delay/data
+      // before launching, matching the behaviour the rest of the sidebar
+      // (click on suite name) already had. Holding shift would be the
+      // natural place to add a "Quick Run" that skips the config screen.
       openOrReuseRunnerTab({
-        autoRun: true,
+        autoRun: false,
         endpointIds,
         folderName: suiteName,
         sourceType: 'suite',

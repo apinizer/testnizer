@@ -30,6 +30,7 @@ import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
 import Modal from '../shared/Modal'
+import { toast } from '../../lib/toast'
 import {
   OverviewPane,
   AuthPane,
@@ -262,9 +263,16 @@ export default function ProjectDetailModal() {
       } catch {
         /* non-critical */
       }
+
+      toast.success(t('modal.saved') || 'Project settings saved')
+      handleClose()
+    } catch (e) {
+      // Surface save failures instead of silently closing the modal — without
+      // this, a renameProject / updateProject reject left the user thinking
+      // their change had landed (v1.4.0 review finding).
+      toast.error(`Save failed: ${(e as Error).message}`)
     } finally {
       setSaving(false)
-      handleClose()
     }
   }
 

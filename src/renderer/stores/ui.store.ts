@@ -258,14 +258,24 @@ export const useUIStore = create<UIStore>((set) => ({
 
   setLeftPanelCollapsed: (collapsed) => set({ isLeftPanelCollapsed: collapsed }),
 
-  setActiveSidebarPage: (page) =>
+  setActiveSidebarPage: (page) => {
+    // Remember the last-active tab for the page we're leaving, then restore
+    // the previously-active tab for the page we're entering. v1.3.1 B13
+    // (R-6 regression): switching APIs → Tests → APIs reopened the welcome
+    // surface instead of the endpoint preview tab that had been visible
+    // before the round trip. We delegate to tabs.store so the move stays in
+    // sync with whatever tab cleanup happens elsewhere.
+    void import('./tabs.store').then(({ useTabsStore }) => {
+      useTabsStore.getState().rememberAndRestoreForPage(page)
+    })
     set((state) => ({
       activeSidebarPage: page,
       // Tests-only overlays must not survive a workbench switch — otherwise
       // the Workbench keeps rendering the AddEndpoints view over the new page.
       addEndpointsSuiteId: page === 'tests' ? state.addEndpointsSuiteId : null,
       addEndpointsSuiteName: page === 'tests' ? state.addEndpointsSuiteName : null,
-    })),
+    }))
+  },
 
   setShowImportModal: (show) => set({ showImportModal: show }),
   setShowEnvironmentModal: (show) => set({ showEnvironmentModal: show }),

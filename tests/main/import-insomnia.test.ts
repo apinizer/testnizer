@@ -413,6 +413,67 @@ describe('importInsomnia v4 edge cases', () => {
   })
 })
 
+// ─── v5 environment YAML (v1.3.1 M12 — routed to the wrong importer) ──
+
+describe('importInsomnia v5 — environment.insomnia.rest YAML', () => {
+  it('creates a project-scoped environment with the data map', async () => {
+    const yaml = [
+      'type: environment.insomnia.rest/5.0',
+      'name: mehmet',
+      'meta:',
+      '  id: env_mehmet',
+      'data:',
+      '  test: asdasdasd',
+      '  token: mehmet',
+    ].join('\n')
+    const r = await importInsomnia(projectId, yaml)
+    expect(r.success).toBe(true)
+    const env = getDb()
+      .prepare('SELECT id, name FROM environments WHERE project_id = ? AND name = ?')
+      .get(projectId, 'mehmet') as { id: string; name: string } | undefined
+    expect(env?.name).toBe('mehmet')
+    const vars = getDb()
+      .prepare(
+        'SELECT key, value FROM environment_variables WHERE environment_id = ? ORDER BY key',
+      )
+      .all(env!.id) as Array<{ key: string; value: string }>
+    expect(vars).toEqual([
+      { key: 'test', value: 'asdasdasd' },
+      { key: 'token', value: 'mehmet' },
+    ])
+  })
+
+  it('re-importing the same v5 environment replaces variables (idempotent)', async () => {
+    const yaml1 = 'type: environment.insomnia.rest/5.0\nname: dev\ndata:\n  a: "1"'
+    const yaml2 = 'type: environment.insomnia.rest/5.0\nname: dev\ndata:\n  a: "2"\n  b: "3"'
+    await importInsomnia(projectId, yaml1)
+    await importInsomnia(projectId, yaml2)
+    const envs = getDb()
+      .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
+      .all(projectId, 'dev') as Array<{ id: string }>
+    expect(envs).toHaveLength(1) // not duplicated
+    const vars = getDb()
+      .prepare(
+        'SELECT key, value FROM environment_variables WHERE environment_id = ? ORDER BY key',
+      )
+      .all(envs[0].id) as Array<{ key: string; value: string }>
+    expect(vars).toEqual([
+      { key: 'a', value: '2' },
+      { key: 'b', value: '3' },
+    ])
+  })
+
+  it('falls back to a default name when the YAML omits `name`', async () => {
+    const yaml = 'type: environment.insomnia.rest/5.0\ndata:\n  k: v'
+    const r = await importInsomnia(projectId, yaml)
+    expect(r.success).toBe(true)
+    const env = getDb()
+      .prepare('SELECT name FROM environments WHERE project_id = ?')
+      .get(projectId) as { name: string }
+    expect(env.name).toBe('Imported Insomnia Environment')
+  })
+})
+
 // ─── Script shim coverage on the wider Insomnia surface ────
 
 describe('normalizeInsomniaScript covers the full insomnia.* surface', () => {
