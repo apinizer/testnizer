@@ -3,6 +3,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useUIStore } from '../../stores/ui.store'
 import { T } from '../../styles/tokens'
+import ImportDropdown from './ImportDropdown'
 import {
   Plus,
   Search,
@@ -469,21 +470,10 @@ export default function TestsPanel() {
         <span style={{ flex: 1, fontSize: 15, fontWeight: 700, color: T.text }}>
           {t('tests.title')}
         </span>
-        <button
-          type="button"
-          onClick={handleImportSuite}
-          className="flex cursor-pointer items-center justify-center rounded-[7px] border"
-          style={{
-            width: 28,
-            height: 28,
-            background: 'var(--surface)',
-            borderColor: T.border2,
-            color: 'var(--text)',
-          }}
-          title={t('tests.importSuite')}
-        >
-          <Upload size={13} strokeWidth={2.2} />
-        </button>
+        {/* ImportDropdown matches the APIs sidebar pattern — open the wizard
+         *  on step 2 with a pre-selected format, instead of the legacy two-
+         *  step "open modal, then pick format" flow. */}
+        <ImportDropdown />
         <button
           type="button"
           onClick={() => {
@@ -672,7 +662,7 @@ export default function TestsPanel() {
                 onClick={() => handleAddItem(suite)}
               />
               <ContextMenuItem
-                icon={<Upload size={13} />}
+                icon={<Download size={13} />}
                 label={t('testsPanel.importEndpoints')}
                 onClick={() => {
                   setContextMenu(null)
@@ -695,12 +685,12 @@ export default function TestsPanel() {
               />
               <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
               <ContextMenuItem
-                icon={<Download size={13} />}
+                icon={<Upload size={13} />}
                 label={t('testsPanel.export')}
                 onClick={() => handleExportSuite(suite.id)}
               />
               <ContextMenuItem
-                icon={<Upload size={13} />}
+                icon={<Download size={13} />}
                 label={t('testsPanel.import')}
                 onClick={() => {
                   setContextMenu(null)

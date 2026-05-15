@@ -705,6 +705,8 @@ interface RunnerApi {
 
 // ─── Scheduler ───────────────────────────────────────────────────
 
+type SchedulerScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
+
 interface ScheduledTaskRow {
   id: string
   project_id: string
@@ -719,6 +721,11 @@ interface ScheduledTaskRow {
   last_run_at: number | null
   next_run_at: number | null
   created_at: number
+  schedule_type: SchedulerScheduleType | null
+  schedule_time: string | null
+  schedule_days: string | null
+  schedule_cron: string | null
+  suite_id: string | null
 }
 
 interface SchedulerCreatePayload {
@@ -730,6 +737,15 @@ interface SchedulerCreatePayload {
   intervalValue: number
   intervalUnit: 'minutes' | 'hours' | 'days'
   delayMs?: number
+  scheduleType?: SchedulerScheduleType
+  scheduleTime?: string
+  scheduleDays?: number[]
+  scheduleCron?: string
+  suiteId?: string
+}
+
+interface SchedulerUpdatePayload extends SchedulerCreatePayload {
+  id: string
 }
 
 interface SchedulerRunCompletedEvent {
@@ -738,11 +754,43 @@ interface SchedulerRunCompletedEvent {
   report: RunnerReport
 }
 
+interface SchedulerHistoryRow {
+  id: string
+  project_id: string
+  environment_name: string | null
+  source: string
+  source_label: string | null
+  scheduled_task_id: string | null
+  iterations: number
+  duration_ms: number
+  total_endpoints: number
+  passed_endpoints: number
+  failed_endpoints: number
+  total_tests: number
+  passed_tests: number
+  failed_tests: number
+  skipped_tests: number
+  avg_resp_time: number
+  results_json: string | null
+  started_at: number
+  folder_name: string | null
+}
+
 interface SchedulerApi {
   create(payload: SchedulerCreatePayload): Promise<IpcResult<ScheduledTaskRow>>
+  update(payload: SchedulerUpdatePayload): Promise<IpcResult<ScheduledTaskRow>>
   list(projectId: string): Promise<IpcResult<ScheduledTaskRow[]>>
   delete(taskId: string): Promise<IpcResult<boolean>>
-  toggle(taskId: string): Promise<IpcResult<ScheduledTaskRow | undefined>>
+  toggle(taskId: string): Promise<IpcResult<{ enabled: number }>>
+  history(taskId: string): Promise<IpcResult<SchedulerHistoryRow[]>>
+  taskEndpoints(taskId: string): Promise<
+    IpcResult<{
+      items: Array<{ id: string; name: string; method: string | null; url: string | null }>
+      source: 'suite' | 'apis' | 'empty'
+    }>
+  >
+  runNow(taskId: string): Promise<IpcResult<boolean>>
+  validateCron(expr: string): Promise<IpcResult<{ valid: boolean }>>
   onRunCompleted(callback: (event: SchedulerRunCompletedEvent) => void): () => void
 }
 
@@ -1128,6 +1176,7 @@ interface WindowApi {
 interface AppApi {
   version(): Promise<IpcResult<{ version: string; name: string }>>
   openExternal(url: string): Promise<IpcResult<null>>
+  onOpenAbout(callback: () => void): () => void
 }
 
 // ─── Branch (DB-backed, non-Git) ─────────────────────────────────

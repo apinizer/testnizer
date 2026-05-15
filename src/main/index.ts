@@ -1,4 +1,12 @@
-import { app, shell, BrowserWindow, ipcMain, nativeImage } from 'electron'
+import {
+  app,
+  shell,
+  BrowserWindow,
+  ipcMain,
+  nativeImage,
+  Menu,
+  type MenuItemConstructorOptions,
+} from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase, closeDatabase } from './db/database'
@@ -139,6 +147,55 @@ app.whenReady().then(() => {
       // Icon not found — use default
     }
   }
+
+  // Override the macOS / Linux application menu so the standard "About
+  // Testnizer" item opens our in-app AboutModal instead of Electron's
+  // default About panel — the native panel renders Electron's atom logo
+  // (iconPath on setAboutPanelOptions is ignored on macOS) and the
+  // Electron framework version, neither of which we want users to see.
+  // Custom menu also lets the rest of the chrome stay default (services,
+  // hide, quit, edit/window/help) without rebuilding every role manually.
+  function broadcastOpenAbout(): void {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('menu:openAbout')
+    }
+  }
+  const isMac = process.platform === 'darwin'
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac
+      ? ([
+          {
+            label: 'Testnizer',
+            submenu: [
+              { label: 'About Testnizer', click: broadcastOpenAbout },
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' },
+            ],
+          },
+        ] satisfies MenuItemConstructorOptions[])
+      : []),
+    { role: 'fileMenu' },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+    {
+      role: 'help',
+      submenu: [
+        ...(isMac
+          ? []
+          : ([
+              { label: 'About Testnizer', click: broadcastOpenAbout },
+            ] satisfies MenuItemConstructorOptions[])),
+      ],
+    },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 
   // Initialize database
   initDatabase()

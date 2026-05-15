@@ -1,5 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useEnvironmentStore } from '../../stores/environment.store'
+
+type RunMode = 'manual' | 'schedule'
+type ScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
+
+export interface SchedulePayload {
+  scheduleType: ScheduleType
+  intervalValue: number
+  intervalUnit: 'minutes' | 'hours' | 'days'
+  scheduleTime?: string
+  scheduleDays?: number[]
+  scheduleCron?: string
+}
 
 interface RunnerConfigProps {
   delay: number
@@ -17,12 +29,23 @@ interface RunnerConfigProps {
   iterationData?: Record<string, string>[]
   setIterationData?: (rows: Record<string, string>[]) => void
   onRun: () => void
-  onSchedule?: (interval: number, unit: 'minutes' | 'hours' | 'days') => void
+  onSchedule?: (payload: SchedulePayload) => void
   isRunning: boolean
   selectedCount: number
+  // Default tab. Bumping `initialRunModeKey` re-applies it even if the user
+  // already toggled the radio — used when "New Run" is pressed from the
+  // Scheduled Tasks view, where the default should be 'schedule'.
+  initialRunMode?: RunMode
+  initialRunModeKey?: number
+  // When false, the "Schedule runs" radio is hidden and Manual is forced.
+  // The product decision is that schedules are owned by Test Suites — APIs-
+  // tree runs are one-shots only, so the suite of features the schedule
+  // path implies (Scheduled Tasks list, history-by-task, etc.) only ever
+  // surfaces when the runner is actually wired to a suite.
+  canSchedule?: boolean
 }
 
-type RunMode = 'manual' | 'schedule'
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export default function RunnerConfig({
   delay,
@@ -43,15 +66,104 @@ export default function RunnerConfig({
   onSchedule,
   isRunning,
   selectedCount,
+  initialRunMode = 'manual',
+  initialRunModeKey,
+  canSchedule = true,
 }: RunnerConfigProps) {
   const environments = useEnvironmentStore((s) => s.environments)
-  const [runMode, setRunMode] = useState<RunMode>('manual')
+  const [runMode, setRunMode] = useState<RunMode>(canSchedule ? initialRunMode : 'manual')
+  // Force-manual when scheduling is not allowed for this source. This
+  // overrides any stale state if the user previously had Schedule selected
+  // on a suite run and then opened a fresh APIs run in the same tab.
+  useEffect(() => {
+    if (!canSchedule && runMode === 'schedule') setRunMode('manual')
+  }, [canSchedule, runMode])
+  // Re-apply the parent's preferred default whenever the parent bumps the key
+  // (i.e. entered config from a different entry point). Bare prop change is
+  // not enough — once the user clicks a radio, runMode diverges from the
+  // prop and we don't want stale entry-point changes to fight that. Keying
+  // it lets the parent be explicit: "this is a fresh open, snap back".
+  const lastAppliedKey = useRef(initialRunModeKey)
+  useEffect(() => {
+    if (initialRunModeKey !== undefined && initialRunModeKey !== lastAppliedKey.current) {
+      lastAppliedKey.current = initialRunModeKey
+      setRunMode(initialRunMode)
+    }
+  }, [initialRunMode, initialRunModeKey])
+  const [scheduleType, setScheduleType] = useState<ScheduleType>('interval')
   const [scheduleInterval, setScheduleInterval] = useState('60')
   const [scheduleUnit, setScheduleUnit] = useState<'minutes' | 'hours' | 'days'>('minutes')
+  const [scheduleTime, setScheduleTime] = useState('09:00')
+  const [scheduleDays, setScheduleDays] = useState<number[]>([1, 2, 3, 4, 5])
+  const [scheduleCron, setScheduleCron] = useState('0 9 * * *')
+  const [cronError, setCronError] = useState<string | null>(null)
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
+
+  // Debounced cron validation — calls main process so the rules stay in
+  // one place. Users see immediate feedback instead of waiting for the
+  // submit to surface a parse failure.
+  useEffect(() => {
+    if (scheduleType !== 'cron') {
+      setCronError(null)
+      return
+    }
+    const expr = scheduleCron.trim()
+    if (!expr) {
+      setCronError('Cron expression is empty')
+      return
+    }
+    let cancelled = false
+    const t = window.setTimeout(() => {
+      window.api?.scheduler
+        ?.validateCron(expr)
+        .then((res) => {
+          if (cancelled) return
+          const valid = (res as { success?: boolean; data?: { valid?: boolean } })?.data?.valid
+          setCronError(valid ? null : 'Invalid cron — expected 5 fields (m h dom mon dow)')
+        })
+        .catch(() => {
+          if (!cancelled) setCronError('Could not validate cron expression')
+        })
+    }, 300)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
+  }, [scheduleCron, scheduleType])
+
+  const toggleDay = (dow: number) => {
+    setScheduleDays((prev) =>
+      prev.includes(dow) ? prev.filter((d) => d !== dow) : [...prev, dow].sort(),
+    )
+  }
 
   const handleStart = () => {
     if (runMode === 'schedule' && onSchedule) {
-      onSchedule(Math.max(1, Number(scheduleInterval) || 60), scheduleUnit)
+      // Build the payload. Validation: daily/weekly need a time, weekly
+      // needs at least one weekday, cron must parse. Local feedback only
+      // — the main process re-validates too.
+      if ((scheduleType === 'daily' || scheduleType === 'weekly') && !scheduleTime) {
+        setScheduleError('Pick a time of day')
+        return
+      }
+      if (scheduleType === 'weekly' && scheduleDays.length === 0) {
+        setScheduleError('Pick at least one weekday')
+        return
+      }
+      if (scheduleType === 'cron' && cronError) {
+        setScheduleError(cronError)
+        return
+      }
+      setScheduleError(null)
+      onSchedule({
+        scheduleType,
+        intervalValue: Math.max(1, Number(scheduleInterval) || 60),
+        intervalUnit: scheduleUnit,
+        scheduleTime:
+          scheduleType === 'daily' || scheduleType === 'weekly' ? scheduleTime : undefined,
+        scheduleDays: scheduleType === 'weekly' ? scheduleDays : undefined,
+        scheduleCron: scheduleType === 'cron' ? scheduleCron.trim() : undefined,
+      })
     } else {
       onRun()
     }
@@ -61,38 +173,44 @@ export default function RunnerConfig({
     <div className="flex flex-1 flex-col overflow-hidden" style={{ fontSize: 13 }}>
       {/* Content */}
       <div className="flex-1 overflow-auto px-5 py-4">
-        {/* Choose how to run */}
-        <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
-          Choose how to run your collection
-        </h3>
-        <div style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <label
-            className="flex cursor-pointer items-center gap-2"
-            style={{ color: 'var(--text)' }}
-          >
-            <input
-              type="radio"
-              name="runMode"
-              checked={runMode === 'manual'}
-              onChange={() => setRunMode('manual')}
-              className="accent-[#e86826]"
-            />
-            Run manually
-          </label>
-          <label
-            className="flex cursor-pointer items-center gap-2"
-            style={{ color: 'var(--text)' }}
-          >
-            <input
-              type="radio"
-              name="runMode"
-              checked={runMode === 'schedule'}
-              onChange={() => setRunMode('schedule')}
-              className="accent-[#e86826]"
-            />
-            Schedule runs
-          </label>
-        </div>
+        {/* Choose how to run. When the runner is sourced from APIs (not a
+         *  Test Suite) the schedule path is intentionally unavailable —
+         *  scheduled tasks live on suites, by design. */}
+        {canSchedule ? (
+          <>
+            <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
+              Choose how to run your collection
+            </h3>
+            <div style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label
+                className="flex cursor-pointer items-center gap-2"
+                style={{ color: 'var(--text)' }}
+              >
+                <input
+                  type="radio"
+                  name="runMode"
+                  checked={runMode === 'manual'}
+                  onChange={() => setRunMode('manual')}
+                  className="accent-[#e86826]"
+                />
+                Run manually
+              </label>
+              <label
+                className="flex cursor-pointer items-center gap-2"
+                style={{ color: 'var(--text)' }}
+              >
+                <input
+                  type="radio"
+                  name="runMode"
+                  checked={runMode === 'schedule'}
+                  onChange={() => setRunMode('schedule')}
+                  className="accent-[#e86826]"
+                />
+                Schedule runs
+              </label>
+            </div>
+          </>
+        ) : null}
 
         {/* Schedule config (when schedule mode selected) */}
         {runMode === 'schedule' && (
@@ -100,30 +218,157 @@ export default function RunnerConfig({
             className="mb-5 rounded-[8px] border border-[var(--border)] p-3"
             style={{ background: 'var(--surface)' }}
           >
-            <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
+            <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 10 }}>
               Schedule Configuration
             </div>
-            <div className="flex items-center gap-2">
-              <span style={{ color: 'var(--muted)' }}>Run every</span>
-              <input
-                type="number"
-                min={1}
-                value={scheduleInterval}
-                onChange={(e) => setScheduleInterval(e.target.value)}
-                className="w-[60px] rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-[var(--text)] outline-none focus:border-[var(--accent)]"
-                style={{ fontSize: 13 }}
-              />
-              <select
-                value={scheduleUnit}
-                onChange={(e) => setScheduleUnit(e.target.value as 'minutes' | 'hours' | 'days')}
-                className="rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-[var(--text)] outline-none"
-                style={{ fontSize: 13 }}
-              >
-                <option value="minutes">minutes</option>
-                <option value="hours">hours</option>
-                <option value="days">days</option>
-              </select>
+
+            {/* Schedule type selector — four mutually exclusive modes. We
+             *  default to 'interval' for backwards compat with the legacy
+             *  every-N flow; the other three were added to bring this in
+             *  line with Postman / cron-style schedulers. */}
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 4,
+                marginBottom: 12,
+                padding: 2,
+                background: 'var(--white)',
+                borderRadius: 6,
+                border: '1px solid var(--border)',
+              }}
+            >
+              {(
+                [
+                  { id: 'interval', label: 'Interval' },
+                  { id: 'daily', label: 'Daily' },
+                  { id: 'weekly', label: 'Weekly' },
+                  { id: 'cron', label: 'Cron' },
+                ] as { id: ScheduleType; label: string }[]
+              ).map((opt) => {
+                const active = scheduleType === opt.id
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setScheduleType(opt.id)
+                      setScheduleError(null)
+                    }}
+                    className="flex-1 cursor-pointer rounded-[4px] border-none px-2 py-1"
+                    style={{
+                      background: active ? 'var(--accent-light)' : 'transparent',
+                      color: active ? 'var(--accent-text)' : 'var(--muted)',
+                      fontWeight: active ? 600 : 500,
+                      fontSize: 12,
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                )
+              })}
             </div>
+
+            {scheduleType === 'interval' && (
+              <div className="flex items-center gap-2">
+                <span style={{ color: 'var(--muted)' }}>Run every</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={scheduleInterval}
+                  onChange={(e) => setScheduleInterval(e.target.value)}
+                  className="w-[60px] rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                  style={{ fontSize: 13 }}
+                />
+                <select
+                  value={scheduleUnit}
+                  onChange={(e) => setScheduleUnit(e.target.value as 'minutes' | 'hours' | 'days')}
+                  className="rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-[var(--text)] outline-none"
+                  style={{ fontSize: 13 }}
+                >
+                  <option value="minutes">minutes</option>
+                  <option value="hours">hours</option>
+                  <option value="days">days</option>
+                </select>
+              </div>
+            )}
+
+            {scheduleType === 'daily' && (
+              <div className="flex items-center gap-2">
+                <span style={{ color: 'var(--muted)' }}>Every day at</span>
+                <input
+                  type="time"
+                  value={scheduleTime}
+                  onChange={(e) => setScheduleTime(e.target.value)}
+                  className="rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                  style={{ fontSize: 13 }}
+                />
+                <span style={{ color: 'var(--hint)', fontSize: 12 }}>(local time)</span>
+              </div>
+            )}
+
+            {scheduleType === 'weekly' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="flex items-center gap-2">
+                  <span style={{ color: 'var(--muted)' }}>At</span>
+                  <input
+                    type="time"
+                    value={scheduleTime}
+                    onChange={(e) => setScheduleTime(e.target.value)}
+                    className="rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                    style={{ fontSize: 13 }}
+                  />
+                  <span style={{ color: 'var(--hint)', fontSize: 12 }}>(local time)</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {WEEKDAY_LABELS.map((label, idx) => {
+                    const active = scheduleDays.includes(idx)
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => toggleDay(idx)}
+                        className="cursor-pointer rounded-[6px] border px-2.5 py-1"
+                        style={{
+                          background: active ? 'var(--accent)' : 'var(--white)',
+                          borderColor: active ? 'var(--accent)' : 'var(--border)',
+                          color: active ? '#fff' : 'var(--text)',
+                          fontSize: 12,
+                          fontWeight: active ? 600 : 500,
+                        }}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {scheduleType === 'cron' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <input
+                  type="text"
+                  value={scheduleCron}
+                  onChange={(e) => setScheduleCron(e.target.value)}
+                  placeholder="m h dom mon dow  (e.g. 0 9 * * 1-5)"
+                  className="rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                  style={{ fontSize: 13, fontFamily: 'ui-monospace, monospace' }}
+                />
+                {cronError ? (
+                  <div style={{ color: '#cc2200', fontSize: 12 }}>{cronError}</div>
+                ) : (
+                  <div style={{ color: 'var(--hint)', fontSize: 12 }}>
+                    5 fields, local time. Supports <code>*</code>, <code>a-b</code>,{' '}
+                    <code>*/n</code>, lists <code>a,b,c</code>.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {scheduleError && (
+              <div style={{ color: '#cc2200', fontSize: 12, marginTop: 8 }}>{scheduleError}</div>
+            )}
           </div>
         )}
 

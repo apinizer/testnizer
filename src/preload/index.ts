@@ -29,6 +29,16 @@ const api = {
   app: {
     version: (): Promise<unknown> => ipcRenderer.invoke('app:version'),
     openExternal: (url: string): Promise<unknown> => ipcRenderer.invoke('app:openExternal', url),
+    // Fires when the native application menu's "About Testnizer" item is
+    // selected. Renderer hooks this into the in-app AboutModal so the
+    // user sees our branded About instead of Electron's default panel.
+    onOpenAbout: (callback: () => void): (() => void) => {
+      const handler = (): void => callback()
+      ipcRenderer.on('menu:openAbout', handler)
+      return () => {
+        ipcRenderer.removeListener('menu:openAbout', handler)
+      }
+    },
   },
 
   // ─── EULA / Privacy consent gate ────────────────────────
@@ -302,9 +312,16 @@ const api = {
   // ─── Scheduler ──────────────────────────────────────────────────
   scheduler: {
     create: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('scheduler:create', payload),
+    update: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('scheduler:update', payload),
     list: (projectId: string): Promise<unknown> => ipcRenderer.invoke('scheduler:list', projectId),
     delete: (taskId: string): Promise<unknown> => ipcRenderer.invoke('scheduler:delete', taskId),
     toggle: (taskId: string): Promise<unknown> => ipcRenderer.invoke('scheduler:toggle', taskId),
+    history: (taskId: string): Promise<unknown> => ipcRenderer.invoke('scheduler:history', taskId),
+    taskEndpoints: (taskId: string): Promise<unknown> =>
+      ipcRenderer.invoke('scheduler:taskEndpoints', taskId),
+    runNow: (taskId: string): Promise<unknown> => ipcRenderer.invoke('scheduler:runNow', taskId),
+    validateCron: (expr: string): Promise<unknown> =>
+      ipcRenderer.invoke('scheduler:validateCron', expr),
     onRunCompleted: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)

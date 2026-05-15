@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, Trash2, MoreHorizontal, GitBranch, Pencil, Upload, Copy } from 'lucide-react'
+import { Plus, Trash2, MoreHorizontal, GitBranch, Pencil, Download, Copy } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
 import { useAuthStore } from '../../stores/auth.store'
@@ -271,7 +271,7 @@ export default function ProjectHome() {
               }}
               title={t('home.importTitle')}
             >
-              <Upload size={14} />
+              <Download size={14} />
               {t('home.import')}
             </button>
             <button

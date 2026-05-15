@@ -18,12 +18,95 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Cleanup — free up Actions storage BEFORE building anything. The org quota
+  # fills up surprisingly fast (six platform artifacts per tag × dozens of tag
+  # runs × default 90-day retention), and once it's exhausted GitHub starts
+  # silently refusing new artifact uploads — which is what's been killing our
+  # release builds.
+  #
+  # This job:
+  #   1. Deletes all but the most recent 10 artifacts (regardless of source
+  #      workflow) — old release builds are already published on the
+  #      `testnizer-releases` repo, so the build artifacts here are just
+  #      transient handoff between jobs.
+  #   2. Deletes every cache entry — npm cache rehydrates in a few seconds
+  #      and stale caches are the primary storage hog for matrix builds.
+  #   3. Deletes workflow runs older than the most recent 30 (logs go with
+  #      the run).
+  #
+  # Runs in parallel-friendly mode: failures don't block builds. `quality`
+  # below uses `needs: cleanup` + `if: always()` so a transient API hiccup
+  # in cleanup never aborts a real release.
+  # ---------------------------------------------------------------------------
+  cleanup:
+    name: Free Actions storage (artifacts + caches + old runs)
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Delete old artifacts (keep latest 10)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          # `gh api --paginate` flattens .artifacts across pages.
+          gh api -X GET /repos/${{ github.repository }}/actions/artifacts \
+            --paginate --jq '.artifacts[] | "\(.id) \(.created_at)"' \
+            | sort -k2 \
+            | head -n -10 \
+            | awk '{print $1}' \
+            | while read -r id; do
+                [ -z "$id" ] && continue
+                echo "Deleting artifact $id"
+                gh api -X DELETE "/repos/${{ github.repository }}/actions/artifacts/$id" \
+                  || echo "  (already gone or permission denied)"
+              done
+
+      - name: Delete all caches
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          gh api -X GET /repos/${{ github.repository }}/actions/caches \
+            --paginate --jq '.actions_caches[] | .id' \
+            | while read -r id; do
+                [ -z "$id" ] && continue
+                echo "Deleting cache $id"
+                gh api -X DELETE "/repos/${{ github.repository }}/actions/caches/$id" \
+                  || echo "  (already gone)"
+              done
+
+      - name: Delete old workflow runs (keep latest 30)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          gh api -X GET /repos/${{ github.repository }}/actions/runs \
+            --paginate --jq '.workflow_runs[] | "\(.id) \(.created_at)"' \
+            | sort -k2 \
+            | head -n -30 \
+            | awk '{print $1}' \
+            | while read -r id; do
+                [ -z "$id" ] && continue
+                echo "Deleting run $id (logs included)"
+                gh api -X DELETE "/repos/${{ github.repository }}/actions/runs/$id" \
+                  || echo "  (already gone or in-progress)"
+              done
+
+  # ---------------------------------------------------------------------------
   # Quality gate — runs once before any platform build. Blocks the matrix on
   # type errors, lint errors, or failing unit tests so we don't waste CI minutes
   # building six platform packages from broken code.
   # ---------------------------------------------------------------------------
   quality:
     name: Lint + Typecheck + Unit tests
+    needs: cleanup
+    # Cleanup is best-effort — never block a build on a storage-API hiccup.
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -130,6 +213,11 @@ jobs:
             dist/ready-packages/*.dmg
             dist/ready-packages/*.zip
           if-no-files-found: error
+          # Build artifacts are only needed long enough for the `release`
+          # job to download + draft a release. After that they live on the
+          # testnizer-releases repo. 1-day retention drains the quota fast
+          # — the previous 90-day default was the primary storage hog.
+          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # Linux — native x64 on ubuntu-latest, native arm64 on ubuntu-24.04-arm.
@@ -208,6 +296,7 @@ jobs:
             dist/ready-packages/*.AppImage
             dist/ready-packages/*.deb
           if-no-files-found: error
+          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # Windows — x64 on windows-latest (native), arm64 on windows-11-arm (native).
@@ -266,6 +355,7 @@ jobs:
             dist/ready-packages/*.exe
             dist/ready-packages/*.zip
           if-no-files-found: error
+          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # Draft GitHub Release on tag pushes — collects all six artifacts.

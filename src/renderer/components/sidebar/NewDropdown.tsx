@@ -8,12 +8,10 @@ import {
   Bot,
   FileCode2,
   Hexagon,
-  Download,
-  Code2,
   Cloud,
   Zap,
+  Plus,
 } from 'lucide-react'
-import { useUIStore } from '../../stores/ui.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
@@ -36,7 +34,6 @@ export default function NewDropdown() {
   const buttonRef = useRef<HTMLButtonElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 })
-  const setShowImportModal = useUIStore((s) => s.setShowImportModal)
   const openTab = useTabsStore((s) => s.openTab)
 
   function createProtocolTab(protocol: Protocol, name: string, method?: string) {
@@ -144,19 +141,10 @@ export default function NewDropdown() {
     },
   ]
 
-  const otherItems: { icon: ReactNode; label: string; shortcut: string; action?: () => void }[] = [
-    {
-      icon: <Download size={14} />,
-      label: t('newDropdown.import'),
-      shortcut: '\u2318O',
-      action: () => {
-        setOpen(false)
-        setShowImportModal(true)
-      },
-    },
-    { icon: <Code2 size={14} />, label: t('newDropdown.importCurl'), shortcut: '\u2318I' },
-  ]
-
+  // The "OTHER" group (Import + Import cURL) used to live here. It has
+  // since moved into the dedicated Import dropdown rendered next to the
+  // "+" button on the APIs sidebar \u2014 clicking a format there opens the
+  // wizard already on step 2, which is faster than the old two-click path.
   const dropdown = open
     ? createPortal(
         <div
@@ -202,36 +190,6 @@ export default function NewDropdown() {
               </button>
             ))}
           </div>
-
-          {/* Separator */}
-          <div className="border-t border-[var(--border)] pt-2">
-            <div className="mb-1 uppercase tracking-widest text-[var(--hint)]">
-              {t('newDropdown.other')}
-            </div>
-            {otherItems.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[var(--text)] transition-colors hover:bg-[var(--bg)]"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-                onClick={() => {
-                  item.action?.()
-                  if (!item.action) setOpen(false)
-                }}
-              >
-                <span aria-hidden="true" className="flex w-5 items-center text-[var(--muted)]">
-                  {item.icon}
-                </span>
-                <span className="flex-1">{item.label}</span>
-                <span className="text-[var(--hint)]">{item.shortcut}</span>
-              </button>
-            ))}
-          </div>
         </div>,
         document.body,
       )
@@ -249,10 +207,14 @@ export default function NewDropdown() {
           e.stopPropagation()
           setOpen((v) => !v)
         }}
-        className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-[7px] bg-[var(--accent)] text-xl font-light leading-none text-white"
-        style={{ border: 'none' }}
+        // Inline style mirrors TestsPanel / MockServersPanel exactly so the
+        // three "+" buttons render at the same pixel size — leaning on
+        // Tailwind sizing classes (h-7 w-7) for some panels and inline
+        // width/height for others caused subtle drift across browsers.
+        className="flex cursor-pointer items-center justify-center rounded-[7px] border-none"
+        style={{ width: 28, height: 28, background: 'var(--accent)', color: '#fff' }}
       >
-        +
+        <Plus size={15} strokeWidth={2.5} />
       </button>
       {dropdown}
     </div>

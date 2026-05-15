@@ -38,6 +38,14 @@ const translations: Record<Locale, Record<string, string>> = {
       'For paid support, SLAs, on-premise deployment assistance, training, or custom development requests, contact us.',
     'about.enterpriseContact': 'info@testnizer.com',
 
+    // Enterprise modal (opened from the footer "Enterprise" button)
+    'enterprise.title': 'Testnizer Enterprise',
+    'enterprise.body':
+      'For enterprise inquiries — licensing, on-prem deployment, dedicated support — please reach out to our team at the address below. We typically respond within one business day.',
+    'enterprise.copy': 'Copy',
+    'enterprise.copied': 'Copied',
+    'enterprise.close': 'Close',
+
     // Script Help (pm.* mini guide)
     'scriptHelp.title': 'Script Reference',
     'scriptHelp.subtitlePost':
@@ -169,8 +177,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'tree.delete': 'Delete',
     'tree.createTestSuite': 'Create Test Suite from this folder',
     'tree.createTestSuiteFromProject': 'Create Test Suite from this project',
+    'tree.createTestSuiteFromRequest': 'Create Test Suite from this request',
     'tree.createMockServer': 'Create Mock Server from this folder',
     'tree.createMockServerFromProject': 'Create Mock Server from this project',
+    'tree.createMockServerFromRequest': 'Create Mock Server from this request',
     'tree.testSuiteCreated': 'Test suite "{name}" created with {count} endpoint(s)',
     'tree.mockServerCreated': 'Mock server "{name}" created with {count} endpoint(s)',
     'tree.suiteNamePrompt': 'Test suite name',
@@ -200,6 +210,13 @@ const translations: Record<Locale, Record<string, string>> = {
     'leftPanel.apis': 'APIs',
     'leftPanel.search': 'Search...',
     'leftPanel.new': 'New',
+
+    // Import dropdown (sits next to the "+" New button)
+    'importDropdown.title': 'Import API Data',
+    'importDropdown.tooltip': 'Import from a data source',
+    'importDropdown.section.specs': 'API Specs',
+    'importDropdown.section.collections': 'Collections',
+    'importDropdown.section.quick': 'Quick',
 
     // New Dropdown
     'newDropdown.httpEndpoint': 'HTTP',
@@ -1452,6 +1469,14 @@ const translations: Record<Locale, Record<string, string>> = {
       'Ücretli destek, SLA, lokal kurulum asistanlığı, eğitim veya özel geliştirme talepleri için bizimle iletişime geçin.',
     'about.enterpriseContact': 'info@testnizer.com',
 
+    // Enterprise modal (alt bardaki "Kurumsal" butonundan açılır)
+    'enterprise.title': 'Testnizer Kurumsal',
+    'enterprise.body':
+      'Kurumsal talepleriniz — lisanslama, lokal kurulum, özel destek — için lütfen aşağıdaki adres üzerinden ekibimize ulaşın. Genellikle bir iş günü içinde yanıt veriyoruz.',
+    'enterprise.copy': 'Kopyala',
+    'enterprise.copied': 'Kopyalandı',
+    'enterprise.close': 'Kapat',
+
     // Script Help (pm.* mini kılavuz)
     'scriptHelp.title': 'Script Kılavuzu',
     'scriptHelp.subtitlePost':
@@ -1586,8 +1611,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'tree.delete': 'Sil',
     'tree.createTestSuite': 'Bu klasörden Test Suite oluştur',
     'tree.createTestSuiteFromProject': 'Bu projeden Test Suite oluştur',
+    'tree.createTestSuiteFromRequest': 'Bu istekten Test Suite oluştur',
     'tree.createMockServer': 'Bu klasörden Mock Sunucu oluştur',
     'tree.createMockServerFromProject': 'Bu projeden Mock Sunucu oluştur',
+    'tree.createMockServerFromRequest': 'Bu istekten Mock Sunucu oluştur',
     'tree.testSuiteCreated': '"{name}" test suite\'i {count} endpoint ile oluşturuldu',
     'tree.mockServerCreated': '"{name}" mock sunucusu {count} endpoint ile oluşturuldu',
     'tree.suiteNamePrompt': 'Test suite adı',
@@ -1617,6 +1644,13 @@ const translations: Record<Locale, Record<string, string>> = {
     'leftPanel.apis': "API'ler",
     'leftPanel.search': 'Ara...',
     'leftPanel.new': 'Yeni',
+
+    // Import dropdown
+    'importDropdown.title': 'API Verisi İçe Aktar',
+    'importDropdown.tooltip': 'Bir veri kaynağından içe aktar',
+    'importDropdown.section.specs': 'API Şemaları',
+    'importDropdown.section.collections': 'Koleksiyonlar',
+    'importDropdown.section.quick': 'Hızlı',
 
     // New Dropdown
     'newDropdown.httpEndpoint': 'HTTP',

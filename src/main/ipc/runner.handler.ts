@@ -83,6 +83,9 @@ interface RunnerExecuteOptions {
   folderName?: string
   source?: string
   sourceLabel?: string
+  // Set by executeCollectionForScheduler so we can tie this runner_history
+  // row back to its scheduled_tasks row even after a rename / delete.
+  scheduledTaskId?: string
 }
 
 interface RunnerExportOptions {
@@ -1216,8 +1219,9 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       `
       INSERT INTO runner_history (id, project_id, environment_name, source, iterations, duration_ms,
         total_endpoints, passed_endpoints, failed_endpoints, total_tests, passed_tests, failed_tests,
-        skipped_tests, avg_resp_time, results_json, started_at, folder_name, source_label)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        skipped_tests, avg_resp_time, results_json, started_at, folder_name, source_label,
+        scheduled_task_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     ).run(
       randomUUID(),
@@ -1238,6 +1242,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       startedAt,
       options.folderName || null,
       options.sourceLabel || null,
+      options.scheduledTaskId || null,
     )
   } catch {
     // History save failure should not affect runner

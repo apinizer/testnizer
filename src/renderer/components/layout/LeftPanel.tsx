@@ -4,6 +4,7 @@ import { useTranslation } from '../../lib/i18n'
 import { T } from '../../styles/tokens'
 import TreeView from '../sidebar/TreeView'
 import NewDropdown from '../sidebar/NewDropdown'
+import ImportDropdown from '../sidebar/ImportDropdown'
 import HistorySidebar from '../sidebar/HistorySidebar'
 import TestsPanel from '../sidebar/TestsPanel'
 import ToolsPanel from '../sidebar/ToolsPanel'
@@ -53,6 +54,9 @@ export default function LeftPanel() {
             <span style={{ fontWeight: 700, fontSize: 15, flex: 1, color: T.text }}>
               {t('leftPanel.apis')}
             </span>
+
+            {/* Import dropdown (lands users on step 2 of the import wizard) */}
+            <ImportDropdown />
 
             {/* New dropdown (+ button) */}
             <NewDropdown />

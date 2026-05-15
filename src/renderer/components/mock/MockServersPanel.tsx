@@ -110,16 +110,16 @@ export default function MockServersPanel() {
             background: T.accent,
             color: '#fff',
             border: 'none',
-            borderRadius: 6,
-            width: 26,
-            height: 26,
+            borderRadius: 7,
+            width: 28,
+            height: 28,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'pointer',
           }}
         >
-          <Plus size={14} />
+          <Plus size={15} strokeWidth={2.5} />
         </button>
       </div>
 

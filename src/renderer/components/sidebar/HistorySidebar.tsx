@@ -17,10 +17,22 @@ export default function HistorySidebar() {
 
   return (
     <div className="flex h-full flex-col">
+      {/* 44px header matches the APIs / Tests / Mocks / Tools sidebars —
+       *  earlier 32px height was inconsistent with the rest of the chrome. */}
       <div
-        className="flex shrink-0 items-center gap-1 px-2"
-        style={{ height: 32, borderBottom: '1px solid var(--border)' }}
+        className="flex shrink-0 items-center gap-2 px-3"
+        style={{ height: 44, borderBottom: '1px solid var(--border)' }}
       >
+        <span
+          style={{
+            fontWeight: 700,
+            fontSize: 15,
+            color: 'var(--text)',
+            marginRight: 4,
+          }}
+        >
+          History
+        </span>
         <TabButton
           active={mode === 'requests'}
           onClick={() => setMode('requests')}

@@ -278,11 +278,6 @@ const FolderPlusIcon = (
     <line x1="9" y1="14" x2="15" y2="14" />
   </svg>
 )
-const PlayIcon = (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <polygon points="5 3 19 12 5 21 5 3" />
-  </svg>
-)
 const CopyIcon = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <rect x="9" y="9" width="13" height="13" rx="2" />
@@ -515,14 +510,10 @@ export default function TreeNodeComponent({
           action: () => onAddFolder(node),
         })
       }
-      if (onRunFolder) {
-        items.push({
-          label: t('tree.run'),
-          icon: PlayIcon,
-          separator: true,
-          action: () => onRunFolder(node),
-        })
-      }
+      // The "Run" entry used to live here, but every endpoint already has
+      // a Send button in its tab and the Test Suite path covers the multi-
+      // endpoint case more deliberately. Right-click → Run on a folder was
+      // duplicative — removing it cleans up the menu.
       // UX 6: One-click "convert this folder/project to a test suite / mock
       // server" — surfaces the recursive endpoint collector + suite/mock-
       // server creation flows that previously required manual setup. The
@@ -579,9 +570,32 @@ export default function TreeNodeComponent({
         })
       }
     } else {
-      // Endpoint / request — sub-item actions
+      // Endpoint / request — sub-item actions. The single-request
+      // Test Suite / Mock Server entries scaffold a one-item suite or
+      // a one-route mock server, using the request's own name as the
+      // suite/mock name (per the v1.4.0 UX request — "tek bir api
+      // olduğunda test suite ismini sistem otomatik atasın").
+      if (onCreateTestSuite) {
+        items.push({
+          label: t('tree.createTestSuiteFromRequest'),
+          icon: TestSuiteIcon,
+          action: () => onCreateTestSuite(node),
+        })
+      }
+      if (onCreateMockServer) {
+        items.push({
+          label: t('tree.createMockServerFromRequest'),
+          icon: MockServerIcon,
+          action: () => onCreateMockServer(node),
+        })
+      }
       if (onDuplicate) {
-        items.push({ label: t('tree.duplicate'), icon: CopyIcon, action: () => onDuplicate(node) })
+        items.push({
+          label: t('tree.duplicate'),
+          icon: CopyIcon,
+          separator: true,
+          action: () => onDuplicate(node),
+        })
       }
       if (onRename && canModify) {
         items.push({ label: t('tree.rename'), icon: PencilIcon, action: startRename })

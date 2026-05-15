@@ -1,7 +1,6 @@
 import { Terminal, AlertCircle, Building2 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
-import { useTabsStore } from '../../stores/tabs.store'
 import { useConsoleStore } from '../../stores/console.store'
 import { T } from '../../styles/tokens'
 import { useTranslation } from '../../lib/i18n'
@@ -10,9 +9,9 @@ export default function Footer() {
   const environments = useEnvironmentStore((s) => s.environments)
   const activeEnvId = useEnvironmentStore((s) => s.activeEnvironmentId)
   const activeEnv = environments.find((e) => e.id === activeEnvId)
-  const openTab = useTabsStore((s) => s.openTab)
   const showConsolePanel = useUIStore((s) => s.showConsolePanel)
   const toggleConsolePanel = useUIStore((s) => s.toggleConsolePanel)
+  const setShowEnterpriseModal = useUIStore((s) => s.setShowEnterpriseModal)
   const consoleEntries = useConsoleStore((s) => s.entries)
   const errorCount = consoleEntries.filter(
     (e) => e.level === 'error' || (e.status != null && e.status >= 400),
@@ -60,9 +59,7 @@ export default function Footer() {
       {/* Right */}
       <button
         type="button"
-        onClick={() => {
-          void window.api?.app?.openExternal?.(`mailto:${t('about.enterpriseContact')}`)
-        }}
+        onClick={() => setShowEnterpriseModal(true)}
         title={t('about.enterpriseTitle')}
         style={{
           display: 'inline-flex',
@@ -81,14 +78,10 @@ export default function Footer() {
         <Building2 size={11} aria-hidden="true" />
         {t('footer.enterprise')}
       </button>
-      <span
-        style={{ color: T.ghost, cursor: 'pointer', fontFamily: 'inherit' }}
-        onClick={() =>
-          openTab({ id: 'runner-all-' + Date.now(), name: 'Runner', protocol: 'runner' })
-        }
-      >
-        ▶ {t('footer.runner')}
-      </span>
+      {/* "Runner" footer entry removed in v1.4.0 — the Tests sidebar's
+       *  Overview / All Runs / Scheduled Tasks entries cover the runner
+       *  surface explicitly and a duplicate footer link confused users
+       *  who couldn't tell it apart from the inline runner tabs. */}
       <button
         type="button"
         onClick={toggleConsolePanel}

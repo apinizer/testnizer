@@ -3,7 +3,7 @@ import { Braces, ChevronRight } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import type { TreeNode, HttpMethod } from '../../types'
 import RunnerSequence from './RunnerSequence'
-import RunnerConfig from './RunnerConfig'
+import RunnerConfig, { type SchedulePayload } from './RunnerConfig'
 import RunnerResults from './RunnerResults'
 import { openEndpointTab, openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import { useUIStore } from '../../stores/ui.store'
@@ -191,7 +191,15 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         return stored
       }
     }
-    return 'config'
+    // Default landing page is the Tests overview (TestsHome), not the runner
+    // config. Dropping straight into the run-config screen — with the full
+    // APIs collection auto-selected — was disorienting: users open the Tests
+    // sidebar expecting an Overview / Recent runs / Test Suites summary,
+    // not a 200-endpoint "ready to fire" list. The session-restore branch
+    // above still works for tab switches mid-flight (B13). Explicit entry
+    // points (TestsHome "New Run", suite right-click, ScheduledTasks picker)
+    // flip to 'config' themselves once the user actually asks to run.
+    return 'home'
   })
   // Persist the current view whenever it changes so a remount lands here.
   useEffect(() => {
@@ -206,6 +214,14 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [persistResponses, setPersistResponses] = useState(true)
   const [keepVariableValues, setKeepVariableValues] = useState(true)
   const [runFolderName, setRunFolderName] = useState('')
+  // Default radio selection for the RunnerConfig "Choose how to run" block.
+  // We bump configRunModeKey whenever a fresh "New Run" lands on the config
+  // view, so RunnerConfig snaps the radio back to the requested default even
+  // if the user had toggled it earlier. Entering from Scheduled Tasks means
+  // the user clearly wants the schedule path — defaulting to 'manual' there
+  // hides the schedule fields and forces an extra click.
+  const [defaultRunMode, setDefaultRunMode] = useState<'manual' | 'schedule'>('manual')
+  const [configRunModeKey, setConfigRunModeKey] = useState(0)
 
   // Resizable panel widths
   const containerRef = useRef<HTMLDivElement>(null)
@@ -313,6 +329,13 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             Array.isArray(data.endpointIds) ? new Set(data.endpointIds as string[]) : null,
           )
           setSuiteIdForRunner(data.suiteId)
+          // When the suite was opened explicitly to schedule it (ScheduledTasksView
+          // → "New Run" → pick suite), snap the radio in RunnerConfig to
+          // "Schedule runs" so the user doesn't have to toggle it manually.
+          if (data.scheduleMode) {
+            setDefaultRunMode('schedule')
+            setConfigRunModeKey((k) => k + 1)
+          }
           // Force the config view — the runner tab is reused, and a previous
           // session (TestsHome, All Runs, prior results) may have parked it
           // on another view. Auto-run paths flip to 'results' on their own.
@@ -645,11 +668,22 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     window.api?.runner?.stop()
   }, [])
 
-  const handleNewRun = useCallback(() => {
+  const handleNewRun = useCallback((mode: 'manual' | 'schedule' = 'manual') => {
+    setDefaultRunMode(mode)
+    setConfigRunModeKey((k) => k + 1)
     setView('config')
     setResults([])
     setReport(null)
     setSelectedResultId(null)
+    // Reset the suite scope. "New Run" is a fresh start — the user
+    // explicitly wants the APIs-tree picker, not the previously-loaded
+    // suite. Without this, picking a suite via the ScheduledTasks dropdown
+    // pinned `suiteIdForRunner` on the tab, so a later "Pick endpoints
+    // from APIs…" still rendered the suite's items.
+    setSuiteFilterIds(null)
+    setSuiteIdForRunner(null)
+    setRunOrigin('runner')
+    setRunFolderName('')
   }, [])
 
   const handleViewAllRuns = useCallback(() => {
@@ -674,29 +708,40 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   )
 
   const handleSchedule = useCallback(
-    async (intervalValue: number, intervalUnit: 'minutes' | 'hours' | 'days') => {
+    async (payload: SchedulePayload) => {
       const selected = endpoints.filter((ep) => ep.selected)
       if (selected.length === 0) return
 
       try {
         const result = await window.api.scheduler.create({
           projectId: activeProjectId || '',
-          name: `Scheduled Run ${new Date().toLocaleString()}`,
+          // Auto-derive a human name. If the runner tab knows the suite or
+          // folder it's working with, surface that — otherwise we used to
+          // print only the timestamp which made the Scheduled Tasks table
+          // unreadable when you had more than a couple of rows.
+          name: `${runFolderName || 'Scheduled Run'} — ${new Date().toLocaleString()}`,
           endpointIds: selected.map((ep) => ep.id),
           folderId: folderId || undefined,
           environmentId: environmentId || undefined,
-          intervalValue,
-          intervalUnit,
+          intervalValue: payload.intervalValue,
+          intervalUnit: payload.intervalUnit,
           delayMs: delay,
+          scheduleType: payload.scheduleType,
+          scheduleTime: payload.scheduleTime,
+          scheduleDays: payload.scheduleDays,
+          scheduleCron: payload.scheduleCron,
+          suiteId: suiteIdForRunner || undefined,
         })
         if (result?.success) {
           setView('scheduled')
+        } else {
+          console.error('Failed to create scheduled task:', result?.error)
         }
       } catch (e) {
         console.error('Failed to create scheduled task:', e)
       }
     },
-    [endpoints, activeProjectId, folderId, environmentId, delay],
+    [endpoints, activeProjectId, folderId, environmentId, delay, runFolderName, suiteIdForRunner],
   )
 
   const handleSequenceResize = useCallback((dx: number) => {
@@ -719,7 +764,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             onViewReport={handleViewReport}
           />
         ) : view === 'scheduled' ? (
-          <ScheduledTasksView onBack={() => setView('home')} onNewRun={handleNewRun} />
+          <ScheduledTasksView onBack={() => setView('home')} />
         ) : view === 'history' ? (
           <RunnerHistory
             onBack={() => setView(results.length > 0 ? 'results' : 'home')}
@@ -780,6 +825,12 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 onSchedule={handleSchedule}
                 isRunning={isRunning}
                 selectedCount={selectedCount}
+                initialRunMode={defaultRunMode}
+                initialRunModeKey={configRunModeKey}
+                // Scheduling lives on Test Suites. APIs / folder runs are
+                // one-shots; hiding the Schedule radio prevents stranded
+                // "Scheduled: ad-hoc" tasks that no one knows where to find.
+                canSchedule={!!suiteIdForRunner}
               />
             </div>
           </>

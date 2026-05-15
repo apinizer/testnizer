@@ -40,6 +40,10 @@ interface UIStore {
   isLeftPanelCollapsed: boolean
   activeSidebarPage: SidebarPage
   showImportModal: boolean
+  // When the import modal opens with a pre-selected format ID, ImportModal
+  // skips step 1 (format picker) and lands the user directly on step 2
+  // (file / URL source). Cleared on close.
+  importModalInitialFormatId: string | null
   showEnvironmentModal: boolean
   showSettingsModal: boolean
   showCodeGenerator: boolean
@@ -53,6 +57,7 @@ interface UIStore {
   showConsolePanel: boolean
   showProfileModal: boolean
   showAboutModal: boolean
+  showEnterpriseModal: boolean
   showCommandPalette: boolean
   showShortcutCheatsheet: boolean
   gitLoading: string | null // null = idle, string = message to display
@@ -74,7 +79,7 @@ interface UIStore {
   toggleLeftPanel: () => void
   setLeftPanelCollapsed: (collapsed: boolean) => void
   setActiveSidebarPage: (page: SidebarPage) => void
-  setShowImportModal: (show: boolean) => void
+  setShowImportModal: (show: boolean, initialFormatId?: string | null) => void
   setShowEnvironmentModal: (show: boolean) => void
   setShowSettingsModal: (show: boolean) => void
   setShowCodeGenerator: (show: boolean) => void
@@ -89,6 +94,7 @@ interface UIStore {
   toggleConsolePanel: () => void
   setShowProfileModal: (show: boolean) => void
   setShowAboutModal: (show: boolean) => void
+  setShowEnterpriseModal: (show: boolean) => void
   setShowCommandPalette: (show: boolean) => void
   setShowShortcutCheatsheet: (show: boolean) => void
   setGitLoading: (msg: string | null) => void
@@ -156,6 +162,7 @@ export const useUIStore = create<UIStore>((set) => ({
   isLeftPanelCollapsed: false,
   activeSidebarPage: 'apis',
   showImportModal: false,
+  importModalInitialFormatId: null,
   showEnvironmentModal: false,
   showSettingsModal: false,
   showCodeGenerator: false,
@@ -169,6 +176,7 @@ export const useUIStore = create<UIStore>((set) => ({
   showConsolePanel: false,
   showProfileModal: false,
   showAboutModal: false,
+  showEnterpriseModal: false,
   showCommandPalette: false,
   showShortcutCheatsheet: false,
   gitLoading: null,
@@ -287,7 +295,13 @@ export const useUIStore = create<UIStore>((set) => ({
     }))
   },
 
-  setShowImportModal: (show) => set({ showImportModal: show }),
+  setShowImportModal: (show, initialFormatId) =>
+    set({
+      showImportModal: show,
+      // Reset on close so a later "plain" open of the modal lands back on
+      // step 1; preserve only when explicitly provided.
+      importModalInitialFormatId: show ? (initialFormatId ?? null) : null,
+    }),
   setShowEnvironmentModal: (show) => set({ showEnvironmentModal: show }),
   setShowSettingsModal: (show) => set({ showSettingsModal: show }),
   setShowCodeGenerator: (show) => set({ showCodeGenerator: show }),
@@ -302,6 +316,7 @@ export const useUIStore = create<UIStore>((set) => ({
   toggleConsolePanel: () => set((s) => ({ showConsolePanel: !s.showConsolePanel })),
   setShowProfileModal: (show) => set({ showProfileModal: show }),
   setShowAboutModal: (show) => set({ showAboutModal: show }),
+  setShowEnterpriseModal: (show) => set({ showEnterpriseModal: show }),
   setShowCommandPalette: (show) => set({ showCommandPalette: show }),
   setShowShortcutCheatsheet: (show) => set({ showShortcutCheatsheet: show }),
   setGitLoading: (msg) => set({ gitLoading: msg }),

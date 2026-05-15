@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   X,
   Upload,
@@ -133,6 +133,7 @@ function collectFolders(
 export default function ImportModal() {
   const showImportModal = useUIStore((s) => s.showImportModal)
   const setShowImportModal = useUIStore((s) => s.setShowImportModal)
+  const importModalInitialFormatId = useUIStore((s) => s.importModalInitialFormatId)
   const { t } = useTranslation()
 
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
@@ -141,6 +142,21 @@ export default function ImportModal() {
 
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [step, setStep] = useState<1 | 2 | 3>(1)
+
+  // When the modal is opened with a pre-selected format (e.g. via the
+  // Import dropdown next to "+" on the APIs sidebar), seed both the format
+  // index and the step so the user lands on the Source step right away.
+  // The effect only fires on transitions of (modal-open, format-id), so
+  // user navigation back to step 1 inside the modal still works.
+  useEffect(() => {
+    if (!showImportModal) return
+    if (!importModalInitialFormatId) return
+    const idx = IMPORT_FORMATS.findIndex((f) => f.id === importModalInitialFormatId)
+    if (idx >= 0) {
+      setSelectedIdx(idx)
+      setStep(2)
+    }
+  }, [showImportModal, importModalInitialFormatId])
   const [importUrl, setImportUrl] = useState('')
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState('')

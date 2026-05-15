@@ -299,6 +299,45 @@ function runMigrations(database: Database.Database): void {
   if (!rhColNames.includes('source_label')) {
     database.exec(`ALTER TABLE runner_history ADD COLUMN source_label TEXT`)
   }
+  // scheduled_task_id ties runner_history rows back to the scheduled_tasks
+  // row that produced them. We used to filter by source_label match on the
+  // task name, which broke as soon as a task was renamed or deleted (the
+  // history orphaned with no way to look it up). A dedicated FK column is
+  // the durable answer.
+  if (!rhColNames.includes('scheduled_task_id')) {
+    database.exec(`ALTER TABLE runner_history ADD COLUMN scheduled_task_id TEXT`)
+    database.exec(
+      `CREATE INDEX IF NOT EXISTS idx_runner_history_scheduled_task ON runner_history(scheduled_task_id)`,
+    )
+  }
+
+  // scheduled_tasks: richer scheduling than "every N {minutes/hours/days}".
+  // schedule_type:
+  //   'interval' (default, legacy): every interval_value × interval_unit
+  //   'daily': fires at schedule_time (HH:MM) every day
+  //   'weekly': fires at schedule_time on the weekdays in schedule_days
+  //            (JSON array of 0–6, Sunday = 0 matching Date#getDay)
+  //   'cron': fires per schedule_cron expression (basic 5-field)
+  // schedule_time / schedule_days / schedule_cron are nullable for legacy
+  // rows. The migration leaves existing tasks on 'interval' so they keep
+  // running unchanged.
+  const stCols = database.pragma('table_info(scheduled_tasks)') as Array<{ name: string }>
+  const stColNames = stCols.map((c) => c.name)
+  if (!stColNames.includes('schedule_type')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN schedule_type TEXT DEFAULT 'interval'`)
+  }
+  if (!stColNames.includes('schedule_time')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN schedule_time TEXT`)
+  }
+  if (!stColNames.includes('schedule_days')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN schedule_days TEXT`)
+  }
+  if (!stColNames.includes('schedule_cron')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN schedule_cron TEXT`)
+  }
+  if (!stColNames.includes('suite_id')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN suite_id TEXT`)
+  }
 
   // ─── Auth tables ─────────────────────────────────────────
   database.exec(`

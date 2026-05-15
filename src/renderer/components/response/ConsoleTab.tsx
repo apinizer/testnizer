@@ -8,7 +8,6 @@ import {
   ChevronDown,
   ChevronRight,
   X,
-  MoreHorizontal,
   Maximize2,
   ArrowDown,
   ArrowUp,
@@ -118,8 +117,13 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
     <div className="flex h-full flex-col bg-[var(--white)]">
       {/* ── Top bar ── */}
       <div
-        className="flex shrink-0 items-center gap-3 px-3"
+        className="flex shrink-0 items-center gap-3 pl-3"
         style={{
+          // 40px right padding leaves room for the ConsolePanel close
+          // (chevron-down) button, which is rendered as an absolute-
+          // positioned overlay at top:8, right:10. Without this, the
+          // close button sat directly on top of the "Clear" action.
+          paddingRight: 40,
           height: 36,
           borderBottom: '1px solid var(--border)',
           background: 'var(--white)',
@@ -262,15 +266,6 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
           }}
         >
           Clear
-        </button>
-
-        <button
-          type="button"
-          title="More"
-          className="cursor-pointer"
-          style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
-        >
-          <MoreHorizontal size={14} />
         </button>
       </div>
 

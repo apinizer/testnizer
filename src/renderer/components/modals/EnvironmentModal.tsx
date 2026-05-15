@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { X, Plus, Trash2, Eye, EyeOff, Globe, Layers, Check, Copy, Upload } from 'lucide-react'
+import { X, Plus, Trash2, Eye, EyeOff, Globe, Layers, Check, Copy, Download } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
@@ -330,7 +330,7 @@ export default function EnvironmentModal() {
               }}
               title={t('env.importEnvironmentHint')}
             >
-              <Upload size={12} />
+              <Download size={12} />
               {importing ? t('env.importing') : t('env.importEnvironment')}
             </button>
           </div>
