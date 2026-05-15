@@ -10,10 +10,12 @@
       forbid `connect-src` to anywhere. Monaco Editor needs `blob:` workers
       and inline styles, and the app uses inline styles via Tailwind and
       Zustand hydration, so `'unsafe-inline'` is kept for styles only.
+      `'unsafe-eval'` is required so user-authored pre-request and
+      post-response scripts can execute via `new Function()` (test-runner.ts).
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
     />
     <title>Testnizer</title>
   </head>

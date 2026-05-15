@@ -1177,7 +1177,7 @@ export default function NewProjectModal() {
                 <Label text={t('newProject.summary')} />
                 <div className="flex items-center gap-3" style={{ marginBottom: 6 }}>
                   <ProjectIcon
-                    name={projName}
+                    name={displayName || projName}
                     emoji={activeEmoji}
                     color={selectedColor}
                     size={32}

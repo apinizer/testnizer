@@ -33,6 +33,33 @@ interface TestSuiteRow {
 }
 
 /**
+ * Returns `name` if there is no test suite with that exact name in the project;
+ * otherwise appends " (1)", " (2)"… until the result is unique. Used by the
+ * create and import flows so re-importing an exported suite produces a clearly
+ * disambiguated copy instead of two suites with identical names (v1.3.1 §5.9).
+ */
+export function ensureUniqueSuiteName(
+  db: ReturnType<typeof getDb>,
+  projectId: string,
+  baseName: string,
+): string {
+  const taken = new Set<string>(
+    (
+      db.prepare('SELECT name FROM test_suites WHERE project_id = ?').all(projectId) as Array<{
+        name: string
+      }>
+    ).map((r) => r.name),
+  )
+  if (!taken.has(baseName)) return baseName
+  for (let i = 1; i < 1000; i++) {
+    const candidate = `${baseName} (${i})`
+    if (!taken.has(candidate)) return candidate
+  }
+  // Astronomically unlikely; fall through with a uuid suffix rather than loop forever.
+  return `${baseName} (${randomUUID().slice(0, 8)})`
+}
+
+/**
  * Build a unified `request_schema` JSON string from either an endpoint
  * (whose `request_schema` is already a JSON blob produced by the importer)
  * or a saved_request (whose request fields live in separate columns).
@@ -140,10 +167,16 @@ export function registerTestSuiteHandlers(): void {
         const db = getDb()
         const id = randomUUID()
         const now = Date.now()
+        // De-duplicate suite names within a project. v1.3.1 §5.9 reported that
+        // re-importing an export of the same suite produced two suites with
+        // identical names sitting side-by-side in the sidebar. Auto-append
+        // " (1)", " (2)"… until the name is unique so the user can still see
+        // both copies, but the names disambiguate clearly.
+        const uniqueName = ensureUniqueSuiteName(db, payload.project_id, payload.name)
         db.prepare(
           `INSERT INTO test_suites (id, project_id, name, description, sort_order, created_at, updated_at)
            VALUES (?, ?, ?, ?, 0, ?, ?)`,
-        ).run(id, payload.project_id, payload.name, payload.description || null, now, now)
+        ).run(id, payload.project_id, uniqueName, payload.description || null, now, now)
         const suite = db.prepare('SELECT * FROM test_suites WHERE id = ?').get(id) as TestSuiteRow
         return { success: true, data: suite }
       } catch (e) {

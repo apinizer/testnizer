@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { X, Copy, Check, Terminal, Code2, FileCode } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useRequestStore } from '../../stores/request.store'
+import { useEnvironmentStore } from '../../stores/environment.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import Modal from '../shared/Modal'
 import { generateCode, CODE_LANGUAGES } from '../../lib/code-generator'
@@ -33,10 +34,28 @@ export default function CodeGeneratorModal() {
   const headers = useRequestStore((s) => s.headers)
   const body = useRequestStore((s) => s.body)
   const auth = useRequestStore((s) => s.auth)
+  const getActiveVariables = useEnvironmentStore((s) => s.getActiveVariables)
+  const activeEnvId = useEnvironmentStore((s) => s.activeEnvironmentId)
+  const envState = useEnvironmentStore((s) => s.environments)
 
   const code = useMemo(() => {
-    return generateCode(activeLang, { method, url, params, headers, body, auth })
-  }, [activeLang, method, url, params, headers, body, auth])
+    return generateCode(
+      activeLang,
+      { method, url, params, headers, body, auth },
+      { envVars: getActiveVariables() },
+    )
+  }, [
+    activeLang,
+    method,
+    url,
+    params,
+    headers,
+    body,
+    auth,
+    getActiveVariables,
+    activeEnvId,
+    envState,
+  ])
 
   const monacoLang = CODE_LANGUAGES.find((l) => l.id === activeLang)?.monacoLang ?? 'plaintext'
 

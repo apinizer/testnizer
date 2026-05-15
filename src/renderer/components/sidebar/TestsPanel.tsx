@@ -438,6 +438,17 @@ export default function TestsPanel() {
     return () => document.removeEventListener('click', handler)
   }, [contextMenu])
 
+  // Same outside-click dismissal for the suite-item context menu (open /
+  // rename / duplicate / delete). Without this it stayed pinned on screen
+  // until the user picked one of the four actions, which is the v1.3.1
+  // §5.5 bug.
+  useEffect(() => {
+    if (!itemContextMenu) return
+    const handler = () => setItemContextMenu(null)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [itemContextMenu])
+
   // ─── Filter ───────────────────────────────────────────────
   const filteredSuites = searchQuery.trim()
     ? suites.filter((s) => s.name.toLowerCase().includes(searchQuery.toLowerCase()))

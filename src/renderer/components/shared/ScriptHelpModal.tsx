@@ -110,8 +110,24 @@ const API_ROWS: ApiRow[] = [
 ]
 
 function CodeBlock({ code }: { code: string }) {
+  // Constrain Ctrl/Cmd+A to the focused snippet rather than letting the
+  // browser default expand the selection to the whole modal — v1.3.1 M5.
+  function handleKeyDown(e: React.KeyboardEvent<HTMLPreElement>) {
+    const isSelectAll = (e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')
+    if (!isSelectAll) return
+    e.preventDefault()
+    const range = document.createRange()
+    range.selectNodeContents(e.currentTarget)
+    const sel = window.getSelection()
+    if (sel) {
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
+  }
   return (
     <pre
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
       className="overflow-x-auto rounded-md p-2"
       style={{
         background: 'var(--surface)',
@@ -121,6 +137,7 @@ function CodeBlock({ code }: { code: string }) {
         fontFamily: 'var(--font-mono)',
         margin: 0,
         whiteSpace: 'pre',
+        outline: 'none',
       }}
     >
       {code}

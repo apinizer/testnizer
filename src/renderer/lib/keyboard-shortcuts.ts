@@ -80,11 +80,20 @@ export function useKeyboardShortcuts(): void {
             const ui = useUIStore.getState()
             const tabs = useTabsStore.getState()
             const active = tabs.tabs.find((t) => t.id === tabs.activeTabId)
+            // A tab is a request tab if (a) it carries one of the resource ids
+            // — endpoint / saved request / mock / test suite item — or (b) its
+            // protocol is a regular request protocol. Without the id-based
+            // check, freshly-opened "New Request" tabs whose protocol field
+            // hadn't propagated yet fell through to the project-save branch
+            // (v1.3.1 M8).
             const isRequestTab =
               !!active &&
-              !isToolProtocol(active.protocol) &&
-              active.protocol !== 'runner' &&
-              active.protocol !== 'mockServer'
+              (!!active.endpointId ||
+                !!active.savedRequestId ||
+                !!active.testSuiteItemId ||
+                (!isToolProtocol(active.protocol) &&
+                  active.protocol !== 'runner' &&
+                  active.protocol !== 'mockServer'))
             if (isRequestTab) {
               ui.setShowEndpointSaveModal(true)
             } else {

@@ -625,37 +625,36 @@ function buildResponseShim(response: ScriptResponseShape) {
   }
 }
 
-interface ChainResult {
-  _: never
+// Test Suite runner expect-chain. Fluent chain mirroring chai-BDD so the same
+// assertion idioms (.to.be.an('array').that.is.empty, .with.lengthOf(n)) work
+// here as in the renderer test-runner.ts. Keep the two implementations in sync.
+type ExpectChain = {
+  to: ExpectChain
+  be: ExpectChain
+  is: ExpectChain
+  that: ExpectChain
+  which: ExpectChain
+  with: ExpectChain
+  and: ExpectChain
+  have: ExpectChain
+  not: ExpectChain
+  equal: (expected: unknown) => ExpectChain
+  eql: (expected: unknown) => ExpectChain
+  a: (type: string) => ExpectChain
+  an: (type: string) => ExpectChain
+  include: (sub: unknown) => ExpectChain
+  length: (n: number) => ExpectChain
+  lengthOf: (n: number) => ExpectChain
+  empty: ExpectChain
+  true: ExpectChain
+  false: ExpectChain
+  null: ExpectChain
+  undefined: ExpectChain
 }
 
-function buildExpectChain(value: unknown): {
-  to: {
-    eql: (expected: unknown) => ChainResult
-    equal: (expected: unknown) => ChainResult
-    be: {
-      a: (type: string) => ChainResult
-      an: (type: string) => ChainResult
-      true: ChainResult
-      false: ChainResult
-      null: ChainResult
-      undefined: ChainResult
-      empty: ChainResult
-    }
-    include: (sub: unknown) => ChainResult
-    have: { length: (n: number) => ChainResult; lengthOf: (n: number) => ChainResult }
-    not: {
-      eql: (expected: unknown) => ChainResult
-      include: (sub: unknown) => ChainResult
-    }
-  }
-} {
+function buildExpectChain(value: unknown): ExpectChain {
   const fail = (msg: string): never => {
     throw new Error(msg)
-  }
-  const ok = (cond: boolean, msg: string): ChainResult => {
-    if (!cond) fail(msg)
-    return { _: undefined as never }
   }
   const eqlCheck = (a: unknown, b: unknown): boolean => {
     if (a === b) return true
@@ -663,90 +662,153 @@ function buildExpectChain(value: unknown): {
     if (typeof a !== 'object' || typeof b !== 'object') return false
     return JSON.stringify(a) === JSON.stringify(b)
   }
-  const isType = (t: string) => {
-    if (t === 'array') return Array.isArray(value)
-    if (t === 'null') return value === null
-    return typeof value === t
+  const isType = (t: string): boolean => {
+    const lower = t.toLowerCase()
+    if (lower === 'array') return Array.isArray(value)
+    if (lower === 'null') return value === null
+    return typeof value === lower
   }
-  return {
-    to: {
-      eql: (expected) =>
-        ok(
-          eqlCheck(value, expected),
-          `expected ${JSON.stringify(value)} to equal ${JSON.stringify(expected)}`,
-        ),
-      equal: (expected) =>
-        ok(
+  const assertEmpty = (): void => {
+    if (Array.isArray(value) || typeof value === 'string') {
+      if ((value as { length: number }).length !== 0) {
+        fail(`expected ${JSON.stringify(value)} to be empty`)
+      }
+      return
+    }
+    if (value !== null && typeof value === 'object') {
+      if (Object.keys(value as object).length !== 0) {
+        fail(`expected ${JSON.stringify(value)} to be empty`)
+      }
+      return
+    }
+    fail(`expected ${JSON.stringify(value)} to be empty`)
+  }
+  const lengthOf = (n: number): void => {
+    const len = (value as { length?: number } | null | undefined)?.length
+    if (len !== n) fail(`expected length ${n} but got ${String(len)}`)
+  }
+  const negated = false
+
+  // Forward-declared so the getters defined inside `make()` can return `chain`
+  // before it's assigned. ESLint's `prefer-const` would force a const here,
+  // but the value is only known after `make()` returns and the getters need
+  // the declaration in scope at construction time.
+  // eslint-disable-next-line prefer-const
+  let chain: ExpectChain
+  const make = (notFlag: boolean): ExpectChain => {
+    const check = (cond: boolean, msg: string): void => {
+      if (notFlag ? cond : !cond) fail(notFlag ? `negated: ${msg}` : msg)
+    }
+    const c: Partial<ExpectChain> = {
+      equal: (expected) => {
+        check(
           value === expected,
           `expected ${JSON.stringify(value)} to strictly equal ${JSON.stringify(expected)}`,
-        ),
-      // CRITICAL: each property below MUST be a getter, not an eagerly-evaluated
-      // value. Without `get`, `pm.expect(x)` throws at chain construction time
-      // even when the user never accessed `.true` / `.false` / etc., because
-      // `ok(value === true, …)` runs while the object is being built.
-      be: {
-        a: (type) => ok(isType(type), `expected ${JSON.stringify(value)} to be a ${type}`),
-        an: (type) => ok(isType(type), `expected ${JSON.stringify(value)} to be an ${type}`),
-        get true() {
-          return ok(value === true, `expected ${JSON.stringify(value)} to be true`)
-        },
-        get false() {
-          return ok(value === false, `expected ${JSON.stringify(value)} to be false`)
-        },
-        get null() {
-          return ok(value === null, `expected ${JSON.stringify(value)} to be null`)
-        },
-        get undefined() {
-          return ok(value === undefined, `expected ${JSON.stringify(value)} to be undefined`)
-        },
-        get empty() {
-          return ok(
-            (Array.isArray(value) && value.length === 0) ||
-              (typeof value === 'string' && value.length === 0) ||
-              (value !== null &&
-                typeof value === 'object' &&
-                Object.keys(value as object).length === 0),
-            `expected ${JSON.stringify(value)} to be empty`,
-          )
-        },
+        )
+        return chain
+      },
+      eql: (expected) => {
+        check(
+          eqlCheck(value, expected),
+          `expected ${JSON.stringify(value)} to equal ${JSON.stringify(expected)}`,
+        )
+        return chain
+      },
+      a: (type) => {
+        check(isType(type), `expected ${JSON.stringify(value)} to be a ${type}`)
+        return chain
+      },
+      an: (type) => {
+        check(isType(type), `expected ${JSON.stringify(value)} to be an ${type}`)
+        return chain
       },
       include: (sub) => {
         if (typeof value === 'string' && typeof sub === 'string') {
-          return ok(value.includes(sub), `expected "${value}" to include "${sub}"`)
-        }
-        if (Array.isArray(value)) {
-          return ok(
+          check(value.includes(sub), `expected "${value}" to include "${sub}"`)
+        } else if (Array.isArray(value)) {
+          check(
             value.some((v) => eqlCheck(v, sub)),
             `expected array to include ${JSON.stringify(sub)}`,
           )
+        } else {
+          fail('include is only supported for strings and arrays')
         }
-        return fail('include is only supported for strings and arrays')
+        return chain
       },
-      have: {
-        length: (n) => {
-          const len = Array.isArray(value) || typeof value === 'string' ? value.length : -1
-          return ok(len === n, `expected length ${n} but got ${len}`)
-        },
-        lengthOf: (n) => {
-          const len = Array.isArray(value) || typeof value === 'string' ? value.length : -1
-          return ok(len === n, `expected length ${n} but got ${len}`)
-        },
+      length: (n) => {
+        try {
+          lengthOf(n)
+          if (notFlag) fail(`expected length not to be ${n}`)
+        } catch (e) {
+          if (!notFlag) throw e
+        }
+        return chain
       },
-      not: {
-        eql: (expected) =>
-          ok(
-            !eqlCheck(value, expected),
-            `expected ${JSON.stringify(value)} to not equal ${JSON.stringify(expected)}`,
-          ),
-        include: (sub) => {
-          if (typeof value === 'string' && typeof sub === 'string') {
-            return ok(!value.includes(sub), `expected "${value}" to not include "${sub}"`)
+      lengthOf: (n) => {
+        try {
+          lengthOf(n)
+          if (notFlag) fail(`expected length not to be ${n}`)
+        } catch (e) {
+          if (!notFlag) throw e
+        }
+        return chain
+      },
+    }
+    Object.defineProperties(c, {
+      to: { get: () => chain, enumerable: true },
+      be: { get: () => chain, enumerable: true },
+      is: { get: () => chain, enumerable: true },
+      that: { get: () => chain, enumerable: true },
+      which: { get: () => chain, enumerable: true },
+      with: { get: () => chain, enumerable: true },
+      and: { get: () => chain, enumerable: true },
+      have: { get: () => chain, enumerable: true },
+      not: { get: () => make(true), enumerable: true },
+      empty: {
+        get: () => {
+          try {
+            assertEmpty()
+            if (notFlag) fail(`expected ${JSON.stringify(value)} to not be empty`)
+          } catch (e) {
+            if (!notFlag) throw e
           }
-          return fail('not.include is only supported for strings')
+          return chain
         },
+        enumerable: true,
       },
-    },
+      true: {
+        get: () => {
+          check(value === true, `expected ${JSON.stringify(value)} to be true`)
+          return chain
+        },
+        enumerable: true,
+      },
+      false: {
+        get: () => {
+          check(value === false, `expected ${JSON.stringify(value)} to be false`)
+          return chain
+        },
+        enumerable: true,
+      },
+      null: {
+        get: () => {
+          check(value === null, `expected ${JSON.stringify(value)} to be null`)
+          return chain
+        },
+        enumerable: true,
+      },
+      undefined: {
+        get: () => {
+          check(value === undefined, `expected ${JSON.stringify(value)} to be undefined`)
+          return chain
+        },
+        enumerable: true,
+      },
+    })
+    return c as ExpectChain
   }
+  chain = make(negated)
+  return chain
 }
 
 function delay(ms: number): Promise<void> {
@@ -1015,9 +1077,25 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
               url: resolvedOptions.url,
               status_code: response.status,
               duration_ms: response.timing?.total ? Math.round(response.timing.total) : undefined,
+              // Capture the headers/params/body that actually went out on the
+              // wire so the Run Details "Request" tab can show the full picture
+              // (auto-applied headers from the auth tab, resolved query params,
+              // etc.). Without these the UI looked like the runner had stripped
+              // them — v1.3.1 §5.7 / §5.8.
               request_snapshot: JSON.stringify({
                 method: resolvedOptions.method,
                 url: resolvedOptions.url,
+                headers: resolvedOptions.headers ?? [],
+                params: resolvedOptions.params ?? [],
+                body: resolvedOptions.body
+                  ? {
+                      type: (resolvedOptions.body as RequestBody).type,
+                      content: ((resolvedOptions.body as RequestBody).content ?? '').slice(0, 4096),
+                    }
+                  : undefined,
+                auth: resolvedOptions.auth
+                  ? { type: (resolvedOptions.auth as AuthConfig).type }
+                  : undefined,
               }),
               response_snapshot: JSON.stringify({
                 status: response.status,

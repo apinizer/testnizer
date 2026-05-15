@@ -80,6 +80,19 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     const ok = await createBranch(activeProjectId, name, currentBranch)
     if (ok) {
       toast.success(t('toast.branchCreated').replace('{name}', name))
+      // Match VS Code / IntelliJ / GitKraken: a fresh branch you just asked
+      // for is the one you want to be on. Without this auto-switch v1.3.1 left
+      // the indicator on the source branch and forced a second click — B7.
+      try {
+        setGitLoading(`Switching to ${name}...`)
+        await switchBranch(activeProjectId, name)
+        await refreshTree()
+        await setActiveProject(activeProjectId)
+      } catch {
+        /* a failed auto-switch is recoverable; the branch exists */
+      } finally {
+        setGitLoading(null)
+      }
     } else {
       toast.error(t('toast.branchCreateFailed'))
     }
@@ -372,9 +385,15 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
             </div>
           )}
 
-          {/* Branch list */}
+          {/* Branch list. We materialise the current branch synthetically when
+              the fetch came back empty — v1.3.1 B6/B9 showed "No branches" in
+              the dropdown even when the pill clearly said "main", which was
+              just the legacy fallback never reaching the array. */}
           <div className="max-h-[240px] overflow-y-auto py-1">
-            {branches.map((branch) => (
+            {(branches.some((b) => b.name === currentBranch) || !currentBranch
+              ? branches
+              : [{ name: currentBranch, current: true, isRemote: false }, ...branches]
+            ).map((branch) => (
               <div
                 key={branch.name}
                 className="group flex cursor-pointer items-center gap-2 px-3 py-1.5"

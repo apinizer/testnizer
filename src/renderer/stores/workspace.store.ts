@@ -268,9 +268,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       document.documentElement.style.removeProperty('--accent-text')
       return
     }
-    // Find project and apply its color
+    // Find project and apply its color. Prefer `display_name` (human-friendly,
+    // entered in the wizard) over `name` (the slug used for filenames / git).
+    // v1.3.1 B4 surfaced the slug as the tree root label, which clashed with
+    // the rest of the UI that already used display_name.
     const project = get().projects.find((p) => p.id === id)
-    const projectName = project?.name || 'Project'
+    const projectName = project?.display_name || project?.name || 'Project'
     if (project?.icon_color) {
       document.documentElement.style.setProperty('--accent', project.icon_color)
       document.documentElement.style.setProperty('--accent-text', project.icon_color)
@@ -412,7 +415,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const projectId = get().activeProjectId
     if (!projectId) return
     const project = get().projects.find((p) => p.id === projectId)
-    const projectName = project?.name || 'Project'
+    // Same preference as setActiveProject — display_name beats the slug so a
+    // rename made via the project hub shows up immediately on the next tree
+    // refresh, not just on a full reload (B4).
+    const projectName = project?.display_name || project?.name || 'Project'
     const tree = await buildTreeFromDB(projectId, projectName)
     // Preserve existing openNodeIds
     set({ treeData: tree })

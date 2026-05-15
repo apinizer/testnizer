@@ -16,7 +16,7 @@ import { addSaveHistory } from '../db/branch.repo'
 import { encryptSecret, decryptSecret } from '../lib/secure-storage'
 import { assertTmpSubpath, assertImportFilePath, GIT_TMP_PREFIXES } from '../lib/path-safety'
 import { importPostman, importInsomnia } from './import-export.handler'
-import { snapshotEndpointForSuite } from './test-suite.handler'
+import { snapshotEndpointForSuite, ensureUniqueSuiteName } from './test-suite.handler'
 
 // ─── Multi-format detection for test suite import ────────────────
 export type TestSuiteImportFormat = 'testnizer' | 'postman' | 'insomnia' | 'unknown'
@@ -181,6 +181,40 @@ const CERTIFICATE_COLUMNS = [
   'enabled',
   'created_at',
 ] as const
+
+// Returns null when the export shape is acceptable, or a specific user-facing
+// error string. Lets the importer point users at the actual problem (empty
+// project, missing top-level field, wrong file kind) instead of the generic
+// "Invalid project file format." that hid the v1.3.1 export-corruption bug.
+export function validateProjectExport(parsed: unknown): string | null {
+  if (!parsed || typeof parsed !== 'object') {
+    return 'Project file is not a JSON object.'
+  }
+  const doc = parsed as Partial<ProjectExport>
+  if (!doc.version || typeof doc.version !== 'string') {
+    return 'Project file is missing the required "version" field.'
+  }
+  if (!doc.project || typeof doc.project !== 'object') {
+    return 'Project file is missing the required "project" object.'
+  }
+  if (
+    !Array.isArray(doc.folders) ||
+    !Array.isArray(doc.endpoints) ||
+    !Array.isArray(doc.savedRequests)
+  ) {
+    return 'Project file is missing folders/endpoints/savedRequests arrays.'
+  }
+  if (
+    doc.folders.length === 0 &&
+    doc.endpoints.length === 0 &&
+    doc.savedRequests.length === 0 &&
+    (doc.testSuites?.length ?? 0) === 0 &&
+    (doc.mockServers?.length ?? 0) === 0
+  ) {
+    return 'Project file contains no folders, endpoints, suites or mocks. The original export may have failed; re-export the source project before importing.'
+  }
+  return null
+}
 
 export function exportProjectData(projectId: string): ProjectExport {
   const db = getDb()
@@ -869,6 +903,10 @@ export async function importTestSuiteFromFile(
     const db = getDb()
     const now = Date.now()
     const newSuiteId = randomUUID()
+    // De-duplicate against suites already present in the project so a user
+    // re-importing the same export gets "X", "X (1)", "X (2)" instead of two
+    // suites with identical names (v1.3.1 §5.9).
+    derivedName = ensureUniqueSuiteName(db, projectId, derivedName)
 
     // Step 2: snapshot each freshly-imported endpoint into test_suite_items
     // and delete the source endpoint row. The user's intent for a suite
@@ -1347,6 +1385,20 @@ export function registerSaveHandlers(): void {
   ipcMain.handle('save:exportProject', async (_event, projectId: string) => {
     try {
       const data = exportProjectData(projectId)
+      if (!data.project || Object.keys(data.project).length === 0) {
+        return {
+          success: false,
+          error: `Project ${projectId} not found in database (export skipped)`,
+        }
+      }
+      const counts = {
+        folders: data.folders.length,
+        endpoints: data.endpoints.length,
+        savedRequests: data.savedRequests.length,
+        environments: data.environments.length,
+        testSuites: data.testSuites?.length ?? 0,
+        mockServers: data.mockServers?.length ?? 0,
+      }
       const projectName = ((data.project?.name as string) || 'project').replace(
         /[^a-zA-Z0-9-_]/g,
         '_',
@@ -1355,7 +1407,7 @@ export function registerSaveHandlers(): void {
       const defaultName = `${projectName}-${dateStr}.json`
       const res = await writeJsonViaSaveDialog(JSON.stringify(data, null, 2), defaultName)
       if (!res.success) return { success: false, error: res.error }
-      return { success: true, data: { path: res.path } }
+      return { success: true, data: { path: res.path, counts } }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -1366,11 +1418,24 @@ export function registerSaveHandlers(): void {
     try {
       const data = exportFolderData(folderId)
       const db = getDb()
-      const folder = db.prepare('SELECT name FROM folders WHERE id = ?').get(folderId) as
-        | { name?: string }
-        | undefined
-      const folderName = (folder?.name || 'folder').replace(/[^a-zA-Z0-9-_]/g, '_')
-      const defaultName = `folder-${folderName}-${new Date().toISOString().slice(0, 10)}.json`
+      const folder = db
+        .prepare('SELECT name, project_id FROM folders WHERE id = ?')
+        .get(folderId) as { name?: string; project_id?: string } | undefined
+      // Fix v1.3.1 B23: filenames came out as "folder-folder-2026-05-15.json"
+      // because the project-root folder was literally named "folder". Use the
+      // owning project's name when the folder name is empty or the generic
+      // "folder" placeholder, and drop the redundant `folder-` prefix.
+      const project = folder?.project_id
+        ? (db.prepare('SELECT name FROM projects WHERE id = ?').get(folder.project_id) as
+            | { name?: string }
+            | undefined)
+        : undefined
+      const rawName =
+        !folder?.name || folder.name.toLowerCase() === 'folder'
+          ? project?.name || 'project'
+          : folder.name
+      const slug = rawName.replace(/[^a-zA-Z0-9-_]/g, '_')
+      const defaultName = `${slug}-${new Date().toISOString().slice(0, 10)}.json`
       const res = await writeJsonViaSaveDialog(JSON.stringify(data, null, 2), defaultName)
       if (!res.success) return { success: false, error: res.error }
       return { success: true, data: { path: res.path } }
@@ -1409,8 +1474,9 @@ export function registerSaveHandlers(): void {
         }
         const content = readFileSync(result.filePaths[0], 'utf-8')
         const parsed = JSON.parse(content) as ProjectExport
-        if (!parsed.version || !parsed.project) {
-          return { success: false, error: 'Invalid project file format.' }
+        const validationError = validateProjectExport(parsed)
+        if (validationError) {
+          return { success: false, error: validationError }
         }
         const res = importProjectAsNew(parsed, payload.workspaceId, { name: payload.name })
         return { success: true, data: { projectId: res.projectId } }
@@ -1461,8 +1527,13 @@ export function registerSaveHandlers(): void {
           const result = await dialog.showOpenDialog(win!, {
             properties: ['openFile'],
             title: 'Select test suite / collection file',
+            // Accept both JSON (Postman, Insomnia v4, Testnizer native) and
+            // YAML (Insomnia v5). Without yaml/yml here, the v5 export shape
+            // documented by Insomnia 8+ is invisible in the picker.
             filters: [
-              { name: 'Collections (JSON)', extensions: ['json'] },
+              { name: 'Collections', extensions: ['json', 'yaml', 'yml'] },
+              { name: 'JSON', extensions: ['json'] },
+              { name: 'YAML', extensions: ['yaml', 'yml'] },
               { name: 'All Files', extensions: ['*'] },
             ],
           })

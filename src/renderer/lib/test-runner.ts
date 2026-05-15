@@ -289,11 +289,20 @@ interface NotChain {
 }
 
 interface BeChain {
-  a(type: string): void
-  an(type: string): void
-  above(n: number): void
-  below(n: number): void
+  a(type: string): BeChain
+  an(type: string): BeChain
+  above(n: number): BeChain
+  below(n: number): BeChain
   oneOf(values: unknown[]): void
+  lengthOf(n: number): BeChain
+  // Chai BDD fluent connectors — self-return getters keep the chain alive.
+  that: BeChain
+  which: BeChain
+  is: BeChain
+  with: BeChain
+  and: BeChain
+  // Terminal assertions (getters so callers write `.empty` not `.empty()`).
+  empty: void
   true: void
   false: void
   null: void
@@ -302,6 +311,7 @@ interface BeChain {
 
 interface HaveChain {
   length(n: number): void
+  lengthOf(n: number): void
   property(name: string): void
 }
 
@@ -677,30 +687,97 @@ function createExpectChain(value: unknown): AssertionChain {
     throw new Error(message)
   }
 
-  const beChain: BeChain = {
-    a(type: string): void {
-      const actual = typeof value
-      if (actual !== type) {
-        assertionError(`Expected type "${type}" but got "${actual}"`)
+  function assertType(type: string): void {
+    const lower = type.toLowerCase()
+    if (lower === 'array') {
+      if (!Array.isArray(value)) {
+        assertionError(`Expected an array but got ${typeof value}`)
       }
+      return
+    }
+    if (lower === 'null') {
+      if (value !== null) assertionError(`Expected null but got ${String(value)}`)
+      return
+    }
+    const actual = typeof value
+    if (actual !== lower) {
+      assertionError(`Expected type "${type}" but got "${actual}"`)
+    }
+  }
+
+  function assertEmpty(): void {
+    if (Array.isArray(value) || typeof value === 'string') {
+      if ((value as { length: number }).length !== 0) {
+        assertionError(
+          `Expected empty ${Array.isArray(value) ? 'array' : 'string'} but got length ${String((value as { length: number }).length)}`,
+        )
+      }
+      return
+    }
+    if (value && typeof value === 'object') {
+      if (Object.keys(value as object).length !== 0) {
+        assertionError(`Expected empty object but got ${Object.keys(value as object).length} keys`)
+      }
+      return
+    }
+    assertionError(`Expected empty value but got ${String(value)}`)
+  }
+
+  function assertLengthOf(n: number): void {
+    const actual = (value as { length?: number } | null | undefined)?.length
+    if (actual !== n) {
+      assertionError(`Expected length ${n} but got ${String(actual)}`)
+    }
+  }
+
+  const beChain = {
+    a(type: string): BeChain {
+      assertType(type)
+      return beChain
     },
-    an(type: string): void {
-      this.a(type)
+    an(type: string): BeChain {
+      assertType(type)
+      return beChain
     },
-    above(n: number): void {
+    above(n: number): BeChain {
       if (typeof value !== 'number' || value <= n) {
         assertionError(`Expected ${String(value)} to be above ${n}`)
       }
+      return beChain
     },
-    below(n: number): void {
+    below(n: number): BeChain {
       if (typeof value !== 'number' || value >= n) {
         assertionError(`Expected ${String(value)} to be below ${n}`)
       }
+      return beChain
     },
     oneOf(values: unknown[]): void {
       if (!Array.isArray(values) || !values.includes(value)) {
         assertionError(`Expected ${String(value)} to be one of [${values.map(String).join(', ')}]`)
       }
+    },
+    lengthOf(n: number): BeChain {
+      assertLengthOf(n)
+      return beChain
+    },
+    get that(): BeChain {
+      return beChain
+    },
+    get which(): BeChain {
+      return beChain
+    },
+    get is(): BeChain {
+      return beChain
+    },
+    get with(): BeChain {
+      return beChain
+    },
+    get and(): BeChain {
+      return beChain
+    },
+    get empty() {
+      assertEmpty()
+      return undefined
     },
     get true() {
       if (value !== true) assertionError(`Expected true but got ${String(value)}`)
@@ -718,14 +795,14 @@ function createExpectChain(value: unknown): AssertionChain {
       if (value !== undefined) assertionError(`Expected undefined but got ${String(value)}`)
       return undefined
     },
-  }
+  } as BeChain
 
   const haveChain: HaveChain = {
     length(n: number): void {
-      const actual = (value as string | unknown[])?.length
-      if (actual !== n) {
-        assertionError(`Expected length ${n} but got ${String(actual)}`)
-      }
+      assertLengthOf(n)
+    },
+    lengthOf(n: number): void {
+      assertLengthOf(n)
     },
     property(name: string): void {
       if (

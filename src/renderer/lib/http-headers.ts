@@ -58,13 +58,16 @@ export const STANDARD_HTTP_HEADERS: readonly string[] = [
 ]
 
 /**
- * Filter a list of header suggestions against a user-typed prefix.
+ * Filter a list of header suggestions against a user-typed substring.
  *
  * - Empty/whitespace input → empty list (caller should not show the popup).
- * - Match is case-insensitive prefix match.
+ * - Match is case-insensitive substring (contains) match — typing "type"
+ *   surfaces "Content-Type" / "If-None-Match-Type" etc., which was the
+ *   v1.3.1 UX gap reported by Mehmet (M2).
  * - An entry that exactly equals the input is dropped — there is nothing
  *   useful to autocomplete to.
- * - Original ordering of `entries` is preserved.
+ * - Results are ordered: prefix matches first (preserving the original
+ *   ordering of `entries`), then the remaining substring matches.
  */
 export function filterHeaderSuggestions(
   input: string,
@@ -73,13 +76,18 @@ export function filterHeaderSuggestions(
   const query = input.trim().toLowerCase()
   if (query.length === 0) return []
 
-  const out: string[] = []
+  const prefixMatches: string[] = []
+  const otherMatches: string[] = []
   for (const h of entries) {
     const lower = h.toLowerCase()
     if (lower === query) continue
-    if (lower.startsWith(query)) out.push(h)
+    if (lower.startsWith(query)) {
+      prefixMatches.push(h)
+    } else if (lower.includes(query)) {
+      otherMatches.push(h)
+    }
   }
-  return out
+  return [...prefixMatches, ...otherMatches]
 }
 
 /**

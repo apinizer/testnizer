@@ -16,6 +16,7 @@ import type {
 } from '../../types'
 import TreeNodeComponent, { type DragPayload, type DropPosition } from './TreeNode'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
+import { toast } from '../../lib/toast'
 
 // Re-alias for flattenTree signature
 type TreeNode = TreeNodeType
@@ -390,6 +391,15 @@ export default function TreeView() {
               name: `${ep.name} (copy)`,
             } as Parameters<typeof window.api.endpoint.create>[0])
           }
+        } else if (node.type === 'folder' || node.type === 'module') {
+          // Folder duplication is not wired through a dedicated IPC handler
+          // yet (tracked for a follow-up). Until that lands, the right-click
+          // entry stayed silent in v1.3.1 (B5) — at least tell the user
+          // what's going on instead of pretending the action ran.
+          toast.error(
+            'Folder duplication is not yet supported. Use Export → Import as a temporary workaround.',
+          )
+          return
         }
         await refreshTree()
       } catch {

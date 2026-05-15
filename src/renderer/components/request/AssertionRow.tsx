@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Check, ToggleLeft, ToggleRight } from 'lucide-react'
+import { X, Check, ToggleLeft, ToggleRight, Pencil } from 'lucide-react'
 import type { TestAssertion } from '../../types'
 
 const TYPE_STYLES: Record<string, { color: string; bg: string }> = {
@@ -76,6 +76,19 @@ export default function AssertionRow({ assertion, onUpdate, onRemove }: Assertio
 
         <button
           type="button"
+          onClick={() => {
+            setNameValue(assertion.name)
+            setEditingName(true)
+          }}
+          className="cursor-pointer bg-transparent p-0 text-[var(--hint)] hover:text-[var(--accent)]"
+          style={{ border: 'none' }}
+          title="Edit assertion name"
+        >
+          <Pencil size={12} />
+        </button>
+
+        <button
+          type="button"
           onClick={() => onUpdate({ enabled: !assertion.enabled })}
           className="cursor-pointer bg-transparent p-0"
           style={{ border: 'none', color: assertion.enabled ? 'var(--accent)' : 'var(--hint)' }}
@@ -89,6 +102,7 @@ export default function AssertionRow({ assertion, onUpdate, onRemove }: Assertio
           onClick={onRemove}
           className="cursor-pointer bg-transparent p-0 text-[var(--hint)] hover:text-[var(--red)]"
           style={{ border: 'none' }}
+          title="Remove assertion"
         >
           <X size={12} />
         </button>

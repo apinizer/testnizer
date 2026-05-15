@@ -46,10 +46,23 @@ describe('filterHeaderSuggestions', () => {
     expect(result).toContain('Authorization')
   })
 
-  it('only matches by prefix, not by substring', () => {
+  it('matches by substring, putting prefix matches first', () => {
+    // v1.4.0: typing "forw" should surface both "Forwarded" (prefix match)
+    // and "X-Forwarded-For"/"Authorization-Forwarded" (substring matches),
+    // so users searching for a known header by its mid-word keyword
+    // actually find it. Prefix matches stay at the top to keep the most
+    // likely completion adjacent to the caret.
     const entries = ['X-Forwarded-For', 'Forwarded', 'Authorization-Forwarded']
     const result = filterHeaderSuggestions('forw', entries)
-    expect(result).toEqual(['Forwarded'])
+    expect(result[0]).toBe('Forwarded')
+    expect(result).toContain('X-Forwarded-For')
+    expect(result).toContain('Authorization-Forwarded')
+  })
+
+  it('finds Content-Type when the user types just "type"', () => {
+    // The classic case from v1.3.1 §M2: "type" did not match "Content-Type".
+    const result = filterHeaderSuggestions('type', ['Content-Type', 'Accept', 'Authorization'])
+    expect(result).toContain('Content-Type')
   })
 
   it('preserves original ordering of matched entries', () => {

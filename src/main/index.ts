@@ -8,6 +8,7 @@ import { initLogging } from './diagnostics'
 import { maybeInitTelemetry } from './telemetry'
 import { disconnectAll as wsDisconnectAll } from './protocols/websocket.engine'
 import { mcpDisconnectAll } from './protocols/mcp.engine'
+import pkg from '../../package.json'
 
 function getIconPath(): string {
   if (is.dev) {
@@ -81,9 +82,20 @@ ipcMain.handle('window:toggleMaximize', (event) => {
 })
 
 // App metadata + safe external URL opener (used by About modal etc.)
+// Prefer package.json (bundled at build time) over app.getVersion() so the
+// About modal never falls back to Electron's own "1.0.0" string when the
+// runtime app version lookup misbehaves under dev/launcher rename.
 ipcMain.handle('app:version', () => {
   try {
-    return { success: true, data: { version: app.getVersion(), name: app.name } }
+    const runtimeVersion = (() => {
+      try {
+        return app.getVersion()
+      } catch {
+        return ''
+      }
+    })()
+    const version = pkg.version || runtimeVersion || 'unknown'
+    return { success: true, data: { version, name: app.name } }
   } catch (e) {
     return { success: false, error: (e as Error).message }
   }

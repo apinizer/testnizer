@@ -1731,6 +1731,19 @@ export async function importPostman(
       const url = reconstructPostmanUrl(req.url)
       const path = extractPath(url)
 
+      // Skip Postman placeholder items that have neither a URL nor a name —
+      // those show up after some Postman collection-builder operations and
+      // surfaced as the stray "GET New Request" in v1.3.1 B16. We're
+      // conservative: require BOTH the URL to be empty AND the name to look
+      // like an unedited placeholder, so we don't accidentally drop a real
+      // user-authored request that simply lacks a URL.
+      const looksLikePlaceholder =
+        !url.trim() && (!item.name || /^new request$/i.test(item.name.trim()))
+      if (looksLikePlaceholder) {
+        warnings.push(`Skipped empty placeholder item "${item.name ?? '(unnamed)'}"`)
+        continue
+      }
+
       // Headers — UI KeyValuePair[]
       const headers = (req.header ?? []).map((h) => ({
         id: genKvId(),
@@ -3171,6 +3184,28 @@ function isInsomniaV5(doc: unknown): doc is InsomniaV5Doc {
   )
 }
 
+/**
+ * v5 environment exports are YAML with `type: environment.insomnia.rest/5.0`
+ * and a top-level `data` map (`{ key: value }`). Detected separately from
+ * collections so they can route to the environment importer instead of
+ * falling through to v4 and erroring with "Insomnia v4 export contains no
+ * resources" — the v1.3.1 M12 bug.
+ */
+function isInsomniaV5Environment(doc: unknown): doc is {
+  type: string
+  name?: string
+  data?: Record<string, unknown>
+} {
+  if (!doc || typeof doc !== 'object') return false
+  const d = doc as Record<string, unknown>
+  return (
+    typeof d.type === 'string' &&
+    /\benvironment\.insomnia\.rest\b/.test(d.type) &&
+    typeof d.data === 'object' &&
+    d.data !== null
+  )
+}
+
 export async function importInsomnia(
   projectId: string,
   content: string,
@@ -3195,10 +3230,78 @@ export async function importInsomnia(
     }
   }
 
+  if (isInsomniaV5Environment(doc)) {
+    return importInsomniaV5Environment(projectId, doc, warnings)
+  }
   if (isInsomniaV5(doc)) {
     return importInsomniaV5(projectId, doc, rootFolderId, warnings)
   }
   return importInsomniaV4(projectId, doc as InsomniaExport, rootFolderId, warnings)
+}
+
+/**
+ * Import an Insomnia v5 environment YAML export. Creates (or replaces) a
+ * project-scoped environment whose name matches the export's `name`. The
+ * variables live under `data` as a flat `{ key: value }` map. Falls back to
+ * the file's logical name when `name` is missing.
+ */
+function importInsomniaV5Environment(
+  projectId: string,
+  doc: { type: string; name?: string; data?: Record<string, unknown> },
+  warnings: string[],
+): ImportResult & { environmentId?: string; environmentName?: string } {
+  const db = getDb()
+  const now = Date.now()
+  const envName = doc.name || 'Imported Insomnia Environment'
+
+  const projectRow = db.prepare('SELECT workspace_id FROM projects WHERE id = ?').get(projectId) as
+    | { workspace_id: string }
+    | undefined
+  if (!projectRow) {
+    return { success: false, error: 'Project not found: ' + projectId }
+  }
+
+  const existing = db
+    .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
+    .get(projectId, envName) as { id: string } | undefined
+
+  let envId: string
+  if (existing) {
+    envId = existing.id
+    db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(envId)
+  } else {
+    envId = randomUUID()
+    const hasActive = db
+      .prepare('SELECT 1 AS x FROM environments WHERE project_id = ? AND is_active = 1')
+      .get(projectId) as { x: number } | undefined
+    db.prepare(
+      `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(envId, projectRow.workspace_id, projectId, envName, hasActive ? 0 : 1, now, now)
+  }
+
+  const insertVar = db.prepare(
+    `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+  let varCount = 0
+  for (const [k, v] of Object.entries(doc.data ?? {})) {
+    if (!k) continue
+    const stringValue = typeof v === 'string' ? v : v == null ? '' : JSON.stringify(v)
+    insertVar.run(randomUUID(), envId, k, stringValue, null, 1, 0, stringValue)
+    varCount++
+  }
+  if (varCount === 0) {
+    warnings.push('Insomnia v5 environment had no variables — created an empty environment.')
+  }
+  return {
+    success: true,
+    environmentId: envId,
+    environmentName: envName,
+    endpointCount: 0,
+    folderCount: 0,
+    warnings: warnings.length > 0 ? warnings : undefined,
+  }
 }
 
 function importInsomniaV4(

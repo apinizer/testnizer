@@ -223,46 +223,49 @@ export default function ProjectDetailModal() {
     if (!activeProject) return
     setSaving(true)
 
-    if (editName.trim() !== (activeProject.display_name || activeProject.name)) {
-      await renameProject(activeProject.id, editName.trim())
-    }
+    try {
+      if (editName.trim() !== (activeProject.display_name || activeProject.name)) {
+        await renameProject(activeProject.id, editName.trim())
+      }
 
-    const emojiVal = editIconMode === 'emoji' ? editIconEmoji : null
-    await updateProject(activeProject.id, {
-      save_mode: editSaveMode,
-      local_path: editLocalPath || null,
-      icon_emoji: emojiVal,
-      icon_color: editIconColor,
-    })
+      const emojiVal = editIconMode === 'emoji' ? editIconEmoji : null
+      await updateProject(activeProject.id, {
+        save_mode: editSaveMode,
+        local_path: editLocalPath || null,
+        icon_emoji: emojiVal,
+        icon_color: editIconColor,
+      })
 
-    if (editSaveMode === 'git' || editSaveMode === 'both') {
-      if (editGitUrl) {
-        try {
-          await window.api?.settings?.set(`git.${activeProject.id}`, {
-            repoUrl: editGitUrl,
-            username: editGitUser,
-            branch: editGitBranch,
-            token: editGitToken || '',
-          })
-          setGitConfig({
-            repoUrl: editGitUrl,
-            username: editGitUser,
-            branch: editGitBranch,
-            token: editGitToken || gitConfig?.token,
-          })
-        } catch {
-          /* non-critical */
+      if (editSaveMode === 'git' || editSaveMode === 'both') {
+        if (editGitUrl) {
+          try {
+            await window.api?.settings?.set(`git.${activeProject.id}`, {
+              repoUrl: editGitUrl,
+              username: editGitUser,
+              branch: editGitBranch,
+              token: editGitToken || '',
+            })
+            setGitConfig({
+              repoUrl: editGitUrl,
+              username: editGitUser,
+              branch: editGitBranch,
+              token: editGitToken || gitConfig?.token,
+            })
+          } catch {
+            /* non-critical */
+          }
         }
       }
-    }
 
-    try {
-      await window.api?.settings?.set(`project.${activeProject.id}.settings`, projSettings)
-    } catch {
-      /* non-critical */
+      try {
+        await window.api?.settings?.set(`project.${activeProject.id}.settings`, projSettings)
+      } catch {
+        /* non-critical */
+      }
+    } finally {
+      setSaving(false)
+      handleClose()
     }
-
-    setSaving(false)
   }
 
   const typeLabels: Record<string, { label: string; icon: React.ReactNode }> = {

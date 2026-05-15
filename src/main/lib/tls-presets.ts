@@ -97,9 +97,17 @@ export const TLS_VERSIONS: TlsVersion[] = ['TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1
  * Validate / normalise a string from the renderer. Returns `undefined` for
  * unknown values so callers can fall back to Node's defaults (currently
  * TLSv1.2 minimum / TLSv1.3 maximum).
+ *
+ * Electron 33 ships with BoringSSL, which dropped TLS 1.0 and TLS 1.1 at
+ * build time. Passing those versions through to `https.Agent` triggers
+ * `ERR_SSL_INVALID_COMMAND` (M14). We coerce them to `undefined` here so
+ * a stale persisted setting can never reach the socket layer; the UI also
+ * disables those choices, but the runtime guard is what makes the
+ * advertisement honest.
  */
 export function normaliseTlsVersion(v: string | undefined): TlsVersion | undefined {
   if (!v) return undefined
+  if (v === 'TLSv1' || v === 'TLSv1.1') return undefined
   return (TLS_VERSIONS as string[]).includes(v) ? (v as TlsVersion) : undefined
 }
 

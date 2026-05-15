@@ -32,6 +32,8 @@ export default function RequestEditor() {
   const body = useRequestStore((s) => s.body)
   const auth = useRequestStore((s) => s.auth)
   const assertions = useRequestStore((s) => s.assertions)
+  const preScript = useRequestStore((s) => s.preScript)
+  const postScript = useRequestStore((s) => s.postScript)
   const { t } = useTranslation()
 
   const enabledParamCount = params.filter((p) => p.enabled).length
@@ -39,6 +41,7 @@ export default function RequestEditor() {
   const hasBody = body.type !== 'none'
   const hasAuth = auth.type !== 'none'
   const enabledAssertionCount = assertions.filter((a) => a.enabled !== false).length
+  const hasScripts = (preScript?.trim().length ?? 0) > 0 || (postScript?.trim().length ?? 0) > 0
 
   function getBadge(
     tab: ReqTabKey,
@@ -54,6 +57,9 @@ export default function RequestEditor() {
     }
     // Green dot for active auth (Postman style)
     if (tab === 'auth' && hasAuth) {
+      return { dot: true, bg: 'var(--green)', color: 'var(--green)' }
+    }
+    if (tab === 'scripts' && hasScripts) {
       return { dot: true, bg: 'var(--green)', color: 'var(--green)' }
     }
     if (tab === 'tests' && enabledAssertionCount > 0) {

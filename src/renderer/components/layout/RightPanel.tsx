@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { Code2, Variable, ChevronRight, Copy, Check } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useRequestStore } from '../../stores/request.store'
+import { useEnvironmentStore } from '../../stores/environment.store'
 import RunnerVariables from '../runner/RunnerVariables'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import { generateCode, CODE_LANGUAGES } from '../../lib/code-generator'
@@ -18,10 +19,29 @@ function GenerateCodePane() {
   const headers = useRequestStore((s) => s.headers)
   const body = useRequestStore((s) => s.body)
   const auth = useRequestStore((s) => s.auth)
+  const getActiveVariables = useEnvironmentStore((s) => s.getActiveVariables)
+  const activeEnvId = useEnvironmentStore((s) => s.activeEnvironmentId)
+  const envVarsRev = useEnvironmentStore((s) => s.environments)
 
   const code = useMemo(
-    () => generateCode(activeLang, { method, url, params, headers, body, auth }),
-    [activeLang, method, url, params, headers, body, auth],
+    () =>
+      generateCode(
+        activeLang,
+        { method, url, params, headers, body, auth },
+        { envVars: getActiveVariables() },
+      ),
+    [
+      activeLang,
+      method,
+      url,
+      params,
+      headers,
+      body,
+      auth,
+      getActiveVariables,
+      activeEnvId,
+      envVarsRev,
+    ],
   )
 
   const monacoLang = CODE_LANGUAGES.find((l) => l.id === activeLang)?.monacoLang ?? 'plaintext'

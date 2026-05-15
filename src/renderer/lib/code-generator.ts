@@ -1,4 +1,5 @@
 import type { HttpMethod, KeyValuePair, RequestBody, AuthConfig, CodeLanguage } from '../types'
+import { resolveVariables } from './variable-resolver'
 
 export interface CodeGenRequest {
   method: HttpMethod
@@ -7,6 +8,47 @@ export interface CodeGenRequest {
   headers: KeyValuePair[]
   body?: RequestBody
   auth?: AuthConfig
+}
+
+export interface CodeGenOptions {
+  /**
+   * Optional variable scope used to substitute `{{var}}` placeholders before
+   * the request is rendered into a code snippet. Without this, suite items
+   * and saved requests emit literal `{{var}}` text in the generated cURL —
+   * the v1.3.1 §5.10 bug.
+   */
+  envVars?: Record<string, string>
+}
+
+function resolveKvList(list: KeyValuePair[], vars: Record<string, string>): KeyValuePair[] {
+  return list.map((p) => ({
+    ...p,
+    key: resolveVariables(p.key, vars),
+    value: resolveVariables(p.value, vars),
+  }))
+}
+
+function resolveBody(
+  body: RequestBody | undefined,
+  vars: Record<string, string>,
+): RequestBody | undefined {
+  if (!body) return body
+  return {
+    ...body,
+    content: body.content ? resolveVariables(body.content, vars) : body.content,
+    formData: body.formData ? resolveKvList(body.formData, vars) : body.formData,
+    urlEncoded: body.urlEncoded ? resolveKvList(body.urlEncoded, vars) : body.urlEncoded,
+  }
+}
+
+function resolveRequest(req: CodeGenRequest, vars: Record<string, string>): CodeGenRequest {
+  return {
+    ...req,
+    url: resolveVariables(req.url, vars),
+    params: resolveKvList(req.params, vars),
+    headers: resolveKvList(req.headers, vars),
+    body: resolveBody(req.body, vars),
+  }
 }
 
 function buildFullUrl(url: string, params: KeyValuePair[]): string {
@@ -68,12 +110,28 @@ function genCurl(req: CodeGenRequest): string {
   const fullUrl = buildFullUrl(req.url, req.params)
   const lines: string[] = [`curl -X ${req.method} '${escapeShell(fullUrl)}'`]
   const hdrs = activeHeaders(req.headers, req.auth)
+  // Skip an explicit Content-Type header for form-data — let curl emit the
+  // multipart boundary itself; otherwise we'd ship a header that doesn't
+  // match the body curl just generated, which is the classic Postman gotcha.
+  const isFormData = req.body?.type === 'form-data' && Array.isArray(req.body.formData)
   Object.entries(hdrs).forEach(([k, v]) => {
+    if (isFormData && k.toLowerCase() === 'content-type') return
     lines.push(`  -H '${escapeShell(k)}: ${escapeShell(v)}'`)
   })
-  const bd = bodyString(req.body)
-  if (bd) {
-    lines.push(`  -d '${escapeShell(bd)}'`)
+  if (isFormData) {
+    const parts = (req.body!.formData || []).filter((p) => p.enabled && p.key)
+    parts.forEach((p) => {
+      if (p.type === 'file' && p.filePath) {
+        lines.push(`  -F '${escapeShell(p.key)}=@${escapeShell(p.filePath)}'`)
+      } else {
+        lines.push(`  -F '${escapeShell(p.key)}=${escapeShell(p.value)}'`)
+      }
+    })
+  } else {
+    const bd = bodyString(req.body)
+    if (bd) {
+      lines.push(`  -d '${escapeShell(bd)}'`)
+    }
   }
   return lines.join(' \\\n')
 }
@@ -360,10 +418,15 @@ const GENERATORS: Record<CodeLanguage, (req: CodeGenRequest) => string> = {
   csharp: genCsharp,
 }
 
-export function generateCode(language: CodeLanguage, req: CodeGenRequest): string {
+export function generateCode(
+  language: CodeLanguage,
+  req: CodeGenRequest,
+  options?: CodeGenOptions,
+): string {
   const gen = GENERATORS[language]
   if (!gen) return `// Code generation for ${language} is not supported yet.`
-  return gen(req)
+  const effective = options?.envVars ? resolveRequest(req, options.envVars) : req
+  return gen(effective)
 }
 
 export const CODE_LANGUAGES: { id: CodeLanguage; label: string; monacoLang: string }[] = [

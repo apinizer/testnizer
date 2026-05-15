@@ -84,6 +84,23 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
         return
       }
     }
+    // Singleton tab id guard: callers like openOrReuseRunnerTab and the tools
+    // panel hand us a stable, well-known id (e.g. "runner-main"). When that id
+    // is already present we MUST reuse the existing tab and just refocus —
+    // otherwise repeated right-click "Run" pushes duplicate runner tabs into
+    // the list (v1.3.1 §5.1 bug: 3 clicks → 3 phantom runner tabs).
+    if (tab.id) {
+      const existingById = get().tabs.find((t) => t.id === tab.id)
+      if (existingById) {
+        set((state) => ({
+          activeTabId: existingById.id,
+          tabs: state.tabs.map((t) =>
+            t.id === existingById.id ? { ...t, ...tab, isPreview: false } : t,
+          ),
+        }))
+        return
+      }
+    }
     const newTab: Tab = { ...tab, isDirty: false, isLoading: false, isPreview: false }
     set((state) => ({
       tabs: [...state.tabs, newTab],

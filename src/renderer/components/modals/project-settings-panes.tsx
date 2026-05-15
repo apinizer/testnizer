@@ -5,6 +5,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import { useTranslation } from '../../lib/i18n'
 import { isMac } from '../../lib/platform'
 import { FONT_PRESETS } from '../../stores/ui.store'
+import { toast } from '../../lib/toast'
 
 // ════════════════════════════════════════════════════════════════
 // Shared types & styles
@@ -618,12 +619,34 @@ export function StoragePane(props: {
   const { t } = useTranslation()
   async function handleExportProject() {
     try {
-      const result = await window.api?.save?.exportProject?.(props.projectId)
-      if (!result?.success && result?.error && result.error !== 'Cancelled') {
-        console.error('Export project failed:', result.error)
+      const result = (await window.api?.save?.exportProject?.(props.projectId)) as
+        | {
+            success: boolean
+            error?: string
+            data?: {
+              path?: string
+              counts?: {
+                folders: number
+                endpoints: number
+                savedRequests: number
+                environments: number
+                testSuites: number
+                mockServers: number
+              }
+            }
+          }
+        | undefined
+      if (result?.success && result.data?.counts) {
+        const c = result.data.counts
+        toast.success(
+          `Exported ${c.folders} folder(s), ${c.endpoints} endpoint(s), ${c.environments} env(s)`,
+        )
+      } else if (!result?.success && result?.error && result.error !== 'Cancelled') {
+        toast.error(result.error)
       }
     } catch (err) {
       console.error(err)
+      toast.error('Export project failed')
     }
   }
 
@@ -1477,10 +1500,29 @@ export function CertificatesPane({
     { id: 'legacy', labelKey: 'tls.presetLegacy' },
     { id: 'custom', labelKey: 'tls.presetCustom' },
   ]
-  const TLS_VERSION_OPTIONS: Array<{ id: TlsVersionLabel | ''; label: string }> = [
+  // Electron 33 links against BoringSSL, which does not support TLS 1.0/1.1
+  // at runtime — selecting them produced ERR_SSL_INVALID_COMMAND in v1.3.1
+  // (M14). Disable those entries with an explanatory tooltip rather than
+  // hiding them, so users who relied on them get an honest reason.
+  const TLS_VERSION_OPTIONS: Array<{
+    id: TlsVersionLabel | ''
+    label: string
+    disabled?: boolean
+    title?: string
+  }> = [
     { id: '', label: t('tls.auto') },
-    { id: 'TLSv1', label: 'TLS 1.0' },
-    { id: 'TLSv1.1', label: 'TLS 1.1' },
+    {
+      id: 'TLSv1',
+      label: 'TLS 1.0 (not supported)',
+      disabled: true,
+      title: 'TLS 1.0 is not supported by the underlying TLS library (BoringSSL).',
+    },
+    {
+      id: 'TLSv1.1',
+      label: 'TLS 1.1 (not supported)',
+      disabled: true,
+      title: 'TLS 1.1 is not supported by the underlying TLS library (BoringSSL).',
+    },
     { id: 'TLSv1.2', label: 'TLS 1.2' },
     { id: 'TLSv1.3', label: 'TLS 1.3' },
   ]
@@ -1509,7 +1551,7 @@ export function CertificatesPane({
                 style={{ ...BASE_INP, cursor: 'pointer' }}
               >
                 {TLS_VERSION_OPTIONS.map((o) => (
-                  <option key={`min-${o.id}`} value={o.id}>
+                  <option key={`min-${o.id}`} value={o.id} disabled={o.disabled} title={o.title}>
                     {o.label}
                   </option>
                 ))}
@@ -1523,7 +1565,7 @@ export function CertificatesPane({
                 style={{ ...BASE_INP, cursor: 'pointer' }}
               >
                 {TLS_VERSION_OPTIONS.map((o) => (
-                  <option key={`max-${o.id}`} value={o.id}>
+                  <option key={`max-${o.id}`} value={o.id} disabled={o.disabled} title={o.title}>
                     {o.label}
                   </option>
                 ))}

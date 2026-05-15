@@ -112,10 +112,23 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
                         {v.key}
                       </td>
                       <td className="py-1.5" style={{ color: 'var(--muted)' }}>
-                        {v.value || v.initialValue || (
-                          <span className="italic" style={{ color: 'var(--hint)' }}>
-                            {t('runnerVars.enterValue')}
+                        {v.secret ? (
+                          <span style={{ fontFamily: 'monospace', letterSpacing: 1 }}>
+                            {v.value || v.initialValue ? (
+                              '••••••••'
+                            ) : (
+                              <span className="italic" style={{ color: 'var(--hint)' }}>
+                                {t('runnerVars.enterValue')}
+                              </span>
+                            )}
                           </span>
+                        ) : (
+                          v.value ||
+                          v.initialValue || (
+                            <span className="italic" style={{ color: 'var(--hint)' }}>
+                              {t('runnerVars.enterValue')}
+                            </span>
+                          )
                         )}
                       </td>
                       <td className="py-1.5 pl-2" style={{ width: 18 }}>
@@ -161,10 +174,23 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
                       {v.key}
                     </td>
                     <td className="py-1.5" style={{ color: 'var(--muted)' }}>
-                      {v.value || v.initialValue || (
-                        <span className="italic" style={{ color: 'var(--hint)' }}>
-                          Enter value
+                      {v.secret ? (
+                        <span style={{ fontFamily: 'monospace', letterSpacing: 1 }}>
+                          {v.value || v.initialValue ? (
+                            '••••••••'
+                          ) : (
+                            <span className="italic" style={{ color: 'var(--hint)' }}>
+                              Enter value
+                            </span>
+                          )}
                         </span>
+                      ) : (
+                        v.value ||
+                        v.initialValue || (
+                          <span className="italic" style={{ color: 'var(--hint)' }}>
+                            Enter value
+                          </span>
+                        )
                       )}
                     </td>
                     <td className="py-1.5 pl-2" style={{ width: 18 }}>
