@@ -431,20 +431,37 @@ export default function TreeView() {
     [openTab],
   )
 
-  const handleExport = useCallback(async (node: TreeNode) => {
-    try {
-      if (node.type !== 'folder' && node.type !== 'module') return
-      const result = (await window.api?.save?.exportFolder?.(node.id)) as {
-        success: boolean
-        error?: string
+  const handleExport = useCallback(
+    async (node: TreeNode) => {
+      try {
+        if (node.type === 'module') {
+          // Project-root → full project export (kind: 'project') instead of
+          // routing through exportFolder, which would look up a folders row
+          // with id "project-<uuid>" and return a stub. v1.3.1 B22.
+          if (!activeProjectId) return
+          const result = (await window.api?.save?.exportProject?.(activeProjectId)) as {
+            success: boolean
+            error?: string
+          }
+          if (!result?.success && result?.error && result.error !== 'Cancelled') {
+            console.error('Export project failed:', result.error)
+          }
+          return
+        }
+        if (node.type !== 'folder') return
+        const result = (await window.api?.save?.exportFolder?.(node.id)) as {
+          success: boolean
+          error?: string
+        }
+        if (!result?.success && result?.error && result.error !== 'Cancelled') {
+          console.error('Export folder failed:', result.error)
+        }
+      } catch (err) {
+        console.error(err)
       }
-      if (!result?.success && result?.error && result.error !== 'Cancelled') {
-        console.error('Export folder failed:', result.error)
-      }
-    } catch (err) {
-      console.error(err)
-    }
-  }, [])
+    },
+    [activeProjectId],
+  )
 
   const handleImportFolder = useCallback(
     async (node: TreeNode) => {

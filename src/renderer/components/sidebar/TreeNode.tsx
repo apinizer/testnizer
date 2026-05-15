@@ -523,12 +523,15 @@ export default function TreeNodeComponent({
           action: () => onRunFolder(node),
         })
       }
-      // UX 6: One-click "convert this folder to a test suite / mock server" —
-      // surfaces the recursive endpoint collector + suite/mock-server creation
-      // flows that previously required manual setup.
+      // UX 6: One-click "convert this folder/project to a test suite / mock
+      // server" — surfaces the recursive endpoint collector + suite/mock-
+      // server creation flows that previously required manual setup. The
+      // label flips between "folder" and "project" so the project-root
+      // entry doesn't say "from this folder" (v1.3.1 B22).
+      const isProjectRoot = node.type === 'module'
       if (onCreateTestSuite && isFolder) {
         items.push({
-          label: t('tree.createTestSuite'),
+          label: isProjectRoot ? t('tree.createTestSuiteFromProject') : t('tree.createTestSuite'),
           icon: TestSuiteIcon,
           separator: true,
           action: () => onCreateTestSuite(node),
@@ -536,7 +539,7 @@ export default function TreeNodeComponent({
       }
       if (onCreateMockServer && isFolder) {
         items.push({
-          label: t('tree.createMockServer'),
+          label: isProjectRoot ? t('tree.createMockServerFromProject') : t('tree.createMockServer'),
           icon: MockServerIcon,
           action: () => onCreateMockServer(node),
         })

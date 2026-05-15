@@ -512,6 +512,11 @@ const api = {
       ipcRenderer.invoke('save:exportTestSuite', suiteId),
     importProject: (payload: { workspaceId: string; name?: string }): Promise<unknown> =>
       ipcRenderer.invoke('save:importProject', payload),
+    importProjectFromContent: (payload: {
+      workspaceId: string
+      content: string
+      name?: string
+    }): Promise<unknown> => ipcRenderer.invoke('save:importProjectFromContent', payload),
     importFolder: (payload: {
       projectId: string
       parentFolderId?: string | null

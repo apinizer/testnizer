@@ -1482,6 +1482,27 @@ export function registerSaveHandlers(): void {
     },
   )
 
+  // ─── Import Project from pre-loaded JSON content ───────────
+  // Used by the APIs Import wizard (B25) where the file content has already
+  // been read via importExport.openFile. Skips the native open-dialog so the
+  // wizard's own folder selection stays in charge.
+  ipcMain.handle(
+    'save:importProjectFromContent',
+    async (_event, payload: { workspaceId: string; content: string; name?: string }) => {
+      try {
+        const parsed = JSON.parse(payload.content) as ProjectExport
+        const validationError = validateProjectExport(parsed)
+        if (validationError) {
+          return { success: false, error: validationError }
+        }
+        const res = importProjectAsNew(parsed, payload.workspaceId, { name: payload.name })
+        return { success: true, data: { projectId: res.projectId } }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
+
   // ─── Import Project (as NEW project in workspace) ──────────
   ipcMain.handle(
     'save:importProject',

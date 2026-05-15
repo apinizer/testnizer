@@ -128,6 +128,25 @@ function EndpointTabBar() {
     }
   }, [contextMenu])
 
+  // Whenever the active tab changes — regardless of where the change came
+  // from (handleSwitchTab, openTab from NewDropdown / Welcome / Tools,
+  // tabs.store.rememberAndRestoreForPage, etc.) — flip every protocol store
+  // to the corresponding tab's cached state. Without this, "+ New" in the
+  // tab strip or "New HTTP endpoint" from the welcome screen left the
+  // editor showing the previous endpoint's data (v1.3.1 M1 / M6).
+  useEffect(() => {
+    if (!activeTabId) return
+    switchToTab(activeTabId)
+    useSoapStore.getState().switchToTab(activeTabId)
+    useWebSocketStore.getState().switchToTab(activeTabId)
+    useSseStore.getState().switchToTab(activeTabId)
+    useGrpcStore.getState().switchToTab(activeTabId)
+    useGraphQLStore.getState().switchToTab(activeTabId)
+    useAiChatStore.getState().switchToTab(activeTabId)
+    useMcpStore.getState().switchToTab(activeTabId)
+    useSocketIOStore.getState().switchToTab(activeTabId)
+  }, [activeTabId, switchToTab])
+
   type TabContextAction =
     | 'newRequest'
     | 'duplicate'
@@ -343,6 +362,20 @@ function EndpointTabBar() {
   function handleNewTab() {
     const id = makeTabId()
     openTab({ id, name: 'New Request', protocol: 'http', method: 'GET', url: '' })
+    // Reset every protocol store to its empty baseline for the new tab so the
+    // editor doesn't keep showing the previous endpoint's URL / params /
+    // headers / scripts. v1.3.1 M1: "+ New" used to clone the last request
+    // because activeTabId changed but no store ever flipped to a fresh state.
+    switchToTab(id)
+    useSoapStore.getState().switchToTab(id)
+    useWebSocketStore.getState().switchToTab(id)
+    useSseStore.getState().switchToTab(id)
+    useGrpcStore.getState().switchToTab(id)
+    useGraphQLStore.getState().switchToTab(id)
+    useAiChatStore.getState().switchToTab(id)
+    useMcpStore.getState().switchToTab(id)
+    useSocketIOStore.getState().switchToTab(id)
+    clearResponse()
   }
 
   if (tabs.length === 0) return null

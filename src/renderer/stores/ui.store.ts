@@ -56,6 +56,8 @@ interface UIStore {
   showCommandPalette: boolean
   showShortcutCheatsheet: boolean
   gitLoading: string | null // null = idle, string = message to display
+  /** Global transient status message (footer/header) with TTL auto-clear. */
+  statusMessage: string | null
   addEndpointsSuiteId: string | null
   addEndpointsSuiteName: string | null
   rightPanelCollapsed: boolean
@@ -90,6 +92,13 @@ interface UIStore {
   setShowCommandPalette: (show: boolean) => void
   setShowShortcutCheatsheet: (show: boolean) => void
   setGitLoading: (msg: string | null) => void
+  /**
+   * Transient bottom-of-screen / header status message. Auto-clears after
+   * `ttlMs` (default 6 s) so a previous import banner can never get stuck
+   * on screen — v1.3.1 B18 ("Oracle Employee (imported)" persisted across
+   * a subsequent Insomnia import).
+   */
+  setStatusMessage: (text: string | null, ttlMs?: number) => void
   setAddEndpointsSuite: (suiteId: string | null, suiteName?: string | null) => void
   setRightPanelCollapsed: (collapsed: boolean) => void
   toggleRightPanel: () => void
@@ -163,6 +172,7 @@ export const useUIStore = create<UIStore>((set) => ({
   showCommandPalette: false,
   showShortcutCheatsheet: false,
   gitLoading: null,
+  statusMessage: null,
   addEndpointsSuiteId: null,
   addEndpointsSuiteName: null,
   rightPanelCollapsed: false,
@@ -295,6 +305,23 @@ export const useUIStore = create<UIStore>((set) => ({
   setShowCommandPalette: (show) => set({ showCommandPalette: show }),
   setShowShortcutCheatsheet: (show) => set({ showShortcutCheatsheet: show }),
   setGitLoading: (msg) => set({ gitLoading: msg }),
+  setStatusMessage: (text, ttlMs = 6000) => {
+    set({ statusMessage: text })
+    if (text) {
+      // Schedule an auto-clear so a stale banner can't outlive its
+      // relevance. We compare against `text` at clear-time so two rapid
+      // overlapping calls don't trample each other — only the most recent
+      // text is actually cleared by its own timer.
+      const target = text
+      const timer = window.setTimeout(() => {
+        if (useUIStore.getState().statusMessage === target) {
+          useUIStore.setState({ statusMessage: null })
+        }
+      }, ttlMs)
+      // Best-effort cleanup if the user navigates away — non-blocking.
+      void timer
+    }
+  },
   setAddEndpointsSuite: (suiteId, suiteName) =>
     set({ addEndpointsSuiteId: suiteId, addEndpointsSuiteName: suiteName ?? null }),
   setRightPanelCollapsed: (collapsed) => set({ rightPanelCollapsed: collapsed }),

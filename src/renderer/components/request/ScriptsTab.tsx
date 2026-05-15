@@ -41,13 +41,25 @@ export default function ScriptsTab() {
     { key: 'post-response', label: 'Post-response' },
   ]
 
-  const showInsertExample =
-    (activeSection === 'pre-request' && !preScript) ||
-    (activeSection === 'post-response' && !postScript)
-
+  // Always-visible Insert example button. The previous version only showed
+  // it while the script was empty, which made it look like the button
+  // "disappeared" the moment the user typed anything (v1.3.1 M6). Pressing
+  // Insert example now appends the example to whatever the user already has,
+  // separated by a blank line — idempotent and discoverable at any time.
   function handleInsertExample(): void {
-    if (activeSection === 'pre-request') setPreScript(PRE_REQUEST_EXAMPLE)
-    else setPostScript(POST_RESPONSE_EXAMPLE)
+    if (activeSection === 'pre-request') {
+      setPreScript(
+        preScript
+          ? `${preScript.replace(/\s+$/, '')}\n\n${PRE_REQUEST_EXAMPLE}`
+          : PRE_REQUEST_EXAMPLE,
+      )
+    } else {
+      setPostScript(
+        postScript
+          ? `${postScript.replace(/\s+$/, '')}\n\n${POST_RESPONSE_EXAMPLE}`
+          : POST_RESPONSE_EXAMPLE,
+      )
+    }
   }
 
   return (
@@ -84,21 +96,20 @@ export default function ScriptsTab() {
 
         <div className="flex-1" />
 
-        {showInsertExample && (
-          <button
-            type="button"
-            onClick={handleInsertExample}
-            className="cursor-pointer rounded px-2 py-0.5"
-            style={{
-              background: 'transparent',
-              border: '1px solid var(--border2)',
-              color: 'var(--accent-text)',
-              fontSize: 12,
-            }}
-          >
-            + Insert example
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleInsertExample}
+          className="cursor-pointer rounded px-2 py-0.5"
+          style={{
+            background: 'transparent',
+            border: '1px solid var(--border2)',
+            color: 'var(--accent-text)',
+            fontSize: 12,
+          }}
+          title="Append an example snippet to the editor"
+        >
+          + Insert example
+        </button>
 
         <button
           type="button"

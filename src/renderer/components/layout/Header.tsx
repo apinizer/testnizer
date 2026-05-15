@@ -6,6 +6,7 @@ import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
 import BranchDropdown from '../sidebar/BranchDropdown'
 import { T } from '../../styles/tokens'
+import { isMac } from '../../lib/platform'
 
 // SVG icons for git operations
 function ArrowUpIcon() {
@@ -246,6 +247,8 @@ export default function Header() {
             borderBottom: `2px solid ${T.accent}`,
             color: T.text,
           }}
+          onClick={() => goHome()}
+          title={`${activeProject.display_name || activeProject.name} — click to switch projects (${isMac() ? '⌘' : 'Ctrl'}+P)`}
         >
           <ProjectIcon
             name={activeProject.display_name || activeProject.name}

@@ -31,6 +31,14 @@ interface ImportFormat {
 }
 
 const IMPORT_FORMATS: ImportFormat[] = [
+  {
+    id: 'native',
+    name: 'Testnizer Native',
+    icon: 'TZ',
+    bg: '#eeecfe',
+    color: '#5b52d4',
+    mono: true,
+  },
   { id: 'openapi', name: 'OpenAPI/Swagger', icon: '\uD83C\uDF3F', bg: '#e8f9f1', color: '#1a7a4a' },
   { id: 'postman', name: 'Postman', icon: '\uD83D\uDFE0', bg: '#fff0ec', color: '#f25c00' },
   { id: 'insomnia', name: 'Insomnia', icon: '\uD83D\uDFE3', bg: '#faf0ff', color: '#7c4dff' },
@@ -43,6 +51,7 @@ const IMPORT_FORMATS: ImportFormat[] = [
 
 const URL_IMPORTABLE = ['openapi', 'wsdl', 'raml']
 const FILE_IMPORTABLE = [
+  'native',
   'openapi',
   'postman',
   'insomnia',
@@ -438,6 +447,35 @@ export default function ImportModal() {
           content: pendingFileContent || '',
           folderId,
         })) as { success: boolean; error?: string } | undefined
+      } else if (fmtId === 'native') {
+        // Testnizer native JSON — load it as a NEW project in the same
+        // workspace via save:importProject. v1.3.1 B25: native import was
+        // only reachable from Project Hub; making it visible here too
+        // closes the only path that surfaced "Invalid project file format"
+        // for users who didn't know about the hub flow.
+        const wsId = useWorkspaceStore.getState().activeWorkspaceId
+        if (!wsId) {
+          setImportError('No active workspace')
+          setImporting(false)
+          return
+        }
+        try {
+          const parsed = JSON.parse(pendingFileContent || '{}')
+          // Reuse importProjectAsNew's path indirectly: write the file's
+          // already-parsed JSON to a temp file? No — the existing
+          // save:importProject IPC pops its own picker. Use the dedicated
+          // bridge that the Project Hub uses, but feed it the staged
+          // content instead.
+          importResult = (await window.api?.save?.importProjectFromContent?.({
+            workspaceId: wsId,
+            content: JSON.stringify(parsed),
+          })) as { success: boolean; error?: string } | undefined
+        } catch (e) {
+          importResult = {
+            success: false,
+            error: 'Invalid JSON: ' + (e as Error).message,
+          }
+        }
       } else {
         setImportError('Import not yet implemented for this format')
         setImporting(false)

@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import { useRequestStore } from '../stores/request.store'
 import { useTabsStore } from '../stores/tabs.store'
 import { useUIStore } from '../stores/ui.store'
+import { useWorkspaceStore } from '../stores/workspace.store'
 import { isMac } from './platform'
 import { makeTabId } from './utils'
 import { isToolProtocol } from '../types'
@@ -123,6 +124,17 @@ export function useKeyboardShortcuts(): void {
               method: 'GET',
               url: '',
             })
+          },
+        },
+        {
+          key: 'p',
+          ctrl: true,
+          description: 'Open Project Hub',
+          action: () => {
+            // v1.3.1 B1: project switching moved to the Project Hub on Home,
+            // but there was no keyboard path to get there. Cmd/Ctrl+P now
+            // unmounts the current project and renders the hub.
+            useWorkspaceStore.getState().goHome()
           },
         },
         {

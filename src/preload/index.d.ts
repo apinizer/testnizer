@@ -1374,6 +1374,11 @@ interface SaveApi {
     workspaceId: string
     name?: string
   }): Promise<IpcResult<{ projectId: string }>>
+  importProjectFromContent(payload: {
+    workspaceId: string
+    content: string
+    name?: string
+  }): Promise<IpcResult<{ projectId: string }>>
   importFolder(payload: {
     projectId: string
     parentFolderId?: string | null
