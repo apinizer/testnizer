@@ -121,6 +121,8 @@ interface EndpointRunResult {
   responseHeaders?: Record<string, string>
   requestHeaders?: Record<string, string>
   requestBody?: string
+  /** 1-based iteration index. Renderer groups results by this field. */
+  iteration?: number
 }
 
 interface AssertionResult {
@@ -970,6 +972,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
             skipped: 0,
             assertions: [],
             error: 'Endpoint not found',
+            iteration: iter + 1,
           }
           results.push(result)
           failedEndpoints++
@@ -993,6 +996,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
             skipped: 0,
             assertions: [],
             error: 'No URL configured for endpoint',
+            iteration: iter + 1,
           }
           results.push(result)
           failedEndpoints++
@@ -1026,6 +1030,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
                 failed: 0,
                 skipped: 1,
                 assertions: [],
+                iteration: iter + 1,
               }
               results.push(skipResult)
               sendProgress({ current: i + 1, total, endpointId, result: skipResult })
@@ -1163,6 +1168,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
               ? headersArrayToRecord(resolvedOptions.headers)
               : undefined,
             requestBody: persistResponses ? requestBodyToString(resolvedOptions.body) : undefined,
+            iteration: iter + 1,
           }
 
           results.push(result)
@@ -1183,6 +1189,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
             skipped: 0,
             assertions: [],
             error: (e as Error).message,
+            iteration: iter + 1,
           }
           results.push(result)
           failedEndpoints++

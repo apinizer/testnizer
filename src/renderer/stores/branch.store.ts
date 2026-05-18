@@ -106,21 +106,43 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
   fetchBranches: async (projectId) => {
     const { hasGit } = get()
     if (!hasGit) {
-      // Fallback to legacy DB branches
+      // Fallback to legacy DB branches. The DB list may not include `main`
+      // for older projects that pre-date the default-branch seeding (B1) —
+      // synthesize it so the BranchesPane always renders the default and
+      // exactly one row is flagged `current`.
       try {
         const result = await api().branch.list(projectId)
         if (result?.success && result.data) {
           const dbBranches = result.data
-          const branches: GitBranch[] = dbBranches.map((b, i) => ({
-            name: b.name,
-            current: i === 0,
-            isRemote: false,
-          }))
           const defaultBranch = dbBranches.find((b) => b.is_default)
+          const previous = get().currentBranch
+          // Pick the active branch: prefer the previously-selected name if it
+          // still exists, otherwise fall back to the default, otherwise 'main'.
+          const activeName =
+            dbBranches.find((b) => b.name === previous)?.name || defaultBranch?.name || 'main'
+          const namesSeen = new Set<string>()
+          const branches: GitBranch[] = []
+          for (const b of dbBranches) {
+            if (namesSeen.has(b.name)) continue
+            namesSeen.add(b.name)
+            branches.push({
+              name: b.name,
+              current: b.name === activeName,
+              isRemote: false,
+            })
+          }
+          // Always materialise the default 'main' row if missing.
+          if (!namesSeen.has('main')) {
+            branches.unshift({
+              name: 'main',
+              current: activeName === 'main',
+              isRemote: false,
+            })
+          }
           set({
             branches,
-            currentBranch: defaultBranch?.name || 'main',
-            activeBranchId: defaultBranch?.id || dbBranches[0]?.id || null,
+            currentBranch: activeName,
+            activeBranchId: activeName,
           })
         }
       } catch {
@@ -148,6 +170,15 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
 
   ensureDefault: async (projectId) => {
     await get().checkGitConfig(projectId)
+    // For non-git projects, seed the `main` row in the DB so older projects
+    // that pre-date branch-seeding still show `main` in the Branches modal (B1).
+    if (!get().hasGit) {
+      try {
+        await api().branch.ensureDefault(projectId)
+      } catch {
+        /* best effort — fetchBranches still synthesizes main if missing */
+      }
+    }
     await get().fetchBranches(projectId)
   },
 
@@ -179,8 +210,12 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
   switchBranch: async (projectId, branchName) => {
     const { hasGit } = get()
     if (!hasGit) {
-      // Legacy — just set active
-      set({ currentBranch: branchName, activeBranchId: branchName })
+      // Legacy — flip current flag on every branch so exactly one is active.
+      // Without rewriting the array, the previous "current" row from the
+      // initial fetch would stay marked, producing the double-active badge
+      // in the Branches pane (B1).
+      const branches = get().branches.map((b) => ({ ...b, current: b.name === branchName }))
+      set({ branches, currentBranch: branchName, activeBranchId: branchName })
       return true
     }
 

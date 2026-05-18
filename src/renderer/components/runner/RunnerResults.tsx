@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { RotateCcw, Plus, X, ExternalLink } from 'lucide-react'
+import { useState, useMemo, useEffect } from 'react'
+import { RotateCcw, Plus, X, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
 import { getMethodColors } from '../../styles/tokens'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
@@ -44,6 +44,10 @@ export default function RunnerResults({
 }: RunnerResultsProps) {
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
   const [detailTab, setDetailTab] = useState<'response' | 'request'>('response')
+  // Per-iteration collapse state. Default is "all expanded" — collapsing is
+  // an opt-in for long runs. Keyed by 1-based iteration index so older
+  // history rows (no `iteration` field) bucket into Iteration 1 cleanly.
+  const [collapsedIterations, setCollapsedIterations] = useState<Set<number>>(new Set())
 
   const totalPassed = results.filter(
     (r) => !r.error && r.failed === 0 && r.status !== null && r.status < 400,
@@ -83,6 +87,46 @@ export default function RunnerResults({
       }
     })
   }, [results, activeFilter])
+
+  // Bucket filtered results by 1-based iteration index. Results predating
+  // the iteration field (older history rows) fall into bucket 1 so the UI
+  // stays backwards compatible — a single "Iteration 1" group identical to
+  // the previous flat list.
+  const iterationGroups = useMemo(() => {
+    const map = new Map<number, EndpointRunResult[]>()
+    for (const r of filteredResults) {
+      const iter = r.iteration && r.iteration > 0 ? r.iteration : 1
+      const bucket = map.get(iter)
+      if (bucket) bucket.push(r)
+      else map.set(iter, [r])
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0] - b[0])
+  }, [filteredResults])
+
+  // Auto-expand any new iteration that arrives mid-run so the user sees
+  // results stream in. Without this, a user who collapsed Iteration 1 mid-
+  // run would also have Iteration 2 collapsed by default (Set carries over).
+  useEffect(() => {
+    setCollapsedIterations((prev) => {
+      if (prev.size === 0) return prev
+      // Drop entries for iterations that no longer exist (e.g. after a new
+      // run replaced the results) to prevent stale collapse state hiding
+      // fresh data.
+      const valid = new Set(iterationGroups.map((g) => g[0]))
+      const next = new Set<number>()
+      for (const i of prev) if (valid.has(i)) next.add(i)
+      return next.size === prev.size ? prev : next
+    })
+  }, [iterationGroups])
+
+  const toggleIteration = (iter: number) => {
+    setCollapsedIterations((prev) => {
+      const next = new Set(prev)
+      if (next.has(iter)) next.delete(iter)
+      else next.add(iter)
+      return next
+    })
+  }
 
   const FILTER_TABS: { key: FilterTab; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: results.length },
@@ -205,7 +249,7 @@ export default function RunnerResults({
             <div className="flex gap-8">
               <StatCell label="Source" value={sourceLabel || 'Runner'} />
               <StatCell label="Environment" value={report ? 'Active' : '-'} />
-              <StatCell label="Iterations" value="1" />
+              <StatCell label="Iterations" value={String(iterationGroups.length || 1)} />
               <StatCell label="Duration" value={formatDuration(totalDuration)} />
               <StatCell label="All tests" value={String(totalTests)} />
               <StatCell
@@ -248,28 +292,52 @@ export default function RunnerResults({
           </div>
         )}
 
-        {/* Iteration header */}
-        {results.length > 0 && !isRunning && (
-          <div
-            className="shrink-0 px-5 py-2"
-            style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}
-          >
-            Iteration 1
-          </div>
-        )}
-
-        {/* Results list */}
+        {/* Results list grouped by iteration. Single-iteration runs render
+            one group ("Iteration 1") and look identical to the previous
+            flat list; multi-iteration runs get one collapsible group per
+            iteration with pass/fail counts in the header. */}
         <div className="flex-1 overflow-auto">
-          {filteredResults.map((result, idx) => (
-            <ResultRow
-              key={`${result.endpointId}-${idx}`}
-              result={result}
-              isSelected={result.endpointId === selectedResultId}
-              onClick={() =>
-                onSelectResult(result.endpointId === selectedResultId ? null : result.endpointId)
-              }
-            />
-          ))}
+          {iterationGroups.map(([iter, rows]) => {
+            const collapsed = collapsedIterations.has(iter)
+            const passed = rows.filter(
+              (r) => !r.error && r.failed === 0 && r.status !== null && r.status < 400,
+            ).length
+            const failed = rows.length - passed
+            return (
+              <div key={iter}>
+                {!isRunning && (
+                  <button
+                    type="button"
+                    onClick={() => toggleIteration(iter)}
+                    className="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-5 py-2 text-left hover:bg-[var(--surface)]"
+                    style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}
+                    aria-expanded={!collapsed}
+                  >
+                    {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                    <span>Iteration {iter}</span>
+                    <span style={{ color: 'var(--hint)', fontWeight: 400, marginLeft: 6 }}>
+                      ({rows.length} {rows.length === 1 ? 'request' : 'requests'}
+                      {failed > 0 ? `, ${failed} failed` : ''}
+                      {passed > 0 && failed === 0 ? `, ${passed} passed` : ''})
+                    </span>
+                  </button>
+                )}
+                {!collapsed &&
+                  rows.map((result, idx) => (
+                    <ResultRow
+                      key={`${iter}-${result.endpointId}-${idx}`}
+                      result={result}
+                      isSelected={result.endpointId === selectedResultId}
+                      onClick={() =>
+                        onSelectResult(
+                          result.endpointId === selectedResultId ? null : result.endpointId,
+                        )
+                      }
+                    />
+                  ))}
+              </div>
+            )
+          })}
         </div>
       </div>
 

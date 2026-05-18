@@ -16,7 +16,7 @@ type AutoUpdaterModule = {
   autoUpdater: {
     checkForUpdates(): Promise<unknown>
     downloadUpdate(): Promise<unknown>
-    quitAndInstall(): void
+    quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void
     on(event: string, listener: (...args: unknown[]) => void): void
     autoDownload: boolean
     autoInstallOnAppQuit: boolean
@@ -121,7 +121,8 @@ export async function initAutoUpdater(): Promise<void> {
 
   ipcMain.handle('updater:install', async () => {
     try {
-      autoUpdater.quitAndInstall()
+      // isSilent=true: run NSIS silently (no wizard); isForceRunAfter=true: relaunch app after install
+      autoUpdater.quitAndInstall(true, true)
       return { success: true, data: null }
     } catch (e) {
       return { success: false, error: (e as Error).message }

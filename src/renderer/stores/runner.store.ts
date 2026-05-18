@@ -37,6 +37,14 @@ export interface EndpointRunResult {
   responseHeaders?: Record<string, string>
   requestHeaders?: Record<string, string>
   requestBody?: string
+  /**
+   * 1-based iteration index this result belongs to. When iterations > 1
+   * (or iterationData is supplied) the RunnerResults UI groups rows by
+   * iteration. Optional for backwards compatibility with reports stored
+   * before this field was added — older history rows are treated as a
+   * single Iteration 1 bucket.
+   */
+  iteration?: number
 }
 
 export interface RunnerReport {

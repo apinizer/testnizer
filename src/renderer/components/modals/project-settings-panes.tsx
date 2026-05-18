@@ -828,7 +828,15 @@ export function BranchesPane({
           </div>
         )}
         {branches.map((branch) => {
-          const isActive = branch.current === true || branch.name === activeBranchId
+          // Use `current` as the single source of truth. Falling back to
+          // `name === activeBranchId` caused two badges to appear when the
+          // legacy switch path left a stale `current: true` on the first
+          // row while activeBranchId pointed at the newly-selected branch.
+          // The store guarantees exactly one row has `current: true`; if
+          // it doesn't (e.g. fresh git fetch with no current), fall back
+          // to activeBranchId, but never both. (B1)
+          const anyCurrent = branches.some((b) => b.current === true)
+          const isActive = anyCurrent ? branch.current === true : branch.name === activeBranchId
           return (
             <div
               key={branch.name}

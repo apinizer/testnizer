@@ -252,8 +252,18 @@
       "artifactName": "Testnizer-${version}-${arch}.${ext}"
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "allowElevation": false,
+      "differentialPackage": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Testnizer",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     },
     "publish": {
       "provider": "github",

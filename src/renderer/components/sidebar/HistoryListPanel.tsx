@@ -15,6 +15,7 @@ import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
+import { useUIStore } from '../../stores/ui.store'
 import MethodBadge from '../shared/MethodBadge'
 import EmptyState from '../shared/EmptyState'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
@@ -71,6 +72,7 @@ export default function HistoryListPanel() {
   const clearResponse = useResponseStore((s) => s.clearResponse)
   const soapSwitchToTab = useSoapStore((s) => s.switchToTab)
   const soapLoadFromEndpoint = useSoapStore((s) => s.loadFromEndpoint)
+  const setActiveSidebarPage = useUIStore((s) => s.setActiveSidebarPage)
 
   const [runHistory, setRunHistory] = useState<RunHistoryRow[]>([])
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['__all__']))
@@ -127,9 +129,15 @@ export default function HistoryListPanel() {
   }, [])
 
   function handleOpenInTab(entry: HistoryEntry) {
-    const snap = entry.request_snapshot || {}
+    const snap = (entry.request_snapshot || {}) as Record<string, unknown>
     const tabId = `tab-hist-${entry.id}`
     const protocol = entry.protocol || 'http'
+
+    // History rows live under the History sidebar page, but the tabs they
+    // open belong to the APIs workbench. Without flipping the sidebar page
+    // first, the Workbench filters the new tab out via tabBelongsToPage and
+    // the user sees the History welcome surface instead of the request.
+    setActiveSidebarPage('apis')
 
     openPreviewTab({
       id: tabId,
@@ -139,17 +147,35 @@ export default function HistoryListPanel() {
       url: entry.url,
     })
 
+    // openPreviewTab is synchronous — read the resolved active tab id back
+    // out of the store so per-tab state caches key off the right id (a
+    // matching existing preview reuses its original id, not `tabId`).
     const realTabId = useTabsStore.getState().activeTabId || tabId
 
     if (protocol === 'soap') {
       soapSwitchToTab(realTabId)
+      clearResponse()
+      // SOAP snapshots store wsdl/operation/etc. fields at the top level
+      // (see soap.handler.ts addHistory) — not under a nested `soap` key —
+      // and the request body lives in `envelope`. Map them onto the shape
+      // soapStore.loadFromEndpoint expects so the editor restores wsdl
+      // selection + envelope XML.
+      const envelope = typeof snap.envelope === 'string' ? snap.envelope : ''
       soapLoadFromEndpoint({
         url: entry.url,
-        body: snap.body as { type: string; content?: string } | undefined,
+        body: envelope ? { type: 'xml', content: envelope } : undefined,
         headers: snap.headers as
           | Array<{ key: string; value: string; enabled: boolean }>
           | undefined,
-        soap: (snap as Record<string, unknown>).soap as Record<string, unknown> | undefined,
+        soap: {
+          wsdlUrl: snap.wsdlUrl as string | undefined,
+          endpointUrl: (snap.endpointUrl as string | undefined) || entry.url,
+          operationName: snap.operationName as string | undefined,
+          serviceName: snap.serviceName as string | undefined,
+          portName: snap.portName as string | undefined,
+          soapVersion: snap.soapVersion as 'soap11' | 'soap12' | undefined,
+          exampleRequest: envelope,
+        },
       })
     } else {
       switchToTab(realTabId)

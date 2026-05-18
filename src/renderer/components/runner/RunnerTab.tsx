@@ -668,8 +668,14 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     window.api?.runner?.stop()
   }, [])
 
-  const handleNewRun = useCallback((mode: 'manual' | 'schedule' = 'manual') => {
-    setDefaultRunMode(mode)
+  const handleNewRun = useCallback((mode?: 'manual' | 'schedule' | unknown) => {
+    // Defensive guard: this callback is wired to several <button onClick>
+    // sites (TestsHome, RunnerResults, RunnerHistory). React passes the
+    // SyntheticEvent as the first argument from those bindings — without
+    // this guard we'd stash a MouseEvent into `defaultRunMode`, which then
+    // poisons `RunnerConfig` state and renders a blank workbench (B5).
+    const safeMode: 'manual' | 'schedule' = mode === 'schedule' ? 'schedule' : 'manual'
+    setDefaultRunMode(safeMode)
     setConfigRunModeKey((k) => k + 1)
     setView('config')
     setResults([])
