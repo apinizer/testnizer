@@ -332,7 +332,12 @@ const SCHEMA_SQL = `
     enabled INTEGER NOT NULL DEFAULT 1,
     last_run_at INTEGER,
     next_run_at INTEGER,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    schedule_type TEXT DEFAULT 'interval',
+    schedule_time TEXT,
+    schedule_days TEXT,
+    schedule_cron TEXT,
+    suite_id TEXT
   );
 
   CREATE TABLE runner_history (
@@ -353,7 +358,8 @@ const SCHEMA_SQL = `
     results_json TEXT,
     started_at INTEGER NOT NULL,
     folder_name TEXT,
-    source_label TEXT
+    source_label TEXT,
+    scheduled_task_id TEXT
   );
 
   CREATE TABLE users (
