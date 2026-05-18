@@ -181,9 +181,24 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [view, setView] = useState<'home' | 'config' | 'results' | 'history' | 'scheduled'>(() => {
     if (viewStorageKey) {
       const stored = sessionStorage.getItem(viewStorageKey)
+      // 'config' can only be restored when the tab has a concrete scope
+      // (suite or APIs folder). Without one, restoring 'config' produces
+      // the dreaded "all 200 endpoints from the project" sequence — the
+      // exact screen we removed from every entry point. Fall back to
+      // 'home' so the user lands on the curated Tests overview instead.
+      if (stored === 'config') {
+        try {
+          const sess = tabId ? sessionStorage.getItem(`runner-report-${tabId}`) : null
+          const data = sess ? (JSON.parse(sess) as { sourceType?: string; suiteId?: string }) : null
+          const hasSuiteScope = data?.sourceType === 'suite' && typeof data.suiteId === 'string'
+          if (hasSuiteScope || folderId) return 'config'
+        } catch {
+          /* fall through to 'home' */
+        }
+        return 'home'
+      }
       if (
         stored === 'home' ||
-        stored === 'config' ||
         stored === 'results' ||
         stored === 'history' ||
         stored === 'scheduled'

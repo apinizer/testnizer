@@ -33,7 +33,12 @@ export default function PageWelcome({ page }: PageWelcomeProps) {
   if (page === 'tests') {
     return (
       <TestsHome
-        onNewRun={() => openOrReuseRunnerTab({ viewHome: false })}
+        // `onNewRun` is only invoked by NewRunButton when the project has
+        // zero suites — the legacy blank-slate path. We keep the user on
+        // the TestsHome surface (via `viewHome: true`) where the "create
+        // a test suite" CTA lives, instead of dropping them into a
+        // config view that would load every endpoint in the project.
+        onNewRun={() => openOrReuseRunnerTab({ viewHome: true })}
         onViewAllRuns={() => openOrReuseRunnerTab({ viewAllRuns: true })}
         onViewScheduled={() => openOrReuseRunnerTab({ viewScheduledTasks: true })}
         onViewReport={(
