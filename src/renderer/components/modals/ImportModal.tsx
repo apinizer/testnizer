@@ -403,7 +403,17 @@ export default function ImportModal() {
 
     try {
       const fmtId = selectedFormat.id
-      let importResult: { success: boolean; error?: string } | undefined
+      // The IPC wrapper returns `{ success: true, data: importerResult }` on
+      // success; internal importer failures arrive as
+      // `{ success: true, data: { success: false, error } }`. We must inspect
+      // both layers so users don't see "Imported" for an empty result.
+      let importResult:
+        | {
+            success: boolean
+            data?: { success?: boolean; error?: string }
+            error?: string
+          }
+        | undefined
 
       if (fmtId === 'wsdl') {
         importResult = (await window.api?.importExport?.importWsdl({
@@ -412,7 +422,7 @@ export default function ImportModal() {
           createNewFolder: false, // folder already created above if needed
           wsdlUrl: importUrl.trim() || undefined,
           parsedWsdl: wsdlParsed!,
-        })) as { success: boolean; error?: string } | undefined
+        })) as typeof importResult
       } else if (fmtId === 'openapi') {
         importResult = (await window.api?.importExport?.importOpenApi({
           projectId: pid,
@@ -420,25 +430,25 @@ export default function ImportModal() {
           format: 'openapi',
           folderId,
           sourceUrl: pendingSourceUrl || undefined,
-        })) as { success: boolean; error?: string } | undefined
+        })) as typeof importResult
       } else if (fmtId === 'postman') {
         importResult = (await window.api?.importExport?.importPostman({
           projectId: pid,
           content: pendingFileContent || '',
           folderId,
-        })) as { success: boolean; error?: string } | undefined
+        })) as typeof importResult
       } else if (fmtId === 'insomnia') {
         importResult = (await window.api?.importExport?.importInsomnia({
           projectId: pid,
           content: pendingFileContent || '',
           folderId,
-        })) as { success: boolean; error?: string } | undefined
+        })) as typeof importResult
       } else if (fmtId === 'curl') {
         importResult = (await window.api?.importExport?.importCurl({
           projectId: pid,
           curlCommand: pendingFileContent || '',
           folderId,
-        })) as { success: boolean; error?: string } | undefined
+        })) as typeof importResult
       } else if (fmtId === 'proto') {
         if (!pendingFilePath) {
           setImportError('Proto file path missing — please re-select the file')
@@ -450,19 +460,19 @@ export default function ImportModal() {
           protoPath: pendingFilePath,
           folderId,
           serverAddress: protoServerAddress.trim() || undefined,
-        })) as { success: boolean; error?: string } | undefined
+        })) as typeof importResult
       } else if (fmtId === 'raml') {
         importResult = (await window.api?.importExport?.importRaml({
           projectId: pid,
           content: pendingFileContent || '',
           folderId,
-        })) as { success: boolean; error?: string } | undefined
+        })) as typeof importResult
       } else if (fmtId === 'soapui') {
         importResult = (await window.api?.importExport?.importSoapUi({
           projectId: pid,
           content: pendingFileContent || '',
           folderId,
-        })) as { success: boolean; error?: string } | undefined
+        })) as typeof importResult
       } else if (fmtId === 'native') {
         // Testnizer native JSON — load it as a NEW project in the same
         // workspace via save:importProject. v1.3.1 B25: native import was
@@ -485,7 +495,7 @@ export default function ImportModal() {
           importResult = (await window.api?.save?.importProjectFromContent?.({
             workspaceId: wsId,
             content: JSON.stringify(parsed),
-          })) as { success: boolean; error?: string } | undefined
+          })) as typeof importResult
         } catch (e) {
           importResult = {
             success: false,
@@ -498,7 +508,9 @@ export default function ImportModal() {
         return
       }
 
-      if (importResult?.success) {
+      const ipcOk = importResult?.success === true
+      const importerOk = importResult?.data?.success !== false
+      if (ipcOk && importerOk) {
         await refreshTree()
         // Postman/Insomnia imports may create a project-scoped environment for
         // collection variables. Refresh the env store so the new env shows up
@@ -513,8 +525,9 @@ export default function ImportModal() {
         // after the modal closes on a successful retry. The parse-step
         // errors above stay in the modal because they relate to the
         // current input field.
-        toast.error(importResult?.error || t('toast.importFailed'))
-        setImportError(importResult?.error || 'Import failed')
+        const errMsg = importResult?.data?.error || importResult?.error || t('toast.importFailed')
+        toast.error(errMsg)
+        setImportError(errMsg)
       }
     } catch (err) {
       toast.error((err as Error).message || t('toast.importFailed'))

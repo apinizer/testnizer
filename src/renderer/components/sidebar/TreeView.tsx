@@ -17,6 +17,7 @@ import type {
 import TreeNodeComponent, { type DragPayload, type DropPosition } from './TreeNode'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import { toast } from '../../lib/toast'
+import { t } from '../../lib/i18n'
 
 // Re-alias for flattenTree signature
 type TreeNode = TreeNodeType
@@ -443,8 +444,11 @@ export default function TreeView() {
             success: boolean
             error?: string
           }
-          if (!result?.success && result?.error && result.error !== 'Cancelled') {
+          if (result?.success) {
+            toast.success(t('toast.exported'))
+          } else if (result?.error && result.error !== 'Cancelled') {
             console.error('Export project failed:', result.error)
+            toast.error(`${t('toast.exportFailed')}: ${result.error}`)
           }
           return
         }
@@ -453,11 +457,15 @@ export default function TreeView() {
           success: boolean
           error?: string
         }
-        if (!result?.success && result?.error && result.error !== 'Cancelled') {
+        if (result?.success) {
+          toast.success(t('toast.exported'))
+        } else if (result?.error && result.error !== 'Cancelled') {
           console.error('Export folder failed:', result.error)
+          toast.error(`${t('toast.exportFailed')}: ${result.error}`)
         }
       } catch (err) {
         console.error(err)
+        toast.error(`${t('toast.exportFailed')}: ${(err as Error).message}`)
       }
     },
     [activeProjectId],

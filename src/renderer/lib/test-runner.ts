@@ -1,6 +1,7 @@
 // src/renderer/lib/test-runner.ts
 // Testnizer — Test Runner (renderer process library)
 
+import CryptoJS from 'crypto-js'
 import type { TestAssertion, TestResult, ApiResponse, ConsoleLog } from '../types'
 
 // ─── JSONPath Evaluator ──────────────────────────────────────────
@@ -338,6 +339,82 @@ interface ResponseToChain {
   not: { have: ResponseHaveChain; be: ResponseBeChain }
 }
 
+/**
+ * Case-insensitive header collection backing pm.request.headers. Postman
+ * scripts expect HTTP header names to behave per RFC 7230 (case-insensitive),
+ * so a plain Record produces ghost duplicates like {"Content-Type": "",
+ * "content-type": "multipart/..."} when the engine writes a header that the
+ * user already typed in a different case (Mehmet BUG-03). We key the internal
+ * store by lowercased name but preserve the original casing for iteration and
+ * the engine handoff.
+ */
+export interface HeaderEntry {
+  key: string
+  value: string
+}
+
+export class HeaderCollection {
+  private store: Map<string, HeaderEntry> = new Map()
+
+  constructor(initial?: HeaderEntry[] | Record<string, string>) {
+    if (!initial) return
+    if (Array.isArray(initial)) {
+      for (const h of initial) {
+        if (h && h.key) this.upsert(h)
+      }
+    } else {
+      for (const [k, v] of Object.entries(initial)) {
+        if (k) this.upsert({ key: k, value: v })
+      }
+    }
+  }
+
+  get(name: string): string | undefined {
+    return this.store.get(name.toLowerCase())?.value
+  }
+
+  has(name: string): boolean {
+    return this.store.has(name.toLowerCase())
+  }
+
+  add(h: HeaderEntry): void {
+    // Postman semantics: add overwrites if present (its HeaderList allows
+    // duplicates but most scripts use it interchangeably with upsert). We
+    // pick upsert behaviour to stay aligned with case-insensitive single-
+    // value HTTP header expectations on the wire.
+    this.upsert(h)
+  }
+
+  upsert(h: HeaderEntry): void {
+    if (!h || !h.key) return
+    this.store.set(h.key.toLowerCase(), { key: h.key, value: h.value ?? '' })
+  }
+
+  remove(name: string): void {
+    this.store.delete(name.toLowerCase())
+  }
+
+  each(fn: (h: HeaderEntry) => void): void {
+    for (const entry of this.store.values()) fn(entry)
+  }
+
+  toArray(): HeaderEntry[] {
+    return Array.from(this.store.values())
+  }
+
+  toJSON(): Record<string, string> {
+    const out: Record<string, string> = {}
+    for (const entry of this.store.values()) out[entry.key] = entry.value
+    return out
+  }
+}
+
+export interface PmRequestInput {
+  method: string
+  url: string
+  headers: HeaderEntry[] | Record<string, string>
+}
+
 export interface PmApi {
   response: {
     code: number
@@ -354,15 +431,23 @@ export interface PmApi {
   request: {
     method: string
     url: string
-    headers: Record<string, string>
+    headers: HeaderCollection
+  }
+  execution: {
+    /** Mark the current request to be skipped. Pre-request only. */
+    skipRequest(): void
   }
   environment: {
     set(key: string, value: string): void
     get(key: string): string | undefined
+    has(key: string): boolean
+    unset(key: string): void
   }
   globals: {
     set(key: string, value: string): void
     get(key: string): string | undefined
+    has(key: string): boolean
+    unset(key: string): void
   }
   collectionVariables: {
     set(key: string, value: string): void
@@ -389,19 +474,43 @@ export interface PmApi {
    *  `await Promise.allSettled(pm._pendingTests)` before reading
    *  `_testResults` so async failures aren't silently lost. */
   _pendingTests: Promise<void>[]
+  /** Set by pm.execution.skipRequest() in a pre-request script — callers
+   * (request.store) should abort the actual HTTP send when true. */
+  _skipRequest: boolean
+  /** Mutated by pm.request.headers.{add,upsert,remove} so callers can fold
+   * the changes back into the outgoing request before it ships. */
+  _requestHeaders: HeaderCollection
 }
 
 export function createPmApi(
   response: ApiResponse,
   envVars: Map<string, string>,
   globalVars: Map<string, string>,
-  meta?: { requestName?: string; eventName?: 'prerequest' | 'test' },
+  meta?: {
+    requestName?: string
+    eventName?: 'prerequest' | 'test'
+    /** Caller-typed request (method/url/headers) used to populate
+     * pm.request when no real response.actualRequest is available yet
+     * — pre-request scope. Mehmet BUG-01. */
+    request?: PmRequestInput
+  },
 ): PmApi {
   const testResults: PmTestResult[] = []
   const envUpdates = new Map<string, string>()
   const globalUpdates = new Map<string, string>()
   const localVars = new Map<string, string>()
   const pendingTests: Promise<void>[] = []
+  const isPreRequest = meta?.eventName === 'prerequest'
+  let skipRequestFlag = false
+
+  // Build the header collection from either the caller-provided pre-request
+  // build OR the engine's actualRequest (post-response). Both routes feed into
+  // the same case-insensitive HeaderCollection so script mutations propagate.
+  const initialHeaders: HeaderEntry[] | Record<string, string> =
+    meta?.request?.headers ?? response.actualRequest?.headers ?? {}
+  const requestHeaders = new HeaderCollection(initialHeaders)
+  const requestMethod = meta?.request?.method ?? response.actualRequest?.method ?? ''
+  const requestUrl = meta?.request?.url ?? response.actualRequest?.url ?? ''
 
   // Build Chai-BDD style chain for pm.response.to.have.status() etc.
   function assertionError(msg: string): never {
@@ -576,9 +685,17 @@ export function createPmApi(
       to: responseToChain,
     },
     request: {
-      method: response.actualRequest?.method ?? '',
-      url: response.actualRequest?.url ?? '',
-      headers: response.actualRequest?.headers ?? {},
+      method: requestMethod,
+      url: requestUrl,
+      headers: requestHeaders,
+    },
+    execution: {
+      skipRequest(): void {
+        if (!isPreRequest) {
+          throw new Error('pm.execution.skipRequest() is only available in pre-request scripts')
+        }
+        skipRequestFlag = true
+      },
     },
     environment: {
       set(key: string, value: string): void {
@@ -588,6 +705,15 @@ export function createPmApi(
       get(key: string): string | undefined {
         return envVars.get(key)
       },
+      has(key: string): boolean {
+        return envVars.has(key)
+      },
+      unset(key: string): void {
+        envVars.delete(key)
+        // Empty-string marker tells the persistence layer to delete the row
+        // rather than overwrite it. Matches collectionVariables.unset above.
+        envUpdates.set(key, '')
+      },
     },
     globals: {
       set(key: string, value: string): void {
@@ -596,6 +722,13 @@ export function createPmApi(
       },
       get(key: string): string | undefined {
         return globalVars.get(key)
+      },
+      has(key: string): boolean {
+        return globalVars.has(key)
+      },
+      unset(key: string): void {
+        globalVars.delete(key)
+        globalUpdates.set(key, '')
       },
     },
     // Postman exposes `pm.collectionVariables` for collection-scoped vars.
@@ -677,6 +810,26 @@ export function createPmApi(
     _envUpdates: envUpdates,
     _globalUpdates: globalUpdates,
     _pendingTests: pendingTests,
+    get _skipRequest(): boolean {
+      return skipRequestFlag
+    },
+    _requestHeaders: requestHeaders,
+  }
+
+  // Pre-request guard: any access to pm.response in a pre-request script is
+  // almost certainly a user mistake — there's no response yet. Replace the
+  // accessor so it throws a clear error instead of returning a phantom shell
+  // that silently yields 0/"" everywhere (Mehmet BUG-07).
+  if (isPreRequest) {
+    Object.defineProperty(pmApi, 'response', {
+      configurable: true,
+      enumerable: true,
+      get() {
+        throw new Error(
+          'pm.response is not available in pre-request scripts. Move this code to the Tests / Post-response tab.',
+        )
+      },
+    })
   }
 
   return pmApi
@@ -857,6 +1010,12 @@ export interface ScriptRunResult {
   consoleLogs: ConsoleLog[]
   envUpdates: Record<string, string>
   globalUpdates: Record<string, string>
+  /** Set by pm.execution.skipRequest() — callers should abort the actual HTTP
+   * send when this is true (pre-request only). */
+  skipRequest: boolean
+  /** Headers AFTER any pm.request.headers.{add,upsert,remove} mutations so
+   * callers can fold the mutations back into the outgoing request. */
+  requestHeaders: HeaderEntry[]
 }
 
 export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRunResult> {
@@ -890,9 +1049,11 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
   try {
     // `t` is a Testnizer-branded alias for `pm`. Both bind to the same API so
     // imported Postman scripts (which use `pm.*`) keep working unchanged, while
-    // new Testnizer scripts can opt into the shorter `t.*` form.
-    const fn = new Function('pm', 't', 'console', script)
-    fn(pmApi, pmApi, captureConsole)
+    // new Testnizer scripts can opt into the shorter `t.*` form. CryptoJS is
+    // exposed for HMAC / SHA / AES use cases (AWS sig v4, webhook signing) —
+    // mirrors Postman's built-in (Mehmet BUG-05).
+    const fn = new Function('pm', 't', 'console', 'CryptoJS', script)
+    fn(pmApi, pmApi, captureConsole, CryptoJS)
   } catch (e) {
     consoleLogs.push({
       level: 'error',
@@ -931,7 +1092,14 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
     globalUpdates[key] = val
   })
 
-  return { results, consoleLogs, envUpdates, globalUpdates }
+  return {
+    results,
+    consoleLogs,
+    envUpdates,
+    globalUpdates,
+    skipRequest: pmApi._skipRequest,
+    requestHeaders: pmApi._requestHeaders.toArray(),
+  }
 }
 
 // ─── Variable Extraction ─────────────────────────────────────────

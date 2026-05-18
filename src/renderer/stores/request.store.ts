@@ -308,6 +308,12 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // and introducing that is outside the scope of this change.
     const scriptOverrides: Record<string, string> = {}
 
+    // Header overrides produced by pm.request.headers.{add,upsert,remove}.
+    // Folded into the resolved headers below so script-driven auth/correlation
+    // headers actually ship on the wire (Mehmet BUG-02).
+    let preScriptHeaders: { key: string; value: string }[] | null = null
+    let preScriptSkippedRequest = false
+
     // Run pre-request script before variables are resolved so the script can
     // mutate them.
     if (preScript && preScript.trim()) {
@@ -322,9 +328,16 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       // pm API contract is satisfied.
       const emptyResp: ApiResponse = { requestId: makeId(), protocol: 'http', timing: { total: 0 } }
       const requestName = tabsStore.tabs.find((tt) => tt.id === activeTabId)?.name ?? ''
+      // Populate pm.request with the user-typed values so the script can read
+      // method/url/headers BEFORE variable resolution (Mehmet BUG-01).
       const pmApi = createPmApi(emptyResp, envMap, globalMap, {
         eventName: 'prerequest',
         requestName,
+        request: {
+          method,
+          url,
+          headers: headers.filter((h) => h.enabled).map((h) => ({ key: h.key, value: h.value })),
+        },
       })
       const scriptResult = await runScript(preScript, pmApi)
       // test-runner emits 'info'/'debug' via console.info/debug — flatten those
@@ -334,6 +347,32 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         preScriptLogs.push({ level, message: log.message, timestamp: log.timestamp })
       }
       Object.assign(scriptOverrides, scriptResult.globalUpdates, scriptResult.envUpdates)
+      preScriptHeaders = scriptResult.requestHeaders
+      preScriptSkippedRequest = scriptResult.skipRequest
+    }
+
+    // pm.execution.skipRequest() — abort the actual HTTP send. Surface the
+    // skip in console + tab spinner cleanup so the user knows it ran.
+    if (preScriptSkippedRequest) {
+      const skipMsg = 'Request skipped by pm.execution.skipRequest() in pre-request script'
+      preScriptLogs.push({ level: 'warn', message: skipMsg, timestamp: Date.now() })
+      const reqName = tabsStore.tabs.find((tt) => tt.id === activeTabId)?.name ?? ''
+      useConsoleStore.getState().addEntry({
+        protocol: 'http',
+        level: 'warning',
+        category: 'system',
+        method,
+        url,
+        message: `${reqName}${reqName ? ' — ' : ''}${skipMsg}`,
+        scriptLogs: preScriptLogs.map((l) => ({
+          level: l.level === 'error' ? 'error' : l.level === 'warn' ? 'warn' : 'log',
+          message: l.message,
+          timestamp: l.timestamp,
+        })),
+      })
+      if (activeTabId) tabsStore.markLoading(activeTabId, false)
+      responseStore.setLoading(false)
+      return
     }
 
     // Resolve {{variable}} placeholders (after pre-request script has had
@@ -344,10 +383,26 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       params.filter((p) => p.enabled),
       activeVars,
     )
-    const resolvedHeaders = resolveKeyValuePairs(
+    let resolvedHeaders = resolveKeyValuePairs(
       headers.filter((h) => h.enabled),
       activeVars,
     )
+
+    // Fold pm.request.headers mutations from the pre-request script into the
+    // outgoing header list. HeaderCollection is case-insensitive, so an upsert
+    // of `Authorization` overrides any user-typed entry with the same name
+    // regardless of casing (Mehmet BUG-02 + BUG-03).
+    if (preScriptHeaders) {
+      const seen = new Set<string>()
+      const merged: typeof resolvedHeaders = []
+      for (const h of preScriptHeaders) {
+        const lk = h.key.toLowerCase()
+        if (seen.has(lk)) continue
+        seen.add(lk)
+        merged.push({ key: h.key, value: h.value, enabled: true })
+      }
+      resolvedHeaders = merged
+    }
     const resolvedBody = resolveRequestBody(body, activeVars) ?? body
     const resolvedAuth = resolveAuth(auth, activeVars)
 

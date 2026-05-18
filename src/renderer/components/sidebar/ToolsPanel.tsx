@@ -7,6 +7,10 @@ import { T } from '../../styles/tokens'
 export default function ToolsPanel() {
   const { t } = useTranslation()
   const openToolTab = useTabsStore((s) => s.openToolTab)
+  const activeTabProtocol = useTabsStore((s) => {
+    const active = s.tabs.find((tab) => tab.id === s.activeTabId)
+    return active?.protocol ?? null
+  })
   const [query, setQuery] = useState('')
 
   const q = query.trim().toLowerCase()
@@ -80,35 +84,49 @@ export default function ToolsPanel() {
 
       {/* Tool list */}
       <div className="flex-1 overflow-y-auto" style={{ padding: '6px 6px' }}>
-        {filtered.map((tool) => (
-          <button
-            key={tool.protocol}
-            type="button"
-            onClick={() => openToolTab(tool.protocol, t(tool.labelKey))}
-            className="group flex w-full cursor-pointer items-center gap-2.5 rounded-lg transition-colors"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              padding: '8px 10px',
-              textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-              ;(e.currentTarget as HTMLElement).style.background = T.surface
-            }}
-            onMouseLeave={(e) => {
-              ;(e.currentTarget as HTMLElement).style.background = 'transparent'
-            }}
-          >
-            <div
-              aria-hidden="true"
-              className="flex shrink-0 items-center justify-center rounded-md"
-              style={{ width: 28, height: 28, background: tool.bg }}
+        {filtered.map((tool) => {
+          const isActive = activeTabProtocol === tool.protocol
+          return (
+            <button
+              key={tool.protocol}
+              type="button"
+              onClick={() => openToolTab(tool.protocol, t(tool.labelKey))}
+              aria-current={isActive ? 'page' : undefined}
+              className="group flex w-full cursor-pointer items-center gap-2.5 rounded-lg transition-colors"
+              style={{
+                background: isActive ? T.accentBg : 'transparent',
+                border: 'none',
+                padding: '8px 10px',
+                textAlign: 'left',
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) (e.currentTarget as HTMLElement).style.background = T.surface
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = isActive
+                  ? T.accentBg
+                  : 'transparent'
+              }}
             >
-              <tool.Icon size={15} style={{ color: tool.color }} strokeWidth={2} />
-            </div>
-            <span style={{ fontSize: 13, color: T.text, fontWeight: 500 }}>{t(tool.labelKey)}</span>
-          </button>
-        ))}
+              <div
+                aria-hidden="true"
+                className="flex shrink-0 items-center justify-center rounded-md"
+                style={{ width: 28, height: 28, background: tool.bg }}
+              >
+                <tool.Icon size={15} style={{ color: tool.color }} strokeWidth={2} />
+              </div>
+              <span
+                style={{
+                  fontSize: 13,
+                  color: isActive ? T.accentText : T.text,
+                  fontWeight: isActive ? 600 : 500,
+                }}
+              >
+                {t(tool.labelKey)}
+              </span>
+            </button>
+          )
+        })}
         {filtered.length === 0 && (
           <div style={{ padding: 12, fontSize: 12, color: T.ghost, textAlign: 'center' }}>—</div>
         )}

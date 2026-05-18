@@ -71,8 +71,23 @@ export default function EnvironmentModal() {
         return
       }
       const content = fileResult.data.content
-      const parsed: unknown = JSON.parse(content)
-      const root = parsed as Record<string, unknown>
+
+      // Insomnia v5 exports are YAML, not JSON, so we can't JSON.parse them
+      // up-front. Detect the v5 shape directly from the raw text and route
+      // straight to the Insomnia importer (which handles YAML on the main
+      // side). Otherwise fall through to JSON parsing for the JSON formats.
+      const isInsomniaV5Yaml = /^\s*type:\s*\S*insomnia\.rest\b/m.test(content)
+
+      let root: Record<string, unknown> = {}
+      if (!isInsomniaV5Yaml) {
+        try {
+          root = JSON.parse(content) as Record<string, unknown>
+        } catch (parseErr) {
+          toast.error(t('env.importUnknownFormat'))
+          console.warn('Environment import: JSON parse failed', parseErr)
+          return
+        }
+      }
 
       // Auto-detect what kind of file the user picked. Postman environment
       // exports carry `_postman_variable_scope: 'environment'`; Insomnia
@@ -80,25 +95,30 @@ export default function EnvironmentModal() {
       // a collection export) so for Insomnia we route through the same
       // importer that handles the collection — it picks up any environment
       // resources along the way and surfaces them as suggested vars.
-      const isPostmanEnv =
-        root && typeof root === 'object' && root['_postman_variable_scope'] === 'environment'
-      const isPostmanCollection =
-        root && typeof root === 'object' && root['info'] && Array.isArray(root['item'])
+      const isPostmanEnv = !isInsomniaV5Yaml && root['_postman_variable_scope'] === 'environment'
+      const isPostmanCollection = !isInsomniaV5Yaml && root['info'] && Array.isArray(root['item'])
       const isInsomniaV4 =
-        root &&
-        typeof root === 'object' &&
-        root['_type'] === 'export' &&
-        Array.isArray(root['resources'])
+        !isInsomniaV5Yaml && root['_type'] === 'export' && Array.isArray(root['resources'])
       const isInsomniaV5 =
-        root &&
-        typeof root === 'object' &&
-        typeof root['type'] === 'string' &&
-        /\binsomnia\.rest\b/.test(root['type'] as string)
+        isInsomniaV5Yaml ||
+        (typeof root['type'] === 'string' && /\binsomnia\.rest\b/.test(root['type'] as string))
 
+      // The IPC wrapper returns `{ success: true, data: importerResult }` on
+      // success and `{ success: false, error }` only when the handler itself
+      // throws — internal importer failures (e.g. "Project not found",
+      // "Postman environment file is missing `name`") arrive as
+      // `{ success: true, data: { success: false, error } }`. We must inspect
+      // both layers, otherwise a silent failure pops up as "Environment
+      // imported" with no env actually created (Mehmet #1 / B8 / B9).
       let result:
         | {
             success: boolean
-            data?: { environmentName?: string; suggestedEnvVars?: Record<string, string> }
+            data?: {
+              success?: boolean
+              error?: string
+              environmentName?: string
+              suggestedEnvVars?: Record<string, string>
+            }
             error?: string
           }
         | undefined
@@ -121,12 +141,15 @@ export default function EnvironmentModal() {
         return
       }
 
-      if (result?.success) {
+      const ipcOk = result?.success === true
+      const importerOk = result?.data?.success !== false
+      if (ipcOk && importerOk) {
         await fetchEnvironments()
-        const name = result.data?.environmentName
+        const name = result?.data?.environmentName
         toast.success(name ? `${t('env.importSuccess')}: ${name}` : t('env.importSuccess'))
       } else {
-        toast.error(`${t('env.importFailed')}: ${result?.error || 'unknown'}`)
+        const errMsg = result?.data?.error || result?.error || 'unknown'
+        toast.error(`${t('env.importFailed')}: ${errMsg}`)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

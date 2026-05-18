@@ -990,6 +990,36 @@ export async function importTestSuiteFromFile(
 }
 
 /**
+ * Append `(imported)` / `(imported 2)` / `(imported 3)` … to `baseName` until
+ * the resulting name doesn't collide with any existing project in the given
+ * workspace. Compares against BOTH `name` (canonical key) and `display_name`
+ * (Project Hub label) so import doesn't quietly drop you next to an identical
+ * row from a previous run (Dilek #6 / B4).
+ */
+function ensureUniqueProjectName(
+  db: ReturnType<typeof getDb>,
+  workspaceId: string,
+  baseName: string,
+): string {
+  const taken = new Set<string>()
+  const rows = db
+    .prepare('SELECT name, display_name FROM projects WHERE workspace_id = ?')
+    .all(workspaceId) as { name: string; display_name: string | null }[]
+  for (const r of rows) {
+    if (r.name) taken.add(r.name)
+    if (r.display_name) taken.add(r.display_name)
+  }
+  if (!taken.has(baseName)) return baseName
+  const first = `${baseName} (imported)`
+  if (!taken.has(first)) return first
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${baseName} (imported ${i})`
+    if (!taken.has(candidate)) return candidate
+  }
+  return `${baseName} (imported ${Date.now()})`
+}
+
+/**
  * Import a whole project (from exported JSON) as a NEW project in the
  * target workspace. All IDs are regenerated so source and target can
  * coexist. Returns the new project id.
@@ -1016,7 +1046,16 @@ export function importProjectAsNew(
   for (const s of data.testSuites || []) suiteIdMap.set(s.id as string, randomUUID())
 
   const proj = data.project || {}
-  const projName = overrides?.name || (proj.name as string) || 'Imported Project'
+  const desiredName = overrides?.name || (proj.name as string) || 'Imported Project'
+  // Project Hub keys off display_name when present, otherwise name. If the
+  // user explicitly passed an override we honour it verbatim (the Duplicate
+  // flow already chose its own "(copy)"-suffixed name). Otherwise we
+  // disambiguate against existing rows in the workspace by appending
+  // "(imported)" / "(imported N)" so a freshly imported project never
+  // collides visually with an already-loaded one (Dilek #6 / B4).
+  const projName = overrides?.name
+    ? desiredName
+    : ensureUniqueProjectName(db, workspaceId, desiredName)
 
   const tx = db.transaction(() => {
     // Insert project
@@ -1036,7 +1075,10 @@ export function importProjectAsNew(
       proj.local_path ?? null,
       proj.icon_emoji ?? null,
       proj.icon_color ?? '#2D5FA0',
-      overrides?.name ?? proj.display_name ?? null,
+      // Display name follows the same uniqueness rule as `name` so the Project
+      // Hub doesn't show two identical labels after an import. If the caller
+      // passed an explicit override, that wins.
+      overrides?.name ?? (projName !== desiredName ? projName : (proj.display_name ?? null)),
     )
 
     // Folders

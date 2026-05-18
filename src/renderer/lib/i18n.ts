@@ -1358,6 +1358,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.importFailed': 'Import failed',
     'toast.projectImported': 'Project imported',
     'toast.projectImportFailed': 'Project import failed',
+    'toast.exported': 'Exported successfully',
+    'toast.exportFailed': 'Export failed',
 
     // Workbench welcome surfaces — shown when no tab is active on the page
     'welcome.mocks': 'Select a mock server from the left panel',
@@ -2795,6 +2797,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.importFailed': 'İçe aktarma başarısız',
     'toast.projectImported': 'Proje içe aktarıldı',
     'toast.projectImportFailed': 'Proje içe aktarılamadı',
+    'toast.exported': 'Dışa aktarıldı',
+    'toast.exportFailed': 'Dışa aktarma başarısız',
 
     'welcome.mocks': 'Sol panelden bir mock sunucu seçin',
     'welcome.history': 'Sol panelden bir geçmiş kaydı seçin',
