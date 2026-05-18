@@ -2034,11 +2034,11 @@ export function AboutPane() {
   }>({})
 
   useEffect(() => {
+    let cancelled = false
     try {
       const proc = window.electron?.process
       const v = proc?.versions
       setVersions({
-        app: v?.app,
         electron: v?.electron,
         node: v?.node,
         chrome: v?.chrome,
@@ -2047,10 +2047,27 @@ export function AboutPane() {
     } catch {
       /* ignore */
     }
+    // process.versions.app is not populated by @electron-toolkit/preload —
+    // ask the main process for the real app version (same source AboutModal uses).
+    void (async () => {
+      try {
+        const r = (await window.api?.app?.version?.()) as
+          | { success: boolean; data?: { version: string } }
+          | undefined
+        if (!cancelled && r?.success && r.data?.version) {
+          setVersions((prev) => ({ ...prev, app: r.data!.version }))
+        }
+      } catch {
+        /* ignore */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const rows: Array<{ label: string; value: string | undefined }> = [
-    { label: t('about.version'), value: versions.app || '1.0.0' },
+    { label: t('about.version'), value: versions.app || '—' },
     { label: t('about.platform'), value: versions.platform },
     { label: t('about.electron'), value: versions.electron },
     { label: t('about.node'), value: versions.node },

@@ -385,6 +385,7 @@ export default function RunnerConfig({
               type="number"
               min={1}
               value={iterations}
+              onFocus={(e) => e.currentTarget.select()}
               onChange={(e) => setIterations(Math.max(1, Number(e.target.value)))}
               className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
               style={{ fontSize: 13 }}
@@ -400,6 +401,7 @@ export default function RunnerConfig({
                 min={0}
                 step={100}
                 value={delay}
+                onFocus={(e) => e.currentTarget.select()}
                 onChange={(e) => setDelay(Math.max(0, Number(e.target.value)))}
                 className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                 style={{ fontSize: 13 }}

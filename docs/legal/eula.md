@@ -135,7 +135,7 @@ of the Software:
 
 The Software includes an auto-update mechanism (`electron-updater`) that
 periodically checks the public GitHub Releases feed at
-`https://github.com/apinizer/testnizer/releases` for newer versions. By
+`https://github.com/apinizer/testnizer-releases/releases` for newer versions. By
 using the Software with auto-update enabled (the default), you consent to:
 
 (a) periodic outbound HTTPS requests to GitHub solely to check for and

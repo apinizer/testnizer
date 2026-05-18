@@ -631,6 +631,7 @@ const translations: Record<Locale, Record<string, string>> = {
     // Modal footer
     'modal.saveChanges': 'Save Changes',
     'modal.saving': 'Saving…',
+    'modal.saved': 'Saved',
     'modal.close': 'Close',
 
     // Collection Runner
@@ -684,6 +685,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'home.cancel': 'Cancel',
     'home.delete': 'Delete',
     'home.rename': 'Rename',
+    'home.duplicate': 'Duplicate',
     'home.import': 'Import',
     'home.importTitle': 'Import Project',
     'home.noProjects': 'No projects yet. Create one to get started.',
@@ -2065,6 +2067,7 @@ const translations: Record<Locale, Record<string, string>> = {
     // Modal footer
     'modal.saveChanges': 'Değişiklikleri Kaydet',
     'modal.saving': 'Kaydediliyor…',
+    'modal.saved': 'Kaydedildi',
     'modal.close': 'Kapat',
 
     // Collection Runner
@@ -2118,6 +2121,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'home.cancel': 'Iptal',
     'home.delete': 'Sil',
     'home.rename': 'Yeniden Adlandır',
+    'home.duplicate': 'Çoğalt',
     'home.import': 'İçeri Aktar',
     'home.importTitle': 'Projeyi İçeri Aktar',
     'home.noProjects': 'Henüz proje yok. Başlamak için bir tane oluşturun.',
