@@ -83,6 +83,44 @@ describe('curl-shim — buildCurlArgs', () => {
     expect(args[idx + 1]).toBe('AES128-SHA:DES-CBC3-SHA')
   })
 
+  it('auto-injects DEFAULT@SECLEVEL=0 when TLS 1.0/1.1 is selected and no ciphers configured', () => {
+    // OpenSSL 4.x bundled with our static curl refuses TLS 1.0/1.1 under
+    // SECLEVEL=2 default ("no protocols available"). The shim needs to
+    // drop SECLEVEL so the handshake actually completes.
+    const a1 = buildCurlArgs({ ...base, tls: { minVersion: 'TLSv1' } })
+    const i1 = a1.indexOf('--ciphers')
+    expect(a1[i1 + 1]).toBe('DEFAULT@SECLEVEL=0')
+
+    const a2 = buildCurlArgs({ ...base, tls: { maxVersion: 'TLSv1.1' } })
+    const i2 = a2.indexOf('--ciphers')
+    expect(a2[i2 + 1]).toBe('DEFAULT@SECLEVEL=0')
+  })
+
+  it('appends @SECLEVEL=0 to a user cipher string under TLS 1.0/1.1', () => {
+    const args = buildCurlArgs({
+      ...base,
+      tls: { minVersion: 'TLSv1', ciphers: 'AES128-SHA' },
+    })
+    const idx = args.indexOf('--ciphers')
+    expect(args[idx + 1]).toBe('AES128-SHA@SECLEVEL=0')
+  })
+
+  it('honours an explicit SECLEVEL in user ciphers (no double-suffix)', () => {
+    const args = buildCurlArgs({
+      ...base,
+      tls: { minVersion: 'TLSv1', ciphers: 'AES128-SHA@SECLEVEL=1' },
+    })
+    const idx = args.indexOf('--ciphers')
+    expect(args[idx + 1]).toBe('AES128-SHA@SECLEVEL=1')
+  })
+
+  it('does NOT inject SECLEVEL=0 for modern TLS even when no ciphers given', () => {
+    const a1 = buildCurlArgs({ ...base, tls: { minVersion: 'TLSv1.2' } })
+    expect(a1).not.toContain('--ciphers')
+    const a2 = buildCurlArgs({ ...base, tls: {} })
+    expect(a2).not.toContain('--ciphers')
+  })
+
   it('adds -k when SSL verification is disabled', () => {
     expect(buildCurlArgs({ ...base, sslVerification: false })).toContain('-k')
     expect(buildCurlArgs({ ...base, sslVerification: true })).not.toContain('-k')

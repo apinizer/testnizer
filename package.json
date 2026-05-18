@@ -11,34 +11,36 @@
   },
   "license": "MIT",
   "scripts": {
-    "predev": "node scripts/ensure-native-abi.js electron",
+    "predev": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js",
     "dev": "electron-vite dev",
     "dev:socketio-echo": "node scripts/socketio-echo-server.cjs",
     "icons": "node scripts/generate-icons.mjs",
     "licenses": "node scripts/generate-licenses.mjs",
+    "download:curl": "node scripts/download-curl-binaries.js",
+    "download:curl:all": "node scripts/download-curl-binaries.js --all",
     "build": "electron-vite build",
     "build:analyze": "ANALYZE=true electron-vite build",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps && node scripts/ensure-native-abi.js electron --mark-only && bash scripts/patch-electron-name.sh",
-    "prebuild:unpack": "node scripts/ensure-native-abi.js electron",
+    "prebuild:unpack": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js",
     "build:unpack": "npm run build && electron-builder --dir",
-    "prebuild:win": "node scripts/ensure-native-abi.js electron",
+    "prebuild:win": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=win32-x64 && node scripts/download-curl-binaries.js --target=win32-arm64",
     "build:win": "npm run build && electron-builder --win",
-    "prebuild:win:x64": "node scripts/ensure-native-abi.js electron",
+    "prebuild:win:x64": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=win32-x64",
     "build:win:x64": "npm run build && electron-builder --win --x64",
-    "prebuild:win:arm64": "node scripts/ensure-native-abi.js electron",
+    "prebuild:win:arm64": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=win32-arm64",
     "build:win:arm64": "npm run build && electron-builder --win --arm64",
-    "prebuild:mac": "node scripts/ensure-native-abi.js electron",
+    "prebuild:mac": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=darwin-x64 && node scripts/download-curl-binaries.js --target=darwin-arm64",
     "build:mac": "npm run build && electron-builder --mac",
-    "prebuild:mac:x64": "node scripts/ensure-native-abi.js electron",
+    "prebuild:mac:x64": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=darwin-x64",
     "build:mac:x64": "npm run build && electron-builder --mac --x64",
-    "prebuild:mac:arm64": "node scripts/ensure-native-abi.js electron",
+    "prebuild:mac:arm64": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=darwin-arm64",
     "build:mac:arm64": "npm run build && electron-builder --mac --arm64",
-    "prebuild:linux": "node scripts/ensure-native-abi.js electron",
+    "prebuild:linux": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=linux-x64 && node scripts/download-curl-binaries.js --target=linux-arm64",
     "build:linux": "npm run build && electron-builder --linux",
-    "prebuild:linux:x64": "node scripts/ensure-native-abi.js electron",
+    "prebuild:linux:x64": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=linux-x64",
     "build:linux:x64": "npm run build && electron-builder --linux --x64",
-    "prebuild:linux:arm64": "node scripts/ensure-native-abi.js electron",
+    "prebuild:linux:arm64": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=linux-arm64",
     "build:linux:arm64": "npm run build && electron-builder --linux --arm64",
     "pack:collect": "node scripts/collect-packages.js",
     "verify:natives": "node scripts/verify-natives.js",
@@ -209,7 +211,8 @@
         "from": "resources/",
         "to": "resources/",
         "filter": [
-          "**/*"
+          "**/*",
+          "!curl/**"
         ]
       },
       {
@@ -233,7 +236,16 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": false
+      "notarize": false,
+      "extraResources": [
+        {
+          "from": "resources/curl/darwin-${arch}",
+          "to": "curl",
+          "filter": [
+            "curl"
+          ]
+        }
+      ]
     },
     "win": {
       "target": [
@@ -241,7 +253,16 @@
         "zip"
       ],
       "icon": "build/icon.ico",
-      "artifactName": "Testnizer-${version}-${arch}.${ext}"
+      "artifactName": "Testnizer-${version}-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "resources/curl/win32-${arch}",
+          "to": "curl",
+          "filter": [
+            "curl.exe"
+          ]
+        }
+      ]
     },
     "linux": {
       "target": [
@@ -249,7 +270,16 @@
         "deb"
       ],
       "icon": "build/icon.png",
-      "artifactName": "Testnizer-${version}-${arch}.${ext}"
+      "artifactName": "Testnizer-${version}-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "resources/curl/linux-${arch}",
+          "to": "curl",
+          "filter": [
+            "curl"
+          ]
+        }
+      ]
     },
     "nsis": {
       "oneClick": true,

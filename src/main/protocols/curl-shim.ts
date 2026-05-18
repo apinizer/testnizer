@@ -19,12 +19,69 @@
 
 import { spawn } from 'node:child_process'
 import { writeFile, mkdtemp, rm, readFile, stat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, basename } from 'node:path'
+import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { performance } from 'node:perf_hooks'
+import { app } from 'electron'
 import type { HttpRequestOptions } from './http.engine'
 import { getJarCookieHeader, storeResponseCookies } from './http.engine'
+
+/**
+ * Locate the curl binary to spawn. Packaged installs ship a per-platform
+ * static curl under `resources/curl/{platform}-{arch}/curl(.exe)` (see
+ * scripts/download-curl-binaries.js) so end users never need a system curl
+ * even on locked-down enterprise Windows images. Dev / unit-test runs
+ * resolve the same path inside the repo; if neither exists we fall back to
+ * `'curl'` and let PATH resolution try (CI bootstrap, contributors who
+ * skipped `npm run download:curl`).
+ */
+let cachedCurlPath: string | null = null
+
+export function getCurlPath(): string {
+  if (cachedCurlPath !== null) return cachedCurlPath
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+  const targetDir = `${process.platform}-${arch}`
+  const binaryName = process.platform === 'win32' ? 'curl.exe' : 'curl'
+
+  // Packaged Electron: extraResources are unpacked under
+  // process.resourcesPath. The per-platform extraResources override in
+  // package.json strips the `{platform}-{arch}/` prefix so the binary
+  // lands directly at `resources/curl/{binaryName}`.
+  const isPackaged = app?.isPackaged ?? false
+  const packagedPath = isPackaged ? join(process.resourcesPath, 'curl', binaryName) : null
+  if (packagedPath && existsSync(packagedPath)) {
+    cachedCurlPath = packagedPath
+    return packagedPath
+  }
+
+  // Dev / unit-test: resolve from the repo's resources/ directory. Same
+  // layout as scripts/download-curl-binaries.js writes.
+  try {
+    // app.getAppPath() returns the unpacked code root; in tests Electron
+    // isn't initialised so we walk up from __dirname instead.
+    const appPath = app?.getAppPath?.()
+    const repoRoot = appPath || join(__dirname, '..', '..', '..')
+    const devPath = join(repoRoot, 'resources', 'curl', targetDir, binaryName)
+    if (existsSync(devPath)) {
+      cachedCurlPath = devPath
+      return devPath
+    }
+  } catch {
+    // Electron not available (test runner) — fall through.
+  }
+
+  // Last resort: hope a system curl is on PATH. isCurlAvailable() will
+  // probe and surface a clear error to the user if the spawn fails.
+  cachedCurlPath = 'curl'
+  return cachedCurlPath
+}
+
+/** Test seam — invalidate the cached resolution between unit-test cases. */
+export function resetCurlPathCache(): void {
+  cachedCurlPath = null
+}
 
 // Local type mirrors — the renderer types live outside the main-process
 // tsconfig's include list, so we duplicate the small subset we need
@@ -91,7 +148,7 @@ export async function isCurlAvailable(): Promise<boolean> {
   if (curlAvailable !== null) return curlAvailable
   curlAvailable = await new Promise<boolean>((resolve) => {
     try {
-      const proc = spawn('curl', ['--version'], { stdio: ['ignore', 'pipe', 'ignore'] })
+      const proc = spawn(getCurlPath(), ['--version'], { stdio: ['ignore', 'pipe', 'ignore'] })
       let out = ''
       proc.stdout?.on('data', (chunk: Buffer) => {
         out += chunk.toString()
@@ -206,11 +263,29 @@ export function buildCurlArgs(input: {
   const tlsMax = tlsFlag(input.tls.maxVersion)
   if (tlsMin) args.push(`--tlsv${tlsMin}`)
   if (tlsMax) args.push('--tls-max', tlsMax)
-  if (input.tls.ciphers && input.tls.ciphers.trim()) {
-    // curl accepts OpenSSL cipher strings via `--ciphers`. For TLS 1.3 you'd
-    // use `--tls13-ciphers`; we pass through to `--ciphers` which is what
-    // the existing UI populates.
-    args.push('--ciphers', input.tls.ciphers.trim())
+
+  // OpenSSL 3.x+ (and BoringSSL) reject TLS 1.0/1.1 + legacy ciphers under
+  // the default SECLEVEL=2 policy with "no protocols available". Force
+  // SECLEVEL=0 on the cipher string when the user pins a legacy protocol
+  // so the static curl shipped with the app (OpenSSL 4.x) can actually
+  // complete the handshake. If the user supplied their own ciphers we
+  // append @SECLEVEL=0 only when it isn't already there, so explicit
+  // configs win.
+  const isLegacy =
+    input.tls.minVersion === 'TLSv1' ||
+    input.tls.minVersion === 'TLSv1.1' ||
+    input.tls.maxVersion === 'TLSv1' ||
+    input.tls.maxVersion === 'TLSv1.1'
+  const userCiphers = input.tls.ciphers?.trim()
+  let effectiveCiphers: string | undefined
+  if (userCiphers) {
+    effectiveCiphers =
+      isLegacy && !/@SECLEVEL=/.test(userCiphers) ? `${userCiphers}@SECLEVEL=0` : userCiphers
+  } else if (isLegacy) {
+    effectiveCiphers = 'DEFAULT@SECLEVEL=0'
+  }
+  if (effectiveCiphers) {
+    args.push('--ciphers', effectiveCiphers)
   }
 
   if (!input.sslVerification) args.push('-k')
@@ -371,7 +446,7 @@ function spawnCurl(
   signal?: AbortSignal,
 ): Promise<CurlExecResult> {
   return new Promise((resolve) => {
-    const proc = spawn('curl', args, { stdio: ['pipe', 'pipe', 'pipe'] })
+    const proc = spawn(getCurlPath(), args, { stdio: ['pipe', 'pipe', 'pipe'] })
     const stdoutChunks: Buffer[] = []
     const stderrChunks: Buffer[] = []
     proc.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk))
@@ -469,7 +544,9 @@ export async function executeViaCurl(options: HttpRequestOptions): Promise<CurlA
   const tempDir = await mkdtemp(join(tmpdir(), 'testnizer-curl-'))
   const headersDumpPath = join(tempDir, 'response-headers.txt')
   const bodyOutputPath = join(tempDir, 'response-body.bin')
-  const extraTempFiles: string[] = []
+  // Cert / key / CA temp files are written under `tempDir` and cleaned up
+  // wholesale by the recursive rm in the finally block — no per-file
+  // bookkeeping needed.
 
   try {
     // ── URL + query params ───────────────────────────────────
@@ -598,11 +675,14 @@ export async function executeViaCurl(options: HttpRequestOptions): Promise<CurlA
     const jarCookies = await getJarCookieHeader(url.toString(), options.projectId)
 
     // ── Cert / CA temp files ─────────────────────────────────
+    // mode 0o600 keeps private keys readable only by our process owner —
+    // important on multi-user hosts where /tmp is world-readable. The
+    // wrapping mkdtemp dir gets nuked by the finally block on the way out.
+    const CERT_MODE = 0o600
     let caCertPath: string | undefined
     if (options.certificates?.caCerts?.length) {
       caCertPath = join(tempDir, 'ca.pem')
-      await writeFile(caCertPath, Buffer.concat(options.certificates.caCerts))
-      extraTempFiles.push(caCertPath)
+      await writeFile(caCertPath, Buffer.concat(options.certificates.caCerts), { mode: CERT_MODE })
     }
     const cc = options.certificates?.clientCert
     let clientCertPath: string | undefined
@@ -611,18 +691,15 @@ export async function executeViaCurl(options: HttpRequestOptions): Promise<CurlA
     if (cc) {
       if (cc.pfx) {
         clientCertPath = join(tempDir, 'client.p12')
-        await writeFile(clientCertPath, cc.pfx)
+        await writeFile(clientCertPath, cc.pfx, { mode: CERT_MODE })
         clientCertType = 'P12'
-        extraTempFiles.push(clientCertPath)
       } else if (cc.cert) {
         clientCertPath = join(tempDir, 'client.pem')
-        await writeFile(clientCertPath, cc.cert)
+        await writeFile(clientCertPath, cc.cert, { mode: CERT_MODE })
         clientCertType = 'PEM'
-        extraTempFiles.push(clientCertPath)
         if (cc.key) {
           clientKeyPath = join(tempDir, 'client.key')
-          await writeFile(clientKeyPath, cc.key)
-          extraTempFiles.push(clientKeyPath)
+          await writeFile(clientKeyPath, cc.key, { mode: CERT_MODE })
         }
       }
     }
@@ -785,7 +862,5 @@ export async function executeViaCurl(options: HttpRequestOptions): Promise<CurlA
     } catch {
       /* ignore */
     }
-    void extraTempFiles
-    void basename // keep import slot for future request-name dumping
   }
 }

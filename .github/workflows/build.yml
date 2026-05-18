@@ -171,6 +171,11 @@ jobs:
       - name: Install deps (host arch only)
         run: npm ci
 
+      # F25: bundle the per-platform static curl into resources/curl/ so the
+      # TLS 1.0/1.1 sidecar works on enterprise hosts without a system curl.
+      - name: Download bundled curl (darwin-${{ matrix.arch }})
+        run: node scripts/download-curl-binaries.js --target=darwin-${{ matrix.arch }}
+
       # The Vite/Rollup main-process bundle pulls in the full Electron deps
       # graph (better-sqlite3, soap, grpc, etc.) and on macos-14 (arm64) the
       # default 2 GB Node heap is occasionally exceeded during minification.
@@ -276,6 +281,10 @@ jobs:
       - name: Install deps (host arch only)
         run: npm ci
 
+      # F25: bundle the per-platform static curl for the TLS 1.0/1.1 sidecar.
+      - name: Download bundled curl (linux-${{ matrix.arch }})
+        run: node scripts/download-curl-binaries.js --target=linux-${{ matrix.arch }}
+
       - name: Build renderer + main
         run: npm run build
 
@@ -334,6 +343,10 @@ jobs:
 
       - name: Install deps (host arch only)
         run: npm ci
+
+      # F25: bundle the per-platform static curl for the TLS 1.0/1.1 sidecar.
+      - name: Download bundled curl (win32-${{ matrix.arch }})
+        run: node scripts/download-curl-binaries.js --target=win32-${{ matrix.arch }}
 
       - name: Build renderer + main
         run: npm run build

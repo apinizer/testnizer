@@ -40,3 +40,14 @@ resources/third-party-licenses.json
 # Stray scaffolds occasionally created by `npx create-*` runs that
 # misinterpret a flag (e.g. `--typescript`) as a target directory name.
 website/--*
+
+# Bundled curl static binaries (F25 — legacy TLS sidecar).
+# Per-platform static curl downloaded by `npm run download:curl` into
+# resources/curl/{platform}-{arch}/. Not committed because they total
+# ~18MB across the 6 release targets and would bloat clones. CI runs
+# the prebuild:<target> npm script which fetches the right one before
+# packaging.
+resources/curl/
+
+# Local scratchpad notes (commit only if explicitly intended).
+todo_for_enterprise.md
