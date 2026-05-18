@@ -20,10 +20,14 @@ npm run build            # Main + preload + renderer üretim derlemesi (out/)
 npm run typecheck        # main + renderer için tsc --noEmit
 npm run icons            # build/ ve resources/ ikonlarını yeniden üretir (sharp + png2icons)
 npm test                 # vitest unit testler (pretest ABI'yi otomatik node'a flip eder)
+npm run test:unit        # aynı suite (CI'da quality job bunu çağırır)
 npm run test:e2e         # playwright E2E (önce build gerekli; test:all zinciri kullan)
+npm run test:e2e:smoke   # playwright smoke (tests/e2e/smoke.spec.ts)
 npm run test:all         # unit → build → e2e tek seferde
 npm run lint             # eslint src/ (lint:fix otomatik düzeltir)
 npm run format           # prettier src/ (format:check sadece doğrular)
+npm run build:mac:arm64  # ayrıca :mac:x64, :win:x64, :win:arm64, :linux:x64, :linux:arm64
+npm run verify:natives   # paketlenmiş better-sqlite3 binary'sinin platform/arch'ını doğrular
 ```
 
 Paketleme (dmg/exe/deb/AppImage/zip) için **`.claude/commands/package.md`**'deki sırayı izle — native module (`better-sqlite3`) çapraz mimari rebuild'ini bozmamak için kritik.
@@ -179,6 +183,14 @@ testnizer/
 │   │   │   ├── grpc-reflection.ts     # gRPC server reflection client
 │   │   │   └── {ai-chat, graphql, grpc, http, mcp, soap, socketio, sse,
 │   │   │        websocket, wsse}.engine.ts
+│   │   ├── lib/                       # Main-process util'leri (test'lerle yoğun coverage)
+│   │   │   ├── secure-storage.ts      # safeStorage wrapper (API key/cert passphrase)
+│   │   │   ├── error-classifier.ts    # Engine'lerden ortak hata sınıflandırma
+│   │   │   ├── pending-cancellables.ts # In-flight request cancel registry
+│   │   │   ├── path-safety.ts, ownership.ts, env-vars.ts, eula-consent.ts,
+│   │   │   │   git-conflict.ts, os-auth.ts, tls-presets.ts, user-agent.ts,
+│   │   │   │   variable-resolver.ts, console-logger.ts, ipc-helpers.ts,
+│   │   │   │   sse-body-parser.ts
 │   │   └── db/                        # better-sqlite3 + migrations
 │   │       ├── database.ts            # Init + schema + migrations
 │   │       └── {workspace, project, branch, endpoint, environment,
@@ -206,7 +218,7 @@ testnizer/
 │       │   │                          # Base/JsonXml/JsonSchema/YamlJson/JoltFormat, WsSecurity
 │       │   ├── runner/                # Collection runner UI + ScheduledTasks + TestsHome
 │       │   ├── modals/                # Import, Environment, Settings, RunnerConfig/Results vb.
-│       │   └── shared/                # MethodBadge, StatusBadge, MonacoEditor, vb.
+│       │   └── shared/                # MethodBadge, StatusBadge, MonacoEditor, CommandPalette (Cmd+K), vb.
 │       ├── stores/                    # Zustand — feature başına bir store
 │       │   └── {ai-chat, auth, branch, console, environment, eula, graphql, grpc,
 │       │        history, mcp, mock, request, response, runner, soap, socketio,
@@ -217,11 +229,15 @@ testnizer/
 │       │   ├── test-runner.ts         # pm API + assertions
 │       │   ├── code-generator.ts      # cURL/JS/Python snippet üretimi
 │       │   ├── i18n.ts                # EN + TR çeviriler
+│       │   ├── command-registry.ts    # Cmd+K palette aksiyon kaydı (CommandPalette tüketir)
+│       │   ├── sidebar-pages.ts       # Sol panel sayfa (APIs/Tests/Mocks/Tools) kayıt + meta
+│       │   ├── import-format-detect.ts # OpenAPI/Postman/Insomnia/HAR otomatik tespit
 │       │   ├── tools/                 # Tools panel'in saf TS implementasyonları (browser-safe)
 │       │   ├── tools-bridge.ts, tools-catalog.ts
 │       │   ├── key-value-bulk.ts, http-headers.ts, graphql-errors.ts
-│       │   ├── persist-helpers.ts, open-endpoint-tab.ts, mock-snippets.ts
-│       │   └── monaco-theme.ts, keyboard-shortcuts.ts, utils.ts
+│       │   ├── persist-helpers.ts, open-endpoint-tab.ts, open-runner-tab.ts, mock-snippets.ts
+│       │   ├── monaco-theme.ts, keyboard-shortcuts.ts, utils.ts
+│       │   └── toast.ts, platform.ts, z-index.ts
 │       └── types/index.ts             # Tüm TypeScript tipleri (tek dosya, ~820 satır)
 ├── tests/
 │   ├── main/                          # vitest — handler + engine + repo testleri
@@ -299,6 +315,20 @@ Her feature için bu sırayı izle:
 
 ---
 
+## CI / Release Flow
+
+`.github/workflows/build.yml` — `quality` (lint+typecheck+vitest) sonra 6 paralel native runner matrix (mac arm64/x64, win x64/arm64, linux x64/arm64) çalıştırır. Tag push (`v*`) tetiklendiğinde her job kendi `electron-builder ... --publish always` çağrısını yapar ve **`apinizer/testnizer-releases`** repo'sundaki release'e asset yükler.
+
+- **Release repo** ayrı: `apinizer/testnizer-releases` (kod yok, sadece release artifact'ları)
+- **Website** ayrı: `apinizer/testnizer-website` (Astro, GitHub Pages → www.testnizer.com)
+  - `src/lib/latest-release.ts` build-time'da GitHub API'den son release'i çeker
+  - **`FALLBACK` sabiti**: API rate-limit / offline durumunda kullanılır — **her release tag push'unda lockstep bump edilmeli** (yoksa kullanıcılar yanlış sürüm görür)
+  - Site indirme linkleri için `resolveAsset()`: exact name → pattern → release page fallback
+- Release notları otomasyonu: testnizer'in `ci(release)` job'u website changelog'undan release body üretir; **changelog entry website'a merge edilmeden tag push edilmemeli** (memory feedback'inde sabit kural)
+- Manuel tetikleyici: GitHub → Actions → "Build" → Run workflow
+
+---
+
 ## Kod Standartları
 
 - TypeScript strict — `any` yasak
@@ -324,3 +354,5 @@ Her feature için bu sırayı izle:
 - **Renderer'dan dış ağ yok**: CSP `connect-src 'self'`. Yeni bir HTTP çağrısı eklenecekse main process'te engine + IPC handler oluşturulmalı.
 - **Tailwind v4**: `tailwind.config.*` yok, `@tailwindcss/vite` plugin'i kullanılıyor. v3 dokümantasyonuna güvenme.
 - **Dynamic import uyarısı**: `runner.handler.ts`, `scheduler.handler.ts` tarafından dinamik import edilirken `ipc/index.ts`'te statik de import ediliyor — Vite uyarı verir, davranışsal sorun yok.
+- **Test helper şema senkronizasyonu**: `tests/main/handlers/helpers.ts` `createTestDb()` üretim migration'larını **manuel yansıtmak zorunda** — `database.ts`'deki `ALTER TABLE` migration'ları test DB'sinde otomatik koşmaz. Yeni kolon eklenirse helper'a da eklenmeli, yoksa handler INSERT'leri "no such column" ile sessizce success=false döner ve CI quality job'u kırar.
+- **electron-builder publish race condition**: Tag push tetikli paralel matrix build'lerde her job kendi `POST /releases`'ini yapar; ilk gelen kazanır, diğerleri 422 `already_exists` alır ve fatal sayar (Linux x64/arm64 bu yüzden tekrar tekrar düşer). Geçici çözüm: failed job'ları `gh run rerun --failed` ile yeniden çalıştır — release artık var olduğu için "update mode" kazanır. Kalıcı çözüm: matrix öncesi tek "create release if not exists" job'u eklemek.
