@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, forwardRef } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, forwardRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useResponseStore } from '../../stores/response.store'
 import { Loader2, Send, Globe, History as HistoryIcon } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
@@ -45,99 +46,154 @@ function fmtMs(ms?: number): string {
   return `${Math.round(ms)} ms`
 }
 
-/** Network info popover — rendered when the globe icon is clicked */
-const NetworkInfoPopover = forwardRef<HTMLDivElement, { response: ApiResponse }>(
-  function NetworkInfoPopover({ response }, ref) {
-    const url = response.actualRequest?.url
-    const host = extractHost(url)
-    const proto = extractProtocol(url)
-    const contentType =
-      response.headers?.['content-type'] || response.headers?.['Content-Type'] || '—'
-    const server = response.headers?.['server'] || response.headers?.['Server'] || '—'
-    const t = response.timing || { total: 0 }
+/**
+ * Network info popover — rendered when the globe icon is clicked.
+ *
+ * Portaled to `document.body` and positioned with `fixed` so the overlay
+ * can escape the response pane's `overflow-hidden` clipping rectangle and
+ * the workbench's bottom Console panel. The previous absolute-positioned
+ * version was clipped at the workbench bottom edge whenever the response
+ * pane sat low in the layout (typical 50/50 split), hiding the Timings
+ * rows from view.
+ */
+const NetworkInfoPopover = forwardRef<
+  HTMLDivElement,
+  { response: ApiResponse; anchor: HTMLElement | null }
+>(function NetworkInfoPopover({ response, anchor }, ref) {
+  const POPOVER_W = 320
+  const VIEWPORT_MARGIN = 8
 
-    const rows: Array<[string, string]> = [
-      ['Host', host],
-      ['Protocol', proto],
-      ['Method', response.actualRequest?.method || '—'],
-      [
-        'Status',
-        response.status != null ? `${response.status} ${response.statusText || ''}`.trim() : '—',
-      ],
-      ['Server', server],
-      ['Content-Type', contentType],
-    ]
+  const [pos, setPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null)
 
-    const timings: Array<[string, string]> = [
-      ['DNS lookup', fmtMs(t.dns)],
-      ['TCP handshake', fmtMs(t.tcp)],
-      ['TLS handshake', fmtMs(t.tls)],
-      ['Time to first byte', fmtMs(t.ttfb)],
-      ['Download', fmtMs(t.download)],
-      ['Total', fmtMs(t.total)],
-    ]
+  // Recompute position on mount + when the viewport changes. The button is
+  // anchored at fixed coords from the workbench layout, so we read its
+  // rect on demand rather than tracking it continuously.
+  useLayoutEffect(() => {
+    if (!anchor) return
+    const measure = (): void => {
+      const rect = anchor.getBoundingClientRect()
+      const vh = window.innerHeight
+      const vw = window.innerWidth
+      const spaceBelow = vh - rect.bottom
+      const spaceAbove = rect.top
+      // Pick the side with more room. Threshold: 200px below — anything
+      // less and we flip upward. The popover renders both Network and
+      // Timings sections (~400px when fully populated).
+      const openUp = spaceBelow < 220 && spaceAbove > spaceBelow
+      const maxHeight = Math.max(180, (openUp ? spaceAbove : spaceBelow) - VIEWPORT_MARGIN)
+      const top = openUp
+        ? Math.max(VIEWPORT_MARGIN, rect.top - maxHeight - 4)
+        : Math.min(rect.bottom + 4, vh - maxHeight - VIEWPORT_MARGIN)
+      // Right-align with the button; clamp inside the viewport so the
+      // popover never spills off the left edge on a narrow window.
+      const left = Math.max(
+        VIEWPORT_MARGIN,
+        Math.min(rect.right - POPOVER_W, vw - POPOVER_W - VIEWPORT_MARGIN),
+      )
+      setPos({ top, left, maxHeight })
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    window.addEventListener('scroll', measure, true)
+    return () => {
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('scroll', measure, true)
+    }
+  }, [anchor])
 
-    return (
+  if (!pos) return null
+
+  const url = response.actualRequest?.url
+  const host = extractHost(url)
+  const proto = extractProtocol(url)
+  const contentType =
+    response.headers?.['content-type'] || response.headers?.['Content-Type'] || '—'
+  const server = response.headers?.['server'] || response.headers?.['Server'] || '—'
+  const t = response.timing || { total: 0 }
+
+  const rows: Array<[string, string]> = [
+    ['Host', host],
+    ['Protocol', proto],
+    ['Method', response.actualRequest?.method || '—'],
+    [
+      'Status',
+      response.status != null ? `${response.status} ${response.statusText || ''}`.trim() : '—',
+    ],
+    ['Server', server],
+    ['Content-Type', contentType],
+  ]
+
+  const timings: Array<[string, string]> = [
+    ['DNS lookup', fmtMs(t.dns)],
+    ['TCP handshake', fmtMs(t.tcp)],
+    ['TLS handshake', fmtMs(t.tls)],
+    ['Time to first byte', fmtMs(t.ttfb)],
+    ['Download', fmtMs(t.download)],
+    ['Total', fmtMs(t.total)],
+  ]
+
+  return createPortal(
+    <div
+      ref={ref}
+      className="fixed z-[1000] overflow-auto rounded-md border border-[var(--border)] bg-[var(--white)] shadow-lg"
+      style={{
+        top: pos.top,
+        left: pos.left,
+        width: POPOVER_W,
+        maxHeight: pos.maxHeight,
+        boxShadow: '0 6px 24px rgba(0,0,0,0.12)',
+        fontSize: 13,
+      }}
+    >
       <div
-        ref={ref}
-        className="absolute z-[1000] mt-1 rounded-md border border-[var(--border)] bg-[var(--white)] shadow-lg"
-        style={{
-          top: '100%',
-          right: 0,
-          width: 320,
-          boxShadow: '0 6px 24px rgba(0,0,0,0.12)',
-          fontSize: 13,
-        }}
+        className="px-3 py-2 font-semibold text-[var(--text)]"
+        style={{ borderBottom: '1px solid var(--border)' }}
       >
-        <div
-          className="px-3 py-2 font-semibold text-[var(--text)]"
-          style={{ borderBottom: '1px solid var(--border)' }}
-        >
-          Network
-        </div>
-        <div className="px-3 py-2">
-          <table className="w-full" style={{ fontSize: 13 }}>
-            <tbody>
-              {rows.map(([k, v]) => (
-                <tr key={k}>
-                  <td className="py-1 pr-3 text-[var(--muted)]" style={{ width: 110 }}>
-                    {k}
-                  </td>
-                  <td
-                    className="py-1 font-mono text-[var(--text)]"
-                    style={{ wordBreak: 'break-all' }}
-                  >
-                    {v}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div
-          className="px-3 py-2 font-semibold text-[var(--text)]"
-          style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}
-        >
-          Timings
-        </div>
-        <div className="px-3 py-2">
-          <table className="w-full" style={{ fontSize: 13 }}>
-            <tbody>
-              {timings.map(([k, v]) => (
-                <tr key={k}>
-                  <td className="py-1 pr-3 text-[var(--muted)]" style={{ width: 160 }}>
-                    {k}
-                  </td>
-                  <td className="py-1 font-mono text-[var(--text)]">{v}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        Network
       </div>
-    )
-  },
-)
+      <div className="px-3 py-2">
+        <table className="w-full" style={{ fontSize: 13 }}>
+          <tbody>
+            {rows.map(([k, v]) => (
+              <tr key={k}>
+                <td className="py-1 pr-3 text-[var(--muted)]" style={{ width: 110 }}>
+                  {k}
+                </td>
+                <td
+                  className="py-1 font-mono text-[var(--text)]"
+                  style={{ wordBreak: 'break-all' }}
+                >
+                  {v}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div
+        className="px-3 py-2 font-semibold text-[var(--text)]"
+        style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}
+      >
+        Timings
+      </div>
+      <div className="px-3 py-2">
+        <table className="w-full" style={{ fontSize: 13 }}>
+          <tbody>
+            {timings.map(([k, v]) => (
+              <tr key={k}>
+                <td className="py-1 pr-3 text-[var(--muted)]" style={{ width: 160 }}>
+                  {k}
+                </td>
+                <td className="py-1 font-mono text-[var(--text)]">{v}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>,
+    document.body,
+  )
+})
 
 /**
  * Response panel — Postman-style layout:
@@ -370,7 +426,13 @@ export default function ResponsePane() {
             >
               <Globe size={14} />
             </button>
-            {showNetworkInfo && <NetworkInfoPopover ref={networkPopRef} response={response} />}
+            {showNetworkInfo && (
+              <NetworkInfoPopover
+                ref={networkPopRef}
+                response={response}
+                anchor={networkBtnRef.current}
+              />
+            )}
           </div>
         </div>
       </div>
