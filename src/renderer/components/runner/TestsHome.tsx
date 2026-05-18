@@ -1,16 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
-import {
-  BarChart2,
-  Clock,
-  FolderOpen,
-  Play,
-  ChevronRight,
-  CheckCircle2,
-  XCircle,
-} from 'lucide-react'
+import { BarChart2, Clock, FolderOpen, ChevronRight, CheckCircle2, XCircle } from 'lucide-react'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import { useTranslation } from '../../lib/i18n'
+import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
+import NewRunButton from './NewRunButton'
 
 interface RunHistoryRow {
   id: string
@@ -84,6 +78,20 @@ export default function TestsHome({
   const [tasks, setTasks] = useState<ScheduledTaskRow[]>([])
   const [suites, setSuites] = useState<TestSuiteRow[]>([])
   const [loading, setLoading] = useState(true)
+
+  // "New Run" opens the runner with a specific suite locked as its scope.
+  // Why no APIs-tree picker any more: showing every endpoint here pulled
+  // people into ad-hoc runs that bypass Test Suites entirely, then they
+  // wondered why scheduling/reporting tied to a suite was empty. Symmetric
+  // with Scheduled Tasks now — always pick a suite first.
+  const pickSuiteForRun = useCallback((suite: { id: string; name: string }) => {
+    openOrReuseRunnerTab({
+      sourceType: 'suite',
+      suiteId: suite.id,
+      folderName: suite.name,
+      scheduleMode: false,
+    })
+  }, [])
 
   const load = useCallback(async () => {
     if (!activeProjectId) return
@@ -184,15 +192,12 @@ export default function TestsHome({
         <span style={{ fontWeight: 700, color: 'var(--text)', fontSize: 16, flex: 1 }}>
           {t('testsHome.title')}
         </span>
-        <button
-          type="button"
-          onClick={onNewRun}
-          className="flex cursor-pointer items-center gap-1.5 rounded-[6px] border-none px-3 py-1.5 font-medium text-white hover:opacity-90"
-          style={{ background: 'var(--accent)', fontSize: 13 }}
-        >
-          <Play size={13} />
-          {t('testsHome.newRun')}
-        </button>
+        <NewRunButton
+          suites={suites}
+          mode="manual"
+          onPickSuite={pickSuiteForRun}
+          onFallback={onNewRun}
+        />
       </div>
 
       {/* Content */}

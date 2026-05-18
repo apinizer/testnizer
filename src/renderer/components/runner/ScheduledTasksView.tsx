@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import {
   ArrowLeft,
@@ -7,7 +7,6 @@ import {
   ToggleLeft,
   ToggleRight,
   Play,
-  FolderOpen,
   ChevronDown,
   ChevronRight,
   CheckCircle2,
@@ -16,6 +15,7 @@ import {
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import EmptyState from '../shared/EmptyState'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
+import NewRunButton from './NewRunButton'
 
 type ScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
 
@@ -121,8 +121,6 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
   const [tasks, setTasks] = useState<ScheduledTask[]>([])
   const [suites, setSuites] = useState<TestSuiteRow[]>([])
   const [deleteTarget, setDeleteTarget] = useState<ScheduledTask | null>(null)
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const pickerRef = useRef<HTMLDivElement>(null)
 
   const loadTasks = useCallback(() => {
     if (!activeProjectId) return
@@ -149,30 +147,16 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
     loadSuites()
   }, [loadTasks, loadSuites])
 
-  // Close the suite picker on outside click — matches the rest of the
-  // sidebar/tree dropdown behaviour.
-  useEffect(() => {
-    if (!pickerOpen) return
-    function handler(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPickerOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [pickerOpen])
-
   // Opening from a suite is the canonical scheduled-task flow: the runner
   // tab gets the suite's items as the run sequence and the config view
-  // defaults to "Schedule runs". Falling through to `onNewRun` only happens
-  // when the project has zero suites — that path keeps the legacy blank
-  // slate so the user is never stuck.
-  const openSuiteForSchedule = useCallback((suiteId: string, suiteName: string) => {
-    setPickerOpen(false)
+  // defaults to "Schedule runs". When no suites exist the NewRunButton
+  // disables itself with a tooltip rather than falling through — there's
+  // nothing meaningful to schedule without a suite.
+  const openSuiteForSchedule = useCallback((suite: { id: string; name: string }) => {
     openOrReuseRunnerTab({
       sourceType: 'suite',
-      suiteId,
-      folderName: suiteName,
+      suiteId: suite.id,
+      folderName: suite.name,
       scheduleMode: true,
     })
   }, [])
@@ -233,64 +217,7 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
         <span style={{ fontWeight: 600, color: 'var(--text)', fontSize: 15, flex: 1 }}>
           Scheduled Tasks
         </span>
-        <div ref={pickerRef} style={{ position: 'relative' }}>
-          <button
-            type="button"
-            onClick={() => {
-              if (suites.length === 0) return
-              setPickerOpen((v) => !v)
-            }}
-            className="flex cursor-pointer items-center gap-1.5 rounded-[6px] border-none px-3 py-1.5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-            style={{ background: '#e86826', fontSize: 13 }}
-            disabled={suites.length === 0}
-            title={
-              suites.length > 0
-                ? 'Pick a Test Suite to schedule'
-                : 'No test suites yet — create one from the Tests sidebar first'
-            }
-          >
-            <Play size={13} />
-            New Run
-          </button>
-          {pickerOpen && suites.length > 0 && (
-            <div
-              className="absolute right-0 z-10 mt-1 overflow-hidden rounded-[8px] border"
-              style={{
-                top: '100%',
-                background: 'var(--white)',
-                borderColor: 'var(--border)',
-                minWidth: 260,
-                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-              }}
-            >
-              <div
-                className="px-3 py-2"
-                style={{
-                  borderBottom: '1px solid var(--border)',
-                  color: 'var(--muted)',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.5,
-                }}
-              >
-                Schedule a Test Suite
-              </div>
-              {suites.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => openSuiteForSchedule(s.id, s.name)}
-                  className="flex w-full cursor-pointer items-center gap-2 border-none bg-transparent px-3 py-2 text-left hover:bg-[var(--surface)]"
-                  style={{ color: 'var(--text)', fontSize: 13 }}
-                >
-                  <FolderOpen size={14} style={{ color: 'var(--accent)' }} />
-                  <span style={{ flex: 1 }}>{s.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <NewRunButton suites={suites} mode="schedule" onPickSuite={openSuiteForSchedule} />
       </div>
 
       {/* Description */}

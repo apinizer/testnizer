@@ -281,8 +281,6 @@ const translations: Record<Locale, Record<string, string>> = {
     // Response tabs
     'response.response': 'Response',
     'response.cookie': 'Cookie',
-    'response.console': 'Console',
-    'response.actualRequest': 'Actual Request',
 
     // Response meta
     'response.ms': 'ms',
@@ -825,6 +823,14 @@ const translations: Record<Locale, Record<string, string>> = {
     // Tests Home (runner)
     'testsHome.title': 'Tests',
     'testsHome.newRun': 'New Run',
+    'testsHome.pickSuiteToRun': 'Pick a Test Suite to run',
+    'newRun.label': 'New Run',
+    'newRun.headerRun': 'Pick a Test Suite to run',
+    'newRun.headerSchedule': 'Pick a Test Suite to schedule',
+    'newRun.tooltipRun': 'Pick a Test Suite to run',
+    'newRun.tooltipSchedule': 'Pick a Test Suite to schedule',
+    'newRun.tooltipNoSuitesSchedule':
+      'No test suites yet — create one from the Tests sidebar first',
     'testsHome.loading': 'Loading...',
     'testsHome.endpointsTested': 'Endpoints Tested',
     'testsHome.noRunsYet': 'No runs yet',
@@ -1719,8 +1725,6 @@ const translations: Record<Locale, Record<string, string>> = {
     // Response tabs
     'response.response': 'Yanit',
     'response.cookie': 'Cerez',
-    'response.console': 'Konsol',
-    'response.actualRequest': 'Gercek Istek',
 
     // Response meta
     'response.ms': 'ms',
@@ -2264,6 +2268,14 @@ const translations: Record<Locale, Record<string, string>> = {
     // Tests Home (runner)
     'testsHome.title': 'Testler',
     'testsHome.newRun': 'Yeni Çalıştırma',
+    'testsHome.pickSuiteToRun': 'Çalıştırılacak Test Suite seçin',
+    'newRun.label': 'Yeni Çalıştırma',
+    'newRun.headerRun': 'Çalıştırılacak Test Suite seçin',
+    'newRun.headerSchedule': 'Zamanlanacak Test Suite seçin',
+    'newRun.tooltipRun': 'Çalıştırılacak Test Suite seçin',
+    'newRun.tooltipSchedule': 'Zamanlanacak Test Suite seçin',
+    'newRun.tooltipNoSuitesSchedule':
+      'Henüz test suite yok — önce sidebar üzerinden bir tane oluşturun',
     'testsHome.loading': 'Yükleniyor...',
     'testsHome.endpointsTested': 'Test Edilen Uç Noktalar',
     'testsHome.noRunsYet': 'Henüz çalıştırma yok',

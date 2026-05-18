@@ -50,26 +50,41 @@ export function getCurlPath(): string {
   // package.json strips the `{platform}-{arch}/` prefix so the binary
   // lands directly at `resources/curl/{binaryName}`.
   const isPackaged = app?.isPackaged ?? false
-  const packagedPath = isPackaged ? join(process.resourcesPath, 'curl', binaryName) : null
-  if (packagedPath && existsSync(packagedPath)) {
-    cachedCurlPath = packagedPath
-    return packagedPath
+  if (isPackaged) {
+    const packagedPath = join(process.resourcesPath, 'curl', binaryName)
+    if (existsSync(packagedPath)) {
+      cachedCurlPath = packagedPath
+      return packagedPath
+    }
   }
 
-  // Dev / unit-test: resolve from the repo's resources/ directory. Same
-  // layout as scripts/download-curl-binaries.js writes.
-  try {
-    // app.getAppPath() returns the unpacked code root; in tests Electron
-    // isn't initialised so we walk up from __dirname instead.
-    const appPath = app?.getAppPath?.()
-    const repoRoot = appPath || join(__dirname, '..', '..', '..')
-    const devPath = join(repoRoot, 'resources', 'curl', targetDir, binaryName)
-    if (existsSync(devPath)) {
-      cachedCurlPath = devPath
-      return devPath
-    }
-  } catch {
-    // Electron not available (test runner) — fall through.
+  // Dev / e2e: walk up from this compiled file's location to the repo root.
+  // The compiled main bundle lives at out/main/index.js, so two levels up
+  // lands at the repo root regardless of how Electron is invoked (vite
+  // dev, packaged --user-data-dir override, playwright spawn). Matches
+  // the pattern src/main/index.ts uses for its own resources lookups.
+  const devPath = join(__dirname, '..', '..', 'resources', 'curl', targetDir, binaryName)
+  if (existsSync(devPath)) {
+    cachedCurlPath = devPath
+    return devPath
+  }
+
+  // Unit-test runner (vitest, no Electron): walk to repo root from this
+  // .ts file. tsx/ts-node leave __dirname pointing at src/main/protocols/,
+  // so three levels up is the repo root.
+  const repoRootGuess = join(
+    __dirname,
+    '..',
+    '..',
+    '..',
+    'resources',
+    'curl',
+    targetDir,
+    binaryName,
+  )
+  if (existsSync(repoRootGuess)) {
+    cachedCurlPath = repoRootGuess
+    return repoRootGuess
   }
 
   // Last resort: hope a system curl is on PATH. isCurlAvailable() will

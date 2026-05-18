@@ -4,10 +4,8 @@ import { Loader2, Send, Globe, History as HistoryIcon } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
 import ResponseBody from './ResponseBody'
 import CookieTab from './CookieTab'
-import ConsoleTab from './ConsoleTab'
 import HeadersTab from './HeadersTab'
 import TestResultsTab from './TestResultsTab'
-import ActualRequestTab from './ActualRequestTab'
 import EventsTab from './EventsTab'
 import WsseResponsePanel from './WsseResponsePanel'
 import { useTabsStore } from '../../stores/tabs.store'
@@ -16,15 +14,7 @@ import StatusBadge from '../shared/StatusBadge'
 import { useUIStore } from '../../stores/ui.store'
 import type { ApiResponse } from '../../types'
 
-type ResTabKey =
-  | 'body'
-  | 'events'
-  | 'cookies'
-  | 'headers'
-  | 'testResults'
-  | 'console'
-  | 'actualRequest'
-  | 'wsse'
+type ResTabKey = 'body' | 'events' | 'cookies' | 'headers' | 'testResults' | 'wsse'
 
 /** Extract hostname from URL safely */
 function extractHost(url?: string): string {
@@ -275,9 +265,13 @@ export default function ResponsePane() {
       countLabel: testTotal > 0 ? `${testPassed}/${testTotal}` : undefined,
       countColor: testTotal > 0 ? (testFailed > 0 ? 'var(--red)' : 'var(--green)') : undefined,
     },
-    { key: 'console', label: 'Console' },
-    { key: 'actualRequest', label: 'Actual' },
     ...(isSoapResponse ? [{ key: 'wsse' as ResTabKey, label: 'WS-Security' }] : []),
+    // NOTE: "Console" and "Actual" tabs were removed. The footer Console
+    // (sağ alt) already shows the same data: script logs land as their own
+    // entry via `console.store.addFromResponse`, and the per-request entry
+    // pre-populates `details.requestHeaders`/`requestBody` (from
+    // `result.actualRequest`) plus `responseHeaders`/`responseBody`. Two
+    // labels named "Console" in different scopes was confusing users.
   ]
 
   return (
@@ -388,8 +382,6 @@ export default function ResponsePane() {
         {activeTab === 'cookies' && <CookieTab />}
         {activeTab === 'headers' && <HeadersTab />}
         {activeTab === 'testResults' && <TestResultsTab />}
-        {activeTab === 'console' && <ConsoleTab tabFilterId={activeProtocolTab?.id} />}
-        {activeTab === 'actualRequest' && <ActualRequestTab />}
         {activeTab === 'wsse' && <WsseResponsePanel body={response.body ?? ''} />}
       </div>
     </div>

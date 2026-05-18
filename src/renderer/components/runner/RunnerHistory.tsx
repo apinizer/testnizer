@@ -4,6 +4,8 @@ import { ArrowLeft, BarChart2, ChevronLeft, ChevronRight, Inbox } from 'lucide-r
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import EmptyState from '../shared/EmptyState'
+import NewRunButton from './NewRunButton'
+import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 
 interface RunHistoryRow {
   id: string
@@ -50,6 +52,31 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
   const [activeTab, setActiveTab] = useState<HistoryTab>('Functional')
   const [page, setPage] = useState(0)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [suites, setSuites] = useState<Array<{ id: string; name: string }>>([])
+
+  // Test suites for the New Run picker. All Runs surface needs the same
+  // picker as TestsHome / Scheduled Tasks so the three entry points have
+  // identical behaviour.
+  useEffect(() => {
+    if (!activeProjectId) return
+    window.api?.testSuite
+      ?.list(activeProjectId)
+      .then((result) => {
+        if (result?.success && result.data) {
+          setSuites(result.data as Array<{ id: string; name: string }>)
+        }
+      })
+      .catch(() => {})
+  }, [activeProjectId])
+
+  const pickSuiteForRun = useCallback((suite: { id: string; name: string }) => {
+    openOrReuseRunnerTab({
+      sourceType: 'suite',
+      suiteId: suite.id,
+      folderName: suite.name,
+      scheduleMode: false,
+    })
+  }, [])
 
   const loadRuns = useCallback(() => {
     if (!activeProjectId) return
@@ -185,16 +212,12 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
         <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', margin: 0, flex: 1 }}>
           All Runs
         </h2>
-        {onNewRun && (
-          <button
-            type="button"
-            onClick={onNewRun}
-            className="flex cursor-pointer items-center gap-1.5 rounded-[6px] border-none px-4 py-1.5 font-medium text-white hover:opacity-90"
-            style={{ fontSize: 13, background: '#e86826' }}
-          >
-            + New Run
-          </button>
-        )}
+        <NewRunButton
+          suites={suites}
+          mode="manual"
+          onPickSuite={pickSuiteForRun}
+          onFallback={onNewRun}
+        />
       </div>
 
       {/* Tabs */}
