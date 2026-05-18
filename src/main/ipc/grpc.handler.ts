@@ -14,7 +14,7 @@ import {
   type GrpcClientStreamOptions,
   type GrpcBidiStreamOptions,
 } from '../protocols/grpc.engine'
-import { logRequest, logResponse, logEvent } from '../lib/console-logger'
+import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
 import { createPendingRegistry } from '../lib/pending-cancellables'
 
@@ -134,20 +134,9 @@ export function registerGrpcHandlers(): void {
       }
 
       const fullMethod = `${payload.serviceName}/${payload.methodName}`
-      logRequest({
-        protocol: 'grpc',
-        method: 'unary',
-        url: `${payload.serverAddress}/${fullMethod}`,
-        body: payload.requestBody,
-        headers: payload.metadata,
-        tabId: payload._tabId,
-        message: `gRPC unary ${fullMethod}`,
-        meta: { tls: !!payload.useTls },
-      })
-
       const response = await executeUnary(options)
 
-      logResponse({
+      logRequestResponse({
         protocol: 'grpc',
         method: 'unary',
         url: `${payload.serverAddress}/${fullMethod}`,

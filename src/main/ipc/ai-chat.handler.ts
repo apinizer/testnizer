@@ -5,7 +5,7 @@ import {
   type AiProvider,
   type AiChatMessage,
 } from '../protocols/ai-chat.engine'
-import { logRequest, logResponse, logEvent } from '../lib/console-logger'
+import { logRequestResponse, logEvent } from '../lib/console-logger'
 
 interface AiChatSendPayload {
   provider: AiProvider
@@ -49,22 +49,6 @@ export function registerAiChatHandlers(): void {
       const promptPreview = lastUserMsg?.content?.slice(0, 200) ?? ''
       const started = Date.now()
       const targetUrl = payload.url ?? `${payload.provider}://chat/completions`
-
-      logRequest({
-        protocol: 'ai',
-        method: 'CHAT',
-        url: targetUrl,
-        body: promptPreview,
-        message: `AI ${payload.provider}/${payload.model} → ${promptPreview.slice(0, 60)}${
-          promptPreview.length > 60 ? '…' : ''
-        }`,
-        meta: {
-          provider: payload.provider,
-          model: payload.model,
-          messageCount: payload.messages.length,
-          temperature: payload.temperature ?? 0,
-        },
-      })
 
       // Drive streaming in the background — the IPC call resolves immediately
       // with the messageId so the renderer can route subsequent chunk events.
@@ -114,7 +98,7 @@ export function registerAiChatHandlers(): void {
             })
           } else {
             emit(win.id, 'aichat:done', { messageId })
-            logResponse({
+            logRequestResponse({
               protocol: 'ai',
               method: 'CHAT',
               url: targetUrl,
@@ -122,12 +106,16 @@ export function registerAiChatHandlers(): void {
               statusText: 'OK',
               durationMs: elapsed,
               sizeBytes: totalBytes,
+              requestBody: promptPreview,
               responseBody: fullText,
               meta: {
+                provider: payload.provider,
+                model: payload.model,
+                messageCount: payload.messages.length,
+                temperature: payload.temperature ?? 0,
                 chunks: chunkCount,
                 ttfbMs: ttfb,
                 avgChunkBytes: chunkCount > 0 ? Math.round(totalBytes / chunkCount) : 0,
-                model: payload.model,
               },
             })
           }
@@ -145,15 +133,20 @@ export function registerAiChatHandlers(): void {
               messageId,
               error: err?.message ?? String(e),
             })
-            logResponse({
+            logRequestResponse({
               protocol: 'ai',
               method: 'CHAT',
               url: targetUrl,
               status: -1,
               statusText: err?.message ?? 'AI chat failed',
               durationMs: Date.now() - started,
+              requestBody: promptPreview,
               error: { message: err?.message ?? String(e), stack: err?.stack },
-              meta: { provider: payload.provider, model: payload.model },
+              meta: {
+                provider: payload.provider,
+                model: payload.model,
+                messageCount: payload.messages.length,
+              },
             })
           }
         } finally {

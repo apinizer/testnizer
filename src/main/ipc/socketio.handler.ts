@@ -9,7 +9,7 @@ import {
   socketIOSetEventCallback,
   type SocketIOEvent,
 } from '../protocols/socketio.engine'
-import { logRequest, logResponse, logEvent } from '../lib/console-logger'
+import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
 
 function getWindow(): BrowserWindow | null {
@@ -48,16 +48,6 @@ export function registerSocketIOHandlers(): void {
     ) => {
       const started = Date.now()
       const fullTarget = `${options.url}${options.namespace && options.namespace !== '/' ? options.namespace : ''}`
-      logRequest({
-        protocol: 'socketio',
-        method: 'CONNECT',
-        url: fullTarget,
-        message: `Socket.IO connect: ${fullTarget}`,
-        meta: {
-          namespace: options.namespace ?? '/',
-          hasAuth: !!options.auth,
-        },
-      })
       try {
         const data = await socketIOConnect({
           url: options.url,
@@ -75,14 +65,18 @@ export function registerSocketIOHandlers(): void {
             ...event,
           })
         })
-        logResponse({
+        logRequestResponse({
           protocol: 'socketio',
           method: 'CONNECT',
           url: fullTarget,
           status: 0,
           statusText: 'connected',
           durationMs: connectedAt - started,
-          meta: { connectionId: data.connectionId },
+          meta: {
+            connectionId: data.connectionId,
+            namespace: options.namespace ?? '/',
+            hasAuth: !!options.auth,
+          },
         })
         try {
           historyRepo.addHistory({
@@ -113,7 +107,7 @@ export function registerSocketIOHandlers(): void {
       } catch (e) {
         const err = e as Error
         const failedAt = Date.now()
-        logResponse({
+        logRequestResponse({
           protocol: 'socketio',
           method: 'CONNECT',
           url: fullTarget,

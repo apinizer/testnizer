@@ -7,7 +7,7 @@ import {
   type GraphqlExecuteOptions,
   type GraphqlSubscribeOptions,
 } from '../protocols/graphql.engine'
-import { logRequest, logResponse, logEvent } from '../lib/console-logger'
+import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
 
 interface GraphqlExecutePayload {
@@ -70,16 +70,6 @@ export function registerGraphqlHandlers(): void {
       }
 
       const opName = payload.operationName || 'anonymous'
-      logRequest({
-        protocol: 'graphql',
-        method: 'POST',
-        url: payload.url,
-        body: payload.query,
-        tabId: payload._tabId,
-        message: `GraphQL ${opName} → ${payload.url}`,
-        meta: { operation: opName },
-      })
-
       const response = await executeQuery(options)
 
       // GraphQL returns 200 even on errors; flag them.
@@ -95,7 +85,7 @@ export function registerGraphqlHandlers(): void {
         // not JSON; ignore
       }
 
-      logResponse({
+      logRequestResponse({
         protocol: 'graphql',
         method: 'POST',
         url: payload.url,

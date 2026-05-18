@@ -7,7 +7,7 @@ import {
   mcpCallTool,
   type McpTransport,
 } from '../protocols/mcp.engine'
-import { logRequest, logResponse, logEvent } from '../lib/console-logger'
+import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
 
 // Track when each connection was opened so the disconnect log can carry the
@@ -29,13 +29,6 @@ export function registerMcpHandlers(): void {
       },
     ) => {
       const started = Date.now()
-      logRequest({
-        protocol: 'mcp',
-        method: 'CONNECT',
-        url: options.url,
-        message: `MCP connect (${options.transport}): ${options.url}`,
-        meta: { transport: options.transport },
-      })
       try {
         const data = await mcpConnect({
           transport: options.transport,
@@ -45,7 +38,7 @@ export function registerMcpHandlers(): void {
           pendingId: options._pendingId,
         })
         mcpContext.set(data.connectionId, { url: options.url, connectedAt: Date.now() })
-        logResponse({
+        logRequestResponse({
           protocol: 'mcp',
           method: 'CONNECT',
           url: options.url,
@@ -62,7 +55,7 @@ export function registerMcpHandlers(): void {
         return { success: true, data }
       } catch (e) {
         const err = e as Error
-        logResponse({
+        logRequestResponse({
           protocol: 'mcp',
           method: 'CONNECT',
           url: options.url,
@@ -118,7 +111,7 @@ export function registerMcpHandlers(): void {
     const started = Date.now()
     try {
       const data = await mcpListTools(connectionId)
-      logResponse({
+      logRequestResponse({
         protocol: 'mcp',
         method: 'LIST_TOOLS',
         url: connectionId,
@@ -131,7 +124,7 @@ export function registerMcpHandlers(): void {
       return { success: true, data }
     } catch (e) {
       const err = e as Error
-      logResponse({
+      logRequestResponse({
         protocol: 'mcp',
         method: 'LIST_TOOLS',
         url: connectionId,
@@ -157,18 +150,11 @@ export function registerMcpHandlers(): void {
       const argsBody = JSON.stringify(args)
       const ctx = mcpContext.get(connectionId)
       const targetUrl = ctx ? `${ctx.url}/${toolName}` : `${connectionId}/${toolName}`
-      logRequest({
-        protocol: 'mcp',
-        method: 'CALL_TOOL',
-        url: targetUrl,
-        body: argsBody,
-        message: `MCP call ${toolName}`,
-      })
       try {
         const data = await mcpCallTool(connectionId, toolName, args)
         const responseBody = JSON.stringify(data)
         const durationMs = Date.now() - started
-        logResponse({
+        logRequestResponse({
           protocol: 'mcp',
           method: 'CALL_TOOL',
           url: targetUrl,
@@ -204,7 +190,7 @@ export function registerMcpHandlers(): void {
       } catch (e) {
         const err = e as Error
         const durationMs = Date.now() - started
-        logResponse({
+        logRequestResponse({
           protocol: 'mcp',
           method: 'CALL_TOOL',
           url: targetUrl,

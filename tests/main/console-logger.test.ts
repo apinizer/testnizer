@@ -16,7 +16,7 @@ vi.mock('electron', () => ({
   },
 }))
 
-import { logRequest, logResponse, logEvent, __testing } from '../../src/main/lib/console-logger'
+import { logRequestResponse, logEvent, __testing } from '../../src/main/lib/console-logger'
 
 beforeEach(() => {
   sentEvents.length = 0
@@ -48,20 +48,35 @@ describe('console-logger.levelFromStatus', () => {
   it('no status → info', () => expect(__testing.levelFromStatus(undefined)).toBe('info'))
 })
 
-describe('logRequest / logResponse / logEvent — IPC emission', () => {
-  it('logRequest emits a console:log entry with category=request', () => {
-    logRequest({ protocol: 'http', method: 'GET', url: 'https://x' })
+describe('logRequestResponse / logEvent — IPC emission', () => {
+  it('logRequestResponse emits a console:log entry with request + response fields', () => {
+    logRequestResponse({
+      protocol: 'http',
+      method: 'POST',
+      url: 'https://x/y',
+      status: 200,
+      durationMs: 12,
+      requestHeaders: { 'Content-Type': 'application/json' },
+      requestBody: '{"a":1}',
+      responseHeaders: { server: 'jetty' },
+      responseBody: '{"ok":true}',
+    })
     expect(sentEvents).toHaveLength(1)
     expect(sentEvents[0].channel).toBe('console:log')
     const e = sentEvents[0].payload as Record<string, unknown>
     expect(e.protocol).toBe('http')
-    expect(e.category).toBe('request')
-    expect(e.method).toBe('GET')
-    expect(e.url).toBe('https://x')
+    expect(e.category).toBe('response')
+    expect(e.method).toBe('POST')
+    expect(e.status).toBe(200)
+    const details = e.details as Record<string, unknown>
+    expect(details.requestHeaders).toMatchObject({ 'Content-Type': 'application/json' })
+    expect(details.requestBody).toBe('{"a":1}')
+    expect(details.responseHeaders).toMatchObject({ server: 'jetty' })
+    expect(details.responseBody).toBe('{"ok":true}')
   })
 
-  it('logResponse derives level from status', () => {
-    logResponse({
+  it('logRequestResponse derives level from status', () => {
+    logRequestResponse({
       protocol: 'http',
       method: 'POST',
       url: 'https://x/y',
@@ -74,8 +89,8 @@ describe('logRequest / logResponse / logEvent — IPC emission', () => {
     expect(e.durationMs).toBe(42)
   })
 
-  it('logResponse marks errors as level=error even for status=200', () => {
-    logResponse({
+  it('logRequestResponse marks errors as level=error even for status=200', () => {
+    logRequestResponse({
       protocol: 'graphql',
       url: 'https://gql',
       status: 200,

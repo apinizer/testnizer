@@ -100,37 +100,7 @@ export function emitConsoleEntry(entry: ConsoleLogEntryWire): void {
 
 // ─── Public helpers ─────────────────────────────────────────────────
 
-export interface LogRequestArgs {
-  protocol: ConsoleProtocol
-  method?: string
-  url?: string
-  headers?: Record<string, string>
-  body?: string
-  tabId?: string
-  message?: string
-  meta?: Record<string, string | number | boolean>
-}
-
-export function logRequest(args: LogRequestArgs): void {
-  emitConsoleEntry({
-    id: randomUUID(),
-    timestamp: Date.now(),
-    protocol: args.protocol,
-    level: 'info',
-    category: 'request',
-    tabId: args.tabId,
-    method: args.method,
-    url: args.url,
-    message: args.message ?? [args.method, args.url].filter(Boolean).join(' '),
-    details: {
-      requestHeaders: args.headers,
-      requestBody: clip(args.body),
-      meta: args.meta,
-    },
-  })
-}
-
-export interface LogResponseArgs {
+export interface LogRequestResponseArgs {
   protocol: ConsoleProtocol
   method?: string
   url?: string
@@ -148,7 +118,18 @@ export interface LogResponseArgs {
   meta?: Record<string, string | number | boolean>
 }
 
-export function logResponse(args: LogResponseArgs): void {
+/**
+ * Single-entry logger for request/response protocol cycles (HTTP, SOAP,
+ * GraphQL, gRPC unary, MCP call, AI chat, Socket.IO connect). Emits one
+ * collapsible row that carries both the request side (headers + body
+ * via `args.requestHeaders` / `requestBody`) and the response side
+ * (`responseHeaders` / `responseBody` / `status` / `durationMs`).
+ *
+ * Renamed from `logResponse` for accuracy: the row represents the WHOLE
+ * cycle, not just the response leg. The old name is re-exported below
+ * for backwards-compat with existing call sites and tests.
+ */
+export function logRequestResponse(args: LogRequestResponseArgs): void {
   emitConsoleEntry({
     id: randomUUID(),
     timestamp: Date.now(),

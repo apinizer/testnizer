@@ -7,7 +7,7 @@ import { readFileSync } from 'fs'
 import { resolve, extname } from 'path'
 import { realpathSync, statSync } from 'fs'
 import { decryptSecret } from '../lib/secure-storage'
-import { logRequest, logResponse } from '../lib/console-logger'
+import { logRequestResponse } from '../lib/console-logger'
 import { getCipherPreset, normaliseTlsVersion } from '../lib/tls-presets'
 
 /**
@@ -142,26 +142,23 @@ export function registerRequestHandlers(): void {
           options = { ...options, signal: controller.signal }
         }
 
-        // Postman-style console: log the request before sending. We log a
-        // light-weight stub here; the full headers/body come from
-        // `result.actualRequest` (already populated by the engine) in the
-        // response log call below.
+        // Postman-style console: a single entry per request/response cycle
+        // (logRequestResponse below). The previous "log request before send" call
+        // produced an extra row that had only the URL — no headers / body
+        // visible when expanded — and was the most common confusion in user
+        // testing. Keeping just the response entry mirrors Postman's
+        // Console which collapses request + response into one collapsible
+        // log line.
         const protocolName: 'http' | 'soap' | 'graphql' =
           options._protocol === 'soap' || options._protocol === 'graphql'
             ? options._protocol
             : 'http'
-        logRequest({
-          protocol: protocolName,
-          method: options.method,
-          url: options.url,
-          tabId: options._tabId,
-        })
 
         const result = await executeHttpRequest(options)
 
         // … and the response (or error). Use the actualRequest that was
         // built by the engine so we report exactly what hit the wire.
-        logResponse({
+        logRequestResponse({
           protocol: protocolName,
           method: result.actualRequest?.method ?? options.method,
           url: result.actualRequest?.url ?? options.url,
@@ -220,7 +217,7 @@ export function registerRequestHandlers(): void {
             ? options._protocol
             : 'http'
         try {
-          logResponse({
+          logRequestResponse({
             protocol: protocolName,
             method: options.method,
             url: options.url,

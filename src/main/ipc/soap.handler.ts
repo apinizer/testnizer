@@ -8,7 +8,7 @@ import {
   type SoapVersion,
   type WsSecurityConfig,
 } from '../protocols/soap.engine'
-import { logRequest, logResponse } from '../lib/console-logger'
+import { logRequestResponse } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
 
 interface SoapExecutePayload {
@@ -75,18 +75,6 @@ export function registerSoapHandlers(): void {
         sslVerification: payload.sslVerification,
       }
 
-      logRequest({
-        protocol: 'soap',
-        method: 'POST',
-        url: payload.endpointUrl,
-        tabId: payload._tabId,
-        message: `SOAP ${payload.operationName} → ${payload.endpointUrl}`,
-        meta: {
-          soapVersion: payload.soapVersion,
-          operation: payload.operationName,
-        },
-      })
-
       const result = await executeSoap(options)
 
       // SOAP-Fault detection: SOAP 11/12 reports faults inside the body even
@@ -94,7 +82,7 @@ export function registerSoapHandlers(): void {
       const bodyStr = result.body ?? ''
       const isFault = /<(?:[^>:\s]+:)?Fault[\s>]/i.test(bodyStr)
 
-      logResponse({
+      logRequestResponse({
         protocol: 'soap',
         method: 'POST',
         url: payload.endpointUrl,
