@@ -12,7 +12,8 @@ import {
 } from './wsse.engine'
 import { applyDefaultUserAgent } from '../lib/user-agent'
 import { classifyTransportError } from '../lib/error-classifier'
-import { normaliseTlsVersion, type TlsOptions } from '../lib/tls-presets'
+import { normaliseTlsVersion, isLegacyTlsVersion, type TlsOptions } from '../lib/tls-presets'
+import { executeViaCurl, shouldUseCurlSidecar } from './curl-shim'
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -780,10 +781,59 @@ export async function executeSoap(options: SoapExecuteOptions): Promise<SoapApiR
     if (options.tls) {
       const min = normaliseTlsVersion(options.tls.minVersion)
       const max = normaliseTlsVersion(options.tls.maxVersion)
-      if (min) httpsAgentOpts.minVersion = min
-      if (max) httpsAgentOpts.maxVersion = max
+      // Skip TLS 1.0/1.1 — they'd trip ERR_SSL_INVALID_COMMAND on BoringSSL.
+      // Those routes already detoured through the curl sidecar above.
+      if (min && !isLegacyTlsVersion(min)) httpsAgentOpts.minVersion = min
+      if (max && !isLegacyTlsVersion(max)) httpsAgentOpts.maxVersion = max
       if (options.tls.ciphers && options.tls.ciphers.trim()) {
         httpsAgentOpts.ciphers = options.tls.ciphers.trim()
+      }
+    }
+
+    // Legacy-TLS sidecar route. The SOAP envelope is already built above; we
+    // hand it to curl as a plain POST with the same headers, then map the
+    // raw HTTP response back to the SOAP response shape.
+    if (shouldUseCurlSidecar(options.tls)) {
+      const headerKvs = Object.entries(requestHeaders).map(([key, value], idx) => ({
+        id: `soap-h-${idx}`,
+        key,
+        value,
+        enabled: true,
+      }))
+      const curlResp = await executeViaCurl({
+        method: 'POST',
+        url: options.endpointUrl,
+        headers: headerKvs,
+        body: { type: 'xml', content: envelope },
+        timeout: options.timeout ?? 30000,
+        sslVerification: options.sslVerification,
+        tls: options.tls,
+      })
+      const totalTime = curlResp.timing?.total ?? 0
+      // Try to pretty-format the response XML.
+      let formattedBody = curlResp.body ?? ''
+      try {
+        const parsed = xmlParser.parse(formattedBody) as Record<string, unknown>
+        formattedBody = xmlBuilder.build(parsed) as string
+      } catch {
+        // raw on parse failure
+      }
+      return {
+        requestId,
+        protocol: 'soap',
+        status: curlResp.status,
+        statusText: curlResp.statusText,
+        headers: curlResp.headers,
+        body: formattedBody,
+        bodySize: curlResp.bodySize ?? Buffer.byteLength(formattedBody, 'utf-8'),
+        timing: { total: totalTime },
+        error: curlResp.error,
+        actualRequest: {
+          method: 'POST',
+          url: options.endpointUrl,
+          headers: requestHeaders,
+          body: envelope,
+        },
       }
     }
 

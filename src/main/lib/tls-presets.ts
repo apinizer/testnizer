@@ -98,17 +98,26 @@ export const TLS_VERSIONS: TlsVersion[] = ['TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1
  * unknown values so callers can fall back to Node's defaults (currently
  * TLSv1.2 minimum / TLSv1.3 maximum).
  *
- * Electron 33 ships with BoringSSL, which dropped TLS 1.0 and TLS 1.1 at
- * build time. Passing those versions through to `https.Agent` triggers
- * `ERR_SSL_INVALID_COMMAND` (M14). We coerce them to `undefined` here so
- * a stale persisted setting can never reach the socket layer; the UI also
- * disables those choices, but the runtime guard is what makes the
- * advertisement honest.
+ * Note: TLS 1.0 / 1.1 are returned as-is by this normaliser even though
+ * Electron 33's BoringSSL can't negotiate them. The HTTP engine inspects the
+ * raw value and routes legacy-TLS requests through the curl sidecar
+ * (src/main/protocols/curl-shim.ts), which uses the OS's TLS stack (Schannel
+ * / Secure Transport / system OpenSSL) and CAN speak TLS 1.0/1.1. Callers
+ * that pass these values to `https.Agent` directly must check first via
+ * `isLegacyTlsVersion()` and route to the sidecar instead.
  */
 export function normaliseTlsVersion(v: string | undefined): TlsVersion | undefined {
   if (!v) return undefined
-  if (v === 'TLSv1' || v === 'TLSv1.1') return undefined
   return (TLS_VERSIONS as string[]).includes(v) ? (v as TlsVersion) : undefined
+}
+
+/**
+ * Returns true for TLS protocol values that BoringSSL (Electron 33) refuses
+ * to negotiate. The HTTP/SOAP engines check this BEFORE configuring axios so
+ * legacy requests are routed through the curl sidecar instead.
+ */
+export function isLegacyTlsVersion(v: string | undefined): boolean {
+  return v === 'TLSv1' || v === 'TLSv1.1'
 }
 
 /**

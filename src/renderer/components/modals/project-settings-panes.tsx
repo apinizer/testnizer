@@ -1508,32 +1508,40 @@ export function CertificatesPane({
     { id: 'legacy', labelKey: 'tls.presetLegacy' },
     { id: 'custom', labelKey: 'tls.presetCustom' },
   ]
-  // Electron 33 links against BoringSSL, which does not support TLS 1.0/1.1
-  // at runtime — selecting them produced ERR_SSL_INVALID_COMMAND in v1.3.1
-  // (M14). Disable those entries with an explanatory tooltip rather than
-  // hiding them, so users who relied on them get an honest reason.
+  // Electron 33 links against BoringSSL, which can't negotiate TLS 1.0/1.1.
+  // Testnizer ships as a client tool, so we can't refuse to talk to legacy
+  // backends — many enterprise customers (banks, government API gateways)
+  // still require these versions. When the user picks TLS 1.0/1.1 we route
+  // the request through the system `curl` binary (which uses the OS TLS
+  // stack and CAN speak them); see src/main/protocols/curl-shim.ts. The
+  // label calls this out so users understand the runtime path is different.
   const TLS_VERSION_OPTIONS: Array<{
     id: TlsVersionLabel | ''
     label: string
-    disabled?: boolean
     title?: string
   }> = [
     { id: '', label: t('tls.auto') },
     {
       id: 'TLSv1',
-      label: 'TLS 1.0 (not supported)',
-      disabled: true,
-      title: 'TLS 1.0 is not supported by the underlying TLS library (BoringSSL).',
+      label: 'TLS 1.0 (legacy — via system curl)',
+      title:
+        'TLS 1.0 is deprecated (RFC 8996). Selecting it routes this request through the system curl binary, which can still negotiate legacy protocols.',
     },
     {
       id: 'TLSv1.1',
-      label: 'TLS 1.1 (not supported)',
-      disabled: true,
-      title: 'TLS 1.1 is not supported by the underlying TLS library (BoringSSL).',
+      label: 'TLS 1.1 (legacy — via system curl)',
+      title:
+        'TLS 1.1 is deprecated (RFC 8996). Selecting it routes this request through the system curl binary, which can still negotiate legacy protocols.',
     },
     { id: 'TLSv1.2', label: 'TLS 1.2' },
     { id: 'TLSv1.3', label: 'TLS 1.3' },
   ]
+
+  const usesLegacyTls =
+    tls.minVersion === 'TLSv1' ||
+    tls.minVersion === 'TLSv1.1' ||
+    tls.maxVersion === 'TLSv1' ||
+    tls.maxVersion === 'TLSv1.1'
 
   return (
     <div className="p-6">
@@ -1559,7 +1567,7 @@ export function CertificatesPane({
                 style={{ ...BASE_INP, cursor: 'pointer' }}
               >
                 {TLS_VERSION_OPTIONS.map((o) => (
-                  <option key={`min-${o.id}`} value={o.id} disabled={o.disabled} title={o.title}>
+                  <option key={`min-${o.id}`} value={o.id} title={o.title}>
                     {o.label}
                   </option>
                 ))}
@@ -1573,13 +1581,43 @@ export function CertificatesPane({
                 style={{ ...BASE_INP, cursor: 'pointer' }}
               >
                 {TLS_VERSION_OPTIONS.map((o) => (
-                  <option key={`max-${o.id}`} value={o.id} disabled={o.disabled} title={o.title}>
+                  <option key={`max-${o.id}`} value={o.id} title={o.title}>
                     {o.label}
                   </option>
                 ))}
               </select>
             </div>
           </div>
+
+          {usesLegacyTls && (
+            <div
+              role="status"
+              style={{
+                marginTop: 10,
+                padding: '8px 10px',
+                borderRadius: 8,
+                background: 'var(--mb-put-bg, #fff4e0)',
+                border: '1px solid var(--mb-put-br, #f5d4a0)',
+                color: 'var(--mb-put-fg, #b35a00)',
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              <strong>Legacy TLS notice:</strong> TLS 1.0/1.1 are deprecated by RFC 8996. Requests
+              using these versions are routed through the system <code>curl</code> binary (Schannel
+              on Windows, Secure Transport on macOS, OpenSSL on Linux). If <code>curl</code>
+              is missing on this machine the request will fail with a clear error — install it from{' '}
+              <a
+                href="https://curl.se/download.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'inherit', textDecoration: 'underline' }}
+              >
+                curl.se/download.html
+              </a>
+              .
+            </div>
+          )}
 
           <div className="mt-3">
             <Label text={t('tls.cipherPreset')} />

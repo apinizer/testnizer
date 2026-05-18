@@ -12,7 +12,8 @@ import { basename } from 'path'
 import { applyDefaultUserAgent } from '../lib/user-agent'
 import { parseSseBody } from '../lib/sse-body-parser'
 import { classifyTransportError, hintForHttpStatus } from '../lib/error-classifier'
-import { normaliseTlsVersion, type TlsOptions } from '../lib/tls-presets'
+import { normaliseTlsVersion, isLegacyTlsVersion, type TlsOptions } from '../lib/tls-presets'
+import { executeViaCurl, shouldUseCurlSidecar } from './curl-shim'
 
 // ─── Types (main-process local, mirrors renderer types) ──────
 
@@ -173,7 +174,7 @@ function jarFor(projectId: string | null | undefined): CookieJar {
   return jar
 }
 
-async function getJarCookieHeader(url: string, projectId?: string | null): Promise<string> {
+export async function getJarCookieHeader(url: string, projectId?: string | null): Promise<string> {
   try {
     return await jarFor(projectId).getCookieString(url)
   } catch {
@@ -181,7 +182,7 @@ async function getJarCookieHeader(url: string, projectId?: string | null): Promi
   }
 }
 
-async function storeResponseCookies(
+export async function storeResponseCookies(
   url: string,
   headers: Record<string, string | string[] | undefined>,
   projectId?: string | null,
@@ -508,6 +509,15 @@ function attachSocketTimings(httpsAgent: https.Agent, httpAgent: http.Agent): So
 // ─── Main execute function ───────────────────────────────────
 
 export async function executeHttpRequest(options: HttpRequestOptions): Promise<ApiResponse> {
+  // Legacy-TLS sidecar route. Customers (banks, government API gateways)
+  // still run TLS 1.0/1.1 backends that Electron 33's BoringSSL can't talk
+  // to. When the user picks one of those protocol bounds we hand the whole
+  // request off to system curl, which uses the OS TLS stack and can speak
+  // them. See src/main/protocols/curl-shim.ts.
+  if (shouldUseCurlSidecar(options.tls)) {
+    return executeViaCurl(options)
+  }
+
   const requestId = randomUUID()
   const timings: Partial<ResponseTiming> = {}
   const startTime = performance.now()
@@ -683,8 +693,12 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     if (options.tls) {
       const min = normaliseTlsVersion(options.tls.minVersion)
       const max = normaliseTlsVersion(options.tls.maxVersion)
-      if (min) httpsAgentOpts.minVersion = min
-      if (max) httpsAgentOpts.maxVersion = max
+      // Skip TLS 1.0 / 1.1 here — those land on `https.Agent` as
+      // ERR_SSL_INVALID_COMMAND because BoringSSL refuses to negotiate them.
+      // The early sidecar guard at the top of `executeHttpRequest` routes
+      // those requests through the curl shim instead.
+      if (min && !isLegacyTlsVersion(min)) httpsAgentOpts.minVersion = min
+      if (max && !isLegacyTlsVersion(max)) httpsAgentOpts.maxVersion = max
       if (options.tls.ciphers && options.tls.ciphers.trim()) {
         httpsAgentOpts.ciphers = options.tls.ciphers.trim()
       }

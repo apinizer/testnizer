@@ -64,9 +64,8 @@ describe('tls-presets — cipher preset lookup', () => {
   })
 
   it('falls back to MODERN for unknown preset names', () => {
-    // @ts-expect-error — deliberately passing an invalid preset name
+    // Signature accepts any string and falls through to MODERN for unknowns.
     expect(getCipherPreset('bogus')).toBe(MODERN_CIPHERS)
-    // @ts-expect-error — empty / undefined falls back to MODERN too
     expect(getCipherPreset('')).toBe(MODERN_CIPHERS)
   })
 })
@@ -77,13 +76,15 @@ describe('tls-presets — version validator', () => {
     expect(normaliseTlsVersion('TLSv1.3')).toBe('TLSv1.3')
   })
 
-  it('coerces TLS 1.0 / 1.1 to undefined so they never hit the socket layer', () => {
-    // Electron 33 links against BoringSSL, which has dropped TLS 1.0 / 1.1.
-    // Passing those through to https.Agent yields ERR_SSL_INVALID_COMMAND
-    // (v1.3.1 M14). The validator now refuses them upstream — UI still shows
-    // the options as disabled, but this is the runtime backstop.
-    expect(normaliseTlsVersion('TLSv1')).toBeUndefined()
-    expect(normaliseTlsVersion('TLSv1.1')).toBeUndefined()
+  it('returns TLS 1.0 / 1.1 as-is so the engine can route them through the curl sidecar', () => {
+    // BoringSSL (Electron 33) still can't negotiate TLS 1.0/1.1, but the
+    // engine now detects them at the HTTP entry point and routes through
+    // system curl. The normaliser must therefore SURFACE the value rather
+    // than swallowing it (v1.4.2 — F25). The engine has its own
+    // `isLegacyTlsVersion` guard that keeps these values out of
+    // `https.Agent` on the axios fallback path.
+    expect(normaliseTlsVersion('TLSv1')).toBe('TLSv1')
+    expect(normaliseTlsVersion('TLSv1.1')).toBe('TLSv1.1')
   })
 
   it('rejects malformed / empty / unknown version strings', () => {
