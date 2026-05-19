@@ -215,19 +215,6 @@ jobs:
       - name: Verify native binaries
         run: node scripts/verify-natives.js --platform=darwin --arch=${{ matrix.arch }}
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mac-${{ matrix.arch }}
-          path: |
-            dist/ready-packages/*.dmg
-            dist/ready-packages/*.zip
-          if-no-files-found: error
-          # Build artifacts are only needed long enough for the `release`
-          # job to download + draft a release. After that they live on the
-          # testnizer-releases repo. 1-day retention drains the quota fast
-          # — the previous 90-day default was the primary storage hog.
-          retention-days: 1
-
   # ---------------------------------------------------------------------------
   # Linux — native x64 on ubuntu-latest, native arm64 on ubuntu-24.04-arm.
   # Both run electron-rebuild against the host's glibc, which matches the
@@ -302,15 +289,6 @@ jobs:
       - name: Verify native binaries
         run: node scripts/verify-natives.js --platform=linux --arch=${{ matrix.arch }}
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux-${{ matrix.arch }}
-          path: |
-            dist/ready-packages/*.AppImage
-            dist/ready-packages/*.deb
-          if-no-files-found: error
-          retention-days: 1
-
   # ---------------------------------------------------------------------------
   # Windows — x64 on windows-latest (native), arm64 on windows-11-arm (native).
   # Running each arch on its own native host is the only reliable way to get
@@ -365,36 +343,31 @@ jobs:
       - name: Verify native binaries
         run: node scripts/verify-natives.js --platform=win32 --arch=${{ matrix.arch }}
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: win-${{ matrix.arch }}
-          path: |
-            dist/ready-packages/*.exe
-            dist/ready-packages/*.zip
-          if-no-files-found: error
-          retention-days: 1
-
   # ---------------------------------------------------------------------------
-  # Draft GitHub Release on tag pushes — collects all six artifacts.
+  # Update the release body on tag pushes.
+  #
+  # The six installer assets (dmg / exe / deb / AppImage / zip) plus the
+  # electron-updater `latest*.yml` manifests are already on
+  # `apinizer/testnizer-releases` — each platform job runs
+  # `electron-builder ... --publish always` and uploads its own artifacts
+  # directly to the release. This job therefore does NOT need to download
+  # any GitHub Actions artifact; it only:
+  #   1. Pulls the v<tag> changelog block from the website repo.
+  #   2. Overwrites the release body with that block via `gh release edit`.
+  #   3. Pings the website to rebuild so the /download page picks up the
+  #      new version.
+  #
+  # Killing the upload-artifact / download-artifact dance avoids the
+  # GitHub Actions storage-quota wall that silently broke v1.4.2 publish.
   # ---------------------------------------------------------------------------
   release:
-    name: Draft release
+    name: Update release notes
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build-mac, build-linux, build-windows]
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Flatten artifacts
-        run: |
-          mkdir -p release
-          find artifacts -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \) -exec cp {} release/ \;
-          ls -la release/
-
       # Pull the release-notes block for this tag out of the website's
       # changelog (single source of truth — same content the /docs/changelog/
       # page renders). awk slurps the section starting at `## v<tag>` and
@@ -419,15 +392,17 @@ jobs:
           echo "----- release-notes.md -----"
           cat release-notes.md
 
-      - uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          files: release/*
-          repository: apinizer/testnizer-releases
-          tag_name: ${{ github.ref_name }}
-          name: Testnizer ${{ github.ref_name }}
-          body_path: release-notes.md
-          token: ${{ secrets.RELEASE_TOKEN }}
+      # The release was already published by the platform jobs via
+      # `electron-builder --publish always`. We only need to overwrite its
+      # body with the changelog block.
+      - name: Update release body
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          gh release edit "${{ github.ref_name }}" \
+            --repo apinizer/testnizer-releases \
+            --notes-file release-notes.md \
+            --title "Testnizer ${{ github.ref_name }}"
 
       # Kick the website rebuild so the /download page picks up the new
       # version + asset URLs as soon as the release is up. Uses RELEASE_TOKEN
