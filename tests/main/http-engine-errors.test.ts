@@ -40,7 +40,11 @@ describe('http.engine — transport error visibility', () => {
       timeout: 5000,
     })
     expect(res.status).toBeUndefined()
-    expect(res.error).toMatch(/DNS lookup failed|ENOTFOUND|getaddrinfo/i)
+    // Some resolvers (notably macOS captive-portal handlers + certain
+    // corporate DNS setups) silently swallow .invalid lookups and let the
+    // axios timeout fire instead of returning ENOTFOUND. Both outcomes
+    // are valid "the host doesn't resolve" signals — accept either.
+    expect(res.error).toMatch(/DNS lookup failed|ENOTFOUND|getaddrinfo|timed out|ECONNABORTED/i)
   }, 15000)
 })
 
