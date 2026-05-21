@@ -407,7 +407,16 @@ jobs:
       # Kick the website rebuild so the /download page picks up the new
       # version + asset URLs as soon as the release is up. Uses RELEASE_TOKEN
       # which already has cross-repo write access in this org.
+      #
+      # `continue-on-error: true` because some token revisions don't carry
+      # `repository_dispatch` scope on the website repo and a 403 here
+      # should NOT mark the whole release job as failed — the release
+      # itself is already published by the platform jobs above. Fix the
+      # token scope to make this go green, but treat the notify as best-
+      # effort either way (a manual workflow-dispatch on the website is
+      # always available).
       - name: Notify website to rebuild
+        continue-on-error: true
         run: |
           curl -fsSL -X POST \
             -H "Accept: application/vnd.github+json" \
