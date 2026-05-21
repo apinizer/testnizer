@@ -1103,6 +1103,15 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
                 status: response.status,
                 statusText: response.statusText,
                 timing: response.timing,
+                // Persist the response body + headers + size so opening a
+                // historical run entry shows the same response detail
+                // users would have seen at run time. Without these, the
+                // History "Today" entry for a suite-run request opened
+                // with empty Response / Headers / Test Results panels
+                // (v1.4.2 T-12.5).
+                body: persistResponses ? response.body : undefined,
+                headers: persistResponses ? response.headers : undefined,
+                bodySize: response.bodySize,
               }),
             })
           } catch {

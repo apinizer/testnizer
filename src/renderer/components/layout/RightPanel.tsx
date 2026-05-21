@@ -44,6 +44,17 @@ function GenerateCodePane() {
     ],
   )
 
+  // Detect any `{{var}}` placeholders the resolver couldn't substitute and
+  // surface a banner so users notice missing-variable cases like
+  // body=`{{employee_body}}` with no `employee_body` in the active env
+  // (v1.4.2 T-5.5). The check runs on the rendered code so it catches
+  // url / header / body unresolved spots in one shot.
+  const unresolvedVars = useMemo(() => {
+    const matches = code.match(/\{\{\s*([^}\s]+)\s*\}\}/g)
+    if (!matches) return [] as string[]
+    return Array.from(new Set(matches.map((m) => m.replace(/[{}]/g, '').trim())))
+  }, [code])
+
   const monacoLang = CODE_LANGUAGES.find((l) => l.id === activeLang)?.monacoLang ?? 'plaintext'
 
   function handleCopy() {
@@ -82,6 +93,22 @@ function GenerateCodePane() {
           <span>{copied ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
+
+      {/* Unresolved-variable banner */}
+      {unresolvedVars.length > 0 && (
+        <div
+          className="shrink-0 border-t border-b px-2.5 py-1.5"
+          style={{
+            background: 'var(--orange-bg, #fff7e6)',
+            borderColor: 'var(--border)',
+            color: 'var(--orange, #b35a00)',
+            fontSize: 12,
+          }}
+          title="Define these variables in the active environment so the snippet uses real values"
+        >
+          Unresolved: {unresolvedVars.map((v) => `{{${v}}}`).join(', ')}
+        </div>
+      )}
 
       {/* Code preview */}
       <div className="flex-1 overflow-hidden">

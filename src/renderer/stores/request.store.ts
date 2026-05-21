@@ -605,7 +605,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   },
 
   loadFromEndpoint: (data) => {
-    set({
+    const state = get()
+    const newFields = {
       method: data.method,
       url: data.url,
       params: data.params || [],
@@ -615,7 +616,19 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       preScript: data.preScript ?? '',
       postScript: data.postScript ?? '',
       assertions: data.assertions ?? [],
-    })
+    }
+    // ALSO refresh the per-tab cache for the current tab. Without this,
+    // closing and reopening a test-suite item (or any tab) would restore
+    // the stale `_tabStates` snapshot instead of the freshly-loaded DB
+    // data — saved changes appeared lost (v1.4.2 T-5.2).
+    if (state._currentTabId) {
+      const tabStates = new Map(state._tabStates)
+      const prev = tabStates.get(state._currentTabId) ?? emptyTabState()
+      tabStates.set(state._currentTabId, { ...prev, ...newFields })
+      set({ ...newFields, _tabStates: tabStates })
+    } else {
+      set(newFields)
+    }
   },
 }))
 

@@ -336,6 +336,14 @@ export default function TreeView() {
           protocol,
         })
         await refreshTree()
+        // Auto-expand the parent folder so the freshly-added request is
+        // visible immediately. Without this, the request was inserted with
+        // the right folder_id but the user saw nothing change when their
+        // folder was collapsed (v1.4.2 T-12.1).
+        if (folderId) {
+          const store = useWorkspaceStore.getState()
+          if (!store.openNodeIds.has(folderId)) store.toggleNode(folderId)
+        }
       } catch {
         /* ignore */
       }

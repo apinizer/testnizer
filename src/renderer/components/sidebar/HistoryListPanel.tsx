@@ -75,6 +75,10 @@ export default function HistoryListPanel() {
   const setActiveSidebarPage = useUIStore((s) => s.setActiveSidebarPage)
 
   const [runHistory, setRunHistory] = useState<RunHistoryRow[]>([])
+  // Auto-expand every grouping (incl. test-suite folders) on first render so
+  // suite-run rows are visible without an extra click. Folders the user
+  // collapses persist in this set for the rest of the session
+  // (v1.4.2 T-12.4 — suite folders rendered as collapsed-with-no-content).
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['__all__']))
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
@@ -118,6 +122,25 @@ export default function HistoryListPanel() {
     }
     return Array.from(map.entries()).map(([folder, runs]) => ({ folder, runs }))
   }, [runHistory])
+
+  // Auto-expand every folder that appears in the grouping the first time it
+  // shows up — without this, suite-run folders default to collapsed and
+  // user-reported as "folder appears but expand shows nothing"
+  // (v1.4.2 T-12.4).
+  useEffect(() => {
+    if (runGroups.length === 0) return
+    setExpandedFolders((prev) => {
+      const next = new Set(prev)
+      let changed = false
+      for (const g of runGroups) {
+        if (!next.has(g.folder)) {
+          next.add(g.folder)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [runGroups])
 
   const toggleFolder = useCallback((key: string) => {
     setExpandedFolders((s) => {
