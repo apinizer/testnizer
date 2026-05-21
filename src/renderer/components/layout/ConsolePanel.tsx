@@ -16,8 +16,12 @@ import ConsoleTab from '../response/ConsoleTab'
 export default function ConsolePanel() {
   const show = useUIStore((s) => s.showConsolePanel)
   const setShow = useUIStore((s) => s.setShowConsolePanel)
+  const maximized = useUIStore((s) => s.consolePanelMaximized)
 
   const [height, setHeight] = useState(280)
+  const effectiveHeight = maximized
+    ? Math.max(360, Math.round(typeof window !== 'undefined' ? window.innerHeight * 0.78 : 600))
+    : height
   const dragging = useRef(false)
   const startY = useRef(0)
   const startH = useRef(0)
@@ -66,7 +70,7 @@ export default function ConsolePanel() {
       className="absolute left-0 right-0"
       style={{
         bottom: 28,
-        height,
+        height: effectiveHeight,
         background: 'var(--white)',
         borderTop: '1px solid var(--border)',
         boxShadow: 'var(--shadow-drop)',

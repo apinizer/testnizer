@@ -1,1 +1,10 @@
-{}
+{
+  "permissions": {
+    "allow": [
+      "mcp__mongodb__find",
+      "mcp__atlassian__jira_get_issue",
+      "mcp__atlassian__jira_search",
+      "mcp__atlassian__jira_get_transitions"
+    ]
+  }
+}

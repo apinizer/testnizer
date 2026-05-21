@@ -2,17 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { useResponseStore } from '../../stores/response.store'
 import { useTranslation } from '../../lib/i18n'
 import MonacoWrapper from '../shared/MonacoWrapper'
-import {
-  ChevronDown,
-  Play,
-  Image as ImageIcon,
-  WrapText,
-  Filter,
-  Search,
-  Copy,
-  ExternalLink,
-  Check,
-} from 'lucide-react'
+import { ChevronDown, Play, Image as ImageIcon, WrapText, Filter, Copy, Check } from 'lucide-react'
 
 type ViewMode = 'Pretty' | 'Raw' | 'Preview'
 type FormatMode = 'JSON' | 'XML' | 'HTML' | 'Text'
@@ -287,10 +277,6 @@ export default function ResponseBody() {
           <Filter size={13} aria-hidden="true" />
         </button>
 
-        <button type="button" title="Search" aria-label={t('a11y.search')} style={ICON_BTN}>
-          <Search size={13} aria-hidden="true" />
-        </button>
-
         <button
           type="button"
           title="Copy"
@@ -302,15 +288,6 @@ export default function ResponseBody() {
           }}
         >
           {copied ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
-        </button>
-
-        <button
-          type="button"
-          title="Open in new tab"
-          aria-label={t('a11y.openInEditor')}
-          style={ICON_BTN}
-        >
-          <ExternalLink size={13} aria-hidden="true" />
         </button>
       </div>
 

@@ -3,9 +3,12 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useTabsStore } from '../../stores/tabs.store'
+import { useSoapStore } from '../../stores/soap.store'
+import { useWebSocketStore } from '../../stores/websocket.store'
+import { useSseStore } from '../../stores/sse.store'
 import { useTranslation } from '../../lib/i18n'
 import Modal from '../shared/Modal'
-import type { Folder } from '../../types'
+import type { Folder, Tab } from '../../types'
 
 export default function EndpointSaveModal() {
   const { t } = useTranslation()
@@ -123,19 +126,56 @@ export default function EndpointSaveModal() {
     setSaving(true)
     setSaveError(null)
     try {
+      // Pull protocol-specific data from the matching store. The legacy
+      // EndpointSaveModal only ever read useRequestStore (HTTP), which is
+      // why saving a SOAP / WebSocket / SSE tab into a folder used to
+      // persist an empty HTTP request and lose the original protocol
+      // payload (v1.4.2 T-12.6/8/9).
+      const protocol = (activeTab?.protocol ?? 'http') as string
+      let effectiveUrl = url
+      let effectiveMethod = method
+      let effectiveBody: unknown = body
+      const protocolMeta: Record<string, unknown> = {}
+
+      if (protocol === 'soap') {
+        const soap = useSoapStore.getState()
+        effectiveUrl = soap.endpointUrl || soap.wsdlUrl || url
+        effectiveMethod = 'POST'
+        effectiveBody = { type: 'xml', content: soap.rawXml }
+        protocolMeta.soap = {
+          wsdlUrl: soap.wsdlUrl,
+          selectedService: soap.selectedService,
+          selectedPort: soap.selectedPort,
+          selectedOperation: soap.selectedOperation,
+          bodyMode: soap.bodyMode,
+          wsSecurity: soap.wsSecurity,
+        }
+      } else if (protocol === 'websocket') {
+        const ws = useWebSocketStore.getState()
+        effectiveUrl = ws.url || url
+        effectiveMethod = 'GET'
+        effectiveBody = { type: 'none' }
+      } else if (protocol === 'sse') {
+        const sse = useSseStore.getState()
+        effectiveUrl = sse.url || url
+        effectiveMethod = sse.method || 'GET'
+        effectiveBody = { type: sse.bodyType === 'json' ? 'json' : 'text', content: sse.body }
+      }
+
       const payload = {
         name: endpointName.trim() || 'Untitled',
-        method,
-        url,
-        protocol: 'http',
+        method: effectiveMethod,
+        url: effectiveUrl,
+        protocol,
         params: JSON.stringify(params),
         headers: JSON.stringify(headers),
-        body: JSON.stringify(body),
+        body: JSON.stringify(effectiveBody),
         auth: JSON.stringify(auth),
         pre_script: preScript,
         post_script: postScript,
         assertions: JSON.stringify(assertions),
         folder_id: selectedFolder || null,
+        ...(Object.keys(protocolMeta).length > 0 ? { metadata: JSON.stringify(protocolMeta) } : {}),
       }
 
       let savedId: string | undefined
@@ -172,6 +212,13 @@ export default function EndpointSaveModal() {
           useTabsStore.getState().updateTab(tabId, {
             name: endpointName.trim() || 'Untitled',
             savedRequestId: savedId,
+            // Sync the tab badge with the current method so changing
+            // GET → POST in the URL bar then saving updates the
+            // method chip on the tab immediately, without requiring a
+            // close + reopen of the tab (v1.4.2 T-12.2).
+            method: effectiveMethod,
+            url: effectiveUrl,
+            protocol: protocol as Tab['protocol'],
           })
         }
         handleClose()
@@ -307,6 +354,7 @@ export default function EndpointSaveModal() {
                 gap: 2,
                 maxHeight: 280,
                 overflowY: 'auto',
+                scrollbarGutter: 'stable',
                 border: '1px solid var(--border)',
                 borderRadius: 8,
                 padding: 4,

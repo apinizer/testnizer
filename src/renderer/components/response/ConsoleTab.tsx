@@ -18,6 +18,7 @@ import {
   type ConsoleLogFilter,
   type ConsoleLogEntry,
 } from '../../stores/console.store'
+import { useUIStore } from '../../stores/ui.store'
 import EmptyState from '../shared/EmptyState'
 
 /**
@@ -129,14 +130,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
           background: 'var(--white)',
         }}
       >
-        <button
-          type="button"
-          className="flex cursor-pointer items-center gap-1"
-          style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
-          title="Layout"
-        >
-          <Maximize2 size={13} />
-        </button>
+        <ConsoleLayoutToggle inResponsePane={!!tabFilterId} />
 
         <span
           className="flex items-center gap-1.5"
@@ -607,5 +601,33 @@ function renderHeaders(headers?: Record<string, string>) {
           <KV key={k} k={k} v={headers[k]} />
         ))}
     </>
+  )
+}
+
+/**
+ * Layout toggle for the Console header. When rendered inside the response
+ * pane (tabFilterId set), the button promotes the in-pane console to the
+ * global bottom panel. When rendered inside that bottom panel, it toggles
+ * between the user-resized height and a near-fullscreen maximised view.
+ */
+function ConsoleLayoutToggle({ inResponsePane }: { inResponsePane: boolean }) {
+  const setShowConsolePanel = useUIStore((s) => s.setShowConsolePanel)
+  const maximized = useUIStore((s) => s.consolePanelMaximized)
+  const toggleMaximized = useUIStore((s) => s.toggleConsolePanelMaximized)
+
+  const handleClick = inResponsePane ? () => setShowConsolePanel(true) : () => toggleMaximized()
+
+  const title = inResponsePane ? 'Open in bottom panel' : maximized ? 'Restore' : 'Maximize'
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className="flex cursor-pointer items-center gap-1"
+      style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
+      title={title}
+    >
+      <Maximize2 size={13} />
+    </button>
   )
 }

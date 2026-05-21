@@ -160,6 +160,10 @@ app.whenReady().then(() => {
       if (!win.isDestroyed()) win.webContents.send('menu:openAbout')
     }
   }
+  function broadcastMenuEvent(channel: string): void {
+    const target = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    if (target && !target.isDestroyed()) target.webContents.send(channel)
+  }
   const isMac = process.platform === 'darwin'
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
@@ -180,7 +184,53 @@ app.whenReady().then(() => {
           },
         ] satisfies MenuItemConstructorOptions[])
       : []),
-    { role: 'fileMenu' },
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'New Tab',
+          accelerator: 'CmdOrCtrl+T',
+          click: () => broadcastMenuEvent('menu:newTab'),
+        },
+        {
+          label: 'New Window',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: () => {
+            void createWindow()
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Import…',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => broadcastMenuEvent('menu:openImport'),
+        },
+        {
+          label: 'Export…',
+          click: () => broadcastMenuEvent('menu:openExport'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => broadcastMenuEvent('menu:save'),
+        },
+        {
+          label: 'Settings…',
+          accelerator: isMac ? 'Cmd+,' : 'Ctrl+,',
+          click: () => broadcastMenuEvent('menu:openSettings'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Close Tab',
+          accelerator: 'CmdOrCtrl+W',
+          click: () => broadcastMenuEvent('menu:closeTab'),
+        },
+        ...(isMac
+          ? ([] satisfies MenuItemConstructorOptions[])
+          : [{ role: 'quit' as const, label: 'Exit' }]),
+      ],
+    },
     { role: 'editMenu' },
     { role: 'viewMenu' },
     { role: 'windowMenu' },

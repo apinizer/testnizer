@@ -1177,6 +1177,7 @@ interface AppApi {
   version(): Promise<IpcResult<{ version: string; name: string }>>
   openExternal(url: string): Promise<IpcResult<null>>
   onOpenAbout(callback: () => void): () => void
+  onMenuCommand(callback: (command: string) => void): () => void
 }
 
 // ─── Branch (DB-backed, non-Git) ─────────────────────────────────

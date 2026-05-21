@@ -16,6 +16,9 @@ interface ImportResult {
    * fresh endpoints to suites without re-querying the DB.
    */
   endpointIds?: string[]
+  /** Set when the importer creates an environment row (Postman / Insomnia v4 / v5 environment exports). */
+  environmentId?: string
+  environmentName?: string
   suggestedEnvVars?: Record<string, string>
   warnings?: string[]
   error?: string
@@ -669,6 +672,15 @@ async function importOpenApi(
           enabled: boolean
         }> = []
 
+        // Swagger 2.0: body parameters live inside `parameters[]` with
+        // `in: 'body'` or `in: 'formData'`. We collect them here so they
+        // can populate the body editor as a usable starter payload (a
+        // JSON-schema dump or, for form-data, the form fields).
+        let swagger2BodyParam:
+          | { name: string; schema?: Record<string, unknown>; description?: string }
+          | undefined
+        const swagger2FormParams: Array<{ name: string; type?: string; description?: string }> = []
+
         if (operation.parameters) {
           for (const param of operation.parameters) {
             const item = {
@@ -680,6 +692,19 @@ async function importOpenApi(
             }
             if (param.in === 'query') params.push(item)
             else if (param.in === 'header') headers.push(item)
+            else if (param.in === 'body') {
+              swagger2BodyParam = {
+                name: param.name,
+                schema: param.schema as Record<string, unknown> | undefined,
+                description: param.description,
+              }
+            } else if (param.in === 'formData') {
+              swagger2FormParams.push({
+                name: param.name,
+                type: (param as { type?: string }).type,
+                description: param.description,
+              })
+            }
             // path params are embedded in URL
           }
         }
@@ -687,7 +712,7 @@ async function importOpenApi(
         // Convert request body — prefer the operation's `example` /
         // first `examples.*.value` over a JSON-schema dump (which is far
         // less useful as a starter request body).
-        let body: { type: string; content?: string } = { type: 'none' }
+        let body: { type: string; content?: string; formData?: unknown[] } = { type: 'none' }
         if (operation.requestBody?.content) {
           const contentTypes = Object.keys(operation.requestBody.content)
           const pickExample = (mt: string): string | undefined => {
@@ -731,6 +756,31 @@ async function importOpenApi(
             body = { type: 'xml', content: pickExample(xmlMt) ?? '' }
           } else if (contentTypes.some((ct) => ct.includes('form'))) {
             body = { type: 'form-data' }
+          }
+        } else if (swagger2BodyParam) {
+          // Swagger 2.0 JSON body parameter — generate a JSON example from
+          // its schema so the user sees a starter payload instead of an
+          // empty editor (v1.4.2 #6).
+          const example = swagger2BodyParam.schema
+            ? generateJsonExample(swagger2BodyParam.schema, {
+                ...doc.definitions,
+                ...doc.components?.schemas,
+              })
+            : {}
+          body = { type: 'json', content: JSON.stringify(example, null, 2) }
+        } else if (swagger2FormParams.length > 0) {
+          // Swagger 2.0 formData — populate the form-data list with each
+          // form parameter so the body editor opens pre-filled.
+          body = {
+            type: 'form-data',
+            formData: swagger2FormParams.map((p) => ({
+              id: randomUUID(),
+              key: p.name,
+              value: '',
+              description: p.description ?? '',
+              type: 'text',
+              enabled: true,
+            })),
           }
         }
 
@@ -3421,30 +3471,84 @@ function importInsomniaV4(
     endpointCount++
   }
 
-  for (const resource of resources) {
-    if (!resource || typeof resource !== 'object') continue
-    if (resource._type === 'environment') {
-      // Insomnia v4: environment vars live in `data` either as
-      // `[{name, value}]` (legacy) or `{key: value}` (current export). We
-      // accept both so secret-only and structured envs both round-trip.
-      const data = (resource as InsomniaResource & { data?: unknown }).data
+  // Insomnia v4 environment resources used to be silently collected into
+  // `suggestedEnvVars` only — they never actually became real environments
+  // in the DB, so the EnvironmentModal showed a success toast but the
+  // import was invisible (v1.4.2 #3). Now we persist each one as a proper
+  // environment row, mirroring the v5 importer.
+  const projectRow = db.prepare('SELECT workspace_id FROM projects WHERE id = ?').get(projectId) as
+    | { workspace_id: string }
+    | undefined
+  let environmentCount = 0
+  const lastEnv: { id: string; name: string } | null = (() => {
+    if (!projectRow) return null
+    const envResources = resources.filter(
+      (r) => r && typeof r === 'object' && (r as InsomniaResource)._type === 'environment',
+    )
+    let last: { id: string; name: string } | null = null
+    for (const resource of envResources) {
+      const r = resource as InsomniaResource & { name?: string; data?: unknown }
+      const rawName = (r.name || '').trim() || 'Imported Insomnia Environment'
+      // Reuse name if it already exists to avoid duplicate clutter on
+      // repeated imports — overwrite its variables.
+      const existing = db
+        .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
+        .get(projectId, rawName) as { id: string } | undefined
+      let envId: string
+      if (existing) {
+        envId = existing.id
+        db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(envId)
+      } else {
+        envId = randomUUID()
+        const hasActive = db
+          .prepare('SELECT 1 AS x FROM environments WHERE project_id = ? AND is_active = 1')
+          .get(projectId) as { x: number } | undefined
+        db.prepare(
+          `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(envId, projectRow.workspace_id, projectId, rawName, hasActive ? 0 : 1, now, now)
+      }
+      const insertVar = db.prepare(
+        `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      const data = r.data
+      let varCount = 0
+      const pushKv = (k: string, v: string): void => {
+        insertVar.run(randomUUID(), envId, k, v, null, 1, 0, v)
+        varCount++
+      }
       if (Array.isArray(data)) {
         for (const entry of data) {
           if (entry && typeof entry === 'object' && (entry as { name?: string }).name) {
             const e = entry as { name: string; value?: string }
+            pushKv(e.name, e.value ?? '')
             suggestedEnvVars[e.name] = e.value ?? ''
           }
         }
       } else if (data && typeof data === 'object') {
         for (const [k, v] of Object.entries(data)) {
-          if (typeof v === 'string') suggestedEnvVars[k] = v
+          if (typeof v === 'string') {
+            pushKv(k, v)
+            suggestedEnvVars[k] = v
+          } else if (v != null) {
+            const s = JSON.stringify(v)
+            pushKv(k, s)
+            suggestedEnvVars[k] = s
+          }
         }
       }
+      if (varCount === 0) {
+        warnings.push(`Insomnia v4 environment "${rawName}" had no variables.`)
+      }
+      environmentCount++
+      last = { id: envId, name: rawName }
     }
-  }
+    return last
+  })()
 
-  if (endpointCount === 0 && folderCount === 0) {
-    warnings.push('No request resources found in Insomnia export')
+  if (endpointCount === 0 && folderCount === 0 && environmentCount === 0) {
+    warnings.push('No request or environment resources found in Insomnia export')
   }
 
   return {
@@ -3453,6 +3557,8 @@ function importInsomniaV4(
     endpointCount,
     folderCount,
     endpointIds,
+    environmentId: lastEnv?.id,
+    environmentName: lastEnv?.name,
     suggestedEnvVars: Object.keys(suggestedEnvVars).length > 0 ? suggestedEnvVars : undefined,
     warnings: warnings.length > 0 ? warnings : undefined,
   }

@@ -23,16 +23,28 @@ export function getActiveSoapTabId(): string | null {
 }
 
 /**
- * Replace the current SOAP request body with the given XML. Returns true on
- * success — false if no SOAP tab has been active yet.
+ * Replace the current SOAP request body with the given XML, focus the
+ * matching tab, and (when `autoSend` is true) fire the SOAP request so
+ * the WS-Security tool feels like a one-click "send" handoff rather
+ * than a silent body-injection. Returns true if a target SOAP tab was
+ * found.
  */
-export function pushPayloadToActiveSoap(xml: string): boolean {
+export function pushPayloadToActiveSoap(xml: string, autoSend = false): boolean {
   const tabsStore = useTabsStore.getState()
   const activeTab = tabsStore.tabs.find((t) => t.id === tabsStore.activeTabId)
 
+  const dispatch = (): void => {
+    useSoapStore.getState().setRawXml(xml)
+    if (autoSend) {
+      // Fire-and-forget — the SOAP editor surfaces the response in the
+      // response pane on its own.
+      void useSoapStore.getState().sendSoap()
+    }
+  }
+
   // Prefer the currently active SOAP tab; fall back to the last-known one.
   if (activeTab?.protocol === 'soap') {
-    useSoapStore.getState().setRawXml(xml)
+    dispatch()
     return true
   }
 
@@ -40,7 +52,7 @@ export function pushPayloadToActiveSoap(xml: string): boolean {
     const target = tabsStore.tabs.find((t) => t.id === lastSoapTabId)
     if (target?.protocol === 'soap') {
       tabsStore.setActiveTab(lastSoapTabId)
-      useSoapStore.getState().setRawXml(xml)
+      dispatch()
       return true
     }
   }

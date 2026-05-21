@@ -6,7 +6,7 @@
 
 This End-User License Agreement ("Agreement") is a binding contract between
 **you** ("Licensee", "you") and **Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş.** ("Licensor", "we",
-"our"), located in **İstanbul, Republic of Türkiye**, concerning your use of
+"our"), located in **Ankara, Republic of Türkiye**, concerning your use of
 the **Testnizer** desktop application — the pre-built binary distribution
 (DMG, EXE, AppImage, deb, zip, or any other packaged installer obtained from
 our official channels) — and any accompanying documentation (collectively,
@@ -402,9 +402,9 @@ intellectual-property inquiries:
 - **Legal & privacy:** info@apinizer.com
 - **General support:** info@apinizer.com
 - **Enterprise / commercial support, SLAs, on-premise deployment, training:** info@apinizer.com
-- **Source repository:** https://github.com/apinizer/testnizer
+- **Source repository:** https://github.com/apinizer/testnizer-releases
 - **Website:** https://www.testnizer.com
-- **Postal:** Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş., İstanbul, Türkiye
+- **Postal:** Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş., Ankara, Türkiye
 
 The general distribution of the Software is, and will remain, free of charge.
 Enterprise / commercial support is offered on a separate contractual basis

@@ -1,4 +1,5 @@
 import { X, Loader2, CheckCircle2, AlertCircle, Download } from 'lucide-react'
+import DOMPurify from 'dompurify'
 import { useUIStore } from '../../stores/ui.store'
 import { useUpdaterStore } from '../../stores/updater.store'
 import { useTranslation } from '../../lib/i18n'
@@ -101,7 +102,32 @@ function StatusContent({
           {releaseNotes && (
             <div className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3">
               <div className="mb-1 font-medium text-[var(--muted)]">{t('update.releaseNotes')}</div>
-              <div className="max-h-24 overflow-y-auto text-[var(--text)]">{releaseNotes}</div>
+              <div
+                className="release-notes-html max-h-56 overflow-y-auto text-sm text-[var(--text)]"
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(releaseNotes, {
+                    ALLOWED_TAGS: [
+                      'h1',
+                      'h2',
+                      'h3',
+                      'h4',
+                      'p',
+                      'ul',
+                      'ol',
+                      'li',
+                      'strong',
+                      'em',
+                      'code',
+                      'pre',
+                      'br',
+                      'a',
+                      'hr',
+                      'blockquote',
+                    ],
+                    ALLOWED_ATTR: ['href', 'rel', 'target'],
+                  }),
+                }}
+              />
             </div>
           )}
         </>

@@ -695,6 +695,10 @@ export function createPmApi(
           throw new Error('pm.execution.skipRequest() is only available in pre-request scripts')
         }
         skipRequestFlag = true
+        // Postman behaviour: skipRequest() aborts the pre-request script
+        // synchronously — any code after it must not run. We throw a sentinel
+        // error that the script wrapper recognises and swallows.
+        throw new Error('__pm_skip_request_signal__')
       },
     },
     environment: {
@@ -1055,11 +1059,14 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
     const fn = new Function('pm', 't', 'console', 'CryptoJS', script)
     fn(pmApi, pmApi, captureConsole, CryptoJS)
   } catch (e) {
-    consoleLogs.push({
-      level: 'error',
-      message: `Script error: ${(e as Error).message}`,
-      timestamp: Date.now(),
-    })
+    const msg = (e as Error).message
+    if (msg !== '__pm_skip_request_signal__') {
+      consoleLogs.push({
+        level: 'error',
+        message: `Script error: ${msg}`,
+        timestamp: Date.now(),
+      })
+    }
   }
 
   // Wait for any async `pm.test(name, async () => {...})` callbacks to settle

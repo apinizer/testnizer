@@ -416,3 +416,70 @@ select:focus {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Release-notes HTML rendered inside UpdateModal (GitHub Releases body). */
+.release-notes-html h1,
+.release-notes-html h2,
+.release-notes-html h3 {
+  font-weight: 600;
+  margin: 8px 0 4px;
+  line-height: 1.3;
+}
+.release-notes-html h1 {
+  font-size: 1.05rem;
+}
+.release-notes-html h2 {
+  font-size: 1rem;
+}
+.release-notes-html h3 {
+  font-size: 0.95rem;
+}
+.release-notes-html p {
+  margin: 4px 0;
+}
+.release-notes-html ul,
+.release-notes-html ol {
+  margin: 4px 0 4px 18px;
+}
+.release-notes-html ul {
+  list-style: disc;
+}
+.release-notes-html ol {
+  list-style: decimal;
+}
+.release-notes-html li {
+  margin: 2px 0;
+}
+.release-notes-html code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 0.85em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.release-notes-html pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  overflow-x: auto;
+}
+.release-notes-html a {
+  color: var(--accentText);
+  text-decoration: underline;
+}
+.release-notes-html hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 8px 0;
+}
+.release-notes-html strong {
+  font-weight: 600;
+}
+.release-notes-html blockquote {
+  border-left: 3px solid var(--border2);
+  margin: 4px 0;
+  padding: 0 8px;
+  color: var(--muted);
+}

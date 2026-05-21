@@ -78,7 +78,11 @@ export default function WsSecurityTool() {
   function handleSendToSoap() {
     const payload = output || input
     if (!payload) return
-    const ok = pushPayloadToActiveSoap(payload)
+    // autoSend=true: inject the WSSE-signed envelope and immediately fire
+    // the SOAP request so the user sees the response in one click
+    // (v1.4.2 T-12.7 — previously the body was set but the request
+    // never went out, so the action felt like a no-op).
+    const ok = pushPayloadToActiveSoap(payload, true)
     setStatusLine(ok ? 'Sent to active SOAP request' : 'No active SOAP request to send to')
   }
 

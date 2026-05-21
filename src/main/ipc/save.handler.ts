@@ -769,7 +769,11 @@ export function importTestSuiteData(
   )
 
   const suite = data.suite
-  const suiteName = (suite?.name as string) || 'Imported Suite'
+  const rawSuiteName = (suite?.name as string) || 'Imported Suite'
+  // Avoid two suites sharing the same name when the user re-imports the
+  // same export. Mirrors the Postman/Insomnia branch's behaviour so
+  // every import path is dedupe-safe (v1.4.2 T-5.4).
+  const suiteName = ensureUniqueSuiteName(db, projectId, rawSuiteName)
 
   const tx = db.transaction(() => {
     insertSuite.run(

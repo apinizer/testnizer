@@ -103,9 +103,21 @@ export function initUpdaterListeners(): (() => void) | undefined {
         store.setStatus('available')
         if (event.version) store.setVersion(event.version)
         if (event.releaseNotes) {
-          // releaseNotes can be string or array of {version, note}; only the
-          // string form is meaningful for our single-line status display.
-          if (typeof event.releaseNotes === 'string') store.setReleaseNotes(event.releaseNotes)
+          // releaseNotes is either a string (HTML from a single release) or
+          // ReleaseNoteInfo[] when skipping multiple versions. Join the array
+          // form so users hopping v1.4.1 → v1.4.3 see all intermediate notes.
+          if (typeof event.releaseNotes === 'string') {
+            store.setReleaseNotes(event.releaseNotes)
+          } else if (Array.isArray(event.releaseNotes)) {
+            const joined = (event.releaseNotes as Array<{ version?: string; note?: string | null }>)
+              .map((r) => {
+                if (!r.note) return ''
+                return r.version ? `<h3>v${r.version}</h3>${r.note}` : r.note
+              })
+              .filter(Boolean)
+              .join('<hr/>')
+            if (joined) store.setReleaseNotes(joined)
+          }
         }
         break
       case 'not-available':

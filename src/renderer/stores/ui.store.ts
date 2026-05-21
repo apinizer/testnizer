@@ -55,6 +55,7 @@ interface UIStore {
   showProjectDetailModal: boolean
   showHistoryPanel: boolean
   showConsolePanel: boolean
+  consolePanelMaximized: boolean
   showProfileModal: boolean
   showAboutModal: boolean
   showEnterpriseModal: boolean
@@ -92,6 +93,7 @@ interface UIStore {
   setShowHistoryPanel: (show: boolean) => void
   setShowConsolePanel: (show: boolean) => void
   toggleConsolePanel: () => void
+  toggleConsolePanelMaximized: () => void
   setShowProfileModal: (show: boolean) => void
   setShowAboutModal: (show: boolean) => void
   setShowEnterpriseModal: (show: boolean) => void
@@ -174,6 +176,7 @@ export const useUIStore = create<UIStore>((set) => ({
   showProjectDetailModal: false,
   showHistoryPanel: false,
   showConsolePanel: false,
+  consolePanelMaximized: false,
   showProfileModal: false,
   showAboutModal: false,
   showEnterpriseModal: false,
@@ -314,6 +317,8 @@ export const useUIStore = create<UIStore>((set) => ({
   setShowHistoryPanel: (show) => set({ showHistoryPanel: show }),
   setShowConsolePanel: (show) => set({ showConsolePanel: show }),
   toggleConsolePanel: () => set((s) => ({ showConsolePanel: !s.showConsolePanel })),
+  toggleConsolePanelMaximized: () =>
+    set((s) => ({ consolePanelMaximized: !s.consolePanelMaximized })),
   setShowProfileModal: (show) => set({ showProfileModal: show }),
   setShowAboutModal: (show) => set({ showAboutModal: show }),
   setShowEnterpriseModal: (show) => set({ showEnterpriseModal: show }),

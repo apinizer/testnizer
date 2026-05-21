@@ -63,6 +63,9 @@ export default function AppShell() {
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
   const setShowCommandPalette = useUIStore((s) => s.setShowCommandPalette)
   const setShowAboutModal = useUIStore((s) => s.setShowAboutModal)
+  const setShowImportModal = useUIStore((s) => s.setShowImportModal)
+  const setShowSettingsModal = useUIStore((s) => s.setShowSettingsModal)
+  const setShowSaveModal = useUIStore((s) => s.setShowSaveModal)
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const initialized = useWorkspaceStore((s) => s.initialized)
   const initialize = useWorkspaceStore((s) => s.initialize)
@@ -87,6 +90,36 @@ export default function AppShell() {
       unsub?.()
     }
   }, [setShowAboutModal])
+
+  // Native File-menu commands. Routes each Electron menu click to the
+  // matching modal/action so File → Import, Settings, Save etc. work.
+  useEffect(() => {
+    const unsub = window.api?.app?.onMenuCommand?.((command) => {
+      switch (command) {
+        case 'menu:openImport':
+          setShowImportModal(true)
+          break
+        case 'menu:openSettings':
+          setShowSettingsModal(true)
+          break
+        case 'menu:save':
+          setShowSaveModal(true)
+          break
+        case 'menu:newTab':
+          window.dispatchEvent(new CustomEvent('testnizer:newTab'))
+          break
+        case 'menu:closeTab':
+          window.dispatchEvent(new CustomEvent('testnizer:closeActiveTab'))
+          break
+        case 'menu:openExport':
+          window.dispatchEvent(new CustomEvent('testnizer:openExport'))
+          break
+      }
+    })
+    return () => {
+      unsub?.()
+    }
+  }, [setShowImportModal, setShowSettingsModal, setShowSaveModal])
 
   // Check auth session on mount
   useEffect(() => {

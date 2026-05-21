@@ -286,14 +286,16 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": false,
       "allowElevation": false,
-      "differentialPackage": true,
+      "differentialPackage": false,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "Testnizer",
+      "menuCategory": false,
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true,
       "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico"
+      "uninstallerIcon": "build/icon.ico",
+      "include": "build/installer.nsh"
     },
     "publish": {
       "provider": "github",

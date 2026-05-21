@@ -7,7 +7,7 @@
 This Privacy Policy explains how **Testnizer** ("the Software", "we", "our")
 handles information when you install and use the application. Testnizer is
 published by **Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş.** ("the Publisher"), located in
-**İstanbul, Republic of Türkiye**.
+**Ankara, Republic of Türkiye**.
 
 Testnizer is a free, dual-licensed (MIT for source, EULA for binaries)
 desktop application for testing APIs. It runs entirely on your local
@@ -403,8 +403,8 @@ how Testnizer handles data:
 - **Privacy & legal:** info@apinizer.com
 - **General support:** info@apinizer.com
 - **Enterprise / commercial support inquiries:** info@apinizer.com
-- **Source repository:** https://github.com/apinizer/testnizer
+- **Source repository:** https://github.com/apinizer/testnizer-releases
 - **Website:** https://www.testnizer.com
-- **Postal:** Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş., İstanbul, Türkiye
+- **Postal:** Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş., Ankara, Türkiye
 
 Copyright © 2026 Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş.

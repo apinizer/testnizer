@@ -250,7 +250,34 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [results, setResults] = useState<EndpointRunResult[]>([])
   const [report, setReport] = useState<RunnerReport | null>(null)
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
-  const [selectedResultId, setSelectedResultId] = useState<string | null>(null)
+  // Persist the currently inspected result so leaving + returning to the
+  // tab (or switching between Overview / All Runs and back to a results
+  // view) does not drop the user back to an unscoped blank state
+  // (v1.4.2 T-5.6, T-12.5).
+  const resultsStorageKey = tabId ? `runner-results-${tabId}` : null
+  const [selectedResultId, setSelectedResultId] = useState<string | null>(() => {
+    if (!resultsStorageKey) return null
+    try {
+      const stored = sessionStorage.getItem(resultsStorageKey)
+      if (!stored) return null
+      const parsed = JSON.parse(stored) as { selectedResultId?: string | null }
+      return parsed.selectedResultId ?? null
+    } catch {
+      return null
+    }
+  })
+  // Persist `selectedResultId` so the detail panel survives tab switches
+  // (v1.4.2 T-5.6). State that the user does not mind being re-derived
+  // (results, report) is rebuilt by the runner-report sessionStorage
+  // bridge.
+  useEffect(() => {
+    if (!resultsStorageKey) return
+    if (selectedResultId) {
+      sessionStorage.setItem(resultsStorageKey, JSON.stringify({ selectedResultId }))
+    } else {
+      sessionStorage.removeItem(resultsStorageKey)
+    }
+  }, [selectedResultId, resultsStorageKey])
 
   // Origin tracking: 'apis' if opened via right-click Run on APIs tree, 'suite' if from Test Suite, 'runner' otherwise
   const [runOrigin, setRunOrigin] = useState<'apis' | 'suite' | 'runner'>(

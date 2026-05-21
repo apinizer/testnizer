@@ -39,6 +39,28 @@ const api = {
         ipcRenderer.removeListener('menu:openAbout', handler)
       }
     },
+    /** Native File-menu commands fired on the focused window. */
+    onMenuCommand: (callback: (command: string) => void): (() => void) => {
+      const channels = [
+        'menu:newTab',
+        'menu:openImport',
+        'menu:openExport',
+        'menu:save',
+        'menu:openSettings',
+        'menu:closeTab',
+      ]
+      const handler = (_: unknown, channel: string): void => callback(channel)
+      const handlers: Array<[string, (e: unknown) => void]> = []
+      for (const ch of channels) {
+        const h = (): void => callback(ch)
+        ipcRenderer.on(ch, h)
+        handlers.push([ch, h])
+      }
+      void handler
+      return () => {
+        for (const [ch, h] of handlers) ipcRenderer.removeListener(ch, h)
+      }
+    },
   },
 
   // ─── EULA / Privacy consent gate ────────────────────────

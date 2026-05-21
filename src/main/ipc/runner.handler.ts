@@ -1152,7 +1152,11 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
             endpointId,
             endpointName: endpoint.name,
             method: requestOptions.method,
-            url: requestOptions.url,
+            // Use the final URL the engine actually hit (after query
+            // params + variable substitution + redirects) so the
+            // Request tab in run-results shows the same URL the wire
+            // saw — not the unresolved configured URL.
+            url: response.actualRequest?.url ?? requestOptions.url,
             status: response.status ?? null,
             statusText: response.statusText ?? '',
             duration: response.timing.total,
@@ -1164,10 +1168,19 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
             responseSize: response.bodySize ?? 0,
             responseBody: persistResponses ? (response.body ?? undefined) : undefined,
             responseHeaders: persistResponses ? (response.headers ?? undefined) : undefined,
+            // Prefer the engine's `actualRequest.headers` over the
+            // configured headers array — the engine snapshots what was
+            // actually put on the wire after auth-tab injection, default
+            // Content-Type/Host/User-Agent fill-ins, and content-length
+            // calculation. Without this, the Test Suite run-results
+            // request tab only showed the user-typed headers and dropped
+            // Authorization / Content-Type / Host (v1.4.2 T-5.1, T-5.3).
             requestHeaders: persistResponses
-              ? headersArrayToRecord(resolvedOptions.headers)
+              ? (response.actualRequest?.headers ?? headersArrayToRecord(resolvedOptions.headers))
               : undefined,
-            requestBody: persistResponses ? requestBodyToString(resolvedOptions.body) : undefined,
+            requestBody: persistResponses
+              ? (response.actualRequest?.body ?? requestBodyToString(resolvedOptions.body))
+              : undefined,
             iteration: iter + 1,
           }
 

@@ -403,17 +403,54 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
       if (result?.success && result.data) {
         const apiResp = result.data as ApiResponse
         if (apiResp.body) {
-          const parsed = JSON.parse(apiResp.body)
-          const schema = parseIntrospectionResult(parsed.data || parsed)
+          let parsed: { data?: unknown; errors?: Array<{ message?: string }> }
+          try {
+            parsed = JSON.parse(apiResp.body)
+          } catch {
+            set({
+              introspectError: `Server returned non-JSON response (status ${apiResp.status ?? '?'}).`,
+              isIntrospecting: false,
+            })
+            return
+          }
+          // GraphQL surface-level errors come back with { errors: [...] }
+          // even on HTTP 200. Bubble the first message instead of
+          // dropping to a misleading demo schema.
+          if (parsed.errors && parsed.errors.length > 0) {
+            const msg = parsed.errors[0]?.message || 'GraphQL endpoint returned errors'
+            set({ introspectError: msg, isIntrospecting: false })
+            return
+          }
+          if (!parsed.data) {
+            set({
+              introspectError:
+                'Server response had no `data` field — endpoint may not support introspection.',
+              isIntrospecting: false,
+            })
+            return
+          }
+          const schema = parseIntrospectionResult(parsed.data as Record<string, unknown>)
           set({ schemaData: schema, isIntrospecting: false })
           return
         }
       }
 
-      set({ introspectError: 'Failed to introspect schema', isIntrospecting: false })
-    } catch {
-      // Demo mode: generate a sample schema
-      const demoSchema: GqlSchema = {
+      const errorMsg =
+        (result as { error?: string } | undefined)?.error ?? 'Failed to introspect schema'
+      set({ introspectError: errorMsg, isIntrospecting: false })
+    } catch (e) {
+      // Real introspection failures used to fall through to a fake demo
+      // schema, which made the button look broken (v1.4.2 T-12.11 —
+      // user clicked Introspect, "saw" a Query/User/Post tree appear,
+      // then could not figure out why their actual schema's queries
+      // didn't run). Surface the error instead.
+      set({
+        introspectError: (e as Error)?.message ?? 'Introspection failed',
+        isIntrospecting: false,
+      })
+      // Demo schema kept below so existing test fixtures still parse,
+      // but is now unreachable in normal product paths.
+      const _demoSchema: GqlSchema = {
         queryType: 'Query',
         mutationType: 'Mutation',
         subscriptionType: 'Subscription',
@@ -516,7 +553,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
           },
         ],
       }
-      set({ schemaData: demoSchema, isIntrospecting: false })
+      void _demoSchema
     }
   },
 

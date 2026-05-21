@@ -414,7 +414,7 @@ export default function SaveModal() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4" style={{ scrollbarGutter: 'stable' }}>
           {/* ── SAVE TAB ── */}
           {tabMode === 'save' && (
             <>
