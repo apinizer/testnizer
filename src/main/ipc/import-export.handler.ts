@@ -203,7 +203,13 @@ export function registerImportExportHandlers(): void {
       const result = await dialog.showOpenDialog({
         properties: ['openFile'],
         filters: [
-          { name: 'API Specs', extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml', 'proto'] },
+          // `raml` was missing here even though the importer handles RAML
+          // — the OS file dialog greyed out .raml files and forced users
+          // to fall back to the URL-import path (v1.4.4 §6.1).
+          {
+            name: 'API Specs',
+            extensions: ['json', 'yaml', 'yml', 'raml', 'wsdl', 'xml', 'proto'],
+          },
           { name: 'All Files', extensions: ['*'] },
         ],
       })
@@ -5049,16 +5055,30 @@ export function parseRamlSpec(content: string): ParsedRamlSpec {
   /* eslint-disable @typescript-eslint/no-require-imports */
   const yamlMod = require('js-yaml') as {
     load: (s: string, opts?: { schema?: unknown }) => unknown
-    FAILSAFE_SCHEMA: unknown
+    Type: new (
+      tag: string,
+      opts: { kind: 'scalar' | 'mapping' | 'sequence'; construct: (data: unknown) => unknown },
+    ) => unknown
+    DEFAULT_SCHEMA: { extend: (types: unknown[]) => unknown }
   }
   /* eslint-enable @typescript-eslint/no-require-imports */
 
+  // RAML uses `!include path/to/file.raml` to fan a spec out across multiple
+  // files. We don't resolve those includes yet (that would mean an extra
+  // I/O pass and security review for arbitrary path traversal), but unknown
+  // tags blow up `js-yaml.load` with "unknown tag !<!include>". Registering
+  // a no-op constructor lets the parse succeed — the included payload is
+  // dropped, but the rest of the spec (resources, endpoints) loads.
+  // v1.4.4 §6.1 reported this as a hard import failure.
+  const includeType = new yamlMod.Type('!include', {
+    kind: 'scalar',
+    construct: (data) => (typeof data === 'string' ? data : ''),
+  })
+  const ramlSchema = yamlMod.DEFAULT_SCHEMA.extend([includeType])
+
   let parsed: unknown
   try {
-    // Default schema is fine for the common case; FAILSAFE_SCHEMA would force
-    // every scalar to a string which loses booleans/numbers, so we let js-yaml
-    // use CORE_SCHEMA but catch and rethrow on unknown tags like `!include`.
-    parsed = yamlMod.load(stripped)
+    parsed = yamlMod.load(stripped, { schema: ramlSchema })
   } catch (e) {
     throw new Error('Failed to parse RAML as YAML: ' + (e as Error).message)
   }

@@ -35,9 +35,16 @@ function resolveBody(
   if (!body) return body
   return {
     ...body,
+    // `body.content` covers raw / json / xml / text / html / javascript
+    // — the same set `bodyString()` reads below. The other body types
+    // route through formData / urlEncoded so we resolve those rows too.
+    // binaryPath is here for parity with `resolveRequestBody()` in
+    // variable-resolver.ts so `{{fixturesDir}}/foo.bin` works in both
+    // the code panel and the live request engine.
     content: body.content ? resolveVariables(body.content, vars) : body.content,
     formData: body.formData ? resolveKvList(body.formData, vars) : body.formData,
     urlEncoded: body.urlEncoded ? resolveKvList(body.urlEncoded, vars) : body.urlEncoded,
+    binaryPath: body.binaryPath ? resolveVariables(body.binaryPath, vars) : body.binaryPath,
   }
 }
 

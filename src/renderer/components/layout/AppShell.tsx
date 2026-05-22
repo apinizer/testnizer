@@ -26,7 +26,11 @@ import QuickTestShell from './QuickTestShell'
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useAuthStore } from '../../stores/auth.store'
+import { useTabsStore } from '../../stores/tabs.store'
 import { useKeyboardShortcuts } from '../../lib/keyboard-shortcuts'
+import { makeTabId } from '../../lib/utils'
+import { toast } from '../../lib/toast'
+import { closeTabSafely } from '../../lib/cleanup-tab-state'
 
 function GitLoadingOverlay() {
   const gitLoading = useUIStore((s) => s.gitLoading)
@@ -105,15 +109,61 @@ export default function AppShell() {
         case 'menu:save':
           setShowSaveModal(true)
           break
-        case 'menu:newTab':
-          window.dispatchEvent(new CustomEvent('testnizer:newTab'))
+        case 'menu:newTab': {
+          // Previously dispatched a `testnizer:newTab` custom event with
+          // no listener attached anywhere — clicking File → New Tab
+          // therefore did nothing. Drive the tabs store directly here so
+          // the menu path actually opens a tab. (Ctrl+T is handled by
+          // the renderer keyboard listener — the menu item no longer
+          // carries an accelerator, so there's no double-fire.)
+          const tabs = useTabsStore.getState()
+          tabs.openTab({
+            id: makeTabId(),
+            name: 'New Request',
+            protocol: 'http',
+            method: 'GET',
+            url: '',
+          })
           break
-        case 'menu:closeTab':
-          window.dispatchEvent(new CustomEvent('testnizer:closeActiveTab'))
+        }
+        case 'menu:closeTab': {
+          // Route through `closeTabSafely` so File → Close Tab matches the
+          // Ctrl+W path: prompt before discarding unsaved edits, tear down
+          // protocol-store slices (and their live WS/SSE/gRPC subscriptions)
+          // via `cleanupTabState`. The naive `tabs.closeTab(id)` we had here
+          // was leaking those slices on every menu-driven close.
+          const activeId = useTabsStore.getState().activeTabId
+          if (activeId) closeTabSafely(activeId)
           break
-        case 'menu:openExport':
-          window.dispatchEvent(new CustomEvent('testnizer:openExport'))
+        }
+        case 'menu:openExport': {
+          // Previously dispatched `testnizer:openExport` to a custom event
+          // that had no listener anywhere — File → Export was a silent
+          // no-op (same dead-event class as menu:newTab/menu:closeTab,
+          // missed in the v1.4.4 menu pass). Drive the export IPC
+          // directly: the main-side `save:exportProject` handler opens
+          // a native save dialog and writes the JSON, so no modal is
+          // needed here. Surface the outcome via toast.
+          const projectId = useWorkspaceStore.getState().activeProjectId
+          if (!projectId) {
+            toast.error('No active project to export')
+            break
+          }
+          void window.api?.save
+            ?.exportProject(projectId)
+            .then((res) => {
+              const r = res as { success: boolean; error?: string; data?: { path?: string } }
+              if (r?.success) {
+                toast.success(r.data?.path ? `Exported to ${r.data.path}` : 'Exported')
+              } else if (r?.error) {
+                toast.error(`Export failed: ${r.error}`)
+              }
+            })
+            .catch((err: Error) => {
+              toast.error(`Export failed: ${err.message}`)
+            })
           break
+        }
       }
     })
     return () => {

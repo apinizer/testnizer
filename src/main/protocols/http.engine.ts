@@ -117,6 +117,30 @@ function isEventStreamContentType(contentType: string | undefined): boolean {
   return mime === 'text/event-stream'
 }
 
+/**
+ * Strip `user:pass@` userinfo from a URL before we display it in Run
+ * Results / actualRequest or persist it to history. Basic-auth credentials
+ * should travel via the Authorization header, not the URL. Returns the
+ * input unchanged when it isn't parseable as a URL. Exported so IPC
+ * handlers (request, runner, soap, ...) can sanitise the URL before
+ * writing to the SQLite history table; otherwise `https://user:pw@host`
+ * leaks to disk even when the runtime/UI strip succeeds.
+ */
+export function stripUrlCredentials(raw: string): string {
+  if (!raw) return raw
+  try {
+    const u = new URL(raw)
+    if (u.username || u.password) {
+      u.username = ''
+      u.password = ''
+      return u.toString()
+    }
+    return raw
+  } catch {
+    return raw
+  }
+}
+
 export interface HttpRequestOptions {
   method: string
   url: string
@@ -212,10 +236,42 @@ function applyAuth(
 ): void {
   switch (auth.type) {
     case 'basic': {
+      // Previously set axios's `config.auth`, which (a) made the value
+      // appear too late for `actualRequest.headers` capture — the
+      // Authorization header was added by axios's request interceptor
+      // *after* we snapshot `config.headers`, so Run Results showed an
+      // empty header bag (v1.4.4 §5.3) — and (b) on Node's underlying
+      // `http.request` the `auth` field could surface in
+      // `response.request.res.responseUrl` as `user:pass@host`, which
+      // we then displayed as the effective URL in the runner panel
+      // (v1.4.4 §5.1). Building the header ourselves keeps both the
+      // header capture and the displayed URL credential-free.
       if (auth.basic) {
-        config.auth = {
-          username: auth.basic.username,
-          password: auth.basic.password,
+        // RFC 7617 §2: usernames MUST NOT contain `:`. An accidental
+        // colon would silently corrupt the credential on the server
+        // side (the first `:` becomes the username/password separator
+        // after decode). Strip it pragmatically with a warning rather
+        // than failing the whole request — axios's old `config.auth`
+        // didn't validate either, but we no longer have that
+        // protection so call it out loudly.
+        let username = auth.basic.username ?? ''
+        const password = auth.basic.password ?? ''
+        if (username.includes(':')) {
+          console.warn('[http.engine] basic auth username contains ":" — stripping')
+          username = username.replace(/:/g, '')
+        }
+        // Don't clobber an explicit user-set Authorization header. If the
+        // user typed `Authorization: Bearer …` into the Headers tab AND
+        // turned on Basic auth, the old `config.auth` path let the
+        // explicit header win — preserve that order so a deliberate
+        // manual header isn't silently overridden by the auth config.
+        config.headers = config.headers || {}
+        const existing = Object.keys(config.headers).some(
+          (k) => k.toLowerCase() === 'authorization',
+        )
+        if (!existing) {
+          const token = Buffer.from(`${username}:${password}`).toString('base64')
+          config.headers['Authorization'] = `Basic ${token}`
         }
       }
       break
@@ -866,7 +922,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     }
     const actualRequest: ActualRequestInfo = {
       method: options.method.toUpperCase(),
-      url: response.request?.res?.responseUrl ?? options.url,
+      url: stripUrlCredentials(response.request?.res?.responseUrl ?? options.url),
       headers: config.headers as Record<string, string>,
       body: actualBody,
     }

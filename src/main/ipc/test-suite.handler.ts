@@ -20,7 +20,12 @@ import {
   moveFolder,
   isDescendantOf,
 } from '../db/test-suite-folder.repo'
-import { getEndpointById, getSavedRequestById } from '../db/endpoint.repo'
+import {
+  getEndpointById,
+  getSavedRequestById,
+  getCasesByEndpoint,
+  type EndpointCaseRow,
+} from '../db/endpoint.repo'
 
 interface TestSuiteRow {
   id: string
@@ -84,16 +89,48 @@ export interface SnapshotForSuite {
 export function snapshotEndpointForSuite(endpointId: string): SnapshotForSuite | null {
   const ep = getEndpointById(endpointId)
   if (ep) {
-    // Endpoint already serialises its request shape into request_schema; we
-    // copy verbatim. assertions are not surfaced separately on endpoints
-    // (they live inside request_schema or endpoint_cases) so we leave null.
+    // Endpoint serialises *template* shape (URL pattern, body schema) into
+    // request_schema, but per-environment values — params, headers, body,
+    // auth, assertions — live on endpoint_cases. The "default" case is
+    // what the APIs editor reads on tab open. Without it the snapshot is
+    // empty of real values and test suite items show blank request panes
+    // even though the source endpoint had fully-populated requests
+    // (v1.4.4 §4: "bazı environmtlar gelmemiş gözüküyor").
+    const cases = getCasesByEndpoint(ep.id)
+    const defaultCase: EndpointCaseRow | undefined =
+      cases.find((c) => c.is_default === 1) ?? cases[0]
+
+    const baseSchema = tryParseJSON<Record<string, unknown>>(ep.request_schema, {})
+    const mergedSchema: Record<string, unknown> = { ...baseSchema }
+    if (defaultCase) {
+      // Overlay each case column only when it carries an actual value.
+      // `endpoint_cases.{params,headers,body,auth}` are nullable; an
+      // unconditional `tryParseJSON(null, [])` would emit the empty
+      // fallback and clobber whatever the endpoint's `request_schema`
+      // already had at the template level — an OpenAPI-imported endpoint
+      // with populated `headers` but a default case row whose `headers`
+      // column was never set would lose its template headers in the
+      // snapshot. Keep base values when the case is silent.
+      if (defaultCase.params !== null) {
+        mergedSchema.params = tryParseJSON(defaultCase.params, [])
+      }
+      if (defaultCase.headers !== null) {
+        mergedSchema.headers = tryParseJSON(defaultCase.headers, [])
+      }
+      if (defaultCase.body !== null) {
+        mergedSchema.body = tryParseJSON(defaultCase.body, { type: 'none', content: '' })
+      }
+      if (defaultCase.auth !== null) {
+        mergedSchema.auth = tryParseJSON(defaultCase.auth, { type: 'none' })
+      }
+    }
     return {
       protocol: ep.protocol || 'http',
       name: ep.name,
       method: ep.method,
       url: ep.path ?? null,
-      request_schema: ep.request_schema ?? '{}',
-      assertions: null,
+      request_schema: JSON.stringify(mergedSchema),
+      assertions: defaultCase?.assertions ?? null,
       source_endpoint_id: ep.id,
     }
   }

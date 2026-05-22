@@ -64,6 +64,8 @@ interface SseStore extends TabSseState {
   addHeader: () => void
   updateHeader: (id: string, updates: Partial<KeyValuePair>) => void
   removeHeader: (id: string) => void
+  /** Replace the header list outright. Used by snapshot/restore paths. */
+  setHeaders: (headers: KeyValuePair[]) => void
 
   addEvent: (event: SseEvent) => void
   setConnectionState: (state: ConnectionState) => void
@@ -361,6 +363,8 @@ export const useSseStore = create<SseStore>((set, get) => ({
     set((state) => ({
       customHeaders: state.customHeaders.filter((h) => h.id !== id),
     })),
+
+  setHeaders: (headers) => set({ customHeaders: headers }),
 
   addEvent: (event) => set((state) => ({ events: [...state.events, event] })),
 

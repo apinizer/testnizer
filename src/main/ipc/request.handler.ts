@@ -1,5 +1,9 @@
 import { ipcMain } from 'electron'
-import { executeHttpRequest, HttpRequestOptions } from '../protocols/http.engine'
+import {
+  executeHttpRequest,
+  HttpRequestOptions,
+  stripUrlCredentials,
+} from '../protocols/http.engine'
 import * as historyRepo from '../db/history.repo'
 import { listCertificatesForHost } from '../db/certificate.repo'
 import { URL } from 'url'
@@ -176,18 +180,26 @@ export function registerRequestHandlers(): void {
 
         // Auto-save to history
         try {
+          // Strip `user:pass@host` credentials from the persisted URL.
+          // The runtime/UI already sanitise actualRequest.url, but the
+          // history table and the request_snapshot blob were keeping the
+          // raw user-typed URL — which means a `https://admin:secret@…`
+          // URL bar entry leaked to disk and was visible in History panel
+          // exports forever. Credentials should ride on the Authorization
+          // header (auth.basic), not in the URL.
+          const sanitizedUrl = stripUrlCredentials(options.url)
           historyRepo.addHistory({
             workspace_id: options._workspaceId,
             project_id: options._projectId,
             endpoint_id: options._endpointId,
             protocol: options._protocol || 'http',
             method: options.method,
-            url: options.url,
+            url: sanitizedUrl,
             status_code: result.status,
             duration_ms: result.timing?.total ? Math.round(result.timing.total) : undefined,
             request_snapshot: JSON.stringify({
               method: options.method,
-              url: options.url,
+              url: sanitizedUrl,
               params: options.params,
               headers: options.headers,
               body: options.body,

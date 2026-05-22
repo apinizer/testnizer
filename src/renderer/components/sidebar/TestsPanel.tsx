@@ -3,7 +3,6 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useUIStore } from '../../stores/ui.store'
 import { T } from '../../styles/tokens'
-import ImportDropdown from './ImportDropdown'
 import {
   Plus,
   Search,
@@ -470,10 +469,29 @@ export default function TestsPanel() {
         <span style={{ flex: 1, fontSize: 15, fontWeight: 700, color: T.text }}>
           {t('tests.title')}
         </span>
-        {/* ImportDropdown matches the APIs sidebar pattern — open the wizard
-         *  on step 2 with a pre-selected format, instead of the legacy two-
-         *  step "open modal, then pick format" flow. */}
-        <ImportDropdown />
+        {/* Test Suites have a dedicated import modal (format picker +
+         *  destination-suite step) — pointing this button at the APIs
+         *  ImportDropdown opened the APIs Import wizard instead, which
+         *  then rejected `{ kind: 'testSuite' }` exports with
+         *  "Selected type is native but file appears to be JSON"
+         *  (v1.4.4 §5.4). Reuse the suite-level handler so the Tests
+         *  sidebar header behaves like every suite's right-click
+         *  Import. */}
+        <button
+          type="button"
+          onClick={() => handleImportSuite()}
+          aria-label={t('tests.importSuiteModalTitle')}
+          title={t('tests.importSuiteModalTitle')}
+          className="flex cursor-pointer items-center justify-center rounded-[7px] border text-[var(--muted)] hover:bg-[var(--bg)]"
+          style={{
+            width: 28,
+            height: 28,
+            borderColor: 'var(--border2)',
+            background: 'var(--white)',
+          }}
+        >
+          <Download size={15} strokeWidth={2.5} />
+        </button>
         <button
           type="button"
           onClick={() => {

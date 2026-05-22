@@ -228,28 +228,62 @@ function assertBodyXPath(assertion: TestAssertion, response: ApiResponse): TestR
   return { assertion, passed: actual === expected, actual: actual ?? '' }
 }
 
+/**
+ * Normalise the response headers bag to a flat Record<string,string>. Axios
+ * usually hands them back as an object, but raw Node http responses surface
+ * them as alternating [k, v] arrays, and certain protocol engines (SSE,
+ * gRPC) push them through as `[['Content-Type', 'application/json'], ...]`.
+ * Without flattening, `Object.entries()` returns the indices and every
+ * header_equals / header_contains assertion fails even when the header is
+ * literally present (v1.4.4 §5).
+ */
+function normaliseHeaders(input: unknown): Record<string, string> {
+  if (!input) return {}
+  if (Array.isArray(input)) {
+    const out: Record<string, string> = {}
+    for (const pair of input) {
+      if (Array.isArray(pair) && pair.length >= 2 && typeof pair[0] === 'string') {
+        out[pair[0]] = String(pair[1] ?? '')
+      }
+    }
+    return out
+  }
+  const obj = input as Record<string, unknown>
+  const out: Record<string, string> = {}
+  for (const k of Object.keys(obj)) {
+    out[k] = String(obj[k] ?? '')
+  }
+  return out
+}
+
 function assertHeaderExists(assertion: TestAssertion, response: ApiResponse): TestResult {
-  const headerName = (assertion.headerName ?? '').toLowerCase()
-  const headers = response.headers ?? {}
+  const headerName = (assertion.headerName ?? '').trim().toLowerCase()
+  const headers = normaliseHeaders(response.headers)
   const found = Object.keys(headers).some((k) => k.toLowerCase() === headerName)
   return { assertion, passed: found, actual: found ? 'exists' : 'not found' }
 }
 
 function assertHeaderEquals(assertion: TestAssertion, response: ApiResponse): TestResult {
-  const headerName = (assertion.headerName ?? '').toLowerCase()
-  const headers = response.headers ?? {}
+  const headerName = (assertion.headerName ?? '').trim().toLowerCase()
+  const headers = normaliseHeaders(response.headers)
   const entry = Object.entries(headers).find(([k]) => k.toLowerCase() === headerName)
-  const actual = entry ? entry[1] : ''
-  const expected = String(assertion.expected ?? '')
+  // Trim both sides so a trailing newline on the form field or an axios
+  // header value with surrounding whitespace doesn't break the match.
+  const actual = entry ? entry[1].trim() : ''
+  const expected = String(assertion.expected ?? '').trim()
   return { assertion, passed: actual === expected, actual }
 }
 
 function assertHeaderContains(assertion: TestAssertion, response: ApiResponse): TestResult {
-  const headerName = (assertion.headerName ?? '').toLowerCase()
-  const headers = response.headers ?? {}
+  const headerName = (assertion.headerName ?? '').trim().toLowerCase()
+  const headers = normaliseHeaders(response.headers)
   const entry = Object.entries(headers).find(([k]) => k.toLowerCase() === headerName)
-  const actual = entry ? entry[1] : ''
-  const expected = String(assertion.expected ?? '')
+  // Trim both sides so `header_contains` is consistent with `header_equals`
+  // — a stray leading/trailing space on either input shouldn't change the
+  // verdict, otherwise users hit "equals passes but contains fails" with
+  // the same response (v1.4.4 §6).
+  const actual = entry ? entry[1].trim() : ''
+  const expected = String(assertion.expected ?? '').trim()
   return { assertion, passed: actual.includes(expected), actual }
 }
 

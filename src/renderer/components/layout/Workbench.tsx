@@ -60,28 +60,11 @@ import EnvironmentSelector from '../shared/EnvironmentSelector'
 import { T } from '../../styles/tokens'
 import { tabBelongsToPage } from '../../lib/sidebar-pages'
 
-/**
- * Tear down state belonging to a tab being closed. Every protocol store now
- * keeps a per-tab cache keyed on `tabId`; calling `removeTabState(tabId)`
- * disposes any live subscription/connection that tab owns. The SOAP/HTTP
- * stores have always been per-tab; WS/SSE/gRPC/GraphQL/AI Chat were converted
- * to the same pattern so two tabs of the same protocol no longer share state.
- */
-function cleanupTabState(tabId: string): void {
-  const allTabs = useTabsStore.getState().tabs
-  const closing = allTabs.find((t) => t.id === tabId)
-  if (!closing) return
-
-  useRequestStore.getState().removeTabState(tabId)
-  useSoapStore.getState().removeTabState(tabId)
-  useWebSocketStore.getState().removeTabState(tabId)
-  useSseStore.getState().removeTabState(tabId)
-  useGrpcStore.getState().removeTabState(tabId)
-  useGraphQLStore.getState().removeTabState(tabId)
-  useAiChatStore.getState().removeTabState(tabId)
-  useMcpStore.getState().removeTabState(tabId)
-  useSocketIOStore.getState().removeTabState(tabId)
-}
+// `cleanupTabState` moved to ../../lib/cleanup-tab-state so the AppShell
+// File → Close Tab menu path can share it (otherwise closing via the menu
+// leaked protocol-store slices that the in-Workbench Ctrl+W path cleaned
+// up — v1.4.4 close-bypass).
+import { cleanupTabState } from '../../lib/cleanup-tab-state'
 
 function EndpointTabBar() {
   const allTabs = useTabsStore((s) => s.tabs)

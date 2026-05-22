@@ -64,6 +64,20 @@ export function detectImportFormat(content: string, filePath?: string | null): s
       const parsed = JSON.parse(trimmed) as unknown
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         const obj = parsed as Record<string, unknown>
+        // Testnizer Native — project / folder / testSuite exports all carry
+        // a string `kind` field and a `testnizer-*` version. Without this
+        // branch a v1.4.4-exported project flagged as generic JSON and the
+        // mismatch guard rejected it with "Selected type is native but file
+        // appears to be JSON" (v1.4.4 §6.2).
+        if (
+          (obj.kind === 'project' || obj.kind === 'folder' || obj.kind === 'testSuite') &&
+          typeof obj.version === 'string'
+        ) {
+          return 'native'
+        }
+        if (typeof obj.version === 'string' && obj.version.startsWith('testnizer-')) {
+          return 'native'
+        }
         // OpenAPI / Swagger
         if (typeof obj.openapi === 'string' || typeof obj.swagger === 'string') {
           return 'openapi'
@@ -127,10 +141,14 @@ export function checkTypeMismatch(
     postman: ['postman'],
     insomnia: ['insomnia'],
     curl: ['curl'],
+    native: ['native'],
     har: [], // no dedicated HAR import card → always a mismatch
     // generic buckets — many formats are JSON or XML, so don't flag a
-    // mismatch when detection isn't more specific than that.
-    json: ['openapi', 'postman', 'insomnia', 'raml'],
+    // mismatch when detection isn't more specific than that. `native` is
+    // also added here so a Testnizer export that misses the strict tagged
+    // detection still routes through the native importer (which carries
+    // its own structural validator).
+    json: ['openapi', 'postman', 'insomnia', 'raml', 'native'],
     xml: ['wsdl', 'soapui'],
   }
 
@@ -147,6 +165,7 @@ export function checkTypeMismatch(
     wsdl: 'WSDL',
     proto: '.proto',
     soapui: 'SoapUI',
+    native: 'Testnizer Native',
     har: 'HAR',
     json: 'JSON',
     xml: 'XML',

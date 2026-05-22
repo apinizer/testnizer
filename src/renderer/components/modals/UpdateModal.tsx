@@ -1,6 +1,38 @@
 import { X, Loader2, CheckCircle2, AlertCircle, Download } from 'lucide-react'
-import DOMPurify from 'dompurify'
+import * as DOMPurifyNs from 'dompurify'
 import { useUIStore } from '../../stores/ui.store'
+
+// Vite/electron-vite resolves the `dompurify` CJS package as
+// `{ default: { sanitize, ... } }` in the renderer bundle. The previous
+// default import (`import DOMPurify from 'dompurify'`) gave back the
+// namespace object whose `.sanitize` was undefined — React then dropped
+// `dangerouslySetInnerHTML.__html=undefined` on the floor and rendered
+// the raw `<h2>…</h2>` source text instead of the parsed HTML. Resolve
+// the inner factory explicitly to avoid the regression.
+//
+// Defensive: walk through plausible interop shapes (`default.default`
+// has shown up in earlier CJS-under-Vite regressions) and only bind
+// when `sanitize` is actually a function. If nothing matches we fall
+// back to an identity passthrough — the user sees raw HTML markers,
+// which is bad UX but better than a TypeError at module-load time
+// taking the whole UpdateModal (and its importer chain) down.
+function resolveSanitize(): (input: string, opts: unknown) => string {
+  const candidates: unknown[] = [
+    DOMPurifyNs,
+    (DOMPurifyNs as { default?: unknown }).default,
+    ((DOMPurifyNs as { default?: { default?: unknown } }).default as { default?: unknown })
+      ?.default,
+  ]
+  for (const c of candidates) {
+    if (c && typeof (c as { sanitize?: unknown }).sanitize === 'function') {
+      const factory = c as { sanitize: (input: string, opts: unknown) => string }
+      return factory.sanitize.bind(factory)
+    }
+  }
+  console.error('[UpdateModal] DOMPurify.sanitize not found — falling back to raw text')
+  return (input: string) => input
+}
+const sanitizeHtml = resolveSanitize()
 import { useUpdaterStore } from '../../stores/updater.store'
 import { useTranslation } from '../../lib/i18n'
 import Modal from '../shared/Modal'
@@ -105,7 +137,7 @@ function StatusContent({
               <div
                 className="release-notes-html max-h-56 overflow-y-auto text-sm text-[var(--text)]"
                 dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(releaseNotes, {
+                  __html: sanitizeHtml(releaseNotes, {
                     ALLOWED_TAGS: [
                       'h1',
                       'h2',

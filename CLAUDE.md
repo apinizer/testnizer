@@ -305,6 +305,8 @@ Her feature için bu sırayı izle:
 6. `src/renderer/stores/` — Zustand store
 7. `src/renderer/components/` — React UI
 
+**Yeni protokol eklerken Ctrl+S davranışı:** `src/renderer/lib/save-active-request.ts`'in `snapshotProtocol()` fonksiyonuna o protokolün store snapshot branch'ini ekle — aksi halde Ctrl+S in-place update sırasında protokol-spesifik field'lar (connection URL, namespace, proto path, vb.) DB'ye yazılmaz ve tab kapanıp açılınca kaybolur. `EndpointSaveModal` aynı helper'ı kullandığı için "Save As" modal'ında da otomatik geçerli olur — tek nokta.
+
 ## Testler
 
 - **Unit/integration**: `vitest` ^3 — `tests/main/` (handler/engine/repo) ve `tests/renderer/` (component/store). `pretest` hook'u `ensure-native-abi.js` çağırarak better-sqlite3'ü **node ABI**'ye flip eder.
@@ -356,3 +358,5 @@ Her feature için bu sırayı izle:
 - **Dynamic import uyarısı**: `runner.handler.ts`, `scheduler.handler.ts` tarafından dinamik import edilirken `ipc/index.ts`'te statik de import ediliyor — Vite uyarı verir, davranışsal sorun yok.
 - **Test helper şema senkronizasyonu**: `tests/main/handlers/helpers.ts` `createTestDb()` üretim migration'larını **manuel yansıtmak zorunda** — `database.ts`'deki `ALTER TABLE` migration'ları test DB'sinde otomatik koşmaz. Yeni kolon eklenirse helper'a da eklenmeli, yoksa handler INSERT'leri "no such column" ile sessizce success=false döner ve CI quality job'u kırar.
 - **electron-builder publish race condition**: Tag push tetikli paralel matrix build'lerde her job kendi `POST /releases`'ini yapar; ilk gelen kazanır, diğerleri 422 `already_exists` alır ve fatal sayar (Linux x64/arm64 bu yüzden tekrar tekrar düşer). Geçici çözüm: failed job'ları `gh run rerun --failed` ile yeniden çalıştır — release artık var olduğu için "update mode" kazanır. Kalıcı çözüm: matrix öncesi tek "create release if not exists" job'u eklemek.
+- **Header assertion paralelliği**: Test assertion lookup logic'i hem main (`src/main/ipc/runner.handler.ts` → `runAssertionsMainProcess` + `normaliseRunnerHeaders`) hem renderer (`src/renderer/lib/test-runner.ts` → `assertHeader*` + `normaliseHeaders`) tarafında ayrı ayrı duruyor. Send butonu renderer yolunu, Runner main yolunu kullanır — birini değiştirirken (case-insensitive lookup, trim, headers array→object normalize) diğerini de eşle, yoksa "tek istek pass / runner fail" gibi tutarsız sonuçlar oluşur.
+- **NSIS wizard mode (v1.4.5+)**: Windows installer `nsis.oneClick: false` ile **wizard** gösterir, sessiz değil. `src/main/updater.ts`'te `quitAndInstall(false, true)` ve renderer IPC reply'i öncelemek için `setImmediate` defer ekli. v1.4.4'te silent install başarısızlıkları kullanıcıyı app'siz state'te bırakıyordu (commit `c79526d`). "Tekrar silent installer'a dönelim" tasarımı geri açma — wizard kasıtlı.

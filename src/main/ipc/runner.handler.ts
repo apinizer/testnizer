@@ -2,7 +2,11 @@
 // Testnizer — Collection Runner IPC Handler
 
 import { ipcMain, BrowserWindow } from 'electron'
-import { executeHttpRequest, HttpRequestOptions } from '../protocols/http.engine'
+import {
+  executeHttpRequest,
+  HttpRequestOptions,
+  stripUrlCredentials,
+} from '../protocols/http.engine'
 import * as endpointRepo from '../db/endpoint.repo'
 import * as tsiRepo from '../db/test-suite-item.repo'
 import * as historyRepo from '../db/history.repo'
@@ -338,6 +342,30 @@ function requestBodyToString(body?: {
   return body.content
 }
 
+/**
+ * Flatten `response.headers` into a Record<string,string> regardless of
+ * whether the engine handed back an object or an alternating-pair array.
+ * Identical to the renderer's `normaliseHeaders` — see test-runner.ts.
+ */
+function normaliseRunnerHeaders(input: unknown): Record<string, string> {
+  if (!input) return {}
+  if (Array.isArray(input)) {
+    const out: Record<string, string> = {}
+    for (const pair of input) {
+      if (Array.isArray(pair) && pair.length >= 2 && typeof pair[0] === 'string') {
+        out[pair[0]] = String(pair[1] ?? '')
+      }
+    }
+    return out
+  }
+  const obj = input as Record<string, unknown>
+  const out: Record<string, string> = {}
+  for (const k of Object.keys(obj)) {
+    out[k] = String(obj[k] ?? '')
+  }
+  return out
+}
+
 function runAssertionsMainProcess(
   assertions: TestAssertion[],
   response: {
@@ -391,25 +419,27 @@ function runAssertionsMainProcess(
             }
           }
           case 'header_exists': {
-            const headerName = resolveStr(assertion.headerName).toLowerCase()
-            const headers = response.headers ?? {}
+            const headerName = resolveStr(assertion.headerName).trim().toLowerCase()
+            const headers = normaliseRunnerHeaders(response.headers)
             const found = Object.keys(headers).some((k) => k.toLowerCase() === headerName)
             return { name: assertion.name, passed: found, actual: found ? 'exists' : 'not found' }
           }
           case 'header_equals': {
-            const headerName = resolveStr(assertion.headerName).toLowerCase()
-            const headers = response.headers ?? {}
+            const headerName = resolveStr(assertion.headerName).trim().toLowerCase()
+            const headers = normaliseRunnerHeaders(response.headers)
             const entry = Object.entries(headers).find(([k]) => k.toLowerCase() === headerName)
-            const actual = entry ? entry[1] : ''
-            const expected = resolveStr(assertion.expected)
+            const actual = entry ? entry[1].trim() : ''
+            const expected = resolveStr(assertion.expected).trim()
             return { name: assertion.name, passed: actual === expected, actual }
           }
           case 'header_contains': {
-            const headerName = resolveStr(assertion.headerName).toLowerCase()
-            const headers = response.headers ?? {}
+            const headerName = resolveStr(assertion.headerName).trim().toLowerCase()
+            const headers = normaliseRunnerHeaders(response.headers)
             const entry = Object.entries(headers).find(([k]) => k.toLowerCase() === headerName)
-            const actual = entry ? entry[1] : ''
-            const expected = resolveStr(assertion.expected)
+            // Mirror test-runner.ts: trim both sides so contains/equals stay
+            // consistent. Stray whitespace on either side shouldn't decide.
+            const actual = entry ? entry[1].trim() : ''
+            const expected = resolveStr(assertion.expected).trim()
             return { name: assertion.name, passed: actual.includes(expected), actual }
           }
           case 'response_time_under': {
@@ -1070,13 +1100,18 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
 
           // Auto-save to history
           try {
+            // Mirror request.handler.ts: scrub `user:pass@host` userinfo
+            // from the persisted URL so a credential-bearing URL bar entry
+            // (or one synthesised by a misconfigured importer) doesn't
+            // land on disk in the history table.
+            const sanitizedRunnerUrl = stripUrlCredentials(resolvedOptions.url)
             historyRepo.addHistory({
               workspace_id: options.workspaceId,
               project_id: options.projectId,
               endpoint_id: endpointId,
               protocol: endpoint.protocol || 'http',
               method: resolvedOptions.method,
-              url: resolvedOptions.url,
+              url: sanitizedRunnerUrl,
               status_code: response.status,
               duration_ms: response.timing?.total ? Math.round(response.timing.total) : undefined,
               // Capture the headers/params/body that actually went out on the
@@ -1086,7 +1121,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
               // them — v1.3.1 §5.7 / §5.8.
               request_snapshot: JSON.stringify({
                 method: resolvedOptions.method,
-                url: resolvedOptions.url,
+                url: sanitizedRunnerUrl,
                 headers: resolvedOptions.headers ?? [],
                 params: resolvedOptions.params ?? [],
                 body: resolvedOptions.body
@@ -1164,8 +1199,10 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
             // Use the final URL the engine actually hit (after query
             // params + variable substitution + redirects) so the
             // Request tab in run-results shows the same URL the wire
-            // saw — not the unresolved configured URL.
-            url: response.actualRequest?.url ?? requestOptions.url,
+            // saw — not the unresolved configured URL. `actualRequest.url`
+            // is already credential-stripped by the engine; the fallback
+            // `requestOptions.url` is not, so scrub it here.
+            url: response.actualRequest?.url ?? stripUrlCredentials(requestOptions.url),
             status: response.status ?? null,
             statusText: response.statusText ?? '',
             duration: response.timing.total,

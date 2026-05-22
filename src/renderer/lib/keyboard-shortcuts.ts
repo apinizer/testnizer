@@ -9,6 +9,8 @@ import { useWorkspaceStore } from '../stores/workspace.store'
 import { isMac } from './platform'
 import { makeTabId } from './utils'
 import { isToolProtocol } from '../types'
+import { saveActiveRequestInPlace } from './save-active-request'
+import { toast } from './toast'
 
 interface ShortcutHandler {
   key: string
@@ -95,11 +97,29 @@ export function useKeyboardShortcuts(): void {
                 (!isToolProtocol(active.protocol) &&
                   active.protocol !== 'runner' &&
                   active.protocol !== 'mockServer'))
-            if (isRequestTab) {
-              ui.setShowEndpointSaveModal(true)
-            } else {
+            if (!isRequestTab) {
               ui.setShowSaveModal(true)
+              return
             }
+            // Already-persisted rows (saved_request / test_suite_item) skip
+            // the folder-picker modal and write straight back to their row.
+            // Without this branch a Ctrl+S on a Test Suite item opened a
+            // modal that listed the APIs folder tree (wrong tree!) and on
+            // submit silently created a duplicate APIs request (v1.4.4
+            // §5.2). For new tabs (no row yet) fall through to the modal.
+            if (active && (active.savedRequestId || active.testSuiteItemId)) {
+              void saveActiveRequestInPlace().then((result) => {
+                if (result.notApplicable) {
+                  ui.setShowEndpointSaveModal(true)
+                  return
+                }
+                if (!result.success) {
+                  toast.error(result.error || 'Save failed')
+                }
+              })
+              return
+            }
+            ui.setShowEndpointSaveModal(true)
           },
         },
         {
@@ -111,21 +131,15 @@ export function useKeyboardShortcuts(): void {
             useUIStore.getState().setShowSaveModal(true)
           },
         },
-        {
-          key: 't',
-          ctrl: true,
-          description: 'New tab',
-          action: () => {
-            const id = makeTabId()
-            useTabsStore.getState().openTab({
-              id,
-              name: 'New Request',
-              protocol: 'http',
-              method: 'GET',
-              url: '',
-            })
-          },
-        },
+        // Ctrl+T (New Tab) and Ctrl+W (Close Tab) live exclusively on
+        // Workbench's own keydown listener — keeping the same chord wired
+        // here too made every press fire BOTH listeners (this module is
+        // mounted globally on AppShell, Workbench is mounted on the route
+        // that shows tabs). That double-fire is why v1.4.4 users reported
+        // Ctrl+T opening two tabs. The File menu items (now
+        // accelerator-less, hint-only) drive the same actions for users
+        // who prefer the menu — see `AppShell.tsx` menu:newTab/closeTab
+        // handlers.
         {
           key: 'p',
           ctrl: true,
@@ -137,17 +151,8 @@ export function useKeyboardShortcuts(): void {
             useWorkspaceStore.getState().goHome()
           },
         },
-        {
-          key: 'w',
-          ctrl: true,
-          description: 'Close tab',
-          action: () => {
-            const activeTabId = useTabsStore.getState().activeTabId
-            if (activeTabId) {
-              useTabsStore.getState().closeTab(activeTabId)
-            }
-          },
-        },
+        // Ctrl+W intentionally not bound here — Workbench owns it. See
+        // the note above the `Ctrl+P` entry for the double-fire history.
         {
           key: 'l',
           ctrl: true,

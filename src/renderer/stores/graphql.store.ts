@@ -378,12 +378,38 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
 
   introspect: async () => {
     const { url, headers } = get()
-    if (!url.trim()) return
+    if (!url.trim()) {
+      // Previously silently returned — the user clicked Introspect and
+      // nothing happened, no banner, no log (v1.4.4 §12.7). Surface a
+      // clear error so the button feels live.
+      set({ introspectError: 'Enter the GraphQL endpoint URL first.' })
+      return
+    }
 
     set({ isIntrospecting: true, introspectError: null })
 
     const introVars = useEnvironmentStore.getState().getActiveVariables()
-    const introUrl = resolveVariables(url, introVars)
+    let introUrl = resolveVariables(url, introVars)
+    // If `resolveVariables` left any `{{var}}` placeholders behind, the
+    // variable was undefined in the active environment. Surface a clean
+    // error instead of prepending `http://` and sending the literal
+    // placeholder downstream — that path produces a misleading
+    // "ENOTFOUND" / "Invalid URL" error far from the real cause
+    // (v1.4.4 §12.7 sweep). Match the resolver's literal-fallback shape.
+    const unresolved = introUrl.match(/\{\{\s*([^}\s]+)\s*\}\}/)
+    if (unresolved) {
+      set({
+        introspectError: `Variable ${unresolved[0]} is not defined in the active environment.`,
+        isIntrospecting: false,
+      })
+      return
+    }
+    // Default scheme when the user omits one. The HTTP engine requires a
+    // full URL; without this `localhost:4000/graphql` would surface as
+    // "Invalid URL" instead of actually trying introspection.
+    if (introUrl && !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(introUrl)) {
+      introUrl = `http://${introUrl}`
+    }
     const introHeaders = resolveKeyValuePairs(
       headers.filter((h) => h.enabled && h.key.trim()),
       introVars,
@@ -393,7 +419,14 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
       const result = await window.api?.request?.send({
         method: 'POST',
         url: introUrl,
-        headers: introHeaders,
+        headers: [
+          ...introHeaders,
+          // Default Content-Type so the gateway treats this as a valid
+          // GraphQL POST. Don't override an explicit user header.
+          ...(introHeaders.some((h) => h.key.toLowerCase() === 'content-type')
+            ? []
+            : [{ key: 'Content-Type', value: 'application/json', enabled: true }]),
+        ],
         body: {
           type: 'json',
           content: JSON.stringify({ query: INTROSPECTION_QUERY }),

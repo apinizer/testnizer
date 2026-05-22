@@ -33,18 +33,28 @@ export function pushPayloadToActiveSoap(xml: string, autoSend = false): boolean 
   const tabsStore = useTabsStore.getState()
   const activeTab = tabsStore.tabs.find((t) => t.id === tabsStore.activeTabId)
 
-  const dispatch = (): void => {
-    useSoapStore.getState().setRawXml(xml)
+  const dispatch = (targetTabId: string): void => {
+    // SOAP store is tab-aware — without an explicit `switchToTab(...)`
+    // we'd write the rawXml into the *previously-rendered* SOAP tab's
+    // slice. The renderer normally calls switchToTab from a useEffect
+    // after the active tab changes, but `dispatch()` runs in the same
+    // microtask as `setActiveTab`, so the effect hasn't fired yet — we
+    // have to flip the slice ourselves first.
+    const soap = useSoapStore.getState()
+    soap.switchToTab(targetTabId)
+    soap.setRawXml(xml)
     if (autoSend) {
       // Fire-and-forget — the SOAP editor surfaces the response in the
-      // response pane on its own.
+      // response pane on its own. Reading sendSoap off the store again
+      // (rather than via the captured `soap` ref) picks up any state
+      // mutations setRawXml just performed.
       void useSoapStore.getState().sendSoap()
     }
   }
 
   // Prefer the currently active SOAP tab; fall back to the last-known one.
   if (activeTab?.protocol === 'soap') {
-    dispatch()
+    dispatch(activeTab.id)
     return true
   }
 
@@ -52,7 +62,7 @@ export function pushPayloadToActiveSoap(xml: string, autoSend = false): boolean 
     const target = tabsStore.tabs.find((t) => t.id === lastSoapTabId)
     if (target?.protocol === 'soap') {
       tabsStore.setActiveTab(lastSoapTabId)
-      dispatch()
+      dispatch(lastSoapTabId)
       return true
     }
   }

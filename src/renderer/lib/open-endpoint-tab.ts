@@ -9,6 +9,7 @@ import type {
 import { useTabsStore } from '../stores/tabs.store'
 import { useRequestStore } from '../stores/request.store'
 import { useResponseStore } from '../stores/response.store'
+import { restoreProtocolFromMetadata } from './save-active-request'
 
 /**
  * Open an endpoint or saved request in a new (or reused) preview tab and
@@ -242,6 +243,23 @@ export async function openSuiteItemTab(id: string, opts?: { pinned?: boolean }):
       postScript,
       assertions,
     })
+
+    // Re-hydrate protocol-specific state (SOAP / Socket.IO / gRPC) from
+    // the snapshot metadata that `snapshotProtocol` writes into
+    // `schema.metadata` at save time. Without this, Ctrl+S on a SOAP
+    // tab inside a Test Suite item persisted the WSDL/operation but
+    // reopening the item showed an empty SOAP slice — the save path
+    // wrote data that no read path consumed. Tolerant of older items
+    // that have no metadata field. (Imported the helper at the top of
+    // this file.)
+    try {
+      const schemaForMeta = JSON.parse(item.request_schema || '{}') as { metadata?: unknown }
+      if (schemaForMeta.metadata) {
+        restoreProtocolFromMetadata(protocol, schemaForMeta.metadata)
+      }
+    } catch {
+      /* malformed schema — protocol-specific restore skipped */
+    }
   } catch {
     /* ignore */
   }

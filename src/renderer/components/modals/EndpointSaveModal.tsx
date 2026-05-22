@@ -3,10 +3,8 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useTabsStore } from '../../stores/tabs.store'
-import { useSoapStore } from '../../stores/soap.store'
-import { useWebSocketStore } from '../../stores/websocket.store'
-import { useSseStore } from '../../stores/sse.store'
 import { useTranslation } from '../../lib/i18n'
+import { snapshotProtocol } from '../../lib/save-active-request'
 import Modal from '../shared/Modal'
 import type { Folder, Tab } from '../../types'
 
@@ -126,41 +124,23 @@ export default function EndpointSaveModal() {
     setSaving(true)
     setSaveError(null)
     try {
-      // Pull protocol-specific data from the matching store. The legacy
-      // EndpointSaveModal only ever read useRequestStore (HTTP), which is
-      // why saving a SOAP / WebSocket / SSE tab into a folder used to
-      // persist an empty HTTP request and lose the original protocol
-      // payload (v1.4.2 T-12.6/8/9).
+      // Pull protocol-specific data from the matching store via the shared
+      // `snapshotProtocol` helper (also used by Ctrl+S in-place save) — keeps
+      // both save paths in lockstep so adding a new protocol doesn't need to
+      // be wired up twice. The legacy modal only read useRequestStore (HTTP),
+      // which is why saving a SOAP / WebSocket / SSE tab into a folder used
+      // to persist an empty HTTP request and lose the original protocol
+      // payload (v1.4.2 T-12.6/8/9, v1.4.4 §12.8/12.9).
       const protocol = (activeTab?.protocol ?? 'http') as string
-      let effectiveUrl = url
-      let effectiveMethod = method
-      let effectiveBody: unknown = body
-      const protocolMeta: Record<string, unknown> = {}
-
-      if (protocol === 'soap') {
-        const soap = useSoapStore.getState()
-        effectiveUrl = soap.endpointUrl || soap.wsdlUrl || url
-        effectiveMethod = 'POST'
-        effectiveBody = { type: 'xml', content: soap.rawXml }
-        protocolMeta.soap = {
-          wsdlUrl: soap.wsdlUrl,
-          selectedService: soap.selectedService,
-          selectedPort: soap.selectedPort,
-          selectedOperation: soap.selectedOperation,
-          bodyMode: soap.bodyMode,
-          wsSecurity: soap.wsSecurity,
-        }
-      } else if (protocol === 'websocket') {
-        const ws = useWebSocketStore.getState()
-        effectiveUrl = ws.url || url
-        effectiveMethod = 'GET'
-        effectiveBody = { type: 'none' }
-      } else if (protocol === 'sse') {
-        const sse = useSseStore.getState()
-        effectiveUrl = sse.url || url
-        effectiveMethod = sse.method || 'GET'
-        effectiveBody = { type: sse.bodyType === 'json' ? 'json' : 'text', content: sse.body }
-      }
+      const snapshot = activeTab
+        ? snapshotProtocol(activeTab)
+        : {
+            effectiveUrl: url,
+            effectiveMethod: method,
+            effectiveBody: body as unknown,
+            protocolMeta: {} as Record<string, unknown>,
+          }
+      const { effectiveUrl, effectiveMethod, effectiveBody, protocolMeta } = snapshot
 
       const payload = {
         name: endpointName.trim() || 'Untitled',

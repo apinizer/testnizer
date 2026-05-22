@@ -2,9 +2,16 @@
   "permissions": {
     "allow": [
       "mcp__mongodb__find",
+      "mcp__mongodb__count",
+      "mcp__mongodb__aggregate",
       "mcp__atlassian__jira_get_issue",
       "mcp__atlassian__jira_search",
-      "mcp__atlassian__jira_get_transitions"
+      "mcp__atlassian__jira_get_transitions",
+      "Bash(npm run typecheck)",
+      "Bash(npm run test:unit)",
+      "Bash(npm run lint)",
+      "Bash(npm run test:e2e:smoke)",
+      "Bash(mvn dependency:build-classpath)"
     ]
   }
 }

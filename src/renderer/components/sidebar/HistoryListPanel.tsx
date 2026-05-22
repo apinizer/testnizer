@@ -215,6 +215,14 @@ export default function HistoryListPanel() {
 
     if (entry.response_snapshot) {
       const r = entry.response_snapshot as Partial<ApiResponse>
+      // Pre-fix history rows (written before the v1.4.4 credential-strip
+      // sweep) may have `actualRequest.url` carrying `user:pass@host`
+      // userinfo. Scrub it on restore so the Actual Request panel never
+      // displays credentials that the rest of the UI already strips.
+      // Modern rows are already clean — this is a no-op for them.
+      const cleanActualRequest = r.actualRequest
+        ? { ...r.actualRequest, url: stripCredentialsInUrl(r.actualRequest.url) ?? '' }
+        : r.actualRequest
       setResponse({
         requestId: entry.id,
         protocol,
@@ -225,7 +233,31 @@ export default function HistoryListPanel() {
         bodySize: r.bodySize,
         timing: r.timing || { total: entry.duration_ms || 0 },
         error: r.error,
+        // Carry forward the saved test results + console logs so the user
+        // who opens an old run (especially a Test Suite request, where
+        // pm.test()'s output is the whole point) sees the assertion
+        // verdicts and script logs they originally produced. Without
+        // these the Tests / Console sub-panes always rendered as empty
+        // even when the runner had real data on disk (v1.4.4 §12.4).
+        testResults: r.testResults,
+        consoleLogs: r.consoleLogs,
+        actualRequest: cleanActualRequest,
       })
+    }
+  }
+
+  function stripCredentialsInUrl(raw: string | undefined): string | undefined {
+    if (!raw) return raw
+    try {
+      const u = new URL(raw)
+      if (u.username || u.password) {
+        u.username = ''
+        u.password = ''
+        return u.toString()
+      }
+      return raw
+    } catch {
+      return raw
     }
   }
 

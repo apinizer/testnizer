@@ -187,9 +187,19 @@ app.whenReady().then(() => {
     {
       label: 'File',
       submenu: [
+        // No `accelerator:` fields below: when Electron registers an
+        // accelerator on a menu item it ALSO swallows the key chord and
+        // fires the click handler — but the renderer's window keydown
+        // listener (`useKeyboardShortcuts`) still runs in parallel, so
+        // Ctrl+T opened two tabs and Ctrl+W closed two. We keep the
+        // menu items as clickable shortcuts (and surface the chord as a
+        // visible hint via `\t…`), and let the renderer keyboard
+        // listener own the actual key handling. Apidog/Postman/Insomnia
+        // all do this for the same reason. The chord label must match
+        // the platform — renderer's keyboard handler uses
+        // `e.metaKey` on macOS, so Mac users see "Cmd+T", not "Ctrl+T".
         {
-          label: 'New Tab',
-          accelerator: 'CmdOrCtrl+T',
+          label: isMac ? 'New Tab\tCmd+T' : 'New Tab\tCtrl+T',
           click: () => broadcastMenuEvent('menu:newTab'),
         },
         {
@@ -201,8 +211,7 @@ app.whenReady().then(() => {
         },
         { type: 'separator' },
         {
-          label: 'Import…',
-          accelerator: 'CmdOrCtrl+O',
+          label: isMac ? 'Import…\tCmd+O' : 'Import…\tCtrl+O',
           click: () => broadcastMenuEvent('menu:openImport'),
         },
         {
@@ -211,19 +220,16 @@ app.whenReady().then(() => {
         },
         { type: 'separator' },
         {
-          label: 'Save',
-          accelerator: 'CmdOrCtrl+S',
+          label: isMac ? 'Save\tCmd+S' : 'Save\tCtrl+S',
           click: () => broadcastMenuEvent('menu:save'),
         },
         {
-          label: 'Settings…',
-          accelerator: isMac ? 'Cmd+,' : 'Ctrl+,',
+          label: isMac ? 'Settings…\tCmd+,' : 'Settings…\tCtrl+,',
           click: () => broadcastMenuEvent('menu:openSettings'),
         },
         { type: 'separator' },
         {
-          label: 'Close Tab',
-          accelerator: 'CmdOrCtrl+W',
+          label: isMac ? 'Close Tab\tCmd+W' : 'Close Tab\tCtrl+W',
           click: () => broadcastMenuEvent('menu:closeTab'),
         },
         ...(isMac

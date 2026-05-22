@@ -327,14 +327,27 @@ export default function TreeView() {
           socketio: { name: 'New Socket.IO', method: 'GET' },
         }
         const d = defaultsByProtocol[protocol] ?? defaultsByProtocol.http!
-        await window.api?.savedRequest?.create({
+        const result = (await window.api?.savedRequest?.create({
           project_id: activeProjectId,
           folder_id: folderId,
           name: d.name,
           method: d.method,
           url: '',
           protocol,
-        })
+        })) as { success: boolean; error?: string } | undefined
+        // Previously this `await` was followed by a hard `refreshTree()` with
+        // no inspection of the IPC result — a non-existent SQL constraint or
+        // a missing IPC binding silently swallowed the request and the user
+        // saw nothing happen ("right-click → Add Request → protocol → no
+        // effect", v1.4.4 §12.1). Surface the failure both to the console
+        // (for support diagnostics) and the user (so they don't keep
+        // clicking expecting a result).
+        if (!result?.success) {
+          const reason = result?.error || 'no response'
+          console.error('savedRequest.create failed:', reason)
+          toast.error(`Failed to create request: ${reason}`)
+          return
+        }
         await refreshTree()
         // Auto-expand the parent folder so the freshly-added request is
         // visible immediately. Without this, the request was inserted with
@@ -344,8 +357,9 @@ export default function TreeView() {
           const store = useWorkspaceStore.getState()
           if (!store.openNodeIds.has(folderId)) store.toggleNode(folderId)
         }
-      } catch {
-        /* ignore */
+      } catch (err) {
+        console.error('Add Request from context menu failed:', err)
+        toast.error(`Failed to create request: ${(err as Error).message || 'unknown error'}`)
       }
     },
     [activeProjectId, refreshTree],

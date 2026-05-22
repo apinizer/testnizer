@@ -88,7 +88,21 @@ export async function initAutoUpdater(): Promise<void> {
     })
   })
 
-  autoUpdater.on('update-downloaded', () => {
+  autoUpdater.on('update-downloaded', (info: unknown) => {
+    // `downloadedFile` lands on the info object on Windows/macOS; log it so
+    // post-restart support can confirm the installer actually reached disk
+    // before quitAndInstall runs (v1.4.4 users hit a state where the old
+    // app was removed but the new installer never executed — likely the
+    // file was missing or 0 bytes when quitAndInstall fired).
+    const downloadedFile =
+      info && typeof info === 'object'
+        ? ((info as Record<string, unknown>).downloadedFile as string | undefined)
+        : undefined
+    if (downloadedFile) {
+      console.log('[updater] Update downloaded to:', downloadedFile)
+    } else {
+      console.warn('[updater] update-downloaded fired without downloadedFile')
+    }
     sendToAllWindows('updater:event', { type: 'downloaded' })
   })
 
@@ -126,7 +140,36 @@ export async function initAutoUpdater(): Promise<void> {
       //   user with the app fully uninstalled, no UI, no clue why
       //   v1.4.4 → v1.4.5 hotfix).
       // isForceRunAfter=true: relaunch the app once install completes.
-      autoUpdater.quitAndInstall(false, true)
+      //
+      // Awaited setImmediate: we want quitAndInstall to fire one tick
+      // *after* the current event loop turn (so the IPC's own reply
+      // serialisation completes first — preserves the v1.4.4 fix), but
+      // we ALSO need a synchronous throw from quitAndInstall to come
+      // back through this handler as `{ success: false }`. The fire-
+      // and-forget `setImmediate(() => …)` we had before resolved the
+      // handler with `{ success: true }` even when quitAndInstall
+      // immediately threw, so the renderer modal showed "restarting…"
+      // forever while the broadcast `error` event was effectively
+      // invisible. Awaiting on a Promise that the setImmediate
+      // callback resolves/rejects keeps both behaviours.
+      await new Promise<void>((resolve, reject) => {
+        setImmediate(() => {
+          try {
+            autoUpdater.quitAndInstall(false, true)
+            resolve()
+          } catch (err) {
+            console.error('[updater] quitAndInstall failed:', (err as Error).message)
+            // Broadcast for any other window that may still be alive
+            // (a second BrowserWindow), then reject so the IPC reply
+            // carries the failure to the modal that triggered it.
+            sendToAllWindows('updater:event', {
+              type: 'error',
+              error: (err as Error).message,
+            })
+            reject(err)
+          }
+        })
+      })
       return { success: true, data: null }
     } catch (e) {
       return { success: false, error: (e as Error).message }

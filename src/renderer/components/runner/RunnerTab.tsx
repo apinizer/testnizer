@@ -247,9 +247,46 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [isRunning, setIsRunning] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [totalCount, setTotalCount] = useState(0)
-  const [results, setResults] = useState<EndpointRunResult[]>([])
-  const [report, setReport] = useState<RunnerReport | null>(null)
-  const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
+  // Persist the inspected run snapshot too (not just the selectedResultId).
+  // Without this, opening an All Runs detail → switching tabs → coming back
+  // restored `view='results'` via runner-view-${tabId} but `results`/`report`
+  // stayed at their empty initial state, so the user landed on a blank
+  // results page (v1.4.4 §5.6). The one-shot runner-report-${tabId} key
+  // can't help because that's consumed by the pre-load effect on the
+  // first mount and never repopulated.
+  //
+  // Read sessionStorage inside each `useState`'s lazy initializer so it
+  // happens exactly once, on first mount. An IIFE at component scope would
+  // re-run on every render and do an MB-scale JSON.parse per re-render for
+  // big runs.
+  const runDataStorageKey = tabId ? `runner-run-data-${tabId}` : null
+  const readStoredRunData = (): {
+    results: EndpointRunResult[]
+    report: RunnerReport | null
+    startedAt: number | null
+  } | null => {
+    if (!runDataStorageKey) return null
+    try {
+      const stored = sessionStorage.getItem(runDataStorageKey)
+      if (!stored) return null
+      return JSON.parse(stored) as {
+        results: EndpointRunResult[]
+        report: RunnerReport | null
+        startedAt: number | null
+      }
+    } catch {
+      return null
+    }
+  }
+  const [results, setResults] = useState<EndpointRunResult[]>(
+    () => readStoredRunData()?.results ?? [],
+  )
+  const [report, setReport] = useState<RunnerReport | null>(
+    () => readStoredRunData()?.report ?? null,
+  )
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(
+    () => readStoredRunData()?.startedAt ?? null,
+  )
   // Persist the currently inspected result so leaving + returning to the
   // tab (or switching between Overview / All Runs and back to a results
   // view) does not drop the user back to an unscoped blank state
@@ -278,6 +315,37 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       sessionStorage.removeItem(resultsStorageKey)
     }
   }, [selectedResultId, resultsStorageKey])
+
+  // Mirror the full run snapshot (results / report / startedAt) so a tab
+  // switch + return doesn't blank the results detail view. Only persists
+  // when there's actually a run to remember — clears the key otherwise.
+  //
+  // Skip while a run is in flight: progress ticks fire `setResults` after
+  // every endpoint, and a 200-endpoint run would serialise + write the
+  // entire result blob to sessionStorage 200 times (MB-scale writes on
+  // the main thread, plus a real risk of `QuotaExceededError` on big
+  // runs). We only need the final snapshot — the next `isRunning=false`
+  // transition will trigger this effect once with the complete data,
+  // because `results`/`report` change on completion too.
+  useEffect(() => {
+    if (!runDataStorageKey) return
+    if (isRunning) return
+    if (results.length > 0 || report) {
+      try {
+        sessionStorage.setItem(
+          runDataStorageKey,
+          JSON.stringify({ results, report, startedAt: runStartedAt }),
+        )
+      } catch (err) {
+        // QuotaExceededError on a huge run — drop the snapshot rather
+        // than crashing the tab. Users still see the live results in
+        // memory; only the tab-switch restore path is degraded.
+        console.warn('runner: failed to persist run snapshot:', (err as Error).message)
+      }
+    } else {
+      sessionStorage.removeItem(runDataStorageKey)
+    }
+  }, [isRunning, results, report, runStartedAt, runDataStorageKey])
 
   // Origin tracking: 'apis' if opened via right-click Run on APIs tree, 'suite' if from Test Suite, 'runner' otherwise
   const [runOrigin, setRunOrigin] = useState<'apis' | 'suite' | 'runner'>(
