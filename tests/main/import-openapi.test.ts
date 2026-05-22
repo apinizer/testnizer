@@ -405,7 +405,12 @@ describe('OpenAPI 3.0.3 import — Petstore', () => {
     const schema = JSON.parse(listPets!.request_schema)
     expect(schema.method).toBe('GET')
     expect(schema.params).toHaveLength(1)
-    expect(schema.params[0]).toMatchObject({ key: 'limit', value: 20, description: 'How many to return' })
+    // value is the string "20", not the number 20 — importer now coerces
+    // schema.default to string so renderer KeyValueTable's string-only
+    // APIs (isInsideVariableExpression, suggestion filter) don't crash
+    // on a numeric default and unmount the whole React tree
+    // (v1.4.4 white-screen hotfix).
+    expect(schema.params[0]).toMatchObject({ key: 'limit', value: '20', description: 'How many to return' })
     expect(schema.headers).toHaveLength(1)
     expect(schema.headers[0]).toMatchObject({ key: 'X-Trace-Id', description: 'Trace identifier' })
   })
