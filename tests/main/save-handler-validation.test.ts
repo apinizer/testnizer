@@ -7,8 +7,15 @@ import { describe, expect, it } from 'vitest'
 import { validateProjectExport } from '../../src/main/ipc/save.handler'
 
 describe('validateProjectExport — shape checks', () => {
+  // v1.4.6: the validator collapses all "wrong file type" branches to a
+  // single generic message (matches the Postman/Insomnia/SoapUI/cURL
+  // guards). Only an obviously-Testnizer file that's just empty gets a
+  // separate, more helpful message ("re-export the source project").
+  const WRONG_TYPE = /not a Testnizer project file/i
+
   it('passes a fully-populated export', () => {
     const valid = {
+      kind: 'project',
       version: 'testnizer-project/2.0',
       exportedAt: Date.now(),
       project: { id: 'p1', name: 'My Project' },
@@ -24,51 +31,67 @@ describe('validateProjectExport — shape checks', () => {
   })
 
   it('rejects a non-object payload', () => {
-    expect(validateProjectExport('not-an-object')).toMatch(/not a JSON object/i)
-    expect(validateProjectExport(null)).toMatch(/not a JSON object/i)
-    expect(validateProjectExport(42)).toMatch(/not a JSON object/i)
+    expect(validateProjectExport('not-an-object')).toMatch(WRONG_TYPE)
+    expect(validateProjectExport(null)).toMatch(WRONG_TYPE)
+    expect(validateProjectExport(42)).toMatch(WRONG_TYPE)
   })
 
-  it('rejects a payload missing the version field', () => {
+  it('rejects a payload missing the kind:"project" marker', () => {
     expect(
       validateProjectExport({
+        version: 'testnizer-project/2.0',
         project: { id: 'p1', name: 'X' },
         folders: [],
         endpoints: [],
         savedRequests: [],
       }),
-    ).toMatch(/version/i)
+    ).toMatch(WRONG_TYPE)
+  })
+
+  it('rejects a payload missing the version field', () => {
+    expect(
+      validateProjectExport({
+        kind: 'project',
+        project: { id: 'p1', name: 'X' },
+        folders: [],
+        endpoints: [],
+        savedRequests: [],
+      }),
+    ).toMatch(WRONG_TYPE)
   })
 
   it('rejects a payload missing the project block', () => {
     expect(
       validateProjectExport({
+        kind: 'project',
         version: 'testnizer-project/2.0',
         folders: [],
         endpoints: [],
         savedRequests: [],
       }),
-    ).toMatch(/project/i)
+    ).toMatch(WRONG_TYPE)
   })
 
   it('rejects a payload with the wrong array shape', () => {
     expect(
       validateProjectExport({
+        kind: 'project',
         version: 'testnizer-project/2.0',
         project: { id: 'p1' },
         folders: 'not-an-array',
         endpoints: [],
         savedRequests: [],
       }),
-    ).toMatch(/folders\/endpoints\/savedRequests/i)
+    ).toMatch(WRONG_TYPE)
   })
 
   it('rejects the v1.3.1 corrupted-200-byte stub (all arrays empty)', () => {
-    // The literal shape v1.3.1 wrote to disk when the export query path
-    // silently returned zero rows. Re-importing it produced "Invalid project
-    // file format." (B24).
+    // Shape is right but the export is empty — different message ("re-
+    // export the source") so the user knows the file isn't the wrong
+    // type, the original export just failed.
     expect(
       validateProjectExport({
+        kind: 'project',
         version: 'testnizer-project/2.0',
         exportedAt: Date.now(),
         project: { id: 'p1', name: 'My Project' },
@@ -86,6 +109,7 @@ describe('validateProjectExport — shape checks', () => {
   it('accepts an export that only carries mock servers (mocks-only project)', () => {
     expect(
       validateProjectExport({
+        kind: 'project',
         version: 'testnizer-project/2.0',
         project: { id: 'p1', name: 'mocks-only' },
         folders: [],

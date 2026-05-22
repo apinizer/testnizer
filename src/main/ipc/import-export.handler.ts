@@ -2446,6 +2446,19 @@ function importCurl(
   const db = getDb()
   const now = Date.now()
 
+  // Reject input that obviously isn't a cURL command before parsing —
+  // protects against the same wrong-file-type confusion as the Postman /
+  // Insomnia importers (v1.4.6). A real cURL starts with `curl `
+  // (optionally preceded by whitespace, line continuations, or a `$ `
+  // shell prompt). Anything else gets a single generic message.
+  const cleaned = (curlCommand || '').replace(/^\s*\$\s*/, '').trim()
+  if (!/^curl(\s|$)/i.test(cleaned)) {
+    return {
+      success: false,
+      error: "This is not a cURL command. You can't upload this file type from here.",
+    }
+  }
+
   // Parse cURL command
   const parsed = parseCurlCommand(curlCommand)
 
@@ -4700,6 +4713,19 @@ async function importSoapUi(payload: {
   const now = Date.now()
   let endpointCount = 0
   let folderCount = 0
+
+  // SoapUI files are XML rooted at `<con:soapui-project ...>` (the
+  // `con` prefix maps to https://eviware.com/soapui/config). Reject
+  // input that doesn't match this shape with the generic wrong-file
+  // message so other XML / JSON / YAML exports don't accidentally
+  // pass through (v1.4.6).
+  const head = (payload.content || '').trim().slice(0, 4096)
+  if (!/<con:soapui-project[\s>]/i.test(head)) {
+    return {
+      success: false,
+      error: "This is not a SoapUI project file. You can't upload this file type from here.",
+    }
+  }
 
   let parsed: SoapUiParseResult
   try {

@@ -187,23 +187,34 @@ const CERTIFICATE_COLUMNS = [
 // project, missing top-level field, wrong file kind) instead of the generic
 // "Invalid project file format." that hid the v1.3.1 export-corruption bug.
 export function validateProjectExport(parsed: unknown): string | null {
-  if (!parsed || typeof parsed !== 'object') {
-    return 'Project file is not a JSON object.'
-  }
+  // Strict shape check for Testnizer-native project exports. Anything that
+  // doesn't match collapses to a single generic "wrong file type" error so
+  // a Postman / Insomnia / SoapUI / etc. file dragged into the Testnizer
+  // importer doesn't get six different misleading hints about which field
+  // looks wrong (v1.4.6 — matches the Postman/Insomnia/SoapUI/cURL guards).
+  const WRONG_TYPE =
+    "This is not a Testnizer project file. You can't upload this file type from here."
+
+  if (!parsed || typeof parsed !== 'object') return WRONG_TYPE
   const doc = parsed as Partial<ProjectExport>
-  if (!doc.version || typeof doc.version !== 'string') {
-    return 'Project file is missing the required "version" field.'
-  }
-  if (!doc.project || typeof doc.project !== 'object') {
-    return 'Project file is missing the required "project" object.'
-  }
+
+  // Testnizer exports always carry `kind: 'project'` and a string `version`.
+  if (doc.kind !== 'project') return WRONG_TYPE
+  if (!doc.version || typeof doc.version !== 'string') return WRONG_TYPE
+
+  // …and an object `project` plus the three core collection arrays.
+  if (!doc.project || typeof doc.project !== 'object') return WRONG_TYPE
   if (
     !Array.isArray(doc.folders) ||
     !Array.isArray(doc.endpoints) ||
     !Array.isArray(doc.savedRequests)
   ) {
-    return 'Project file is missing folders/endpoints/savedRequests arrays.'
+    return WRONG_TYPE
   }
+
+  // Shape is right but the export is empty — surface this separately so
+  // users with a genuinely-empty export know to re-export instead of
+  // assuming the file is the wrong type.
   if (
     doc.folders.length === 0 &&
     doc.endpoints.length === 0 &&
