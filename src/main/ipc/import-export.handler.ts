@@ -683,10 +683,25 @@ async function importOpenApi(
 
         if (operation.parameters) {
           for (const param of operation.parameters) {
+            // Coerce numeric / boolean / null defaults to string. The
+            // KeyValuePair `value` field is rendered through string-only
+            // APIs (input value, .toLowerCase(), .includes(), .replace()),
+            // so passing a raw `1` from `schema.default: 1` crashed the
+            // request editor on tab open → white screen for the rest of
+            // the session (v1.4.3 user-reported OpenAPI 3 import crash).
+            const rawDefault = param.schema?.default
+            const value =
+              rawDefault === undefined || rawDefault === null
+                ? ''
+                : typeof rawDefault === 'string'
+                  ? rawDefault
+                  : typeof rawDefault === 'object'
+                    ? JSON.stringify(rawDefault)
+                    : String(rawDefault)
             const item = {
               id: randomUUID(),
               key: param.name,
-              value: param.schema?.default ?? '',
+              value,
               description: param.description || '',
               enabled: true,
             }
