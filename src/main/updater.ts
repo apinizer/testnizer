@@ -121,8 +121,12 @@ export async function initAutoUpdater(): Promise<void> {
 
   ipcMain.handle('updater:install', async () => {
     try {
-      // isSilent=true: run NSIS silently (no wizard); isForceRunAfter=true: relaunch app after install
-      autoUpdater.quitAndInstall(true, true)
+      // isSilent=false: show the NSIS wizard so the user sees install
+      //   progress + any error dialog (a silent failure used to leave the
+      //   user with the app fully uninstalled, no UI, no clue why
+      //   v1.4.4 → v1.4.5 hotfix).
+      // isForceRunAfter=true: relaunch the app once install completes.
+      autoUpdater.quitAndInstall(false, true)
       return { success: true, data: null }
     } catch (e) {
       return { success: false, error: (e as Error).message }

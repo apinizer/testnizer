@@ -1,7 +1,7 @@
 {
   "name": "testnizer",
   "productName": "Testnizer",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "Testnizer — Cross-platform desktop API testing application",
   "main": "./out/main/index.js",
   "homepage": "https://testnizer.com",
@@ -282,20 +282,16 @@
       ]
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": false,
-      "allowElevation": false,
       "differentialPackage": false,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "Testnizer",
-      "menuCategory": false,
       "deleteAppDataOnUninstall": false,
-      "runAfterFinish": true,
       "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "include": "build/installer.nsh"
+      "uninstallerIcon": "build/icon.ico"
     },
     "publish": {
       "provider": "github",
