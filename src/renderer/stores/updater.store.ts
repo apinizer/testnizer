@@ -29,11 +29,23 @@ export const useUpdaterStore = create<UpdaterStore>((set) => ({
 
   check: () => {
     set({ status: 'checking', errorMessage: null })
-    // Delegate to main process via IPC
+    // Delegate to main process via IPC. The IPC handler doesn't reject the
+    // Promise on failure — it resolves with `{ success: false, error }` —
+    // so we also have to inspect the success flag and surface the real
+    // error message. Previously only the Promise-reject path was handled,
+    // so a stub or "Auto-updater not configured" reply left the modal
+    // stuck on "checking" with no feedback (v1.4.3 user-reported bug).
     if (window.api?.updater?.check) {
-      window.api.updater.check().catch((err: Error) => {
-        set({ status: 'error', errorMessage: err.message })
-      })
+      void window.api.updater
+        .check()
+        .then((result: { success: boolean; error?: string } | undefined) => {
+          if (result && result.success === false) {
+            set({ status: 'error', errorMessage: result.error || 'Update check failed' })
+          }
+        })
+        .catch((err: Error) => {
+          set({ status: 'error', errorMessage: err.message })
+        })
     } else {
       // Simulate for development
       setTimeout(() => {
@@ -45,9 +57,16 @@ export const useUpdaterStore = create<UpdaterStore>((set) => ({
   download: () => {
     set({ status: 'downloading', downloadPercent: 0 })
     if (window.api?.updater?.download) {
-      window.api.updater.download().catch((err: Error) => {
-        set({ status: 'error', errorMessage: err.message })
-      })
+      void window.api.updater
+        .download()
+        .then((result: { success: boolean; error?: string } | undefined) => {
+          if (result && result.success === false) {
+            set({ status: 'error', errorMessage: result.error || 'Download failed' })
+          }
+        })
+        .catch((err: Error) => {
+          set({ status: 'error', errorMessage: err.message })
+        })
     } else {
       // Simulate download progress for development
       let percent = 0
