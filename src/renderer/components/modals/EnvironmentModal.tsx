@@ -124,14 +124,26 @@ export default function EnvironmentModal() {
         | undefined
 
       if (isPostmanEnv) {
-        result = (await window.api?.importExport?.importPostman({
+        // Use the env-only IPC. The shared importPostman handler now
+        // rejects env files outright (so APIs Import doesn't silently
+        // create phantom empty folders); env-only callers like this
+        // modal go through the dedicated channel instead.
+        result = (await window.api?.importExport?.importPostmanEnvironment({
           projectId: activeProjectId,
           content,
         })) as typeof result
       } else if (isPostmanCollection) {
         toast.error(t('env.importPostmanCollectionHint'))
         return
-      } else if (isInsomniaV4 || isInsomniaV5) {
+      } else if (isInsomniaV5) {
+        result = (await window.api?.importExport?.importInsomniaEnvironment({
+          projectId: activeProjectId,
+          content,
+        })) as typeof result
+      } else if (isInsomniaV4) {
+        // v4 environments live inside a collection-shaped resources[]
+        // array, so we still send them through the collection importer —
+        // it picks them out and creates env rows (v1.4.3 #3 fix).
         result = (await window.api?.importExport?.importInsomnia({
           projectId: activeProjectId,
           content,

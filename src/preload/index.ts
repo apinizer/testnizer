@@ -240,11 +240,15 @@ const api = {
       ipcRenderer.invoke('export:saveFile', content, defaultName),
     importPostman: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('import:postman', payload),
+    importPostmanEnvironment: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('import:postmanEnvironment', payload),
     exportPostman: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('export:postman', projectId),
     importHar: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('import:har', payload),
     importInsomnia: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('import:insomnia', payload),
+    importInsomniaEnvironment: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('import:insomniaEnvironment', payload),
     exportInsomnia: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('export:insomnia', projectId),
     importCurl: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('import:curl', payload),

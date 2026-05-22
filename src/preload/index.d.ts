@@ -438,6 +438,10 @@ interface ImportExportApi {
     content: string
     folderId?: string | null
   }): Promise<IpcResult<ImportResult>>
+  importPostmanEnvironment(payload: {
+    projectId: string
+    content: string
+  }): Promise<IpcResult<ImportResult>>
   exportPostman(projectId: string): Promise<IpcResult<string>>
   importHar(payload: {
     projectId: string
@@ -448,6 +452,10 @@ interface ImportExportApi {
     projectId: string
     content: string
     folderId?: string | null
+  }): Promise<IpcResult<ImportResult>>
+  importInsomniaEnvironment(payload: {
+    projectId: string
+    content: string
   }): Promise<IpcResult<ImportResult>>
   exportInsomnia(projectId: string): Promise<IpcResult<string>>
   importCurl(payload: {

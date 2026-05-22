@@ -327,6 +327,59 @@ export function registerImportExportHandlers(): void {
     },
   )
 
+  // ─── Environment-only imports (called by EnvironmentModal, not by the
+  // APIs Import flow). Keeping these on dedicated channels lets us reject
+  // env files coming through the APIs flow without breaking env imports
+  // from the Environments modal.
+  ipcMain.handle(
+    'import:postmanEnvironment',
+    async (_event, payload: { projectId: string; content: string }) => {
+      try {
+        const parsed = JSON.parse(payload.content) as Record<string, unknown>
+        if (!parsed || parsed['_postman_variable_scope'] !== 'environment') {
+          return {
+            success: false,
+            error: 'Not a Postman environment export (`_postman_variable_scope` missing).',
+          }
+        }
+        const result = await importPostmanEnvironment(
+          payload.projectId,
+          parsed as unknown as PostmanEnvironment,
+        )
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    'import:insomniaEnvironment',
+    async (_event, payload: { projectId: string; content: string }) => {
+      try {
+        let doc: unknown
+        try {
+          doc = JSON.parse(payload.content)
+        } catch {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const yaml = require('js-yaml') as { load: (s: string) => unknown }
+          doc = yaml.load(payload.content)
+        }
+        if (!isInsomniaV5Environment(doc)) {
+          return {
+            success: false,
+            error:
+              'Not an Insomnia environment export (expected `type: environment.insomnia.rest/5.0`).',
+          }
+        }
+        const result = importInsomniaV5Environment(payload.projectId, doc, [])
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
+
   // ─── Insomnia Import ────────────────────────────────────────
   ipcMain.handle(
     'import:insomnia',
@@ -1673,20 +1726,12 @@ export async function importPostman(
     }
   }
 
-  // Postman ships two distinct file shapes through the same JSON exporter:
-  // collections (info + item[]) and environments (_postman_variable_scope +
-  // values[]). Detecting the latter here lets users drag any Postman export
-  // into the same "Import → Postman" flow without us silently rejecting envs.
   const root = parsed as Record<string, unknown>
-  if (root && typeof root === 'object' && root['_postman_variable_scope'] === 'environment') {
-    return importPostmanEnvironment(projectId, root as unknown as PostmanEnvironment)
-  }
 
-  const collection = parsed as PostmanCollection
-
-  // Detect Postman v1 (legacy) — has `requests[]` + top-level `name`/`id` but
-  // no `info.schema` and no `item[]`. Convert to a more actionable error so
-  // users know to re-export from Postman as v2.1 instead of guessing.
+  // Postman v1 legacy collections — `name` + `requests[]` instead of
+  // `info` + `item[]`. Surface a v1-specific message so the user knows
+  // to re-export as v2.1 rather than getting the generic "wrong file
+  // type" error below.
   const hasV1Markers =
     typeof root['name'] === 'string' &&
     Array.isArray(root['requests']) &&
@@ -1700,16 +1745,25 @@ export async function importPostman(
     }
   }
 
-  if (
-    !collection.info ||
-    typeof collection.info.name !== 'string' ||
-    !Array.isArray(collection.item)
-  ) {
+  // Reject anything that's not actually a Postman v2.x collection. The
+  // APIs Import flow is collection-only — env / test-suite / mock
+  // exports belong in their own importers. Keep the message generic so
+  // we don't have to enumerate every wrong-file shape (env, test suite,
+  // mock, …) — the importer's job is to verify the file it WAS asked
+  // to load matches the format it was asked to load.
+  const looksLikeCollection =
+    root &&
+    typeof root === 'object' &&
+    typeof (root['info'] as Record<string, unknown> | undefined)?.['name'] === 'string' &&
+    Array.isArray(root['item'])
+  if (!looksLikeCollection) {
     return {
       success: false,
-      error: 'Not a valid Postman collection (missing `info.name` or `item[]`)',
+      error: "This file is not a Postman collection. You can't upload this file type from here.",
     }
   }
+
+  const collection = parsed as PostmanCollection
 
   // Accept v2.0 and v2.1 schemas (both live under getpostman.com).
   const schema = collection.info.schema ?? ''
@@ -3296,7 +3350,11 @@ export async function importInsomnia(
   }
 
   if (isInsomniaV5Environment(doc)) {
-    return importInsomniaV5Environment(projectId, doc, warnings)
+    return {
+      success: false,
+      error:
+        "This file is not an Insomnia request collection. You can't upload this file type from here.",
+    }
   }
   if (isInsomniaV5(doc)) {
     return importInsomniaV5(projectId, doc, rootFolderId, warnings)
