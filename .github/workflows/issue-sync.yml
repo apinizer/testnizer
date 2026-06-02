@@ -1,0 +1,130 @@
+name: Issue sync (testnizer-releases)
+
+# Keeps the cross-repo issue tracker (apinizer/testnizer-releases) in step with
+# code progress here. Issues live in a DIFFERENT repo than the code, so
+# GitHub's native "Fixes #N" auto-close can't reach them — this bridges it via
+# the API using RELEASE_TOKEN (already used by build.yml for cross-repo writes).
+#
+# Lifecycle:
+#   PR opened/edited  → comment + label status:in-review
+#   PR merged to main → comment + label status:needs-verification
+#   release tag v*    → comment "Released in <tag>" + label status:released + CLOSE
+#
+# CONVENTION — reference release issues in the PR body / commit messages as:
+#   apinizer/testnizer-releases#<N>     (or testnizer-releases#<N>)
+# Bare "#N" is NOT used (it would mean an issue in THIS repo).
+#
+# Note: pull_request jobs run with the workflow from the base branch (main), so
+# this file only takes effect for PRs opened after it lands on main. Tag and
+# manual (workflow_dispatch) runs use the workflow at that commit.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, closed]
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to sync issues for (e.g. v1.4.8)'
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  ISSUES_REPO: apinizer/testnizer-releases
+
+jobs:
+  # ── PR opened / edited / reopened (not yet merged) → in-review ──────────────
+  pr-open:
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment + label referenced issues (in-review)
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          PR_TEXT: ${{ github.event.pull_request.title }}${{ '\n' }}${{ github.event.pull_request.body }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -uo pipefail
+          refs=$(printf '%s' "$PR_TEXT" \
+            | grep -oiE '(apinizer/)?testnizer-releases#[0-9]+' \
+            | grep -oE '[0-9]+' | sort -un || true)
+          if [ -z "$refs" ]; then echo "No release-issue refs in PR."; exit 0; fi
+          for n in $refs; do
+            echo "→ #$n: in-review"
+            gh issue comment "$n" --repo "$ISSUES_REPO" \
+              --body "🔧 Fix in progress — testnizer PR #${PR_NUM}: ${PR_URL}" || true
+            gh issue edit "$n" --repo "$ISSUES_REPO" \
+              --add-label "status:in-review" --remove-label "status:triage" || true
+          done
+
+  # ── PR merged to main → needs-verification ─────────────────────────────────
+  pr-merged:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment + label referenced issues (needs-verification)
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          PR_TEXT: ${{ github.event.pull_request.title }}${{ '\n' }}${{ github.event.pull_request.body }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -uo pipefail
+          refs=$(printf '%s' "$PR_TEXT" \
+            | grep -oiE '(apinizer/)?testnizer-releases#[0-9]+' \
+            | grep -oE '[0-9]+' | sort -un || true)
+          if [ -z "$refs" ]; then echo "No release-issue refs in PR."; exit 0; fi
+          short="${MERGE_SHA:0:7}"
+          for n in $refs; do
+            echo "→ #$n: needs-verification"
+            gh issue comment "$n" --repo "$ISSUES_REPO" \
+              --body "✅ Merged to main (\`${short}\`, PR #${PR_NUM}). It ships in the next release — re-test on that build." || true
+            gh issue edit "$n" --repo "$ISSUES_REPO" \
+              --add-label "status:needs-verification" --remove-label "status:in-review" || true
+          done
+
+  # ── Release tag (or manual dispatch) → released + close ─────────────────────
+  released:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Close referenced issues for this release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          DISPATCH_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -uo pipefail
+          TAG="${DISPATCH_TAG:-$GITHUB_REF_NAME}"
+          echo "Release tag: $TAG"
+          # Previous v* tag in version order, for the commit range.
+          PREV=$(git tag --list 'v*' --sort=-version:refname | grep -x -A1 "$TAG" | tail -n1 || true)
+          if [ -n "$PREV" ] && [ "$PREV" != "$TAG" ]; then
+            echo "Commit range: $PREV..$TAG"
+            LOG=$(git log "$PREV..$TAG" --pretty=%B || true)
+          else
+            echo "No previous tag — scanning all commits reachable from $TAG"
+            LOG=$(git log "$TAG" --pretty=%B || true)
+          fi
+          refs=$(printf '%s' "$LOG" \
+            | grep -oiE '(apinizer/)?testnizer-releases#[0-9]+' \
+            | grep -oE '[0-9]+' | sort -un || true)
+          if [ -z "$refs" ]; then echo "No release-issue refs in range."; exit 0; fi
+          for n in $refs; do
+            echo "→ #$n: released + close"
+            gh issue comment "$n" --repo "$ISSUES_REPO" \
+              --body "🚀 Released in **${TAG}** — download: https://www.testnizer.com/download/ · Closing; please reopen if it regresses." || true
+            gh issue edit "$n" --repo "$ISSUES_REPO" \
+              --add-label "status:released" \
+              --remove-label "status:needs-verification" --remove-label "status:in-review" || true
+            gh issue close "$n" --repo "$ISSUES_REPO" --reason completed || true
+          done
