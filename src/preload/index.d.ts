@@ -1441,6 +1441,7 @@ interface SaveApi {
   importFolder(payload: {
     projectId: string
     parentFolderId?: string | null
+    content?: string
   }): Promise<IpcResult<{ foldersImported: number; endpointsImported: number }>>
   importTestSuite(payload: {
     projectId: string

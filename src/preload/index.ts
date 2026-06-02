@@ -563,6 +563,7 @@ const api = {
     importFolder: (payload: {
       projectId: string
       parentFolderId?: string | null
+      content?: string
     }): Promise<unknown> => ipcRenderer.invoke('save:importFolder', payload),
     importTestSuite: (payload: {
       projectId: string

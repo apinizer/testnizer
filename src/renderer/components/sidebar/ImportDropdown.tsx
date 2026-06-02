@@ -47,6 +47,7 @@ const CATEGORIES: ImportFormatCategory[] = [
     options: [
       { id: 'postman', name: 'Postman' },
       { id: 'insomnia', name: 'Insomnia' },
+      { id: 'har', name: 'HAR' },
       { id: 'soapui', name: 'SoapUI' },
       { id: 'native', name: 'Testnizer Native' },
     ],

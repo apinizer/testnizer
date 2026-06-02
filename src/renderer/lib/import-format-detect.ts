@@ -142,7 +142,7 @@ export function checkTypeMismatch(
     insomnia: ['insomnia'],
     curl: ['curl'],
     native: ['native'],
-    har: [], // no dedicated HAR import card → always a mismatch
+    har: ['har'], // HAR now has its own import card
     // generic buckets — many formats are JSON or XML, so don't flag a
     // mismatch when detection isn't more specific than that. `native` is
     // also added here so a Testnizer export that misses the strict tagged

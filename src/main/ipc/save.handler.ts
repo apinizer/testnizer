@@ -1591,18 +1591,28 @@ export function registerSaveHandlers(): void {
   // ─── Import Folder (into existing project, optional parent) ─
   ipcMain.handle(
     'save:importFolder',
-    async (_event, payload: { projectId: string; parentFolderId?: string | null }) => {
+    async (
+      _event,
+      payload: { projectId: string; parentFolderId?: string | null; content?: string },
+    ) => {
       try {
-        const win = BrowserWindow.getFocusedWindow()
-        const result = await dialog.showOpenDialog(win!, {
-          properties: ['openFile'],
-          title: 'Select folder export file',
-          filters: [{ name: 'JSON Files', extensions: ['json'] }],
-        })
-        if (result.canceled || !result.filePaths[0]) {
-          return { success: false, error: 'Cancelled' }
+        // The APIs Import wizard passes the already-read file content so the
+        // user's destination-folder choice (not a second native picker) stays
+        // in charge — mirrors save:importProjectFromContent. Falls back to a
+        // picker for the standalone "Import Folder" entry point.
+        let content = payload.content
+        if (!content) {
+          const win = BrowserWindow.getFocusedWindow()
+          const result = await dialog.showOpenDialog(win!, {
+            properties: ['openFile'],
+            title: 'Select folder export file',
+            filters: [{ name: 'JSON Files', extensions: ['json'] }],
+          })
+          if (result.canceled || !result.filePaths[0]) {
+            return { success: false, error: 'Cancelled' }
+          }
+          content = readFileSync(result.filePaths[0], 'utf-8')
         }
-        const content = readFileSync(result.filePaths[0], 'utf-8')
         const parsed = JSON.parse(content) as FolderExport
         if (!parsed.version || parsed.kind !== 'folder') {
           return { success: false, error: 'Invalid folder export file.' }
