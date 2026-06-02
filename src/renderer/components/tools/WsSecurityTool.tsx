@@ -1,22 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
+import { useWsseToolStore } from '../../stores/wsse-tool.store'
 import {
   applyWsSecurity,
   verifySignature,
   decryptEnvelope,
-  defaultUsernameToken,
-  defaultTimestamp,
-  defaultSignConfig,
-  defaultEncryptConfig,
   buildSingleModeConfig,
 } from '../../lib/tools/wsse'
 import { consumeStagedWsseToolPayload, pushPayloadToActiveSoap } from '../../lib/tools-bridge'
 import type {
-  WsUsernameTokenConfig,
-  WsTimestampConfig,
-  WsSignConfig,
-  WsEncryptConfig,
   WsSignAlgorithm,
   WsEncryptAlgorithm,
   WsKeyWrapAlgorithm,
@@ -56,19 +49,33 @@ const TEXTAREA =
 
 export default function WsSecurityTool() {
   const { t } = useTranslation()
-  const [mode, setMode] = useState<Mode>('sign')
-  const [input, setInput] = useState(SAMPLE_ENVELOPE)
-  const [output, setOutput] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [statusLine, setStatusLine] = useState<string | null>(null)
-
-  const [usernameToken, setUsernameToken] = useState<WsUsernameTokenConfig>(defaultUsernameToken())
-  const [timestamp, setTimestamp] = useState<WsTimestampConfig>(defaultTimestamp())
-  const [sign, setSign] = useState<WsSignConfig>(defaultSignConfig())
-  const [encrypt, setEncrypt] = useState<WsEncryptConfig>(defaultEncryptConfig())
-  const [verifyCert, setVerifyCert] = useState('')
-  const [decryptKey, setDecryptKey] = useState('')
-  const [decryptPass, setDecryptPass] = useState('')
+  // State lives in a store so it survives tab switches (issue #19). Selector
+  // names mirror the old useState locals, so the rest of the component is
+  // unchanged.
+  const mode = useWsseToolStore((s) => s.mode)
+  const setMode = useWsseToolStore((s) => s.setMode)
+  const input = useWsseToolStore((s) => s.input)
+  const setInput = useWsseToolStore((s) => s.setInput)
+  const output = useWsseToolStore((s) => s.output)
+  const setOutput = useWsseToolStore((s) => s.setOutput)
+  const error = useWsseToolStore((s) => s.error)
+  const setError = useWsseToolStore((s) => s.setError)
+  const statusLine = useWsseToolStore((s) => s.statusLine)
+  const setStatusLine = useWsseToolStore((s) => s.setStatusLine)
+  const usernameToken = useWsseToolStore((s) => s.usernameToken)
+  const setUsernameToken = useWsseToolStore((s) => s.setUsernameToken)
+  const timestamp = useWsseToolStore((s) => s.timestamp)
+  const setTimestamp = useWsseToolStore((s) => s.setTimestamp)
+  const sign = useWsseToolStore((s) => s.sign)
+  const setSign = useWsseToolStore((s) => s.setSign)
+  const encrypt = useWsseToolStore((s) => s.encrypt)
+  const setEncrypt = useWsseToolStore((s) => s.setEncrypt)
+  const verifyCert = useWsseToolStore((s) => s.verifyCert)
+  const setVerifyCert = useWsseToolStore((s) => s.setVerifyCert)
+  const decryptKey = useWsseToolStore((s) => s.decryptKey)
+  const setDecryptKey = useWsseToolStore((s) => s.setDecryptKey)
+  const decryptPass = useWsseToolStore((s) => s.decryptPass)
+  const setDecryptPass = useWsseToolStore((s) => s.setDecryptPass)
 
   useEffect(() => {
     const staged = consumeStagedWsseToolPayload()
@@ -138,28 +145,28 @@ export default function WsSecurityTool() {
     <>
       <button
         onClick={handleRun}
-        className="rounded px-3 py-1 text-xs font-medium"
+        className="cursor-pointer rounded px-3 py-1 text-xs font-medium"
         style={{ background: 'var(--accent)', color: '#fff' }}
       >
         {modeLabel(mode, t)}
       </button>
       <button
         onClick={handleSendToSoap}
-        className="rounded border px-2 py-1 text-xs"
+        className="cursor-pointer rounded border px-2 py-1 text-xs"
         style={{ borderColor: 'var(--accent)', color: 'var(--accent-text)' }}
       >
         Send to active SOAP
       </button>
       <button
         onClick={loadSample}
-        className="rounded border px-2 py-1 text-xs"
+        className="cursor-pointer rounded border px-2 py-1 text-xs"
         style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
       >
         {t('tools.common.loadSample')}
       </button>
       <button
         onClick={handleClear}
-        className="rounded border px-2 py-1 text-xs"
+        className="cursor-pointer rounded border px-2 py-1 text-xs"
         style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
       >
         {t('tools.common.clear')}
@@ -182,7 +189,7 @@ export default function WsSecurityTool() {
               <button
                 key={m}
                 onClick={() => setMode(m)}
-                className="rounded px-2.5 py-0.5 text-xs font-medium transition-colors"
+                className="cursor-pointer rounded px-2.5 py-0.5 text-xs font-medium transition-colors"
                 style={{
                   background: mode === m ? 'var(--accent-light)' : 'transparent',
                   color: mode === m ? 'var(--accent-text)' : 'var(--muted)',
