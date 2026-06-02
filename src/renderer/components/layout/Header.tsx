@@ -5,6 +5,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
 import BranchDropdown from '../sidebar/BranchDropdown'
+import UserMenu from './UserMenu'
 import { T } from '../../styles/tokens'
 import { isMac } from '../../lib/platform'
 
@@ -433,6 +434,9 @@ export default function Header() {
           )}
           {saveStatus === 'success' && <span style={{ fontSize: 13 }}>✓</span>}
         </button>
+
+        {/* Session / user menu (issue #3) */}
+        <UserMenu />
       </div>
     </header>
   )
