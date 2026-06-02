@@ -161,7 +161,14 @@ function ContextMenu({
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      // A submenu renders as a sibling portal, not a DOM descendant of this
+      // menu's ref. Closing on "outside my own ref" therefore fired on
+      // mousedown when the user clicked a submenu item — tearing the whole
+      // menu down before the item's onClick could run, so "Add Request →
+      // <type>" did nothing (issue #14). Treat a click inside ANY context
+      // menu (this one or an open submenu) as inside.
+      const target = e.target as HTMLElement | null
+      if (!target?.closest?.('[data-context-menu]')) onClose()
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -191,7 +198,7 @@ function ContextMenu({
 
   return createPortal(
     <>
-      <div ref={ref} style={style}>
+      <div ref={ref} data-context-menu style={style}>
         {items.map((item, i) => {
           const hasSubmenu = !!(item.submenu && item.submenu.length > 0)
           return (

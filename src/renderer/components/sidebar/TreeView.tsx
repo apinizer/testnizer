@@ -45,9 +45,48 @@ function flattenTree(nodes: TreeNode[], openIds: Set<string>, depth: number = 0)
   return result
 }
 
+/**
+ * Flatten with every folder expanded — used while searching so all surviving
+ * matches are visible regardless of the user's collapse state.
+ */
+function flattenAll(nodes: TreeNode[], depth: number = 0): FlatNode[] {
+  const result: FlatNode[] = []
+  for (const node of nodes) {
+    result.push({ node, depth })
+    if (node.children && node.children.length > 0) {
+      result.push(...flattenAll(node.children, depth + 1))
+    }
+  }
+  return result
+}
+
+/**
+ * Keep a node when its label/path matches (case-insensitive) or any descendant
+ * matches, preserving the path to each match. Powers the APIs search box
+ * (issue #4) — typing previously updated state but never filtered the tree.
+ */
+function filterTree(nodes: TreeNode[], q: string): TreeNode[] {
+  const out: TreeNode[] = []
+  for (const node of nodes) {
+    const selfMatch =
+      node.label.toLowerCase().includes(q) || (node.path?.toLowerCase().includes(q) ?? false)
+    const children = node.children ? filterTree(node.children, q) : []
+    if (selfMatch || children.length > 0) {
+      // A self-matching folder keeps its full subtree; a folder kept only
+      // because a descendant matched shows just the matching branch.
+      out.push({
+        ...node,
+        children: children.length > 0 ? children : selfMatch ? node.children : [],
+      })
+    }
+  }
+  return out
+}
+
 export default function TreeView() {
   const treeData = useWorkspaceStore((s) => s.treeData)
   const openNodeIds = useWorkspaceStore((s) => s.openNodeIds)
+  const searchQuery = useWorkspaceStore((s) => s.searchQuery)
   const activeNodeId = useWorkspaceStore((s) => s.activeNodeId)
   const toggleNode = useWorkspaceStore((s) => s.toggleNode)
   const setActiveNode = useWorkspaceStore((s) => s.setActiveNode)
@@ -61,7 +100,12 @@ export default function TreeView() {
 
   const parentRef = useRef<HTMLDivElement>(null)
 
-  const flatNodes = useMemo(() => flattenTree(treeData, openNodeIds), [treeData, openNodeIds])
+  const flatNodes = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return flattenTree(treeData, openNodeIds)
+    // When searching, filter the tree and show every surviving match expanded.
+    return flattenAll(filterTree(treeData, q))
+  }, [treeData, openNodeIds, searchQuery])
 
   const virtualizer = useVirtualizer({
     count: flatNodes.length,
