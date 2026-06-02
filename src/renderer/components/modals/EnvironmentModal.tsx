@@ -1,5 +1,17 @@
 import { useState, useMemo } from 'react'
-import { X, Plus, Trash2, Eye, EyeOff, Globe, Layers, Check, Copy, Download } from 'lucide-react'
+import {
+  X,
+  Plus,
+  Trash2,
+  Eye,
+  EyeOff,
+  Globe,
+  Layers,
+  Check,
+  Copy,
+  Download,
+  Upload,
+} from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
@@ -367,6 +379,45 @@ export default function EnvironmentModal() {
             >
               <Download size={12} />
               {importing ? t('env.importing') : t('env.importEnvironment')}
+            </button>
+            {/* Export the selected environment as a Postman-compatible file
+             *  (round-trips through the existing Postman-environment importer).
+             *  There was no way to export an environment before (issue #15). */}
+            <button
+              type="button"
+              onClick={() => {
+                if (!selectedEnv) return
+                const doc = {
+                  id: selectedEnv.id,
+                  name: selectedEnv.name,
+                  values: selectedEnv.variables.map((v) => ({
+                    key: v.key,
+                    value: v.value || v.initialValue || '',
+                    enabled: v.enabled,
+                    type: v.secret ? 'secret' : 'default',
+                  })),
+                  _postman_variable_scope: 'environment',
+                  _postman_exported_using: 'Testnizer',
+                }
+                void window.api?.importExport?.saveFile(
+                  JSON.stringify(doc, null, 2),
+                  `${selectedEnv.name || 'environment'}.postman_environment.json`,
+                )
+              }}
+              disabled={!selectedEnv}
+              className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-[6px] py-1.5 disabled:cursor-default disabled:opacity-60"
+              style={{
+                background: 'var(--white)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+                fontWeight: 500,
+              }}
+              title={
+                selectedEnv ? t('env.exportEnvironmentHint') : t('env.exportEnvironmentSelectHint')
+              }
+            >
+              <Upload size={12} />
+              {t('env.exportEnvironment')}
             </button>
           </div>
         </div>

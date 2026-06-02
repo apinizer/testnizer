@@ -142,6 +142,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'env.importEnvironment': 'Import Environment',
     'env.importEnvironmentHint':
       'Import a Postman environment (.json) or an Insomnia export — environment variables are picked up automatically.',
+    'env.exportEnvironment': 'Export Environment',
+    'env.exportEnvironmentHint':
+      'Export the selected environment as a Postman-compatible .json file.',
+    'env.exportEnvironmentSelectHint': 'Select an environment on the left to export it.',
     'env.importing': 'Importing…',
     'env.importSuccess': 'Environment imported',
     'env.importFailed': 'Could not import environment',
@@ -1586,6 +1590,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'env.importEnvironment': 'Environment İçe Aktar',
     'env.importEnvironmentHint':
       'Postman environment (.json) veya Insomnia dışa aktarımı — değişkenler otomatik alınır.',
+    'env.exportEnvironment': 'Environment Dışa Aktar',
+    'env.exportEnvironmentHint':
+      'Seçili environment’ı Postman uyumlu bir .json dosyası olarak dışa aktarır.',
+    'env.exportEnvironmentSelectHint': 'Dışa aktarmak için soldan bir environment seçin.',
     'env.importing': 'İçe aktarılıyor…',
     'env.importSuccess': 'Environment içe aktarıldı',
     'env.importFailed': 'Environment içe aktarılamadı',
