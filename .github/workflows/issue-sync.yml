@@ -53,13 +53,17 @@ jobs:
             | grep -oiE '(apinizer/)?testnizer-releases#[0-9]+' \
             | grep -oE '[0-9]+' | sort -un || true)
           if [ -z "$refs" ]; then echo "No release-issue refs in PR."; exit 0; fi
+          fail=0
           for n in $refs; do
             echo "→ #$n: in-review"
             gh issue comment "$n" --repo "$ISSUES_REPO" \
-              --body "🔧 Fix in progress — testnizer PR #${PR_NUM}: ${PR_URL}" || true
+              --body "🔧 Fix in progress — testnizer PR #${PR_NUM}: ${PR_URL}" \
+              || { echo "::error::comment #$n failed (token?)"; fail=1; }
             gh issue edit "$n" --repo "$ISSUES_REPO" \
-              --add-label "status:in-review" --remove-label "status:triage" || true
+              --add-label "status:in-review" --remove-label "status:triage" \
+              || { echo "::error::label #$n failed (token?)"; fail=1; }
           done
+          [ "$fail" -eq 0 ] || { echo "One or more issue updates failed."; exit 1; }
 
   # ── PR merged to main → needs-verification ─────────────────────────────────
   pr-merged:
@@ -82,13 +86,17 @@ jobs:
             | grep -oE '[0-9]+' | sort -un || true)
           if [ -z "$refs" ]; then echo "No release-issue refs in PR."; exit 0; fi
           short="${MERGE_SHA:0:7}"
+          fail=0
           for n in $refs; do
             echo "→ #$n: needs-verification"
             gh issue comment "$n" --repo "$ISSUES_REPO" \
-              --body "✅ Merged to main (\`${short}\`, PR #${PR_NUM}). It ships in the next release — re-test on that build." || true
+              --body "✅ Merged to main (\`${short}\`, PR #${PR_NUM}). It ships in the next release — re-test on that build." \
+              || { echo "::error::comment #$n failed (token?)"; fail=1; }
             gh issue edit "$n" --repo "$ISSUES_REPO" \
-              --add-label "status:needs-verification" --remove-label "status:in-review" || true
+              --add-label "status:needs-verification" --remove-label "status:in-review" \
+              || { echo "::error::label #$n failed (token?)"; fail=1; }
           done
+          [ "$fail" -eq 0 ] || { echo "One or more issue updates failed."; exit 1; }
 
   # ── Release tag (or manual dispatch) → released + close ─────────────────────
   released:
@@ -119,12 +127,27 @@ jobs:
             | grep -oiE '(apinizer/)?testnizer-releases#[0-9]+' \
             | grep -oE '[0-9]+' | sort -un || true)
           if [ -z "$refs" ]; then echo "No release-issue refs in range."; exit 0; fi
+          fail=0
           for n in $refs; do
+            # Idempotent: skip issues already closed (so a re-run / dispatch is
+            # safe and doesn't post duplicate "Released" comments).
+            state=$(gh issue view "$n" --repo "$ISSUES_REPO" --json state --jq .state 2>/dev/null || echo ERR)
+            if [ "$state" = "ERR" ]; then
+              echo "::error::Cannot read issue #$n — RELEASE_TOKEN likely lacks issues access."
+              fail=1; continue
+            fi
+            if [ "$state" = "CLOSED" ]; then echo "#$n already closed — skip"; continue; fi
             echo "→ #$n: released + close"
             gh issue comment "$n" --repo "$ISSUES_REPO" \
-              --body "🚀 Released in **${TAG}** — download: https://www.testnizer.com/download/ · Closing; please reopen if it regresses." || true
+              --body "🚀 Released in **${TAG}** — download: https://www.testnizer.com/download/ · Closing; please reopen if it regresses." \
+              || { echo "::error::comment #$n failed"; fail=1; }
             gh issue edit "$n" --repo "$ISSUES_REPO" \
               --add-label "status:released" \
-              --remove-label "status:needs-verification" --remove-label "status:in-review" || true
-            gh issue close "$n" --repo "$ISSUES_REPO" --reason completed || true
+              --remove-label "status:needs-verification" --remove-label "status:in-review" \
+              || { echo "::error::label #$n failed"; fail=1; }
+            gh issue close "$n" --repo "$ISSUES_REPO" --reason completed \
+              || { echo "::error::close #$n failed"; fail=1; }
           done
+          # Fail the job loudly if any write failed (token scope, etc.) instead
+          # of the old silent no-op.
+          [ "$fail" -eq 0 ] || { echo "One or more issue updates failed."; exit 1; }
