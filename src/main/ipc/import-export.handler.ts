@@ -3458,7 +3458,7 @@ function importInsomniaV5Environment(
  * request shows no query in the URL bar (issue #12). Append enabled params the
  * same way Postman's raw URL would (unencoded so `{{vars}}` survive).
  */
-function insomniaUrlWithParams(
+export function insomniaUrlWithParams(
   url: string,
   params: Array<{ key: string; value: string; enabled: boolean }>,
 ): string {
