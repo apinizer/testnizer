@@ -5,8 +5,8 @@ import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
 import BranchDropdown from '../sidebar/BranchDropdown'
+import UserMenu from './UserMenu'
 import { T } from '../../styles/tokens'
-import { isMac } from '../../lib/platform'
 
 // SVG icons for git operations
 function ArrowUpIcon() {
@@ -56,6 +56,14 @@ export default function Header() {
     const pid = s.activeProjectId
     return s.projects.find((p) => p.id === pid)
   })
+  // Multiple project tabs can be open at once (#1).
+  const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
+  const openProjectIds = useWorkspaceStore((s) => s.openProjectIds)
+  const projects = useWorkspaceStore((s) => s.projects)
+  const closeProjectTab = useWorkspaceStore((s) => s.closeProjectTab)
+  const openProjects = openProjectIds
+    .map((id) => projects.find((p) => p.id === id))
+    .filter((p): p is NonNullable<typeof p> => !!p)
   const { t } = useTranslation()
 
   const [saveStatus, setSaveStatus] = useState<OpStatus>('idle')
@@ -84,6 +92,10 @@ export default function Header() {
         if (result?.success) {
           setSaveStatus('success')
           setTimeout(() => setSaveStatus('idle'), 2000)
+        } else if (result?.error === 'Cancelled') {
+          // User backed out of the directory picker — don't punish that by
+          // popping the Save modal on top (issue #2).
+          setSaveStatus('idle')
         } else {
           setShowSaveModal(true)
           setSaveStatus('idle')
@@ -235,42 +247,49 @@ export default function Header() {
         {t('home.tab')}
       </div>
 
-      {/* Project tab */}
-      {activeProject && (
-        <div
-          className="no-drag group flex items-center gap-1.5 cursor-pointer shrink-0"
-          style={{
-            padding: '0 16px',
-            height: '100%',
-            fontSize: 13,
-            fontWeight: 500,
-            borderBottom: `2px solid ${T.accent}`,
-            color: T.text,
-          }}
-          onClick={() => goHome()}
-          title={`${activeProject.display_name || activeProject.name} — click to switch projects (${isMac() ? '⌘' : 'Ctrl'}+P)`}
-        >
-          <ProjectIcon
-            name={activeProject.display_name || activeProject.name}
-            emoji={activeProject.icon_emoji || undefined}
-            color={activeProject.icon_color || T.accent}
-            size={18}
-          />
-          <span className="truncate" style={{ maxWidth: 160 }}>
-            {activeProject.display_name || activeProject.name}
-          </span>
-          <span
-            className="hidden cursor-pointer group-hover:inline"
-            style={{ color: T.ghost, fontSize: 16, marginLeft: 4 }}
-            onClick={(e) => {
-              e.stopPropagation()
-              goHome()
+      {/* Project tabs — one per open project, switchable (#1) */}
+      {openProjects.map((proj) => {
+        const isActive = proj.id === activeProjectId
+        return (
+          <div
+            key={proj.id}
+            className="no-drag group flex items-center gap-1.5 cursor-pointer shrink-0"
+            style={{
+              padding: '0 16px',
+              height: '100%',
+              fontSize: 13,
+              fontWeight: 500,
+              borderRight: `1px solid ${T.border}`,
+              borderBottom: isActive ? `2px solid ${T.accent}` : '2px solid transparent',
+              color: isActive ? T.text : T.muted,
+              background: isActive ? 'transparent' : undefined,
             }}
+            onClick={() => setActiveProject(proj.id)}
+            title={proj.display_name || proj.name}
           >
-            ×
-          </span>
-        </div>
-      )}
+            <ProjectIcon
+              name={proj.display_name || proj.name}
+              emoji={proj.icon_emoji || undefined}
+              color={proj.icon_color || T.accent}
+              size={18}
+            />
+            <span className="truncate" style={{ maxWidth: 160 }}>
+              {proj.display_name || proj.name}
+            </span>
+            <span
+              className="hidden cursor-pointer group-hover:inline"
+              style={{ color: T.ghost, fontSize: 16, marginLeft: 4 }}
+              onClick={(e) => {
+                e.stopPropagation()
+                closeProjectTab(proj.id)
+              }}
+              title="Close project tab"
+            >
+              ×
+            </span>
+          </div>
+        )
+      })}
 
       {/* Status message */}
       {statusMsg && (
@@ -429,6 +448,9 @@ export default function Header() {
           )}
           {saveStatus === 'success' && <span style={{ fontSize: 13 }}>✓</span>}
         </button>
+
+        {/* Session / user menu (issue #3) */}
+        <UserMenu />
       </div>
     </header>
   )

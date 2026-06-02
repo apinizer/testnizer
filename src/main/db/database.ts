@@ -244,6 +244,24 @@ function runMigrations(database: Database.Database): void {
     )
   }
 
+  // ─── Branch isolation (issue #8) ────────────────────────────
+  // Tag tree content with the branch it was created on. A NULL branch_id
+  // means "shared" — content that pre-dates branching or was created on the
+  // default branch stays visible on every branch (this is what lets a new
+  // branch inherit the base tree). Content created while a NON-default branch
+  // is active carries that branch's id and is hidden on the others.
+  // Deliberately NO backfill: existing rows keep branch_id NULL, so nothing a
+  // user already has ever disappears when this migration runs.
+  for (const tbl of ['folders', 'endpoints', 'saved_requests']) {
+    const tcols = (database.pragma(`table_info(${tbl})`) as Array<{ name: string }>).map(
+      (c) => c.name,
+    )
+    if (!tcols.includes('branch_id')) {
+      database.exec(`ALTER TABLE ${tbl} ADD COLUMN branch_id TEXT`)
+      database.exec(`CREATE INDEX IF NOT EXISTS idx_${tbl}_branch ON ${tbl}(project_id, branch_id)`)
+    }
+  }
+
   // Scheduled tasks table
   database.exec(`
     CREATE TABLE IF NOT EXISTS scheduled_tasks (

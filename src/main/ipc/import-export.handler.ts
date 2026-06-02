@@ -322,10 +322,11 @@ export function registerImportExportHandlers(): void {
       payload: {
         projectId: string
         content: string
+        folderId?: string | null
       },
     ) => {
       try {
-        const result = await importHar(payload.projectId, payload.content)
+        const result = await importHar(payload.projectId, payload.content, payload.folderId ?? null)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: (e as Error).message }
@@ -3072,7 +3073,11 @@ interface HarEntry {
 
 // ─── HAR Import ─────────────────────────────────────────────
 
-async function importHar(projectId: string, content: string): Promise<ImportResult> {
+async function importHar(
+  projectId: string,
+  content: string,
+  folderId: string | null = null,
+): Promise<ImportResult> {
   const warnings: string[] = []
   let har: HarLog
 
@@ -3202,7 +3207,7 @@ async function importHar(projectId: string, content: string): Promise<ImportResu
     ).run(
       endpointId,
       projectId,
-      null,
+      folderId,
       name,
       null,
       'http',
@@ -3446,6 +3451,25 @@ function importInsomniaV5Environment(
   }
 }
 
+/**
+ * Insomnia stores query parameters in a separate `parameters[]` array and
+ * keeps the request `url` clean, whereas Postman's `url.raw` carries the
+ * `?query`. Without folding the params back into the URL, an Insomnia-imported
+ * request shows no query in the URL bar (issue #12). Append enabled params the
+ * same way Postman's raw URL would (unencoded so `{{vars}}` survive).
+ */
+export function insomniaUrlWithParams(
+  url: string,
+  params: Array<{ key: string; value: string; enabled: boolean }>,
+): string {
+  if (url.includes('?')) return url // already carries a query — leave it
+  const qs = params
+    .filter((p) => p.enabled && p.key.trim() !== '')
+    .map((p) => (p.value !== '' ? `${p.key}=${p.value}` : p.key))
+    .join('&')
+  return qs ? `${url}?${qs}` : url
+}
+
 function importInsomniaV4(
   projectId: string,
   doc: InsomniaExport,
@@ -3529,7 +3553,7 @@ function importInsomniaV4(
       : undefined
 
     const requestSchema: Record<string, unknown> = {
-      url,
+      url: insomniaUrlWithParams(url, params),
       method,
       params,
       headers,
@@ -3702,7 +3726,7 @@ function importInsomniaV5(
       const auth = mapInsomniaAuthToUi(item.authentication)
 
       const requestSchema: Record<string, unknown> = {
-        url,
+        url: insomniaUrlWithParams(url, params),
         method,
         params,
         headers,

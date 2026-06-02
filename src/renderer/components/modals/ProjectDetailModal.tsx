@@ -484,7 +484,15 @@ export default function ProjectDetailModal() {
                 onLocaleChange={setLocale}
                 onFontSizeChange={setFontSize}
                 onFontFamilyChange={setFontFamily}
-                onAccentColorChange={setAccentColor}
+                onAccentColorChange={(c) => {
+                  // Apply + persist the global UI accent, AND mirror it into the
+                  // active project's icon_color so Save Changes persists it.
+                  // Without the project side, setActiveProject re-applied the old
+                  // project color on the next launch and the accent "reset"
+                  // (issue #37).
+                  setAccentColor(c)
+                  setEditIconColor(c)
+                }}
               />
             )}
             {tab === 'shortcuts' && <ShortcutsPane />}

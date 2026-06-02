@@ -194,7 +194,8 @@ const SCHEMA_SQL = `
     project_id TEXT NOT NULL,
     parent_id TEXT,
     name TEXT NOT NULL,
-    sort_order INTEGER NOT NULL DEFAULT 0
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    branch_id TEXT
   );
 
   CREATE TABLE endpoints (
@@ -211,7 +212,8 @@ const SCHEMA_SQL = `
     response_schemas TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    branch_id TEXT
   );
 
   CREATE TABLE endpoint_cases (
@@ -245,7 +247,8 @@ const SCHEMA_SQL = `
     metadata TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    branch_id TEXT
   );
 
   CREATE TABLE environments (

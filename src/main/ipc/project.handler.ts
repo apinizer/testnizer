@@ -82,9 +82,9 @@ export function registerProjectHandlers(): void {
 
   // ─── Folders ─────────────────────────────────────────────
 
-  ipcMain.handle('folder:list', async (_event, projectId: string) => {
+  ipcMain.handle('folder:list', async (_event, projectId: string, branchId?: string | null) => {
     try {
-      const data = projectRepo.getFoldersByProject(projectId)
+      const data = projectRepo.getFoldersByProject(projectId, branchId)
       return { success: true, data }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -99,6 +99,7 @@ export function registerProjectHandlers(): void {
         project_id: string
         parent_id?: string | null
         name: string
+        branch_id?: string | null
       },
     ) => {
       try {

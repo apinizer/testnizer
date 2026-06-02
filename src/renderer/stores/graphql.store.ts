@@ -85,6 +85,7 @@ interface GraphQLStore extends TabGraphQLState {
   setUrl: (url: string) => void
   setQuery: (query: string) => void
   setVariables: (vars: string) => void
+  setHeaders: (headers: KeyValuePair[]) => void
   addHeader: () => void
   updateHeader: (id: string, updates: Partial<KeyValuePair>) => void
   removeHeader: (id: string) => void
@@ -219,6 +220,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   setUrl: (url) => set({ url }),
   setQuery: (query) => set({ query }),
   setVariables: (vars) => set({ variables: vars }),
+  setHeaders: (headers) => set({ headers }),
 
   addHeader: () => set((state) => ({ headers: [...state.headers, defaultKv()] })),
 

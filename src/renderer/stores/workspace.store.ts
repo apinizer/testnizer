@@ -1,9 +1,24 @@
 import { create } from 'zustand'
-import type { Workspace, Project, TreeNode, Folder, Endpoint, SavedRequest } from '../types'
+import type { Workspace, Project, TreeNode, Folder, Endpoint, SavedRequest, Tab } from '../types'
 import { useEnvironmentStore } from './environment.store'
 import { useBranchStore } from './branch.store'
 import { useTabsStore } from './tabs.store'
 import { useConsoleStore } from './console.store'
+
+/**
+ * Per-project open-tab snapshots (issue #1). Each project keeps its own set of
+ * open tabs so switching projects no longer wipes them — the previous project's
+ * tabs are stashed here and restored when you switch back. Module-level (not
+ * persisted): it's session state, and only the active project's tabs round-trip
+ * through the tabs store's own localStorage.
+ */
+const tabsByProject = new Map<string, { tabs: Tab[]; activeTabId: string | null }>()
+
+function snapshotProjectTabs(projectId: string | null): void {
+  if (!projectId) return
+  const ts = useTabsStore.getState()
+  tabsByProject.set(projectId, { tabs: ts.tabs, activeTabId: ts.activeTabId })
+}
 
 /**
  * Wipe state that's scoped to a single project before switching contexts.
@@ -25,6 +40,8 @@ interface WorkspaceStore {
   activeWorkspaceId: string | null
   projects: Project[]
   activeProjectId: string | null
+  /** Projects with an open header tab (issue #1) — multiple stay open at once. */
+  openProjectIds: string[]
   treeData: TreeNode[]
   openNodeIds: Set<string>
   activeNodeId: string | null
@@ -62,6 +79,9 @@ interface WorkspaceStore {
     },
   ) => Promise<void>
   deleteProject: (id: string) => Promise<void>
+  /** Close a project's header tab (#1): drops its tab snapshot and, if it was
+   *  active, falls back to another open project or Home. */
+  closeProjectTab: (id: string) => void
   goHome: () => void
   /** Reload tree data from DB for active project */
   refreshTree: () => Promise<void>
@@ -97,14 +117,20 @@ interface SavedRequestRow {
 
 async function buildTreeFromDB(projectId: string, projectName: string): Promise<TreeNode[]> {
   try {
+    // Branch scope (#8): null on the default branch (shows shared content),
+    // else the active branch name (shows shared + that branch's content).
+    const branchScope = useBranchStore.getState().getActiveBranchScope()
     // Three independent IPC calls — fan out in parallel.
     const [foldersResult, endpointsResult, savedResult] = await Promise.all([
-      window.api?.folder?.list(projectId) as Promise<{ success: boolean; data?: FolderRow[] }>,
-      window.api?.endpoint?.listByProject(projectId) as Promise<{
+      window.api?.folder?.list(projectId, branchScope) as Promise<{
+        success: boolean
+        data?: FolderRow[]
+      }>,
+      window.api?.endpoint?.listByProject(projectId, branchScope) as Promise<{
         success: boolean
         data?: EndpointRow[]
       }>,
-      window.api?.savedRequest?.list(projectId) as Promise<{
+      window.api?.savedRequest?.list(projectId, branchScope) as Promise<{
         success: boolean
         data?: SavedRequestRow[]
       }>,
@@ -218,6 +244,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   activeWorkspaceId: null,
   projects: [],
   activeProjectId: null,
+  openProjectIds: [],
   treeData: emptyTree(),
   openNodeIds: new Set(['default-module']),
   activeNodeId: null,
@@ -251,14 +278,39 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setActiveWorkspace: (id) => {
     const prev = get().activeWorkspaceId
-    if (prev && prev !== id) resetProjectScopedState()
+    if (prev && prev !== id) {
+      resetProjectScopedState()
+      // A different workspace has its own projects — reset the open-project
+      // header tabs + their cached tab sets (#1).
+      tabsByProject.clear()
+      set({ openProjectIds: [] })
+    }
     set({ activeWorkspaceId: id, activeProjectId: null })
   },
 
   setActiveProject: async (id) => {
     const prevId = get().activeProjectId
-    if (prevId && prevId !== id) resetProjectScopedState()
+    // Per-project tabs (#1): instead of wiping tabs on switch, stash the
+    // leaving project's tabs and restore the incoming project's. Console +
+    // pending-conflict are still cleared (they're scoped to the old project).
+    if (prevId && prevId !== id) {
+      snapshotProjectTabs(prevId)
+      useConsoleStore.getState().clear()
+      useBranchStore.getState().clearPendingConflict()
+    }
     set({ activeProjectId: id })
+    if (id) {
+      // Restore (or seed empty) the target project's tab set and remember it
+      // as an open header tab.
+      const snap = tabsByProject.get(id)
+      useTabsStore.getState().replaceAllTabs(snap?.tabs ?? [], snap?.activeTabId ?? null)
+      set((s) =>
+        s.openProjectIds.includes(id) ? s : { openProjectIds: [...s.openProjectIds, id] },
+      )
+    } else {
+      // Home: keep the project tabs stashed; the tab bar isn't shown here.
+      useTabsStore.getState().replaceAllTabs([], null)
+    }
     // Reload environments/globals for the new scope
     await useEnvironmentStore.getState().setCurrentProject(id)
     if (!id) {
@@ -397,6 +449,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       if (wsId) {
         await get().fetchProjects(wsId)
       }
+      // The project is gone — drop its open header tab + cached tabs (#1).
+      tabsByProject.delete(id)
+      set((s) => ({ openProjectIds: s.openProjectIds.filter((p) => p !== id) }))
       // If we just deleted the project we were viewing, drop all
       // project-scoped state (tabs / console / branch) so the UI stops
       // rendering against a dead row.
@@ -409,7 +464,29 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
   },
 
-  goHome: () => set({ activeProjectId: null }),
+  goHome: () => {
+    // Stash the current project's tabs so returning to it restores them (#1),
+    // and clear the tab view while Home (ProjectHome) is shown.
+    snapshotProjectTabs(get().activeProjectId)
+    useTabsStore.getState().replaceAllTabs([], null)
+    set({ activeProjectId: null })
+  },
+
+  closeProjectTab: (id) => {
+    tabsByProject.delete(id)
+    const wasActive = get().activeProjectId === id
+    set((s) => ({ openProjectIds: s.openProjectIds.filter((p) => p !== id) }))
+    if (wasActive) {
+      // Fall back to another still-open project, else Home.
+      const next = get().openProjectIds[0] ?? null
+      if (next) {
+        void get().setActiveProject(next)
+      } else {
+        useTabsStore.getState().replaceAllTabs([], null)
+        set({ activeProjectId: null })
+      }
+    }
+  },
 
   refreshTree: async () => {
     const projectId = get().activeProjectId

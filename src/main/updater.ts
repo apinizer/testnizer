@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron'
+import { formatUpdaterError } from './lib/updater-error'
 
 interface UpdateInfo {
   version: string
@@ -107,10 +108,10 @@ export async function initAutoUpdater(): Promise<void> {
   })
 
   autoUpdater.on('error', (err: unknown) => {
-    sendToAllWindows('updater:event', {
-      type: 'error',
-      error: (err as Error).message,
-    })
+    // Rephrase the macOS code-signature failure into an actionable message
+    // (issue #34); the modal also offers a manual-download link.
+    const message = formatUpdaterError(process.platform, (err as Error).message)
+    sendToAllWindows('updater:event', { type: 'error', error: message })
   })
 
   // ─── IPC handlers ───────────────────────────────────────────

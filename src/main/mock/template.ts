@@ -62,11 +62,54 @@ export function renderTemplate(source: string, ctx: TemplateContext): string {
   const stage0 = ctx.envVars ? resolveVariables(source, ctx.envVars) : applyDynamicValues(source)
   try {
     const compiled = hb.compile(stage0, { noEscape: true })
-    return compiled(ctx)
+    return compiled(withCaseInsensitiveHeaders(ctx))
   } catch {
     // Invalid Handlebars syntax — return the partially-resolved source.
     return stage0
   }
+}
+
+/**
+ * HTTP header names are case-insensitive (RFC 7230 §3.2), but the request
+ * headers map is stored lowercased and Handlebars does an exact-key lookup —
+ * so `{{request.headers.Authorization}}` / `AUTHORIZATION` resolved to empty
+ * while only the lowercase form worked (issue #29). Wrap `request.headers` in
+ * a case-insensitive Proxy. Handlebars' `lookupProperty` gates reads on
+ * `hasOwnProperty`, so the Proxy must answer `get`, `has`, AND
+ * `getOwnPropertyDescriptor` for any casing.
+ */
+function withCaseInsensitiveHeaders(ctx: TemplateContext): TemplateContext {
+  const headers = ctx.request?.headers
+  if (!headers || typeof headers !== 'object') return ctx
+  const lower: Record<string, string> = {}
+  for (const k of Object.keys(headers)) lower[k.toLowerCase()] = headers[k]
+  const resolve = (prop: string): string | undefined =>
+    prop in headers ? headers[prop] : lower[prop.toLowerCase()]
+  const ciHeaders = new Proxy(headers, {
+    get(target, prop) {
+      if (typeof prop === 'string') {
+        const v = resolve(prop)
+        if (v !== undefined) return v
+      }
+      return Reflect.get(target, prop)
+    },
+    has(target, prop) {
+      if (typeof prop === 'string' && prop.toLowerCase() in lower) return true
+      return Reflect.has(target, prop)
+    },
+    getOwnPropertyDescriptor(target, prop) {
+      if (typeof prop === 'string' && !(prop in target) && prop.toLowerCase() in lower) {
+        return {
+          configurable: true,
+          enumerable: true,
+          writable: false,
+          value: lower[prop.toLowerCase()],
+        }
+      }
+      return Reflect.getOwnPropertyDescriptor(target, prop)
+    },
+  })
+  return { ...ctx, request: { ...ctx.request, headers: ciHeaders } }
 }
 
 /** Replace dynamic-value tokens like {{$randomUUID}}. */

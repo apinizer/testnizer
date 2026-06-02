@@ -42,6 +42,7 @@ const IMPORT_FORMATS: ImportFormat[] = [
   { id: 'openapi', name: 'OpenAPI/Swagger', icon: '\uD83C\uDF3F', bg: '#e8f9f1', color: '#1a7a4a' },
   { id: 'postman', name: 'Postman', icon: '\uD83D\uDFE0', bg: '#fff0ec', color: '#f25c00' },
   { id: 'insomnia', name: 'Insomnia', icon: '\uD83D\uDFE3', bg: '#faf0ff', color: '#7c4dff' },
+  { id: 'har', name: 'HAR', icon: 'HAR', bg: '#e8f4ff', color: '#1565c0', mono: true },
   { id: 'curl', name: 'cURL', icon: 'cURL', bg: '#e8f4ff', color: '#1565c0', mono: true },
   { id: 'raml', name: 'RAML', icon: 'RAML', bg: '#e3f2fd', color: '#1976d2', mono: true },
   { id: 'wsdl', name: 'WSDL', icon: 'WSDL', bg: '#e3f2fd', color: '#1565c0', mono: true },
@@ -55,6 +56,7 @@ const FILE_IMPORTABLE = [
   'openapi',
   'postman',
   'insomnia',
+  'har',
   'curl',
   'raml',
   'wsdl',
@@ -382,9 +384,13 @@ export default function ImportModal() {
 
     const pid = activeProjectId
 
-    // Create folder if needed
+    // Create folder if needed. Native imports are skipped here: a native
+    // *project* export becomes a brand-new project (no folder), and a native
+    // *folder* export carries its own folder structure that importFolder
+    // remaps under the chosen destination — so an extra placeholder folder
+    // would just sit empty (issues #11, #32).
     let folderId: string | null = null
-    if (folderMode === 'new' && newFolderName.trim()) {
+    if (selectedFormat.id !== 'native' && folderMode === 'new' && newFolderName.trim()) {
       try {
         const folderResult = await window.api?.folder?.create({
           project_id: pid,
@@ -443,6 +449,12 @@ export default function ImportModal() {
           content: pendingFileContent || '',
           folderId,
         })) as typeof importResult
+      } else if (fmtId === 'har') {
+        importResult = (await window.api?.importExport?.importHar({
+          projectId: pid,
+          content: pendingFileContent || '',
+          folderId,
+        })) as typeof importResult
       } else if (fmtId === 'curl') {
         importResult = (await window.api?.importExport?.importCurl({
           projectId: pid,
@@ -474,32 +486,51 @@ export default function ImportModal() {
           folderId,
         })) as typeof importResult
       } else if (fmtId === 'native') {
-        // Testnizer native JSON — load it as a NEW project in the same
-        // workspace via save:importProject. v1.3.1 B25: native import was
-        // only reachable from Project Hub; making it visible here too
-        // closes the only path that surfaced "Invalid project file format"
-        // for users who didn't know about the hub flow.
-        const wsId = useWorkspaceStore.getState().activeWorkspaceId
-        if (!wsId) {
-          setImportError('No active workspace')
-          setImporting(false)
-          return
-        }
+        // Testnizer native JSON comes in two shapes:
+        //   kind: 'folder'  → a collection export; import its endpoints INTO
+        //                      the current project (honors the destination
+        //                      folder) so a folder export/import round-trips
+        //                      losslessly (#32).
+        //   kind: 'project' → a full project export; import as a NEW project
+        //                      in the workspace and switch to it (#11).
+        // Before, both went through importProjectFromContent + a placeholder
+        // folder.create, so the current project showed an empty folder while
+        // the real data either errored (folder export failed project
+        // validation) or landed in an unnoticed new project.
+        let parsed: { kind?: string }
         try {
-          const parsed = JSON.parse(pendingFileContent || '{}')
-          // Reuse importProjectAsNew's path indirectly: write the file's
-          // already-parsed JSON to a temp file? No — the existing
-          // save:importProject IPC pops its own picker. Use the dedicated
-          // bridge that the Project Hub uses, but feed it the staged
-          // content instead.
+          parsed = JSON.parse(pendingFileContent || '{}')
+        } catch (e) {
+          importResult = { success: false, error: 'Invalid JSON: ' + (e as Error).message }
+          parsed = {}
+        }
+        if (parsed.kind === 'folder') {
+          importResult = (await window.api?.save?.importFolder?.({
+            projectId: pid,
+            parentFolderId: folderMode === 'existing' ? targetFolderId : null,
+            content: pendingFileContent || '',
+          })) as typeof importResult
+        } else if (parsed.kind === 'project' || parsed.kind === undefined) {
+          const wsId = useWorkspaceStore.getState().activeWorkspaceId
+          if (!wsId) {
+            setImportError('No active workspace')
+            setImporting(false)
+            return
+          }
           importResult = (await window.api?.save?.importProjectFromContent?.({
             workspaceId: wsId,
-            content: JSON.stringify(parsed),
+            content: pendingFileContent || '',
           })) as typeof importResult
-        } catch (e) {
+          // Surface the imported project: switch to it so the user sees the
+          // content instead of an empty placeholder in the current project.
+          const newPid = (importResult?.data as { projectId?: string } | undefined)?.projectId
+          if (importResult?.success && newPid) {
+            useWorkspaceStore.getState().setActiveProject(newPid)
+          }
+        } else {
           importResult = {
             success: false,
-            error: 'Invalid JSON: ' + (e as Error).message,
+            error: `Unsupported native export kind: ${parsed.kind}`,
           }
         }
       } else {

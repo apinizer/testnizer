@@ -20,6 +20,7 @@ import type {
   MockLogEntry,
 } from '../../types'
 import MonacoWrapper from '../shared/MonacoWrapper'
+import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import { CONDITION_SNIPPETS, SCRIPT_SNIPPETS } from '../../lib/mock-snippets'
 
 const METHODS: MockMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'ANY']
@@ -172,6 +173,8 @@ function EndpointsTab({ serverId }: { serverId: string }) {
   const importPostman = useMockStore((s) => s.importPostman)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [importStatus, setImportStatus] = useState<string | null>(null)
+  // Styled confirm instead of the native window.confirm (issue #28).
+  const [deleteTarget, setDeleteTarget] = useState<MockEndpoint | null>(null)
 
   useEffect(() => {
     loadEndpoints(serverId)
@@ -306,9 +309,9 @@ function EndpointsTab({ serverId }: { serverId: string }) {
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    if (confirm(t('mock.confirmDeleteEndpoint'))) deleteEndpoint(serverId, ep.id)
+                    setDeleteTarget(ep)
                   }}
-                  className="text-xs"
+                  className="cursor-pointer text-xs"
                   style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
                   title={t('mock.delete')}
                 >
@@ -334,6 +337,17 @@ function EndpointsTab({ serverId }: { serverId: string }) {
           </div>
         )}
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        itemName={deleteTarget?.path ?? ''}
+        itemType="endpoint"
+        onConfirm={() => {
+          if (deleteTarget) deleteEndpoint(serverId, deleteTarget.id)
+          setDeleteTarget(null)
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </>
   )
 }

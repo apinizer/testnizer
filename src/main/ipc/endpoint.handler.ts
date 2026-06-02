@@ -7,8 +7,8 @@ import { ipcResult } from '../lib/ipc-helpers'
 export function registerEndpointHandlers(): void {
   // ─── Endpoints ───────────────────────────────────────────
 
-  ipcMain.handle('endpoint:listByProject', (_event, projectId: string) =>
-    ipcResult(() => endpointRepo.getEndpointsByProject(projectId)),
+  ipcMain.handle('endpoint:listByProject', (_event, projectId: string, branchId?: string | null) =>
+    ipcResult(() => endpointRepo.getEndpointsByProject(projectId, branchId)),
   )
 
   ipcMain.handle('endpoint:listByFolder', (_event, folderId: string) =>
@@ -34,6 +34,7 @@ export function registerEndpointHandlers(): void {
         status?: string
         request_schema?: string
         response_schemas?: string
+        branch_id?: string | null
       },
     ) => ipcResult(() => endpointRepo.createEndpoint(payload)),
   )
@@ -111,8 +112,8 @@ export function registerEndpointHandlers(): void {
 
   // ─── Saved Requests ──────────────────────────────────────
 
-  ipcMain.handle('savedRequest:list', (_event, projectId: string) =>
-    ipcResult(() => endpointRepo.getSavedRequestsByProject(projectId)),
+  ipcMain.handle('savedRequest:list', (_event, projectId: string, branchId?: string | null) =>
+    ipcResult(() => endpointRepo.getSavedRequestsByProject(projectId, branchId)),
   )
 
   ipcMain.handle('savedRequest:get', (_event, id: string) =>
@@ -138,6 +139,7 @@ export function registerEndpointHandlers(): void {
         post_script?: string
         assertions?: string
         metadata?: string
+        branch_id?: string | null
       },
     ) => ipcResult(() => endpointRepo.createSavedRequest(payload)),
   )

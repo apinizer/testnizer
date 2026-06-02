@@ -115,7 +115,8 @@ const api = {
 
   // ─── Folder ──────────────────────────────────────────────
   folder: {
-    list: (projectId: string): Promise<unknown> => ipcRenderer.invoke('folder:list', projectId),
+    list: (projectId: string, branchId?: string | null): Promise<unknown> =>
+      ipcRenderer.invoke('folder:list', projectId, branchId),
     create: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('folder:create', payload),
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('folder:update', id, payload),
@@ -125,8 +126,8 @@ const api = {
 
   // ─── Endpoint ────────────────────────────────────────────
   endpoint: {
-    listByProject: (projectId: string): Promise<unknown> =>
-      ipcRenderer.invoke('endpoint:listByProject', projectId),
+    listByProject: (projectId: string, branchId?: string | null): Promise<unknown> =>
+      ipcRenderer.invoke('endpoint:listByProject', projectId, branchId),
     listByFolder: (folderId: string): Promise<unknown> =>
       ipcRenderer.invoke('endpoint:listByFolder', folderId),
     get: (id: string): Promise<unknown> => ipcRenderer.invoke('endpoint:get', id),
@@ -148,8 +149,8 @@ const api = {
 
   // ─── Saved Requests ──────────────────────────────────────
   savedRequest: {
-    list: (projectId: string): Promise<unknown> =>
-      ipcRenderer.invoke('savedRequest:list', projectId),
+    list: (projectId: string, branchId?: string | null): Promise<unknown> =>
+      ipcRenderer.invoke('savedRequest:list', projectId, branchId),
     get: (id: string): Promise<unknown> => ipcRenderer.invoke('savedRequest:get', id),
     create: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('savedRequest:create', payload),
@@ -563,6 +564,7 @@ const api = {
     importFolder: (payload: {
       projectId: string
       parentFolderId?: string | null
+      content?: string
     }): Promise<unknown> => ipcRenderer.invoke('save:importFolder', payload),
     importTestSuite: (payload: {
       projectId: string

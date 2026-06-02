@@ -24,8 +24,13 @@ export default function SoapManualForm() {
   const setEndpointUrl = useSoapStore((s) => s.setEndpointUrl)
   const setRawXml = useSoapStore((s) => s.setRawXml)
 
-  const [version, setVersion] = useState<SoapVersion>('soap11')
-  const [soapAction, setSoapAction] = useState('')
+  // SOAP Action + version live in the store so sendSoap can read them and they
+  // survive tab switches (issue #17) — they used to be component-local state
+  // that never reached the request.
+  const version = useSoapStore((s) => s.manualSoapVersion)
+  const setVersion = useSoapStore((s) => s.setManualSoapVersion)
+  const soapAction = useSoapStore((s) => s.manualSoapAction)
+  const setSoapAction = useSoapStore((s) => s.setManualSoapAction)
   const [operationName, setOperationName] = useState('Echo')
   const [operationNamespace, setOperationNamespace] = useState('http://example.com/echo')
 

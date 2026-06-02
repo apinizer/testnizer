@@ -1268,18 +1268,36 @@ export function DataPane({
 
   async function handleExport() {
     try {
-      await window.api?.save?.exportProject?.(projectId)
+      const result = (await window.api?.save?.exportProject?.(projectId)) as
+        | { success: boolean; error?: string }
+        | undefined
+      // Success feedback was missing entirely (issue #38) — users had to go
+      // find the file in Finder to know it worked.
+      if (result?.success) {
+        toast.success(t('data.exportSuccess'))
+      } else if (result?.error && result.error !== 'Cancelled') {
+        toast.error(`${t('data.exportFailed')}: ${result.error}`)
+      }
     } catch (err) {
       console.error(err)
+      toast.error(t('data.exportFailed'))
     }
   }
 
   async function handleClearHistory() {
     setClearing('history')
     try {
-      await window.api?.history?.clear?.({ project_id: projectId })
+      const result = (await window.api?.history?.clear?.({ project_id: projectId })) as
+        | { success: boolean; error?: string }
+        | undefined
+      if (result?.success === false) {
+        toast.error(result.error || t('data.clearHistoryFailed'))
+      } else {
+        toast.success(t('data.clearHistorySuccess'))
+      }
     } catch (err) {
       console.error(err)
+      toast.error(t('data.clearHistoryFailed'))
     }
     setClearing(null)
   }

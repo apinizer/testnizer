@@ -463,10 +463,22 @@ export default function NewProjectModal() {
                 token: gitToken || '',
               })
 
-              // Initial push — create main branch in remote with project data
-              await window.api.git.push(projectId)
+              if (source === 'git') {
+                // Clone-from-git: the earlier step only inspected a throwaway
+                // temp clone, so the chosen local dir was still empty and the
+                // first Pull failed (issue #36). Pull now — git:pull's
+                // ensureGitRepo clones the remote into the local dir and
+                // re-imports the project, so the repo actually lands on disk.
+                // (A push here would instead upload the freshly-created empty
+                // project and risk clobbering the remote.)
+                await window.api.git.pull(projectId)
+              } else {
+                // New project with a git remote — seed the remote with the
+                // project data.
+                await window.api.git.push(projectId)
+              }
             } catch {
-              /* non-critical — user can push later */
+              /* non-critical — user can pull/push later */
             }
           }
 

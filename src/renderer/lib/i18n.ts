@@ -142,6 +142,16 @@ const translations: Record<Locale, Record<string, string>> = {
     'env.importEnvironment': 'Import Environment',
     'env.importEnvironmentHint':
       'Import a Postman environment (.json) or an Insomnia export — environment variables are picked up automatically.',
+    'env.exportEnvironment': 'Export Environment',
+    'env.exportEnvironmentHint':
+      'Export the selected environment as a Postman-compatible .json file.',
+    'env.exportEnvironmentSelectHint': 'Select an environment on the left to export it.',
+    'userMenu.title': 'Session',
+    'userMenu.protected': 'Protected — local password set',
+    'userMenu.guest': 'Quick Test (guest) — no password',
+    'userMenu.lock': 'Lock',
+    'userMenu.setPassword': 'Set a password…',
+    'userMenu.about': 'About Testnizer',
     'env.importing': 'Importing…',
     'env.importSuccess': 'Environment imported',
     'env.importFailed': 'Could not import environment',
@@ -553,6 +563,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'data.clearHistory': 'Clear history',
     'data.clearHistoryDesc': 'Delete all request history entries for this project.',
     'data.clearHistoryBtn': 'Clear history',
+    'data.exportSuccess': 'Project exported',
+    'data.exportFailed': 'Export failed',
+    'data.clearHistorySuccess': 'History cleared',
+    'data.clearHistoryFailed': 'Could not clear history',
     'data.dnsResolution': 'DNS resolution',
     'data.dnsIpv4': 'Prefer IPv4',
     'data.dnsIpv6': 'Prefer IPv6',
@@ -771,6 +785,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'update.upToDate': "You're up to date",
     'update.error': 'Update check failed',
     'update.retry': 'Retry',
+    'update.downloadManually': 'Download the latest version manually',
     'update.releaseNotes': 'Release Notes',
     'update.version': 'Version',
 
@@ -1156,7 +1171,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.headers': 'Headers',
     'mock.body': 'Body',
     'mock.bodyHint':
-      'Templating: {{request.body.x}}, {{request.headers.x}}, {{request.params.id}}, {{$timestamp}}, {{$randomUUID}}, {{#if}}, {{#each}}…',
+      'Templating: {{request.body.x}}, {{request.headers.x}}, {{request.query.x}} (query string), {{request.params.x}} (path param), {{$timestamp}}, {{$randomUUID}}, {{#if}}, {{#each}}…',
     'mock.condition': 'Condition (JSON)',
     'mock.conditionHint':
       'Examples: {"type":"always"} · {"type":"header","name":"x-tenant","op":"eq","value":"acme"} · {"type":"jsonPath","path":"$.role","op":"eq","value":"admin"}',
@@ -1586,6 +1601,16 @@ const translations: Record<Locale, Record<string, string>> = {
     'env.importEnvironment': 'Environment İçe Aktar',
     'env.importEnvironmentHint':
       'Postman environment (.json) veya Insomnia dışa aktarımı — değişkenler otomatik alınır.',
+    'env.exportEnvironment': 'Environment Dışa Aktar',
+    'env.exportEnvironmentHint':
+      'Seçili environment’ı Postman uyumlu bir .json dosyası olarak dışa aktarır.',
+    'env.exportEnvironmentSelectHint': 'Dışa aktarmak için soldan bir environment seçin.',
+    'userMenu.title': 'Oturum',
+    'userMenu.protected': 'Korumalı — yerel şifre tanımlı',
+    'userMenu.guest': 'Hızlı Test (misafir) — şifre yok',
+    'userMenu.lock': 'Kilitle',
+    'userMenu.setPassword': 'Şifre belirle…',
+    'userMenu.about': 'Testnizer Hakkında',
     'env.importing': 'İçe aktarılıyor…',
     'env.importSuccess': 'Environment içe aktarıldı',
     'env.importFailed': 'Environment içe aktarılamadı',
@@ -1997,6 +2022,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'data.clearHistory': 'Geçmişi temizle',
     'data.clearHistoryDesc': 'Bu projedeki tüm istek geçmişini silin.',
     'data.clearHistoryBtn': 'Geçmişi temizle',
+    'data.exportSuccess': 'Proje dışa aktarıldı',
+    'data.exportFailed': 'Dışa aktarma başarısız',
+    'data.clearHistorySuccess': 'Geçmiş temizlendi',
+    'data.clearHistoryFailed': 'Geçmiş temizlenemedi',
     'data.dnsResolution': 'DNS çözümleme',
     'data.dnsIpv4': 'IPv4 tercih et',
     'data.dnsIpv6': 'IPv6 tercih et',
@@ -2215,6 +2244,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'update.upToDate': 'Guncelsiniz',
     'update.error': 'Guncelleme kontrolu basarisiz',
     'update.retry': 'Tekrar Dene',
+    'update.downloadManually': 'En son sürümü manuel indir',
     'update.releaseNotes': 'Surum Notlari',
     'update.version': 'Surum',
 
@@ -2602,7 +2632,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.headers': "Header'lar",
     'mock.body': 'Gövde',
     'mock.bodyHint':
-      'Template: {{request.body.x}}, {{request.headers.x}}, {{request.params.id}}, {{$timestamp}}, {{$randomUUID}}, {{#if}}, {{#each}}…',
+      'Şablon: {{request.body.x}}, {{request.headers.x}}, {{request.query.x}} (query string), {{request.params.x}} (path param), {{$timestamp}}, {{$randomUUID}}, {{#if}}, {{#each}}…',
     'mock.condition': 'Koşul (JSON)',
     'mock.conditionHint':
       'Örnekler: {"type":"always"} · {"type":"header","name":"x-tenant","op":"eq","value":"acme"} · {"type":"jsonPath","path":"$.role","op":"eq","value":"admin"}',

@@ -36,6 +36,47 @@ function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
 }
 
+// ─── URL ⇄ Query-param sync (issue #22) ───────────────────────
+// The URL bar and the Params tab were independent: adding a param never
+// touched the URL. Keep them in lockstep without encoding (so `{{vars}}`
+// survive intact, matching what the URL bar renders) and without losing
+// disabled rows.
+function buildQueryString(params: KeyValuePair[]): string {
+  return params
+    .filter((p) => p.enabled && p.key.trim() !== '')
+    .map((p) => (p.value !== '' ? `${p.key}=${p.value}` : p.key))
+    .join('&')
+}
+
+/** Rewrite the URL's query string from the current params (enabled only). */
+function applyParamsToUrl(url: string, params: KeyValuePair[]): string {
+  const base = url.split('?')[0]
+  const qs = buildQueryString(params)
+  return qs ? `${base}?${qs}` : base
+}
+
+/**
+ * Derive params from the URL's query, preserving any disabled rows the user
+ * set in the Params tab (those never appear in the URL). Enabled rows are
+ * rebuilt from the query.
+ */
+function mergeParamsFromUrl(url: string, existing: KeyValuePair[]): KeyValuePair[] {
+  const qIdx = url.indexOf('?')
+  const fromUrl: KeyValuePair[] = []
+  if (qIdx !== -1) {
+    const qs = url.slice(qIdx + 1)
+    for (const pair of qs.split('&')) {
+      if (!pair) continue
+      const eq = pair.indexOf('=')
+      const key = eq === -1 ? pair : pair.slice(0, eq)
+      const value = eq === -1 ? '' : pair.slice(eq + 1)
+      fromUrl.push({ id: makeId(), key, value, enabled: true })
+    }
+  }
+  const disabled = existing.filter((p) => !p.enabled)
+  return [...fromUrl, ...disabled]
+}
+
 /** Snapshot of request state for a single tab */
 interface TabRequestState {
   method: HttpMethod
@@ -47,6 +88,14 @@ interface TabRequestState {
   preScript: string
   postScript: string
   assertions: TestAssertion[]
+  // ── Per-request Settings tab (issues #24-27). These override the
+  // project-level network defaults on the Send path. `requestTimeout` is in
+  // ms; 0 = no timeout (honored by the engine). Defaults mirror axios sanity:
+  // follow redirects up to 5, verify SSL, no timeout.
+  followRedirects: boolean
+  maxRedirects: number
+  sslVerification: boolean
+  requestTimeout: number
 }
 
 function emptyTabState(): TabRequestState {
@@ -60,6 +109,10 @@ function emptyTabState(): TabRequestState {
     preScript: '',
     postScript: '',
     assertions: [],
+    followRedirects: true,
+    maxRedirects: 5,
+    sslVerification: true,
+    requestTimeout: 0,
   }
 }
 
@@ -91,6 +144,10 @@ interface RequestStore extends TabRequestState {
   setAssertions: (assertions: TestAssertion[]) => void
   addAssertion: () => void
   removeAssertion: (id: string) => void
+  setFollowRedirects: (v: boolean) => void
+  setMaxRedirects: (v: number) => void
+  setSslVerification: (v: boolean) => void
+  setRequestTimeout: (v: number) => void
   sendRequest: () => Promise<void>
   /** Abort the in-flight HTTP request, if any. No-op when nothing is in flight. */
   cancelRequest: () => Promise<void>
@@ -104,6 +161,10 @@ interface RequestStore extends TabRequestState {
     preScript?: string
     postScript?: string
     assertions?: TestAssertion[]
+    followRedirects?: boolean
+    maxRedirects?: number
+    sslVerification?: boolean
+    requestTimeout?: number
   }) => void
 
   /** Switch active tab — saves current state and loads target tab state */
@@ -129,6 +190,10 @@ function extractState(s: RequestStore): TabRequestState {
     preScript: s.preScript,
     postScript: s.postScript,
     assertions: s.assertions,
+    followRedirects: s.followRedirects,
+    maxRedirects: s.maxRedirects,
+    sslVerification: s.sslVerification,
+    requestTimeout: s.requestTimeout,
   }
 }
 
@@ -138,6 +203,12 @@ const persisted = loadTabbedState<TabRequestState>(STORAGE_KEY, emptyTabState)
 
 export const useRequestStore = create<RequestStore>((set, get) => ({
   ...persisted.current,
+  // Backfill the per-request settings for states persisted before these
+  // fields existed (would otherwise spread in as `undefined`).
+  followRedirects: persisted.current.followRedirects ?? true,
+  maxRedirects: persisted.current.maxRedirects ?? 5,
+  sslVerification: persisted.current.sslVerification ?? true,
+  requestTimeout: persisted.current.requestTimeout ?? 0,
   _tabStates: persisted._tabStates,
   _currentTabId: persisted._currentTabId,
   _inflightRequestId: null,
@@ -147,26 +218,34 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     markActiveDirty()
   },
   setUrl: (url) => {
-    set({ url })
+    // Keep the Params tab in sync with the query the user typed (#22).
+    set((state) => ({ url, params: mergeParamsFromUrl(url, state.params) }))
     markActiveDirty()
   },
 
   setParams: (params) => {
-    set({ params })
+    set((state) => ({ params, url: applyParamsToUrl(state.url, params) }))
     markActiveDirty()
   },
   addParam: () => {
-    set((state) => ({ params: [...state.params, defaultKv()] }))
+    set((state) => {
+      const params = [...state.params, defaultKv()]
+      return { params, url: applyParamsToUrl(state.url, params) }
+    })
     markActiveDirty()
   },
   updateParam: (id, updates) => {
-    set((state) => ({
-      params: state.params.map((p) => (p.id === id ? { ...p, ...updates } : p)),
-    }))
+    set((state) => {
+      const params = state.params.map((p) => (p.id === id ? { ...p, ...updates } : p))
+      return { params, url: applyParamsToUrl(state.url, params) }
+    })
     markActiveDirty()
   },
   removeParam: (id) => {
-    set((state) => ({ params: state.params.filter((p) => p.id !== id) }))
+    set((state) => {
+      const params = state.params.filter((p) => p.id !== id)
+      return { params, url: applyParamsToUrl(state.url, params) }
+    })
     markActiveDirty()
   },
 
@@ -233,6 +312,23 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     markActiveDirty()
   },
 
+  setFollowRedirects: (v) => {
+    set({ followRedirects: v })
+    markActiveDirty()
+  },
+  setMaxRedirects: (v) => {
+    set({ maxRedirects: Number.isFinite(v) && v >= 0 ? v : 0 })
+    markActiveDirty()
+  },
+  setSslVerification: (v) => {
+    set({ sslVerification: v })
+    markActiveDirty()
+  },
+  setRequestTimeout: (v) => {
+    set({ requestTimeout: Number.isFinite(v) && v >= 0 ? v : 0 })
+    markActiveDirty()
+  },
+
   switchToTab: (tabId) => {
     const state = get()
     const tabStates = new Map(state._tabStates)
@@ -255,8 +351,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       tabStates.delete(oldest)
     }
 
-    // Load target tab state (or empty for new tabs)
-    const target = tabStates.get(tabId) || emptyTabState()
+    // Load target tab state (or empty for new tabs). Merge over emptyTabState
+    // so fields added later (per-request settings #24-27) default cleanly when
+    // restoring a cache entry persisted before those fields existed.
+    const target = { ...emptyTabState(), ...tabStates.get(tabId) }
 
     set({
       ...target,
@@ -463,6 +561,12 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     const requestId = makeId()
     set({ _inflightRequestId: requestId })
 
+    // Per-request Settings tab (#24-27) override the project-level network
+    // defaults. These now actually reach the engine: timeout (0 = no timeout),
+    // maxRedirects, followRedirects, and SSL verification. Falling back to the
+    // project value only when a per-request field is somehow absent.
+    const reqCfg = get()
+
     try {
       const result = await window.api?.request?.send({
         method,
@@ -471,9 +575,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         headers: resolvedHeaders as unknown[],
         body: resolvedBody,
         auth: resolvedAuth,
-        timeout: netSettings.requestTimeout,
-        sslVerification: netSettings.sslVerification,
-        followRedirects: netSettings.followRedirects,
+        timeout: reqCfg.requestTimeout ?? netSettings.requestTimeout,
+        maxRedirects: reqCfg.maxRedirects,
+        sslVerification: reqCfg.sslVerification ?? netSettings.sslVerification,
+        followRedirects: reqCfg.followRedirects ?? netSettings.followRedirects,
         proxy: netSettings.proxy,
         tls: tlsForEngine,
         // History metadata
@@ -616,6 +721,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       preScript: data.preScript ?? '',
       postScript: data.postScript ?? '',
       assertions: data.assertions ?? [],
+      followRedirects: data.followRedirects ?? true,
+      maxRedirects: data.maxRedirects ?? 5,
+      sslVerification: data.sslVerification ?? true,
+      requestTimeout: data.requestTimeout ?? 0,
     }
     // ALSO refresh the per-tab cache for the current tab. Without this,
     // closing and reopening a test-suite item (or any tab) would restore

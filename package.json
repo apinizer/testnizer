@@ -284,10 +284,12 @@
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
+      "allowToChangeInstallationDirectory": true,
       "differentialPackage": false,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
+      "menuCategory": false,
+      "runAfterFinish": true,
       "shortcutName": "Testnizer",
       "deleteAppDataOnUninstall": false,
       "installerIcon": "build/icon.ico",

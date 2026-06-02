@@ -54,11 +54,27 @@ export interface SavedRequestRow {
 
 // ─── Endpoints ───────────────────────────────────────────────
 
-export function getEndpointsByProject(projectId: string): EndpointRow[] {
+// Branch-scoped (issue #8) — see getFoldersByProject for the branchId contract
+// (undefined = all, null = shared only, string = shared + that branch).
+export function getEndpointsByProject(projectId: string, branchId?: string | null): EndpointRow[] {
   const db = getDb()
+  if (branchId === undefined) {
+    return db
+      .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
+      .all(projectId) as EndpointRow[]
+  }
+  if (branchId === null) {
+    return db
+      .prepare(
+        'SELECT * FROM endpoints WHERE project_id = ? AND branch_id IS NULL ORDER BY sort_order ASC',
+      )
+      .all(projectId) as EndpointRow[]
+  }
   return db
-    .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
-    .all(projectId) as EndpointRow[]
+    .prepare(
+      'SELECT * FROM endpoints WHERE project_id = ? AND (branch_id IS NULL OR branch_id = ?) ORDER BY sort_order ASC',
+    )
+    .all(projectId, branchId) as EndpointRow[]
 }
 
 export function getEndpointsByFolder(folderId: string): EndpointRow[] {
@@ -84,6 +100,8 @@ export function createEndpoint(data: {
   status?: string
   request_schema?: string
   response_schemas?: string
+  /** Branch this endpoint belongs to; NULL/omitted = shared across branches. */
+  branch_id?: string | null
 }): EndpointRow {
   const db = getDb()
   const now = Date.now()
@@ -97,8 +115,8 @@ export function createEndpoint(data: {
 
   db.prepare(
     `
-    INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at, branch_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     id,
@@ -115,6 +133,7 @@ export function createEndpoint(data: {
     maxOrder.max_order + 1,
     now,
     now,
+    data.branch_id ?? null,
   )
   return getEndpointById(id)!
 }
@@ -234,11 +253,29 @@ export function deleteCase(id: string): boolean {
 
 // ─── Saved Requests ──────────────────────────────────────────
 
-export function getSavedRequestsByProject(projectId: string): SavedRequestRow[] {
+// Branch-scoped (issue #8) — see getFoldersByProject for the branchId contract.
+export function getSavedRequestsByProject(
+  projectId: string,
+  branchId?: string | null,
+): SavedRequestRow[] {
   const db = getDb()
+  if (branchId === undefined) {
+    return db
+      .prepare('SELECT * FROM saved_requests WHERE project_id = ? ORDER BY sort_order ASC')
+      .all(projectId) as SavedRequestRow[]
+  }
+  if (branchId === null) {
+    return db
+      .prepare(
+        'SELECT * FROM saved_requests WHERE project_id = ? AND branch_id IS NULL ORDER BY sort_order ASC',
+      )
+      .all(projectId) as SavedRequestRow[]
+  }
   return db
-    .prepare('SELECT * FROM saved_requests WHERE project_id = ? ORDER BY sort_order ASC')
-    .all(projectId) as SavedRequestRow[]
+    .prepare(
+      'SELECT * FROM saved_requests WHERE project_id = ? AND (branch_id IS NULL OR branch_id = ?) ORDER BY sort_order ASC',
+    )
+    .all(projectId, branchId) as SavedRequestRow[]
 }
 
 export function getSavedRequestById(id: string): SavedRequestRow | undefined {
@@ -263,6 +300,8 @@ export function createSavedRequest(data: {
   post_script?: string
   assertions?: string
   metadata?: string
+  /** Branch this request belongs to; NULL/omitted = shared across branches. */
+  branch_id?: string | null
 }): SavedRequestRow {
   const db = getDb()
   const now = Date.now()
@@ -270,8 +309,8 @@ export function createSavedRequest(data: {
 
   db.prepare(
     `
-    INSERT INTO saved_requests (id, project_id, folder_id, name, protocol, method, url, params, headers, body, auth, pre_script, post_script, assertions, metadata, sort_order, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO saved_requests (id, project_id, folder_id, name, protocol, method, url, params, headers, body, auth, pre_script, post_script, assertions, metadata, sort_order, created_at, updated_at, branch_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     id,
@@ -292,6 +331,7 @@ export function createSavedRequest(data: {
     0,
     now,
     now,
+    data.branch_id ?? null,
   )
   return getSavedRequestById(id)!
 }

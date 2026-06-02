@@ -23,9 +23,10 @@ interface TabsStore {
   /** Pin (persist) the current preview tab so it won't be replaced */
   pinTab: (id: string) => void
   closeTab: (id: string) => void
-  /** Drop every open tab — used on project switch to prevent stale endpoint
-   * references from leaking across project boundaries. */
+  /** Drop every open tab — used when a project/workspace is deleted. */
   closeAllTabs: () => void
+  /** Replace the whole open-tab set (per-project tab snapshots, #1). */
+  replaceAllTabs: (tabs: Tab[], activeTabId: string | null) => void
   /**
    * Reorder tabs by drag-drop. Moves `tabId` to the position immediately
    * before `beforeTabId`; pass `null` to move it to the end. No-op when the
@@ -244,6 +245,12 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
     }),
 
   closeAllTabs: () => set({ tabs: [], activeTabId: null }),
+
+  // Swap the entire open-tab set. Used by the workspace store to keep a
+  // separate tab set per open project (#1): switching projects snapshots the
+  // current tabs and restores the target project's, instead of wiping them.
+  replaceAllTabs: (tabs, activeTabId) =>
+    set({ tabs: tabs.map((t) => ({ ...t, isLoading: false })), activeTabId }),
 
   moveTab: (tabId, beforeTabId) =>
     set((state) => {

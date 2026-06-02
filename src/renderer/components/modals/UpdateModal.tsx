@@ -191,6 +191,17 @@ function StatusContent({
           <AlertCircle size={32} className="text-[#cc2200]" />
           <span className="font-medium text-[#cc2200]">{t('update.error')}</span>
           {errorMessage && <span className="text-[var(--muted)]">{errorMessage}</span>}
+          {/* Auto-update can fail for reasons outside the app's control (e.g.
+              an unsigned macOS build can't self-update). Always give the user
+              a way forward — download the latest build manually (#34). */}
+          <a
+            href="https://www.testnizer.com/download/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-[var(--accent-text)] underline"
+          >
+            {t('update.downloadManually')}
+          </a>
         </>
       )
     default:

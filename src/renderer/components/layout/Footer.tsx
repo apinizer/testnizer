@@ -12,6 +12,7 @@ export default function Footer() {
   const showConsolePanel = useUIStore((s) => s.showConsolePanel)
   const toggleConsolePanel = useUIStore((s) => s.toggleConsolePanel)
   const setShowEnterpriseModal = useUIStore((s) => s.setShowEnterpriseModal)
+  const setShowEnvironmentModal = useUIStore((s) => s.setShowEnvironmentModal)
   const consoleEntries = useConsoleStore((s) => s.entries)
   const errorCount = consoleEntries.filter(
     (e) => e.level === 'error' || (e.status != null && e.status >= 400),
@@ -38,7 +39,27 @@ export default function Footer() {
         <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.POST.color }} />
         {t('footer.ready')}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: T.muted }}>
+      {/* Environment indicator doubles as the manager entry point — without
+       *  this there was no way to open the Environment modal when no request
+       *  tab was open (issue #10). */}
+      <button
+        type="button"
+        onClick={() => setShowEnvironmentModal(true)}
+        title={t('command.action.openEnvironments')}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          color: T.muted,
+          background: 'transparent',
+          border: 'none',
+          padding: '2px 6px',
+          borderRadius: 4,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          fontSize: 13,
+        }}
+      >
         <svg
           width="10"
           height="10"
@@ -52,7 +73,7 @@ export default function Footer() {
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
         </svg>
         {activeEnv?.name || t('footer.noEnvironment')}
-      </div>
+      </button>
 
       <div style={{ flex: 1 }} />
 
