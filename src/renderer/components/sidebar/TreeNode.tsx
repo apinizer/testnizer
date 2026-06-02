@@ -298,6 +298,11 @@ const ExportIcon = (
     <line x1="12" y1="3" x2="12" y2="15" />
   </svg>
 )
+const RunIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <polygon points="5 3 19 12 5 21 5 3" />
+  </svg>
+)
 const ImportIcon = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -455,7 +460,6 @@ export default function TreeNodeComponent({
 
   const canModify = node.type === 'folder' || node.type === 'endpoint' || node.type === 'request'
   const isFolder = node.type === 'folder' || node.type === 'module'
-  const isTopLevel = depth <= 1
 
   useEffect(() => {
     if (renaming) {
@@ -517,10 +521,17 @@ export default function TreeNodeComponent({
           action: () => onAddFolder(node),
         })
       }
-      // The "Run" entry used to live here, but every endpoint already has
-      // a Send button in its tab and the Test Suite path covers the multi-
-      // endpoint case more deliberately. Right-click → Run on a folder was
-      // duplicative — removing it cleans up the menu.
+      // Run the folder/collection (opens a runner tab over its endpoints).
+      // Restored per issue #6 — the handler always existed (handleRunFolder)
+      // but was never surfaced in the menu.
+      if (onRunFolder && isFolder) {
+        items.push({
+          label: t('tree.run'),
+          icon: RunIcon,
+          separator: true,
+          action: () => onRunFolder(node),
+        })
+      }
       // UX 6: One-click "convert this folder/project to a test suite / mock
       // server" — surfaces the recursive endpoint collector + suite/mock-
       // server creation flows that previously required manual setup. The
@@ -550,7 +561,9 @@ export default function TreeNodeComponent({
           action: () => onDuplicate(node),
         })
       }
-      if (onExport && isTopLevel) {
+      // Export was gated to top-level folders only; nested folders had no
+      // Export action (issue #6). handleExport handles any folder/module id.
+      if (onExport) {
         items.push({ label: t('tree.export'), icon: ExportIcon, action: () => onExport(node) })
       }
       if (onImport) {

@@ -84,6 +84,10 @@ export default function Header() {
         if (result?.success) {
           setSaveStatus('success')
           setTimeout(() => setSaveStatus('idle'), 2000)
+        } else if (result?.error === 'Cancelled') {
+          // User backed out of the directory picker — don't punish that by
+          // popping the Save modal on top (issue #2).
+          setSaveStatus('idle')
         } else {
           setShowSaveModal(true)
           setSaveStatus('idle')

@@ -15,6 +15,7 @@ import {
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
+import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import { makeTabId } from '../../lib/utils'
 import type { Protocol } from '../../types'
@@ -84,6 +85,13 @@ export default function NewDropdown() {
       action: () => createProtocolTab('http', t('welcome.newEndpointName'), 'GET'),
     },
     {
+      icon: <Zap size={16} strokeWidth={1.75} />,
+      iconColor: '#7c52d4',
+      label: t('newDropdown.quickRequest'),
+      bg: '#eeecfe',
+      action: () => createProtocolTab('http', t('welcome.quickRequest'), 'GET'),
+    },
+    {
       icon: <FileCode2 size={16} strokeWidth={1.75} />,
       iconColor: '#E65100',
       label: t('newDropdown.soapMethod'),
@@ -139,12 +147,29 @@ export default function NewDropdown() {
       bg: '#FFF3E0',
       action: () => createProtocolTab('socketio', t('welcome.socketio')),
     },
+    // Import entries: listed here too (issue #5) in addition to the dedicated
+    // Import dropdown, since users expect them under the New (+) menu.
+    {
+      icon: <Plus size={16} strokeWidth={1.75} />,
+      iconColor: '#5b52d4',
+      label: t('newDropdown.import'),
+      bg: '#eeecfe',
+      action: () => {
+        useUIStore.getState().setShowImportModal(true)
+        setOpen(false)
+      },
+    },
+    {
+      icon: <FileCode2 size={16} strokeWidth={1.75} />,
+      iconColor: '#1565c0',
+      label: t('newDropdown.importCurl'),
+      bg: '#e8f4ff',
+      action: () => {
+        useUIStore.getState().setShowImportModal(true, 'curl')
+        setOpen(false)
+      },
+    },
   ]
-
-  // The "OTHER" group (Import + Import cURL) used to live here. It has
-  // since moved into the dedicated Import dropdown rendered next to the
-  // "+" button on the APIs sidebar \u2014 clicking a format there opens the
-  // wizard already on step 2, which is faster than the old two-click path.
   const dropdown = open
     ? createPortal(
         <div
