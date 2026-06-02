@@ -43,6 +43,7 @@ export async function openEndpointTab(id: string): Promise<void> {
         pre_script?: string
         post_script?: string
         assertions?: string
+        metadata?: string
       } | null
     }
     if (result?.success && result.data) {
@@ -75,6 +76,18 @@ export async function openEndpointTab(id: string): Promise<void> {
         postScript: sr.post_script ?? '',
         assertions,
       })
+      // Re-hydrate protocol-specific state (SOAP/WS/SSE/Socket.IO/gRPC/GraphQL)
+      // that snapshotProtocol wrote into the `metadata` column. Without this a
+      // saved protocol request reopened with an empty editor even though the
+      // data was persisted (issue #18) — openSuiteItemTab already did this; the
+      // APIs-tree saved-request path did not.
+      if (sr.metadata) {
+        try {
+          restoreProtocolFromMetadata((sr.protocol || 'http') as string, JSON.parse(sr.metadata))
+        } catch {
+          /* malformed metadata — skip protocol restore */
+        }
+      }
       return
     }
   } catch {
@@ -106,6 +119,7 @@ export async function openEndpointTab(id: string): Promise<void> {
       let assertions: TestAssertion[] = []
       let url = ep.path
       let method = ep.method || 'GET'
+      let metadata: unknown = undefined
 
       if (ep.request_schema) {
         try {
@@ -119,6 +133,7 @@ export async function openEndpointTab(id: string): Promise<void> {
           assertions = schema.assertions ?? []
           if (schema.url) url = schema.url
           if (schema.method) method = schema.method
+          metadata = schema.metadata
         } catch {
           /* ignore */
         }
@@ -146,6 +161,14 @@ export async function openEndpointTab(id: string): Promise<void> {
         postScript,
         assertions,
       })
+      // Restore protocol-specific state from request_schema.metadata (#18).
+      if (metadata) {
+        try {
+          restoreProtocolFromMetadata(protocol, metadata)
+        } catch {
+          /* malformed metadata — skip protocol restore */
+        }
+      }
     }
   } catch {
     /* ignore — caller will see nothing change */

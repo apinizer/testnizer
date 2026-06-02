@@ -2,6 +2,10 @@ import { create } from 'zustand'
 import type { SaveHistoryEntry } from '../types'
 
 interface GitBranch {
+  /** DB row id (UUID) for legacy non-git branches. Absent for synthetic
+   *  rows (e.g. the always-materialised default 'main') and git branches,
+   *  which are addressed by name. */
+  id?: string
   name: string
   current: boolean
   isRemote: boolean
@@ -126,6 +130,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
             if (namesSeen.has(b.name)) continue
             namesSeen.add(b.name)
             branches.push({
+              id: b.id,
               name: b.name,
               current: b.name === activeName,
               isRemote: false,
@@ -358,13 +363,19 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
     if (!hasGit) {
       // Legacy DB branch
       try {
-        // Find branch by name and delete
-        const branches = get().branches
-        const br = branches.find((b) => b.name === branchName)
-        if (br) {
-          await api().branch.delete(branchName)
-          await get().fetchBranches(projectId)
+        // Find branch by name; the IPC layer deletes by row id (UUID), not by
+        // name. Previously this passed the NAME — getBranchById(name) returned
+        // undefined so the repo's delete short-circuited, yet the store
+        // ignored the failed result and returned success anyway, so the UI
+        // showed "deleted" while the branch stayed (issue #35).
+        const br = get().branches.find((b) => b.name === branchName)
+        if (!br) return { success: false, error: 'Branch not found' }
+        if (!br.id) return { success: false, error: 'Cannot delete this branch' }
+        const res = (await api().branch.delete(br.id)) as { success: boolean; error?: string }
+        if (res && res.success === false) {
+          return { success: false, error: res.error || 'Delete failed' }
         }
+        await get().fetchBranches(projectId)
         return { success: true }
       } catch (e) {
         return { success: false, error: (e as Error).message }

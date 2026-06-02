@@ -16,6 +16,7 @@ import { useWebSocketStore } from '../stores/websocket.store'
 import { useSseStore } from '../stores/sse.store'
 import { useSocketIOStore } from '../stores/socketio.store'
 import { useGrpcStore } from '../stores/grpc.store'
+import { useGraphQLStore } from '../stores/graphql.store'
 import type { Tab, KeyValuePair } from '../types'
 
 type SseHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -149,6 +150,25 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
       },
     }
   }
+  if (protocol === 'graphql') {
+    // GraphQL was never captured here (#18) — its query/variables/headers
+    // live only in useGraphQLStore, so save → close → reopen dropped the
+    // query and dumped the user on the default sample. Snapshot them.
+    const gql = useGraphQLStore.getState()
+    return {
+      effectiveUrl: gql.url || url,
+      effectiveMethod: 'POST',
+      effectiveBody: { type: 'graphql', content: gql.query },
+      protocolMeta: {
+        graphql: {
+          url: gql.url,
+          query: gql.query,
+          variables: gql.variables,
+          headers: gql.headers,
+        },
+      },
+    }
+  }
   return { effectiveUrl: url, effectiveMethod: method, effectiveBody: body, protocolMeta }
 }
 
@@ -241,6 +261,16 @@ export function restoreProtocolFromMetadata(protocol: string, metadata: unknown)
     // we'd be writing dropdown selections that the editor can't render.
     // The user clicks "Load Proto" once and selection state comes back
     // via per-tab cache. Tracked as a known limitation.
+    return
+  }
+
+  if (protocol === 'graphql' && meta.graphql && typeof meta.graphql === 'object') {
+    const g = meta.graphql as Record<string, unknown>
+    const gql = useGraphQLStore.getState()
+    if (typeof g.url === 'string') gql.setUrl(g.url)
+    if (typeof g.query === 'string') gql.setQuery(g.query)
+    if (typeof g.variables === 'string') gql.setVariables(g.variables)
+    if (Array.isArray(g.headers)) gql.setHeaders(g.headers as KeyValuePair[])
     return
   }
 }

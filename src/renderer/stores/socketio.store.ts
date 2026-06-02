@@ -191,11 +191,21 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
       if (connectionId) await api.disconnect(connectionId)
     }
     _unsubscribePush?.()
+    // Disconnect tears down the connection, not the request configuration.
+    // Previously this reset to emptyState() and only kept url/namespace/
+    // bearerToken, so the configured emit event/payload and subscriptions were
+    // wiped on every connect→disconnect cycle (issue #21). Preserve all the
+    // request-model fields; only the transient connection state is cleared.
+    const cur = get()
     set({
       ...emptyState(),
-      url: get().url,
-      namespace: get().namespace,
-      bearerToken: get().bearerToken,
+      url: cur.url,
+      namespace: cur.namespace,
+      bearerToken: cur.bearerToken,
+      emitEvent: cur.emitEvent,
+      emitPayload: cur.emitPayload,
+      subscriptions: cur.subscriptions,
+      newSubscription: cur.newSubscription,
     })
   },
 
