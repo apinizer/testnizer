@@ -1156,7 +1156,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.headers': 'Headers',
     'mock.body': 'Body',
     'mock.bodyHint':
-      'Templating: {{request.body.x}}, {{request.headers.x}}, {{request.params.id}}, {{$timestamp}}, {{$randomUUID}}, {{#if}}, {{#each}}…',
+      'Templating: {{request.body.x}}, {{request.headers.x}}, {{request.query.x}} (query string), {{request.params.x}} (path param), {{$timestamp}}, {{$randomUUID}}, {{#if}}, {{#each}}…',
     'mock.condition': 'Condition (JSON)',
     'mock.conditionHint':
       'Examples: {"type":"always"} · {"type":"header","name":"x-tenant","op":"eq","value":"acme"} · {"type":"jsonPath","path":"$.role","op":"eq","value":"admin"}',
@@ -2602,7 +2602,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.headers': "Header'lar",
     'mock.body': 'Gövde',
     'mock.bodyHint':
-      'Template: {{request.body.x}}, {{request.headers.x}}, {{request.params.id}}, {{$timestamp}}, {{$randomUUID}}, {{#if}}, {{#each}}…',
+      'Şablon: {{request.body.x}}, {{request.headers.x}}, {{request.query.x}} (query string), {{request.params.x}} (path param), {{$timestamp}}, {{$randomUUID}}, {{#if}}, {{#each}}…',
     'mock.condition': 'Koşul (JSON)',
     'mock.conditionHint':
       'Örnekler: {"type":"always"} · {"type":"header","name":"x-tenant","op":"eq","value":"acme"} · {"type":"jsonPath","path":"$.role","op":"eq","value":"admin"}',

@@ -285,6 +285,25 @@ describe('renderTemplate', () => {
     expect(renderTemplate('q={{request.query.q}}', tCtx)).toBe('q=x')
   })
 
+  it('resolves request headers case-insensitively (#29)', () => {
+    const ctx = {
+      request: { ...tCtx.request, headers: { authorization: 'Bearer test-token-123' } },
+    }
+    // Lowercase, PascalCase, and uppercase must all resolve (RFC 7230 §3.2).
+    expect(renderTemplate('{{request.headers.authorization}}', ctx)).toBe('Bearer test-token-123')
+    expect(renderTemplate('{{request.headers.Authorization}}', ctx)).toBe('Bearer test-token-123')
+    expect(renderTemplate('{{request.headers.AUTHORIZATION}}', ctx)).toBe('Bearer test-token-123')
+  })
+
+  it('header case-insensitivity also works inside {{#if}}', () => {
+    const ctx = {
+      request: { ...tCtx.request, headers: { authorization: 'Bearer x' } },
+    }
+    expect(
+      renderTemplate('{{#if request.headers.Authorization}}yes{{else}}no{{/if}}', ctx),
+    ).toBe('yes')
+  })
+
   it('substitutes dynamic values', () => {
     const out = renderTemplate('{{$timestamp}}', tCtx)
     expect(/^\d+$/.test(out)).toBe(true)

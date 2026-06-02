@@ -713,7 +713,18 @@ function VarRowView({
         <input
           value={variable.value}
           onChange={(e) => onUpdate({ value: e.target.value })}
-          placeholder={variable.initialValue || '—'}
+          // The Current Value falls back to the Initial Value when empty, and
+          // that inherited value was shown via the placeholder — but
+          // placeholders are never masked by type="password", so a secret's
+          // value leaked in plain text (issue #13). Mask the placeholder hint
+          // for hidden secrets while keeping the inherited-value affordance.
+          placeholder={
+            variable.secret && !showCurrent
+              ? variable.initialValue
+                ? '••••••'
+                : '—'
+              : variable.initialValue || '—'
+          }
           type={variable.secret && !showCurrent ? 'password' : 'text'}
           style={{ ...INPUT, color: 'var(--json-string)' }}
         />
