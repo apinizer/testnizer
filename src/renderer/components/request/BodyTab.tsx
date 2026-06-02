@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useRequestStore } from '../../stores/request.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
@@ -38,6 +39,11 @@ export default function BodyTab() {
   }
 
   const handleBeautify = () => {
+    // Read the latest body from the store rather than the render closure, so
+    // the same logic is correct whether triggered by the Beautify button or
+    // the Shift+F keyboard shortcut (which fires outside this render scope).
+    const body = useRequestStore.getState().body
+    const setBody = useRequestStore.getState().setBody
     if (body.type === 'json' && body.content) {
       try {
         const formatted = JSON.stringify(JSON.parse(body.content), null, 2)
@@ -71,6 +77,17 @@ export default function BodyTab() {
       setBody({ ...body, content: formatted })
     }
   }
+
+  // Wire the Shift+F shortcut (and the command palette "Format request body"
+  // action), which dispatch a `testnizer:format-body` event. Nothing listened
+  // for it before, so only the Beautify button worked (issue #23).
+  useEffect(() => {
+    const handler = (): void => handleBeautify()
+    document.addEventListener('testnizer:format-body', handler)
+    return () => document.removeEventListener('testnizer:format-body', handler)
+    // handleBeautify reads the latest state from the store, so it's safe to
+    // bind once for the lifetime of the tab.
+  }, [])
 
   const handleFormDataUpdate = (id: string, updates: Partial<KeyValuePair>) => {
     const formData = (body.formData || []).map((item) =>

@@ -36,6 +36,47 @@ function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
 }
 
+// ─── URL ⇄ Query-param sync (issue #22) ───────────────────────
+// The URL bar and the Params tab were independent: adding a param never
+// touched the URL. Keep them in lockstep without encoding (so `{{vars}}`
+// survive intact, matching what the URL bar renders) and without losing
+// disabled rows.
+function buildQueryString(params: KeyValuePair[]): string {
+  return params
+    .filter((p) => p.enabled && p.key.trim() !== '')
+    .map((p) => (p.value !== '' ? `${p.key}=${p.value}` : p.key))
+    .join('&')
+}
+
+/** Rewrite the URL's query string from the current params (enabled only). */
+function applyParamsToUrl(url: string, params: KeyValuePair[]): string {
+  const base = url.split('?')[0]
+  const qs = buildQueryString(params)
+  return qs ? `${base}?${qs}` : base
+}
+
+/**
+ * Derive params from the URL's query, preserving any disabled rows the user
+ * set in the Params tab (those never appear in the URL). Enabled rows are
+ * rebuilt from the query.
+ */
+function mergeParamsFromUrl(url: string, existing: KeyValuePair[]): KeyValuePair[] {
+  const qIdx = url.indexOf('?')
+  const fromUrl: KeyValuePair[] = []
+  if (qIdx !== -1) {
+    const qs = url.slice(qIdx + 1)
+    for (const pair of qs.split('&')) {
+      if (!pair) continue
+      const eq = pair.indexOf('=')
+      const key = eq === -1 ? pair : pair.slice(0, eq)
+      const value = eq === -1 ? '' : pair.slice(eq + 1)
+      fromUrl.push({ id: makeId(), key, value, enabled: true })
+    }
+  }
+  const disabled = existing.filter((p) => !p.enabled)
+  return [...fromUrl, ...disabled]
+}
+
 /** Snapshot of request state for a single tab */
 interface TabRequestState {
   method: HttpMethod
@@ -177,26 +218,34 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     markActiveDirty()
   },
   setUrl: (url) => {
-    set({ url })
+    // Keep the Params tab in sync with the query the user typed (#22).
+    set((state) => ({ url, params: mergeParamsFromUrl(url, state.params) }))
     markActiveDirty()
   },
 
   setParams: (params) => {
-    set({ params })
+    set((state) => ({ params, url: applyParamsToUrl(state.url, params) }))
     markActiveDirty()
   },
   addParam: () => {
-    set((state) => ({ params: [...state.params, defaultKv()] }))
+    set((state) => {
+      const params = [...state.params, defaultKv()]
+      return { params, url: applyParamsToUrl(state.url, params) }
+    })
     markActiveDirty()
   },
   updateParam: (id, updates) => {
-    set((state) => ({
-      params: state.params.map((p) => (p.id === id ? { ...p, ...updates } : p)),
-    }))
+    set((state) => {
+      const params = state.params.map((p) => (p.id === id ? { ...p, ...updates } : p))
+      return { params, url: applyParamsToUrl(state.url, params) }
+    })
     markActiveDirty()
   },
   removeParam: (id) => {
-    set((state) => ({ params: state.params.filter((p) => p.id !== id) }))
+    set((state) => {
+      const params = state.params.filter((p) => p.id !== id)
+      return { params, url: applyParamsToUrl(state.url, params) }
+    })
     markActiveDirty()
   },
 
