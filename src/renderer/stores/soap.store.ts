@@ -42,6 +42,10 @@ interface TabSoapState {
   bodyMode: 'form' | 'raw'
   wsSecurity: WsSecurityConfig
   endpointUrl: string
+  /** Manual-mode SOAP Action + version — no WSDL operation to read them from
+   *  (issue #17). Persisted per tab so they survive close/reopen. */
+  manualSoapAction: string
+  manualSoapVersion: 'soap11' | 'soap12'
 }
 
 interface SoapStore {
@@ -65,6 +69,10 @@ interface SoapStore {
   /** The resolved SOAP endpoint URL (for sending) */
   endpointUrl: string
 
+  /** Manual-mode SOAP Action + version (issue #17) */
+  manualSoapAction: string
+  manualSoapVersion: 'soap11' | 'soap12'
+
   /** Per-tab state cache */
   _tabStates: Map<string, TabSoapState>
   _currentTabId: string | null
@@ -79,6 +87,8 @@ interface SoapStore {
   setRawXml: (xml: string) => void
   setBodyMode: (mode: 'form' | 'raw') => void
   setEndpointUrl: (url: string) => void
+  setManualSoapAction: (action: string) => void
+  setManualSoapVersion: (v: 'soap11' | 'soap12') => void
   setWsSecurity: (config: Partial<WsSecurityConfig>) => void
   sendSoap: () => Promise<void>
   cancelSoap: () => Promise<void>
@@ -140,6 +150,8 @@ function extractSoapTabState(s: SoapStore): TabSoapState {
     bodyMode: s.bodyMode,
     wsSecurity: s.wsSecurity,
     endpointUrl: s.endpointUrl,
+    manualSoapAction: s.manualSoapAction,
+    manualSoapVersion: s.manualSoapVersion,
   }
 }
 
@@ -155,6 +167,8 @@ function emptySoapTabState(): TabSoapState {
     bodyMode: 'raw',
     wsSecurity: { ...defaultWsSecurity },
     endpointUrl: '',
+    manualSoapAction: '',
+    manualSoapVersion: 'soap11',
   }
 }
 
@@ -163,6 +177,9 @@ const persisted = loadTabbedState<TabSoapState>(STORAGE_KEY, emptySoapTabState)
 
 export const useSoapStore = create<SoapStore>((set, get) => ({
   ...persisted.current,
+  // Backfill manual-mode fields for states persisted before they existed.
+  manualSoapAction: persisted.current.manualSoapAction ?? '',
+  manualSoapVersion: persisted.current.manualSoapVersion ?? 'soap11',
   // Transient — never restored
   isLoading: false,
   parseError: null,
@@ -289,14 +306,16 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
 
   setEndpointUrl: (url) => set({ endpointUrl: url }),
 
+  setManualSoapAction: (action) => set({ manualSoapAction: action }),
+  setManualSoapVersion: (v) => set({ manualSoapVersion: v }),
+
   setWsSecurity: (config) =>
     set((state) => ({
       wsSecurity: { ...state.wsSecurity, ...config },
     })),
 
   sendSoap: async () => {
-    const { rawXml, wsSecurity, parsedWsdl, selectedService, selectedPort, selectedOperation } =
-      get()
+    const { rawXml, wsSecurity, parsedWsdl, manualSoapAction, manualSoapVersion } = get()
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const activeTabId = tabsStore.activeTabId
@@ -312,14 +331,35 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedUrl = resolveVariables(endpointUrl, activeVars)
     const resolvedXml = resolveVariables(rawXml, activeVars)
-    const resolvedSoapAction = resolveVariables(op?.soapAction || '', activeVars)
-    const resolvedHeaders = resolveKeyValuePairs(
-      [
-        { key: 'Content-Type', value: 'text/xml; charset=utf-8', enabled: true },
-        { key: 'SOAPAction', value: resolvedSoapAction, enabled: true },
-      ],
+    // The SOAP Action and version come from the selected WSDL operation when
+    // one is loaded, otherwise from the manual form (issue #17 — manual mode
+    // had no WSDL op, so the action was always empty). Transport rules differ
+    // by version:
+    //   SOAP 1.1 → quoted `SOAPAction:` HTTP header
+    //   SOAP 1.2 → `action="…"` parameter inside the Content-Type, no SOAPAction
+    const effectiveVersion = op ? (parsedWsdl?.soapVersion ?? 'soap11') : manualSoapVersion
+    const resolvedSoapAction = resolveVariables(
+      op?.soapAction || manualSoapAction || '',
       activeVars,
     )
+    const headerPairs =
+      effectiveVersion === 'soap12'
+        ? [
+            {
+              key: 'Content-Type',
+              value: resolvedSoapAction
+                ? `application/soap+xml; charset=utf-8; action="${resolvedSoapAction}"`
+                : 'application/soap+xml; charset=utf-8',
+              enabled: true,
+            },
+          ]
+        : [
+            { key: 'Content-Type', value: 'text/xml; charset=utf-8', enabled: true },
+            // SOAP 1.1 requires the action quoted; an unquoted/empty value is
+            // what the server rejected in the report.
+            { key: 'SOAPAction', value: `"${resolvedSoapAction}"`, enabled: true },
+          ]
+    const resolvedHeaders = resolveKeyValuePairs(headerPairs, activeVars)
     const resolvedWsseUsername = resolveVariables(
       wsSecurity.usernameToken?.username || wsSecurity.username || '',
       activeVars,
@@ -478,8 +518,10 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
       tabStates.set(state._currentTabId, extractSoapTabState(state))
     }
 
-    // Load target tab state (or empty for new tabs)
-    const target = tabStates.get(tabId) || emptySoapTabState()
+    // Load target tab state (or empty for new tabs). Merge over the empty
+    // state so fields added later (manual SOAP action/version) default cleanly
+    // for cache entries persisted before they existed.
+    const target = { ...emptySoapTabState(), ...tabStates.get(tabId) }
 
     set({
       ...target,

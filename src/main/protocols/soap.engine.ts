@@ -272,6 +272,10 @@ interface WsdlXmlStructure {
   services: Map<string, Array<{ name: string; bindingName: string; address?: string }>>
   /** binding name + opName → soapAction */
   bindingOpSoapAction: Map<string, string>
+  /** `<wsdl:definitions targetNamespace="…">` — the namespace the operation
+   *  elements belong to. Without this the envelope fell back to
+   *  http://tempuri.org/ and servers rejected the request (issue #16). */
+  targetNamespace?: string
 }
 
 function stripNsPrefix(qname: string | undefined): string {
@@ -309,6 +313,12 @@ function parseWsdlXmlStructure(wsdlXml: string): WsdlXmlStructure {
     | Record<string, unknown>
     | undefined
   if (!definitions) return result
+
+  // Capture the WSDL target namespace — the operation elements in the request
+  // body belong to it. Discarding this is what made every envelope default to
+  // http://tempuri.org/ (issue #16).
+  const tns = definitions['@_targetNamespace']
+  if (typeof tns === 'string' && tns) result.targetNamespace = tns
 
   // portTypes — operation names live here
   for (const portType of getChildrenByLocalName(definitions, 'portType')) {
@@ -525,13 +535,27 @@ export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
         const xmlAction =
           xmlPort && xmlStructure.bindingOpSoapAction.get(`${xmlPort.bindingName}::${opName}`)
         const soapAction = xmlAction || extractSoapAction(client, portName, opName)
+        // Resolve the operation's namespace: prefer the input message's own
+        // targetNamespace (describe() descriptor), then the WSDL-level
+        // targetNamespace. Falls back to tempuri inside generateEnvelope only
+        // when neither is known (issue #16).
+        const opNamespace =
+          (typeof inputSchema['targetNamespace'] === 'string'
+            ? (inputSchema['targetNamespace'] as string)
+            : undefined) || xmlStructure.targetNamespace
         const exampleRequest = generateEnvelope(
           opName,
           buildExampleParams(inputSchema),
           soapVersion,
           soapAction,
+          opNamespace,
         )
-        const exampleResponse = generateResponseEnvelope(opName, outputSchema, soapVersion)
+        const exampleResponse = generateResponseEnvelope(
+          opName,
+          outputSchema,
+          soapVersion,
+          opNamespace,
+        )
 
         operations.push({
           name: opName,
@@ -668,7 +692,9 @@ export function generateEnvelope(
       ? 'http://www.w3.org/2003/05/soap-envelope'
       : 'http://schemas.xmlsoap.org/soap/envelope/'
 
-  const bodyContent = buildXmlElement(operationName, params, 'ns1')
+  // Re-indent every line of the (multi-line) body so children line up under
+  // <soap:Body> instead of being left-shifted (issue #16 secondary).
+  const bodyContent = buildXmlElement(operationName, params, 'ns1').replace(/\n/g, '\n    ')
 
   const xml = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="${envelopeNs}" xmlns:ns1="${ns}">
@@ -685,17 +711,22 @@ function generateResponseEnvelope(
   operationName: string,
   outputSchema: Record<string, unknown>,
   soapVersion: SoapVersion,
+  namespace?: string,
 ): string {
+  const ns = namespace || 'http://tempuri.org/'
   const envelopeNs =
     soapVersion === 'soap12'
       ? 'http://www.w3.org/2003/05/soap-envelope'
       : 'http://schemas.xmlsoap.org/soap/envelope/'
 
   const responseContent = buildExampleParams(outputSchema)
-  const bodyContent = buildXmlElement(`${operationName}Response`, responseContent, 'ns1')
+  const bodyContent = buildXmlElement(`${operationName}Response`, responseContent, 'ns1').replace(
+    /\n/g,
+    '\n    ',
+  )
 
   return `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="${envelopeNs}" xmlns:ns1="http://tempuri.org/">
+<soap:Envelope xmlns:soap="${envelopeNs}" xmlns:ns1="${ns}">
   <soap:Body>
     ${bodyContent}
   </soap:Body>
