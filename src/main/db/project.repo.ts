@@ -131,11 +131,32 @@ export function deleteProject(id: string): boolean {
 
 // ─── Folders ─────────────────────────────────────────────────
 
-export function getFoldersByProject(projectId: string): FolderRow[] {
+/**
+ * Branch-scoped folder listing (issue #8).
+ *   - `branchId === undefined`: no branch filter — every internal caller
+ *     (export, import, mock/test-suite scaffolding) keeps seeing all content.
+ *   - `branchId === null`: default-branch view — only shared (NULL) rows.
+ *   - `branchId` string: that branch — shared rows PLUS rows stamped with it.
+ */
+export function getFoldersByProject(projectId: string, branchId?: string | null): FolderRow[] {
   const db = getDb()
+  if (branchId === undefined) {
+    return db
+      .prepare('SELECT * FROM folders WHERE project_id = ? ORDER BY sort_order ASC')
+      .all(projectId) as FolderRow[]
+  }
+  if (branchId === null) {
+    return db
+      .prepare(
+        'SELECT * FROM folders WHERE project_id = ? AND branch_id IS NULL ORDER BY sort_order ASC',
+      )
+      .all(projectId) as FolderRow[]
+  }
   return db
-    .prepare('SELECT * FROM folders WHERE project_id = ? ORDER BY sort_order ASC')
-    .all(projectId) as FolderRow[]
+    .prepare(
+      'SELECT * FROM folders WHERE project_id = ? AND (branch_id IS NULL OR branch_id = ?) ORDER BY sort_order ASC',
+    )
+    .all(projectId, branchId) as FolderRow[]
 }
 
 export function getFolderById(id: string): FolderRow | undefined {
@@ -147,6 +168,8 @@ export function createFolder(data: {
   project_id: string
   parent_id?: string | null
   name: string
+  /** Branch this folder belongs to; NULL/omitted = shared across branches. */
+  branch_id?: string | null
 }): FolderRow {
   const db = getDb()
   const id = randomUUID()
@@ -157,10 +180,17 @@ export function createFolder(data: {
 
   db.prepare(
     `
-    INSERT INTO folders (id, project_id, parent_id, name, sort_order)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO folders (id, project_id, parent_id, name, sort_order, branch_id)
+    VALUES (?, ?, ?, ?, ?, ?)
   `,
-  ).run(id, data.project_id, data.parent_id ?? null, data.name, maxOrder.max_order + 1)
+  ).run(
+    id,
+    data.project_id,
+    data.parent_id ?? null,
+    data.name,
+    maxOrder.max_order + 1,
+    data.branch_id ?? null,
+  )
   return getFolderById(id)!
 }
 

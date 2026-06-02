@@ -81,6 +81,9 @@ interface BranchStore {
   clearPendingConflict: () => void
   setActiveBranch: (id: string) => void
   getActiveBranch: () => { id: string; name: string; is_default: number } | null
+  /** Branch scope key for tree content: null on the default branch, else the
+   *  active branch name. Used to stamp + filter folders/endpoints (#8). */
+  getActiveBranchScope: () => string | null
   fetchSaveHistory: (projectId: string) => Promise<void>
 }
 
@@ -399,6 +402,16 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
   getActiveBranch: () => {
     const { currentBranch } = get()
     return { id: currentBranch, name: currentBranch, is_default: currentBranch === 'main' ? 1 : 0 }
+  },
+
+  // Branch scope key for tree content (issue #8). The default branch maps to
+  // `null` ("shared" — content visible on every branch); a non-default branch
+  // maps to its name, which is what new content on that branch is stamped with
+  // and what the tree filters on. Using the branch name keeps it consistent
+  // for both git and legacy projects without a separate id lookup.
+  getActiveBranchScope: () => {
+    const ab = get().getActiveBranch()
+    return ab && ab.is_default ? null : (ab?.id ?? null)
   },
 
   fetchSaveHistory: async (projectId) => {

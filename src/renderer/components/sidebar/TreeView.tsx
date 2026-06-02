@@ -1,6 +1,7 @@
 import { useRef, useMemo, useCallback, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useWorkspaceStore } from '../../stores/workspace.store'
+import { useBranchStore } from '../../stores/branch.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
@@ -378,6 +379,9 @@ export default function TreeView() {
           method: d.method,
           url: '',
           protocol,
+          // Stamp the active branch so content created on a non-default branch
+          // is isolated to it (#8). null on the default branch = shared.
+          branch_id: useBranchStore.getState().getActiveBranchScope(),
         })) as { success: boolean; error?: string } | undefined
         // Previously this `await` was followed by a hard `refreshTree()` with
         // no inspection of the IPC result — a non-existent SQL constraint or
@@ -418,6 +422,9 @@ export default function TreeView() {
           project_id: activeProjectId,
           parent_id: parentFolderId,
           name: 'New Folder',
+          // Branch-stamp so a folder added on a non-default branch stays on it
+          // (#8 — the exact reported repro).
+          branch_id: useBranchStore.getState().getActiveBranchScope(),
         })
         await refreshTree()
       } catch {

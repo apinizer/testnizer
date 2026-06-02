@@ -97,14 +97,20 @@ interface SavedRequestRow {
 
 async function buildTreeFromDB(projectId: string, projectName: string): Promise<TreeNode[]> {
   try {
+    // Branch scope (#8): null on the default branch (shows shared content),
+    // else the active branch name (shows shared + that branch's content).
+    const branchScope = useBranchStore.getState().getActiveBranchScope()
     // Three independent IPC calls — fan out in parallel.
     const [foldersResult, endpointsResult, savedResult] = await Promise.all([
-      window.api?.folder?.list(projectId) as Promise<{ success: boolean; data?: FolderRow[] }>,
-      window.api?.endpoint?.listByProject(projectId) as Promise<{
+      window.api?.folder?.list(projectId, branchScope) as Promise<{
+        success: boolean
+        data?: FolderRow[]
+      }>,
+      window.api?.endpoint?.listByProject(projectId, branchScope) as Promise<{
         success: boolean
         data?: EndpointRow[]
       }>,
-      window.api?.savedRequest?.list(projectId) as Promise<{
+      window.api?.savedRequest?.list(projectId, branchScope) as Promise<{
         success: boolean
         data?: SavedRequestRow[]
       }>,

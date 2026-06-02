@@ -156,11 +156,12 @@ interface ProjectApi {
 }
 
 interface FolderApi {
-  list(projectId: string): Promise<IpcResult<Folder[]>>
+  list(projectId: string, branchId?: string | null): Promise<IpcResult<Folder[]>>
   create(payload: {
     project_id: string
     parent_id?: string | null
     name: string
+    branch_id?: string | null
   }): Promise<IpcResult<Folder>>
   update(
     id: string,
@@ -171,7 +172,7 @@ interface FolderApi {
 }
 
 interface EndpointApi {
-  listByProject(projectId: string): Promise<IpcResult<Endpoint[]>>
+  listByProject(projectId: string, branchId?: string | null): Promise<IpcResult<Endpoint[]>>
   listByFolder(folderId: string): Promise<IpcResult<Endpoint[]>>
   get(id: string): Promise<IpcResult<Endpoint | undefined>>
   create(payload: {
@@ -208,7 +209,7 @@ interface EndpointCaseApi {
 }
 
 interface SavedRequestApi {
-  list(projectId: string): Promise<IpcResult<SavedRequest[]>>
+  list(projectId: string, branchId?: string | null): Promise<IpcResult<SavedRequest[]>>
   get(id: string): Promise<IpcResult<SavedRequest | undefined>>
   create(payload: {
     project_id?: string | null
@@ -225,6 +226,7 @@ interface SavedRequestApi {
     post_script?: string
     assertions?: string
     metadata?: string
+    branch_id?: string | null
   }): Promise<IpcResult<SavedRequest>>
   update(
     id: string,
