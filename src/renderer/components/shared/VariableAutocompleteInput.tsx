@@ -402,43 +402,63 @@ export default function VariableAutocompleteInput({
           className={className}
         />
         <div ref={overlayRef} aria-hidden="true" style={overlayStyle}>
-          {segments.map((seg, i) => {
-            if (!seg.isVar) return <span key={i}>{seg.text}</span>
-            // Strip the surrounding `{{` `}}` to extract the bare name.
-            const varName = seg.text.slice(2, -2)
-            const info = lookupVariable(varName)
-            const unresolved = info.category === 'unresolved'
-            return (
-              <span
-                key={i}
-                style={{
-                  color: unresolved
-                    ? 'var(--delete-color, #cc2200)'
-                    : 'var(--variable-color, #0066cc)',
-                  fontWeight: 500,
-                  // Re-enable pointer events on the overlay token so the
-                  // tooltip can fire even though the wrapper is pointer-none.
-                  pointerEvents: 'auto',
-                  cursor: 'help',
-                  textDecoration: unresolved ? 'underline dotted' : undefined,
-                  textUnderlineOffset: 2,
-                }}
-                onMouseEnter={(e) => {
-                  cancelHoverClose()
-                  setHoverInfo({
-                    name: varName,
-                    value: info.value,
-                    category: info.category,
-                    envName: info.envName,
-                    rect: (e.currentTarget as HTMLElement).getBoundingClientRect(),
-                  })
-                }}
-                onMouseLeave={scheduleHoverClose}
-              >
-                {seg.text}
-              </span>
-            )
-          })}
+          {/*
+            Everything renders inside ONE `white-space: pre` inline run so the
+            overlay glyph advances mirror the real <input> exactly — the caret
+            lives in the input, the colored text lives here, and the two only
+            line up if their per-character widths are identical. Two things
+            previously broke that alignment, and both only surfaced once a
+            `{{var}}` split the string into several pieces:
+              1. The token used `fontWeight: 500`; bolder glyphs are wider than
+                 the input's 400, so every character after a variable drifted
+                 right of the caret.
+              2. Each segment was a separate flex item, so flexbox added
+                 sub-pixel rounding between the pieces.
+            Keeping a single inline flow (not flex children) and matching the
+            input's font-weight fixes the "letters look scrambled after a
+            variable" report. Variables are distinguished by color only.
+          */}
+          <span style={{ whiteSpace: 'pre' }}>
+            {segments.map((seg, i) => {
+              if (!seg.isVar) return <span key={i}>{seg.text}</span>
+              // Strip the surrounding `{{` `}}` to extract the bare name.
+              const varName = seg.text.slice(2, -2)
+              const info = lookupVariable(varName)
+              const unresolved = info.category === 'unresolved'
+              return (
+                <span
+                  key={i}
+                  style={{
+                    color: unresolved
+                      ? 'var(--delete-color, #cc2200)'
+                      : 'var(--variable-color, #0066cc)',
+                    // Do NOT change font-weight here — a wider glyph would
+                    // shift every following character out of sync with the
+                    // input caret. Color alone marks the variable.
+                    // Re-enable pointer events on the overlay token so the
+                    // tooltip can fire even though the wrapper is pointer-none.
+                    pointerEvents: 'auto',
+                    cursor: 'help',
+                    textDecoration: unresolved ? 'underline dotted' : undefined,
+                    textUnderlineOffset: 2,
+                  }}
+                  onMouseEnter={(e) => {
+                    cancelHoverClose()
+                    setHoverInfo({
+                      name: varName,
+                      value: info.value,
+                      category: info.category,
+                      envName: info.envName,
+                      rect: (e.currentTarget as HTMLElement).getBoundingClientRect(),
+                    })
+                  }}
+                  onMouseLeave={scheduleHoverClose}
+                >
+                  {seg.text}
+                </span>
+              )
+            })}
+          </span>
         </div>
       </span>
       {isOpen &&

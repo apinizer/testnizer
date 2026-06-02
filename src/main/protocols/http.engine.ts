@@ -150,6 +150,8 @@ export interface HttpRequestOptions {
   auth?: AuthConfig
   timeout?: number
   followRedirects?: boolean
+  /** Cap the redirect chain. Ignored when followRedirects === false. */
+  maxRedirects?: number
   sslVerification?: boolean
   proxy?: ProxyConfig
   certificates?: {
@@ -714,8 +716,13 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       params,
       headers,
       data,
-      timeout: options.timeout ?? 30000,
-      maxRedirects: options.followRedirects !== false ? 5 : 0,
+      // `timeout` honors an explicit 0 as "no timeout" (axios semantics).
+      // Only fall back to the 30s default when nothing was supplied — a
+      // sent 0 must NOT be clobbered (issue #24, Test B).
+      timeout: options.timeout == null ? 30000 : options.timeout,
+      // Honor the per-request "Max redirects" value; 0 (or follow-off)
+      // disables following so the raw 3xx is returned (issues #25, #26).
+      maxRedirects: options.followRedirects === false ? 0 : (options.maxRedirects ?? 5),
       validateStatus: () => true, // Accept all status codes
       responseType: 'text',
       transformResponse: [(d: string) => d], // Prevent auto JSON parse

@@ -361,6 +361,7 @@ interface RequestApi {
     auth?: unknown
     timeout?: number
     followRedirects?: boolean
+    maxRedirects?: number
     sslVerification?: boolean
     proxy?: unknown
     /**

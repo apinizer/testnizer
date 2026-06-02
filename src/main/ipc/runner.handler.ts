@@ -189,6 +189,7 @@ function buildRequestFromEndpoint(endpoint: endpointRepo.EndpointRow): HttpReque
     auth?: AuthConfig
     timeout?: number
     followRedirects?: boolean
+    maxRedirects?: number
     sslVerification?: boolean
   }>(endpoint.request_schema, {})
 
@@ -202,8 +203,11 @@ function buildRequestFromEndpoint(endpoint: endpointRepo.EndpointRow): HttpReque
     headers: schema.headers,
     body: schema.body as HttpRequestOptions['body'],
     auth: schema.auth as HttpRequestOptions['auth'],
-    timeout: schema.timeout ?? 30000,
+    // Mirror the engine's "explicit 0 = no timeout" semantics (issue #24)
+    // rather than clobbering 0 with the 30s default.
+    timeout: schema.timeout == null ? 30000 : schema.timeout,
     followRedirects: schema.followRedirects ?? true,
+    maxRedirects: schema.maxRedirects,
     sslVerification: schema.sslVerification ?? true,
   }
 }

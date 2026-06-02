@@ -83,3 +83,116 @@ describe('http.engine — 4xx visibility', () => {
     expect(res.error).toBeUndefined()
   })
 })
+
+// Per-request Settings (#24-27): the engine must honor followRedirects /
+// maxRedirects / timeout instead of a hardcoded chain length or default.
+describe('http.engine — redirect + timeout settings', () => {
+  let server: Server
+  let port = 0
+
+  beforeAll(
+    () =>
+      new Promise<void>((resolve) => {
+        server = createServer((req, res) => {
+          const url = req.url || '/'
+          // /redirect/N → 302 to /redirect/(N-1); /redirect/0 → 200.
+          const m = url.match(/^\/redirect\/(\d+)$/)
+          if (m) {
+            const n = Number(m[1])
+            if (n <= 0) {
+              res.writeHead(200, { 'Content-Type': 'text/plain' })
+              res.end('landed')
+            } else {
+              res.writeHead(302, { Location: `/redirect/${n - 1}` })
+              res.end()
+            }
+            return
+          }
+          if (url.startsWith('/slow')) {
+            setTimeout(() => {
+              res.writeHead(200, { 'Content-Type': 'text/plain' })
+              res.end('eventually')
+            }, 800)
+            return
+          }
+          res.writeHead(404)
+          res.end()
+        })
+        server.listen(0, '127.0.0.1', () => {
+          port = (server.address() as AddressInfo).port
+          resolve()
+        })
+      }),
+  )
+
+  afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())))
+
+  it('returns the raw 3xx when followRedirects is false (#26)', async () => {
+    const res = await executeHttpRequest({
+      method: 'GET',
+      url: `http://127.0.0.1:${port}/redirect/1`,
+      followRedirects: false,
+      timeout: 2000,
+    })
+    expect(res.status).toBe(302)
+    // Location header is preserved (case-insensitive lookup tolerated).
+    const loc = res.headers?.['location'] ?? res.headers?.['Location']
+    expect(loc).toBe('/redirect/0')
+  })
+
+  it('does not follow when maxRedirects is 0 even if followRedirects is on (#25 Test B)', async () => {
+    const res = await executeHttpRequest({
+      method: 'GET',
+      url: `http://127.0.0.1:${port}/redirect/1`,
+      followRedirects: true,
+      maxRedirects: 0,
+      timeout: 2000,
+    })
+    expect(res.status).toBe(302)
+  })
+
+  it('follows up to maxRedirects and surfaces an error when the chain is longer (#25 Test A)', async () => {
+    const res = await executeHttpRequest({
+      method: 'GET',
+      url: `http://127.0.0.1:${port}/redirect/5`,
+      followRedirects: true,
+      maxRedirects: 2,
+      timeout: 2000,
+    })
+    // Chain (5) exceeds the cap (2) → axios aborts with a redirect error.
+    expect(res.status).toBeUndefined()
+    expect(res.error).toMatch(/redirect/i)
+  })
+
+  it('follows the whole chain when maxRedirects is generous', async () => {
+    const res = await executeHttpRequest({
+      method: 'GET',
+      url: `http://127.0.0.1:${port}/redirect/5`,
+      followRedirects: true,
+      maxRedirects: 10,
+      timeout: 2000,
+    })
+    expect(res.status).toBe(200)
+    expect(res.body).toBe('landed')
+  })
+
+  it('aborts a slow request when a small timeout is set (#24 Test A)', async () => {
+    const res = await executeHttpRequest({
+      method: 'GET',
+      url: `http://127.0.0.1:${port}/slow`,
+      timeout: 200,
+    })
+    expect(res.status).toBeUndefined()
+    expect(res.error).toMatch(/timeout|timed out|ECONNABORTED/i)
+  })
+
+  it('does not abort a slow request when timeout is 0 = no timeout (#24 Test B)', async () => {
+    const res = await executeHttpRequest({
+      method: 'GET',
+      url: `http://127.0.0.1:${port}/slow`,
+      timeout: 0,
+    })
+    expect(res.status).toBe(200)
+    expect(res.body).toBe('eventually')
+  })
+})
