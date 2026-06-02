@@ -107,10 +107,19 @@ export async function initAutoUpdater(): Promise<void> {
   })
 
   autoUpdater.on('error', (err: unknown) => {
-    sendToAllWindows('updater:event', {
-      type: 'error',
-      error: (err as Error).message,
-    })
+    let message = (err as Error).message
+    // macOS auto-update needs a signed (ideally notarized) app; an ad-hoc /
+    // unsigned build can't self-update and electron-updater fails with a code-
+    // signature error. Make that actionable instead of cryptic (issue #34) —
+    // the modal already offers a manual-download link.
+    if (
+      process.platform === 'darwin' &&
+      /code sign|signature|not.*valid.*process|could not get/i.test(message)
+    ) {
+      message =
+        'Automatic update is not available for this macOS build (code signature requirement). Please download the latest version manually.'
+    }
+    sendToAllWindows('updater:event', { type: 'error', error: message })
   })
 
   // ─── IPC handlers ───────────────────────────────────────────
