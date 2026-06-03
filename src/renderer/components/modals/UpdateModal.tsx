@@ -35,7 +35,13 @@ function resolveSanitize(): (input: string, opts: unknown) => string {
 const sanitizeHtml = resolveSanitize()
 import { useUpdaterStore } from '../../stores/updater.store'
 import { useTranslation } from '../../lib/i18n'
+import { isMac } from '../../lib/platform'
 import Modal from '../shared/Modal'
+
+// Where users land to grab a build by hand. macOS ad-hoc/unsigned builds can't
+// self-install (electron-updater fails the code-signature check), so on macOS
+// this is the *primary* update path, not just an error fallback (#34).
+const DOWNLOAD_PAGE = 'https://www.testnizer.com/download/'
 
 export default function UpdateModal() {
   const show = useUIStore((s) => s.showUpdateModal)
@@ -162,6 +168,11 @@ function StatusContent({
               />
             </div>
           )}
+          {isMac() && (
+            <span className="text-center text-sm text-[var(--muted)]">
+              {t('update.macAutoUnavailable')}
+            </span>
+          )}
         </>
       )
     case 'downloading':
@@ -234,6 +245,22 @@ function UpdateActions({
     case 'downloading':
       return null
     case 'available':
+      // macOS builds are ad-hoc/unsigned and electron-updater can't self-
+      // install them — the in-app "Download & Install" path always ends in a
+      // code-signature error (#34). Send macOS users straight to the manual
+      // download instead of letting them hit that dead end.
+      if (isMac()) {
+        return (
+          <a
+            href={DOWNLOAD_PAGE}
+            target="_blank"
+            rel="noreferrer"
+            className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white no-underline transition-colors hover:opacity-90"
+          >
+            {t('update.downloadManually')}
+          </a>
+        )
+      }
       return (
         <button
           type="button"

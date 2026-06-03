@@ -748,4 +748,56 @@ describe('Folder export → import round-trip', () => {
     expect(newEndpoint.method).toBe('POST')
     expect(newEndpoint.path).toBe('/users')
   })
+
+  it('preserves saved requests inside the folder (regression #32)', () => {
+    // A collection made of *saved requests* (ad-hoc requests dropped into a
+    // folder, stored in `saved_requests`, not `endpoints`) used to round-trip
+    // as an empty folder: the folder export only collected `endpoints`, so
+    // every saved request was silently dropped.
+    const ids = seedRichProject()
+    const savedInFolder = randomUUID()
+    testDb
+      .prepare(
+        `INSERT INTO saved_requests
+           (id, project_id, folder_id, name, protocol, method, url, params, headers, body,
+            auth, pre_script, post_script, assertions, metadata, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, 'Ping', 'http', 'GET', 'https://api.example/ping',
+                 '[]', '[]', '', NULL, '', '', '[]', NULL, 0, ?, ?)`,
+      )
+      .run(savedInFolder, SOURCE_PID, ids.childFolderId, Date.now(), Date.now())
+
+    const exported = exportFolderData(ids.rootFolderId)
+    // The folder export must now carry the saved request that lives in it.
+    expect(exported.savedRequests?.length).toBe(1)
+    expect(exported.savedRequests?.[0].name).toBe('Ping')
+
+    const destParent = randomUUID()
+    testDb
+      .prepare(
+        `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, NULL, 'Graft', 2)`,
+      )
+      .run(destParent, SOURCE_PID)
+
+    const out = importFolderData(exported, SOURCE_PID, destParent)
+    // foldersImported counts folders; endpointsImported now folds in saved
+    // requests (1 endpoint + 1 saved request).
+    expect(out.endpointsImported).toBe(2)
+
+    // Resolve the grafted Root → Child and assert the saved request landed
+    // under the *new* Child folder with a fresh id (not the source one).
+    const newRoot = testDb
+      .prepare('SELECT id FROM folders WHERE project_id = ? AND parent_id = ?')
+      .get(SOURCE_PID, destParent) as { id: string }
+    const newChild = testDb
+      .prepare('SELECT id FROM folders WHERE project_id = ? AND parent_id = ?')
+      .get(SOURCE_PID, newRoot.id) as { id: string }
+    const grafted = testDb
+      .prepare('SELECT id, name, method, url FROM saved_requests WHERE folder_id = ?')
+      .get(newChild.id) as { id: string; name: string; method: string; url: string } | undefined
+    expect(grafted).toBeDefined()
+    expect(grafted!.name).toBe('Ping')
+    expect(grafted!.method).toBe('GET')
+    expect(grafted!.url).toBe('https://api.example/ping')
+    expect(grafted!.id).not.toBe(savedInFolder)
+  })
 })

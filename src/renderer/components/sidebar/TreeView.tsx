@@ -19,6 +19,7 @@ import TreeNodeComponent, { type DragPayload, type DropPosition } from './TreeNo
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
+import { openFolderRunner } from '../../lib/open-runner-tab'
 
 // Re-alias for flattenTree signature
 type TreeNode = TreeNodeType
@@ -490,20 +491,12 @@ export default function TreeView() {
     [refreshTree],
   )
 
-  const openTab = useTabsStore((s) => s.openTab)
-
-  const handleRunFolder = useCallback(
-    (node: TreeNode) => {
-      const tabId = 'runner-' + node.id
-      openTab({
-        id: tabId,
-        name: 'Runner',
-        protocol: 'runner',
-        folderId: node.id,
-      })
-    },
-    [openTab],
-  )
+  const handleRunFolder = useCallback((node: TreeNode) => {
+    // Open the runner AND switch to the Tests page where it renders — without
+    // the page switch the tab opened but stayed hidden behind the APIs view, so
+    // right-click → Run looked like a no-op (#39).
+    openFolderRunner(node.id, node.label)
+  }, [])
 
   const handleExport = useCallback(
     async (node: TreeNode) => {
