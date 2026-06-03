@@ -521,10 +521,13 @@ export default function ImportModal() {
             workspaceId: wsId,
             content: pendingFileContent || '',
           })) as typeof importResult
-          // Surface the imported project: switch to it so the user sees the
-          // content instead of an empty placeholder in the current project.
+          // Surface the imported project: refresh the workspace project list so
+          // it shows on the Home grid without an app restart (#32 follow-up —
+          // setActiveProject alone left `projects` stale, so the new project
+          // only appeared after a reload), then switch to it.
           const newPid = (importResult?.data as { projectId?: string } | undefined)?.projectId
           if (importResult?.success && newPid) {
+            await useWorkspaceStore.getState().fetchProjects(wsId)
             useWorkspaceStore.getState().setActiveProject(newPid)
           }
         } else {

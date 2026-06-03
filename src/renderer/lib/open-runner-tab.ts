@@ -41,8 +41,15 @@ export function openOrReuseRunnerTab(
  */
 export function openFolderRunner(folderId: string, folderName?: string): void {
   const tabsApi = useTabsStore.getState()
+  const tabId = 'runner-' + folderId
+  // RunnerTab defaults a fresh tab to the Tests *overview* ('home'), not the
+  // run config — explicit entry points opt into 'config' themselves. Without
+  // this the folder runner opened on the generic Overview instead of a run
+  // scoped to the folder (#39). RunnerTab's view initializer restores 'config'
+  // when this key is set AND the tab carries a folder scope.
+  sessionStorage.setItem(`runner-view-${tabId}`, 'config')
   tabsApi.openTab({
-    id: 'runner-' + folderId,
+    id: tabId,
     name: folderName || 'Runner',
     protocol: 'runner',
     folderId,

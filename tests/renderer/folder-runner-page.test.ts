@@ -19,6 +19,7 @@ describe('openFolderRunner — page navigation (#39)', () => {
   beforeEach(() => {
     useTabsStore.setState({ tabs: [], activeTabId: null })
     useUIStore.setState({ activeSidebarPage: 'apis' })
+    sessionStorage.clear()
   })
 
   it('opens a runner tab scoped to the folder and activates it', () => {
@@ -43,6 +44,15 @@ describe('openFolderRunner — page navigation (#39)', () => {
     const tab = useTabsStore.getState().tabs[0]
     expect(tabBelongsToPage(tab, 'tests')).toBe(true)
     expect(tabBelongsToPage(tab, 'apis')).toBe(false)
+  })
+
+  it('seeds the runner view to config so it shows the folder run, not Overview', () => {
+    // Regression #39 follow-up: a fresh runner tab defaults to the Tests
+    // overview; the folder run must land on the run config scoped to the
+    // folder. RunnerTab restores 'config' from this key when the tab has a
+    // folder scope.
+    openFolderRunner('folder-1', 'My Folder')
+    expect(sessionStorage.getItem('runner-view-runner-folder-1')).toBe('config')
   })
 
   it('falls back to a generic name when none is given', () => {
