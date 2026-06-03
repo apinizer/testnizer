@@ -10,9 +10,15 @@
 ; freshly-installed exe.
 ;
 ; macrocustomInstall fires inside the install section, after files are
-; written but before electron-builder's shortcut creation, so deleting
-; first / creating after produces a single fresh shortcut without the
-; orphan-pointing-at-old-version problem.
+; written. We can't rely on electron-builder's own shortcut block running (or
+; running after us) — users on v1.4.7/1.4.8 reported a finished install with NO
+; Start Menu or Desktop shortcut, so the only launch point was re-running the
+; .exe (#33). To make a launch point GUARANTEED regardless of the builder's
+; conditional shortcut logic or macro ordering, we delete any stale shortcuts
+; and then explicitly CreateShortCut ourselves against the freshly-installed
+; exe. If electron-builder also creates them it just overwrites with an
+; identical target; if it doesn't, ours remain — either way the app is
+; launchable from a shortcut after install.
 ; ---------------------------------------------------------------------------
 
 !macro customInstall
@@ -33,9 +39,12 @@
   Delete "$SMPROGRAMS\Testnizer\Testnizer.lnk"
   RMDir  "$SMPROGRAMS\Testnizer"
 
-  ; Restore the current-user context for electron-builder's own shortcut
-  ; creation logic (perMachine:false in package.json).
+  ; Restore the current-user context (perMachine:false in package.json) and
+  ; create the shortcuts ourselves so a launch point always exists. ${INSTDIR}
+  ; holds the just-extracted app; the exe is named after productName.
   SetShellVarContext current
+  CreateShortCut "$SMPROGRAMS\Testnizer.lnk" "$INSTDIR\Testnizer.exe" "" "$INSTDIR\Testnizer.exe" 0
+  CreateShortCut "$DESKTOP\Testnizer.lnk" "$INSTDIR\Testnizer.exe" "" "$INSTDIR\Testnizer.exe" 0
 !macroend
 
 !macro customUnInstall

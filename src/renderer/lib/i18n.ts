@@ -786,6 +786,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'update.error': 'Update check failed',
     'update.retry': 'Retry',
     'update.downloadManually': 'Download the latest version manually',
+    'update.macAutoUnavailable':
+      'Automatic install is not available for this macOS build. Download the new version manually and replace the app.',
     'update.releaseNotes': 'Release Notes',
     'update.version': 'Version',
 
@@ -2245,6 +2247,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'update.error': 'Guncelleme kontrolu basarisiz',
     'update.retry': 'Tekrar Dene',
     'update.downloadManually': 'En son sürümü manuel indir',
+    'update.macAutoUnavailable':
+      'Bu macOS sürümü için otomatik kurulum kullanılamıyor. Yeni sürümü manuel indirip uygulamayı değiştirin.',
     'update.releaseNotes': 'Surum Notlari',
     'update.version': 'Surum',
 

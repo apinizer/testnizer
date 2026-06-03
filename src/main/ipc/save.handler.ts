@@ -94,6 +94,12 @@ interface FolderExport {
   folders: Record<string, unknown>[]
   endpoints: Record<string, unknown>[]
   endpointCases: Record<string, unknown>[]
+  // Ad-hoc saved requests live in their own table (`saved_requests`), separate
+  // from the structured `endpoints`. The full project export already carried
+  // them; a folder export that only collected `endpoints` silently dropped
+  // every saved request, so a collection made of saved requests round-tripped
+  // as an empty folder (#32). Optional for backward-compat with older files.
+  savedRequests?: Record<string, unknown>[]
 }
 
 // ─── Test Suite Export Format (snapshot model) ──────────────────
@@ -551,6 +557,7 @@ function collectFolderTree(rootFolderId: string): {
   folders: Record<string, unknown>[]
   endpoints: Record<string, unknown>[]
   endpointCases: Record<string, unknown>[]
+  savedRequests: Record<string, unknown>[]
 } {
   const db = getDb()
 
@@ -558,7 +565,7 @@ function collectFolderTree(rootFolderId: string): {
     | Record<string, unknown>
     | undefined
   if (!rootFolder) {
-    return { folders: [], endpoints: [], endpointCases: [] }
+    return { folders: [], endpoints: [], endpointCases: [], savedRequests: [] }
   }
 
   // Recursively gather all descendant folder IDs (BFS)
@@ -590,11 +597,18 @@ function collectFolderTree(rootFolderId: string): {
       .all(...endpointIds) as Record<string, unknown>[]
   }
 
-  return { folders, endpoints, endpointCases }
+  // Saved requests (ad-hoc requests dropped into the collection) live in a
+  // separate table from `endpoints`; collect them too or the folder export is
+  // lossy for any collection that holds saved requests (#32).
+  const savedRequests = db
+    .prepare(`SELECT * FROM saved_requests WHERE folder_id IN (${ph})`)
+    .all(...folderIds) as Record<string, unknown>[]
+
+  return { folders, endpoints, endpointCases, savedRequests }
 }
 
 export function exportFolderData(folderId: string): FolderExport {
-  const { folders, endpoints, endpointCases } = collectFolderTree(folderId)
+  const { folders, endpoints, endpointCases, savedRequests } = collectFolderTree(folderId)
   return {
     version: '1.0.0',
     exportedAt: Date.now(),
@@ -603,6 +617,7 @@ export function exportFolderData(folderId: string): FolderExport {
     folders,
     endpoints,
     endpointCases,
+    savedRequests,
   }
 }
 
@@ -621,9 +636,11 @@ export function importFolderData(
   // ID remapping: oldId → newId
   const folderIdMap = new Map<string, string>()
   const endpointIdMap = new Map<string, string>()
+  const savedReqIdMap = new Map<string, string>()
 
   for (const f of data.folders) folderIdMap.set(f.id as string, randomUUID())
   for (const e of data.endpoints) endpointIdMap.set(e.id as string, randomUUID())
+  for (const s of data.savedRequests || []) savedReqIdMap.set(s.id as string, randomUUID())
 
   const insertFolder = db.prepare(
     `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
@@ -635,6 +652,10 @@ export function importFolderData(
   const insertCase = db.prepare(
     `INSERT INTO endpoint_cases (id, endpoint_id, name, params, headers, body, auth, assertions, is_default, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+  const insertSaved = db.prepare(
+    `INSERT INTO saved_requests (id, project_id, folder_id, name, protocol, method, url, params, headers, body, auth, pre_script, post_script, assertions, metadata, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
 
   const tx = db.transaction(() => {
@@ -699,10 +720,45 @@ export function importFolderData(
         (c.created_at as number) || now,
       )
     }
+
+    // Saved requests — remap id + folder_id like endpoints so a folder export
+    // built from saved requests round-trips losslessly (#32). branch_id is
+    // omitted (defaults to NULL = shared), mirroring the project importer.
+    for (const s of data.savedRequests || []) {
+      const newId = savedReqIdMap.get(s.id as string) as string
+      const oldFolderId = s.folder_id as string | null
+      const newFolderId =
+        oldFolderId && folderIdMap.has(oldFolderId)
+          ? (folderIdMap.get(oldFolderId) as string)
+          : null
+      insertSaved.run(
+        newId,
+        projectId,
+        newFolderId,
+        s.name,
+        s.protocol || 'http',
+        s.method ?? null,
+        s.url ?? null,
+        s.params ?? null,
+        s.headers ?? null,
+        s.body ?? null,
+        s.auth ?? null,
+        s.pre_script ?? null,
+        s.post_script ?? null,
+        s.assertions ?? null,
+        s.metadata ?? null,
+        s.sort_order ?? 0,
+        (s.created_at as number) || now,
+        now,
+      )
+    }
   })
   tx()
 
-  return { foldersImported: folderIdMap.size, endpointsImported: endpointIdMap.size }
+  return {
+    foldersImported: folderIdMap.size,
+    endpointsImported: endpointIdMap.size + savedReqIdMap.size,
+  }
 }
 
 // ─── Test Suite Export / Import (v1.3+ snapshot model) ─────────
