@@ -12,14 +12,17 @@ name: Deploy website to GitHub Pages
 
 on:
   workflow_dispatch:
-  # ── enabled in Stage 2, after Pages + custom-domain migration ──
-  # push:
-  #   branches: [main]
-  #   paths: ['website/**', '.github/workflows/website-deploy.yml']
-  # repository_dispatch:
-  #   types: [testnizer-release-published]
-  # schedule:
-  #   - cron: '17 6 * * *'
+  # Site changes deploy on their own; app-only changes don't (path filter).
+  push:
+    branches: [main]
+    paths: ['website/**', '.github/workflows/website-deploy.yml']
+  # Fired by build.yml after a release is published, so the /download page
+  # picks up the new version + asset URLs.
+  repository_dispatch:
+    types: [testnizer-release-published]
+  # Safety net: a missed dispatch won't strand the site on a stale version.
+  schedule:
+    - cron: '17 6 * * *'
 
 permissions:
   contents: read
