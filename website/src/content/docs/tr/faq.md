@@ -163,7 +163,7 @@ uyumludur. `--reporter json` ile JSON raporlayıcısı da kullanılabilir.
 İlk başarısız testte çalıştırmayı durdurmak ve sıfır olmayan bir kodla çıkmak
 için `--bail` bayrağını ayarlayın.
 
-Tüm CLI seçenekleri için [CLI ve otomasyon](./cli-and-automation.md) bölümüne bakın.
+Tüm CLI seçenekleri için [CLI ve otomasyon](/tr/docs/cli-and-automation) bölümüne bakın.
 
 ---
 

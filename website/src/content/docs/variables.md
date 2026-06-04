@@ -26,7 +26,7 @@ multiple scopes, the more specific scope wins. From lowest to highest priority:
    that belong to the project but should not vary per environment.
 
 3. **Environment variables** — pulled from the currently active environment.
-   See [Environments & variables](./environments.md) for how to create and
+   See [Environments & variables](/docs/environments) for how to create and
    manage environments. These are the most common place to put values that
    differ between staging and production.
 
@@ -166,4 +166,4 @@ Behavior of secret variables:
   variable name only.
 
 For guidance on creating and organizing environments, see
-[Environments & variables](./environments.md).
+[Environments & variables](/docs/environments).

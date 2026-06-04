@@ -166,7 +166,7 @@ most other CI systems. A JSON reporter is also available with `--reporter json`.
 Set the `--bail` flag to stop execution on the first failed test and exit with a
 non-zero code.
 
-For details on all CLI options, see [CLI and automation](./cli-and-automation.md).
+For details on all CLI options, see [CLI and automation](/docs/cli-and-automation).
 
 ---
 
