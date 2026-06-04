@@ -98,16 +98,64 @@ is present so electron-builder signs with Developer ID, and `scripts/notarize.js
 auto-`true` only when a cert is supplied, else `false` (ad-hoc path). **Nothing
 else in CI needs to change — just add the secrets:**
 
-1. Apple Developer Program membership ($99/yr).
-2. Create a **Developer ID Application** certificate; export as `.p12`.
-3. Generate an app-specific password; note the 10-char Team ID.
-4. Add repo secrets: `CSC_LINK` (base64 `.p12`), `CSC_KEY_PASSWORD`,
-   `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
+### Step-by-step
+
+**1. Enroll in the Apple Developer Program ($99/yr)** — developer.apple.com/programs/enroll
+   - **Individual** (fast, ~24–48h, signer shows your personal name) or
+     **Organization** (signer shows the company name, but needs a free D-U-N-S
+     number + legal verification — days to weeks). Individual is the pragmatic
+     pick for an OSS app; Organization only if company branding on the signature
+     matters.
+
+**2. Create a "Developer ID Application" certificate** (no Xcode needed):
+   - Keychain Access → *Certificate Assistant → Request a Certificate From a
+     Certificate Authority* → enter your email + a name, choose **Saved to disk**
+     → save the `.certSigningRequest`.
+   - developer.apple.com/account → **Certificates** → **+** → **Developer ID
+     Application** → upload the CSR → download the `.cer` → double-click to add it
+     to the **login** keychain.
+
+**3. Export the cert as `.p12`** (cert + private key together):
+   - Keychain Access → **My Certificates** → expand *“Developer ID Application:
+     …”* (must show a private key under it) → right-click → **Export** → `.p12`
+     → set a password. **That password = `CSC_KEY_PASSWORD`.**
+
+**4. App-specific password + Team ID:**
+   - appleid.apple.com → *Sign-In and Security → App-Specific Passwords* →
+     generate (e.g. `testnizer-notarize`) → that's `APPLE_APP_SPECIFIC_PASSWORD`
+     (format `xxxx-xxxx-xxxx-xxxx`).
+   - developer.apple.com/account → *Membership* → the 10-char **Team ID** =
+     `APPLE_TEAM_ID`.
+
+**5. Base64-encode the `.p12` for `CSC_LINK`:**
+   ```bash
+   base64 -i DeveloperID.p12 | pbcopy     # → clipboard, paste as the secret
+   ```
+
+**6. Add the 5 repo secrets** (github.com/apinizer/testnizer → Settings →
+   Secrets and variables → Actions → New repository secret):
+
+   | Secret | Value |
+   |---|---|
+   | `CSC_LINK` | base64 of the `.p12` (step 5) |
+   | `CSC_KEY_PASSWORD` | the `.p12` export password (step 3) |
+   | `APPLE_ID` | your Apple account e-mail |
+   | `APPLE_APP_SPECIFIC_PASSWORD` | step 4 |
+   | `APPLE_TEAM_ID` | step 4 |
+
+That's it — the next tag/release builds signed + notarized macOS automatically.
 
 > **Do NOT flip `build.mac.notarize` to `true`.** Notarization is handled by the
 > custom `notarize.js` afterSign hook; `mac.notarize` stays `false` so
 > electron-builder doesn't *also* notarize (which would double-submit and slow
 > every build). The two are mutually exclusive — we use the hook.
+
+**Verify the first signed build:** download the `.dmg`, the app should open with
+no “unidentified developer” block. From a terminal:
+```bash
+spctl -a -vvv -t install /Applications/Testnizer.app   # → "source=Notarized Developer ID"
+codesign -dv --verbose=4 /Applications/Testnizer.app    # shows the Developer ID
+```
 
 Once a signed + notarized macOS build ships, in-app auto-update (issue #34)
 works on macOS too. No test-tag gymnastics needed — Apple signing is
