@@ -1,0 +1,41 @@
+---
+/**
+ * Self-hosted, shields.io-style flat-square badge. We render these from data
+ * fetched at build time (see lib/latest-release.ts) instead of embedding
+ * img.shields.io URLs — that service intermittently fails with "Unable to
+ * select next GitHub token from pool" and can't aggregate two repos.
+ *
+ * Two segments: a dark label on the left, a colored value on the right.
+ */
+interface Props {
+  label: string
+  value: string
+  href?: string
+  /** Right-segment background. Defaults to the brand blue used across the site. */
+  color?: string
+  ariaLabel?: string
+}
+const { label, value, href, color = '#3b82f6', ariaLabel } = Astro.props
+
+const wrapStyle =
+  'display:inline-flex;height:20px;line-height:20px;border-radius:3px;overflow:hidden;' +
+  "font-family:'DejaVu Sans',Verdana,Geneva,sans-serif;font-size:11px;"
+const labelStyle = 'background:#555;color:#fff;padding:0 7px;white-space:nowrap;'
+const valueStyle = `background:${color};color:#fff;padding:0 7px;white-space:nowrap;font-weight:600;`
+---
+
+{
+  href ? (
+    <a href={href} target="_blank" rel="noopener" aria-label={ariaLabel ?? `${label}: ${value}`}>
+      <span style={wrapStyle}>
+        <span style={labelStyle}>{label}</span>
+        <span style={valueStyle}>{value}</span>
+      </span>
+    </a>
+  ) : (
+    <span style={wrapStyle} aria-label={ariaLabel ?? `${label}: ${value}`}>
+      <span style={labelStyle}>{label}</span>
+      <span style={valueStyle}>{value}</span>
+    </span>
+  )
+}

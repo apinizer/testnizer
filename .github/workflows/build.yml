@@ -33,9 +33,9 @@ jobs:
   #
   # This job:
   #   1. Deletes all but the most recent 10 artifacts (regardless of source
-  #      workflow) — old release builds are already published on the
-  #      `testnizer-releases` repo, so the build artifacts here are just
-  #      transient handoff between jobs.
+  #      workflow) — release builds are published straight to this repo's
+  #      Releases by `electron-builder --publish always`, so the build
+  #      artifacts here are just transient handoff between jobs.
   #   2. Deletes every cache entry — npm cache rehydrates in a few seconds
   #      and stale caches are the primary storage hog for matrix builds.
   #   3. Deletes workflow runs older than the most recent 30 (logs go with
@@ -354,8 +354,8 @@ jobs:
   # Update the release body on tag pushes.
   #
   # The six installer assets (dmg / exe / deb / AppImage / zip) plus the
-  # electron-updater `latest*.yml` manifests are already on
-  # `apinizer/testnizer-releases` — each platform job runs
+  # electron-updater `latest*.yml` manifests are already on this repo's
+  # Releases — each platform job runs
   # `electron-builder ... --publish always` and uploads its own artifacts
   # directly to the release. This job therefore does NOT need to download
   # any GitHub Actions artifact; it only:

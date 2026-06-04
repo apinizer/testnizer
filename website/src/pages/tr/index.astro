@@ -1,10 +1,13 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro'
 import GuaranteeCard from '../../components/GuaranteeCard.astro'
+import StatBadge from '../../components/StatBadge.astro'
 import { icons } from '../../components/icons'
-import { fetchLatestRelease } from '../../lib/latest-release'
+import { fetchLatestRelease, fetchRepoStats, formatCount } from '../../lib/latest-release'
 
 const release = await fetchLatestRelease()
+const stats = await fetchRepoStats()
+const releasesUrl = release.htmlUrl.replace(/\/tag\/.*$/, '').replace(/\/latest$/, '')
 
 const guarantees = [
   {
@@ -94,16 +97,10 @@ const tools = [
       </p>
 
       <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
-        <a href="https://github.com/apinizer/testnizer-releases/releases" target="_blank" rel="noopener" aria-label="Son sürüm">
-          <img src="https://img.shields.io/github/v/release/apinizer/testnizer-releases?label=son%20s%C3%BCr%C3%BCm&color=3b82f6&style=flat-square" alt="Son sürüm" height="20" />
-        </a>
-        <a href="https://github.com/apinizer/testnizer-releases/releases" target="_blank" rel="noopener" aria-label="Toplam indirme">
-          <img src="https://img.shields.io/github/downloads/apinizer/testnizer-releases/total?label=indirme&color=3b82f6&style=flat-square" alt="Toplam indirme" height="20" />
-        </a>
-        <a href="https://github.com/apinizer/testnizer-releases" target="_blank" rel="noopener" aria-label="GitHub yıldız">
-          <img src="https://img.shields.io/github/stars/apinizer/testnizer-releases?label=y%C4%B1ld%C4%B1z&color=3b82f6&style=flat-square" alt="GitHub yıldız" height="20" />
-        </a>
-        <img src="https://img.shields.io/badge/telemetri-yok-3b82f6?style=flat-square" alt="Telemetri yok" height="20" />
+        <StatBadge label="son sürüm" value={release.tag} href={releasesUrl} />
+        {stats && <StatBadge label="indirme" value={formatCount(stats.downloads)} href={releasesUrl} />}
+        {stats && stats.stars > 0 && <StatBadge label="yıldız" value={formatCount(stats.stars)} href="https://github.com/apinizer/testnizer" />}
+        <StatBadge label="telemetri" value="yok" />
       </div>
     </div>
   </section>

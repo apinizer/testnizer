@@ -4,7 +4,7 @@
 
 [![Build](https://github.com/apinizer/testnizer/actions/workflows/build.yml/badge.svg)](https://github.com/apinizer/testnizer/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/apinizer/testnizer-releases/total.svg)](https://github.com/apinizer/testnizer-releases/releases)
+[![Downloads](https://img.shields.io/github/downloads/apinizer/testnizer-releases/total.svg)](https://www.testnizer.com/download/)
 
 > **Your data never leaves your machine.** Every API request, collection,
 > credential, certificate, and token is stored locally in an encrypted
@@ -95,7 +95,7 @@ native + Postman + Insomnia).
 
 ## Install
 
-Pre-built binaries from [the Releases page](https://github.com/apinizer/testnizer-releases/releases):
+Pre-built binaries from [the download page](https://www.testnizer.com/download/):
 
 | Platform | Format | Note |
 |---|---|---|
