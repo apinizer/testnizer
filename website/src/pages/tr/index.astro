@@ -98,7 +98,7 @@ const tools = [
 
       <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
         <StatBadge label="son sürüm" value={release.tag} href={releasesUrl} />
-        {stats && <StatBadge label="indirme" value={formatCount(stats.downloads)} href={releasesUrl} />}
+        {stats && stats.downloads > 0 && <StatBadge label="indirme" value={formatCount(stats.downloads)} href={releasesUrl} />}
         {stats && stats.stars > 0 && <StatBadge label="yıldız" value={formatCount(stats.stars)} href="https://github.com/apinizer/testnizer" />}
         <StatBadge label="telemetri" value="yok" />
       </div>

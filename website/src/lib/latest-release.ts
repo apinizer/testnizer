@@ -3,12 +3,9 @@
  * build time, so the generated HTML embeds whatever the GitHub API returned at
  * deploy time.
  *
- * Repo consolidation note: releases are migrating from `apinizer/testnizer-releases`
- * into the monorepo `apinizer/testnizer`. To make that a ZERO-TOUCH cutover, we
- * probe the monorepo FIRST and fall back to the legacy release repo. While the
- * monorepo has no published release yet, the site keeps serving the v1.4.x
- * assets from testnizer-releases; the moment the first monorepo release lands,
- * the site picks it up automatically with no code change.
+ * Repo consolidation: releases (including the re-hosted v1.4.x assets) now live
+ * in the monorepo `apinizer/testnizer`. The legacy `apinizer/testnizer-releases`
+ * repo has been retired, so it's no longer probed.
  *
  * Behaviour:
  * - Tries the unauthenticated API; if `GITHUB_TOKEN` is in env (CI) it uses it
@@ -19,7 +16,7 @@
  */
 
 /** Probed in order — first repo with a usable release wins. */
-const REPOS = ['apinizer/testnizer', 'apinizer/testnizer-releases'] as const
+const REPOS = ['apinizer/testnizer'] as const
 
 export interface ReleaseAsset {
   name: string
@@ -51,7 +48,7 @@ export interface RepoStats {
 const FALLBACK: LatestRelease = {
   tag: 'v1.4.10',
   version: '1.4.10',
-  htmlUrl: 'https://github.com/apinizer/testnizer-releases/releases/latest',
+  htmlUrl: 'https://github.com/apinizer/testnizer/releases/latest',
   publishedAt: null,
   assets: [],
   byName: {},
@@ -136,9 +133,8 @@ let cachedStats: RepoStats | null = null
 /**
  * Self-hosted download + star counters. We fetch and sum these at build time
  * with our own GITHUB_TOKEN instead of leaning on shields.io, which throws a
- * transient "Unable to select next GitHub token from pool" under load and
- * can't aggregate two repos. Summing both repos keeps the legacy
- * testnizer-releases counts visible through the consolidation.
+ * transient "Unable to select next GitHub token from pool" under load. Loops
+ * REPOS so it stays correct if more sources are ever added back.
  *
  * Returns null on any failure so the caller can drop the badges rather than
  * render a wrong number.

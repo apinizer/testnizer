@@ -183,7 +183,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
           <p style={{ color: '#888', fontSize: 12, marginTop: 14 }}>
             If <em>Reset UI state &amp; reload</em> doesn't help, the crash is probably triggered by
-            something in the DB itself. Open an issue at github.com/apinizer/testnizer-releases with
+            something in the DB itself. Open an issue at github.com/apinizer/testnizer/issues with
             the copied error.
           </p>
         </div>

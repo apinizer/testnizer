@@ -105,7 +105,7 @@ directly or by using the in-app Export / Settings menus.
 ## 4. Auto-Update
 
 Testnizer uses `electron-updater` to check the project's public GitHub
-Releases feed at `https://github.com/apinizer/testnizer-releases/releases` for newer
+Releases feed at `https://github.com/apinizer/testnizer/releases` for newer
 versions. The check sends a standard HTTPS request consisting of:
 
 - The updater's User-Agent string (the application name and the currently
@@ -404,7 +404,7 @@ how Testnizer handles data:
 - **General support:** info@apinizer.com
 - **Enterprise / commercial support inquiries:** info@apinizer.com
 - **Source repository (MIT):** https://github.com/apinizer/testnizer
-- **Releases / downloads:** https://github.com/apinizer/testnizer-releases
+- **Releases / downloads:** https://github.com/apinizer/testnizer
 - **Website:** https://www.testnizer.com
 - **Postal:** Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş., Üniversiteler Mah. 1606 Cad. Cyberpark A-Blok No:4 A/305, 06800 Bilkent/Ankara, Türkiye
 - **Phone / Fax:** 0312 265 02 36 / 0312 265 02 38

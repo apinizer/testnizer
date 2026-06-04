@@ -135,7 +135,7 @@ of the Software:
 
 The Software includes an auto-update mechanism (`electron-updater`) that
 periodically checks the public GitHub Releases feed at
-`https://github.com/apinizer/testnizer-releases/releases` for newer versions. By
+`https://github.com/apinizer/testnizer/releases` for newer versions. By
 using the Software with auto-update enabled (the default), you consent to:
 
 (a) periodic outbound HTTPS requests to GitHub solely to check for and
@@ -403,7 +403,7 @@ intellectual-property inquiries:
 - **General support:** info@apinizer.com
 - **Enterprise / commercial support, SLAs, on-premise deployment, training:** info@apinizer.com
 - **Source repository (MIT):** https://github.com/apinizer/testnizer
-- **Releases / downloads:** https://github.com/apinizer/testnizer-releases
+- **Releases / downloads:** https://github.com/apinizer/testnizer
 - **Website:** https://www.testnizer.com
 - **Postal:** Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş., Üniversiteler Mah. 1606 Cad. Cyberpark A-Blok No:4 A/305, 06800 Bilkent/Ankara, Türkiye
 - **Phone / Fax:** 0312 265 02 36 / 0312 265 02 38

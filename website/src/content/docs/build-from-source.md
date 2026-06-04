@@ -6,7 +6,7 @@ section: Reference
 ---
 
 Every release published to
-[github.com/apinizer/testnizer-releases](https://github.com/apinizer/testnizer-releases/releases)
+[github.com/apinizer/testnizer](https://github.com/apinizer/testnizer/releases)
 includes SHA-256 checksums for each artifact. Verifying them confirms the file
 you downloaded arrived intact and was not tampered with in transit.
 
@@ -45,7 +45,7 @@ Compare the `Hash` field against `checksums.txt`.
 For fully isolated networks:
 
 1. On a connected machine, open the
-   [latest release](https://github.com/apinizer/testnizer-releases/releases/latest)
+   [latest release](https://github.com/apinizer/testnizer/releases/latest)
    and download the installer for your platform plus `checksums.txt`
 2. Verify the SHA-256 as above
 3. Transfer the installer to the isolated machine via USB / SFTP / your
@@ -59,7 +59,7 @@ After installation, disable the auto-update check on the isolated machine:
 
 Releases are built by GitHub Actions on isolated per-OS runners. The workflow
 logs and artifact upload steps are publicly visible at
-[github.com/apinizer/testnizer-releases](https://github.com/apinizer/testnizer-releases/actions)
+[github.com/apinizer/testnizer](https://github.com/apinizer/testnizer/actions)
 so you can trace each artifact back to the exact build run that produced it.
 
 ## Reporting issues
@@ -68,5 +68,5 @@ Open an issue at
 [github.com/apinizer/testnizer/issues](https://github.com/apinizer/testnizer/issues).
 
 Security issues — use GitHub's private security advisory channel
-([Report a vulnerability privately](https://github.com/apinizer/testnizer-releases/security/advisories/new))
+([Report a vulnerability privately](https://github.com/apinizer/testnizer/security/advisories/new))
 rather than opening a public issue.

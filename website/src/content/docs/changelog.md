@@ -7,7 +7,7 @@ section: Reference
 
 Every Testnizer build is tagged and logged here. This page is the
 source of truth for release descriptions — the CI release job mirrors
-each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer-releases/releases),
+each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
 ## v1.4.10
@@ -362,7 +362,7 @@ installer.**
   in-app actions over a new `menu:*` IPC channel.
 - **Help / About:** "Source repository" in the Privacy Policy and
   EULA footers now points at the **public**
-  `apinizer/testnizer-releases` repo (the private source repo was
+  `apinizer/testnizer` repo (the private source repo was
   giving users a 404). Postal address corrected from İstanbul to
   Ankara.
 - **WSSE tool:** "Send to active SOAP" now both injects the signed

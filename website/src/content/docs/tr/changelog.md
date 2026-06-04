@@ -7,7 +7,7 @@ section: Referans
 
 Her Testnizer derlemesi etiketlenir ve burada kayıt altına alınır. Bu
 sayfa, sürüm açıklamaları için kaynak referansıdır — CI release job'u her
-girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testnizer-releases/releases)
+girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testnizer/releases)
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
@@ -371,7 +371,7 @@ iyileştirme.**
   Save, Settings…, Close Tab ve Exit listeniyor; hepsi yeni
   `menu:*` IPC kanalı üzerinden ilgili in-app aksiyonlara bağlı.
 - **Help / About:** Privacy Policy ve EULA footer'larındaki "Source
-  repository" artık **public** olan `apinizer/testnizer-releases`
+  repository" artık **public** olan `apinizer/testnizer`
   repo'sunu işaret ediyor (private kaynak repo'su kullanıcıya 404
   döndürüyordu). Posta adresi İstanbul yerine Ankara olarak
   düzeltildi.

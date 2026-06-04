@@ -136,7 +136,7 @@ CLI, masaüstü uygulamasıyla aynı motorları (HTTP, SOAP, gRPC, WebSocket, SS
 aynı `pm` API'sini paylaşır. UI bağımlılığı yok. Telemetri yok.
 
 İlerlemeyi
-[sürümler sayfasında](https://github.com/apinizer/testnizer-releases/releases)
+[sürümler sayfasında](https://github.com/apinizer/testnizer/releases)
 takip edin.
 
 ## Neden Newman değil?

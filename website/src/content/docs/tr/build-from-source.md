@@ -5,7 +5,7 @@ order: 1
 section: Referans
 ---
 
-[github.com/apinizer/testnizer-releases](https://github.com/apinizer/testnizer-releases/releases)
+[github.com/apinizer/testnizer](https://github.com/apinizer/testnizer/releases)
 adresinde yayımlanan her sürüm, her artifact için SHA-256 sağlama toplamları içerir.
 Bunları doğrulamak, indirdiğiniz dosyanın sağlam ulaştığını ve aktarım sırasında
 tahrif edilmediğini teyit eder.
@@ -45,7 +45,7 @@ Get-FileHash .\Testnizer-Setup-1.1.1-x64.exe -Algorithm SHA256
 Tamamen yalıtılmış ağlar için:
 
 1. İnternet erişimi olan bir makinede
-   [en son sürümü](https://github.com/apinizer/testnizer-releases/releases/latest)
+   [en son sürümü](https://github.com/apinizer/testnizer/releases/latest)
    açın ve platformunuza uygun yükleyiciyi ve `checksums.txt`'yi indirin
 2. SHA-256'yı yukarıdaki gibi doğrulayın
 3. Yükleyiciyi USB / SFTP / hava boşluğu geçidini kullanarak yalıtılmış makineye aktarın
@@ -58,7 +58,7 @@ bırakın: **Ayarlar → Güncellemeler → Otomatik güncelleme kontrolü → k
 
 Sürümler, yalıtılmış işletim sistemi başına çalıştırıcılarda GitHub Actions
 tarafından derlenir. İş akışı günlükleri ve artifact yükleme adımları
-[github.com/apinizer/testnizer-releases](https://github.com/apinizer/testnizer-releases/actions)
+[github.com/apinizer/testnizer](https://github.com/apinizer/testnizer/actions)
 adresinde kamuya açık olarak görüntülenebilir; böylece her artifact'ı onu üreten
 tam derleme çalışmasına kadar izleyebilirsiniz.
 
@@ -69,4 +69,4 @@ adresinde bir sorun açın.
 
 Güvenlik sorunları — herkese açık sorun açmak yerine GitHub'ın özel
 güvenlik bildirim kanalını kullanın
-([Güvenlik açığını özel olarak bildir](https://github.com/apinizer/testnizer-releases/security/advisories/new)).
+([Güvenlik açığını özel olarak bildir](https://github.com/apinizer/testnizer/security/advisories/new)).

@@ -129,7 +129,7 @@ The CLI shares the same engines (HTTP, SOAP, gRPC, WebSocket, SSE) and the
 same `pm` API as the desktop app. No UI dependency. No telemetry.
 
 Track progress on the
-[releases page](https://github.com/apinizer/testnizer-releases/releases).
+[releases page](https://github.com/apinizer/testnizer/releases).
 
 ## Why not Newman?
 
