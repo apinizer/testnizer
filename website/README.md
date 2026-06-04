@@ -1,8 +1,8 @@
-# testnizer-website
+# Testnizer website
 
-Marketing site and documentation for [Testnizer](https://github.com/apinizer/testnizer) — the offline API client for teams who can't paste tokens into the cloud.
+Marketing site and documentation for [Testnizer](https://github.com/apinizer/testnizer) — the offline API client for teams who can't paste tokens into the cloud. This is the `website/` subdirectory of the Testnizer monorepo.
 
-Live at [testnizer.com](https://testnizer.com).
+Live at [www.testnizer.com](https://www.testnizer.com).
 
 ## Stack
 
@@ -10,7 +10,7 @@ Live at [testnizer.com](https://testnizer.com).
 - [Tailwind CSS v4](https://tailwindcss.com/) via the official Vite plugin
 - [Shiki](https://shiki.style/) for code highlighting
 - [`@astrojs/mdx`](https://docs.astro.build/en/guides/integrations-guide/mdx/) for documentation pages
-- Deployed to GitHub Pages via `.github/workflows/deploy.yml`
+- Deployed to GitHub Pages via the repo-root `.github/workflows/website-deploy.yml` (monorepo: GitHub only runs workflows from the root `.github/`)
 
 ## Develop
 
@@ -39,11 +39,11 @@ src/
 └── content.config.ts
 public/
 ├── favicon.svg
-├── CNAME            # testnizer.com
+├── CNAME            # www.testnizer.com
 └── robots.txt
-.github/workflows/
-└── deploy.yml       # Build + deploy to GitHub Pages on push to main
 ```
+
+Deploy lives at the repo root, not here: `../.github/workflows/website-deploy.yml`.
 
 ## Adding a doc page
 

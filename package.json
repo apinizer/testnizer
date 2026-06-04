@@ -4,7 +4,14 @@
   "version": "1.4.10",
   "description": "Testnizer — Cross-platform desktop API testing application",
   "main": "./out/main/index.js",
-  "homepage": "https://testnizer.com",
+  "homepage": "https://www.testnizer.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/apinizer/testnizer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/apinizer/testnizer/issues"
+  },
   "author": {
     "name": "Testnizer",
     "email": "support@testnizer.com"

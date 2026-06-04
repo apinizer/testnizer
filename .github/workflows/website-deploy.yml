@@ -1,14 +1,13 @@
 name: Deploy website to GitHub Pages
 
 # Monorepo website deploy — builds the Astro site in `website/` and publishes it
-# to GitHub Pages (custom domain www.testnizer.com).
+# to GitHub Pages (custom domain www.testnizer.com, served from this repo's
+# Pages with "GitHub Actions" as the source; the domain was migrated here from
+# the now-retired apinizer/testnizer-website).
 #
-# STAGE 1 (current): manual-only. The repo's Pages must be enabled with
-# "GitHub Actions" as the source and the custom domain www.testnizer.com moved
-# here from apinizer/testnizer-website before this can deploy successfully.
-# STAGE 2 enables the auto triggers below (push on website/**, the
-# repository_dispatch from testnizer's build.yml after a release, and the
-# daily safety-net rebuild).
+# Live and fully automatic: it deploys on push to website/**, on the
+# repository_dispatch from build.yml after a release publishes, on the daily
+# safety-net cron, and on manual workflow_dispatch.
 
 on:
   workflow_dispatch:
