@@ -298,7 +298,7 @@
     "publish": {
       "provider": "github",
       "owner": "apinizer",
-      "repo": "testnizer-releases",
+      "repo": "testnizer",
       "releaseType": "release"
     }
   }

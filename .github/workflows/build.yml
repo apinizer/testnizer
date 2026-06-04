@@ -401,7 +401,7 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           gh release edit "${{ github.ref_name }}" \
-            --repo apinizer/testnizer-releases \
+            --repo apinizer/testnizer \
             --notes-file release-notes.md \
             --title "Testnizer ${{ github.ref_name }}"
 

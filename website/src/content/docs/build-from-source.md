@@ -65,7 +65,7 @@ so you can trace each artifact back to the exact build run that produced it.
 ## Reporting issues
 
 Open an issue at
-[github.com/apinizer/testnizer-releases/issues](https://github.com/apinizer/testnizer-releases/issues).
+[github.com/apinizer/testnizer/issues](https://github.com/apinizer/testnizer/issues).
 
 Security issues — use GitHub's private security advisory channel
 ([Report a vulnerability privately](https://github.com/apinizer/testnizer-releases/security/advisories/new))

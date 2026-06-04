@@ -64,7 +64,7 @@ tam derleme çalışmasına kadar izleyebilirsiniz.
 
 ## Sorun bildirme
 
-[github.com/apinizer/testnizer-releases/issues](https://github.com/apinizer/testnizer-releases/issues)
+[github.com/apinizer/testnizer/issues](https://github.com/apinizer/testnizer/issues)
 adresinde bir sorun açın.
 
 Güvenlik sorunları — herkese açık sorun açmak yerine GitHub'ın özel
