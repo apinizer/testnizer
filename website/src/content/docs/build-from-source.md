@@ -16,26 +16,29 @@ Each release page lists a `checksums.txt` file alongside the installers. It
 contains one line per artifact:
 
 ```
-sha256:a3f8…  Testnizer-1.1.1-arm64.dmg
-sha256:c91b…  Testnizer-1.1.1-x64.dmg
-sha256:e54a…  Testnizer-Setup-1.1.1-x64.exe
-sha256:2d77…  Testnizer-1.1.1-amd64.deb
+a3f8…  Testnizer-1.4.10-arm64.dmg
+c91b…  Testnizer-1.4.10-x64.dmg
+e54a…  Testnizer-1.4.10-x64.exe
+2d77…  Testnizer-1.4.10-amd64.deb
 …
 ```
+
+(One `sha256  filename` line per artifact — standard `sha256sum` format.)
 
 ## Verifying on macOS / Linux
 
 ```sh
-shasum -a 256 Testnizer-1.1.1-arm64.dmg
+shasum -a 256 Testnizer-1.4.10-arm64.dmg
 ```
 
 Compare the output hash with the matching line in `checksums.txt`. They must
-match exactly.
+match exactly. To check every file you downloaded at once, run
+`shasum -a 256 -c checksums.txt` from the download folder.
 
 ## Verifying on Windows (PowerShell)
 
 ```powershell
-Get-FileHash .\Testnizer-Setup-1.1.1-x64.exe -Algorithm SHA256
+Get-FileHash .\Testnizer-1.4.10-x64.exe -Algorithm SHA256
 ```
 
 Compare the `Hash` field against `checksums.txt`.

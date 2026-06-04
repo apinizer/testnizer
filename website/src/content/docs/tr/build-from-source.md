@@ -16,26 +16,29 @@ Her sürüm sayfası, yükleyicilerin yanında bir `checksums.txt` dosyası list
 Her artifact için bir satır içerir:
 
 ```
-sha256:a3f8…  Testnizer-1.1.1-arm64.dmg
-sha256:c91b…  Testnizer-1.1.1-x64.dmg
-sha256:e54a…  Testnizer-Setup-1.1.1-x64.exe
-sha256:2d77…  Testnizer-1.1.1-amd64.deb
+a3f8…  Testnizer-1.4.10-arm64.dmg
+c91b…  Testnizer-1.4.10-x64.dmg
+e54a…  Testnizer-1.4.10-x64.exe
+2d77…  Testnizer-1.4.10-amd64.deb
 …
 ```
+
+(Her artifact için bir `sha256  dosyaadı` satırı — standart `sha256sum` formatı.)
 
 ## macOS / Linux'ta doğrulama
 
 ```sh
-shasum -a 256 Testnizer-1.1.1-arm64.dmg
+shasum -a 256 Testnizer-1.4.10-arm64.dmg
 ```
 
 Çıktı karmasını `checksums.txt`'deki eşleşen satırla karşılaştırın. Tam olarak
-eşleşmeleri gerekir.
+eşleşmeleri gerekir. İndirdiğin tüm dosyaları tek seferde kontrol etmek için
+indirme klasöründe `shasum -a 256 -c checksums.txt` çalıştır.
 
 ## Windows'ta doğrulama (PowerShell)
 
 ```powershell
-Get-FileHash .\Testnizer-Setup-1.1.1-x64.exe -Algorithm SHA256
+Get-FileHash .\Testnizer-1.4.10-x64.exe -Algorithm SHA256
 ```
 
 `Hash` alanını `checksums.txt` ile karşılaştırın.

@@ -472,6 +472,24 @@ jobs:
             --notes-file release-notes.md \
             --title "Testnizer ${{ github.ref_name }}"
 
+      # SHA-256 every user-facing installer and publish a checksums.txt to the
+      # release. The website's "Verifying releases" doc points users here. Runs
+      # after the platform jobs (needs:) so every installer is already uploaded;
+      # the .yml / .blockmap auto-update metadata is intentionally skipped.
+      - name: Publish checksums.txt
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          work="$(mktemp -d)"
+          ( cd "$work"
+            gh release download "$TAG" --repo apinizer/testnizer \
+              --pattern '*.dmg' --pattern '*.exe' --pattern '*.deb' \
+              --pattern '*.AppImage' --pattern '*.zip'
+            sha256sum * > checksums.txt
+            echo '----- checksums.txt -----'; cat checksums.txt
+            gh release upload "$TAG" checksums.txt --repo apinizer/testnizer --clobber )
+
       # Kick the website rebuild so the /download page picks up the new
       # version + asset URLs as soon as the release is up. Monorepo: the site
       # now lives in THIS repo under website/, so dispatch to ourselves — the
