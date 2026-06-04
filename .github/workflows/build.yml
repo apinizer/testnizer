@@ -375,26 +375,20 @@ jobs:
     permissions:
       contents: read
     steps:
-      # Pull the release-notes block for this tag out of the website's
-      # changelog (single source of truth — same content the /docs/changelog/
-      # page renders). awk slurps the section starting at `## v<tag>` and
-      # stops at the next `## ` header. Falls back to a one-line stub if the
-      # tag isn't documented yet, so the release still drafts.
-      - name: Extract release notes from website changelog
+      # Read the release notes for this tag from the in-repo single source of
+      # truth: docs/release-notes/v<tag>.md (the same content mirrored into the
+      # website changelog). Monorepo move: this used to curl the changelog out
+      # of apinizer/testnizer-website — now it's a local file, no cross-repo
+      # fetch. Falls back to a one-line stub if the tag file isn't present yet,
+      # so the release still drafts.
+      - name: Extract release notes
         run: |
-          curl -fsSL \
-            -H "Authorization: Bearer ${{ secrets.RELEASE_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3.raw" \
-            "https://api.github.com/repos/apinizer/testnizer-website/contents/src/content/docs/changelog.md" \
-            -o changelog.md
           TAG="${{ github.ref_name }}"
-          awk -v tag="$TAG" '
-            $0 == "## " tag { capture = 1; next }
-            capture && /^## / { exit }
-            capture { print }
-          ' changelog.md > release-notes.md
-          if [ ! -s release-notes.md ]; then
-            echo "Release notes for $TAG not yet published — see https://www.testnizer.com/docs/changelog/" > release-notes.md
+          NOTES="docs/release-notes/${TAG}.md"
+          if [ -s "$NOTES" ]; then
+            cp "$NOTES" release-notes.md
+          else
+            echo "Release notes for $TAG not yet published — see https://www.testnizer.com/changelog/" > release-notes.md
           fi
           echo "----- release-notes.md -----"
           cat release-notes.md
