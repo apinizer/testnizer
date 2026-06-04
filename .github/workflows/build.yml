@@ -207,8 +207,17 @@ jobs:
 
       - name: Package (dmg + zip, ${{ matrix.arch }})
         env:
-          # Skip signing in CI unless the secrets are actually configured.
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # Developer ID signing + notarization turn on ONLY when these secrets
+          # exist. scripts/ad-hoc-sign.js + notarize.js both no-op without them,
+          # so unsigned/ad-hoc builds keep working byte-for-byte. Auto-discovery
+          # is enabled solely when a real cert (.p12 via CSC_LINK) is provided —
+          # otherwise it stays off so electron-builder doesn't try to sign.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         # `--publish always` on tag pushes uploads + generates latest-mac.yml
         # for electron-updater. On main/PR builds we never publish.
         run: |
@@ -309,6 +318,11 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+      # Surfaced as job env so step `if:` can gate on `env.SIGNPATH_API_TOKEN`
+      # (the `secrets` context isn't reliably usable in step `if:` conditions).
+      # Empty until the SignPath OSS application is approved — see SIGNING.md.
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      SIGNPATH_ORGANIZATION_ID: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
     strategy:
       fail-fast: false
       matrix:
@@ -339,13 +353,66 @@ jobs:
       - name: Package (nsis + zip, ${{ matrix.arch }})
         # PowerShell on windows-latest, bash on windows-11-arm — use a
         # cross-shell check via the GITHUB_REF env.
+        #
+        # SignPath (free OSS Authenticode signing) activates only when the
+        # SIGNPATH_API_TOKEN secret exists. Until then this is byte-identical
+        # to before: tag builds publish immediately, unsigned. When the secret
+        # IS present we build WITHOUT publishing, sign the installer in the
+        # steps below, then publish the signed artifacts — otherwise the
+        # already-published unsigned .exe would win.
         shell: bash
+        env:
+          SIGNPATH_ACTIVE: ${{ env.SIGNPATH_API_TOKEN != '' }}
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          if [[ "${GITHUB_REF}" == refs/tags/v* && "${SIGNPATH_ACTIVE}" != "true" ]]; then
             npx electron-builder --win --${{ matrix.arch }} --publish always
           else
             npx electron-builder --win --${{ matrix.arch }} --publish never
           fi
+
+      # ─── Windows code signing — SignPath Foundation (guarded skeleton) ─────
+      # All three steps are inert until SIGNPATH_API_TOKEN +
+      # SIGNPATH_ORGANIZATION_ID are added (after the signpath.io/open-source
+      # application is approved — see SIGNING.md). Current builds are 100%
+      # unaffected. On approval: fill the real project / policy / artifact
+      # slugs below, implement the publish step, and VALIDATE WITH A TEST TAG —
+      # the signed .exe's sha512 must match the regenerated latest.yml or
+      # electron-updater rejects the update. That last handoff is the one piece
+      # that cannot be verified without the real certificate.
+      - name: Upload unsigned installer (SignPath input)
+        id: upload-unsigned
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && env.SIGNPATH_API_TOKEN != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-win-${{ matrix.arch }}
+          path: dist/*.exe
+
+      - name: Sign with SignPath
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && env.SIGNPATH_API_TOKEN != '' }}
+        uses: SignPath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: testnizer
+          signing-policy-slug: release-signing        # TODO: real slug at approval
+          artifact-configuration-slug: nsis-installer  # TODO: real slug at approval
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist-signed
+
+      - name: Publish signed installer
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && env.SIGNPATH_API_TOKEN != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          # FINALIZE AT APPROVAL (tripwire — fails loudly so an unsigned build
+          # is never mistaken for signed): replace dist/*.exe with the signed
+          # dist-signed/*.exe, recompute the electron-updater latest.yml sha512
+          # + size for the signed file, then `gh release upload` both. Verify
+          # auto-update end-to-end with a test tag before removing this guard.
+          echo "::error::SignPath signing is enabled but the publish-signed step is not finalized yet. See SIGNING.md → Windows."
+          exit 1
 
       - name: Verify native binaries
         run: node scripts/verify-natives.js --platform=win32 --arch=${{ matrix.arch }}
