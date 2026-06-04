@@ -39,6 +39,10 @@ resources/third-party-licenses.json
 CLAUDE.md
 .claude/
 
+# Internal signing / release-ops runbook — kept on the maintainer's disk only
+# (no secret values in it, but the signing process isn't published).
+SIGNING.md
+
 # Stray scaffolds occasionally created by `npx create-*` runs that
 # misinterpret a flag (e.g. `--typescript`) as a target directory name.
 website/--*
