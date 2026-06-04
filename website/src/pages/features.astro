@@ -1,0 +1,306 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro'
+import { icons } from '../components/icons'
+
+const sections = [
+  {
+    title: 'HTTP / REST',
+    icon: icons.globe,
+    bullets: [
+      'Full method coverage including TRACE and CONNECT',
+      'Body modes: raw / JSON / XML / urlencoded / form-data with file upload / binary',
+      'mTLS with project-scoped client certificates and OS-keychain-encrypted passphrases',
+      'HTTP / SOCKS proxy with auth, follow / no-follow redirects, custom timeouts',
+      'Pre-request and post-response scripts with a Postman-compatible pm API',
+      'Test assertions on status, headers, body, response time, JSON path, XML path',
+      'Cookie jar per workspace with manual edit',
+    ],
+  },
+  {
+    title: 'SOAP / WSDL',
+    icon: icons.fileCode,
+    bullets: [
+      'WSDL import from URL or file, SOAP 1.1 + 1.2 dual bindings',
+      'Multi-service, multi-port WSDL parsing with operation extraction',
+      'Manual envelope mode for hand-written SOAP / XML payloads',
+      'Automatic example envelope generation from XSD schema',
+      'WS-Security: UsernameToken (Text + Digest with nonce/created), Timestamp with TTL',
+      'XML Signature (RSA-SHA1 / RSA-SHA256), envelope or specific elements',
+      'XML Encryption (AES-128/256-CBC, AES-128/256-GCM, RSA-OAEP key wrapping)',
+      'SOAPAction extraction and header negotiation',
+    ],
+  },
+  {
+    title: 'WebSocket',
+    icon: icons.radio,
+    bullets: [
+      'ws + wss with custom headers and subprotocol negotiation',
+      'JSON / text composer with template variable substitution',
+      'Message timeline (sent + received) with timestamps and direction',
+      'Reconnection control with manual disconnect',
+    ],
+  },
+  {
+    title: 'GraphQL',
+    icon: icons.network,
+    bullets: [
+      'Query, mutation, and subscription support over HTTP and WebSocket transports',
+      'Schema introspection with searchable type browser',
+      'Variables JSON editor synced with the operation',
+      'graphql-ws for live subscriptions, no SaaS proxy',
+    ],
+  },
+  {
+    title: 'gRPC',
+    icon: icons.cpu,
+    bullets: [
+      '.proto file import via @grpc/proto-loader',
+      'All four streaming modes: unary, server-streaming, client-streaming, bidirectional',
+      'Metadata editor (request and response)',
+      'JSON skeleton automatically generated from message field types',
+      'TLS / mTLS with project-scoped certificates',
+    ],
+  },
+  {
+    title: 'Server-Sent Events',
+    icon: icons.zap,
+    bullets: [
+      'Long-lived event streams with automatic Last-Event-ID resume',
+      'Per-event filtering, JSON parsing of data payloads',
+      'Reconnect-with-backoff (configurable)',
+    ],
+  },
+  {
+    title: 'Socket.IO',
+    icon: icons.arrowsLeftRight,
+    bullets: [
+      'WebSocket and HTTP long-polling transports via the official socket.io-client',
+      'Namespaces and connection-time auth (bearer token via the auth payload)',
+      'Custom HTTP headers on the WebSocket upgrade handshake',
+      'Emit any event with a JSON payload — outgoing events appear in the timeline',
+      'Subscribe to any event name; incoming events stream into the same timeline',
+      'Bidirectional event timeline with direction arrows and timestamps',
+    ],
+  },
+  {
+    title: 'MCP (Model Context Protocol)',
+    icon: icons.plug,
+    bullets: [
+      'Built on the official @modelcontextprotocol/sdk — same wire protocol Claude Desktop and other MCP hosts speak',
+      'Three transports: Streamable HTTP, SSE (legacy), stdio for locally-spawned servers',
+      'For stdio, Testnizer launches the server as a subprocess (e.g. `npx @modelcontextprotocol/server-everything`)',
+      'Server identity (name + version) shown after handshake',
+      'Tool catalog with input-schema preview',
+      'Invoke any tool with a JSON arguments object; inspect the structured result',
+    ],
+  },
+  {
+    title: 'AI Chat',
+    icon: icons.bot,
+    bullets: [
+      '14 providers: OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq, Perplexity, Cerebras, Cohere, Fireworks, DeepInfra, Together, OpenRouter',
+      'Custom URL provider for self-hosted vLLM / LM Studio / Ollama / TGI endpoints',
+      'Streaming responses with abort support',
+      'Multi-turn conversations with system prompt control',
+      'Environment variable resolution in URL, headers, and body',
+    ],
+  },
+  {
+    title: 'Mock Server',
+    icon: icons.server,
+    bullets: [
+      'Multiple HTTP server instances on custom ports — bound to 127.0.0.1 by default, 0.0.0.0 with explicit opt-in',
+      'Endpoint matching: exact, :param placeholders, * / ** wildcards, full-regex with named capture',
+      'Per-response conditions: header / query / path-param / body-JSONPath / body-XPath / method / and / or — first match wins',
+      'Templating with Handlebars + dynamic values (e.g. {{request.body.x}}, {{$timestamp}}, {{$randomUUID}})',
+      'Pre-response JavaScript in a Node vm sandbox (5s timeout) — read & mutate state, override status / headers / body, console.log captured',
+      'Per-server in-memory state shared across endpoints — POST / GET / PUT round-trips work without external storage',
+      'Authentication gate: Bearer / Basic / API-key (header or query); per-endpoint overrides',
+      'JSON Schema (draft-07) body validation per endpoint with 400 + Ajv error details on mismatch',
+      'Failure injection (probabilistic 5xx or upstream-timeout simulation) and rate limiting (per-IP or global, 429 + Retry-After)',
+      'Configurable CORS (origins / methods / headers / credentials / max-age) with auto preflight responses',
+      'Echo endpoint at /__echo for quick reflection of inbound requests',
+      'Proxy passthrough for unmatched paths with optional recording — captured upstream responses persist as new mock endpoints for offline replay',
+      'Import endpoints from OpenAPI 3 (JSON / YAML, $ref dereferencing, examples + schema-derived bodies) or Postman v2 collections',
+      'Live request log per server with replay-friendly request / response capture and matched-rule attribution',
+    ],
+  },
+]
+
+const tools = [
+  { icon: icons.key, title: 'JWT Debugger', body: 'Decode + encode in one tool. Header / payload as JSON or table view, intra-line claim descriptions, ISO-rendered date claims. Verify HS / RS / PS / ES / EdDSA signatures, sign with shared secret or PEM private key. Generate working sample tokens per algorithm.' },
+  { icon: icons.fileText, title: 'JSON / XML Formatters', body: 'Pretty-print, minify, validate. Multi-line input, syntax errors with line numbers. Sort-keys / sort-attributes options.' },
+  { icon: icons.fileText, title: 'Encoders / Decoders', body: 'Base64, URL, Hex, HTML entities, Unicode escape — paired text fields, instant convert.' },
+  { icon: icons.eyeOff, title: 'Text Diff', body: 'Side-by-side aligned diff with character-level intra-line highlights for paired modified rows. Per-side line counts and additions / removals tally; ignore-whitespace and ignore-case toggles.' },
+  { icon: icons.fileJson, title: 'JSON Schema Generator', body: 'Infer a draft-07 JSON Schema from a sample document, including string-format detection (date, date-time, email, uuid, uri, ipv4) and array-shape unions via oneOf.' },
+  { icon: icons.search, title: 'JSONPath / XPath Evaluator', body: 'Live-evaluate expressions against an in-editor sample. Built-in canonical sample datasets and 11–17 ready-to-load example queries each (Goessner reference + common predicates).' },
+  { icon: icons.repeat, title: 'JSON ↔ XML Converter', body: 'Both directions with attribute preservation, xsi:nil → null mapping, paths-as-arrays hint, ignore-nulls / ignore-empty filters, root-element naming.' },
+  { icon: icons.fileCode, title: 'XSLT / Jolt Evaluators', body: 'XSLT 1.0 transformations + Jolt-compatible JSON shaping (shift / default / remove). 17 Jolt + 8 XSLT runnable samples bundled.' },
+  { icon: icons.lock, title: 'WS-Security Workbench', body: 'Apply, verify, decrypt, and sign arbitrary XML. Same engine as the SOAP request panel. Useful for inspecting captured envelopes.' },
+  { icon: icons.hash, title: 'Hash Calculator', body: 'MD5, SHA-1, SHA-256, SHA-384, SHA-512 — all algorithms computed in parallel for the same input, with per-row copy buttons. RFC-vector tested.' },
+  { icon: icons.fingerprint, title: 'HMAC Generator', body: 'HMAC-SHA1 / SHA256 / SHA384 / SHA512 with shared secret. RFC 4231 vector tested.' },
+  { icon: icons.clock, title: 'Epoch Converter', body: 'Auto-detected unit (seconds / ms / μs / ns) ↔ ISO 8601 + GMT + local zone + relative ("4 seconds ago"). Date-parts builder for the inverse direction.' },
+  { icon: icons.listChecks, title: 'HTTP Status Codes', body: 'Searchable, category-filtered reference (1xx / 2xx / 3xx / 4xx / 5xx) covering 60+ codes from RFC 9110 + IANA + WebDAV.' },
+  { icon: icons.calculator, title: 'Base Converter', body: 'ASCII ↔ Binary ↔ Octal ↔ Decimal ↔ Hex — UTF-8 byte-aware, all five fields synced live, multi-byte characters handled correctly.' },
+  { icon: icons.fingerprint, title: 'UUID Generator', body: 'v1 / v4 / v5 / v7 in batches up to 1000, with namespace presets (DNS / URL / OID / X.500) for deterministic v5. Lower / upper / no-dashes / urn / braces formats. Validate + version-detect any UUID.' },
+  { icon: icons.search, title: 'Regex Tester', body: 'Live regex match with named + numbered group captures, replacement preview with $1 backreferences, all six JS flags toggleable, and a built-in cheatsheet (email / URL / IPv4 / UUID / ISO 8601 / JWT / hex color / phone).' },
+  { icon: icons.repeat, title: 'YAML ↔ JSON Converter', body: 'Bidirectional with indent + sort-keys options. JSON_SCHEMA-safe (no `!!js/*` tags). Convenient for OpenAPI specs, Kubernetes configs, and Helm charts.' },
+  { icon: icons.building, title: 'Certificate Manager', body: 'Local cert store, mTLS / client certificates per project, OS keychain encryption for passphrases.' },
+]
+---
+
+<BaseLayout title="Features — Testnizer" description="Every protocol Testnizer supports, the on-device tools, and what makes the offline execution model work.">
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-4xl px-6 py-20 text-center md:py-24">
+      <h1 class="text-4xl font-semibold tracking-tight text-text md:text-5xl">
+        Everything in one app. Everything on-device.
+      </h1>
+      <p class="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-text-muted">
+        Testnizer covers the full enterprise API surface — REST, SOAP, gRPC, GraphQL, WebSocket, SSE, Socket.IO and MCP, plus an AI client and a workbench of cryptographic tools. None of it phones home.
+      </p>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-5xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Protocols</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">Every protocol, first-class.</h2>
+
+      <div class="mt-10 space-y-4">
+        {sections.map((s) => (
+          <article class="rounded-card border border-border bg-bg p-7">
+            <div class="flex items-center gap-3">
+              <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-light text-accent-text">
+                <Fragment set:html={s.icon} />
+              </div>
+              <h3 class="text-xl font-semibold text-text">{s.title}</h3>
+            </div>
+            <ul class="mt-5 grid grid-cols-1 gap-x-6 gap-y-2.5 md:grid-cols-2">
+              {s.bullets.map((b) => (
+                <li class="flex items-start gap-2.5 text-sm leading-relaxed text-text-muted">
+                  <span class="mt-1 text-accent-text">
+                    <Fragment set:html={icons.check} />
+                  </span>
+                  {b}
+                </li>
+              ))}
+            </ul>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border py-20">
+    <div class="mx-auto max-w-5xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Mock Server</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">A real HTTP server, configured in the same UI.</h2>
+      <p class="mt-4 max-w-3xl text-base leading-relaxed text-text-muted">
+        Define endpoints with path params, wildcards, or regex. Pick a response with declarative conditions on headers, query, body (JSONPath/XPath), or method. Sign and encrypt the responses with templating, in-memory state, and a Node-vm sandbox that runs your JavaScript before each reply. Plus auth, schema validation, failure injection, rate limit, CORS, OpenAPI/Postman import, and a recording proxy — all on 127.0.0.1.
+      </p>
+
+      <figure class="mt-10 overflow-hidden rounded-card border border-border bg-bg shadow-sm">
+        <img
+          src="/testnizer-mock.png"
+          alt="Testnizer Mock Server — endpoints panel with full URL bar, condition / script editors, and live response preview"
+          class="block w-full"
+          loading="lazy"
+        />
+      </figure>
+    </div>
+  </section>
+
+  <section class="border-t border-border bg-bg-soft py-20">
+    <div class="mx-auto max-w-5xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Built-in tools</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">No more pasting tokens into jwt.io.</h2>
+      <p class="mt-4 max-w-2xl text-base leading-relaxed text-text-muted">
+        These all run inside Testnizer's main process, with no network call. If your machine is offline, they still work.
+      </p>
+
+      <figure class="mt-10 overflow-hidden rounded-card border border-border bg-bg shadow-sm">
+        <img
+          src="/testnizer-tools.png"
+          alt="Testnizer tools workbench — JWT debugger with decoder/encoder, hash and HMAC calculators, epoch converter, HTTP status codes, and more"
+          class="block w-full"
+          loading="lazy"
+        />
+      </figure>
+
+      <div class="mt-10 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {tools.map((t) => (
+          <div class="rounded-card border border-border bg-bg p-6">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-light text-accent-text">
+              <Fragment set:html={t.icon} />
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-text">{t.title}</h3>
+            <p class="mt-1.5 text-sm leading-relaxed text-text-muted">{t.body}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-5xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Workflow</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">The collaborative bits, without a cloud.</h2>
+
+      <div class="mt-10 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Collection runner</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Sequential or parallel execution of multiple endpoints with HTML report output. Iterate over data files for parameterised runs.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Test suites</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Multi-collection regression sets with auto-detected import (Testnizer + Postman + Insomnia formats).
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Scheduler</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Local cron-style scheduling for repeat runs against staging or QA endpoints. No background SaaS workers.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Git integration</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Project files commit through your existing repo. Branch with the project, review through PRs.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Console</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Virtualised log timeline with per-tab filtering, raw request / response capture, search.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Code generation</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Export any request as cURL, JavaScript fetch, Python requests — useful for sharing without sharing tokens.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border">
+    <div class="mx-auto max-w-3xl px-6 py-20 text-center">
+      <h2 class="text-3xl font-semibold tracking-tight text-text">Try it in five minutes.</h2>
+      <p class="mt-4 text-base leading-relaxed text-text-muted">
+        Free. No account, no waitlist, no telemetry.
+      </p>
+      <div class="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <a href="/download" class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover">
+          Download Testnizer
+        </a>
+        <a href="/docs/getting-started" class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted">
+          Read the docs
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

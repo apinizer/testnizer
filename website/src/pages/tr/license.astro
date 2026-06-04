@@ -1,0 +1,398 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro'
+---
+
+<BaseLayout
+  lang="tr"
+  title="EULA — Testnizer"
+  description="Testnizer için Son Kullanıcı Lisans Sözleşmesi. Yürürlük tarihi 2026-05-07, v1.0.3 ve sonrası için geçerlidir."
+>
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-3xl px-6 py-20 text-center">
+      <h1 class="text-4xl font-semibold tracking-tight text-text">Son Kullanıcı Lisans Sözleşmesi</h1>
+      <p class="mt-4 text-base leading-relaxed text-text-muted">
+        Testnizer'ı indirmeden veya kurmadan önce lütfen bu sözleşmeyi dikkatlice okuyun.
+        Yazılımı kurarak veya kullanarak bu koşulları kabul etmiş olursunuz.
+      </p>
+      <p class="mt-3 text-xs text-text-soft">
+        Yürürlük tarihi: 2026-05-07 &nbsp;·&nbsp; Geçerlilik: Testnizer v1.0.3 ve sonrası
+      </p>
+      <p class="mt-3 text-xs text-text-soft">
+        Hukuken bağlayıcı metin <a href="/license" class="text-accent-text hover:underline">İngilizce sürümdür</a>. Türkçe metin yalnızca bilgilendirme amaçlıdır.
+      </p>
+    </div>
+  </section>
+
+  <section class="py-16">
+    <div class="mx-auto max-w-3xl px-6">
+
+      <!-- İçindekiler -->
+      <nav class="mb-12 rounded-card border border-border bg-bg-soft p-5">
+        <p class="mb-3 text-xs font-semibold uppercase tracking-wider text-text-muted">İçindekiler</p>
+        <ol class="grid grid-cols-1 gap-1 text-sm text-text-muted sm:grid-cols-2">
+          {[
+            ['#acceptance', '1. Koşulların Kabulü'],
+            ['#license-type', '2. İkili Lisans Modeli'],
+            ['#grant', '3. Lisans Hakkı'],
+            ['#permitted', '4. İzin Verilen Kullanım'],
+            ['#restrictions', '5. Kısıtlamalar'],
+            ['#autoupdate', '6. Otomatik Güncelleme Onayı'],
+            ['#oss', '7. Üçüncü Taraf Açık Kaynak Bileşenler'],
+            ['#trademarks', '8. Markalar'],
+            ['#warranty', '9. Garanti Reddi'],
+            ['#liability', '10. Sorumluluk Sınırlaması'],
+            ['#indemnification', '11. Tazminat'],
+            ['#termination', '12. Fesih'],
+            ['#export', '13. İhracat Kontrolü'],
+            ['#governing', '14. Geçerli Hukuk'],
+            ['#changes', '15. Bu EULA\'daki Değişiklikler'],
+            ['#severability', '16. Bölünebilirlik ve Sözleşmenin Bütünlüğü'],
+            ['#contact', '17. İletişim'],
+          ].map(([href, label]) => (
+            <li>
+              <a href={href} class="transition-colors hover:text-text">{label}</a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
+      <div class="space-y-12 text-sm leading-relaxed text-text-muted">
+
+        <!-- Önsöz -->
+        <p>
+          Bu Son Kullanıcı Lisans Sözleşmesi ("Sözleşme"),
+          <strong class="text-text">siz</strong> ("Lisans Sahibi", "siz") ile
+          <strong class="text-text">Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş.</strong>
+          ("Lisans Veren", "biz", "bizim") arasında, <strong class="text-text">Testnizer</strong>
+          masaüstü uygulamasının — önceden derlenmiş ikili dağıtımının (resmi kanallarımızdan elde edilen
+          DMG, EXE, AppImage, deb, zip veya diğer paketlenmiş yükleyiciler) — ve buna eşlik eden tüm
+          dokümantasyonun (topluca "Yazılım") kullanımına ilişkin bağlayıcı bir sözleşmedir.
+        </p>
+        <p>
+          Yazılımı kurarak, kopyalayarak, indirerek veya başka bir şekilde kullanarak, bu Sözleşmeyi okuduğunuzu,
+          anladığınızı ve onunla bağlı kalmayı kabul ettiğinizi beyan etmiş olursunuz. Kabul etmiyorsanız,
+          Yazılımı kurmayın veya kullanmayın.
+        </p>
+
+        <!-- 1 -->
+        <div id="acceptance">
+          <h2 class="text-base font-semibold text-text mb-3">1. Koşulların Kabulü</h2>
+          <p>
+            Bu Sözleşme, Yazılımın ilk başlatılmasında uygulama içi onay kapısı aracılığıyla size sunulur.
+            Yazılımı kullanmak için bu Sözleşmeyi ve buna eşlik eden
+            <a href="/tr/privacy" class="text-accent-text hover:underline">Gizlilik Politikası</a>'nı kabul
+            etmeniz gerekir. Yazılım, bu belgenin bir SHA-256 hash'ini hesaplar; belge gelecekteki bir
+            sürümde değişirse, onay kapısı bir sonraki başlatmada güncellenmiş metni kabul etmenizi tekrar
+            isteyecektir. Güncellenmiş metni reddederseniz, Yazılım kapanır ve ilişkiyi sonlandırmak için
+            onu kaldırmanız gerekir.
+          </p>
+        </div>
+
+        <!-- 2 -->
+        <div id="license-type">
+          <h2 class="text-base font-semibold text-text mb-3">2. İkili Lisans Modeli</h2>
+          <p>Testnizer <strong class="text-text">ikili (dual) lisans modeli</strong> ile dağıtılır:</p>
+          <ul class="mt-3 space-y-2 list-disc list-outside ml-5">
+            <li>
+              <strong class="text-text">Kaynak kod</strong> — <strong class="text-text">MIT Lisansı</strong>
+              altında yayımlanır (genel kaynak deposundaki
+              <a href="https://github.com/apinizer/testnizer" class="text-accent-text hover:underline">github.com/apinizer/testnizer</a>
+              adresinde <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">LICENSE</code> dosyasına bakın).
+              MIT Lisansı size kaynak kodu görüntüleme, kopyalama, değiştirme, birleştirme, yayımlama,
+              dağıtma, alt lisanslama ve satma hakkını, o lisansta belirtilen koşullara tabi olarak verir.
+              Bu Sözleşmedeki hiçbir hüküm, MIT Lisansının kaynak koda ilişkin size tanıdığı hakları daraltmaz.
+            </li>
+            <li>
+              <strong class="text-text">Önceden derlenmiş ikili dağıtım</strong> — resmi kanallarımızda
+              (Testnizer.com, GitHub Releases) yayımladığımız yükleyiciler <strong class="text-text">bu
+              Sözleşmeye</strong> tabidir; bu Sözleşme ikili çıktıları, otomatik güncelleme kanalını ve bu
+              ikili dosyaların veri işleme davranışını kapsar. Testnizer'ı kaynaktan kendiniz derlerseniz
+              derlemeniz MIT Lisansına tabidir; bu Sözleşme yalnızca dağıttığımız ikili dosyaları kurmayı
+              seçtiğinizde geçerlidir.
+            </li>
+          </ul>
+          <p class="mt-3">
+            Bu Sözleşme ile MIT Lisansı arasında <strong class="text-text">kaynak koda</strong> ilişkin bir
+            çelişki olması halinde MIT Lisansı geçerlidir. <strong class="text-text">İkili dağıtım ve
+            güncelleme kanalına</strong> ilişkin olarak bu Sözleşme geçerlidir.
+          </p>
+        </div>
+
+        <!-- 3 -->
+        <div id="grant">
+          <h2 class="text-base font-semibold text-text mb-3">3. Lisans Hakkı (İkili Kullanım)</h2>
+          <p>
+            Bu Sözleşmeye uymanız koşuluyla Lisans Veren, size dünya çapında, telifsiz, münhasır olmayan,
+            devredilemez, süresiz (Madde 12'ye tabi) bir lisans verir:
+          </p>
+          <ol class="mt-3 space-y-1.5 list-[lower-alpha] list-outside ml-5">
+            <li>ikili Yazılımı sahibi olduğunuz veya kontrol ettiğiniz herhangi bir sayıda cihaza kurmak ve kullanmak;</li>
+            <li>Yazılımı kâr amaçlı bir kuruluş içinde dahil olmak üzere kişisel, eğitim veya ticari amaçlarla kullanmak;</li>
+            <li>yükleyicinin yedek kopyalarını arşiv amaçlı oluşturmak.</li>
+          </ol>
+          <p class="mt-3">
+            Bu lisans yalnızca ikili biçim için verilmiştir. Kaynak koda ilişkin haklarınız
+            <strong class="text-text">MIT Lisansı</strong> ile düzenlenir ve bu madde tarafından daraltılmaz.
+          </p>
+        </div>
+
+        <!-- 4 -->
+        <div id="permitted">
+          <h2 class="text-base font-semibold text-text mb-3">4. İzin Verilen Kullanım</h2>
+          <p>Yazılımı şu amaçlarla kullanabilirsiniz:</p>
+          <ul class="mt-3 space-y-1.5 list-disc list-outside ml-5">
+            <li>erişim yetkiniz bulunan API'ları ve ağ servislerini test etmek, geliştirmek, hata ayıklamak ve belgelemek;</li>
+            <li>API tanımlarını, istekleri, ortamları, sertifikaları ve kimlik bilgilerini cihazınızda yerel olarak saklamak;</li>
+            <li>koleksiyonları standart birlikte çalışabilir biçimlerde (OpenAPI, Postman, Insomnia, cURL, HAR, WSDL, Proto ve benzerleri) içe ve dışa aktarmak;</li>
+            <li>yetkili hedeflere karşı otomatik test paketleri ve koleksiyon çalıştırıcıları çalıştırmak;</li>
+            <li><strong class="text-text">kaynak kodu</strong> MIT Lisansı koşulları altında yeniden dağıtmak, değiştirmek ve fork'lamak.</li>
+          </ul>
+        </div>
+
+        <!-- 5 -->
+        <div id="restrictions">
+          <h2 class="text-base font-semibold text-text mb-3">5. Kısıtlamalar</h2>
+          <p>Yazılımın <strong class="text-text">ikili dağıtımı</strong> ile bağlantılı olarak şunları yapmamayı kabul edersiniz:</p>
+          <ol class="mt-3 space-y-2 list-[lower-alpha] list-outside ml-5">
+            <li>yayımlanan ikili çıktıları, lisanslama veya güncelleme mekanizmalarını atlatmak amacıyla tersine mühendislik yapmak, decompile etmek veya disassembly yapmak; kaynak kodun genel depo üzerinden incelenmesine MIT Lisansı kapsamında açıkça izin verilmiştir ve bu, bu maddenin ihlali sayılmaz;</li>
+            <li>Yazılımı, açık ve gösterilebilir yetkinizin olmadığı herhangi bir sistem, ağ veya servise erişmek, taramak, sondalamak veya saldırmak için kullanmak (yazılı onay olmaksızın yapılan sızma testi dahil);</li>
+            <li>Yazılımı güvenlik kritik veya yaşam destek ortamlarında kullanmak; bunlar arasında tıbbi cihazlar, nükleer tesisler, hava aracı navigasyon veya kontrolü, silah sistemleri veya Yazılımın arızasının ölüm, kişisel yaralanma veya ciddi çevresel ya da maddi zararla sonuçlanabileceği herhangi bir ortam bulunur;</li>
+            <li><strong class="text-text">ikili dağıtımı</strong> doğrudan rakip bir ürün olarak yeniden paketlemek, yeniden markalamak veya yeniden dağıtmak. MIT Lisansı kaynak kodu fork'lamaya, değiştirmeye ve yeniden dağıtmaya izin verir; bu kısıtlama yalnızca resmi ikili dosyalarımızın yeniden paketlenmesini, "Testnizer" marka kimliğinin sahiplenilmesini veya güncelleme kanalımızın değiştirilmesini hedefler;</li>
+            <li>Yazılımı, yürürlükteki herhangi bir kanunu veya düzenlemeyi (GDPR, KVKK, CCPA vb. veri koruma kanunları, ihracat kontrol kanunları, Bilgisayar Sahtekarlığı ve Suistimal Yasası ve benzer mevzuat) ihlal etmek veya dolandırıcılık ya da hırsızlık yapmak için kullanmak;</li>
+            <li>ikili dosyaya, uygulamanın "Hakkında" ekranına, otomatik güncelleme yüküne veya birlikte verilen dokümantasyona gömülmüş herhangi bir telif hakkı, marka, lisans veya atıf bildirimini kaldırmak, değiştirmek veya gizlemek.</li>
+          </ol>
+        </div>
+
+        <!-- 6 -->
+        <div id="autoupdate">
+          <h2 class="text-base font-semibold text-text mb-3">6. Otomatik Güncelleme Onayı</h2>
+          <p>
+            Yazılım, periyodik olarak
+            <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">https://github.com/apinizer/testnizer-releases/releases</code>
+            adresindeki kamuya açık GitHub Releases beslemesini daha yeni sürümler için kontrol eden bir
+            otomatik güncelleme mekanizması (<code class="text-xs bg-bg-muted px-1 py-0.5 rounded">electron-updater</code>) içerir.
+            Yazılımı otomatik güncelleme etkin (varsayılan) olarak kullanarak şunlara onay vermiş olursunuz:
+          </p>
+          <ol class="mt-3 space-y-1.5 list-[lower-alpha] list-outside ml-5">
+            <li>yalnızca Yazılımın yeni sürümlerini kontrol etmek ve indirmek amacıyla GitHub'a periyodik giden HTTPS istekleri;</li>
+            <li>işletim sisteminin gerektirdiği yerlerde sizin onayınızla Yazılımın kendisini daha yeni bir sürümle değiştirmesi.</li>
+          </ol>
+          <p class="mt-3">
+            İletilen bilgi standart HTTP istek meta verileriyle sınırlıdır (GitHub'a görünen IP adresiniz,
+            uygulama adını ve mevcut sürümü içeren güncelleyici User-Agent değeri) ve çalışma alanlarınız,
+            istekleriniz veya kullanımınızla ilgili hiçbir veri içermez. Tüm ayrıntılar için
+            <a href="/tr/privacy" class="text-accent-text hover:underline">Gizlilik Politikası</a>'na bakınız.
+          </p>
+          <p class="mt-3">
+            Otomatik güncellemeyi istediğiniz zaman <strong class="text-text">Ayarlar → Güncellemeler</strong>
+            bölümünden devre dışı bırakabilirsiniz. Lisans Veren, otomatik güncelleme servisini herhangi bir
+            zamanda bildirimde bulunmaksızın değiştirme, askıya alma veya durdurma hakkını saklı tutar.
+            Yerel olarak kurulmuş Yazılım kopyası, güncelleme kanalı kullanılabilirliğinden bağımsız olarak
+            süresiz olarak kullanılabilir kalır.
+          </p>
+        </div>
+
+        <!-- 7 -->
+        <div id="oss">
+          <h2 class="text-base font-semibold text-text mb-3">7. Üçüncü Taraf Açık Kaynak Bileşenler</h2>
+          <p>
+            Yazılım, aşağıdakiler dahil ancak bunlarla sınırlı olmamak üzere açık kaynaklı kütüphaneleri
+            ve framework'leri içerir: Electron, Node.js, React, TypeScript, Tailwind CSS, Monaco Editor,
+            Zustand, better-sqlite3, axios, ws, soap, graphql, @grpc/grpc-js ve diğerleri. Her bileşen
+            kendi upstream lisansına (MIT, BSD, Apache 2.0, ISC, MPL 2.0 vb.) tabidir. Atıflarla birlikte
+            tam liste, Yazılımda <strong class="text-text">Hakkında → Açık kaynak lisanslar</strong> bölümünde
+            ve genel kaynak deposunda mevcuttur. Bu Sözleşmedeki hiçbir hüküm, ilgili upstream kaynakları
+            açısından söz konusu upstream lisanslar tarafından size tanınan hakları değiştirmez.
+          </p>
+        </div>
+
+        <!-- 8 -->
+        <div id="trademarks">
+          <h2 class="text-base font-semibold text-text mb-3">8. Markalar</h2>
+          <p>
+            "Testnizer" ve Testnizer logosu, Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve
+            Eğitim A.Ş.'nin markalarıdır. Yazılıma editöryel, gazetecilik veya eğitim bağlamlarında
+            adıyla atıfta bulunabilirsiniz. Lisans Verenin önceden yazılı izni olmaksızın Lisans Verenin
+            adını, logosunu veya markalarını Yazılımdan türetilmiş herhangi bir ürünü veya hizmeti
+            desteklemek, tanıtmak veya bağlantı ima etmek için kullanamazsınız.
+          </p>
+          <p class="mt-3">
+            "Postman", "SoapUI", "ReadyAPI", "Insomnia", "JetBrains", "HTTPie", "OpenAPI", "Swagger",
+            "Apple", "macOS", "Microsoft", "Windows", "Linux", "GitHub", "OpenAI", "Anthropic", "Google"
+            adları ve Yazılımda veya bu dokümantasyonda atıfta bulunulan diğer üçüncü taraf markalar
+            ilgili sahiplerinin mülküdür. Bu adlara yapılan atıflar — örneğin içe / dışa aktarma
+            biçimlerini veya AI sağlayıcı uyumluluğunu açıklarken — yalnızca birlikte çalışabilirlik ve
+            tanımlama amacıyla yapılmıştır ve ilgili sahipler tarafından destek, sponsorluk veya bağlantı
+            ima etmez.
+          </p>
+        </div>
+
+        <!-- 9 -->
+        <div id="warranty">
+          <h2 class="text-base font-semibold text-text mb-3">9. Garanti Reddi</h2>
+          <p class="uppercase font-medium text-text-muted tracking-wide text-xs leading-relaxed">
+            YAZILIM "OLDUĞU GİBİ" VE "MEVCUT OLDUĞU ŞEKİLDE" SUNULMAKTA OLUP, TİCARETE ELVERİŞLİLİK,
+            BELİRLİ BİR AMACA UYGUNLUK, MÜLKİYET, DOĞRULUK VE İHLAL ETMEME GARANTİLERİ DAHİL ANCAK
+            BUNLARLA SINIRLI OLMAMAK ÜZERE AÇIK, ZIMNİ VEYA YASAL HİÇBİR GARANTİ VERİLMEMİŞTİR.
+          </p>
+          <p class="uppercase font-medium text-text-muted tracking-wide text-xs leading-relaxed mt-3">
+            LİSANS VEREN, YAZILIMIN KESİNTİSİZ, HATASIZ, GÜVENLİ VEYA ZARARLI BİLEŞENLERDEN ARINDIRILMIŞ
+            OLACAĞINI VEYA KUSURLARIN DÜZELTİLECEĞİNİ GARANTİ ETMEZ.
+          </p>
+          <p class="mt-3">
+            Yazılımın sizin adınıza ağ istekleri yayımlayan, keyfi kullanıcı girdisi ayrıştıran ve gizli
+            bilgileri yerel olarak saklayan bir geliştirici aracı olduğunu; yetkisiz hedeflere istek
+            göndermek, üretim kimlik bilgilerini yanlış kullanmak veya güvenilmeyen betikleri çalıştırmak
+            dahil yanlış kullanımın yalnızca sizin sorumluluğunuzda olan hukuki, finansal, düzenleyici veya
+            operasyonel sonuçlar doğurabileceğini kabul edersiniz.
+          </p>
+        </div>
+
+        <!-- 10 -->
+        <div id="liability">
+          <h2 class="text-base font-semibold text-text mb-3">10. Sorumluluk Sınırlaması</h2>
+          <p>Yazılım ücretsiz olarak dağıtılır. Yazılımı edinmek için herhangi bir ücret ödemediniz.</p>
+          <p class="uppercase font-medium text-text-muted tracking-wide text-xs leading-relaxed mt-3">
+            YÜRÜRLÜKTEKİ HUKUKUN İZİN VERDİĞİ AZAMİ ÖLÇÜDE, LİSANS VEREN, BAĞLI ŞİRKETLERİ, YETKİLİLERİ,
+            YÖNETİCİLERİ, ÇALIŞANLARI, ACENTELERİ VEYA KATKIDA BULUNANLARI, YAZILIMI KULLANMAKTAN — VEYA
+            KULLANAMAMAKTAN — DOĞAN VEYA BUNLARLA BAĞLANTILI HİÇBİR DOLAYLI, ARIZİ, ÖZEL, SONUÇSAL,
+            CEZAİ VEYA İBRETLİK ZARARDAN YA DA KÂR, GELİR, İŞ, VERİ VEYA İTİBAR KAYBINDAN — HUKUKİ
+            TEORİDEN (SÖZLEŞME, HAKSIZ FİİL, İHMAL, KUSURSUZ SORUMLULUK VEYA DİĞER) BAĞIMSIZ OLARAK VE
+            LİSANS VEREN BU TÜR ZARARLARIN OLASILIĞI KONUSUNDA BİLGİLENDİRİLMİŞ OLSA BİLE SORUMLU
+            TUTULAMAZ.
+          </p>
+          <p class="uppercase font-medium text-text-muted tracking-wide text-xs leading-relaxed mt-3">
+            LİSANS VERENİN BU SÖZLEŞME KAPSAMINDA VEYA İLE BAĞLANTILI TOPLAM BİRİKİMLİ SORUMLULUĞU,
+            YAZILIMI EDİNMEK İÇİN ÖDEDİĞİNİZ TUTARI AŞAMAZ, YANİ{' '}
+            <strong class="text-text">SIFIR</strong>.
+          </p>
+          <p class="mt-3">
+            Bazı yargı çevreleri arızi veya sonuçsal zararlar için sorumluluğun dışlanmasına veya
+            sınırlandırılmasına izin vermez, bu nedenle bu Maddenin bazı kısımları size uygulanmayabilir.
+            İkamet yerinizdeki emredici tüketici koruma kanunları daha yüksek bir taban sağladığı yerlerde,
+            yukarıdaki üst sınır yerine bu taban uygulanır.
+          </p>
+        </div>
+
+        <!-- 11 -->
+        <div id="indemnification">
+          <h2 class="text-base font-semibold text-text mb-3">11. Tazminat</h2>
+          <p>
+            Lisans Vereni, bağlı şirketlerini, yetkililerini, yöneticilerini, çalışanlarını, taşeronlarını,
+            acentelerini ve katkıda bulunanlarını şunlardan kaynaklanan veya bunlarla bağlantılı her türlü
+            talep, zarar, yükümlülük, kayıp, sorumluluk, maliyet ve gidere (makul avukatlık ücretleri
+            dahil) karşı savunmayı, tazmin etmeyi ve zararsız tutmayı kabul edersiniz:
+          </p>
+          <ol class="mt-3 space-y-1.5 list-[lower-alpha] list-outside ml-5">
+            <li>Yazılımı kullanmanız veya yanlış kullanmanız;</li>
+            <li>Madde 5'teki kısıtlamaların ihlali dahil bu Sözleşmeyi ihlal etmeniz;</li>
+            <li>fikri mülkiyet hakkı, mahremiyet hakkı veya sözleşme hakkı dahil herhangi bir üçüncü taraf hakkını ihlal etmeniz;</li>
+            <li>Yazılım aracılığıyla işlediğiniz veriler, istekler, kimlik bilgileri veya içerik; hedeflediğiniz sistemlere verilen herhangi bir zarar dahil.</li>
+          </ol>
+          <p class="mt-3">
+            Lisans Veren, kendi pahasına, sizin tarafınızdan tazmin edilmesi gereken herhangi bir konunun
+            münhasır savunma ve kontrolünü üstlenme hakkını saklı tutar; bu durumda mevcut savunmaları
+            ileri sürmede Lisans Verenle işbirliği yapacaksınız.
+          </p>
+        </div>
+
+        <!-- 12 -->
+        <div id="termination">
+          <h2 class="text-base font-semibold text-text mb-3">12. Fesih</h2>
+          <p>
+            Bu Sözleşme feshedilene kadar yürürlüktedir. Sözleşme koşullarına uymadığınız takdirde bildirim
+            yapılmaksızın otomatik olarak feshedilir. Fesih üzerine Yazılımın tüm kullanımını durdurmalı ve
+            elinizde veya kontrolünüzde bulunan tüm kopyaları imha etmelisiniz. Yazılımı kaldırarak ve
+            <a href="/tr/privacy" class="text-accent-text hover:underline">Gizlilik Politikası</a>'nda
+            açıklanan kullanıcı veri dizinini silerek bu Sözleşmeyi istediğiniz zaman feshedebilirsiniz.
+          </p>
+          <p class="mt-3">
+            Madde 5 (Kısıtlamalar), 8 (Markalar), 9 (Garanti Reddi), 10 (Sorumluluk Sınırlaması),
+            11 (Tazminat), 13 (İhracat Kontrolü), 14 (Geçerli Hukuk), 16 (Bölünebilirlik / Sözleşmenin
+            Bütünlüğü) ve 17 (İletişim) fesihten sonra geçerliliğini sürdürür.
+          </p>
+        </div>
+
+        <!-- 13 -->
+        <div id="export">
+          <h2 class="text-base font-semibold text-text mb-3">13. İhracat Kontrolü</h2>
+          <p>
+            Türkiye Cumhuriyeti, Avrupa Birliği, Amerika Birleşik Devletleri (İhracat Yönetim Düzenlemeleri
+            ve OFAC yaptırım programları dahil) ve Birleşmiş Milletler Güvenlik Konseyi'nin ihracat kontrolü
+            ve ticari yaptırımlara ilişkin yürürlükteki tüm kanun ve düzenlemelerine uymayı kabul edersiniz.
+            Şunları beyan ve garanti edersiniz:
+          </p>
+          <ol class="mt-3 space-y-1.5 list-[lower-alpha] list-outside ml-5">
+            <li>bu otoritelerce kapsamlı ambargoya tabi tutulan herhangi bir ülke veya bölgede bulunmadığınızı, bu ülke veya bölgenin kontrolü altında, vatandaşı veya ikamet edeni olmadığınızı;</li>
+            <li>bu otoritelerce tutulan herhangi bir kısıtlı taraf veya yaptırım listesinde yer almadığınızı;</li>
+            <li>Yazılımı yasaklı herhangi bir varış noktasına, son kullanıcıya veya son kullanıma ihraç etmeyeceğinizi, yeniden ihraç etmeyeceğinizi, transfer etmeyeceğinizi veya başka bir şekilde sağlamayacağınızı.</li>
+          </ol>
+        </div>
+
+        <!-- 14 -->
+        <div id="governing">
+          <h2 class="text-base font-semibold text-text mb-3">14. Geçerli Hukuk ve Yargı Yeri</h2>
+          <p>
+            Bu Sözleşme, kanunlar ihtilafı ilkelerine bakılmaksızın
+            <strong class="text-text">Türkiye Cumhuriyeti</strong> kanunlarına tabidir. Bu Sözleşmeden veya
+            ihlalinden, feshinden ya da geçersizliğinden kaynaklanan veya bunlarla bağlantılı her türlü
+            ihtilaf, anlaşmazlık veya talep, ikamet yerinizdeki emredici tüketici koruma kanunları aksini
+            öngörmediği sürece <strong class="text-text">Ankara, Türkiye</strong> mahkemeleri ve icra
+            dairelerinin münhasır yargı yetkisine tabi kılınacaktır.
+          </p>
+        </div>
+
+        <!-- 15 -->
+        <div id="changes">
+          <h2 class="text-base font-semibold text-text mb-3">15. Bu EULA'daki Değişiklikler</h2>
+          <p>
+            Lisans Veren, bu Sözleşmeyi zaman zaman güncelleyebilir. Önemli değişiklikler, bu belgenin
+            üst kısmındaki <strong class="text-text">Son güncelleme</strong> tarihini güncelleyerek ve
+            belge hash'ini artırarak yansıtılır. Belge hash'i değiştiğinde, uygulama içi onay kapısı
+            Yazılımın bir sonraki başlatılmasında güncellenmiş metni incelemeniz ve kabul etmeniz için
+            sizi uyarır. Güncellenmiş metni reddederseniz, Yazılım kapanır ve ilişkiyi sonlandırmak için
+            onu kaldırmanız gerekir.
+          </p>
+          <p class="mt-3">
+            Lisans Veren, herhangi bir zamanda bildirim yapmaksızın veya size karşı sorumluluk almaksızın
+            Yazılımı, otomatik güncelleme servisini veya herhangi bir özelliğini değiştirebilir, askıya
+            alabilir veya durdurabilir. Yerel olarak kurulu kopyanız, en son rıza verdiğiniz bu Sözleşmenin
+            sürümünün koşullarına tabi olarak kullanılabilir kalır.
+          </p>
+        </div>
+
+        <!-- 16 -->
+        <div id="severability">
+          <h2 class="text-base font-semibold text-text mb-3">16. Bölünebilirlik ve Sözleşmenin Bütünlüğü</h2>
+          <ul class="space-y-2 list-disc list-outside ml-5">
+            <li><strong class="text-text">Sözleşmenin bütünlüğü.</strong> Bu Sözleşme ve <a href="/tr/privacy" class="text-accent-text hover:underline">Gizlilik Politikası</a> birlikte, Yazılım ile ilgili olarak siz ve Lisans Veren arasındaki tüm sözleşmeyi oluşturur ve önceki veya çağdaş tüm anlayışların, iletişimlerin veya anlaşmaların yerini alır.</li>
+            <li><strong class="text-text">Bölünebilirlik.</strong> Bu Sözleşmenin herhangi bir hükmü yetkili bir mahkeme tarafından uygulanamaz bulunursa, o hüküm uygulanabilir hale getirmek için gereken asgari ölçüde değiştirilecek ve geri kalan hükümler tam olarak yürürlükte kalacaktır.</li>
+            <li><strong class="text-text">Feragat yok.</strong> Lisans Verenin bu Sözleşme kapsamındaki herhangi bir hakkı kullanmadaki başarısızlığı veya gecikmesi, bu haktan feragat edildiği anlamına gelmez.</li>
+            <li><strong class="text-text">Devir.</strong> Lisans Verenin önceden yazılı izni olmaksızın bu Sözleşmeyi tamamen veya kısmen devredemezsiniz. Lisans Veren bu Sözleşmeyi bir birleşme, devralma, yeniden yapılanma veya varlıklarının tümünün ya da büyük çoğunluğunun satışı ile bağlantılı olarak devredebilir.</li>
+          </ul>
+        </div>
+
+        <!-- 17 -->
+        <div id="contact">
+          <h2 class="text-base font-semibold text-text mb-3">17. İletişim</h2>
+          <p>Bu Sözleşmeyle ilgili sorular için (hukuki, uyumluluk veya fikri mülkiyet sorgulamaları dahil):</p>
+          <ul class="mt-3 space-y-1.5 list-disc list-outside ml-5">
+            <li><strong class="text-text">Hukuk &amp; gizlilik:</strong> <a href="mailto:info@apinizer.com" class="text-accent-text hover:underline">info@apinizer.com</a></li>
+            <li><strong class="text-text">Web sitesi:</strong> <a href="https://www.testnizer.com" class="text-accent-text hover:underline">www.testnizer.com</a></li>
+            <li><strong class="text-text">Posta:</strong> Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş., Üniversiteler Mah. 1606 Cad. Cyberpark A-Blok No:4 A/305, 06800 Bilkent/Ankara, Türkiye</li>
+            <li><strong class="text-text">Tel / Faks:</strong> 0312 265 02 36 / 0312 265 02 38</li>
+          </ul>
+          <p class="mt-6 text-xs text-text-soft">
+            Ayrıca bkz.: <a href="/tr/privacy" class="hover:text-text-muted underline decoration-dotted underline-offset-2">Gizlilik Politikası</a>
+          </p>
+        </div>
+
+      </div>
+
+      <p class="mt-12 border-t border-border pt-6 text-xs text-text-soft">
+        Telif hakkı © 2026 Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş.
+        İkili dağıtıma ilişkin tüm haklar saklıdır. Kaynak kod hakları MIT Lisansı ile düzenlenir.
+      </p>
+    </div>
+  </section>
+</BaseLayout>

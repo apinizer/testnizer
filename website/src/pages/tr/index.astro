@@ -1,0 +1,349 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import GuaranteeCard from '../../components/GuaranteeCard.astro'
+import { icons } from '../../components/icons'
+import { fetchLatestRelease } from '../../lib/latest-release'
+
+const release = await fetchLatestRelease()
+
+const guarantees = [
+  {
+    icon: icons.shieldOff,
+    title: '%100 Çevrimdışı',
+    body: 'Hava boşluklu ağlar desteklenir. Uygulama, API isteklerini yalnızca sizin yapılandırdığınız hedeflere gönderir — asla bir satıcı sunucusuna değil. Giriş yok, hesap yok, telemetri yok.',
+  },
+  {
+    icon: icons.hardDrive,
+    title: 'Yalnızca Yerel Depolama',
+    body: 'Çalışma alanları, projeler, ortamlar, geçmiş, sertifikalar ve gizli bilgiler diskinizde tek bir SQLite veritabanında saklanır. Taşıyın, yedekleyin, silin — karar sizin.',
+  },
+  {
+    icon: icons.gitBranch,
+    title: 'Dahili Git ve Yerel Veritabanı',
+    body: 'Testler mevcut Git deponuzda kodunuzun yanında yer alır. Yerleşik simple-git entegrasyonu sayesinde koleksiyonlar normal PR sürecinizde dallanır ve incelenir.',
+  },
+  {
+    icon: icons.lock,
+    title: 'Sıfır Veri Sızıntısı',
+    body: "Renderer'ın CSP'si connect-src self — fiziksel olarak kamuya açık internete ulaşamaz. Her API çağrısı, sizin denetlediğiniz denetlenmiş bir ana süreç IPC işleyicisinden geçer.",
+  },
+]
+
+const protocols = [
+  { icon: icons.globe, name: 'HTTP / REST', body: 'Metotlar, parametreler, başlıklar, gövde, çerezler, mTLS, proxy, yönlendirmeler, dosya yükleme ile multipart, betikler, doğrulamalar.' },
+  { icon: icons.fileCode, name: 'SOAP / WSDL', body: 'WSDL içe aktarma (URL veya dosya), manuel zarf modu, SOAP 1.1 + 1.2, çoklu servis, çoklu port.' },
+  { icon: icons.cpu, name: 'gRPC', body: '.proto içe aktarma, dört akış modu, meta veri, mesaj alanlarından JSON iskeleti.' },
+  { icon: icons.radio, name: 'WebSocket', body: 'ws + wss, özel başlıklar, JSON / metin düzenleyici, mesaj zaman çizelgesi.' },
+  { icon: icons.arrowsLeftRight, name: 'Socket.IO', body: 'Namespace + auth ile bağlanın, JSON yüküyle event emit edin, herhangi bir event adına abone olun, çift yönlü zaman çizelgesini izleyin.' },
+  { icon: icons.network, name: 'GraphQL', body: 'Sorgu, mutasyon, abonelik, şema iç gözlemi, değişkenler JSON.' },
+  { icon: icons.bot, name: 'Yapay Zeka Sohbet', body: '14 sağlayıcı (OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq…) artı özel URL — akışlı, çok dönüşlü. İstekler doğrudan sizin yapılandırdığınız sağlayıcıya gider; bu, harici bir sunucuyla iletişim kuran tek özelliktir.' },
+  { icon: icons.zap, name: 'Server-Sent Events', body: 'Last-Event-ID ile devam destekli uzun ömürlü akışlar.' },
+  { icon: icons.plug, name: 'MCP', body: 'Model Context Protocol istemcisi. Streamable HTTP, SSE ve stdio (yerel alt süreç) transport\'ları. Sunucunun yayınladığı araçları listeleyin, JSON argümanlarla çağırın, sonuçları inceleyin.' },
+]
+
+const tools = [
+  'JWT hata ayıklayıcı',
+  'WS-Security çalışma tezgahı',
+  'AES / RSA şifreleme / çözme',
+  'XML İmza ve Şifreleme',
+  'JSON / XML biçimlendiriciler',
+  'Base64 / URL / Hex kodlayıcılar',
+  'JSONPath / XPath / XSLT / Jolt',
+  'Metin farkı',
+]
+---
+
+<BaseLayout lang="tr">
+  <!-- Hero -->
+  <section class="hero-glow relative overflow-hidden border-b border-border">
+    <div class="dot-grid absolute inset-0"></div>
+    <div class="relative mx-auto max-w-6xl px-6 pt-20 pb-24 text-center md:pt-28 md:pb-32">
+      <div class="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-bg-soft px-3 py-1 text-xs font-medium text-text-muted">
+        <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+        {release.tag} — sonsuza dek ücretsiz · Apinizer projesi
+      </div>
+
+      <h1 class="mx-auto max-w-4xl text-4xl font-semibold tracking-tight text-text md:text-6xl md:leading-[1.1]">
+        <span class="text-gradient">Mutlak veri gizliliği</span>
+        gerektiren takımlar için çevrimdışı API istemcisi.
+      </h1>
+
+      <p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-text-muted">
+        Testnizer; HTTP, SOAP, WebSocket, GraphQL, gRPC ve SSE test etmek için ücretsiz, tamamen çevrimdışı bir masaüstü uygulamasıdır — üretim kimlik bilgileri ve veri yüklerinin makineden <em>asla ayrılmaması gereken</em> bankacılık, kamu, sigorta ve sağlık sektörlerindeki takımlar için <a href="https://apinizer.com" target="_blank" rel="noopener" class="underline decoration-dotted underline-offset-2 hover:text-text">Apinizer</a> tarafından geliştirilmiştir.
+      </p>
+
+      <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <a
+          href="/tr/download"
+          class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
+        >
+          <Fragment set:html={icons.download} />
+          macOS, Windows, Linux için İndir
+        </a>
+        <a
+          href="/tr/docs/getting-started"
+          class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted"
+        >
+          Dokümanlara Git
+          <Fragment set:html={icons.arrowRight} />
+        </a>
+      </div>
+
+      <p class="mt-5 text-xs text-text-soft">
+        macOS (arm64 / x64) · Windows (x64 / arm64) · Linux (deb / AppImage)
+      </p>
+
+      <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
+        <a href="https://github.com/apinizer/testnizer-releases/releases" target="_blank" rel="noopener" aria-label="Son sürüm">
+          <img src="https://img.shields.io/github/v/release/apinizer/testnizer-releases?label=son%20s%C3%BCr%C3%BCm&color=3b82f6&style=flat-square" alt="Son sürüm" height="20" />
+        </a>
+        <a href="https://github.com/apinizer/testnizer-releases/releases" target="_blank" rel="noopener" aria-label="Toplam indirme">
+          <img src="https://img.shields.io/github/downloads/apinizer/testnizer-releases/total?label=indirme&color=3b82f6&style=flat-square" alt="Toplam indirme" height="20" />
+        </a>
+        <a href="https://github.com/apinizer/testnizer-releases" target="_blank" rel="noopener" aria-label="GitHub yıldız">
+          <img src="https://img.shields.io/github/stars/apinizer/testnizer-releases?label=y%C4%B1ld%C4%B1z&color=3b82f6&style=flat-square" alt="GitHub yıldız" height="20" />
+        </a>
+        <img src="https://img.shields.io/badge/telemetri-yok-3b82f6?style=flat-square" alt="Telemetri yok" height="20" />
+      </div>
+    </div>
+  </section>
+
+  <!-- Ürün ekran görüntüsü -->
+  <section class="border-b border-border bg-bg-soft py-16 md:py-20">
+    <div class="mx-auto max-w-6xl px-6">
+      <div class="overflow-hidden rounded-card border border-border bg-bg shadow-2xl shadow-blue-500/10 ring-1 ring-white/5">
+        <img
+          src="/testnizer-overview.png"
+          alt="Testnizer'ın Swagger Petstore OpenAPI yüklü ekranı — sol panelde içe aktarılmış endpoint ağacı, istek panelinde JSON gövdeli bir POST /pet, yanıt panelinde dönen pet nesnesiyle 200 OK."
+          width="1399"
+          height="871"
+          loading="eager"
+          decoding="async"
+          class="block h-auto w-full"
+        />
+      </div>
+      <p class="mt-4 text-center text-sm text-text-soft">
+        Bir Swagger spec içe aktarıldı, POST gönderildi, 200 alındı. Hesap yok, bulut senkronu yok, telemetri yok.
+      </p>
+    </div>
+  </section>
+
+  <!-- Dört güvence -->
+  <section class="py-24">
+    <div class="mx-auto max-w-6xl px-6">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Dört güvence</p>
+        <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text md:text-4xl">
+          Verileriniz asla makinenizden çıkmaz.
+        </h2>
+        <p class="mt-4 text-base leading-relaxed text-text-muted">
+          JWT çözerken de değil. XML zarfını imzalarken de değil. Güncellemeleri kontrol ederken de değil. Hiçbir zaman.
+        </p>
+      </div>
+
+      <div class="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {guarantees.map((g) => (
+          <GuaranteeCard icon={g.icon} title={g.title} body={g.body} />
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Karşılaştırma tablosu -->
+  <section class="border-y border-border bg-bg-soft py-24">
+    <div class="mx-auto max-w-6xl px-6">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Neden çevrimdışı önemlidir?</p>
+        <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text md:text-4xl">
+          Verileriniz gerçekte nereye gidiyor?
+        </h2>
+      </div>
+
+      <div class="mt-12 overflow-hidden rounded-card border border-border bg-bg">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-border bg-bg-muted text-left">
+              <th class="px-5 py-3.5 font-medium text-text-muted">Konu</th>
+              <th class="px-5 py-3.5 font-medium text-text-muted">Bulut araçları</th>
+              <th class="px-5 py-3.5 font-medium text-accent-text">Testnizer</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border">
+            <tr>
+              <td class="px-5 py-3.5 font-medium text-text">Koleksiyonlar nerede saklanır?</td>
+              <td class="px-5 py-3.5 text-text-muted">Satıcı bulut çalışma alanı</td>
+              <td class="px-5 py-3.5 text-text">Diskinizde yerel SQLite</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-3.5 font-medium text-text">Token'lar nerede saklanır?</td>
+              <td class="px-5 py-3.5 text-text-muted">Satıcı sunucularıyla senkronize edilir</td>
+              <td class="px-5 py-3.5 text-text">İşletim sistemi anahtarlığı (Keychain / DPAPI / libsecret)</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-3.5 font-medium text-text">JWT çözme</td>
+              <td class="px-5 py-3.5 text-text-muted">Web uygulaması token'ı uzak servise gönderir</td>
+              <td class="px-5 py-3.5 text-text">Yerel kripto — token süreç içinde kalır</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-3.5 font-medium text-text">WS-Security imzalama / şifreleme</td>
+              <td class="px-5 py-3.5 text-text-muted">Çevrimiçi araçlar veya ayrı masaüstü uygulama</td>
+              <td class="px-5 py-3.5 text-text">xml-crypto + Node crypto ile yerleşik ana süreç</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-3.5 font-medium text-text">Telemetri</td>
+              <td class="px-5 py-3.5 text-text-muted">Varsayılan olarak açık</td>
+              <td class="px-5 py-3.5 text-text">Hiç yok — katılım seçeneği de yok</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-3.5 font-medium text-text">Hava boşluklu ağ</td>
+              <td class="px-5 py-3.5 text-text-muted">Çalışmaz</td>
+              <td class="px-5 py-3.5 text-text">Çalışır</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Protokoller -->
+  <section class="py-24">
+    <div class="mx-auto max-w-6xl px-6">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Protokoller</p>
+        <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text md:text-4xl">
+          Kurumsal sistemlerin gerçekte çalıştığı şeyleri test edin.
+        </h2>
+        <p class="mt-4 text-base leading-relaxed text-text-muted">
+          Sadece REST değil. SOAP zarfları, gRPC akışları, WebSocket oturumları ve olay akışları — birinci sınıf, cihaz üzerinde.
+        </p>
+      </div>
+
+      <div class="mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border md:grid-cols-2 lg:grid-cols-3">
+        {protocols.map((p) => (
+          <div class="bg-bg p-6">
+            <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-light text-accent-text">
+              <Fragment set:html={p.icon} />
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-text">{p.name}</h3>
+            <p class="mt-1.5 text-sm leading-relaxed text-text-muted">{p.body}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Araçlar şeridi -->
+  <section class="border-t border-border bg-bg-soft py-20">
+    <div class="mx-auto max-w-6xl px-6">
+      <div class="grid items-center gap-10 md:grid-cols-2">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Yerleşik araçlar</p>
+          <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text md:text-4xl">
+            jwt.io'ya yapıştıracağınız her şey.
+          </h2>
+          <p class="mt-4 text-base leading-relaxed text-text-muted">
+            Her yardımcı araç cihazda çalışır. "JSON'unuzu biçimlendirmek" veya "token'ınızı çözmek" için üçüncü taraf bir siteye gidiş-dönüş yok. Ağ kapalıysa araçlar yine de çalışır.
+          </p>
+        </div>
+        <ul class="grid grid-cols-2 gap-2.5">
+          {tools.map((t) => (
+            <li class="flex items-center gap-2.5 rounded-lg border border-border bg-bg px-3.5 py-2.5 text-sm text-text">
+              <span class="text-accent-text">
+                <Fragment set:html={icons.check} />
+              </span>
+              {t}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Uyumluluk / taşıma -->
+  <section class="py-24">
+    <div class="mx-auto max-w-6xl px-6">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Taşıma</p>
+        <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text md:text-4xl">
+          Mevcut koleksiyonlarınızı getirin.
+        </h2>
+        <p class="mt-4 text-base leading-relaxed text-text-muted">
+          Belgeli yüzey için kayıpsız gidiş-dönüş — betikler ve değişkenler dahil.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-10 flex max-w-3xl flex-wrap items-center justify-center gap-2">
+        {[
+          'OpenAPI 3.x',
+          'Swagger 2.0',
+          'Postman v2.1',
+          'Insomnia v4',
+          'cURL',
+          'WSDL',
+          '.proto',
+          'RAML 1.0',
+          'SoapUI / ReadyAPI',
+          'HAR',
+        ].map((fmt) => (
+          <span class="rounded-full border border-border bg-bg px-3.5 py-1.5 text-xs font-medium text-text-muted">
+            {fmt}
+          </span>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Kurumsal -->
+  <section class="border-t border-border bg-bg-soft">
+    <div class="mx-auto max-w-4xl px-6 py-20">
+      <div class="rounded-2xl border border-border bg-bg p-8 md:p-10">
+        <div class="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+          <div class="md:flex-1">
+            <div class="mb-2 inline-flex items-center gap-2 rounded-full border border-border bg-bg-soft px-3 py-1 text-xs font-medium text-text-muted">
+              <Fragment set:html={icons.building} />
+              Düzenlenmiş sektörler için
+            </div>
+            <h2 class="text-2xl font-semibold tracking-tight text-text md:text-3xl">
+              Kurumsal desteğe mi ihtiyacınız var?
+            </h2>
+            <p class="mt-3 max-w-2xl text-sm leading-relaxed text-text-muted md:text-base">
+              Ücretsiz dağıtım "olduğu gibi" sunulur — bakım veya güvenlik yaması taahhüdümüz yoktur. Kurumunuz ücretli destek, yanıt süresi SLA'ları, lokal kurulum asistanlığı, eğitim ya da özel geliştirme talep ediyorsa — bankacılık, kamu, savunma, sağlık ve düzenlenmiş altyapı için yaygın bir gereksinim — bizimle iletişime geçin.
+            </p>
+          </div>
+          <div class="shrink-0">
+            <a
+              href="https://github.com/apinizer/testnizer-releases/issues/new?labels=enterprise&title=Kurumsal+destek+talebi"
+              target="_blank"
+              rel="noopener"
+              class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
+            >
+              Talep aç
+              <Fragment set:html={icons.arrowRight} />
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Son çağrı -->
+  <section class="border-t border-border">
+    <div class="mx-auto max-w-4xl px-6 py-24 text-center">
+      <h2 class="text-3xl font-semibold tracking-tight text-text md:text-4xl">
+        Ücretsiz. Satıcı bağımlılığı yok. Abonelik yok.
+      </h2>
+      <p class="mx-auto mt-4 max-w-xl text-base leading-relaxed text-text-muted">
+        Testnizer, Apinizer tarafından geliştirilmekte ve sürdürülmektedir. "Pro" katman yok, bulut çalışma alanı ek satışı yok, gerçek özellikler için bekleme listesi yok. Biz bunu kendimiz ihtiyaç duyduğumuz için yaptık.
+      </p>
+      <div class="mt-8 flex justify-center">
+        <a
+          href="/tr/download"
+          class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
+        >
+          Testnizer'ı İndir
+          <Fragment set:html={icons.arrowRight} />
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

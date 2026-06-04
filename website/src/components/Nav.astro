@@ -1,0 +1,63 @@
+---
+import LanguageSwitcher from './LanguageSwitcher.astro'
+
+const links = [
+  { href: '/features', label: 'Features' },
+  { href: '/security', label: 'Security' },
+  { href: '/docs/getting-started', label: 'Docs' },
+  { href: '/download', label: 'Download' },
+]
+const pathname = Astro.url.pathname
+---
+
+<header class="sticky top-0 z-40 w-full border-b border-border bg-bg/80 backdrop-blur-md">
+  <div class="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
+    <a href="/" class="flex items-center gap-2.5 font-semibold tracking-tight">
+      <img src="/logo.png" class="h-7 w-7" alt="" />
+      <span class="text-text">Testnizer</span>
+    </a>
+
+    <nav class="hidden items-center gap-1 md:flex">
+      {links.map(({ href, label }) => (
+        <a
+          href={href}
+          class:list={[
+            'rounded-md px-3 py-1.5 text-sm transition-colors',
+            pathname.startsWith(href)
+              ? 'text-accent-text bg-accent-light'
+              : 'text-text-muted hover:text-text hover:bg-bg-muted',
+          ]}
+        >
+          {label}
+        </a>
+      ))}
+      <span class="mx-1 h-4 w-px bg-border"></span>
+      <a
+        href="https://apinizer.com"
+        target="_blank"
+        rel="noopener"
+        class="rounded-md px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:bg-accent-light"
+      >
+        Apinizer
+      </a>
+    </nav>
+
+    <div class="flex items-center gap-2">
+      <LanguageSwitcher />
+      <a
+        href="https://github.com/apinizer/testnizer-releases"
+        target="_blank"
+        rel="noopener"
+        class="hidden rounded-md px-3 py-1.5 text-sm text-text-muted transition-colors hover:bg-bg-muted hover:text-text md:inline-flex"
+      >
+        GitHub
+      </a>
+      <a
+        href="/download"
+        class="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
+      >
+        Download
+      </a>
+    </div>
+  </div>
+</header>

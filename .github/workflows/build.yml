@@ -1,0 +1,433 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+    # Monorepo hygiene: a website-only change to main must not trigger the app
+    # build. Release tags always bump package.json (a non-website file), so the
+    # `v*` release path is never skipped by this filter.
+    paths-ignore:
+      - 'website/**'
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - 'website/**'
+  workflow_dispatch:
+
+# Allow only one concurrent build per ref — cancel stale ones.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Cleanup — free up Actions storage BEFORE building anything. The org quota
+  # fills up surprisingly fast (six platform artifacts per tag × dozens of tag
+  # runs × default 90-day retention), and once it's exhausted GitHub starts
+  # silently refusing new artifact uploads — which is what's been killing our
+  # release builds.
+  #
+  # This job:
+  #   1. Deletes all but the most recent 10 artifacts (regardless of source
+  #      workflow) — old release builds are already published on the
+  #      `testnizer-releases` repo, so the build artifacts here are just
+  #      transient handoff between jobs.
+  #   2. Deletes every cache entry — npm cache rehydrates in a few seconds
+  #      and stale caches are the primary storage hog for matrix builds.
+  #   3. Deletes workflow runs older than the most recent 30 (logs go with
+  #      the run).
+  #
+  # Runs in parallel-friendly mode: failures don't block builds. `quality`
+  # below uses `needs: cleanup` + `if: always()` so a transient API hiccup
+  # in cleanup never aborts a real release.
+  # ---------------------------------------------------------------------------
+  cleanup:
+    name: Free Actions storage (artifacts + caches + old runs)
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Delete old artifacts (keep latest 10)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          # `gh api --paginate` flattens .artifacts across pages.
+          gh api -X GET /repos/${{ github.repository }}/actions/artifacts \
+            --paginate --jq '.artifacts[] | "\(.id) \(.created_at)"' \
+            | sort -k2 \
+            | head -n -10 \
+            | awk '{print $1}' \
+            | while read -r id; do
+                [ -z "$id" ] && continue
+                echo "Deleting artifact $id"
+                gh api -X DELETE "/repos/${{ github.repository }}/actions/artifacts/$id" \
+                  || echo "  (already gone or permission denied)"
+              done
+
+      - name: Delete all caches
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          gh api -X GET /repos/${{ github.repository }}/actions/caches \
+            --paginate --jq '.actions_caches[] | .id' \
+            | while read -r id; do
+                [ -z "$id" ] && continue
+                echo "Deleting cache $id"
+                gh api -X DELETE "/repos/${{ github.repository }}/actions/caches/$id" \
+                  || echo "  (already gone)"
+              done
+
+      - name: Delete old workflow runs (keep latest 30)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          gh api -X GET /repos/${{ github.repository }}/actions/runs \
+            --paginate --jq '.workflow_runs[] | "\(.id) \(.created_at)"' \
+            | sort -k2 \
+            | head -n -30 \
+            | awk '{print $1}' \
+            | while read -r id; do
+                [ -z "$id" ] && continue
+                echo "Deleting run $id (logs included)"
+                gh api -X DELETE "/repos/${{ github.repository }}/actions/runs/$id" \
+                  || echo "  (already gone or in-progress)"
+              done
+
+  # ---------------------------------------------------------------------------
+  # Quality gate — runs once before any platform build. Blocks the matrix on
+  # type errors, lint errors, or failing unit tests so we don't waste CI minutes
+  # building six platform packages from broken code.
+  # ---------------------------------------------------------------------------
+  quality:
+    name: Lint + Typecheck + Unit tests
+    needs: cleanup
+    # Cleanup is best-effort — never block a build on a storage-API hiccup.
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      # The `pretest:unit` hook in package.json invokes
+      # `scripts/ensure-native-abi.js node`, which rebuilds better-sqlite3
+      # for the system Node ABI before vitest spawns. The platform build
+      # jobs below have their own `prebuild:*` hook that flips the binary
+      # back to Electron's ABI, so test → build → test cycles never leave
+      # node_modules in a broken state. No manual `npm rebuild` here.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test:unit
+
+  # ---------------------------------------------------------------------------
+  # macOS — one job per arch, each on a native runner so better-sqlite3's
+  # prebuild-install pulls the correct darwin-{x64,arm64} binary and
+  # electron-rebuild compiles against the host's arch if a prebuild is missing.
+  # ---------------------------------------------------------------------------
+  build-mac:
+    needs: quality
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    name: macOS ${{ matrix.arch }}
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14   # Apple Silicon — native arm64 build
+          - arch: x64
+            runner: macos-14   # Apple Silicon — cross-build x64 via electron-builder --x64
+            # (macos-13 Intel pool is effectively dead post-deprecation: jobs
+            # sit queued for 10+ hrs. Apple Silicon hosts electron + native
+            # deps for x64 fine since better-sqlite3 ships prebuilt darwin-x64
+            # binaries and @electron/rebuild honors --arch=x64.)
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps (host arch only)
+        run: npm ci
+
+      # F25: bundle the per-platform static curl into resources/curl/ so the
+      # TLS 1.0/1.1 sidecar works on enterprise hosts without a system curl.
+      - name: Download bundled curl (darwin-${{ matrix.arch }})
+        run: node scripts/download-curl-binaries.js --target=darwin-${{ matrix.arch }}
+
+      # The Vite/Rollup main-process bundle pulls in the full Electron deps
+      # graph (better-sqlite3, soap, grpc, etc.) and on macos-14 (arm64) the
+      # default 2 GB Node heap is occasionally exceeded during minification.
+      # Bump the heap so the build is deterministic on both macOS runners.
+      - name: Build renderer + main
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: npm run build
+
+      - name: E2E smoke tests (Playwright)
+        run: npm run test:e2e:smoke
+
+      - name: E2E HTTP suite (network-dependent; failures non-blocking for now)
+        # Sprint 2 introduced this suite; some tests assume specific httpbin
+        # response shapes and need iteration. Track via STATUS.md before making
+        # this a hard gate.
+        run: npm run test:e2e:http
+        continue-on-error: true
+        env:
+          HTTPBIN_URL: ${{ vars.HTTPBIN_URL || 'https://httpbin.org' }}
+          BADSSL_BASE: ${{ vars.BADSSL_BASE || 'https://badssl.com' }}
+
+      - name: Package (dmg + zip, ${{ matrix.arch }})
+        env:
+          # Skip signing in CI unless the secrets are actually configured.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        # `--publish always` on tag pushes uploads + generates latest-mac.yml
+        # for electron-updater. On main/PR builds we never publish.
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            npx electron-builder --mac --${{ matrix.arch }} --publish always
+          else
+            npx electron-builder --mac --${{ matrix.arch }} --publish never
+          fi
+        shell: bash
+
+      - name: Verify native binaries
+        run: node scripts/verify-natives.js --platform=darwin --arch=${{ matrix.arch }}
+
+  # ---------------------------------------------------------------------------
+  # Linux — native x64 on ubuntu-latest, native arm64 on ubuntu-24.04-arm.
+  # Both run electron-rebuild against the host's glibc, which matches the
+  # target users (no cross-compile gymnastics).
+  # ---------------------------------------------------------------------------
+  build-linux:
+    name: Linux ${{ matrix.arch }}
+    needs: quality
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install system build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential python3 libopenjp2-tools rpm fakeroot dpkg
+
+      # electron-builder's bundled fpm has bitten us on both arches:
+      #   - arm64 runner: the bundled binary is Linux x86, fails with
+      #     "Exec format error".
+      #   - x64 runner: depending on the cache / electron-builder version,
+      #     the bundled fpm can fail to land in PATH at all
+      #     ("fpm: executable file not found in $PATH").
+      # Install fpm via the system Ruby on both arches and tell
+      # electron-builder to use it (USE_SYSTEM_FPM=true) for a deterministic
+      # `.deb` build.
+      - name: Install system fpm
+        run: |
+          sudo apt-get install -y --no-install-recommends ruby ruby-dev rubygems
+          sudo gem install --no-document fpm
+
+      - name: Install deps (host arch only)
+        run: npm ci
+
+      # F25: bundle the per-platform static curl for the TLS 1.0/1.1 sidecar.
+      - name: Download bundled curl (linux-${{ matrix.arch }})
+        run: node scripts/download-curl-binaries.js --target=linux-${{ matrix.arch }}
+
+      - name: Build renderer + main
+        run: npm run build
+
+      - name: Package (AppImage + deb, ${{ matrix.arch }})
+        env:
+          USE_SYSTEM_FPM: 'true'
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            npx electron-builder --linux --${{ matrix.arch }} --publish always
+          else
+            npx electron-builder --linux --${{ matrix.arch }} --publish never
+          fi
+        shell: bash
+
+      - name: Verify native binaries
+        run: node scripts/verify-natives.js --platform=linux --arch=${{ matrix.arch }}
+
+  # ---------------------------------------------------------------------------
+  # Windows — x64 on windows-latest (native), arm64 on windows-11-arm (native).
+  # Running each arch on its own native host is the only reliable way to get
+  # the correct better_sqlite3.node into the NSIS installer.
+  # ---------------------------------------------------------------------------
+  build-windows:
+    name: Windows ${{ matrix.arch }}
+    needs: quality
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps (host arch only)
+        run: npm ci
+
+      # F25: bundle the per-platform static curl for the TLS 1.0/1.1 sidecar.
+      - name: Download bundled curl (win32-${{ matrix.arch }})
+        run: node scripts/download-curl-binaries.js --target=win32-${{ matrix.arch }}
+
+      - name: Build renderer + main
+        run: npm run build
+
+      - name: Package (nsis + zip, ${{ matrix.arch }})
+        # PowerShell on windows-latest, bash on windows-11-arm — use a
+        # cross-shell check via the GITHUB_REF env.
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            npx electron-builder --win --${{ matrix.arch }} --publish always
+          else
+            npx electron-builder --win --${{ matrix.arch }} --publish never
+          fi
+
+      - name: Verify native binaries
+        run: node scripts/verify-natives.js --platform=win32 --arch=${{ matrix.arch }}
+
+  # ---------------------------------------------------------------------------
+  # Update the release body on tag pushes.
+  #
+  # The six installer assets (dmg / exe / deb / AppImage / zip) plus the
+  # electron-updater `latest*.yml` manifests are already on
+  # `apinizer/testnizer-releases` — each platform job runs
+  # `electron-builder ... --publish always` and uploads its own artifacts
+  # directly to the release. This job therefore does NOT need to download
+  # any GitHub Actions artifact; it only:
+  #   1. Pulls the v<tag> changelog block from the website repo.
+  #   2. Overwrites the release body with that block via `gh release edit`.
+  #   3. Pings the website to rebuild so the /download page picks up the
+  #      new version.
+  #
+  # Killing the upload-artifact / download-artifact dance avoids the
+  # GitHub Actions storage-quota wall that silently broke v1.4.2 publish.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Update release notes
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-mac, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Pull the release-notes block for this tag out of the website's
+      # changelog (single source of truth — same content the /docs/changelog/
+      # page renders). awk slurps the section starting at `## v<tag>` and
+      # stops at the next `## ` header. Falls back to a one-line stub if the
+      # tag isn't documented yet, so the release still drafts.
+      - name: Extract release notes from website changelog
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer ${{ secrets.RELEASE_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3.raw" \
+            "https://api.github.com/repos/apinizer/testnizer-website/contents/src/content/docs/changelog.md" \
+            -o changelog.md
+          TAG="${{ github.ref_name }}"
+          awk -v tag="$TAG" '
+            $0 == "## " tag { capture = 1; next }
+            capture && /^## / { exit }
+            capture { print }
+          ' changelog.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "Release notes for $TAG not yet published — see https://www.testnizer.com/docs/changelog/" > release-notes.md
+          fi
+          echo "----- release-notes.md -----"
+          cat release-notes.md
+
+      # The release was already published by the platform jobs via
+      # `electron-builder --publish always`. We only need to overwrite its
+      # body with the changelog block.
+      - name: Update release body
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          gh release edit "${{ github.ref_name }}" \
+            --repo apinizer/testnizer-releases \
+            --notes-file release-notes.md \
+            --title "Testnizer ${{ github.ref_name }}"
+
+      # Kick the website rebuild so the /download page picks up the new
+      # version + asset URLs as soon as the release is up. Uses RELEASE_TOKEN
+      # which already has cross-repo write access in this org.
+      #
+      # `continue-on-error: true` because some token revisions don't carry
+      # `repository_dispatch` scope on the website repo and a 403 here
+      # should NOT mark the whole release job as failed — the release
+      # itself is already published by the platform jobs above. Fix the
+      # token scope to make this go green, but treat the notify as best-
+      # effort either way (a manual workflow-dispatch on the website is
+      # always available).
+      - name: Notify website to rebuild
+        continue-on-error: true
+        run: |
+          curl -fsSL -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.RELEASE_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/apinizer/testnizer-website/dispatches \
+            -d '{"event_type":"testnizer-release-published","client_payload":{"tag":"${{ github.ref_name }}"}}'

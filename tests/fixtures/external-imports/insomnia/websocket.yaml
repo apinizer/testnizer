@@ -1,0 +1,41 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: WebSocket
+meta:
+  id: wrk_cc567a814b6d44e58d0f6ce3c9c34c1b
+  created: 1774438449583
+  modified: 1774963281111
+  description: ""
+collection:
+  - url: ws://167.86.83.73:30881/apigateway/wsviserver
+    name: mirror
+    meta:
+      id: ws-req_9caa76b54f3f48c1bf557361e2b8814b
+      created: 1774438460473
+      modified: 1774963281114
+      description: ""
+      sortKey: -1774438460473
+    settings:
+      encodeUrl: true
+      cookies:
+        store: true
+        send: true
+      followRedirects: global
+    headers:
+      - name: User-Agent
+        value: insomnia/12.4.0
+        description: ""
+        disabled: false
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_d62eadf57cc67edd3d011c018b942700a7a60b1e
+    created: 1777013522523
+    modified: 1777013522523
+environments:
+  name: Base Environment
+  meta:
+    id: env_d62eadf57cc67edd3d011c018b942700a7a60b1e
+    created: 1774438449610
+    modified: 1774963281109
+    isPrivate: false

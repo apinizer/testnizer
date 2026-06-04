@@ -1,0 +1,37 @@
+---
+import BaseLayout from './BaseLayout.astro'
+import DocsSidebar from '../components/DocsSidebar.astro'
+
+interface Props {
+  title: string
+  description?: string
+  currentSlug: string
+  lang?: string
+}
+const { title, description, currentSlug, lang = 'en' } = Astro.props
+---
+
+<BaseLayout title={`${title} — Testnizer Docs`} description={description} lang={lang}>
+  <div class="mx-auto flex max-w-6xl">
+    <DocsSidebar currentSlug={currentSlug} lang={lang} />
+
+    <article class="min-w-0 flex-1 px-6 py-10 md:px-10 md:py-14">
+      <div class="prose prose-invert max-w-none
+                  prose-headings:tracking-tight prose-headings:text-text
+                  prose-h1:text-3xl prose-h1:font-semibold prose-h1:mb-3
+                  prose-h2:text-xl prose-h2:font-semibold prose-h2:mt-10 prose-h2:mb-3
+                  prose-h3:text-base prose-h3:font-semibold prose-h3:mt-7 prose-h3:mb-2
+                  prose-p:text-[0.95rem] prose-p:leading-relaxed prose-p:text-text-muted
+                  prose-li:text-[0.95rem] prose-li:text-text-muted
+                  prose-strong:text-text
+                  prose-a:text-accent-text prose-a:no-underline hover:prose-a:underline
+                  prose-code:rounded prose-code:bg-bg-muted prose-code:px-1.5 prose-code:py-0.5
+                  prose-code:text-[0.85em] prose-code:text-text prose-code:before:content-none
+                  prose-code:after:content-none
+                  prose-pre:border prose-pre:border-border prose-pre:bg-bg-soft
+                  prose-pre:text-[0.85rem]">
+        <slot />
+      </div>
+    </article>
+  </div>
+</BaseLayout>

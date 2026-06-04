@@ -1,0 +1,442 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro'
+---
+
+<BaseLayout
+  title="Privacy Policy — Testnizer"
+  description="Testnizer Privacy Policy. Effective 2026-05-07. Testnizer collects no personal data by default — all data stays on your local device."
+>
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-3xl px-6 py-20 text-center">
+      <h1 class="text-4xl font-semibold tracking-tight text-text">Privacy Policy</h1>
+      <p class="mt-4 text-base leading-relaxed text-text-muted">
+        Testnizer collects <strong>no personal data by default</strong>. All your work stays on
+        your local device. This policy explains what little does leave your machine, and why.
+      </p>
+      <p class="mt-3 text-xs text-text-soft">
+        Effective date: 2026-05-07 &nbsp;·&nbsp; Applies to: Testnizer v1.0.3 and later
+      </p>
+    </div>
+  </section>
+
+  <section class="py-16">
+    <div class="mx-auto max-w-3xl px-6">
+
+      <!-- TOC -->
+      <nav class="mb-12 rounded-card border border-border bg-bg-soft p-5">
+        <p class="mb-3 text-xs font-semibold uppercase tracking-wider text-text-muted">Contents</p>
+        <ol class="grid grid-cols-1 gap-1 text-sm text-text-muted sm:grid-cols-2">
+          {[
+            ['#overview', '1. Overview (TL;DR)'],
+            ['#what-we-collect', '2. What Data We Collect'],
+            ['#local-storage', '3. Local Data Storage'],
+            ['#autoupdate', '4. Auto-Update'],
+            ['#telemetry', '5. Optional Telemetry (Sentry)'],
+            ['#ai-chat', '6. AI Chat Feature'],
+            ['#third-party', '7. Third-Party Services'],
+            ['#cookies', '8. Cookies and Tracking'],
+            ['#children', '9. Children\'s Privacy'],
+            ['#gdpr', '10. GDPR and International Users'],
+            ['#security', '11. Security'],
+            ['#international', '12. International Transfers'],
+            ['#rights', '13. Your Rights'],
+            ['#changes', '14. Changes to this Policy'],
+            ['#contact', '15. Contact'],
+          ].map(([href, label]) => (
+            <li>
+              <a href={href} class="transition-colors hover:text-text">{label}</a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
+      <div class="space-y-12 text-sm leading-relaxed text-text-muted">
+
+        <!-- Preamble -->
+        <p>
+          This Privacy Policy explains how <strong class="text-text">Testnizer</strong> ("the
+          Software", "we", "our") handles information when you install and use the application.
+          Testnizer is published by{' '}
+          <strong class="text-text">Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş.</strong>
+          ("the Publisher"), located in İstanbul, Republic of Türkiye.
+        </p>
+        <p>
+          Testnizer is a free desktop application for testing APIs. It runs entirely on your local
+          machine. <strong class="text-text">We do not operate any backend service that receives,
+          stores, or processes your data.</strong> We do not have user accounts. We do not monetize
+          you in any way.
+        </p>
+
+        <!-- 1 -->
+        <div id="overview">
+          <h2 class="text-base font-semibold text-text mb-3">1. Overview (TL;DR)</h2>
+          <ul class="space-y-2 list-disc list-outside ml-5">
+            <li>Testnizer collects <strong class="text-text">no personal data by default</strong>.</li>
+            <li>All workspaces, projects, branches, requests, responses, environment variables, certificates, and credentials stay on <strong class="text-text">your local disk</strong>.</li>
+            <li>
+              Outbound traffic from the Software is limited to:
+              <ol class="mt-2 ml-5 space-y-1 list-decimal list-outside">
+                <li>The API requests <strong class="text-text">you</strong> explicitly send — these go directly from your device to the target you specify and never pass through us.</li>
+                <li>A periodic version check against the GitHub Releases feed for auto-update.</li>
+                <li><strong class="text-text">AI Chat:</strong> if you use the AI Chat feature, prompts and responses travel directly between your device and the AI provider you selected. We do not see, proxy, or store this content. See Section 6.</li>
+                <li>Optional crash telemetry, <strong class="text-text">only</strong> if you supply a <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">SENTRY_DSN</code> environment variable (off by default). See Section 5.</li>
+              </ol>
+            </li>
+            <li>We have no user accounts, host nothing on your behalf, and do not see your traffic.</li>
+          </ul>
+        </div>
+
+        <!-- 2 -->
+        <div id="what-we-collect">
+          <h2 class="text-base font-semibold text-text mb-3">2. What Data We Collect</h2>
+          <h3 class="font-medium text-text mt-4 mb-2">2.1 Data we collect from you: none, by default</h3>
+          <p>
+            Testnizer does not transmit your collections, requests, responses, headers, bodies,
+            environment variables, secrets, certificates, history, AI prompts, or any other content
+            you create or import — to us or to any third party under our control. We have no servers
+            that receive this content. We have no analytics SDK, no tracking beacons, no advertising
+            identifiers, no usage counters phoning home.
+          </p>
+          <h3 class="font-medium text-text mt-4 mb-2">2.2 What "we collect" actually means</h3>
+          <p>
+            The only data exchange initiated by the Software where the destination is <strong class="text-text">not</strong> an API target you chose is:
+          </p>
+          <ul class="mt-2 space-y-1.5 list-disc list-outside ml-5">
+            <li>The auto-update version check (Section 4) — destination: GitHub.</li>
+            <li>Optional crash telemetry (Section 5) — destination: a Sentry instance <strong class="text-text">you</strong> configured.</li>
+          </ul>
+          <p class="mt-2">That is the complete list. There is no other path.</p>
+        </div>
+
+        <!-- 3 -->
+        <div id="local-storage">
+          <h2 class="text-base font-semibold text-text mb-3">3. Local Data Storage</h2>
+          <p class="mb-4">
+            All your work product is stored on your own device. We have no copy and no ability to retrieve it.
+          </p>
+          <div class="overflow-x-auto rounded-card border border-border">
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="border-b border-border bg-bg-muted text-left">
+                  <th class="px-4 py-2.5 font-medium text-text-muted">Item</th>
+                  <th class="px-4 py-2.5 font-medium text-text-muted">Location</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                <tr><td class="px-4 py-2.5 font-medium text-text">Database (SQLite)</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/testnizer.db</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">Settings</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/config.json</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">Secrets (passwords, tokens, certificates)</td><td class="px-4 py-2.5 text-text-muted">OS keychain via Electron <code>safeStorage</code> (macOS Keychain, Windows DPAPI, libsecret on Linux)</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">Logs (if any)</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/logs/</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">AI provider configs &amp; keys</td><td class="px-4 py-2.5 text-text-muted">Encrypted in <code>config.json</code> via <code>safeStorage</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="mt-4">
+            <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">&lt;userData&gt;</code> resolves to:
+            <strong class="text-text"> macOS</strong> <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">~/Library/Application Support/Testnizer</code> ·
+            <strong class="text-text">Windows</strong> <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">%APPDATA%\Testnizer</code> ·
+            <strong class="text-text">Linux</strong> <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">~/.config/Testnizer</code>
+          </p>
+          <p class="mt-3">
+            You are the sole controller of this data. There is no cloud sync. You may inspect,
+            edit, export, or delete it at any time by manipulating the files directly or by using
+            the in-app Export / Settings menus.
+          </p>
+        </div>
+
+        <!-- 4 -->
+        <div id="autoupdate">
+          <h2 class="text-base font-semibold text-text mb-3">4. Auto-Update</h2>
+          <p>
+            Testnizer uses <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">electron-updater</code> to
+            check the project's public GitHub Releases feed at{' '}
+            <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">https://github.com/apinizer/testnizer/releases</code>{' '}
+            for newer versions. The check sends a standard HTTPS request consisting of the updater's
+            User-Agent string (application name + currently installed version) and your IP address as
+            visible to GitHub at the network layer.
+          </p>
+          <p class="mt-3">
+            <strong class="text-text">No data about your workspaces, requests, responses, environments,
+            credentials, or usage is sent.</strong> No account or device identifier is generated or
+            transmitted. GitHub's handling of this request is governed by GitHub's own privacy policy.
+          </p>
+          <p class="mt-3">
+            You can disable the auto-updater in <strong class="text-text">Settings → Updates</strong>.
+            Disabling it has no effect on the Software's other functionality.
+          </p>
+          <p class="mt-3 text-xs text-text-soft">
+            <strong>Lawful basis (GDPR Art. 6(1)(f)):</strong> legitimate interest in delivering security
+            and stability fixes to installed binaries. This processing involves only IP and User-Agent
+            metadata, intrinsic to any HTTPS request the user's machine makes to a public host.
+          </p>
+        </div>
+
+        <!-- 5 -->
+        <div id="telemetry">
+          <h2 class="text-base font-semibold text-text mb-3">5. Optional Telemetry (Sentry)</h2>
+          <p>
+            Testnizer ships <strong class="text-text">without a default telemetry endpoint</strong>.
+            There is no analytics, no crash reporting, no usage tracking enabled out of the box.
+          </p>
+          <p class="mt-3">
+            Crash reporting only activates when <strong class="text-text">you</strong> (or your
+            organization, when self-distributing) build or run the application with a{' '}
+            <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">SENTRY_DSN</code> environment
+            variable set. When and only when that DSN is present, the following may be sent to the
+            configured Sentry instance: application version, OS version, runtime version; stack traces
+            of unhandled errors; non-PII breadcrumbs (UI navigation events, IPC channel names).
+          </p>
+          <p class="mt-3">
+            The following are <strong class="text-text">never</strong> sent — even when telemetry is enabled:
+            request or response bodies, target URLs, headers, cookies; bearer tokens, credentials,
+            API keys, OAuth tokens, JWTs; TLS client certificates or private keys; environment-variable
+            values; file contents; AI Chat prompts or responses.
+          </p>
+          <p class="mt-3">
+            The official binaries we publish on Testnizer.com and GitHub Releases ship
+            <strong class="text-text">without</strong> a <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">SENTRY_DSN</code>
+            and therefore transmit no telemetry.
+          </p>
+          <p class="mt-3 text-xs text-text-soft">
+            <strong>Lawful basis (GDPR Art. 6(1)(a)):</strong> explicit opt-in by the user or the
+            self-distributing organization that sets the <code>SENTRY_DSN</code>.
+          </p>
+        </div>
+
+        <!-- 6 -->
+        <div id="ai-chat">
+          <h2 class="text-base font-semibold text-text mb-3">6. AI Chat Feature</h2>
+          <p>
+            Testnizer includes an "AI Chat" tab that allows you to converse with a large-language-model
+            provider of your choice from within the application. The application ships with presets for:
+          </p>
+          <ul class="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 list-disc list-outside ml-5 sm:grid-cols-3">
+            {['OpenAI', 'Anthropic', 'Groq', 'Google (Gemini)', 'Azure OpenAI', 'Cohere',
+              'Mistral', 'Perplexity', 'Together AI', 'OpenRouter', 'Fireworks AI', 'DeepSeek',
+              'xAI (Grok)', 'Ollama (local — no outbound)'].map((p) => (
+              <li>{p}</li>
+            ))}
+          </ul>
+          <p class="mt-4">
+            When you use AI Chat, the prompts you submit and the responses returned travel{' '}
+            <strong class="text-text">directly from your machine to the AI provider's API endpoint</strong>,
+            authenticated with the API key you supplied. Testnizer does not proxy, relay, intercept,
+            log, or store this content at any point — it is a peer-to-peer connection between your
+            device and the provider you selected.
+          </p>
+          <ul class="mt-3 space-y-2 list-disc list-outside ml-5">
+            <li>We have no access to your prompts or model responses.</li>
+            <li>The AI provider you selected sees your prompts, responses, and IP. Each provider has its own privacy policy, retention policy, and training-data policy. <strong class="text-text">Review the privacy policy of the provider you select before sending sensitive data.</strong></li>
+            <li>Data sent to AI providers may be retained or used to improve their models, entirely outside our control.</li>
+            <li>You can run AI Chat <strong class="text-text">fully offline</strong> by selecting the <strong class="text-text">Ollama</strong> preset (or any locally-hosted endpoint). No outbound traffic leaves your machine in that case.</li>
+            <li>Your API keys are stored locally, encrypted via the OS keychain (Section 3), and sent only to the provider they belong to.</li>
+          </ul>
+          <p class="mt-3 text-xs text-text-soft">
+            <strong>Lawful basis (GDPR Art. 6(1)(a)):</strong> explicit opt-in by the user. With respect
+            to data processed by the AI provider, the AI provider is the data controller; we are neither.
+          </p>
+          <p class="mt-2 text-xs text-text-soft">
+            If you do not use the AI Chat feature, no AI-related network traffic is generated by the Software.
+          </p>
+        </div>
+
+        <!-- 7 -->
+        <div id="third-party">
+          <h2 class="text-base font-semibold text-text mb-3">7. Third-Party Services</h2>
+          <p class="mb-4">
+            Testnizer interacts with third-party services only as a direct result of actions you take.
+            We have no affiliation with these services and no control over how they handle the data you
+            choose to send them.
+          </p>
+          <div class="overflow-x-auto rounded-card border border-border">
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="border-b border-border bg-bg-muted text-left">
+                  <th class="px-4 py-2.5 font-medium text-text-muted">Service</th>
+                  <th class="px-4 py-2.5 font-medium text-text-muted">When contacted</th>
+                  <th class="px-4 py-2.5 font-medium text-text-muted">What is shared</th>
+                  <th class="px-4 py-2.5 font-medium text-text-muted">Controller</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                <tr>
+                  <td class="px-4 py-2.5 font-medium text-text">GitHub Releases</td>
+                  <td class="px-4 py-2.5 text-text-muted">Auto-update check</td>
+                  <td class="px-4 py-2.5 text-text-muted">Version metadata, IP, User-Agent</td>
+                  <td class="px-4 py-2.5 text-text-muted">GitHub, Inc.</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-2.5 font-medium text-text">Your API targets</td>
+                  <td class="px-4 py-2.5 text-text-muted">When you click Send</td>
+                  <td class="px-4 py-2.5 text-text-muted">Whatever you put in the request</td>
+                  <td class="px-4 py-2.5 text-text-muted">Operator of that endpoint</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-2.5 font-medium text-text">Sentry (optional)</td>
+                  <td class="px-4 py-2.5 text-text-muted">Only if SENTRY_DSN is configured</td>
+                  <td class="px-4 py-2.5 text-text-muted">Anonymous error metadata (§5)</td>
+                  <td class="px-4 py-2.5 text-text-muted">Operator of that Sentry instance</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-2.5 font-medium text-text">AI providers (optional)</td>
+                  <td class="px-4 py-2.5 text-text-muted">When you use AI Chat</td>
+                  <td class="px-4 py-2.5 text-text-muted">Your prompts and context (§6)</td>
+                  <td class="px-4 py-2.5 text-text-muted">The selected AI provider</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 8 -->
+        <div id="cookies">
+          <h2 class="text-base font-semibold text-text mb-3">8. Cookies and Tracking</h2>
+          <p>
+            Testnizer is a desktop application, not a website, and uses{' '}
+            <strong class="text-text">no tracking cookies, no advertising cookies, no analytics cookies</strong>.
+            The Software does not embed any tracking pixels or third-party tags.
+          </p>
+          <p class="mt-3">
+            When you call HTTP APIs that set cookies, those cookies are stored on your machine via{' '}
+            <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">tough-cookie</code> so that
+            subsequent requests within the same session can include them. Those cookies are your data,
+            scoped to the API targets you chose, and stay on your device.
+          </p>
+        </div>
+
+        <!-- 9 -->
+        <div id="children">
+          <h2 class="text-base font-semibold text-text mb-3">9. Children's Privacy</h2>
+          <p>
+            Testnizer is intended for software developers, QA engineers, and IT professionals. It is{' '}
+            <strong class="text-text">not directed at children under the age of 13</strong> (or the
+            equivalent minimum age in your jurisdiction). We do not knowingly collect personal data
+            from anyone, regardless of age. If a parent or guardian believes a child has used the
+            Software in a way that warrants attention, please contact us at the address in Section 15.
+          </p>
+        </div>
+
+        <!-- 10 -->
+        <div id="gdpr">
+          <h2 class="text-base font-semibold text-text mb-3">10. GDPR and International Users</h2>
+          <p>
+            Because Testnizer does not transmit your personal data to us by default, no cross-border
+            transfer is initiated by the Software, and we act neither as a data controller nor as a
+            data processor with respect to the content you create. The processing in Sections 4 and 5
+            is limited to network metadata or opt-in technical crash data.
+          </p>
+          <p class="mt-3 font-medium text-text">Principles honored by design:</p>
+          <ul class="mt-2 space-y-2 list-disc list-outside ml-5">
+            <li><strong class="text-text">Data minimization (Art. 5(1)(c)):</strong> the application asks for nothing it does not strictly need to operate. There is no email collection, no account, no profile.</li>
+            <li><strong class="text-text">Purpose limitation (Art. 5(1)(b)):</strong> the only outbound traffic we initiate (the GitHub update check) has the single purpose of delivering newer versions.</li>
+            <li><strong class="text-text">Storage limitation (Art. 5(1)(e)):</strong> all your work product is stored locally; deletion is fully under your control.</li>
+            <li>
+              <strong class="text-text">Lawful basis (Art. 6):</strong>
+              <ul class="mt-1 ml-5 space-y-0.5 list-disc list-outside text-xs">
+                <li>Auto-update — Art. 6(1)(f) legitimate interest (security &amp; stability).</li>
+                <li>Telemetry — Art. 6(1)(a) explicit opt-in.</li>
+                <li>AI Chat — Art. 6(1)(a) explicit opt-in (the AI provider, not us, is the controller).</li>
+              </ul>
+            </li>
+          </ul>
+          <p class="mt-3">
+            You retain full control over your data on your device — exercising the rights of access,
+            rectification, erasure, restriction, portability, and objection by editing or deleting the
+            local database directly, or by using the in-app export and clear-data features.
+          </p>
+        </div>
+
+        <!-- 11 -->
+        <div id="security">
+          <h2 class="text-base font-semibold text-text mb-3">11. Security</h2>
+          <p>The Software employs the following defensive practices:</p>
+          <ul class="mt-3 space-y-2 list-disc list-outside ml-5">
+            <li><strong class="text-text">Local secret encryption.</strong> Passwords, API keys, OAuth tokens, and client certificates are encrypted at rest via Electron <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">safeStorage</code>, which delegates to the OS keychain. Plain-text secrets are never written to disk.</li>
+            <li><strong class="text-text">Renderer hardening.</strong> The Renderer process runs with <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">contextIsolation: true</code>, <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">nodeIntegration: false</code>, and a strict CSP of <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">connect-src 'self'</code>, which means the UI cannot make outbound network calls.</li>
+            <li><strong class="text-text">Process separation.</strong> The UI cannot directly access the filesystem, child processes, or network. All such operations are mediated by typed IPC channels with input validation in the Main process.</li>
+            <li><strong class="text-text">No telemetry by default.</strong> Crash data does not leave your machine unless you opt in (Section 5).</li>
+          </ul>
+          <p class="mt-3">
+            No software is perfectly secure. You remain responsible for the physical and logical
+            security of the device on which Testnizer runs, including keeping your operating system
+            and the Software updated, using full-disk encryption, and protecting against unauthorized
+            physical access.
+          </p>
+        </div>
+
+        <!-- 12 -->
+        <div id="international">
+          <h2 class="text-base font-semibold text-text mb-3">12. International Transfers</h2>
+          <p>
+            The Software does not initiate cross-border transfers of your work product. Outbound
+            network traffic initiated by the Software is limited to:
+          </p>
+          <ul class="mt-3 space-y-1.5 list-disc list-outside ml-5">
+            <li>Auto-update requests to <strong class="text-text">GitHub</strong>, served by GitHub's global edge network. GitHub's data-handling and Standard Contractual Clauses are documented in its own privacy policy.</li>
+            <li>Optional Sentry crash reports, transmitted to whichever Sentry endpoint you configured.</li>
+            <li>AI Chat requests, transmitted directly from your device to the AI provider you selected. The location of that provider's infrastructure is determined by your provider choice; review their privacy policy for details.</li>
+          </ul>
+          <p class="mt-3">We do not send your data to any third country ourselves.</p>
+        </div>
+
+        <!-- 13 -->
+        <div id="rights">
+          <h2 class="text-base font-semibold text-text mb-3">13. Your Rights</h2>
+          <p>
+            Because we hold no data about you, exercising your data-protection rights generally
+            means acting on your <strong class="text-text">local device</strong>:
+          </p>
+          <ul class="mt-3 space-y-2 list-disc list-outside ml-5">
+            <li><strong class="text-text">Right of access.</strong> Inspect the local database, configuration files, and exported collections directly. The Software's Export feature produces a portable JSON snapshot of any workspace.</li>
+            <li><strong class="text-text">Right to rectification.</strong> Edit any record from within the Software.</li>
+            <li><strong class="text-text">Right to erasure.</strong> Delete the user-data directory listed in Section 3, or use the in-app "Clear data" option in Settings, or uninstall the Software (the user-data directory may persist after uninstall on some platforms — delete it manually to complete erasure).</li>
+            <li><strong class="text-text">Right to portability.</strong> Use the Export functions (OpenAPI, Postman, HAR) to obtain your data in standard interoperable formats.</li>
+            <li><strong class="text-text">Right to object / restrict processing.</strong> Disable auto-update in Settings; do not configure <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">SENTRY_DSN</code>; do not use AI Chat.</li>
+          </ul>
+          <p class="mt-3">
+            If a third-party provider (an AI provider, a Sentry instance, or an API target) holds
+            personal data about you because of how you used Testnizer, please direct your
+            data-protection request to that provider directly — we cannot act on their behalf.
+          </p>
+        </div>
+
+        <!-- 14 -->
+        <div id="changes">
+          <h2 class="text-base font-semibold text-text mb-3">14. Changes to this Policy</h2>
+          <p>
+            We may update this Privacy Policy from time to time. Material changes are reflected by
+            updating the <strong class="text-text">Last updated</strong> date at the top of this
+            document and incrementing its hash. When the document hash changes, the in-application
+            consent gate prompts you to review and accept the updated text on the next launch of the
+            Software. If you decline the updated text, the Software will exit and you must uninstall
+            it to terminate the relationship.
+          </p>
+          <p class="mt-3">
+            We will not retroactively reduce protections in this Policy without first giving you the
+            opportunity to refuse the change.
+          </p>
+        </div>
+
+        <!-- 15 -->
+        <div id="contact">
+          <h2 class="text-base font-semibold text-text mb-3">15. Contact</h2>
+          <p>For questions, requests, or complaints about this Privacy Policy or about how Testnizer handles data:</p>
+          <ul class="mt-3 space-y-1.5 list-disc list-outside ml-5">
+            <li><strong class="text-text">Privacy &amp; legal:</strong> <a href="mailto:info@apinizer.com" class="text-accent-text hover:underline">info@apinizer.com</a></li>
+            <li><strong class="text-text">Website:</strong> <a href="https://www.testnizer.com" class="text-accent-text hover:underline">www.testnizer.com</a></li>
+            <li><strong class="text-text">Postal:</strong> Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş., Üniversiteler Mah. 1606 Cad. Cyberpark A-Blok No:4 A/305, 06800 Bilkent/Ankara, Türkiye</li>
+            <li><strong class="text-text">Phone / Fax:</strong> 0312 265 02 36 / 0312 265 02 38</li>
+          </ul>
+          <p class="mt-6 text-xs text-text-soft">
+            Also see: <a href="/license" class="hover:text-text-muted underline decoration-dotted underline-offset-2">End User License Agreement</a>
+          </p>
+        </div>
+
+      </div>
+
+      <p class="mt-12 border-t border-border pt-6 text-xs text-text-soft">
+        Copyright © 2026 Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş.
+      </p>
+    </div>
+  </section>
+</BaseLayout>

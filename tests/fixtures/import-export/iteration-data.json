@@ -1,0 +1,67 @@
+[
+  {
+    "_iteration_label": "Iter-1: Valid cases + Quota#1 + Throttle#1 + ClientBan#1",
+    "run_once":        "yes",
+    "auth_case":       "valid",
+    "token_case":      "valid",
+    "xml_case":        "valid",
+    "size_case":       "valid",
+    "max_size_case":   "valid",
+    "schema_case":     "valid",
+    "throttling_case": "valid",
+    "filter_case":     "valid",
+    "client_ban_case": "first_request"
+  },
+  {
+    "_iteration_label": "Iter-2: Invalid cases + Quota#2 + Throttle#2 + Filter script + ClientBan#2",
+    "run_once":        "no",
+    "auth_case":       "invalid",
+    "token_case":      "invalid_issuer",
+    "xml_case":        "invalid_short_username",
+    "size_case":       "too_short",
+    "max_size_case":   "exceed",
+    "schema_case":     "missing_password",
+    "throttling_case": "valid",
+    "filter_case":     "blocked_script_tag",
+    "client_ban_case": "second_request"
+  },
+  {
+    "_iteration_label": "Iter-3: XML Short Pass + Quota#3 + Throttle#3 + Filter UPPERCASE + ClientBan#3 (BANNED)",
+    "run_once":        "no",
+    "auth_case":       "SKIP",
+    "token_case":      "SKIP",
+    "xml_case":        "invalid_short_password",
+    "size_case":       "SKIP",
+    "max_size_case":   "SKIP",
+    "schema_case":     "SKIP",
+    "throttling_case": "valid",
+    "filter_case":     "blocked_script_uppercase",
+    "client_ban_case": "banned_request"
+  },
+  {
+    "_iteration_label": "Iter-4: XML Long User + Quota#4 + Throttle#4 (BLOCK) + Filter MiXeD",
+    "run_once":        "no",
+    "auth_case":       "SKIP",
+    "token_case":      "SKIP",
+    "xml_case":        "invalid_long_username",
+    "size_case":       "SKIP",
+    "max_size_case":   "SKIP",
+    "schema_case":     "SKIP",
+    "throttling_case": "exceed",
+    "filter_case":     "blocked_script_mixed",
+    "client_ban_case": "SKIP"
+  },
+  {
+    "_iteration_label": "Iter-5: Quota#5 + Throttle#5 (BLOCK)",
+    "run_once":        "no",
+    "auth_case":       "SKIP",
+    "token_case":      "SKIP",
+    "xml_case":        "SKIP",
+    "size_case":       "SKIP",
+    "max_size_case":   "SKIP",
+    "schema_case":     "SKIP",
+    "throttling_case": "exceed",
+    "filter_case":     "SKIP",
+    "client_ban_case": "SKIP"
+  }
+]

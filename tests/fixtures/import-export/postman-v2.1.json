@@ -1,0 +1,74 @@
+{
+  "info": {
+    "name": "Sample Collection",
+    "_postman_id": "abc-123",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.example.com" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{globalToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get user by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "X-Disabled", "value": "x", "disabled": true }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/:id?expand=profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", ":id"],
+              "query": [
+                { "key": "expand", "value": "profile" },
+                { "key": "trace", "value": "1", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create user",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "https://api.example.com/users",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"alice\"}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "admin" },
+                { "key": "password", "value": "secret" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Upload file",
+      "request": {
+        "method": "POST",
+        "url": "https://api.example.com/upload",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "title", "value": "demo", "type": "text" },
+            { "key": "file", "type": "file", "src": "/tmp/demo.bin" }
+          ]
+        }
+      }
+    }
+  ]
+}

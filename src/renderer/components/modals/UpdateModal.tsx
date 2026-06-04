@@ -1,0 +1,313 @@
+import { X, Loader2, CheckCircle2, AlertCircle, Download } from 'lucide-react'
+import * as DOMPurifyNs from 'dompurify'
+import { useUIStore } from '../../stores/ui.store'
+
+// Vite/electron-vite resolves the `dompurify` CJS package as
+// `{ default: { sanitize, ... } }` in the renderer bundle. The previous
+// default import (`import DOMPurify from 'dompurify'`) gave back the
+// namespace object whose `.sanitize` was undefined — React then dropped
+// `dangerouslySetInnerHTML.__html=undefined` on the floor and rendered
+// the raw `<h2>…</h2>` source text instead of the parsed HTML. Resolve
+// the inner factory explicitly to avoid the regression.
+//
+// Defensive: walk through plausible interop shapes (`default.default`
+// has shown up in earlier CJS-under-Vite regressions) and only bind
+// when `sanitize` is actually a function. If nothing matches we fall
+// back to an identity passthrough — the user sees raw HTML markers,
+// which is bad UX but better than a TypeError at module-load time
+// taking the whole UpdateModal (and its importer chain) down.
+function resolveSanitize(): (input: string, opts: unknown) => string {
+  const candidates: unknown[] = [
+    DOMPurifyNs,
+    (DOMPurifyNs as { default?: unknown }).default,
+    ((DOMPurifyNs as { default?: { default?: unknown } }).default as { default?: unknown })
+      ?.default,
+  ]
+  for (const c of candidates) {
+    if (c && typeof (c as { sanitize?: unknown }).sanitize === 'function') {
+      const factory = c as { sanitize: (input: string, opts: unknown) => string }
+      return factory.sanitize.bind(factory)
+    }
+  }
+  console.error('[UpdateModal] DOMPurify.sanitize not found — falling back to raw text')
+  return (input: string) => input
+}
+const sanitizeHtml = resolveSanitize()
+import { useUpdaterStore } from '../../stores/updater.store'
+import { useTranslation } from '../../lib/i18n'
+import { isMac } from '../../lib/platform'
+import Modal from '../shared/Modal'
+
+// Where users land to grab a build by hand. macOS ad-hoc/unsigned builds can't
+// self-install (electron-updater fails the code-signature check), so on macOS
+// this is the *primary* update path, not just an error fallback (#34).
+const DOWNLOAD_PAGE = 'https://www.testnizer.com/download/'
+
+export default function UpdateModal() {
+  const show = useUIStore((s) => s.showUpdateModal)
+  const setShow = useUIStore((s) => s.setShowUpdateModal)
+  const { t } = useTranslation()
+
+  const status = useUpdaterStore((s) => s.status)
+  const version = useUpdaterStore((s) => s.version)
+  const releaseNotes = useUpdaterStore((s) => s.releaseNotes)
+  const downloadPercent = useUpdaterStore((s) => s.downloadPercent)
+  const errorMessage = useUpdaterStore((s) => s.errorMessage)
+  const check = useUpdaterStore((s) => s.check)
+  const download = useUpdaterStore((s) => s.download)
+  const install = useUpdaterStore((s) => s.install)
+
+  if (!show) return null
+
+  return (
+    <Modal open={show} onOpenChange={setShow} title={t('settings.autoUpdate')}>
+      <div
+        className="w-[440px] max-w-[95%] rounded-[14px] bg-[var(--white)] p-7"
+        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}
+      >
+        {/* Header */}
+        <div className="mb-5 flex items-center justify-between">
+          <span className="text-lg font-bold text-[var(--text)]">{t('settings.autoUpdate')}</span>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => setShow(false)}
+            className="cursor-pointer text-[var(--hint)] hover:text-[var(--text)]"
+            style={{ background: 'transparent', border: 'none' }}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex flex-col items-center gap-4 py-4">
+          <StatusContent
+            status={status}
+            version={version}
+            releaseNotes={releaseNotes}
+            downloadPercent={downloadPercent}
+            errorMessage={errorMessage}
+            t={t}
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="mt-4 flex justify-center gap-2.5">
+          <UpdateActions
+            status={status}
+            onCheck={check}
+            onDownload={download}
+            onInstall={install}
+            onClose={() => setShow(false)}
+            t={t}
+          />
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function StatusContent({
+  status,
+  version,
+  releaseNotes,
+  downloadPercent,
+  errorMessage,
+  t,
+}: {
+  status: string
+  version: string | null
+  releaseNotes: string | null
+  downloadPercent: number
+  errorMessage: string | null
+  t: (key: string) => string
+}) {
+  switch (status) {
+    case 'checking':
+      return (
+        <>
+          <Loader2 size={32} className="animate-spin text-[var(--accent)]" />
+          <span className="text-[var(--muted)]">{t('update.checking')}</span>
+        </>
+      )
+    case 'available':
+      return (
+        <>
+          <Download size={32} className="text-[var(--accent)]" />
+          <span className="font-medium text-[var(--text)]">
+            {t('update.available')}: v{version}
+          </span>
+          {releaseNotes && (
+            <div className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3">
+              <div className="mb-1 font-medium text-[var(--muted)]">{t('update.releaseNotes')}</div>
+              <div
+                className="release-notes-html max-h-56 overflow-y-auto text-sm text-[var(--text)]"
+                dangerouslySetInnerHTML={{
+                  __html: sanitizeHtml(releaseNotes, {
+                    ALLOWED_TAGS: [
+                      'h1',
+                      'h2',
+                      'h3',
+                      'h4',
+                      'p',
+                      'ul',
+                      'ol',
+                      'li',
+                      'strong',
+                      'em',
+                      'code',
+                      'pre',
+                      'br',
+                      'a',
+                      'hr',
+                      'blockquote',
+                    ],
+                    ALLOWED_ATTR: ['href', 'rel', 'target'],
+                  }),
+                }}
+              />
+            </div>
+          )}
+          {isMac() && (
+            <span className="text-center text-sm text-[var(--muted)]">
+              {t('update.macAutoUnavailable')}
+            </span>
+          )}
+        </>
+      )
+    case 'downloading':
+      return (
+        <>
+          <span className="text-[var(--muted)]">
+            {t('update.downloading')} {Math.round(downloadPercent)}%
+          </span>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--bg)]">
+            <div
+              className="h-full rounded-full bg-[var(--accent)] transition-all duration-300"
+              style={{ width: `${downloadPercent}%` }}
+            />
+          </div>
+        </>
+      )
+    case 'ready':
+      return (
+        <>
+          <CheckCircle2 size={32} className="text-[var(--green)]" />
+          <span className="font-medium text-[var(--text)]">{t('update.ready')}</span>
+        </>
+      )
+    case 'error':
+      return (
+        <>
+          <AlertCircle size={32} className="text-[#cc2200]" />
+          <span className="font-medium text-[#cc2200]">{t('update.error')}</span>
+          {errorMessage && <span className="text-[var(--muted)]">{errorMessage}</span>}
+          {/* Auto-update can fail for reasons outside the app's control (e.g.
+              an unsigned macOS build can't self-update). Always give the user
+              a way forward — download the latest build manually (#34). */}
+          <a
+            href="https://www.testnizer.com/download/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-[var(--accent-text)] underline"
+          >
+            {t('update.downloadManually')}
+          </a>
+        </>
+      )
+    default:
+      return (
+        <>
+          <CheckCircle2 size={32} className="text-[var(--green)]" />
+          <span className="text-[var(--muted)]">{t('update.upToDate')}</span>
+        </>
+      )
+  }
+}
+
+function UpdateActions({
+  status,
+  onCheck,
+  onDownload,
+  onInstall,
+  onClose,
+  t,
+}: {
+  status: string
+  onCheck: () => void
+  onDownload: () => void
+  onInstall: () => void
+  onClose: () => void
+  t: (key: string) => string
+}) {
+  switch (status) {
+    case 'checking':
+    case 'downloading':
+      return null
+    case 'available':
+      // macOS builds are ad-hoc/unsigned and electron-updater can't self-
+      // install them — the in-app "Download & Install" path always ends in a
+      // code-signature error (#34). Send macOS users straight to the manual
+      // download instead of letting them hit that dead end.
+      if (isMac()) {
+        return (
+          <a
+            href={DOWNLOAD_PAGE}
+            target="_blank"
+            rel="noreferrer"
+            className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white no-underline transition-colors hover:opacity-90"
+          >
+            {t('update.downloadManually')}
+          </a>
+        )
+      }
+      return (
+        <button
+          type="button"
+          onClick={onDownload}
+          className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
+        >
+          {t('update.download')}
+        </button>
+      )
+    case 'ready':
+      return (
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[#555] transition-colors hover:bg-[var(--bg)]"
+          >
+            {t('update.later')}
+          </button>
+          <button
+            type="button"
+            onClick={onInstall}
+            className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
+          >
+            {t('update.restartNow')}
+          </button>
+        </>
+      )
+    case 'error':
+      return (
+        <button
+          type="button"
+          onClick={onCheck}
+          className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
+        >
+          {t('update.retry')}
+        </button>
+      )
+    default:
+      return (
+        <button
+          type="button"
+          onClick={onCheck}
+          className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
+        >
+          {t('settings.checkForUpdates')}
+        </button>
+      )
+  }
+}

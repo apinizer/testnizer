@@ -1,0 +1,305 @@
+{
+  "name": "testnizer",
+  "productName": "Testnizer",
+  "version": "1.4.10",
+  "description": "Testnizer — Cross-platform desktop API testing application",
+  "main": "./out/main/index.js",
+  "homepage": "https://testnizer.com",
+  "author": {
+    "name": "Testnizer",
+    "email": "support@testnizer.com"
+  },
+  "license": "MIT",
+  "scripts": {
+    "predev": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js",
+    "dev": "electron-vite dev",
+    "dev:socketio-echo": "node scripts/socketio-echo-server.cjs",
+    "icons": "node scripts/generate-icons.mjs",
+    "licenses": "node scripts/generate-licenses.mjs",
+    "download:curl": "node scripts/download-curl-binaries.js",
+    "download:curl:all": "node scripts/download-curl-binaries.js --all",
+    "build": "electron-vite build",
+    "build:analyze": "ANALYZE=true electron-vite build",
+    "preview": "electron-vite preview",
+    "postinstall": "electron-builder install-app-deps && node scripts/ensure-native-abi.js electron --mark-only && bash scripts/patch-electron-name.sh",
+    "prebuild:unpack": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js",
+    "build:unpack": "npm run build && electron-builder --dir",
+    "prebuild:win": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=win32-x64 && node scripts/download-curl-binaries.js --target=win32-arm64",
+    "build:win": "npm run build && electron-builder --win",
+    "prebuild:win:x64": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=win32-x64",
+    "build:win:x64": "npm run build && electron-builder --win --x64",
+    "prebuild:win:arm64": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=win32-arm64",
+    "build:win:arm64": "npm run build && electron-builder --win --arm64",
+    "prebuild:mac": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=darwin-x64 && node scripts/download-curl-binaries.js --target=darwin-arm64",
+    "build:mac": "npm run build && electron-builder --mac",
+    "prebuild:mac:x64": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=darwin-x64",
+    "build:mac:x64": "npm run build && electron-builder --mac --x64",
+    "prebuild:mac:arm64": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=darwin-arm64",
+    "build:mac:arm64": "npm run build && electron-builder --mac --arm64",
+    "prebuild:linux": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=linux-x64 && node scripts/download-curl-binaries.js --target=linux-arm64",
+    "build:linux": "npm run build && electron-builder --linux",
+    "prebuild:linux:x64": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=linux-x64",
+    "build:linux:x64": "npm run build && electron-builder --linux --x64",
+    "prebuild:linux:arm64": "node scripts/ensure-native-abi.js electron && node scripts/download-curl-binaries.js --target=linux-arm64",
+    "build:linux:arm64": "npm run build && electron-builder --linux --arm64",
+    "pack:collect": "node scripts/collect-packages.js",
+    "verify:natives": "node scripts/verify-natives.js",
+    "typecheck:main": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:preload": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:renderer": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:main && npm run typecheck:renderer",
+    "pretest": "node scripts/ensure-native-abi.js node",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "pretest:unit": "node scripts/ensure-native-abi.js node",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test tests/e2e/smoke.spec.ts",
+    "test:e2e:http": "playwright test tests/e2e/http",
+    "test:e2e:wsse": "playwright test tests/e2e/wsse",
+    "test:e2e:ui": "playwright test --ui",
+    "test:all": "npm run test:unit && npm run build && npm run test:e2e",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,mjs,json,css,html}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,mjs,json,css,html}\"",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "src/**/*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "src/**/*.{json,css,html}": [
+      "prettier --write"
+    ]
+  },
+  "dependencies": {
+    "@electron-toolkit/preload": "^3.0.2",
+    "@electron-toolkit/utils": "^4.0.0",
+    "@grpc/grpc-js": "^1.12.6",
+    "@grpc/proto-loader": "^0.7.13",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@monaco-editor/react": "^4.7.0",
+    "@readme/openapi-parser": "^2.6.0",
+    "@xmldom/xmldom": "^0.9.10",
+    "ajv": "^8.20.0",
+    "archiver": "^7.0.1",
+    "archiver-utils": "^5.0.2",
+    "async": "^3.2.6",
+    "axios": "^1.7.9",
+    "better-sqlite3": "^11.10.0",
+    "buffer-crc32": "^1.0.0",
+    "cmdk": "^1.1.1",
+    "crypto-js": "^4.2.0",
+    "diff": "^9.0.0",
+    "electron-log": "^5.4.3",
+    "electron-store": "^10.0.0",
+    "electron-updater": "^6.3.9",
+    "electron-window-state": "^5.0.3",
+    "eventsource": "^3.0.7",
+    "fast-xml-parser": "^5.7.3",
+    "graphql": "^16.10.0",
+    "graphql-ws": "^5.16.2",
+    "handlebars": "^4.7.9",
+    "jose": "^6.2.3",
+    "js-yaml": "^4.1.0",
+    "jsonpath-plus": "^10.4.0",
+    "monaco-editor": "^0.55.1",
+    "react-markdown": "^10.1.0",
+    "readable-stream": "^4.7.0",
+    "readdir-glob": "^3.0.0",
+    "remark-gfm": "^4.0.1",
+    "simple-git": "^3.36.0",
+    "soap": "^1.9.0",
+    "socket.io-client": "^4.8.3",
+    "sonner": "^2.0.7",
+    "tar-stream": "^3.2.0",
+    "tough-cookie": "^5.1.2",
+    "uuid": "^14.0.0",
+    "ws": "^8.18.0",
+    "wsse": "^6.0.0",
+    "xml-crypto": "^6.1.2",
+    "xml-encryption": "^4.0.0",
+    "xpath": "^0.0.34",
+    "xslt-processor": "^5.0.11",
+    "zip-stream": "^7.0.2"
+  },
+  "devDependencies": {
+    "@electron/notarize": "^2.5.0",
+    "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.59.1",
+    "@radix-ui/react-accordion": "^1.2.2",
+    "@radix-ui/react-checkbox": "^1.1.3",
+    "@radix-ui/react-context-menu": "^2.2.4",
+    "@radix-ui/react-dialog": "^1.1.4",
+    "@radix-ui/react-dropdown-menu": "^2.1.4",
+    "@radix-ui/react-popover": "^1.1.4",
+    "@radix-ui/react-scroll-area": "^1.2.2",
+    "@radix-ui/react-select": "^2.1.4",
+    "@radix-ui/react-separator": "^1.1.1",
+    "@radix-ui/react-switch": "^1.1.2",
+    "@radix-ui/react-tabs": "^1.1.2",
+    "@radix-ui/react-tooltip": "^1.1.6",
+    "@tailwindcss/vite": "^4.0.0",
+    "@tanstack/react-virtual": "^3.11.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/crypto-js": "^4.2.2",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "@types/tough-cookie": "^4.0.5",
+    "@types/ws": "^8.5.14",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^3.2.4",
+    "autoprefixer": "^10.4.20",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "husky": "^9.1.7",
+    "jsdom": "^27.0.1",
+    "license-checker": "^25.0.1",
+    "lint-staged": "^16.4.0",
+    "lucide-react": "^0.469.0",
+    "playwright": "^1.59.1",
+    "png2icons": "^2.0.1",
+    "postcss": "^8.4.49",
+    "prettier": "^3.8.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-resizable-panels": "^2.1.7",
+    "rollup-plugin-visualizer": "^7.0.1",
+    "sharp": "^0.34.5",
+    "socket.io": "^4.8.3",
+    "tailwind-merge": "^2.6.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.59.2",
+    "vitest": "^3.2.4",
+    "zustand": "^5.0.3"
+  },
+  "overrides": {
+    "dompurify": "^3.4.2"
+  },
+  "build": {
+    "appId": "com.testnizer.app",
+    "productName": "Testnizer",
+    "directories": {
+      "buildResources": "build"
+    },
+    "afterPack": "./scripts/ad-hoc-sign.js",
+    "afterSign": "./scripts/notarize.js",
+    "afterAllArtifactBuild": "./scripts/collect-packages.js",
+    "files": [
+      "out/**/*",
+      "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/",
+        "to": "resources/",
+        "filter": [
+          "**/*",
+          "!curl/**"
+        ]
+      },
+      {
+        "from": "docs/legal/",
+        "to": "docs/legal/",
+        "filter": [
+          "eula.md",
+          "privacy-policy.md"
+        ]
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.icns",
+      "artifactName": "Testnizer-${version}-${arch}.${ext}",
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": false,
+      "extraResources": [
+        {
+          "from": "resources/curl/darwin-${arch}",
+          "to": "curl",
+          "filter": [
+            "curl"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Testnizer-${version}-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "resources/curl/win32-${arch}",
+          "to": "curl",
+          "filter": [
+            "curl.exe"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "Testnizer-${version}-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "resources/curl/linux-${arch}",
+          "to": "curl",
+          "filter": [
+            "curl"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "differentialPackage": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "menuCategory": false,
+      "runAfterFinish": true,
+      "shortcutName": "Testnizer",
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "apinizer",
+      "repo": "testnizer-releases",
+      "releaseType": "release"
+    }
+  }
+}

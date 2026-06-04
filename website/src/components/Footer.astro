@@ -1,0 +1,92 @@
+---
+const cols = [
+  {
+    title: 'Product',
+    links: [
+      { href: '/features', label: 'Features' },
+      { href: '/security', label: 'Security' },
+      { href: '/download', label: 'Download' },
+      { href: '/docs/changelog', label: 'Changelog' },
+    ],
+  },
+  {
+    title: 'Documentation',
+    links: [
+      { href: '/docs/getting-started', label: 'Getting started' },
+      { href: '/docs/import-formats', label: 'Import & export' },
+      { href: '/docs/protocols', label: 'Protocols' },
+      { href: '/docs/ws-security', label: 'WS-Security' },
+      { href: '/docs/scripts', label: 'Scripts & tests' },
+      { href: '/docs/certificates', label: 'Certificates' },
+    ],
+  },
+  {
+    title: 'Community',
+    links: [
+      { href: 'https://github.com/apinizer/testnizer-releases', label: 'GitHub', external: true },
+      { href: 'https://github.com/apinizer/testnizer-releases/releases', label: 'Releases', external: true },
+      { href: 'https://github.com/apinizer/testnizer-releases/issues', label: 'Issues', external: true },
+      { href: 'mailto:info@testnizer.com', label: 'Contact' },
+    ],
+  },
+  {
+    title: 'Company',
+    links: [
+      { href: 'https://apinizer.com', label: 'Apinizer', external: true },
+      { href: '/license', label: 'EULA & License' },
+      { href: '/privacy', label: 'Privacy Policy' },
+    ],
+  },
+]
+---
+
+<footer class="mt-32 border-t border-border bg-bg-soft">
+  <div class="mx-auto max-w-6xl px-6 py-16">
+    <div class="grid grid-cols-2 gap-10 md:grid-cols-5">
+      <div class="col-span-2 md:col-span-1">
+        <div class="flex items-center gap-2.5 font-semibold tracking-tight">
+          <img src="/logo.png" class="h-7 w-7" alt="" />
+          <span class="text-text">Testnizer</span>
+        </div>
+        <p class="mt-3 text-sm text-text-muted">
+          The offline API client for teams requiring absolute data privacy.
+        </p>
+        <p class="mt-2 text-xs text-text-soft">
+          A free community project by{' '}
+          <a href="https://apinizer.com" target="_blank" rel="noopener" class="underline decoration-dotted underline-offset-2 hover:text-text-muted">Apinizer</a>.
+        </p>
+      </div>
+
+      {cols.map((col) => (
+        <div>
+          <h4 class="text-sm font-semibold text-text">{col.title}</h4>
+          <ul class="mt-3 space-y-2">
+            {col.links.map((l) => (
+              <li>
+                <a
+                  href={l.href}
+                  target={l.external ? '_blank' : undefined}
+                  rel={l.external ? 'noopener' : undefined}
+                  class="text-sm text-text-muted transition-colors hover:text-text"
+                >
+                  {l.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+
+    <div class="mt-12 flex flex-col gap-3 border-t border-border pt-6 text-xs text-text-soft md:flex-row md:items-center md:justify-between">
+      <p>
+        © {new Date().getFullYear()}{' '}
+        <a href="https://apinizer.com" target="_blank" rel="noopener" class="hover:text-text-muted underline decoration-dotted underline-offset-2">Apinizer</a>.
+        {' '}Testnizer is a free project by Apinizer — no subscription, no telemetry, no vendor lock-in.
+      </p>
+      <p>
+        Built in Türkiye. Other trademarks (Postman, SoapUI, jwt.io) referenced for compatibility only.
+      </p>
+    </div>
+  </div>
+</footer>

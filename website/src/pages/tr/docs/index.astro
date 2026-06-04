@@ -1,0 +1,57 @@
+---
+import { getCollection } from 'astro:content'
+import DocsLayout from '../../../layouts/DocsLayout.astro'
+
+const all = await getCollection('docsTr')
+const grouped = all
+  .sort((a, b) => a.data.order - b.data.order)
+  .reduce<Record<string, typeof all>>((acc, entry) => {
+    const section = entry.data.section
+    acc[section] = acc[section] ?? []
+    acc[section].push(entry)
+    return acc
+  }, {})
+
+const sectionOrder = ['Başlarken', 'Kılavuzlar', 'Protokoller', 'Araçlar', 'Referans']
+const sortedSections = Object.entries(grouped).sort((a, b) => {
+  const ia = sectionOrder.indexOf(a[0])
+  const ib = sectionOrder.indexOf(b[0])
+  if (ia === -1 && ib === -1) return a[0].localeCompare(b[0])
+  if (ia === -1) return 1
+  if (ib === -1) return -1
+  return ia - ib
+})
+---
+
+<DocsLayout title="Dokümantasyon" description="Testnizer kılavuzları ve referans belgeleri." currentSlug="" lang="tr">
+  <h1>Dokümantasyon</h1>
+  <p class="text-lg text-text-muted">
+    Kılavuzlar, protokol referansları ve araç anlatımları. Testnizer'ın tüm özellikleri yazılı.
+  </p>
+
+  <div class="not-prose mt-10 space-y-8">
+    {sortedSections.map(([section, entries]) => (
+      <div>
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-accent-text">{section}</h3>
+        <ul class="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+          {entries.map((entry) => {
+            const slug = entry.id.replace(/\.mdx?$/, '')
+            return (
+              <li>
+                <a
+                  href={`/tr/docs/${slug}`}
+                  class="block rounded-lg border border-border bg-bg p-4 transition-colors hover:border-accent/40 hover:bg-bg-soft"
+                >
+                  <h4 class="text-sm font-semibold text-text">{entry.data.title}</h4>
+                  {entry.data.description && (
+                    <p class="mt-1 text-xs leading-relaxed text-text-muted">{entry.data.description}</p>
+                  )}
+                </a>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    ))}
+  </div>
+</DocsLayout>

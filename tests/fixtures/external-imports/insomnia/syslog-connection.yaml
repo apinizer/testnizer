@@ -1,0 +1,60 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: Syslog Connection
+meta:
+  id: wrk_8fbf009601da443aa7cc28d4e2324032
+  created: 1772439289317
+  modified: 1772439289317
+  description: ""
+collection:
+  - name: Syslog Connection
+    meta:
+      id: fld_f4d6bd5c9f6449cead8341461d16aaed
+      created: 1772439289341
+      modified: 1777986569454
+      sortKey: -1772439287394
+      description: ""
+    children:
+      - url: https://apiqa.apinizer.com/apigateway/syslog
+        name: log
+        meta:
+          id: req_de61c664e0d4486fa8573d88147513f0
+          created: 1772439289344
+          modified: 1775030463576
+          isPrivate: false
+          description: ""
+          sortKey: -1772439287393
+        method: POST
+        body:
+          mimeType: application/json
+          text: '{"qa": "qa-testidir"}'
+        headers:
+          - name: Content-Type
+            value: application/json
+        scripts:
+          afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+            \    insomnia.response.to.have.status(200);\r
+
+            });"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_77d8aa2adb6b39f32e2214b381c9f6ddcd96da30
+    created: 1772439289357
+    modified: 1777986569449
+environments:
+  name: Base Environment
+  meta:
+    id: env_77d8aa2adb6b39f32e2214b381c9f6ddcd96da30
+    created: 1772439289348
+    modified: 1777986569452
+    isPrivate: false

@@ -1,0 +1,27 @@
+---
+const pathname = Astro.url.pathname
+const isTr = pathname.startsWith('/tr') && (pathname === '/tr' || pathname.startsWith('/tr/'))
+const enHref = isTr ? (pathname.slice(3) || '/') : pathname
+const trHref = isTr ? pathname : '/tr' + pathname
+---
+
+<div class="flex items-center gap-1 rounded-md border border-border bg-bg px-1 py-0.5">
+  <a
+    href={enHref}
+    class:list={[
+      'rounded px-2 py-0.5 text-xs font-medium transition-colors',
+      !isTr ? 'bg-accent text-white' : 'text-text-muted hover:text-text',
+    ]}
+  >
+    EN
+  </a>
+  <a
+    href={trHref}
+    class:list={[
+      'rounded px-2 py-0.5 text-xs font-medium transition-colors',
+      isTr ? 'bg-accent text-white' : 'text-text-muted hover:text-text',
+    ]}
+  >
+    TR
+  </a>
+</div>

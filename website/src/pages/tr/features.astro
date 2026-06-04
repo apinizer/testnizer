@@ -1,0 +1,306 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import { icons } from '../../components/icons'
+
+const sections = [
+  {
+    title: 'HTTP / REST',
+    icon: icons.globe,
+    bullets: [
+      'TRACE ve CONNECT dahil tam metot desteği',
+      'Gövde modları: ham / JSON / XML / urlencoded / dosya yükleme ile form-data / ikili',
+      'İşletim sistemi anahtarlığıyla şifrelenmiş parola ifadeleri ve proje kapsamlı istemci sertifikalarıyla mTLS',
+      'Kimlik doğrulama ile HTTP / SOCKS proxy, yönlendirme takip / takip etme, özel zaman aşımları',
+      'Postman uyumlu pm API ile istek öncesi ve sonrası betikler',
+      'Durum kodu, başlıklar, gövde, yanıt süresi, JSON path, XML path üzerinde test doğrulamaları',
+      'Manuel düzenleme ile çalışma alanı başına çerez deposu',
+    ],
+  },
+  {
+    title: 'SOAP / WSDL',
+    icon: icons.fileCode,
+    bullets: [
+      'URL veya dosyadan WSDL içe aktarma, SOAP 1.1 + 1.2 çift bağlaması',
+      'İşlem çıkarma ile çoklu servis ve çoklu port WSDL ayrıştırma',
+      'El yazısı SOAP / XML yükleri için manuel zarf modu',
+      'XSD şemasından otomatik örnek zarf oluşturma',
+      'WS-Security: UsernameToken (nonce/created ile Metin + Özet), TTL ile Zaman Damgası',
+      'XML İmzalama (RSA-SHA1 / RSA-SHA256), zarf veya belirli öğeler',
+      'XML Şifreleme (AES-128/256-CBC, AES-128/256-GCM, RSA-OAEP anahtar sarma)',
+      'SOAPAction çıkarma ve başlık müzakeresi',
+    ],
+  },
+  {
+    title: 'WebSocket',
+    icon: icons.radio,
+    bullets: [
+      'Özel başlıklar ve alt protokol müzakeresi ile ws + wss',
+      'Şablon değişken ikamesi ile JSON / metin düzenleyici',
+      'Zaman damgaları ve yön ile mesaj zaman çizelgesi (gönderilen + alınan)',
+      'Manuel bağlantı kesme ile yeniden bağlanma kontrolü',
+    ],
+  },
+  {
+    title: 'GraphQL',
+    icon: icons.network,
+    bullets: [
+      'HTTP ve WebSocket taşımaları üzerinden sorgu, mutasyon ve abonelik desteği',
+      'Aranabilir tür tarayıcıyla şema iç gözlemi',
+      'İşlemle senkronize edilen değişkenler JSON düzenleyici',
+      'Canlı abonelikler için graphql-ws, SaaS proxy yok',
+    ],
+  },
+  {
+    title: 'gRPC',
+    icon: icons.cpu,
+    bullets: [
+      '@grpc/proto-loader aracılığıyla .proto dosyası içe aktarma',
+      'Dört akış modu: tekil, sunucu akışlı, istemci akışlı, çift yönlü',
+      'Meta veri düzenleyici (istek ve yanıt)',
+      'Mesaj alan türlerinden otomatik oluşturulan JSON iskeleti',
+      'Proje kapsamlı sertifikalarla TLS / mTLS',
+    ],
+  },
+  {
+    title: 'Server-Sent Events',
+    icon: icons.zap,
+    bullets: [
+      'Otomatik Last-Event-ID devam ile uzun ömürlü olay akışları',
+      'Olay başına filtreleme, veri yüklerinin JSON ayrıştırması',
+      'Geri çekilmeli yeniden bağlanma (yapılandırılabilir)',
+    ],
+  },
+  {
+    title: 'Socket.IO',
+    icon: icons.arrowsLeftRight,
+    bullets: [
+      'Resmi socket.io-client üzerinden WebSocket ve HTTP long-polling transport\'ları',
+      'Namespace\'ler ve bağlantı sırasında auth (auth payload üzerinden bearer token)',
+      'WebSocket upgrade el sıkışmasında özel HTTP başlıkları',
+      'JSON yüküyle herhangi bir event emit edin — giden event\'ler zaman çizelgesinde görünür',
+      'Herhangi bir event adına abone olun; gelen event\'ler aynı zaman çizelgesine akar',
+      'Yön okları ve zaman damgalarıyla çift yönlü event zaman çizelgesi',
+    ],
+  },
+  {
+    title: 'MCP (Model Context Protocol)',
+    icon: icons.plug,
+    bullets: [
+      'Resmi @modelcontextprotocol/sdk üzerine kurulu — Claude Desktop ve diğer MCP host\'larıyla aynı wire protokolü',
+      'Üç transport: Streamable HTTP, SSE (eski), yerel olarak başlatılan sunucular için stdio',
+      'stdio için Testnizer sunucuyu alt süreç olarak başlatır (örn. `npx @modelcontextprotocol/server-everything`)',
+      'El sıkışma sonrası sunucu kimliği (ad + sürüm) gösterilir',
+      'Input-schema önizlemeli araç kataloğu',
+      'Herhangi bir aracı JSON argüman nesnesiyle çağırın; yapılandırılmış sonucu inceleyin',
+    ],
+  },
+  {
+    title: 'Yapay Zeka Sohbet',
+    icon: icons.bot,
+    bullets: [
+      '14 sağlayıcı: OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq, Perplexity, Cerebras, Cohere, Fireworks, DeepInfra, Together, OpenRouter',
+      'Öz barındırılan vLLM / LM Studio / Ollama / TGI uç noktaları için özel URL sağlayıcı',
+      'Durdurma desteği ile akışlı yanıtlar',
+      'Sistem istemi kontrolüyle çok dönüşlü konuşmalar',
+      'URL, başlıklar ve gövdede ortam değişkeni çözümleme',
+    ],
+  },
+  {
+    title: 'Mock Sunucu',
+    icon: icons.server,
+    bullets: [
+      'Özel portlarda birden fazla HTTP sunucusu — varsayılan olarak 127.0.0.1\'e bağlı, 0.0.0.0 yalnızca açık opt-in ile',
+      'Endpoint eşleştirme: tam (exact), :param yer tutucuları, * / ** wildcard, adlandırılmış grup destekli regex',
+      'Response başına koşullar: header / query / path-param / body-JSONPath / body-XPath / method / and / or — ilk eşleşen kazanır',
+      'Handlebars + dinamik değer template\'leri ({{request.body.x}}, {{$timestamp}}, {{$randomUUID}})',
+      'Pre-response JavaScript Node vm sandbox\'ında (5sn timeout) — state ve response\'ı oku/değiştir, console.log yakalanır',
+      'Sunucu başına in-memory state — POST → GET / PUT round-trip\'leri harici depolama olmadan çalışır',
+      'Kimlik doğrulama: Bearer / Basic / API-key (header veya query); endpoint başına override',
+      'Endpoint başına JSON Schema (draft-07) body doğrulama, başarısız olunca 400 + Ajv hata detayları',
+      'Hata enjeksiyonu (olasılıklı 5xx veya timeout simülasyonu) ve hız limiti (IP başına veya global, 429 + Retry-After)',
+      'Yapılandırılabilir CORS (origins / methods / headers / credentials / max-age) ve preflight otomatik yanıtı',
+      'Hızlı yansıtma için /__echo endpoint\'i',
+      'Eşleşmeyen path\'ler için proxy passthrough + opsiyonel kayıt — yakalanan upstream cevapları offline replay için yeni endpoint olarak persist edilir',
+      'OpenAPI 3 (JSON / YAML, $ref dereference, examples + schema bazlı body) veya Postman v2 koleksiyonlarından endpoint içe aktarma',
+      'Sunucu başına canlı istek log\'u — replay-friendly request / response yakalama ve eşleşen kuralın izi',
+    ],
+  },
+]
+
+const tools = [
+  { icon: icons.key, title: 'JWT Çözücü/Kodlayıcı', body: 'Tek araçta decode + encode. Header / payload\'i JSON ya da tablo görünümünde, claim açıklamalı, ISO render\'lı tarih claim\'leri. HS / RS / PS / ES / EdDSA imzaları doğrulayın, paylaşılan secret veya PEM özel anahtarla imzalayın. Algoritma başına çalışan örnek token üretin.' },
+  { icon: icons.fileText, title: 'JSON / XML Biçimlendiriciler', body: 'Güzel yazdır, küçült, doğrula. Çok satırlı giriş, satır numaralı söz dizimi hataları. Sort-keys / sort-attributes seçenekleri.' },
+  { icon: icons.fileText, title: 'Kodlayıcılar / Çözücüler', body: 'Base64, URL, Hex, HTML varlıkları, Unicode kaçış — eşleştirilmiş metin alanları, anında dönüştürme.' },
+  { icon: icons.eyeOff, title: 'Metin Diff', body: 'Yan yana hizalı diff; eşleşen satırlar için karakter düzeyinde intra-line vurgular. Tarafa özel satır ve eklenen / silinen sayaçları, boşluk / büyük-küçük harf yoksay seçenekleri.' },
+  { icon: icons.fileJson, title: 'JSON Schema Üretici', body: 'Örnek bir JSON dokümandan draft-07 şema türetin; string format tespiti (date, date-time, email, uuid, uri, ipv4) ve oneOf ile array shape union\'ları dahil.' },
+  { icon: icons.search, title: 'JSONPath / XPath Değerlendirici', body: 'Düzenleyici içi örnekte ifadeleri canlı değerlendir. Hazır örnek doküman + her biri için 11–17 kullanıma hazır sorgu (Goessner referansı + sık kullanılan predicate\'ler).' },
+  { icon: icons.repeat, title: 'JSON ↔ XML Dönüştürücü', body: 'Çift yönlü; attribute koruma, xsi:nil → null, paths-as-arrays ipucu, ignore-nulls / ignore-empty filtreleri, kök eleman adı.' },
+  { icon: icons.fileCode, title: 'XSLT / Jolt Değerlendirici', body: 'XSLT 1.0 dönüşümleri + Jolt-uyumlu JSON shaping (shift / default / remove). 17 Jolt + 8 XSLT çalışan örnek.' },
+  { icon: icons.lock, title: 'WS-Security Tezgahı', body: 'Keyfi XML üzerinde uygula, doğrula, şifresini çöz ve imzala. SOAP istek paneliyle aynı motor.' },
+  { icon: icons.hash, title: 'Hash Hesaplayıcı', body: 'MD5, SHA-1, SHA-256, SHA-384, SHA-512 — aynı girdi için tüm algoritmalar paralel hesaplanır, satır başına kopyala butonu. RFC vektör testleri ile doğrulanmış.' },
+  { icon: icons.fingerprint, title: 'HMAC Üretici', body: 'Paylaşılan secret ile HMAC-SHA1 / SHA256 / SHA384 / SHA512. RFC 4231 vektörleriyle test edilmiş.' },
+  { icon: icons.clock, title: 'Epoch Dönüştürücü', body: 'Otomatik tespit edilen birim (saniye / ms / μs / ns) ↔ ISO 8601 + GMT + yerel saat dilimi + görece zaman ("4 saniye önce"). Ters yön için tarih bileşeni oluşturucu.' },
+  { icon: icons.listChecks, title: 'HTTP Durum Kodları', body: 'Aranabilir, kategori filtreli referans (1xx / 2xx / 3xx / 4xx / 5xx) — RFC 9110 + IANA + WebDAV\'den 60+ kod.' },
+  { icon: icons.calculator, title: 'Sayı Tabanı Dönüştürücü', body: 'ASCII ↔ İkili ↔ Sekizlik ↔ Onluk ↔ Onaltılı — UTF-8 byte farkındalı, beş alan canlı senkronize, multi-byte karakterler doğru işlenir.' },
+  { icon: icons.fingerprint, title: 'UUID Üretici', body: 'v1 / v4 / v5 / v7 — 1000\'e kadar toplu üretim, deterministik v5 için namespace preset\'leri (DNS / URL / OID / X.500). Lower / upper / no-dashes / urn / braces formatları. Herhangi bir UUID\'i doğrula + versiyonunu tespit et.' },
+  { icon: icons.search, title: 'Regex Tester', body: 'Adlandırılmış + numaralı grup yakalamalı canlı regex match, $1 backreference\'lı replacement önizlemesi, altı JS flag\'i toggle\'lanabilir, dahili cheatsheet (email / URL / IPv4 / UUID / ISO 8601 / JWT / hex renk / telefon).' },
+  { icon: icons.repeat, title: 'YAML ↔ JSON Dönüştürücü', body: 'Çift yönlü, indent + sort-keys seçenekleri. JSON_SCHEMA-safe (`!!js/*` tag\'leri yok). OpenAPI spec\'leri, Kubernetes config\'leri ve Helm chart\'ları için kullanışlı.' },
+  { icon: icons.building, title: 'Sertifika Yöneticisi', body: 'Yerel sertifika deposu, proje başına mTLS / istemci sertifikaları, parola ifadeleri için işletim sistemi anahtarlığı şifrelemesi.' },
+]
+---
+
+<BaseLayout lang="tr" title="Özellikler — Testnizer" description="Testnizer'ın desteklediği tüm protokoller, cihaz üzerindeki araçlar ve çevrimdışı yürütme modelinin nasıl çalıştığı.">
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-4xl px-6 py-20 text-center md:py-24">
+      <h1 class="text-4xl font-semibold tracking-tight text-text md:text-5xl">
+        Her şey tek uygulamada. Her şey cihazda.
+      </h1>
+      <p class="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-text-muted">
+        Testnizer, tam kurumsal API yüzeyini kapsar — REST, SOAP, gRPC, GraphQL, WebSocket, SSE, Socket.IO ve MCP, artı bir yapay zeka istemcisi ve kriptografik araçların bir çalışma tezgahı. Hiçbiri dışarıya bağlanmaz.
+      </p>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-5xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Protokoller</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">Her protokol, birinci sınıf.</h2>
+
+      <div class="mt-10 space-y-4">
+        {sections.map((s) => (
+          <article class="rounded-card border border-border bg-bg p-7">
+            <div class="flex items-center gap-3">
+              <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-light text-accent-text">
+                <Fragment set:html={s.icon} />
+              </div>
+              <h3 class="text-xl font-semibold text-text">{s.title}</h3>
+            </div>
+            <ul class="mt-5 grid grid-cols-1 gap-x-6 gap-y-2.5 md:grid-cols-2">
+              {s.bullets.map((b) => (
+                <li class="flex items-start gap-2.5 text-sm leading-relaxed text-text-muted">
+                  <span class="mt-1 text-accent-text">
+                    <Fragment set:html={icons.check} />
+                  </span>
+                  {b}
+                </li>
+              ))}
+            </ul>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border py-20">
+    <div class="mx-auto max-w-5xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Mock Sunucu</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">Aynı arayüzde yapılandırılan gerçek bir HTTP sunucusu.</h2>
+      <p class="mt-4 max-w-3xl text-base leading-relaxed text-text-muted">
+        Path param, wildcard veya regex'le endpoint tanımlayın. Header, query, body (JSONPath/XPath) veya method üzerinde tanımlı koşullarla response seçin. Template'leme, in-memory state ve her cevaptan önce JavaScript çalıştıran Node-vm sandbox'ı dahil. Auth, schema doğrulama, hata enjeksiyonu, rate limit, CORS, OpenAPI/Postman içe aktarma ve recording proxy — hepsi 127.0.0.1'de.
+      </p>
+
+      <figure class="mt-10 overflow-hidden rounded-card border border-border bg-bg shadow-sm">
+        <img
+          src="/testnizer-mock.png"
+          alt="Testnizer Mock Sunucu — endpoint paneli, tam URL barı, koşul / script editörleri ve canlı response önizlemesi"
+          class="block w-full"
+          loading="lazy"
+        />
+      </figure>
+    </div>
+  </section>
+
+  <section class="border-t border-border bg-bg-soft py-20">
+    <div class="mx-auto max-w-5xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Yerleşik araçlar</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">Token'ları artık jwt.io'ya yapıştırmaya gerek yok.</h2>
+      <p class="mt-4 max-w-2xl text-base leading-relaxed text-text-muted">
+        Bunların hepsi Testnizer'ın ana sürecinde, hiçbir ağ çağrısı olmadan çalışır. Makineniz çevrimdışıysa yine de çalışırlar.
+      </p>
+
+      <figure class="mt-10 overflow-hidden rounded-card border border-border bg-bg shadow-sm">
+        <img
+          src="/testnizer-tools.png"
+          alt="Testnizer araç tezgahı — JWT decoder/encoder, hash + HMAC hesaplayıcılar, epoch çevirici, HTTP durum kodları ve dahası"
+          class="block w-full"
+          loading="lazy"
+        />
+      </figure>
+
+      <div class="mt-10 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {tools.map((t) => (
+          <div class="rounded-card border border-border bg-bg p-6">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-light text-accent-text">
+              <Fragment set:html={t.icon} />
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-text">{t.title}</h3>
+            <p class="mt-1.5 text-sm leading-relaxed text-text-muted">{t.body}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-5xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">İş akışı</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">İşbirliği kısımları, bulutsuz.</h2>
+
+      <div class="mt-10 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Koleksiyon çalıştırıcı</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            HTML rapor çıktısıyla birden fazla uç noktanın sıralı veya paralel yürütülmesi. Parametreli çalıştırmalar için veri dosyaları üzerinde yineleme.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Test paketleri</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Otomatik algılanan içe aktarma ile çoklu koleksiyon regresyon setleri (Testnizer + Postman + Insomnia formatları).
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Zamanlayıcı</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Hazırlık veya QA uç noktalarına karşı tekrarlı çalıştırmalar için yerel cron tarzı zamanlama. Arka planda SaaS işçisi yok.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Git entegrasyonu</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Proje dosyaları mevcut deponuzdan commit edilir. Proje ile dallanın, PR'lar aracılığıyla inceleyin.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Konsol</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Sekme başına filtreleme, ham istek / yanıt yakalama ve arama ile sanallaştırılmış günlük zaman çizelgesi.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Kod üretimi</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Herhangi bir isteği cURL, JavaScript fetch, Python requests olarak dışa aktarın — token paylaşmadan paylaşmak için kullanışlıdır.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border">
+    <div class="mx-auto max-w-3xl px-6 py-20 text-center">
+      <h2 class="text-3xl font-semibold tracking-tight text-text">Beş dakikada deneyin.</h2>
+      <p class="mt-4 text-base leading-relaxed text-text-muted">
+        Ücretsiz. Hesap yok, bekleme listesi yok, telemetri yok.
+      </p>
+      <div class="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <a href="/tr/download" class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover">
+          Testnizer'ı İndir
+        </a>
+        <a href="/tr/docs/getting-started" class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted">
+          Dokümanlara Git
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

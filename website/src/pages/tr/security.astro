@@ -1,0 +1,161 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import { icons } from '../../components/icons'
+
+const principles = [
+  {
+    title: 'CSP connect-src self',
+    body: "Renderer'ın İçerik Güvenlik Politikası başlığı <code>connect-src 'self'</code> olarak ayarlanmıştır — React arayüzünün kendi kaynağı dışında bir bağlantı açması fiziksel olarak imkânsızdır. Her API çağrısı, kullanıcı olarak sizin denetlediğiniz denetlenmiş bir Node ana süreç IPC işleyicisinden geçer.",
+  },
+  {
+    title: 'Varsayılan olarak süreç yalıtımı',
+    body: 'contextIsolation açık. nodeIntegration kapalı. Preload betiği yalnızca denetlenmiş bir <code>window.api</code> yüzeyini açar — arayüz iş parçacığından ham <code>fetch</code>, <code>axios</code> veya <code>require</code> yok.',
+  },
+  {
+    title: 'Gizli bilgiler işletim sistemi anahtarlığından geçer',
+    body: 'Parola ifadeleri, temel kimlik doğrulama parolaları, taşıyıcı token\'lar, OAuth yenileme token\'ları ve sertifika anahtarlarının tamamı Electron <code>safeStorage</code> üzerinden geçer — macOS\'ta Keychain, Windows\'ta DPAPI, Linux\'ta libsecret. SQLite\'a yalnızca şifreli bloblar dokunur. Ham değerler asla diske yazılmaz.',
+  },
+  {
+    title: 'Tasarım gereği sıfır telemetri',
+    body: "Analitik uç noktası yoktur. Başlangıçta 'eve telefon' yok. Arka plan senkronizasyonu yok. Anonim kullanım istatistiği yok. Otomatik güncelleme yalnızca siz istediğinizde çalışır ve Ayarlar'dan kapatabilirsiniz.",
+  },
+]
+
+const claims = [
+  { label: 'Telemetri yok', body: 'Devre dışı bırakılacak bir analitik uç noktamız yoktur. Katılım seçeneği de yoktur.' },
+  { label: 'Giriş yok', body: 'Hesap oluşturma yok. SSO yok. Hiçbir satıcı sunucusu uygulamanın varlığından bile haberdar olmaz.' },
+  { label: 'Bulut senkronizasyonu yok', body: 'Koleksiyonlarınız yerel bir SQLite içinde yaşar. Yedeklemeler sizin sorumluluğunuzdadır. Bu, yapılan takas budur.' },
+  { label: 'Arka plan çıkışı yok', body: "Renderer'ın CSP'si bunu engeller. Ana süreç yalnızca sizin tetiklediğiniz bağlantıları açar." },
+  { label: 'Üçüncü taraf JWT çözme yok', body: "Çözme, Node'un crypto modülüyle yerel olarak çalışır. Token asla süreçten çıkmaz." },
+  { label: 'Üçüncü taraf XML imzalama yok', body: 'WS-Security, xml-crypto + Node crypto kullanır, tamamı ana süreçtedir. Özel anahtarlar yalnızca bellekte diskten yüklenir.' },
+]
+---
+
+<BaseLayout lang="tr" title="Güvenlik — Testnizer" description="Testnizer'ın yalnızca çevrimdışı yürütme modelinin nasıl uygulandığı — CSP, süreç yalıtımı, işletim sistemi anahtarlığı şifrelemesi, sıfır telemetri.">
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-4xl px-6 py-20 text-center md:py-24">
+      <div class="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1 text-xs font-medium text-accent-text shadow-sm">
+        <Fragment set:html={icons.lock} />
+        Güvenlik modeli
+      </div>
+      <h1 class="text-4xl font-semibold tracking-tight text-text md:text-5xl">
+        Kodla zorunlu kılınan
+        <br />
+        üç temel kural.
+      </h1>
+      <p class="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-text-muted">
+        Bize güvenmenizi istemiyoruz. Uygulamanın verilerinizi siz söylemedikçe herhangi bir yere göndermesini mimari olarak imkânsız hale getiriyoruz.
+      </p>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <div class="space-y-5">
+        {principles.map((p, i) => (
+          <article class="rounded-card border border-border bg-bg p-7">
+            <div class="flex items-start gap-4">
+              <span class="grid h-9 w-9 flex-shrink-0 place-items-center rounded-lg bg-accent text-sm font-semibold text-white">
+                {i + 1}
+              </span>
+              <div class="min-w-0 flex-1">
+                <h3 class="text-lg font-semibold text-text">{p.title}</h3>
+                <p class="mt-2 text-sm leading-relaxed text-text-muted" set:html={p.body}></p>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border bg-bg-soft py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Pratikte ne anlama gelir</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">Testnizer'ın yapmadığı altı şey.</h2>
+
+      <div class="mt-10 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {claims.map((c) => (
+          <div class="rounded-card border border-border bg-bg p-6">
+            <div class="flex items-start gap-2.5">
+              <span class="mt-0.5 text-emerald-400">
+                <Fragment set:html={icons.check} />
+              </span>
+              <div>
+                <h3 class="text-base font-semibold text-text">{c.label}</h3>
+                <p class="mt-1 text-sm leading-relaxed text-text-muted">{c.body}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Kriptografi</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">Tüm anahtarlar diskte kalır. Tüm işlemler süreç içinde çalışır.</h2>
+
+      <div class="mt-8 space-y-6 text-sm leading-relaxed text-text-muted">
+        <p>
+          XML imzalama ve şifreleme, Node'un yerel <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">crypto</code>
+          modülünü artı <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">xml-crypto</code> ve
+          <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">xml-encryption</code> kullanır. Her ikisi de ana süreçte çalışır. Özel anahtarlar talep üzerine diskten belleğe yüklenir, tek işlem için kullanılır ve istek tamamlandığında sıfırlanır.
+        </p>
+        <p>
+          JWT doğrulaması aynı ana süreç içindeki bir HS / RS / ES algoritma kataloğuna karşı çalışır — yardımcı servis yok, çevrimiçi doğrulama adımı yok, paylaşılan gizli havuz yok.
+        </p>
+        <p>
+          Saklanan gizli bilgiler — temel kimlik doğrulama parolaları, taşıyıcı token'lar, OAuth yenileme token'ları, sertifika parola ifadeleri — Electron'un <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">safeStorage</code> API'sinden geçer. macOS'ta bu Keychain'e devreder. Windows'ta DPAPI. Linux'ta libsecret. Ham düz metin asla projenizin SQLite veritabanına yazılmaz; yalnızca işletim sistemi şifreli blobu yazılır.
+        </p>
+        <p>
+          Ana parola koruması isteğe bağlıdır. Etkinleştirildiğinde, uygulama PBKDF2-SHA256 (120.000 yineleme) ile bir anahtar türetir ve bunu kaydetmeden önce tüm SQLite veritabanını zarf şifrelemek için kullanır.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border bg-bg-soft py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Denetime hazır</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">İncelenebilir, tekrarlanabilir, size ait.</h2>
+
+      <div class="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Ağ üzerinden gözlemlenebilir</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Çalışma zamanı sözleşmesini doğrulamak için kaynak koduna ihtiyacınız yok. Yükleyiciyi paket yakalama (packet capture), giden bir proxy veya tercih ettiğiniz EDR arkasında çalıştırın — otomatik güncelleme kontrolü dışında, tek giden trafik kendi yapılandırdığınız API hedeflerinedir.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">İmzalı, hash'li, sabitlenebilir sürümler</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Her sürüm GitHub Releases'te yükleyicinin yanında SHA-256 sağlama toplamlarıyla birlikte yayımlanır. Tedarik veya uyumluluk ekibiniz belirli bir sürümü sabitleyebilir ve geliştiricilerinize ulaştırdığınız byte'ların aktarım sırasında değişmediğini doğrulayabilir.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">İkili dosyada eve telefon yok</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Gönderilen ikili dosya, analitik SDK ve uzak yapılandırma uç noktası içermez. <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">strings</code>, <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">tcpdump</code> veya favori EDR'ınızla doğrulayabilirsiniz.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Hava boşluklu kurulum</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Yükleyiciyi bir kez indirin, izole bir ağa aktarın. Otomatik güncelleme devre dışı bırakılabilir. Dokümantasyon uygulama içinde sunulur — okumak için internete ihtiyacınız yok.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border">
+    <div class="mx-auto max-w-3xl px-6 py-20 text-center">
+      <h2 class="text-3xl font-semibold tracking-tight text-text">Bir güvenlik açığı mı buldunuz?</h2>
+      <p class="mt-4 text-base leading-relaxed text-text-muted">
+        GitHub'ın özel güvenlik bildirim kanalını kullanın — raporunuz yalnızca sizinle bakımcılar arasında özel kalır, herkese açık bir konu oluşturulmaz: <a class="text-accent-text underline-offset-4 hover:underline" href="https://github.com/apinizer/testnizer-releases/security/advisories/new" target="_blank" rel="noopener">Güvenlik açığını özel olarak bildir</a>. Beş iş günü içinde değerlendireceğiz.
+      </p>
+    </div>
+  </section>
+</BaseLayout>

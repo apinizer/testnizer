@@ -1,0 +1,60 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-04-02T10:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v8.6.0",
+  "resources": [
+    {
+      "_id": "wrk_1",
+      "_type": "workspace",
+      "name": "Sample Workspace"
+    },
+    {
+      "_id": "fld_users",
+      "_type": "request_group",
+      "parentId": "wrk_1",
+      "name": "Users"
+    },
+    {
+      "_id": "req_get_user",
+      "_type": "request",
+      "parentId": "fld_users",
+      "name": "Get user by id",
+      "method": "GET",
+      "url": "{{ _.baseUrl }}/users/123",
+      "headers": [
+        { "name": "Accept", "value": "application/json" },
+        { "name": "X-Off", "value": "y", "disabled": true }
+      ],
+      "parameters": [
+        { "name": "expand", "value": "profile" }
+      ]
+    },
+    {
+      "_id": "req_create_user",
+      "_type": "request",
+      "parentId": "fld_users",
+      "name": "Create user",
+      "method": "POST",
+      "url": "https://api.example.com/users",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"name\":\"alice\"}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "authentication": {
+        "type": "basic",
+        "username": "admin",
+        "password": "secret"
+      }
+    },
+    {
+      "_id": "env_dev",
+      "_type": "environment",
+      "name": "Dev",
+      "data": [
+        { "name": "baseUrl", "value": "https://api.example.com" }
+      ]
+    }
+  ]
+}

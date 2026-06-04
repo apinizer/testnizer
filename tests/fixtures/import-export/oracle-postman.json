@@ -1,0 +1,477 @@
+{
+  "info": {
+    "_postman_id": "ab5fdffe-f4ab-4a0e-a6d9-5400cc00ca90",
+    "name": "Oracle Employee - CRUD Test Flow",
+    "description": "Sequential CRUD flow: Create → Read → Update → Read → Delete → Read",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "21245519",
+    "_collection_link": "https://go.postman.co/collection/21245519-ab5fdffe-f4ab-4a0e-a6d9-5400cc00ca90?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "1. POST - Create Employee",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// Test için sabit empNo kullan",
+              "const empNo = 7;",
+              "pm.environment.set('test_empNo', empNo);",
+              "",
+              "const body = {",
+              "    'firstName': 'Eren',",
+              "    'lastName': 'Dile',",
+              "    'hireDate': '18-04-2020',",
+              "    'gender': 'M',",
+              "    'empNo': empNo,",
+              "    'birthDate': '18-04-2001'",
+              "};",
+              "",
+              "pm.environment.set('employee_body', JSON.stringify(body));",
+              "console.log('Creating employee with empNo:', empNo);"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('POST: Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const res = pm.response.json();",
+              "",
+              "pm.test('POST: statusCode is 200', function () {",
+              "    pm.expect(res.statusCode).to.eql(200);",
+              "});",
+              "",
+              "pm.test('POST: statusDescription is OK', function () {",
+              "    pm.expect(res.statusDescription).to.eql('OK');",
+              "});",
+              "",
+              "pm.test('POST: No errors', function () {",
+              "    pm.expect(res.errors).to.be.an('array').that.is.empty;",
+              "});",
+              "",
+              "console.log('✅ Employee created successfully');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{{employee_body}}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/employee",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "employee"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "2. GET - Read After Create",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const empNo = pm.environment.get('test_empNo');",
+              "console.log('Reading employee with empNo:', empNo);"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('GET #1: Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const res = pm.response.json();",
+              "",
+              "pm.test('GET #1: statusCode is 200', function () {",
+              "    pm.expect(res.statusCode).to.eql(200);",
+              "});",
+              "",
+              "pm.test('GET #1: numRows is 1', function () {",
+              "    pm.expect(res.numRows).to.eql(1);",
+              "});",
+              "",
+              "pm.test('GET #1: data array has 1 employee', function () {",
+              "    pm.expect(res.data).to.be.an('array').with.lengthOf(1);",
+              "});",
+              "",
+              "const employee = res.data[0];",
+              "",
+              "pm.test('GET #1: Employee has correct empNo', function () {",
+              "    pm.expect(employee.emp_no).to.eql(7);",
+              "});",
+              "",
+              "pm.test('GET #1: Employee has correct firstName', function () {",
+              "    pm.expect(employee.first_name).to.eql('Eren');",
+              "});",
+              "",
+              "pm.test('GET #1: Employee has correct lastName', function () {",
+              "    pm.expect(employee.last_name).to.eql('Dile');",
+              "});",
+              "",
+              "pm.test('GET #1: Employee has correct gender', function () {",
+              "    pm.expect(employee.gender).to.eql('M');",
+              "});",
+              "",
+              "console.log('✅ Employee read successfully:', employee);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/employee?empNo={{test_empNo}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "employee"
+          ],
+          "query": [
+            {
+              "key": "empNo",
+              "value": "{{test_empNo}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "3. PUT - Update Employee",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const empNo = pm.environment.get('test_empNo');",
+              "",
+              "const body = {",
+              "    'firstName': 'Updated',",
+              "    'lastName': 'Dile',",
+              "    'hireDate': '18-04-2022',",
+              "    'gender': 'M',",
+              "    'birthDate': '18-04-2001'",
+              "};",
+              "",
+              "pm.environment.set('employee_body', JSON.stringify(body));",
+              "console.log('Updating employee with empNo:', empNo);"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('PUT: Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const res = pm.response.json();",
+              "",
+              "pm.test('PUT: statusCode is 200', function () {",
+              "    pm.expect(res.statusCode).to.eql(200);",
+              "});",
+              "",
+              "pm.test('PUT: statusDescription is OK', function () {",
+              "    pm.expect(res.statusDescription).to.eql('OK');",
+              "});",
+              "",
+              "pm.test('PUT: No errors', function () {",
+              "    pm.expect(res.errors).to.be.an('array').that.is.empty;",
+              "});",
+              "",
+              "console.log('✅ Employee updated successfully');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{{employee_body}}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/employee?empNo={{test_empNo}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "employee"
+          ],
+          "query": [
+            {
+              "key": "empNo",
+              "value": "{{test_empNo}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "4. GET - Read After Update",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const empNo = pm.environment.get('test_empNo');",
+              "console.log('Reading updated employee with empNo:', empNo);"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('GET #2: Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const res = pm.response.json();",
+              "",
+              "pm.test('GET #2: statusCode is 200', function () {",
+              "    pm.expect(res.statusCode).to.eql(200);",
+              "});",
+              "",
+              "pm.test('GET #2: numRows is 1', function () {",
+              "    pm.expect(res.numRows).to.eql(1);",
+              "});",
+              "",
+              "const employee = res.data[0];",
+              "",
+              "pm.test('GET #2: firstName was updated to Updated', function () {",
+              "    pm.expect(employee.first_name).to.eql('Updated');",
+              "});",
+              "",
+              "pm.test('GET #2: lastName is still Dile', function () {",
+              "    pm.expect(employee.last_name).to.eql('Dile');",
+              "});",
+              "",
+              "pm.test('GET #2: empNo is still 7', function () {",
+              "    pm.expect(employee.emp_no).to.eql(7);",
+              "});",
+              "",
+              "console.log('✅ Updated employee verified:', employee);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/employee?empNo={{test_empNo}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "employee"
+          ],
+          "query": [
+            {
+              "key": "empNo",
+              "value": "{{test_empNo}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "5. DELETE - Delete Employee",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const empNo = pm.environment.get('test_empNo');",
+              "console.log('Deleting employee with empNo:', empNo);"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('DELETE: Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const res = pm.response.json();",
+              "",
+              "pm.test('DELETE: statusCode is 200', function () {",
+              "    pm.expect(res.statusCode).to.eql(200);",
+              "});",
+              "",
+              "pm.test('DELETE: statusDescription is OK', function () {",
+              "    pm.expect(res.statusDescription).to.eql('OK');",
+              "});",
+              "",
+              "pm.test('DELETE: No errors', function () {",
+              "    pm.expect(res.errors).to.be.an('array').that.is.empty;",
+              "});",
+              "",
+              "console.log('✅ Employee deleted successfully');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/employee?empNo={{test_empNo}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "employee"
+          ],
+          "query": [
+            {
+              "key": "empNo",
+              "value": "{{test_empNo}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "6. GET - Verify Deletion",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const empNo = pm.environment.get('test_empNo');",
+              "console.log('Verifying deletion for empNo:', empNo);"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('GET #3: Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const res = pm.response.json();",
+              "",
+              "pm.test('GET #3: statusCode is 200', function () {",
+              "    pm.expect(res.statusCode).to.eql(200);",
+              "});",
+              "",
+              "pm.test('GET #3: numRows is 0 (employee deleted)', function () {",
+              "    pm.expect(res.numRows).to.eql(0);",
+              "});",
+              "",
+              "pm.test('GET #3: data array is empty', function () {",
+              "    pm.expect(res.data).to.be.an('array').that.is.empty;",
+              "});",
+              "",
+              "console.log('✅ Employee deletion verified - no data returned');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/employee?empNo={{test_empNo}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "employee"
+          ],
+          "query": [
+            {
+              "key": "empNo",
+              "value": "{{test_empNo}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://apiqa.apinizer.com/apigateway/mysql-employee"
+    }
+  ]
+}

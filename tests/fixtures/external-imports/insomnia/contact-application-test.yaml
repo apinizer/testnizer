@@ -1,0 +1,1683 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: Contact Application APIspec
+meta:
+  id: wrk_069c476e00b24056ab791231a65fadb6
+  created: 1772439024468
+  modified: 1772439024468
+  description: ""
+collection:
+  - name: Contact Application APIspec
+    meta:
+      id: fld_67b6dcd7ecc3460cab6b09bba47e0d39
+      created: 1772439024471
+      modified: 1775206359067
+      sortKey: -1772439016287
+      description: This is a sample Spring Boot RESTful service using
+        springdoc-openapi and OpenAPI 3.
+    children:
+      - name: auth
+        meta:
+          id: fld_c55674b39c324537a29c0de681280868
+          created: 1772439024474
+          modified: 1775206075414
+          sortKey: -1772439016286
+          description: ""
+        children:
+          - name: authenticateWithHeader
+            meta:
+              id: fld_5cb53f6b11884eb581eec5dd1057adeb
+              created: 1772439024476
+              modified: 1775206074055
+              sortKey: -1772439016285
+              description: ""
+            children:
+              - url: "{{baseUrl}}/auth/authenticateWithHeader"
+                name: authenticate With Header
+                meta:
+                  id: req_89a767a509444116acff7fcef853cbdd
+                  created: 1772439024479
+                  modified: 1772439024479
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016284
+                method: GET
+                headers:
+                  - name: Accept
+                    value: application/json;charset=UTF-8
+                  - name: username
+                    value: user1
+                  - name: password
+                    value: P@ssW@rd!
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+          - name: authenticateWithBase64
+            meta:
+              id: fld_61e99dd7ea9848279d5b8262e96fddaf
+              created: 1772439024481
+              modified: 1775206074228
+              sortKey: -1772439016283
+              description: ""
+            children:
+              - url: "{{baseUrl}}/auth/authenticateWithBase64"
+                name: authenticate With Base64
+                meta:
+                  id: req_95c411e342d84791989cdc24029a93fb
+                  created: 1772439024483
+                  modified: 1772439024483
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016282
+                method: GET
+                headers:
+                  - name: Accept
+                    value: application/json;charset=UTF-8
+                  - name: Token
+                    value: Basic dXNlcjE6UEBzc1dAcmQh
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+          - name: authenticateWithQueryParam
+            meta:
+              id: fld_a9df57ee44d145a2a69a70fe7decfe86
+              created: 1772439024486
+              modified: 1775206074372
+              sortKey: -1772439016281
+              description: ""
+            children:
+              - url: "{{baseUrl}}/auth/authenticateWithQueryParam"
+                name: authenticate With Query Param
+                meta:
+                  id: req_2771fdc02681477c8867194d48d10435
+                  created: 1772439024489
+                  modified: 1772439024489
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016280
+                method: GET
+                parameters:
+                  - name: username
+                    value: user1
+                    disabled: false
+                  - name: password
+                    value: P@ssW@rd!
+                    disabled: false
+                headers:
+                  - name: Accept
+                    value: application/json;charset=UTF-8
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+          - name: authenticateWithPathParam
+            meta:
+              id: fld_ede17202e68a43608a94d737314fa1f5
+              created: 1772439024516
+              modified: 1775206074596
+              sortKey: -1772439016279
+              description: ""
+            children:
+              - name: "{username}"
+                meta:
+                  id: fld_8405b3b23a3b4c0891cc2c1ccc8c40fa
+                  created: 1772439024517
+                  modified: 1775206074596
+                  sortKey: -1772439016278
+                  description: ""
+                children:
+                  - name: "{password}"
+                    meta:
+                      id: fld_a9ba7e6c97454258938d78e2a9ccae11
+                      created: 1772439024519
+                      modified: 1775206074596
+                      sortKey: -1772439016277
+                      description: ""
+                    children:
+                      - url: "{{baseUrl}}/auth/authenticateWithPathParam/:username/:password"
+                        name: authenticate With Path Param
+                        meta:
+                          id: req_c6416ba58c5445af83d53932ac853212
+                          created: 1772439024522
+                          modified: 1772439024522
+                          isPrivate: false
+                          description: ""
+                          sortKey: -1772439016276
+                        method: GET
+                        headers:
+                          - name: Accept
+                            value: application/json;charset=UTF-8
+                        scripts:
+                          afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                            \    insomnia.response.to.have.status(200);\r
+
+                            });"
+                        settings:
+                          renderRequestBody: true
+                          encodeUrl: true
+                          followRedirects: global
+                          cookies:
+                            send: true
+                            store: true
+                          rebuildPath: true
+                        pathParameters:
+                          - name: username
+                            value: user1
+                          - name: password
+                            value: P@ssW@rd!
+          - name: authenticateWithBody
+            meta:
+              id: fld_0b476b5596d645ffa0e06fbbd5ab288e
+              created: 1772439024524
+              modified: 1775206074769
+              sortKey: -1772439016275
+              description: ""
+            children:
+              - url: "{{baseUrl}}/auth/authenticateWithBody"
+                name: authenticate With Body
+                meta:
+                  id: req_ffa6e99dbb2e41dd9701bc0e0187a48c
+                  created: 1772439024526
+                  modified: 1772439024526
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016274
+                method: POST
+                body:
+                  mimeType: application/json
+                  text: |-
+                    {
+                      "username": "user1",
+                      "password": "P@ssW@rd!"
+                    }
+                headers:
+                  - name: Content-Type
+                    value: application/json
+                  - name: Accept
+                    value: application/json;charset=UTF-8
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+          - name: authenticateWithForm
+            meta:
+              id: fld_3144558080f54888ace1131062d57b46
+              created: 1772439024529
+              modified: 1775206075062
+              sortKey: -1772439016273
+              description: ""
+            children:
+              - url: "{{baseUrl}}/auth/authenticateWithForm"
+                name: authenticate With Form
+                meta:
+                  id: req_86c31ebedcc1470e98d3787c045643ed
+                  created: 1772439024531
+                  modified: 1772715171729
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016272
+                method: POST
+                body:
+                  mimeType: multipart/form-data
+                  params:
+                    - name: username
+                      value: user1
+                      disabled: false
+                      type: text
+                    - name: password
+                      value: P@ssW@rd!
+                      disabled: false
+                      type: text
+                parameters:
+                  - name: paramMap
+                    value: ""
+                    disabled: false
+                headers:
+                  - name: Accept
+                    value: application/json;charset=UTF-8
+                  - name: Content-Type
+                    value: multipart/form-data
+                scripts:
+                  afterResponse: |-
+                    insomnia.test("Status code is 401", function () {
+                        insomnia.response.to.have.status(401);
+                    });
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+          - name: authenticateWithXWwwForm
+            meta:
+              id: fld_882e48479e1a4c32bad8f499340b5367
+              created: 1772439024533
+              modified: 1775206075414
+              sortKey: -1772439016271
+              description: ""
+            children:
+              - url: "{{baseUrl}}/auth/authenticateWithXWwwForm"
+                name: authenticate With X Www Form
+                meta:
+                  id: req_cac3fc16441742ec81c4818306884fbc
+                  created: 1772439024535
+                  modified: 1772439024535
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016270
+                method: POST
+                body:
+                  mimeType: application/x-www-form-urlencoded
+                  params:
+                    - name: username
+                      value: user1
+                      disabled: false
+                    - name: password
+                      value: P@ssW@rd!
+                      disabled: false
+                headers:
+                  - name: Accept
+                    value: application/json;charset=UTF-8
+                  - name: Content-Type
+                    value: application/x-www-form-urlencoded
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+      - name: apinizer
+        meta:
+          id: fld_cc48dfa14e7e41a1a75c99dcc66f5848
+          created: 1772439024538
+          modified: 1775206075592
+          sortKey: -1772439016269
+          description: ""
+        children:
+          - name: convertBase64
+            meta:
+              id: fld_1606cfc7e8e8490e899327efa5a589f1
+              created: 1772439024540
+              modified: 1775206075592
+              sortKey: -1772439016268
+              description: ""
+            children:
+              - url: "{{baseUrl}}/apinizer/convertBase64"
+                name: convert Base64
+                meta:
+                  id: req_5cac00bc48504e24aed453fbbe7385af
+                  created: 1772439024542
+                  modified: 1772439024542
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016267
+                method: GET
+                headers:
+                  - name: Accept
+                    value: application/json;charset=UTF-8
+                  - name: Authorization
+                    value: Bearer
+                      eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiam9obiIsInJvbGVzIjpbImFkbWluIl19.signature
+                authentication:
+                  type: bearer
+                  disabled: false
+                  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiam9obiIsInJvbGVzIjpbImFkbWluIl19.signature
+                  prefix: ""
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 401\", function () {\r
+
+                    \    insomnia.response.to.have.status(401);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+      - name: cert-info
+        meta:
+          id: fld_5d3592b8a98a4bc4a979118094237e07
+          created: 1772439024544
+          modified: 1775206076105
+          sortKey: -1772439016266
+          description: ""
+        children:
+          - url: "{{_['baseUrl']}}/cert-info"
+            name: get Client Cert Info
+            meta:
+              id: req_894b3e9bcb53472996fa506716aa24de
+              created: 1772439024551
+              modified: 1772439024551
+              isPrivate: false
+              description: ""
+              sortKey: -1772439016263
+            method: GET
+            headers:
+              - name: X-Client-Cert
+                value: MIICXDCCAcWgAwIBAgIBADANBgkqhkiG9w0BAQQFADBuMQswCQYDVQQGEwJVUzEYMBYGA1UEChMPVS5TLiBHb3Zlcm5tZW50MQwwCgYDVQQLEwNEb0QxDDAKBgNVBAsTA1BLSTEPMQ0GA1UECxMGQWdlbmN5MRgwFgYDVQQDEw9UZXN0IENBICgyNDgpMB4XDTk2MDMxMjE5MDEwMFoXDTA2MDMxMjE5MDEwMFowbjELMAkGA1UEBhMCVVMxGDAWBgNVBAoTD1UuUy4gR292ZXJubWVudDEMMAoGA1UECxMDRG9EMQwwCgYDVQQLEwNQS0kxDzANBgNVBAsTBkFnZW5jeTEYMBYGA1UEAxMPVGVzdCBDQSAoMjQ4KTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA0Z3VS5+6ztTxvRZdEQnB3LFXxXKe3cHBdCsVR8OwczIZrNKdVh5K6cPnQYREjKqLQNzCwIR3zEz3d3RQb+T4PqnBIjKj7K6MILrPDsY1gNlgXBIxLr3bUFlJhkFG7MYvDk+0cDAGqAMC8GhJMT7KKVYaB1fRqqpOhLSVQTNANsCAwEAAaMTMBEwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQQFAAOBgQBKGZwL0mlF9yNOiYhJEpxDWiAzpRvMnjnzI3H6Y1Mw5VRR8nSL8s2vHPpHqwKkfNT7L7d7hjNmCsqXVADzMy+k6h4x4Yf9jPDZA4LQdBpozPlLKHY4p1dTKqJ4MsDBqD+JJxKhXr5fXVpIJ2cQGsvyGGHdArA1pCr8K0vJVTNhA==
+              - name: X-Client-Verify
+                value: SUCCESS
+              - name: X-Client-Subject-DN
+                value: CN=testuser, O=Test Org, C=US
+              - name: X-Client-Issuer-DN
+                value: CN=Test CA, O=Test Authority, C=US
+              - name: Accept
+                value: "*/*"
+            scripts:
+              afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                \    insomnia.response.to.have.status(200);\r
+
+                });"
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+          - name: hello
+            meta:
+              id: fld_f0659984856f49239c536a8477397526
+              created: 1772439024546
+              modified: 1775206075754
+              sortKey: -1772439016265
+              description: ""
+            children:
+              - url: "{{_['baseUrl']}}/cert-info/hello"
+                name: get Client Cert Info 1
+                meta:
+                  id: req_6e8a76a9b5e74dc882ba45abb670cc97
+                  created: 1772439024548
+                  modified: 1772439024548
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016264
+                method: GET
+                headers:
+                  - name: Accept
+                    value: "*/*"
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+      - name: openapi
+        meta:
+          id: fld_24a287ba84ae4bc6a60949472ddf0811
+          created: 1772439024553
+          modified: 1775206077041
+          sortKey: -1772439016262
+          description: ""
+        children:
+          - name: contacts
+            meta:
+              id: fld_43b84dcb487f492f8fb2af24f0d148f2
+              created: 1772439024555
+              modified: 1775206077041
+              sortKey: -1772439016261
+              description: ""
+            children:
+              - url: "{{baseUrl}}/openapi/contacts"
+                name: Find contact by ID
+                meta:
+                  id: req_0a4951e45cf74546b77ec8884177bb3a
+                  created: 1772439024567
+                  modified: 1772439024567
+                  isPrivate: false
+                  description: Returns a single contact
+                  sortKey: -1772439016256
+                method: GET
+                parameters:
+                  - name: id
+                    value: "1"
+                    disabled: false
+                headers:
+                  - name: Accept
+                    value: application/json
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+              - url: "{{baseUrl}}/openapi/contacts"
+                name: Add a new contact
+                meta:
+                  id: req_e4d50d8f128e4adb82adfd6212f21c93
+                  created: 1772439024570
+                  modified: 1772715054350
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016255
+                method: POST
+                body:
+                  mimeType: application/json
+                  text: |-
+                    {
+                    	"id": 99,
+                      "name": "contact_{% faker 'randomFirstName' %}",
+                      "phone": "{% faker 'randomPhoneNumber' %}",
+                      "email": "{% faker 'randomEmail' %}",
+                      "address1": "123 Main St",
+                      "address2": "Apt 4B",
+                      "postalCode": "34340",
+                      "note": "VIP Customer"
+                    }
+                headers:
+                  - name: Content-Type
+                    value: application/json
+                  - name: Accept
+                    value: "*/*"
+                scripts:
+                  afterResponse: "// 1. Önce her ihtimale karşı eski değişkeni temizle\r
+
+                    insomnia.environment.unset(\"current_contact_id\");\r
+
+                    \r
+
+                    if (insomnia.response.code === 201 || insomnia.response.code
+                    === 200) {\r
+
+                    \    \r
+
+                    \    // 2. Location header'ını oku (Örn: .../contacts/45)\r
+
+                    \    const locationHeader =
+                    insomnia.response.headers.get(\"Location\");\r
+
+                    \    \r
+
+                    \    if (locationHeader) {\r
+
+                    \        // 3. URL'in en sonundaki ID değerini çek\r
+
+                    \        const contactId =
+                    locationHeader.split('/').pop();\r
+
+                    \        \r
+
+                    \        // 4. Yeni contact ID'sini kaydet\r
+
+                    \        insomnia.environment.set(\"current_contact_id\",
+                    contactId);\r
+
+                    \        \r
+
+                    \        console.log(\"Yeni Contact ID başarıyla alındı: \"
+                    + contactId);\r
+
+                    \    } else {\r
+
+                    \        console.error(\"HATA: Location header'ı
+                    bulunamadı!\");\r
+
+                    \    }\r
+
+                    }\r
+
+                    \r
+
+                    insomnia.test(\"Status code is 201\", function () {\r
+
+                    \    insomnia.response.to.have.status(201);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+              - name: "{contactId}"
+                meta:
+                  id: fld_c702f55d548d4352913937a42e1da464
+                  created: 1772439024557
+                  modified: 1775206076594
+                  sortKey: -1772439016260
+                  description: ""
+                children:
+                  - url: "{{baseUrl}}/openapi/contacts/:contactId"
+                    name: Find contact by ID
+                    meta:
+                      id: req_dac3834cb5834220a019dbe9b45ed40f
+                      created: 1772439024560
+                      modified: 1772439024560
+                      isPrivate: false
+                      description: Returns a single contact
+                      sortKey: -1772439016259
+                    method: GET
+                    headers:
+                      - name: Accept
+                        value: application/json
+                    scripts:
+                      afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                        \    insomnia.response.to.have.status(200);\r
+
+                        });"
+                    settings:
+                      renderRequestBody: true
+                      encodeUrl: true
+                      followRedirects: global
+                      cookies:
+                        send: true
+                        store: true
+                      rebuildPath: true
+                    pathParameters:
+                      - name: contactId
+                        value: "1"
+                  - url: "{{baseUrl}}/openapi/contacts/:contactId"
+                    name: Update an existing contact
+                    meta:
+                      id: req_b1f91979f2cd4c8ca76a42fa2eb7d25c
+                      created: 1772439024562
+                      modified: 1774807012718
+                      isPrivate: false
+                      description: ""
+                      sortKey: -1772439016258
+                    method: PUT
+                    body:
+                      mimeType: application/json
+                      text: |2-
+                         {
+                          "name" : "John edo",
+                          "phone" : "+905551234567",
+                          "email" : "john@example.com",
+                          "address1" : "123 Main St",
+                          "address2" : "Apt 4B",
+                          "date" : null,
+                          "postalCode" : 34340,
+                          "note" : "VIP Customer"
+                        }
+                    headers:
+                      - name: Content-Type
+                        value: application/json
+                    scripts:
+                      afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                        \    insomnia.response.to.have.status(200);\r
+
+                        });"
+                    settings:
+                      renderRequestBody: true
+                      encodeUrl: true
+                      followRedirects: global
+                      cookies:
+                        send: true
+                        store: true
+                      rebuildPath: true
+                    pathParameters:
+                      - name: contactId
+                        value: "99"
+                  - url: "{{baseUrl}}/openapi/contacts/:contactId"
+                    name: Deletes a contact
+                    meta:
+                      id: req_86156dcd324248219dc67bfc2ddfebe2
+                      created: 1772439024564
+                      modified: 1772715005408
+                      isPrivate: false
+                      description: ""
+                      sortKey: -1772439016257
+                    method: DELETE
+                    scripts:
+                      afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                        \    insomnia.response.to.have.status(200);\r
+
+                        });"
+                    settings:
+                      renderRequestBody: true
+                      encodeUrl: true
+                      followRedirects: global
+                      cookies:
+                        send: true
+                        store: true
+                      rebuildPath: true
+                    pathParameters:
+                      - name: contactId
+                        value: "99"
+      - name: "{test}"
+        meta:
+          id: fld_fccdc4615093443aa17cd4c43969bce9
+          created: 1772439024572
+          modified: 1775206077220
+          sortKey: -1772439016254
+          description: ""
+        children:
+          - url: "{{baseUrl}}/:test"
+            name: hello
+            meta:
+              id: req_2a600c785dd048d4a533708e29156199
+              created: 1772439024575
+              modified: 1772439024575
+              isPrivate: false
+              description: ""
+              sortKey: -1772439016253
+            method: GET
+            headers:
+              - name: Accept
+                value: text/html
+            scripts:
+              afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                \    insomnia.response.to.have.status(200);\r
+
+                });"
+            settings:
+              renderRequestBody: true
+              encodeUrl: true
+              followRedirects: global
+              cookies:
+                send: true
+                store: true
+              rebuildPath: true
+            pathParameters:
+              - name: test
+                value: "1"
+      - name: api
+        meta:
+          id: fld_2f230d98fa1949b6b53c406844fe0f01
+          created: 1772439024577
+          modified: 1775206078737
+          sortKey: -1772439016252
+          description: ""
+        children:
+          - name: dec
+            meta:
+              id: fld_9f303029c19241ac85fa62cae9c62fae
+              created: 1772439024579
+              modified: 1775206077418
+              sortKey: -1772439016251
+              description: ""
+            children:
+              - url: "{{baseUrl}}/api/dec/"
+                name: dec
+                meta:
+                  id: req_9985258526984addb53bc5b69d830558
+                  created: 1772439024581
+                  modified: 1772439024581
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016250
+                method: POST
+                body:
+                  mimeType: application/json
+                  text: "{\r
+
+                    \  \"SlotNo\": \"1\",\r
+
+                    \  \"KeyNamePRI\": \"pri-example\",\r
+
+                    \  \"KeyNameSIM\": \"sim-example\",\r
+
+                    \  \"MobileToken\": \"token123\",\r
+
+                    \  \"Data\": \"eyJoZWxsbyI6IndvcmxkIn0=\"\r
+
+                    }"
+                headers:
+                  - name: Content-Type
+                    value: application/json
+                  - name: Accept
+                    value: "*/*"
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+          - name: enc
+            meta:
+              id: fld_8a3b9fc533c04cfeac87c11d03c98b79
+              created: 1772439024583
+              modified: 1775206077595
+              sortKey: -1772439016249
+              description: ""
+            children:
+              - url: "{{baseUrl}}/api/enc/"
+                name: enc
+                meta:
+                  id: req_c4dc7ea76ad14b6585ef0208310ae27c
+                  created: 1772439024585
+                  modified: 1772439024585
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016248
+                method: POST
+                body:
+                  mimeType: application/json
+                  text: "{\r
+
+                    \"SlotNo\": \"1\",\r
+
+                    \"KeyNamePRI\": \"pri-example\",\r
+
+                    \"KeyNameSIM\": \"sim-example\",\r
+
+                    \"MobileToken\": \"token123\",\r
+
+                    \"Data\": \"hello world\"\r
+
+                    }"
+                headers:
+                  - name: Content-Type
+                    value: application/json
+                  - name: Accept
+                    value: "*/*"
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+          - name: user
+            meta:
+              id: fld_04a2ffe42dad4a52818b024685271d23
+              created: 1772439024588
+              modified: 1775206078594
+              sortKey: -1772439016247
+              description: ""
+            children:
+              - url: "{{baseUrl}}/api/user"
+                name: get User By Id Query Param
+                meta:
+                  id: req_23b386887e0a4a56a3fad8d9884f8caa
+                  created: 1772439024604
+                  modified: 1772439024604
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016241
+                method: GET
+                parameters:
+                  - name: id
+                    value: "1"
+                    disabled: false
+                headers:
+                  - name: Accept
+                    value: "*/*"
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+              - url: "{{baseUrl}}/api/user/"
+                name: create User
+                meta:
+                  id: req_ff6a4e5346924a29bb03f867f4a35452
+                  created: 1772439024606
+                  modified: 1772715070644
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016240
+                method: POST
+                body:
+                  mimeType: application/json
+                  text: |-
+                    {
+                    		"id": 99,
+                        "name": "mehmet_{% faker 'randomFirstName' %}",
+                        "username": "user_{% faker 'randomInt' %}",
+                        "password": "password123",
+                        "age": 23,
+                        "salary": 2000000.0
+                    }
+                headers:
+                  - name: Content-Type
+                    value: application/json
+                  - name: Accept
+                    value: "*/*"
+                scripts:
+                  afterResponse: "// 1. Önce her ihtimale karşı eski değişkeni temizle\r
+
+                    insomnia.environment.unset(\"current_user_id\");\r
+
+                    \r
+
+                    // 2. Sadece başarılı oluşturma (201) durumunda işlem yap\r
+
+                    if (insomnia.response.code === 201 || insomnia.response.code
+                    === 200) {\r
+
+                    \    \r
+
+                    \    // 3. Location header'ını oku\r
+
+                    \    const locationHeader =
+                    insomnia.response.headers.get(\"Location\");\r
+
+                    \    \r
+
+                    \    if (locationHeader) {\r
+
+                    \        // 4. URL'i '/' karakterlerinden böl ve en sondaki
+                    elemanı (ID) al\r
+
+                    \        const userId = locationHeader.split('/').pop();\r
+
+                    \        \r
+
+                    \        // 5. Elde ettiğimiz ID'yi çevre değişkenine
+                    (environment) kaydet\r
+
+                    \        insomnia.environment.set(\"current_user_id\",
+                    userId);\r
+
+                    \        \r
+
+                    \        console.log(\"Yeni Kullanıcı ID'si Location
+                    Header'dan alındı: \" + userId);\r
+
+                    \    } else {\r
+
+                    \        console.error(\"HATA: Location header'ı
+                    bulunamadı!\");\r
+
+                    \    }\r
+
+                    }\r
+
+                    insomnia.test(\"Status code is 201\", function () {\r
+
+                    \    insomnia.response.to.have.status(201);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+              - name: "{id}"
+                meta:
+                  id: fld_7cd1575c593b4854af8a77e4d9631c0f
+                  created: 1772439024590
+                  modified: 1775206078227
+                  sortKey: -1772439016246
+                  description: ""
+                children:
+                  - url: "{{baseUrl}}/api/user/:id"
+                    name: get User By Id Path Param
+                    meta:
+                      id: req_b3d212c0cc034360996df8c5f983a777
+                      created: 1772439024594
+                      modified: 1772439024594
+                      isPrivate: false
+                      description: ""
+                      sortKey: -1772439016245
+                    method: GET
+                    headers:
+                      - name: Accept
+                        value: "*/*"
+                    scripts:
+                      afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                        \    insomnia.response.to.have.status(200);\r
+
+                        });"
+                    settings:
+                      renderRequestBody: true
+                      encodeUrl: true
+                      followRedirects: global
+                      cookies:
+                        send: true
+                        store: true
+                      rebuildPath: true
+                    pathParameters:
+                      - name: id
+                        value: "1"
+                  - url: "{{baseUrl}}/api/user/:id"
+                    name: update User
+                    meta:
+                      id: req_4e1130568ee9486cae66e5d68df0e789
+                      created: 1772439024596
+                      modified: 1772439024596
+                      isPrivate: false
+                      description: ""
+                      sortKey: -1772439016244
+                    method: PUT
+                    body:
+                      mimeType: application/json
+                      text: |-
+                        {
+                        "name": "mehmet updated",
+                        "age": 90,
+                        "salary": 51000.0
+                        }
+                    headers:
+                      - name: Content-Type
+                        value: application/json
+                      - name: Accept
+                        value: "*/*"
+                    scripts:
+                      afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                        \    insomnia.response.to.have.status(200);\r
+
+                        });"
+                    settings:
+                      renderRequestBody: true
+                      encodeUrl: true
+                      followRedirects: global
+                      cookies:
+                        send: true
+                        store: true
+                      rebuildPath: true
+                    pathParameters:
+                      - name: id
+                        value: "4"
+                  - url: "{{baseUrl}}/api/user/:id"
+                    name: delete User
+                    meta:
+                      id: req_a915448df90440589199e0d3263e3f40
+                      created: 1772439024598
+                      modified: 1772715027831
+                      isPrivate: false
+                      description: ""
+                      sortKey: -1772439016243
+                    method: DELETE
+                    headers:
+                      - name: Accept
+                        value: "*/*"
+                    scripts:
+                      afterResponse: "insomnia.test(\"Status code is 204\", function () {\r
+
+                        \    insomnia.response.to.have.status(204);\r
+
+                        });"
+                    settings:
+                      renderRequestBody: true
+                      encodeUrl: true
+                      followRedirects: global
+                      cookies:
+                        send: true
+                        store: true
+                      rebuildPath: true
+                    pathParameters:
+                      - name: id
+                        value: "99"
+                  - url: "{{baseUrl}}/api/user/:id"
+                    name: patch User
+                    meta:
+                      id: req_ff7eef3c796540a8ab6ab86de2fc90ca
+                      created: 1772439024602
+                      modified: 1772439024602
+                      isPrivate: false
+                      description: ""
+                      sortKey: -1772439016242
+                    method: PATCH
+                    body:
+                      mimeType: application/json
+                      text: |-
+                        {
+                          "name" : "mehmet patch",
+                          "username" : "wiispy",
+                          "password" : "apinizer",
+                          "age" : 23,
+                          "salary" : 2.100000
+                        }
+                    headers:
+                      - name: Content-Type
+                        value: application/json
+                      - name: Accept
+                        value: "*/*"
+                    scripts:
+                      afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                        \    insomnia.response.to.have.status(200);\r
+
+                        });"
+                    settings:
+                      renderRequestBody: true
+                      encodeUrl: true
+                      followRedirects: global
+                      cookies:
+                        send: true
+                        store: true
+                      rebuildPath: true
+                    pathParameters:
+                      - name: id
+                        value: "4"
+          - name: getUserByUserInQueryParam
+            meta:
+              id: fld_2587034da7ee461295c521ec596dd072
+              created: 1772439024610
+              modified: 1775206078737
+              sortKey: -1772439016239
+              description: ""
+            children:
+              - url: "{{baseUrl}}/api/getUserByUserInQueryParam"
+                name: get User By User In Query Param
+                meta:
+                  id: req_16609964bacf40b19f0d647f792dee8f
+                  created: 1772439024612
+                  modified: 1772439024612
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016238
+                method: GET
+                parameters:
+                  - name: user
+                    value: '%7B%22id%22%3A1%7D"'
+                    disabled: false
+                headers:
+                  - name: Accept
+                    value: "*/*"
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+      - name: download
+        meta:
+          id: fld_f5d48366ca294968b75545d563d32fa9
+          created: 1772439024614
+          modified: 1775206079761
+          sortKey: -1772439016237
+          description: ""
+        children:
+          - name: pdf
+            meta:
+              id: fld_63fb0d2905854ac7bf798e0ad37f4eb4
+              created: 1772439024616
+              modified: 1775206079010
+              sortKey: -1772439016236
+              description: ""
+            children:
+              - url: "{{baseUrl}}/download/pdf"
+                name: download Pdf
+                meta:
+                  id: req_967fe0faee034ec4be3786a710824095
+                  created: 1772439024619
+                  modified: 1772439024619
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016235
+                method: GET
+                headers:
+                  - name: Accept
+                    value: application/pdf
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+          - name: jpg
+            meta:
+              id: fld_d3092828d11c466d8d613c1a352ccd2f
+              created: 1772439024622
+              modified: 1775206079610
+              sortKey: -1772439016234
+              description: ""
+            children:
+              - url: "{{baseUrl}}/download/jpg"
+                name: download Jpg
+                meta:
+                  id: req_f2dbfa09698d481cb81b08d58bc38384
+                  created: 1772439024627
+                  modified: 1772439024627
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016233
+                method: GET
+                headers:
+                  - name: Accept
+                    value: image/jpg
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+          - name: txt
+            meta:
+              id: fld_f0498febf2c04663bb55441eadb75f02
+              created: 1772439024629
+              modified: 1775206079761
+              sortKey: -1772439016232
+              description: ""
+            children:
+              - url: "{{baseUrl}}/download/txt"
+                name: download Txt
+                meta:
+                  id: req_3de7997c9b9c4943bbb10255223e6380
+                  created: 1772439024632
+                  modified: 1772439024632
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016231
+                method: GET
+                headers:
+                  - name: Accept
+                    value: text/plain
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+      - name: test
+        meta:
+          id: fld_e953edbddead4265967e42f4edfba7c3
+          created: 1772439024634
+          modified: 1775206359068
+          sortKey: -1772439016230
+          description: ""
+        children:
+          - name: fileUpload
+            meta:
+              id: fld_5f2fa8e6b916420a8c492273581a43ff
+              created: 1772439024636
+              modified: 1775206359068
+              sortKey: -1772439016229
+              description: ""
+            children:
+              - url: "{{baseUrl}}/test/fileUpload"
+                name: file Upload
+                meta:
+                  id: req_910d456423104b3e8a079bcf929f3861
+                  created: 1772439024639
+                  modified: 1775206362184
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016228
+                method: POST
+                body:
+                  mimeType: multipart/form-data
+                  params:
+                    - name: file
+                      disabled: false
+                      fileName: C:\Users\hilmi\Downloads\testjpg.jpg
+                      type: file
+                headers:
+                  - name: Content-Type
+                    value: application/json
+                  - name: Accept
+                    value: application/json
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+          - name: multipart
+            meta:
+              id: fld_9be6ae07e9654c6281e188c93d7e85a0
+              created: 1772439024642
+              modified: 1772439024642
+              sortKey: -1772439016227
+              description: ""
+            children:
+              - url: "{{baseUrl}}/test/multipart"
+                name: multipart
+                meta:
+                  id: req_fccbe7fefd4943d6852924cafca8c2cc
+                  created: 1772439024645
+                  modified: 1772439024645
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016226
+                method: POST
+                body:
+                  mimeType: multipart/form-data
+                  params:
+                    - name: file
+                      disabled: false
+                      fileName: postman-cloud:///1effd43e-fb5c-4d00-8daa-53687c48b26a
+                      type: file
+                    - name: id
+                      value: "123"
+                      disabled: false
+                      type: text
+                    - name: token
+                      value: abc123
+                      disabled: false
+                      type: text
+                headers:
+                  - name: Content-Type
+                    value: multipart/form-data
+                  - name: Accept
+                    value: application/json
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+          - name: multipartMultiple
+            meta:
+              id: fld_fad7210cc5ac4b2cb7e1dff5f9ee4210
+              created: 1772439024647
+              modified: 1772439024647
+              sortKey: -1772439016225
+              description: ""
+            children:
+              - url: "{{baseUrl}}/test/multipartMultiple"
+                name: upload Multiple Files
+                meta:
+                  id: req_238e85043e10406eb4c5d90540f2fcc0
+                  created: 1772439024649
+                  modified: 1772439024649
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016224
+                method: POST
+                body:
+                  mimeType: multipart/form-data
+                  params:
+                    - name: files
+                      disabled: false
+                      fileName: postman-cloud:///1effd437-337a-4f00-8e2f-10d41fc34b8c
+                      type: file
+                    - name: files
+                      disabled: false
+                      fileName: postman-cloud:///1effd3ff-74b2-4a00-a009-6947eb05d3c6
+                      type: file
+                parameters:
+                  - name: files
+                    value: ""
+                    disabled: false
+                headers:
+                  - name: Accept
+                    value: "*/*"
+                  - name: Content-Type
+                    value: multipart/form-data
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+          - name: downloadFile
+            meta:
+              id: fld_949746d8777c415ab6461f44355ec5ab
+              created: 1772439024652
+              modified: 1772439024652
+              sortKey: -1772439016223
+              description: ""
+            children:
+              - name: "{fileName}"
+                meta:
+                  id: fld_ec7a49331a80498d947dc57c22dc1899
+                  created: 1772439024654
+                  modified: 1772439024654
+                  sortKey: -1772439016222
+                  description: ""
+                children:
+                  - url: "{{baseUrl}}/test/downloadFile/:fileName"
+                    name: download File
+                    meta:
+                      id: req_360fc0ef468b41588a36d63e0a11c5cc
+                      created: 1772439024657
+                      modified: 1772439024657
+                      isPrivate: false
+                      description: ""
+                      sortKey: -1772439016221
+                    method: GET
+                    headers:
+                      - name: Accept
+                        value: "*/*"
+                    settings:
+                      renderRequestBody: true
+                      encodeUrl: true
+                      followRedirects: global
+                      cookies:
+                        send: true
+                        store: true
+                      rebuildPath: true
+                    pathParameters:
+                      - name: fileName
+                        value: ""
+          - name: multipleHeaders
+            meta:
+              id: fld_479392b61e1b47babbd0aa3452fd264a
+              created: 1772439024660
+              modified: 1775206080319
+              sortKey: -1772439016220
+              description: ""
+            children:
+              - url: "{{baseUrl}}/test/multipleHeaders"
+                name: get Headers
+                meta:
+                  id: req_72667621b6fb4f728019dc7da3a8e944
+                  created: 1772439024662
+                  modified: 1772439024662
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016219
+                method: GET
+                headers:
+                  - name: Accept
+                    value: "*/*"
+                scripts:
+                  afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                    \    insomnia.response.to.have.status(200);\r
+
+                    });"
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+          - name: test
+            meta:
+              id: fld_9cd43baefca84cbb99a8bbea388689f9
+              created: 1772439024664
+              modified: 1775206080627
+              sortKey: -1772439016218
+              description: ""
+            children:
+              - name: hello
+                meta:
+                  id: fld_9db38ffd6694442ba54cb935a0d47110
+                  created: 1772439024666
+                  modified: 1772439024666
+                  sortKey: -1772439016217
+                  description: ""
+                children:
+                  - url: "{{baseUrl}}/test/test/hello"
+                    name: hello 1
+                    meta:
+                      id: req_283ad12011bc4473afee15995ce3bc73
+                      created: 1772439024668
+                      modified: 1772439024668
+                      isPrivate: false
+                      description: ""
+                      sortKey: -1772439016216
+                    method: GET
+                    headers:
+                      - name: Accept
+                        value: "*/*"
+                    settings:
+                      renderRequestBody: true
+                      encodeUrl: true
+                      followRedirects: global
+                      cookies:
+                        send: true
+                        store: true
+                      rebuildPath: true
+              - name: helloWait
+                meta:
+                  id: fld_4807a706aeb24ab7b04b7aa9178bfa87
+                  created: 1772439024671
+                  modified: 1775206080628
+                  sortKey: -1772439016215
+                  description: ""
+                children:
+                  - url: "{{baseUrl}}/test/test/helloWait"
+                    name: hello Wait
+                    meta:
+                      id: req_a5566865174247698ee36e492b26327b
+                      created: 1772439024674
+                      modified: 1772439024674
+                      isPrivate: false
+                      description: ""
+                      sortKey: -1772439016214
+                    method: GET
+                    parameters:
+                      - name: waitTimeInMillis
+                        value: "12"
+                        disabled: false
+                    headers:
+                      - name: Accept
+                        value: "*/*"
+                    scripts:
+                      afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+                        \    insomnia.response.to.have.status(200);\r
+
+                        });"
+                    settings:
+                      renderRequestBody: true
+                      encodeUrl: true
+                      followRedirects: global
+                      cookies:
+                        send: true
+                        store: true
+                      rebuildPath: true
+              - name: patch
+                meta:
+                  id: fld_d8b593dea6a944189f150cc9ceee459f
+                  created: 1772439024677
+                  modified: 1772439024677
+                  sortKey: -1772439016213
+                  description: ""
+                children:
+                  - url: "{{baseUrl}}/test/test/patch"
+                    name: patch
+                    meta:
+                      id: req_43bb47ddec7a45ed8215b063ec18fc45
+                      created: 1772439024679
+                      modified: 1772439024679
+                      isPrivate: false
+                      description: ""
+                      sortKey: -1772439016212
+                    method: PATCH
+                    headers:
+                      - name: Accept
+                        value: "*/*"
+                    settings:
+                      renderRequestBody: true
+                      encodeUrl: true
+                      followRedirects: global
+                      cookies:
+                        send: true
+                        store: true
+                      rebuildPath: true
+      - name: v2
+        meta:
+          id: fld_fe2cde6110d4409ba351549b56e37b1c
+          created: 1772439024681
+          modified: 1772439024681
+          sortKey: -1772439016211
+          description: ""
+        children:
+          - name: application_wadl
+            meta:
+              id: fld_74507e82b1ab4c3a84c79cee94236cc0
+              created: 1772439024684
+              modified: 1772439024684
+              sortKey: -1772439016210
+              description: ""
+            children:
+              - url: "{{baseUrl}}/v2/application_wadl"
+                name: generate Wadl
+                meta:
+                  id: req_565859624f94471bae15ff8deae6af2b
+                  created: 1772439024686
+                  modified: 1772439024686
+                  isPrivate: false
+                  description: ""
+                  sortKey: -1772439016209
+                method: GET
+                headers:
+                  - name: Accept
+                    value: application/xml
+                settings:
+                  renderRequestBody: true
+                  encodeUrl: true
+                  followRedirects: global
+                  cookies:
+                    send: true
+                    store: true
+                  rebuildPath: true
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_ec87a539b5b6b7f427894c16b522966979e34f0e
+    created: 1772439024702
+    modified: 1775206359049
+environments:
+  name: Variables
+  meta:
+    id: env_fc08518de7a14b82832397444c68a654
+    created: 1772439024690
+    modified: 1775206359060
+    isPrivate: false
+  data:
+    baseUrl: https://apiqa.apinizer.com/apigateway/example-service

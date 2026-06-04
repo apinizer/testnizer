@@ -1,0 +1,362 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: Postgresql-test - CRUD Test Flow
+meta:
+  id: wrk_e43cecb967bf4d8ca33231966d22d0d7
+  created: 1772439184323
+  modified: 1772439184323
+  description: ""
+collection:
+  - name: Postgresql-test - CRUD Test Flow
+    meta:
+      id: fld_591d8fe5c6854330b9d252fcff921ca8
+      created: 1772439184345
+      modified: 1777014579997
+      sortKey: -1772439183003
+      description: ""
+    children:
+      - url: "{{_['baseUrl']}}/create-user"
+        name: 1.POST -Create-Employee
+        meta:
+          id: req_026bde6f80ce485f8c94432bcbb166c1
+          created: 1772439184348
+          modified: 1772439184348
+          isPrivate: false
+          description: ""
+          sortKey: -1772439183002
+        method: POST
+        body:
+          mimeType: application/json
+          text: "{{employee_body}}"
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: Accept
+            value: application/json
+        scripts:
+          preRequest: "// Test için sabit empNo kullan\r
+
+            const empNo = 7;\r
+
+            insomnia.environment.set('test_empNo', empNo);\r
+
+            \r
+
+            const body = {\r
+
+            \    'firstName': 'Mehmet',\r
+
+            \    'lastName': 'Ercan',\r
+
+            \    'hireDate': '2023-04-18',\r
+
+            \    'gender': 'M',\r
+
+            \    'empNo': empNo,\r
+
+            \    'birthDate': '1990-01-01',\r
+
+            };\r
+
+            \r
+
+            insomnia.environment.set('employee_body', JSON.stringify(body));\r
+
+            console.log('Creating employee with empNo:', empNo);"
+          afterResponse: "insomnia.test('POST: Status code is 200', function () {\r
+
+            \    insomnia.response.to.have.status(200);\r
+
+            });\r
+
+            \r
+
+            const res = insomnia.response.json();\r
+
+            \r
+
+            insomnia.test('POST: statusCode is 200', function () {\r
+
+            \    insomnia.expect(res.statusCode).to.eql(200);\r
+
+            });\r
+
+            \r
+
+            insomnia.test('POST: statusDescription is OK', function () {\r
+
+            \    insomnia.expect(res.statusDescription).to.eql('OK');\r
+
+            });\r
+
+            \r
+
+            insomnia.test('POST: No errors', function () {\r
+
+            \    insomnia.expect(res.errors).to.be.an('array').that.is.empty;\r
+
+            });\r
+
+            \r
+
+            console.log('✅ Employee created successfully');"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{_['baseUrl']}}/get-employee"
+        name: 2.GET-Employee
+        meta:
+          id: req_7c69f7c642e54ad4a6e04af1f464d3a3
+          created: 1772439184351
+          modified: 1772441611955
+          isPrivate: false
+          description: ""
+          sortKey: -1772439183001
+        method: GET
+        parameters:
+          - name: empNo
+            value: "{{test_empNo}}"
+            disabled: false
+        headers:
+          - name: Accept
+            value: application/json
+        scripts:
+          preRequest: "const empNo = insomnia.environment.get('test_empNo');\r
+
+            console.log('Reading employee with empNo:', empNo);"
+          afterResponse: |-
+            insomnia.test('GET #1: Status code is 200', function () {
+                insomnia.response.to.have.status(200);
+            });
+
+            const res = insomnia.response.json();
+
+            insomnia.test('GET #1: statusCode is 200', function () {
+                insomnia.expect(res.statusCode).to.eql(200);
+            });
+
+            insomnia.test('GET #1: numRows is 1', function () {
+                insomnia.expect(res.numRows).to.eql(1);
+            });
+
+            insomnia.test('GET #1: data array has 1 employee', function () {
+                insomnia.expect(res.data).to.be.an('array');
+                insomnia.expect(res.data.length).to.eql(1);
+            });
+
+            const employee = res.data[0];
+            console.log('✅ Employee read successfully:', employee);
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{_['baseUrl']}}/user-update"
+        name: 3.PUT- Update Employee
+        meta:
+          id: req_a6001cffbf234b42bf6391c7480d8c7a
+          created: 1772439184353
+          modified: 1772439184353
+          isPrivate: false
+          description: ""
+          sortKey: -1772439183000
+        method: PUT
+        body:
+          mimeType: application/json
+          text: "{{employee_body}}"
+        parameters:
+          - name: empNo
+            value: "{{test_empNo}}"
+            disabled: false
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: Accept
+            value: application/json
+        scripts:
+          preRequest: "const empNo = insomnia.environment.get('test_empNo');\r
+
+            \r
+
+            const body = {\r
+
+            \    'firstName': 'Updated',\r
+
+            \    'lastName': 'Ercan',\r
+
+            \    'hireDate': '18-04-2022',\r
+
+            \    'gender': 'M',\r
+
+            \    'birthDate': '18-04-2001'\r
+
+            };\r
+
+            \r
+
+            insomnia.environment.set('employee_body', JSON.stringify(body));\r
+
+            console.log('Updating employee with empNo:', empNo);"
+          afterResponse: "insomnia.test('PUT: Status code is 200', function () {\r
+
+            \    insomnia.response.to.have.status(200);\r
+
+            });\r
+
+            \r
+
+            const res = insomnia.response.json();\r
+
+            \r
+
+            insomnia.test('PUT: statusCode is 200', function () {\r
+
+            \    insomnia.expect(res.statusCode).to.eql(200);\r
+
+            });\r
+
+            \r
+
+            insomnia.test('PUT: statusDescription is OK', function () {\r
+
+            \    insomnia.expect(res.statusDescription).to.eql('OK');\r
+
+            });\r
+
+            \r
+
+            insomnia.test('PUT: No errors', function () {\r
+
+            \    insomnia.expect(res.errors).to.be.an('array').that.is.empty;\r
+
+            });\r
+
+            \r
+
+            console.log('✅ Employee updated successfully');"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{_['baseUrl']}}/get-all"
+        name: 4.GET - Read Employees
+        meta:
+          id: req_be6b3003e70f499eb61058683623eb29
+          created: 1772439184355
+          modified: 1772439184355
+          isPrivate: false
+          description: ""
+          sortKey: -1772439182999
+        method: GET
+        headers:
+          - name: Accept
+            value: application/json
+        scripts:
+          afterResponse: "insomnia.test(\"Status code is 200\", function () {\r
+
+            \    insomnia.response.to.have.status(200);\r
+
+            });"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{_['baseUrl']}}/delete-user"
+        name: 5.DELETE - Delete Employee
+        meta:
+          id: req_f01a2a3d1f5845099f0a529a9aca631d
+          created: 1772439184358
+          modified: 1772439184358
+          isPrivate: false
+          description: ""
+          sortKey: -1772439182998
+        method: DELETE
+        parameters:
+          - name: empNo
+            value: "{{test_empNo}}"
+            disabled: false
+        headers:
+          - name: Accept
+            value: application/json
+        scripts:
+          preRequest: "const empNo = insomnia.environment.get('test_empNo');\r
+
+            console.log('Deleting employee with empNo:', empNo);"
+          afterResponse: "insomnia.test('DELETE: Status code is 200', function () {\r
+
+            \    insomnia.response.to.have.status(200);\r
+
+            });\r
+
+            \r
+
+            const res = insomnia.response.json();\r
+
+            \r
+
+            insomnia.test('DELETE: statusCode is 200', function () {\r
+
+            \    insomnia.expect(res.statusCode).to.eql(200);\r
+
+            });\r
+
+            \r
+
+            insomnia.test('DELETE: statusDescription is OK', function () {\r
+
+            \    insomnia.expect(res.statusDescription).to.eql('OK');\r
+
+            });\r
+
+            \r
+
+            insomnia.test('DELETE: No errors', function () {\r
+
+            \    insomnia.expect(res.errors).to.be.an('array').that.is.empty;\r
+
+            });\r
+
+            \r
+
+            console.log('✅ Employee deleted successfully');"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_d5dd6dbc3295f97340e3d511c0fff4a1ca6330ea
+    created: 1772439184368
+    modified: 1777014579992
+environments:
+  name: Variables
+  meta:
+    id: env_4e5861f9b33b431096a0655aba9907e1
+    created: 1772439184361
+    modified: 1777014579995
+    isPrivate: false
+  data:
+    baseUrl: https://apiqa.apinizer.com/apigateway/postgresql-qa-test
+    test_empNo: 7
+    employee_body: '{"firstName":"Updated","lastName":"Ercan","hireDate":"18-04-2022","gender":"M","birthDate":"18-04-2001"}'

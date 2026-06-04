@@ -1,0 +1,453 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro'
+---
+
+<BaseLayout
+  lang="tr"
+  title="Gizlilik Politikası — Testnizer"
+  description="Testnizer Gizlilik Politikası. Yürürlük tarihi 2026-05-07. Testnizer varsayılan olarak hiçbir kişisel veri toplamaz — tüm veriler yerel cihazınızda kalır."
+>
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-3xl px-6 py-20 text-center">
+      <h1 class="text-4xl font-semibold tracking-tight text-text">Gizlilik Politikası</h1>
+      <p class="mt-4 text-base leading-relaxed text-text-muted">
+        Testnizer <strong>varsayılan olarak hiçbir kişisel veri toplamaz</strong>. Tüm çalışmanız
+        yerel cihazınızda kalır. Bu politika, makinenizden ne kadar az şeyin ayrıldığını ve nedenini açıklar.
+      </p>
+      <p class="mt-3 text-xs text-text-soft">
+        Yürürlük tarihi: 2026-05-07 &nbsp;·&nbsp; Geçerlilik: Testnizer v1.0.3 ve sonrası
+      </p>
+      <p class="mt-3 text-xs text-text-soft">
+        Hukuken bağlayıcı metin <a href="/privacy" class="text-accent-text hover:underline">İngilizce sürümdür</a>. Türkçe metin yalnızca bilgilendirme amaçlıdır.
+      </p>
+    </div>
+  </section>
+
+  <section class="py-16">
+    <div class="mx-auto max-w-3xl px-6">
+
+      <!-- İçindekiler -->
+      <nav class="mb-12 rounded-card border border-border bg-bg-soft p-5">
+        <p class="mb-3 text-xs font-semibold uppercase tracking-wider text-text-muted">İçindekiler</p>
+        <ol class="grid grid-cols-1 gap-1 text-sm text-text-muted sm:grid-cols-2">
+          {[
+            ['#overview', '1. Genel Bakış (TL;DR)'],
+            ['#what-we-collect', '2. Topladığımız Veriler'],
+            ['#local-storage', '3. Yerel Veri Depolama'],
+            ['#autoupdate', '4. Otomatik Güncelleme'],
+            ['#telemetry', '5. İsteğe Bağlı Telemetri (Sentry)'],
+            ['#ai-chat', '6. Yapay Zeka Sohbet Özelliği'],
+            ['#third-party', '7. Üçüncü Taraf Servisler'],
+            ['#cookies', '8. Çerezler ve Takip'],
+            ['#children', '9. Çocukların Gizliliği'],
+            ['#gdpr', '10. GDPR ve Uluslararası Kullanıcılar'],
+            ['#security', '11. Güvenlik'],
+            ['#international', '12. Uluslararası Aktarımlar'],
+            ['#rights', '13. Haklarınız'],
+            ['#changes', '14. Bu Politikadaki Değişiklikler'],
+            ['#contact', '15. İletişim'],
+          ].map(([href, label]) => (
+            <li>
+              <a href={href} class="transition-colors hover:text-text">{label}</a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
+      <div class="space-y-12 text-sm leading-relaxed text-text-muted">
+
+        <!-- Önsöz -->
+        <p>
+          Bu Gizlilik Politikası, <strong class="text-text">Testnizer</strong> ("Yazılım",
+          "biz", "bizim") uygulamasının siz kurup kullandığınızda bilgileri nasıl ele aldığını açıklar.
+          Testnizer, Türkiye Cumhuriyeti İstanbul'da bulunan{' '}
+          <strong class="text-text">Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş.</strong>
+          ("Yayıncı") tarafından yayımlanmaktadır.
+        </p>
+        <p>
+          Testnizer, API'ları test etmek için ücretsiz bir masaüstü uygulamasıdır. Tamamen yerel makinenizde
+          çalışır. <strong class="text-text">Verilerinizi alan, saklayan veya işleyen herhangi bir arka uç
+          servisimiz yoktur.</strong> Kullanıcı hesabımız yoktur. Hiçbir şekilde sizden gelir elde etmeyiz.
+        </p>
+
+        <!-- 1 -->
+        <div id="overview">
+          <h2 class="text-base font-semibold text-text mb-3">1. Genel Bakış (TL;DR)</h2>
+          <ul class="space-y-2 list-disc list-outside ml-5">
+            <li>Testnizer <strong class="text-text">varsayılan olarak hiçbir kişisel veri toplamaz</strong>.</li>
+            <li>Tüm çalışma alanları, projeler, dallar, istekler, yanıtlar, ortam değişkenleri, sertifikalar ve kimlik bilgileri <strong class="text-text">yerel diskinizde</strong> kalır.</li>
+            <li>
+              Yazılımın giden trafiği yalnızca şunlarla sınırlıdır:
+              <ol class="mt-2 ml-5 space-y-1 list-decimal list-outside">
+                <li><strong class="text-text">Sizin</strong> açıkça gönderdiğiniz API istekleri — bunlar cihazınızdan belirttiğiniz hedefe doğrudan gider ve asla bizden geçmez.</li>
+                <li>Otomatik güncelleme için GitHub Releases beslemesine yönelik periyodik bir sürüm kontrolü.</li>
+                <li><strong class="text-text">Yapay Zeka Sohbet:</strong> Yapay Zeka Sohbet özelliğini kullanırsanız, istemler ve yanıtlar cihazınız ile seçtiğiniz Yapay Zeka sağlayıcısı arasında doğrudan dolaşır. Bu içeriği görmez, vekil sunucu olarak kullanmaz veya saklamayız. Bkz. Bölüm 6.</li>
+                <li>İsteğe bağlı çökme telemetrisi, <strong class="text-text">yalnızca</strong> <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">SENTRY_DSN</code> ortam değişkeni sağlarsanız (varsayılan olarak kapalı). Bkz. Bölüm 5.</li>
+              </ol>
+            </li>
+            <li>Kullanıcı hesabımız yoktur, sizin adınıza hiçbir şey barındırmayız ve trafiğinizi görmeyiz.</li>
+          </ul>
+        </div>
+
+        <!-- 2 -->
+        <div id="what-we-collect">
+          <h2 class="text-base font-semibold text-text mb-3">2. Topladığımız Veriler</h2>
+          <h3 class="font-medium text-text mt-4 mb-2">2.1 Sizden topladığımız veriler: varsayılan olarak hiç</h3>
+          <p>
+            Testnizer; oluşturduğunuz veya içe aktardığınız koleksiyonları, istekleri, yanıtları,
+            başlıkları, gövdeleri, ortam değişkenlerini, gizli bilgileri, sertifikaları, geçmişi, Yapay Zeka
+            istemlerini veya başka herhangi bir içeriği bize ya da kontrolümüz altındaki herhangi bir üçüncü
+            tarafa iletmez. Bu içeriği alan sunucumuz yoktur. Analitik SDK'mız, takip sinyallerimiz, reklam
+            tanımlayıcılarımız veya eve haber veren kullanım sayaçlarımız yoktur.
+          </p>
+          <h3 class="font-medium text-text mt-4 mb-2">2.2 "Topladığımız" gerçekten ne anlama gelir?</h3>
+          <p>
+            Yazılım tarafından başlatılan, hedefin sizin seçtiğiniz bir API hedefi
+            <strong class="text-text">olmadığı</strong> tek veri alışverişi şudur:
+          </p>
+          <ul class="mt-2 space-y-1.5 list-disc list-outside ml-5">
+            <li>Otomatik güncelleme sürüm kontrolü (Bölüm 4) — hedef: GitHub.</li>
+            <li>İsteğe bağlı çökme telemetrisi (Bölüm 5) — hedef: <strong class="text-text">sizin</strong> yapılandırdığınız bir Sentry örneği.</li>
+          </ul>
+          <p class="mt-2">Liste bundan ibarettir. Başka bir yol yoktur.</p>
+        </div>
+
+        <!-- 3 -->
+        <div id="local-storage">
+          <h2 class="text-base font-semibold text-text mb-3">3. Yerel Veri Depolama</h2>
+          <p class="mb-4">
+            Tüm çalışma ürününüz kendi cihazınızda saklanır. Bunun bir kopyası bizde yoktur ve geri alma yeteneğimiz yoktur.
+          </p>
+          <div class="overflow-x-auto rounded-card border border-border">
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="border-b border-border bg-bg-muted text-left">
+                  <th class="px-4 py-2.5 font-medium text-text-muted">Öğe</th>
+                  <th class="px-4 py-2.5 font-medium text-text-muted">Konum</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                <tr><td class="px-4 py-2.5 font-medium text-text">Veritabanı (SQLite)</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/testnizer.db</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">Ayarlar</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/config.json</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">Gizli bilgiler (parolalar, token'lar, sertifikalar)</td><td class="px-4 py-2.5 text-text-muted">Electron <code>safeStorage</code> aracılığıyla işletim sistemi anahtarlığı (macOS Keychain, Windows DPAPI, Linux libsecret)</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">Loglar (varsa)</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/logs/</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">Yapay Zeka sağlayıcı yapılandırmaları ve anahtarlar</td><td class="px-4 py-2.5 text-text-muted"><code>safeStorage</code> aracılığıyla <code>config.json</code> içinde şifrelenmiş</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="mt-4">
+            <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">&lt;userData&gt;</code> şu konumlara karşılık gelir:
+            <strong class="text-text"> macOS</strong> <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">~/Library/Application Support/Testnizer</code> ·
+            <strong class="text-text">Windows</strong> <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">%APPDATA%\Testnizer</code> ·
+            <strong class="text-text">Linux</strong> <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">~/.config/Testnizer</code>
+          </p>
+          <p class="mt-3">
+            Bu verinin tek denetleyicisi sizsiniz. Bulut senkronizasyonu yoktur. Dosyaları doğrudan
+            işleyerek veya uygulama içi Dışa Aktar / Ayarlar menülerini kullanarak istediğiniz zaman
+            inceleyebilir, düzenleyebilir, dışa aktarabilir veya silebilirsiniz.
+          </p>
+        </div>
+
+        <!-- 4 -->
+        <div id="autoupdate">
+          <h2 class="text-base font-semibold text-text mb-3">4. Otomatik Güncelleme</h2>
+          <p>
+            Testnizer, daha yeni sürümler için projenin kamuya açık GitHub Releases beslemesini
+            <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">https://github.com/apinizer/testnizer/releases</code>{' '}
+            adresinden kontrol etmek için
+            <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">electron-updater</code>'ı kullanır.
+            Kontrol, güncelleyicinin User-Agent değerinden (uygulama adı + şu anda kurulu sürüm) ve ağ
+            katmanında GitHub'a görünen IP adresinizden oluşan standart bir HTTPS isteği gönderir.
+          </p>
+          <p class="mt-3">
+            <strong class="text-text">Çalışma alanlarınız, istekleriniz, yanıtlarınız, ortamlarınız,
+            kimlik bilgileriniz veya kullanımınızla ilgili hiçbir veri gönderilmez.</strong> Hiçbir hesap
+            veya cihaz tanımlayıcısı oluşturulmaz veya iletilmez. GitHub'ın bu isteği işleme şekli
+            GitHub'ın kendi gizlilik politikasına tabidir.
+          </p>
+          <p class="mt-3">
+            Otomatik güncelleyiciyi <strong class="text-text">Ayarlar → Güncellemeler</strong>
+            bölümünden devre dışı bırakabilirsiniz. Devre dışı bırakmanın, Yazılımın diğer işlevselliği
+            üzerinde hiçbir etkisi yoktur.
+          </p>
+          <p class="mt-3 text-xs text-text-soft">
+            <strong>Hukuki dayanak (GDPR Md. 6(1)(f)):</strong> kurulu ikili dosyalara güvenlik ve
+            kararlılık düzeltmeleri sunmadaki meşru menfaat. Bu işleme, yalnızca kullanıcının makinesinin
+            kamuya açık bir sunucuya yaptığı herhangi bir HTTPS isteğinin doğasında bulunan IP ve
+            User-Agent meta verilerini kapsar.
+          </p>
+        </div>
+
+        <!-- 5 -->
+        <div id="telemetry">
+          <h2 class="text-base font-semibold text-text mb-3">5. İsteğe Bağlı Telemetri (Sentry)</h2>
+          <p>
+            Testnizer <strong class="text-text">varsayılan bir telemetri uç noktası olmadan</strong> gelir.
+            Kutudan çıktığı haliyle hiçbir analitik, çökme raporlaması veya kullanım takibi etkin değildir.
+          </p>
+          <p class="mt-3">
+            Çökme raporlama yalnızca <strong class="text-text">siz</strong> (veya kendi kendine dağıtım
+            yapıyorsanız kuruluşunuz) uygulamayı{' '}
+            <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">SENTRY_DSN</code> ortam değişkeni
+            ayarlanmış olarak derler veya çalıştırırsa etkinleşir. Yalnızca o DSN mevcut olduğunda,
+            yapılandırılan Sentry örneğine şunlar gönderilebilir: uygulama sürümü, işletim sistemi sürümü,
+            çalışma zamanı sürümü; ele alınmamış hataların yığın izleri; PII içermeyen breadcrumb'lar
+            (arayüz navigasyon olayları, IPC kanal adları).
+          </p>
+          <p class="mt-3">
+            Telemetri etkin olsa bile aşağıdakiler <strong class="text-text">asla</strong> gönderilmez:
+            istek veya yanıt gövdeleri, hedef URL'ler, başlıklar, çerezler; bearer token'lar, kimlik
+            bilgileri, API anahtarları, OAuth token'ları, JWT'ler; TLS istemci sertifikaları veya özel
+            anahtarlar; ortam değişkeni değerleri; dosya içerikleri; Yapay Zeka Sohbet istemleri veya
+            yanıtları.
+          </p>
+          <p class="mt-3">
+            Testnizer.com ve GitHub Releases'te yayımladığımız resmi ikili dosyalar
+            <strong class="text-text"> </strong><code class="text-xs bg-bg-muted px-1 py-0.5 rounded">SENTRY_DSN</code><strong class="text-text"> olmadan</strong>
+            gelir ve bu nedenle hiçbir telemetri iletmez.
+          </p>
+          <p class="mt-3 text-xs text-text-soft">
+            <strong>Hukuki dayanak (GDPR Md. 6(1)(a)):</strong> <code>SENTRY_DSN</code>'i ayarlayan
+            kullanıcının veya kendi kendine dağıtım yapan kuruluşun açık katılımı.
+          </p>
+        </div>
+
+        <!-- 6 -->
+        <div id="ai-chat">
+          <h2 class="text-base font-semibold text-text mb-3">6. Yapay Zeka Sohbet Özelliği</h2>
+          <p>
+            Testnizer, uygulama içinden seçtiğiniz bir büyük dil modeli sağlayıcısıyla sohbet etmenizi
+            sağlayan bir "Yapay Zeka Sohbet" sekmesi içerir. Uygulama aşağıdakiler için hazır ayarlarla gelir:
+          </p>
+          <ul class="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 list-disc list-outside ml-5 sm:grid-cols-3">
+            {['OpenAI', 'Anthropic', 'Groq', 'Google (Gemini)', 'Azure OpenAI', 'Cohere',
+              'Mistral', 'Perplexity', 'Together AI', 'OpenRouter', 'Fireworks AI', 'DeepSeek',
+              'xAI (Grok)', 'Ollama (yerel — giden trafik yok)'].map((p) => (
+              <li>{p}</li>
+            ))}
+          </ul>
+          <p class="mt-4">
+            Yapay Zeka Sohbet'i kullandığınızda, gönderdiğiniz istemler ve dönen yanıtlar, sağladığınız
+            API anahtarıyla kimliği doğrulanarak{' '}
+            <strong class="text-text">cihazınızdan Yapay Zeka sağlayıcısının API uç noktasına doğrudan</strong>
+            gider. Testnizer bu içeriği herhangi bir noktada vekil olarak iletmez, yönlendirmez, kesmez,
+            kaydetmez veya saklamaz — bu, cihazınız ile seçtiğiniz sağlayıcı arasında uçtan uca bir
+            bağlantıdır.
+          </p>
+          <ul class="mt-3 space-y-2 list-disc list-outside ml-5">
+            <li>İstemlerinize veya model yanıtlarınıza erişimimiz yoktur.</li>
+            <li>Seçtiğiniz Yapay Zeka sağlayıcısı istemlerinizi, yanıtlarınızı ve IP'nizi görür. Her sağlayıcının kendi gizlilik politikası, saklama politikası ve eğitim verisi politikası vardır. <strong class="text-text">Hassas veri göndermeden önce seçtiğiniz sağlayıcının gizlilik politikasını gözden geçirin.</strong></li>
+            <li>Yapay Zeka sağlayıcılarına gönderilen veriler, tamamen bizim kontrolümüz dışında, modellerini iyileştirmek için saklanabilir veya kullanılabilir.</li>
+            <li>Yapay Zeka Sohbet'i, <strong class="text-text">Ollama</strong> hazır ayarını (veya yerel olarak barındırılan herhangi bir uç noktayı) seçerek <strong class="text-text">tamamen çevrimdışı</strong> çalıştırabilirsiniz. Bu durumda makinenizden hiçbir giden trafik çıkmaz.</li>
+            <li>API anahtarlarınız yerel olarak, işletim sistemi anahtarlığı (Bölüm 3) aracılığıyla şifrelenmiş olarak saklanır ve yalnızca ait oldukları sağlayıcıya gönderilir.</li>
+          </ul>
+          <p class="mt-3 text-xs text-text-soft">
+            <strong>Hukuki dayanak (GDPR Md. 6(1)(a)):</strong> kullanıcının açık katılımı. Yapay Zeka
+            sağlayıcısı tarafından işlenen veriler açısından, veri denetleyicisi Yapay Zeka sağlayıcısıdır;
+            biz değiliz.
+          </p>
+          <p class="mt-2 text-xs text-text-soft">
+            Yapay Zeka Sohbet özelliğini kullanmazsanız, Yazılım tarafından Yapay Zeka ile ilgili hiçbir ağ trafiği oluşturulmaz.
+          </p>
+        </div>
+
+        <!-- 7 -->
+        <div id="third-party">
+          <h2 class="text-base font-semibold text-text mb-3">7. Üçüncü Taraf Servisler</h2>
+          <p class="mb-4">
+            Testnizer, üçüncü taraf servislerle yalnızca sizin gerçekleştirdiğiniz eylemlerin doğrudan
+            sonucu olarak etkileşime girer. Bu servislerle hiçbir bağlantımız yoktur ve onlara göndermeyi
+            seçtiğiniz verileri nasıl işledikleri üzerinde hiçbir kontrolümüz yoktur.
+          </p>
+          <div class="overflow-x-auto rounded-card border border-border">
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="border-b border-border bg-bg-muted text-left">
+                  <th class="px-4 py-2.5 font-medium text-text-muted">Servis</th>
+                  <th class="px-4 py-2.5 font-medium text-text-muted">Ne zaman iletişim kurulur</th>
+                  <th class="px-4 py-2.5 font-medium text-text-muted">Neler paylaşılır</th>
+                  <th class="px-4 py-2.5 font-medium text-text-muted">Denetleyici</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                <tr>
+                  <td class="px-4 py-2.5 font-medium text-text">GitHub Releases</td>
+                  <td class="px-4 py-2.5 text-text-muted">Otomatik güncelleme kontrolü</td>
+                  <td class="px-4 py-2.5 text-text-muted">Sürüm meta verisi, IP, User-Agent</td>
+                  <td class="px-4 py-2.5 text-text-muted">GitHub, Inc.</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-2.5 font-medium text-text">API hedefleriniz</td>
+                  <td class="px-4 py-2.5 text-text-muted">Gönder'e tıkladığınızda</td>
+                  <td class="px-4 py-2.5 text-text-muted">İsteğe ne koyarsanız</td>
+                  <td class="px-4 py-2.5 text-text-muted">İlgili uç noktanın operatörü</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-2.5 font-medium text-text">Sentry (isteğe bağlı)</td>
+                  <td class="px-4 py-2.5 text-text-muted">Yalnızca SENTRY_DSN yapılandırılmışsa</td>
+                  <td class="px-4 py-2.5 text-text-muted">Anonim hata meta verisi (§5)</td>
+                  <td class="px-4 py-2.5 text-text-muted">İlgili Sentry örneğinin operatörü</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-2.5 font-medium text-text">Yapay Zeka sağlayıcıları (isteğe bağlı)</td>
+                  <td class="px-4 py-2.5 text-text-muted">Yapay Zeka Sohbet'i kullandığınızda</td>
+                  <td class="px-4 py-2.5 text-text-muted">İstemleriniz ve bağlamınız (§6)</td>
+                  <td class="px-4 py-2.5 text-text-muted">Seçilen Yapay Zeka sağlayıcısı</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 8 -->
+        <div id="cookies">
+          <h2 class="text-base font-semibold text-text mb-3">8. Çerezler ve Takip</h2>
+          <p>
+            Testnizer bir web sitesi değil, masaüstü uygulamasıdır ve{' '}
+            <strong class="text-text">takip çerezi, reklam çerezi veya analitik çerezi kullanmaz</strong>.
+            Yazılım, herhangi bir takip pikseli veya üçüncü taraf etiket gömmez.
+          </p>
+          <p class="mt-3">
+            Çerez belirleyen HTTP API'larını çağırdığınızda, bu çerezler aynı oturum içindeki sonraki
+            isteklerin bunları içerebilmesi için{' '}
+            <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">tough-cookie</code> aracılığıyla
+            makinenizde saklanır. Bu çerezler sizin verilerinizdir, seçtiğiniz API hedeflerine kapsamlıdır
+            ve cihazınızda kalır.
+          </p>
+        </div>
+
+        <!-- 9 -->
+        <div id="children">
+          <h2 class="text-base font-semibold text-text mb-3">9. Çocukların Gizliliği</h2>
+          <p>
+            Testnizer, yazılım geliştiricileri, kalite mühendisleri ve BT uzmanları için tasarlanmıştır.
+            <strong class="text-text">13 yaşın altındaki çocuklara</strong> (veya yargı çevrenizdeki eşdeğer
+            asgari yaşa) yönelik değildir. Yaşı ne olursa olsun hiç kimseden kasıtlı olarak kişisel veri
+            toplamayız. Bir ebeveyn veya vasi, bir çocuğun Yazılımı dikkat gerektirecek bir şekilde
+            kullandığına inanıyorsa, lütfen Bölüm 15'teki adresten bizimle iletişime geçin.
+          </p>
+        </div>
+
+        <!-- 10 -->
+        <div id="gdpr">
+          <h2 class="text-base font-semibold text-text mb-3">10. GDPR ve Uluslararası Kullanıcılar</h2>
+          <p>
+            Testnizer kişisel verilerinizi varsayılan olarak bize iletmediğinden, Yazılım tarafından
+            sınır ötesi aktarım başlatılmaz ve oluşturduğunuz içerik açısından ne veri denetleyicisi ne
+            de veri işleyicisi olarak hareket ederiz. Bölüm 4 ve 5'teki işleme, yalnızca ağ meta verileri
+            veya katılım esaslı teknik çökme verileriyle sınırlıdır.
+          </p>
+          <p class="mt-3 font-medium text-text">Tasarımla onurlandırılan ilkeler:</p>
+          <ul class="mt-2 space-y-2 list-disc list-outside ml-5">
+            <li><strong class="text-text">Veri minimizasyonu (Md. 5(1)(c)):</strong> uygulama, çalışması için kesinlikle gerekli olmayan hiçbir şeyi istemez. E-posta toplama, hesap, profil yoktur.</li>
+            <li><strong class="text-text">Amaç sınırlaması (Md. 5(1)(b)):</strong> başlattığımız tek giden trafiğin (GitHub güncelleme kontrolü) tek amacı daha yeni sürümleri sunmaktır.</li>
+            <li><strong class="text-text">Depolama sınırlaması (Md. 5(1)(e)):</strong> tüm çalışma ürününüz yerel olarak saklanır; silme tamamen sizin kontrolünüzdedir.</li>
+            <li>
+              <strong class="text-text">Hukuki dayanak (Md. 6):</strong>
+              <ul class="mt-1 ml-5 space-y-0.5 list-disc list-outside text-xs">
+                <li>Otomatik güncelleme — Md. 6(1)(f) meşru menfaat (güvenlik &amp; kararlılık).</li>
+                <li>Telemetri — Md. 6(1)(a) açık katılım.</li>
+                <li>Yapay Zeka Sohbet — Md. 6(1)(a) açık katılım (denetleyici biz değil, Yapay Zeka sağlayıcısıdır).</li>
+              </ul>
+            </li>
+          </ul>
+          <p class="mt-3">
+            Cihazınızdaki verileriniz üzerinde tam kontrol sahibisiniz — erişim, düzeltme, silme,
+            kısıtlama, taşınabilirlik ve itiraz haklarını yerel veritabanını doğrudan düzenleyerek veya
+            silerek ya da uygulama içi dışa aktarma ve veri temizleme özelliklerini kullanarak
+            kullanabilirsiniz.
+          </p>
+        </div>
+
+        <!-- 11 -->
+        <div id="security">
+          <h2 class="text-base font-semibold text-text mb-3">11. Güvenlik</h2>
+          <p>Yazılım, aşağıdaki savunma uygulamalarını kullanır:</p>
+          <ul class="mt-3 space-y-2 list-disc list-outside ml-5">
+            <li><strong class="text-text">Yerel gizli bilgi şifrelemesi.</strong> Parolalar, API anahtarları, OAuth token'ları ve istemci sertifikaları, işletim sistemi anahtarlığına devreden Electron <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">safeStorage</code> aracılığıyla diskte şifrelenir. Düz metin gizli bilgiler asla diske yazılmaz.</li>
+            <li><strong class="text-text">Renderer sertleştirme.</strong> Renderer süreci, <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">contextIsolation: true</code>, <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">nodeIntegration: false</code> ve sıkı bir <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">connect-src 'self'</code> CSP'si ile çalışır; bu, arayüzün giden ağ çağrıları yapamayacağı anlamına gelir.</li>
+            <li><strong class="text-text">Süreç ayrımı.</strong> Arayüz, dosya sistemine, alt süreçlere veya ağa doğrudan erişemez. Tüm bu işlemler, Main sürecinde girdi doğrulamasıyla birlikte tip güvenli IPC kanalları aracılığıyla yapılır.</li>
+            <li><strong class="text-text">Varsayılan olarak telemetri yok.</strong> Katılım göstermediğiniz sürece çökme verisi makinenizden çıkmaz (Bölüm 5).</li>
+          </ul>
+          <p class="mt-3">
+            Hiçbir yazılım mükemmel derecede güvenli değildir. Testnizer'ın çalıştığı cihazın fiziksel ve
+            mantıksal güvenliğinden — işletim sisteminizi ve Yazılımı güncel tutmak, tam disk şifrelemesi
+            kullanmak ve yetkisiz fiziksel erişime karşı koruma sağlamak dahil — siz sorumlusunuz.
+          </p>
+        </div>
+
+        <!-- 12 -->
+        <div id="international">
+          <h2 class="text-base font-semibold text-text mb-3">12. Uluslararası Aktarımlar</h2>
+          <p>
+            Yazılım, çalışma ürününüzün sınır ötesi aktarımlarını başlatmaz. Yazılım tarafından başlatılan
+            giden ağ trafiği şunlarla sınırlıdır:
+          </p>
+          <ul class="mt-3 space-y-1.5 list-disc list-outside ml-5">
+            <li>GitHub'ın global edge ağı tarafından sunulan <strong class="text-text">GitHub</strong>'a otomatik güncelleme istekleri. GitHub'ın veri işleme ve Standart Sözleşme Maddeleri kendi gizlilik politikasında belgelenmiştir.</li>
+            <li>Yapılandırdığınız Sentry uç noktasına iletilen isteğe bağlı Sentry çökme raporları.</li>
+            <li>Cihazınızdan seçtiğiniz Yapay Zeka sağlayıcısına doğrudan iletilen Yapay Zeka Sohbet istekleri. O sağlayıcının altyapısının konumu seçiminize bağlıdır; ayrıntılar için gizlilik politikalarını inceleyin.</li>
+          </ul>
+          <p class="mt-3">Verilerinizi kendimiz herhangi bir üçüncü ülkeye göndermeyiz.</p>
+        </div>
+
+        <!-- 13 -->
+        <div id="rights">
+          <h2 class="text-base font-semibold text-text mb-3">13. Haklarınız</h2>
+          <p>
+            Hakkınızda hiçbir veri tutmadığımız için, veri koruma haklarınızı kullanmak genellikle
+            <strong class="text-text">yerel cihazınızda</strong> hareket etmek anlamına gelir:
+          </p>
+          <ul class="mt-3 space-y-2 list-disc list-outside ml-5">
+            <li><strong class="text-text">Erişim hakkı.</strong> Yerel veritabanını, yapılandırma dosyalarını ve dışa aktarılan koleksiyonları doğrudan inceleyin. Yazılımın Dışa Aktar özelliği herhangi bir çalışma alanının taşınabilir bir JSON anlık görüntüsünü üretir.</li>
+            <li><strong class="text-text">Düzeltme hakkı.</strong> Yazılım içinden herhangi bir kaydı düzenleyin.</li>
+            <li><strong class="text-text">Silme hakkı.</strong> Bölüm 3'te listelenen kullanıcı veri dizinini silin, Ayarlar'daki uygulama içi "Verileri temizle" seçeneğini kullanın veya Yazılımı kaldırın (kullanıcı veri dizini bazı platformlarda kaldırma sonrası kalabilir — tam silme için manuel olarak silin).</li>
+            <li><strong class="text-text">Taşınabilirlik hakkı.</strong> Verilerinizi standart birlikte çalışabilir biçimlerde almak için Dışa Aktarma fonksiyonlarını (OpenAPI, Postman, HAR) kullanın.</li>
+            <li><strong class="text-text">İtiraz / işlemeyi kısıtlama hakkı.</strong> Ayarlar'dan otomatik güncellemeyi devre dışı bırakın; <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">SENTRY_DSN</code>'i yapılandırmayın; Yapay Zeka Sohbet'i kullanmayın.</li>
+          </ul>
+          <p class="mt-3">
+            Üçüncü taraf bir sağlayıcı (Yapay Zeka sağlayıcısı, Sentry örneği veya API hedefi),
+            Testnizer'ı nasıl kullandığınızdan dolayı hakkınızda kişisel veri tutuyorsa, lütfen
+            veri koruma talebinizi doğrudan o sağlayıcıya iletin — onların adına hareket edemeyiz.
+          </p>
+        </div>
+
+        <!-- 14 -->
+        <div id="changes">
+          <h2 class="text-base font-semibold text-text mb-3">14. Bu Politikadaki Değişiklikler</h2>
+          <p>
+            Bu Gizlilik Politikasını zaman zaman güncelleyebiliriz. Önemli değişiklikler, bu belgenin
+            üst kısmındaki <strong class="text-text">Son güncelleme</strong> tarihini güncelleyerek ve
+            hash'ini artırarak yansıtılır. Belge hash'i değiştiğinde, uygulama içi onay kapısı, Yazılımın
+            bir sonraki başlatılmasında güncellenmiş metni incelemeniz ve kabul etmeniz için sizi uyarır.
+            Güncellenmiş metni reddederseniz, Yazılım kapanır ve ilişkiyi sonlandırmak için onu
+            kaldırmanız gerekir.
+          </p>
+          <p class="mt-3">
+            Bu Politikadaki korumaları, değişikliği reddetme fırsatı vermeden geriye dönük olarak azaltmayız.
+          </p>
+        </div>
+
+        <!-- 15 -->
+        <div id="contact">
+          <h2 class="text-base font-semibold text-text mb-3">15. İletişim</h2>
+          <p>Bu Gizlilik Politikası veya Testnizer'ın verileri nasıl ele aldığı hakkında sorular, talepler veya şikayetler için:</p>
+          <ul class="mt-3 space-y-1.5 list-disc list-outside ml-5">
+            <li><strong class="text-text">Gizlilik &amp; hukuk:</strong> <a href="mailto:info@apinizer.com" class="text-accent-text hover:underline">info@apinizer.com</a></li>
+            <li><strong class="text-text">Web sitesi:</strong> <a href="https://www.testnizer.com" class="text-accent-text hover:underline">www.testnizer.com</a></li>
+            <li><strong class="text-text">Posta:</strong> Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş., Üniversiteler Mah. 1606 Cad. Cyberpark A-Blok No:4 A/305, 06800 Bilkent/Ankara, Türkiye</li>
+            <li><strong class="text-text">Tel / Faks:</strong> 0312 265 02 36 / 0312 265 02 38</li>
+          </ul>
+          <p class="mt-6 text-xs text-text-soft">
+            Ayrıca bkz.: <a href="/tr/license" class="hover:text-text-muted underline decoration-dotted underline-offset-2">Son Kullanıcı Lisans Sözleşmesi</a>
+          </p>
+        </div>
+
+      </div>
+
+      <p class="mt-12 border-t border-border pt-6 text-xs text-text-soft">
+        Telif hakkı © 2026 Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş.
+      </p>
+    </div>
+  </section>
+</BaseLayout>

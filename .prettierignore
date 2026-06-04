@@ -1,0 +1,9 @@
+node_modules
+out
+dist
+release
+build/icons
+.vite
+package-lock.json
+resources/third-party-licenses.json
+*.md

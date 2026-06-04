@@ -1,0 +1,193 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import { icons } from '../../components/icons'
+import { fetchLatestRelease, resolveAsset } from '../../lib/latest-release'
+
+const release = await fetchLatestRelease()
+const v = release.version
+const releaseBase = release.htmlUrl
+
+const platforms = [
+  {
+    icon: icons.apple,
+    title: 'macOS',
+    architectures: [
+      {
+        label: 'Apple Silicon (arm64)',
+        ...resolveAsset(release, {
+          exact: `Testnizer-${v}-arm64.dmg`,
+          pattern: /-arm64\.dmg$/,
+        }),
+      },
+      {
+        label: 'Intel (x64)',
+        ...resolveAsset(release, {
+          exact: `Testnizer-${v}-x64.dmg`,
+          pattern: /-x64\.dmg$/,
+        }),
+      },
+    ],
+    note: 'İlk başlatmada sağ tıklayın → Aç. Beta sürecinde ad-hoc imzalı.',
+    extra: 'Sequoia\'da Gatekeeper hâlâ engelliyorsa: <code>xattr -dr com.apple.quarantine /Applications/Testnizer.app</code>',
+  },
+  {
+    icon: icons.windows,
+    title: 'Windows',
+    architectures: [
+      {
+        label: 'x64',
+        ...resolveAsset(release, {
+          exact: `Testnizer-${v}-x64.exe`,
+          pattern: /-x64\.exe$/,
+        }),
+      },
+      {
+        label: 'arm64',
+        ...resolveAsset(release, {
+          exact: `Testnizer-${v}-arm64.exe`,
+          pattern: /-arm64\.exe$/,
+        }),
+      },
+    ],
+    note: 'SmartScreen beta sürecinde uyarı verecektir — Daha fazla bilgi → Yine de çalıştır.',
+    extra: 'NSIS yükleyici. Varsayılan olarak kullanıcı başına kurulum; yönetici kurulumu da desteklenir.',
+  },
+  {
+    icon: icons.linux,
+    title: 'Linux',
+    architectures: [
+      {
+        label: 'Debian / Ubuntu (deb, x64)',
+        ...resolveAsset(release, {
+          exact: `Testnizer-${v}-amd64.deb`,
+          pattern: /-amd64\.deb$/,
+        }),
+      },
+      {
+        label: 'Debian / Ubuntu (deb, arm64)',
+        ...resolveAsset(release, {
+          exact: `Testnizer-${v}-arm64.deb`,
+          pattern: /-arm64\.deb$/,
+        }),
+      },
+      {
+        label: 'AppImage (x64)',
+        ...resolveAsset(release, {
+          exact: `Testnizer-${v}-x86_64.AppImage`,
+          pattern: /-x86_64\.AppImage$/,
+        }),
+      },
+      {
+        label: 'AppImage (arm64)',
+        ...resolveAsset(release, {
+          exact: `Testnizer-${v}-arm64.AppImage`,
+          pattern: /-arm64\.AppImage$/,
+        }),
+      },
+    ],
+    note: '<code>sudo dpkg -i Testnizer-' + v + '-amd64.deb</code> veya <code>chmod +x Testnizer-*.AppImage && ./Testnizer-*.AppImage</code>.',
+    extra: '',
+  },
+]
+---
+
+<BaseLayout lang="tr" title={`İndir Testnizer ${release.tag}`} description="Testnizer'ı macOS (Apple Silicon / Intel), Windows (x64 / arm64) veya Linux (deb / AppImage) için indirin. Ücretsiz, hesap gerektirmez.">
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-4xl px-6 py-20 text-center md:py-24">
+      <h1 class="text-4xl font-semibold tracking-tight text-text md:text-5xl">
+        Testnizer'ı İndir
+      </h1>
+      <p class="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-text-muted">
+        Ücretsiz, hesap gerektirmez. Platformunuzu seçin — yükleyici geri kalanı halleder. Otomatik güncelleme yerleşiktir ancak Ayarlar'dan devre dışı bırakılabilir.
+      </p>
+      <div class="mt-7 inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1 text-xs font-medium text-text-muted shadow-sm">
+        <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+        Son sürüm: <span class="font-semibold text-text">{release.tag}</span>
+        <a href="/tr/docs/changelog/" class="text-accent-text hover:underline">— sürüm notları</a>
+      </div>
+      <p class="mt-5 text-xs text-text-soft">
+        Testnizer'ı indirerek veya kurarak{' '}
+        <a href="/tr/license" class="underline decoration-dotted underline-offset-2 hover:text-text-muted">Son Kullanıcı Lisans Sözleşmesi</a>
+        {' '}ve{' '}
+        <a href="/tr/privacy" class="underline decoration-dotted underline-offset-2 hover:text-text-muted">Gizlilik Politikası</a>'nı kabul etmiş olursunuz.
+      </p>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-5xl px-6">
+      <div class="space-y-6">
+        {platforms.map((p) => (
+          <article class="rounded-card border border-border bg-bg p-7">
+            <div class="flex items-start gap-4">
+              <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg bg-bg-muted text-text">
+                <Fragment set:html={p.icon} />
+              </div>
+              <div class="min-w-0 flex-1">
+                <h2 class="text-xl font-semibold text-text">{p.title}</h2>
+
+                <ul class="mt-4 space-y-2">
+                  {p.architectures.map((a) => (
+                    <li class="flex flex-col items-start justify-between gap-2 rounded-lg border border-border bg-bg-soft px-4 py-3 sm:flex-row sm:items-center">
+                      <div>
+                        <p class="text-sm font-medium text-text">{a.label}</p>
+                        <p class="font-mono text-xs text-text-soft">{a.name ?? 'sürüm sayfasına bakın'}</p>
+                      </div>
+                      <a
+                        href={a.url}
+                        target="_blank"
+                        rel="noopener"
+                        class="inline-flex items-center gap-2 rounded-md bg-accent px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-accent-hover"
+                      >
+                        <Fragment set:html={icons.download} />
+                        İndir
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+
+                <p class="mt-4 text-xs text-text-muted" set:html={p.note}></p>
+                {p.extra && <p class="mt-1.5 text-xs text-text-soft" set:html={p.extra}></p>}
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border bg-bg-soft py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">İndirmenizi doğrulayın</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">Her sürüm SHA-256 sağlama toplamıyla birlikte gönderilir.</h2>
+      <p class="mt-4 max-w-2xl text-base leading-relaxed text-text-muted">
+        <a href={releaseBase} target="_blank" rel="noopener" class="text-accent-text hover:underline">sürüm sayfasındaki</a> sağlama toplamını indirdiğiniz dosyayla karşılaştırın. Tam olarak eşleşmeli.
+      </p>
+
+      <pre class="mt-6 overflow-x-auto rounded-card border border-border bg-bg p-5 font-mono text-xs leading-relaxed text-text"><span class="text-text-soft"># macOS / Linux</span>
+shasum -a 256 Testnizer-{v}-arm64.dmg
+
+<span class="text-text-soft"># Windows (PowerShell)</span>
+Get-FileHash .\Testnizer-Setup-{v}-x64.exe -Algorithm SHA256</pre>
+
+      <p class="mt-4 text-xs text-text-muted">
+        Hava boşluklu ortamlar için yükleyiciyi ve <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">checksums.txt</code> dosyasını bağlantılı bir makinede indirin, doğrulayın, ardından aktarın. Ayrıntılar için <a href="/tr/docs/build-from-source" class="text-accent-text hover:underline">doğrulama kılavuzuna</a> bakın.
+      </p>
+    </div>
+  </section>
+
+  <section class="border-t border-border">
+    <div class="mx-auto max-w-3xl px-6 py-20 text-center">
+      <h2 class="text-2xl font-semibold tracking-tight text-text">İlk kez mi kuruyorsunuz?</h2>
+      <p class="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-text-muted">
+        Beş dakikalık başlangıç kılavuzu bir örnek koleksiyon içe aktarır, ilk isteğinizi çalıştırır ve verilerinizin gerçekte nerede yaşadığını gösterir.
+      </p>
+      <div class="mt-7">
+        <a href="/tr/docs/getting-started" class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted">
+          Başlangıç kılavuzunu oku
+          <Fragment set:html={icons.arrowRight} />
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

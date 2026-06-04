@@ -1,0 +1,46 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Petstore Lite",
+    "version": "1.0.0",
+    "description": "Minimal OpenAPI 3 fixture for import tests"
+  },
+  "servers": [{ "url": "https://petstore.example.com/v1" }],
+  "tags": [{ "name": "pets", "description": "Pet operations" }],
+  "paths": {
+    "/pets": {
+      "get": {
+        "tags": ["pets"],
+        "summary": "List pets",
+        "operationId": "listPets",
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "default": 10 } },
+          { "name": "X-Trace-Id", "in": "header", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      },
+      "post": {
+        "tags": ["pets"],
+        "summary": "Create pet",
+        "operationId": "createPet",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" } } } }
+          }
+        },
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/pets/{petId}": {
+      "get": {
+        "tags": ["pets"],
+        "summary": "Get pet by id",
+        "operationId": "getPet",
+        "parameters": [
+          { "name": "petId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "OK" }, "404": { "description": "Not Found" } }
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+provider: github
+owner: apinizer
+repo: testnizer-releases
+updaterCacheDirName: testnizer-updater

@@ -1,0 +1,292 @@
+type: spec.insomnia.rest/5.0
+schema_version: "5.1"
+name: dynamic-ttl-test-proxyspec 1.0
+meta:
+  id: wrk_d7bb6f12aad342879b5f701330485b00
+  created: 1775542178215
+  modified: 1775629898763
+  description: ""
+collection:
+  - url: "{{ _.base_url }}/custom"
+    name: /custom
+    meta:
+      id: req_ad976069df0b406884bd6fa53e9097db
+      created: 1775542178225
+      modified: 1775629898754
+      isPrivate: false
+      description: ""
+      sortKey: -1775542178225
+    method: GET
+    scripts:
+      afterResponse: |-
+        insomnia.test("Status code is 200", function () {
+            insomnia.response.to.have.status(200);
+        });
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: "{{ _.base_url }}/duration"
+    name: /duration
+    meta:
+      id: req_3aae5a39b94c4a38a812cbe07fb717f1
+      created: 1775542178228
+      modified: 1775629898744
+      isPrivate: false
+      description: ""
+      sortKey: -1775542178228
+    method: GET
+    scripts:
+      afterResponse: |-
+        insomnia.test("Status code is 200", function () {
+            insomnia.response.to.have.status(200);
+        });
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: "{{ _.base_url }}/epoch-ms"
+    name: /epoch-ms
+    meta:
+      id: req_c0469e496d1d474da6f7f7ecc878df86
+      created: 1775542178230
+      modified: 1775629898756
+      isPrivate: false
+      description: ""
+      sortKey: -1775542178230
+    method: GET
+    scripts:
+      afterResponse: |-
+        insomnia.test("Status code is 200", function () {
+            insomnia.response.to.have.status(200);
+        });
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: "{{ _.base_url }}/epoch-sec"
+    name: /epoch-sec
+    meta:
+      id: req_355efe0f91f64c21a7e3cdd462e2cfbf
+      created: 1775542178231
+      modified: 1775629898741
+      isPrivate: false
+      description: ""
+      sortKey: -1775542178231
+    method: GET
+    scripts:
+      afterResponse: |-
+        insomnia.test("Status code is 200", function () {
+            insomnia.response.to.have.status(200);
+        });
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: "{{ _.base_url }}/expires-in-ms"
+    name: /expires-in-ms
+    meta:
+      id: req_699c2b7828104b999165b1f499344faf
+      created: 1775542178233
+      modified: 1775629898749
+      isPrivate: false
+      description: ""
+      sortKey: -1775542178233
+    method: GET
+    scripts:
+      afterResponse: |-
+        insomnia.test("Status code is 200", function () {
+            insomnia.response.to.have.status(200);
+        });
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: "{{ _.base_url }}/expires-in-sec"
+    name: /expires-in-sec
+    meta:
+      id: req_f3f28cbb625440c19844e2c243591350
+      created: 1775542178235
+      modified: 1775629898759
+      isPrivate: false
+      description: ""
+      sortKey: -1775542178235
+    method: GET
+    scripts:
+      afterResponse: |-
+        insomnia.test("Status code is 200", function () {
+            insomnia.response.to.have.status(200);
+        });
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: "{{ _.base_url }}/iso"
+    name: /iso
+    meta:
+      id: req_1cdd9355ff8c44d281fd0baad760cac9
+      created: 1775542178237
+      modified: 1775629898738
+      isPrivate: false
+      description: ""
+      sortKey: -1775542178237
+    method: GET
+    scripts:
+      afterResponse: |-
+        insomnia.test("Status code is 200", function () {
+            insomnia.response.to.have.status(200);
+        });
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: "{{ _.base_url }}/jwt"
+    name: /jwt
+    meta:
+      id: req_4af76efae2364933a8d5974d49d82033
+      created: 1775542178239
+      modified: 1775629898746
+      isPrivate: false
+      description: ""
+      sortKey: -1775542178239
+    method: GET
+    scripts:
+      afterResponse: |-
+        insomnia.test("Status code is 200", function () {
+            insomnia.response.to.have.status(200);
+        });
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: "{{ _.base_url }}/jwt-nested"
+    name: /jwt-nested
+    meta:
+      id: req_962cb1b30ef243ec83de756838932291
+      created: 1775542178241
+      modified: 1775629898751
+      isPrivate: false
+      description: ""
+      sortKey: -1775542178241
+    method: GET
+    scripts:
+      afterResponse: |-
+        insomnia.test("Status code is 200", function () {
+            insomnia.response.to.have.status(200);
+        });
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_8a86a17ce999b9a6ba34e9f6944a19832f04728e
+    created: 1775629898946
+    modified: 1775629898946
+environments:
+  name: Base environment
+  meta:
+    id: env_43637f5765964cc0a4996dc9428ccc6d
+    created: 1775542178221
+    modified: 1775629898735
+    isPrivate: false
+  data:
+    base_url: "{{ _.scheme }}://{{ _.host }}{{ _.base_path }}"
+  subEnvironments:
+    - name: OpenAPI env apiqa.apinizer.com
+      meta:
+        id: env_141725c52f2346999c992fbab214ef0c
+        created: 1775542178223
+        modified: 1775629898732
+        isPrivate: false
+        sortKey: 1775542178223
+      data:
+        base_path: /apigateway/dynamic-ttl-test-proxy
+        host: apiqa.apinizer.com
+        scheme: https
+spec:
+  contents:
+    openapi: 3.0.3
+    info:
+      title: dynamic-ttl-test-proxyspec
+      version: "1.0"
+    servers:
+      - url: https://apiqa.apinizer.com/apigateway/dynamic-ttl-test-proxy
+    paths:
+      /custom:
+        get:
+          operationId: get_custom
+          deprecated: false
+      /duration:
+        get:
+          operationId: get_duration
+          deprecated: false
+      /epoch-ms:
+        get:
+          operationId: get_epoch-ms
+          deprecated: false
+      /epoch-sec:
+        get:
+          operationId: get_epoch-sec
+          deprecated: false
+      /expires-in-ms:
+        get:
+          operationId: get_expires-in-ms
+          deprecated: false
+      /expires-in-sec:
+        get:
+          operationId: get_expires-in-sec
+          deprecated: false
+      /iso:
+        get:
+          operationId: get_iso
+          deprecated: false
+      /jwt:
+        get:
+          operationId: get_jwt
+          deprecated: false
+      /jwt-nested:
+        get:
+          operationId: get_jwt-nested
+          deprecated: false
+  meta:
+    id: spc_29344f03862f462b92a1cf12e6965888
+    created: 1775542178217
+    modified: 1775629898761

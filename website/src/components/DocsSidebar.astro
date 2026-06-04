@@ -1,0 +1,70 @@
+---
+import { getCollection } from 'astro:content'
+
+interface Props {
+  currentSlug: string
+  lang?: string
+}
+const { currentSlug, lang = 'en' } = Astro.props
+
+const all = await (lang === 'tr' ? getCollection('docsTr') : getCollection('docs'))
+const grouped = all
+  .sort((a, b) => a.data.order - b.data.order)
+  .reduce<Record<string, typeof all>>((acc, entry) => {
+    const section = entry.data.section
+    acc[section] = acc[section] ?? []
+    acc[section].push(entry)
+    return acc
+  }, {})
+
+const sectionOrder = [
+  'Getting started', 'Başlarken',
+  'Guides', 'Kılavuzlar',
+  'Protocols', 'Protokoller',
+  'Tools', 'Araçlar',
+  'Reference', 'Referans',
+]
+const sortedSections = Object.entries(grouped).sort((a, b) => {
+  const ia = sectionOrder.indexOf(a[0])
+  const ib = sectionOrder.indexOf(b[0])
+  if (ia === -1 && ib === -1) return a[0].localeCompare(b[0])
+  if (ia === -1) return 1
+  if (ib === -1) return -1
+  return ia - ib
+})
+
+const prefix = lang === 'tr' ? '/tr/docs' : '/docs'
+---
+
+<aside class="hidden w-60 flex-shrink-0 border-r border-border bg-bg-soft md:block">
+  <nav class="sticky top-14 max-h-[calc(100vh-3.5rem)] overflow-y-auto px-5 py-8">
+    {sortedSections.map(([section, entries]) => (
+      <div class="mb-6">
+        <h4 class="px-2 text-xs font-semibold uppercase tracking-wider text-text-soft">
+          {section}
+        </h4>
+        <ul class="mt-2 space-y-0.5">
+          {entries.map((entry) => {
+            const slug = entry.id.replace(/\.mdx?$/, '')
+            const isCurrent = slug === currentSlug
+            return (
+              <li>
+                <a
+                  href={`${prefix}/${slug}`}
+                  class:list={[
+                    'block rounded-md px-2 py-1.5 text-sm transition-colors',
+                    isCurrent
+                      ? 'bg-accent-light font-medium text-accent-text'
+                      : 'text-text-muted hover:bg-bg-muted hover:text-text',
+                  ]}
+                >
+                  {entry.data.title}
+                </a>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    ))}
+  </nav>
+</aside>

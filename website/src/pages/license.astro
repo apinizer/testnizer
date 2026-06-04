@@ -1,0 +1,401 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro'
+---
+
+<BaseLayout
+  title="EULA — Testnizer"
+  description="End User License Agreement for Testnizer. Effective 2026-05-07, applies to v1.0.3 and later."
+>
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-3xl px-6 py-20 text-center">
+      <h1 class="text-4xl font-semibold tracking-tight text-text">End User License Agreement</h1>
+      <p class="mt-4 text-base leading-relaxed text-text-muted">
+        Please read this agreement carefully before downloading or installing Testnizer.
+        By installing or using the Software, you accept these terms.
+      </p>
+      <p class="mt-3 text-xs text-text-soft">
+        Effective date: 2026-05-07 &nbsp;·&nbsp; Applies to: Testnizer v1.0.3 and later
+      </p>
+    </div>
+  </section>
+
+  <section class="py-16">
+    <div class="mx-auto max-w-3xl px-6">
+
+      <!-- TOC -->
+      <nav class="mb-12 rounded-card border border-border bg-bg-soft p-5">
+        <p class="mb-3 text-xs font-semibold uppercase tracking-wider text-text-muted">Contents</p>
+        <ol class="grid grid-cols-1 gap-1 text-sm text-text-muted sm:grid-cols-2">
+          {[
+            ['#acceptance', '1. Acceptance of Terms'],
+            ['#license-type', '2. Dual License Model'],
+            ['#grant', '3. License Grant'],
+            ['#permitted', '4. Permitted Use'],
+            ['#restrictions', '5. Restrictions'],
+            ['#autoupdate', '6. Auto-Update Consent'],
+            ['#oss', '7. Third-Party Open-Source Components'],
+            ['#trademarks', '8. Trademarks'],
+            ['#warranty', '9. Disclaimer of Warranties'],
+            ['#liability', '10. Limitation of Liability'],
+            ['#indemnification', '11. Indemnification'],
+            ['#termination', '12. Termination'],
+            ['#export', '13. Export Control'],
+            ['#governing', '14. Governing Law'],
+            ['#changes', '15. Changes to this EULA'],
+            ['#severability', '16. Severability & Entire Agreement'],
+            ['#contact', '17. Contact'],
+          ].map(([href, label]) => (
+            <li>
+              <a href={href} class="transition-colors hover:text-text">{label}</a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
+      <div class="space-y-12 text-sm leading-relaxed text-text-muted">
+
+        <!-- Preamble -->
+        <p>
+          This End-User License Agreement ("Agreement") is a binding contract between
+          <strong class="text-text">you</strong> ("Licensee", "you") and
+          <strong class="text-text">Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş.</strong>
+          ("Licensor", "we", "our"), concerning your use of the
+          <strong class="text-text">Testnizer</strong> desktop application — the pre-built binary
+          distribution (DMG, EXE, AppImage, deb, zip, or any other packaged installer obtained from
+          our official channels) — and any accompanying documentation (collectively, the "Software").
+        </p>
+        <p>
+          By installing, copying, downloading, or otherwise using the Software, you acknowledge
+          that you have read, understood, and agreed to be bound by this Agreement. If you do not
+          agree, do not install or use the Software.
+        </p>
+
+        <!-- 1 -->
+        <div id="acceptance">
+          <h2 class="text-base font-semibold text-text mb-3">1. Acceptance of Terms</h2>
+          <p>
+            This Agreement is presented to you on first launch of the Software through an
+            in-application consent gate. You must accept this Agreement and the accompanying
+            <a href="/privacy" class="text-accent-text hover:underline">Privacy Policy</a> to use
+            the Software. The Software computes a SHA-256 hash of this document; if the document
+            changes in a future release, the consent gate will re-prompt you to accept the updated
+            text on the next launch. If you decline the updated text, the Software will exit and
+            you must uninstall it to terminate the relationship.
+          </p>
+        </div>
+
+        <!-- 2 -->
+        <div id="license-type">
+          <h2 class="text-base font-semibold text-text mb-3">2. Dual License Model</h2>
+          <p>Testnizer is distributed under a <strong class="text-text">dual licensing model</strong>:</p>
+          <ul class="mt-3 space-y-2 list-disc list-outside ml-5">
+            <li>
+              <strong class="text-text">Source code</strong> — released under the
+              <strong class="text-text">MIT License</strong> (see the
+              <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">LICENSE</code> file in the public
+              source repository at
+              <a href="https://github.com/apinizer/testnizer" class="text-accent-text hover:underline">github.com/apinizer/testnizer</a>).
+              The MIT License grants you the right to view, copy, modify, merge, publish, distribute,
+              sublicense, and sell copies of the source code, subject to the conditions stated in that
+              license. Nothing in this Agreement narrows the rights granted to you by the MIT License
+              with respect to the source code.
+            </li>
+            <li>
+              <strong class="text-text">Pre-built binary distribution</strong> — the installers we
+              publish on our official channels (Testnizer.com, GitHub Releases) are governed by
+              <strong class="text-text">this Agreement</strong>, which covers the binary artifacts, the
+              auto-update channel, and any data-handling behavior of those binaries. If you build
+              Testnizer yourself from source, the MIT License governs your build; this Agreement applies
+              only when you choose to install the binaries we distribute.
+            </li>
+          </ul>
+          <p class="mt-3">
+            In the event of any conflict between this Agreement and the MIT License with respect to the
+            <strong class="text-text">source code</strong>, the MIT License controls. With respect to the
+            <strong class="text-text">binary distribution and its update channel</strong>, this Agreement
+            controls.
+          </p>
+        </div>
+
+        <!-- 3 -->
+        <div id="grant">
+          <h2 class="text-base font-semibold text-text mb-3">3. License Grant (Binary Use)</h2>
+          <p>
+            Subject to your compliance with this Agreement, the Licensor grants you a worldwide,
+            royalty-free, non-exclusive, non-transferable, perpetual (subject to Section 12) license to:
+          </p>
+          <ol class="mt-3 space-y-1.5 list-[lower-alpha] list-outside ml-5">
+            <li>install and use the binary Software on any number of devices you own or control;</li>
+            <li>use the Software for personal, educational, or commercial purposes, including within a for-profit organization;</li>
+            <li>make backup copies of the installer for archival purposes.</li>
+          </ol>
+          <p class="mt-3">
+            This license is granted for the binary form only. Your rights with respect to the source
+            code are governed by the <strong class="text-text">MIT License</strong> and are not narrowed
+            by this Section.
+          </p>
+        </div>
+
+        <!-- 4 -->
+        <div id="permitted">
+          <h2 class="text-base font-semibold text-text mb-3">4. Permitted Use</h2>
+          <p>You may use the Software to:</p>
+          <ul class="mt-3 space-y-1.5 list-disc list-outside ml-5">
+            <li>test, develop, debug, and document APIs and network services that you are authorized to access;</li>
+            <li>store API definitions, requests, environments, certificates, and credentials locally on your device;</li>
+            <li>import and export collections in standard interoperable formats (OpenAPI, Postman, Insomnia, cURL, HAR, WSDL, Proto, and similar);</li>
+            <li>run automated test suites and collection runners against authorized targets;</li>
+            <li>redistribute, modify, and fork the <strong class="text-text">source code</strong> under the terms of the MIT License.</li>
+          </ul>
+        </div>
+
+        <!-- 5 -->
+        <div id="restrictions">
+          <h2 class="text-base font-semibold text-text mb-3">5. Restrictions</h2>
+          <p>You agree that you will not, in connection with the <strong class="text-text">binary distribution</strong> of the Software:</p>
+          <ol class="mt-3 space-y-2 list-[lower-alpha] list-outside ml-5">
+            <li>reverse-engineer, decompile, or disassemble the published binary artifacts in an attempt to circumvent licensing or update mechanisms; inspection of the source code through the public repository is expressly permitted under the MIT License and is not a violation of this clause;</li>
+            <li>use the Software to access, scan, probe, or attack any system, network, or service for which you do not have explicit, demonstrable authorization (including penetration testing without written consent);</li>
+            <li>use the Software in safety-critical or life-support environments, including but not limited to medical devices, nuclear facilities, aircraft navigation or control, weapons systems, or any environment in which a failure of the Software could result in death, personal injury, or severe environmental or property damage;</li>
+            <li>repackage, rebrand, or redistribute the <strong class="text-text">binary distribution</strong> as a directly competing product. The MIT License permits forking, modifying, and redistributing the source code; this restriction targets only the repackaging of our official binaries, the appropriation of the "Testnizer" brand identity, or the substitution of our update channel;</li>
+            <li>use the Software to violate any applicable law or regulation, including data-protection laws (GDPR, KVKK, CCPA, etc.), export-control laws, the Computer Fraud and Abuse Act and analogous statutes, or to commit fraud or theft;</li>
+            <li>remove, alter, or obscure any copyright, trademark, license, or attribution notice embedded in the binary, the application's "About" screen, the auto-update payload, or the bundled documentation.</li>
+          </ol>
+        </div>
+
+        <!-- 6 -->
+        <div id="autoupdate">
+          <h2 class="text-base font-semibold text-text mb-3">6. Auto-Update Consent</h2>
+          <p>
+            The Software includes an auto-update mechanism (<code class="text-xs bg-bg-muted px-1 py-0.5 rounded">electron-updater</code>)
+            that periodically checks the public GitHub Releases feed at
+            <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">https://github.com/apinizer/testnizer-releases/releases</code>
+            for newer versions. By using the Software with auto-update enabled (the default), you consent to:
+          </p>
+          <ol class="mt-3 space-y-1.5 list-[lower-alpha] list-outside ml-5">
+            <li>periodic outbound HTTPS requests to GitHub solely to check for and download new versions of the Software;</li>
+            <li>the Software replacing itself with a newer version, with your confirmation where the operating system requires it.</li>
+          </ol>
+          <p class="mt-3">
+            The information transmitted is limited to standard HTTP request metadata (your IP address
+            as visible to GitHub, the updater User-Agent containing the application name and current
+            version) and contains no data about your workspaces, requests, or usage. See the
+            <a href="/privacy" class="text-accent-text hover:underline">Privacy Policy</a> for full details.
+          </p>
+          <p class="mt-3">
+            You may disable auto-update at any time in <strong class="text-text">Settings → Updates</strong>.
+            The Licensor reserves the right to modify, suspend, or discontinue the auto-update service at any
+            time without notice. The locally installed copy of the Software remains usable indefinitely
+            irrespective of update-channel availability.
+          </p>
+        </div>
+
+        <!-- 7 -->
+        <div id="oss">
+          <h2 class="text-base font-semibold text-text mb-3">7. Third-Party Open-Source Components</h2>
+          <p>
+            The Software incorporates open-source libraries and frameworks, including but not
+            limited to: Electron, Node.js, React, TypeScript, Tailwind CSS, Monaco Editor, Zustand,
+            better-sqlite3, axios, ws, soap, graphql, @grpc/grpc-js, and many others. Each component
+            is governed by its own upstream license (MIT, BSD, Apache 2.0, ISC, MPL 2.0, etc.). A
+            complete list with attributions is available in the Software at <strong class="text-text">About
+            → Open-source licenses</strong>. Nothing in this Agreement modifies the rights granted to
+            you by those upstream licenses with respect to the corresponding upstream sources. A
+            complete list with attributions is also available in the public source repository.
+          </p>
+        </div>
+
+        <!-- 8 -->
+        <div id="trademarks">
+          <h2 class="text-base font-semibold text-text mb-3">8. Trademarks</h2>
+          <p>
+            "Testnizer" and the Testnizer logo are trademarks of Pruvasoft Bilişim Teknolojileri
+            Yazılım Danışmanlık ve Eğitim A.Ş. You may refer to the Software by its name in
+            editorial, journalistic, or educational contexts. You may not use Licensor's name, logo,
+            or trademarks to endorse, promote, or imply affiliation with any product or service
+            derived from the Software without prior written permission from the Licensor.
+          </p>
+          <p class="mt-3">
+            The names "Postman", "SoapUI", "ReadyAPI", "Insomnia", "JetBrains", "HTTPie",
+            "OpenAPI", "Swagger", "Apple", "macOS", "Microsoft", "Windows", "Linux", "GitHub",
+            "OpenAI", "Anthropic", "Google", and any other third-party trademarks referenced in the
+            Software or this documentation are the property of their respective owners. References to
+            these names — for example, when describing import/export formats or AI provider
+            compatibility — are made solely for interoperability and identification purposes and do
+            not imply endorsement, sponsorship, or affiliation with the respective owners.
+          </p>
+        </div>
+
+        <!-- 9 -->
+        <div id="warranty">
+          <h2 class="text-base font-semibold text-text mb-3">9. Disclaimer of Warranties</h2>
+          <p class="uppercase font-medium text-text-muted tracking-wide text-xs leading-relaxed">
+            THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY KIND,
+            EXPRESS, IMPLIED, OR STATUTORY, INCLUDING WITHOUT LIMITATION THE WARRANTIES OF
+            MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, ACCURACY, AND
+            NON-INFRINGEMENT.
+          </p>
+          <p class="uppercase font-medium text-text-muted tracking-wide text-xs leading-relaxed mt-3">
+            THE LICENSOR DOES NOT WARRANT THAT THE SOFTWARE WILL BE UNINTERRUPTED, ERROR-FREE,
+            SECURE, OR FREE OF HARMFUL COMPONENTS, NOR THAT DEFECTS WILL BE CORRECTED.
+          </p>
+          <p class="mt-3">
+            You acknowledge that the Software is a developer tool that issues network requests on
+            your behalf, parses arbitrary user-supplied input, and stores secrets locally; that
+            misuse — including sending requests to unauthorized targets, mishandling production
+            credentials, or running untrusted scripts — may have legal, financial, regulatory, or
+            operational consequences for which you alone are responsible.
+          </p>
+        </div>
+
+        <!-- 10 -->
+        <div id="liability">
+          <h2 class="text-base font-semibold text-text mb-3">10. Limitation of Liability</h2>
+          <p>The Software is distributed free of charge. You have not paid any fee to obtain the Software.</p>
+          <p class="uppercase font-medium text-text-muted tracking-wide text-xs leading-relaxed mt-3">
+            TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE LICENSOR,
+            ITS AFFILIATES, OFFICERS, DIRECTORS, EMPLOYEES, AGENTS, OR CONTRIBUTORS BE LIABLE FOR
+            ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR
+            ANY LOSS OF PROFITS, REVENUE, BUSINESS, DATA, OR GOODWILL, ARISING OUT OF OR IN
+            CONNECTION WITH YOUR USE OF — OR INABILITY TO USE — THE SOFTWARE, REGARDLESS OF THE
+            LEGAL THEORY (CONTRACT, TORT, NEGLIGENCE, STRICT LIABILITY, OR OTHERWISE) AND EVEN IF
+            THE LICENSOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+          </p>
+          <p class="uppercase font-medium text-text-muted tracking-wide text-xs leading-relaxed mt-3">
+            THE LICENSOR'S TOTAL CUMULATIVE LIABILITY UNDER OR IN CONNECTION WITH THIS AGREEMENT
+            SHALL NOT EXCEED THE AMOUNT YOU PAID TO OBTAIN THE SOFTWARE, WHICH IS{' '}
+            <strong class="text-text">ZERO</strong>.
+          </p>
+          <p class="mt-3">
+            Some jurisdictions do not allow the exclusion or limitation of liability for incidental
+            or consequential damages, so portions of this Section may not apply to you. Where
+            mandatory consumer-protection law in your place of residence provides a higher floor,
+            that floor applies in place of the cap above to the extent so required.
+          </p>
+        </div>
+
+        <!-- 11 -->
+        <div id="indemnification">
+          <h2 class="text-base font-semibold text-text mb-3">11. Indemnification</h2>
+          <p>
+            You agree to defend, indemnify, and hold harmless the Licensor, its affiliates,
+            officers, directors, employees, contractors, agents, and contributors from and against
+            any and all claims, damages, obligations, losses, liabilities, costs, and expenses
+            (including reasonable attorneys' fees) arising out of or relating to:
+          </p>
+          <ol class="mt-3 space-y-1.5 list-[lower-alpha] list-outside ml-5">
+            <li>your use or misuse of the Software;</li>
+            <li>your violation of this Agreement, including any breach of the restrictions in Section 5;</li>
+            <li>your violation of any third-party right, including any intellectual property right, privacy right, or contractual right;</li>
+            <li>the data, requests, credentials, or content you process through the Software, including any harm caused to systems you target.</li>
+          </ol>
+          <p class="mt-3">
+            The Licensor reserves the right, at its own expense, to assume the exclusive defense
+            and control of any matter otherwise subject to indemnification by you, in which event
+            you will cooperate with the Licensor in asserting any available defenses.
+          </p>
+        </div>
+
+        <!-- 12 -->
+        <div id="termination">
+          <h2 class="text-base font-semibold text-text mb-3">12. Termination</h2>
+          <p>
+            This Agreement is effective until terminated. It will terminate automatically without
+            notice if you fail to comply with its terms. Upon termination you must cease all use of
+            the Software and destroy all copies in your possession or control. You may terminate
+            this Agreement at any time by uninstalling the Software and deleting the user-data
+            directory described in the
+            <a href="/privacy" class="text-accent-text hover:underline">Privacy Policy</a>.
+          </p>
+          <p class="mt-3">
+            Sections 5 (Restrictions), 8 (Trademarks), 9 (Disclaimer of Warranties), 10
+            (Limitation of Liability), 11 (Indemnification), 13 (Export Control), 14 (Governing
+            Law), 16 (Severability / Entire Agreement), and 17 (Contact) survive termination.
+          </p>
+        </div>
+
+        <!-- 13 -->
+        <div id="export">
+          <h2 class="text-base font-semibold text-text mb-3">13. Export Control</h2>
+          <p>
+            You agree to comply with all applicable export-control and trade-sanctions laws and
+            regulations, including those of the Republic of Türkiye, the European Union, the United
+            States (including the Export Administration Regulations and OFAC sanctions programs),
+            and the United Nations Security Council. You represent and warrant that:
+          </p>
+          <ol class="mt-3 space-y-1.5 list-[lower-alpha] list-outside ml-5">
+            <li>you are not located in, under the control of, or a national or resident of any country or territory subject to a comprehensive embargo by those authorities;</li>
+            <li>you are not listed on any restricted-party or sanctioned-party list maintained by those authorities;</li>
+            <li>you will not export, re-export, transfer, or otherwise make the Software available to any prohibited destination, end-user, or end-use.</li>
+          </ol>
+        </div>
+
+        <!-- 14 -->
+        <div id="governing">
+          <h2 class="text-base font-semibold text-text mb-3">14. Governing Law and Jurisdiction</h2>
+          <p>
+            This Agreement is governed by the laws of the <strong class="text-text">Republic of
+            Türkiye</strong>, without regard to its conflict-of-laws principles. Any dispute,
+            controversy, or claim arising out of or relating to this Agreement, or the breach,
+            termination, or invalidity thereof, shall be submitted to the exclusive jurisdiction of
+            the courts and execution offices of <strong class="text-text">Ankara, Türkiye</strong>,
+            except where mandatory consumer-protection laws of your place of residence provide
+            otherwise.
+          </p>
+        </div>
+
+        <!-- 15 -->
+        <div id="changes">
+          <h2 class="text-base font-semibold text-text mb-3">15. Changes to this EULA</h2>
+          <p>
+            The Licensor may update this Agreement from time to time. Material changes are
+            reflected by updating the <strong class="text-text">Last updated</strong> date at the
+            top of this document and incrementing the document hash. When the document hash
+            changes, the in-application consent gate will prompt you to review and accept the
+            updated text on the next launch of the Software. If you decline the updated text, the
+            Software will exit and you must uninstall it to terminate the relationship.
+          </p>
+          <p class="mt-3">
+            The Licensor may modify, suspend, or discontinue the Software, the auto-update
+            service, or any feature thereof at any time without notice or liability to you. Your
+            locally installed copy remains usable subject to the terms of the version of this
+            Agreement to which you most recently consented.
+          </p>
+        </div>
+
+        <!-- 16 -->
+        <div id="severability">
+          <h2 class="text-base font-semibold text-text mb-3">16. Severability and Entire Agreement</h2>
+          <ul class="space-y-2 list-disc list-outside ml-5">
+            <li><strong class="text-text">Entire agreement.</strong> This Agreement and the <a href="/privacy" class="text-accent-text hover:underline">Privacy Policy</a> together constitute the entire agreement between you and the Licensor regarding the Software, and supersede any prior or contemporaneous understandings, communications, or agreements.</li>
+            <li><strong class="text-text">Severability.</strong> If any provision of this Agreement is held by a court of competent jurisdiction to be unenforceable, that provision shall be modified to the minimum extent necessary to make it enforceable, and the remaining provisions shall remain in full force and effect.</li>
+            <li><strong class="text-text">No waiver.</strong> Failure or delay by the Licensor in enforcing any right under this Agreement shall not be a waiver of that right.</li>
+            <li><strong class="text-text">Assignment.</strong> You may not assign this Agreement, in whole or in part, without the Licensor's prior written consent. The Licensor may assign this Agreement in connection with a merger, acquisition, reorganization, or sale of all or substantially all of its assets.</li>
+          </ul>
+        </div>
+
+        <!-- 17 -->
+        <div id="contact">
+          <h2 class="text-base font-semibold text-text mb-3">17. Contact</h2>
+          <p>For questions about this Agreement, including legal, compliance, or intellectual-property inquiries:</p>
+          <ul class="mt-3 space-y-1.5 list-disc list-outside ml-5">
+            <li><strong class="text-text">Legal &amp; privacy:</strong> <a href="mailto:info@apinizer.com" class="text-accent-text hover:underline">info@apinizer.com</a></li>
+            <li><strong class="text-text">Website:</strong> <a href="https://www.testnizer.com" class="text-accent-text hover:underline">www.testnizer.com</a></li>
+            <li><strong class="text-text">Postal:</strong> Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş., Üniversiteler Mah. 1606 Cad. Cyberpark A-Blok No:4 A/305, 06800 Bilkent/Ankara, Türkiye</li>
+            <li><strong class="text-text">Phone / Fax:</strong> 0312 265 02 36 / 0312 265 02 38</li>
+          </ul>
+          <p class="mt-6 text-xs text-text-soft">
+            Also see: <a href="/privacy" class="hover:text-text-muted underline decoration-dotted underline-offset-2">Privacy Policy</a>
+          </p>
+        </div>
+
+      </div>
+
+      <p class="mt-12 border-t border-border pt-6 text-xs text-text-soft">
+        Copyright © 2026 Pruvasoft Bilişim Teknolojileri Yazılım Danışmanlık ve Eğitim A.Ş.
+        All rights reserved with respect to the binary distribution. Source code rights are governed
+        by the MIT License.
+      </p>
+    </div>
+  </section>
+</BaseLayout>

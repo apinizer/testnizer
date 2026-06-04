@@ -1,0 +1,161 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro'
+import { icons } from '../components/icons'
+
+const principles = [
+  {
+    title: 'CSP connect-src self',
+    body: "The renderer's Content-Security-Policy header is set to <code>connect-src 'self'</code> — the React UI is physically incapable of opening a connection to anything except its own origin. Every API call goes through an audited Node main-process IPC handler that you, the user, control.",
+  },
+  {
+    title: 'Process isolation by default',
+    body: 'contextIsolation is on. nodeIntegration is off. The preload script exposes only an audited <code>window.api</code> surface — no raw <code>fetch</code>, <code>axios</code>, or <code>require</code> from the UI thread.',
+  },
+  {
+    title: 'Secrets pass through OS keychain',
+    body: 'Passphrases, basic-auth passwords, bearer tokens, OAuth refresh tokens, and certificate keys all go through Electron <code>safeStorage</code> — Keychain on macOS, DPAPI on Windows, libsecret on Linux. Only encrypted blobs touch SQLite. Raw values never write to disk.',
+  },
+  {
+    title: 'Zero telemetry by design',
+    body: "There is no analytics endpoint. No 'phone home' on launch. No background sync. No anonymous usage stats. Auto-update only runs when you ask it to, and you can turn it off in Settings.",
+  },
+]
+
+const claims = [
+  { label: 'No telemetry', body: "We don't have an analytics endpoint to disable. There is no opt-in either." },
+  { label: 'No login', body: 'No account creation. No SSO. No vendor server even knows the app exists.' },
+  { label: 'No cloud sync', body: "Your collections live in a local SQLite. Backups are your responsibility. That's the trade-off." },
+  { label: 'No background egress', body: "The renderer's CSP blocks it. The main process only opens connections you trigger." },
+  { label: 'No third-party JWT decode', body: "Decode runs locally with Node's crypto module. The token never leaves the process." },
+  { label: 'No third-party XML signing', body: 'WS-Security uses xml-crypto + Node crypto, all main-process. Private keys load from disk in-memory only.' },
+]
+---
+
+<BaseLayout title="Security — Testnizer" description="How Testnizer's offline-only execution model is enforced — CSP, process isolation, OS keychain encryption, zero telemetry.">
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-4xl px-6 py-20 text-center md:py-24">
+      <div class="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1 text-xs font-medium text-accent-text shadow-sm">
+        <Fragment set:html={icons.lock} />
+        Security model
+      </div>
+      <h1 class="text-4xl font-semibold tracking-tight text-text md:text-5xl">
+        Three load-bearing rules,
+        <br />
+        enforced by code.
+      </h1>
+      <p class="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-text-muted">
+        We don't ask you to trust us. We make it architecturally impossible for the app to send your data anywhere you didn't tell it to.
+      </p>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <div class="space-y-5">
+        {principles.map((p, i) => (
+          <article class="rounded-card border border-border bg-bg p-7">
+            <div class="flex items-start gap-4">
+              <span class="grid h-9 w-9 flex-shrink-0 place-items-center rounded-lg bg-accent text-sm font-semibold text-white">
+                {i + 1}
+              </span>
+              <div class="min-w-0 flex-1">
+                <h3 class="text-lg font-semibold text-text">{p.title}</h3>
+                <p class="mt-2 text-sm leading-relaxed text-text-muted" set:html={p.body}></p>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border bg-bg-soft py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">What this means in practice</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">Six things Testnizer doesn't do.</h2>
+
+      <div class="mt-10 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {claims.map((c) => (
+          <div class="rounded-card border border-border bg-bg p-6">
+            <div class="flex items-start gap-2.5">
+              <span class="mt-0.5 text-emerald-400">
+                <Fragment set:html={icons.check} />
+              </span>
+              <div>
+                <h3 class="text-base font-semibold text-text">{c.label}</h3>
+                <p class="mt-1 text-sm leading-relaxed text-text-muted">{c.body}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Cryptography</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">All keys stay on disk. All operations run in process.</h2>
+
+      <div class="mt-8 space-y-6 text-sm leading-relaxed text-text-muted">
+        <p>
+          XML signing and encryption use Node's native <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">crypto</code>
+          plus <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">xml-crypto</code> and
+          <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">xml-encryption</code>. Both run in the main process. Private keys are loaded from disk into memory on demand, used for the single operation, and zeroed when the request completes.
+        </p>
+        <p>
+          JWT verification runs against an HS / RS / ES algorithm catalogue inside the same main process — there is no helper service, no online verification step, no shared secret pool.
+        </p>
+        <p>
+          Stored secrets — basic-auth passwords, bearer tokens, OAuth refresh tokens, certificate passphrases — pass through Electron's <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">safeStorage</code> API. On macOS that delegates to Keychain. On Windows, DPAPI. On Linux, libsecret. The raw plaintext never writes to your project's SQLite database; only the OS-encrypted blob does.
+        </p>
+        <p>
+          Master password gating is opt-in. When enabled, the app derives a key with PBKDF2-SHA256 (120,000 iterations) and uses it to envelope-encrypt the entire SQLite database before save.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border bg-bg-soft py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Audit-ready</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">Reviewable, reproducible, owned by you.</h2>
+
+      <div class="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Network-observable, not opaque</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            You don't need our source to verify the runtime contract. Run the installer behind a packet capture, an outbound proxy, or your favourite EDR — outside the auto-update check, the only egress is to the API targets you yourself configure.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Signed, hashed, pinnable releases</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Every release ships with SHA-256 checksums published next to the installer on GitHub Releases. Your procurement or compliance team can pin a specific version and verify the bytes you ship to your developers haven't been tampered with in transit.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">No phone-home in the binary</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            The shipped binary contains no analytics SDK and no remote configuration endpoint. You can confirm with <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">strings</code>, <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">tcpdump</code>, or your favourite EDR.
+          </p>
+        </div>
+        <div class="rounded-card border border-border bg-bg p-6">
+          <h3 class="text-base font-semibold text-text">Air-gapped install</h3>
+          <p class="mt-2 text-sm leading-relaxed text-text-muted">
+            Download the installer once, transfer it onto an isolated network. Auto-update is disablable. Documentation ships in-app — you don't need internet to read it.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border">
+    <div class="mx-auto max-w-3xl px-6 py-20 text-center">
+      <h2 class="text-3xl font-semibold tracking-tight text-text">Found a vulnerability?</h2>
+      <p class="mt-4 text-base leading-relaxed text-text-muted">
+        Use GitHub's private security advisory channel — your report stays private between you and the maintainers, no public issue is created: <a class="text-accent-text underline-offset-4 hover:underline" href="https://github.com/apinizer/testnizer-releases/security/advisories/new" target="_blank" rel="noopener">Report a vulnerability privately</a>. We'll triage within five working days.
+      </p>
+    </div>
+  </section>
+</BaseLayout>
