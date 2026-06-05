@@ -10,26 +10,14 @@
  * silently (a wrong byte still produces a plausible-looking header).
  *
  * Coverage: basic, bearer (default + custom prefix), api-key (header + query),
- * oauth2, digest, ntlm, hawk, aws-signature (SigV4).
+ * oauth2, digest (MD5 + SHA-256 + RFC 2069 no-qop), ntlm (full NTLMSSP
+ * handshake), hawk, aws-signature (SigV4).
  *
- * IMPORTANT IMPLEMENTATION NOTES discovered while writing these tests — the
- * assertions below pin the ENGINE'S CURRENT BEHAVIOUR, which differs from a
- * naive reading of the auth-type names:
- *
- *   • digest  — the engine does NOT implement RFC 2617 digest. It merely sets
- *     axios's `config.auth`, and axios 1.16 turns that into a plain
- *     `Authorization: Basic base64(user:pass)` header (it has no
- *     WWW-Authenticate challenge/response logic). So "digest" currently
- *     behaves identically to basic. We assert that real behaviour rather than
- *     a digest `response=` hash that the code never produces.
- *
- *   • ntlm    — same story. The engine sets `config.auth` with
- *     `DOMAIN\username`, which axios emits as
- *     `Authorization: Basic base64(DOMAIN\user:pass)`. No NTLMSSP Type-1
- *     ("Negotiate TlRMTVNTUA...") message is ever generated.
- *
- * If/when the engine grows a real digest/NTLM handshake these two tests must
- * be rewritten — they are intentionally strict so that change is caught.
+ * digest and ntlm exercise the engine's REAL challenge/response handshakes
+ * (added when the earlier silent Basic-fallback was fixed): the local server
+ * issues a 401 challenge and each test asserts the engine answers with a
+ * correct Digest `response=` hash, or completes the NTLMSSP Type 1 → Type 2 →
+ * Type 3 exchange — never a `Basic` header.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -83,7 +71,14 @@ beforeAll(
     }),
 )
 
-afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())))
+afterAll(
+  () =>
+    new Promise<void>((resolve) => {
+      // NTLM forces keep-alive sockets; terminate them so close() actually fires.
+      ;(server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.()
+      server.close(() => resolve())
+    }),
+)
 
 function baseUrl(path = '/'): string {
   return `http://127.0.0.1:${port}${path}`
@@ -211,103 +206,229 @@ describe('http.engine auth — oauth2', () => {
   })
 })
 
-// ─── digest ──────────────────────────────────────────────────
+// ─── digest (RFC 2617 / RFC 7616) ────────────────────────────
 //
-// The engine delegates to axios `config.auth`, which (axios 1.16) has no
-// digest handshake and emits a Basic header. These tests pin that real
-// behaviour. The second test stands up a 401 WWW-Authenticate challenge to
-// prove the engine does NOT perform the digest response dance (no second
-// request carrying a `Digest ... response=` header).
+// The engine sends the request, reads the 401 `WWW-Authenticate: Digest`
+// challenge, computes the response hash and resends. The server here validates
+// that hash exactly (recomputing HA1/HA2/response), so a 200 proves the engine
+// produced a cryptographically correct Digest answer — not a smoke check.
 
-describe('http.engine auth — digest (currently basic-equivalent)', () => {
-  it('emits Authorization: Basic base64(user:pass) — engine has no real digest', async () => {
-    reset()
-    await executeHttpRequest({
-      method: 'GET',
-      url: baseUrl('/digest'),
-      auth: { type: 'digest', digest: { username: 'mufasa', password: 'Circle Of Life' } },
-      timeout: 3000,
-    })
-    const auth = captured?.headers.authorization ?? ''
-    // It is a Basic header, decoding back to the exact credentials.
-    expect(auth.startsWith('Basic ')).toBe(true)
-    const decoded = Buffer.from(auth.slice('Basic '.length), 'base64').toString('utf8')
-    expect(decoded).toBe('mufasa:Circle Of Life')
-    // Explicitly NOT a digest header.
-    expect(auth.startsWith('Digest ')).toBe(false)
-  })
+function md5hex(s: string): string {
+  return createHash('md5').update(s).digest('hex')
+}
+function sha256hex(s: string): string {
+  return createHash('sha256').update(s).digest('hex')
+}
+function parseAuthParams(header: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const body = header.replace(/^\w+\s+/, '')
+  const re = /(\w[\w-]*)\s*=\s*(?:"([^"]*)"|([^,\s]+))/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(body)) !== null) out[m[1].toLowerCase()] = m[2] !== undefined ? m[2] : m[3]
+  return out
+}
 
-  it('does NOT answer a 401 WWW-Authenticate digest challenge with a Digest response', async () => {
+const DIGEST_USER = 'mufasa'
+const DIGEST_PASS = 'Circle Of Life'
+const DIGEST_REALM = 'testrealm@host.com'
+const DIGEST_NONCE = 'dcd98b7102dd2f0e8b11d0f600bfb0c093'
+
+describe('http.engine auth — digest', () => {
+  it('answers an MD5 / qop=auth challenge with a correct response hash', async () => {
     reset()
-    let requestCount = 0
-    customHandler = (_req, res) => {
-      requestCount++
-      if (requestCount === 1) {
-        // First hit: issue an RFC 2617 digest challenge.
+    const seen: string[] = []
+    customHandler = (cap, res) => {
+      const auth = (cap.headers.authorization as string) ?? ''
+      seen.push(auth)
+      if (!auth.startsWith('Digest ')) {
         res.writeHead(401, {
-          'WWW-Authenticate':
-            'Digest realm="testrealm@host.com", qop="auth", nonce="dcd98b7102dd2f0e8b11d0f600bfb0c093", opaque="5ccc069c403ebaf9f0171e9517f40e41"',
+          'WWW-Authenticate': `Digest realm="${DIGEST_REALM}", qop="auth", nonce="${DIGEST_NONCE}", opaque="op-1"`,
         })
         res.end('challenge')
         return true
       }
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ ok: true }))
+      const p = parseAuthParams(auth)
+      const ha1 = md5hex(`${DIGEST_USER}:${DIGEST_REALM}:${DIGEST_PASS}`)
+      const ha2 = md5hex(`${cap.method}:${p.uri}`)
+      const expected = md5hex(`${ha1}:${DIGEST_NONCE}:${p.nc}:${p.cnonce}:auth:${ha2}`)
+      res.writeHead(p.response === expected ? 200 : 403, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: p.response === expected }))
       return true
     }
     const res = await executeHttpRequest({
       method: 'GET',
-      url: baseUrl('/digest'),
-      auth: { type: 'digest', digest: { username: 'mufasa', password: 'Circle Of Life' } },
-      timeout: 3000,
+      url: baseUrl('/secure/resource'),
+      auth: { type: 'digest', digest: { username: DIGEST_USER, password: DIGEST_PASS } },
+      timeout: 5000,
     })
-    // Engine does not retry with a digest response — it sees the 401 directly.
-    expect(res.status).toBe(401)
-    expect(requestCount).toBe(1)
-    // The lone request carried a Basic (not Digest) header.
-    expect((captured?.headers.authorization ?? '').startsWith('Basic ')).toBe(true)
+    expect(res.status).toBe(200) // server accepted our computed digest response
+    expect(seen.length).toBe(2) // probe (401 challenge) + authenticated retry
+    expect(seen[1].startsWith('Digest ')).toBe(true)
+    const p = parseAuthParams(seen[1])
+    expect(p.username).toBe(DIGEST_USER)
+    expect(p.realm).toBe(DIGEST_REALM)
+    expect(p.nonce).toBe(DIGEST_NONCE)
+    expect(p.uri).toBe('/secure/resource')
+    expect(p.qop).toBe('auth')
+    expect(p.opaque).toBe('op-1')
+    expect(p.response).toMatch(/^[0-9a-f]{32}$/)
+  })
+
+  it('uses SHA-256 when the challenge specifies algorithm=SHA-256 (RFC 7616)', async () => {
+    reset()
+    const seen: string[] = []
+    customHandler = (cap, res) => {
+      const auth = (cap.headers.authorization as string) ?? ''
+      seen.push(auth)
+      if (!auth.startsWith('Digest ')) {
+        res.writeHead(401, {
+          'WWW-Authenticate': `Digest realm="${DIGEST_REALM}", qop="auth", nonce="${DIGEST_NONCE}", algorithm=SHA-256`,
+        })
+        res.end('challenge')
+        return true
+      }
+      const p = parseAuthParams(auth)
+      const ha1 = sha256hex(`${DIGEST_USER}:${DIGEST_REALM}:${DIGEST_PASS}`)
+      const ha2 = sha256hex(`${cap.method}:${p.uri}`)
+      const expected = sha256hex(`${ha1}:${DIGEST_NONCE}:${p.nc}:${p.cnonce}:auth:${ha2}`)
+      res.writeHead(p.response === expected ? 200 : 403)
+      res.end('done')
+      return true
+    }
+    const res = await executeHttpRequest({
+      method: 'GET',
+      url: baseUrl('/secure/sha'),
+      auth: { type: 'digest', digest: { username: DIGEST_USER, password: DIGEST_PASS } },
+      timeout: 5000,
+    })
+    expect(res.status).toBe(200)
+    expect(parseAuthParams(seen[1]).algorithm).toBe('SHA-256')
+    // SHA-256 response digest is 64 hex chars, not MD5's 32.
+    expect(parseAuthParams(seen[1]).response).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('falls back to the RFC 2069 (no-qop) response when the challenge omits qop', async () => {
+    reset()
+    const seen: string[] = []
+    customHandler = (cap, res) => {
+      const auth = (cap.headers.authorization as string) ?? ''
+      seen.push(auth)
+      if (!auth.startsWith('Digest ')) {
+        res.writeHead(401, {
+          'WWW-Authenticate': `Digest realm="${DIGEST_REALM}", nonce="${DIGEST_NONCE}"`,
+        })
+        res.end('challenge')
+        return true
+      }
+      const p = parseAuthParams(auth)
+      const ha1 = md5hex(`${DIGEST_USER}:${DIGEST_REALM}:${DIGEST_PASS}`)
+      const ha2 = md5hex(`${cap.method}:${p.uri}`)
+      const expected = md5hex(`${ha1}:${DIGEST_NONCE}:${ha2}`)
+      res.writeHead(p.response === expected ? 200 : 403)
+      res.end('done')
+      return true
+    }
+    const res = await executeHttpRequest({
+      method: 'GET',
+      url: baseUrl('/secure/legacy'),
+      auth: { type: 'digest', digest: { username: DIGEST_USER, password: DIGEST_PASS } },
+      timeout: 5000,
+    })
+    expect(res.status).toBe(200)
+    const p = parseAuthParams(seen[1])
+    // No-qop mode: the engine must omit qop/nc/cnonce entirely.
+    expect(p.qop).toBeUndefined()
+    expect(p.nc).toBeUndefined()
+    expect(p.cnonce).toBeUndefined()
   })
 })
 
-// ─── ntlm ────────────────────────────────────────────────────
+// ─── ntlm (NTLMSSP, via axios-ntlm) ──────────────────────────
 //
-// Also `config.auth`-based → Basic header with DOMAIN\username. No NTLMSSP
-// Type-1 Negotiate message is produced by the engine.
+// Full handshake: the engine sends the request, the server answers 401 `NTLM`,
+// axios-ntlm sends a Type 1 (Negotiate), the server returns a Type 2 challenge,
+// axios-ntlm sends a Type 3, the server accepts (200). A valid NTLMv2-capable
+// Type 2 (NTLM2_KEY + TARGET_INFO flags) is needed or createType3Message would
+// fall down the legacy DES path.
 
-describe('http.engine auth — ntlm (currently basic-equivalent)', () => {
-  it('encodes DOMAIN\\username:password as Basic — no NTLMSSP Type-1 message', async () => {
+const NTLM_TYPE2_B64 = 'TlRMTVNTUAACAAAAAAAAADAAAAABAIgAU3J2Tm9uY2UAAAAAAAAAAAQABAAwAAAAAAAAAA=='
+
+function ntlmMessageType(auth: string | undefined): number {
+  if (!auth) return 0
+  const b64 = auth.replace(/^NTLM\s+/i, '')
+  const buf = Buffer.from(b64, 'base64')
+  if (buf.length < 12 || buf.toString('ascii', 0, 7) !== 'NTLMSSP') return -1
+  return buf.readUInt32LE(8)
+}
+
+describe('http.engine auth — ntlm', () => {
+  it('completes the NTLMSSP Type 1 → Type 2 → Type 3 handshake (never Basic)', async () => {
     reset()
-    await executeHttpRequest({
+    const seen: (string | undefined)[] = []
+    customHandler = (cap, res) => {
+      const auth = cap.headers.authorization as string | undefined
+      seen.push(auth)
+      const t = ntlmMessageType(auth)
+      if (!auth) {
+        res.writeHead(401, { 'WWW-Authenticate': 'NTLM' })
+        res.end('need-ntlm')
+      } else if (t === 1) {
+        res.writeHead(401, { 'WWW-Authenticate': `NTLM ${NTLM_TYPE2_B64}` })
+        res.end('type2')
+      } else if (t === 3) {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true }))
+      } else {
+        res.writeHead(400)
+        res.end('bad')
+      }
+      return true
+    }
+    const res = await executeHttpRequest({
       method: 'GET',
-      url: baseUrl('/ntlm'),
+      url: baseUrl('/ntlm/resource'),
       auth: {
         type: 'ntlm',
-        ntlm: { username: 'jdoe', password: 'p@ss', domain: 'CORP' },
+        ntlm: { username: 'jdoe', password: 'p@ss', domain: 'CORP', workstation: 'WS1' },
       },
-      timeout: 3000,
+      timeout: 8000,
     })
-    const auth = captured?.headers.authorization ?? ''
-    expect(auth.startsWith('Basic ')).toBe(true)
-    const decoded = Buffer.from(auth.slice('Basic '.length), 'base64').toString('utf8')
-    expect(decoded).toBe('CORP\\jdoe:p@ss')
-    // Explicitly NOT a Negotiate / NTLMSSP handshake.
-    expect(auth.startsWith('Negotiate ')).toBe(false)
-    expect(auth.startsWith('NTLM ')).toBe(false)
-    // The NTLMSSP signature base64-encodes to a string starting "TlRMTVNTUA".
-    expect(auth).not.toContain('TlRMTVNTUA')
+    expect(res.status).toBe(200) // handshake completed end-to-end
+    const types = seen.map((a) => ntlmMessageType(a))
+    expect(types).toContain(1) // Type 1 Negotiate was sent
+    expect(types).toContain(3) // Type 3 Authenticate was sent
+    // Never a Basic header — this is the regression guard for the old fallback.
+    expect(seen.some((a) => (a ?? '').startsWith('Basic '))).toBe(false)
   })
 
-  it('omits the domain prefix when no domain is supplied', async () => {
+  it('engages NTLM (Type 1 sent) even when no domain is supplied', async () => {
     reset()
-    await executeHttpRequest({
+    const seen: (string | undefined)[] = []
+    customHandler = (cap, res) => {
+      const auth = cap.headers.authorization as string | undefined
+      seen.push(auth)
+      const t = ntlmMessageType(auth)
+      if (!auth) {
+        res.writeHead(401, { 'WWW-Authenticate': 'NTLM' })
+        res.end()
+      } else if (t === 1) {
+        res.writeHead(401, { 'WWW-Authenticate': `NTLM ${NTLM_TYPE2_B64}` })
+        res.end()
+      } else {
+        res.writeHead(200)
+        res.end('ok')
+      }
+      return true
+    }
+    const res = await executeHttpRequest({
       method: 'GET',
-      url: baseUrl('/ntlm'),
+      url: baseUrl('/ntlm/nodomain'),
       auth: { type: 'ntlm', ntlm: { username: 'solo', password: 'pw' } },
-      timeout: 3000,
+      timeout: 8000,
     })
-    const auth = captured?.headers.authorization ?? ''
-    const decoded = Buffer.from(auth.slice('Basic '.length), 'base64').toString('utf8')
-    expect(decoded).toBe('solo:pw')
+    expect(res.status).toBe(200)
+    expect(seen.map((a) => ntlmMessageType(a))).toContain(3)
+    expect(seen.some((a) => (a ?? '').startsWith('Basic '))).toBe(false)
   })
 })
 

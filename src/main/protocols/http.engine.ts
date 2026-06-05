@@ -1,7 +1,8 @@
 import axios, { AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios'
+import { NtlmClient } from 'axios-ntlm'
 import { CookieJar } from 'tough-cookie'
 import { randomUUID } from 'crypto'
-import { createHash, createHmac } from 'crypto'
+import { createHash, createHmac, randomBytes } from 'crypto'
 import http from 'http'
 import https from 'https'
 import { URL } from 'url'
@@ -306,12 +307,9 @@ function applyAuth(
       break
     }
     case 'digest': {
-      if (auth.digest) {
-        config.auth = {
-          username: auth.digest.username,
-          password: auth.digest.password,
-        }
-      }
+      // Handled in dispatchRequest(): Digest is a 401-challenge/response
+      // scheme (RFC 2617 / RFC 7616), so the Authorization header can only be
+      // built after the server's nonce arrives. Nothing to pre-apply here.
       break
     }
     case 'hawk': {
@@ -344,17 +342,166 @@ function applyAuth(
       break
     }
     case 'ntlm': {
-      if (auth.ntlm) {
-        config.auth = {
-          username: auth.ntlm.domain
-            ? `${auth.ntlm.domain}\\${auth.ntlm.username}`
-            : auth.ntlm.username,
-          password: auth.ntlm.password,
-        }
-      }
+      // Handled in dispatchRequest() via axios-ntlm — NTLM is a 3-leg
+      // NTLMSSP handshake (Type 1 → Type 2 → Type 3) over one keep-alive
+      // connection, not a static header.
       break
     }
   }
+}
+
+// ─── Digest (RFC 2617 / RFC 7616) + NTLM dispatch ───────────────────
+//
+// Digest and NTLM are challenge/response schemes — they need more than one
+// round trip, so they can't be expressed as a single pre-computed header in
+// applyAuth(). dispatchRequest() wraps the actual axios call and handles them:
+//   • Digest — send once, read the 401 `WWW-Authenticate: Digest` challenge,
+//     compute the response hash, resend with the Authorization header.
+//   • NTLM — delegated to axios-ntlm, which runs the 3-leg NTLMSSP handshake
+//     (Type 1 → Type 2 → Type 3) over a single keep-alive connection (the
+//     engine forces keepAlive agents for ntlm in executeHttpRequest).
+
+function parseDigestChallenge(header: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const body = header.replace(/^\s*Digest\s+/i, '')
+  // key=value where value is either "quoted" or a bare token.
+  const re = /(\w[\w-]*)\s*=\s*(?:"([^"]*)"|([^,\s]+))/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(body)) !== null) {
+    out[m[1].toLowerCase()] = m[2] !== undefined ? m[2] : m[3]
+  }
+  return out
+}
+
+function digestRequestUri(url: string): string {
+  try {
+    const u = new URL(url)
+    return `${u.pathname}${u.search}`
+  } catch {
+    return url
+  }
+}
+
+function buildDigestAuthHeader(
+  challenge: string,
+  creds: { username: string; password: string },
+  method: string,
+  url: string,
+): string {
+  const p = parseDigestChallenge(challenge)
+  const realm = p.realm ?? ''
+  const nonce = p.nonce ?? ''
+  const algorithm = p.algorithm ?? 'MD5'
+  const algoUpper = algorithm.toUpperCase()
+  const uri = digestRequestUri(url)
+  const cnonce = randomBytes(16).toString('hex')
+  const nc = '00000001'
+
+  // RFC 7616 adds SHA-256; anything else (incl. the classic MD5) uses MD5.
+  const hashName = algoUpper.startsWith('SHA-256') ? 'sha256' : 'md5'
+  const H = (s: string): string => createHash(hashName).update(s).digest('hex')
+
+  let ha1 = H(`${creds.username}:${realm}:${creds.password}`)
+  if (algoUpper.endsWith('-SESS')) {
+    ha1 = H(`${ha1}:${nonce}:${cnonce}`)
+  }
+  // We implement qop="auth" (not "auth-int"), so HA2 = H(method:uri).
+  const ha2 = H(`${method.toUpperCase()}:${uri}`)
+
+  const qop = p.qop
+    ? p.qop
+        .split(',')
+        .map((q) => q.trim())
+        .includes('auth')
+      ? 'auth'
+      : undefined
+    : undefined
+
+  const response = qop
+    ? H(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
+    : H(`${ha1}:${nonce}:${ha2}`)
+
+  const parts = [
+    `username="${creds.username}"`,
+    `realm="${realm}"`,
+    `nonce="${nonce}"`,
+    `uri="${uri}"`,
+    `response="${response}"`,
+    `algorithm=${algorithm}`,
+  ]
+  if (p.opaque !== undefined) parts.push(`opaque="${p.opaque}"`)
+  if (qop) parts.push(`qop=${qop}`, `nc=${nc}`, `cnonce="${cnonce}"`)
+  return `Digest ${parts.join(', ')}`
+}
+
+function headerValueCI(headers: unknown, name: string): string | undefined {
+  if (!headers || typeof headers !== 'object') return undefined
+  const lower = name.toLowerCase()
+  for (const [k, v] of Object.entries(headers as Record<string, unknown>)) {
+    if (k.toLowerCase() === lower) {
+      return Array.isArray(v) ? String(v[0]) : v == null ? undefined : String(v)
+    }
+  }
+  return undefined
+}
+
+async function requestWithDigest(
+  config: AxiosRequestConfig,
+  creds: { username: string; password: string },
+  method: string,
+  url: string,
+): Promise<AxiosResponse<string>> {
+  // Probe: accept 2xx + 401 without throwing so we can read the challenge.
+  // Any other status hits axios's default validateStatus on the probe →
+  // throws → handled by executeHttpRequest's catch, identical to today.
+  const probe = await axios.request<string>({
+    ...config,
+    validateStatus: (s) => (s >= 200 && s < 300) || s === 401,
+  })
+  if (probe.status !== 401) return probe
+  const challenge = headerValueCI(probe.headers, 'www-authenticate')
+  if (!challenge || !/digest/i.test(challenge)) return probe
+  config.headers = config.headers ?? {}
+  ;(config.headers as Record<string, string>)['Authorization'] = buildDigestAuthHeader(
+    challenge,
+    creds,
+    method,
+    url,
+  )
+  // Authenticated request with the engine's default validateStatus, so the
+  // normal resolve/throw flow applies to the final response.
+  return axios.request<string>(config)
+}
+
+async function dispatchRequest(
+  config: AxiosRequestConfig,
+  auth: AuthConfig | undefined,
+  method: string,
+  url: string,
+): Promise<AxiosResponse<string>> {
+  if (auth?.type === 'ntlm' && auth.ntlm) {
+    // axios-ntlm drives the handshake from its response-error interceptor: a
+    // 401 must REJECT for it to fire. The engine's global `validateStatus: () =>
+    // true` (which keeps the UI showing 4xx/5xx bodies instead of throwing)
+    // would swallow the 401 and the handshake would never start. So for ntlm we
+    // reject only on 401 — challenge legs trigger the retry, every other status
+    // (incl. the final 2xx and any real 4xx/5xx body) still resolves normally.
+    const ntlmConfig: AxiosRequestConfig = { ...config, validateStatus: (s) => s !== 401 }
+    const client = NtlmClient(
+      {
+        username: auth.ntlm.username,
+        password: auth.ntlm.password,
+        domain: auth.ntlm.domain ?? '',
+        workstation: auth.ntlm.workstation,
+      },
+      ntlmConfig,
+    )
+    return client.request<string>(ntlmConfig)
+  }
+  if (auth?.type === 'digest' && auth.digest) {
+    return requestWithDigest(config, auth.digest, method, url)
+  }
+  return axios.request<string>(config)
 }
 
 function generateHawkHeader(
@@ -773,8 +920,14 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     // intervals from each other. Hooking `createConnection` is the only way
     // to learn about the socket's lifecycle without forking the axios
     // adapter.
+    // NTLM is a multi-leg NTLMSSP handshake over ONE TCP connection; without
+    // keep-alive the Type 3 message lands on a fresh socket that never saw the
+    // Type 2 challenge and the handshake fails. axios-ntlm reuses these agents
+    // via config, so force keep-alive when the auth type is ntlm.
+    const needKeepAlive = options.auth?.type === 'ntlm'
+    if (needKeepAlive) httpsAgentOpts.keepAlive = true
     const httpsAgent = new https.Agent(httpsAgentOpts)
-    const httpAgent = new http.Agent()
+    const httpAgent = new http.Agent(needKeepAlive ? { keepAlive: true } : {})
     const socketTimings = attachSocketTimings(httpsAgent, httpAgent)
     config.httpsAgent = httpsAgent
     config.httpAgent = httpAgent
@@ -814,9 +967,16 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       if (firstByteAt == null) firstByteAt = performance.now()
     }
 
-    // Execute request using plain axios (no cookiejar wrapper).
+    // Execute request (no cookiejar wrapper). dispatchRequest handles the
+    // multi-leg Digest / NTLM challenge flows; everything else is a plain
+    // axios.request(config).
     const requestStart = performance.now()
-    const response: AxiosResponse<string> = await axios.request(config)
+    const response: AxiosResponse<string> = await dispatchRequest(
+      config,
+      options.auth,
+      options.method,
+      options.url,
+    )
     const endTime = performance.now()
 
     // Merge per-phase numbers from the socket-level instrumentation.
