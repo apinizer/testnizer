@@ -14,6 +14,9 @@ import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { makeId } from '../lib/utils'
+// Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
+// the unsaved-change indicator works for SOAP, not just HTTP (issue #8).
+import { markActiveTabDirty } from '../lib/mark-dirty'
 
 /** SOAP metadata stored in endpoint request_schema.soap */
 interface SoapEndpointMeta {
@@ -187,7 +190,10 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
   _tabStates: persisted._tabStates,
   _currentTabId: persisted._currentTabId,
 
-  setWsdlUrl: (url) => set({ wsdlUrl: url }),
+  setWsdlUrl: (url) => {
+    set({ wsdlUrl: url })
+    markActiveTabDirty()
+  },
 
   parseWsdl: async () => {
     const rawUrl = get().wsdlUrl.trim()
@@ -260,6 +266,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         })
       }
     }
+    markActiveTabDirty()
   },
 
   selectPort: (name) => {
@@ -278,6 +285,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         formValues: flattenSchema(op.inputSchema),
       })
     }
+    markActiveTabDirty()
   },
 
   selectOperation: (name) => {
@@ -291,28 +299,51 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         formValues: flattenSchema(op.inputSchema),
       })
     }
+    markActiveTabDirty()
   },
 
-  setFormValue: (key, value) =>
+  setFormValue: (key, value) => {
     set((state) => ({
       formValues: { ...state.formValues, [key]: value },
-    })),
+    }))
+    markActiveTabDirty()
+  },
 
-  setFormValues: (values) => set({ formValues: values }),
+  setFormValues: (values) => {
+    set({ formValues: values })
+    markActiveTabDirty()
+  },
 
-  setRawXml: (xml) => set({ rawXml: xml }),
+  setRawXml: (xml) => {
+    set({ rawXml: xml })
+    markActiveTabDirty()
+  },
 
-  setBodyMode: (mode) => set({ bodyMode: mode }),
+  setBodyMode: (mode) => {
+    set({ bodyMode: mode })
+    markActiveTabDirty()
+  },
 
-  setEndpointUrl: (url) => set({ endpointUrl: url }),
+  setEndpointUrl: (url) => {
+    set({ endpointUrl: url })
+    markActiveTabDirty()
+  },
 
-  setManualSoapAction: (action) => set({ manualSoapAction: action }),
-  setManualSoapVersion: (v) => set({ manualSoapVersion: v }),
+  setManualSoapAction: (action) => {
+    set({ manualSoapAction: action })
+    markActiveTabDirty()
+  },
+  setManualSoapVersion: (v) => {
+    set({ manualSoapVersion: v })
+    markActiveTabDirty()
+  },
 
-  setWsSecurity: (config) =>
+  setWsSecurity: (config) => {
     set((state) => ({
       wsSecurity: { ...state.wsSecurity, ...config },
-    })),
+    }))
+    markActiveTabDirty()
+  },
 
   sendSoap: async () => {
     const { rawXml, wsSecurity, parsedWsdl, manualSoapAction, manualSoapVersion } = get()

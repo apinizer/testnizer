@@ -20,6 +20,7 @@ import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
 import { openFolderRunner } from '../../lib/open-runner-tab'
+import { openEndpointTab } from '../../lib/open-endpoint-tab'
 
 // Re-alias for flattenTree signature
 type TreeNode = TreeNodeType
@@ -383,7 +384,7 @@ export default function TreeView() {
           // Stamp the active branch so content created on a non-default branch
           // is isolated to it (#8). null on the default branch = shared.
           branch_id: useBranchStore.getState().getActiveBranchScope(),
-        })) as { success: boolean; error?: string } | undefined
+        })) as { success: boolean; error?: string; data?: { id: string } } | undefined
         // Previously this `await` was followed by a hard `refreshTree()` with
         // no inspection of the IPC result — a non-existent SQL constraint or
         // a missing IPC binding silently swallowed the request and the user
@@ -405,6 +406,14 @@ export default function TreeView() {
         if (folderId) {
           const store = useWorkspaceStore.getState()
           if (!store.openNodeIds.has(folderId)) store.toggleNode(folderId)
+        }
+        // Open + focus the freshly-created request, matching the global "+ New"
+        // dropdown (which opens its tab immediately). Without this the request
+        // appeared in the tree but the user had to find and click it manually
+        // (issue #6). `openEndpointTab` opens the tab, switches to it, and
+        // hydrates protocol-specific state for non-HTTP types.
+        if (result.data?.id) {
+          await openEndpointTab(result.data.id)
         }
       } catch (err) {
         console.error('Add Request from context menu failed:', err)

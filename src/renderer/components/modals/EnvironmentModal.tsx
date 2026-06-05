@@ -235,7 +235,7 @@ export default function EnvironmentModal() {
   }
 
   return (
-    <Modal open={show} onOpenChange={setShow} title="Environments">
+    <Modal open={show} onOpenChange={setShow} title="Environments" testId="environment-modal">
       <div
         className="flex overflow-hidden rounded-[12px]"
         style={{
@@ -380,9 +380,11 @@ export default function EnvironmentModal() {
               <Download size={12} />
               {importing ? t('env.importing') : t('env.importEnvironment')}
             </button>
-            {/* Export the selected environment as a Postman-compatible file
-             *  (round-trips through the existing Postman-environment importer).
-             *  There was no way to export an environment before (issue #15). */}
+            {/* Export the selected environment. The CONTENT stays Postman-schema
+             *  on purpose (round-trips through the existing Postman-environment
+             *  importer, which keys off `_postman_variable_scope` in the body —
+             *  not the filename). Only the default FILENAME is Testnizer-native
+             *  so exports aren't Postman-branded (issue #7; export added #15). */}
             <button
               type="button"
               onClick={() => {
@@ -401,7 +403,7 @@ export default function EnvironmentModal() {
                 }
                 void window.api?.importExport?.saveFile(
                   JSON.stringify(doc, null, 2),
-                  `${selectedEnv.name || 'environment'}.postman_environment.json`,
+                  `${selectedEnv.name || 'environment'}.testnizer_environment.json`,
                 )
               }}
               disabled={!selectedEnv}

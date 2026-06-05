@@ -7,6 +7,9 @@ import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { makeId } from '../lib/utils'
+// Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
+// the unsaved-change indicator works for GraphQL, not just HTTP (issue #8).
+import { markActiveTabDirty } from '../lib/mark-dirty'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
@@ -217,19 +220,39 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   isIntrospecting: false,
   introspectError: null,
 
-  setUrl: (url) => set({ url }),
-  setQuery: (query) => set({ query }),
-  setVariables: (vars) => set({ variables: vars }),
-  setHeaders: (headers) => set({ headers }),
+  setUrl: (url) => {
+    set({ url })
+    markActiveTabDirty()
+  },
+  setQuery: (query) => {
+    set({ query })
+    markActiveTabDirty()
+  },
+  setVariables: (vars) => {
+    set({ variables: vars })
+    markActiveTabDirty()
+  },
+  setHeaders: (headers) => {
+    set({ headers })
+    markActiveTabDirty()
+  },
 
-  addHeader: () => set((state) => ({ headers: [...state.headers, defaultKv()] })),
+  addHeader: () => {
+    set((state) => ({ headers: [...state.headers, defaultKv()] }))
+    markActiveTabDirty()
+  },
 
-  updateHeader: (id, updates) =>
+  updateHeader: (id, updates) => {
     set((state) => ({
       headers: state.headers.map((h) => (h.id === id ? { ...h, ...updates } : h)),
-    })),
+    }))
+    markActiveTabDirty()
+  },
 
-  removeHeader: (id) => set((state) => ({ headers: state.headers.filter((h) => h.id !== id) })),
+  removeHeader: (id) => {
+    set((state) => ({ headers: state.headers.filter((h) => h.id !== id) }))
+    markActiveTabDirty()
+  },
 
   executeQuery: async () => {
     const { url, query, variables, headers } = get()

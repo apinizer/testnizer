@@ -65,6 +65,9 @@ import { tabBelongsToPage } from '../../lib/sidebar-pages'
 // leaked protocol-store slices that the in-Workbench Ctrl+W path cleaned
 // up — v1.4.4 close-bypass).
 import { cleanupTabState } from '../../lib/cleanup-tab-state'
+import { saveActiveRequestInPlace } from '../../lib/save-active-request'
+import UnsavedChangesDialog from '../modals/UnsavedChangesDialog'
+import { toast } from '../../lib/toast'
 
 function EndpointTabBar() {
   const allTabs = useTabsStore((s) => s.tabs)
@@ -90,6 +93,9 @@ function EndpointTabBar() {
   // last tab" — drawn as a marker on the right edge of the strip.
   const [dropBeforeId, setDropBeforeId] = useState<string | null | undefined>(undefined)
   const moveTab = useTabsStore((s) => s.moveTab)
+  // Tab pending an unsaved-changes confirm on close (issue #9), + Save in-flight.
+  const [closeConfirmTabId, setCloseConfirmTabId] = useState<string | null>(null)
+  const [closeSaving, setCloseSaving] = useState(false)
 
   const TAB_DND_MIME = 'application/testnizer-tab'
 
@@ -151,12 +157,19 @@ function EndpointTabBar() {
       handleDuplicateTab(tabId)
       return
     }
+    // Single-tab "Close" → the 3-way Save / Discard / Cancel dialog (issue #9).
+    // Bulk variants (closeOthers/Left/Right/All) keep the lighter batch confirm
+    // below since there's no single Save target for them.
+    if (action === 'close') {
+      requestCloseTab(tabId)
+      return
+    }
 
     const allTabs = useTabsStore.getState().tabs
     const idx = allTabs.findIndex((t) => t.id === tabId)
     if (idx < 0) return
     const idsToClose: string[] = []
-    if (action === 'close' || action === 'closeForce') {
+    if (action === 'closeForce') {
       idsToClose.push(tabId)
     } else if (action === 'closeOthers') {
       idsToClose.push(...allTabs.filter((t) => t.id !== tabId).map((t) => t.id))
@@ -323,23 +336,79 @@ function EndpointTabBar() {
     setActiveTab(tabId)
   }
 
-  function handleCloseTab(tabId: string, e: React.MouseEvent) {
-    e.stopPropagation()
+  /** Switch the active tab + every protocol store to `tabId`. */
+  function activateTab(tabId: string) {
+    switchToTab(tabId)
+    useSoapStore.getState().switchToTab(tabId)
+    useWebSocketStore.getState().switchToTab(tabId)
+    useSseStore.getState().switchToTab(tabId)
+    useGrpcStore.getState().switchToTab(tabId)
+    useGraphQLStore.getState().switchToTab(tabId)
+    useAiChatStore.getState().switchToTab(tabId)
+    useMcpStore.getState().switchToTab(tabId)
+    useSocketIOStore.getState().switchToTab(tabId)
+  }
+
+  /** Actually close a tab (cleanup + close + re-sync the new active tab). */
+  function doCloseTab(tabId: string) {
     cleanupTabState(tabId)
     closeTab(tabId)
     const newActiveId = useTabsStore.getState().activeTabId
     if (newActiveId) {
-      switchToTab(newActiveId)
-      useSoapStore.getState().switchToTab(newActiveId)
-      useWebSocketStore.getState().switchToTab(newActiveId)
-      useSseStore.getState().switchToTab(newActiveId)
-      useGrpcStore.getState().switchToTab(newActiveId)
-      useGraphQLStore.getState().switchToTab(newActiveId)
-      useAiChatStore.getState().switchToTab(newActiveId)
-      useMcpStore.getState().switchToTab(newActiveId)
-      useSocketIOStore.getState().switchToTab(newActiveId)
+      activateTab(newActiveId)
       clearResponse()
     }
+  }
+
+  /** Close a tab, prompting first if it has unsaved changes (issue #9). */
+  function requestCloseTab(tabId: string) {
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)
+    if (tab?.isDirty) {
+      setCloseConfirmTabId(tabId)
+    } else {
+      doCloseTab(tabId)
+    }
+  }
+
+  function handleCloseTab(tabId: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    requestCloseTab(tabId)
+  }
+
+  // ─── Unsaved-changes confirm handlers (issue #9) ────────────────
+  async function handleCloseSave() {
+    const tabId = closeConfirmTabId
+    if (!tabId) return
+    setCloseSaving(true)
+    try {
+      // `saveActiveRequestInPlace` targets the ACTIVE tab — make the closing tab
+      // active first so a background tab's × still saves the right request.
+      if (useTabsStore.getState().activeTabId !== tabId) activateTab(tabId)
+      const result = await saveActiveRequestInPlace()
+      if (!result.success && !result.notApplicable) {
+        toast.error(`Failed to save: ${result.error ?? 'unknown error'}`)
+        setCloseSaving(false)
+        return // keep the dialog open so the user can retry or cancel
+      }
+    } catch (err) {
+      toast.error(`Failed to save: ${(err as Error).message || 'unknown error'}`)
+      setCloseSaving(false)
+      return
+    }
+    setCloseSaving(false)
+    setCloseConfirmTabId(null)
+    doCloseTab(tabId)
+  }
+
+  function handleCloseDiscard() {
+    const tabId = closeConfirmTabId
+    setCloseConfirmTabId(null)
+    if (tabId) doCloseTab(tabId)
+  }
+
+  function handleCloseCancel() {
+    if (closeSaving) return
+    setCloseConfirmTabId(null)
   }
 
   function handleNewTab() {
@@ -382,6 +451,7 @@ function EndpointTabBar() {
         return (
           <div
             key={tab.id}
+            data-testid="endpoint-tab"
             className="group"
             draggable={renamingTabId !== tab.id}
             onDragStart={(e) => {
@@ -666,6 +736,15 @@ function EndpointTabBar() {
           </div>,
           document.body,
         )}
+
+      <UnsavedChangesDialog
+        open={closeConfirmTabId !== null}
+        itemName={allTabs.find((t) => t.id === closeConfirmTabId)?.name ?? 'this request'}
+        saving={closeSaving}
+        onSave={handleCloseSave}
+        onDiscard={handleCloseDiscard}
+        onCancel={handleCloseCancel}
+      />
     </div>
   )
 }

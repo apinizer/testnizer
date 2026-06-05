@@ -181,8 +181,26 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
  * persisting metadata that no read path consumed.
  *
  * Tolerant: silently skips unknown protocols or malformed `metadata`.
+ *
+ * NOTE: this hydration path reuses the protocol stores' user-facing setters,
+ * which now flag the active tab dirty (issue #8). Re-hydrating a freshly-opened
+ * request must NOT leave it looking edited, so we snapshot the active tab's
+ * dirty flag before restoring and put it back afterwards — the restore itself
+ * is never a user edit.
  */
 export function restoreProtocolFromMetadata(protocol: string, metadata: unknown): void {
+  const tabs = useTabsStore.getState()
+  const activeTabId = tabs.activeTabId
+  const wasDirty = activeTabId
+    ? (tabs.tabs.find((t) => t.id === activeTabId)?.isDirty ?? false)
+    : false
+  applyProtocolMetadata(protocol, metadata)
+  // The setters fired above may have flipped the dirty dot on; restore the
+  // pre-hydration value so reopening a saved request reads as clean.
+  if (activeTabId) tabs.markDirty(activeTabId, wasDirty)
+}
+
+function applyProtocolMetadata(protocol: string, metadata: unknown): void {
   if (!metadata || typeof metadata !== 'object') return
   const meta = metadata as Record<string, unknown>
 

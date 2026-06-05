@@ -17,6 +17,8 @@ interface ModalProps {
   /** Override the default centered positioning class on the content box. Pass full positioning (e.g. 'fixed inset-y-0 right-0') for slide-in panels. */
   contentClassName?: string
   contentStyle?: CSSProperties
+  /** Playwright E2E selector hook */
+  testId?: string
 }
 
 const DEFAULT_CONTENT_CLASS = 'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'
@@ -45,6 +47,7 @@ export default function Modal({
   zIndex = Z.MODAL,
   contentClassName,
   contentStyle,
+  testId,
 }: ModalProps) {
   const block = preventClose ? blockEvent : undefined
   return (
@@ -55,6 +58,7 @@ export default function Modal({
           style={{ background: 'rgba(0,0,0,0.4)', zIndex }}
         />
         <Dialog.Content
+          data-testid={testId}
           onEscapeKeyDown={block}
           onPointerDownOutside={block}
           onInteractOutside={block}

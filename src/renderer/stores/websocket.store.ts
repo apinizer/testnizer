@@ -5,6 +5,9 @@ import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { makeId } from '../lib/utils'
+// Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
+// the unsaved-change indicator works for WebSocket, not just HTTP (issue #8).
+import { markActiveTabDirty } from '../lib/mark-dirty'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
@@ -115,7 +118,10 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
   connectionState: 'disconnected',
   events: [],
 
-  setUrl: (url) => set({ url }),
+  setUrl: (url) => {
+    set({ url })
+    markActiveTabDirty()
+  },
 
   connect: async () => {
     const { url, customHeaders } = get()
@@ -362,23 +368,42 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
 
   clearMessages: () => set({ messages: [] }),
 
-  setComposerContent: (content) => set({ composerContent: content }),
-  setComposerMode: (mode) => set({ composerMode: mode }),
-  setAutoScroll: (auto) => set({ autoScroll: auto }),
+  setComposerContent: (content) => {
+    set({ composerContent: content })
+    markActiveTabDirty()
+  },
+  setComposerMode: (mode) => {
+    set({ composerMode: mode })
+    markActiveTabDirty()
+  },
+  setAutoScroll: (auto) => {
+    set({ autoScroll: auto })
+    markActiveTabDirty()
+  },
 
-  addHeader: () => set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] })),
+  addHeader: () => {
+    set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] }))
+    markActiveTabDirty()
+  },
 
-  updateHeader: (id, updates) =>
+  updateHeader: (id, updates) => {
     set((state) => ({
       customHeaders: state.customHeaders.map((h) => (h.id === id ? { ...h, ...updates } : h)),
-    })),
+    }))
+    markActiveTabDirty()
+  },
 
-  removeHeader: (id) =>
+  removeHeader: (id) => {
     set((state) => ({
       customHeaders: state.customHeaders.filter((h) => h.id !== id),
-    })),
+    }))
+    markActiveTabDirty()
+  },
 
-  setHeaders: (headers) => set({ customHeaders: headers }),
+  setHeaders: (headers) => {
+    set({ customHeaders: headers })
+    markActiveTabDirty()
+  },
 
   addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
 

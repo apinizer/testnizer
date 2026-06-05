@@ -6,6 +6,9 @@ import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+// Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
+// the unsaved-change indicator works for gRPC, not just HTTP (issue #8).
+import { markActiveTabDirty } from '../lib/mark-dirty'
 
 function makeId(): string {
   return Math.random().toString(36).substring(2, 10)
@@ -309,10 +312,22 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
   _tabStates: persisted._tabStates,
   _currentTabId: persisted._currentTabId,
 
-  setAddress: (address) => set({ address: stripGrpcScheme(address) }),
-  setUseTls: (useTls) => set({ useTls }),
-  setProtoSource: (protoSource) => set({ protoSource }),
-  setProtoUrl: (protoUrl) => set({ protoUrl }),
+  setAddress: (address) => {
+    set({ address: stripGrpcScheme(address) })
+    markActiveTabDirty()
+  },
+  setUseTls: (useTls) => {
+    set({ useTls })
+    markActiveTabDirty()
+  },
+  setProtoSource: (protoSource) => {
+    set({ protoSource })
+    markActiveTabDirty()
+  },
+  setProtoUrl: (protoUrl) => {
+    set({ protoUrl })
+    markActiveTabDirty()
+  },
 
   loadProto: async () => {
     set({ isLoading: true, errorMessage: null })
@@ -488,20 +503,35 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     if (svc && svc.methods.length > 0) {
       set({ selectedMethod: svc.methods[0].name })
     }
+    markActiveTabDirty()
   },
 
-  selectMethod: (name) => set({ selectedMethod: name }),
+  selectMethod: (name) => {
+    set({ selectedMethod: name })
+    markActiveTabDirty()
+  },
 
-  setRequestBody: (body) => set({ requestBody: body }),
+  setRequestBody: (body) => {
+    set({ requestBody: body })
+    markActiveTabDirty()
+  },
 
-  addMetadata: () => set((state) => ({ metadata: [...state.metadata, defaultKv()] })),
+  addMetadata: () => {
+    set((state) => ({ metadata: [...state.metadata, defaultKv()] }))
+    markActiveTabDirty()
+  },
 
-  updateMetadata: (id, updates) =>
+  updateMetadata: (id, updates) => {
     set((state) => ({
       metadata: state.metadata.map((m) => (m.id === id ? { ...m, ...updates } : m)),
-    })),
+    }))
+    markActiveTabDirty()
+  },
 
-  removeMetadata: (id) => set((state) => ({ metadata: state.metadata.filter((m) => m.id !== id) })),
+  removeMetadata: (id) => {
+    set((state) => ({ metadata: state.metadata.filter((m) => m.id !== id) }))
+    markActiveTabDirty()
+  },
 
   execute: async () => {
     const { address, useTls, selectedService, selectedMethod, requestBody, metadata, protoPath } =

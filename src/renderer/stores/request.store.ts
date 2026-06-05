@@ -22,15 +22,10 @@ import {
 } from '../lib/variable-resolver'
 import { runAssertions, runScript, createPmApi } from '../lib/test-runner'
 import { makeId } from '../lib/utils'
-
-function markActiveDirty(): void {
-  const { activeTabId, tabs, markDirty } = useTabsStore.getState()
-  if (!activeTabId) return
-  const tab = tabs.find((t) => t.id === activeTabId)
-  if (tab?.endpointId || tab?.savedRequestId) {
-    markDirty(activeTabId, true)
-  }
-}
+// Shared dirty-flag helper, also used by the protocol stores so the blue dot
+// is consistent across request types (issue #8). Aliased to keep the existing
+// `markActiveDirty()` call sites unchanged.
+import { markActiveTabDirty as markActiveDirty } from '../lib/mark-dirty'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }

@@ -5,6 +5,9 @@ import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { makeId } from '../lib/utils'
+// Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
+// the unsaved-change indicator works for SSE, not just HTTP (issue #8).
+import { markActiveTabDirty } from '../lib/mark-dirty'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
@@ -130,13 +133,34 @@ export const useSseStore = create<SseStore>((set, get) => ({
   _tabStates: persisted._tabStates,
   _currentTabId: persisted._currentTabId,
 
-  setUrl: (url) => set({ url }),
-  setMethod: (method) => set({ method }),
-  setBody: (body) => set({ body }),
-  setBodyType: (bodyType) => set({ bodyType }),
-  setLastEventId: (id) => set({ lastEventId: id }),
-  setEventTypeFilter: (filter) => set({ eventTypeFilter: filter }),
-  setAutoScroll: (auto) => set({ autoScroll: auto }),
+  setUrl: (url) => {
+    set({ url })
+    markActiveTabDirty()
+  },
+  setMethod: (method) => {
+    set({ method })
+    markActiveTabDirty()
+  },
+  setBody: (body) => {
+    set({ body })
+    markActiveTabDirty()
+  },
+  setBodyType: (bodyType) => {
+    set({ bodyType })
+    markActiveTabDirty()
+  },
+  setLastEventId: (id) => {
+    set({ lastEventId: id })
+    markActiveTabDirty()
+  },
+  setEventTypeFilter: (filter) => {
+    set({ eventTypeFilter: filter })
+    markActiveTabDirty()
+  },
+  setAutoScroll: (auto) => {
+    set({ autoScroll: auto })
+    markActiveTabDirty()
+  },
 
   connect: async () => {
     const { url, customHeaders, lastEventId, method, body, bodyType } = get()
@@ -352,19 +376,29 @@ export const useSseStore = create<SseStore>((set, get) => ({
 
   clearEvents: () => set({ events: [] }),
 
-  addHeader: () => set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] })),
+  addHeader: () => {
+    set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] }))
+    markActiveTabDirty()
+  },
 
-  updateHeader: (id, updates) =>
+  updateHeader: (id, updates) => {
     set((state) => ({
       customHeaders: state.customHeaders.map((h) => (h.id === id ? { ...h, ...updates } : h)),
-    })),
+    }))
+    markActiveTabDirty()
+  },
 
-  removeHeader: (id) =>
+  removeHeader: (id) => {
     set((state) => ({
       customHeaders: state.customHeaders.filter((h) => h.id !== id),
-    })),
+    }))
+    markActiveTabDirty()
+  },
 
-  setHeaders: (headers) => set({ customHeaders: headers }),
+  setHeaders: (headers) => {
+    set({ customHeaders: headers })
+    markActiveTabDirty()
+  },
 
   addEvent: (event) => set((state) => ({ events: [...state.events, event] })),
 

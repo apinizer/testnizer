@@ -4,6 +4,9 @@ import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables } from '../lib/variable-resolver'
 import { makeId } from '../lib/utils'
+// Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
+// the unsaved-change indicator works for Socket.IO, not just HTTP (issue #8).
+import { markActiveTabDirty } from '../lib/mark-dirty'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -102,11 +105,28 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
   errorMessage: null,
   events: [],
 
-  setUrl: (url) => set({ url }),
-  setNamespace: (namespace) => set({ namespace }),
-  setBearerToken: (bearerToken) => set({ bearerToken }),
-  setEmitEvent: (emitEvent) => set({ emitEvent }),
-  setEmitPayload: (emitPayload) => set({ emitPayload }),
+  setUrl: (url) => {
+    set({ url })
+    markActiveTabDirty()
+  },
+  setNamespace: (namespace) => {
+    set({ namespace })
+    markActiveTabDirty()
+  },
+  setBearerToken: (bearerToken) => {
+    set({ bearerToken })
+    markActiveTabDirty()
+  },
+  setEmitEvent: (emitEvent) => {
+    set({ emitEvent })
+    markActiveTabDirty()
+  },
+  setEmitPayload: (emitPayload) => {
+    set({ emitPayload })
+    markActiveTabDirty()
+  },
+  // `newSubscription` is the in-progress text box — not part of the saved
+  // snapshot (only confirmed `subscriptions` are), so it doesn't dirty the tab.
   setNewSubscription: (newSubscription) => set({ newSubscription }),
 
   connect: async () => {
