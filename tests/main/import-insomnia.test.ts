@@ -438,6 +438,56 @@ describe('importInsomnia — wrong-file-type guard', () => {
   })
 })
 
+// ─── v5 collection import creates its bundled environment (issue #11) ──
+
+describe('importInsomnia v5 — bundled environment', () => {
+  const v5Collection = {
+    type: 'collection.insomnia.rest/5.0',
+    name: 'Sample v5',
+    collection: [{ name: 'Get user', method: 'GET', url: '{{ _.baseUrl }}/users/1' }],
+    environments: {
+      data: { baseUrl: 'https://api.example.com', token: 'abc123' },
+    },
+  }
+
+  it('creates a real environment + variables from environments.data', async () => {
+    const r = await importInsomnia(projectId, JSON.stringify(v5Collection))
+    expect(r.success).toBe(true)
+
+    const db = getDb()
+    const env = db
+      .prepare('SELECT id, name FROM environments WHERE project_id = ?')
+      .get(projectId) as { id: string; name: string } | undefined
+    expect(env).toBeTruthy()
+    // Named from the collection (no explicit environments.name in the export).
+    expect(env!.name).toBe('Sample v5 Environment')
+
+    const vars = db
+      .prepare('SELECT key, value, initial_value FROM environment_variables WHERE environment_id = ?')
+      .all(env!.id) as Array<{ key: string; value: string; initial_value: string }>
+    const byKey = Object.fromEntries(vars.map((v) => [v.key, v]))
+    expect(byKey.baseUrl.value).toBe('https://api.example.com')
+    expect(byKey.baseUrl.initial_value).toBe('https://api.example.com')
+    expect(byKey.token.value).toBe('abc123')
+  })
+
+  it('is idempotent — re-importing replaces the env vars, not duplicates them', async () => {
+    await importInsomnia(projectId, JSON.stringify(v5Collection))
+    await importInsomnia(projectId, JSON.stringify(v5Collection))
+
+    const db = getDb()
+    const envs = db
+      .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
+      .all(projectId, 'Sample v5 Environment') as Array<{ id: string }>
+    expect(envs).toHaveLength(1)
+    const vars = db
+      .prepare('SELECT key FROM environment_variables WHERE environment_id = ?')
+      .all(envs[0].id) as Array<{ key: string }>
+    // baseUrl + token, not duplicated.
+    expect(vars).toHaveLength(2)
+  })
+})
+
 // ─── Script shim coverage on the wider Insomnia surface ────
 
 describe('normalizeInsomniaScript covers the full insomnia.* surface', () => {

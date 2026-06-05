@@ -3297,7 +3297,7 @@ interface InsomniaV5Doc {
   name?: string
   meta?: { id?: string; name?: string }
   collection?: InsomniaV5Item[]
-  environments?: { data?: Record<string, unknown> }
+  environments?: { data?: Record<string, unknown>; name?: string }
 }
 
 interface InsomniaV5Item {
@@ -3771,9 +3771,49 @@ function importInsomniaV5(
 
   walk(doc.collection ?? [], rootFolderId)
 
-  if (doc.environments?.data) {
-    for (const [k, v] of Object.entries(doc.environments.data)) {
-      if (typeof v === 'string') suggestedEnvVars[k] = v
+  // Create a REAL environment from the bundled `environments.data` block so the
+  // imported collection's {{vars}} have something to resolve against. The v5
+  // collection path used to drop these into `suggestedEnvVars` (a UI hint only,
+  // never persisted), so imported requests had no active environment — issue
+  // #11. The standalone v5-environment importer already does this DB insert.
+  if (doc.environments?.data && Object.keys(doc.environments.data).length > 0) {
+    const data = doc.environments.data
+    const envName =
+      doc.environments.name ||
+      (doc.name ? `${doc.name} Environment` : 'Imported Insomnia Environment')
+    const existing = db
+      .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
+      .get(projectId, envName) as { id: string } | undefined
+    let envId: string | undefined
+    if (existing) {
+      envId = existing.id
+      db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(envId)
+    } else {
+      const projectRow = db
+        .prepare('SELECT workspace_id FROM projects WHERE id = ?')
+        .get(projectId) as { workspace_id: string } | undefined
+      if (projectRow) {
+        envId = randomUUID()
+        const hasActive = db
+          .prepare('SELECT 1 AS x FROM environments WHERE project_id = ? AND is_active = 1')
+          .get(projectId) as { x: number } | undefined
+        db.prepare(
+          `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(envId, projectRow.workspace_id, projectId, envName, hasActive ? 0 : 1, now, now)
+      }
+    }
+    if (envId) {
+      const insertVar = db.prepare(
+        `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      for (const [k, v] of Object.entries(data)) {
+        if (!k) continue
+        const stringValue = typeof v === 'string' ? v : v == null ? '' : JSON.stringify(v)
+        insertVar.run(randomUUID(), envId, k, stringValue, null, 1, 0, stringValue)
+        suggestedEnvVars[k] = stringValue // keep the UI hint too
+      }
     }
   }
 

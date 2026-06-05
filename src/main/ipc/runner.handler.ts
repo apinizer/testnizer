@@ -891,11 +891,39 @@ function resolveRequestOptions(
       value: resolveRunnerVariables(h.value, vars),
     }))
   }
-  if (resolved.body && (resolved.body as RequestBody).content) {
-    resolved.body = {
-      ...(resolved.body as RequestBody),
-      content: resolveRunnerVariables((resolved.body as RequestBody).content!, vars),
-    } as HttpRequestOptions['body']
+  if (resolved.body) {
+    // Resolve EVERY substitutable body field, mirroring the renderer's
+    // `resolveRequestBody` (variable-resolver.ts). Previously only `body.content`
+    // was resolved, so form-data / urlencoded values — which live in arrays, not
+    // `content` — reached the wire with literal `{{var}}` placeholders: Send
+    // resolved the body, Run didn't (issue #10, the body-shaped sibling of #4).
+    const b = resolved.body as RequestBody
+    const next: RequestBody = { ...b }
+    if (b.content != null) {
+      next.content = resolveRunnerVariables(b.content, vars)
+    }
+    if (b.formData) {
+      next.formData = b.formData.map((row) => {
+        const r = row as KeyValuePair & { filePath?: string }
+        return {
+          ...row,
+          key: resolveRunnerVariables(r.key, vars),
+          value: resolveRunnerVariables(r.value, vars),
+          ...(r.filePath != null ? { filePath: resolveRunnerVariables(r.filePath, vars) } : {}),
+        }
+      })
+    }
+    if (b.urlEncoded) {
+      next.urlEncoded = b.urlEncoded.map((row) => ({
+        ...row,
+        key: resolveRunnerVariables(row.key, vars),
+        value: resolveRunnerVariables(row.value, vars),
+      }))
+    }
+    if (b.binaryPath != null) {
+      next.binaryPath = resolveRunnerVariables(b.binaryPath, vars)
+    }
+    resolved.body = next as HttpRequestOptions['body']
   }
 
   if (resolved.auth) {

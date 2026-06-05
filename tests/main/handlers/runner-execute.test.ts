@@ -106,7 +106,12 @@ interface SeedEndpointOpts {
   url: string
   params?: Array<{ id: string; key: string; value: string; enabled: boolean }>
   headers?: Array<{ id: string; key: string; value: string; enabled: boolean }>
-  body?: { type: string; content?: string }
+  body?: {
+    type: string
+    content?: string
+    formData?: Array<{ id: string; key: string; value: string; enabled: boolean; filePath?: string }>
+    urlEncoded?: Array<{ id: string; key: string; value: string; enabled: boolean }>
+  }
   assertions?: Array<Record<string, unknown>>
   preScript?: string
   postScript?: string
@@ -153,6 +158,23 @@ function seedActiveBaseEnv(): void {
        VALUES (?, ?, 'base', ?, 1, ?)`,
     )
     .run(crypto.randomUUID(), envId, `http://127.0.0.1:${port}`, `http://127.0.0.1:${port}`)
+}
+
+/** Seed an active environment carrying the given key→value variables. */
+function seedActiveEnv(vars: Record<string, string>): void {
+  const envId = crypto.randomUUID()
+  const now = Date.now()
+  testDb
+    .prepare(
+      `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, 'Vars', 1, ?, ?)`,
+    )
+    .run(envId, workspaceId, projectId, now, now)
+  const ins = testDb.prepare(
+    `INSERT INTO environment_variables (id, environment_id, key, value, enabled, initial_value)
+     VALUES (?, ?, ?, ?, 1, ?)`,
+  )
+  for (const [k, v] of Object.entries(vars)) ins.run(crypto.randomUUID(), envId, k, v, v)
 }
 
 beforeEach(() => {
@@ -304,6 +326,70 @@ describe('executeCollection — stopOnError', () => {
     expect(res.success).toBe(true)
     expect(res.data?.results.length).toBe(2)
     expect(received.some((r) => r.url.startsWith('/second'))).toBe(true)
+  })
+})
+
+// ─── f. Body variable resolution (issue #10) ─────────────────────
+
+describe('executeCollection — body variable resolution', () => {
+  it('resolves {{var}} inside a JSON request body', async () => {
+    seedActiveEnv({ AccessURL: 'https://access.example', ApiKey: 'k-123' })
+    const epId = seedEndpoint({
+      name: 'JsonBody',
+      method: 'POST',
+      url: `http://127.0.0.1:${port}/json`,
+      body: { type: 'json', content: '{"endpoint":"{{AccessURL}}","apiKey":"{{ApiKey}}"}' },
+    })
+
+    const res = await run({ endpointIds: [epId] })
+
+    expect(res.success).toBe(true)
+    expect(received[0].body).toContain('"endpoint":"https://access.example"')
+    expect(received[0].body).toContain('"apiKey":"k-123"')
+    expect(received[0].body).not.toContain('{{')
+  })
+
+  it('resolves {{var}} in urlencoded body values (array, not content)', async () => {
+    seedActiveEnv({ AccessURL: 'https://access.example' })
+    const epId = seedEndpoint({
+      name: 'UrlEncoded',
+      method: 'POST',
+      url: `http://127.0.0.1:${port}/form`,
+      body: {
+        type: 'urlencoded',
+        urlEncoded: [{ id: '1', key: 'endpoint', value: '{{AccessURL}}', enabled: true }],
+      },
+    })
+
+    const res = await run({ endpointIds: [epId] })
+
+    expect(res.success).toBe(true)
+    expect(received[0].body).toContain('endpoint=')
+    // value is url-encoded on the wire; decode then check, and ensure no
+    // literal/encoded {{ }} placeholder survived.
+    expect(decodeURIComponent(received[0].body)).toContain('https://access.example')
+    expect(received[0].body).not.toContain('%7B%7B')
+    expect(received[0].body).not.toContain('{{')
+  })
+
+  it('resolves {{var}} in form-data field values', async () => {
+    seedActiveEnv({ ApiKey: 'k-xyz' })
+    const epId = seedEndpoint({
+      name: 'FormData',
+      method: 'POST',
+      url: `http://127.0.0.1:${port}/multipart`,
+      body: {
+        type: 'form-data',
+        formData: [{ id: '1', key: 'token', value: '{{ApiKey}}', enabled: true }],
+      },
+    })
+
+    const res = await run({ endpointIds: [epId] })
+
+    expect(res.success).toBe(true)
+    // multipart body carries the resolved value, not the placeholder.
+    expect(received[0].body).toContain('k-xyz')
+    expect(received[0].body).not.toContain('{{ApiKey}}')
   })
 })
 
