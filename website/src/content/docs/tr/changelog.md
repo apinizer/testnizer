@@ -11,6 +11,24 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.11
+
+**Collection Runner artık ortam değişkenlerini tam olarak Send gibi çözüyor —
+Send ile 200 OK dönen bir istek, Run'da artık "Invalid URL" ile başarısız
+olmuyor.**
+
+- **Runner / Mock:** değeri yalnızca **Initial Value** (ilk değer) sütununda
+  bulunan ortam ve global değişkenler artık Run sırasında çözülüyor. Bu, bir
+  Postman / Insomnia koleksiyonu içe aktarıldıktan hemen sonra ya da ortam
+  editöründe yalnızca en soldaki sütun doldurulduğunda sık karşılaşılan durum.
+  Daha önce runner yalnızca **Current Value** (geçerli değer) sütununu okuyordu;
+  bu yüzden `{{AccessURL}}` gibi bir URL yerine konmadan kalıyor ve istek
+  **Invalid URL** ile başarısız oluyordu — aynı istek **Send** ile 200 OK
+  dönmesine rağmen. Runner ve mock sunucusu artık Send'in çift-değer modelini
+  birebir uyguluyor: önce Current Value, boşsa Initial Value. Projenin aktif
+  ortamını otomatik çözen klasör ve koleksiyon çalıştırmaları da aynı
+  düzeltmeden yararlanıyor.
+
 ## v1.4.10
 
 **v1.4.9 üzerine iki takip düzeltmesi — Home sayfası içe aktarmadan sonra
