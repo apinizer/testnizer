@@ -18,6 +18,7 @@ export default function LeftPanel() {
 
   return (
     <div
+      data-testid="left-panel"
       style={{
         width: T.panelW,
         minWidth: T.panelW,
@@ -95,6 +96,7 @@ export default function LeftPanel() {
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                data-testid="tree-search"
                 placeholder={t('leftPanel.search')}
                 style={{
                   background: 'transparent',

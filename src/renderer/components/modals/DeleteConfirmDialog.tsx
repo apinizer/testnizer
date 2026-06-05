@@ -111,6 +111,7 @@ export default function DeleteConfirmDialog({
                 type="text"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
+                data-testid="delete-confirm-input"
                 placeholder="delete"
                 className="mt-1.5 w-full rounded-md border px-3 py-2 outline-none transition-colors"
                 style={{
@@ -133,6 +134,7 @@ export default function DeleteConfirmDialog({
             ref={cancelRef}
             type="button"
             onClick={onCancel}
+            data-testid="delete-cancel-btn"
             className="cursor-pointer rounded-md border px-3.5 py-1.5 font-medium transition-colors hover:opacity-80"
             style={{
               fontSize: 13,
@@ -147,6 +149,7 @@ export default function DeleteConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={!canConfirm}
+            data-testid="delete-confirm-btn"
             className="rounded-md px-3.5 py-1.5 font-medium text-white transition-colors"
             style={{
               fontSize: 13,

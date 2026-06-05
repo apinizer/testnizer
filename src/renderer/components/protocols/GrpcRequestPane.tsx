@@ -101,6 +101,7 @@ export default function GrpcRequestPane() {
               type="text"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
+              data-testid="grpc-address"
               placeholder={t('grpc.serverAddressPlaceholder')}
               className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
             />
@@ -286,7 +287,10 @@ export default function GrpcRequestPane() {
             <label className="mb-1 block font-medium text-[var(--muted)]">
               {t('grpc.requestMessage')}
             </label>
-            <div className="overflow-hidden rounded-lg border border-[var(--border)]">
+            <div
+              className="overflow-hidden rounded-lg border border-[var(--border)]"
+              data-testid="grpc-request-editor"
+            >
               <MonacoWrapper
                 value={requestBody}
                 onChange={setRequestBody}
@@ -389,6 +393,7 @@ export default function GrpcRequestPane() {
                 type="button"
                 onClick={() => (isLoading ? cancelUnary() : execute())}
                 disabled={!isLoading && (!selectedService || !selectedMethod)}
+                data-testid="grpc-execute"
                 className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
                 style={{
                   background: isLoading ? '#cc2200' : 'var(--accent)',

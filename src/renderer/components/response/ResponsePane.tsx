@@ -366,6 +366,7 @@ export default function ResponsePane() {
               <button
                 key={tab.key}
                 type="button"
+                data-testid={`res-tab-${tab.key}`}
                 onClick={() => setActiveTab(tab.key)}
                 className="relative shrink-0 cursor-pointer whitespace-nowrap px-3 transition-colors"
                 style={{

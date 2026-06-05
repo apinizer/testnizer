@@ -59,6 +59,7 @@ export default function GraphQLQueryPane() {
           type="text"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
+          data-testid="graphql-url"
           placeholder="https://api.example.com/graphql"
           className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
           onKeyDown={(e) => {
@@ -82,6 +83,7 @@ export default function GraphQLQueryPane() {
             type="button"
             onClick={() => (isLoading ? cancelQuery() : executeQuery())}
             disabled={!url.trim()}
+            data-testid="graphql-run"
             className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
             style={{ background: isLoading ? '#cc2200' : 'var(--accent)', border: 'none' }}
           >
@@ -95,6 +97,7 @@ export default function GraphQLQueryPane() {
           type="button"
           onClick={introspect}
           disabled={isIntrospecting || !url.trim()}
+          data-testid="graphql-introspect"
           className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-2 font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-50"
           style={{ background: 'transparent' }}
         >
@@ -106,7 +109,7 @@ export default function GraphQLQueryPane() {
       {/* Content area */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Query editor */}
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0" data-testid="graphql-query-editor">
           <MonacoWrapper value={query} onChange={setQuery} language="graphql" height="100%" />
         </div>
 

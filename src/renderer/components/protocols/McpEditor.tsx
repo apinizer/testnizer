@@ -67,6 +67,7 @@ export default function McpEditor() {
           value={store.url}
           onChange={(e) => store.setUrl(e.target.value)}
           disabled={isConnected}
+          data-testid="mcp-url"
           placeholder={
             store.transport === 'stdio'
               ? 'e.g. npx @modelcontextprotocol/server-everything'
@@ -88,6 +89,7 @@ export default function McpEditor() {
         <button
           type="button"
           onClick={isConnected || isConnecting ? () => store.disconnect() : () => store.connect()}
+          data-testid="mcp-connect"
           style={{
             height: 32,
             padding: '0 16px',
@@ -148,6 +150,7 @@ export default function McpEditor() {
               <button
                 key={tool.name}
                 type="button"
+                data-testid={`mcp-tool-${tool.name}`}
                 onClick={() => store.setSelectedTool(tool.name)}
                 style={{
                   width: '100%',
@@ -246,6 +249,7 @@ export default function McpEditor() {
                   type="button"
                   onClick={() => store.callTool()}
                   disabled={store.isInvoking}
+                  data-testid="mcp-invoke"
                   style={{
                     marginTop: 8,
                     height: 32,

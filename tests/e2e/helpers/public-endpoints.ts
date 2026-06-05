@@ -1,9 +1,29 @@
 /**
- * Resolve public test endpoint URLs. Allows env overrides for self-hosted
- * mirrors when the public service is rate-limited or down.
+ * Resolve test endpoint URLs.
+ * Prefers local echo server (E2E_HTTP_BASE / globalSetup) for offline E2E.
+ * Falls back to httpbin.org when no local server is configured.
  */
 
-export const HTTPBIN = process.env.HTTPBIN_URL ?? 'https://httpbin.org'
+function resolveHttpBin(): string {
+  if (process.env.E2E_HTTP_BASE) return process.env.E2E_HTTP_BASE
+  if (process.env.HTTPBIN_URL) return process.env.HTTPBIN_URL
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('node:fs') as typeof import('node:fs')
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('node:path') as typeof import('node:path')
+    const state = path.join(__dirname, '../servers/.test-servers.json')
+    if (fs.existsSync(state)) {
+      const raw = JSON.parse(fs.readFileSync(state, 'utf8')) as { urls?: { http?: string } }
+      if (raw.urls?.http) return raw.urls.http
+    }
+  } catch {
+    // ignore — use public fallback
+  }
+  return 'https://httpbin.org'
+}
+
+export const HTTPBIN = resolveHttpBin()
 export const BADSSL = process.env.BADSSL_BASE ?? 'https://badssl.com'
 
 /** badssl.com sub-host helpers */

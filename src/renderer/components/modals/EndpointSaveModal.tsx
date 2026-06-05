@@ -215,7 +215,12 @@ export default function EndpointSaveModal() {
   }
 
   return (
-    <Modal open={show} onOpenChange={(o) => !o && handleClose()} title="Save endpoint">
+    <Modal
+      open={show}
+      onOpenChange={(o) => !o && handleClose()}
+      title="Save endpoint"
+      testId="endpoint-save-modal"
+    >
       <div
         style={{
           background: 'var(--white)',

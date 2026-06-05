@@ -276,6 +276,7 @@ export default function ProjectHome() {
             </button>
             <button
               type="button"
+              data-testid="home-new-project"
               onClick={() => setShowNewProjectModal(true)}
               className="flex cursor-pointer items-center gap-1.5 rounded-lg font-medium"
               style={{
@@ -296,6 +297,7 @@ export default function ProjectHome() {
           {projects.map((project) => (
             <div
               key={project.id}
+              data-testid="project-card"
               className="group flex cursor-pointer items-center gap-3 rounded-xl transition-all"
               style={{
                 background: 'var(--white)',

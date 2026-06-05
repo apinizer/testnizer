@@ -27,6 +27,7 @@ export default function EnterpriseModal() {
       open={open}
       onOpenChange={(v) => setOpen(v)}
       title={t('enterprise.title')}
+      testId="enterprise-modal"
       contentStyle={{ width: 420, background: 'var(--white)', borderRadius: 12 }}
     >
       <div style={{ padding: '24px 26px' }}>

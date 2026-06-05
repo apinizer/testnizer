@@ -90,6 +90,7 @@ export default function AssertionRow({ assertion, onUpdate, onRemove }: Assertio
         <button
           type="button"
           onClick={() => onUpdate({ enabled: !assertion.enabled })}
+          data-testid="assertion-enable"
           className="cursor-pointer bg-transparent p-0"
           style={{ border: 'none', color: assertion.enabled ? 'var(--accent)' : 'var(--hint)' }}
           title={assertion.enabled ? 'Disable' : 'Enable'}
@@ -100,6 +101,7 @@ export default function AssertionRow({ assertion, onUpdate, onRemove }: Assertio
         <button
           type="button"
           onClick={onRemove}
+          data-testid="assertion-remove"
           className="cursor-pointer bg-transparent p-0 text-[var(--hint)] hover:text-[var(--red)]"
           style={{ border: 'none' }}
           title="Remove assertion"

@@ -576,6 +576,7 @@ export default function ImportModal() {
       open={showImportModal}
       onOpenChange={(o) => !o && handleClose()}
       title={t('import.title')}
+      testId="import-modal"
     >
       <div
         className="w-[720px] max-w-[95%] rounded-[14px] bg-[var(--white)] p-7 px-8"

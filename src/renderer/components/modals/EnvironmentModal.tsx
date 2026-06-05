@@ -352,6 +352,7 @@ export default function EnvironmentModal() {
           <div className="flex flex-col gap-2 p-3" style={{ borderTop: '1px solid var(--border)' }}>
             <button
               type="button"
+              data-testid="env-new"
               onClick={() => setCreatingEnv(true)}
               className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-[6px] py-1.5"
               style={{
@@ -567,6 +568,7 @@ function EnvPane({
           {!isActive && (
             <button
               type="button"
+              data-testid="env-set-active"
               onClick={onSetActive}
               className="cursor-pointer rounded px-2.5 py-1"
               style={{
@@ -672,6 +674,7 @@ function VarTable({
 
         <button
           type="button"
+          data-testid="env-var-add"
           onClick={onAdd}
           className="m-4 flex w-[calc(100%-2rem)] cursor-pointer items-center justify-center gap-1 rounded-[6px] border border-dashed py-2"
           style={{
@@ -713,6 +716,7 @@ function VarRowView({
 
   return (
     <div
+      data-testid="env-var-row"
       className="grid items-center px-5"
       style={{
         gridTemplateColumns: '22px 1fr 100px 1fr 1fr 28px',
@@ -730,6 +734,7 @@ function VarRowView({
 
       {/* Key */}
       <input
+        data-testid="env-var-key"
         value={variable.key}
         onChange={(e) => onUpdate({ key: e.target.value })}
         placeholder="variable_name"
@@ -754,6 +759,7 @@ function VarRowView({
 
       {/* Initial Value */}
       <input
+        data-testid="env-var-initial"
         value={variable.initialValue || ''}
         onChange={(e) => onUpdate({ initialValue: e.target.value })}
         placeholder="—"
@@ -764,6 +770,7 @@ function VarRowView({
       {/* Current Value — with show/hide toggle for secrets */}
       <div className="flex items-center gap-1">
         <input
+          data-testid="env-var-current"
           value={variable.value}
           onChange={(e) => onUpdate({ value: e.target.value })}
           // The Current Value falls back to the Initial Value when empty, and

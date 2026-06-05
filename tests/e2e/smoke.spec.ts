@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
+import { electronLaunchOptions } from './helpers/electron-env'
 
 let app: ElectronApplication
 let window: Page
@@ -18,10 +19,7 @@ test.beforeAll(async () => {
   // pull in the developer's real workspace data and so login state is fresh.
   userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'testnizer-e2e-'))
 
-  app = await electron.launch({
-    args: [mainPath, `--user-data-dir=${userDataDir}`],
-    env: { ...process.env, NODE_ENV: 'test', ELECTRON_DISABLE_SECURITY_WARNINGS: '1' },
-  })
+  app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
   window = await app.firstWindow()
   await window.waitForLoadState('domcontentloaded')
 })

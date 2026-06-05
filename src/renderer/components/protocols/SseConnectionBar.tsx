@@ -65,6 +65,7 @@ export default function SseConnectionBar() {
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           disabled={isConnected || isConnecting}
+          data-testid="sse-url"
           placeholder="https://api.example.com/events"
           className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)] disabled:opacity-60"
           onKeyDown={(e) => {
@@ -77,6 +78,7 @@ export default function SseConnectionBar() {
           <button
             type="button"
             onClick={disconnect}
+            data-testid="sse-disconnect"
             className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg px-4 py-2 font-medium text-white transition-opacity"
             style={{ background: '#cc2200', border: 'none' }}
           >
@@ -98,6 +100,7 @@ export default function SseConnectionBar() {
             type="button"
             onClick={connect}
             disabled={!url.trim()}
+            data-testid="sse-connect"
             className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg px-4 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
             style={{ background: 'var(--accent)', border: 'none' }}
           >

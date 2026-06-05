@@ -14,7 +14,10 @@ function collectEndpoints(
 ): { id: string; name: string; method: HttpMethod; path: string }[] {
   const result: { id: string; name: string; method: HttpMethod; path: string }[] = []
   for (const node of nodes) {
-    if (node.type === 'endpoint' && node.method && node.path) {
+    // Imported endpoints (`endpoint`) and manually saved requests (`request`)
+    // both resolve via runner `getRunnableEntity` — omitting `request` left
+    // the collection runner with zero selectable rows after Ctrl+S saves.
+    if ((node.type === 'endpoint' || node.type === 'request') && node.method && node.path) {
       result.push({
         id: node.id,
         name: node.label,
@@ -65,6 +68,7 @@ export default function CollectionRunnerModal() {
         if (!o && !isRunning) setShow(false)
       }}
       title="Collection Runner"
+      testId="collection-runner-modal"
       preventClose={isRunning}
     >
       <div

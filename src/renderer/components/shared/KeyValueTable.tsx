@@ -293,6 +293,7 @@ export default function KeyValueTable({
         <div className="mb-1 flex items-center justify-end">
           <button
             type="button"
+            data-testid="kv-bulk-toggle"
             onClick={() => {
               // Commit on the way back to table view so any unsaved edits
               // in the textarea aren't silently dropped.
@@ -308,6 +309,7 @@ export default function KeyValueTable({
       )}
       {bulkMode ? (
         <textarea
+          data-testid="kv-bulk-textarea"
           value={bulkText}
           onChange={(e) => setBulkText(e.target.value)}
           onBlur={commitBulk}
@@ -348,6 +350,7 @@ export default function KeyValueTable({
           {rows.map((row, idx) => (
             <div
               key={row.id}
+              data-testid={`kv-row-${idx}`}
               className="group grid"
               style={{
                 gridTemplateColumns: gridCols,
@@ -359,6 +362,7 @@ export default function KeyValueTable({
               <div className="flex items-center justify-center">
                 <button
                   type="button"
+                  data-testid="kv-enable"
                   onClick={() => onUpdate(row.id, { enabled: !row.enabled })}
                   className="flex h-3.5 w-3.5 shrink-0 cursor-pointer items-center justify-center rounded-sm"
                   style={{
@@ -373,6 +377,7 @@ export default function KeyValueTable({
               {/* Key */}
               <div className="relative" style={{ borderRight: '1px solid var(--border)' }}>
                 <input
+                  data-testid="kv-key"
                   value={row.key}
                   onChange={(e) => handleKeyInputChange(row.id, e.target.value, e.currentTarget)}
                   onFocus={(e) => {
@@ -479,14 +484,16 @@ export default function KeyValueTable({
                     </button>
                   )
                 ) : (
-                  <VariableAutocompleteInput
-                    value={row.value}
-                    onChange={(val) => handleValueInputChange(row.id, row.key, val)}
-                    onKeyDown={handleKeyDown}
-                    className="w-full border-none bg-transparent px-2.5 py-[5px] outline-none"
-                    style={{ color: valueColor || 'var(--text)' }}
-                    placeholder={t('kv.value')}
-                  />
+                  <div data-testid="kv-value" className="w-full">
+                    <VariableAutocompleteInput
+                      value={row.value}
+                      onChange={(val) => handleValueInputChange(row.id, row.key, val)}
+                      onKeyDown={handleKeyDown}
+                      className="w-full border-none bg-transparent px-2.5 py-[5px] outline-none"
+                      style={{ color: valueColor || 'var(--text)' }}
+                      placeholder={t('kv.value')}
+                    />
+                  </div>
                 )}
               </div>
 
@@ -504,6 +511,7 @@ export default function KeyValueTable({
               <div className="flex items-center justify-center">
                 <button
                   type="button"
+                  data-testid="kv-remove"
                   onClick={() => onRemove(row.id)}
                   className="cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
                   style={{
@@ -548,6 +556,7 @@ export default function KeyValueTable({
       {!bulkMode && (
         <button
           type="button"
+          data-testid="kv-add-row"
           onClick={onAdd}
           className="mt-1.5 w-full cursor-pointer rounded-md border border-dashed border-[var(--border)] bg-transparent py-1 text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
         >

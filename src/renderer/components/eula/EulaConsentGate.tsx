@@ -85,6 +85,7 @@ export default function EulaConsentGate({ children }: Props) {
       open={true}
       onOpenChange={() => {}}
       title="EULA Consent"
+      testId="eula-gate"
       zIndex={Z.GATE}
       preventClose={true}
     >
@@ -160,6 +161,7 @@ export default function EulaConsentGate({ children }: Props) {
           >
             <input
               type="checkbox"
+              data-testid="eula-accept-checkbox"
               checked={agreed}
               onChange={(e) => setAgreed(e.target.checked)}
               style={{
@@ -194,6 +196,7 @@ export default function EulaConsentGate({ children }: Props) {
             </button>
             <button
               type="button"
+              data-testid="eula-accept-btn"
               onClick={onAccept}
               disabled={!agreed || submitting}
               className="flex items-center gap-1.5 rounded-md border-none px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50"

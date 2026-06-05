@@ -156,6 +156,7 @@ export default function TestsTab() {
           ref={btnRef}
           type="button"
           onClick={() => setShowPicker(!showPicker)}
+          data-testid="tests-add-assertion"
           className="mb-3 mt-1 w-full cursor-pointer rounded-[7px] border border-dashed border-[var(--border2)] bg-transparent py-[5px] text-[var(--hint)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
         >
           + Add Assertion
@@ -226,7 +227,10 @@ export default function TestsTab() {
           </button>
         </div>
       </div>
-      <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--white)]">
+      <div
+        className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--white)]"
+        data-testid="tests-post-script"
+      >
         <MonacoWrapper
           value={postScript}
           onChange={setPostScript}

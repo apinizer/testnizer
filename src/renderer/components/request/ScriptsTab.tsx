@@ -75,6 +75,7 @@ export default function ScriptsTab() {
             <button
               key={s.key}
               type="button"
+              data-testid={s.key === 'pre-request' ? 'scripts-pre' : 'scripts-post'}
               onClick={() => setActiveSection(s.key)}
               className="cursor-pointer rounded-md px-3 py-1 font-medium transition-all"
               style={{
@@ -99,6 +100,7 @@ export default function ScriptsTab() {
         <button
           type="button"
           onClick={handleInsertExample}
+          data-testid="scripts-insert-example"
           className="cursor-pointer rounded px-2 py-0.5"
           style={{
             background: 'transparent',
@@ -114,6 +116,7 @@ export default function ScriptsTab() {
         <button
           type="button"
           onClick={() => setShowHelp(true)}
+          data-testid="scripts-help"
           className="flex cursor-pointer items-center gap-1 rounded px-2 py-0.5"
           style={{
             background: 'transparent',
@@ -140,20 +143,24 @@ export default function ScriptsTab() {
       {/* Editor */}
       <div className="flex-1 overflow-hidden">
         {activeSection === 'pre-request' && (
-          <MonacoWrapper
-            value={preScript}
-            onChange={setPreScript}
-            language="javascript"
-            height="100%"
-          />
+          <div data-testid="scripts-pre-editor" className="h-full">
+            <MonacoWrapper
+              value={preScript}
+              onChange={setPreScript}
+              language="javascript"
+              height="100%"
+            />
+          </div>
         )}
         {activeSection === 'post-response' && (
-          <MonacoWrapper
-            value={postScript}
-            onChange={setPostScript}
-            language="javascript"
-            height="100%"
-          />
+          <div data-testid="scripts-post-editor" className="h-full">
+            <MonacoWrapper
+              value={postScript}
+              onChange={setPostScript}
+              language="javascript"
+              height="100%"
+            />
+          </div>
         )}
       </div>
     </div>

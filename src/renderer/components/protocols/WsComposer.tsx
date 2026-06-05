@@ -46,12 +46,14 @@ export default function WsComposer() {
         </div>
       </div>
 
-      <MonacoWrapper
-        value={composerContent}
-        onChange={setComposerContent}
-        language={composerMode === 'json' ? 'json' : 'plaintext'}
-        height={120}
-      />
+      <div data-testid="ws-composer" className="flex-1 min-h-0">
+        <MonacoWrapper
+          value={composerContent}
+          onChange={setComposerContent}
+          language={composerMode === 'json' ? 'json' : 'plaintext'}
+          height={120}
+        />
+      </div>
 
       <button
         type="button"

@@ -86,7 +86,7 @@ export default function AboutModal() {
   }
 
   return (
-    <Modal open={open} onOpenChange={setOpen} title={t('about.title')}>
+    <Modal open={open} onOpenChange={setOpen} title={t('about.title')} testId="about-modal">
       <div
         className="flex w-[560px] flex-col overflow-hidden rounded-xl border shadow-xl"
         style={{ background: 'var(--white)', borderColor: 'var(--border)', maxHeight: '85vh' }}

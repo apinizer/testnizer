@@ -35,7 +35,7 @@ export default function TestResultsTab() {
     filter === 'all' ? 'Filter Results' : filter === 'passed' ? 'Passed' : 'Failed'
 
   return (
-    <div className="h-full overflow-auto">
+    <div className="h-full overflow-auto" data-testid="test-results-panel">
       {/* Filter bar — Postman style */}
       <div
         className="flex items-center gap-3 px-4 py-2"

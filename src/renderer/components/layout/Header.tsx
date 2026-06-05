@@ -216,6 +216,7 @@ export default function Header() {
     >
       {/* Home tab */}
       <div
+        data-testid="header-home"
         className="no-drag flex items-center cursor-pointer shrink-0"
         style={{
           padding: '0 16px',
@@ -253,6 +254,7 @@ export default function Header() {
         return (
           <div
             key={proj.id}
+            data-testid="header-project-tab"
             className="no-drag group flex items-center gap-1.5 cursor-pointer shrink-0"
             style={{
               padding: '0 16px',
@@ -413,6 +415,7 @@ export default function Header() {
           type="button"
           onClick={handleSave}
           disabled={anyLoading}
+          data-testid="header-save"
           className="flex items-center gap-1 cursor-pointer"
           style={{
             background: 'transparent',

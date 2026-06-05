@@ -100,6 +100,7 @@ export default function UrlBar() {
       {/* Method dropdown — Postman style: bordered pill on the left, flush with URL input */}
       <div ref={dropRef} style={{ position: 'relative' }}>
         <div
+          data-testid="url-method"
           onClick={(e) => {
             e.stopPropagation()
             setShowMethodDrop((v) => !v)
@@ -151,6 +152,7 @@ export default function UrlBar() {
             {METHODS.map((m) => (
               <div
                 key={m}
+                data-testid={`url-method-option-${m}`}
                 onClick={() => {
                   pinIfPreview()
                   setMethod(m)
@@ -180,6 +182,7 @@ export default function UrlBar() {
 
       {/* URL input — Postman style: flush with method dropdown */}
       <VariableAutocompleteInput
+        data-testid="url-input"
         value={url}
         onChange={(v) => {
           pinIfPreview()
@@ -208,6 +211,7 @@ export default function UrlBar() {
       <div ref={sendDropRef} style={{ position: 'relative', display: 'flex', marginLeft: 8 }}>
         <button
           type="button"
+          data-testid="send-btn"
           onClick={() => {
             if (isLoading) {
               cancelRequest()
@@ -387,6 +391,7 @@ export default function UrlBar() {
       {/* Save button */}
       <button
         type="button"
+        data-testid="save-btn"
         onClick={async () => {
           const isSaved =
             activeTab?.savedRequestId || activeTab?.endpointId || activeTab?.testSuiteItemId

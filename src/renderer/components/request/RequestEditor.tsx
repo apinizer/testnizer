@@ -89,6 +89,7 @@ export default function RequestEditor() {
             <button
               key={tab.key}
               type="button"
+              data-testid={`req-tab-${tab.key}`}
               onClick={() => setActiveTab(tab.key)}
               className="flex cursor-pointer items-center gap-1 whitespace-nowrap px-2.5 transition-colors"
               style={{

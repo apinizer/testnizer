@@ -203,7 +203,10 @@ export default function RunnerResults({
           <div className="shrink-0 border-b border-[var(--border)] px-5 py-3">
             {/* Title + actions */}
             <div className="mb-2 flex items-center justify-between">
-              <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
+              <span
+                data-testid="runner-results-title"
+                style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}
+              >
                 Run results
               </span>
               <div className="flex items-center gap-2">
@@ -269,6 +272,7 @@ export default function RunnerResults({
               <button
                 key={tab.key}
                 type="button"
+                data-testid={`runner-filter-${tab.key}`}
                 onClick={() => setActiveFilter(tab.key)}
                 className="cursor-pointer border-none bg-transparent px-3 py-2"
                 style={{

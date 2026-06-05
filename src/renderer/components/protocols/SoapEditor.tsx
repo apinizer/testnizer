@@ -168,6 +168,7 @@ export default function SoapEditor() {
               type="button"
               onClick={() => (isLoading ? cancelSoap() : sendSoap())}
               disabled={!isLoading && !!parsedWsdl && !selectedOperation}
+              data-testid="soap-send"
               className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: isLoading ? '#cc2200' : 'var(--accent)', border: 'none' }}
             >

@@ -319,6 +319,7 @@ export default function ProjectDetailModal() {
       open={show}
       onOpenChange={(o) => !o && handleClose()}
       title={activeProject.display_name || activeProject.name}
+      testId="project-detail-modal"
     >
       <div
         className="flex overflow-hidden"
@@ -368,6 +369,7 @@ export default function ProjectDetailModal() {
             {ALL_TABS.map((item) => (
               <SidebarItem
                 key={item.id}
+                testId={`project-detail-tab-${item.id}`}
                 label={item.label}
                 icon={item.icon}
                 active={tab === item.id}
@@ -573,15 +575,18 @@ function SidebarItem({
   icon,
   active,
   onClick,
+  testId,
 }: {
   label: string
   icon: React.ReactNode
   active: boolean
   onClick: () => void
+  testId?: string
 }) {
   return (
     <button
       type="button"
+      data-testid={testId}
       onClick={onClick}
       className="flex w-full cursor-pointer items-center gap-2 px-4 py-[7px] text-left"
       style={{

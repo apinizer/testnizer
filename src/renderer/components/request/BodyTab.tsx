@@ -4,6 +4,14 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
 import type { BodyType, KeyValuePair } from '../../types'
 
+const BODY_TYPE_TEST_IDS: Record<string, string> = {
+  none: 'none',
+  'form-data': 'form-data',
+  urlencoded: 'urlencoded',
+  json: 'raw',
+  binary: 'binary',
+}
+
 const BODY_OPTIONS: { value: BodyType; label: string }[] = [
   { value: 'none', label: 'none' },
   { value: 'form-data', label: 'form-data' },
@@ -176,6 +184,7 @@ export default function BodyTab() {
                 name="bodyType"
                 checked={isActive}
                 onChange={() => handleTypeChange(opt.value)}
+                data-testid={`body-type-${BODY_TYPE_TEST_IDS[opt.value]}`}
                 style={{ accentColor: 'var(--accent)', width: 13, height: 13, margin: 0 }}
               />
               {opt.label}
@@ -190,6 +199,7 @@ export default function BodyTab() {
             <select
               value={body.type}
               onChange={(e) => handleTypeChange(e.target.value as BodyType)}
+              data-testid="body-raw-format"
               className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg)] px-1.5 py-px font-medium text-[var(--accent-text)] outline-none"
             >
               {RAW_FORMATS.map((f) => (
@@ -207,6 +217,7 @@ export default function BodyTab() {
           <button
             type="button"
             onClick={handleBeautify}
+            data-testid="body-beautify"
             className="cursor-pointer rounded border border-[var(--border)] bg-transparent px-2 py-0.5 text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
           >
             Beautify
@@ -222,7 +233,7 @@ export default function BodyTab() {
       )}
 
       {isRawType(body.type) && (
-        <div className="flex-1 overflow-hidden pt-1">
+        <div className="flex-1 overflow-hidden pt-1" data-testid="body-raw-editor">
           <MonacoWrapper
             value={body.content || ''}
             onChange={handleContentChange}

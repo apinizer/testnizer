@@ -44,6 +44,7 @@ export default function SocketIOEditor() {
           value={store.url}
           onChange={(e) => store.setUrl(e.target.value)}
           disabled={isConnected}
+          data-testid="socketio-url"
           placeholder="http://localhost:3000"
           style={{
             flex: 1,
@@ -94,6 +95,7 @@ export default function SocketIOEditor() {
         <button
           type="button"
           onClick={isConnected || isConnecting ? () => store.disconnect() : () => store.connect()}
+          data-testid="socketio-connect"
           style={{
             height: 32,
             padding: '0 16px',
@@ -182,6 +184,7 @@ export default function SocketIOEditor() {
               type="button"
               onClick={() => store.emit()}
               disabled={!isConnected}
+              data-testid="socketio-emit"
               style={{
                 width: '100%',
                 height: 28,

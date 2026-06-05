@@ -708,6 +708,7 @@ function WelcomeOptions({ onSetPassword }: { onSetPassword: () => void }) {
       {/* Anonymous Option */}
       <button
         type="button"
+        data-testid="login-continue-anonymous"
         onClick={continueAsGuest}
         className="flex w-full cursor-pointer items-center gap-4 rounded-xl border px-5 py-4 text-left transition-all"
         style={{ borderColor: 'var(--border)', background: 'var(--white)' }}

@@ -105,7 +105,12 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
       {!isRunning && results.length > 0 && (
         <div className="shrink-0 border-b border-[var(--border)] px-5 py-3">
           <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-[15px] font-semibold text-[var(--text)]">Run results</h2>
+            <h2
+              data-testid="runner-results-title"
+              className="text-[15px] font-semibold text-[var(--text)]"
+            >
+              Run results
+            </h2>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -164,6 +169,7 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
             <button
               key={tab.key}
               type="button"
+              data-testid={`runner-filter-${tab.key}`}
               onClick={() => setActiveFilter(tab.key)}
               className="cursor-pointer border-none bg-transparent px-2.5 py-2 transition-colors"
               style={{

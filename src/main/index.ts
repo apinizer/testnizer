@@ -27,6 +27,7 @@ function getIconPath(): string {
 
 function createWindow(): BrowserWindow {
   const iconPath = getIconPath()
+  const headless = process.env.E2E_HEADLESS === '1'
 
   const mainWindow = new BrowserWindow({
     width: 1400,
@@ -34,6 +35,7 @@ function createWindow(): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     show: false,
+    skipTaskbar: headless,
     title: 'Testnizer',
     icon: iconPath,
     titleBarStyle: 'hiddenInset',
@@ -48,7 +50,9 @@ function createWindow(): BrowserWindow {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    if (!headless) {
+      mainWindow.show()
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -136,8 +140,12 @@ initLogging()
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.testnizer.app')
 
-  // Set macOS dock icon
-  if (process.platform === 'darwin' && app.dock) {
+  // Headless E2E: keep the app off-screen and out of the dock so Playwright
+  // can drive the UI without stealing focus from the developer's desktop.
+  if (process.env.E2E_HEADLESS === '1' && process.platform === 'darwin' && app.dock) {
+    app.dock.hide()
+  } else if (process.platform === 'darwin' && app.dock) {
+    // Set macOS dock icon
     try {
       const dockIcon = nativeImage.createFromPath(getIconPath())
       if (!dockIcon.isEmpty()) {

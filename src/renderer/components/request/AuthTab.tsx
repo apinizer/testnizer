@@ -6,6 +6,17 @@ import { useSoapStore } from '../../stores/soap.store'
 import SoapSecuritySection from '../protocols/SoapSecuritySection'
 import type { AuthType } from '../../types'
 
+const AUTH_TYPE_TEST_IDS: Partial<Record<AuthType, string>> = {
+  none: 'noAuth',
+  bearer: 'bearer',
+  basic: 'basic',
+  'api-key': 'apiKey',
+  oauth2: 'oauth2',
+  digest: 'digest',
+  ntlm: 'ntlm',
+  wsse: 'wsse',
+}
+
 const AUTH_OPTIONS: { value: AuthType; label: string; soapOnly?: boolean }[] = [
   { value: 'none', label: 'No Auth' },
   { value: 'bearer', label: 'Bearer Token' },
@@ -27,10 +38,12 @@ function PasswordInput({
   value,
   onChange,
   placeholder,
+  dataTestId,
 }: {
   value: string
   onChange: (v: string) => void
   placeholder?: string
+  dataTestId?: string
 }) {
   const [show, setShow] = useState(false)
   return (
@@ -42,6 +55,7 @@ function PasswordInput({
         className={INPUT}
         style={{ color: 'var(--text)', paddingRight: 36 }}
         placeholder={placeholder || 'Password'}
+        data-testid={dataTestId}
       />
       <button
         type="button"
@@ -79,6 +93,7 @@ export default function AuthTab() {
             <button
               key={opt.value}
               type="button"
+              data-testid={`auth-type-${AUTH_TYPE_TEST_IDS[opt.value] ?? opt.value}`}
               onClick={() => {
                 setAuth({ ...auth, type: opt.value })
                 if (opt.value === 'wsse') setWsSecurity({ enabled: true })
@@ -135,6 +150,7 @@ export default function AuthTab() {
               className={`flex-1 font-mono ${INPUT}`}
               style={{ color: 'var(--text)' }}
               placeholder="{{token}}"
+              data-testid="auth-bearer-token"
             />
             <button
               type="button"
@@ -174,6 +190,7 @@ export default function AuthTab() {
               className={INPUT}
               style={{ color: 'var(--text)' }}
               placeholder="Username"
+              data-testid="auth-basic-user"
             />
           </div>
           <div>
@@ -185,6 +202,7 @@ export default function AuthTab() {
               onChange={(v) =>
                 setAuth({ ...auth, basic: { username: auth.basic?.username || '', password: v } })
               }
+              dataTestId="auth-basic-pass"
             />
           </div>
           <div className="mt-3" style={{ color: 'var(--hint)' }}>
@@ -215,6 +233,7 @@ export default function AuthTab() {
               className={INPUT}
               style={{ color: 'var(--text)' }}
               placeholder="X-API-Key"
+              data-testid="auth-apikey-key"
             />
           </div>
           <div className="mb-3">
@@ -236,6 +255,7 @@ export default function AuthTab() {
               className={INPUT}
               style={{ color: 'var(--text)' }}
               placeholder="api-key-value"
+              data-testid="auth-apikey-value"
             />
           </div>
           <div>
@@ -249,6 +269,9 @@ export default function AuthTab() {
                   <button
                     key={loc}
                     type="button"
+                    data-testid={
+                      loc === 'header' ? 'auth-apikey-in-header' : 'auth-apikey-in-query'
+                    }
                     onClick={() =>
                       setAuth({
                         ...auth,

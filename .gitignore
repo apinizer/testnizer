@@ -18,6 +18,8 @@ coverage/
 # Playwright (playwright.config.ts: list + html reporter)
 playwright-report/
 test-results/
+tests/e2e/servers/.test-servers.json
+tests/e2e/servers/.supervisor.pid
 playwright/.cache/
 playwright/.auth/
 
@@ -38,6 +40,7 @@ resources/third-party-licenses.json
 # published. The repo is the MIT source; these are internal workflow files.
 CLAUDE.md
 .claude/
+.cursor/
 
 # Internal signing / release-ops runbook — kept on the maintainer's disk only
 # (no secret values in it, but the signing process isn't published).

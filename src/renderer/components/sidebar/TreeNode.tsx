@@ -738,6 +738,7 @@ export default function TreeNodeComponent({
         />
       )}
       <div
+        data-testid="tree-node"
         draggable={draggable}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
@@ -825,6 +826,7 @@ export default function TreeNodeComponent({
         {showActions && (
           <button
             type="button"
+            data-testid="tree-node-more"
             onClick={(e) => {
               e.stopPropagation()
               openContextMenu(e)

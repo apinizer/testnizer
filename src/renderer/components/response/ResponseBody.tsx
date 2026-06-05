@@ -154,6 +154,7 @@ export default function ResponseBody() {
           <button
             type="button"
             onClick={() => setFormatOpen((v) => !v)}
+            data-testid="res-body-format"
             className="flex cursor-pointer items-center gap-1 rounded px-2 py-[3px]"
             style={{
               background: 'var(--surface)',
@@ -196,6 +197,7 @@ export default function ResponseBody() {
         <button
           type="button"
           onClick={() => setViewMode('Pretty')}
+          data-testid="res-body-preview"
           className="cursor-pointer rounded px-2 py-[3px] transition-colors"
           style={{
             background: 'transparent',
@@ -216,6 +218,7 @@ export default function ResponseBody() {
         <button
           type="button"
           onClick={() => setViewMode('Raw')}
+          data-testid="res-body-raw"
           className="cursor-pointer rounded px-2 py-[3px] transition-colors"
           style={{
             background: 'transparent',
@@ -230,6 +233,7 @@ export default function ResponseBody() {
         <button
           type="button"
           onClick={() => setViewMode('Preview')}
+          data-testid="res-body-visualize"
           className="cursor-pointer rounded px-2 py-[3px] transition-colors"
           style={{
             background: 'transparent',
@@ -252,6 +256,7 @@ export default function ResponseBody() {
           title={wrap ? 'Disable word wrap' : 'Enable word wrap'}
           aria-label={wrap ? 'Disable word wrap' : 'Enable word wrap'}
           aria-pressed={wrap}
+          data-testid="res-body-wrap"
           onClick={() => setWrap((v) => !v)}
           style={{
             ...ICON_BTN,
@@ -267,6 +272,7 @@ export default function ResponseBody() {
           title="Filter"
           aria-label={t('a11y.filter')}
           aria-pressed={showFilter}
+          data-testid="res-body-filter"
           onClick={() => setShowFilter((v) => !v)}
           style={{
             ...ICON_BTN,
@@ -281,6 +287,7 @@ export default function ResponseBody() {
           type="button"
           title="Copy"
           aria-label={t('a11y.copyToClipboard')}
+          data-testid="res-body-copy"
           onClick={handleCopy}
           style={{
             ...ICON_BTN,

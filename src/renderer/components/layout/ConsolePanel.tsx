@@ -66,6 +66,7 @@ export default function ConsolePanel() {
 
   return (
     <div
+      data-testid="console-panel"
       // sits just above the 28px footer
       className="absolute left-0 right-0"
       style={{

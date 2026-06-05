@@ -202,6 +202,7 @@ export default function IconSidebar() {
           return (
             <div
               key={item.id}
+              data-testid={`nav-${item.id}`}
               onClick={() => handleClick(item)}
               style={{
                 width: 'calc(100% - 8px)',
@@ -247,6 +248,7 @@ export default function IconSidebar() {
         {bottomItems.map((item) => (
           <div
             key={item.id}
+            data-testid={`nav-${item.id}`}
             onClick={() => handleClick(item)}
             style={{
               width: 'calc(100% - 8px)',

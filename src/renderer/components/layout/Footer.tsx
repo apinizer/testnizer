@@ -44,6 +44,7 @@ export default function Footer() {
        *  tab was open (issue #10). */}
       <button
         type="button"
+        data-testid="footer-env"
         onClick={() => setShowEnvironmentModal(true)}
         title={t('command.action.openEnvironments')}
         style={{
@@ -80,6 +81,7 @@ export default function Footer() {
       {/* Right */}
       <button
         type="button"
+        data-testid="footer-enterprise"
         onClick={() => setShowEnterpriseModal(true)}
         title={t('about.enterpriseTitle')}
         style={{
@@ -105,6 +107,7 @@ export default function Footer() {
        *  who couldn't tell it apart from the inline runner tabs. */}
       <button
         type="button"
+        data-testid="footer-console"
         onClick={toggleConsolePanel}
         title={`${t('footer.console')} (Alt+Ctrl+C)`}
         style={{

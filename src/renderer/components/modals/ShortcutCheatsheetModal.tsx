@@ -19,6 +19,7 @@ export default function ShortcutCheatsheetModal() {
       open={open}
       onOpenChange={setOpen}
       title={t('command.cheatsheet.title')}
+      testId="shortcut-cheatsheet"
       contentClassName="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
     >
       <div

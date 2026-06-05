@@ -174,6 +174,7 @@ export default function NewDropdown() {
     ? createPortal(
         <div
           ref={dropdownRef}
+          data-testid="new-dropdown-menu"
           className="fixed z-[9999] w-80 rounded-xl border border-[var(--border)] bg-[var(--white)] p-3"
           style={{
             top: dropdownPos.top,
@@ -225,6 +226,7 @@ export default function NewDropdown() {
       <button
         ref={buttonRef}
         type="button"
+        data-testid="new-dropdown-btn"
         aria-label={t('leftPanel.new')}
         aria-expanded={open}
         aria-haspopup="menu"

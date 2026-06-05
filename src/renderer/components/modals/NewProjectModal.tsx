@@ -502,7 +502,12 @@ export default function NewProjectModal() {
   ]
 
   return (
-    <Modal open={show} onOpenChange={(o) => !o && handleClose()} title={t('newProject.title')}>
+    <Modal
+      open={show}
+      onOpenChange={(o) => !o && handleClose()}
+      title={t('newProject.title')}
+      testId="new-project-modal"
+    >
       <div
         style={{
           background: 'var(--white)',
@@ -809,6 +814,7 @@ export default function NewProjectModal() {
               <div>
                 <Label text="DISPLAY NAME *" />
                 <input
+                  data-testid="new-project-display-name"
                   value={displayName}
                   onChange={(e) => {
                     setDisplayName(e.target.value)
@@ -837,6 +843,7 @@ export default function NewProjectModal() {
               <div>
                 <Label text="PROJECT NAME (SLUG) *" />
                 <input
+                  data-testid="new-project-name"
                   value={projName}
                   onChange={(e) => {
                     const val = e.target.value.replace(/[^a-zA-Z0-9\-_]/g, '')
@@ -1295,6 +1302,7 @@ export default function NewProjectModal() {
 
             <button
               type="button"
+              data-testid={step === 3 ? 'new-project-create' : 'new-project-next'}
               onClick={goNext}
               disabled={isCreating || cloning}
               className="cursor-pointer"

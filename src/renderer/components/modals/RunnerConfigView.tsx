@@ -186,6 +186,7 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
           <div className="mt-6">
             <button
               type="button"
+              data-testid="runner-start"
               onClick={handleRun}
               disabled={isRunning || selectedCount === 0}
               className="flex cursor-pointer items-center gap-2 rounded-[7px] border-none px-5 py-2 font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"

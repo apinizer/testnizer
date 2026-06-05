@@ -198,6 +198,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
       {/* Pill button */}
       <button
         type="button"
+        data-testid="branch-pill"
         className="flex cursor-pointer items-center gap-1"
         style={
           pill
@@ -262,6 +263,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
             >
               <button
                 type="button"
+                data-testid="branch-push"
                 className="flex cursor-pointer items-center gap-1 rounded px-2 py-1"
                 style={{
                   fontSize: 13,
@@ -284,6 +286,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
               </button>
               <button
                 type="button"
+                data-testid="branch-pull"
                 className="flex cursor-pointer items-center gap-1 rounded px-2 py-1"
                 style={{
                   fontSize: 13,
@@ -509,6 +512,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
           ) : (
             <button
               type="button"
+              data-testid="branch-new"
               className="flex w-full cursor-pointer items-center gap-2 px-3 py-2"
               style={{
                 fontSize: 13,

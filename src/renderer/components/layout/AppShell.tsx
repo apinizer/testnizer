@@ -17,6 +17,7 @@ import ProjectDetailModal from '../modals/ProjectDetailModal'
 import ProfileModal from '../modals/ProfileModal'
 import AboutModal from '../modals/AboutModal'
 import EnterpriseModal from '../modals/EnterpriseModal'
+import CollectionRunnerModal from '../modals/CollectionRunnerModal'
 import MergeConflictModal from '../modals/MergeConflictModal'
 import ShortcutCheatsheetModal from '../modals/ShortcutCheatsheetModal'
 import CommandPalette from '../shared/CommandPalette'
@@ -244,6 +245,7 @@ export default function AppShell() {
   if (!activeProjectId) {
     return (
       <div
+        data-testid="project-home"
         className="flex h-screen w-screen overflow-hidden"
         style={{ background: 'var(--bg)', color: 'var(--text)' }}
       >
@@ -262,6 +264,7 @@ export default function AppShell() {
   // Project is active — full layout
   return (
     <div
+      data-testid="workbench"
       className="relative flex h-screen w-screen flex-col overflow-hidden"
       style={{ background: 'var(--bg)', color: 'var(--text)' }}
     >
@@ -301,6 +304,7 @@ export default function AppShell() {
       <ProfileModal />
       <AboutModal />
       <EnterpriseModal />
+      <CollectionRunnerModal />
       <MergeConflictModal />
       <ShortcutCheatsheetModal />
       <CommandPalette open={showCommandPalette} onOpenChange={setShowCommandPalette} />

@@ -39,6 +39,7 @@ interface VariableAutocompleteInputProps {
   placeholder?: string
   style?: React.CSSProperties
   className?: string
+  'data-testid'?: string
 }
 
 /**
@@ -52,6 +53,7 @@ export default function VariableAutocompleteInput({
   placeholder,
   style,
   className,
+  'data-testid': testId,
 }: VariableAutocompleteInputProps) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -386,6 +388,7 @@ export default function VariableAutocompleteInput({
       >
         <input
           ref={inputRef}
+          data-testid={testId}
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}

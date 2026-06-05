@@ -2,6 +2,7 @@ import { test, _electron as electron, type ElectronApplication, type Page } from
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
+import { electronLaunchOptions } from '../helpers/electron-env'
 
 /**
  * Shared setup for WS-Security e2e specs. Mirrors the worker-scoped fixture
@@ -23,10 +24,7 @@ export const wsseTest = test.extend<object, WsseFixtures>({
         )
       }
       const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'testnizer-wsse-e2e-'))
-      const app = await electron.launch({
-        args: [mainPath, `--user-data-dir=${userDataDir}`],
-        env: { ...process.env, NODE_ENV: 'test', ELECTRON_DISABLE_SECURITY_WARNINGS: '1' },
-      })
+      const app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
       await use(app)
       await app.close()
       if (fs.existsSync(userDataDir)) fs.rmSync(userDataDir, { recursive: true, force: true })

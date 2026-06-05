@@ -56,6 +56,7 @@ export default function ResponseMeta() {
       {/* Actions — compact like Postman */}
       <button
         type="button"
+        data-testid="response-code-btn"
         onClick={() => setShowCodeGenerator(true)}
         className="flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
         style={{ borderColor: 'var(--border)', background: 'transparent' }}

@@ -48,6 +48,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
       open={open}
       onOpenChange={onOpenChange}
       title={t('command.placeholder')}
+      testId="command-palette"
       zIndex={Z.COMMAND_PALETTE}
       contentClassName="fixed left-1/2 top-[18%] -translate-x-1/2"
       contentStyle={{ width: 'min(640px, 92vw)' }}

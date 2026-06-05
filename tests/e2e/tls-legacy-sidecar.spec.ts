@@ -22,6 +22,7 @@ import { test, expect, _electron as electron, ElectronApplication } from '@playw
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
+import { electronLaunchOptions } from './helpers/electron-env'
 
 let app: ElectronApplication
 let userDataDir: string
@@ -35,10 +36,7 @@ test.beforeAll(async () => {
     throw new Error(`Build artifact not found: ${mainPath}. Run "npm run build" first.`)
   }
   userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'testnizer-tlssidecar-'))
-  app = await electron.launch({
-    args: [mainPath, `--user-data-dir=${userDataDir}`],
-    env: { ...process.env, NODE_ENV: 'test', ELECTRON_DISABLE_SECURITY_WARNINGS: '1' },
-  })
+  app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
   // Wait for the first window so app.evaluate has a main-process context.
   await app.firstWindow()
 })
