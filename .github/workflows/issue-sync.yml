@@ -38,7 +38,10 @@ env:
   # gh defaults to GITHUB_REPOSITORY; pin it explicitly for clarity.
   GH_REPO: ${{ github.repository }}
   # Shared ref extractor: "issue #12" or "apinizer/testnizer#12" → 12.
-  REF_GREP: (issue #|apinizer/testnizer#)[0-9]+
+  # MUST stay quoted — the unquoted "#" makes YAML treat the rest of the line
+  # as a comment, leaving REF_GREP="(issue" (an unterminated group) so grep
+  # errors with "Unmatched (" and every ref scan silently finds nothing.
+  REF_GREP: '(issue #|apinizer/testnizer#)[0-9]+'
 
 jobs:
   # ── PR opened / edited / reopened (not yet merged) → in-review ──────────────
