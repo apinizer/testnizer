@@ -221,6 +221,15 @@ jobs:
         # `--publish always` on tag pushes uploads + generates latest-mac.yml
         # for electron-updater. On main/PR builds we never publish.
         run: |
+          # GitHub renders an absent secret as an empty STRING, not an unset var.
+          # electron-builder then treats the empty CSC_LINK as a cert PATH,
+          # resolves '' to the workspace dir, and dies with "<dir> not a file"
+          # before the ad-hoc/notarize hooks ever matter. Drop the empties so the
+          # vars are genuinely undefined (the v1.4.10 unsigned behaviour).
+          if [ -z "${CSC_LINK}" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD
+            echo "No CSC_LINK secret — ad-hoc signing only (notarize hook self-skips)."
+          fi
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             npx electron-builder --mac --${{ matrix.arch }} --publish always
           else
