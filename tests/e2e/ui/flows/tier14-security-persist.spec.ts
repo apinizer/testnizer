@@ -120,10 +120,15 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
     await expect(row.locator('select')).toHaveValue('secret')
 
     const projectId = await getActiveProjectId(window)
-    const envs = (await listEnvironmentsByProject(window, projectId)) as Array<{ id: string; name: string }>
-    const envRow = envs.find((e) => e.name === envName)
-    expect(envRow?.id).toBeTruthy()
-    const vars = (await listEnvVariables(window, envRow!.id)) as Array<{ key: string; secret?: boolean | number }>
+    let envId = ''
+    await expect
+      .poll(async () => {
+        const envs = (await listEnvironmentsByProject(window, projectId)) as Array<{ id: string; name: string }>
+        envId = envs.find((e) => e.name === envName)?.id ?? ''
+        return envId
+      })
+      .not.toBe('')
+    const vars = (await listEnvVariables(window, envId)) as Array<{ key: string; secret?: boolean | number }>
     expect(vars.find((v) => v.key === 'apiSecret')?.secret).toBeTruthy()
 
     await window.keyboard.press('Escape')

@@ -39,7 +39,12 @@ uiTest.describe('Tur1 — Tree / Tab / Save [MST-017..022]', () => {
       url: `${http()}/get`,
     })
     await refreshWorkspaceTree(window)
-    await treeOpenNode(window, name)
+    await expect
+      .poll(async () => {
+        await treeSearch(window, name)
+        return window.getByTestId('tree-node').filter({ hasText: name }).first().isVisible().catch(() => false)
+      })
+      .toBe(true)
     await treeContextAction(window, name, /Delete/i)
     await confirmDelete(window)
     await expect(window.getByTestId('tree-node').filter({ hasText: name })).toHaveCount(0, { timeout: 10_000 })

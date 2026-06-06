@@ -3,12 +3,7 @@
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import {
-  dismissOverlays,
-  fillCommandPalette,
-  navigateSidebar,
-  openCommandPalette,
-} from '../../helpers/ui/bootstrap'
+import { dismissOverlays, navigateSidebar, openCommandPalette } from '../../helpers/ui/bootstrap'
 import { pressModShortcut } from '../../helpers/ui/keyboard'
 
 uiTest.describe('Tur1 — Tools & palette [MST-204..207]', () => {
@@ -26,8 +21,8 @@ uiTest.describe('Tur1 — Tools & palette [MST-204..207]', () => {
   uiTest('MST-205 command palette opens and finds New Request', async ({ window }) => {
     await navigateSidebar(window, 'apis')
     await openCommandPalette(window)
-    await fillCommandPalette(window, 'new tab')
-    await expect(window.getByRole('option', { name: /New tab|Yeni sekme/i }).first()).toBeVisible({
+    const palette = window.getByTestId('command-palette')
+    await expect(palette.getByRole('option', { name: /New tab|Yeni sekme/i }).first()).toBeVisible({
       timeout: 8_000,
     })
     await pressModShortcut(window, 'k', { shift: true }).catch(() => window.keyboard.press('Escape'))
