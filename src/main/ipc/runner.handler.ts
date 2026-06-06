@@ -14,6 +14,7 @@ import { getDb } from '../db/database'
 import { isRunnableInProject } from '../lib/ownership'
 import { resolveVariables } from '../lib/variable-resolver'
 import { loadEnvVars } from '../lib/env-vars'
+import { evaluateJsonPath } from '../lib/json-path'
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -420,6 +421,45 @@ function runAssertionsMainProcess(
               name: assertion.name,
               passed: body.includes(expected),
               actual: body.length > 100 ? `${body.slice(0, 100)}...` : body,
+            }
+          }
+          // body_equals_json / body_jsonpath mirror src/renderer/lib/test-runner.ts
+          // (assertBodyEqualsJson / assertBodyJsonPath). The runner used to reject
+          // these as "Unknown type", so a JSONPath assertion that passed on Send
+          // silently failed in the Runner — see CLAUDE.md "Header assertion
+          // paralelliği". Keep both evaluators in lockstep.
+          case 'body_equals_json': {
+            try {
+              const actualObj = JSON.parse(response.body ?? '{}')
+              const expectedObj = JSON.parse(resolveStr(assertion.expected) || '{}')
+              const passed = JSON.stringify(actualObj) === JSON.stringify(expectedObj)
+              return { name: assertion.name, passed, actual: response.body ?? '' }
+            } catch (e) {
+              return {
+                name: assertion.name,
+                passed: false,
+                error: `JSON parse error: ${(e as Error).message}`,
+              }
+            }
+          }
+          case 'body_jsonpath': {
+            try {
+              const obj = JSON.parse(response.body ?? '{}')
+              const jpPath = assertion.jsonPath ?? '$'
+              const actualVal = evaluateJsonPath(obj, jpPath)
+              const actualStr =
+                typeof actualVal === 'object' ? JSON.stringify(actualVal) : String(actualVal ?? '')
+              const expected = resolveStr(assertion.expected)
+              if (expected === '') {
+                return { name: assertion.name, passed: actualVal !== undefined, actual: actualStr }
+              }
+              return { name: assertion.name, passed: actualStr === expected, actual: actualStr }
+            } catch (e) {
+              return {
+                name: assertion.name,
+                passed: false,
+                error: `JSONPath error: ${(e as Error).message}`,
+              }
             }
           }
           case 'header_exists': {

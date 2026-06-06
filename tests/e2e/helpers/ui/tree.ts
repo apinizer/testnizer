@@ -11,6 +11,12 @@ export async function treeClickNode(page: Page, label: string): Promise<void> {
   await page.getByTestId('tree-node').filter({ hasText: label }).first().click()
 }
 
+/** Search then click — reliable when the tree is large or folders are collapsed. */
+export async function treeOpenNode(page: Page, label: string): Promise<void> {
+  await treeSearch(page, label)
+  await treeClickNode(page, label)
+}
+
 /** Right-click tree node and pick context action. */
 export async function treeContextAction(
   page: Page,

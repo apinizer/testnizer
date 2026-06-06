@@ -70,15 +70,22 @@ export default function SettingsTab() {
         <div className="flex items-center gap-2">
           <input
             type="number"
-            value={requestTimeout}
-            onChange={(e) => setRequestTimeout(Number(e.target.value))}
+            value={requestTimeout ?? ''}
+            onChange={(e) => {
+              const raw = e.target.value.trim()
+              // Empty → inherit the general (project/app) timeout. A typed
+              // value (incl. 0 = no timeout) is an explicit per-request override.
+              setRequestTimeout(raw === '' ? null : Number(raw))
+            }}
             data-testid="settings-timeout"
             className="w-24 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 outline-none"
             style={{ color: 'var(--text)' }}
             min={0}
-            placeholder="0"
+            placeholder="inherit"
           />
-          <span style={{ color: 'var(--muted)' }}>ms (0 = no timeout)</span>
+          <span style={{ color: 'var(--muted)' }}>
+            ms (empty = general default · 0 = no timeout)
+          </span>
         </div>
       </div>
 

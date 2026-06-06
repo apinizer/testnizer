@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar } from '../helpers/ui/bootstrap'
+import { dismissOverlays, E2E_PROJECT_NAME, navigateSidebar } from '../helpers/ui/bootstrap'
 import { treeSearch } from '../helpers/ui/tree'
 
 uiTest.describe('Tree CRUD (deep)', () => {
@@ -10,7 +10,7 @@ uiTest.describe('Tree CRUD (deep)', () => {
   })
 
   uiTest('tree search filters nodes', async ({ window }) => {
-    await treeSearch(window, 'Default')
+    await treeSearch(window, E2E_PROJECT_NAME)
     await expect(window.getByTestId('tree-node').first()).toBeVisible()
   })
 

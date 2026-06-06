@@ -447,4 +447,81 @@ describe('executeCollection — assertions', () => {
     expect(res.data?.failedEndpoints).toBe(1)
     expect(res.data?.results[0].failed).toBe(1)
   })
+
+  // body_jsonpath / body_equals_json must evaluate in the Runner exactly as they
+  // do for the Send button (src/renderer/lib/test-runner.ts). They used to be
+  // rejected as "Unknown type", so a JSONPath assertion that passed on Send
+  // silently failed in the Runner (see CLAUDE.md "Header assertion paralelliği").
+  it('passes a body_jsonpath assertion against the echoed response', async () => {
+    const epId = seedEndpoint({
+      name: 'JsonPath',
+      url: `http://127.0.0.1:${port}/ok`,
+      assertions: [
+        {
+          id: 'a1',
+          name: 'path is /ok',
+          type: 'body_jsonpath',
+          enabled: true,
+          jsonPath: '$.path',
+          expected: '/ok',
+        },
+      ],
+    })
+
+    const res = await run({ endpointIds: [epId] })
+
+    expect(res.success).toBe(true)
+    expect(res.data?.passedAssertions).toBe(1)
+    expect(res.data?.failedAssertions).toBe(0)
+    expect(res.data?.results[0].passed).toBe(1)
+  })
+
+  it('resolves {{var}} inside a body_jsonpath expected value', async () => {
+    seedActiveEnv({ wantPath: '/wp' })
+    const epId = seedEndpoint({
+      name: 'JsonPathVar',
+      url: `http://127.0.0.1:${port}/wp`,
+      assertions: [
+        {
+          id: 'a1',
+          name: 'path matches {{wantPath}}',
+          type: 'body_jsonpath',
+          enabled: true,
+          jsonPath: '$.path',
+          expected: '{{wantPath}}',
+        },
+      ],
+    })
+
+    const res = await run({ endpointIds: [epId] })
+
+    expect(res.success).toBe(true)
+    expect(res.data?.passedAssertions).toBe(1)
+    expect(res.data?.failedAssertions).toBe(0)
+  })
+
+  it('passes a body_equals_json assertion (whitespace insensitive)', async () => {
+    const epId = seedEndpoint({
+      name: 'EqualsJson',
+      url: `http://127.0.0.1:${port}/eq`,
+      assertions: [
+        {
+          id: 'a1',
+          name: 'body matches',
+          type: 'body_equals_json',
+          enabled: true,
+          // Whitespace differs from the wire payload but the parse→stringify
+          // round-trip normalises it. Key order mirrors the server's shape
+          // ({ ok, path, echo }) — assertBodyEqualsJson is order-sensitive.
+          expected: '{ "ok": true, "path": "/eq", "echo": "" }',
+        },
+      ],
+    })
+
+    const res = await run({ endpointIds: [epId] })
+
+    expect(res.success).toBe(true)
+    expect(res.data?.passedAssertions).toBe(1)
+    expect(res.data?.failedAssertions).toBe(0)
+  })
 })

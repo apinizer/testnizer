@@ -10,17 +10,31 @@ uiTest.describe('Tier 6 — Protocol multi-step journeys', () => {
     await navigateSidebar(window, 'apis')
   })
 
-  uiTest('F17 WebSocket multi-message timeline', async ({ window }) => {
+  uiTest('F17 WebSocket multi-message timeline echoes each payload', async ({ window }) => {
     const { ws } = getTestServerUrls()
     await openNewDropdownItem(window, /WebSocket/i)
     await window.getByTestId('ws-url').fill(ws)
     await window.getByTestId('ws-connect').click()
     await expect(window.getByTestId('ws-disconnect')).toBeVisible({ timeout: 15_000 })
-    for (const msg of ['{"n":1}', '{"n":2}']) {
-      await fillMonaco(window, 'ws-composer', msg)
-      await window.getByRole('button', { name: /Send Message/i }).click()
+
+    // Send two distinguishable payloads; the echo server wraps each in
+    // {"type":"echo","data":"<original>"} so each one round-trips verbatim.
+    for (const marker of ['ws-first', 'ws-second']) {
+      await fillMonaco(window, 'ws-composer', `{"msg":"${marker}"}`)
+      await expect(window.getByTestId('ws-send')).toBeEnabled({ timeout: 10_000 })
+      await window.getByTestId('ws-send').click()
+      await window.waitForTimeout(300)
     }
-    await expect(window.getByText(/echo|welcome/i).first()).toBeVisible({ timeout: 15_000 })
+
+    // Both echoes must arrive — not just "some" echo. Each marker round-trips
+    // verbatim inside a received row.
+    await expect(window.getByText(/ws-first/).first()).toBeVisible({ timeout: 15_000 })
+    await expect(window.getByText(/ws-second/).first()).toBeVisible({ timeout: 15_000 })
+
+    // welcome + 2 sent + 2 received; counts span confirms both directions arrived.
+    await expect(window.getByTestId('ws-message-counts')).toContainText(/2 sent/i, { timeout: 10_000 })
+    await expect(window.getByTestId('ws-message-counts')).toContainText(/[23] received/i, { timeout: 10_000 })
+
     await window.getByTestId('ws-disconnect').click()
   })
 
@@ -60,14 +74,29 @@ uiTest.describe('Tier 6 — Protocol multi-step journeys', () => {
     await expect(window.getByText(/Query|Schema/i).first()).toBeVisible({ timeout: 15_000 })
   })
 
-  uiTest('F21 gRPC proto load and unary execute', async ({ window }) => {
+  uiTest('F21 gRPC proto load and unary execute returns echo', async ({ window }) => {
     const { grpc, http } = getTestServerUrls()
     await openNewDropdownItem(window, /gRPC/i)
     await window.getByTestId('grpc-address').fill(grpc)
     await window.getByRole('button', { name: /From URL/i }).click()
     await window.getByPlaceholder(/example\.com.*proto/i).fill(`${http}/fixtures/echo.proto`)
     await window.getByRole('button', { name: /Load from URL/i }).click()
+
+    // Proto loaded → EchoService/UnaryEcho auto-select.
+    await expect(window.getByTestId('grpc-service-select')).toBeVisible({ timeout: 15_000 })
+    await expect(window.getByTestId('grpc-method-select')).toHaveValue(/UnaryEcho/i, { timeout: 15_000 })
+
+    // Actually invoke the unary RPC and assert the server's echo comes back.
+    await fillMonaco(window, 'grpc-request-editor', '{"message":"grpc-flow"}')
     await expect(window.getByTestId('grpc-execute')).toBeEnabled({ timeout: 15_000 })
+    await window.getByTestId('grpc-execute').click()
+
+    await expect(window.getByTestId('grpc-response-status')).toContainText(/OK/i, { timeout: 20_000 })
+    // The echoed payload round-trips as {"message":"echo: grpc-flow"}; assert on
+    // the contiguous token to avoid Monaco's inter-token whitespace rendering.
+    await expect(window.getByTestId('grpc-response-body')).toContainText(/grpc-flow/i, {
+      timeout: 20_000,
+    })
   })
 
   uiTest('F22 MCP connect invoke echo tool', async ({ window }) => {

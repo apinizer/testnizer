@@ -33,6 +33,14 @@ export async function selectEnvironmentInModal(page: Page, name: string): Promis
   await page.getByTestId('environment-modal').getByRole('button', { name, exact: true }).click()
 }
 
+/** Switch environment modal to the Globals pane. */
+export async function openGlobalsPane(page: Page): Promise<void> {
+  await page.getByTestId('env-globals-nav').click()
+  await expect(page.getByTestId('environment-modal').getByText('Globals').first()).toBeVisible({
+    timeout: 5_000,
+  })
+}
+
 /** Fill the last variable row in the active env/globals pane. */
 export async function addVariable(page: Page, v: EnvVariableInput): Promise<void> {
   await page.getByTestId('env-var-add').click()
@@ -71,7 +79,10 @@ export async function setActiveEnvironment(page: Page): Promise<void> {
   const btn = page.getByTestId('env-set-active')
   if (await btn.isVisible().catch(() => false)) {
     await btn.click()
-    await expect(page.getByText('Active')).toBeVisible({ timeout: 5_000 })
+    // Scope to the modal — the workbench can hold its own "Active" label.
+    await expect(
+      page.getByTestId('environment-modal').getByText('Active').first(),
+    ).toBeVisible({ timeout: 5_000 })
   }
 }
 

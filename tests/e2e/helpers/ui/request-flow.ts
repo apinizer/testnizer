@@ -28,10 +28,18 @@ export async function seedPostScriptExample(page: Page): Promise<void> {
 export async function addPostScript(page: Page, script: string): Promise<void> {
   await clickRequestTab(page, 'scripts')
   await page.getByTestId('scripts-post').click()
-  await page.getByRole('button', { name: /Insert example/i }).click()
-  await fillMonaco(page, 'scripts-post-editor', script)
-  await page.getByTestId('url-input').click()
-  await page.waitForTimeout(200)
+  // Type into the editor with real keyboard events. model.setValue() alone
+  // sometimes fails to fire the controlled onChange for the scripts editor
+  // (see seedPostScriptExample note), which left req.postScript stale and broke
+  // the saved snapshot. Real input events reliably commit to the store.
+  const editor = page.getByTestId('scripts-post-editor').locator('.monaco-editor')
+  await editor.click()
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await page.keyboard.press(`${mod}+KeyA`)
+  await page.keyboard.press('Backspace')
+  await page.keyboard.insertText(script)
+  await page.getByTestId('url-input').click({ force: true }).catch(() => {})
+  await page.waitForTimeout(250)
 }
 
 export async function addPreScript(page: Page, script: string): Promise<void> {
@@ -86,7 +94,45 @@ export async function addHeader(page: Page, key: string, value: string): Promise
 
 export async function sendAndWaitResponse(page: Page, timeoutMs = 30_000): Promise<void> {
   await page.getByTestId('send-btn').click()
-  await expect(page.getByText(/200|OK/i).first()).toBeVisible({ timeout: timeoutMs })
+  await expect(page.getByTestId('res-tab-body')).toBeVisible({ timeout: timeoutMs })
+  await expect(page.getByText(/200|OK/i).first()).toBeVisible({ timeout: 10_000 })
+}
+
+/** Click Send without asserting a 2xx — for error / non-200 / recovery flows. */
+export async function clickSend(page: Page): Promise<void> {
+  await page.getByTestId('send-btn').click()
+}
+
+/** Wait for a status pill to render and return its numeric code. */
+export async function waitForResponseStatus(page: Page, timeoutMs = 30_000): Promise<number> {
+  const badge = page.getByTestId('response-status')
+  await expect(badge).toBeVisible({ timeout: timeoutMs })
+  const text = (await badge.textContent())?.trim() ?? ''
+  const match = text.match(/(\d{3})/)
+  if (!match) throw new Error(`response status not parseable: "${text}"`)
+  return Number(match[1])
+}
+
+/** Send and resolve the resulting status code (any code). */
+export async function sendAndReadStatus(page: Page, timeoutMs = 30_000): Promise<number> {
+  await clickSend(page)
+  return waitForResponseStatus(page, timeoutMs)
+}
+
+/** Wait for the connection-level error panel (no HTTP status at all). */
+export async function waitForResponseError(page: Page, timeoutMs = 30_000): Promise<void> {
+  await expect(page.getByTestId('response-error')).toBeVisible({ timeout: timeoutMs })
+}
+
+/**
+ * Cancel an in-flight request: the Send button flips to a red "Cancel" while
+ * `isLoading`, and clicking it again aborts. We poll for the in-flight state
+ * first so we don't race the click before the request actually starts.
+ */
+export async function cancelInFlightRequest(page: Page): Promise<void> {
+  const btn = page.getByTestId('send-btn')
+  await expect(btn).toContainText(/Cancel|İptal/i, { timeout: 10_000 })
+  await btn.click()
 }
 
 export interface TestResultsSummary {
@@ -139,6 +185,21 @@ export async function saveRequestToTree(page: Page, name: string): Promise<void>
   await expect(modal).toBeHidden({ timeout: 20_000 })
 }
 
+/** Save active request into a specific folder (selected by its name) via the save modal. */
+export async function saveRequestToFolder(
+  page: Page,
+  name: string,
+  folderName: string,
+): Promise<void> {
+  await page.getByTestId('save-btn').click()
+  const modal = page.getByTestId('endpoint-save-modal')
+  await expect(modal).toBeVisible({ timeout: 8_000 })
+  await modal.locator('input').first().fill(name)
+  await modal.locator(`[data-testid="save-folder-row"][data-folder-name="${folderName}"]`).click()
+  await modal.getByRole('button', { name: /Save|Update/i }).click()
+  await expect(modal).toBeHidden({ timeout: 20_000 })
+}
+
 export async function setBodyType(
   page: Page,
   type: 'none' | 'raw' | 'json' | 'urlencoded' | 'formdata' | 'xml',
@@ -160,6 +221,8 @@ export async function setBodyType(
   await page.getByTestId('body-type-raw').click()
   if (type === 'json' || type === 'xml') {
     await page.getByTestId('body-raw-format').selectOption(type)
+  } else if (type === 'raw') {
+    await page.getByTestId('body-raw-format').selectOption('text')
   }
   if (content !== undefined) {
     await fillMonaco(page, 'body-raw-editor', content)

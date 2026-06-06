@@ -65,6 +65,8 @@ export default function WsMessageLog() {
             return (
               <div
                 key={msg.id}
+                data-testid="ws-message"
+                data-direction={msg.direction}
                 className="cursor-pointer border-b border-[var(--border)] px-3 py-1.5 transition-colors hover:bg-[var(--surface)]"
                 onClick={() => setExpandedId(isExpanded ? null : msg.id)}
               >
@@ -109,7 +111,7 @@ export default function WsMessageLog() {
 
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
-        <span className="text-[var(--muted)]">
+        <span className="text-[var(--muted)]" data-testid="ws-message-counts">
           {messages.length} message{messages.length !== 1 ? 's' : ''} (
           {messages.filter((m) => m.direction === 'sent').length} sent,{' '}
           {messages.filter((m) => m.direction === 'received').length} received)

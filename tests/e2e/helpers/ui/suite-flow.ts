@@ -37,7 +37,10 @@ export async function openSuiteContextMenu(page: Page, suiteName: string): Promi
 /** Persist active test-suite item snapshot (UrlBar save on Tests page). */
 export async function saveActiveSuiteItem(page: Page): Promise<void> {
   await navigateToTestsPanel(page)
-  await page.getByTestId('url-input').click()
+  // Force the focus/blur click: when the URL holds a {{var}}, the variable
+  // highlight overlay span sits over the input and would intercept a normal
+  // click. We only need to commit the pending edit before saving.
+  await page.getByTestId('url-input').click({ force: true })
   await page.getByTestId('save-btn').click()
   await page.waitForTimeout(600)
 }

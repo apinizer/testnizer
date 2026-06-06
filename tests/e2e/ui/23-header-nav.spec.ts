@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar } from '../helpers/ui/bootstrap'
+import { dismissOverlays, navigateSidebar, openHttpRequestTab } from '../helpers/ui/bootstrap'
 import { pressModShortcut } from '../helpers/ui/keyboard'
 
 uiTest.describe('Header & navigation (deep)', () => {
@@ -21,23 +21,22 @@ uiTest.describe('Header & navigation (deep)', () => {
     await window.keyboard.press('Escape')
   })
 
-  uiTest('workbench tab close via context', async ({ window }) => {
+  uiTest('workbench tab close via shortcut', async ({ window }) => {
     await navigateSidebar(window, 'apis')
-    await pressModShortcut(window, 't')
+    await openHttpRequestTab(window)
     const tabs = window.locator('[data-testid="endpoint-tab"]')
     const before = await tabs.count()
     expect(before).toBeGreaterThan(0)
-    await tabs.first().click({ button: 'right' })
-    await window.locator('[data-context-menu]').getByRole('button', { name: /Close Tab/i }).click()
+    await tabs.first().click()
+    await pressModShortcut(window, 'w')
+    await expect(tabs).toHaveCount(before - 1, { timeout: 8_000 })
   })
 
   uiTest('environment selector in workbench', async ({ window }) => {
     await navigateSidebar(window, 'apis')
-    const envBtn = window.getByRole('button', { name: /environment|No environment/i }).first()
-    if (await envBtn.isVisible()) {
-      await envBtn.click()
-      await expect(window.getByText(/Manage Environments/i)).toBeVisible()
-      await window.keyboard.press('Escape')
-    }
+    await openHttpRequestTab(window)
+    await window.getByTitle('Environment').first().click()
+    await expect(window.getByText(/Manage Environments/i)).toBeVisible()
+    await window.keyboard.press('Escape')
   })
 })

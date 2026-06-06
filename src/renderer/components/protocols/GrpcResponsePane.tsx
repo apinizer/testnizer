@@ -110,7 +110,7 @@ function UnaryView({
   }
 
   return (
-    <div className="flex h-full flex-col bg-[var(--white)]">
+    <div className="flex h-full flex-col bg-[var(--white)]" data-testid="grpc-response-body">
       {/* Meta bar */}
       <div className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-3.5 py-2">
         <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
@@ -118,6 +118,7 @@ function UnaryView({
         </span>
         {response.status !== undefined && (
           <span
+            data-testid="grpc-response-status"
             className="rounded-full px-2 py-0.5 font-semibold"
             style={{
               background: response.status === 0 ? '#e8f9f1' : '#fff0f0',

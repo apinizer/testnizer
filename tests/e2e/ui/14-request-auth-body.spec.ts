@@ -2,6 +2,7 @@ import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
 import { dismissOverlays, navigateSidebar, openHttpRequestTab } from '../helpers/ui/bootstrap'
 import { fillMonaco } from '../helpers/ui/monaco'
+import { expectAuthTypeActive } from '../helpers/ui/assertions'
 import { localHttpBin } from '../helpers/test-servers'
 
 uiTest.describe('Request Auth & Body (deep)', () => {
@@ -15,7 +16,7 @@ uiTest.describe('Request Auth & Body (deep)', () => {
     uiTest(`auth type ${type} is selectable`, async ({ window }) => {
       await window.getByTestId('req-tab-auth').click()
       await window.getByTestId(`auth-type-${type}`).click()
-      await expect(window.getByTestId(`auth-type-${type}`)).toHaveCSS('font-weight', '600')
+      await expectAuthTypeActive(window.getByTestId(`auth-type-${type}`))
     })
   }
 
@@ -52,7 +53,7 @@ uiTest.describe('Request Auth & Body (deep)', () => {
 
   uiTest('settings toggles and timeout', async ({ window }) => {
     await window.getByTestId('req-tab-settings').click()
-    await window.getByTestId('settings-follow-redirects').click()
+    await window.getByTestId('settings-follow-redirects').locator('xpath=ancestor::label').click()
     await window.getByTestId('settings-timeout').fill('5000')
     await expect(window.getByTestId('settings-timeout')).toHaveValue('5000')
   })

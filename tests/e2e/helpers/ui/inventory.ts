@@ -117,8 +117,8 @@ export const NEW_DROPDOWN_PROTOCOLS = [
   /SSE/i,
   /MCP/i,
   /Socket\.IO/i,
-  /Import/i,
-  /cURL/i,
+  /^Import$/i,
+  /^Import cURL$/i,
 ] as const
 
 export const ALL_INVENTORY: InventoryItem[] = [

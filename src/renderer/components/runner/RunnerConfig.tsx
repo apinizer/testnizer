@@ -384,6 +384,7 @@ export default function RunnerConfig({
             <input
               type="number"
               min={1}
+              data-testid="runner-iterations"
               value={iterations}
               onFocus={(e) => e.currentTarget.select()}
               onChange={(e) => setIterations(Math.max(1, Number(e.target.value)))}

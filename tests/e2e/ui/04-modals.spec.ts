@@ -80,10 +80,11 @@ uiTest.describe('Modals', () => {
 
   uiTest('Import modal shows format grid', async ({ window }) => {
     await pressModShortcut(window, 'o')
-    await expect(window.getByTestId('import-modal')).toBeVisible()
-    await expect(window.getByText('OpenAPI/Swagger')).toBeVisible()
-    await expect(window.getByText('Postman')).toBeVisible()
-    await expect(window.getByText('WSDL')).toBeVisible()
+    const modal = window.getByTestId('import-modal')
+    await expect(modal).toBeVisible()
+    await expect(modal.getByRole('button', { name: 'OpenAPI/Swagger' })).toBeVisible()
+    await expect(modal.getByRole('button', { name: 'Postman' })).toBeVisible()
+    await expect(modal.getByRole('button', { name: 'WSDL WSDL' })).toBeVisible()
     await window.keyboard.press('Escape')
   })
 })

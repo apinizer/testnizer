@@ -399,6 +399,8 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
             ).map((branch) => (
               <div
                 key={branch.name}
+                data-testid="branch-item"
+                data-branch-name={branch.name}
                 className="group flex cursor-pointer items-center gap-2 px-3 py-1.5"
                 style={{
                   fontSize: 13,

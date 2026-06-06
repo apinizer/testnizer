@@ -1,6 +1,7 @@
 node_modules/
 dist/
 out/
+ext/
 .env
 .env.*
 *.log

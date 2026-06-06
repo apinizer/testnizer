@@ -23,8 +23,10 @@ uiTest.describe('Response pane (deep)', () => {
 
   uiTest('body toolbar: word wrap toggle', async ({ window }) => {
     await window.getByTestId('res-tab-body').click()
-    await window.getByTestId('res-body-wrap').click()
-    await expect(window.getByTestId('res-body-wrap')).toHaveAttribute('aria-pressed', 'true')
+    const wrap = window.getByTestId('res-body-wrap')
+    const before = await wrap.getAttribute('aria-pressed')
+    await wrap.click({ force: true })
+    await expect(wrap).toHaveAttribute('aria-pressed', before === 'true' ? 'false' : 'true')
   })
 
   uiTest('cookies tab shows table', async ({ window }) => {

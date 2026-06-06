@@ -452,6 +452,10 @@ function EndpointTabBar() {
           <div
             key={tab.id}
             data-testid="endpoint-tab"
+            data-tab-name={tab.name}
+            data-preview={isPreview ? 'true' : 'false'}
+            data-dirty={tab.isDirty ? 'true' : 'false'}
+            data-active={isActive ? 'true' : 'false'}
             className="group"
             draggable={renamingTabId !== tab.id}
             onDragStart={(e) => {
@@ -611,6 +615,7 @@ function EndpointTabBar() {
             )}
             {tab.isDirty && (
               <span
+                data-testid="tab-dirty"
                 style={{
                   width: 6,
                   height: 6,
@@ -621,6 +626,7 @@ function EndpointTabBar() {
               />
             )}
             <span
+              data-testid="tab-close"
               className="hidden cursor-pointer group-hover:inline"
               style={{ color: T.ghost, fontSize: 13 }}
               onClick={(e) => handleCloseTab(tab.id, e)}

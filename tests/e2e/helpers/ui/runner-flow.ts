@@ -7,6 +7,20 @@ export async function openCollectionRunner(page: Page): Promise<void> {
   await expect(page.getByTestId('collection-runner-modal')).toBeVisible({ timeout: 8_000 })
 }
 
+/** Deselect every runner row except the one whose label contains `name`. */
+export async function selectOnlyRunnerEndpoint(page: Page, name: string): Promise<void> {
+  const modal = page.getByTestId('collection-runner-modal')
+  const rows = modal.locator('div.border-b').filter({ has: page.locator('input[type="checkbox"]') })
+  const count = await rows.count()
+  for (let i = 0; i < count; i++) {
+    const row = rows.nth(i)
+    const text = (await row.textContent()) ?? ''
+    const cb = row.locator('input[type="checkbox"]')
+    const want = text.includes(name)
+    if ((await cb.isChecked()) !== want) await cb.click()
+  }
+}
+
 export async function startCollectionRun(page: Page): Promise<void> {
   const start = page.getByTestId('collection-runner-modal').getByTestId('runner-start')
   await expect(start).toBeEnabled({ timeout: 30_000 })
@@ -41,6 +55,18 @@ export async function readCollectionRunSummary(page: Page): Promise<{ passed: nu
 export async function closeCollectionRunner(page: Page): Promise<void> {
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('collection-runner-modal')).toBeHidden({ timeout: 5_000 })
+}
+
+/** Open the Scheduled Tasks list from the Tests sidebar quick-nav. */
+export async function openScheduledTasksView(page: Page): Promise<void> {
+  await page.getByTestId('nav-tests').click()
+  await page
+    .getByTestId('left-panel')
+    .getByRole('button', { name: /^Scheduled Tasks$/i })
+    .click()
+  await expect(
+    page.getByTestId('scheduled-task-row').or(page.getByText(/No scheduled tasks yet/i)).first(),
+  ).toBeVisible({ timeout: 10_000 })
 }
 
 /** Runner tab (Tests sidebar) — Start run button in embedded RunnerConfig. */

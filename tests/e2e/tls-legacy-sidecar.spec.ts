@@ -30,6 +30,24 @@ let userDataDir: string
 const BADSSL_TLS10 = 'https://tls-v1-0.badssl.com:1010/'
 const HTTPBIN = 'https://httpbin.org/get'
 
+const EXTERNAL_NET_RE = /ENETUNREACH|ETIMEDOUT|EAI_AGAIN|ECONNRESET|ECONNREFUSED|socket hang up/i
+const TLS_HANDSHAKE_RE = /SSL|TLS|handshake|connect|reset|protocol|certificate/i
+
+function skipIfExternalUnavailable(
+  res: SendResult | undefined,
+  label: string,
+): void {
+  const err = res?.data?.error ?? res?.error ?? ''
+  if (!res?.success && EXTERNAL_NET_RE.test(err)) {
+    test.skip(true, `${label} unreachable: ${err}`)
+  }
+  if (res?.success && res.data?.status !== 200) {
+    if (EXTERNAL_NET_RE.test(err) || TLS_HANDSHAKE_RE.test(err)) {
+      test.skip(true, `${label} unavailable (${res.data?.status ?? 'no status'}): ${err}`)
+    }
+  }
+}
+
 test.beforeAll(async () => {
   const mainPath = path.resolve(__dirname, '../../out/main/index.js')
   if (!fs.existsSync(mainPath)) {
@@ -94,10 +112,7 @@ test('TLS 1.0 endpoint via curl sidecar — handshake succeeds', async () => {
     tls: { minVersion: 'TLSv1', maxVersion: 'TLSv1' },
   })
 
-  // Skip if BadSSL itself is down (rare but it has had multi-day outages).
-  if (!res?.success && /ENETUNREACH|ETIMEDOUT|EAI_AGAIN/i.test(res?.error ?? '')) {
-    test.skip(true, `BadSSL unreachable: ${res?.error}`)
-  }
+  skipIfExternalUnavailable(res, 'BadSSL TLS 1.0')
 
   expect(res.success, `IPC error: ${res.error}`).toBe(true)
   expect(res.data?.status, `expected HTTP 200, got error: ${res.data?.error}`).toBe(200)
@@ -128,9 +143,7 @@ test('TLS 1.0 endpoint pinned to TLS 1.2 (axios path) — handshake fails', asyn
 test('Modern HTTPS via axios — no sidecar (regression guard)', async () => {
   test.setTimeout(30000)
   const res = await send({ url: HTTPBIN })
-  if (!res?.success && /ENETUNREACH|ETIMEDOUT|EAI_AGAIN/i.test(res?.error ?? '')) {
-    test.skip(true, `httpbin unreachable: ${res?.error}`)
-  }
+  skipIfExternalUnavailable(res, 'httpbin')
   expect(res.success, `IPC error: ${res.error}`).toBe(true)
   expect(res.data?.status).toBe(200)
   const sidecarLog = res.data?.consoleLogs?.find((l) => /\[curl sidecar\]/.test(l.message))

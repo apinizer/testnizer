@@ -59,6 +59,7 @@ export default function WsComposer() {
         type="button"
         onClick={sendMessage}
         disabled={!isConnected || !composerContent.trim()}
+        data-testid="ws-send"
         className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
         style={{ background: 'var(--accent)', border: 'none' }}
       >

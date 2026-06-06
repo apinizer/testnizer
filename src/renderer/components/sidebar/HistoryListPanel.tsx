@@ -436,6 +436,7 @@ export default function HistoryListPanel() {
               <div
                 key={entry.id}
                 onClick={() => handleOpenInTab(entry)}
+                data-testid="history-entry"
                 className="group flex cursor-pointer items-center gap-1.5 px-3 py-[6px]"
                 style={{
                   borderBottom: '1px solid var(--border)',

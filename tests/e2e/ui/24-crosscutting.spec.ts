@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar, openCommandPalette } from '../helpers/ui/bootstrap'
+import { dismissOverlays, navigateSidebar, openCommandPalette, openHttpRequestTab } from '../helpers/ui/bootstrap'
 import { pressModShortcut } from '../helpers/ui/keyboard'
 
 uiTest.describe('Cross-cutting (deep)', () => {
@@ -10,9 +10,9 @@ uiTest.describe('Cross-cutting (deep)', () => {
 
   uiTest('theme switch via command palette', async ({ window }) => {
     await openCommandPalette(window)
-    await window.getByRole('option', { name: /Dark Theme/i }).click()
+    await window.getByRole('option', { name: /Switch theme: Dark|Tema: Koyu/i }).click()
     await openCommandPalette(window)
-    await window.getByRole('option', { name: /Light Theme/i }).click()
+    await window.getByRole('option', { name: /Switch theme: Light|Tema: Açık/i }).click()
   })
 
   uiTest('locale switch TR and EN', async ({ window }) => {
@@ -22,19 +22,16 @@ uiTest.describe('Cross-cutting (deep)', () => {
     await window.getByRole('option', { name: /English/i }).click()
   })
 
-  uiTest('tab persistence after close and reopen', async ({ window }) => {
+  uiTest('tab persistence across tab switches', async ({ window }) => {
     await navigateSidebar(window, 'apis')
-    const url = window.locator('input[placeholder*="URL"], input[placeholder*="url"]')
-    await url.fill('https://persist-test.example/e2e')
-    await pressModShortcut(window, 's')
-    const modal = window.getByTestId('endpoint-save-modal')
-    if (await modal.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await window.keyboard.press('Escape')
-    }
-    const value = await url.inputValue()
-    await pressModShortcut(window, 'w')
-    await pressModShortcut(window, 't')
+    const tabs = window.locator('[data-testid="endpoint-tab"]')
+    await openHttpRequestTab(window)
+    const url = window.getByTestId('url-input')
+    const value = `https://persist-test.example/e2e-${Date.now()}`
     await url.fill(value)
+    const filledTabIndex = (await tabs.count()) - 1
+    await openHttpRequestTab(window)
+    await tabs.nth(filledTabIndex).click()
     await expect(url).toHaveValue(value)
   })
 

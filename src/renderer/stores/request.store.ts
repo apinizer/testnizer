@@ -85,12 +85,20 @@ interface TabRequestState {
   assertions: TestAssertion[]
   // ── Per-request Settings tab (issues #24-27). These override the
   // project-level network defaults on the Send path. `requestTimeout` is in
-  // ms; 0 = no timeout (honored by the engine). Defaults mirror axios sanity:
-  // follow redirects up to 5, verify SSL, no timeout.
+  // ms with a three-valued meaning that the Send path relies on:
+  //   null  → inherit (project-level → app-wide → engine 30s default)
+  //   0     → explicitly NO timeout
+  //   >0    → explicit timeout
+  // The default is `null` so that an untouched request inherits the
+  // configured "general" timeout instead of silently disabling it — the
+  // earlier `0` default made the project/app timeout dead (it was a valid
+  // number, so the `?? project` fallback never fired and the engine read 0
+  // as "no timeout"). Defaults mirror axios sanity: follow redirects up to
+  // 5, verify SSL.
   followRedirects: boolean
   maxRedirects: number
   sslVerification: boolean
-  requestTimeout: number
+  requestTimeout: number | null
 }
 
 function emptyTabState(): TabRequestState {
@@ -107,7 +115,7 @@ function emptyTabState(): TabRequestState {
     followRedirects: true,
     maxRedirects: 5,
     sslVerification: true,
-    requestTimeout: 0,
+    requestTimeout: null,
   }
 }
 
@@ -142,7 +150,7 @@ interface RequestStore extends TabRequestState {
   setFollowRedirects: (v: boolean) => void
   setMaxRedirects: (v: number) => void
   setSslVerification: (v: boolean) => void
-  setRequestTimeout: (v: number) => void
+  setRequestTimeout: (v: number | null) => void
   sendRequest: () => Promise<void>
   /** Abort the in-flight HTTP request, if any. No-op when nothing is in flight. */
   cancelRequest: () => Promise<void>
@@ -159,7 +167,7 @@ interface RequestStore extends TabRequestState {
     followRedirects?: boolean
     maxRedirects?: number
     sslVerification?: boolean
-    requestTimeout?: number
+    requestTimeout?: number | null
   }) => void
 
   /** Switch active tab — saves current state and loads target tab state */
@@ -203,7 +211,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   followRedirects: persisted.current.followRedirects ?? true,
   maxRedirects: persisted.current.maxRedirects ?? 5,
   sslVerification: persisted.current.sslVerification ?? true,
-  requestTimeout: persisted.current.requestTimeout ?? 0,
+  requestTimeout: persisted.current.requestTimeout ?? null,
   _tabStates: persisted._tabStates,
   _currentTabId: persisted._currentTabId,
   _inflightRequestId: null,
@@ -320,7 +328,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     markActiveDirty()
   },
   setRequestTimeout: (v) => {
-    set({ requestTimeout: Number.isFinite(v) && v >= 0 ? v : 0 })
+    // null → inherit the general timeout; a finite >= 0 number is an explicit
+    // override (0 = no timeout). Anything else collapses to inherit.
+    set({ requestTimeout: v != null && Number.isFinite(v) && v >= 0 ? v : null })
     markActiveDirty()
   },
 
@@ -537,6 +547,19 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       }
     }
 
+    // App-wide "general" timeout (Settings modal → `defaultTimeout`). This is
+    // the last fallback before the engine's own 30s default. Without reading
+    // it here the global Settings timeout had no effect on Send at all.
+    let appDefaultTimeout: number | undefined
+    try {
+      const r = (await window.api?.settings?.get('defaultTimeout')) as
+        | { success: boolean; data?: number }
+        | undefined
+      if (r?.success && typeof r.data === 'number') appDefaultTimeout = r.data
+    } catch {
+      /* ignore */
+    }
+
     // Forward TLS settings as-is — the main process (request handler) resolves
     // the cipher preset via `getCipherPreset` so the renderer never has to
     // import the main-process TLS preset constants.
@@ -562,6 +585,18 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // project value only when a per-request field is somehow absent.
     const reqCfg = get()
 
+    // Timeout resolution hierarchy (Postman-style, least surprise):
+    //   per-request explicit (incl. 0 = no timeout) → project general →
+    //   app-wide general → engine 30s default (when all are null/undefined).
+    // `requestTimeout === null` means "inherit", so a 0 only wins when the
+    // user explicitly typed it on the Settings tab.
+    const resolvedTimeout =
+      reqCfg.requestTimeout != null
+        ? reqCfg.requestTimeout
+        : netSettings.requestTimeout != null
+          ? netSettings.requestTimeout
+          : appDefaultTimeout
+
     try {
       const result = await window.api?.request?.send({
         method,
@@ -570,7 +605,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         headers: resolvedHeaders as unknown[],
         body: resolvedBody,
         auth: resolvedAuth,
-        timeout: reqCfg.requestTimeout ?? netSettings.requestTimeout,
+        timeout: resolvedTimeout,
         maxRedirects: reqCfg.maxRedirects,
         sslVerification: reqCfg.sslVerification ?? netSettings.sslVerification,
         followRedirects: reqCfg.followRedirects ?? netSettings.followRedirects,
@@ -719,7 +754,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       followRedirects: data.followRedirects ?? true,
       maxRedirects: data.maxRedirects ?? 5,
       sslVerification: data.sslVerification ?? true,
-      requestTimeout: data.requestTimeout ?? 0,
+      requestTimeout: data.requestTimeout ?? null,
     }
     // ALSO refresh the per-tab cache for the current tab. Without this,
     // closing and reopening a test-suite item (or any tab) would restore

@@ -1,0 +1,8 @@
+{
+  "id": "e2e-env-only",
+  "name": "E2E Environment (not a collection)",
+  "values": [
+    { "key": "host", "value": "https://api.example.com", "enabled": true, "type": "default" }
+  ],
+  "_postman_variable_scope": "environment"
+}

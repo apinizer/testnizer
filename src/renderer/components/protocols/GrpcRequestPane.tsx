@@ -253,6 +253,7 @@ export default function GrpcRequestPane() {
               <select
                 value={selectedService || ''}
                 onChange={(e) => selectService(e.target.value)}
+                data-testid="grpc-service-select"
                 className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
               >
                 {services.map((svc) => (
@@ -269,6 +270,7 @@ export default function GrpcRequestPane() {
               <select
                 value={selectedMethod || ''}
                 onChange={(e) => selectMethod(e.target.value)}
+                data-testid="grpc-method-select"
                 className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
               >
                 {(services.find((s) => s.name === selectedService)?.methods || []).map((m) => (

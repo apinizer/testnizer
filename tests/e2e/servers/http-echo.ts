@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
@@ -5,6 +6,33 @@ import { URL } from 'node:url'
 import zlib from 'node:zlib'
 
 const ECHO_PROTO = fs.readFileSync(path.join(__dirname, 'echo.proto'), 'utf8')
+const FIXTURES_DIR = path.join(__dirname, '../../fixtures/import-export')
+const FIXTURE_FILES: Record<string, string> = {
+  'openapi-3.0.json': 'application/json',
+  'postman-v2.1.json': 'application/json',
+  'insomnia-v4.json': 'application/json',
+  'sample.har': 'application/json',
+  'sample.wsdl': 'application/xml',
+  'echo.proto': 'text/plain',
+}
+const OPENAPI_FIXTURE = fs.readFileSync(path.join(FIXTURES_DIR, 'openapi-3.0.json'), 'utf8')
+
+function parseMultipartForm(body: Buffer, contentType: string): Record<string, string> | undefined {
+  const boundaryMatch = contentType.match(/boundary=([^;\s]+)/i)
+  if (!boundaryMatch) return undefined
+  const boundary = boundaryMatch[1].replace(/^"|"$/g, '')
+  const form: Record<string, string> = {}
+  const parts = body.toString('utf8').split(`--${boundary}`)
+  for (const part of parts) {
+    const nameMatch = part.match(/name="([^"]+)"/)
+    if (!nameMatch) continue
+    const chunks = part.split(/\r?\n\r?\n/)
+    if (chunks.length < 2) continue
+    const value = chunks.slice(1).join('\n').replace(/\r?\n--$/, '').trim()
+    form[nameMatch[1]] = value
+  }
+  return Object.keys(form).length > 0 ? form : undefined
+}
 
 export interface HttpEchoServer {
   port: number
@@ -19,6 +47,40 @@ function readBody(req: http.IncomingMessage): Promise<Buffer> {
     req.on('end', () => resolve(Buffer.concat(chunks)))
     req.on('error', reject)
   })
+}
+
+/** Node lowercases incoming header names; httpbin echoes custom X-* with original casing. */
+function echoHeaders(raw: Record<string, string>): Record<string, string> {
+  const out = { ...raw }
+  for (const [k, v] of Object.entries(raw)) {
+    if (k.startsWith('x-')) {
+      const titled = k
+        .split('-')
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join('-')
+      out[titled] = v
+    }
+  }
+  return out
+}
+
+const DIGEST_USER = 'mufasa'
+const DIGEST_PASS = 'Circle Of Life'
+const DIGEST_REALM = 'testrealm@host.com'
+const DIGEST_NONCE = 'dcd98b7102dd2f0e8b11d0f600bfb0c093'
+
+function md5hex(s: string): string {
+  return crypto.createHash('md5').update(s).digest('hex')
+}
+
+function parseDigestParams(auth: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const body = auth.startsWith('Digest ') ? auth.slice(7) : auth
+  for (const part of body.split(',')) {
+    const m = part.trim().match(/^(\w+)="?([^"]+)"?$/)
+    if (m) out[m[1]] = m[2]
+  }
+  return out
 }
 
 function parseBasicAuth(authHeader: string | undefined): { user: string; pass: string } | null {
@@ -58,18 +120,51 @@ export async function startHttpEchoServer(port: number): Promise<HttpEchoServer>
       return
     }
 
-    if (path === '/fixtures/echo.proto' && method === 'GET') {
-      res.writeHead(200, { 'Content-Type': 'text/plain' })
-      res.end(ECHO_PROTO)
+    if (path.startsWith('/fixtures/') && method === 'GET') {
+      const fileName = path.slice('/fixtures/'.length)
+      if (fileName === 'echo.proto') {
+        res.writeHead(200, { 'Content-Type': 'text/plain' })
+        res.end(ECHO_PROTO)
+        return
+      }
+      const contentType = FIXTURE_FILES[fileName]
+      if (contentType) {
+        const filePath = path.join(FIXTURES_DIR, fileName)
+        if (fs.existsSync(filePath)) {
+          res.writeHead(200, { 'Content-Type': contentType })
+          res.end(fs.readFileSync(filePath))
+          return
+        }
+      }
+    }
+
+    if (path === '/fixtures/openapi-3.0.json' && method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(OPENAPI_FIXTURE)
       return
     }
 
-    if (path === '/get' && method === 'GET') {
+    if (path === '/get' && (method === 'GET' || method === 'HEAD' || method === 'OPTIONS')) {
+      if (method === 'HEAD') {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end()
+        return
+      }
+      if (method === 'OPTIONS') {
+        res.writeHead(200, { Allow: 'GET, HEAD, OPTIONS, POST' })
+        res.end()
+        return
+      }
       const args: Record<string, string> = {}
       url.searchParams.forEach((v, k) => {
         args[k] = v
       })
-      jsonResponse(200, { args, headers, origin: headers.origin ?? '', url: url.toString() })
+      jsonResponse(200, {
+        args,
+        headers: echoHeaders(headers),
+        origin: headers.origin ?? '',
+        url: url.toString(),
+      })
       return
     }
 
@@ -88,6 +183,8 @@ export async function startHttpEchoServer(port: number): Promise<HttpEchoServer>
         new URLSearchParams(bodyText).forEach((v, k) => {
           form![k] = v
         })
+      } else if (ct.includes('multipart/form-data')) {
+        form = parseMultipartForm(bodyBuf, ct)
       }
       jsonResponse(200, { args: Object.fromEntries(url.searchParams), data: bodyText, json, form, headers })
       return
@@ -118,7 +215,23 @@ export async function startHttpEchoServer(port: number): Promise<HttpEchoServer>
     }
 
     if (path === '/headers' && method === 'GET') {
-      jsonResponse(200, { headers })
+      jsonResponse(200, { headers: echoHeaders(headers) })
+      return
+    }
+
+    if (path === '/user-agent' && method === 'GET') {
+      jsonResponse(200, { 'user-agent': headers['user-agent'] ?? '' })
+      return
+    }
+
+    if (path === '/response-headers' && method === 'GET') {
+      const outHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+      url.searchParams.forEach((v, k) => {
+        outHeaders[k] = v
+      })
+      const payload = JSON.stringify({ ok: true })
+      res.writeHead(200, { ...outHeaders, 'Content-Length': String(Buffer.byteLength(payload)) })
+      res.end(payload)
       return
     }
 
@@ -133,6 +246,60 @@ export async function startHttpEchoServer(port: number): Promise<HttpEchoServer>
         return
       }
       jsonResponse(200, { authenticated: true, user: creds.user })
+      return
+    }
+
+    if (path === '/oauth/token' && method === 'POST') {
+      let grantType = ''
+      let clientId = ''
+      let clientSecret = ''
+      const ct = headers['content-type'] ?? ''
+      if (ct.includes('application/json')) {
+        try {
+          const j = JSON.parse(bodyText) as Record<string, string>
+          grantType = j.grant_type ?? ''
+          clientId = j.client_id ?? ''
+          clientSecret = j.client_secret ?? ''
+        } catch {
+          /* ignore */
+        }
+      } else {
+        const params = new URLSearchParams(bodyText)
+        grantType = params.get('grant_type') ?? ''
+        clientId = params.get('client_id') ?? ''
+        clientSecret = params.get('client_secret') ?? ''
+      }
+      if (grantType !== 'client_credentials' || clientId !== 'e2e-client' || clientSecret !== 'e2e-secret') {
+        jsonResponse(401, { error: 'invalid_client' })
+        return
+      }
+      jsonResponse(200, {
+        access_token: 'oauth-e2e-access-token',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      })
+      return
+    }
+
+    if (path === '/secure/resource' && method === 'GET') {
+      const auth = headers.authorization ?? ''
+      if (!auth.startsWith('Digest ')) {
+        res.writeHead(401, {
+          'WWW-Authenticate': `Digest realm="${DIGEST_REALM}", qop="auth", nonce="${DIGEST_NONCE}", opaque="op-1"`,
+        })
+        res.end('challenge')
+        return
+      }
+      const p = parseDigestParams(auth)
+      const ha1 = md5hex(`${DIGEST_USER}:${DIGEST_REALM}:${DIGEST_PASS}`)
+      const ha2 = md5hex(`${method}:${p.uri ?? '/secure/resource'}`)
+      const expected = md5hex(`${ha1}:${DIGEST_NONCE}:${p.nc}:${p.cnonce}:auth:${ha2}`)
+      if (p.response === expected && p.username === DIGEST_USER) {
+        jsonResponse(200, { authenticated: true, user: DIGEST_USER })
+      } else {
+        res.writeHead(403)
+        res.end('forbidden')
+      }
       return
     }
 
@@ -200,6 +367,14 @@ export async function startHttpEchoServer(port: number): Promise<HttpEchoServer>
       return
     }
 
+    const streamBytesMatch = path.match(/^\/stream-bytes\/(\d+)$/)
+    if (streamBytesMatch && method === 'GET') {
+      const n = Math.min(Number(streamBytesMatch[1]), 100_000)
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream' })
+      res.end(Buffer.alloc(n, 0xcd))
+      return
+    }
+
     if (path === '/image/png' && method === 'GET') {
       const png = Buffer.from(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -218,6 +393,19 @@ export async function startHttpEchoServer(port: number): Promise<HttpEchoServer>
         if (k) cookies[k] = rest.join('=')
       })
       jsonResponse(200, { cookies })
+      return
+    }
+
+    if (path === '/cookies/set' && method === 'GET' && url.searchParams.size > 0) {
+      const cookies = Array.from(url.searchParams.entries()).map(
+        ([name, value]) => `${name}=${value}; Path=/`,
+      )
+      res.writeHead(302, {
+        'Content-Type': 'application/json',
+        Location: `${url.origin}/cookies`,
+        'Set-Cookie': cookies,
+      })
+      res.end()
       return
     }
 

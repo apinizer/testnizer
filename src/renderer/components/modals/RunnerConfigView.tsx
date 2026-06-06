@@ -119,6 +119,7 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
               <input
                 type="number"
                 min={1}
+                data-testid="runner-iterations"
                 value={iterations}
                 onChange={(e) => setIterations(Number(e.target.value))}
                 className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"

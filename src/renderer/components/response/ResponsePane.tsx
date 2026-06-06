@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, forwardRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useResponseStore } from '../../stores/response.store'
-import { Loader2, Send, Globe, History as HistoryIcon } from 'lucide-react'
+import { Loader2, Send, Globe, History as HistoryIcon, Code2 } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
 import ResponseBody from './ResponseBody'
 import CookieTab from './CookieTab'
@@ -203,6 +203,7 @@ export default function ResponsePane() {
   const response = useResponseStore((s) => s.response)
   const isLoading = useResponseStore((s) => s.isLoading)
   const setActiveSidebarPage = useUIStore((s) => s.setActiveSidebarPage)
+  const setShowCodeGenerator = useUIStore((s) => s.setShowCodeGenerator)
   const activeProtocolTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const [activeTab, setActiveTab] = useState<ResTabKey>('body')
   const [showNetworkInfo, setShowNetworkInfo] = useState(false)
@@ -264,7 +265,7 @@ export default function ResponsePane() {
   // Error state (no status code at all)
   if (response.error && !response.status) {
     return (
-      <div className="flex h-full flex-col bg-[var(--white)]">
+      <div className="flex h-full flex-col bg-[var(--white)]" data-testid="response-error">
         <div className="flex flex-1 items-center justify-center p-4">
           <div
             className="rounded-lg p-4 text-center"
@@ -398,7 +399,9 @@ export default function ResponsePane() {
         {/* Right: meta info (status • time • size • globe • more) */}
         <div className="flex shrink-0 items-center gap-3 pl-2">
           {response.status != null && (
-            <StatusBadge status={response.status} statusText={response.statusText} pill />
+            <span data-testid="response-status">
+              <StatusBadge status={response.status} statusText={response.statusText} pill />
+            </span>
           )}
           {response.timing?.total != null && (
             <span style={{ color: 'var(--muted)' }}>
@@ -412,6 +415,17 @@ export default function ResponsePane() {
               {sizeKB} KB
             </span>
           </span>
+          <button
+            type="button"
+            data-testid="response-code-btn"
+            title={t('response.code')}
+            onClick={() => setShowCodeGenerator(true)}
+            className="flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+            style={{ borderColor: 'var(--border)', background: 'transparent' }}
+          >
+            <Code2 size={11} />
+            {t('response.code')}
+          </button>
           <div style={{ position: 'relative' }}>
             <button
               ref={networkBtnRef}

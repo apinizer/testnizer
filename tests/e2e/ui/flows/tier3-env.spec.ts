@@ -10,6 +10,7 @@ import {
   closeEnvModal,
   createEnvironment,
   openEnvModal,
+  openGlobalsPane,
   selectEnvironmentInModal,
   setupEnvironment,
   switchEnvironment,
@@ -76,8 +77,7 @@ uiTest.describe('Tier 3 — Environment journeys', () => {
     ])
 
     await openEnvModal(window)
-    await selectEnvironmentInModal(window, envName)
-    await window.getByText('Globals', { exact: true }).click()
+    await openGlobalsPane(window)
     await addVariable(window, {
       key: varKey,
       initialValue: 'from-global',
@@ -88,7 +88,10 @@ uiTest.describe('Tier 3 — Environment journeys', () => {
     await openHttpRequestTab(window)
     await fillUrl(window, `${http()}/headers`)
     await addHeader(window, 'X-Token', `{{${varKey}}}`)
-    await addVisualAssertion(window, /Body contains/i, { expected: 'from-initial' })
+    await addVisualAssertion(window, /Body JSON path/i, {
+      jsonPath: `$.headers['x-token']`,
+      expected: 'from-initial',
+    })
     await sendAndWaitResponse(window)
     await expectTestResults(window, { passed: 1, total: 1 })
   })

@@ -73,6 +73,7 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
           {server.name}
         </h2>
         <span
+          data-testid="mock-status"
           className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs"
           style={{ border: `1px solid ${dot}40`, background: `${dot}15`, color: dot }}
         >
@@ -87,6 +88,7 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
           {status === 'running' ? (
             <button
               onClick={() => stopServer(serverId)}
+              data-testid="mock-stop"
               className="flex items-center gap-1 rounded border px-2 py-1 text-xs"
               style={{ borderColor: 'var(--border)', color: '#cc2200', background: 'var(--white)' }}
             >
@@ -95,6 +97,7 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
           ) : (
             <button
               onClick={() => startServer(serverId)}
+              data-testid="mock-start"
               className="flex items-center gap-1 rounded border px-2 py-1 text-xs"
               style={{ borderColor: 'var(--border)', color: '#1a7a4a', background: 'var(--white)' }}
             >
@@ -245,6 +248,7 @@ function EndpointsTab({ serverId }: { serverId: string }) {
             </span>
             <button
               onClick={handleAdd}
+              data-testid="mock-add-endpoint"
               className="flex items-center gap-1 rounded px-2 py-0.5 text-xs"
               style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
             >
@@ -411,6 +415,7 @@ function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: Mo
           <select
             value={endpoint.method}
             onChange={(e) => updateEndpoint(endpoint.id, { method: e.target.value as MockMethod })}
+            data-testid="mock-endpoint-method"
             className="rounded border px-2 py-1 text-sm"
             style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
           >
@@ -425,6 +430,7 @@ function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: Mo
             value={endpoint.path}
             onChange={(e) => updateEndpoint(endpoint.id, { path: e.target.value })}
             placeholder="/users/:id"
+            data-testid="mock-endpoint-path"
             className="rounded border px-2 py-1 font-mono text-sm"
             style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
           />
@@ -513,6 +519,7 @@ function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: Mo
           </h3>
           <button
             onClick={handleAddResponse}
+            data-testid="mock-add-response"
             className="flex items-center gap-1 rounded px-2 py-1 text-xs"
             style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
           >
@@ -612,6 +619,7 @@ function FullUrlBar({
         className="flex-1 truncate font-mono text-xs"
         style={{ color: 'var(--text)' }}
         title={fullUrl}
+        data-testid="mock-endpoint-url"
       >
         {fullUrl}
       </code>
@@ -724,6 +732,7 @@ function ResponseEditor({ response, endpointId }: { response: MockResponse; endp
           onChange={(e) =>
             updateResponse(response.id, { statusCode: Number(e.target.value) || 200 })
           }
+          data-testid="mock-response-status"
           className="rounded border px-2 py-1 text-sm"
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
         />
@@ -804,7 +813,10 @@ function ResponseEditor({ response, endpointId }: { response: MockResponse; endp
         >
           {t('mock.body')}
         </label>
-        <div style={{ height: 200, border: '1px solid var(--border)', borderRadius: 4 }}>
+        <div
+          data-testid="mock-response-body"
+          style={{ height: 200, border: '1px solid var(--border)', borderRadius: 4 }}
+        >
           <MonacoWrapper
             value={response.body}
             onChange={(v) => updateResponse(response.id, { body: v })}

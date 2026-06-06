@@ -309,6 +309,7 @@ export default function ResponseBody() {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter response... (substring or JSONPath-like)"
+            data-testid="res-body-filter-input"
             autoFocus
             className="flex-1 outline-none"
             style={{
@@ -334,7 +335,7 @@ export default function ResponseBody() {
       )}
 
       {/* ── Body content ── */}
-      <div className="flex-1 overflow-hidden bg-[var(--white)]">
+      <div className="flex-1 overflow-hidden bg-[var(--white)]" data-testid="res-body-content">
         {viewMode === 'Pretty' && (
           <MonacoWrapper
             value={displayBody}

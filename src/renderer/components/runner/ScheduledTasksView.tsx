@@ -423,6 +423,8 @@ function TaskRow({
   return (
     <>
       <tr
+        data-testid="scheduled-task-row"
+        data-task-name={task.name}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
@@ -499,6 +501,7 @@ function TaskRow({
             </button>
             <button
               type="button"
+              data-testid="scheduled-task-delete"
               onClick={onDelete}
               title="Delete"
               className="flex cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent p-1"

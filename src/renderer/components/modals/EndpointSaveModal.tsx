@@ -364,6 +364,8 @@ export default function EndpointSaveModal() {
                     return (
                       <div key={f.id}>
                         <div
+                          data-testid="save-folder-row"
+                          data-folder-name={f.name}
                           onClick={() => {
                             setSelectedFolder(f.id)
                             setCreatingFolder(false)

@@ -1,8 +1,115 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { expect, type Page } from '@playwright/test'
 import { pressModShortcut } from './keyboard'
+import { getActiveProjectId } from './assert-ipc'
 
 const FIXTURES = path.resolve(__dirname, '../../../fixtures/import-export')
+
+function readFixture(fileName: string): string {
+  return fs.readFileSync(path.join(FIXTURES, fileName), 'utf8')
+}
+
+export type FixtureImportFormat = 'postman' | 'insomnia' | 'har' | 'openapi' | 'wsdl'
+
+/** Force tree reload after IPC-only mutations (import/save) that skip the UI store. */
+export async function refreshWorkspaceTree(page: Page): Promise<void> {
+  // Re-clicking the active project tab calls setActiveProject → buildTreeFromDB.
+  const tab = page.getByTestId('header-project-tab')
+  if (await tab.isVisible().catch(() => false)) {
+    await tab.click()
+    await page.waitForTimeout(500)
+  }
+  if (!(await page.getByTestId('tree-search').isVisible().catch(() => false))) {
+    await page.getByTestId('nav-apis').click().catch(() => {})
+  }
+  await page.getByTestId('tree-search').waitFor({ state: 'visible', timeout: 15_000 })
+}
+
+/** Import collection/spec formats via IPC (native file dialog is unreliable in E2E). */
+export async function importFixtureViaIpc(
+  page: Page,
+  format: FixtureImportFormat,
+  fixtureFile: string,
+  folderName: string,
+): Promise<void> {
+  const content = readFixture(fixtureFile)
+  const projectId = await getActiveProjectId(page)
+  await page.evaluate(
+    async ({ format, content, folderName, projectId, fixtureFile }) => {
+      const w = window as Window & {
+        api?: {
+          folder?: {
+            create: (p: unknown) => Promise<{ success: boolean; data?: { id: string }; error?: string }>
+          }
+          importExport?: {
+            importOpenApi: (p: unknown) => Promise<{ success: boolean; data?: unknown; error?: string }>
+            importPostman: (p: unknown) => Promise<{ success: boolean; data?: unknown; error?: string }>
+            importInsomnia: (p: unknown) => Promise<{ success: boolean; data?: unknown; error?: string }>
+            importHar: (p: unknown) => Promise<{ success: boolean; data?: unknown; error?: string }>
+            importWsdl: (p: unknown) => Promise<{ success: boolean; data?: unknown; error?: string }>
+          }
+        }
+      }
+
+      const folderRes = await w.api?.folder?.create({
+        project_id: projectId,
+        parent_id: null,
+        name: folderName,
+      })
+      if (!folderRes?.success || !folderRes.data?.id) {
+        throw new Error(folderRes?.error ?? 'folder create failed')
+      }
+      const folderId = folderRes.data.id
+
+      let importResult:
+        | { success: boolean; data?: { success?: boolean; error?: string }; error?: string }
+        | undefined
+
+      if (format === 'wsdl') {
+        importResult = (await w.api?.importExport?.importWsdl({
+          projectId,
+          targetFolderId: folderId,
+          createNewFolder: false,
+          wsdlContent: content,
+        })) as typeof importResult
+      } else if (format === 'openapi') {
+        importResult = (await w.api?.importExport?.importOpenApi({
+          projectId,
+          content,
+          format: 'openapi',
+          folderId,
+          sourceUrl: `fixture://${fixtureFile}`,
+        })) as typeof importResult
+      } else if (format === 'postman') {
+        importResult = (await w.api?.importExport?.importPostman({
+          projectId,
+          content,
+          folderId,
+        })) as typeof importResult
+      } else if (format === 'insomnia') {
+        importResult = (await w.api?.importExport?.importInsomnia({
+          projectId,
+          content,
+          folderId,
+        })) as typeof importResult
+      } else {
+        importResult = (await w.api?.importExport?.importHar({
+          projectId,
+          content,
+          folderId,
+        })) as typeof importResult
+      }
+
+      const inner = importResult?.data as { success?: boolean; error?: string } | undefined
+      if (!importResult?.success || inner?.success === false) {
+        throw new Error(inner?.error ?? importResult?.error ?? `${format} import failed`)
+      }
+    },
+    { format, content, folderName, projectId, fixtureFile },
+  )
+  await refreshWorkspaceTree(page)
+}
 
 /** Open import wizard on step 2 with a format pre-selected (Import dropdown). */
 export async function openImportDropdown(page: Page, formatName: RegExp | string): Promise<void> {
@@ -32,6 +139,24 @@ export async function importCurlCommand(page: Page, curl: string, folderName?: s
   }
   await modal.getByRole('button', { name: /^Import$/i }).click()
   await expect(page.getByTestId('import-modal')).toBeHidden({ timeout: 30_000 })
+}
+
+export async function importFromUrl(
+  page: Page,
+  formatName: RegExp | string,
+  url: string,
+  folderName?: string,
+): Promise<void> {
+  await openImportDropdown(page, formatName)
+  const modal = page.getByTestId('import-modal')
+  await modal.getByLabel('Import URL').fill(url)
+  await modal.getByRole('button', { name: /^Next$/i }).click()
+  await expect(modal.getByPlaceholder('Folder name')).toBeVisible({ timeout: 60_000 })
+  if (folderName) {
+    await modal.getByPlaceholder('Folder name').fill(folderName)
+  }
+  await modal.getByRole('button', { name: /^Import$/i }).click()
+  await expect(page.getByTestId('import-modal')).toBeHidden({ timeout: 60_000 })
 }
 
 export async function importFromFile(

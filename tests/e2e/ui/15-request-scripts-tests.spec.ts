@@ -2,6 +2,7 @@ import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
 import { dismissOverlays, navigateSidebar, openHttpRequestTab } from '../helpers/ui/bootstrap'
 import { fillMonaco } from '../helpers/ui/monaco'
+import { expectScriptsSectionActive } from '../helpers/ui/assertions'
 
 uiTest.describe('Request Scripts & Tests (deep)', () => {
   uiTest.beforeEach(async ({ window }) => {
@@ -13,9 +14,9 @@ uiTest.describe('Request Scripts & Tests (deep)', () => {
   uiTest('scripts: switch pre and post', async ({ window }) => {
     await window.getByTestId('req-tab-scripts').click()
     await window.getByTestId('scripts-pre').click()
-    await expect(window.getByTestId('scripts-pre')).toHaveCSS('font-weight', '600')
+    await expectScriptsSectionActive(window.getByTestId('scripts-pre'))
     await window.getByTestId('scripts-post').click()
-    await expect(window.getByTestId('scripts-post')).toHaveCSS('font-weight', '600')
+    await expectScriptsSectionActive(window.getByTestId('scripts-post'))
   })
 
   uiTest('scripts: insert example populates editor', async ({ window }) => {

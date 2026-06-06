@@ -25,7 +25,7 @@ uiTest.describe('Modals deep', () => {
 
   uiTest('import modal cURL paste step', async ({ window }) => {
     await pressModShortcut(window, 'o')
-    await window.getByText(/cURL/i).click()
+    await window.getByTestId('import-modal').getByRole('button', { name: 'cURL cURL' }).click()
     await window.getByRole('button', { name: /Next/i }).click()
     const ta = window.locator('textarea').first()
     await ta.fill('curl https://example.com')

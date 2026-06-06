@@ -9,10 +9,9 @@ uiTest.describe('Mock servers (deep)', () => {
   })
 
   uiTest('create mock server', async ({ window }) => {
-    await window.getByRole('button', { name: /New|\+/i }).first().click()
-    const nameInput = window.locator('input').filter({ hasNot: window.locator('[data-testid="tree-search"]') }).first()
-    await nameInput.fill('E2E Mock')
-    await window.getByRole('button', { name: /Create/i }).click()
+    await window.getByRole('button', { name: 'New mock server' }).click()
+    await window.getByPlaceholder(/Server name|Sunucu adı/i).fill('E2E Mock')
+    await window.getByRole('button', { name: /^Create$|^Oluştur$/i }).click()
     await expect(window.getByText('E2E Mock').first()).toBeVisible({ timeout: 10_000 })
   })
 
