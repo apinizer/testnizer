@@ -3,16 +3,25 @@
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar, openNewDropdownItem } from '../../helpers/ui/bootstrap'
+import {
+  dismissOverlays,
+  ensureCanonicalProject,
+  navigateSidebar,
+  openNewDropdownItem,
+} from '../../helpers/ui/bootstrap'
 import { importFixtureViaIpc } from '../../helpers/ui/import-flow'
 import { localHttpBin } from '../../helpers/test-servers'
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
 uiTest.describe('Tur1 — SOAP WSDL [MST-106]', () => {
-  uiTest('MST-106 WSDL import creates SOAP endpoints in tree', async ({ window }) => {
+  uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
+  })
+
+  uiTest('MST-106 WSDL import creates SOAP endpoints in tree', async ({ window }) => {
     const folder = `WSDL ${uid()}`
     await importFixtureViaIpc(window, 'wsdl', 'sample.wsdl', folder)
     await expect(window.getByTestId('tree-node').filter({ hasText: folder })).toBeVisible({ timeout: 20_000 })
@@ -23,8 +32,6 @@ uiTest.describe('Tur1 — SOAP WSDL [MST-106]', () => {
   })
 
   uiTest('MST-106 manual SOAP envelope send returns 200', async ({ window }) => {
-    await dismissOverlays(window)
-    await navigateSidebar(window, 'apis')
     const http = localHttpBin()
     await openNewDropdownItem(window, /SOAP/i)
     await window.getByRole('button', { name: /^Manual$/i }).click()

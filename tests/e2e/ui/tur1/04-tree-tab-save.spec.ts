@@ -3,10 +3,15 @@
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
+import {
+  dismissOverlays,
+  ensureCanonicalProject,
+  navigateSidebar,
+  openHttpRequestTab,
+} from '../../helpers/ui/bootstrap'
 import { fillUrl, saveRequestToTree } from '../../helpers/ui/request-flow'
 import { saveInPlace } from '../../helpers/ui/save-flow'
-import { treeClickNode, treeContextAction, treeOpenNode, treeSearch, confirmDelete } from '../../helpers/ui/tree'
+import { treeContextAction, treeOpenNode, treeSearch, confirmDelete } from '../../helpers/ui/tree'
 import {
   createFolder,
   getActiveProjectId,
@@ -27,6 +32,7 @@ const activeTab = (page: import('@playwright/test').Page) =>
 uiTest.describe('Tur1 — Tree / Tab / Save [MST-017..022]', () => {
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
   })
 

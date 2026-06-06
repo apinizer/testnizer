@@ -1,9 +1,17 @@
 import type { Page } from '@playwright/test'
-import { clickContextMenuItem, clickContextSubmenuItem, openContextMenu } from './context-menu'
+import { clickContextMenuItem, clickContextSubmenuItem } from './context-menu'
 
 /** Search the APIs tree. */
 export async function treeSearch(page: Page, query: string): Promise<void> {
   await page.getByTestId('tree-search').fill(query)
+}
+
+/** Clear the tree search filter — stale filters hide nodes from later tests. */
+export async function treeClearSearch(page: Page): Promise<void> {
+  const search = page.getByTestId('tree-search')
+  if (await search.isVisible().catch(() => false)) {
+    await search.fill('')
+  }
 }
 
 /** Click a tree node by label text. */

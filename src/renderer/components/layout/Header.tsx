@@ -255,6 +255,8 @@ export default function Header() {
           <div
             key={proj.id}
             data-testid="header-project-tab"
+            data-active={isActive ? 'true' : 'false'}
+            data-project-id={proj.id}
             className="no-drag group flex items-center gap-1.5 cursor-pointer shrink-0"
             style={{
               padding: '0 16px',

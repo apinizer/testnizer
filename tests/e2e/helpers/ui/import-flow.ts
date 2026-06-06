@@ -15,7 +15,8 @@ export type FixtureImportFormat = 'postman' | 'insomnia' | 'har' | 'openapi' | '
 /** Force tree reload after IPC-only mutations (import/save) that skip the UI store. */
 export async function refreshWorkspaceTree(page: Page): Promise<void> {
   // Re-clicking the active project tab calls setActiveProject → buildTreeFromDB.
-  const tab = page.getByTestId('header-project-tab')
+  // Multiple projects may be open (worker-scoped app) — target the active one.
+  const tab = page.locator('[data-testid="header-project-tab"][data-active="true"]').first()
   if (await tab.isVisible().catch(() => false)) {
     await tab.click()
     await page.waitForTimeout(500)
@@ -24,6 +25,8 @@ export async function refreshWorkspaceTree(page: Page): Promise<void> {
     await page.getByTestId('nav-apis').click().catch(() => {})
   }
   await page.getByTestId('tree-search').waitFor({ state: 'visible', timeout: 15_000 })
+  // A stale search filter from an earlier test would hide freshly imported nodes.
+  await page.getByTestId('tree-search').fill('')
 }
 
 /** Import collection/spec formats via IPC (native file dialog is unreliable in E2E). */

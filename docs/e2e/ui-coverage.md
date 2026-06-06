@@ -1,6 +1,6 @@
 # Testnizer UI E2E — Tam Kapsam Matrisi
 
-Güncelleme: 2026-06-05 | **~330 UI E2E testi** (27 legacy spec + **40 tur1 spec** + journey flows) + **47 kullanıcı yolculuğu (journey) flow'u** (15 tier spec, `tests/e2e/ui/flows/`)
+Güncelleme: 2026-06-06 | **385 UI E2E testi** — 238 legacy (27 spec) + **84 tur1** (51 spec) + **63 journey flow** (16 tier spec, `tests/e2e/ui/flows/`). Tur1 + flows katmanı serial koşumda (`--workers=1`) **147 test**.
 
 ## Altyapı
 
@@ -118,8 +118,9 @@ Uçtan uca, çok adımlı gerçek kullanıcı senaryoları. Her flow `tests/e2e/
 | DB persistence | `db-*.spec.ts` (12 dosya) | 251–277 | ✅ IPC ağırlıklı |
 | Shell / SEC | `shell-security`, `shell-window-open`, `tier14` | 215–219, 283–291 | ✅ çekirdek |
 | Certificates | `14-certificates-mtls`, `db-certificates` | 047, 196, 260–270 | ✅ |
+| Tools / palette | `13-ai-tools-cross` | 204–207 | ⚠️ kısmi (palette + tools cross çekirdek) |
 
-**Henüz eksik / Sprint 2–5:** `shell-dialogs`, `shell-relaunch`, `13-ai-tools-cross`, `soap-wsse-*`, `http-cookies-jar`, `tier13-git-save`, paketleme (`shell-packaging`), AI chat secrets, import formatları (Apidog/JMeter/RAML…), runner HTML rapor derinliği.
+**Henüz eksik / Sprint 2–5:** `shell-dialogs`, `shell-relaunch`, `soap-wsse-*`, `http-cookies-jar`, `tier13-git-save`, paketleme (`shell-packaging`), AI chat secrets, MST-204–207 kalan case'ler, import formatları (Apidog/JMeter/RAML…), runner HTML rapor derinliği, DB ileri (`db-relaunch`, `db-migration`, `db-corruption`), tree kalanları (018, 020, 024, 027, 029).
 
 > Not: Git branch izolasyonu (varsayılan branch `branch_id=NULL` paylaşımlı, varsayılan-olmayan branch içeriği izole) save-modal yolunda paylaşımlı içerik ürettiğinden UI flow'u yerine `tests/main/branch-isolation.test.ts` unit testinde kapsanır.
 

@@ -4,7 +4,12 @@
 import path from 'node:path'
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
+import {
+  dismissOverlays,
+  ensureCanonicalProject,
+  navigateSidebar,
+  openHttpRequestTab,
+} from '../../helpers/ui/bootstrap'
 import { createProject, goToProjectHome } from '../../helpers/ui/workspace-flow'
 import { createFolder, getActiveProjectId, listEnvironmentsByProject, listEnvVariables } from '../../helpers/ui/assert-ipc'
 import { fillUrl, saveRequestToTree } from '../../helpers/ui/request-flow'
@@ -29,6 +34,7 @@ const CERT_DIR = path.resolve(__dirname, '../../../fixtures/certs')
 uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
   })
 

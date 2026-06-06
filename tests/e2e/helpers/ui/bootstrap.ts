@@ -83,6 +83,34 @@ export async function bootstrapWorkbench(page: Page): Promise<void> {
   await createAndOpenProject(page)
 }
 
+/**
+ * Ensure the canonical E2E project is open AND active in the UI.
+ * Worker-scoped app fixture means earlier tests may have switched/created
+ * projects — without this, IPC writes (getActiveProjectId) and the visible
+ * tree can point at different projects.
+ */
+export async function ensureCanonicalProject(page: Page): Promise<void> {
+  const tab = page.locator(
+    `[data-testid="header-project-tab"][title="${E2E_PROJECT_NAME}"]`,
+  )
+  if ((await tab.count()) > 0) {
+    if ((await tab.first().getAttribute('data-active')) !== 'true') {
+      await tab.first().click()
+      await page.waitForTimeout(300)
+    }
+  } else {
+    // Tab was closed by a previous test — reopen from Project Home.
+    await page.getByTestId('header-home').click()
+    await createAndOpenProject(page)
+  }
+  await expect(tab.first()).toHaveAttribute('data-active', 'true', { timeout: 10_000 })
+  // Stale tree filter from a previous test hides nodes — clear when present.
+  const treeSearch = page.getByTestId('tree-search')
+  if (await treeSearch.isVisible().catch(() => false)) {
+    await treeSearch.fill('')
+  }
+}
+
 /** Dismiss stacked modals / palette. */
 export async function dismissOverlays(page: Page): Promise<void> {
   for (let i = 0; i < 4; i++) {

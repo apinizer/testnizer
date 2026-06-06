@@ -3,6 +3,7 @@ import { uiTest } from './_setup'
 import {
   dismissOverlays,
   E2E_PROJECT_NAME,
+  ensureCanonicalProject,
   navigateSidebar,
   openHttpRequestTab,
 } from '../../helpers/ui/bootstrap'
@@ -24,8 +25,8 @@ const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 uiTest.describe('Tier 5 — Tree & Import journeys', () => {
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
-    await window.getByTestId('header-project-tab').click()
   })
 
   uiTest('F14 tree CRUD: folder, request, rename, duplicate, delete', async ({ window }) => {
