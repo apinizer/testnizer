@@ -24,6 +24,7 @@ import {
   waitCollectionRunComplete,
   readCollectionRunSummary,
   closeCollectionRunner,
+  selectOnlyRunnerEndpoint,
 } from '../../helpers/ui/runner-flow'
 import { openEnvModal, closeEnvModal, addVariable, setActiveEnvironment, createEnvironment } from '../../helpers/ui/env'
 import { getActiveProjectId, listEnvironmentsByProject } from '../../helpers/ui/assert-ipc'
@@ -65,8 +66,10 @@ uiTest.describe('Tur1 — Runner parity [MST-172, MST-173]', () => {
     await addVisualAssertion(window, /Status code equals/i, { expected: 200 })
     await saveRequestToTree(window, reqName)
 
-    // Run via collection runner modal.
+    // Run via collection runner modal — yalnızca bu testin isteğini koş;
+    // worker-paylaşımlı koleksiyonda birikmiş istekler sayıyı kirletir.
     await openCollectionRunner(window)
+    await selectOnlyRunnerEndpoint(window, reqName)
     await startCollectionRun(window)
     await waitCollectionRunComplete(window)
     const summary = await readCollectionRunSummary(window)

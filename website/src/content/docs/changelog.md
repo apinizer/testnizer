@@ -10,6 +10,48 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.12
+
+**Request lifecycle polish (open-on-create, unsaved-changes dialog, dirty dots
+for every protocol), real Digest/NTLM authentication, the Runner resolving
+variables in every body type, and four reliability fixes — from corrupt-database
+startup recovery to lost Socket.IO events.**
+
+- **Requests:** a request created from the tree's right-click **Add Request** is
+  now opened and focused immediately, matching the global "+ New" dropdown
+  (issue #6).
+- **Requests:** the unsaved-changes blue dot now appears for **all** protocols —
+  SOAP, WebSocket, SSE, Socket.IO, gRPC and GraphQL — not just HTTP (issue #8).
+- **Requests:** closing a modified tab no longer silently discards your edits.
+  A three-way **Save / Discard / Cancel** dialog now guards the × button and the
+  context-menu Close for every protocol (issue #9).
+- **Auth:** **Digest** and **NTLM** authentication are now actually implemented.
+  Previously both silently fell back to Basic, so servers requiring
+  challenge-response auth always returned 401.
+- **Runner:** `{{variables}}` inside **form-data**, **x-www-form-urlencoded**
+  and **binary file path** bodies are now resolved during a Run, mirroring Send.
+  Previously only raw body content was substituted, so form fields reached the
+  wire as literal `{{...}}` (issue #10).
+- **Import:** importing an **Insomnia v5 collection** now also imports its
+  bundled environments as real environment rows with variables — no more adding
+  every variable by hand after an import (issue #11).
+- **Export:** the environment export dialog now suggests a
+  `*.testnizer_environment.json` file name instead of a Postman-branded one.
+  The file content stays Postman-schema compatible (issue #7).
+- **SSE:** setting a **Last-Event-ID** before connecting no longer breaks the
+  connection with a DOMException — custom headers are now merged correctly with
+  the reconnect bookkeeping of the SSE client.
+- **Socket.IO:** events pushed by the server **immediately on connect** (e.g. a
+  `welcome` event) are no longer lost. The engine now buffers early events until
+  the UI's event listener is attached, then replays them in order.
+- **WebSocket:** a saved WebSocket request now restores its URL and settings
+  when its tab is reopened. Previously the editor reverted to the default
+  `wss://echo.websocket.org` even though the request was saved correctly.
+- **Reliability:** if the local database file is corrupted, the app no longer
+  fails to launch with no window and no message. The corrupt file is backed up
+  next to the original, a fresh database is created, and a dialog explains what
+  happened and where the backup lives.
+
 ## v1.4.11
 
 **The Collection Runner now resolves environment variables exactly like Send —

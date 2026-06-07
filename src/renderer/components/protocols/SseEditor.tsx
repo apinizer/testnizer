@@ -67,6 +67,7 @@ export default function SseEditor() {
             <div className="border-t border-[var(--border)] p-3">
               <input
                 type="text"
+                data-testid="sse-last-event-id"
                 value={lastEventId}
                 onChange={(e) => setLastEventId(e.target.value)}
                 placeholder="Optional: resume from this event ID"

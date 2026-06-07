@@ -27,9 +27,9 @@ import {
   openNewDropdownItem,
 } from '../../helpers/ui/bootstrap'
 import { getTestServerUrls } from '../../helpers/test-servers'
+import { treeOpenNode } from '../../helpers/ui/tree'
 import { fillMonaco } from '../../helpers/ui/monaco'
 import { pressModShortcut } from '../../helpers/ui/keyboard'
-import { saveInPlace } from '../../helpers/ui/save-flow'
 import { getActiveProjectId, listSavedRequestsByProject } from '../../helpers/ui/assert-ipc'
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -285,13 +285,25 @@ uiTest.describe('Tur1 — WebSocket advanced [MST-115..121]', () => {
     expect(meta.websocket?.customHeaders?.some((h) => h.key === 'X-Save-Test' && h.value === 'mst120')).toBe(true)
     expect(meta.websocket?.composerContent ?? '').toContain('mst120')
 
-    // APP-GAP (verified): reopening the saved node renders the WS editor but
-    // leaves ws-url at the default "wss://echo.websocket.org" — the saved URL
-    // never reaches the editor. The DB metadata is correct (asserted above) and
-    // restoreProtocolFromMetadata calls ws.setUrl(), but the tab-scoped
-    // websocket store re-hydrates its default after the restore, clobbering it.
-    // The save side is what MST-120 fundamentally guarantees; the UI restore is
-    // tracked as an app bug. (Not asserting the broken editor restore here.)
+    // UI restore round-trip (MST-120): close the tab, reopen the saved node
+    // from the tree, and assert the editor shows the saved URL — not the
+    // default "wss://echo.websocket.org". This previously failed because the
+    // tab-scoped websocket store re-hydrated its default after the restore
+    // (Workbench's switchToTab useEffect ran AFTER restoreProtocolFromMetadata
+    // and clobbered the restored URL). The fix pre-switches the protocol store
+    // to the active tab inside restoreProtocolFromMetadata so the restore lands
+    // on the right tab and survives the later effect.
+    const wsTab = window.locator('[data-testid="endpoint-tab"][data-active="true"]')
+    await wsTab.hover()
+    await wsTab.getByTestId('tab-close').click()
+    // A clean (just-saved) tab closes without the unsaved dialog.
+    await expect(
+      window.getByTestId('endpoint-tab').filter({ hasText: name }),
+    ).toHaveCount(0, { timeout: 8_000 })
+
+    // Reopen from the tree and verify the editor restores the saved URL.
+    await treeOpenNode(window, name)
+    await expect(window.getByTestId('ws-url')).toHaveValue(ws, { timeout: 10_000 })
   })
 
   // ── MST-121: cancelConnect timeout cleanup ────────────────────────────────

@@ -11,6 +11,49 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.12
+
+**İstek yaşam döngüsü iyileştirmeleri (oluşturunca açılma, kaydedilmemiş
+değişiklik diyaloğu, tüm protokollerde değişiklik noktası), gerçek Digest/NTLM
+kimlik doğrulaması, Runner'ın tüm body tiplerinde değişken çözmesi ve bozuk
+veritabanından açılış kurtarmasından kaybolan Socket.IO event'lerine dört
+güvenilirlik düzeltmesi.**
+
+- **İstekler:** ağaçta sağ tık **Add Request** ile oluşturulan istek artık
+  hemen açılıp odaklanıyor — global "+ New" menüsüyle aynı davranış (issue #6).
+- **İstekler:** kaydedilmemiş değişiklik (mavi nokta) göstergesi artık **tüm**
+  protokollerde görünüyor — SOAP, WebSocket, SSE, Socket.IO, gRPC ve GraphQL;
+  yalnızca HTTP değil (issue #8).
+- **İstekler:** değiştirilmiş bir sekmeyi kapatmak artık düzenlemelerinizi
+  sessizce atmıyor. Üç seçenekli **Save / Discard / Cancel** diyaloğu × düğmesini
+  ve bağlam menüsündeki Close'u her protokolde koruyor (issue #9).
+- **Auth:** **Digest** ve **NTLM** kimlik doğrulaması artık gerçekten
+  uygulanıyor. Daha önce ikisi de sessizce Basic'e düşüyordu; challenge-response
+  isteyen sunucular her zaman 401 dönüyordu.
+- **Runner:** **form-data**, **x-www-form-urlencoded** ve **binary dosya yolu**
+  body'lerindeki `{{değişkenler}}` artık Run sırasında çözülüyor — Send ile
+  birebir. Daha önce yalnızca ham body içeriği yerine konuyordu; form alanları
+  tele düz `{{...}}` olarak gidiyordu (issue #10).
+- **İçe aktarma:** bir **Insomnia v5 koleksiyonu** içe aktarıldığında artık
+  paketli ortamları da değişkenleriyle birlikte gerçek ortam kayıtları olarak
+  geliyor — içe aktarmadan sonra her değişkeni elle eklemek yok (issue #11).
+- **Dışa aktarma:** ortam dışa aktarma diyaloğu artık Postman markalı bir ad
+  yerine `*.testnizer_environment.json` dosya adı öneriyor. Dosya içeriği
+  Postman şemasıyla uyumlu kalıyor (issue #7).
+- **SSE:** bağlanmadan önce **Last-Event-ID** girmek artık bağlantıyı
+  DOMException ile kırmıyor — özel header'lar SSE istemcisinin yeniden bağlanma
+  defteriyle artık doğru birleştiriliyor.
+- **Socket.IO:** sunucunun **bağlantı anında** push'ladığı event'ler (örn.
+  `welcome`) artık kaybolmuyor. Motor, arayüzün event dinleyicisi bağlanana dek
+  erken event'leri tamponluyor ve sırayla aktarıyor.
+- **WebSocket:** kayıtlı bir WebSocket isteği, sekmesi yeniden açıldığında artık
+  URL'ini ve ayarlarını geri yüklüyor. Daha önce istek doğru kaydedildiği halde
+  editör varsayılan `wss://echo.websocket.org` adresine dönüyordu.
+- **Güvenilirlik:** yerel veritabanı dosyası bozulursa uygulama artık penceresiz
+  ve mesajsız şekilde açılmamazlık etmiyor. Bozuk dosya yanına yedekleniyor,
+  taze bir veritabanı oluşturuluyor ve ne olduğunu ve yedeğin nerede olduğunu
+  açıklayan bir diyalog gösteriliyor.
+
 ## v1.4.11
 
 **Collection Runner artık ortam değişkenlerini tam olarak Send gibi çözüyor —

@@ -27,11 +27,44 @@ interface SubscriptionState {
   whitelist: Set<string>
 }
 
+/**
+ * Upper bound on how many events are buffered before the renderer attaches its
+ * `onEvent` callback. The server can push events (e.g. a `welcome`) the instant
+ * the socket connects — before the renderer's `socketio:connect` IPC roundtrip
+ * completes and wires the callback. Without buffering those events vanish (the
+ * old `conn.onEvent?.` optional chaining silently dropped them). When the cap is
+ * exceeded the oldest entry is discarded so a chatty server can never grow this
+ * unbounded.
+ */
+const MAX_PENDING_EVENTS = 1000
+
 interface Connection {
   socket: Socket
   info: SocketIOConnectionInfo
   onEvent?: (event: SocketIOEvent) => void
+  /**
+   * Events that arrived before `onEvent` was set. Flushed in arrival order the
+   * moment `socketIOSetEventCallback` wires the callback, then left empty for
+   * the remainder of the connection. Cleared on disconnect.
+   */
+  pendingEvents: SocketIOEvent[]
   subscription: SubscriptionState
+}
+
+/**
+ * Deliver an event to the renderer callback, or buffer it (bounded) when the
+ * callback has not been wired yet. Single funnel for both the inbound `onAny`
+ * forward and the outbound `emit` echo so buffering/flush stays consistent.
+ */
+function dispatchEvent(conn: Connection, event: SocketIOEvent): void {
+  if (conn.onEvent) {
+    conn.onEvent(event)
+    return
+  }
+  conn.pendingEvents.push(event)
+  if (conn.pendingEvents.length > MAX_PENDING_EVENTS) {
+    conn.pendingEvents.shift()
+  }
 }
 
 const connections = new Map<string, Connection>()
@@ -88,6 +121,7 @@ export async function socketIOConnect(options: {
       const conn: Connection = {
         socket,
         info,
+        pendingEvents: [],
         subscription: { mode: 'all', whitelist: new Set<string>() },
       }
       connections.set(connectionId, conn)
@@ -100,7 +134,7 @@ export async function socketIOConnect(options: {
         const sub = conn.subscription
         if (sub.mode === 'whitelist' && !sub.whitelist.has(event)) return
         const data = args.length === 1 ? args[0] : args.length === 0 ? null : args
-        conn.onEvent?.({
+        dispatchEvent(conn, {
           direction: 'in',
           event,
           data,
@@ -140,6 +174,7 @@ export function socketIODisconnect(connectionId: string): void {
   const conn = connections.get(connectionId)
   if (!conn) return
   conn.socket.disconnect()
+  conn.pendingEvents.length = 0
   connections.delete(connectionId)
 }
 
@@ -147,7 +182,7 @@ export function socketIOEmit(connectionId: string, eventName: string, data: unkn
   const conn = connections.get(connectionId)
   if (!conn) throw new Error('Not connected')
   conn.socket.emit(eventName, data)
-  conn.onEvent?.({
+  dispatchEvent(conn, {
     direction: 'out',
     event: eventName,
     data,
@@ -175,6 +210,14 @@ export function socketIOSetEventCallback(
   const conn = connections.get(connectionId)
   if (!conn) return
   conn.onEvent = cb
+  // Flush any events that arrived before the callback was wired (e.g. a server
+  // `welcome` pushed during the IPC roundtrip), in arrival order, then drop the
+  // buffer — all subsequent events go straight through `dispatchEvent`.
+  if (conn.pendingEvents.length > 0) {
+    const buffered = conn.pendingEvents
+    conn.pendingEvents = []
+    for (const event of buffered) cb(event)
+  }
 }
 
 export function socketIOGetInfo(connectionId: string): SocketIOConnectionInfo | undefined {

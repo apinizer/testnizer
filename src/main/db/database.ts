@@ -2,8 +2,22 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
+import { existsSync, renameSync } from 'fs'
 
 let db: Database.Database | null = null
+
+/**
+ * Result of {@link initDatabase}. When the on-disk DB file was corrupt and we
+ * had to back it up + start fresh, `recovered` is true and `backupPath` points
+ * at the renamed corrupt file (kept, never deleted) so the user can recover it
+ * manually or send it for support.
+ */
+export interface InitDatabaseResult {
+  /** True when a corrupt DB file was detected, backed up, and recreated. */
+  recovered: boolean
+  /** Absolute path of the backed-up corrupt DB file (only when recovered). */
+  backupPath?: string
+}
 
 export function getDb(): Database.Database {
   if (!db) {
@@ -12,15 +26,99 @@ export function getDb(): Database.Database {
   return db
 }
 
-export function initDatabase(): void {
+/**
+ * Detect the "file is not a database" failure class. better-sqlite3 surfaces a
+ * garbage / non-SQLite file as a SqliteError with code `SQLITE_NOTADB`; older
+ * builds and some platforms only carry the message. We match on both so the
+ * recovery path is robust. A truncated / zero-byte file is NOT this case —
+ * SQLite treats an empty file as a brand-new database, so it opens cleanly and
+ * never reaches here.
+ */
+export function isCorruptDbError(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code
+  if (code === 'SQLITE_NOTADB' || code === 'SQLITE_CORRUPT') return true
+  const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase()
+  return (
+    message.includes('file is not a database') ||
+    message.includes('not a database') ||
+    message.includes('database disk image is malformed')
+  )
+}
+
+/**
+ * Move a corrupt DB file and its WAL/SHM sidecars out of the way using a
+ * timestamped `.corrupt-<ts>` suffix. The real DB filename is preserved in the
+ * backup name (e.g. `testnizer.db.corrupt-1234567890`) so the origin is
+ * obvious. Stale `-wal` / `-shm` sidecars MUST be moved too: leaving them next
+ * to a freshly recreated DB can re-corrupt it on the next open. Returns the
+ * backup path of the main DB file, or null when there was nothing to move.
+ */
+export function quarantineCorruptDb(dbPath: string): string | null {
+  if (!existsSync(dbPath)) return null
+  const timestamp = Date.now()
+  const backupPath = `${dbPath}.corrupt-${timestamp}`
+  renameSync(dbPath, backupPath)
+  for (const ext of ['-wal', '-shm']) {
+    const sidecar = `${dbPath}${ext}`
+    if (existsSync(sidecar)) {
+      // Mirror the suffix so the trio stays grouped: `…db-wal.corrupt-<ts>`.
+      renameSync(sidecar, `${sidecar}.corrupt-${timestamp}`)
+    }
+  }
+  return backupPath
+}
+
+/**
+ * Open the DB at `dbPath`, run pragmas + migrations + seed. Throws if the file
+ * cannot be opened (e.g. corrupt). Extracted so {@link initDatabase} can retry
+ * after quarantining a corrupt file.
+ */
+export function openAndMigrate(dbPath: string): Database.Database {
+  const database = new Database(dbPath)
+  try {
+    database.pragma('journal_mode = WAL')
+    database.pragma('foreign_keys = ON')
+    runMigrations(database)
+    seedDefaults(database)
+    return database
+  } catch (err) {
+    // Release the file handle before propagating. On Windows an open handle on
+    // the corrupt file would block the subsequent rename in quarantineCorruptDb.
+    try {
+      database.close()
+    } catch {
+      // Best-effort — the handle may already be unusable.
+    }
+    throw err
+  }
+}
+
+/**
+ * Initialize the database. If the on-disk file is corrupt ("file is not a
+ * database"), the corrupt file (and any WAL/SHM sidecars) are renamed aside
+ * with a `.corrupt-<timestamp>` suffix (never deleted) and a fresh DB is
+ * created in its place. The returned {@link InitDatabaseResult} tells the
+ * caller whether recovery happened so it can inform the user.
+ *
+ * @throws if even the fresh-DB creation fails — the caller is expected to show
+ *   an error and quit gracefully rather than leave a windowless process.
+ */
+export function initDatabase(): InitDatabaseResult {
   const dbPath = join(app.getPath('userData'), 'testnizer.db')
-  db = new Database(dbPath)
 
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
-
-  runMigrations(db)
-  seedDefaults(db)
+  try {
+    db = openAndMigrate(dbPath)
+    return { recovered: false }
+  } catch (err) {
+    if (!isCorruptDbError(err)) {
+      // Not a recognised corruption — re-throw so the caller can surface it.
+      throw err
+    }
+    // Corrupt file: quarantine it (+ sidecars) and start fresh.
+    const backupPath = quarantineCorruptDb(dbPath)
+    db = openAndMigrate(dbPath)
+    return { recovered: true, backupPath: backupPath ?? undefined }
+  }
 }
 
 function runMigrations(database: Database.Database): void {

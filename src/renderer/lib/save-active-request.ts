@@ -194,10 +194,55 @@ export function restoreProtocolFromMetadata(protocol: string, metadata: unknown)
   const wasDirty = activeTabId
     ? (tabs.tabs.find((t) => t.id === activeTabId)?.isDirty ?? false)
     : false
+  // Flip the matching protocol store to the (just-opened) active tab BEFORE
+  // applying metadata (MST-120). The protocol stores are tab-scoped: each
+  // keeps a `_currentTabId` and a `_tabStates` cache, and the Workbench runs
+  // `switchToTab(activeTabId)` from a useEffect *after* the active tab
+  // changes. openEndpointTab / openSuiteItemTab call us synchronously inside
+  // the same task that set the active tab — before that effect fires — so
+  // without this pre-switch our setters write into the *previous* tab's live
+  // slice. Then the effect's `switchToTab` loads the new tab id, finds no
+  // cache entry, and falls back to `emptyState()` — clobbering the restored
+  // url/headers with the protocol default (e.g. wss://echo.websocket.org).
+  // Switching first makes `_currentTabId === activeTabId`, so the setters
+  // land on the right tab and the later effect call is idempotent (it
+  // re-saves and re-loads the same id). Same race existed for every
+  // tab-scoped protocol store; fixing it once here covers them all.
+  if (activeTabId) switchProtocolToTab(protocol, activeTabId)
   applyProtocolMetadata(protocol, metadata)
   // The setters fired above may have flipped the dirty dot on; restore the
   // pre-hydration value so reopening a saved request reads as clean.
   if (activeTabId) tabs.markDirty(activeTabId, wasDirty)
+}
+
+/**
+ * Point the tab-scoped store for `protocol` at `tabId` so subsequent setters
+ * mutate that tab's live slice. Only the protocols whose stores carry per-tab
+ * state need this; HTTP and renderer-only tool protocols are no-ops.
+ */
+function switchProtocolToTab(protocol: string, tabId: string): void {
+  switch (protocol) {
+    case 'soap':
+      useSoapStore.getState().switchToTab(tabId)
+      break
+    case 'websocket':
+      useWebSocketStore.getState().switchToTab(tabId)
+      break
+    case 'sse':
+      useSseStore.getState().switchToTab(tabId)
+      break
+    case 'socketio':
+      useSocketIOStore.getState().switchToTab(tabId)
+      break
+    case 'grpc':
+      useGrpcStore.getState().switchToTab(tabId)
+      break
+    case 'graphql':
+      useGraphQLStore.getState().switchToTab(tabId)
+      break
+    default:
+      break
+  }
 }
 
 function applyProtocolMetadata(protocol: string, metadata: unknown): void {

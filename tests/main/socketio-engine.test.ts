@@ -13,6 +13,9 @@
  *   - outbound emit fires callback with direction=out
  *   - unsubscribe stops further inbound events
  *   - error cases: emit/subscribe on unknown id, connect to closed port
+ *   - connect-time push buffering: events arriving before the renderer attaches
+ *     its callback are buffered and flushed in order (regression for the lost
+ *     `welcome` event under load)
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
@@ -178,6 +181,80 @@ describe('socketio.engine — emit / subscribe / callback', () => {
     socketIOEmit(info.connectionId, 'ts-test', null)
     await waitFor(() => events.some((e) => e.direction === 'in'))
     expect(typeof events.find((e) => e.direction === 'in')!.timestamp).toBe('number')
+
+    socketIODisconnect(info.connectionId)
+  })
+})
+
+// ─── connect-time push buffering ──────────────────────────────
+describe('socketio.engine — connect-time push buffering', () => {
+  // Dedicated server that pushes events the instant a socket connects, then
+  // echoes anything it receives. The engine connects before the renderer wires
+  // its callback (the IPC roundtrip in the handler), so these pushes must be
+  // buffered and replayed on `socketIOSetEventCallback`.
+  let pushServer: SocketIOServer
+  let pushHttp: ReturnType<typeof createServer>
+  let pushPort: number
+
+  beforeAll(async () => {
+    pushHttp = createServer()
+    pushServer = new SocketIOServer(pushHttp, { cors: { origin: '*' } })
+    pushServer.on('connection', (socket: Socket) => {
+      // Two ordered server-pushed events fired synchronously on connect.
+      socket.emit('welcome', { id: socket.id })
+      socket.emit('second', { n: 2 })
+      socket.onAny((event: string, data: unknown) => {
+        socket.emit('echo', { event, data })
+      })
+    })
+    await new Promise<void>((resolve) => pushHttp.listen(0, '127.0.0.1', resolve))
+    pushPort = (pushHttp.address() as AddressInfo).port
+  })
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => pushServer.close(() => resolve()))
+    await new Promise<void>((resolve) => pushHttp.close(() => resolve()))
+  })
+
+  const pushUrl = () => `http://127.0.0.1:${pushPort}`
+
+  it('buffers connect-time pushes and flushes them in order on late callback', async () => {
+    const received: SocketIOEvent[] = []
+    const info = await socketIOConnect({ url: pushUrl() })
+
+    // Simulate the handler's IPC roundtrip latency: the server may have already
+    // pushed `welcome`/`second` by the time the renderer wires its callback.
+    await new Promise((r) => setTimeout(r, 150))
+
+    socketIOSetEventCallback(info.connectionId, (evt) => received.push(evt))
+
+    await waitFor(() => received.some((e) => e.event === 'second'))
+
+    const inbound = received.filter((e) => e.direction === 'in')
+    const welcomeIdx = inbound.findIndex((e) => e.event === 'welcome')
+    const secondIdx = inbound.findIndex((e) => e.event === 'second')
+    expect(welcomeIdx).toBeGreaterThanOrEqual(0)
+    expect(secondIdx).toBeGreaterThan(welcomeIdx) // arrival order preserved
+
+    socketIODisconnect(info.connectionId)
+  })
+
+  it('events after the callback is wired bypass the buffer (no double-delivery)', async () => {
+    const received: SocketIOEvent[] = []
+    const info = await socketIOConnect({ url: pushUrl() })
+    await new Promise((r) => setTimeout(r, 150))
+
+    socketIOSetEventCallback(info.connectionId, (evt) => received.push(evt))
+    await waitFor(() => received.some((e) => e.event === 'second'))
+    const countAfterFlush = received.length
+
+    // A fresh inbound event (echo of our emit) must arrive exactly once.
+    socketIOEmit(info.connectionId, 'ping', { msg: 'hi' })
+    await waitFor(() => received.some((e) => e.direction === 'in' && e.event === 'echo'))
+
+    const echoes = received.filter((e) => e.direction === 'in' && e.event === 'echo')
+    expect(echoes).toHaveLength(1)
+    expect(received.length).toBeGreaterThan(countAfterFlush)
 
     socketIODisconnect(info.connectionId)
   })

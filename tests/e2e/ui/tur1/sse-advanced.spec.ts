@@ -23,7 +23,6 @@ import {
   openNewDropdownItem,
 } from '../../helpers/ui/bootstrap'
 
-const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
 async function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -147,35 +146,40 @@ uiTest.describe('Tur1 — SSE advanced [MST-123..126]', () => {
   })
 
   // ── MST-124: Last-Event-ID resume ─────────────────────────────────────────
-  // APP-GAP (verified): setting a Last-Event-ID and connecting fails with
-  // DOMException "An invalid or illegal string was specified" and produces 0
-  // events. The SSE engine (src/main/protocols/sse.engine.ts connectEventSource)
-  // injects `Last-Event-ID` into a custom fetch wrapper, but eventsource@3
-  // manages that header internally and rejects the manual injection. The exact
-  // same flow WITHOUT Last-Event-ID streams events fine (MST-123/125 pass).
-  // Skipped until the engine stops setting the Last-Event-ID request header
-  // manually (or passes it through the library's supported API). Test logic is
-  // correct; the app is the blocker.
-  uiTest.skip('MST-124 Last-Event-ID input is sent on reconnect', async ({ window }) => {
+  // The SSE engine (src/main/protocols/sse.engine.ts connectEventSource) merges
+  // the caller's `Last-Event-ID` into eventsource@3's wrapped fetch via a
+  // case-insensitive `Headers` object, so the library's own reconnect
+  // bookkeeping wins on collisions while the user's first-connect value is still
+  // sent. The earlier red was a TEST locator bug, not an engine bug: the
+  // Last-Event-ID input was selected by `placeholder*="event"`, which ALSO
+  // matched the URL field (placeholder "…/events"), so `.first()` filled the URL
+  // with "3" and the connection went nowhere. We now target the dedicated
+  // `sse-last-event-id` testid. The server below reads Last-Event-ID and resumes
+  // from that offset + 1.
+  uiTest('MST-124 Last-Event-ID input is sent on reconnect', async ({ window }) => {
     const port = await getFreePort()
     const server = await startAdvancedSseServer(port, { maxEvents: 10 })
     try {
       await openNewDropdownItem(window, /SSE/i)
       await window.getByTestId('sse-url').fill(server.url)
 
-      // Expand Last-Event-ID section and set a value
+      // Expand Last-Event-ID section and set a value. Target the dedicated
+      // testid — the old `placeholder*="event"` fallback also matched the URL
+      // input (placeholder "https://api.example.com/events"), and `.first()`
+      // resolved to the URL field, so "3" overwrote the URL → connect went to
+      // `3` and zero events ever streamed (this is what made MST-124 red).
       await window.getByRole('button', { name: /Last-Event-ID/i }).click()
-      const lastIdInput = window
-        .locator('input[placeholder*="resume"]')
-        .or(window.locator('input[placeholder*="event"]'))
-        .first()
+      const lastIdInput = window.getByTestId('sse-last-event-id')
       await lastIdInput.fill('3')
 
       await window.getByTestId('sse-connect').click()
 
-      // Server starts from event 4 — data renders compact as {"n":4}.
+      // Server starts from event 4 — data renders compact as {"n":4}. Combine
+      // the two acceptable matches THEN take `.first()`: `a.first().or(b.first())`
+      // yields the union of both first-matches, which trips strict mode when
+      // both the `tick` badge and the `{"n":4}` data line are present.
       await expect(
-        window.getByText(/"n":\s*[456]/).first().or(window.getByText(/tick/i).first()),
+        window.getByText(/"n":\s*[456]/).or(window.getByText(/tick/i)).first(),
       ).toBeVisible({ timeout: 15_000 })
 
       await window.getByTestId('sse-disconnect').click()

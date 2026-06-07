@@ -163,6 +163,97 @@ describe('sse.engine — message delivery', () => {
   })
 })
 
+// ─── Last-Event-ID forwarding (MST-124 regression) ─────────────
+//
+// `eventsource@3` does not accept a `headers` init field, so the engine merges
+// caller headers (incl. a hand-entered `Last-Event-ID`) into a wrapped `fetch`.
+// Two things must hold: (1) a clean `Last-Event-ID` reaches the server on the
+// first connect, and (2) a `Last-Event-ID` value that is illegal as an HTTP
+// header (CR/LF/NUL, or a non-Latin1 char) must NOT abort the connection — the
+// old plain-object merge let `Headers` throw inside `fetch`, which surfaced as a
+// connect failure with zero events.
+
+interface HeaderCaptureServer {
+  server: Server
+  url: string
+  /** Most-recent inbound `Last-Event-ID` request header (undefined if absent). */
+  lastEventIdHeader: () => string | undefined
+  close: () => Promise<void>
+}
+
+async function startHeaderCaptureServer(): Promise<HeaderCaptureServer> {
+  let captured: string | undefined
+  const server = createServer((req, res) => {
+    const v = req.headers['last-event-id']
+    captured = Array.isArray(v) ? v.join(',') : v
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    })
+    res.write('event: tick\nid: 1\ndata: hi\n\n')
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const port = (server.address() as AddressInfo).port
+  return {
+    server,
+    url: `http://127.0.0.1:${port}/`,
+    lastEventIdHeader: () => captured,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections?.()
+        server.close(() => resolve())
+      }),
+  }
+}
+
+describe('sse.engine — Last-Event-ID header merge', () => {
+  it('forwards a clean Last-Event-ID on the first connect', async () => {
+    const hs = await startHeaderCaptureServer()
+    try {
+      const info = await connect({ url: hs.url, lastEventId: '42' }, 1)
+      await waitFor(() => sseEvents().find((e) => e.type === 'open'))
+      expect(hs.lastEventIdHeader()).toBe('42')
+      disconnect(info.connectionId)
+    } finally {
+      await hs.close()
+    }
+  })
+
+  it('skips an illegal Last-Event-ID value instead of aborting the connection', async () => {
+    // A hand-typed id with an embedded control char is rejected by `Headers`.
+    // The connection must still open and stream events — only the bad header
+    // is dropped. Previously this produced zero events (the wrapped fetch threw).
+    const hs = await startHeaderCaptureServer()
+    try {
+      const info = await connect({ url: hs.url, lastEventId: 'bad\r\nvalue' }, 1)
+      const evt = await waitFor(() => sseEvents().find((e) => e.type === 'event'))
+      expect(evt.eventType).toBe('tick')
+      expect(evt.data).toBe('hi')
+      // The malformed header must not have been forwarded.
+      expect(hs.lastEventIdHeader()).toBeUndefined()
+      disconnect(info.connectionId)
+    } finally {
+      await hs.close()
+    }
+  })
+
+  it('keeps a custom header alongside a clean Last-Event-ID', async () => {
+    const hs = await startHeaderCaptureServer()
+    try {
+      const info = await connect(
+        { url: hs.url, lastEventId: '7', headers: { 'X-Trace-Id': 'abc' } },
+        1,
+      )
+      await waitFor(() => sseEvents().find((e) => e.type === 'open'))
+      expect(hs.lastEventIdHeader()).toBe('7')
+      disconnect(info.connectionId)
+    } finally {
+      await hs.close()
+    }
+  })
+})
+
 describe('sse.engine — error path', () => {
   it('emits an `error` payload when the server drops the connection', async () => {
     const info = await connect({ url: srv.url + '/' }, 1)

@@ -3,6 +3,10 @@
  *
  * Server capabilities (socketio-server.ts):
  *   - Default namespace "/" and any named namespace via `io.of(/^\/.+$/).on('connection', ...)`
+ *   - Connect-time push: the server emits `welcome` the instant a socket connects.
+ *     MST-142 asserts this arrives — it stresses the engine's connect-time event
+ *     buffer (events pushed before the renderer wires its callback are buffered and
+ *     flushed, not dropped; see socketio.engine.ts pendingEvents/dispatchEvent).
  *   - auth.token validation: server does NOT validate auth tokens — connection always
  *     succeeds. MST-143 verifies the token field is accepted without error.
  *   - subscribe/unsubscribe: Socket.IO "subscribe" button adds an event to the
@@ -43,11 +47,16 @@ uiTest.describe('Tur1 — Socket.IO advanced [MST-142..145]', () => {
     // Emit button appears when connected
     await expect(window.getByTestId('socketio-emit')).toBeVisible({ timeout: 15_000 })
 
-    // Server welcome'ı bağlantı ANINDA push'lar; renderer event handler'ı ise
-    // IPC roundtrip sonrası bağlanır — CPU yükünde welcome bu pencerede
-    // düşebilir (engine `conn.onEvent?.` sessizce yutar; bkz. needs-hooks.md).
-    // Namespace doğrulamasını erken-push'a bağlamak yerine emit/echo ile yap:
-    // server onAny her event'i echo'lar — /chat namespace'inde de geçerli.
+    // Server pushes `welcome` the instant the socket connects, i.e. before the
+    // renderer's `socketio:connect` IPC roundtrip wires the event callback. The
+    // engine now buffers connect-time pushes and flushes them once the callback
+    // is set (see socketio.engine.ts dispatchEvent/pendingEvents), so `welcome`
+    // is reliably visible even under CPU load — the previous `conn.onEvent?.`
+    // drop is fixed. Assert it on /chat too.
+    await expect(window.getByText(/welcome/i).first()).toBeVisible({ timeout: 15_000 })
+
+    // Also exercise the round-trip emit/echo path on the named namespace: the
+    // server onAny echoes every event back, including under /chat.
     const emitEventInput = window.getByPlaceholder(/event name/i).first()
     await emitEventInput.fill('ns-probe')
     await window.getByTestId('socketio-emit').click()

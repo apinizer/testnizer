@@ -203,12 +203,28 @@ function connectEventSource(
     applyDefaultUserAgent(customHeaders)
 
     const wrappedFetch = (url: string | URL, init: EventSourceFetchInit): Promise<Response> => {
-      // `init.headers` is a plain object literal in v3; merge ours on top so
-      // the library's defaults (Accept, Last-Event-ID auto-bookkeeping after
-      // reconnects) win when there's a collision. Caller-provided values for
-      // these headers are still honored on the first connect.
-      const merged: Record<string, string> = { ...customHeaders, ...init.headers }
-      return fetch(url, { ...init, headers: merged } as RequestInit)
+      // Build from the library's own init headers first (`Accept`, plus the
+      // `Last-Event-ID` it re-derives from the last received event on every
+      // reconnect) so those always win, then layer our custom headers on top
+      // only where the library has not already set a value. Using `Headers`
+      // (case-insensitive) instead of a plain-object spread means the library's
+      // `Last-Event-ID` is recognised as a collision even though our key casing
+      // differs — a `{ ...customHeaders, ...init.headers }` spread would keep
+      // both entries because object keys are case-sensitive.
+      const headers = new Headers(init.headers)
+      for (const [key, value] of Object.entries(customHeaders)) {
+        if (headers.has(key)) continue
+        try {
+          headers.set(key, value)
+        } catch {
+          // A user-supplied header value (most often a hand-typed
+          // `Last-Event-ID` carrying CR/LF/NUL or a non-Latin1 character) can
+          // be rejected by `Headers` as an invalid header value. Skip just that
+          // header rather than letting the throw abort the whole connection —
+          // previously this surfaced as a connect failure with zero events.
+        }
+      }
+      return fetch(url, { ...init, headers } as RequestInit)
     }
 
     let eventSource: EventSource
@@ -369,7 +385,7 @@ function createSseParser(onEvent: (e: SseLineEvent) => void): (chunk: string) =>
         eventType = value
         break
       case 'id':
-        if (!value.includes(' ')) id = value
+        if (!value.includes('\x00')) id = value
         break
       case 'retry': {
         const n = Number(value)

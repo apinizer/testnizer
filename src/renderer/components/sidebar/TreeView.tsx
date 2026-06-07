@@ -21,6 +21,7 @@ import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
 import { openFolderRunner } from '../../lib/open-runner-tab'
 import { openEndpointTab } from '../../lib/open-endpoint-tab'
+import { restoreProtocolFromMetadata } from '../../lib/save-active-request'
 
 // Re-alias for flattenTree signature
 type TreeNode = TreeNodeType
@@ -150,6 +151,7 @@ export default function TreeView() {
               pre_script?: string
               post_script?: string
               assertions?: string
+              metadata?: string
             }
           }
           if (result?.success && result.data) {
@@ -184,6 +186,24 @@ export default function TreeView() {
               postScript: sr.post_script ?? '',
               assertions: parsedAsserts,
             })
+            // Re-hydrate protocol-specific state (WS/SSE/Socket.IO/gRPC/GraphQL/
+            // SOAP) that snapshotProtocol wrote into the `metadata` column.
+            // This inline tree-click handler is a parallel load path to
+            // `openEndpointTab` (TreeView caches stores/setActiveNode itself),
+            // and it used to drop `metadata` entirely — so a saved WebSocket
+            // request reopened from the tree showed the default URL while the
+            // helper-driven paths restored correctly (MST-120). Keep this in
+            // sync with `openEndpointTab` in lib/open-endpoint-tab.ts.
+            if (sr.metadata) {
+              try {
+                restoreProtocolFromMetadata(
+                  (sr.protocol || 'http') as string,
+                  JSON.parse(sr.metadata),
+                )
+              } catch {
+                /* malformed metadata — skip protocol restore */
+              }
+            }
             return
           }
         } catch {

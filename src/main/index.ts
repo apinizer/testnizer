@@ -1,6 +1,7 @@
 import {
   app,
   shell,
+  dialog,
   BrowserWindow,
   ipcMain,
   nativeImage,
@@ -9,7 +10,7 @@ import {
 } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { initDatabase, closeDatabase } from './db/database'
+import { initDatabase, closeDatabase, type InitDatabaseResult } from './db/database'
 import { registerAllHandlers } from './ipc'
 import { initAutoUpdater } from './updater'
 import { initLogging } from './diagnostics'
@@ -261,8 +262,31 @@ app.whenReady().then(() => {
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 
-  // Initialize database
-  initDatabase()
+  // Initialize database. A corrupt on-disk DB file is recovered transparently
+  // (the corrupt file is backed up with a `.corrupt-<ts>` suffix and a fresh
+  // DB is created). If even that fails, we must NOT die silently with no
+  // window — show an error box and quit gracefully. Recovery is reported to
+  // the user via a dialog AFTER the window appears (see below).
+  let dbInit: InitDatabaseResult
+  try {
+    dbInit = initDatabase()
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    // Under headless E2E a native modal has no one to dismiss it and would
+    // flood the desktop with one blocking box per worker launch — log + quit
+    // instead. The error still fails the run loudly via the missing window.
+    if (process.env.E2E_HEADLESS === '1') {
+      console.error(`[db] could not open or recover the database: ${detail}`)
+    } else {
+      dialog.showErrorBox(
+        'Testnizer — Database error',
+        `Testnizer could not open or recover its local database and has to close.\n\n${detail}\n\n` +
+          `Your data folder is:\n${app.getPath('userData')}`,
+      )
+    }
+    app.quit()
+    return
+  }
 
   // Register all IPC handlers
   registerAllHandlers()
@@ -291,7 +315,36 @@ app.whenReady().then(() => {
     }
   })()
 
-  createWindow()
+  const mainWindow = createWindow()
+
+  // If the DB was corrupt and we recovered, tell the user — but only AFTER the
+  // window exists, never before (a pre-window modal would look like a crash).
+  // We wait for ready-to-show so the dialog is parented to a visible window.
+  // Skipped under headless E2E: a modal sheet there would hang the automated
+  // run with no one to dismiss it; the E2E asserts recovery via the backup
+  // file + working IPC bridge instead.
+  if (dbInit.recovered && process.env.E2E_HEADLESS !== '1') {
+    mainWindow.once('ready-to-show', () => {
+      const win = mainWindow.isDestroyed() ? undefined : mainWindow
+      const backupNote = dbInit.backupPath
+        ? `\n\nA backup of the corrupt file was saved to:\n${dbInit.backupPath}`
+        : ''
+      const options = {
+        type: 'warning' as const,
+        title: 'Testnizer — Database recovered',
+        message: 'Your local database was corrupted and could not be opened.',
+        detail:
+          'Testnizer backed up the corrupt file and started with a fresh database, ' +
+          `so the app is now usable. Some previously saved data may be missing.${backupNote}`,
+        buttons: ['OK'],
+      }
+      if (win) {
+        void dialog.showMessageBox(win, options)
+      } else {
+        void dialog.showMessageBox(options)
+      }
+    })
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
