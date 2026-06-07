@@ -1187,6 +1187,7 @@ function SuiteItemRow({
         {isRenaming ? (
           <input
             ref={renameRef as React.RefObject<HTMLInputElement>}
+            data-testid="suite-item-rename-input"
             value={renameValue}
             onChange={(e) => onRenameChange(e.target.value)}
             onKeyDown={(e) => {

@@ -169,6 +169,32 @@ export async function startHttpEchoServer(port: number): Promise<HttpEchoServer>
       return
     }
 
+    // Large JSON payload generator for big-response performance tests.
+    // `?mb=N` controls the approximate size in megabytes (default 5, capped
+    // at 10 to keep the offline harness bounded). Produces a JSON array of
+    // repeated objects so the response is valid JSON the renderer must parse.
+    if (path === '/large-json' && method === 'GET') {
+      const mb = Math.min(Math.max(Number(url.searchParams.get('mb')) || 5, 1), 10)
+      const targetBytes = mb * 1024 * 1024
+      // Each element is a fixed-shape object; pad `data` so we hit the target.
+      const filler = 'x'.repeat(900)
+      const perItem = 1024 // rough byte cost of one stringified element
+      const count = Math.ceil(targetBytes / perItem)
+      const parts: string[] = ['[']
+      for (let i = 0; i < count; i++) {
+        if (i > 0) parts.push(',')
+        parts.push(`{"id":${i},"marker":"large-json","data":"${filler}"}`)
+      }
+      parts.push(']')
+      const payload = parts.join('')
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Content-Length': String(Buffer.byteLength(payload)),
+      })
+      res.end(payload)
+      return
+    }
+
     if (path === '/post' && method === 'POST') {
       let json: unknown = null
       let form: Record<string, string> | undefined

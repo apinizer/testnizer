@@ -52,8 +52,9 @@ uiTest.describe('Tur1 — Socket.IO advanced [MST-142..145]', () => {
     // engine now buffers connect-time pushes and flushes them once the callback
     // is set (see socketio.engine.ts dispatchEvent/pendingEvents), so `welcome`
     // is reliably visible even under CPU load — the previous `conn.onEvent?.`
-    // drop is fixed. Assert it on /chat too.
-    await expect(window.getByText(/welcome/i).first()).toBeVisible({ timeout: 15_000 })
+    // drop is fixed. Assert it on /chat too. 20s: see MST-143 note on
+    // workers=4 timeline-render lag.
+    await expect(window.getByText(/welcome/i).first()).toBeVisible({ timeout: 20_000 })
 
     // Also exercise the round-trip emit/echo path on the named namespace: the
     // server onAny echoes every event back, including under /chat.
@@ -80,8 +81,11 @@ uiTest.describe('Tur1 — Socket.IO advanced [MST-142..145]', () => {
     await window.getByTestId('socketio-connect').click()
     await expect(window.getByTestId('socketio-emit')).toBeVisible({ timeout: 15_000 })
 
-    // Connection succeeded — server accepted (does not validate)
-    await expect(window.getByText(/welcome|connected/i).first()).toBeVisible({ timeout: 10_000 })
+    // Connection succeeded — server accepted (does not validate). Generous
+    // timeout: under workers=4 CPU load the buffered welcome event's timeline
+    // render can trail the connect roundtrip by >10s (one-off fails observed
+    // in this family at 10s/15s while always passing isolated).
+    await expect(window.getByText(/welcome|connected/i).first()).toBeVisible({ timeout: 20_000 })
 
     await window.getByTestId('socketio-connect').click()
   })

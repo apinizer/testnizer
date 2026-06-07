@@ -74,6 +74,7 @@ function AutocompleteDropdown({
 
   return createPortal(
     <div
+      data-testid="kv-autocomplete"
       className="fixed z-[9999] max-h-[200px] overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--white)]"
       style={{
         top: pos.top,
@@ -85,6 +86,7 @@ function AutocompleteDropdown({
       {suggestions.map((s, i) => (
         <div
           key={s}
+          data-testid="kv-autocomplete-item"
           className="cursor-pointer px-2.5 py-1"
           style={{
             background: i === selectedIndex ? 'var(--accent-light)' : 'transparent',

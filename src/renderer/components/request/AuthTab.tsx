@@ -39,11 +39,13 @@ function PasswordInput({
   onChange,
   placeholder,
   dataTestId,
+  toggleTestId,
 }: {
   value: string
   onChange: (v: string) => void
   placeholder?: string
   dataTestId?: string
+  toggleTestId?: string
 }) {
   const [show, setShow] = useState(false)
   return (
@@ -59,6 +61,7 @@ function PasswordInput({
       />
       <button
         type="button"
+        data-testid={toggleTestId}
         onClick={() => setShow((v) => !v)}
         className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
         style={{ background: 'transparent', border: 'none', color: 'var(--muted)', padding: 2 }}
@@ -203,6 +206,7 @@ export default function AuthTab() {
                 setAuth({ ...auth, basic: { username: auth.basic?.username || '', password: v } })
               }
               dataTestId="auth-basic-pass"
+              toggleTestId="auth-password-toggle"
             />
           </div>
           <div className="mt-3" style={{ color: 'var(--hint)' }}>
@@ -325,6 +329,7 @@ export default function AuthTab() {
               }
               className={`${INPUT} cursor-pointer`}
               style={{ color: 'var(--text)' }}
+              data-testid="auth-oauth2-grant"
             >
               <option value="authorization_code">Authorization Code</option>
               <option value="client_credentials">Client Credentials</option>
@@ -501,6 +506,7 @@ export default function AuthTab() {
               className={INPUT}
               style={{ color: 'var(--text)' }}
               placeholder="Username"
+              data-testid="auth-digest-user"
             />
           </div>
           <div>
@@ -512,6 +518,7 @@ export default function AuthTab() {
               onChange={(v) =>
                 setAuth({ ...auth, digest: { username: auth.digest?.username || '', password: v } })
               }
+              dataTestId="auth-digest-pass"
             />
           </div>
           <div className="mt-3" style={{ color: 'var(--hint)' }}>
@@ -612,7 +619,7 @@ export default function AuthTab() {
 
       {/* ── WS-Security (SOAP only) ── */}
       {auth.type === 'wsse' && (
-        <div className={CARD}>
+        <div className={CARD} data-testid="auth-wsse-section">
           <SoapSecuritySection />
         </div>
       )}

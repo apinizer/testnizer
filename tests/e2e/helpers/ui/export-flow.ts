@@ -17,6 +17,17 @@ export async function exportPostmanIpc(page: Page, projectId: string): Promise<s
   }, projectId)
 }
 
+export async function exportInsomniaIpc(page: Page, projectId: string): Promise<string> {
+  return page.evaluate(async (pid) => {
+    const w = window as Window & {
+      api?: { importExport?: { exportInsomnia: (id: string) => Promise<IpcResult<string>> } }
+    }
+    const res = await w.api?.importExport?.exportInsomnia(pid)
+    if (!res?.success || !res.data) throw new Error(res?.error ?? 'export insomnia failed')
+    return res.data
+  }, projectId)
+}
+
 export async function exportOpenApiIpc(page: Page, projectId: string): Promise<string> {
   return page.evaluate(async (pid) => {
     const w = window as Window & {

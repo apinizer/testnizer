@@ -465,7 +465,11 @@ function ConsoleEntryRow({
       </div>
 
       {expanded && (
-        <div className="pb-2 pl-6 pr-3 font-mono" style={{ color: 'var(--text)', fontSize: 12 }}>
+        <div
+          data-testid="actual-request-panel"
+          className="pb-2 pl-6 pr-3 font-mono"
+          style={{ color: 'var(--text)', fontSize: 12 }}
+        >
           {entry.details?.error && (
             <Section title="Error" defaultOpen>
               <div style={{ color: 'var(--red)' }}>{entry.details.error.message}</div>

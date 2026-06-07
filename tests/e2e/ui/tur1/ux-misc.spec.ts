@@ -19,6 +19,8 @@ import {
   openHttpRequestTab,
 } from '../../helpers/ui/bootstrap'
 import { pressModShortcut } from '../../helpers/ui/keyboard'
+import { fillUrl } from '../../helpers/ui/request-flow'
+import { localHttpBin } from '../../helpers/test-servers'
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
 uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
@@ -400,5 +402,36 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
         ).toBeVisible({ timeout: 8_000 })
       }
     }
+  })
+
+  // -------------------------------------------------------------------------
+  // MST-314 — Large response performance (P2)
+  // -------------------------------------------------------------------------
+  // Fetch ~5 MB of JSON from the local echo server (/large-json?mb=5) and
+  // assert the response pane renders within a generous budget and that the
+  // tab strip stays interactive (the Headers tab is still clickable). Offline
+  // only — no external network. If this flakes at workers=4, it can be skipped
+  // with a note per the gap-tests plan (section J).
+  uiTest('MST-314 ~5MB JSON response renders and UI stays responsive', async ({ window }) => {
+    await openHttpRequestTab(window)
+    await fillUrl(window, `${localHttpBin()}/large-json?mb=5`)
+
+    const start = Date.now()
+    await window.getByTestId('send-btn').click()
+
+    // Generous render budget — large body parse + Monaco render.
+    await expect(window.getByText(/200|OK/i).first()).toBeVisible({ timeout: 30_000 })
+    await expect(window.getByTestId('res-tab-body')).toBeVisible({ timeout: 30_000 })
+    const elapsed = Date.now() - start
+    expect(elapsed).toBeLessThan(30_000)
+
+    // Tab strip must still be interactive after the heavy render.
+    const headersTab = window.getByTestId('res-tab-headers')
+    await expect(headersTab).toBeVisible({ timeout: 10_000 })
+    await headersTab.click()
+    await expect(headersTab).toHaveCSS('font-weight', '600')
+
+    // App shell remains responsive.
+    await expect(window.getByTestId('workbench')).toBeVisible()
   })
 })

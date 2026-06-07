@@ -468,6 +468,7 @@ export default function VariableAutocompleteInput({
         createPortal(
           <div
             ref={dropRef}
+            data-testid="var-autocomplete"
             style={{
               position: 'fixed',
               top: dropPos.top,
