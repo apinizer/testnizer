@@ -8,7 +8,7 @@ interface IpcResult<T> {
 
 export async function getDefaultWorkspaceId(page: Page): Promise<string> {
   return page.evaluate(async () => {
-    const w = window as Window & {
+    const w = window as unknown as Window & {
       api?: { workspace?: { list: () => Promise<IpcResult<Array<{ id: string }>>> } }
     }
     const res = await w.api?.workspace?.list()
@@ -21,7 +21,7 @@ export async function getDefaultWorkspaceId(page: Page): Promise<string> {
 export async function createWorkspace(page: Page, name: string): Promise<string> {
   return page.evaluate(
     async (n) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { workspace?: { create: (p: unknown) => Promise<IpcResult<{ id: string }>> } }
       }
       const res = await w.api?.workspace?.create({ name: n })
@@ -34,7 +34,7 @@ export async function createWorkspace(page: Page, name: string): Promise<string>
 
 export async function deleteWorkspace(page: Page, id: string): Promise<void> {
   const res = await page.evaluate(async (wid) => {
-    const w = window as Window & { api?: { workspace?: { delete: (id: string) => Promise<IpcResult<unknown>> } } }
+    const w = window as unknown as Window & { api?: { workspace?: { delete: (id: string) => Promise<IpcResult<unknown>> } } }
     return w.api?.workspace?.delete(wid)
   }, id)
   if (!res?.success) throw new Error(res?.error ?? 'workspace delete failed')
@@ -42,7 +42,7 @@ export async function deleteWorkspace(page: Page, id: string): Promise<void> {
 
 export async function deleteProject(page: Page, id: string): Promise<void> {
   const res = await page.evaluate(async (pid) => {
-    const w = window as Window & { api?: { project?: { delete: (id: string) => Promise<IpcResult<unknown>> } } }
+    const w = window as unknown as Window & { api?: { project?: { delete: (id: string) => Promise<IpcResult<unknown>> } } }
     return w.api?.project?.delete(pid)
   }, id)
   if (!res?.success) throw new Error(res?.error ?? 'project delete failed')
@@ -56,7 +56,7 @@ export async function duplicateProject(
 ): Promise<string> {
   return page.evaluate(
     async ({ pid, wid, n }) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { project?: { duplicate: (p: unknown) => Promise<IpcResult<{ projectId: string }>> } }
       }
       const res = await w.api?.project?.duplicate({ projectId: pid, workspaceId: wid, name: n })
@@ -85,7 +85,7 @@ export async function createSavedRequestIpc(
 ): Promise<string> {
   return page.evaluate(
     async (payload) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { savedRequest?: { create: (p: unknown) => Promise<IpcResult<{ id: string }>> } }
       }
       const res = await w.api?.savedRequest?.create({
@@ -115,7 +115,7 @@ export async function updateSavedRequestIpc(
 ): Promise<void> {
   const res = await page.evaluate(
     async ({ rid, data }) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { savedRequest?: { update: (id: string, p: unknown) => Promise<IpcResult<unknown>> } }
       }
       return w.api?.savedRequest?.update(rid, data)
@@ -133,7 +133,7 @@ export async function createEnvironmentIpc(
 ): Promise<string> {
   return page.evaluate(
     async ({ wid, pid, n }) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { environment?: { create: (p: unknown) => Promise<IpcResult<{ id: string }>> } }
       }
       const res = await w.api?.environment?.create({ workspace_id: wid, project_id: pid, name: n })
@@ -154,7 +154,7 @@ export async function createEnvVariableIpc(
 ): Promise<void> {
   const res = await page.evaluate(
     async ({ eid, k, v, iv, sec }) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { envVariable?: { create: (p: unknown) => Promise<IpcResult<unknown>> } }
       }
       return w.api?.envVariable?.create({
@@ -186,7 +186,7 @@ export async function addHistoryIpc(
 ): Promise<string> {
   return page.evaluate(
     async (p) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { history?: { add: (payload: unknown) => Promise<IpcResult<{ id: string }>> } }
       }
       const res = await w.api?.history?.add(p)
@@ -202,7 +202,7 @@ export async function listHistoryIpc(
   opts: { workspace_id?: string; project_id?: string; limit?: number },
 ): Promise<unknown[]> {
   return page.evaluate(async (o) => {
-    const w = window as Window & {
+    const w = window as unknown as Window & {
       api?: { history?: { list: (opts: unknown) => Promise<IpcResult<unknown[]>> } }
     }
     const res = await w.api?.history?.list(o)
@@ -216,7 +216,7 @@ export async function clearHistoryIpc(
   scope: { workspace_id?: string; project_id?: string },
 ): Promise<void> {
   const res = await page.evaluate(async (s) => {
-    const w = window as Window & { api?: { history?: { clear: (s: unknown) => Promise<IpcResult<unknown>> } } }
+    const w = window as unknown as Window & { api?: { history?: { clear: (s: unknown) => Promise<IpcResult<unknown>> } } }
     return w.api?.history?.clear(s)
   }, scope)
   if (!res?.success) throw new Error(res?.error ?? 'history clear failed')
@@ -237,7 +237,7 @@ export async function addCertificateIpc(
 ): Promise<string> {
   return page.evaluate(
     async (p) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { certificate?: { add: (payload: unknown) => Promise<IpcResult<{ id: string }>> } }
       }
       const res = await w.api?.certificate?.add(p)
@@ -255,7 +255,7 @@ export async function updateCertificateIpc(
 ): Promise<void> {
   const res = await page.evaluate(
     async ({ cid, data }) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { certificate?: { update: (p: unknown) => Promise<IpcResult<unknown>> } }
       }
       return w.api?.certificate?.update({ id: cid, ...data })
@@ -267,7 +267,7 @@ export async function updateCertificateIpc(
 
 export async function deleteCertificateIpc(page: Page, id: string): Promise<void> {
   const res = await page.evaluate(async (cid) => {
-    const w = window as Window & {
+    const w = window as unknown as Window & {
       api?: { certificate?: { delete: (id: string) => Promise<IpcResult<unknown>> } }
     }
     return w.api?.certificate?.delete(cid)
@@ -277,7 +277,7 @@ export async function deleteCertificateIpc(page: Page, id: string): Promise<void
 
 export async function listCertificatesIpc(page: Page, projectId: string): Promise<unknown[]> {
   return page.evaluate(async (pid) => {
-    const w = window as Window & {
+    const w = window as unknown as Window & {
       api?: { certificate?: { list: (id: string) => Promise<IpcResult<unknown[]>> } }
     }
     const res = await w.api?.certificate?.list(pid)
@@ -294,7 +294,7 @@ export async function createMockServerIpc(
 ): Promise<string> {
   return page.evaluate(
     async ({ pid, n, p }) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { mock?: { server?: { create: (input: unknown) => Promise<IpcResult<{ id: string }>> } } }
       }
       const res = await w.api?.mock?.server?.create({ projectId: pid, name: n, port: p })
@@ -307,7 +307,7 @@ export async function createMockServerIpc(
 
 export async function deleteMockServerIpc(page: Page, id: string): Promise<void> {
   const res = await page.evaluate(async (sid) => {
-    const w = window as Window & {
+    const w = window as unknown as Window & {
       api?: { mock?: { server?: { delete: (id: string) => Promise<IpcResult<unknown>> } } }
     }
     return w.api?.mock?.server?.delete(sid)
@@ -317,7 +317,7 @@ export async function deleteMockServerIpc(page: Page, id: string): Promise<void>
 
 export async function getMockServerIpc(page: Page, id: string): Promise<unknown> {
   return page.evaluate(async (sid) => {
-    const w = window as Window & {
+    const w = window as unknown as Window & {
       api?: { mock?: { server?: { get: (id: string) => Promise<IpcResult<unknown>> } } }
     }
     const res = await w.api?.mock?.server?.get(sid)
@@ -329,7 +329,7 @@ export async function getMockServerIpc(page: Page, id: string): Promise<unknown>
 export async function createTestSuiteIpc(page: Page, projectId: string, name: string): Promise<string> {
   return page.evaluate(
     async ({ pid, n }) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { testSuite?: { create: (p: unknown) => Promise<IpcResult<{ id: string }>> } }
       }
       const res = await w.api?.testSuite?.create({ project_id: pid, name: n })
@@ -342,7 +342,7 @@ export async function createTestSuiteIpc(page: Page, projectId: string, name: st
 
 export async function deleteTestSuiteIpc(page: Page, id: string): Promise<void> {
   const res = await page.evaluate(async (sid) => {
-    const w = window as Window & {
+    const w = window as unknown as Window & {
       api?: { testSuite?: { delete: (id: string) => Promise<IpcResult<unknown>> } }
     }
     return w.api?.testSuite?.delete(sid)
@@ -353,7 +353,7 @@ export async function deleteTestSuiteIpc(page: Page, id: string): Promise<void> 
 export async function createBranchIpc(page: Page, projectId: string, name: string): Promise<string> {
   return page.evaluate(
     async ({ pid, n }) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { branch?: { create: (p: unknown) => Promise<IpcResult<{ id: string }>> } }
       }
       const res = await w.api?.branch?.create({ project_id: pid, name: n })
@@ -366,7 +366,7 @@ export async function createBranchIpc(page: Page, projectId: string, name: strin
 
 export async function deleteBranchIpc(page: Page, id: string): Promise<void> {
   const res = await page.evaluate(async (bid) => {
-    const w = window as Window & { api?: { branch?: { delete: (id: string) => Promise<IpcResult<unknown>> } } }
+    const w = window as unknown as Window & { api?: { branch?: { delete: (id: string) => Promise<IpcResult<unknown>> } } }
     return w.api?.branch?.delete(bid)
   }, id)
   if (!res?.success) throw new Error(res?.error ?? 'branch delete failed')
@@ -379,13 +379,17 @@ export async function createNestedFolders(
 ): Promise<string[]> {
   return page.evaluate(
     async ({ pid, chain }) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { folder?: { create: (p: unknown) => Promise<IpcResult<{ id: string }>> } }
       }
       const ids: string[] = []
       let parentId: string | null = null
       for (const name of chain) {
-        const res = await w.api?.folder?.create({ project_id: pid, parent_id: parentId, name })
+        const res: IpcResult<{ id: string }> | undefined = await w.api?.folder?.create({
+          project_id: pid,
+          parent_id: parentId,
+          name,
+        })
         if (!res?.success || !res.data?.id) throw new Error(res?.error ?? 'folder create failed')
         ids.push(res.data.id)
         parentId = res.data.id

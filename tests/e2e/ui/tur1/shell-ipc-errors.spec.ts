@@ -7,7 +7,7 @@ import { uiTest } from './_setup'
 uiTest.describe('Tur1 — Shell IPC errors [MST-219]', () => {
   uiTest('MST-219 invalid testSuite get returns success:false envelope', async ({ window }) => {
     const res = await window.evaluate(async () => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { testSuite?: { get: (id: string) => Promise<{ success: boolean; error?: string }> } }
       }
       return w.api?.testSuite?.get('00000000-0000-0000-0000-000000000000')
@@ -19,7 +19,7 @@ uiTest.describe('Tur1 — Shell IPC errors [MST-219]', () => {
 
   uiTest('MST-219 invalid testSuiteItem get returns success:false envelope', async ({ window }) => {
     const res = await window.evaluate(async () => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: {
           testSuiteItem?: { get: (id: string) => Promise<{ success: boolean; error?: string }> }
         }

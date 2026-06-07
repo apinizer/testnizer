@@ -3,7 +3,7 @@
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar } from '../../helpers/ui/bootstrap'
+import { dismissOverlays, ensureCanonicalProject, navigateSidebar } from '../../helpers/ui/bootstrap'
 import { importFixtureViaIpc } from '../../helpers/ui/import-flow'
 import { treeSearch } from '../../helpers/ui/tree'
 
@@ -12,6 +12,7 @@ const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 uiTest.describe('Tier 9 — Import / Export UI [MST-069, MST-071]', () => {
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
   })
 

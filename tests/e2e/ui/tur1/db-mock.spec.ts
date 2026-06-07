@@ -28,7 +28,7 @@ uiTest.describe('Tur1 — DB mock [MST-262, MST-271]', () => {
     const id = await createMockServerIpc(window, projectId, `Del ${uid()}`, randomMockPort())
     await deleteMockServerIpc(window, id)
     const list = await window.evaluate(async (pid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { mock?: { server?: { list: (id: string) => Promise<{ success: boolean; data?: Array<{ id: string }> }> } } }
       }
       const res = await w.api?.mock?.server?.list(pid)

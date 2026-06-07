@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
+import { dismissOverlays, ensureCanonicalProject, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
 import { setupEnvironment } from '../../helpers/ui/env'
 import {
   addHeader,
@@ -37,6 +37,7 @@ const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 uiTest.describe('Tier 1 — Core HTTP journeys', () => {
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
   })
 

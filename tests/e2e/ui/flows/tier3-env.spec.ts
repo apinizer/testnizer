@@ -2,6 +2,7 @@ import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
 import {
   dismissOverlays,
+  ensureCanonicalProject,
   navigateSidebar,
   openHttpRequestTab,
 } from '../../helpers/ui/bootstrap'
@@ -35,6 +36,7 @@ uiTest.describe('Tier 3 — Environment journeys', () => {
 
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
     await openHttpRequestTab(window)
   })

@@ -3,12 +3,14 @@ import { uiTest } from './_setup'
 import {
   bootstrapWorkbench,
   dismissOverlays,
+  ensureCanonicalProject,
   navigateSidebar,
   openCommandPalette,
   openHttpRequestTab,
   openNewDropdownItem,
   waitForApiBridge,
 } from '../../helpers/ui/bootstrap'
+import { switchToDefaultBranch } from '../../helpers/ui/branch-flow'
 import { fillUrl, sendAndWaitResponse } from '../../helpers/ui/request-flow'
 import { TOOL_NAMES } from '../../helpers/ui/inventory'
 import { assertToolFunctional } from '../../helpers/ui/tools-flow'
@@ -32,6 +34,13 @@ const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 uiTest.describe('Tier 7 — Mock, Tools, AI, History, Settings, Git', () => {
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
+  })
+
+  // F29 creates + switches to a feature branch; restore the default branch so it
+  // doesn't hide the canonical tree from later specs sharing this worker window.
+  uiTest.afterEach(async ({ window }) => {
+    await switchToDefaultBranch(window).catch(() => {})
   })
 
   uiTest('F24 mock server serves the configured response over HTTP', async ({ window }) => {

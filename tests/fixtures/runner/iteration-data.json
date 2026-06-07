@@ -1,0 +1,5 @@
+[
+  { "item": "alpha", "expected_status": "200" },
+  { "item": "beta",  "expected_status": "200" },
+  { "item": "gamma", "expected_status": "200" }
+]

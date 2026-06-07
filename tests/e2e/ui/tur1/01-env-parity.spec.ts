@@ -3,7 +3,7 @@
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
+import { dismissOverlays, ensureCanonicalProject, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
 import { fillUrl, saveRequestToTree, addVisualAssertion } from '../../helpers/ui/request-flow'
 import {
   openCollectionRunner,
@@ -24,6 +24,7 @@ uiTest.describe('Tur1 — Env parity [MST-051, MST-062]', () => {
   uiTest.describe.configure({ mode: 'serial' })
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
   })
 

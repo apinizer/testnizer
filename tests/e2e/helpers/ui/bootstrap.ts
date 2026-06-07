@@ -5,7 +5,7 @@ export const E2E_PROJECT_NAME = 'E2E Test Project'
 
 /** Wait until preload IPC bridge is ready. */
 export async function waitForApiBridge(page: Page): Promise<void> {
-  await page.waitForFunction(() => !!(window as Window & { api?: unknown }).api?.eula, {
+  await page.waitForFunction(() => !!(window as unknown as Window & { api?: { eula?: unknown } }).api?.eula, {
     timeout: 30_000,
   })
 }
@@ -16,7 +16,13 @@ export async function acceptEula(page: Page): Promise<void> {
   const visible = await gate.isVisible().catch(() => false)
   if (!visible) return
 
-  await page.getByTestId('eula-accept-checkbox').check()
+  const checkbox = page.getByTestId('eula-accept-checkbox')
+  // Yoğun paralel başlangıçta (4 worker × ilk açılış) stability penceresi
+  // kaçabiliyor — koordinat tabanlı check() yerine dispatchEvent fallback'i.
+  await checkbox.check({ timeout: 15_000 }).catch(async () => {
+    await checkbox.dispatchEvent('click')
+  })
+  await expect(checkbox).toBeChecked({ timeout: 5_000 })
   await page.getByTestId('eula-accept-btn').click()
   await expect(gate).toBeHidden({ timeout: 15_000 })
 }
@@ -99,8 +105,13 @@ export async function ensureCanonicalProject(page: Page): Promise<void> {
       await page.waitForTimeout(300)
     }
   } else {
-    // Tab was closed by a previous test — reopen from Project Home.
-    await page.getByTestId('header-home').click()
+    // Tab was closed by a previous test — reopen from Project Home. When no
+    // project is active the app is ALREADY on Project Home (no Header / no
+    // header-home is rendered), so only click header-home when it exists.
+    const onProjectHome = await page.getByTestId('project-home').isVisible().catch(() => false)
+    if (!onProjectHome) {
+      await page.getByTestId('header-home').click()
+    }
     await createAndOpenProject(page)
   }
   await expect(tab.first()).toHaveAttribute('data-active', 'true', { timeout: 10_000 })

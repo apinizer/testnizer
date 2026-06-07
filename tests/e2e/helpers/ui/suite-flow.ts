@@ -8,7 +8,9 @@ import {
 } from './runner-flow'
 
 async function clickSuiteMenuItem(page: Page, label: RegExp | string): Promise<void> {
-  await page.locator('div.fixed').last().getByRole('button', { name: label }).click()
+  // dispatchEvent tabanlı versiyona delege — fixed-position menü uzun suite
+  // listelerinde viewport dışına taşıyor, koordinat click'i timeout oluyor.
+  await clickSuiteContextMenuItem(page, label)
 }
 
 export async function navigateToTestsPanel(page: Page): Promise<void> {
@@ -31,7 +33,21 @@ export async function createTestSuite(page: Page, name: string): Promise<void> {
 
 export async function openSuiteContextMenu(page: Page, suiteName: string): Promise<void> {
   const row = page.getByText(suiteName, { exact: true }).first()
+  // Paylaşımlı canonical projede suite listesi uzayabilir — satır viewport
+  // dışındaysa context menu de dışarıda açılır ve menü click'i timeout olur.
+  await row.scrollIntoViewIfNeeded()
   await row.click({ button: 'right' })
+}
+
+/** Click a context-menu entry. Fixed-position menü, satır ekranın dibindeyken
+ * tamamen viewport dışına taşabilir (app flip yapmıyor) — koordinat tabanlı
+ * click (force dahil) "outside of viewport" ile düşer; dispatchEvent koordinat
+ * gerektirmeden React onClick'i tetikler. */
+export async function clickSuiteContextMenuItem(page: Page, label: RegExp | string): Promise<void> {
+  const menu = page.locator('div.fixed').last()
+  const item = menu.getByRole('button', { name: label })
+  await expect(item).toBeAttached({ timeout: 5_000 })
+  await item.dispatchEvent('click')
 }
 
 /** Persist active test-suite item snapshot (UrlBar save on Tests page). */

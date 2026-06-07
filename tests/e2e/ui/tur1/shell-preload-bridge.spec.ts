@@ -23,7 +23,7 @@ const REQUIRED = [
 
 uiTest.describe('Tur1 — Shell preload bridge [MST-218]', () => {
   uiTest('MST-218 window.api exposes required IPC namespaces', async ({ window }) => {
-    const keys = await window.evaluate(() => Object.keys((window as Window & { api?: object }).api ?? {}).sort())
+    const keys = await window.evaluate(() => Object.keys((window as unknown as Window & { api?: object }).api ?? {}).sort())
     for (const ns of REQUIRED) {
       expect(keys).toContain(ns)
     }

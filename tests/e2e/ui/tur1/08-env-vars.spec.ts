@@ -48,7 +48,12 @@ uiTest.describe('Tur1 — Environment vars [MST-059..065]', () => {
     await openGlobalsPane(window)
     const key = `g_${uid()}`
     await addVariable(window, { key, initialValue: 'global-init', currentValue: 'global-cur' })
-    await expect(window.getByTestId('env-var-key').filter({ hasValue: key })).toBeVisible()
+    // Globals are workspace-wide and accumulate across the worker, so the pane
+    // can hold several rows. addVariable fills the newly-appended last row, so
+    // assert on that row's key input by value (a `.filter({hasValue})` is not a
+    // valid Playwright option and silently matches every row → strict violation
+    // once >1 global exists in a parallel/worker-shared run).
+    await expect(window.getByTestId('env-var-key').last()).toHaveValue(key, { timeout: 8_000 })
     await closeEnvModal(window)
   })
 

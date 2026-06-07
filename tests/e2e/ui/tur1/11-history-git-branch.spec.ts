@@ -3,8 +3,8 @@
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar } from '../../helpers/ui/bootstrap'
-import { createBranch } from '../../helpers/ui/branch-flow'
+import { dismissOverlays, ensureCanonicalProject, navigateSidebar } from '../../helpers/ui/bootstrap'
+import { createBranch, switchToDefaultBranch } from '../../helpers/ui/branch-flow'
 import { createBranchScopedRequest, getActiveProjectId } from '../../helpers/ui/assert-ipc'
 import { localHttpBin } from '../../helpers/test-servers'
 
@@ -32,7 +32,14 @@ async function countBranchRequests(
 uiTest.describe('Tur1 — Git branch [MST-185]', () => {
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
+  })
+
+  // Creating + switching to a feature branch mutates the worker-shared active
+  // branch. Return to the default branch so later specs see the canonical tree.
+  uiTest.afterEach(async ({ window }) => {
+    await switchToDefaultBranch(window).catch(() => {})
   })
 
   uiTest('MST-185 request created on a branch is isolated from parent branch', async ({ window }) => {

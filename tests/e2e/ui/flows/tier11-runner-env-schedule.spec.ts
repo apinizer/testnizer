@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar } from '../../helpers/ui/bootstrap'
+import { dismissOverlays, ensureCanonicalProject, navigateSidebar } from '../../helpers/ui/bootstrap'
 import { fillUrl } from '../../helpers/ui/request-flow'
 import {
   startRunnerTabRun,
@@ -37,6 +37,7 @@ const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 uiTest.describe('Tier 11 — Runner iterations, environment CRUD, scheduled tasks', () => {
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
   })
 
   uiTest('F43 the runner honours an iteration count > 1', async ({ window }) => {
@@ -123,7 +124,7 @@ uiTest.describe('Tier 11 — Runner iterations, environment CRUD, scheduled task
     await window.getByTestId('delete-confirm-btn').click()
     await closeEnvModal(window)
 
-    envs = (await listEnvironmentsByProject(window, projectId)) as Array<{ name: string }>
+    envs = (await listEnvironmentsByProject(window, projectId)) as Array<{ id: string; name: string }>
     expect(envs.find((e) => e.name === envName)).toBeUndefined()
   })
 

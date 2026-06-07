@@ -39,7 +39,7 @@ uiTest.describe('Tur1 — DB project cascade [MST-252, MST-292]', () => {
     await deleteProject(window, projectId)
 
     const orphans = await window.evaluate(async (pid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: {
           savedRequest?: { list: (id: string) => Promise<{ success: boolean; data?: unknown[] }> }
           environment?: { listByProject: (id: string) => Promise<{ success: boolean; data?: unknown[] }> }

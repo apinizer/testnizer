@@ -57,12 +57,34 @@ export async function addVariable(page: Page, v: EnvVariableInput): Promise<void
   }
 }
 
+/** Resolve the env-var row index whose key input holds `key`. Controlled React
+ * inputs don't reflect value→attribute, so neither a `[value=...]` selector nor
+ * the invalid `.filter({ hasValue })` can target a specific row — scan the live
+ * input values instead, polling until the row appears. Returns -1 on timeout. */
+async function findVarRowIndex(page: Page, key: string): Promise<number> {
+  const keys = page.getByTestId('env-var-key')
+  const deadline = Date.now() + 8_000
+  while (Date.now() < deadline) {
+    const n = await keys.count()
+    for (let i = 0; i < n; i++) {
+      if ((await keys.nth(i).inputValue()) === key) return i
+    }
+    await page.waitForTimeout(150)
+  }
+  return -1
+}
+
+/** Locator for the env-var row whose key input holds `key` (value-scan based). */
+export async function envVarRowByKey(page: Page, key: string) {
+  const idx = await findVarRowIndex(page, key)
+  expect(idx, `env var row for "${key}" not found`).toBeGreaterThanOrEqual(0)
+  return page.getByTestId('env-var-row').nth(idx)
+}
+
 /** Assert a variable row is marked secret in the environment modal. */
 export async function expectSecretVariable(page: Page, key: string): Promise<void> {
-  const row = page.getByTestId('env-var-row').filter({
-    has: page.getByTestId('env-var-key').filter({ hasValue: key }),
-  })
-  await expect(row.locator('select')).toHaveValue('secret')
+  const row = await envVarRowByKey(page, key)
+  await expect(row.locator('select')).toHaveValue('secret', { timeout: 8_000 })
 }
 
 /** Switch active environment by name (footer shows selected env). */

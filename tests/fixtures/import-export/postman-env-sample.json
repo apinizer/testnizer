@@ -1,0 +1,27 @@
+{
+  "id": "env-sample-001",
+  "name": "Sample Environment",
+  "_postman_variable_scope": "environment",
+  "_postman_exported_at": "2026-01-01T00:00:00.000Z",
+  "_postman_exported_using": "Postman/10.0.0",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.example.com",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "apiKey",
+      "value": "secret-token-123",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "userId",
+      "value": "42",
+      "type": "default",
+      "enabled": true
+    }
+  ]
+}

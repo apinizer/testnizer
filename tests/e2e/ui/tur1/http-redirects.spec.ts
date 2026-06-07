@@ -13,7 +13,7 @@ uiTest.describe('Tur1 — HTTP redirects [MST-042]', () => {
   uiTest('MST-042 follow redirects lands on final status', async ({ window }) => {
     await dismissOverlays(window)
     const res = await window.evaluate(async (url) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: {
           request?: {
             send: (p: unknown) => Promise<{ success: boolean; data?: { status?: number; url?: string } }>

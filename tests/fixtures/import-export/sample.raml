@@ -1,0 +1,42 @@
+#%RAML 1.0
+title: Sample RAML API
+version: v1
+baseUri: https://api.example.com/{version}
+
+/users:
+  get:
+    description: List all users
+    queryParameters:
+      page:
+        type: integer
+        default: 1
+      limit:
+        type: integer
+        default: 20
+    responses:
+      200:
+        description: OK
+  post:
+    description: Create a user
+    body:
+      application/json:
+        example: |
+          { "name": "Alice", "email": "alice@example.com" }
+    responses:
+      201:
+        description: Created
+
+/users/{userId}:
+  uriParameters:
+    userId:
+      type: string
+  get:
+    description: Get user by ID
+    responses:
+      200:
+        description: OK
+  delete:
+    description: Delete user
+    responses:
+      204:
+        description: No Content

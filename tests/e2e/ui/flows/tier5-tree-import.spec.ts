@@ -121,7 +121,7 @@ uiTest.describe('Tier 5 — Tree & Import journeys', () => {
 
     const projectId = await getActiveProjectId(window)
     const exported = await window.evaluate(async (pid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { importExport?: { exportPostman: (id: string) => Promise<{ success: boolean; data?: unknown }> } }
       }
       return w.api?.importExport?.exportPostman(pid)

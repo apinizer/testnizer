@@ -1,9 +1,20 @@
 import { expect, type Page } from '@playwright/test'
 import { navigateSidebar } from './bootstrap'
 
-/** Pick a high, unlikely-to-collide port for an ephemeral mock server. */
+/**
+ * Pick a high port for an ephemeral mock server that won't collide across
+ * parallel workers. Each worker owns a disjoint 1000-port band keyed off its
+ * Playwright index (TEST_PARALLEL_INDEX / TEST_WORKER_INDEX), so two workers
+ * starting mock servers concurrently can never land on the same port. Within a
+ * band the choice is still random to dodge a port left in TIME_WAIT by an
+ * earlier test in the same worker.
+ */
 export function randomMockPort(): number {
-  return 31000 + Math.floor(Math.random() * 9000)
+  const idx = Number(
+    process.env.TEST_PARALLEL_INDEX ?? process.env.TEST_WORKER_INDEX ?? '0',
+  )
+  const band = 31000 + (Number.isFinite(idx) ? idx : 0) * 1000
+  return band + Math.floor(Math.random() * 1000)
 }
 
 /** Create a mock server from the Mocks panel and open its editor. */
@@ -40,6 +51,32 @@ export async function addMockResponse(page: Page, opts: { status?: number } = {}
   // Let the per-keystroke updateEndpoint/updateResponse IPC writes settle so
   // the live server reads the latest definition when it starts.
   await page.waitForTimeout(500)
+}
+
+/**
+ * Fill the condition JSON of the most-recently-added response.
+ *
+ * The condition <textarea> is NOT the last textarea on the page — the response
+ * editor renders other textareas and `textarea.last()` lands on an unrelated
+ * one. Every condition textarea defaults to a JSON object containing `"type"`,
+ * so we scope to the textareas whose live value contains `"type"` and take the
+ * last (newest response).
+ */
+export async function fillLastResponseCondition(page: Page, condition: object): Promise<void> {
+  const all = page.locator('textarea')
+  const count = await all.count()
+  let target: ReturnType<Page['locator']> | null = null
+  for (let i = count - 1; i >= 0; i--) {
+    const val = await all.nth(i).inputValue().catch(() => '')
+    if (val.includes('"type"')) {
+      target = all.nth(i)
+      break
+    }
+  }
+  if (!target) throw new Error('condition textarea (value containing "type") not found')
+  await target.fill(JSON.stringify(condition))
+  await target.blur()
+  await page.waitForTimeout(400)
 }
 
 export async function startMockServer(page: Page): Promise<void> {

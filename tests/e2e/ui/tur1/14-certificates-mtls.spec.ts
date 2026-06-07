@@ -4,7 +4,7 @@
 import path from 'node:path'
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
+import { dismissOverlays, ensureCanonicalProject, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
 import { fillUrl, sendAndReadStatus } from '../../helpers/ui/request-flow'
 import { addCertificateIpc } from '../../helpers/ui/db-flow'
 import { getActiveProjectId } from '../../helpers/ui/assert-ipc'
@@ -16,6 +16,7 @@ const http = () => localHttpBin()
 uiTest.describe('Tur1 — Certificates mTLS [MST-047, MST-196]', () => {
   uiTest('MST-047 client cert registered does not break plain HTTP send', async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
     const projectId = await getActiveProjectId(window)
     await addCertificateIpc(window, {

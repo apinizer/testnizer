@@ -3,7 +3,7 @@
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, openHttpRequestTab } from '../../helpers/ui/bootstrap'
+import { dismissOverlays, ensureCanonicalProject, openHttpRequestTab } from '../../helpers/ui/bootstrap'
 import { createProject, goToProjectHome, openProject } from '../../helpers/ui/workspace-flow'
 import { fillUrl, saveRequestToTree } from '../../helpers/ui/request-flow'
 import { getActiveProjectId, listSavedRequestsByProject } from '../../helpers/ui/assert-ipc'
@@ -14,6 +14,14 @@ const http = () => localHttpBin()
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
 uiTest.describe('Tur1 — Workspace / Project [MST-010..012]', () => {
+  // These specs create and switch to throwaway projects (ProjA/ProjB/...),
+  // leaving a non-canonical project active in the worker-shared window. Restore
+  // the canonical project so later specs (and parallel ordering) start clean.
+  uiTest.afterEach(async ({ window }) => {
+    await dismissOverlays(window).catch(() => {})
+    await ensureCanonicalProject(window).catch(() => {})
+  })
+
   uiTest('MST-010 requests saved in project A are invisible in project B', async ({ window }) => {
     await dismissOverlays(window)
     const projA = `ProjA ${uid()}`
@@ -47,7 +55,7 @@ uiTest.describe('Tur1 — Workspace / Project [MST-010..012]', () => {
     const projectId = await getActiveProjectId(window, orig)
     const upd = await window.evaluate(
       async ({ pid, name }) => {
-        const w = window as Window & {
+        const w = window as unknown as Window & {
           api?: {
             project?: {
               update: (id: string, p: unknown) => Promise<{ success: boolean }>
@@ -76,7 +84,7 @@ uiTest.describe('Tur1 — Workspace / Project [MST-010..012]', () => {
     const copyId = await duplicateProject(window, projectId, wsId, copyName)
     expect(copyId).not.toBe(projectId)
     const listed = await window.evaluate(async (wid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { project?: { list: (id: string) => Promise<{ success: boolean; data?: Array<{ id: string; display_name?: string; name: string }> }> } }
       }
       const res = await w.api?.project?.list(wid)

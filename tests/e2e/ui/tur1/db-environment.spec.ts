@@ -38,7 +38,7 @@ uiTest.describe('Tur1 — DB environment [MST-257, MST-067]', () => {
     const envId = await createEnvironmentIpc(window, wsId, projectId, `Tmp ${uid()}`)
 
     const del = await window.evaluate(async (eid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { environment?: { delete: (id: string) => Promise<{ success: boolean; error?: string }> } }
       }
       return w.api?.environment?.delete(eid)
@@ -46,7 +46,7 @@ uiTest.describe('Tur1 — DB environment [MST-257, MST-067]', () => {
     expect(del?.success).toBe(true)
 
     const remaining = await window.evaluate(async (pid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { environment?: { listByProject: (id: string) => Promise<{ success: boolean; data?: unknown[] }> } }
       }
       const res = await w.api?.environment?.listByProject(pid)

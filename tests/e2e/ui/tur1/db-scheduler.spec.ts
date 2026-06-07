@@ -19,7 +19,7 @@ uiTest.describe('Tur1 — DB scheduler [MST-277, MST-278]', () => {
     expect(tasks.some((t) => t.id === id && t.name === name)).toBe(true)
 
     const del = await window.evaluate(async (tid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { scheduler?: { delete: (id: string) => Promise<{ success: boolean }> } }
       }
       return w.api?.scheduler?.delete(tid)
@@ -32,7 +32,7 @@ uiTest.describe('Tur1 — DB scheduler [MST-277, MST-278]', () => {
     const projectId = await getActiveProjectId(window)
     const id = await createScheduledTask(window, projectId, `Hist ${uid()}`)
     const hist = await window.evaluate(async (tid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { scheduler?: { history: (id: string) => Promise<{ success: boolean; data?: unknown[] }> } }
       }
       return w.api?.scheduler?.history(tid)

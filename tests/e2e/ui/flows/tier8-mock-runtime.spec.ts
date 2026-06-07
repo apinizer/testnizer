@@ -27,7 +27,7 @@ uiTest.describe('Tier 8 — Mock runtime [MST-160]', () => {
 
     const url = await getMockEndpointUrl(window)
     const status = await window.evaluate(async (u) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { request?: { send: (p: unknown) => Promise<{ success: boolean; data?: { status?: number } }> } }
       }
       const res = await w.api?.request?.send({ method: 'GET', url: u })

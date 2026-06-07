@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
+import { dismissOverlays, ensureCanonicalProject, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
 import { fillUrl, saveRequestToTree, saveRequestToFolder } from '../../helpers/ui/request-flow'
 import { treeOpenNode } from '../../helpers/ui/tree'
 import { pressModShortcut } from '../../helpers/ui/keyboard'
@@ -21,6 +21,7 @@ const activeTab = (page: import('@playwright/test').Page) =>
 uiTest.describe('Tier 9 — Tab & save lifecycle journeys', () => {
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
   })
 

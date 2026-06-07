@@ -129,7 +129,8 @@ export async function startHttpEchoServer(port: number): Promise<HttpEchoServer>
       }
       const contentType = FIXTURE_FILES[fileName]
       if (contentType) {
-        const filePath = path.join(FIXTURES_DIR, fileName)
+        // Yerel `path` (url.pathname) node:path import'unu gölgeliyor — string birleştir.
+        const filePath = `${FIXTURES_DIR}/${fileName}`
         if (fs.existsSync(filePath)) {
           res.writeHead(200, { 'Content-Type': contentType })
           res.end(fs.readFileSync(filePath))

@@ -1,7 +1,8 @@
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
+import { dismissOverlays, ensureCanonicalProject, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
 import { fillUrl, sendAndWaitResponse } from '../../helpers/ui/request-flow'
+import { expectCopyToClipboard } from '../../helpers/ui/clipboard'
 import { localHttpBin } from '../../helpers/test-servers'
 
 const http = () => localHttpBin()
@@ -9,6 +10,7 @@ const http = () => localHttpBin()
 uiTest.describe('Tier 12 — Response viewer actions', () => {
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
   })
 
@@ -52,14 +54,9 @@ uiTest.describe('Tier 12 — Response viewer actions', () => {
     await sendAndWaitResponse(window)
     await window.getByTestId('res-tab-body').click()
 
-    // Seed the clipboard with a sentinel so we can prove the copy actually ran
-    // (not just that the value happened to already be there).
-    await app.evaluate(({ clipboard }) => clipboard.writeText('clipboard-empty-sentinel'))
-
-    await window.getByTestId('res-body-copy').click()
-
-    await expect
-      .poll(async () => app.evaluate(({ clipboard }) => clipboard.readText()), { timeout: 10_000 })
-      .toContain(marker)
+    // The system clipboard is a single OS-wide resource shared by every worker's
+    // Electron app; serialise the seed → copy → read sequence so concurrent
+    // workers don't clobber each other's marker under --workers=4.
+    await expectCopyToClipboard(window, app, 'res-body-copy', marker)
   })
 })

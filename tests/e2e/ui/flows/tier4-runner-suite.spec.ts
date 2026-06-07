@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
+import { dismissOverlays, ensureCanonicalProject, navigateSidebar, openHttpRequestTab } from '../../helpers/ui/bootstrap'
 import {
   addPostScript,
   addVisualAssertion,
@@ -36,6 +36,7 @@ const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 uiTest.describe('Tier 4 — Runner & Suite journeys', () => {
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
   })
 
@@ -81,7 +82,7 @@ uiTest.describe('Tier 4 — Runner & Suite journeys', () => {
     const projectId = await getActiveProjectId(window)
     const suiteId = await findSuiteIdByName(window, projectId, suiteName)
     const producerHasScript = await window.evaluate(async (sid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: {
           testSuiteItem?: {
             list: (s: string) => Promise<{ data?: Array<{ id: string }> }>

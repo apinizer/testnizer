@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<con:soapui-project id="test-001" name="E2E Test Project" soapui-version="5.7.0"
+  xmlns:con="http://eviware.com/soapui/config">
+  <con:settings/>
+  <con:interface xsi:type="con:WsdlInterface" id="iface-001" name="CalculatorPortSoap"
+    type="wsdl" definition="http://example.com/calculator.wsdl"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <con:settings/>
+    <con:endpoints>
+      <con:endpoint>http://example.com/calculator</con:endpoint>
+    </con:endpoints>
+    <con:operation xsi:type="con:WsdlOperation" id="op-001" name="Add"
+      isOneWay="false" action="http://example.com/Add"
+      bindingOperationName="Add" type="Request-Response">
+      <con:settings/>
+      <con:call id="call-001" name="Request 1">
+        <con:settings/>
+        <con:endpoint>http://example.com/calculator</con:endpoint>
+        <con:request><![CDATA[<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+  xmlns:calc="http://example.com/calc">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <calc:Add>
+      <calc:a>1</calc:a>
+      <calc:b>2</calc:b>
+    </calc:Add>
+  </soapenv:Body>
+</soapenv:Envelope>]]></con:request>
+      </con:call>
+    </con:operation>
+    <con:operation xsi:type="con:WsdlOperation" id="op-002" name="Subtract"
+      isOneWay="false" action="http://example.com/Subtract"
+      bindingOperationName="Subtract" type="Request-Response">
+      <con:settings/>
+      <con:call id="call-002" name="Request 1">
+        <con:settings/>
+        <con:endpoint>http://example.com/calculator</con:endpoint>
+        <con:request><![CDATA[<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+  xmlns:calc="http://example.com/calc">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <calc:Subtract>
+      <calc:a>10</calc:a>
+      <calc:b>3</calc:b>
+    </calc:Subtract>
+  </soapenv:Body>
+</soapenv:Envelope>]]></con:request>
+      </con:call>
+    </con:operation>
+  </con:interface>
+</con:soapui-project>

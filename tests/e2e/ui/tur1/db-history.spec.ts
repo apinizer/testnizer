@@ -33,7 +33,7 @@ uiTest.describe('Tur1 — DB history [MST-157, MST-258, MST-267, MST-268]', () =
     })
 
     const row = await window.evaluate(async (hid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { history?: { get: (id: string) => Promise<{ success: boolean; data?: Record<string, unknown> }> } }
       }
       const res = await w.api?.history?.get(hid)

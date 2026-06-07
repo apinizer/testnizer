@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test'
-import { fillCommandPalette, openCommandPalette } from './bootstrap'
+import { openCommandPalette } from './bootstrap'
 
 export async function openCollectionRunner(page: Page): Promise<void> {
   await openCommandPalette(page)
@@ -7,17 +7,29 @@ export async function openCollectionRunner(page: Page): Promise<void> {
   await expect(page.getByTestId('collection-runner-modal')).toBeVisible({ timeout: 8_000 })
 }
 
-/** Deselect every runner row except the one whose label contains `name`. */
+/** Deselect every runner row except the one whose label contains `name`.
+ * NOT: satır satır dolaşmak (O(n)×3 roundtrip) worker koleksiyonu yüzlerce
+ * isteğe ulaştığında test timeout'unu yiyor — "Deselect All" tek tık, sonra
+ * yalnızca hedef satır(lar) işaretlenir. */
 export async function selectOnlyRunnerEndpoint(page: Page, name: string): Promise<void> {
+  await selectOnlyRunnerEndpoints(page, name)
+}
+
+/** Keep selected every runner row whose label contains `substr`; deselect the rest. */
+export async function selectOnlyRunnerEndpoints(page: Page, substr: string): Promise<void> {
   const modal = page.getByTestId('collection-runner-modal')
-  const rows = modal.locator('div.border-b').filter({ has: page.locator('input[type="checkbox"]') })
-  const count = await rows.count()
+  await modal.getByRole('button', { name: /Deselect All/i }).click()
+  const matches = modal
+    .locator('div.border-b')
+    .filter({ has: page.locator('input[type="checkbox"]') })
+    .filter({ hasText: substr })
+  const count = await matches.count()
+  expect(count, `runner row containing "${substr}" not found`).toBeGreaterThan(0)
   for (let i = 0; i < count; i++) {
-    const row = rows.nth(i)
-    const text = (await row.textContent()) ?? ''
+    const row = matches.nth(i)
+    await row.scrollIntoViewIfNeeded()
     const cb = row.locator('input[type="checkbox"]')
-    const want = text.includes(name)
-    if ((await cb.isChecked()) !== want) await cb.click()
+    if (!(await cb.isChecked())) await cb.click()
   }
 }
 

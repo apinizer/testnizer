@@ -17,7 +17,7 @@ uiTest.describe('Tur1 — DB test suite [MST-263, MST-273, MST-274]', () => {
 
     const folderId = await window.evaluate(
       async ({ sid, name }) => {
-        const w = window as Window & {
+        const w = window as unknown as Window & {
           api?: {
             testSuiteFolder?: { create: (p: unknown) => Promise<{ success: boolean; data?: { id: string } }> }
           }
@@ -31,7 +31,7 @@ uiTest.describe('Tur1 — DB test suite [MST-263, MST-273, MST-274]', () => {
 
     await window.evaluate(
       async ({ sid, fid }) => {
-        const w = window as Window & {
+        const w = window as unknown as Window & {
           api?: { testSuiteItem?: { create: (p: unknown) => Promise<{ success: boolean }> } }
         }
         const res = await w.api?.testSuiteItem?.create({
@@ -48,7 +48,7 @@ uiTest.describe('Tur1 — DB test suite [MST-263, MST-273, MST-274]', () => {
     )
 
     const items = await window.evaluate(async (sid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: {
           testSuite?: {
             listEndpoints: (id: string) => Promise<{ success: boolean; data?: { items: unknown[] } }>
@@ -67,7 +67,7 @@ uiTest.describe('Tur1 — DB test suite [MST-263, MST-273, MST-274]', () => {
     const suiteId = await createTestSuiteIpc(window, projectId, `DelSuite ${uid()}`)
     await deleteTestSuiteIpc(window, suiteId)
     const list = await window.evaluate(async (pid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { testSuite?: { list: (id: string) => Promise<{ success: boolean; data?: Array<{ id: string }> }> } }
       }
       const res = await w.api?.testSuite?.list(pid)

@@ -1,6 +1,6 @@
 # Testnizer UI E2E — Tam Kapsam Matrisi
 
-Güncelleme: 2026-06-06 | **385 UI E2E testi** — 238 legacy (27 spec) + **84 tur1** (51 spec) + **63 journey flow** (16 tier spec, `tests/e2e/ui/flows/`). Tur1 + flows katmanı serial koşumda (`--workers=1`) **147 test**.
+Güncelleme: 2026-06-07 | **663 UI E2E testi (154 spec)** — 238 legacy (27 spec) + **362 tur1** (111 spec) + **63 journey flow** (16 tier spec, `tests/e2e/ui/flows/`). Suite `--workers=4` paralel koşuma stabilize edildi (worker başına izole Electron + SQLite, mock port bantları, pano mutex'i, `ensureCanonicalProject` guard'ı). MST kapsamı: **255/292** (`ext/tur1/yapilacak-testler.txt`); kalan 37'nin 36'sı bilinçli ertelenen P2, 1'i vitest (MST-282).
 
 ## Altyapı
 
@@ -101,26 +101,36 @@ Uçtan uca, çok adımlı gerçek kullanıcı senaryoları. Her flow `tests/e2e/
 
 ## Tur1 backlog (`tests/e2e/ui/tur1/`)
 
-`ext/tur1/yapilacak-testler.txt` içindeki **292 MST** hedefinin büyük kısmı için spec iskeleti eklendi. Yardımcılar: `db-flow.ts`, `export-flow.ts`, genişletilmiş `assert-ipc.ts` / `import-flow.ts`.
+`ext/tur1/yapilacak-testler.txt` içindeki **292 MST** hedefinden **255'i kapsandı** (111 spec). Yardımcılar: `db-flow.ts`, `export-flow.ts`, `clipboard.ts` (pano mutex), `branch-flow.ts`, `mock-flow.ts` (port bantları), `http-extra.ts`, `runner-extra.ts`, `protocol-extra.ts`, `workbench-extra.ts`, `db-extra.ts`, genişletilmiş `assert-ipc.ts` / `import-flow.ts` / `env.ts` (`envVarRowByKey` value-scan).
 
-| Grup | Örnek spec | MST aralığı | Durum |
+| Grup | Spec'ler | MST aralığı | Durum |
 |---|---|---|---|
-| Auth / EULA | `01-auth-eula` | 001–008 | ✅ çekirdek |
-| Env parity | `01-env-parity` | 051, 062 | ✅ (paralel flaky) |
-| Workspace / proje | `03-workspace-project` | 010–012 | ✅ |
-| Tree / save | `04-tree-tab-save` | 017–023 | ✅ (021 flaky) |
-| HTTP / auth | `05-*`, `http-*` | 030–044 | ✅ çoğu |
-| Env UI | `08-env-vars` | 059–065 | ✅ |
-| Response toolbar | `08-response-toolbar` | 038–039 | ✅ |
-| Import / export | `import-*`, `export-*`, `tier9` | 069–097 | ✅ çoğu |
-| SOAP | `15-soap-wsdl` | 106 | ✅ (paralel flaky) |
-| Mock / runner | `09-mock-deep`, `10-runner-scheduler`, `16-scheduled-tasks` | 160–179 | ✅ çekirdek |
-| DB persistence | `db-*.spec.ts` (12 dosya) | 251–277 | ✅ IPC ağırlıklı |
-| Shell / SEC | `shell-security`, `shell-window-open`, `tier14` | 215–219, 283–291 | ✅ çekirdek |
-| Certificates | `14-certificates-mtls`, `db-certificates` | 047, 196, 260–270 | ✅ |
-| Tools / palette | `13-ai-tools-cross` | 204–207 | ⚠️ kısmi (palette + tools cross çekirdek) |
+| Auth / EULA | `01-auth-eula`, `auth-advanced` | 001–008 | ✅ |
+| Workspace / proje | `03-workspace-project`, `workspace-advanced` | 010–016 | ✅ |
+| Tree / save | `04-tree-tab-save`, `tree-advanced` | 017–029 | ✅ |
+| HTTP derin | `http-{query-encoding,tls-trust,assertion-parity,ntlm,binary,binary-upload,compression-ui,proxy,ux-errors,cookies-jar}` | 030–050 | ✅ |
+| Env | `01-env-parity`, `08-env-vars`, `env-advanced` | 051–065 | ✅ |
+| Import / export | `import-{formats-2,wsdl-ui,proto,soapui,external-smoke,cancel,formats-roundtrip,swagger2,errors,har}`, `export-{variables,env-postman,test-suite}` | 066–102 | ✅ (engine'siz 6 format hariç) |
+| SOAP / WSSE | `15-soap-wsdl`, `soap-{wsse-username,wsse-sign,wsse-encrypt,versions,custom-headers}` | 106–113 | ✅ (113 hariç) |
+| Protokoller ileri | `ws/sse/graphql/grpc/socketio/mcp-advanced`, `protocol-tab-isolation` | 114–146 | ✅ (MST-124 skip — app bug) |
+| Runner / suite / scheduler | `10-runner-scheduler`, `13-runner-parity`, `runner-{iterations,suite-crud}`, `18-runner-report`, `scheduled-tasks-deep` | 147–159, 171–179 | ✅ |
+| Mock | `09-mock-deep`, `mock-{conditional,proxy}` | 160–170 | ✅ çekirdek |
+| Settings / UX | `12-settings-updater`, `settings-advanced`, `ux-misc` | 180–214 | ✅ çekirdek |
+| Shell | `shell-{isolation,relaunch,quit,dialogs,secure-storage,updater,security,window-open,ipc-errors}` | 215–232, 246, 290–291 | ✅ |
+| DB persistence | `db-*.spec.ts` (19 dosya: `mock-state`, `project-active`, `relaunch`, `concurrency`, `corruption`, `wal-recovery`, `migration`…) | 251–281 | ✅ (MST-279 corrupt-bytes skip — app bug) |
+| Güvenlik | `tier14-security-persist`, `shell-security`, `ai-chat-secrets` | 283–291 | ✅ |
+| AI Chat | `25-ai-chat`, `ai-chat-deep`, `ai-chat-secrets` | — | ✅ |
 
-**Henüz eksik / Sprint 2–5:** `shell-dialogs`, `shell-relaunch`, `soap-wsse-*`, `http-cookies-jar`, `tier13-git-save`, paketleme (`shell-packaging`), AI chat secrets, MST-204–207 kalan case'ler, import formatları (Apidog/JMeter/RAML…), runner HTML rapor derinliği, DB ileri (`db-relaunch`, `db-migration`, `db-corruption`), tree kalanları (018, 020, 024, 027, 029).
+**Kalan 37 MST** (36 P2 + 1 vitest): engine desteği olmayan import formatları (MST-076/077/078/080/081/084 — Apidog, JMeter, ApiDoc, WADL, Google Discovery, Hoppscotch), git-import edge akışları (103–105), gRPC/SOAP ekstraları (112, 113), runner/mock kalanları (158, 166, 167, 170), shell ekstraları (233–245, 247–250), import perf (091, 092, 102), docs sayfası (213), `tests/main/schema-sync.test.ts` (282 — yazıldı, vitest).
+
+### Bilinen app-gap'ler (test yazımı sırasında bulunan, kapatılmamış)
+
+| Bulgu | Etkisi | Test |
+|---|---|---|
+| SSE `Last-Event-ID` set edilince connect DOMException ile düşer (`sse.engine.ts` custom fetch header'ı eventsource@3 ile çakışıyor) | Header'lı reconnect çalışmıyor | `sse-advanced` MST-124 (skip) |
+| Bozuk (garbage-byte) DB ile açılışta `initDatabase()` throw → pencere hiç açılmıyor, kurtarma yok | Başlangıç crash'i | `db-corruption` MST-279 (skip) |
+| WS kayıtlı isteğin URL'i tab yeniden açılınca default'a dönüyor (DB'de doğru; store re-hydrate ezíyor) | UI restore eksik | `ws-advanced` MST-120 (DB assert'e indirildi) |
+| Updater'ın UI bildirim yüzeyi yok (`updater-*` testid yok; UpdateModal yalnızca manuel) | MST-230/231 IPC-only doğrulanıyor | `shell-updater` |
 
 > Not: Git branch izolasyonu (varsayılan branch `branch_id=NULL` paylaşımlı, varsayılan-olmayan branch içeriği izole) save-modal yolunda paylaşımlı içerik ürettiğinden UI flow'u yerine `tests/main/branch-isolation.test.ts` unit testinde kapsanır.
 

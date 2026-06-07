@@ -25,9 +25,12 @@ uiTest.describe('Modals deep', () => {
 
   uiTest('import modal cURL paste step', async ({ window }) => {
     await pressModShortcut(window, 'o')
-    await window.getByTestId('import-modal').getByRole('button', { name: 'cURL cURL' }).click()
-    await window.getByRole('button', { name: /Next/i }).click()
-    const ta = window.locator('textarea').first()
+    const modal = window.getByTestId('import-modal')
+    await modal.getByRole('button', { name: 'cURL cURL' }).click()
+    await modal.getByRole('button', { name: /Next/i }).click()
+    // Global .first() arkada açık kalan tab'ın textarea'sını yakalayabilir —
+    // modal'a scope'la (worker-paylaşımlı app'te tab durumu birikir).
+    const ta = modal.locator('textarea').first()
     await ta.fill('curl https://example.com')
     await expect(ta).toHaveValue(/curl/)
     await window.keyboard.press('Escape')

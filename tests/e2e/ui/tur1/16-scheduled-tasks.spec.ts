@@ -3,7 +3,7 @@
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, navigateSidebar } from '../../helpers/ui/bootstrap'
+import { dismissOverlays, ensureCanonicalProject, navigateSidebar } from '../../helpers/ui/bootstrap'
 import { createScheduledTask, getActiveProjectId, listScheduledTasks } from '../../helpers/ui/assert-ipc'
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -11,6 +11,7 @@ const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 uiTest.describe('Tur1 — Scheduled tasks [MST-179]', () => {
   uiTest('MST-179 scheduled task appears in UI and can be deleted', async ({ window }) => {
     await dismissOverlays(window)
+    await ensureCanonicalProject(window)
     const name = `Sched ${uid()}`
     const projectId = await getActiveProjectId(window)
     const taskId = await createScheduledTask(window, projectId, name)
@@ -23,11 +24,14 @@ uiTest.describe('Tur1 — Scheduled tasks [MST-179]', () => {
       .toBe(true)
 
     // Tests home lists upcoming scheduled tasks for the active project.
+    // Önceki spec Tests sayfasını açık bırakmış olabilir — liste mount'ta
+    // fetch'lendiğinden önce APIs'e geçip remount zorla (stale liste guard'ı).
+    await navigateSidebar(window, 'apis')
     await navigateSidebar(window, 'tests')
     await expect(window.getByText(name, { exact: true })).toBeVisible({ timeout: 15_000 })
 
     await window.evaluate(async (id) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { scheduler?: { delete: (tid: string) => Promise<{ success: boolean; error?: string }> } }
       }
       const res = await w.api?.scheduler?.delete(id)

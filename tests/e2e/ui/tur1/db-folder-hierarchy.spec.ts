@@ -18,7 +18,7 @@ uiTest.describe('Tur1 — DB folder hierarchy [MST-025, MST-026]', () => {
     expect(ids).toHaveLength(4)
 
     const folders = await window.evaluate(async (pid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: {
           folder?: {
             list: (id: string) => Promise<{ success: boolean; data?: Array<{ id: string; parent_id: string | null }> }>

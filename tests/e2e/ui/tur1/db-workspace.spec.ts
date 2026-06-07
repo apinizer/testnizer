@@ -17,7 +17,7 @@ uiTest.describe('Tur1 — DB workspace [MST-251, MST-253]', () => {
     const name = `WS ${uid()}`
     const id = await createWorkspace(window, name)
     const listed = await window.evaluate(async () => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { workspace?: { list: () => Promise<{ success: boolean; data?: Array<{ id: string; name: string }> }> } }
       }
       const res = await w.api?.workspace?.list()
@@ -31,7 +31,7 @@ uiTest.describe('Tur1 — DB workspace [MST-251, MST-253]', () => {
     const id = await createWorkspace(window, name)
     await deleteWorkspace(window, id)
     const listed = await window.evaluate(async () => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { workspace?: { list: () => Promise<{ success: boolean; data?: Array<{ id: string }> }> } }
       }
       const res = await w.api?.workspace?.list()

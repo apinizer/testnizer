@@ -28,7 +28,7 @@ uiTest.describe('Tur1 — Mock deep [MST-161]', () => {
 
     const getUrl = await getMockEndpointUrl(window)
     const hit = await window.evaluate(async (url) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { request?: { send: (p: unknown) => Promise<{ success: boolean; data?: { status?: number } }> } }
       }
       const getRes = await w.api?.request?.send({ method: 'GET', url })

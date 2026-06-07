@@ -15,7 +15,7 @@ import { createFolder, getActiveProjectId, listEnvironmentsByProject, listEnvVar
 import { fillUrl, saveRequestToTree } from '../../helpers/ui/request-flow'
 import { addCertificateIpc } from '../../helpers/ui/db-flow'
 import { importLocalProjectFile } from '../../helpers/ui/export-flow'
-import { openEnvModal, selectEnvironmentInModal, setupEnvironment } from '../../helpers/ui/env'
+import { envVarRowByKey, openEnvModal, selectEnvironmentInModal, setupEnvironment } from '../../helpers/ui/env'
 import {
   addMockEndpoint,
   addMockResponse,
@@ -59,7 +59,7 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
 
     const move = await window.evaluate(
       async ({ rid, fid }) => {
-        const w = window as Window & {
+        const w = window as unknown as Window & {
           api?: { tree?: { move: (p: unknown) => Promise<{ success: boolean; error?: string }> } }
         }
         return w.api?.tree?.move({ nodeId: rid, nodeType: 'request', targetFolderId: fid })
@@ -91,7 +91,7 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
     const folderId = await createFolder(window, projectId, `Cycle ${uid()}`)
     const move = await window.evaluate(
       async ({ fid }) => {
-        const w = window as Window & {
+        const w = window as unknown as Window & {
           api?: { tree?: { move: (p: unknown) => Promise<{ success: boolean; error?: string }> } }
         }
         return w.api?.tree?.move({ nodeId: fid, nodeType: 'folder', targetFolderId: fid })
@@ -118,9 +118,8 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
 
     await openEnvModal(window)
     await selectEnvironmentInModal(window, envName)
-    const row = window.getByTestId('env-var-row').filter({
-      has: window.getByTestId('env-var-key').filter({ hasValue: 'apiSecret' }),
-    })
+    // hasValue geçerli bir filter değil — value-scan tabanlı satır locator'ı kullan.
+    const row = await envVarRowByKey(window, 'apiSecret')
     const current = row.getByTestId('env-var-current')
     await expect(current).toHaveAttribute('type', 'password')
     await expect(row.locator('select')).toHaveValue('secret')
@@ -157,7 +156,7 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
 
     const url = await getMockEndpointUrl(window)
     const hit = await window.evaluate(async (u) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { request?: { send: (p: unknown) => Promise<{ success: boolean; data?: { status?: number } }> } }
       }
       const res = await w.api?.request?.send({ method: 'GET', url: u })
@@ -184,7 +183,7 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
 
 async function listSaved(page: import('@playwright/test').Page, projectId: string) {
   return page.evaluate(async (pid) => {
-    const w = window as Window & {
+    const w = window as unknown as Window & {
       api?: { savedRequest?: { list: (id: string) => Promise<{ success: boolean; data?: unknown[] }> } }
     }
     const res = await w.api?.savedRequest?.list(pid)

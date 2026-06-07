@@ -26,7 +26,7 @@ uiTest.describe('Tur1 — DB branch isolation [MST-264]', () => {
     const countOn = async (scope: string, label: string) =>
       window.evaluate(
         async ({ pid, br, n }) => {
-          const w = window as Window & {
+          const w = window as unknown as Window & {
             api?: { savedRequest?: { list: (id: string, b?: string | null) => Promise<{ success: boolean; data?: Array<{ name: string }> }> } }
           }
           const res = await w.api?.savedRequest?.list(pid, br)

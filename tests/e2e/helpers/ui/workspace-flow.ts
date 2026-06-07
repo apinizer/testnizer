@@ -1,8 +1,15 @@
 import { expect, type Page } from '@playwright/test'
 
-/** Return to Project Home via header home tab (clears active project). */
+/** Return to Project Home via header home tab (clears active project).
+ *
+ * When no project is active the app is ALREADY on Project Home and the Header
+ * (with header-home) isn't rendered — so only click header-home when it exists,
+ * otherwise we're already there. */
 export async function goToProjectHome(page: Page): Promise<void> {
-  await page.getByTestId('header-home').click()
+  const alreadyHome = await page.getByTestId('project-home').isVisible().catch(() => false)
+  if (!alreadyHome) {
+    await page.getByTestId('header-home').click()
+  }
   await expect(page.getByTestId('project-home')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByTestId('home-new-project')).toBeVisible({ timeout: 10_000 })
 }

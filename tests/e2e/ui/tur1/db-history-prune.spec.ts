@@ -22,14 +22,14 @@ uiTest.describe('Tur1 — DB history prune [MST-259]', () => {
       })
     }
     const pruned = await window.evaluate(async (wid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { history?: { prune: (limit: number, wsId?: string) => Promise<{ success: boolean; data?: number }> } }
       }
       return w.api?.history?.prune(2, wid)
     }, wsId)
     expect(pruned?.success).toBe(true)
     const list = await window.evaluate(async (wid) => {
-      const w = window as Window & {
+      const w = window as unknown as Window & {
         api?: { history?: { list: (o: unknown) => Promise<{ success: boolean; data?: unknown[] }> } }
       }
       const res = await w.api?.history?.list({ workspace_id: wid, limit: 50 })
