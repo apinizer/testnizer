@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { HttpMethod } from '../types'
+import { useEnvironmentStore } from './environment.store'
 
 // ─── Types matching main process runner ─────────────────────
 
@@ -58,6 +59,10 @@ export interface RunnerReport {
   passedAssertions: number
   failedAssertions: number
   results: EndpointRunResult[]
+  /** Script-written variables persisted during the run (issue #12). The store
+   *  refreshes the env store from these so the env editor + next Send see them. */
+  envUpdates?: Record<string, string>
+  globalUpdates?: Record<string, string>
 }
 
 type RunnerView = 'config' | 'results'
@@ -186,6 +191,7 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
         iterations: state.iterations,
         stopOnError: state.stopOnError,
         persistResponses: state.persistResponses,
+        keepVariableValues: state.keepVariableValues,
       })
 
       acceptProgress = false
@@ -198,6 +204,17 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
           currentIndex: report.totalEndpoints,
           totalCount: report.totalEndpoints,
         })
+        // Scripts may have written env/global variables that the main process
+        // already persisted to the DB (Keep variable values). Refresh the env
+        // store so the env editor and the next "Send" see them without a manual
+        // reload (issue #12).
+        const wroteVars =
+          Object.keys(report.envUpdates ?? {}).length > 0 ||
+          Object.keys(report.globalUpdates ?? {}).length > 0
+        if (wroteVars && state.keepVariableValues) {
+          const envStore = useEnvironmentStore.getState()
+          await Promise.all([envStore.fetchEnvironments(), envStore.fetchGlobalVariables()])
+        }
       }
     } catch {
       // Error handled via results — but ensure we stop accepting late progress

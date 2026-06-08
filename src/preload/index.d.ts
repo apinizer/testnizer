@@ -600,6 +600,9 @@ interface RunnerExecuteOptions {
   /** Persist requestHeaders/requestBody/responseHeaders/responseBody on each
    *  result. Default true; set false to keep memory low for very large runs. */
   persistResponses?: boolean
+  /** Postman "Keep variable values" — persist script-written env/global
+   *  variables back to the active environment after the run. Default true. */
+  keepVariableValues?: boolean
   folderName?: string
   sourceLabel?: string
 }
@@ -649,6 +652,10 @@ interface RunnerReport {
   passedAssertions: number
   failedAssertions: number
   results: EndpointRunResult[]
+  /** Variables written by scripts during the run (and persisted when
+   *  keepVariableValues is on) — renderer refreshes its env store from these. */
+  envUpdates?: Record<string, string>
+  globalUpdates?: Record<string, string>
 }
 
 interface RunnerExportOptions {
