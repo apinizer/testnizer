@@ -15,7 +15,6 @@ import NewProjectModal from '../modals/NewProjectModal'
 import EndpointSaveModal from '../modals/EndpointSaveModal'
 import ProjectDetailModal from '../modals/ProjectDetailModal'
 import ProfileModal from '../modals/ProfileModal'
-import AboutModal from '../modals/AboutModal'
 import EnterpriseModal from '../modals/EnterpriseModal'
 import CollectionRunnerModal from '../modals/CollectionRunnerModal'
 import MergeConflictModal from '../modals/MergeConflictModal'
@@ -67,7 +66,6 @@ export default function AppShell() {
   const activeSidebarPage = useUIStore((s) => s.activeSidebarPage)
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
   const setShowCommandPalette = useUIStore((s) => s.setShowCommandPalette)
-  const setShowAboutModal = useUIStore((s) => s.setShowAboutModal)
   const setShowImportModal = useUIStore((s) => s.setShowImportModal)
   const setShowSettingsModal = useUIStore((s) => s.setShowSettingsModal)
   const setShowSaveModal = useUIStore((s) => s.setShowSaveModal)
@@ -83,18 +81,10 @@ export default function AppShell() {
 
   useKeyboardShortcuts()
 
-  // Subscribe to the native menu's "About Testnizer" item so it opens our
-  // in-app AboutModal instead of Electron's default About panel. The
-  // subscription lives at the shell level so it survives sidebar / tab
-  // changes.
-  useEffect(() => {
-    const unsub = window.api?.app?.onOpenAbout?.(() => {
-      setShowAboutModal(true)
-    })
-    return () => {
-      unsub?.()
-    }
-  }, [setShowAboutModal])
+  // NOTE: the native "About Testnizer" menu listener + the AboutModal mount
+  // were lifted to App.tsx (root) so they also work on the login / welcome
+  // screen, where AppShell isn't rendered (user-reported: About did nothing
+  // before sign-in).
 
   // Native File-menu commands. Routes each Electron menu click to the
   // matching modal/action so File → Import, Settings, Save etc. work.
@@ -254,7 +244,6 @@ export default function AppShell() {
         <UpdateModal />
         <NewProjectModal />
         <ProfileModal />
-        <AboutModal />
         <CommandPalette open={showCommandPalette} onOpenChange={setShowCommandPalette} />
         <ShortcutCheatsheetModal />
       </div>
@@ -302,7 +291,6 @@ export default function AppShell() {
       <EndpointSaveModal />
       <ProjectDetailModal />
       <ProfileModal />
-      <AboutModal />
       <EnterpriseModal />
       <CollectionRunnerModal />
       <MergeConflictModal />

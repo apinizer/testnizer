@@ -1,6 +1,17 @@
 import { create } from 'zustand'
 
-type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'
+// `idle` = never checked this session (neutral — DON'T claim "up to date").
+// `up-to-date` = a check ran and returned no newer version. Keeping these
+// distinct stops the modal from greeting a fresh open with a green "you're up
+// to date" before any check has actually happened (user-reported).
+type UpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'up-to-date'
+  | 'downloading'
+  | 'ready'
+  | 'error'
 
 interface UpdaterStore {
   status: UpdateStatus
@@ -140,7 +151,7 @@ export function initUpdaterListeners(): (() => void) | undefined {
         }
         break
       case 'not-available':
-        store.setStatus('idle')
+        store.setStatus('up-to-date')
         break
       case 'downloading':
         store.setStatus('downloading')
