@@ -11,6 +11,32 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.14
+
+**Scriptler artık bir kez token alıp tüm suite boyunca yeniden kullanabilir —
+`insomnia.*` / `bru.*` script API'leri destekleniyor ve Collection Runner,
+scriptlerinizin yazdığı değişkenleri kalıcı tutuyor (Postman "Keep variable
+values").**
+
+- **Insomnia / Bruno scriptleri:** ön-istek ve test scriptleri artık `insomnia.*`
+  ve `bru.*` nesnelerini (`pm.*` takma adları) kullanabiliyor; böylece Insomnia
+  v5 ve Bruno'dan içe aktarılan koleksiyonlar değişmeden çalışıyor. Önceden
+  `insomnia.environment.set(...)` "insomnia is not defined" hatası fırlatıyor, bu
+  hata yutuluyor ve değişken sessizce hiç set edilmiyordu — setup isteğinde
+  oluşturulan token sonraki isteklere ulaşmıyor ve folder Run'lar
+  401 Empty Key! ile başarısız oluyordu (issue #12).
+- **Runner — kalıcı değişkenler:** Collection Runner artık "Keep variable values"
+  ayarına uyuyor. Bir çalıştırma sırasında scriptlerin yazdığı environment /
+  global değişkenler (`pm.environment.set`, `insomnia.environment.set`,
+  `pm.globals.set`) çalıştırma bitince aktif environment'a / proje globals'ına
+  geri yazılıyor; böylece bir kez alınan token sonraki tüm isteklerde ve sonraki
+  çalıştırmalarda yeniden kullanılıyor — ve tek yerde yenileniyor. İstek-yerel
+  `pm.variables.*` değişkenleri Postman'deki gibi geçici kalıyor.
+
+**Testler:** token yeniden kullanımı, Insomnia/Bruno script takma adları ve
+değişken kalıcılığını kapsayan 10 yeni regresyon testi (düzeltmeden önce
+başarısız / sonra başarılı) — birim test takımı 1706'ya ulaştı.
+
 ## v1.4.13
 
 **macOS derlemeleri artık Apple Developer ID ile imzalanıyor ve Apple

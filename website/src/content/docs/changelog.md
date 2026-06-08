@@ -10,6 +10,31 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.14
+
+**Scripts can now fetch a token once and reuse it across the whole suite —
+`insomnia.*` / `bru.*` script APIs are supported, and the Collection Runner
+persists the variables your scripts write (Postman "Keep variable values").**
+
+- **Insomnia / Bruno scripts:** pre-request and test scripts can now use the
+  `insomnia.*` and `bru.*` objects (aliases of `pm.*`), so collections imported
+  from Insomnia v5 and Bruno run unchanged. Previously
+  `insomnia.environment.set(...)` threw "insomnia is not defined", the error was
+  swallowed, and the variable was silently never set — a token created in a
+  setup request never reached later requests and folder Runs failed with
+  401 Empty Key! (issue #12).
+- **Runner — persisted variables:** the Collection Runner now honours its
+  "Keep variable values" setting. Environment / global variables written by
+  scripts during a run (`pm.environment.set`, `insomnia.environment.set`,
+  `pm.globals.set`) are saved back to the active environment / project globals
+  when the run finishes, so a token fetched once is reused — and refreshed in
+  one place — by every later request and by subsequent runs. Request-local
+  `pm.variables.*` stay ephemeral, matching Postman.
+
+**Tests:** 10 new regression tests (fail-before / pass-after) cover token reuse,
+the Insomnia/Bruno script aliases, and variable persistence — bringing the unit
+suite to 1706.
+
 ## v1.4.13
 
 **macOS builds are now signed with an Apple Developer ID and notarized by
