@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { X, Loader2, CheckCircle2, AlertCircle, Download } from 'lucide-react'
 import * as DOMPurifyNs from 'dompurify'
 import { useUIStore } from '../../stores/ui.store'
@@ -35,12 +36,12 @@ function resolveSanitize(): (input: string, opts: unknown) => string {
 const sanitizeHtml = resolveSanitize()
 import { useUpdaterStore } from '../../stores/updater.store'
 import { useTranslation } from '../../lib/i18n'
-import { isMac } from '../../lib/platform'
 import Modal from '../shared/Modal'
 
-// Where users land to grab a build by hand. macOS ad-hoc/unsigned builds can't
-// self-install (electron-updater fails the code-signature check), so on macOS
-// this is the *primary* update path, not just an error fallback (#34).
+// Where users land to grab a build by hand — kept only as the error-state
+// fallback. macOS builds are now signed + notarized (v1.4.13+), so the in-app
+// "Download & Install" auto-update path works on macOS too and is the primary
+// route again (#34); the old isMac() hard-block here was obsolete.
 const DOWNLOAD_PAGE = 'https://www.testnizer.com/download/'
 
 export default function UpdateModal() {
@@ -56,6 +57,13 @@ export default function UpdateModal() {
   const check = useUpdaterStore((s) => s.check)
   const download = useUpdaterStore((s) => s.download)
   const install = useUpdaterStore((s) => s.install)
+
+  // Auto-check the moment the modal opens from a never-checked state, so the
+  // user never sees a stale "you're up to date" before a real check runs. Once
+  // a check is in flight or has a result the status leaves 'idle' and this no-ops.
+  useEffect(() => {
+    if (show && status === 'idle') check()
+  }, [show, status, check])
 
   if (!show) return null
 
@@ -168,11 +176,6 @@ function StatusContent({
               />
             </div>
           )}
-          {isMac() && (
-            <span className="text-center text-sm text-[var(--muted)]">
-              {t('update.macAutoUnavailable')}
-            </span>
-          )}
         </>
       )
     case 'downloading':
@@ -202,11 +205,11 @@ function StatusContent({
           <AlertCircle size={32} className="text-[#cc2200]" />
           <span className="font-medium text-[#cc2200]">{t('update.error')}</span>
           {errorMessage && <span className="text-[var(--muted)]">{errorMessage}</span>}
-          {/* Auto-update can fail for reasons outside the app's control (e.g.
-              an unsigned macOS build can't self-update). Always give the user
-              a way forward — download the latest build manually (#34). */}
+          {/* Auto-update can still fail for reasons outside the app's control
+              (e.g. the app isn't in /Applications, or a network/permission
+              issue). Always give the user a way forward — download manually. */}
           <a
-            href="https://www.testnizer.com/download/"
+            href={DOWNLOAD_PAGE}
             target="_blank"
             rel="noreferrer"
             className="text-[var(--accent-text)] underline"
@@ -215,11 +218,20 @@ function StatusContent({
           </a>
         </>
       )
-    default:
+    case 'up-to-date':
       return (
         <>
           <CheckCircle2 size={32} className="text-[var(--green)]" />
           <span className="text-[var(--muted)]">{t('update.upToDate')}</span>
+        </>
+      )
+    default:
+      // 'idle' — never checked yet. Neutral prompt, NOT a green "up to date"
+      // claim (which would be a lie before any check has run).
+      return (
+        <>
+          <Download size={32} className="text-[var(--muted)]" />
+          <span className="text-[var(--muted)]">{t('update.notChecked')}</span>
         </>
       )
   }
@@ -245,22 +257,10 @@ function UpdateActions({
     case 'downloading':
       return null
     case 'available':
-      // macOS builds are ad-hoc/unsigned and electron-updater can't self-
-      // install them — the in-app "Download & Install" path always ends in a
-      // code-signature error (#34). Send macOS users straight to the manual
-      // download instead of letting them hit that dead end.
-      if (isMac()) {
-        return (
-          <a
-            href={DOWNLOAD_PAGE}
-            target="_blank"
-            rel="noreferrer"
-            className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white no-underline transition-colors hover:opacity-90"
-          >
-            {t('update.downloadManually')}
-          </a>
-        )
-      }
+      // Signed + notarized builds (all platforms incl. macOS since v1.4.13)
+      // can self-install via electron-updater, so every platform gets the
+      // in-app Download & Install button. If the install fails the store flips
+      // to 'error', whose action offers the manual download fallback.
       return (
         <button
           type="button"

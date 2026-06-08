@@ -102,10 +102,25 @@ export default function LoginScreen() {
   const hasPasswordSet = useAuthStore((s) => s.hasPasswordSet)
   const checkHasPassword = useAuthStore((s) => s.checkHasPassword)
   const isLoading = useAuthStore((s) => s.isLoading)
+  const [appVersion, setAppVersion] = useState<string | null>(null)
 
   useEffect(() => {
     checkHasPassword()
   }, [checkHasPassword])
+
+  // Show the build version on the first screen (user-reported: it was missing).
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const v = (await window.api?.app?.version?.()) as
+        | { success: boolean; data?: { version: string } }
+        | undefined
+      if (!cancelled && v?.success && v.data?.version) setAppVersion(v.data.version)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     clearError()
@@ -158,6 +173,20 @@ export default function LoginScreen() {
           <span style={{ fontSize: 26, fontWeight: 700, color: '#fff', letterSpacing: -0.5 }}>
             Testnizer
           </span>
+
+          {appVersion && (
+            <span
+              data-testid="login-app-version"
+              style={{
+                fontSize: 12,
+                color: 'rgba(255,255,255,0.6)',
+                marginTop: -12,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              v{appVersion}
+            </span>
+          )}
 
           <div
             style={{
