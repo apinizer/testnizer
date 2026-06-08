@@ -358,6 +358,13 @@ jobs:
           node-version: 20
           cache: npm
 
+      # Same node-gyp vs Python 3.12+ break as macOS: the Windows runner image
+      # dropped distutils, so better-sqlite3's node-gyp fallback dies with
+      # "No module named 'distutils'". Pin a node-gyp-friendly Python.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install deps (host arch only)
         run: npm ci
 
