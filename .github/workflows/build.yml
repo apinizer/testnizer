@@ -467,6 +467,12 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Check out the tag so docs/release-notes/v<tag>.md is on disk. Without
+      # this the job ran in an empty workspace, the `-s` test below always
+      # failed, and every release since the monorepo move (v1.4.12+) shipped the
+      # fallback stub instead of the real notes. fetch-depth: 1 at the tag ref
+      # is enough — we only read one file.
+      - uses: actions/checkout@v4
       # Read the release notes for this tag from the in-repo single source of
       # truth: docs/release-notes/v<tag>.md (the same content mirrored into the
       # website changelog). Monorepo move: this used to curl the changelog out
