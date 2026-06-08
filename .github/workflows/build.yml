@@ -175,6 +175,15 @@ jobs:
           node-version: 20
           cache: npm
 
+      # GitHub's macOS runner image bumped its default Python to 3.14, which
+      # node-gyp 9 can't drive (distutils was removed in Python 3.12) — so
+      # better-sqlite3 fails to compile whenever no matching prebuild is found.
+      # Pin a node-gyp-friendly Python (<=3.11) for a deterministic native
+      # build that survives runner-image drift.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install deps (host arch only)
         run: npm ci
 
