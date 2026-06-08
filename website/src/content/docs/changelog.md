@@ -10,6 +10,30 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.15
+
+**macOS in-app auto-update now actually works, the update panel stops claiming
+"you're up to date" before it has checked, and the welcome screen gained the
+version number plus a working About menu.**
+
+- **macOS auto-update (for real):** now that builds are signed and notarized
+  (v1.4.13+), the in-app Download & Install flow works on macOS too — the old
+  block that forced macOS users to a manual download has been removed (the
+  manual link remains as a fallback).
+- **Honest update status:** the update panel no longer shows a green "you're up
+  to date" before any check has run. Opening it runs a check automatically and
+  only reports "up to date" once a check confirms there's no newer version.
+- **About works on the welcome screen:** Testnizer → About Testnizer now opens
+  the About dialog even before you've signed in (previously it did nothing on
+  the first screen).
+- **Version on the welcome screen:** the first-run screen now shows the build
+  version.
+- **Turkish polish:** the update-panel Turkish strings now use correct
+  diacritics.
+
+**Tests:** updater event→status mapping, the macOS in-app Download path, and the
+welcome-screen version badge — unit suite now at 1715.
+
 ## v1.4.14
 
 **Scripts can now fetch a token once and reuse it across the whole suite —

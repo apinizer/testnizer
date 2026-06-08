@@ -11,6 +11,31 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.15
+
+**macOS'ta uygulama içi otomatik güncelleme artık gerçekten çalışıyor, güncelleme
+paneli kontrol etmeden "güncelsiniz" demeyi bıraktı ve karşılama ekranına sürüm
+numarası ile çalışan bir About menüsü eklendi.**
+
+- **macOS otomatik güncelleme (gerçekten):** derlemeler artık imzalı ve notarize
+  (v1.4.13+) olduğundan, uygulama içi İndir & Kur akışı macOS'ta da çalışıyor —
+  macOS kullanıcılarını manuel indirmeye zorlayan eski engel kaldırıldı (manuel
+  indirme bağlantısı yedek olarak duruyor).
+- **Dürüst güncelleme durumu:** güncelleme paneli artık hiç kontrol yapmadan
+  yeşil "güncelsiniz" göstermiyor. Panel açılınca otomatik kontrol yapılıyor ve
+  yalnızca kontrol daha yeni sürüm olmadığını doğruladığında "güncelsiniz"
+  deniyor.
+- **About karşılama ekranında çalışıyor:** Testnizer → About Testnizer artık
+  oturum açmadan önce de About penceresini açıyor (önceden ilk ekranda hiçbir şey
+  olmuyordu).
+- **Karşılama ekranında sürüm:** ilk açılış ekranı artık derleme sürümünü
+  gösteriyor.
+- **Türkçe iyileştirme:** güncelleme panelindeki Türkçe metinler artık doğru
+  diakritikleri kullanıyor (örn. "Guncelsiniz" yerine "Güncelsiniz").
+
+**Testler:** updater olay→durum eşlemesi, macOS uygulama içi İndir yolu ve
+karşılama ekranı sürüm rozeti — birim test takımı 1715'e ulaştı.
+
 ## v1.4.14
 
 **Scriptler artık bir kez token alıp tüm suite boyunca yeniden kullanabilir —
