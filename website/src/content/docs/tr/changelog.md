@@ -11,6 +11,30 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.13
+
+**macOS derlemeleri artık Apple Developer ID ile imzalanıyor ve Apple
+tarafından notarize ediliyor — "bilinmeyen geliştirici" / "uygulama
+zarar görmüş" Gatekeeper engeli kalktı, uygulama içi otomatik güncelleme
+artık macOS'ta da çalışıyor.**
+
+- **macOS — imzalı & notarize:** her macOS derlemesi artık Developer ID
+  Application sertifikasıyla kod imzalanıyor ve Apple notary servisinden
+  geçiriliyor; hardened runtime etkin. Gatekeeper uygulamayı doğrudan açar —
+  sağ tık → Aç geçici çözümüne gerek yok, Apple Silicon'da "uygulama zarar
+  görmüş ve açılamıyor" hatası yok.
+- **macOS — otomatik güncelleme:** derlemeler artık notarize edildiği için
+  uygulama içi otomatik güncellemeler macOS'ta da çalışıyor (önceden macOS
+  kullanıcıları manuel indirmeye yönlendiriliyordu, issue #34).
+- **Kalite:** otomatik test katmanı manuel checklist kapsama taramasının
+  ardından 679 UI E2E testine ve 1696 birim testine ulaştı — yeni senaryolar
+  header otomatik tamamlama, çözümlenmiş gerçek-istek görünümü, auth tipi
+  seçimi, mock CORS ve proxy kaydı, Insomnia dışa aktarma, PFX/PKCS12
+  sertifikaları ve suite öğesi yeniden adlandırmayı kapsıyor.
+
+İstekler, protokoller veya veride işlevsel değişiklik yok — bu sürüm güven
+(imzalama) ve doğrulama (testler) ile ilgili. Windows imzalama hâlâ sürüyor.
+
 ## v1.4.12
 
 **İstek yaşam döngüsü iyileştirmeleri (oluşturunca açılma, kaydedilmemiş

@@ -10,6 +10,29 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.13
+
+**macOS builds are now signed with an Apple Developer ID and notarized by
+Apple — no more "unidentified developer" / "app is damaged" Gatekeeper block,
+and in-app auto-update now works on macOS too.**
+
+- **macOS — signed & notarized:** every macOS build is now code-signed with a
+  Developer ID Application certificate and notarized through Apple's notary
+  service, with the hardened runtime enabled. Gatekeeper opens the app directly
+  — no right-click → Open workaround, and no "app is damaged and can't be
+  opened" error on Apple Silicon.
+- **macOS — auto-update:** because builds are now notarized, in-app automatic
+  updates work on macOS as well (previously macOS users were routed to a manual
+  download, issue #34).
+- **Quality:** the automated test layer grew to 679 UI E2E tests and 1696 unit
+  tests after a manual-checklist coverage sweep — new journeys cover header
+  autocomplete, the resolved actual-request view, auth-type selection, mock
+  CORS and proxy recording, Insomnia export, PFX/PKCS12 certificates and
+  suite-item rename.
+
+No functional changes to requests, protocols or data — this release is about
+trust (signing) and verification (tests). Windows signing is still in progress.
+
 ## v1.4.12
 
 **Request lifecycle polish (open-on-create, unsaved-changes dialog, dirty dots
