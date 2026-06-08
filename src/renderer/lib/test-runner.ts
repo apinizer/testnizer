@@ -1087,11 +1087,15 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
   try {
     // `t` is a Testnizer-branded alias for `pm`. Both bind to the same API so
     // imported Postman scripts (which use `pm.*`) keep working unchanged, while
-    // new Testnizer scripts can opt into the shorter `t.*` form. CryptoJS is
+    // new Testnizer scripts can opt into the shorter `t.*` form. `insomnia` and
+    // `bru` are likewise aliases so scripts imported from Insomnia v5
+    // (`insomnia.environment.set(...)`) and Bruno run unchanged — without them
+    // those scripts threw "insomnia is not defined", the catch swallowed it,
+    // and the env write silently never happened (issue #12). CryptoJS is
     // exposed for HMAC / SHA / AES use cases (AWS sig v4, webhook signing) —
     // mirrors Postman's built-in (Mehmet BUG-05).
-    const fn = new Function('pm', 't', 'console', 'CryptoJS', script)
-    fn(pmApi, pmApi, captureConsole, CryptoJS)
+    const fn = new Function('pm', 't', 'insomnia', 'bru', 'console', 'CryptoJS', script)
+    fn(pmApi, pmApi, pmApi, pmApi, captureConsole, CryptoJS)
   } catch (e) {
     const msg = (e as Error).message
     if (msg !== '__pm_skip_request_signal__') {

@@ -525,3 +525,144 @@ describe('executeCollection — assertions', () => {
     expect(res.data?.failedAssertions).toBe(0)
   })
 })
+
+// ─── g. Script-written variables persist (issue #12) ─────────────
+//
+// "Fetch a token once, reuse it across the suite, refresh it in one place."
+// Two regressions broke this: (1) the script sandbox only exposed `pm`, so
+// Insomnia-imported `insomnia.environment.set(...)` threw "insomnia is not
+// defined" and the write silently never happened; (2) even when the write
+// landed, the runner never persisted it back to the DB, so a second folder run
+// saw an empty `{{accessToken}}` and got 401.
+
+/** Read a variable row from the project's active environment. */
+function readActiveEnvVar(key: string): { value: string } | undefined {
+  const env = testDb
+    .prepare('SELECT id FROM environments WHERE project_id = ? AND is_active = 1 LIMIT 1')
+    .get(projectId) as { id: string } | undefined
+  if (!env) return undefined
+  return testDb
+    .prepare('SELECT value FROM environment_variables WHERE environment_id = ? AND key = ?')
+    .get(env.id, key) as { value: string } | undefined
+}
+
+describe('executeCollection — script variable persistence (issue #12)', () => {
+  it('reuses a pm.environment.set token in a later request within the same run', async () => {
+    seedActiveBaseEnv()
+    const loginId = seedEndpoint({
+      name: 'Login',
+      method: 'POST',
+      url: '{{base}}/token',
+      // Derive the token from the response so pm.response.json() is exercised
+      // too — echo server returns { ok, path, echo }; path of /token → 'token'.
+      postScript: `pm.environment.set('accessToken', 'TOK-' + pm.response.json().path.slice(1))`,
+    })
+    const dataId = seedEndpoint({
+      name: 'Data',
+      url: '{{base}}/data?t={{accessToken}}',
+    })
+
+    const res = await run({ endpointIds: [loginId, dataId] })
+
+    expect(res.success).toBe(true)
+    expect(received.map((r) => r.url)).toEqual(['/token', '/data?t=TOK-token'])
+  })
+
+  it('honours insomnia.environment.set (Insomnia v5 imports) — was silently dropped', async () => {
+    seedActiveBaseEnv()
+    const loginId = seedEndpoint({
+      name: 'Login',
+      url: '{{base}}/login',
+      postScript: `insomnia.environment.set('accessToken', 'INSO-TOKEN')`,
+    })
+    const dataId = seedEndpoint({
+      name: 'Data',
+      url: '{{base}}/data?t={{accessToken}}',
+    })
+
+    const res = await run({ endpointIds: [loginId, dataId] })
+
+    expect(res.success).toBe(true)
+    // Before the fix this was '/data?t=' (empty) → 401 in the real report.
+    expect(received[1].url).toBe('/data?t=INSO-TOKEN')
+  })
+
+  it('persists a script-written env var to the DB after the run (Keep variable values, default on)', async () => {
+    seedActiveBaseEnv()
+    const loginId = seedEndpoint({
+      name: 'Login',
+      url: '{{base}}/login',
+      postScript: `pm.environment.set('accessToken', 'PERSISTED')`,
+    })
+
+    const res = await run({ endpointIds: [loginId] })
+
+    expect(res.success).toBe(true)
+    // The new var was created in the active environment...
+    expect(readActiveEnvVar('accessToken')?.value).toBe('PERSISTED')
+    // ...and the delta is surfaced on the report for the renderer to refresh.
+    const data = res.data as unknown as { envUpdates?: Record<string, string> }
+    expect(data.envUpdates?.accessToken).toBe('PERSISTED')
+  })
+
+  it('updates an existing env var value rather than duplicating it', async () => {
+    // Pre-seed accessToken with an empty current value (the common imported-
+    // collection shape) — the run should overwrite it, not add a second row.
+    seedActiveEnv({ base: `http://127.0.0.1:${port}`, accessToken: '' })
+    const loginId = seedEndpoint({
+      name: 'Login',
+      url: '{{base}}/login',
+      postScript: `pm.environment.set('accessToken', 'REFRESHED')`,
+    })
+
+    await run({ endpointIds: [loginId] })
+
+    const env = testDb
+      .prepare('SELECT id FROM environments WHERE project_id = ? AND is_active = 1 LIMIT 1')
+      .get(projectId) as { id: string }
+    const rows = testDb
+      .prepare('SELECT value FROM environment_variables WHERE environment_id = ? AND key = ?')
+      .all(env.id, 'accessToken') as Array<{ value: string }>
+    expect(rows.length).toBe(1)
+    expect(rows[0].value).toBe('REFRESHED')
+  })
+
+  it('does NOT persist when keepVariableValues is false (side-effect-free run)', async () => {
+    seedActiveBaseEnv()
+    const loginId = seedEndpoint({
+      name: 'Login',
+      url: '{{base}}/login',
+      postScript: `pm.environment.set('ephemeral', 'X')`,
+    })
+
+    const res = await run({ endpointIds: [loginId], keepVariableValues: false })
+
+    expect(res.success).toBe(true)
+    // Variable resolved within the run but was never written to the DB.
+    expect(readActiveEnvVar('ephemeral')).toBeUndefined()
+  })
+
+  it('persists pm.globals.set writes to the project globals', async () => {
+    seedActiveBaseEnv()
+    const loginId = seedEndpoint({
+      name: 'Login',
+      url: '{{base}}/login',
+      postScript: `pm.globals.set('gKey', 'gVal')`,
+    })
+
+    const res = await run({ endpointIds: [loginId] })
+
+    expect(res.success).toBe(true)
+    const g = testDb
+      .prepare('SELECT value FROM global_variables WHERE project_id = ? AND key = ?')
+      .get(projectId, 'gKey') as { value: string } | undefined
+    expect(g?.value).toBe('gVal')
+    // globals land in globalUpdates, NOT envUpdates.
+    const data = res.data as unknown as {
+      envUpdates?: Record<string, string>
+      globalUpdates?: Record<string, string>
+    }
+    expect(data.globalUpdates?.gKey).toBe('gVal')
+    expect(data.envUpdates?.gKey).toBeUndefined()
+  })
+})

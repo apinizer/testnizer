@@ -10,6 +10,7 @@ import {
 import * as endpointRepo from '../db/endpoint.repo'
 import * as tsiRepo from '../db/test-suite-item.repo'
 import * as historyRepo from '../db/history.repo'
+import * as envRepo from '../db/environment.repo'
 import { getDb } from '../db/database'
 import { isRunnableInProject } from '../lib/ownership'
 import { resolveVariables } from '../lib/variable-resolver'
@@ -85,6 +86,15 @@ interface RunnerExecuteOptions {
    * the report still has assertions, status, timing and size.
    */
   persistResponses?: boolean
+  /**
+   * Postman "Keep variable values" — when true (default) environment / global
+   * variables written by scripts during the run (`pm.environment.set`,
+   * `insomnia.environment.set`, …) are persisted back to the active environment
+   * after the run completes, so a token fetched once in a setup request is
+   * reused (and refreshed in one place) by every later request and by
+   * subsequent runs. Set false to keep the run side-effect-free (issue #12).
+   */
+  keepVariableValues?: boolean
   folderName?: string
   source?: string
   sourceLabel?: string
@@ -155,6 +165,14 @@ interface RunnerReport {
   passedAssertions: number
   failedAssertions: number
   results: EndpointRunResult[]
+  /**
+   * Variables written by scripts during the run and (when keepVariableValues
+   * is on) persisted to the active environment / project globals. The renderer
+   * uses these deltas to refresh its in-memory env store so the next "Send"
+   * and the env editor reflect the new values without a manual reload.
+   */
+  envUpdates?: Record<string, string>
+  globalUpdates?: Record<string, string>
 }
 
 // ─── State ───────────────────────────────────────────────────────
@@ -518,7 +536,10 @@ function sendProgress(progress: RunnerProgress): void {
 
 interface ScriptContext {
   envVars: Record<string, string>
+  /** Active-environment writes (pm.environment.set / collectionVariables.set). */
   envUpdates: Record<string, string>
+  /** Global writes (pm.globals.set) — persisted to project globals, not the env. */
+  globalUpdates: Record<string, string>
   iterationData: Record<string, string>
   iterationIndex: number
   iterationCount: number
@@ -542,6 +563,7 @@ function newScriptContext(
   return {
     envVars: { ...envVars },
     envUpdates: {},
+    globalUpdates: {},
     iterationData,
     iterationIndex,
     iterationCount,
@@ -602,14 +624,20 @@ function runUserScript(
         get: (k: string) => ctx.envVars[k] ?? '',
         set: (k: string, v: unknown) => {
           ctx.envVars[k] = String(v)
-          ctx.envUpdates[k] = String(v)
+          ctx.globalUpdates[k] = String(v)
+        },
+        unset: (k: string) => {
+          delete ctx.envVars[k]
+          ctx.globalUpdates[k] = ''
         },
       },
+      // pm.variables.* are request-local / ephemeral (Postman semantics): they
+      // resolve within this run for convenience but are deliberately NOT routed
+      // into envUpdates, so "Keep variable values" never persists them.
       variables: {
         get: (k: string) => ctx.envVars[k] ?? '',
         set: (k: string, v: unknown) => {
           ctx.envVars[k] = String(v)
-          ctx.envUpdates[k] = String(v)
         },
       },
       collectionVariables: {
@@ -649,8 +677,15 @@ function runUserScript(
   }
 
   try {
-    const fn = new Function('pm', 'console', script)
-    fn(buildPm(), { log, warn: log, error: log })
+    // `insomnia` and `bru` are aliases of the same shim so scripts imported
+    // from Insomnia v5 (`insomnia.environment.set(...)`) and Bruno run
+    // unchanged alongside Postman's `pm.*`. Before this they threw
+    // "insomnia is not defined", the catch below swallowed it, and the env
+    // write never happened — folder runs then sent an empty `{{accessToken}}`
+    // and got 401 (issue #12).
+    const pm = buildPm()
+    const fn = new Function('pm', 'insomnia', 'bru', 'console', script)
+    fn(pm, pm, pm, { log, warn: log, error: log })
   } catch (e) {
     ctx.consoleLogs.push(`Script error: ${(e as Error).message}`)
   }
@@ -1042,6 +1077,14 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   }
   const envVars = loadEnvironmentVariables(effectiveEnvId, options.workspaceId, options.projectId)
 
+  // Run-level accumulators for every variable a script writes. `envVars` is
+  // mutated in place so updates flow to *later requests within this run*; these
+  // two records additionally capture the net deltas so they can be persisted to
+  // the DB after the run (Postman "Keep variable values") and returned to the
+  // renderer to refresh its in-memory env store (issue #12).
+  const runEnvUpdates: Record<string, string> = {}
+  const runGlobalUpdates: Record<string, string> = {}
+
   let totalAssertions = 0
   let passedAssertions = 0
   let failedAssertions = 0
@@ -1115,10 +1158,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
           const scriptCtx = newScriptContext(envVars, iterationData[iter] ?? {}, iter, iterations)
           if (schemaForScripts.preScript) {
             runUserScript(schemaForScripts.preScript, scriptCtx, null)
-            // Push script env updates back into the global env vars map.
-            for (const [k, v] of Object.entries(scriptCtx.envUpdates)) {
-              envVars[k] = v
-            }
+            mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
             if (scriptCtx.skipRequest) {
               const skipResult: EndpointRunResult = {
                 endpointId,
@@ -1151,6 +1191,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
           const scriptTestResults: AssertionResult[] = []
           if (schemaForScripts.postScript) {
             scriptCtx.envUpdates = {}
+            scriptCtx.globalUpdates = {}
             runUserScript(schemaForScripts.postScript, scriptCtx, {
               status: response.status,
               statusText: response.statusText,
@@ -1158,9 +1199,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
               body: response.body,
               bodySize: response.bodySize,
             })
-            for (const [k, v] of Object.entries(scriptCtx.envUpdates)) {
-              envVars[k] = v
-            }
+            mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
             for (const t of scriptCtx.testResults) {
               scriptTestResults.push({
                 name: t.name,
@@ -1342,6 +1381,14 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
     activeRuns.delete(runId)
   }
 
+  // Persist script-written variables back to the DB (Postman "Keep variable
+  // values", default on). Mirrors the renderer's Send-path
+  // `environment.store.applyScriptUpdates` so a token fetched once survives
+  // across separate folder runs and shows up in the env editor (issue #12).
+  if (options.keepVariableValues !== false) {
+    persistRunVariableUpdates(effectiveEnvId, options.projectId, runEnvUpdates, runGlobalUpdates)
+  }
+
   const completedAt = Date.now()
   const durationMs = completedAt - startedAt
   const avgRespTime =
@@ -1397,6 +1444,95 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
     passedAssertions,
     failedAssertions,
     results,
+    envUpdates: runEnvUpdates,
+    globalUpdates: runGlobalUpdates,
+  }
+}
+
+/**
+ * Merge a single script execution's writes into the run-level state: the live
+ * `envVars` map (so later requests in this run resolve the new values) and the
+ * persisted-delta accumulators. Called after both pre- and post-scripts.
+ */
+function mergeScriptUpdates(
+  ctx: ScriptContext,
+  envVars: Record<string, string>,
+  runEnvUpdates: Record<string, string>,
+  runGlobalUpdates: Record<string, string>,
+): void {
+  for (const [k, v] of Object.entries(ctx.envUpdates)) {
+    envVars[k] = v
+    runEnvUpdates[k] = v
+  }
+  for (const [k, v] of Object.entries(ctx.globalUpdates)) {
+    envVars[k] = v
+    runGlobalUpdates[k] = v
+  }
+}
+
+/**
+ * Write the net variable deltas of a run back to the database: environment
+ * writes go to the project's active environment, global writes to the project's
+ * globals (creating rows that don't exist yet, updating the current `value`
+ * column of those that do). Best-effort — a persistence failure must never fail
+ * the run or lose the report, so everything is wrapped in try/catch.
+ */
+function persistRunVariableUpdates(
+  environmentId: string | undefined,
+  projectId: string,
+  envUpdates: Record<string, string>,
+  globalUpdates: Record<string, string>,
+): void {
+  // ── Active-environment variables ───────────────────────────────
+  const envKeys = Object.keys(envUpdates)
+  if (environmentId && envKeys.length > 0) {
+    try {
+      const byKey = new Map(envRepo.getVariablesByEnvironment(environmentId).map((r) => [r.key, r]))
+      for (const key of envKeys) {
+        const row = byKey.get(key)
+        if (row) {
+          envRepo.updateVariable(row.id, { value: envUpdates[key] })
+        } else {
+          envRepo.createVariable({ environment_id: environmentId, key, value: envUpdates[key] })
+        }
+      }
+    } catch (e) {
+      console.error('[runner] persist env variable updates failed:', (e as Error).message)
+    }
+  }
+
+  // ── Project globals ────────────────────────────────────────────
+  const globalKeys = Object.keys(globalUpdates)
+  if (projectId && globalKeys.length > 0) {
+    try {
+      const byKey = new Map(envRepo.getGlobalVariablesByProject(projectId).map((r) => [r.key, r]))
+      let workspaceId: string | undefined
+      for (const key of globalKeys) {
+        const row = byKey.get(key)
+        if (row) {
+          envRepo.updateGlobalVariable(row.id, { value: globalUpdates[key] })
+        } else {
+          // Creating a row needs the FK workspace_id — derive it once from the
+          // project (the renderer scopes globals per-project, so we match that).
+          if (workspaceId === undefined) {
+            const proj = getDb()
+              .prepare('SELECT workspace_id FROM projects WHERE id = ?')
+              .get(projectId) as { workspace_id: string } | undefined
+            workspaceId = proj?.workspace_id ?? ''
+          }
+          if (workspaceId) {
+            envRepo.createGlobalVariable({
+              workspace_id: workspaceId,
+              project_id: projectId,
+              key,
+              value: globalUpdates[key],
+            })
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[runner] persist global variable updates failed:', (e as Error).message)
+    }
   }
 }
 

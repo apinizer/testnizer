@@ -87,6 +87,45 @@ describe('pm.environment', () => {
   })
 })
 
+// ─── Script object aliases: insomnia / bru / t (issue #12) ───────
+//
+// Insomnia v5 and Bruno exports call `insomnia.*` / `bru.*`, and Testnizer
+// scripts may use the short `t.*`. All bind to the same pm shim — before the
+// fix `insomnia.environment.set(...)` threw "insomnia is not defined", runScript
+// swallowed it, and the env write silently vanished (folder Run → empty token).
+
+describe('script object aliases', () => {
+  it('insomnia.environment.set is captured exactly like pm.environment.set', async () => {
+    const pm = makePm(makeResponse())
+    const out = await runScript(`insomnia.environment.set('accessToken', 'INSO')`, pm)
+    expect(out.envUpdates).toEqual({ accessToken: 'INSO' })
+  })
+
+  it('bru.environment.set is captured (Bruno imports)', async () => {
+    const pm = makePm(makeResponse())
+    const out = await runScript(`bru.environment.set('accessToken', 'BRU')`, pm)
+    expect(out.envUpdates).toEqual({ accessToken: 'BRU' })
+  })
+
+  it('t.* is the Testnizer-branded alias of pm.*', async () => {
+    const pm = makePm(makeResponse())
+    const out = await runScript(`t.environment.set('accessToken', 'T')`, pm)
+    expect(out.envUpdates).toEqual({ accessToken: 'T' })
+  })
+
+  it('insomnia and pm share one backing store within a script', async () => {
+    const pm = makePm(makeResponse())
+    const script = `
+      insomnia.environment.set('token', 'shared')
+      pm.test('cross-alias read', () => {
+        pm.expect(pm.environment.get('token')).to.equal('shared')
+      })`
+    const out = await runScript(script, pm)
+    expect(out.results[0].passed).toBe(true)
+    expect(out.envUpdates).toEqual({ token: 'shared' })
+  })
+})
+
 // ─── pm.globals ──────────────────────────────────────────────────
 
 describe('pm.globals', () => {
