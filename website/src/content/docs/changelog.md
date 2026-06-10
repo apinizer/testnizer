@@ -10,6 +10,26 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.17
+
+**Packaging fix: macOS (and Windows) auto-update works again. No app changes —
+this release only repairs the release pipeline that produced broken update
+metadata in v1.4.16.**
+
+- **macOS auto-update fixed (v1.4.16 regression):** v1.4.16's macOS update failed
+  with `sha512 checksum mismatch`. macOS and Windows builds produced a zip with
+  the same filename (`Testnizer-<version>-<arch>.zip`) and published it to the
+  same release, so the Windows arm64 zip overwrote the macOS arm64 zip. The
+  unused Windows `zip` target has been removed, eliminating the collision.
+- **Both architectures update again (mac + Windows):** each platform now builds
+  both arches in a single step, emitting one complete `latest-mac.yml` /
+  `latest.yml`. Previously per-arch jobs clobbered each other's manifest, so only
+  one architecture was listed and the other got "no update".
+
+**Upgrading from v1.4.16 on macOS:** v1.4.16's update metadata is broken, so the
+in-app updater can't reach v1.4.17 on its own — download the v1.4.17 `.dmg`
+once; auto-update works normally from v1.4.17 onward.
+
 ## v1.4.16
 
 **Folder- and project-level authorization + scripts that requests inherit, plus

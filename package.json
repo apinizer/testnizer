@@ -1,7 +1,7 @@
 {
   "name": "testnizer",
   "productName": "Testnizer",
-  "version": "1.4.16",
+  "version": "1.4.17",
   "description": "Testnizer — Cross-platform desktop API testing application",
   "main": "./out/main/index.js",
   "homepage": "https://www.testnizer.com",
@@ -261,8 +261,7 @@
     },
     "win": {
       "target": [
-        "nsis",
-        "zip"
+        "nsis"
       ],
       "icon": "build/icon.ico",
       "artifactName": "Testnizer-${version}-${arch}.${ext}",

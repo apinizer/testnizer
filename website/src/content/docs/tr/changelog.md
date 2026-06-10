@@ -11,6 +11,27 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.17
+
+**Paketleme düzeltmesi: macOS (ve Windows) otomatik güncellemesi yeniden
+çalışıyor. Uygulamada değişiklik yok — bu sürüm yalnızca v1.4.16'da bozuk
+güncelleme metadata'sı üreten release hattını onarır.**
+
+- **macOS otomatik güncelleme düzeltildi (v1.4.16 regresyonu):** v1.4.16'da macOS
+  güncellemesi `sha512 checksum mismatch` ile başarısız oluyordu. macOS ve
+  Windows derlemeleri aynı isimde (`Testnizer-<sürüm>-<arch>.zip`) bir zip üretip
+  aynı release'e yüklüyordu; Windows arm64 zip'i macOS arm64 zip'ini eziyordu.
+  Kullanılmayan Windows `zip` target'ı kaldırıldı, çakışma giderildi.
+- **Her iki mimari yeniden güncellenebiliyor (mac + Windows):** her platform artık
+  iki mimariyi tek adımda derleyip tek ve eksiksiz `latest-mac.yml` / `latest.yml`
+  üretiyor. Önceden her mimari job'u kendi manifest'ini yazıp diğerini eziyordu;
+  bu yüzden yalnızca tek mimari listeleniyor, diğeri "güncelleme yok" alıyordu.
+
+**v1.4.16'dan macOS'ta yükseltme:** v1.4.16'nın güncelleme metadata'sı bozuk
+olduğu için uygulama içi güncelleyici sizi kendiliğinden v1.4.17'ye taşıyamaz —
+v1.4.17 `.dmg`'sini bir kez indirin; v1.4.17'den sonra otomatik güncelleme normal
+çalışır.
+
 ## v1.4.16
 
 **İstekler tarafından miras alınan klasör ve proje seviyesinde yetkilendirme +
