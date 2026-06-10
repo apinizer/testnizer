@@ -11,6 +11,32 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.16
+
+**İstekler tarafından miras alınan klasör ve proje seviyesinde yetkilendirme +
+script'ler; ayrıca iki Insomnia/Postman import düzeltmesi — böylece import edilen
+koleksiyonlar doğru sırada ve ortak auth'u korunmuş hâlde çalışır.**
+
+- **Klasör / projeden auth miras al:** isteğin Auth sekmesine **Üstten miras al**
+  seçeneği eklendi (yeni isteklerde varsayılan). Etkin auth en yakın kazanır
+  mantığıyla çözülür — istek → en yakın klasör → proje — böylece bir kez klasöre
+  (veya Proje Ayarları → Yetkilendirme'ye) `Bearer {{accessToken}}` koyman
+  altındaki tüm isteklerce kullanılır. Açık **No Auth** mirası durdurur.
+- **Klasör Ayarları (auth + script):** herhangi bir klasöre **sağ-tık →
+  Ayarlar** ile yetkilendirmesini ve pre-request / test script'lerini ayarla.
+- **Zincirleme (cascade) script'ler:** proje ve klasör pre-request / test
+  script'leri artık her istek etrafında **proje → klasör → istek** sırasıyla,
+  hem **Gönder** hem **Çalıştır** yolunda çalışır. (Proje seviyesi auth +
+  script'ler önceden ayarlanabiliyordu ama çalışma anında uygulanmıyordu — artık
+  uygulanıyor.)
+- **Insomnia import sırası düzeltildi:** v5 koleksiyonları artık dosya sırasıyla
+  değil `meta.sortKey` sırasıyla (Insomnia'nın çalıştırdığı sıra) import edilir —
+  böylece Run istekleri amaçlanan sırada gönderir.
+- **Import'ta Insomnia/Postman auth mirası:** koleksiyon kökünün (ve klasörlerin)
+  `authentication` bloğu, kendi auth'unu taşımayan alt isteklere uygulanır.
+  Önceden kökte bir kez `Bearer {{accessToken}}` tanımlanan koleksiyon, alt
+  isteklerde hiç Authorization göndermez ve 401 alırdı.
+
 ## v1.4.15
 
 **macOS'ta uygulama içi otomatik güncelleme artık gerçekten çalışıyor, güncelleme

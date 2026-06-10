@@ -10,6 +10,32 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.16
+
+**Folder- and project-level authorization + scripts that requests inherit, plus
+two Insomnia/Postman import fixes so imported collections run in the right order
+with their shared auth intact.**
+
+- **Inherit auth from folder / project:** a request's Auth tab gains an **Inherit
+  from parent** option (now the default for new requests). Effective auth is
+  resolved nearest-wins — request → nearest folder → project — so a
+  `Bearer {{accessToken}}` set once on a folder (or in Project Settings →
+  Authorization) is picked up by every request below it. An explicit **No Auth**
+  stops the inheritance.
+- **Folder Settings (auth + scripts):** right-click any folder → **Settings** to
+  set its authorization and its pre-request / test scripts.
+- **Cascade scripts:** project and folder pre-request / test scripts now run
+  around every request in the order **project → folder → request**, on both
+  **Send** and **Run**. (Project-level auth + scripts were configurable before
+  but weren't applied at runtime — now they are.)
+- **Insomnia import order fixed:** v5 collections import in `meta.sortKey` order
+  (what Insomnia runs), not raw file order — so a Run fires requests in the
+  intended sequence.
+- **Insomnia/Postman auth inheritance on import:** a collection's root (and any
+  folder's) `authentication` is carried onto child requests that don't set their
+  own. Previously an imported collection that defined `Bearer {{accessToken}}`
+  once at the root sent no Authorization on children and failed with 401.
+
 ## v1.4.15
 
 **macOS in-app auto-update now actually works, the update panel stops claiming
