@@ -26,6 +26,12 @@ güncelleme metadata'sı üreten release hattını onarır.**
   iki mimariyi tek adımda derleyip tek ve eksiksiz `latest-mac.yml` / `latest.yml`
   üretiyor. Önceden her mimari job'u kendi manifest'ini yazıp diğerini eziyordu;
   bu yüzden yalnızca tek mimari listeleniyor, diğeri "güncelleme yok" alıyordu.
+- **Runner script ile yazılan değişkenleri tazeliyor:** bir klasör/koleksiyon
+  Run'ından sonra, post-response script'inin yakaladığı bir değişken (örn.
+  Create-Token isteğinde `pm.environment.set("accessToken", …)`) artık environment
+  editöründe anında görünüyor ve sonraki Send'de çözülüyor — önceden değer diske
+  kaydediliyor ama uygulama içi environment eski kalıp boş görünüyordu, elle
+  yeniden yazmak gerekiyordu.
 
 **v1.4.16'dan macOS'ta yükseltme:** v1.4.16'nın güncelleme metadata'sı bozuk
 olduğu için uygulama içi güncelleyici sizi kendiliğinden v1.4.17'ye taşıyamaz —

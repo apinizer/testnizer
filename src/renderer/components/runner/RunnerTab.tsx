@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { Braces, ChevronRight } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
+import { useEnvironmentStore } from '../../stores/environment.store'
 import type { TreeNode, HttpMethod } from '../../types'
 import RunnerSequence from './RunnerSequence'
 import RunnerConfig, { type SchedulePayload } from './RunnerConfig'
@@ -12,6 +13,28 @@ import RunnerHistory from './RunnerHistory'
 import ScheduledTasksView from './ScheduledTasksView'
 import TestsHome from './TestsHome'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
+
+/**
+ * After a run, refresh the renderer env store from the DB so script-written
+ * variables (e.g. a token captured by a post-response `pm.environment.set`)
+ * show up in the env editor and resolve on the next Send — the main process
+ * already persisted them ("Keep variable values"). Without this the folder /
+ * APIs run path left the store stale, so `{{accessToken}}` came back empty and
+ * users had to retype it by hand (mirrors runner.store.run, which already did
+ * this — RunnerTab's own execute path was the gap).
+ */
+export async function refreshEnvAfterRun(
+  report: RunnerReport | undefined,
+  keepVariableValues: boolean,
+): Promise<void> {
+  if (!report || !keepVariableValues) return
+  const wrote =
+    Object.keys(report.envUpdates ?? {}).length > 0 ||
+    Object.keys(report.globalUpdates ?? {}).length > 0
+  if (!wrote) return
+  const env = useEnvironmentStore.getState()
+  await Promise.all([env.fetchEnvironments(), env.fetchGlobalVariables()])
+}
 
 /* ── Types ─────────────────────────────────────────────────── */
 
@@ -542,14 +565,16 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           iterationData: iterationData.length > 0 ? iterationData : undefined,
           folderName: pending.folderName || runFolderName || undefined,
           sourceLabel,
+          keepVariableValues,
         })
-        .then((result: unknown) => {
+        .then(async (result: unknown) => {
           const res = result as { success: boolean; data?: RunnerReport }
           if (res?.success && res.data) {
             setReport(res.data)
             setResults(res.data.results)
             setCurrentIndex(res.data.totalEndpoints)
             setTotalCount(res.data.totalEndpoints)
+            await refreshEnvAfterRun(res.data, keepVariableValues)
           }
         })
         .finally(() => {
@@ -567,6 +592,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     iterationData,
     runFolderName,
     folderId,
+    keepVariableValues,
   ])
 
   // Collect endpoints and folder groups from the target folder/module.
@@ -747,6 +773,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         iterationData: iterationData.length > 0 ? iterationData : undefined,
         folderName: runFolderName || undefined,
         sourceLabel,
+        keepVariableValues,
       })
 
       if (result?.success && result.data) {
@@ -755,6 +782,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         setResults(rep.results)
         setCurrentIndex(rep.totalEndpoints)
         setTotalCount(rep.totalEndpoints)
+        await refreshEnvAfterRun(rep, keepVariableValues)
       }
     } catch {
       // handled by results
@@ -772,6 +800,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     iterationData,
     runFolderName,
     runOrigin,
+    keepVariableValues,
   ])
 
   const handleStop = useCallback(() => {

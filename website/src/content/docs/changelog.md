@@ -25,6 +25,11 @@ metadata in v1.4.16.**
   both arches in a single step, emitting one complete `latest-mac.yml` /
   `latest.yml`. Previously per-arch jobs clobbered each other's manifest, so only
   one architecture was listed and the other got "no update".
+- **Runner refreshes script-written variables:** after a folder/collection Run, a
+  variable captured by a post-response script (e.g. `pm.environment.set
+  ("accessToken", …)`) now appears in the environment editor and resolves on the
+  next Send immediately — previously it was saved to disk but the in-app
+  environment stayed stale and looked empty.
 
 **Upgrading from v1.4.16 on macOS:** v1.4.16's update metadata is broken, so the
 in-app updater can't reach v1.4.17 on its own — download the v1.4.17 `.dmg`
