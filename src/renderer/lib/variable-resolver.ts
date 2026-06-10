@@ -159,6 +159,9 @@ export function resolveAuth(
       scope: r(auth.oauth2.scope),
       token: r(auth.oauth2.token),
       refreshToken: r(auth.oauth2.refreshToken),
+      // Resource-owner creds (password grant) may also reference {{vars}}.
+      username: r(auth.oauth2.username),
+      password: r(auth.oauth2.password),
     }
   }
   if (auth.digest) {

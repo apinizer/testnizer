@@ -87,6 +87,11 @@ const api = {
       ipcRenderer.invoke('request:cancel', requestId),
   },
 
+  // ─── OAuth 2.0 ───────────────────────────────────────────
+  oauth2: {
+    getToken: (config: unknown): Promise<unknown> => ipcRenderer.invoke('oauth2:getToken', config),
+  },
+
   // ─── Workspace ───────────────────────────────────────────
   workspace: {
     list: (): Promise<unknown> => ipcRenderer.invoke('workspace:list'),

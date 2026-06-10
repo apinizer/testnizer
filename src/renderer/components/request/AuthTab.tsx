@@ -3,6 +3,9 @@ import { Lock, Eye, EyeOff } from 'lucide-react'
 import { useRequestStore } from '../../stores/request.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
+import { useEnvironmentStore } from '../../stores/environment.store'
+import { resolveVariables } from '../../lib/variable-resolver'
+import { toast } from '../../lib/toast'
 import SoapSecuritySection from '../protocols/SoapSecuritySection'
 import type { AuthType } from '../../types'
 
@@ -78,6 +81,42 @@ export default function AuthTab() {
   const setAuth = useRequestStore((s) => s.setAuth)
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const isSoap = activeTab?.protocol === 'soap'
+  const [fetchingToken, setFetchingToken] = useState(false)
+
+  // "Get New Access Token" — resolve {{vars}} in the OAuth2 config against the
+  // active environment, run the grant in the main process, and store the
+  // returned token. (The same grant also runs automatically at request time;
+  // this lets the user fetch + inspect a token up front.)
+  async function getNewToken(): Promise<void> {
+    const o = auth.oauth2
+    if (!o) return
+    setFetchingToken(true)
+    try {
+      const vars = useEnvironmentStore.getState().getActiveVariables()
+      const rv = (s: string | undefined): string | undefined =>
+        s === undefined ? undefined : resolveVariables(s, vars)
+      const res = (await window.api?.oauth2?.getToken({
+        grantType: o.grantType,
+        tokenUrl: rv(o.tokenUrl),
+        clientId: rv(o.clientId),
+        clientSecret: rv(o.clientSecret),
+        scope: rv(o.scope),
+        username: rv(o.username),
+        password: rv(o.password),
+        clientAuth: o.clientAuth,
+      })) as { success: boolean; data?: { accessToken: string }; error?: string } | undefined
+      if (res?.success && res.data?.accessToken) {
+        setAuth({ ...auth, oauth2: { ...auth.oauth2!, token: res.data.accessToken } })
+        toast.success('Access token fetched')
+      } else {
+        toast.error(res?.error || 'Token request failed')
+      }
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setFetchingToken(false)
+    }
+  }
 
   // SOAP WS-Security sync (panel rendered via SoapSecuritySection below)
   const setWsSecurity = useSoapStore((s) => s.setWsSecurity)
@@ -489,11 +528,25 @@ export default function AuthTab() {
             />
             <button
               type="button"
+              onClick={getNewToken}
+              disabled={fetchingToken || !auth.oauth2?.tokenUrl}
+              data-testid="auth-oauth2-get-token"
               className="mt-2 cursor-pointer rounded-[7px] px-3 py-1.5 font-medium text-white"
-              style={{ background: 'var(--accent)', border: 'none' }}
+              style={{
+                background: 'var(--accent)',
+                border: 'none',
+                opacity: fetchingToken || !auth.oauth2?.tokenUrl ? 0.6 : 1,
+              }}
             >
-              Get New Access Token
+              {fetchingToken ? 'Fetching…' : 'Get New Access Token'}
             </button>
+            {(auth.oauth2?.grantType === 'authorization_code' ||
+              auth.oauth2?.grantType === 'implicit') && (
+              <p className="mt-2 text-[11px]" style={{ color: 'var(--hint)' }}>
+                Browser-redirect grants aren&apos;t automated yet — paste a token above, or use
+                Client Credentials / Password grant for fully automatic tokens.
+              </p>
+            )}
           </div>
         </div>
       )}

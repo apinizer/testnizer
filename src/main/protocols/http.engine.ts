@@ -42,7 +42,19 @@ interface AuthConfig {
   basic?: { username: string; password: string }
   bearer?: { token: string; prefix?: string }
   apiKey?: { key: string; value: string; in: 'header' | 'query' }
-  oauth2?: { token?: string }
+  oauth2?: {
+    token?: string
+    grantType?: 'authorization_code' | 'client_credentials' | 'password' | 'implicit'
+    tokenUrl?: string
+    clientId?: string
+    clientSecret?: string
+    scope?: string
+    username?: string
+    password?: string
+    /** Where client credentials go in the token request: HTTP Basic header
+     *  (default) or in the form body. */
+    clientAuth?: 'header' | 'body'
+  }
   digest?: { username: string; password: string }
   ntlm?: { username: string; password: string; domain?: string; workstation?: string }
   hawk?: { authId: string; authKey: string; algorithm: 'sha1' | 'sha256' }
@@ -230,6 +242,126 @@ export async function storeResponseCookies(
 }
 
 // ─── Helper: Build auth headers ──────────────────────────────
+
+// ─── OAuth 2.0 token grant (client_credentials / password) ───────
+// Non-interactive grants Testnizer can fetch server-side. authorization_code /
+// implicit need a browser redirect flow and are not auto-fetched here.
+
+export interface OAuth2GrantConfig {
+  grantType?: 'authorization_code' | 'client_credentials' | 'password' | 'implicit'
+  tokenUrl?: string
+  clientId?: string
+  clientSecret?: string
+  scope?: string
+  username?: string
+  password?: string
+  clientAuth?: 'header' | 'body'
+}
+
+export interface OAuth2TokenResult {
+  accessToken: string
+  tokenType?: string
+  expiresIn?: number
+  raw: unknown
+}
+
+interface CachedOAuth2Token {
+  token: string
+  expiresAt: number
+}
+
+// Module-level cache so a token fetched once is reused across requests (and
+// across folder runs) until it nears expiry — the whole point of built-in
+// OAuth2 vs hand-scripting a token-fetch request.
+const oauth2TokenCache = new Map<string, CachedOAuth2Token>()
+
+function oauth2CacheKey(o: OAuth2GrantConfig): string {
+  return JSON.stringify({
+    t: o.tokenUrl ?? '',
+    c: o.clientId ?? '',
+    s: o.scope ?? '',
+    g: o.grantType ?? 'client_credentials',
+    u: o.username ?? '',
+    a: o.clientAuth ?? 'header',
+  })
+}
+
+/**
+ * Perform an OAuth 2.0 token request (client_credentials or password grant) and
+ * return the access token. Client credentials go in an HTTP Basic header by
+ * default, or in the form body when `clientAuth === 'body'`.
+ */
+export async function fetchOAuth2Token(o: OAuth2GrantConfig): Promise<OAuth2TokenResult> {
+  if (!o.tokenUrl) throw new Error('OAuth2: Access Token URL is required')
+  const grantType = o.grantType ?? 'client_credentials'
+  const params = new URLSearchParams()
+  params.set('grant_type', grantType)
+  if (o.scope) params.set('scope', o.scope)
+  if (grantType === 'password') {
+    params.set('username', o.username ?? '')
+    params.set('password', o.password ?? '')
+  }
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    Accept: 'application/json',
+  }
+  if ((o.clientAuth ?? 'header') === 'header') {
+    const basic = Buffer.from(`${o.clientId ?? ''}:${o.clientSecret ?? ''}`).toString('base64')
+    headers['Authorization'] = `Basic ${basic}`
+  } else {
+    if (o.clientId) params.set('client_id', o.clientId)
+    if (o.clientSecret) params.set('client_secret', o.clientSecret)
+  }
+  const resp = await axios.post(o.tokenUrl, params.toString(), {
+    headers,
+    timeout: 30000,
+    validateStatus: () => true,
+  })
+  if (resp.status < 200 || resp.status >= 300) {
+    const detail = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data ?? {})
+    throw new Error(`OAuth2 token request failed: HTTP ${resp.status} ${detail}`.slice(0, 400))
+  }
+  const data = (resp.data ?? {}) as {
+    access_token?: string
+    token_type?: string
+    expires_in?: number
+  }
+  if (!data.access_token || typeof data.access_token !== 'string') {
+    throw new Error('OAuth2 token response contained no access_token')
+  }
+  return {
+    accessToken: data.access_token,
+    tokenType: data.token_type,
+    expiresIn: typeof data.expires_in === 'number' ? data.expires_in : undefined,
+    raw: data,
+  }
+}
+
+/**
+ * If a request uses OAuth2 with a non-interactive grant and no explicit token,
+ * fetch (and cache) one and stamp it onto `auth.oauth2.token` so `applyAuth`
+ * attaches it. A manually-pasted token always wins. Best-effort: a fetch
+ * failure throws so the user sees why the request had no Authorization.
+ */
+async function ensureOAuth2Token(auth: AuthConfig | undefined): Promise<void> {
+  if (!auth || auth.type !== 'oauth2' || !auth.oauth2) return
+  const o = auth.oauth2
+  if (o.token && o.token.trim()) return // explicit / pasted token wins
+  const grant = o.grantType ?? 'client_credentials'
+  if (grant !== 'client_credentials' && grant !== 'password') return // interactive — not auto-fetchable
+  if (!o.tokenUrl || !o.clientId) return // not enough config to fetch
+  const key = oauth2CacheKey(o)
+  const cached = oauth2TokenCache.get(key)
+  const now = Date.now()
+  if (cached && cached.expiresAt - 5000 > now) {
+    o.token = cached.token
+    return
+  }
+  const res = await fetchOAuth2Token(o)
+  const ttlMs = res.expiresIn ? res.expiresIn * 1000 : 3600_000
+  oauth2TokenCache.set(key, { token: res.accessToken, expiresAt: now + ttlMs })
+  o.token = res.accessToken
+}
 
 function applyAuth(
   config: AxiosRequestConfig,
@@ -948,8 +1080,11 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       config.proxy = false
     }
 
-    // Apply auth
+    // Apply auth. OAuth2 with a non-interactive grant fetches (and caches) a
+    // token first so applyAuth can attach it — built-in client_credentials /
+    // password, no hand-scripted token request needed.
     if (options.auth && options.auth.type !== 'none') {
+      await ensureOAuth2Token(options.auth)
       applyAuth(config, options.auth, options.method, options.url)
     }
 

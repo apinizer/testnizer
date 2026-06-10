@@ -3,6 +3,8 @@ import {
   executeHttpRequest,
   HttpRequestOptions,
   stripUrlCredentials,
+  fetchOAuth2Token,
+  type OAuth2GrantConfig,
 } from '../protocols/http.engine'
 import * as historyRepo from '../db/history.repo'
 import { listCertificatesForHost } from '../db/certificate.repo'
@@ -107,6 +109,26 @@ function loadCertificatesFor(
 const pendingRequests = new Map<string, AbortController>()
 
 export function registerRequestHandlers(): void {
+  // OAuth 2.0 "Get New Access Token" — used by the Auth tab button. Performs a
+  // client_credentials / password grant and returns the token so the UI can
+  // store it. The same grant runs automatically at request time, but this lets
+  // users fetch + inspect a token up front.
+  ipcMain.handle('oauth2:getToken', async (_event, config: OAuth2GrantConfig) => {
+    try {
+      const res = await fetchOAuth2Token(config)
+      return {
+        success: true,
+        data: {
+          accessToken: res.accessToken,
+          tokenType: res.tokenType,
+          expiresIn: res.expiresIn,
+        },
+      }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
   ipcMain.handle(
     'request:send',
     async (

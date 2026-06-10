@@ -397,6 +397,19 @@ interface RequestApi {
   cancel(requestId: string): Promise<IpcResult<boolean>>
 }
 
+interface OAuth2Api {
+  getToken(config: {
+    grantType?: string
+    tokenUrl?: string
+    clientId?: string
+    clientSecret?: string
+    scope?: string
+    username?: string
+    password?: string
+    clientAuth?: 'header' | 'body'
+  }): Promise<IpcResult<{ accessToken: string; tokenType?: string; expiresIn?: number }>>
+}
+
 // ─── Console (Postman-style streaming logs) ──────────────────────
 
 interface ConsoleLogEntryDto {
@@ -1776,6 +1789,7 @@ interface ApiBridge {
   window: WindowApi
   app: AppApi
   request: RequestApi
+  oauth2: OAuth2Api
   console: ConsoleApi
   workspace: WorkspaceApi
   project: ProjectApi

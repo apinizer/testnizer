@@ -17,6 +17,7 @@ import { isRunnableInProject } from '../lib/ownership'
 import { resolveVariables } from '../lib/variable-resolver'
 import { loadEnvVars } from '../lib/env-vars'
 import { evaluateJsonPath } from '../lib/json-path'
+import CryptoJS from 'crypto-js'
 import { loadProjectSettings } from '../lib/project-settings'
 import {
   projectAuthToAuthConfig,
@@ -48,7 +49,17 @@ interface AuthConfig {
   basic?: { username: string; password: string }
   bearer?: { token: string; prefix?: string }
   apiKey?: { key: string; value: string; in: 'header' | 'query' }
-  oauth2?: { token?: string }
+  oauth2?: {
+    token?: string
+    grantType?: 'authorization_code' | 'client_credentials' | 'password' | 'implicit'
+    tokenUrl?: string
+    clientId?: string
+    clientSecret?: string
+    scope?: string
+    username?: string
+    password?: string
+    clientAuth?: 'header' | 'body'
+  }
   digest?: { username: string; password: string }
   ntlm?: { username: string; password: string; domain?: string; workstation?: string }
   hawk?: { authId: string; authKey: string; algorithm: 'sha1' | 'sha256' }
@@ -581,6 +592,9 @@ interface ScriptContext {
   testResults: Array<{ name: string; passed: boolean; error?: string }>
   /** Console output produced by the script. */
   consoleLogs: string[]
+  /** In-flight `pm.sendRequest(...)` promises; the runner awaits these before
+   *  finishing a script so callback-style sends complete. */
+  pendingSends: Array<Promise<unknown>>
 }
 
 function newScriptContext(
@@ -599,6 +613,7 @@ function newScriptContext(
     skipRequest: false,
     testResults: [],
     consoleLogs: [],
+    pendingSends: [],
   }
 }
 
@@ -608,6 +623,8 @@ interface ScriptResponseShape {
   headers?: Record<string, string>
   body?: string
   bodySize?: number
+  /** Cookies the engine parsed from the response Set-Cookie headers. */
+  cookies?: Array<{ name: string; value: string }>
 }
 
 /**
@@ -619,11 +636,11 @@ interface ScriptResponseShape {
  * iterationData, execution.skipRequest, execution.setNextRequest. More can
  * be added as fixtures demand.
  */
-function runUserScript(
+async function runUserScript(
   script: string,
   ctx: ScriptContext,
   response: ScriptResponseShape | null,
-): void {
+): Promise<void> {
   if (!script) return
 
   const log = (...args: unknown[]): void => {
@@ -648,6 +665,8 @@ function runUserScript(
           delete ctx.envVars[k]
           ctx.envUpdates[k] = ''
         },
+        has: (k: string) => k in ctx.envVars,
+        toObject: () => ({ ...ctx.envVars }),
       },
       globals: {
         get: (k: string) => ctx.envVars[k] ?? '',
@@ -659,6 +678,8 @@ function runUserScript(
           delete ctx.envVars[k]
           ctx.globalUpdates[k] = ''
         },
+        has: (k: string) => k in ctx.envVars,
+        toObject: () => ({ ...ctx.envVars }),
       },
       // pm.variables.* are request-local / ephemeral (Postman semantics): they
       // resolve within this run for convenience but are deliberately NOT routed
@@ -668,6 +689,8 @@ function runUserScript(
         set: (k: string, v: unknown) => {
           ctx.envVars[k] = String(v)
         },
+        has: (k: string) => k in ctx.envVars,
+        toObject: () => ({ ...ctx.envVars }),
       },
       collectionVariables: {
         get: (k: string) => ctx.envVars[k] ?? '',
@@ -675,6 +698,8 @@ function runUserScript(
           ctx.envVars[k] = String(v)
           ctx.envUpdates[k] = String(v)
         },
+        has: (k: string) => k in ctx.envVars,
+        toObject: () => ({ ...ctx.envVars }),
       },
       response: response
         ? buildResponseShim(response)
@@ -683,6 +708,7 @@ function runUserScript(
             status: '',
             text: () => '',
             json: () => null,
+            cookies: buildCookieShim([]),
             headers: { get: () => undefined },
           },
       test: (name: string, fn: () => void) => {
@@ -702,22 +728,123 @@ function runUserScript(
           ctx.nextRequestName = name
         },
       },
+      // pm.sendRequest — fire an auxiliary HTTP request mid-script via the same
+      // engine the runner uses. Returns a Promise (so `await pm.sendRequest`
+      // works) and calls the optional Node-style callback. The runner awaits
+      // `ctx.pendingSends` so callback-only sends finish too. Mirrors the Send
+      // path (test-runner.ts).
+      sendRequest: (
+        req: unknown,
+        cb?: (err: Error | null, res: unknown) => void,
+      ): Promise<unknown> => {
+        const run = executeHttpRequest(normalizeRunnerSendInput(req)).then((apiResp) =>
+          buildResponseShim({
+            status: apiResp.status,
+            statusText: apiResp.statusText,
+            headers: apiResp.headers,
+            body: apiResp.body,
+            bodySize: apiResp.bodySize,
+            cookies: apiResp.cookies,
+          }),
+        )
+        const handled = run.then(
+          (res) => {
+            if (cb) cb(null, res)
+            return res
+          },
+          (err: unknown) => {
+            const e = err instanceof Error ? err : new Error(String(err))
+            if (cb) {
+              cb(e, null)
+              return undefined
+            }
+            throw e
+          },
+        )
+        ctx.pendingSends.push(handled.catch(() => undefined))
+        return handled
+      },
     }
   }
 
   try {
-    // `insomnia` and `bru` are aliases of the same shim so scripts imported
-    // from Insomnia v5 (`insomnia.environment.set(...)`) and Bruno run
-    // unchanged alongside Postman's `pm.*`. Before this they threw
-    // "insomnia is not defined", the catch below swallowed it, and the env
-    // write never happened — folder runs then sent an empty `{{accessToken}}`
-    // and got 401 (issue #12).
+    // Bind the SAME globals the renderer Send path binds (test-runner.ts), so a
+    // script behaves identically whether run via Send or the Collection Runner:
+    //   - `t` — Testnizer-branded alias of `pm`.
+    //   - `insomnia` / `bru` — aliases so Insomnia v5 / Bruno scripts run
+    //     unchanged (without them they threw "insomnia is not defined", the
+    //     catch swallowed it, and the env write never happened — issue #12).
+    //   - `CryptoJS` — HMAC / SHA / AES for AWS sigv4, webhook signing, etc.
+    //     Previously only Send had it, so a CryptoJS script passed on Send and
+    //     threw "CryptoJS is not defined" on Run (the env-vars/header paralellik
+    //     bug class).
     const pm = buildPm()
-    const fn = new Function('pm', 'insomnia', 'bru', 'console', script)
-    fn(pm, pm, pm, { log, warn: log, error: log })
+    // Async function body so scripts can `await pm.sendRequest(...)` / use
+    // top-level await; a plain sync body still works unchanged.
+    const AsyncFunction = Object.getPrototypeOf(async function () {})
+      .constructor as FunctionConstructor
+    const fn = new AsyncFunction('pm', 't', 'insomnia', 'bru', 'console', 'CryptoJS', script)
+    await fn(pm, pm, pm, pm, { log, warn: log, error: log }, CryptoJS)
   } catch (e) {
     ctx.consoleLogs.push(`Script error: ${(e as Error).message}`)
   }
+
+  // Wait for any in-flight `pm.sendRequest(...)` calls (their callbacks may
+  // register env writes / pm.test cases) before returning to the runner.
+  if (ctx.pendingSends.length > 0) {
+    await Promise.allSettled(ctx.pendingSends)
+    ctx.pendingSends.length = 0
+  }
+}
+
+/**
+ * Postman-compatible `pm.response.cookies` shim — case-insensitive read access
+ * to the cookies the engine parsed from the response Set-Cookie headers. Mirror
+ * of the renderer's createPmApi cookie shim (test-runner.ts).
+ */
+function buildCookieShim(cookies: Array<{ name: string; value: string }> | undefined) {
+  const list = cookies ?? []
+  const find = (name: string) => list.find((c) => c.name.toLowerCase() === name.toLowerCase())
+  return {
+    get: (name: string) => find(name)?.value,
+    has: (name: string) => !!find(name),
+    toObject: () => Object.fromEntries(list.map((c) => [c.name, c.value])),
+  }
+}
+
+/**
+ * Normalize a `pm.sendRequest` input (URL string or Postman request object)
+ * into engine HttpRequestOptions. Mirror of the renderer's normalizePmSendInput
+ * (test-runner.ts) — keep the two in lockstep.
+ */
+function normalizeRunnerSendInput(req: unknown): HttpRequestOptions {
+  if (typeof req === 'string') return { method: 'GET', url: req }
+  const r = (req ?? {}) as {
+    url?: string | { raw?: string }
+    method?: string
+    header?: Array<{ key: string; value: string; disabled?: boolean }> | Record<string, string>
+    body?: string | { mode?: string; raw?: string; options?: { raw?: { language?: string } } }
+  }
+  const url = typeof r.url === 'string' ? r.url : (r.url?.raw ?? '')
+  const method = (r.method ?? 'GET').toUpperCase()
+  let headers: Array<{ key: string; value: string; enabled: boolean }> = []
+  if (Array.isArray(r.header)) {
+    headers = r.header.map((h) => ({ key: h.key, value: h.value, enabled: h.disabled !== true }))
+  } else if (r.header && typeof r.header === 'object') {
+    headers = Object.entries(r.header).map(([key, value]) => ({
+      key,
+      value: String(value),
+      enabled: true,
+    }))
+  }
+  let body: { type: string; content?: string } | undefined
+  if (typeof r.body === 'string') {
+    body = { type: 'text', content: r.body }
+  } else if (r.body && r.body.mode === 'raw') {
+    const isJson = r.body.options?.raw?.language === 'json'
+    body = { type: isJson ? 'json' : 'text', content: r.body.raw ?? '' }
+  }
+  return { method, url, headers, body } as HttpRequestOptions
 }
 
 function buildResponseShim(response: ScriptResponseShape) {
@@ -743,6 +870,7 @@ function buildResponseShim(response: ScriptResponseShape) {
         return found ? found[1] : undefined
       },
     },
+    cookies: buildCookieShim(response.cookies),
     responseTime: 0,
     responseSize: response.bodySize ?? (response.body ? response.body.length : 0),
     to: {
@@ -1061,7 +1189,21 @@ function resolveRequestOptions(
         region: r(a.awsSignature.region) ?? '',
         service: r(a.awsSignature.service) ?? '',
       }
-    if (a.oauth2) next.oauth2 = { token: r(a.oauth2.token) }
+    if (a.oauth2)
+      // Carry the FULL OAuth2 grant config (resolved), not just the token, so
+      // the engine can auto-fetch a client_credentials/password token. Dropping
+      // the other fields here meant the Runner never had tokenUrl/clientId to
+      // grant from.
+      next.oauth2 = {
+        ...a.oauth2,
+        token: r(a.oauth2.token),
+        tokenUrl: r(a.oauth2.tokenUrl),
+        clientId: r(a.oauth2.clientId),
+        clientSecret: r(a.oauth2.clientSecret),
+        scope: r(a.oauth2.scope),
+        username: r(a.oauth2.username),
+        password: r(a.oauth2.password),
+      }
     resolved.auth = next as HttpRequestOptions['auth']
   }
 
@@ -1219,7 +1361,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
           for (const s of preScripts) {
             scriptCtx.envUpdates = {}
             scriptCtx.globalUpdates = {}
-            runUserScript(s, scriptCtx, null)
+            await runUserScript(s, scriptCtx, null)
             mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
           }
           if (scriptCtx.skipRequest) {
@@ -1256,12 +1398,13 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
           for (const s of postScripts) {
             scriptCtx.envUpdates = {}
             scriptCtx.globalUpdates = {}
-            runUserScript(s, scriptCtx, {
+            await runUserScript(s, scriptCtx, {
               status: response.status,
               statusText: response.statusText,
               headers: response.headers,
               body: response.body,
               bodySize: response.bodySize,
+              cookies: response.cookies,
             })
             mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
           }

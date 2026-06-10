@@ -275,6 +275,9 @@ export interface OAuth2Config {
   /** Resource-owner credentials — only used when `grantType` is 'password'. */
   username?: string
   password?: string
+  /** Where client credentials go in the token request: HTTP Basic header
+   *  (default) or in the form body. */
+  clientAuth?: 'header' | 'body'
 }
 
 // ─── SOAP ────────────────────────────────────────────────────

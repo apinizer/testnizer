@@ -458,6 +458,11 @@ export interface PmApi {
     headers: {
       get(name: string): string | undefined
     }
+    cookies: {
+      get(name: string): string | undefined
+      has(name: string): boolean
+      toObject(): Record<string, string>
+    }
     responseTime: number
     responseSize: number
     to: ResponseToChain
@@ -476,22 +481,27 @@ export interface PmApi {
     get(key: string): string | undefined
     has(key: string): boolean
     unset(key: string): void
+    toObject(): Record<string, string>
   }
   globals: {
     set(key: string, value: string): void
     get(key: string): string | undefined
     has(key: string): boolean
     unset(key: string): void
+    toObject(): Record<string, string>
   }
   collectionVariables: {
     set(key: string, value: string): void
     get(key: string): string | undefined
     has(key: string): boolean
     unset(key: string): void
+    toObject(): Record<string, string>
   }
   variables: {
     set(key: string, value: string): void
     get(key: string): string | undefined
+    has(key: string): boolean
+    toObject(): Record<string, string>
   }
   info: {
     eventName: string
@@ -499,8 +509,14 @@ export interface PmApi {
   }
   expect(value: unknown): AssertionChain
   test(name: string, fn: () => void): void
-  /** No-op: requests are sent by the host runner; scripts cannot interrupt. */
-  sendRequest(_options: unknown, _cb: (err: Error | null, res: unknown) => void): void
+  /** Fire an auxiliary HTTP request mid-script (Postman-compatible). Accepts a
+   *  URL string or a request object; returns a Promise so scripts can
+   *  `await pm.sendRequest(...)`, and also calls the optional Node-style
+   *  callback. The host awaits all pending sends before finishing the run. */
+  sendRequest(
+    req: PmSendInput,
+    cb?: (err: Error | null, res: PmSendResponse | null) => void,
+  ): Promise<PmSendResponse>
   _testResults: PmTestResult[]
   _envUpdates: Map<string, string>
   _globalUpdates: Map<string, string>
@@ -508,12 +524,113 @@ export interface PmApi {
    *  `await Promise.allSettled(pm._pendingTests)` before reading
    *  `_testResults` so async failures aren't silently lost. */
   _pendingTests: Promise<void>[]
+  /** In-flight `pm.sendRequest` promises. The host awaits these (before tests)
+   *  so callback-style sends complete even when the script didn't `await`. */
+  _pendingSends: Promise<unknown>[]
   /** Set by pm.execution.skipRequest() in a pre-request script — callers
    * (request.store) should abort the actual HTTP send when true. */
   _skipRequest: boolean
   /** Mutated by pm.request.headers.{add,upsert,remove} so callers can fold
    * the changes back into the outgoing request before it ships. */
   _requestHeaders: HeaderCollection
+}
+
+// ─── pm.sendRequest support ──────────────────────────────────────
+// A request a script fires mid-execution — a URL string, or a Postman-style
+// request object. Kept loose so imported Postman scripts pass their objects
+// through unchanged.
+export type PmSendInput =
+  | string
+  | {
+      url?: string | { raw?: string }
+      method?: string
+      header?: Array<{ key: string; value: string; disabled?: boolean }> | Record<string, string>
+      body?: string | { mode?: string; raw?: string; options?: { raw?: { language?: string } } }
+    }
+
+export interface PmSendResponse {
+  code: number
+  status: string
+  responseTime: number
+  json(): unknown
+  text(): string
+  headers: { get(name: string): string | undefined }
+  cookies: {
+    get(name: string): string | undefined
+    has(name: string): boolean
+    toObject(): Record<string, string>
+  }
+}
+
+/** Normalize a pm.sendRequest input into the engine's request:send options. */
+export function normalizePmSendInput(req: PmSendInput): {
+  method: string
+  url: string
+  headers: Array<{ key: string; value: string; enabled: boolean }>
+  body?: { type: string; content?: string }
+} {
+  if (typeof req === 'string') return { method: 'GET', url: req, headers: [] }
+  const url = typeof req.url === 'string' ? req.url : (req.url?.raw ?? '')
+  const method = (req.method ?? 'GET').toUpperCase()
+  let headers: Array<{ key: string; value: string; enabled: boolean }> = []
+  if (Array.isArray(req.header)) {
+    headers = req.header.map((h) => ({ key: h.key, value: h.value, enabled: h.disabled !== true }))
+  } else if (req.header && typeof req.header === 'object') {
+    headers = Object.entries(req.header).map(([key, value]) => ({
+      key,
+      value: String(value),
+      enabled: true,
+    }))
+  }
+  let body: { type: string; content?: string } | undefined
+  if (typeof req.body === 'string') {
+    body = { type: 'text', content: req.body }
+  } else if (req.body && req.body.mode === 'raw') {
+    const isJson = req.body.options?.raw?.language === 'json'
+    body = { type: isJson ? 'json' : 'text', content: req.body.raw ?? '' }
+  }
+  return { method, url, headers, body }
+}
+
+/** Wrap an engine ApiResponse-shaped object as a Postman `pm.sendRequest`
+ *  response (code/status/json/text/headers/cookies). */
+export function buildPmSendResponse(apiResp: {
+  status?: number
+  statusText?: string
+  body?: string
+  headers?: Record<string, string>
+  cookies?: Array<{ name: string; value: string }>
+  timing?: { total?: number }
+}): PmSendResponse {
+  const headers = apiResp.headers ?? {}
+  const cookies = apiResp.cookies ?? []
+  const body = apiResp.body ?? ''
+  const findHeader = (name: string): string | undefined => {
+    const lo = name.toLowerCase()
+    const e = Object.entries(headers).find(([k]) => k.toLowerCase() === lo)
+    return e ? e[1] : undefined
+  }
+  const findCookie = (name: string) =>
+    cookies.find((c) => c.name.toLowerCase() === name.toLowerCase())
+  return {
+    code: apiResp.status ?? 0,
+    status: apiResp.statusText ?? '',
+    responseTime: apiResp.timing?.total ?? 0,
+    text: () => body,
+    json: () => {
+      try {
+        return JSON.parse(body)
+      } catch {
+        return null
+      }
+    },
+    headers: { get: findHeader },
+    cookies: {
+      get: (n) => findCookie(n)?.value,
+      has: (n) => !!findCookie(n),
+      toObject: () => Object.fromEntries(cookies.map((c) => [c.name, c.value])),
+    },
+  }
 }
 
 export function createPmApi(
@@ -534,6 +651,7 @@ export function createPmApi(
   const globalUpdates = new Map<string, string>()
   const localVars = new Map<string, string>()
   const pendingTests: Promise<void>[] = []
+  const pendingSends: Promise<unknown>[] = []
   const isPreRequest = meta?.eventName === 'prerequest'
   let skipRequestFlag = false
 
@@ -710,6 +828,21 @@ export function createPmApi(
           return entry ? entry[1] : undefined
         },
       },
+      // Read-access to the cookies the engine parsed from the response
+      // Set-Cookie headers (case-insensitive). Mirrors the Runner's shim.
+      cookies: {
+        get(name: string): string | undefined {
+          const lower = name.toLowerCase()
+          return (response.cookies ?? []).find((c) => c.name.toLowerCase() === lower)?.value
+        },
+        has(name: string): boolean {
+          const lower = name.toLowerCase()
+          return (response.cookies ?? []).some((c) => c.name.toLowerCase() === lower)
+        },
+        toObject(): Record<string, string> {
+          return Object.fromEntries((response.cookies ?? []).map((c) => [c.name, c.value]))
+        },
+      },
       get responseTime(): number {
         return response.timing.total
       },
@@ -752,6 +885,9 @@ export function createPmApi(
         // rather than overwrite it. Matches collectionVariables.unset above.
         envUpdates.set(key, '')
       },
+      toObject(): Record<string, string> {
+        return Object.fromEntries(envVars)
+      },
     },
     globals: {
       set(key: string, value: string): void {
@@ -767,6 +903,9 @@ export function createPmApi(
       unset(key: string): void {
         globalVars.delete(key)
         globalUpdates.set(key, '')
+      },
+      toObject(): Record<string, string> {
+        return Object.fromEntries(globalVars)
       },
     },
     // Postman exposes `pm.collectionVariables` for collection-scoped vars.
@@ -789,6 +928,9 @@ export function createPmApi(
         envVars.delete(key)
         envUpdates.set(key, '')
       },
+      toObject(): Record<string, string> {
+        return Object.fromEntries(envVars)
+      },
     },
     variables: {
       set(key: string, value: string): void {
@@ -796,6 +938,17 @@ export function createPmApi(
       },
       get(key: string): string | undefined {
         return localVars.get(key) ?? envVars.get(key) ?? globalVars.get(key)
+      },
+      has(key: string): boolean {
+        return localVars.has(key) || envVars.has(key) || globalVars.has(key)
+      },
+      toObject(): Record<string, string> {
+        // Merged view, local over env over global (matches get() precedence).
+        return {
+          ...Object.fromEntries(globalVars),
+          ...Object.fromEntries(envVars),
+          ...Object.fromEntries(localVars),
+        }
       },
     },
     info: {
@@ -834,20 +987,58 @@ export function createPmApi(
         testResults.push({ name, passed: false, error: (e as Error).message })
       }
     },
-    sendRequest(_options: unknown, cb: (err: Error | null, res: unknown) => void): void {
-      // Postman's pm.sendRequest fires an arbitrary HTTP call mid-script. We
-      // don't model that — scripts are pure post/pre hooks here. Fail loud so
-      // the user sees a clear "not supported" rather than a silent no-op.
-      try {
-        cb(new Error('pm.sendRequest is not supported in Testnizer scripts'), null)
-      } catch {
-        /* swallow callback errors so they don't break the script run */
-      }
+    sendRequest(
+      req: PmSendInput,
+      cb?: (err: Error | null, res: PmSendResponse | null) => void,
+    ): Promise<PmSendResponse> {
+      // Fire a real auxiliary HTTP request through the main-process engine (the
+      // renderer can't reach the network directly — CSP). Returns a Promise so
+      // `await pm.sendRequest(...)` works, and also calls the Postman-style
+      // callback. `runScript` awaits `_pendingSends`, so a callback-only send
+      // still completes before the run finishes.
+      const api = (
+        typeof window !== 'undefined' ? (window as unknown as { api?: unknown }).api : undefined
+      ) as
+        | {
+            request?: {
+              send?: (o: unknown) => Promise<{ success: boolean; data?: unknown; error?: string }>
+            }
+          }
+        | undefined
+      const run = (async (): Promise<PmSendResponse> => {
+        if (!api?.request?.send) {
+          throw new Error('pm.sendRequest: request bridge unavailable in this context')
+        }
+        const result = await api.request.send(normalizePmSendInput(req))
+        if (!result?.success || !result.data) {
+          throw new Error(result?.error || 'pm.sendRequest failed')
+        }
+        return buildPmSendResponse(result.data as Parameters<typeof buildPmSendResponse>[0])
+      })()
+      const handled = run.then(
+        (res) => {
+          if (cb) cb(null, res)
+          return res
+        },
+        (err: unknown) => {
+          const e = err instanceof Error ? err : new Error(String(err))
+          if (cb) {
+            cb(e, null)
+            return undefined as unknown as PmSendResponse
+          }
+          throw e
+        },
+      )
+      // Track so the host awaits even the callback-only form; swallow here so
+      // Promise.allSettled never sees a rejection we've already routed to `cb`.
+      pendingSends.push(handled.catch(() => undefined))
+      return handled
     },
     _testResults: testResults,
     _envUpdates: envUpdates,
     _globalUpdates: globalUpdates,
     _pendingTests: pendingTests,
+    _pendingSends: pendingSends,
     get _skipRequest(): boolean {
       return skipRequestFlag
     },
@@ -1094,8 +1285,14 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
     // and the env write silently never happened (issue #12). CryptoJS is
     // exposed for HMAC / SHA / AES use cases (AWS sig v4, webhook signing) —
     // mirrors Postman's built-in (Mehmet BUG-05).
-    const fn = new Function('pm', 't', 'insomnia', 'bru', 'console', 'CryptoJS', script)
-    fn(pmApi, pmApi, pmApi, pmApi, captureConsole, CryptoJS)
+    // Run as an ASYNC function so scripts can `await pm.sendRequest(...)` and
+    // use top-level await. A plain sync body still works unchanged (it just
+    // resolves immediately). `AsyncFunction` is the standard runtime
+    // constructor for `async function`.
+    const AsyncFunction = Object.getPrototypeOf(async function () {})
+      .constructor as FunctionConstructor
+    const fn = new AsyncFunction('pm', 't', 'insomnia', 'bru', 'console', 'CryptoJS', script)
+    await fn(pmApi, pmApi, pmApi, pmApi, captureConsole, CryptoJS)
   } catch (e) {
     const msg = (e as Error).message
     if (msg !== '__pm_skip_request_signal__') {
@@ -1107,9 +1304,12 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
     }
   }
 
-  // Wait for any async `pm.test(name, async () => {...})` callbacks to settle
-  // so their assertion failures land in `_testResults` before we map them
-  // to the TestResult shape below.
+  // Wait for any in-flight `pm.sendRequest(...)` calls to finish FIRST (their
+  // callbacks may register pm.test cases), then for async `pm.test` callbacks
+  // to settle — so every assertion lands in `_testResults` before we map them.
+  if (pmApi._pendingSends.length > 0) {
+    await Promise.allSettled(pmApi._pendingSends)
+  }
   if (pmApi._pendingTests.length > 0) {
     await Promise.allSettled(pmApi._pendingTests)
   }
