@@ -162,10 +162,20 @@ interface FolderApi {
     parent_id?: string | null
     name: string
     branch_id?: string | null
+    auth?: string | null
+    pre_script?: string | null
+    post_script?: string | null
   }): Promise<IpcResult<Folder>>
   update(
     id: string,
-    payload: { name?: string; parent_id?: string | null; sort_order?: number },
+    payload: {
+      name?: string
+      parent_id?: string | null
+      sort_order?: number
+      auth?: string | null
+      pre_script?: string | null
+      post_script?: string | null
+    },
   ): Promise<IpcResult<Folder | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
   duplicate(id: string): Promise<IpcResult<{ newFolderId: string }>>

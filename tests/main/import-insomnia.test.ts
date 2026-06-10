@@ -488,6 +488,124 @@ describe('importInsomnia v5 — bundled environment', () => {
   })
 })
 
+// ─── v5 sortKey ordering + auth inheritance (folder Run regressions) ──
+
+describe('importInsomnia v5 — sortKey ordering & inherited auth', () => {
+  // Mirrors the user's Apinizer Management collection: the exported YAML array
+  // order disagrees with `meta.sortKey`, and a single Bearer {{accessToken}}
+  // lives at the collection root with bare child requests.
+  const v5 = {
+    type: 'collection.insomnia.rest/5.0',
+    name: 'Mgmt API',
+    collection: [
+      {
+        name: 'Root',
+        meta: { id: 'fld_root', sortKey: -1 },
+        children: [
+          // Array order: Projects → Setup → Override.
+          // sortKey order:  Setup(-3000) → Projects(-2900) → Override(-100).
+          {
+            name: '02 Projects',
+            meta: { id: 'fld_proj', sortKey: -2900 },
+            children: [
+              // Array order: List(-90) → Preflight(-100); sortKey → Preflight first.
+              { name: 'List Projects', meta: { sortKey: -90 }, method: 'GET', url: '{{AccessURL}}/projects/' },
+              { name: 'Preflight', meta: { sortKey: -100 }, method: 'GET', url: '{{AccessURL}}/check' },
+            ],
+          },
+          {
+            name: '00 Setup',
+            meta: { id: 'fld_setup', sortKey: -3000 },
+            children: [
+              { name: '01 Healthcheck', meta: { sortKey: -2004 }, method: 'GET', url: '{{AccessURL}}/test/healthcheck' },
+              { name: '03 Init', meta: { sortKey: -2002 }, method: 'GET', url: '{{AccessURL}}/init' },
+              // Token endpoint explicitly opts out of the inherited bearer.
+              { name: '02 Token', meta: { sortKey: -2003 }, method: 'POST', url: '{{AccessURL}}/auth/token', authentication: { type: 'none' } },
+            ],
+          },
+          {
+            name: '99 Override',
+            meta: { id: 'fld_override', sortKey: -100 },
+            authentication: { type: 'basic', username: 'u', password: 'p' },
+            children: [{ name: 'Admin call', meta: { sortKey: -10 }, method: 'GET', url: '{{AccessURL}}/admin' }],
+          },
+        ],
+      },
+    ],
+    authentication: { type: 'bearer', token: '{{accessToken}}' },
+    environments: { name: 'Base', data: { AccessURL: 'http://x/apiops', accessToken: '' } },
+  }
+
+  const folderIdByName = (name: string): string =>
+    (
+      getDb()
+        .prepare('SELECT id FROM folders WHERE project_id = ? AND name = ?')
+        .get(projectId, name) as { id: string }
+    ).id
+
+  const endpointNamesInFolder = (folderName: string): string[] =>
+    (
+      getDb()
+        .prepare(
+          'SELECT name FROM endpoints WHERE project_id = ? AND folder_id = ? ORDER BY sort_order ASC',
+        )
+        .all(projectId, folderIdByName(folderName)) as Array<{ name: string }>
+    ).map((r) => r.name)
+
+  const subFolderNames = (parentName: string): string[] =>
+    (
+      getDb()
+        .prepare(
+          'SELECT name FROM folders WHERE project_id = ? AND parent_id = ? ORDER BY sort_order ASC',
+        )
+        .all(projectId, folderIdByName(parentName)) as Array<{ name: string }>
+    ).map((r) => r.name)
+
+  const authOf = (name: string): Record<string, unknown> | undefined => {
+    const row = getDb()
+      .prepare('SELECT request_schema FROM endpoints WHERE project_id = ? AND name = ?')
+      .get(projectId, name) as { request_schema: string }
+    return JSON.parse(row.request_schema).auth
+  }
+
+  it('orders sibling folders and requests by meta.sortKey, not array order', async () => {
+    const r = await importInsomnia(projectId, JSON.stringify(v5))
+    expect(r.success).toBe(true)
+
+    // Modules under Root: sortKey order, not the array order in the export.
+    expect(subFolderNames('Root')).toEqual(['00 Setup', '02 Projects', '99 Override'])
+    // Requests inside 00 Setup ordered by sortKey (Token before Init).
+    expect(endpointNamesInFolder('00 Setup')).toEqual(['01 Healthcheck', '02 Token', '03 Init'])
+    // Requests inside 02 Projects: Preflight (-100) before List (-90).
+    expect(endpointNamesInFolder('02 Projects')).toEqual(['Preflight', 'List Projects'])
+  })
+
+  it('inherits the collection-root bearer for bare requests', async () => {
+    await importInsomnia(projectId, JSON.stringify(v5))
+    expect(authOf('List Projects')).toEqual({
+      type: 'bearer',
+      bearer: { token: '{{accessToken}}', prefix: 'Bearer' },
+    })
+    expect(authOf('01 Healthcheck')).toEqual({
+      type: 'bearer',
+      bearer: { token: '{{accessToken}}', prefix: 'Bearer' },
+    })
+  })
+
+  it('lets an explicit per-request {type:none} override the inherited bearer', async () => {
+    await importInsomnia(projectId, JSON.stringify(v5))
+    expect(authOf('02 Token')).toBeUndefined()
+  })
+
+  it('lets a folder-level auth block override the inherited one for its subtree', async () => {
+    await importInsomnia(projectId, JSON.stringify(v5))
+    expect(authOf('Admin call')).toEqual({
+      type: 'basic',
+      basic: { username: 'u', password: 'p' },
+    })
+  })
+})
+
 // ─── Script shim coverage on the wider Insomnia surface ────
 
 describe('normalizeInsomniaScript covers the full insomnia.* surface', () => {

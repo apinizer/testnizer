@@ -17,6 +17,7 @@ import {
   FileCode2,
   Hexagon,
   Cloud,
+  Settings,
 } from 'lucide-react'
 
 export interface DragPayload {
@@ -42,6 +43,7 @@ interface TreeNodeProps {
   onImport?: (node: TreeNodeType) => void
   onCreateTestSuite?: (node: TreeNodeType) => void
   onCreateMockServer?: (node: TreeNodeType) => void
+  onFolderSettings?: (node: TreeNodeType) => void
   onDrop?: (target: TreeNodeType, payload: DragPayload, position: DropPosition) => void
   openIds: Set<string>
   isFlat?: boolean
@@ -322,6 +324,7 @@ const TrashIcon = (
     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
   </svg>
 )
+const SettingsIcon = <Settings size={14} />
 const DotsIcon = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
     <circle cx="12" cy="5" r="1.5" />
@@ -439,6 +442,7 @@ export default function TreeNodeComponent({
   onImport,
   onCreateTestSuite,
   onCreateMockServer,
+  onFolderSettings,
   onDrop,
   openIds,
   isFlat = false,
@@ -571,6 +575,16 @@ export default function TreeNodeComponent({
           label: t('tree.importFolder'),
           icon: ImportIcon,
           action: () => onImport(node),
+        })
+      }
+      // Folder-level auth + scripts (inherited by descendant requests). Real
+      // folders only — the project root has its own Project Settings modal.
+      if (onFolderSettings && isFolder) {
+        items.push({
+          label: t('tree.folderSettings'),
+          icon: SettingsIcon,
+          separator: true,
+          action: () => onFolderSettings(node),
         })
       }
       if (onRename && canModify) {

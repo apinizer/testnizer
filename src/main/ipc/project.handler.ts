@@ -100,6 +100,9 @@ export function registerProjectHandlers(): void {
         parent_id?: string | null
         name: string
         branch_id?: string | null
+        auth?: string | null
+        pre_script?: string | null
+        post_script?: string | null
       },
     ) => {
       try {
@@ -120,6 +123,9 @@ export function registerProjectHandlers(): void {
         name?: string
         parent_id?: string | null
         sort_order?: number
+        auth?: string | null
+        pre_script?: string | null
+        post_script?: string | null
       },
     ) => {
       try {

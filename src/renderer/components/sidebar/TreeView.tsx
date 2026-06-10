@@ -17,6 +17,7 @@ import type {
 } from '../../types'
 import TreeNodeComponent, { type DragPayload, type DropPosition } from './TreeNode'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
+import FolderSettingsModal from '../modals/FolderSettingsModal'
 import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
 import { openFolderRunner } from '../../lib/open-runner-tab'
@@ -330,6 +331,13 @@ export default function TreeView() {
 
   // Delete confirmation dialog state
   const [deleteTarget, setDeleteTarget] = useState<TreeNode | null>(null)
+  const [folderSettingsTarget, setFolderSettingsTarget] = useState<{
+    id: string
+    name: string
+  } | null>(null)
+  const handleFolderSettings = useCallback((node: TreeNode) => {
+    setFolderSettingsTarget({ id: node.id, name: node.label })
+  }, [])
 
   const handleDeleteRequest = useCallback((node: TreeNode) => {
     setDeleteTarget(node)
@@ -808,6 +816,7 @@ export default function TreeView() {
                 onImport={handleImportFolder}
                 onCreateTestSuite={handleCreateTestSuite}
                 onCreateMockServer={handleCreateMockServer}
+                onFolderSettings={handleFolderSettings}
                 onDrop={handleDrop}
                 openIds={openNodeIds}
                 isFlat
@@ -816,6 +825,16 @@ export default function TreeView() {
           )
         })}
       </div>
+
+      {/* Folder-level auth + scripts editor */}
+      {folderSettingsTarget && (
+        <FolderSettingsModal
+          open
+          folderId={folderSettingsTarget.id}
+          folderName={folderSettingsTarget.name}
+          onClose={() => setFolderSettingsTarget(null)}
+        />
+      )}
 
       {/* Delete confirmation dialog */}
       <DeleteConfirmDialog

@@ -18,6 +18,7 @@ const AUTH_TYPE_TEST_IDS: Partial<Record<AuthType, string>> = {
 }
 
 const AUTH_OPTIONS: { value: AuthType; label: string; soapOnly?: boolean }[] = [
+  { value: 'inherit', label: 'Inherit from parent' },
   { value: 'none', label: 'No Auth' },
   { value: 'bearer', label: 'Bearer Token' },
   { value: 'basic', label: 'Basic Auth' },
@@ -132,6 +133,15 @@ export default function AuthTab() {
       {auth.type === 'none' && (
         <div className="py-8 text-center" style={{ color: 'var(--hint)' }}>
           This request does not use any authorization.
+        </div>
+      )}
+
+      {/* ── Inherit from parent ── */}
+      {auth.type === 'inherit' && (
+        <div className="py-8 text-center" style={{ color: 'var(--hint)' }}>
+          This request inherits authorization from its folder, or the project if no folder sets one.
+          Configure it on the folder (right-click → Settings) or in Project Settings →
+          Authorization.
         </div>
       )}
 

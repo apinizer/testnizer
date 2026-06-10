@@ -23,6 +23,11 @@ export interface FolderRow {
   parent_id: string | null
   name: string
   sort_order: number
+  /** JSON-encoded AuthConfig, or NULL when the folder sets no auth. */
+  auth: string | null
+  /** Folder-level pre-request / test scripts (cascade with project + request). */
+  pre_script: string | null
+  post_script: string | null
 }
 
 // ─── Projects ────────────────────────────────────────────────
@@ -170,6 +175,10 @@ export function createFolder(data: {
   name: string
   /** Branch this folder belongs to; NULL/omitted = shared across branches. */
   branch_id?: string | null
+  /** JSON-encoded AuthConfig (folder-level auth). */
+  auth?: string | null
+  pre_script?: string | null
+  post_script?: string | null
 }): FolderRow {
   const db = getDb()
   const id = randomUUID()
@@ -180,8 +189,8 @@ export function createFolder(data: {
 
   db.prepare(
     `
-    INSERT INTO folders (id, project_id, parent_id, name, sort_order, branch_id)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO folders (id, project_id, parent_id, name, sort_order, branch_id, auth, pre_script, post_script)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     id,
@@ -190,6 +199,9 @@ export function createFolder(data: {
     data.name,
     maxOrder.max_order + 1,
     data.branch_id ?? null,
+    data.auth ?? null,
+    data.pre_script ?? null,
+    data.post_script ?? null,
   )
   return getFolderById(id)!
 }
@@ -200,6 +212,10 @@ export function updateFolder(
     name?: string
     parent_id?: string | null
     sort_order?: number
+    /** JSON-encoded AuthConfig; pass null to clear, omit to leave unchanged. */
+    auth?: string | null
+    pre_script?: string | null
+    post_script?: string | null
   },
 ): FolderRow | undefined {
   const db = getDb()
@@ -208,13 +224,16 @@ export function updateFolder(
 
   db.prepare(
     `
-    UPDATE folders SET name = ?, parent_id = ?, sort_order = ?
+    UPDATE folders SET name = ?, parent_id = ?, sort_order = ?, auth = ?, pre_script = ?, post_script = ?
     WHERE id = ?
   `,
   ).run(
     data.name ?? existing.name,
     data.parent_id !== undefined ? data.parent_id : existing.parent_id,
     data.sort_order ?? existing.sort_order,
+    data.auth !== undefined ? data.auth : existing.auth,
+    data.pre_script !== undefined ? data.pre_script : existing.pre_script,
+    data.post_script !== undefined ? data.post_script : existing.post_script,
     id,
   )
   return getFolderById(id)

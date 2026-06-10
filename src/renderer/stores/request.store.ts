@@ -21,6 +21,7 @@ import {
   resolveRequestBody,
 } from '../lib/variable-resolver'
 import { runAssertions, runScript, createPmApi } from '../lib/test-runner'
+import { resolveInheritance } from '../lib/auth-inheritance'
 import { makeId } from '../lib/utils'
 // Shared dirty-flag helper, also used by the protocol stores so the blue dot
 // is consistent across request types (issue #8). Aliased to keep the existing
@@ -108,7 +109,10 @@ function emptyTabState(): TabRequestState {
     params: [],
     headers: [],
     body: { type: 'none' },
-    auth: { type: 'none' },
+    // New requests default to inheriting auth from their folder / project
+    // (Postman-style). Existing requests load their own stored auth, so this
+    // only affects freshly-created ones.
+    auth: { type: 'inherit' },
     preScript: '',
     postScript: '',
     assertions: [],
@@ -401,6 +405,24 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     const wsStore = useWorkspaceStore.getState()
     const activeTabId = tabsStore.activeTabId
 
+    // Resolve inherited auth (request → folder(s) → project) and the cascade
+    // pre/test scripts that run around this request. Mirrors the Collection
+    // Runner so Send and Run behave identically. `effectiveAuth` replaces the
+    // request's own auth when that is 'inherit'; `preScripts` / `postScripts`
+    // already include the request's own scripts (last in the cascade).
+    const activeTab = tabsStore.tabs.find((t) => t.id === activeTabId)
+    const inheritance = await resolveInheritance({
+      projectId: wsStore.activeProjectId,
+      endpointId: activeTab?.endpointId,
+      savedRequestId: activeTab?.savedRequestId,
+      requestAuth: auth,
+      requestPre: preScript,
+      requestPost: get().postScript,
+    })
+    const effectiveAuth = inheritance.auth
+    const preScripts = inheritance.preScripts
+    const postScripts = inheritance.postScripts
+
     const preScriptLogs: ConsoleLog[] = []
 
     // Per-send variable overlay. Pre-request script can call
@@ -417,10 +439,13 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     let preScriptHeaders: { key: string; value: string }[] | null = null
     let preScriptSkippedRequest = false
 
-    // Run pre-request script before variables are resolved so the script can
-    // mutate them.
-    if (preScript && preScript.trim()) {
-      const activeVarsRecord = envStore.getActiveVariables()
+    // Run pre-request scripts (cascade: project → folder(s) → request) before
+    // variables are resolved so they can mutate them. They share `scriptOverrides`
+    // so a project/folder script's env writes are visible to inner scripts.
+    for (const script of preScripts) {
+      if (!script || !script.trim()) continue
+      // Rebuild the env map each iteration so later scripts see earlier writes.
+      const activeVarsRecord = { ...envStore.getActiveVariables(), ...scriptOverrides }
       const envMap = new Map<string, string>(Object.entries(activeVarsRecord))
       const globalMap = new Map<string, string>()
       const globalVars = envStore.globalVariables || []
@@ -442,7 +467,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           headers: headers.filter((h) => h.enabled).map((h) => ({ key: h.key, value: h.value })),
         },
       })
-      const scriptResult = await runScript(preScript, pmApi)
+      const scriptResult = await runScript(script, pmApi)
       // test-runner emits 'info'/'debug' via console.info/debug — flatten those
       // into 'log' so they satisfy ConsoleLog's narrower level union.
       for (const log of scriptResult.consoleLogs) {
@@ -450,8 +475,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         preScriptLogs.push({ level, message: log.message, timestamp: log.timestamp })
       }
       Object.assign(scriptOverrides, scriptResult.globalUpdates, scriptResult.envUpdates)
-      preScriptHeaders = scriptResult.requestHeaders
-      preScriptSkippedRequest = scriptResult.skipRequest
+      // Later scripts' header mutations take precedence; keep the last non-null.
+      if (scriptResult.requestHeaders) preScriptHeaders = scriptResult.requestHeaders
+      if (scriptResult.skipRequest) preScriptSkippedRequest = true
     }
 
     // pm.execution.skipRequest() — abort the actual HTTP send. Surface the
@@ -507,7 +533,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       resolvedHeaders = merged
     }
     const resolvedBody = resolveRequestBody(body, activeVars) ?? body
-    const resolvedAuth = resolveAuth(auth, activeVars)
+    // Use the inherited/effective auth (request → folder → project), not just
+    // the request's own — so an 'inherit' request actually sends the folder /
+    // project credential on Send, matching the Runner.
+    const resolvedAuth = resolveAuth(effectiveAuth ?? undefined, activeVars)
 
     responseStore.setLoading(true)
     responseStore.clearResponse()
@@ -632,7 +661,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
 
       if (result?.success && result.data) {
         const apiResp = result.data as ApiResponse
-        const { postScript: ps, assertions: asserts } = get()
+        const { assertions: asserts } = get()
 
         // Run post-response script and assertions
         const allTestResults = [...(apiResp.testResults || [])]
@@ -644,8 +673,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           allTestResults.push(...assertionResults)
         }
 
-        // Run post-response script (pm.test, pm.expect, etc.)
-        if (ps && ps.trim()) {
+        // Run post-response (test) scripts in cascade order (project →
+        // folder(s) → request). pm.test results from every level are merged.
+        for (const script of postScripts) {
+          if (!script || !script.trim()) continue
           const activeVarsRecord = { ...envStore.getActiveVariables(), ...scriptOverrides }
           const envMap = new Map<string, string>(Object.entries(activeVarsRecord))
           const globalMap = new Map<string, string>()
@@ -660,9 +691,11 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
             eventName: 'test',
             requestName,
           })
-          const scriptResult = await runScript(ps, pmApi)
+          const scriptResult = await runScript(script, pmApi)
           allTestResults.push(...scriptResult.results)
           allConsoleLogs.push(...scriptResult.consoleLogs)
+          // Fold writes into the overlay so a later cascade script sees them.
+          Object.assign(scriptOverrides, scriptResult.globalUpdates, scriptResult.envUpdates)
 
           // Persist `pm.environment.set(...)` / `pm.globals.set(...)` writes
           // back to the env store. Without this, scripts that capture a token

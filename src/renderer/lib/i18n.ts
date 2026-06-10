@@ -185,6 +185,20 @@ const translations: Record<Locale, Record<string, string>> = {
     'tree.importFolder': 'Import Folder…',
     'tree.rename': 'Rename',
     'tree.delete': 'Delete',
+    'tree.folderSettings': 'Settings',
+    'folderSettings.title': 'Folder Settings',
+    'folderSettings.authorization': 'Authorization',
+    'folderSettings.scripts': 'Scripts',
+    'folderSettings.authType': 'Type',
+    'folderSettings.preRequest': 'Pre-request Script',
+    'folderSettings.testScript': 'Test Script',
+    'folderSettings.inheritHint':
+      'Requests in this folder inherit auth from the parent folder or project.',
+    'folderSettings.noneHint':
+      'Requests in this folder send no authorization (overrides any parent auth).',
+    'folderSettings.cascadeHint':
+      'These run in cascade: project → folder → request (pre-request before each request, test after).',
+    'folderSettings.saved': 'Folder settings saved',
     'tree.createTestSuite': 'Create Test Suite from this folder',
     'tree.createTestSuiteFromProject': 'Create Test Suite from this project',
     'tree.createTestSuiteFromRequest': 'Create Test Suite from this request',
@@ -1647,6 +1661,20 @@ const translations: Record<Locale, Record<string, string>> = {
     'tree.importFolder': 'Klasör İçe Aktar…',
     'tree.rename': 'Yeniden Adlandır',
     'tree.delete': 'Sil',
+    'tree.folderSettings': 'Ayarlar',
+    'folderSettings.title': 'Klasör Ayarları',
+    'folderSettings.authorization': 'Yetkilendirme',
+    'folderSettings.scripts': "Script'ler",
+    'folderSettings.authType': 'Tür',
+    'folderSettings.preRequest': 'İstek Öncesi Script',
+    'folderSettings.testScript': "Test Script'i",
+    'folderSettings.inheritHint':
+      'Bu klasördeki istekler yetkilendirmeyi üst klasörden veya projeden miras alır.',
+    'folderSettings.noneHint':
+      'Bu klasördeki istekler hiçbir yetkilendirme göndermez (üst yetkilendirmeyi geçersiz kılar).',
+    'folderSettings.cascadeHint':
+      'Bunlar zincirleme çalışır: proje → klasör → istek (her istekten önce pre-request, sonra test).',
+    'folderSettings.saved': 'Klasör ayarları kaydedildi',
     'tree.createTestSuite': 'Bu klasörden Test Suite oluştur',
     'tree.createTestSuiteFromProject': 'Bu projeden Test Suite oluştur',
     'tree.createTestSuiteFromRequest': 'Bu istekten Test Suite oluştur',

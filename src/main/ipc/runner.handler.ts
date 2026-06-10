@@ -12,10 +12,18 @@ import * as tsiRepo from '../db/test-suite-item.repo'
 import * as historyRepo from '../db/history.repo'
 import * as envRepo from '../db/environment.repo'
 import { getDb } from '../db/database'
+import type { FolderRow } from '../db/project.repo'
 import { isRunnableInProject } from '../lib/ownership'
 import { resolveVariables } from '../lib/variable-resolver'
 import { loadEnvVars } from '../lib/env-vars'
 import { evaluateJsonPath } from '../lib/json-path'
+import { loadProjectSettings } from '../lib/project-settings'
+import {
+  projectAuthToAuthConfig,
+  resolveEffectiveAuth,
+  collectCascadeScripts,
+  type AuthConfigLike,
+} from '../lib/auth-inheritance'
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -319,6 +327,27 @@ function getRunnableEntity(id: string): endpointRepo.EndpointRow | undefined {
   const suiteItem = tsiRepo.getItemById(id)
   if (suiteItem) return suiteItemToEndpoint(suiteItem)
   return undefined
+}
+
+/**
+ * Walk an endpoint's ancestor folder chain, outermost → innermost (leaf). Used
+ * to resolve inherited auth and cascade scripts. Cycle-guarded so a corrupt
+ * parent_id loop can't hang the run.
+ */
+function buildFolderChain(folderId: string | null | undefined): FolderRow[] {
+  if (!folderId) return []
+  const db = getDb()
+  const chain: FolderRow[] = []
+  const seen = new Set<string>()
+  let id: string | null = folderId
+  while (id && !seen.has(id)) {
+    seen.add(id)
+    const folder = db.prepare('SELECT * FROM folders WHERE id = ?').get(id) as FolderRow | undefined
+    if (!folder) break
+    chain.unshift(folder)
+    id = folder.parent_id
+  }
+  return chain
 }
 
 function headersArrayToRecord(
@@ -1077,6 +1106,13 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   }
   const envVars = loadEnvironmentVariables(effectiveEnvId, options.workspaceId, options.projectId)
 
+  // Project-level auth + cascade scripts (inheritance). Loaded once per run.
+  // `projectSettings` feeds the script cascade (project → folder → request);
+  // `projectAuth` is the bottom fallback when a request's auth is 'inherit' and
+  // no ancestor folder sets one. Best-effort — undefined in headless contexts.
+  const projectSettings = await loadProjectSettings(options.projectId)
+  const projectAuth = projectAuthToAuthConfig(projectSettings?.auth)
+
   // Run-level accumulators for every variable a script writes. `envVars` is
   // mutated in place so updates flow to *later requests within this run*; these
   // two records additionally capture the net deltas so they can be persisted to
@@ -1150,49 +1186,77 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
         }
 
         try {
-          // Run pre-request script (Postman event[prerequest] / Insomnia preRequest)
-          const schemaForScripts = parseJsonSafe<{ preScript?: string; postScript?: string }>(
-            endpoint.request_schema,
-            {},
+          // Resolve inherited auth + cascade scripts up the folder/project chain.
+          const folderChain = buildFolderChain(endpoint.folder_id)
+          const schemaForScripts = parseJsonSafe<{
+            preScript?: string
+            postScript?: string
+            auth?: AuthConfig
+          }>(endpoint.request_schema, {})
+
+          // Auth: request → nearest folder → project (override; 'inherit'/unset
+          // is transparent, explicit 'none' stops). Replaces the request's own
+          // auth on the outgoing options before variable resolution.
+          const effectiveAuth = resolveEffectiveAuth(
+            requestOptions.auth as unknown as AuthConfigLike | null | undefined,
+            folderChain,
+            projectAuth,
           )
+          requestOptions.auth = (effectiveAuth ??
+            undefined) as unknown as HttpRequestOptions['auth']
+
+          // Scripts: cascade top-down (project → folder(s) → request).
+          const { pre: preScripts, post: postScripts } = collectCascadeScripts(
+            folderChain,
+            projectSettings,
+            schemaForScripts.preScript,
+            schemaForScripts.postScript,
+          )
+
+          // Run pre-request scripts in order. They share one context so a
+          // project/folder script's env writes are visible to inner scripts.
           const scriptCtx = newScriptContext(envVars, iterationData[iter] ?? {}, iter, iterations)
-          if (schemaForScripts.preScript) {
-            runUserScript(schemaForScripts.preScript, scriptCtx, null)
+          for (const s of preScripts) {
+            scriptCtx.envUpdates = {}
+            scriptCtx.globalUpdates = {}
+            runUserScript(s, scriptCtx, null)
             mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
-            if (scriptCtx.skipRequest) {
-              const skipResult: EndpointRunResult = {
-                endpointId,
-                endpointName: endpoint.name,
-                method: requestOptions.method,
-                url: requestOptions.url,
-                status: null,
-                statusText: 'SKIPPED',
-                duration: 0,
-                passed: 0,
-                failed: 0,
-                skipped: 1,
-                assertions: [],
-                iteration: iter + 1,
-              }
-              results.push(skipResult)
-              sendProgress({ current: i + 1, total, endpointId, result: skipResult })
-              if (options.delay && options.delay > 0 && i < total - 1 && !runState.shouldStop) {
-                await delay(options.delay)
-              }
-              continue
+          }
+          if (scriptCtx.skipRequest) {
+            const skipResult: EndpointRunResult = {
+              endpointId,
+              endpointName: endpoint.name,
+              method: requestOptions.method,
+              url: requestOptions.url,
+              status: null,
+              statusText: 'SKIPPED',
+              duration: 0,
+              passed: 0,
+              failed: 0,
+              skipped: 1,
+              assertions: [],
+              iteration: iter + 1,
             }
+            results.push(skipResult)
+            sendProgress({ current: i + 1, total, endpointId, result: skipResult })
+            if (options.delay && options.delay > 0 && i < total - 1 && !runState.shouldStop) {
+              await delay(options.delay)
+            }
+            continue
           }
 
           // Resolve environment variables in request
           const resolvedOptions = resolveRequestOptions(requestOptions, envVars)
           const response = await executeHttpRequest(resolvedOptions)
 
-          // Run post-response (test) script
+          // Run post-response (test) scripts in cascade order (project →
+          // folder(s) → request). They share the run's script context, so a
+          // folder/project test sees the same response + env the request used.
           const scriptTestResults: AssertionResult[] = []
-          if (schemaForScripts.postScript) {
+          for (const s of postScripts) {
             scriptCtx.envUpdates = {}
             scriptCtx.globalUpdates = {}
-            runUserScript(schemaForScripts.postScript, scriptCtx, {
+            runUserScript(s, scriptCtx, {
               status: response.status,
               statusText: response.statusText,
               headers: response.headers,
@@ -1200,13 +1264,14 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
               bodySize: response.bodySize,
             })
             mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
-            for (const t of scriptCtx.testResults) {
-              scriptTestResults.push({
-                name: t.name,
-                passed: t.passed,
-                error: t.error,
-              })
-            }
+          }
+          // Collect every pm.test() the scripts registered (pre + post).
+          for (const t of scriptCtx.testResults) {
+            scriptTestResults.push({
+              name: t.name,
+              passed: t.passed,
+              error: t.error,
+            })
           }
 
           // Auto-save to history

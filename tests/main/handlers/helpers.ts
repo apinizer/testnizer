@@ -195,7 +195,10 @@ const SCHEMA_SQL = `
     parent_id TEXT,
     name TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    branch_id TEXT
+    branch_id TEXT,
+    auth TEXT,
+    pre_script TEXT,
+    post_script TEXT
   );
 
   CREATE TABLE endpoints (

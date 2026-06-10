@@ -150,6 +150,9 @@ function runMigrations(database: Database.Database): void {
       parent_id TEXT,
       name TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      auth TEXT,
+      pre_script TEXT,
+      post_script TEXT,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
       FOREIGN KEY (parent_id) REFERENCES folders(id) ON DELETE CASCADE
     );
@@ -358,6 +361,23 @@ function runMigrations(database: Database.Database): void {
       database.exec(`ALTER TABLE ${tbl} ADD COLUMN branch_id TEXT`)
       database.exec(`CREATE INDEX IF NOT EXISTS idx_${tbl}_branch ON ${tbl}(project_id, branch_id)`)
     }
+  }
+
+  // ─── Folder-level auth + scripts (inheritance) ──────────────
+  // Folders can carry their own auth (JSON AuthConfig) and pre/test scripts.
+  // Requests whose auth is 'inherit' fall back to the nearest folder, then the
+  // project; scripts cascade project → folder(s) → request. NULL = unset.
+  const folderCols = (database.pragma('table_info(folders)') as Array<{ name: string }>).map(
+    (c) => c.name,
+  )
+  if (!folderCols.includes('auth')) {
+    database.exec(`ALTER TABLE folders ADD COLUMN auth TEXT`)
+  }
+  if (!folderCols.includes('pre_script')) {
+    database.exec(`ALTER TABLE folders ADD COLUMN pre_script TEXT`)
+  }
+  if (!folderCols.includes('post_script')) {
+    database.exec(`ALTER TABLE folders ADD COLUMN post_script TEXT`)
   }
 
   // Scheduled tasks table

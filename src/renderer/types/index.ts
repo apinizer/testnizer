@@ -75,6 +75,9 @@ export type BodyType =
   | 'binary'
 export type AuthType =
   | 'none'
+  // Inherit auth from the nearest ancestor folder, else the project. The Send +
+  // Runner paths resolve this to a concrete type before the engine sees it.
+  | 'inherit'
   | 'basic'
   | 'bearer'
   | 'api-key'
@@ -152,6 +155,14 @@ export interface Folder {
   parent_id: string | null
   name: string
   sort_order: number
+  /** Folder-level auth — JSON-encoded AuthConfig string as stored in the DB
+   *  (parse before use). Descendant requests whose own auth is 'inherit' fall
+   *  back to the nearest folder that sets one, then the project. */
+  auth?: string | null
+  /** Folder-level pre-request / test scripts. These cascade (Postman-style):
+   *  project → outer folder → inner folder → request, all run in order. */
+  pre_script?: string | null
+  post_script?: string | null
 }
 
 // ─── Tree Node (UI) ──────────────────────────────────────────

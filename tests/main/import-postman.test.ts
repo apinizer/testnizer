@@ -369,6 +369,70 @@ describe('importPostman — realistic v2.1 collection', () => {
   })
 })
 
+// ─── Folder-level auth inheritance ─────────────────────────
+
+describe('importPostman — folder-level auth inheritance', () => {
+  // Postman item-groups (folders) can carry their own `auth`; descendant
+  // requests inherit the nearest ancestor's (folder → collection root). Only
+  // collection-root inheritance used to be wired up, so auth set on a folder
+  // never reached its children — the Postman cousin of the Insomnia bug.
+  const coll = {
+    info: {
+      name: 'FolderAuth',
+      schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+    },
+    auth: { type: 'bearer', bearer: [{ key: 'token', value: '{{rootToken}}' }] },
+    item: [
+      {
+        name: 'Admin',
+        auth: {
+          type: 'basic',
+          basic: [
+            { key: 'username', value: 'u' },
+            { key: 'password', value: 'p' },
+          ],
+        },
+        item: [
+          { name: 'Admin List', request: { method: 'GET', url: 'https://x/admin' } },
+          {
+            name: 'Sub',
+            item: [
+              { name: 'Sub Call', request: { method: 'GET', url: 'https://x/admin/sub' } },
+              {
+                name: 'Open Call',
+                request: { method: 'GET', url: 'https://x/open', auth: { type: 'noauth' } },
+              },
+            ],
+          },
+        ],
+      },
+      { name: 'Root Call', request: { method: 'GET', url: 'https://x/root' } },
+    ],
+  }
+
+  const authOf = (name: string): Record<string, unknown> =>
+    JSON.parse(
+      (
+        memDb
+          .prepare('SELECT request_schema FROM endpoints WHERE name = ?')
+          .get(name) as { request_schema: string }
+      ).request_schema,
+    ).auth
+
+  it('inherits folder auth (incl. nested), with request-level override winning', async () => {
+    await importPostman('proj-1', JSON.stringify(coll))
+    // Direct child of the basic-auth folder inherits it.
+    expect(authOf('Admin List')).toEqual({ type: 'basic', basic: { username: 'u', password: 'p' } })
+    // A nested folder with no auth still inherits the nearest ancestor (Admin).
+    expect(authOf('Sub Call')).toEqual({ type: 'basic', basic: { username: 'u', password: 'p' } })
+    // An explicit per-request noauth overrides the inherited folder auth.
+    expect(authOf('Open Call')).toEqual({ type: 'none' })
+    // A top-level request still inherits the collection-root bearer.
+    expect(authOf('Root Call').type).toBe('bearer')
+    expect((authOf('Root Call').bearer as { token: string }).token).toBe('{{rootToken}}')
+  })
+})
+
 // ─── Placeholder filter (v1.3.1 B16) ───────────────────────
 
 describe('importPostman — placeholder item filter (B16)', () => {

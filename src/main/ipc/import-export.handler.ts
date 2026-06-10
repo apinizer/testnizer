@@ -1332,6 +1332,9 @@ interface PostmanItem {
   item?: PostmanItem[] // folder (item group)
   description?: string
   event?: PostmanEvent[]
+  /** Folder-level auth — inherited by descendant requests that don't set
+   *  their own (Postman item-groups can carry an `auth` block). */
+  auth?: PostmanAuth
 }
 
 interface PostmanEvent {
@@ -1834,7 +1837,11 @@ export async function importPostman(
     }
   }
 
-  function processItems(items: PostmanItem[], parentFolderId: string | null): void {
+  function processItems(
+    items: PostmanItem[],
+    parentFolderId: string | null,
+    inheritedAuth: PostmanAuth | undefined,
+  ): void {
     for (const item of items) {
       const isFolder = Array.isArray(item.item) && !item.request
       if (isFolder) {
@@ -1843,7 +1850,10 @@ export async function importPostman(
           `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
         ).run(folderId, projectId, parentFolderId, item.name || 'Folder', folderCount)
         folderCount++
-        processItems(item.item ?? [], folderId)
+        // A folder's own auth overrides the inherited one for its whole subtree;
+        // absent a block, inheritance flows straight through.
+        const childAuth = item.auth ?? inheritedAuth
+        processItems(item.item ?? [], folderId, childAuth)
         continue
       }
 
@@ -1892,7 +1902,11 @@ export async function importPostman(
           : []
 
       const body = mapPostmanBodyToUi(req.body)
-      const auth = mapPostmanAuthToUi(req.auth ?? collection.auth)
+      // A request with no auth inherits the nearest ancestor's (folder →
+      // collection root); an explicit block on the request (incl. `noauth`)
+      // overrides. Previously only the collection root was inherited, so an
+      // auth set on a folder never reached its child requests.
+      const auth = mapPostmanAuthToUi(req.auth ?? inheritedAuth)
 
       // Pull pre-request + test scripts from item.event[]
       const { preScript, postScript } = extractPostmanEventScripts(item.event)
@@ -1933,7 +1947,7 @@ export async function importPostman(
     }
   }
 
-  processItems(collection.item, rootFolderId)
+  processItems(collection.item, rootFolderId, collection.auth)
 
   if (endpointCount === 0 && folderCount === 0) {
     warnings.push('No requests or folders found in the Postman collection')
@@ -3298,10 +3312,13 @@ interface InsomniaV5Doc {
   meta?: { id?: string; name?: string }
   collection?: InsomniaV5Item[]
   environments?: { data?: Record<string, unknown>; name?: string }
+  /** Collection-root authentication that every request inherits unless it
+   *  carries (or a closer folder carries) its own block. */
+  authentication?: InsomniaAuth
 }
 
 interface InsomniaV5Item {
-  meta?: { id?: string; name?: string }
+  meta?: { id?: string; name?: string; sortKey?: number }
   name?: string
   url?: string
   method?: string
@@ -3312,6 +3329,26 @@ interface InsomniaV5Item {
   description?: string
   children?: InsomniaV5Item[] // request groups
   scripts?: { preRequest?: string; afterResponse?: string }
+}
+
+/**
+ * Insomnia renders and *runs* a folder's children ordered by `meta.sortKey`
+ * ascending (more-negative first), NOT by their position in the exported YAML
+ * array — the two routinely disagree. Importing in raw array order therefore
+ * scrambled folders/requests, so a Run fired them out of sequence and
+ * order-dependent chains (token setup → protected calls) broke. Sort every
+ * sibling level by sortKey; stable on the original index so items that share or
+ * lack a key keep their array order.
+ */
+function sortByInsomniaSortKey<T extends { meta?: { sortKey?: number } }>(items: T[]): T[] {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const ka = typeof a.item.meta?.sortKey === 'number' ? a.item.meta.sortKey : 0
+      const kb = typeof b.item.meta?.sortKey === 'number' ? b.item.meta.sortKey : 0
+      return ka - kb || a.index - b.index
+    })
+    .map((entry) => entry.item)
 }
 
 function isInsomniaV5(doc: unknown): doc is InsomniaV5Doc {
@@ -3693,8 +3730,12 @@ function importInsomniaV5(
   const endpointIds: string[] = []
   const suggestedEnvVars: Record<string, string> = {}
 
-  function walk(items: InsomniaV5Item[], parentFolderId: string | null): void {
-    for (const item of items) {
+  function walk(
+    items: InsomniaV5Item[],
+    parentFolderId: string | null,
+    inheritedAuth: InsomniaAuth | undefined,
+  ): void {
+    for (const item of sortByInsomniaSortKey(items)) {
       const isFolder = Array.isArray(item.children)
       if (isFolder) {
         const folderId = randomUUID()
@@ -3702,7 +3743,11 @@ function importInsomniaV5(
           `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
         ).run(folderId, projectId, parentFolderId, item.name ?? 'Folder', folderCount)
         folderCount++
-        walk(item.children ?? [], folderId)
+        // A folder may carry its own auth that overrides the inherited one for
+        // its whole subtree (including an explicit "No Auth" → {type:'none'}).
+        // Absent a block, inheritance flows straight through.
+        const childAuth = item.authentication !== undefined ? item.authentication : inheritedAuth
+        walk(item.children ?? [], folderId, childAuth)
         continue
       }
 
@@ -3723,7 +3768,14 @@ function importInsomniaV5(
         enabled: !h.disabled,
       }))
       const body = mapInsomniaBodyToUi(item.body)
-      const auth = mapInsomniaAuthToUi(item.authentication)
+      // A request with no `authentication` block inherits the nearest ancestor's
+      // (folder → collection root). Insomnia exports the common "Bearer
+      // {{accessToken}}" once at the collection root and leaves child requests
+      // bare; without inheriting it the imported requests sent no Authorization
+      // and the server replied 401 "Empty Key" even though the token variable
+      // was populated. An explicit `{type:'none'}` still maps to null (override).
+      const effectiveAuth = item.authentication !== undefined ? item.authentication : inheritedAuth
+      const auth = mapInsomniaAuthToUi(effectiveAuth)
 
       const requestSchema: Record<string, unknown> = {
         url: insomniaUrlWithParams(url, params),
@@ -3769,7 +3821,7 @@ function importInsomniaV5(
     }
   }
 
-  walk(doc.collection ?? [], rootFolderId)
+  walk(doc.collection ?? [], rootFolderId, doc.authentication)
 
   // Create a REAL environment from the bundled `environments.data` block so the
   // imported collection's {{vars}} have something to resolve against. The v5
@@ -4123,9 +4175,13 @@ export function mapInsomniaAuthToUi(
         basic: { username: auth.username ?? '', password: auth.password ?? '' },
       }
     case 'bearer':
+      // Insomnia exports bearer auth with `prefix: ""` by default and itself
+      // treats an empty prefix as "Bearer" (`prefix || 'Bearer'`). Use `||`,
+      // not `??`, so the imported request stores "Bearer" rather than a blank
+      // prefix that shows empty in the auth editor.
       return {
         type: 'bearer',
-        bearer: { token: auth.token ?? '', prefix: auth.prefix ?? 'Bearer' },
+        bearer: { token: auth.token ?? '', prefix: auth.prefix || 'Bearer' },
       }
     case 'apikey':
       return {
