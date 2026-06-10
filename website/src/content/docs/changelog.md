@@ -10,6 +10,31 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.18
+
+**Scripting levels up: built-in OAuth 2.0 tokens, `pm.sendRequest`, response
+cookies in scripts, and the same script runtime in Send and Run. Plus a
+rewritten Scripts guide.**
+
+- **Built-in OAuth 2.0 token grant:** the OAuth 2.0 auth type now fetches a
+  token. Pick Client Credentials or Password grant, fill in token URL / client
+  id / secret / scope, and Testnizer requests + caches the token automatically
+  before each request. With folder/project auth inheritance you can set OAuth
+  2.0 once on a folder and every request below gets a fresh token — no
+  token-fetch request or script needed.
+- **`pm.sendRequest`:** scripts can fire an auxiliary HTTP request mid-script
+  (`await` or callback) — token fetch, polling, setup. Works in Send and Run.
+- **Response cookies in scripts:** `pm.response.cookies.get('session')`.
+- **`pm.*.toObject()`** snapshots for environment / globals / collectionVariables
+  / variables.
+- **Send / Run script parity:** the Runner now exposes the same globals as Send
+  (`CryptoJS`, the `t` alias) — a CryptoJS script that passed on Send no longer
+  throws on Run.
+- **Async scripts:** you can `await` inside pre-request and test scripts.
+- **Docs:** the [Scripts guide](/docs/scripts/) was rewritten to match the real
+  runtime (CryptoJS instead of unsupported `require()`, the full `pm` API, the
+  project → folder → request cascade, auth inheritance, and OAuth 2.0).
+
 ## v1.4.17
 
 **Packaging fix: macOS (and Windows) auto-update works again. No app changes —

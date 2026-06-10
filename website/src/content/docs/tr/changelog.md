@@ -11,6 +11,32 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.18
+
+**Scripting güçlendi: yerleşik OAuth 2.0 token (artık elle token isteği
+yazmaya gerek yok), `pm.sendRequest`, script'te response cookie'leri ve Send ile
+Run'da aynı script runtime'ı. Ayrıca yeniden yazılmış Scripts kılavuzu.**
+
+- **Yerleşik OAuth 2.0 token grant:** OAuth 2.0 auth tipi artık gerçekten token
+  alıyor. Client Credentials veya Password grant seç, token URL / client id /
+  secret / scope gir; Testnizer her istekten önce token'ı otomatik alıp **cache**
+  ediyor (süresi dolmaya yaklaşınca yeniliyor). Klasör/proje auth inheritance ile
+  OAuth 2.0'ı klasöre bir kez ayarla, altındaki her istek taze token alsın —
+  token-fetch isteği veya script'e gerek yok.
+- **`pm.sendRequest`:** script içinden yardımcı HTTP isteği (`await` veya
+  callback) — token alma, polling, setup. Send ve Run'da çalışıyor.
+- **Script'te response cookie'leri:** `pm.response.cookies.get('session')`.
+- **`pm.*.toObject()`** anlık görüntüleri (environment / globals /
+  collectionVariables / variables).
+- **Send / Run script paritesi:** Runner artık Send ile aynı global'leri sunuyor
+  (`CryptoJS`, `t` alias) — Send'de geçen bir CryptoJS script'i Run'da artık
+  patlamıyor.
+- **Async script'ler:** pre-request ve test script'leri içinde `await`
+  kullanabilirsin.
+- **Dokümanlar:** [Scripts kılavuzu](/docs/scripts/) gerçek runtime'a göre
+  yeniden yazıldı (desteklenmeyen `require()` yerine CryptoJS, tam `pm` API'si,
+  proje → klasör → istek zinciri, auth inheritance ve OAuth 2.0).
+
 ## v1.4.17
 
 **Paketleme düzeltmesi: macOS (ve Windows) otomatik güncellemesi yeniden

@@ -71,8 +71,12 @@ pm.environment.get('baseUrl')
 pm.variables.set('correlationId', pm.variables.get('$randomUuid'))
 ```
 
-Setters write to the **current value** of the active environment. They persist
-across requests within the same Testnizer session.
+Setters write to the **current value** of the active environment. Writes from a
+**test** script persist — a token captured in one request is available to the
+next request and shows up in the environment editor. See
+[Scripts and test assertions](/docs/scripts/) for the full `pm` API, the
+project/folder script cascade, and built-in OAuth 2.0 (which often removes the
+need for a token-fetch script entirely).
 
 ## Sharing collections without leaking secrets
 
