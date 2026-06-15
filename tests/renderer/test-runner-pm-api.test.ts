@@ -101,9 +101,9 @@ describe('script object aliases', () => {
     expect(out.envUpdates).toEqual({ accessToken: 'INSO' })
   })
 
-  it('bru.environment.set is captured (Bruno imports)', async () => {
+  it('bru.setEnvVar is captured (Bruno imports — real bru API, not a pm alias)', async () => {
     const pm = makePm(makeResponse())
-    const out = await runScript(`bru.environment.set('accessToken', 'BRU')`, pm)
+    const out = await runScript(`bru.setEnvVar('accessToken', 'BRU')`, pm)
     expect(out.envUpdates).toEqual({ accessToken: 'BRU' })
   })
 
@@ -239,11 +239,13 @@ describe('pm.response', () => {
     expect(out.results[0].passed).toBe(true)
   })
 
-  it('json() returns null when the body is not valid JSON', async () => {
+  it('json() throws on invalid JSON (Postman/Newman-compatible)', async () => {
     const pm = makePm(makeResponse({ body: 'plain text' }))
     const script = `
-      pm.test('json-null', () => {
-        pm.expect(pm.response.json()).to.equal(null)
+      pm.test('json-throws', () => {
+        var threw = false
+        try { pm.response.json() } catch (e) { threw = true }
+        pm.expect(threw).to.equal(true)
       })`
     const out = await runScript(script, pm)
     expect(out.results[0].passed).toBe(true)

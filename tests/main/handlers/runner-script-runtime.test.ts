@@ -127,4 +127,36 @@ describe('runner script runtime parity', () => {
     expect(res.data!.envUpdates.auxOk).toBe('true') // engine response reached the script
     expect(res.data!.envUpdates.auxCode).toBe('200')
   })
+
+  // Parity with the Send path: pm.response.body must be the raw body string so
+  // real token scripts (String(pm.response.body).trim() → JSON.parse) work. Was
+  // undefined on Run → token scripts produced {} → accessToken cleared → 401.
+  it('pm.response.body is the raw body string so token scripts can String()/parse it', async () => {
+    const ep = seedEndpoint(testDb, projectId, {
+      url: 'http://api.test/token',
+      method: 'GET',
+      postScript: `
+        var raw = String(pm.response.body || '').trim();
+        pm.environment.set('rawLen', String(raw.length));
+        pm.environment.set('bodyIsString', String(typeof pm.response.body === 'string'));
+        pm.environment.set('bodyEqualsText', String(pm.response.body === pm.response.text()));
+        var json = pm.response.json();
+        pm.environment.set('okFlag', String(json.ok));
+        pm.test('body present + parseable', function () {
+          pm.expect(raw).to.be.a('string').and.not.empty;
+        });
+      `,
+    })
+    const res = (await harness.invoke('runner:execute', {
+      projectId,
+      environmentId: envId,
+      endpointIds: [ep],
+    })) as { success: boolean; data?: { envUpdates: Record<string, string> } }
+    expect(res.success).toBe(true)
+    const u = res.data!.envUpdates
+    expect(u.bodyIsString).toBe('true')
+    expect(u.bodyEqualsText).toBe('true')
+    expect(u.rawLen).toBe('11') // '{"ok":true}'.length — was '0' before the body fix
+    expect(u.okFlag).toBe('true')
+  })
 })

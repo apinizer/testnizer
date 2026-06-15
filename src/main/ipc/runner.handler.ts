@@ -17,7 +17,6 @@ import { isRunnableInProject } from '../lib/ownership'
 import { resolveVariables } from '../lib/variable-resolver'
 import { loadEnvVars } from '../lib/env-vars'
 import { evaluateJsonPath } from '../lib/json-path'
-import CryptoJS from 'crypto-js'
 import { loadProjectSettings } from '../lib/project-settings'
 import {
   projectAuthToAuthConfig,
@@ -25,6 +24,8 @@ import {
   collectCascadeScripts,
   type AuthConfigLike,
 } from '../lib/auth-inheritance'
+import { buildScriptBindings, createPmResponse, expect as chaiExpect } from '../../shared/script'
+import type { NormalizedResponse, PmLike } from '../../shared/script'
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -647,14 +648,44 @@ async function runUserScript(
     ctx.consoleLogs.push(args.map(String).join(' '))
   }
 
-  function buildPm() {
-    const expect = (value: unknown) => buildExpectChain(value)
+  const normalized: NormalizedResponse | null = response
+    ? {
+        code: response.status ?? 0,
+        statusText: response.statusText ?? '',
+        headers: response.headers ?? {},
+        body: response.body ?? '',
+        cookies: response.cookies ?? [],
+        responseTime: 0,
+        responseSize: response.bodySize ?? (response.body ? response.body.length : 0),
+      }
+    : null
+  const substitute = (t: string, obj: Record<string, unknown>): string =>
+    t.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_m, k: string) =>
+      obj[k] == null ? `{{${k}}}` : String(obj[k]),
+    )
+  const clearAll = (mark?: Record<string, string>): void => {
+    for (const k of Object.keys(ctx.envVars)) {
+      delete ctx.envVars[k]
+      if (mark) mark[k] = ''
+    }
+  }
+  const cookieFind = (n: string) =>
+    (normalized?.cookies ?? []).find((c) => c.name.toLowerCase() === n.toLowerCase())
+
+  function buildPm(): PmLike {
     return {
+      info: {
+        eventName: 'test',
+        iteration: ctx.iterationIndex,
+        iterationCount: ctx.iterationCount,
+        requestName: '',
+        requestId: '',
+      },
       iterationData: {
         get: (k: string) => ctx.iterationData[k] ?? '',
+        has: (k: string) => k in ctx.iterationData,
         toObject: () => ({ ...ctx.iterationData }),
       },
-      info: { iteration: ctx.iterationIndex, iterationCount: ctx.iterationCount },
       environment: {
         get: (k: string) => ctx.envVars[k] ?? '',
         set: (k: string, v: unknown) => {
@@ -666,7 +697,9 @@ async function runUserScript(
           ctx.envUpdates[k] = ''
         },
         has: (k: string) => k in ctx.envVars,
+        clear: () => clearAll(ctx.envUpdates),
         toObject: () => ({ ...ctx.envVars }),
+        replaceIn: (t: string) => substitute(t, ctx.envVars),
       },
       globals: {
         get: (k: string) => ctx.envVars[k] ?? '',
@@ -679,7 +712,9 @@ async function runUserScript(
           ctx.globalUpdates[k] = ''
         },
         has: (k: string) => k in ctx.envVars,
+        clear: () => clearAll(ctx.globalUpdates),
         toObject: () => ({ ...ctx.envVars }),
+        replaceIn: (t: string) => substitute(t, ctx.envVars),
       },
       // pm.variables.* are request-local / ephemeral (Postman semantics): they
       // resolve within this run for convenience but are deliberately NOT routed
@@ -690,7 +725,12 @@ async function runUserScript(
           ctx.envVars[k] = String(v)
         },
         has: (k: string) => k in ctx.envVars,
+        unset: (k: string) => {
+          delete ctx.envVars[k]
+        },
+        clear: () => clearAll(),
         toObject: () => ({ ...ctx.envVars }),
+        replaceIn: (t: string) => substitute(t, ctx.envVars),
       },
       collectionVariables: {
         get: (k: string) => ctx.envVars[k] ?? '',
@@ -698,20 +738,24 @@ async function runUserScript(
           ctx.envVars[k] = String(v)
           ctx.envUpdates[k] = String(v)
         },
+        unset: (k: string) => {
+          delete ctx.envVars[k]
+          ctx.envUpdates[k] = ''
+        },
         has: (k: string) => k in ctx.envVars,
+        clear: () => clearAll(ctx.envUpdates),
         toObject: () => ({ ...ctx.envVars }),
+        replaceIn: (t: string) => substitute(t, ctx.envVars),
       },
-      response: response
-        ? buildResponseShim(response)
-        : {
-            code: 0,
-            status: '',
-            text: () => '',
-            json: () => null,
-            cookies: buildCookieShim([]),
-            headers: { get: () => undefined },
-          },
-      test: (name: string, fn: () => void) => {
+      request: { method: '', url: '', headers: {} },
+      response: normalized ? createPmResponse(normalized) : null,
+      cookies: {
+        get: (n: string) => cookieFind(n)?.value,
+        has: (n: string) => !!cookieFind(n),
+        toObject: () =>
+          Object.fromEntries((normalized?.cookies ?? []).map((c) => [c.name, c.value])),
+      },
+      test: (name: string, fn: () => void | Promise<void>) => {
         try {
           fn()
           ctx.testResults.push({ name, passed: true })
@@ -719,7 +763,7 @@ async function runUserScript(
           ctx.testResults.push({ name, passed: false, error: (e as Error).message })
         }
       },
-      expect,
+      expect: chaiExpect,
       execution: {
         skipRequest: () => {
           ctx.skipRequest = true
@@ -767,26 +811,39 @@ async function runUserScript(
     }
   }
 
+  // Assemble the COMPLETE script global set from the shared runtime — IDENTICAL
+  // to the Send path (test-runner.ts), one source ⇒ no parity drift. Provides
+  // pm/t/insomnia/bru/req/res, require() + the full library set, the legacy
+  // postman.*/responseBody/tests/xml2Json interface, bare expect/test, and the
+  // CryptoJS/_/atob/btoa globals.
+  const pm = buildPm()
+  const { bindings, legacyTests } = buildScriptBindings({ pm, normalizedResponse: normalized })
+  const allBindings: Record<string, unknown> = {
+    ...bindings,
+    console: { log, warn: log, error: log },
+  }
+  const names = Object.keys(allBindings)
+  const values = names.map((n) => allBindings[n])
+
   try {
-    // Bind the SAME globals the renderer Send path binds (test-runner.ts), so a
-    // script behaves identically whether run via Send or the Collection Runner:
-    //   - `t` — Testnizer-branded alias of `pm`.
-    //   - `insomnia` / `bru` — aliases so Insomnia v5 / Bruno scripts run
-    //     unchanged (without them they threw "insomnia is not defined", the
-    //     catch swallowed it, and the env write never happened — issue #12).
-    //   - `CryptoJS` — HMAC / SHA / AES for AWS sigv4, webhook signing, etc.
-    //     Previously only Send had it, so a CryptoJS script passed on Send and
-    //     threw "CryptoJS is not defined" on Run (the env-vars/header paralellik
-    //     bug class).
-    const pm = buildPm()
     // Async function body so scripts can `await pm.sendRequest(...)` / use
     // top-level await; a plain sync body still works unchanged.
+    //
+    // Wrap the body in a `{ }` block so user `const`/`let` redeclarations of an
+    // injected global (e.g. `const _ = require('lodash')`) SHADOW the param
+    // instead of colliding with it ("Identifier '_' has already been declared").
+    // Mirrors the Send path (test-runner.ts) — keep both wrapped.
     const AsyncFunction = Object.getPrototypeOf(async function () {})
       .constructor as FunctionConstructor
-    const fn = new AsyncFunction('pm', 't', 'insomnia', 'bru', 'console', 'CryptoJS', script)
-    await fn(pm, pm, pm, pm, { log, warn: log, error: log }, CryptoJS)
+    const fn = new AsyncFunction(...names, `{\n${script}\n}`)
+    await fn(...values)
   } catch (e) {
     ctx.consoleLogs.push(`Script error: ${(e as Error).message}`)
+  }
+
+  // Drain the legacy `tests` object (tests['name'] = bool) into test results.
+  for (const [name, passed] of Object.entries(legacyTests)) {
+    ctx.testResults.push({ name, passed })
   }
 
   // Wait for any in-flight `pm.sendRequest(...)` calls (their callbacks may
@@ -855,6 +912,12 @@ function buildResponseShim(response: ScriptResponseShape) {
     get status() {
       return response.statusText ?? ''
     },
+    // Raw body string — alias of text(). Postman/Insomnia token scripts do
+    // `String(pm.response.body).trim()` then JSON.parse it, so body must be the
+    // raw string, never a parsed object. Mirrors the Send path (test-runner.ts).
+    get body() {
+      return response.body ?? ''
+    },
     text: () => response.body ?? '',
     json: () => {
       try {
@@ -894,186 +957,6 @@ function buildResponseShim(response: ScriptResponseShape) {
       },
     },
   }
-}
-
-// Test Suite runner expect-chain. Fluent chain mirroring chai-BDD so the same
-// assertion idioms (.to.be.an('array').that.is.empty, .with.lengthOf(n)) work
-// here as in the renderer test-runner.ts. Keep the two implementations in sync.
-type ExpectChain = {
-  to: ExpectChain
-  be: ExpectChain
-  is: ExpectChain
-  that: ExpectChain
-  which: ExpectChain
-  with: ExpectChain
-  and: ExpectChain
-  have: ExpectChain
-  not: ExpectChain
-  equal: (expected: unknown) => ExpectChain
-  eql: (expected: unknown) => ExpectChain
-  a: (type: string) => ExpectChain
-  an: (type: string) => ExpectChain
-  include: (sub: unknown) => ExpectChain
-  length: (n: number) => ExpectChain
-  lengthOf: (n: number) => ExpectChain
-  empty: ExpectChain
-  true: ExpectChain
-  false: ExpectChain
-  null: ExpectChain
-  undefined: ExpectChain
-}
-
-function buildExpectChain(value: unknown): ExpectChain {
-  const fail = (msg: string): never => {
-    throw new Error(msg)
-  }
-  const eqlCheck = (a: unknown, b: unknown): boolean => {
-    if (a === b) return true
-    if (a == null || b == null) return false
-    if (typeof a !== 'object' || typeof b !== 'object') return false
-    return JSON.stringify(a) === JSON.stringify(b)
-  }
-  const isType = (t: string): boolean => {
-    const lower = t.toLowerCase()
-    if (lower === 'array') return Array.isArray(value)
-    if (lower === 'null') return value === null
-    return typeof value === lower
-  }
-  const negated = false
-
-  // Forward-declared so the getters defined inside `make()` can return `chain`
-  // before it's assigned. ESLint's `prefer-const` would force a const here,
-  // but the value is only known after `make()` returns and the getters need
-  // the declaration in scope at construction time.
-  // eslint-disable-next-line prefer-const
-  let chain: ExpectChain
-  const make = (notFlag: boolean): ExpectChain => {
-    const check = (cond: boolean, msg: string): void => {
-      if (notFlag ? cond : !cond) fail(notFlag ? `negated: ${msg}` : msg)
-    }
-    const c: Partial<ExpectChain> = {
-      equal: (expected) => {
-        check(
-          value === expected,
-          `expected ${JSON.stringify(value)} to strictly equal ${JSON.stringify(expected)}`,
-        )
-        return chain
-      },
-      eql: (expected) => {
-        check(
-          eqlCheck(value, expected),
-          `expected ${JSON.stringify(value)} to equal ${JSON.stringify(expected)}`,
-        )
-        return chain
-      },
-      a: (type) => {
-        check(isType(type), `expected ${JSON.stringify(value)} to be a ${type}`)
-        return chain
-      },
-      an: (type) => {
-        check(isType(type), `expected ${JSON.stringify(value)} to be an ${type}`)
-        return chain
-      },
-      include: (sub) => {
-        if (typeof value === 'string' && typeof sub === 'string') {
-          check(value.includes(sub), `expected "${value}" to include "${sub}"`)
-        } else if (Array.isArray(value)) {
-          check(
-            value.some((v) => eqlCheck(v, sub)),
-            `expected array to include ${JSON.stringify(sub)}`,
-          )
-        } else {
-          fail('include is only supported for strings and arrays')
-        }
-        return chain
-      },
-      length: (n) => {
-        const actual = (value as { length?: number } | null | undefined)?.length
-        const match = actual === n
-        if (notFlag ? match : !match) {
-          fail(
-            notFlag
-              ? `expected length not to be ${n}`
-              : `expected length ${n} but got ${String(actual)}`,
-          )
-        }
-        return chain
-      },
-      lengthOf: (n) => {
-        const actual = (value as { length?: number } | null | undefined)?.length
-        const match = actual === n
-        if (notFlag ? match : !match) {
-          fail(
-            notFlag
-              ? `expected length not to be ${n}`
-              : `expected length ${n} but got ${String(actual)}`,
-          )
-        }
-        return chain
-      },
-    }
-    Object.defineProperties(c, {
-      to: { get: () => chain, enumerable: true },
-      be: { get: () => chain, enumerable: true },
-      is: { get: () => chain, enumerable: true },
-      that: { get: () => chain, enumerable: true },
-      which: { get: () => chain, enumerable: true },
-      with: { get: () => chain, enumerable: true },
-      and: { get: () => chain, enumerable: true },
-      have: { get: () => chain, enumerable: true },
-      not: { get: () => make(true), enumerable: true },
-      empty: {
-        get: () => {
-          const isEmpty =
-            (Array.isArray(value) && value.length === 0) ||
-            (typeof value === 'string' && value.length === 0) ||
-            (value !== null &&
-              typeof value === 'object' &&
-              Object.keys(value as object).length === 0)
-          if (notFlag ? isEmpty : !isEmpty) {
-            fail(
-              notFlag
-                ? `expected ${JSON.stringify(value)} to not be empty`
-                : `expected ${JSON.stringify(value)} to be empty`,
-            )
-          }
-          return chain
-        },
-        enumerable: true,
-      },
-      true: {
-        get: () => {
-          check(value === true, `expected ${JSON.stringify(value)} to be true`)
-          return chain
-        },
-        enumerable: true,
-      },
-      false: {
-        get: () => {
-          check(value === false, `expected ${JSON.stringify(value)} to be false`)
-          return chain
-        },
-        enumerable: true,
-      },
-      null: {
-        get: () => {
-          check(value === null, `expected ${JSON.stringify(value)} to be null`)
-          return chain
-        },
-        enumerable: true,
-      },
-      undefined: {
-        get: () => {
-          check(value === undefined, `expected ${JSON.stringify(value)} to be undefined`)
-          return chain
-        },
-        enumerable: true,
-      },
-    })
-    return c as ExpectChain
-  }
-  chain = make(negated)
-  return chain
 }
 
 function delay(ms: number): Promise<void> {

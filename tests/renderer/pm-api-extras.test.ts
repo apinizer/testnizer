@@ -139,3 +139,85 @@ describe('pm.sendRequest (Send path)', () => {
     expect(out.envUpdates.err).toBe('caught')
   })
 })
+
+describe('pm.response.body — raw string (real Postman/Insomnia token script)', () => {
+  it('exposes the raw body string (alias of text(), never a parsed object)', () => {
+    const pm = createPmApi(resp({ body: '{"access_token":"TOK-123"}' }), new Map(), new Map(), {
+      eventName: 'test',
+    })
+    expect(typeof pm.response.body).toBe('string')
+    expect(pm.response.body).toBe('{"access_token":"TOK-123"}')
+    expect(pm.response.body).toBe(pm.response.text())
+    // code is numeric, status is the Postman-style text — used by the script below
+    expect(pm.response.code).toBe(200)
+    expect(pm.response.status).toBe('OK')
+  })
+
+  // Regression for the reported bug: pm.response.body was undefined, so the
+  // script's `String(pm.response.body || '').trim()` produced '', parseJsonResponse
+  // returned {}, accessToken was set to undefined, and the next folder got 401.
+  it("the real Create Token script extracts and saves the access token", async () => {
+    const pm = createPmApi(
+      resp({ status: 200, statusText: 'OK', body: '{"access_token":"TOK-123"}' }),
+      new Map(),
+      new Map(),
+      { eventName: 'test' },
+    )
+    const out = await runScript(
+      `
+        function parseJsonResponse() {
+          var status = pm.response.status;
+          if (status < 200 || status >= 300) { throw new Error('HTTP ' + status); }
+          var raw = String(pm.response.body || '').trim();
+          if (!raw) { return {}; }
+          if (raw.indexOf('<') === 0) { throw new Error('HTML response'); }
+          try { return pm.response.json(); } catch (e) { return JSON.parse(raw); }
+        }
+        pm.test("Status code is 200", function () { pm.response.to.have.status(200); });
+        var json = parseJsonResponse();
+        pm.environment.set("accessToken", json.access_token);
+        pm.test("access_token saved", function () {
+          pm.expect(json.access_token).to.be.a("string").and.not.empty;
+        });
+      `,
+      pm,
+    )
+    expect(out.envUpdates.accessToken).toBe('TOK-123')
+    expect(out.results.find((r) => r.assertion.name === 'Status code is 200')?.passed).toBe(true)
+    expect(out.results.find((r) => r.assertion.name === 'access_token saved')?.passed).toBe(true)
+  })
+})
+
+describe('pm.expect — chai-style chain incl. negation (Send path parity)', () => {
+  const passed = async (body: string): Promise<boolean | undefined> => {
+    const pm = createPmApi(resp(), new Map(), new Map(), { eventName: 'test' })
+    const out = await runScript(`pm.test('a', function () { ${body} })`, pm)
+    return out.results.find((r) => r.assertion.name === 'a')?.passed
+  }
+
+  it('positive matchers pass', async () => {
+    expect(await passed(`pm.expect('x').to.be.a('string')`)).toBe(true)
+    expect(await passed(`pm.expect(5).to.equal(5)`)).toBe(true)
+    expect(await passed(`pm.expect([1,2]).to.have.lengthOf(2)`)).toBe(true)
+    expect(await passed(`pm.expect('abc').to.include('b')`)).toBe(true)
+    expect(await passed(`pm.expect({a:1}).to.eql({a:1})`)).toBe(true)
+    expect(await passed(`pm.expect(7).to.be.above(3).and.below(10)`)).toBe(true)
+    // match (regex) + deep.equal — documented matchers that previously did not exist
+    expect(await passed(`pm.expect('a@b.com').to.match(/@/)`)).toBe(true)
+    expect(await passed(`pm.expect({a:1}).to.deep.equal({a:1})`)).toBe(true)
+    expect(await passed(`pm.expect({a:1}).to.not.deep.equal({a:2})`)).toBe(true)
+    expect(await passed(`pm.expect('xyz').to.not.match(/@/)`)).toBe(true)
+  })
+
+  // Regression: beChain had no `.not`, so `.and.not.empty` threw a TypeError and
+  // every test using negation silently failed. Now `.not` flips the chain.
+  it('negation (.not.*) works — the bug that broke .and.not.empty', async () => {
+    expect(await passed(`pm.expect('tok').to.be.a('string').and.not.empty`)).toBe(true)
+    expect(await passed(`pm.expect('').to.be.empty`)).toBe(true)
+    expect(await passed(`pm.expect(5).to.not.equal(6)`)).toBe(true)
+    expect(await passed(`pm.expect('x').to.not.be.a('number')`)).toBe(true)
+    // negations that should FAIL the assertion (caught → passed:false)
+    expect(await passed(`pm.expect('').to.not.be.empty`)).toBe(false)
+    expect(await passed(`pm.expect(5).to.not.equal(5)`)).toBe(false)
+  })
+})

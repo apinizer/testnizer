@@ -10,6 +10,46 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.19
+
+**Complete Postman / Insomnia / Bruno scripting compatibility. The whole script
+API now runs on one shared runtime, so imported scripts work without edits —
+full Chai assertions, the built-in `require()` libraries, the legacy Postman
+interface, and Insomnia/Bruno aliases, identical in Send and the Collection
+Runner.**
+
+- **Real Chai assertions:** `pm.expect` is now the actual Chai BDD library, so
+  every matcher and flag works — `.deep`, `.nested`, `.not`, `.members`,
+  `.match`, `.closeTo`, `.property`, `.throw`, `.oneOf`, `.lengthOf`, and more —
+  plus `expect.fail`. The bare `expect(...)` global works too.
+- **Full `pm.response`:** `code` (number) vs `status` (reason text), `reason()`,
+  `body`, `text()`, `json()` (throws on invalid JSON, like Postman), `jsonp()`,
+  `dataURI()`, `size()`, case-insensitive `headers`/`cookies`, and the complete
+  `pm.response.to.*` set — `have.status / jsonBody / jsonSchema / header`,
+  `be.success / ok / notFound / …`, all negatable with `to.not.*`.
+- **Built-in `require()` libraries:** `lodash`, `moment`, `uuid`, `crypto-js`,
+  `cheerio`, `ajv`, `tv4`, `xml2js`, `csv-parse`, `postman-collection`, `chai` —
+  plus the `_`, `CryptoJS`, `atob`, `btoa` globals. `const _ = require('lodash')`
+  now works.
+- **Legacy Postman interface:** older exports keep working unchanged —
+  `responseBody`, `responseCode`, `tests['name'] = bool`,
+  `postman.setEnvironmentVariable(...)`, `postman.setNextRequest(...)`,
+  `xml2Json(...)`.
+- **Insomnia & Bruno:** `insomnia.*` runs with the right semantics
+  (`insomnia.response.status` is the numeric code; `baseEnvironment` /
+  `collectionVariables` map to collection variables). Bruno's getter-based
+  `bru` / `req` / `res` API is mapped too.
+- **Complete pm scopes:** `environment` / `globals` / `collectionVariables` /
+  `variables` all gain `clear()` / `replaceIn()` / `toObject()`; plus
+  `pm.iterationData`, `pm.info`, `pm.cookies`, and `pm.execution`.
+- **One shared runtime:** Send and the Collection Runner share a single script
+  engine, so a script behaves identically in both — the Send/Run parity bug
+  class is eliminated for the script API.
+
+**Tests:** a 133-case shared-runtime suite plus Send≡Run parity tests over real
+Postman / Insomnia / Bruno / legacy / library scripts. Unit suite now at 1910.
+The Scripts guide (EN + TR) was rewritten to match the complete API.
+
 ## v1.4.18
 
 **Scripting levels up: built-in OAuth 2.0 tokens, `pm.sendRequest`, response

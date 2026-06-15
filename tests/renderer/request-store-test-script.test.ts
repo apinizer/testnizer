@@ -109,7 +109,7 @@ describe('useRequestStore.sendRequest — post-response pm.test pipeline', () =>
     const resp = useResponseStore.getState().response
     expect(resp?.testResults).toHaveLength(1)
     expect(resp?.testResults?.[0].passed).toBe(false)
-    expect(resp?.testResults?.[0].error).toMatch(/Expected 201/)
+    expect(resp?.testResults?.[0].error).toMatch(/expected 200 to equal 201/)
   })
 
   it('produces no test results when postScript is empty (empty-state copy)', async () => {

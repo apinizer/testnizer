@@ -11,6 +11,47 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.19
+
+**Eksiksiz Postman / Insomnia / Bruno script uyumluluğu. Tüm script API'si artık
+tek paylaşılan bir runtime üzerinde çalışıyor; böylece içe aktarılan script'ler
+değişiklik gerektirmeden çalışır — tam Chai onayları, yerleşik `require()`
+kütüphaneleri, eski Postman arayüzü ve Insomnia/Bruno takma adları; Send ile
+Collection Runner'da birebir aynı.**
+
+- **Gerçek Chai onayları:** `pm.expect` artık gerçek Chai BDD kütüphanesi —
+  her matcher ve flag çalışıyor: `.deep`, `.nested`, `.not`, `.members`,
+  `.match`, `.closeTo`, `.property`, `.throw`, `.oneOf`, `.lengthOf` ve dahası,
+  ayrıca `expect.fail`. Çıplak `expect(...)` globali de çalışır.
+- **Tam `pm.response`:** `code` (sayı) vs `status` (sebep metni), `reason()`,
+  `body`, `text()`, `json()` (geçersiz JSON'da Postman gibi hata fırlatır),
+  `jsonp()`, `dataURI()`, `size()`, büyük/küçük harf duyarsız `headers`/`cookies`
+  ve tam `pm.response.to.*` seti — `have.status / jsonBody / jsonSchema / header`,
+  `be.success / ok / notFound / …`, hepsi `to.not.*` ile olumsuzlanabilir.
+- **Yerleşik `require()` kütüphaneleri:** `lodash`, `moment`, `uuid`,
+  `crypto-js`, `cheerio`, `ajv`, `tv4`, `xml2js`, `csv-parse`,
+  `postman-collection`, `chai` — ayrıca `_`, `CryptoJS`, `atob`, `btoa`
+  globalleri. `const _ = require('lodash')` artık çalışıyor.
+- **Eski Postman arayüzü:** eski export'lar değişmeden çalışmaya devam eder —
+  `responseBody`, `responseCode`, `tests['name'] = bool`,
+  `postman.setEnvironmentVariable(...)`, `postman.setNextRequest(...)`,
+  `xml2Json(...)`.
+- **Insomnia & Bruno:** `insomnia.*` doğru semantikle çalışır
+  (`insomnia.response.status` sayısal koddur; `baseEnvironment` /
+  `collectionVariables` koleksiyon değişkenlerine eşlenir). Bruno'nun
+  getter tabanlı `bru` / `req` / `res` API'si de eşlendi.
+- **Eksiksiz pm kapsamları:** `environment` / `globals` / `collectionVariables` /
+  `variables` artık `clear()` / `replaceIn()` / `toObject()` kazandı; ayrıca
+  `pm.iterationData`, `pm.info`, `pm.cookies` ve `pm.execution`.
+- **Tek paylaşılan runtime:** Send ve Collection Runner tek bir script motorunu
+  paylaşır; böylece bir script ikisinde de birebir aynı davranır — script API'si
+  için Send/Run parite bug sınıfı ortadan kalktı.
+
+**Testler:** 133 senaryoluk paylaşılan-runtime test seti + gerçek
+Postman / Insomnia / Bruno / legacy / kütüphane script'leri üzerinde Send≡Run
+parite testleri. Birim test toplamı artık 1910. Scripts kılavuzu (EN + TR)
+eksiksiz API'ye göre yeniden yazıldı.
+
 ## v1.4.18
 
 **Scripting güçlendi: yerleşik OAuth 2.0 token (artık elle token isteği

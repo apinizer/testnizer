@@ -1,8 +1,9 @@
 // src/renderer/lib/test-runner.ts
 // Testnizer — Test Runner (renderer process library)
 
-import CryptoJS from 'crypto-js'
 import type { TestAssertion, TestResult, ApiResponse, ConsoleLog } from '../types'
+import { buildScriptBindings, createPmResponse, expect as chaiExpect } from '../../shared/script'
+import type { NormalizedResponse, PmLike } from '../../shared/script'
 
 // ─── JSONPath Evaluator ──────────────────────────────────────────
 
@@ -307,47 +308,47 @@ interface PmTestResult {
   error?: string
 }
 
+/**
+ * Chai-BDD style assertion chain for pm.expect. A single recursive shape:
+ * connectors (to/be/and/…) return the chain, `not` flips the negation flag, and
+ * matchers assert then return the chain so they keep chaining (e.g.
+ * `pm.expect(x).to.be.a('string').and.not.empty`). Mirrors the Run path's
+ * ExpectChain (runner.handler.ts → buildExpectChain) — keep the two in sync
+ * (Script-runtime paralelliği, CLAUDE.md→Gotchas).
+ */
 interface AssertionChain {
-  to: ToChain
-}
-
-interface ToChain {
-  equal(expected: unknown): void
-  not: NotChain
-  be: BeChain
-  include(value: unknown): void
-  have: HaveChain
-}
-
-interface NotChain {
-  equal(expected: unknown): void
-}
-
-interface BeChain {
-  a(type: string): BeChain
-  an(type: string): BeChain
-  above(n: number): BeChain
-  below(n: number): BeChain
-  oneOf(values: unknown[]): void
-  lengthOf(n: number): BeChain
-  // Chai BDD fluent connectors — self-return getters keep the chain alive.
-  that: BeChain
-  which: BeChain
-  is: BeChain
-  with: BeChain
-  and: BeChain
-  // Terminal assertions (getters so callers write `.empty` not `.empty()`).
-  empty: void
-  true: void
-  false: void
-  null: void
-  undefined: void
-}
-
-interface HaveChain {
-  length(n: number): void
-  lengthOf(n: number): void
-  property(name: string): void
+  // Connectors — self-returning, preserve the current negation state.
+  to: AssertionChain
+  be: AssertionChain
+  is: AssertionChain
+  that: AssertionChain
+  which: AssertionChain
+  with: AssertionChain
+  and: AssertionChain
+  have: AssertionChain
+  // Flip into negated mode for the next assertion(s).
+  not: AssertionChain
+  // Switch the next equal/include into deep (structural) comparison.
+  deep: AssertionChain
+  // Value matchers — assert and return the chain.
+  equal(expected: unknown): AssertionChain
+  eql(expected: unknown): AssertionChain
+  a(type: string): AssertionChain
+  an(type: string): AssertionChain
+  include(sub: unknown): AssertionChain
+  match(re: RegExp | string): AssertionChain
+  oneOf(values: unknown[]): AssertionChain
+  above(n: number): AssertionChain
+  below(n: number): AssertionChain
+  length(n: number): AssertionChain
+  lengthOf(n: number): AssertionChain
+  property(name: string): AssertionChain
+  // Terminal getters (so callers write `.empty` not `.empty()`).
+  empty: AssertionChain
+  true: AssertionChain
+  false: AssertionChain
+  null: AssertionChain
+  undefined: AssertionChain
 }
 
 interface ResponseHaveChain {
@@ -453,6 +454,8 @@ export interface PmApi {
   response: {
     code: number
     status: string
+    /** Raw response body string — Postman legacy `responseBody` / alias of text(). */
+    body: string
     json(): unknown
     text(): string
     headers: {
@@ -533,6 +536,8 @@ export interface PmApi {
   /** Mutated by pm.request.headers.{add,upsert,remove} so callers can fold
    * the changes back into the outgoing request before it ships. */
   _requestHeaders: HeaderCollection
+  /** Response normalized for the shared script runtime (null in pre-request). */
+  _normalized: NormalizedResponse | null
 }
 
 // ─── pm.sendRequest support ──────────────────────────────────────
@@ -552,6 +557,8 @@ export interface PmSendResponse {
   code: number
   status: string
   responseTime: number
+  /** Raw response body string — Postman legacy `responseBody` / alias of text(). */
+  body: string
   json(): unknown
   text(): string
   headers: { get(name: string): string | undefined }
@@ -616,6 +623,7 @@ export function buildPmSendResponse(apiResp: {
     code: apiResp.status ?? 0,
     status: apiResp.statusText ?? '',
     responseTime: apiResp.timing?.total ?? 0,
+    body,
     text: () => body,
     json: () => {
       try {
@@ -689,7 +697,6 @@ export function createPmApi(
         parsed = JSON.parse(response.body ?? '')
       } catch {
         assertionError('expected response to have a JSON body')
-        return
       }
       if (path) {
         const value = evaluateJsonPath(parsed, path)
@@ -809,6 +816,14 @@ export function createPmApi(
       },
       get status(): string {
         return response.statusText ?? ''
+      },
+      // Raw body string. Postman has no documented `pm.response.body`, but its
+      // legacy sandbox exposed a `responseBody` string and real-world Postman/
+      // Insomnia token scripts do `String(pm.response.body).trim()` then
+      // JSON.parse it — so body MUST be the raw string (alias of text()), never
+      // a parsed object. Use pm.response.json() for parsed access.
+      get body(): string {
+        return response.body ?? ''
       },
       json(): unknown {
         try {
@@ -1043,6 +1058,17 @@ export function createPmApi(
       return skipRequestFlag
     },
     _requestHeaders: requestHeaders,
+    _normalized: isPreRequest
+      ? null
+      : {
+          code: response.status ?? 0,
+          statusText: response.statusText ?? '',
+          headers: (response.headers as Record<string, string>) ?? {},
+          body: response.body ?? '',
+          cookies: response.cookies ?? [],
+          responseTime: response.timing?.total ?? 0,
+          responseSize: response.bodySize ?? 0,
+        },
   }
 
   // Pre-request guard: any access to pm.response in a pre-request script is
@@ -1065,171 +1091,153 @@ export function createPmApi(
 }
 
 function createExpectChain(value: unknown): AssertionChain {
-  function assertionError(message: string): never {
-    throw new Error(message)
+  const fail = (msg: string): never => {
+    throw new Error(msg)
   }
-
-  function assertType(type: string): void {
-    const lower = type.toLowerCase()
-    if (lower === 'array') {
-      if (!Array.isArray(value)) {
-        assertionError(`Expected an array but got ${typeof value}`)
-      }
-      return
-    }
-    if (lower === 'null') {
-      if (value !== null) assertionError(`Expected null but got ${String(value)}`)
-      return
-    }
-    const actual = typeof value
-    if (actual !== lower) {
-      assertionError(`Expected type "${type}" but got "${actual}"`)
-    }
+  const eqlCheck = (a: unknown, b: unknown): boolean => {
+    if (a === b) return true
+    if (a == null || b == null) return false
+    if (typeof a !== 'object' || typeof b !== 'object') return false
+    return JSON.stringify(a) === JSON.stringify(b)
   }
+  const isType = (t: string): boolean => {
+    const lower = t.toLowerCase()
+    if (lower === 'array') return Array.isArray(value)
+    if (lower === 'null') return value === null
+    return typeof value === lower
+  }
+  const len = (): number | undefined => (value as { length?: number } | null | undefined)?.length
+  const isEmpty = (): boolean =>
+    (Array.isArray(value) && value.length === 0) ||
+    (typeof value === 'string' && value.length === 0) ||
+    (value !== null && typeof value === 'object' && Object.keys(value as object).length === 0)
 
-  function assertEmpty(): void {
-    if (Array.isArray(value) || typeof value === 'string') {
-      if ((value as { length: number }).length !== 0) {
-        assertionError(
-          `Expected empty ${Array.isArray(value) ? 'array' : 'string'} but got length ${String((value as { length: number }).length)}`,
+  // Each make() node returns ITSELF from connectors/matchers so the negation
+  // state set by `.not` survives across connectors (e.g. `.to.not.be.empty`);
+  // `.not` spawns a fresh negated node. Mirrors the Run path (runner.handler.ts).
+  const make = (notFlag: boolean, deepFlag = false): AssertionChain => {
+    // eslint-disable-next-line prefer-const
+    let self: AssertionChain
+    const check = (cond: boolean, msg: string): void => {
+      if (notFlag ? cond : !cond) fail(notFlag ? `negated: ${msg}` : msg)
+    }
+    const c: Partial<AssertionChain> = {
+      equal: (expected) => {
+        check(
+          deepFlag ? eqlCheck(value, expected) : value === expected,
+          `expected ${JSON.stringify(value)} to ${deepFlag ? 'deep-' : 'strictly '}equal ${JSON.stringify(expected)}`,
         )
-      }
-      return
+        return self
+      },
+      match: (re) => {
+        const ok = value != null && new RegExp(re).test(String(value))
+        check(ok, `expected ${JSON.stringify(value)} to match ${String(re)}`)
+        return self
+      },
+      eql: (expected) => {
+        check(
+          eqlCheck(value, expected),
+          `expected ${JSON.stringify(value)} to deep-equal ${JSON.stringify(expected)}`,
+        )
+        return self
+      },
+      a: (type) => {
+        check(isType(type), `expected ${JSON.stringify(value)} to be a ${type}`)
+        return self
+      },
+      an: (type) => {
+        check(isType(type), `expected ${JSON.stringify(value)} to be an ${type}`)
+        return self
+      },
+      include: (sub) => {
+        let ok: boolean
+        if (typeof value === 'string' && typeof sub === 'string') ok = value.includes(sub)
+        else if (Array.isArray(value)) ok = value.some((v) => eqlCheck(v, sub))
+        else return fail('include is only supported for strings and arrays')
+        check(ok, `expected ${JSON.stringify(value)} to include ${JSON.stringify(sub)}`)
+        return self
+      },
+      oneOf: (values) => {
+        check(
+          Array.isArray(values) && values.some((v) => eqlCheck(v, value)),
+          `expected ${JSON.stringify(value)} to be one of ${JSON.stringify(values)}`,
+        )
+        return self
+      },
+      above: (n) => {
+        check(typeof value === 'number' && value > n, `expected ${String(value)} to be above ${n}`)
+        return self
+      },
+      below: (n) => {
+        check(typeof value === 'number' && value < n, `expected ${String(value)} to be below ${n}`)
+        return self
+      },
+      length: (n) => {
+        check(len() === n, `expected length ${n} but got ${String(len())}`)
+        return self
+      },
+      lengthOf: (n) => {
+        check(len() === n, `expected length ${n} but got ${String(len())}`)
+        return self
+      },
+      property: (name) => {
+        const has =
+          typeof value === 'object' && value !== null && name in (value as Record<string, unknown>)
+        check(has, `expected object to have property "${name}"`)
+        return self
+      },
     }
-    if (value && typeof value === 'object') {
-      if (Object.keys(value as object).length !== 0) {
-        assertionError(`Expected empty object but got ${Object.keys(value as object).length} keys`)
-      }
-      return
-    }
-    assertionError(`Expected empty value but got ${String(value)}`)
+    Object.defineProperties(c, {
+      to: { get: () => self, enumerable: true },
+      be: { get: () => self, enumerable: true },
+      is: { get: () => self, enumerable: true },
+      that: { get: () => self, enumerable: true },
+      which: { get: () => self, enumerable: true },
+      with: { get: () => self, enumerable: true },
+      and: { get: () => self, enumerable: true },
+      have: { get: () => self, enumerable: true },
+      not: { get: () => make(true, deepFlag), enumerable: true },
+      deep: { get: () => make(notFlag, true), enumerable: true },
+      empty: {
+        get: () => {
+          check(isEmpty(), `expected ${JSON.stringify(value)} to be empty`)
+          return self
+        },
+        enumerable: true,
+      },
+      true: {
+        get: () => {
+          check(value === true, `expected ${JSON.stringify(value)} to be true`)
+          return self
+        },
+        enumerable: true,
+      },
+      false: {
+        get: () => {
+          check(value === false, `expected ${JSON.stringify(value)} to be false`)
+          return self
+        },
+        enumerable: true,
+      },
+      null: {
+        get: () => {
+          check(value === null, `expected ${JSON.stringify(value)} to be null`)
+          return self
+        },
+        enumerable: true,
+      },
+      undefined: {
+        get: () => {
+          check(value === undefined, `expected ${JSON.stringify(value)} to be undefined`)
+          return self
+        },
+        enumerable: true,
+      },
+    })
+    self = c as AssertionChain
+    return self
   }
-
-  function assertLengthOf(n: number): void {
-    const actual = (value as { length?: number } | null | undefined)?.length
-    if (actual !== n) {
-      assertionError(`Expected length ${n} but got ${String(actual)}`)
-    }
-  }
-
-  const beChain = {
-    a(type: string): BeChain {
-      assertType(type)
-      return beChain
-    },
-    an(type: string): BeChain {
-      assertType(type)
-      return beChain
-    },
-    above(n: number): BeChain {
-      if (typeof value !== 'number' || value <= n) {
-        assertionError(`Expected ${String(value)} to be above ${n}`)
-      }
-      return beChain
-    },
-    below(n: number): BeChain {
-      if (typeof value !== 'number' || value >= n) {
-        assertionError(`Expected ${String(value)} to be below ${n}`)
-      }
-      return beChain
-    },
-    oneOf(values: unknown[]): void {
-      if (!Array.isArray(values) || !values.includes(value)) {
-        assertionError(`Expected ${String(value)} to be one of [${values.map(String).join(', ')}]`)
-      }
-    },
-    lengthOf(n: number): BeChain {
-      assertLengthOf(n)
-      return beChain
-    },
-    get that(): BeChain {
-      return beChain
-    },
-    get which(): BeChain {
-      return beChain
-    },
-    get is(): BeChain {
-      return beChain
-    },
-    get with(): BeChain {
-      return beChain
-    },
-    get and(): BeChain {
-      return beChain
-    },
-    get empty() {
-      assertEmpty()
-      return undefined
-    },
-    get true() {
-      if (value !== true) assertionError(`Expected true but got ${String(value)}`)
-      return undefined
-    },
-    get false() {
-      if (value !== false) assertionError(`Expected false but got ${String(value)}`)
-      return undefined
-    },
-    get null() {
-      if (value !== null) assertionError(`Expected null but got ${String(value)}`)
-      return undefined
-    },
-    get undefined() {
-      if (value !== undefined) assertionError(`Expected undefined but got ${String(value)}`)
-      return undefined
-    },
-  } as BeChain
-
-  const haveChain: HaveChain = {
-    length(n: number): void {
-      assertLengthOf(n)
-    },
-    lengthOf(n: number): void {
-      assertLengthOf(n)
-    },
-    property(name: string): void {
-      if (
-        typeof value !== 'object' ||
-        value === null ||
-        !(name in (value as Record<string, unknown>))
-      ) {
-        assertionError(`Expected object to have property "${name}"`)
-      }
-    },
-  }
-
-  const notChain: NotChain = {
-    equal(expected: unknown): void {
-      if (value === expected) {
-        assertionError(`Expected ${String(value)} to not equal ${String(expected)}`)
-      }
-    },
-  }
-
-  const toChain: ToChain = {
-    equal(expected: unknown): void {
-      if (value !== expected) {
-        assertionError(`Expected ${String(expected)} but got ${String(value)}`)
-      }
-    },
-    not: notChain,
-    be: beChain,
-    include(search: unknown): void {
-      if (typeof value === 'string') {
-        if (!value.includes(String(search))) {
-          assertionError(`Expected "${value}" to include "${String(search)}"`)
-        }
-      } else if (Array.isArray(value)) {
-        if (!value.includes(search)) {
-          assertionError(`Expected array to include ${String(search)}`)
-        }
-      } else {
-        assertionError(`Expected string or array but got ${typeof value}`)
-      }
-    },
-    have: haveChain,
-  }
-
-  return { to: toChain }
+  return make(false)
 }
 
 // ─── Script Runner ───────────────────────────────────────────────
@@ -1245,6 +1253,58 @@ export interface ScriptRunResult {
   /** Headers AFTER any pm.request.headers.{add,upsert,remove} mutations so
    * callers can fold the mutations back into the outgoing request. */
   requestHeaders: HeaderEntry[]
+}
+
+/** Backing-store shape the shared layer reads off each variable scope. */
+type MutableScope = {
+  toObject(): Record<string, string>
+  unset?(k: string): void
+  clear?(): void
+  replaceIn?(t: string): string
+}
+
+/** Add the few PmLike members the renderer pm didn't expose (clear/replaceIn,
+ *  iterationData, top-level cookies, info.iteration, execution.setNextRequest)
+ *  so the shared script-binding layer works identically to the Run path. */
+function ensurePmLike(pm: PmApi, normalized: NormalizedResponse | null): void {
+  const addScope = (s: MutableScope): void => {
+    if (typeof s.clear !== 'function') {
+      s.clear = () => {
+        for (const k of Object.keys(s.toObject())) s.unset?.(k)
+      }
+    }
+    if (typeof s.replaceIn !== 'function') {
+      s.replaceIn = (t: string) =>
+        t.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_m, k: string) => {
+          const v = s.toObject()[k]
+          return v == null ? `{{${k}}}` : String(v)
+        })
+    }
+  }
+  addScope(pm.environment as unknown as MutableScope)
+  addScope(pm.globals as unknown as MutableScope)
+  addScope(pm.collectionVariables as unknown as MutableScope)
+  addScope(pm.variables as unknown as MutableScope)
+
+  const p = pm as unknown as Record<string, unknown>
+  if (!p.iterationData) {
+    p.iterationData = { get: () => undefined, has: () => false, toObject: () => ({}) }
+  }
+  if (!p.cookies) {
+    const find = (n: string) =>
+      normalized?.cookies.find((c) => c.name.toLowerCase() === n.toLowerCase())
+    p.cookies = {
+      get: (n: string) => find(n)?.value,
+      has: (n: string) => !!find(n),
+      toObject: () => Object.fromEntries((normalized?.cookies ?? []).map((c) => [c.name, c.value])),
+    }
+  }
+  const info = pm.info as unknown as Record<string, unknown>
+  info.iteration ??= 0
+  info.iterationCount ??= 1
+  info.requestId ??= ''
+  const exec = pm.execution as unknown as Record<string, unknown>
+  if (typeof exec.setNextRequest !== 'function') exec.setNextRequest = () => {}
 }
 
 export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRunResult> {
@@ -1275,24 +1335,40 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
     },
   }
 
+  // Upgrade the assertion engine to the REAL Chai expect and the full
+  // pm.response surface, then assemble the COMPLETE script global set from the
+  // shared runtime — pm/t/insomnia/bru/req/res, require() + the library set,
+  // the legacy postman.*/responseBody/tests/xml2Json interface, and bare
+  // expect/test — IDENTICAL to the Run path (one shared source ⇒ no parity
+  // drift). insomnia/bru aliases also fix issue #12 (silent env-write failures).
+  const normalized = pmApi._normalized
+  ;(pmApi as unknown as { expect: unknown }).expect = chaiExpect
+  if (normalized) {
+    ;(pmApi as unknown as { response: unknown }).response = createPmResponse(normalized)
+  }
+  ensurePmLike(pmApi, normalized)
+  const { bindings, legacyTests } = buildScriptBindings({
+    pm: pmApi as unknown as PmLike,
+    normalizedResponse: normalized,
+  })
+  const allBindings: Record<string, unknown> = { ...bindings, console: captureConsole }
+  const names = Object.keys(allBindings)
+  const values = names.map((n) => allBindings[n])
+
   try {
-    // `t` is a Testnizer-branded alias for `pm`. Both bind to the same API so
-    // imported Postman scripts (which use `pm.*`) keep working unchanged, while
-    // new Testnizer scripts can opt into the shorter `t.*` form. `insomnia` and
-    // `bru` are likewise aliases so scripts imported from Insomnia v5
-    // (`insomnia.environment.set(...)`) and Bruno run unchanged — without them
-    // those scripts threw "insomnia is not defined", the catch swallowed it,
-    // and the env write silently never happened (issue #12). CryptoJS is
-    // exposed for HMAC / SHA / AES use cases (AWS sig v4, webhook signing) —
-    // mirrors Postman's built-in (Mehmet BUG-05).
-    // Run as an ASYNC function so scripts can `await pm.sendRequest(...)` and
-    // use top-level await. A plain sync body still works unchanged (it just
-    // resolves immediately). `AsyncFunction` is the standard runtime
-    // constructor for `async function`.
+    // Run as an ASYNC function so scripts can `await pm.sendRequest(...)` and use
+    // top-level await. A plain sync body still works unchanged.
+    //
+    // The script body is wrapped in a `{ }` block so the injected globals
+    // (`pm`, `_`, `CryptoJS`, `atob`, `btoa`, …) — passed as function params —
+    // can be SHADOWED by user `const`/`let` redeclarations. Without the block,
+    // a common Postman/Insomnia line like `const _ = require('lodash')` collides
+    // with the `_` param ("Identifier '_' has already been declared") and the
+    // whole script dies at parse time before any pm.* runs.
     const AsyncFunction = Object.getPrototypeOf(async function () {})
       .constructor as FunctionConstructor
-    const fn = new AsyncFunction('pm', 't', 'insomnia', 'bru', 'console', 'CryptoJS', script)
-    await fn(pmApi, pmApi, pmApi, pmApi, captureConsole, CryptoJS)
+    const fn = new AsyncFunction(...names, `{\n${script}\n}`)
+    await fn(...values)
   } catch (e) {
     const msg = (e as Error).message
     if (msg !== '__pm_skip_request_signal__') {
@@ -1312,6 +1388,11 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
   }
   if (pmApi._pendingTests.length > 0) {
     await Promise.allSettled(pmApi._pendingTests)
+  }
+
+  // Drain the legacy `tests` object (tests['name'] = bool) into results.
+  for (const [name, passed] of Object.entries(legacyTests)) {
+    pmApi._testResults.push({ name, passed })
   }
 
   // Convert pm test results to TestResult format
