@@ -36,7 +36,24 @@ export default defineConfig(async () => {
 
   return {
     main: {
-      plugins: [externalizeDepsPlugin()],
+      // The shared script runtime (src/shared/script) pulls script deps into
+      // the MAIN process graph (via runner.handler.ts). `uuid@14` is ESM-ONLY
+      // with NO CJS `require` export (its package.json `exports` map has only
+      // `node`/`default`, both ESM) — so externalizeDepsPlugin leaving it as a
+      // runtime `require("uuid")` crashes the bundle ON LOAD under Electron's
+      // Node 20 (no require(ESM) support) with ERR_REQUIRE_ESM, before
+      // app.whenReady() ever runs — the v1.4.19 launch-crash regression.
+      // Excluding uuid from externalization makes Rollup bundle it (ESM→CJS)
+      // into out/main, so there is no runtime require() of an ES module.
+      //   • Only uuid needs this: cheerio + csv-parse are also ESM packages but
+      //     ship a CJS `require` export, so Node 20 resolves them fine when
+      //     externalized — do NOT bundle them (bundling cheerio drags in undici
+      //     and its top-level `require("node:sqlite")`, a Node-22-only builtin
+      //     absent in Electron's Node 20, re-crashing the bundle).
+      //   • System Node ≥22 HIDES this class of bug: it supports require(ESM),
+      //     so a plain `node -e "require('uuid')"` test passes while Electron
+      //     (Node 20) crashes. Verify launch with the built app, not bare node.
+      plugins: [externalizeDepsPlugin({ exclude: ['uuid'] })],
       build: {
         rollupOptions: {
           external: [

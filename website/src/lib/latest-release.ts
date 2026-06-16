@@ -46,8 +46,8 @@ export interface RepoStats {
 }
 
 const FALLBACK: LatestRelease = {
-  tag: 'v1.4.19',
-  version: '1.4.19',
+  tag: 'v1.4.20',
+  version: '1.4.20',
   htmlUrl: 'https://github.com/apinizer/testnizer/releases/latest',
   publishedAt: null,
   assets: [],

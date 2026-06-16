@@ -1,3 +1,4 @@
+import './polyfills' // MUST be first: installs Buffer/global for the shared script runtime deps
 import './styles/globals.css'
 import React from 'react'
 import ReactDOM from 'react-dom/client'

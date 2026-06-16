@@ -198,6 +198,13 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=4096
         run: npm run build
 
+      # Smoke is a HARD gate on purpose: it launches the production main bundle
+      # and is the ONLY thing that catches a main-process load crash (e.g. the
+      # v1.4.19 ERR_REQUIRE_ESM regression, where an ESM-only dep externalized
+      # into the CJS main bundle crashed the app before any window opened). Do
+      # NOT make this continue-on-error — a green-but-broken mac build would
+      # ship a crash-on-launch app. NOTE: win/linux jobs do NOT run smoke, so
+      # that same crash shipped there undetected — see TODO to add smoke there.
       - name: E2E smoke tests (Playwright)
         run: npm run test:e2e:smoke
 
@@ -283,7 +290,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential python3 libopenjp2-tools rpm fakeroot dpkg
+            build-essential python3 libopenjp2-tools rpm fakeroot dpkg xvfb
 
       # electron-builder's bundled fpm has bitten us on both arches:
       #   - arm64 runner: the bundled binary is Linux x86, fails with
@@ -308,6 +315,14 @@ jobs:
 
       - name: Build renderer + main
         run: npm run build
+
+      # Launch-smoke the production bundle BEFORE packaging — Linux's Electron
+      # needs a virtual display, hence xvfb-run. This is the gate that would
+      # have caught the v1.4.19 main-process load crash (ERR_REQUIRE_ESM) /
+      # renderer blank-UI on Linux: previously only the mac job smoke-tested, so
+      # those crashes shipped here undetected. Hard gate — no continue-on-error.
+      - name: E2E smoke tests (Playwright, xvfb)
+        run: xvfb-run -a npm run test:e2e:smoke
 
       - name: Package (AppImage + deb, ${{ matrix.arch }})
         env:
@@ -373,8 +388,14 @@ jobs:
           node scripts/download-curl-binaries.js --target=win32-x64
           node scripts/download-curl-binaries.js --target=win32-arm64
 
-      - name: Build renderer + main
-        run: npm run build
+      # Launch-smoke the production bundle BEFORE packaging. The windows-latest
+      # runner has an interactive desktop, so Electron launches without a
+      # virtual display. This is the gate that would have caught the v1.4.19
+      # main-process load crash (ERR_REQUIRE_ESM) / renderer blank-UI on Windows
+      # — previously only the mac job smoke-tested, so those crashes shipped here
+      # undetected. Hard gate — no continue-on-error.
+      - name: E2E smoke tests (Playwright)
+        run: npm run test:e2e:smoke
 
       - name: Package (nsis, x64 + arm64)
         # SignPath (free OSS Authenticode signing) activates only when the
