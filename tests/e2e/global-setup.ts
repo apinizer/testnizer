@@ -35,7 +35,12 @@ export default async function globalSetup(): Promise<void> {
     }
   }
 
-  const child = spawn('npx', ['tsx', RUN_SCRIPT], {
+  // On Windows `npx` is `npx.cmd`; Node's spawn (no shell) can't resolve the
+  // bare name and dies with `spawn npx ENOENT` — which blocked the Windows
+  // build's smoke gate. Use the platform-correct executable. (mac/linux keep
+  // the plain `npx` on PATH, which is why their smoke passed.)
+  const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx'
+  const child = spawn(npxCmd, ['tsx', RUN_SCRIPT], {
     detached: true,
     stdio: 'ignore',
     env: { ...process.env },
