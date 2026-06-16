@@ -35,14 +35,17 @@ export default async function globalSetup(): Promise<void> {
     }
   }
 
-  // On Windows `npx` is `npx.cmd`; Node's spawn (no shell) can't resolve the
-  // bare name and dies with `spawn npx ENOENT` — which blocked the Windows
-  // build's smoke gate. Use the platform-correct executable. (mac/linux keep
-  // the plain `npx` on PATH, which is why their smoke passed.)
-  const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx'
-  const child = spawn(npxCmd, ['tsx', RUN_SCRIPT], {
+  // Windows: `npx` is `npx.cmd`, and since the Node security fix
+  // (CVE-2024-27980, Node 20.12+) spawning a .cmd/.bat without a shell throws
+  // `spawn EINVAL` (and the bare name throws ENOENT). Running through the shell
+  // lets cmd.exe resolve `npx` → `npx.cmd` correctly. This is what blocked the
+  // Windows build's smoke gate. mac/linux keep the plain no-shell spawn (their
+  // smoke already passed). The RUN_SCRIPT path on CI has no spaces.
+  const isWin = process.platform === 'win32'
+  const child = spawn('npx', ['tsx', RUN_SCRIPT], {
     detached: true,
     stdio: 'ignore',
+    shell: isWin,
     env: { ...process.env },
   })
   child.unref()
