@@ -388,6 +388,14 @@ jobs:
           node scripts/download-curl-binaries.js --target=win32-x64
           node scripts/download-curl-binaries.js --target=win32-arm64
 
+      # The smoke test launches the built production bundle, so it must exist
+      # first. mac + linux build before smoke; Windows was missing this step, so
+      # smoke died with "Build artifact not found: out\main\index.js" before it
+      # could ever launch (the Windows job only runs on tags, so main-push CI —
+      # where builds are skipped — never surfaced it).
+      - name: Build renderer + main
+        run: npm run build
+
       # Launch-smoke the production bundle BEFORE packaging. The windows-latest
       # runner has an interactive desktop, so Electron launches without a
       # virtual display. This is the gate that would have caught the v1.4.19
