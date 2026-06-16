@@ -11,34 +11,41 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
-## v1.4.20
+## v1.4.30
 
-**Kritik düzeltme — v1.4.19 tüm platformlarda açılışta çöküyordu. v1.4.19
-kullanıyorsanız lütfen v1.4.20'ye güncelleyin (bozuk derleme kendini
-otomatik güncelleyemediği için elle indirme gerekebilir).**
+**Windows ve macOS'ta imzalı kurulumlar — artık "bilinmeyen yayıncı" /
+"kimliği doğrulanmamış geliştirici" uyarısı yok.** Bu sürüm ayrıca v1.4.19
+açılış-çökmesi düzeltmesini de içerir; dolayısıyla herkes için önerilen
+derlemedir.
 
+- **Windows:** kurulumlar artık Certum Açık Kaynak kod imzalama sertifikasıyla
+  Authenticode imzalı. SmartScreen "bilinmeyen yayıncı" göstermiyor ve uygulama
+  içi otomatik güncelleme imzalı derlemeyi kabul ediyor.
+- **macOS:** derlemeler Apple Developer ID ile imzalanıp Apple tarafından
+  notarize ediliyor; böylece Gatekeeper "kimliği doğrulanmamış geliştirici"
+  engeli olmadan açıyor. macOS otomatik güncelleme yeniden çalışıyor
+  (`latest-mac.yml` manifesti derlemeyle birlikte yayınlanıyor).
+
+**Devralınan açılış-çökmesi düzeltmesi (v1.4.20'ydi, hiç yayınlanmadı).**
 v1.4.19'daki "tek paylaşılan script runtime" değişikliği, script
 kütüphanelerini uygulamanın açılış yoluna soktu; bunlardan ikisi üretim
-derlemesini bozdu:
+derlemesini bozdu — her ikisi de burada düzeltildi:
 
 - **Uygulama açılmıyordu (tüm platformlar):** paketlenen `uuid` yalnızca ESM
   ve ana süreçte çalışma zamanı `require()` çağrısı olarak kalmıştı; Electron'un
   Node çalışma zamanı bunu yükleyemiyor (`ERR_REQUIRE_ESM`) — uygulama hiçbir
-  pencere açılmadan çöküyordu. `uuid` artık ana sürece bundle ediliyor, böylece
-  çalışma zamanında bir ES modülünün `require()` edilmesi söz konusu değil.
+  pencere açılmadan çöküyordu. `uuid` artık ana sürece bundle ediliyor.
 - **Boş pencere:** renderer, script kütüphanelerinin ihtiyaç duyduğu Node
-  `Buffer` global'ine erişiyordu; bu global tarayıcı bağlamında yok, dolayısıyla
-  arayüz render edilemiyordu. Uygulama yüklenmeden önce bir `Buffer` polyfill'i
-  kuruluyor.
+  `Buffer` global'ine erişiyordu; bu global tarayıcı bağlamında yok. Uygulama
+  yüklenmeden önce bir `Buffer` polyfill'i kuruluyor.
 
-Özellik değişikliği yok — v1.4.20, v1.4.19'un bu iki açılış düzeltmesini
-içeren halidir. v1.4.19'daki tüm scripting çalışması (tam Chai assertion'ları,
-yerleşik `require()` kütüphaneleri, eski Postman arayüzü, Insomnia/Bruno
-takma adları, Send/Run paritesi) korunuyor ve artık gerçekten çalışıyor.
+v1.4.19'daki tüm scripting çalışması (tam Chai assertion'ları, yerleşik
+`require()` kütüphaneleri, eski Postman arayüzü, Insomnia/Bruno takma adları,
+Send/Run paritesi) korunuyor ve artık gerçekten çalışıyor.
 
-**CI sağlamlaştırma:** bunu yakalayan açılış smoke testi artık Windows ve Linux
-build job'larında da çalışıyor (önceden yalnızca macOS) — böylece bir açılış
-çökmesi hiçbir platformda fark edilmeden yayınlanamaz.
+**CI sağlamlaştırma:** çökmeyi yakalayan açılış smoke testi artık Windows ve
+Linux build job'larında da çalışıyor (önceden yalnızca macOS) — böylece bir
+açılış çökmesi hiçbir platformda fark edilmeden yayınlanamaz.
 
 ## v1.4.19
 

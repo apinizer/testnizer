@@ -10,32 +10,39 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
-## v1.4.20
+## v1.4.30
 
-**Critical hotfix — v1.4.19 crashed on launch on every platform. If you are on
-v1.4.19, please update to v1.4.20 (a manual download may be required, since the
-broken build cannot auto-update itself).**
+**Signed installers on Windows and macOS — no more "unknown publisher" /
+"unidentified developer" warnings.** This release also rolls up the v1.4.19
+launch-crash fix, so it is the recommended build for everyone.
 
-The v1.4.19 "one shared script runtime" change pulled the script libraries into
-the app's startup path, where two of them broke the production build:
+- **Windows:** installers are now Authenticode-signed with a Certum Open Source
+  code-signing certificate. SmartScreen no longer shows "unknown publisher", and
+  the in-app auto-update accepts the signed build.
+- **macOS:** builds are signed with an Apple Developer ID and notarized by Apple,
+  so Gatekeeper opens them without the "unidentified developer" block. macOS
+  auto-update is working again (the `latest-mac.yml` manifest ships with the
+  build).
+
+**Rolled-up launch-crash fix (was v1.4.20, never shipped).** The v1.4.19 "one
+shared script runtime" change pulled the script libraries into the app's startup
+path, where two of them broke the production build — both are fixed here:
 
 - **App would not start (all platforms):** the bundled `uuid` is ESM-only and
   was left as a runtime `require()` in the main process, which Electron's Node
   runtime cannot load (`ERR_REQUIRE_ESM`) — the app crashed before any window
-  opened. `uuid` is now bundled into the main process, so there is no runtime
-  `require()` of an ES module.
+  opened. `uuid` is now bundled into the main process.
 - **Blank window:** the renderer referenced Node's `Buffer` global (needed by
-  the script libraries) which does not exist in the browser context, so the UI
-  failed to render. A `Buffer` polyfill is now installed before the app loads.
+  the script libraries) which does not exist in the browser context. A `Buffer`
+  polyfill is now installed before the app loads.
 
-No feature changes — v1.4.20 is v1.4.19 with these two startup fixes. All of the
-v1.4.19 scripting work (full Chai assertions, the built-in `require()`
-libraries, the legacy Postman interface, Insomnia/Bruno aliases, Send/Run
-parity) is intact and now actually runs.
+All of the v1.4.19 scripting work (full Chai assertions, the built-in
+`require()` libraries, the legacy Postman interface, Insomnia/Bruno aliases,
+Send/Run parity) is intact and now actually runs.
 
-**CI hardening:** the launch-smoke test that caught this now runs on the Windows
-and Linux build jobs too (previously macOS only), so a startup crash can no
-longer ship undetected on any platform.
+**CI hardening:** the launch-smoke test that caught the crash now runs on the
+Windows and Linux build jobs too (previously macOS only), so a startup crash can
+no longer ship undetected on any platform.
 
 ## v1.4.19
 
