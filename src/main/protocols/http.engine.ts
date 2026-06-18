@@ -870,11 +870,29 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       }
     }
 
-    // Build query params
+    // Build query params. Skip any key the URL's own query string ALREADY
+    // carries — axios naively appends `config.params` to the existing query, so
+    // a request that holds the same param BOTH in the URL and in the params
+    // table goes out as `?type=x&type=x`. Most servers fold identical dupes, but
+    // strict ones reject them (`Invalid type: snmp,snmp` → 500). This happens on
+    // every Insomnia import (params folded into the URL *and* kept in the table)
+    // and on any URL typed with a `?query` while the Params tab mirrors it via
+    // the renderer's url↔params sync. The URL keeps its query untouched (so a
+    // repeated-key query like `?id=1&id=2` survives — a params Record can't hold
+    // it); we only drop the table entries that would duplicate it. Issue #17.
+    const urlQueryKeys = new Set<string>()
+    const urlQueryStart = options.url.indexOf('?')
+    if (urlQueryStart !== -1) {
+      for (const pair of options.url.slice(urlQueryStart + 1).split('&')) {
+        if (!pair) continue
+        const eq = pair.indexOf('=')
+        urlQueryKeys.add(eq === -1 ? pair : pair.slice(0, eq))
+      }
+    }
     const params: Record<string, string> = {}
     if (options.params) {
       for (const p of options.params) {
-        if (p.enabled && p.key) {
+        if (p.enabled && p.key && !urlQueryKeys.has(p.key)) {
           params[p.key] = p.value
         }
       }
