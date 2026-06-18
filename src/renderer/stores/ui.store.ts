@@ -36,6 +36,7 @@ interface UIStore {
   fontFamily: string
   accentColor: string
   leftPanelWidth: number
+  rightPanelWidth: number
   splitPosition: number
   isLeftPanelCollapsed: boolean
   activeSidebarPage: SidebarPage
@@ -76,6 +77,9 @@ interface UIStore {
   setAccentColor: (color: string) => void
   hydrateFromSettings: () => Promise<void>
   setLeftPanelWidth: (width: number) => void
+  setRightPanelWidth: (width: number) => void
+  /** Persist the current left/right panel widths (called once on drag end). */
+  commitPanelWidths: () => void
   setSplitPosition: (position: number) => void
   toggleLeftPanel: () => void
   setLeftPanelCollapsed: (collapsed: boolean) => void
@@ -153,13 +157,14 @@ async function persistSetting(key: string, value: unknown): Promise<void> {
   }
 }
 
-export const useUIStore = create<UIStore>((set) => ({
+export const useUIStore = create<UIStore>((set, get) => ({
   theme: 'light',
   locale: 'en' as Locale,
   fontSize: 13,
   fontFamily: DEFAULT_FONT_FAMILY,
   accentColor: '#2D5FA0',
-  leftPanelWidth: 260,
+  leftPanelWidth: 300,
+  rightPanelWidth: 300,
   splitPosition: 50,
   isLeftPanelCollapsed: false,
   activeSidebarPage: 'apis',
@@ -230,9 +235,11 @@ export const useUIStore = create<UIStore>((set) => ({
         'ui.fontSize',
         'ui.fontFamily',
         'ui.accentColor',
+        'ui.leftPanelWidth',
+        'ui.rightPanelWidth',
       ] as const
       const results = await Promise.all(keys.map((k) => api.get!(k)))
-      const [themeRes, localeRes, sizeRes, familyRes, accentRes] = results
+      const [themeRes, localeRes, sizeRes, familyRes, accentRes, leftWRes, rightWRes] = results
       const patch: Partial<UIStore> = {}
       const themeVal = themeRes?.data as Theme | undefined
       if (themeVal === 'light' || themeVal === 'dark' || themeVal === 'system') {
@@ -265,13 +272,28 @@ export const useUIStore = create<UIStore>((set) => ({
         applyAccent(accentVal)
         patch.accentColor = accentVal
       }
+      const leftW = leftWRes?.data
+      if (typeof leftW === 'number' && leftW >= 200 && leftW <= 600) patch.leftPanelWidth = leftW
+      const rightW = rightWRes?.data
+      if (typeof rightW === 'number' && rightW >= 240 && rightW <= 600)
+        patch.rightPanelWidth = rightW
       set(patch)
     } catch {
       /* noop */
     }
   },
 
-  setLeftPanelWidth: (width) => set({ leftPanelWidth: Math.max(180, Math.min(400, width)) }),
+  // Live setters during a drag — set-only (no persist) so dragging stays
+  // smooth. `commitPanelWidths` persists the final values once on mouse-up.
+  setLeftPanelWidth: (width) => set({ leftPanelWidth: Math.max(200, Math.min(600, width)) }),
+
+  setRightPanelWidth: (width) => set({ rightPanelWidth: Math.max(240, Math.min(600, width)) }),
+
+  commitPanelWidths: () => {
+    const { leftPanelWidth, rightPanelWidth } = get()
+    void persistSetting('ui.leftPanelWidth', leftPanelWidth)
+    void persistSetting('ui.rightPanelWidth', rightPanelWidth)
+  },
 
   setSplitPosition: (position) => set({ splitPosition: Math.max(22, Math.min(78, position)) }),
 

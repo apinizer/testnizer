@@ -14,14 +14,15 @@ export default function LeftPanel() {
   const searchQuery = useWorkspaceStore((s) => s.searchQuery)
   const setSearchQuery = useWorkspaceStore((s) => s.setSearchQuery)
   const activeSidebarPage = useUIStore((s) => s.activeSidebarPage)
+  const width = useUIStore((s) => s.leftPanelWidth)
   const { t } = useTranslation()
 
   return (
     <div
       data-testid="left-panel"
       style={{
-        width: T.panelW,
-        minWidth: T.panelW,
+        width,
+        minWidth: width,
         background: T.white,
         borderRight: `1px solid ${T.border}`,
         display: 'flex',

@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import IconSidebar from './IconSidebar'
 import Header from './Header'
 import LeftPanel from './LeftPanel'
+import EdgeResizeHandle from './EdgeResizeHandle'
 import Workbench from './Workbench'
 import Footer from './Footer'
 import ProjectHome from './ProjectHome'
@@ -268,7 +269,13 @@ export default function AppShell() {
         {/* Left Panel — collection tree or history */}
         {(!isLeftPanelCollapsed ||
           activeSidebarPage === 'history' ||
-          activeSidebarPage === 'tests') && <LeftPanel />}
+          activeSidebarPage === 'tests') && (
+          <>
+            <LeftPanel />
+            {/* Drag divider between the APIs tree and the workbench (issue #15) */}
+            <EdgeResizeHandle target="left" />
+          </>
+        )}
 
         {/* Workbench — flex:1 */}
         <Workbench />

@@ -145,6 +145,7 @@ export default function RightPanel() {
   const activeTab = useUIStore((s) => s.rightPanelTab)
   const setTab = useUIStore((s) => s.setRightPanelTab)
   const toggleCollapsed = useUIStore((s) => s.toggleRightPanel)
+  const width = useUIStore((s) => s.rightPanelWidth)
 
   // Collapsed — show thin icon rail (64px wide) that expands panel when clicked
   if (collapsed) {
@@ -174,7 +175,7 @@ export default function RightPanel() {
   return (
     <div
       className="flex shrink-0 flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--white)]"
-      style={{ width: 300 }}
+      style={{ width }}
     >
       {/* Tab bar */}
       <div

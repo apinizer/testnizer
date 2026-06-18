@@ -38,6 +38,7 @@ import RegexTool from '../tools/RegexTool'
 import YamlJsonTool from '../tools/YamlJsonTool'
 import MockServerEditor from '../mock/MockServerEditor'
 import RightPanel from './RightPanel'
+import EdgeResizeHandle from './EdgeResizeHandle'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
@@ -1203,6 +1204,9 @@ export default function Workbench() {
           </Panel>
         </PanelGroup>
       </div>
+
+      {/* Drag divider between the workbench and the Variables pane (issue #15) */}
+      <EdgeResizeHandle target="right" />
 
       {/* Right: Postman-style tabbed panel (Variables / Code / ...) */}
       <RightPanel />
