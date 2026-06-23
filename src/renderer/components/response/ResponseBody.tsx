@@ -461,17 +461,25 @@ function BinaryResponseView({
   contentType: string
   size?: number
 }) {
-  const url = useMemo(() => {
-    const blob = base64ToBlob(base64, contentType)
-    return blob ? URL.createObjectURL(blob) : null
-  }, [base64, contentType])
-
-  // Release the object URL when the body changes or the panel unmounts.
+  // Decode to a Blob in a memo (pure — a Blob needs no cleanup), but create and
+  // revoke the object URL INSIDE the effect. React StrictMode (dev) mounts the
+  // component, runs the cleanup once to surface effect bugs, then remounts. The
+  // old code created the URL during render (useMemo) and revoked it in a
+  // separate `[url]` effect, so the StrictMode cleanup revoked the URL while the
+  // memo kept handing that now-dead URL to <img>/<a> — the preview showed a
+  // broken image and Download saved nothing. Creating + revoking the URL in one
+  // effect keeps a live URL across the remount (issue #25).
+  const blob = useMemo(() => base64ToBlob(base64, contentType), [base64, contentType])
+  const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
-    return () => {
-      if (url) URL.revokeObjectURL(url)
+    if (!blob) {
+      setUrl(null)
+      return
     }
-  }, [url])
+    const objectUrl = URL.createObjectURL(blob)
+    setUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [blob])
 
   const isImage = contentType.startsWith('image/')
   const isPdf = contentType === 'application/pdf'
@@ -517,9 +525,9 @@ function BinaryResponseView({
         style={{ background: 'var(--surface)' }}
         data-testid="res-binary-preview"
       >
-        {!url ? (
+        {!blob ? (
           <span style={{ color: 'var(--muted)' }}>Unable to decode binary response.</span>
-        ) : isImage ? (
+        ) : !url ? null : isImage ? (
           <img
             src={url}
             alt="Response"
