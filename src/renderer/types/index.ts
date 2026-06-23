@@ -412,6 +412,13 @@ export interface ApiResponse {
   statusText?: string
   headers?: Record<string, string>
   body?: string
+  /**
+   * Set to 'base64' when `body` holds a base64-encoded binary payload (image /
+   * PDF / octet-stream) rather than text — the response viewer then previews
+   * or offers it for download instead of rendering it in the text editor
+   * (issue #25). Absent for ordinary text responses.
+   */
+  bodyEncoding?: 'base64'
   bodySize?: number
   timing: ResponseTiming
   error?: string

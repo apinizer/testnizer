@@ -12,10 +12,13 @@
       Zustand hydration, so `'unsafe-inline'` is kept for styles only.
       `'unsafe-eval'` is required so user-authored pre-request and
       post-response scripts can execute via `new Function()` (test-runner.ts).
+      `frame-src`/`media-src` allow `blob:` so the response viewer can preview
+      binary bodies (PDF in an iframe, audio/video) from in-memory object URLs
+      built off the base64 body — local only, no network egress (issue #25).
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; frame-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
     />
     <title>Testnizer</title>
   </head>

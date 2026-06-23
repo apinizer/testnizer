@@ -111,6 +111,8 @@ interface ApiResponse {
   statusText?: string
   headers?: Record<string, string>
   body?: string
+  /** 'base64' when `body` is a base64-encoded binary payload (issue #25). */
+  bodyEncoding?: 'base64'
   bodySize?: number
   timing: ResponseTiming
   error?: string
@@ -128,6 +130,67 @@ function isEventStreamContentType(contentType: string | undefined): boolean {
   if (!contentType) return false
   const mime = contentType.split(';')[0]?.trim().toLowerCase()
   return mime === 'text/event-stream'
+}
+
+/**
+ * Decide whether a response body should be treated as opaque binary (kept as
+ * base64 for the renderer to preview/download) rather than decoded to UTF-8
+ * text. Text families — text/*, JSON, XML, HTML, JS, form-urlencoded, CSV,
+ * YAML, SSE — stay text; images, audio, video, fonts, PDFs and other
+ * application/* payloads are binary (issue #25).
+ */
+function isBinaryContentType(contentType: string | undefined): boolean {
+  if (!contentType) return false
+  const mime = contentType.split(';')[0]?.trim().toLowerCase()
+  if (!mime) return false
+  if (mime.startsWith('text/')) return false
+  if (
+    mime.includes('json') ||
+    mime.includes('xml') ||
+    mime.includes('html') ||
+    mime.includes('javascript') ||
+    mime.includes('ecmascript') ||
+    mime.includes('x-www-form-urlencoded') ||
+    mime.includes('csv') ||
+    mime.includes('yaml') ||
+    mime.includes('graphql') ||
+    mime === 'text/event-stream'
+  ) {
+    return false
+  }
+  return (
+    mime.startsWith('image/') ||
+    mime.startsWith('audio/') ||
+    mime.startsWith('video/') ||
+    mime.startsWith('font/') ||
+    mime.startsWith('application/')
+  )
+}
+
+/**
+ * Normalise an axios response body into the string we hand the renderer.
+ * The engine fetches with `responseType: 'arraybuffer'` so binary payloads
+ * survive intact; this converts the raw bytes back to UTF-8 text for text
+ * content types and to base64 for binary ones. Tolerant of a plain string
+ * (test mocks / the curl sidecar) which is passed through unchanged.
+ */
+function decodeResponseBody(
+  data: unknown,
+  contentType: string | undefined,
+): { body: string; isBase64: boolean; size: number } {
+  if (data == null) return { body: '', isBase64: false, size: 0 }
+  if (typeof data === 'string') {
+    return { body: data, isBase64: false, size: Buffer.byteLength(data, 'utf-8') }
+  }
+  const buf = Buffer.isBuffer(data)
+    ? data
+    : data instanceof ArrayBuffer
+      ? Buffer.from(new Uint8Array(data))
+      : Buffer.from(data as Uint8Array)
+  if (isBinaryContentType(contentType)) {
+    return { body: buf.toString('base64'), isBase64: true, size: buf.length }
+  }
+  return { body: buf.toString('utf-8'), isBase64: false, size: buf.length }
 }
 
 /**
@@ -1021,8 +1084,12 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       // disables following so the raw 3xx is returned (issues #25, #26).
       maxRedirects: options.followRedirects === false ? 0 : (options.maxRedirects ?? 5),
       validateStatus: () => true, // Accept all status codes
-      responseType: 'text',
-      transformResponse: [(d: string) => d], // Prevent auto JSON parse
+      // Fetch raw bytes so binary payloads (images / PDFs / octet-stream)
+      // survive instead of being mangled by UTF-8 text decoding (issue #25).
+      // `decodeResponseBody` turns the buffer back into text for text content
+      // types and base64 for binary ones. arraybuffer also bypasses axios's
+      // automatic JSON parse, so no transformResponse override is needed.
+      responseType: 'arraybuffer',
       signal: options.signal,
       // Allow streaming arbitrary-size multipart uploads.
       maxContentLength: Infinity,
@@ -1194,16 +1261,20 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       // Cookie extraction failed — not critical
     }
 
-    // Body size
-    const bodyStr = response.data ?? ''
-    const bodySize = Buffer.byteLength(bodyStr, 'utf-8')
+    // Decode the raw response bytes: UTF-8 text for text content types, base64
+    // for binary ones (issue #25). `bodyStr` is base64 when `bodyIsBinary`.
+    const respContentType = responseHeaders['content-type'] ?? responseHeaders['Content-Type']
+    const {
+      body: bodyStr,
+      isBase64: bodyIsBinary,
+      size: bodySize,
+    } = decodeResponseBody(response.data, respContentType)
 
     // Parse Server-Sent Events bodies into a structured event list so the
     // renderer can show a Postman-style "Events" tab. Real-time streaming is
     // handled by `sse.engine.ts`; this is post-processing of the buffered
     // body for one-shot requests that happen to return text/event-stream.
     let sseEvents: SseEventPayload[] | undefined
-    const respContentType = responseHeaders['content-type'] ?? responseHeaders['Content-Type']
     if (isEventStreamContentType(respContentType) && bodyStr) {
       const parsed = parseSseBody(bodyStr)
       if (parsed.length > 0) {
@@ -1255,6 +1326,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       headers: responseHeaders,
       body: bodyStr,
       bodySize,
+      bodyEncoding: bodyIsBinary ? 'base64' : undefined,
       timing: {
         total: timings.total ?? 0,
         dns: timings.dns,
@@ -1286,16 +1358,23 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       const status = axiosErr.response.status
       const hint = hintForHttpStatus(status) ?? axiosErr.response.statusText
       const errorLine = hint ? `HTTP ${status} ${hint}` : `HTTP ${status}`
+      // Decode the error body the same way as the success path — with
+      // responseType:'arraybuffer' the data is a Buffer, so the old
+      // `JSON.stringify` fallback would have produced `{"0":..}` garbage
+      // (and binary error bodies are kept as base64 for preview).
+      const errCt = responseHeaders['content-type'] ?? responseHeaders['Content-Type']
+      const { body: errBody, isBase64: errIsBinary } = decodeResponseBody(
+        axiosErr.response.data,
+        errCt,
+      )
       return {
         requestId,
         protocol: 'http',
         status,
         statusText: axiosErr.response.statusText,
         headers: responseHeaders,
-        body:
-          typeof axiosErr.response.data === 'string'
-            ? axiosErr.response.data
-            : JSON.stringify(axiosErr.response.data),
+        body: errBody,
+        bodyEncoding: errIsBinary ? 'base64' : undefined,
         timing: { total: Math.round(endTime - startTime) },
         error: errorLine,
       }
