@@ -774,6 +774,22 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
 
   loadFromEndpoint: (data) => {
     const state = get()
+    // Don't clobber a tab's unsaved working copy. The tree click / open-tab
+    // paths run `openPreviewTab → switchToTab → loadFromEndpoint`; when the
+    // user re-focuses an already-open endpoint, `switchToTab` has just
+    // restored their in-memory edits, but this `loadFromEndpoint` would then
+    // overwrite them with the pristine DB row — Query Params / Auth / Body
+    // typed without saving vanished on navigate-away-and-back (issue #23).
+    // A dirty tab means there are unsaved edits the working copy owns, so the
+    // DB reload is skipped; a clean tab (fresh open, or post-Save) loads
+    // normally. Gated on the tab being backed by a saved request / endpoint —
+    // matching `markActiveTabDirty`, the only thing that sets the flag.
+    if (state._currentTabId) {
+      const activeTab = useTabsStore.getState().tabs.find((t) => t.id === state._currentTabId)
+      if (activeTab?.isDirty && (activeTab.endpointId || activeTab.savedRequestId)) {
+        return
+      }
+    }
     const newFields = {
       method: data.method,
       url: data.url,

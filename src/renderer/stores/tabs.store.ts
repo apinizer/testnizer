@@ -148,6 +148,19 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
       }
     }
 
+    // Id-level dedup: never mint a second physical tab carrying an id that's
+    // already open. The clean-preview-replace branch below adopts the incoming
+    // payload id (to keep the `tab.id === tab-${resourceId}` invariant), so
+    // without this guard the metadata-less fallback open path (TreeView's
+    // "open with basic info") could land a replaced slot on an id that another
+    // open tab already uses — two tabs sharing one id, both rendering as the
+    // active tab (issue #24 hardening).
+    const dupById = get().tabs.find((t) => t.id === tab.id)
+    if (dupById) {
+      set({ activeTabId: dupById.id })
+      return
+    }
+
     const state = get()
     // Scope the preview slot per workspace kind — APIs preview ≠ Tests
     // preview ≠ Mocks preview. A click in one tree never disturbs another
@@ -164,34 +177,25 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
         const newTab: Tab = { ...tab, isDirty: false, isLoading: false, isPreview: true }
         set((s) => ({ tabs: [...s.tabs, newTab], activeTabId: newTab.id }))
       } else {
-        // Replace the existing (clean) preview tab's content. Identity
-        // fields (endpointId / savedRequestId / mockServerId /
-        // testSuiteItemId / folderId) are mutually exclusive, so we
-        // ALWAYS overwrite each one with the new tab's value — even
-        // when that value is undefined. Without the explicit overrides
-        // a previous suite-item preview would leave `testSuiteItemId`
-        // behind, making the flask icon stick on an APIs-tree preview
-        // that opened in the same slot (and the Save router would still
-        // try to write to test_suite_items).
+        // Replace the existing (clean) preview tab's content. Build the new
+        // tab purely from the incoming payload — crucially ADOPTING its `id`
+        // instead of keeping `existingPreview.id`. The old "keep the slot's
+        // id" behaviour decoupled a physical tab id from the resource it
+        // showed (`tab.id` stopped equalling `tab-${endpointId}`); a later
+        // open of the original resource then minted a NEW tab whose
+        // `tab-${id}` collided with this stale slot, so two tabs shared one id
+        // and BOTH rendered as the active tab (issue #24). Rebuilding from the
+        // payload also drops any stale identity field (endpointId /
+        // savedRequestId / mockServerId / testSuiteItemId / folderId) for free
+        // — those are mutually exclusive, so a fresh object carries only the
+        // new resource's id and keeps the flask icon / Save router correct.
         set((s) => ({
           tabs: s.tabs.map((t) =>
             t.id === existingPreview.id
-              ? {
-                  ...t,
-                  ...tab,
-                  id: existingPreview.id,
-                  endpointId: tab.endpointId,
-                  savedRequestId: tab.savedRequestId,
-                  mockServerId: tab.mockServerId,
-                  testSuiteItemId: tab.testSuiteItemId,
-                  folderId: tab.folderId,
-                  isDirty: false,
-                  isLoading: false,
-                  isPreview: true,
-                }
+              ? { ...tab, isDirty: false, isLoading: false, isPreview: true }
               : t,
           ),
-          activeTabId: existingPreview.id,
+          activeTabId: tab.id,
         }))
       }
     } else {
