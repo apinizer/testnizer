@@ -34,3 +34,23 @@ describe('ui.store panel widths (issue #15)', () => {
     expect(() => useUIStore.getState().commitPanelWidths()).not.toThrow()
   })
 })
+
+describe('ui.store response Headers column width (issue #20)', () => {
+  beforeEach(() => {
+    useUIStore.setState({ responseHeaderKeyWidth: 35 })
+  })
+
+  it('setResponseHeaderKeyWidth clamps to [15, 70] percent', () => {
+    useUIStore.getState().setResponseHeaderKeyWidth(50)
+    expect(useUIStore.getState().responseHeaderKeyWidth).toBe(50)
+    useUIStore.getState().setResponseHeaderKeyWidth(5)
+    expect(useUIStore.getState().responseHeaderKeyWidth).toBe(15)
+    useUIStore.getState().setResponseHeaderKeyWidth(95)
+    expect(useUIStore.getState().responseHeaderKeyWidth).toBe(70)
+  })
+
+  it('commitResponseHeaderKeyWidth does not throw without a settings bridge', () => {
+    useUIStore.getState().setResponseHeaderKeyWidth(42)
+    expect(() => useUIStore.getState().commitResponseHeaderKeyWidth()).not.toThrow()
+  })
+})

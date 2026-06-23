@@ -37,6 +37,8 @@ interface UIStore {
   accentColor: string
   leftPanelWidth: number
   rightPanelWidth: number
+  /** Response Headers table KEY-column width, as a percentage (issue #20). */
+  responseHeaderKeyWidth: number
   splitPosition: number
   isLeftPanelCollapsed: boolean
   activeSidebarPage: SidebarPage
@@ -80,6 +82,10 @@ interface UIStore {
   setRightPanelWidth: (width: number) => void
   /** Persist the current left/right panel widths (called once on drag end). */
   commitPanelWidths: () => void
+  /** Live setter while dragging the response Headers KEY column (issue #20). */
+  setResponseHeaderKeyWidth: (pct: number) => void
+  /** Persist the response Headers KEY-column width (called once on drag end). */
+  commitResponseHeaderKeyWidth: () => void
   setSplitPosition: (position: number) => void
   toggleLeftPanel: () => void
   setLeftPanelCollapsed: (collapsed: boolean) => void
@@ -165,6 +171,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   accentColor: '#2D5FA0',
   leftPanelWidth: 300,
   rightPanelWidth: 300,
+  responseHeaderKeyWidth: 35,
   splitPosition: 50,
   isLeftPanelCollapsed: false,
   activeSidebarPage: 'apis',
@@ -237,9 +244,11 @@ export const useUIStore = create<UIStore>((set, get) => ({
         'ui.accentColor',
         'ui.leftPanelWidth',
         'ui.rightPanelWidth',
+        'ui.responseHeaderKeyWidth',
       ] as const
       const results = await Promise.all(keys.map((k) => api.get!(k)))
-      const [themeRes, localeRes, sizeRes, familyRes, accentRes, leftWRes, rightWRes] = results
+      const [themeRes, localeRes, sizeRes, familyRes, accentRes, leftWRes, rightWRes, hdrKeyWRes] =
+        results
       const patch: Partial<UIStore> = {}
       const themeVal = themeRes?.data as Theme | undefined
       if (themeVal === 'light' || themeVal === 'dark' || themeVal === 'system') {
@@ -277,6 +286,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
       const rightW = rightWRes?.data
       if (typeof rightW === 'number' && rightW >= 240 && rightW <= 600)
         patch.rightPanelWidth = rightW
+      const hdrKeyW = hdrKeyWRes?.data
+      if (typeof hdrKeyW === 'number' && hdrKeyW >= 15 && hdrKeyW <= 70)
+        patch.responseHeaderKeyWidth = hdrKeyW
       set(patch)
     } catch {
       /* noop */
@@ -293,6 +305,13 @@ export const useUIStore = create<UIStore>((set, get) => ({
     const { leftPanelWidth, rightPanelWidth } = get()
     void persistSetting('ui.leftPanelWidth', leftPanelWidth)
     void persistSetting('ui.rightPanelWidth', rightPanelWidth)
+  },
+
+  setResponseHeaderKeyWidth: (pct) =>
+    set({ responseHeaderKeyWidth: Math.max(15, Math.min(70, pct)) }),
+
+  commitResponseHeaderKeyWidth: () => {
+    void persistSetting('ui.responseHeaderKeyWidth', get().responseHeaderKeyWidth)
   },
 
   setSplitPosition: (position) => set({ splitPosition: Math.max(22, Math.min(78, position)) }),
