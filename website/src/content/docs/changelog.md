@@ -10,6 +10,37 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.31
+
+**A UX-polish and reliability release — your unsaved edits stay put, the tab
+strip stops double-selecting, binary responses are finally viewable, and the
+request/response panes line up.** Closes eleven reported issues.
+
+**Request editing & tabs.** Query Params, Authorization and Body values typed
+without clicking Save are no longer lost when you click another API and come
+back — each tab keeps its working copy, matching Postman / Insomnia (#23). The
+tab strip no longer shows two tabs both highlighted as active after a few clicks
+(#24).
+
+**Request & response layout.** The Params and Headers tables drop their rounded
+"card" border and side padding so they sit flush against the pane, pairing with
+the borderless response Body / Headers (#21). The Bulk Edit toggle moved into
+the table's Description header instead of an empty spacer row (#22). The response
+Headers count is now a green pill matching the request badge (#19).
+
+**Response viewer.** Images, PDFs, audio/video and other binary bodies — which
+used to show as garbage — now preview inline (or in a frame) with a Download
+button (#25). The response Headers KEY / VALUE columns are draggable, with the
+width remembered across tab switches (#20).
+
+**Runner & import (rolled up).** A request with passing assertions is no longer
+force-failed just because the HTTP status was ≥ 400 (#16). Imports stop
+duplicating a query param present in both the URL and the Params table
+(`?type=snmp&type=snmp`), common with Insomnia (#17). The left APIs tree and
+right Variables pane are resizable, with persisted widths (#15). Added a
+regression guard for `pm.response.json()` / `.body` in after-response scripts on
+the Run path (#18).
+
 ## v1.4.30
 
 **Signed installers on Windows and macOS — no more "unknown publisher" /

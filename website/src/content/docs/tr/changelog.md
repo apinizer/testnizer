@@ -11,6 +11,38 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.31
+
+**UX cilası ve güvenilirlik sürümü — kaydedilmemiş düzenlemeleriniz yerinde
+kalıyor, sekme şeridi çift seçim yapmıyor, binary yanıtlar nihayet
+görüntülenebiliyor ve istek/yanıt panelleri hizalanıyor.** On bir bildirilen
+sorunu kapatır.
+
+**İstek düzenleme & sekmeler.** Save'e basmadan girilen Query Params,
+Authorization ve Body değerleri, başka bir API'ye tıklayıp geri dönünce artık
+kaybolmuyor — her sekme kendi çalışma kopyasını koruyor (Postman / Insomnia gibi)
+(#23). Sekme şeridi birkaç tıklamadan sonra iki sekmeyi aynı anda seçili
+göstermiyor (#24).
+
+**İstek & yanıt düzeni.** Params ve Headers tabloları yuvarlak "kart"
+kenarlığını ve yan boşluğunu bıraktı; kenarlıksız yanıt Body / Headers ile
+eşleşecek şekilde panele dayanıyor (#21). Bulk Edit düğmesi, boş bir ara satır
+yerine tablonun Description başlığına taşındı (#22). Yanıt Headers sayısı, istek
+rozetiyle eşleşen yeşil bir pill oldu (#19).
+
+**Yanıt görüntüleyici.** Daha önce bozuk görünen görseller, PDF'ler, ses/video
+ve diğer binary gövdeler artık satır içinde (veya bir çerçevede) Download
+düğmesiyle önizleniyor (#25). Yanıt Headers KEY / VALUE kolonları sürüklenebilir
+ve genişlik sekme değişiminde korunuyor (#20).
+
+**Runner & içe aktarma (toplu dahil edildi).** Assertion'ları geçen bir istek,
+yalnızca HTTP durumu ≥ 400 diye artık zorla başarısız sayılmıyor (#16). İçe
+aktarmalar, hem URL'de hem Params tablosunda bulunan bir query parametresini
+ikiye katlamayı bıraktı (`?type=snmp&type=snmp`; Insomnia'da yaygın) (#17). Sol
+API ağacı ve sağ Variables paneli yeniden boyutlandırılabilir, genişlikler
+korunuyor (#15). Run yolundaki after-response script'lerde `pm.response.json()` /
+`.body` için bir regresyon koruması eklendi (#18).
+
 ## v1.4.30
 
 **Windows ve macOS'ta imzalı kurulumlar — artık "bilinmeyen yayıncı" /
