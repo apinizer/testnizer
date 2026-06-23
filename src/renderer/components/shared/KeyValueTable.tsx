@@ -40,6 +40,13 @@ interface KeyValueTableProps {
    * Edit toggle is hidden.
    */
   onReplaceAll?: (rows: KeyValuePair[]) => void
+  /**
+   * Drop the rounded "card" border around the table so it sits flush against
+   * its container, visually pairing the request Params / Headers tables with
+   * the borderless response Body / Headers panes (issue #21). The form-data /
+   * url-encoded body editors keep the default bordered look.
+   */
+  flush?: boolean
 }
 
 interface AutocompleteState {
@@ -117,6 +124,7 @@ export default function KeyValueTable({
   keyAutocompleteEntries,
   enableFileType = false,
   onReplaceAll,
+  flush = false,
 }: KeyValueTableProps) {
   const keyAutocompleteEnabled = !!keyAutocompleteEntries && keyAutocompleteEntries.length > 0
   const { t } = useTranslation()
@@ -289,46 +297,56 @@ export default function KeyValueTable({
     onReplaceAll(bulkTextToRows(bulkText, bulkSnapshotRef.current))
   }
 
+  // The Bulk Edit ⇄ Key/Value toggle. Previously this sat in its own
+  // `mb-1` row above the table, which pushed an empty gap under the section
+  // header (issue #22). It's now rendered inside the table's Description
+  // header cell (table mode) so the table starts immediately under "Query
+  // Params"; bulk mode keeps a compact top-right toggle so the user can get
+  // back to the table view.
+  const bulkToggle = bulkEditEnabled ? (
+    <button
+      type="button"
+      data-testid="kv-bulk-toggle"
+      onClick={() => {
+        // Commit on the way back to table view so any unsaved edits
+        // in the textarea aren't silently dropped.
+        if (bulkMode) commitBulk()
+        setBulkMode((v) => !v)
+      }}
+      className="cursor-pointer border-none bg-transparent font-normal text-[var(--accent)] hover:underline"
+      style={{ fontSize: 13 }}
+    >
+      {bulkMode ? t('kv.keyValueEdit') : t('kv.bulkEdit')}
+    </button>
+  ) : null
+
   return (
     <div>
-      {bulkEditEnabled && (
-        <div className="mb-1 flex items-center justify-end">
-          <button
-            type="button"
-            data-testid="kv-bulk-toggle"
-            onClick={() => {
-              // Commit on the way back to table view so any unsaved edits
-              // in the textarea aren't silently dropped.
-              if (bulkMode) commitBulk()
-              setBulkMode((v) => !v)
-            }}
-            className="cursor-pointer rounded border border-transparent bg-transparent text-[var(--accent)] hover:underline"
-            style={{ fontSize: 13 }}
-          >
-            {bulkMode ? t('kv.keyValueEdit') : t('kv.bulkEdit')}
-          </button>
-        </div>
-      )}
       {bulkMode ? (
-        <textarea
-          data-testid="kv-bulk-textarea"
-          value={bulkText}
-          onChange={(e) => setBulkText(e.target.value)}
-          onBlur={commitBulk}
-          spellCheck={false}
-          className="w-full rounded-md border border-[var(--border)] p-2 font-mono outline-none focus:border-[var(--accent)]"
-          style={{
-            background: 'var(--white)',
-            color: 'var(--text)',
-            fontSize: 13,
-            minHeight: 180,
-            resize: 'vertical',
-          }}
-          placeholder={'key:value\nkey2:value2\n//disabledKey:disabledValue'}
-        />
+        <>
+          {bulkToggle && <div className="mb-1 flex items-center justify-end">{bulkToggle}</div>}
+          <textarea
+            data-testid="kv-bulk-textarea"
+            value={bulkText}
+            onChange={(e) => setBulkText(e.target.value)}
+            onBlur={commitBulk}
+            spellCheck={false}
+            className="w-full rounded-md border border-[var(--border)] p-2 font-mono outline-none focus:border-[var(--accent)]"
+            style={{
+              background: 'var(--white)',
+              color: 'var(--text)',
+              fontSize: 13,
+              minHeight: 180,
+              resize: 'vertical',
+            }}
+            placeholder={'key:value\nkey2:value2\n//disabledKey:disabledValue'}
+          />
+        </>
       ) : (
         <div
-          className="overflow-visible rounded-md border border-[var(--border)]"
+          className={
+            flush ? 'overflow-visible' : 'overflow-visible rounded-md border border-[var(--border)]'
+          }
           style={{ background: 'var(--white)' }}
         >
           {/* Header */}
@@ -344,7 +362,11 @@ export default function KeyValueTable({
             <div className="px-2.5 py-1">{t('kv.key')}</div>
             {enableFileType && <div className="px-2.5 py-1">{t('kv.type')}</div>}
             <div className="px-2.5 py-1">{t('kv.value')}</div>
-            <div className="px-2.5 py-1">{t('kv.description')}</div>
+            {/* Description header doubles as the Bulk Edit toggle anchor (#22). */}
+            <div className="flex items-center justify-between px-2.5 py-1">
+              <span>{t('kv.description')}</span>
+              {bulkToggle}
+            </div>
             <div />
           </div>
 

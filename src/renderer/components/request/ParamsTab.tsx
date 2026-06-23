@@ -10,7 +10,7 @@ export default function ParamsTab() {
 
   return (
     <div>
-      <div className="mb-2 font-medium" style={{ color: 'var(--text)' }}>
+      <div className="mb-2 px-2.5 font-medium" style={{ color: 'var(--text)' }}>
         Query Params
       </div>
       <KeyValueTable
@@ -20,6 +20,7 @@ export default function ParamsTab() {
         onAdd={addParam}
         onReplaceAll={setParams}
         addLabel="+ Add Parameter"
+        flush
       />
     </div>
   )

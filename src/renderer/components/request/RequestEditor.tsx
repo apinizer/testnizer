@@ -135,12 +135,36 @@ export default function RequestEditor() {
           {activeTab === 'scripts' && <ScriptsTab />}
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto p-2.5">
-          {activeTab === 'params' && <ParamsTab />}
-          {activeTab === 'headers' && <HeadersTab />}
-          {activeTab === 'auth' && <AuthTab />}
-          {activeTab === 'tests' && <TestsTab />}
-          {activeTab === 'settings' && <SettingsTab />}
+        <div className="flex-1 overflow-y-auto">
+          {/* Params / Headers drop the horizontal padding so their tables sit
+              flush against the pane edges, pairing with the borderless
+              response Body / Headers (issue #21). Auth / Tests / Settings keep
+              the inset content padding. */}
+          {activeTab === 'params' && (
+            <div className="py-2.5">
+              <ParamsTab />
+            </div>
+          )}
+          {activeTab === 'headers' && (
+            <div className="py-2.5">
+              <HeadersTab />
+            </div>
+          )}
+          {activeTab === 'auth' && (
+            <div className="p-2.5">
+              <AuthTab />
+            </div>
+          )}
+          {activeTab === 'tests' && (
+            <div className="p-2.5">
+              <TestsTab />
+            </div>
+          )}
+          {activeTab === 'settings' && (
+            <div className="p-2.5">
+              <SettingsTab />
+            </div>
+          )}
         </div>
       )}
     </div>

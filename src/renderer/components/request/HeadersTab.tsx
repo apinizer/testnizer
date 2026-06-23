@@ -20,6 +20,7 @@ export default function HeadersTab() {
         addLabel="+ Add Header"
         enableAutocomplete
         keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
+        flush
       />
     </div>
   )

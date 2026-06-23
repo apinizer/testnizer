@@ -310,11 +310,35 @@ export default function ResponsePane() {
     count?: number
     countLabel?: string
     countColor?: string
+    countBg?: string
   }> = [
     { key: 'body', label: 'Body' },
-    ...(eventCount > 0 ? [{ key: 'events' as ResTabKey, label: 'Events', count: eventCount }] : []),
-    { key: 'cookies', label: 'Cookies', count: cookieCount },
-    { key: 'headers', label: 'Headers', count: headerCount },
+    ...(eventCount > 0
+      ? [
+          {
+            key: 'events' as ResTabKey,
+            label: 'Events',
+            count: eventCount,
+            countBg: 'var(--accent-light)',
+            countColor: 'var(--accent-text)',
+          },
+        ]
+      : []),
+    {
+      key: 'cookies',
+      label: 'Cookies',
+      count: cookieCount,
+      countBg: 'var(--accent-light)',
+      countColor: 'var(--accent-text)',
+    },
+    // Green pill, matching the request Headers tab badge (issue #19).
+    {
+      key: 'headers',
+      label: 'Headers',
+      count: headerCount,
+      countBg: 'var(--green-bg)',
+      countColor: 'var(--green)',
+    },
     {
       key: 'testResults',
       label: 'Test Results',
@@ -381,16 +405,29 @@ export default function ResponsePane() {
                 }}
               >
                 {tab.label}
-                {tab.count != null && tab.count > 0 && (
-                  <span
-                    className="ml-1 font-semibold"
-                    style={{
-                      color: tab.countColor || (isActive ? 'var(--accent-text)' : 'var(--hint)'),
-                    }}
-                  >
-                    {tab.countLabel || tab.count}
-                  </span>
-                )}
+                {tab.count != null &&
+                  tab.count > 0 &&
+                  (tab.countBg ? (
+                    // Rounded count pill — same shape as the request-pane badges.
+                    <span
+                      className="ml-1 rounded-full px-[5px] font-semibold"
+                      style={{
+                        background: tab.countBg,
+                        color: tab.countColor || 'var(--accent-text)',
+                      }}
+                    >
+                      {tab.countLabel || tab.count}
+                    </span>
+                  ) : (
+                    <span
+                      className="ml-1 font-semibold"
+                      style={{
+                        color: tab.countColor || (isActive ? 'var(--accent-text)' : 'var(--hint)'),
+                      }}
+                    >
+                      {tab.countLabel || tab.count}
+                    </span>
+                  ))}
               </button>
             )
           })}
