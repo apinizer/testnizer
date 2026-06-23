@@ -1,14 +1,5 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
-import {
-  Search,
-  Trash2,
-  Clock,
-  FolderClosed,
-  Play,
-  ChevronRight,
-  ChevronDown,
-  History as HistoryIcon,
-} from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Search, Trash2, Clock, History as HistoryIcon } from 'lucide-react'
 import { useHistoryStore } from '../../stores/history.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
@@ -27,33 +18,12 @@ import type {
   HttpMethod,
   ApiResponse,
 } from '../../types'
-import type { EndpointRunResult } from '../../stores/runner.store'
-import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
-
-/* ── Runner history row ───────────────────────────────────── */
-
-interface RunHistoryRow {
-  id: string
-  project_id: string
-  duration_ms: number
-  total_endpoints: number
-  passed_endpoints: number
-  failed_endpoints: number
-  total_tests: number
-  failed_tests: number
-  avg_resp_time: number
-  results_json: string | null
-  started_at: number
-  /**
-   * Optional in the SQLite row — present only after the `folder_name`
-   * column migration, so we accept undefined too.
-   */
-  folder_name?: string | null
-}
 
 /**
- * Postman-style history list for the left panel.
- * Shows requests grouped by date + runner runs grouped by folder.
+ * Postman-style request history list for the left panel — individual requests
+ * grouped by date. Runner/suite run history lives on the Tests page
+ * (RunnerHistory); it used to be mirrored here too, which duplicated that view
+ * and pushed the day's requests down, so it was removed.
  */
 export default function HistoryListPanel() {
   const entries = useHistoryStore((s) => s.entries)
@@ -74,12 +44,6 @@ export default function HistoryListPanel() {
   const soapLoadFromEndpoint = useSoapStore((s) => s.loadFromEndpoint)
   const setActiveSidebarPage = useUIStore((s) => s.setActiveSidebarPage)
 
-  const [runHistory, setRunHistory] = useState<RunHistoryRow[]>([])
-  // Auto-expand every grouping (incl. test-suite folders) on first render so
-  // suite-run rows are visible without an extra click. Folders the user
-  // collapses persist in this set for the rest of the session
-  // (v1.4.2 T-12.4 — suite folders rendered as collapsed-with-no-content).
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['__all__']))
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   // Fetch on mount
@@ -91,17 +55,6 @@ export default function HistoryListPanel() {
     })
   }, [activeWorkspaceId, activeProjectId, fetch])
 
-  // Fetch runner history
-  useEffect(() => {
-    if (!activeProjectId) return
-    window.api?.runner
-      ?.history(activeProjectId)
-      .then((result) => {
-        if (result?.success && result.data) setRunHistory(result.data)
-      })
-      .catch(() => {})
-  }, [activeProjectId])
-
   const filtered = useMemo(() => {
     if (!searchTerm.trim()) return entries
     const q = searchTerm.toLowerCase()
@@ -111,45 +64,6 @@ export default function HistoryListPanel() {
   }, [entries, searchTerm])
 
   const groups = useMemo(() => groupByDate(filtered), [filtered])
-
-  // Group runner history by folder_name
-  const runGroups = useMemo(() => {
-    const map = new Map<string, RunHistoryRow[]>()
-    for (const run of runHistory) {
-      const key = run.folder_name || 'All Endpoints'
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(run)
-    }
-    return Array.from(map.entries()).map(([folder, runs]) => ({ folder, runs }))
-  }, [runHistory])
-
-  // Auto-expand every folder that appears in the grouping the first time it
-  // shows up — without this, suite-run folders default to collapsed and
-  // user-reported as "folder appears but expand shows nothing"
-  // (v1.4.2 T-12.4).
-  useEffect(() => {
-    if (runGroups.length === 0) return
-    setExpandedFolders((prev) => {
-      const next = new Set(prev)
-      let changed = false
-      for (const g of runGroups) {
-        if (!next.has(g.folder)) {
-          next.add(g.folder)
-          changed = true
-        }
-      }
-      return changed ? next : prev
-    })
-  }, [runGroups])
-
-  const toggleFolder = useCallback((key: string) => {
-    setExpandedFolders((s) => {
-      const next = new Set(s)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }, [])
 
   function handleOpenInTab(entry: HistoryEntry) {
     const snap = (entry.request_snapshot || {}) as Record<string, unknown>
@@ -290,39 +204,6 @@ export default function HistoryListPanel() {
     }
   }
 
-  const handleOpenRunReport = useCallback(
-    (run: RunHistoryRow) => {
-      if (!run.results_json) return
-      try {
-        const results = JSON.parse(run.results_json) as EndpointRunResult[]
-        openOrReuseRunnerTab({
-          results,
-          report: {
-            projectId: run.project_id,
-            startedAt: run.started_at,
-            completedAt: run.started_at + run.duration_ms,
-            totalEndpoints: run.total_endpoints,
-            passedEndpoints: run.passed_endpoints,
-            failedEndpoints: run.failed_endpoints,
-            totalAssertions: run.total_tests,
-            passedAssertions: run.total_tests - run.failed_tests,
-            failedAssertions: run.failed_tests,
-            results,
-          },
-          startedAt: run.started_at,
-        })
-        // The runner tab `tabBelongsToPage` the Tests page; without switching
-        // there the tab becomes active but the Workbench filters it out behind
-        // the current (History) page and the click looks like a no-op — the
-        // same trap openFolderRunner documents (#39). Surface the report.
-        setActiveSidebarPage('tests')
-      } catch {
-        /* invalid JSON */
-      }
-    },
-    [setActiveSidebarPage],
-  )
-
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -372,79 +253,7 @@ export default function HistoryListPanel() {
 
       {/* List */}
       <div className="flex-1 overflow-y-auto">
-        {/* ── Runner Runs grouped by folder ── */}
-        {runGroups.length > 0 && (
-          <div>
-            {runGroups.map(({ folder, runs }) => {
-              const isExpanded = expandedFolders.has(folder)
-              return (
-                <div key={folder}>
-                  {/* Folder header */}
-                  <button
-                    type="button"
-                    onClick={() => toggleFolder(folder)}
-                    className="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-3 py-[6px] text-left"
-                    style={{
-                      borderBottom: '1px solid var(--border)',
-                      background: 'var(--surface)',
-                    }}
-                  >
-                    <span style={{ color: 'var(--hint)', display: 'flex', alignItems: 'center' }}>
-                      {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                    </span>
-                    <FolderClosed
-                      size={13}
-                      style={{ color: 'var(--tree-folder)', flexShrink: 0 }}
-                    />
-                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-                      {folder}
-                    </span>
-                    <span style={{ fontSize: 13, color: 'var(--hint)', flexShrink: 0 }}>
-                      {runs.length}
-                    </span>
-                  </button>
-
-                  {/* Run entries under this folder */}
-                  {isExpanded &&
-                    runs.map((run) => (
-                      <div
-                        key={run.id}
-                        onClick={() => handleOpenRunReport(run)}
-                        className="flex cursor-pointer items-center gap-2 px-3 py-[6px] pl-8"
-                        style={{ borderBottom: '1px solid var(--border)' }}
-                        onMouseEnter={(e) => {
-                          ;(e.currentTarget as HTMLElement).style.background = 'var(--item-hover)'
-                        }}
-                        onMouseLeave={(e) => {
-                          ;(e.currentTarget as HTMLElement).style.background = 'transparent'
-                        }}
-                      >
-                        <Play size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                        <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>
-                          {formatDate(run.started_at)}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 13,
-                            color: run.failed_endpoints > 0 ? 'var(--red)' : 'var(--green)',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {run.passed_endpoints}/{run.total_endpoints}
-                        </span>
-                        <span style={{ fontSize: 13, color: 'var(--hint)', flexShrink: 0 }}>
-                          {formatDuration(run.duration_ms)}
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {/* ── Regular request history ── */}
-        {groups.length === 0 && runGroups.length === 0 && (
+        {groups.length === 0 && (
           <EmptyState
             icon={HistoryIcon}
             title="No history yet."
@@ -576,23 +385,6 @@ function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: His
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-}
-
-function formatDate(ts: number): string {
-  const d = new Date(ts)
-  const now = new Date()
-  const isToday = d.toDateString() === now.toDateString()
-  if (isToday) return 'Today ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  return (
-    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
-    ' ' +
-    d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  )
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}s`
 }
 
 function shortUrl(url: string): string {
