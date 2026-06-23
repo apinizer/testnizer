@@ -230,6 +230,12 @@ export default function HistoryListPanel() {
         statusText: r.statusText,
         headers: r.headers,
         body: r.body,
+        // Restore the binary flag so an image / PDF body opened from history
+        // previews as the file instead of dumping its base64 as text. Rows
+        // captured before the flag was persisted still carry a valid base64
+        // body, so fall back to inferring it from the content type
+        // (issue #25 follow-up).
+        bodyEncoding: r.bodyEncoding ?? inferBinaryEncoding(r.headers, r.body),
         bodySize: r.bodySize,
         timing: r.timing || { total: entry.duration_ms || 0 },
         error: r.error,
@@ -244,6 +250,29 @@ export default function HistoryListPanel() {
         actualRequest: cleanActualRequest,
       })
     }
+  }
+
+  // History rows written before `bodyEncoding` was persisted still hold a valid
+  // base64 body for binary responses — recover the flag from the content type so
+  // those entries preview instead of showing base64 as text. Mirrors the
+  // engine's isBinaryContentType families (image/audio/video/font + pdf/octet).
+  function inferBinaryEncoding(
+    headers: Record<string, string> | undefined,
+    body: string | undefined,
+  ): 'base64' | undefined {
+    if (!body) return undefined
+    const ct = (headers?.['content-type'] || headers?.['Content-Type'] || '')
+      .split(';')[0]
+      .trim()
+      .toLowerCase()
+    const isBinary =
+      ct.startsWith('image/') ||
+      ct.startsWith('audio/') ||
+      ct.startsWith('video/') ||
+      ct.startsWith('font/') ||
+      ct === 'application/pdf' ||
+      ct === 'application/octet-stream'
+    return isBinary ? 'base64' : undefined
   }
 
   function stripCredentialsInUrl(raw: string | undefined): string | undefined {
@@ -261,30 +290,38 @@ export default function HistoryListPanel() {
     }
   }
 
-  const handleOpenRunReport = useCallback((run: RunHistoryRow) => {
-    if (!run.results_json) return
-    try {
-      const results = JSON.parse(run.results_json) as EndpointRunResult[]
-      openOrReuseRunnerTab({
-        results,
-        report: {
-          projectId: run.project_id,
-          startedAt: run.started_at,
-          completedAt: run.started_at + run.duration_ms,
-          totalEndpoints: run.total_endpoints,
-          passedEndpoints: run.passed_endpoints,
-          failedEndpoints: run.failed_endpoints,
-          totalAssertions: run.total_tests,
-          passedAssertions: run.total_tests - run.failed_tests,
-          failedAssertions: run.failed_tests,
+  const handleOpenRunReport = useCallback(
+    (run: RunHistoryRow) => {
+      if (!run.results_json) return
+      try {
+        const results = JSON.parse(run.results_json) as EndpointRunResult[]
+        openOrReuseRunnerTab({
           results,
-        },
-        startedAt: run.started_at,
-      })
-    } catch {
-      /* invalid JSON */
-    }
-  }, [])
+          report: {
+            projectId: run.project_id,
+            startedAt: run.started_at,
+            completedAt: run.started_at + run.duration_ms,
+            totalEndpoints: run.total_endpoints,
+            passedEndpoints: run.passed_endpoints,
+            failedEndpoints: run.failed_endpoints,
+            totalAssertions: run.total_tests,
+            passedAssertions: run.total_tests - run.failed_tests,
+            failedAssertions: run.failed_tests,
+            results,
+          },
+          startedAt: run.started_at,
+        })
+        // The runner tab `tabBelongsToPage` the Tests page; without switching
+        // there the tab becomes active but the Workbench filters it out behind
+        // the current (History) page and the click looks like a no-op — the
+        // same trap openFolderRunner documents (#39). Surface the report.
+        setActiveSidebarPage('tests')
+      } catch {
+        /* invalid JSON */
+      }
+    },
+    [setActiveSidebarPage],
+  )
 
   return (
     <div className="flex h-full flex-col">

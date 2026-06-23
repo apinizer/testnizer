@@ -481,6 +481,12 @@ function BinaryResponseView({
     return () => URL.revokeObjectURL(objectUrl)
   }, [blob])
 
+  // Rendered preview vs. the raw base64 the body actually holds. Postman lets
+  // you flip a binary response between its preview and raw bytes; offer the
+  // same so an image isn't a dead-end with no way back to the source
+  // (issue #25 follow-up).
+  const [binView, setBinView] = useState<'preview' | 'raw'>('preview')
+
   const isImage = contentType.startsWith('image/')
   const isPdf = contentType === 'application/pdf'
   const isAudio = contentType.startsWith('audio/')
@@ -501,6 +507,26 @@ function BinaryResponseView({
           <span style={{ color: 'var(--hint)', fontSize: 13 }}>{formatBytes(size)}</span>
         )}
         <div className="flex-1" />
+        <div className="flex items-center gap-0.5">
+          {(['preview', 'raw'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setBinView(m)}
+              data-testid={`res-binary-view-${m}`}
+              className="cursor-pointer rounded px-2 py-[3px] capitalize transition-colors"
+              style={{
+                background: binView === m ? 'var(--accent-light)' : 'transparent',
+                border: 'none',
+                color: binView === m ? 'var(--accent-text)' : 'var(--muted)',
+                fontWeight: binView === m ? 600 : 400,
+                fontSize: 13,
+              }}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
         {url && (
           <a
             href={url}
@@ -519,34 +545,47 @@ function BinaryResponseView({
         )}
       </div>
 
-      {/* Preview area */}
-      <div
-        className="flex flex-1 items-center justify-center overflow-auto p-4"
-        style={{ background: 'var(--surface)' }}
-        data-testid="res-binary-preview"
-      >
-        {!blob ? (
-          <span style={{ color: 'var(--muted)' }}>Unable to decode binary response.</span>
-        ) : !url ? null : isImage ? (
-          <img
-            src={url}
-            alt="Response"
-            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+      {/* Content: rendered preview, or the raw base64 the body holds */}
+      {binView === 'raw' ? (
+        <div className="flex-1 overflow-hidden bg-[var(--white)]" data-testid="res-binary-raw">
+          <MonacoWrapper
+            value={base64}
+            language="plaintext"
+            readOnly
+            lineNumbers="on"
+            height="100%"
+            wordWrap={true}
           />
-        ) : isPdf ? (
-          <iframe src={url} title="PDF response" className="h-full w-full border-none" />
-        ) : isAudio ? (
-          <audio controls src={url} />
-        ) : isVideo ? (
-          <video controls src={url} style={{ maxWidth: '100%', maxHeight: '100%' }} />
-        ) : (
-          <div className="flex flex-col items-center gap-2 text-center">
-            <FileIcon size={40} style={{ color: 'var(--muted)' }} />
-            <div style={{ color: 'var(--text)' }}>{contentType || 'Binary file'}</div>
-            <div style={{ color: 'var(--muted)', fontSize: 13 }}>{formatBytes(size)}</div>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div
+          className="flex flex-1 items-center justify-center overflow-auto p-4"
+          style={{ background: 'var(--surface)' }}
+          data-testid="res-binary-preview"
+        >
+          {!blob ? (
+            <span style={{ color: 'var(--muted)' }}>Unable to decode binary response.</span>
+          ) : !url ? null : isImage ? (
+            <img
+              src={url}
+              alt="Response"
+              style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+            />
+          ) : isPdf ? (
+            <iframe src={url} title="PDF response" className="h-full w-full border-none" />
+          ) : isAudio ? (
+            <audio controls src={url} />
+          ) : isVideo ? (
+            <video controls src={url} style={{ maxWidth: '100%', maxHeight: '100%' }} />
+          ) : (
+            <div className="flex flex-col items-center gap-2 text-center">
+              <FileIcon size={40} style={{ color: 'var(--muted)' }} />
+              <div style={{ color: 'var(--text)' }}>{contentType || 'Binary file'}</div>
+              <div style={{ color: 'var(--muted)', fontSize: 13 }}>{formatBytes(size)}</div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -16,14 +16,14 @@
  */
 import * as React from 'react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup, waitFor } from '@testing-library/react'
+import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react'
 
 ;(globalThis as unknown as { React: typeof React }).React = React
 
-// The binary path never touches Monaco, but the module imports it — stub it so
-// jsdom doesn't have to load the editor.
+// Stub Monaco (jsdom can't load the editor) but echo its `value` so the Raw
+// toggle test can assert the base64 actually reaches the editor.
 vi.mock('../../src/renderer/components/shared/MonacoWrapper', () => ({
-  default: () => null,
+  default: ({ value }: { value: string }) => <div data-testid="monaco">{value}</div>,
 }))
 
 import ResponseBody from '../../src/renderer/components/response/ResponseBody'
@@ -108,5 +108,37 @@ describe('ResponseBody binary preview — object URL lifecycle (issue #25)', () 
     const href = link.getAttribute('href') ?? ''
     expect(live.has(href), `download href ${href} was revoked`).toBe(true)
     expect(link.getAttribute('download')).toBe('response.pdf')
+  })
+
+  it('toggles between the rendered image and the raw base64 (issue #25 follow-up)', async () => {
+    useResponseStore.getState().setResponse({
+      requestId: 'r3',
+      protocol: 'http',
+      status: 200,
+      headers: { 'content-type': 'image/png' },
+      body: PNG_BASE64,
+      bodyEncoding: 'base64',
+      bodySize: 70,
+      timing: { total: 1 },
+    })
+
+    render(
+      <React.StrictMode>
+        <ResponseBody />
+      </React.StrictMode>,
+    )
+
+    // Default view renders the image.
+    await screen.findByAltText('Response')
+
+    // Switch to Raw — the base64 reaches the (stubbed) editor and the image is gone.
+    fireEvent.click(screen.getByTestId('res-binary-view-raw'))
+    const raw = await screen.findByTestId('res-binary-raw')
+    expect(raw.textContent).toContain(PNG_BASE64)
+    expect(screen.queryByAltText('Response')).toBeNull()
+
+    // Back to Preview — the image returns.
+    fireEvent.click(screen.getByTestId('res-binary-view-preview'))
+    await screen.findByAltText('Response')
   })
 })

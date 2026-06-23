@@ -1348,6 +1348,10 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
                 // (v1.4.2 T-12.5).
                 body: persistResponses ? response.body : undefined,
                 headers: persistResponses ? response.headers : undefined,
+                // Carry the binary flag so a base64 image/PDF restored from a
+                // run's history previews as the file, not its base64 text
+                // (issue #25 follow-up).
+                bodyEncoding: response.bodyEncoding,
                 bodySize: response.bodySize,
               }),
             })

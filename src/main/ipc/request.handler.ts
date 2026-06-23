@@ -232,6 +232,10 @@ export function registerRequestHandlers(): void {
               statusText: result.statusText,
               headers: result.headers,
               body: result.body && result.body.length <= 500_000 ? result.body : undefined,
+              // Persist the binary flag so a base64 image / PDF body restored
+              // from history previews as the original file instead of showing
+              // its base64 as plain text (issue #25 follow-up).
+              bodyEncoding: result.bodyEncoding,
               bodySize: result.bodySize,
               timing: result.timing,
               error: result.error,
