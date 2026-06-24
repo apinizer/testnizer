@@ -65,20 +65,54 @@ function verifyMacOs(username: string, password: string): Promise<OsAuthResult> 
 }
 
 // ─── Windows ──────────────────────────────────────────────────────
+// PowerShell serialises its progress/error streams to stderr as CLIXML
+// (`#< CLIXML …`). With ProgressPreference loud, even `Add-Type` emits a
+// progress object, so the old code's failure message read
+// "Incorrect system password (#< CLIXML <Objs …>)" — noise that also masked
+// the real problem: `ValidateCredentials` returns false for many local
+// accounts. We now validate primarily via the Win32 `LogonUser` API (the
+// canonical local-SAM check), keep AccountManagement as a domain/Azure-AD
+// fallback, silence the progress stream, and signal the verdict on stdout so a
+// host-quirk exit code can't be misread. CLIXML is stripped from any leak.
+export function cleanPowerShellStderr(raw: string): string {
+  // Drop the CLIXML envelope PowerShell writes when stderr is redirected.
+  const i = raw.indexOf('#< CLIXML')
+  return (i >= 0 ? raw.slice(0, i) : raw).trim()
+}
+
 function verifyWindows(username: string, password: string): Promise<OsAuthResult> {
   return new Promise((resolve) => {
-    // Validate via System.DirectoryServices.AccountManagement. Try the
-    // local machine first, then fall back to domain for joined machines.
-    // Credentials are passed through env vars so they don't appear in the
-    // command line seen by other processes.
-    const script = [
-      `Add-Type -AssemblyName System.DirectoryServices.AccountManagement`,
-      `$user = $env:TESTNIZER_OS_USER`,
-      `$pw = $env:TESTNIZER_OS_PW`,
-      `try { $m = New-Object System.DirectoryServices.AccountManagement.PrincipalContext('Machine'); if ($m.ValidateCredentials($user, $pw)) { exit 0 } } catch { }`,
-      `try { $d = New-Object System.DirectoryServices.AccountManagement.PrincipalContext('Domain'); if ($d.ValidateCredentials($user, $pw)) { exit 0 } } catch { }`,
-      `exit 1`,
-    ].join('; ')
+    // Credentials ride env vars so they never appear in the process command
+    // line visible to other users. The verdict is printed as TZ_OK / TZ_FAIL.
+    const script = `
+$ProgressPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'SilentlyContinue'
+$u = $env:TESTNIZER_OS_USER
+$p = $env:TESTNIZER_OS_PW
+try {
+  $sig = @'
+[DllImport("advapi32.dll", SetLastError=true)]
+public static extern bool LogonUser(string user, string domain, string password, int type, int provider, out System.IntPtr token);
+[DllImport("kernel32.dll", SetLastError=true)]
+public static extern bool CloseHandle(System.IntPtr handle);
+'@
+  $api = Add-Type -MemberDefinition $sig -Name 'TZLogon' -Namespace 'TZ' -PassThru
+  $tok = [System.IntPtr]::Zero
+  # LOGON32_LOGON_NETWORK = 3, LOGON32_PROVIDER_DEFAULT = 0; domain '.' = local SAM
+  if ($api::LogonUser($u, '.', $p, 3, 0, [ref]$tok)) { [void]$api::CloseHandle($tok); Write-Output 'TZ_OK'; exit 0 }
+} catch { }
+try {
+  Add-Type -AssemblyName System.DirectoryServices.AccountManagement
+  $m = New-Object System.DirectoryServices.AccountManagement.PrincipalContext('Machine')
+  if ($m.ValidateCredentials($u, $p)) { Write-Output 'TZ_OK'; exit 0 }
+} catch { }
+try {
+  $d = New-Object System.DirectoryServices.AccountManagement.PrincipalContext('Domain')
+  if ($d.ValidateCredentials($u, $p)) { Write-Output 'TZ_OK'; exit 0 }
+} catch { }
+Write-Output 'TZ_FAIL'
+exit 1
+`
     // PowerShell requires UTF-16LE base64 for -EncodedCommand.
     const encoded = Buffer.from(script, 'utf16le').toString('base64')
     const proc = spawn(
@@ -89,20 +123,26 @@ function verifyWindows(username: string, password: string): Promise<OsAuthResult
         env: { ...process.env, TESTNIZER_OS_USER: username, TESTNIZER_OS_PW: password },
       },
     )
+    let stdout = ''
     let stderr = ''
+    proc.stdout.on('data', (d: Buffer) => {
+      stdout += d.toString()
+    })
     proc.stderr.on('data', (d: Buffer) => {
       stderr += d.toString()
     })
     proc.on('error', (err) => resolve({ ok: false, error: err.message }))
     proc.on('close', (code) => {
-      if (code === 0) resolve({ ok: true })
-      else
-        resolve({
-          ok: false,
-          error:
-            'Incorrect system password' +
-            (stderr.trim() ? ` (${stderr.trim().slice(0, 200)})` : ''),
-        })
+      // Trust the explicit stdout token first; fall back to the exit code.
+      if (stdout.includes('TZ_OK') || (code === 0 && !stdout.includes('TZ_FAIL'))) {
+        resolve({ ok: true })
+        return
+      }
+      const detail = cleanPowerShellStderr(stderr)
+      resolve({
+        ok: false,
+        error: 'Incorrect system password' + (detail ? ` (${detail.slice(0, 200)})` : ''),
+      })
     })
   })
 }

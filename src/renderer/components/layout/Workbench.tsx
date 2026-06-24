@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, type ComponentType } from 'react'
 import { createPortal } from 'react-dom'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { isMac } from '../../lib/platform'
@@ -69,6 +69,32 @@ import { cleanupTabState } from '../../lib/cleanup-tab-state'
 import { saveActiveRequestInPlace } from '../../lib/save-active-request'
 import UnsavedChangesDialog from '../modals/UnsavedChangesDialog'
 import { toast } from '../../lib/toast'
+
+// Tool-tab protocol → component. The Workbench renders EVERY open tool tab and
+// toggles visibility (rather than mounting only the active one) so a tool's
+// local input state survives switching to another tool tab and back.
+const TOOL_COMPONENTS: Record<string, ComponentType> = {
+  'tools.jwt': JwtTool,
+  'tools.jsonFormat': JsonFormatTool,
+  'tools.xmlFormat': XmlFormatTool,
+  'tools.encode': EncodeTool,
+  'tools.diff': DiffTool,
+  'tools.jsonpath': JsonPathTool,
+  'tools.xpath': XPathTool,
+  'tools.xslt': XsltTool,
+  'tools.jolt': JoltTool,
+  'tools.wsSecurity': WsSecurityTool,
+  'tools.hash': HashTool,
+  'tools.hmac': HmacTool,
+  'tools.jsonSchema': JsonSchemaTool,
+  'tools.jsonXml': JsonXmlTool,
+  'tools.epoch': EpochTool,
+  'tools.httpStatus': HttpStatusTool,
+  'tools.base': BaseConverterTool,
+  'tools.uuid': UuidTool,
+  'tools.regex': RegexTool,
+  'tools.yamlJson': YamlJsonTool,
+}
 
 function EndpointTabBar() {
   const allTabs = useTabsStore((s) => s.tabs)
@@ -945,182 +971,34 @@ export default function Workbench() {
     )
   }
 
-  if (protocol === 'tools.jwt') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <JwtTool />
-      </div>
+  // Tools (JWT, Hash, Encoders, …): render every OPEN tool tab and toggle
+  // visibility so each tool's local input state survives switching to another
+  // tool tab and back, instead of unmounting and losing it. One lightweight
+  // instance per open tool tab.
+  if (protocol.startsWith('tools.')) {
+    const toolTabs = tabs.filter(
+      (t) => t.protocol.startsWith('tools.') && tabBelongsToPage(t, activeSidebarPage),
     )
-  }
-
-  if (protocol === 'tools.jsonFormat') {
     return (
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />
-        <JsonFormatTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.xmlFormat') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <XmlFormatTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.encode') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <EncodeTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.diff') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <DiffTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.jsonpath') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <JsonPathTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.xpath') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <XPathTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.xslt') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <XsltTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.jolt') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <JoltTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.wsSecurity') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <WsSecurityTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.hash') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <HashTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.hmac') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <HmacTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.jsonSchema') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <JsonSchemaTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.jsonXml') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <JsonXmlTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.epoch') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <EpochTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.httpStatus') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <HttpStatusTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.base') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <BaseConverterTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.uuid') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <UuidTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.regex') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <RegexTool />
-      </div>
-    )
-  }
-
-  if (protocol === 'tools.yamlJson') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <YamlJsonTool />
+        <div className="relative flex-1 overflow-hidden">
+          {toolTabs.map((t) => {
+            const ToolComp = TOOL_COMPONENTS[t.protocol]
+            if (!ToolComp) return null
+            const isActive = t.id === activeTab.id
+            return (
+              <div
+                key={t.id}
+                className="absolute inset-0 flex flex-col overflow-hidden"
+                style={{ display: isActive ? 'flex' : 'none' }}
+                aria-hidden={!isActive}
+              >
+                <ToolComp />
+              </div>
+            )
+          })}
+        </div>
       </div>
     )
   }
