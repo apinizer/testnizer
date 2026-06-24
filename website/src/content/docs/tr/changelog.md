@@ -43,6 +43,18 @@ API ağacı ve sağ Variables paneli yeniden boyutlandırılabilir, genişlikler
 korunuyor (#15). Run yolundaki after-response script'lerde `pm.response.json()` /
 `.body` için bir regresyon koruması eklendi (#18).
 
+**Doğrulama turundan gelen rötuşlar.** Yeni görsel / PDF önizlemesi artık günlük
+kullanımda güvenilir — React StrictMode remount'u artık görüntüleyicinin
+altından bellek içi object URL'ini geri çekmiyor (kırık görsel + boş Download),
+**History**'den açılan binary yanıtlar doğru önizleniyor ve görüntüleyiciye
+**Preview / Raw** geçişi eklendi (#25). History paneli artık yalnızca istekleri
+listeliyor — mükerrer runner-run bölümü kaldırıldı (run geçmişi Tests sayfasında
+duruyor) ve filtre gösterdiği her şeyi daraltıyor. Tool sekmeleri (JWT, Hash,
+Diff, …) arasında geçiş yapmak girdiğiniz veriyi artık silmiyor. Windows'ta,
+unutulan uygulama şifresini sıfırlamak için OS şifrenizi doğrularken doğru şifre
+reddediliyor ve ham PowerShell CLIXML sızıyordu; artık Win32 `LogonUser` API'si
+ile (domain / Azure-AD yedeğiyle) doğruluyor ve temiz bir mesaj gösteriyor.
+
 ## v1.4.30
 
 **Windows ve macOS'ta imzalı kurulumlar — artık "bilinmeyen yayıncı" /

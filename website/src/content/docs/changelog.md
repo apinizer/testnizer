@@ -41,6 +41,18 @@ right Variables pane are resizable, with persisted widths (#15). Added a
 regression guard for `pm.response.json()` / `.body` in after-response scripts on
 the Run path (#18).
 
+**Polish from the verification pass.** The new image / PDF preview is now
+reliable in everyday use — a React StrictMode remount no longer revokes the
+in-memory object URL out from under the viewer (broken image + empty Download),
+binary responses opened from **History** preview correctly, and the viewer has a
+**Preview / Raw** toggle (#25). The History panel now lists requests only — the
+duplicated runner-run section was removed (run history still lives on the Tests
+page) and the filter narrows everything it shows. Switching between tool tabs
+(JWT, Hash, Diff, …) no longer clears what you entered. On Windows, verifying
+your OS password to reset a forgotten app password rejected the correct password
+and leaked raw PowerShell CLIXML; it now validates via the Win32 `LogonUser` API
+(with a domain / Azure-AD fallback) and shows a clean message.
+
 ## v1.4.30
 
 **Signed installers on Windows and macOS — no more "unknown publisher" /
