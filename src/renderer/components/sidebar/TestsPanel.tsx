@@ -977,8 +977,7 @@ function SuiteContentsTree({
 }) {
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({})
 
-  // Group items by folder_id (null = suite root). Folders without items are
-  // still rendered as empty groups so the user can see structure.
+  // Group items by folder_id (null = suite root).
   const itemsByFolder = new Map<string | null, TestSuiteItem[]>()
   for (const item of contents.items) {
     const key = item.folder_id ?? null
@@ -987,69 +986,81 @@ function SuiteContentsTree({
     itemsByFolder.set(key, arr)
   }
 
-  // Top-level folders only (parent_id null). Nested folders are a future
-  // step — current import + create paths put items either at suite root or
-  // in a single-level folder, mirroring the APIs tree shape today.
-  const topFolders = contents.folders.filter((f) => f.parent_id === null)
+  // Group folders by parent_id (null = top level), preserving sort order — so
+  // an imported collection's full nested hierarchy (Setup → Flow → Teardown,
+  // arbitrarily deep) renders, not just a single level.
+  const foldersByParent = new Map<string | null, TestSuiteFolder[]>()
+  for (const f of [...contents.folders].sort((a, b) => a.sort_order - b.sort_order)) {
+    const key = f.parent_id ?? null
+    const arr = foldersByParent.get(key) ?? []
+    arr.push(f)
+    foldersByParent.set(key, arr)
+  }
+
+  const FOLDER_BASE = 12
+  const STEP = 14
+
+  const renderItem = (it: TestSuiteItem, indent: number) => (
+    <SuiteItemRow
+      key={it.id}
+      item={it}
+      indent={indent}
+      isRenaming={renamingItemId === it.id}
+      renameValue={renameItemValue}
+      renameRef={renameItemRef}
+      onRenameChange={onItemRenameChange}
+      onRenameSubmit={onItemRenameSubmit}
+      onRenameCancel={onItemRenameCancel}
+      onContextMenu={(e) => onItemContextMenu(it, e)}
+      onMove={onItemMove}
+      onRemove={() => onRemoveItem(it.id)}
+    />
+  )
+
+  // Recursively render a folder, its child folders, then its items. Cycle-safe
+  // via the `seen` set (a corrupt parent loop can't blow the stack).
+  const renderFolder = (
+    folder: TestSuiteFolder,
+    depth: number,
+    seen: Set<string>,
+  ): React.ReactNode => {
+    if (seen.has(folder.id)) return null
+    const nextSeen = new Set(seen).add(folder.id)
+    const collapsed = collapsedFolders[folder.id] ?? false
+    const items = itemsByFolder.get(folder.id) ?? []
+    const childFolders = foldersByParent.get(folder.id) ?? []
+    return (
+      <div key={folder.id}>
+        <div
+          className="flex cursor-pointer items-center gap-1.5 py-[3px] pr-3"
+          style={{ color: 'var(--muted)', paddingLeft: FOLDER_BASE + depth * STEP }}
+          onClick={() => setCollapsedFolders((s) => ({ ...s, [folder.id]: !collapsed }))}
+        >
+          <span style={{ flexShrink: 0 }}>
+            {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+          </span>
+          <FolderOpen size={12} style={{ color: 'var(--hint)', flexShrink: 0 }} />
+          <span className="truncate" style={{ fontSize: 13, fontWeight: 500 }}>
+            {folder.name}
+          </span>
+        </div>
+        {!collapsed && (
+          <>
+            {childFolders.map((cf) => renderFolder(cf, depth + 1, nextSeen))}
+            {items.map((it) => renderItem(it, FOLDER_BASE + (depth + 1) * STEP + 6))}
+          </>
+        )}
+      </div>
+    )
+  }
+
+  const topFolders = foldersByParent.get(null) ?? []
   const rootItems = itemsByFolder.get(null) ?? []
 
   return (
     <>
-      {topFolders.map((folder) => {
-        const collapsed = collapsedFolders[folder.id] ?? false
-        const items = itemsByFolder.get(folder.id) ?? []
-        return (
-          <div key={folder.id}>
-            <div
-              className="flex cursor-pointer items-center gap-1.5 py-[3px] pl-8 pr-3"
-              onClick={() => setCollapsedFolders((s) => ({ ...s, [folder.id]: !collapsed }))}
-              style={{ color: 'var(--muted)' }}
-            >
-              <span style={{ flexShrink: 0 }}>
-                {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
-              </span>
-              <FolderOpen size={12} style={{ color: 'var(--hint)', flexShrink: 0 }} />
-              <span className="truncate" style={{ fontSize: 13, fontWeight: 500 }}>
-                {folder.name}
-              </span>
-            </div>
-            {!collapsed &&
-              items.map((it) => (
-                <SuiteItemRow
-                  key={it.id}
-                  item={it}
-                  indent={20}
-                  isRenaming={renamingItemId === it.id}
-                  renameValue={renameItemValue}
-                  renameRef={renameItemRef}
-                  onRenameChange={onItemRenameChange}
-                  onRenameSubmit={onItemRenameSubmit}
-                  onRenameCancel={onItemRenameCancel}
-                  onContextMenu={(e) => onItemContextMenu(it, e)}
-                  onMove={onItemMove}
-                  onRemove={() => onRemoveItem(it.id)}
-                />
-              ))}
-          </div>
-        )
-      })}
-
-      {rootItems.map((it) => (
-        <SuiteItemRow
-          key={it.id}
-          item={it}
-          indent={10}
-          isRenaming={renamingItemId === it.id}
-          renameValue={renameItemValue}
-          renameRef={renameItemRef}
-          onRenameChange={onItemRenameChange}
-          onRenameSubmit={onItemRenameSubmit}
-          onRenameCancel={onItemRenameCancel}
-          onContextMenu={(e) => onItemContextMenu(it, e)}
-          onMove={onItemMove}
-          onRemove={() => onRemoveItem(it.id)}
-        />
-      ))}
+      {topFolders.map((folder) => renderFolder(folder, 0, new Set()))}
+      {rootItems.map((it) => renderItem(it, 10))}
     </>
   )
 }

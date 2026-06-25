@@ -17,6 +17,7 @@ import { encryptSecret, decryptSecret } from '../lib/secure-storage'
 import { assertTmpSubpath, assertImportFilePath, GIT_TMP_PREFIXES } from '../lib/path-safety'
 import { importPostman, importInsomnia } from './import-export.handler'
 import { snapshotEndpointForSuite, ensureUniqueSuiteName } from './test-suite.handler'
+import { getEndpointById } from '../db/endpoint.repo'
 
 // ─── Multi-format detection for test suite import ────────────────
 export type TestSuiteImportFormat = 'testnizer' | 'postman' | 'insomnia' | 'unknown'
@@ -824,8 +825,9 @@ export function importTestSuiteData(
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
   const insertFolder = db.prepare(
-    `INSERT INTO test_suite_folders (id, suite_id, parent_id, name, sort_order, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO test_suite_folders
+       (id, suite_id, parent_id, name, sort_order, auth, pre_script, post_script, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   const insertItem = db.prepare(
     `INSERT INTO test_suite_items
@@ -865,6 +867,9 @@ export function importTestSuiteData(
         newParentId,
         f.name ?? 'Folder',
         f.sort_order ?? 0,
+        (f.auth as string) ?? null,
+        (f.pre_script as string) ?? null,
+        (f.post_script as string) ?? null,
         (f.created_at as number) || now,
       )
     }
@@ -979,14 +984,32 @@ export async function importTestSuiteFromFile(
     // suites with identical names (v1.3.1 §5.9).
     derivedName = ensureUniqueSuiteName(db, projectId, derivedName)
 
-    // Step 2: snapshot each freshly-imported endpoint into test_suite_items
-    // and delete the source endpoint row. The user's intent for a suite
-    // import is "I want these requests as a test suite" — leaving them in
-    // the APIs tree as a duplicate set creates the cross-contamination the
-    // copy-on-add model was built to prevent.
+    // Step 2: snapshot each freshly-imported endpoint into test_suite_items,
+    // RE-CREATING the folder hierarchy the importer built (under
+    // test_suite_folders) so nested Setup/Flow/Teardown structure + folder-level
+    // scripts/auth survive and cascade at run time. Then delete the source
+    // endpoints AND the folders the import created so nothing leaks into the
+    // APIs tree. The user's intent for a suite import is "I want these requests
+    // as a test suite" — leaving the originals creates the cross-contamination
+    // the copy-on-add model was built to prevent.
+    interface ImportedFolderRow {
+      id: string
+      parent_id: string | null
+      name: string
+      sort_order: number
+      auth: string | null
+      pre_script: string | null
+      post_script: string | null
+    }
+
     const insertSuite = db.prepare(
       `INSERT INTO test_suites (id, project_id, name, description, sort_order, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    const insertFolder = db.prepare(
+      `INSERT INTO test_suite_folders
+         (id, suite_id, parent_id, name, sort_order, auth, pre_script, post_script, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     const insertItem = db.prepare(
       `INSERT INTO test_suite_items
@@ -996,24 +1019,88 @@ export async function importTestSuiteFromFile(
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     const deleteEndpoint = db.prepare(`DELETE FROM endpoints WHERE id = ?`)
+    const deleteFolder = db.prepare(`DELETE FROM folders WHERE id = ?`)
+    const getFolderRow = db.prepare(
+      `SELECT id, parent_id, name, sort_order, auth, pre_script, post_script
+         FROM folders WHERE id = ?`,
+    )
+
+    // Collect ONLY the folders the import created that actually contain an
+    // imported request, plus their ancestors — by walking each endpoint's
+    // folder_id up the parent chain. NEVER a project-wide folder query: that
+    // would sweep in (and later delete) the user's pre-existing APIs folders.
+    const importedFolders = new Map<string, ImportedFolderRow>()
+    const collectFolderChain = (folderId: string | null) => {
+      let id: string | null = folderId
+      while (id && !importedFolders.has(id)) {
+        const f = getFolderRow.get(id) as ImportedFolderRow | undefined
+        if (!f) break
+        importedFolders.set(f.id, f)
+        id = f.parent_id
+      }
+    }
+    const endpointRows = endpointIds
+      .map((id) => getEndpointById(id))
+      .filter((e): e is NonNullable<typeof e> => !!e)
+    for (const ep of endpointRows) collectFolderChain(ep.folder_id)
+
+    // old folder id → new suite folder id
+    const folderIdMap = new Map<string, string>()
+    for (const id of importedFolders.keys()) folderIdMap.set(id, randomUUID())
+
+    // Insert parents before children — order by within-set depth so a folder's
+    // remapped parent_id always points at an already-inserted row.
+    const folderDepth = (f: ImportedFolderRow): number => {
+      let d = 0
+      let p = f.parent_id
+      const seen = new Set<string>()
+      while (p && importedFolders.has(p) && !seen.has(p)) {
+        seen.add(p)
+        d++
+        p = importedFolders.get(p)!.parent_id
+      }
+      return d
+    }
+    const orderedFolders = [...importedFolders.values()].sort(
+      (a, b) => folderDepth(a) - folderDepth(b),
+    )
 
     // Atomic snapshot transaction. `importPostman` / `importInsomnia` have
-    // already committed endpoint rows above; if the snapshot loop throws,
-    // we'd leave APIs-tree leftovers that the user never asked for. Catch
-    // and roll them back ourselves so the operation is all-or-nothing from
-    // the caller's perspective.
+    // already committed endpoint + folder rows above; if the snapshot loop
+    // throws, we'd leave APIs-tree leftovers that the user never asked for.
+    // Catch and roll them back ourselves so the operation is all-or-nothing.
     let itemsCreated = 0
     try {
       const tx = db.transaction(() => {
         insertSuite.run(newSuiteId, projectId, derivedName, null, 0, now, now)
+
+        for (const f of orderedFolders) {
+          const newId = folderIdMap.get(f.id)!
+          const newParentId =
+            f.parent_id && folderIdMap.has(f.parent_id) ? folderIdMap.get(f.parent_id)! : null
+          insertFolder.run(
+            newId,
+            newSuiteId,
+            newParentId,
+            f.name ?? 'Folder',
+            f.sort_order ?? 0,
+            f.auth ?? null,
+            f.pre_script ?? null,
+            f.post_script ?? null,
+            now,
+          )
+        }
+
         let order = 0
-        for (const epId of endpointIds) {
-          const snap = snapshotEndpointForSuite(epId)
+        for (const ep of endpointRows) {
+          const snap = snapshotEndpointForSuite(ep.id)
           if (!snap) continue
+          const newFolderId =
+            ep.folder_id && folderIdMap.has(ep.folder_id) ? folderIdMap.get(ep.folder_id)! : null
           insertItem.run(
             randomUUID(),
             newSuiteId,
-            null,
+            newFolderId,
             snap.protocol,
             snap.name,
             snap.method,
@@ -1027,17 +1114,25 @@ export async function importTestSuiteFromFile(
             now,
             now,
           )
-          deleteEndpoint.run(epId)
+          deleteEndpoint.run(ep.id)
           itemsCreated++
+        }
+
+        // Remove the importer-created folders so they don't linger in the APIs
+        // tree. Children first (reverse depth) — the FK cascade would also
+        // handle nesting, but explicit order keeps it deterministic.
+        for (let i = orderedFolders.length - 1; i >= 0; i--) {
+          deleteFolder.run(orderedFolders[i].id)
         }
       })
       tx()
     } catch (e) {
       // Snapshot failed mid-flight. The transaction itself rolled back, but
       // the importPostman/Insomnia commit before it didn't — clean up the
-      // endpoint rows it created so the user doesn't see ghost imports.
+      // endpoint AND folder rows it created so the user doesn't see ghosts.
       const cleanup = db.transaction(() => {
-        for (const epId of endpointIds) deleteEndpoint.run(epId)
+        for (const ep of endpointRows) deleteEndpoint.run(ep.id)
+        for (const f of importedFolders.values()) deleteFolder.run(f.id)
       })
       try {
         cleanup()

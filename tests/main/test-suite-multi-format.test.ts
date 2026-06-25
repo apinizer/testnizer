@@ -44,7 +44,10 @@ function createSchema(db: Database.Database): void {
       project_id TEXT NOT NULL,
       parent_id TEXT,
       name TEXT NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      auth TEXT,
+      pre_script TEXT,
+      post_script TEXT
     );
     CREATE TABLE endpoints (
       id TEXT PRIMARY KEY,
@@ -89,6 +92,9 @@ function createSchema(db: Database.Database): void {
       parent_id TEXT,
       name TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      auth TEXT,
+      pre_script TEXT,
+      post_script TEXT,
       created_at INTEGER NOT NULL
     );
     CREATE TABLE test_suite_items (
@@ -433,6 +439,107 @@ describe('importTestSuiteFromFile — Insomnia v5 YAML', () => {
     const out = await importTestSuiteFromFile(yamlDoc, PROJECT_ID)
     expect(out.format).toBe('insomnia')
     expect(out.itemsImported).toBeGreaterThan(0)
+  })
+
+  it('preserves the nested folder tree, folder scripts, ordering, and cleans up the APIs tree', async () => {
+    // A pre-existing APIs-tree folder + endpoint in the SAME project. The suite
+    // import must NOT touch these (R1: scope strictly to the imported subtree).
+    const now = Date.now()
+    testDb
+      .prepare(
+        `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES ('keepf', ?, NULL, 'KEEP', 0)`,
+      )
+      .run(PROJECT_ID)
+    testDb
+      .prepare(
+        `INSERT INTO endpoints
+           (id, project_id, folder_id, name, description, protocol, method, path, status,
+            request_schema, response_schemas, sort_order, created_at, updated_at)
+         VALUES ('keepe', ?, 'keepf', 'Keeper', NULL, 'http', 'GET', '/keep', 'developing', '{}', NULL, 0, ?, ?)`,
+      )
+      .run(PROJECT_ID, now, now)
+
+    // Insomnia v5 doc as JSON (importTestSuiteFromFile tries JSON.parse first).
+    // Two root folders deliberately OUT of array order (Flow before Setup) with
+    // sortKeys that put Setup first — proves we sort by sortKey, not array order.
+    // "01 Setup" carries a folder-level preRequest script and a nested subfolder.
+    const doc = {
+      type: 'collection.insomnia.rest/5.0',
+      name: 'APIOPS Mini',
+      collection: [
+        {
+          name: '02 Flow',
+          meta: { sortKey: -100 },
+          children: [{ name: 'Do Thing', url: 'https://api.example.com/thing', method: 'GET' }],
+        },
+        {
+          name: '01 Setup',
+          meta: { sortKey: -200 },
+          scripts: { preRequest: 'insomnia.environment.set("runId", "abc123")' },
+          children: [
+            {
+              name: '01a Init',
+              meta: { sortKey: -10 },
+              children: [
+                { name: 'Init runId', url: 'https://api.example.com/init', method: 'POST' },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+
+    const out = await importTestSuiteFromFile(JSON.stringify(doc), PROJECT_ID)
+    expect(out.format).toBe('insomnia')
+    expect(out.itemsImported).toBe(2)
+
+    // ── Folder tree preserved into test_suite_folders ──
+    const folders = testDb
+      .prepare(
+        'SELECT id, parent_id, name, sort_order, pre_script FROM test_suite_folders WHERE suite_id = ?',
+      )
+      .all(out.suiteId) as {
+      id: string
+      parent_id: string | null
+      name: string
+      sort_order: number
+      pre_script: string | null
+    }[]
+    expect(folders.map((f) => f.name).sort()).toEqual(['01 Setup', '01a Init', '02 Flow'])
+    const setup = folders.find((f) => f.name === '01 Setup')!
+    const init = folders.find((f) => f.name === '01a Init')!
+    const flow = folders.find((f) => f.name === '02 Flow')!
+    // depth-2 nesting: Init's parent remaps to the NEW Setup id.
+    expect(init.parent_id).toBe(setup.id)
+    expect(setup.parent_id).toBeNull()
+    expect(flow.parent_id).toBeNull()
+    // Setup sorts before Flow (sortKey -200 < -100), even though Flow was first
+    // in the array.
+    expect(setup.sort_order).toBeLessThan(flow.sort_order)
+    // B-scripts: folder-level preRequest survived the import.
+    expect(setup.pre_script).toContain('runId')
+
+    // ── Items carry the correct (non-null) remapped folder_id ──
+    const items = testDb
+      .prepare('SELECT name, folder_id FROM test_suite_items WHERE suite_id = ?')
+      .all(out.suiteId) as { name: string; folder_id: string | null }[]
+    const byName = Object.fromEntries(items.map((i) => [i.name, i.folder_id]))
+    expect(byName['Do Thing']).toBe(flow.id)
+    expect(byName['Init runId']).toBe(init.id) // depth-2 item
+
+    // ── APIs tree cleaned up: imported endpoints + folders gone ──
+    const leakedFolders = testDb
+      .prepare(`SELECT count(*) AS n FROM folders WHERE name IN ('01 Setup','02 Flow','01a Init')`)
+      .get() as { n: number }
+    expect(leakedFolders.n).toBe(0)
+    const leakedEndpoints = testDb
+      .prepare(`SELECT count(*) AS n FROM endpoints WHERE name IN ('Do Thing','Init runId')`)
+      .get() as { n: number }
+    expect(leakedEndpoints.n).toBe(0)
+
+    // ── R1: the pre-existing APIs folder + endpoint survive untouched ──
+    expect((testDb.prepare(`SELECT count(*) AS n FROM folders WHERE id='keepf'`).get() as { n: number }).n).toBe(1)
+    expect((testDb.prepare(`SELECT count(*) AS n FROM endpoints WHERE id='keepe'`).get() as { n: number }).n).toBe(1)
   })
 })
 

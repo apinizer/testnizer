@@ -282,7 +282,9 @@ export function registerTestSuiteHandlers(): void {
         ).run(
           newId,
           original.project_id,
-          `${original.name} (copy)`,
+          // De-dupe so duplicating twice yields "X (copy)", "X (copy) (1)", …
+          // rather than two suites named identically.
+          ensureUniqueSuiteName(db, original.project_id, `${original.name} (copy)`),
           original.description,
           maxOrder.mx + 1,
           now,
@@ -300,14 +302,25 @@ export function registerTestSuiteHandlers(): void {
           return a.sort_order - b.sort_order
         })
         const insertFolderStmt = db.prepare(
-          `INSERT INTO test_suite_folders (id, suite_id, parent_id, name, sort_order, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO test_suite_folders
+             (id, suite_id, parent_id, name, sort_order, auth, pre_script, post_script, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         for (const f of orderedFolders) {
           const newFolderId = randomUUID()
           folderIdMap.set(f.id, newFolderId)
           const newParent = f.parent_id ? (folderIdMap.get(f.parent_id) ?? null) : null
-          insertFolderStmt.run(newFolderId, newId, newParent, f.name, f.sort_order, now)
+          insertFolderStmt.run(
+            newFolderId,
+            newId,
+            newParent,
+            f.name,
+            f.sort_order,
+            f.auth ?? null,
+            f.pre_script ?? null,
+            f.post_script ?? null,
+            now,
+          )
         }
 
         // Copy items, remapping folder_id through the map.

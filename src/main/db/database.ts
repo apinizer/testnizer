@@ -561,6 +561,9 @@ function runMigrations(database: Database.Database): void {
       parent_id TEXT,
       name TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      auth TEXT,
+      pre_script TEXT,
+      post_script TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (suite_id) REFERENCES test_suites(id) ON DELETE CASCADE,
       FOREIGN KEY (parent_id) REFERENCES test_suite_folders(id) ON DELETE CASCADE
@@ -682,6 +685,12 @@ function runMigrations(database: Database.Database): void {
     `ALTER TABLE mock_servers ADD COLUMN proxy_enabled INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE mock_servers ADD COLUMN proxy_target TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE mock_servers ADD COLUMN proxy_record INTEGER NOT NULL DEFAULT 0`,
+    // Suite folders carry their own auth (JSON AuthConfig) + pre/post scripts so
+    // an imported collection's folder-level setup/teardown cascades at run time,
+    // mirroring the APIs `folders` table. NULL = unset/inherit.
+    `ALTER TABLE test_suite_folders ADD COLUMN auth TEXT`,
+    `ALTER TABLE test_suite_folders ADD COLUMN pre_script TEXT`,
+    `ALTER TABLE test_suite_folders ADD COLUMN post_script TEXT`,
   ]
   for (const sql of alters) {
     try {

@@ -3275,6 +3275,9 @@ interface InsomniaResource {
   data?: Array<{ name: string; value: string }>
   preRequestScript?: string
   afterResponseScript?: string
+  /** v4 spelling of the sibling sort key (v5 nests it under meta.sortKey).
+   *  Insomnia renders/runs siblings by this ascending — see sortByInsomniaSortKey. */
+  metaSortKey?: number
 }
 
 interface InsomniaBody {
@@ -3340,14 +3343,20 @@ interface InsomniaV5Item {
  * sibling level by sortKey; stable on the original index so items that share or
  * lack a key keep their array order.
  */
-function sortByInsomniaSortKey<T extends { meta?: { sortKey?: number } }>(items: T[]): T[] {
+function sortByInsomniaSortKey<T extends { meta?: { sortKey?: number }; metaSortKey?: number }>(
+  items: T[],
+): T[] {
+  // v4 `resources` can contain null/garbage entries (the importer filters them
+  // AFTER sorting), so guard before touching .meta / .metaSortKey.
+  const keyOf = (it: T): number => {
+    if (!it || typeof it !== 'object') return 0
+    if (typeof it.meta?.sortKey === 'number') return it.meta.sortKey
+    if (typeof it.metaSortKey === 'number') return it.metaSortKey
+    return 0
+  }
   return items
     .map((item, index) => ({ item, index }))
-    .sort((a, b) => {
-      const ka = typeof a.item.meta?.sortKey === 'number' ? a.item.meta.sortKey : 0
-      const kb = typeof b.item.meta?.sortKey === 'number' ? b.item.meta.sortKey : 0
-      return ka - kb || a.index - b.index
-    })
+    .sort((a, b) => keyOf(a.item) - keyOf(b.item) || a.index - b.index)
     .map((entry) => entry.item)
 }
 
@@ -3521,7 +3530,11 @@ function importInsomniaV4(
     warnings.push(`Unexpected __export_format=${doc.__export_format}; importing best-effort.`)
   }
 
-  const resources = doc.resources
+  // Insomnia renders/runs siblings by metaSortKey ascending, NOT export array
+  // order (the two disagree). Sort the flat resource list once so folder + request
+  // sort_order (assigned sequentially below) reflects the real execution order —
+  // otherwise order-dependent chains (token setup → protected calls) run scrambled.
+  const resources = sortByInsomniaSortKey(doc.resources)
   const db = getDb()
   const now = Date.now()
   let endpointCount = 0
@@ -3533,14 +3546,32 @@ function importInsomniaV4(
 
   // First pass: create folders. Insomnia v4 lists resources flat with parentId
   // pointers, and parents may appear after children — so we do this in two
-  // passes (first create, then re-parent).
+  // passes (first create, then re-parent). Folder-level auth + scripts are
+  // persisted so the suite importer can cascade them at run time.
   for (const resource of resources) {
     if (!resource || typeof resource !== 'object') continue
     if (resource._type === 'request_group' && resource._id) {
       const folderId = randomUUID()
+      const folderAuthUi = mapInsomniaAuthToUi(resource.authentication)
+      const folderPre = resource.preRequestScript
+        ? normalizeInsomniaScript(resource.preRequestScript)
+        : null
+      const folderPost = resource.afterResponseScript
+        ? normalizeInsomniaScript(resource.afterResponseScript)
+        : null
       db.prepare(
-        `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
-      ).run(folderId, projectId, rootFolderId, resource.name || 'Folder', folderCount)
+        `INSERT INTO folders (id, project_id, parent_id, name, sort_order, auth, pre_script, post_script)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        folderId,
+        projectId,
+        rootFolderId,
+        resource.name || 'Folder',
+        folderCount,
+        folderAuthUi ? JSON.stringify(folderAuthUi) : null,
+        folderPre,
+        folderPost,
+      )
       folderMap.set(resource._id, folderId)
       folderCount++
     }
@@ -3739,9 +3770,31 @@ function importInsomniaV5(
       const isFolder = Array.isArray(item.children)
       if (isFolder) {
         const folderId = randomUUID()
+        // Persist folder-level auth + pre/post scripts so the suite importer can
+        // carry them into test_suite_folders and they cascade at run time (the
+        // collection's "00 Collection Setup"-style preRequest is folder-scoped).
+        // We KEEP the down-cascade into child requests below (childAuth) too, so
+        // existing per-request 401 fixes don't regress — belt and suspenders.
+        const folderAuthUi = mapInsomniaAuthToUi(item.authentication)
+        const folderPre = item.scripts?.preRequest
+          ? normalizeInsomniaScript(item.scripts.preRequest)
+          : null
+        const folderPost = item.scripts?.afterResponse
+          ? normalizeInsomniaScript(item.scripts.afterResponse)
+          : null
         db.prepare(
-          `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
-        ).run(folderId, projectId, parentFolderId, item.name ?? 'Folder', folderCount)
+          `INSERT INTO folders (id, project_id, parent_id, name, sort_order, auth, pre_script, post_script)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          folderId,
+          projectId,
+          parentFolderId,
+          item.name ?? 'Folder',
+          folderCount,
+          folderAuthUi ? JSON.stringify(folderAuthUi) : null,
+          folderPre,
+          folderPost,
+        )
         folderCount++
         // A folder may carry its own auth that overrides the inherited one for
         // its whole subtree (including an explicit "No Auth" → {type:'none'}).
@@ -3853,6 +3906,15 @@ function importInsomniaV5(
           `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
         ).run(envId, projectRow.workspace_id, projectId, envName, hasActive ? 0 : 1, now, now)
+        // When another environment is already active we deliberately don't steal
+        // the user's selection — but then the imported {{vars}} (AccessURL, token,
+        // …) won't resolve at run time until they switch. Surface that (B-10).
+        if (hasActive) {
+          warnings.push(
+            `Imported environment "${envName}" was added but not activated (another environment is currently active). ` +
+              `Select it in the footer environment switcher so {{variables}} resolve when you run the suite.`,
+          )
+        }
       }
     }
     if (envId) {

@@ -52,6 +52,9 @@ function freshDb(): Database.Database {
       parent_id TEXT,
       name TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      auth TEXT,
+      pre_script TEXT,
+      post_script TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (suite_id) REFERENCES test_suites(id) ON DELETE CASCADE,
       FOREIGN KEY (parent_id) REFERENCES test_suite_folders(id) ON DELETE CASCADE

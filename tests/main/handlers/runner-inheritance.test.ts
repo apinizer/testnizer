@@ -194,3 +194,197 @@ describe('runner — cascade pre-request scripts', () => {
     expect(sent[0].url).toBe('http://api.test/fromFolder')
   })
 })
+
+// ── Suite-item folder cascade (test_suite_folders, not the APIs `folders`) ──
+// Imported suites store their hierarchy under test_suite_folders; the runner
+// must walk THAT table (buildSuiteFolderChain) so folder-level setup scripts +
+// inherited auth cascade for suite items the same way they do for APIs endpoints.
+function seedSuite(db: Database.Database, project: string): string {
+  const id = crypto.randomUUID()
+  const now = Date.now()
+  db.prepare(
+    `INSERT INTO test_suites (id, project_id, name, sort_order, created_at, updated_at)
+     VALUES (?, ?, 'Suite', 0, ?, ?)`,
+  ).run(id, project, now, now)
+  return id
+}
+
+function seedSuiteFolder(
+  db: Database.Database,
+  suiteId: string,
+  opts: { name: string; parent_id?: string | null; auth?: unknown; pre_script?: string },
+): string {
+  const id = crypto.randomUUID()
+  db.prepare(
+    `INSERT INTO test_suite_folders (id, suite_id, parent_id, name, sort_order, auth, pre_script, post_script, created_at)
+     VALUES (?, ?, ?, ?, 0, ?, ?, NULL, ?)`,
+  ).run(
+    id,
+    suiteId,
+    opts.parent_id ?? null,
+    opts.name,
+    opts.auth ? JSON.stringify(opts.auth) : null,
+    opts.pre_script ?? null,
+    Date.now(),
+  )
+  return id
+}
+
+function seedSuiteItem(
+  db: Database.Database,
+  suiteId: string,
+  folderId: string | null,
+  schema: Record<string, unknown>,
+): string {
+  const id = crypto.randomUUID()
+  const now = Date.now()
+  db.prepare(
+    `INSERT INTO test_suite_items
+       (id, suite_id, folder_id, protocol, name, method, url, request_schema, assertions,
+        source_endpoint_id, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, 'http', ?, ?, ?, ?, NULL, NULL, 0, ?, ?)`,
+  ).run(
+    id,
+    suiteId,
+    folderId,
+    (schema.name as string) ?? 'Item',
+    (schema.method as string) ?? 'GET',
+    (schema.url as string) ?? '/',
+    JSON.stringify(schema),
+    now,
+    now,
+  )
+  return id
+}
+
+describe('runner — suite folder cascade', () => {
+  it('a suite folder pre-request script sets a var the suite item URL then resolves', async () => {
+    const suiteId = seedSuite(testDb, projectId)
+    const folderId = seedSuiteFolder(testDb, suiteId, {
+      name: '01 Setup',
+      pre_script: "pm.environment.set('dynPath', 'fromSuiteFolder')",
+    })
+    const item = seedSuiteItem(testDb, suiteId, folderId, {
+      url: 'http://api.test/{{dynPath}}',
+      method: 'GET',
+      auth: { type: 'none' },
+    })
+
+    const res = (await harness.invoke('runner:execute', {
+      projectId,
+      environmentId: envId,
+      endpointIds: [item],
+    })) as { success: boolean }
+    expect(res.success).toBe(true)
+    expect(sent).toHaveLength(1)
+    // Without buildSuiteFolderChain this stays unresolved ({{dynPath}}).
+    expect(sent[0].url).toBe('http://api.test/fromSuiteFolder')
+  })
+
+  it('a suite item with auth:inherit picks up the nested suite-folder bearer + {{var}}', async () => {
+    const suiteId = seedSuite(testDb, projectId)
+    const outer = seedSuiteFolder(testDb, suiteId, {
+      name: 'Outer',
+      auth: { type: 'bearer', bearer: { token: 'OUTER', prefix: 'Bearer' } },
+    })
+    const inner = seedSuiteFolder(testDb, suiteId, {
+      name: 'Inner',
+      parent_id: outer,
+      auth: { type: 'bearer', bearer: { token: '{{tok}}', prefix: 'Bearer' } },
+    })
+    const item = seedSuiteItem(testDb, suiteId, inner, {
+      url: 'http://api.test/secured',
+      method: 'GET',
+      auth: { type: 'inherit' },
+    })
+
+    await harness.invoke('runner:execute', {
+      projectId,
+      environmentId: envId,
+      endpointIds: [item],
+    })
+    expect(sent).toHaveLength(1)
+    // Inner folder wins over outer, and its {{tok}} resolves from the env.
+    expect(sent[0].auth).toEqual({ type: 'bearer', bearer: { token: 'SECRET123', prefix: 'Bearer' } })
+  })
+
+  it('pm.variables.set propagates to a later request within the same run', async () => {
+    // Scope item (T-05): stock Postman/Insomnia keep pm.variables request-local,
+    // but we deliberately propagate them across the run (not to the DB).
+    const suiteId = seedSuite(testDb, projectId)
+    const setItem = seedSuiteItem(testDb, suiteId, null, {
+      url: 'http://api.test/seed',
+      method: 'GET',
+      auth: { type: 'none' },
+      preScript: "pm.variables.set('vp', 'VARVAL')",
+    })
+    const useItem = seedSuiteItem(testDb, suiteId, null, {
+      url: 'http://api.test/{{vp}}',
+      method: 'GET',
+      auth: { type: 'none' },
+    })
+    await harness.invoke('runner:execute', {
+      projectId,
+      environmentId: envId,
+      endpointIds: [setItem, useItem],
+    })
+    expect(sent).toHaveLength(2)
+    expect(sent[1].url).toBe('http://api.test/VARVAL')
+  })
+
+  it('cross-request env writes flow Setup → later item (token/derive pattern)', async () => {
+    // Mirrors the real APIOPS flow: a Setup item runs environment.set('runId', …),
+    // a later item derives + uses it. Both share the run's envVars.
+    const suiteId = seedSuite(testDb, projectId)
+    const setupItem = seedSuiteItem(testDb, suiteId, null, {
+      url: 'http://api.test/init',
+      method: 'GET',
+      auth: { type: 'none' },
+      preScript: "pm.environment.set('ApiProxyName', 'col-' + 'abc' + '-api-proxy')",
+    })
+    const useItem = seedSuiteItem(testDb, suiteId, null, {
+      url: 'http://api.test/{{ApiProxyName}}/deploy',
+      method: 'GET',
+      auth: { type: 'none' },
+    })
+
+    await harness.invoke('runner:execute', {
+      projectId,
+      environmentId: envId,
+      endpointIds: [setupItem, useItem],
+    })
+    expect(sent).toHaveLength(2)
+    expect(sent[1].url).toBe('http://api.test/col-abc-api-proxy/deploy')
+  })
+
+  it('pm.execution.setNextRequest jumps over a request to a named one', async () => {
+    // A → setNextRequest('C') skips B and lands on C. Run order A, C.
+    const suiteId = seedSuite(testDb, projectId)
+    const a = seedSuiteItem(testDb, suiteId, null, {
+      name: 'A',
+      url: 'http://api.test/a',
+      method: 'GET',
+      auth: { type: 'none' },
+      postScript: "pm.execution.setNextRequest('C')",
+    })
+    const b = seedSuiteItem(testDb, suiteId, null, {
+      name: 'B',
+      url: 'http://api.test/b',
+      method: 'GET',
+      auth: { type: 'none' },
+    })
+    const c = seedSuiteItem(testDb, suiteId, null, {
+      name: 'C',
+      url: 'http://api.test/c',
+      method: 'GET',
+      auth: { type: 'none' },
+    })
+
+    await harness.invoke('runner:execute', {
+      projectId,
+      environmentId: envId,
+      endpointIds: [a, b, c],
+    })
+    expect(sent.map((s) => s.url)).toEqual(['http://api.test/a', 'http://api.test/c'])
+  })
+})
