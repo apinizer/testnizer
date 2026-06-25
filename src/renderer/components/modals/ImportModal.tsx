@@ -9,6 +9,7 @@ import {
   FolderOpen,
   ChevronRight,
   Check,
+  ClipboardPaste,
 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
@@ -63,6 +64,10 @@ const FILE_IMPORTABLE = [
   'proto',
   'soapui',
 ]
+// Formats whose spec is plain text we can read straight from the clipboard and
+// feed into the same string-based import pipeline (issue #28). cURL has its own
+// paste textarea; proto/WSDL need a file path or a live URL, so both opt out.
+const CLIPBOARD_IMPORTABLE = ['native', 'openapi', 'postman', 'insomnia', 'har', 'raml', 'soapui']
 
 function FormatIcon({ fmt }: { fmt: ImportFormat }) {
   if (fmt.mono) {
@@ -191,6 +196,7 @@ export default function ImportModal() {
   const selectedFormat = IMPORT_FORMATS[selectedIdx]
   const canUrlImport = URL_IMPORTABLE.includes(selectedFormat.id)
   const canFileImport = FILE_IMPORTABLE.includes(selectedFormat.id)
+  const canClipboardImport = CLIPBOARD_IMPORTABLE.includes(selectedFormat.id)
   const allFolders = collectFolders(treeData)
 
   function handleClose() {
@@ -226,6 +232,47 @@ export default function ImportModal() {
     setPendingFileContent(text)
     setPendingFileName('cURL')
     goToFolderStep('cURL Import')
+  }
+
+  /** Read the clipboard, validate it against the selected format, and advance. */
+  async function handleImportClipboard() {
+    setImportLoading(true)
+    setImportError('')
+    try {
+      let content = ''
+      try {
+        content = await navigator.clipboard.readText()
+      } catch {
+        setImportError('Could not read the clipboard. Copy the spec and try again.')
+        setImportLoading(false)
+        return
+      }
+      if (!content.trim()) {
+        setImportError('Clipboard is empty — copy an API spec first.')
+        setImportLoading(false)
+        return
+      }
+      // Same mismatch guard as file / URL imports so a Postman collection pasted
+      // under the OpenAPI option fails fast instead of mid-import.
+      const detected = detectImportFormat(content)
+      const mismatch = checkTypeMismatch(selectedFormat.id, detected)
+      if (mismatch) {
+        setImportError(
+          t('import.typeMismatch')
+            .replace('{expected}', mismatch.expected)
+            .replace('{detected}', mismatch.detected),
+        )
+        setImportLoading(false)
+        return
+      }
+      setPendingFileContent(content)
+      setPendingFileName(`${selectedFormat.name} (clipboard)`)
+      goToFolderStep(selectedFormat.name)
+    } catch (err) {
+      setImportError((err as Error).message || 'Import failed')
+    } finally {
+      setImportLoading(false)
+    }
   }
 
   function handleNext() {
@@ -771,6 +818,37 @@ export default function ImportModal() {
               )}
 
               {canUrlImport && canFileImport && (
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1 bg-[var(--border)]" />
+                  <span className="text-[var(--hint)]">or</span>
+                  <div className="h-px flex-1 bg-[var(--border)]" />
+                </div>
+              )}
+
+              {canClipboardImport && (
+                <div>
+                  <label className="mb-2 flex items-center gap-1.5 font-medium text-[var(--text)]">
+                    <ClipboardPaste size={15} aria-hidden="true" />
+                    Import from clipboard
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleImportClipboard}
+                    disabled={importLoading}
+                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[var(--border2)] py-4 text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{ background: 'transparent' }}
+                  >
+                    {importLoading ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <ClipboardPaste size={16} />
+                    )}
+                    Paste {selectedFormat.name} spec from clipboard
+                  </button>
+                </div>
+              )}
+
+              {canClipboardImport && canFileImport && (
                 <div className="flex items-center gap-3">
                   <div className="h-px flex-1 bg-[var(--border)]" />
                   <span className="text-[var(--hint)]">or</span>
