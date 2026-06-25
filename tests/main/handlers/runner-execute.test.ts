@@ -117,7 +117,13 @@ interface SeedEndpointOpts {
   body?: {
     type: string
     content?: string
-    formData?: Array<{ id: string; key: string; value: string; enabled: boolean; filePath?: string }>
+    formData?: Array<{
+      id: string
+      key: string
+      value: string
+      enabled: boolean
+      filePath?: string
+    }>
     urlEncoded?: Array<{ id: string; key: string; value: string; enabled: boolean }>
   }
   assertions?: Array<Record<string, unknown>>
@@ -211,9 +217,11 @@ interface ExecResult {
     results: Array<{
       endpointId: string
       status: number | null
+      statusText?: string
       url: string
       passed: number
       failed: number
+      skipped?: number
       iteration?: number
       error?: string
     }>
@@ -749,5 +757,47 @@ describe('executeCollection — derived env var sync across requests (issue #29)
     expect(wire).toContain('/create?name=col-NEW-proxy')
     expect(wire).toContain('/policy?name=col-NEW-proxy')
     expect(wire.some((u) => u.includes('col-OLD-proxy'))).toBe(false)
+  })
+})
+
+// ─── h. pm.execution.skipRequest() — bail out before the HTTP call (T-20) ───
+//
+// A pre-script can call pm.execution.skipRequest() to skip an endpoint without
+// failing the run. The runner must NOT send that request (the server never sees
+// it), record a SKIPPED result (no HTTP status), and still run the next
+// endpoint normally. skipRequest is wired in the runner loop but was only
+// covered at the renderer Send layer (test-runner-pm-api.test.ts) — this is the
+// Runner-path guard.
+
+describe('executeCollection — pm.execution.skipRequest()', () => {
+  it('skips the HTTP call for the flagged endpoint but still runs the next one', async () => {
+    seedActiveBaseEnv()
+    const skipId = seedEndpoint({
+      name: 'Skipped',
+      url: '{{base}}/skipme',
+      preScript: `pm.execution.skipRequest()`,
+    })
+    const nextId = seedEndpoint({ name: 'Runs', url: '{{base}}/runme' })
+
+    const res = await run({ endpointIds: [skipId, nextId] })
+
+    expect(res.success).toBe(true)
+    expect(res.data?.results.length).toBe(2)
+
+    // The skipped endpoint never reached the wire; the following one did.
+    expect(received.some((r) => r.url.startsWith('/skipme'))).toBe(false)
+    expect(received.some((r) => r.url.startsWith('/runme'))).toBe(true)
+    expect(received.length).toBe(1)
+
+    // Its result is a SKIP: no HTTP status, flagged skipped, not a failure.
+    const skipResult = res.data?.results.find((r) => r.endpointId === skipId)
+    expect(skipResult?.status).toBeNull()
+    expect(skipResult?.statusText).toBe('SKIPPED')
+    expect(skipResult?.skipped).toBe(1)
+    expect(skipResult?.failed).toBe(0)
+
+    // The non-skipped endpoint ran for real.
+    const ranResult = res.data?.results.find((r) => r.endpointId === nextId)
+    expect(ranResult?.status).toBe(200)
   })
 })

@@ -10,7 +10,13 @@
  * {{vars}} resolved, folder auth applied.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { setupHandlerHarness, makeElectronMock, createTestDb, seedProject, seedWorkspace } from './helpers'
+import {
+  setupHandlerHarness,
+  makeElectronMock,
+  createTestDb,
+  seedProject,
+  seedWorkspace,
+} from './helpers'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -29,21 +35,23 @@ let testDb: ReturnType<typeof createTestDb>
 vi.mock('../../../src/main/db/database', () => ({ getDb: () => testDb }))
 
 // Capturing HTTP engine stub — records what the runner actually sent.
-const sent: Array<{ method: string; url: string; auth: unknown }> = []
+const sent: Array<{ method: string; url: string; auth: unknown; projectId?: string }> = []
 vi.mock('../../../src/main/protocols/http.engine', () => ({
   stripUrlCredentials: (u: string) => u,
-  executeHttpRequest: vi.fn(async (opts: { method: string; url: string; auth: unknown }) => {
-    sent.push({ method: opts.method, url: opts.url, auth: opts.auth })
-    return {
-      status: 200,
-      statusText: 'OK',
-      headers: {},
-      body: '{}',
-      bodySize: 2,
-      timing: { total: 1 },
-      actualRequest: { method: opts.method, url: opts.url, headers: {}, body: '' },
-    }
-  }),
+  executeHttpRequest: vi.fn(
+    async (opts: { method: string; url: string; auth: unknown; projectId?: string }) => {
+      sent.push({ method: opts.method, url: opts.url, auth: opts.auth, projectId: opts.projectId })
+      return {
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        body: '{}',
+        bodySize: 2,
+        timing: { total: 1 },
+        actualRequest: { method: opts.method, url: opts.url, headers: {}, body: '' },
+      }
+    },
+  ),
 }))
 
 const { importTestSuiteFromFile } = await import('../../../src/main/ipc/save.handler')
@@ -113,5 +121,12 @@ describe('suite import → run end-to-end (synthetic APIOPS)', () => {
 
     // Folder-level bearer auth ({{token}}) reached the Flow request and resolved.
     expect(sent[1].auth).toMatchObject({ type: 'bearer', bearer: { token: 'demo-token' } })
+
+    // C-cookie (TEST-07): every request carried the run's projectId, so the
+    // engine scopes the cookie jar to this project instead of the shared
+    // "_default" jar — Send/Run parity on session-cookie (login → protected)
+    // flows. Without `resolvedOptions.projectId = options.projectId` this is
+    // undefined and cookie-auth suites that pass on Send 401 in the Runner.
+    expect(sent.map((s) => s.projectId)).toEqual([projectId, projectId, projectId])
   })
 })
