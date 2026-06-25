@@ -192,7 +192,7 @@ export default function TestsPanel() {
   // the main process (see `getRunnableEntity` in runner.handler.ts); we
   // just pass the ordered id list.
   const handleRunSuite = useCallback(
-    async (suite: TestSuite) => {
+    async (suite: TestSuite, quick = false) => {
       let items = suiteContents[suite.id]?.items
       if (!items) {
         const result = await api().testSuite.listEndpoints(suite.id)
@@ -204,6 +204,7 @@ export default function TestsPanel() {
         items.map((i) => i.id),
         suite.name,
         suite.id,
+        quick,
       )
       setContextMenu(null)
     },
@@ -219,14 +220,12 @@ export default function TestsPanel() {
   )
 
   const runEndpoints = useCallback(
-    (endpointIds: string[], suiteName: string, suiteId?: string) => {
-      // v1.3.1 §5.6 (E6): right-click "Run" now lands on the configuration
-      // view of the runner tab so the user reviews iterations/delay/data
-      // before launching, matching the behaviour the rest of the sidebar
-      // (click on suite name) already had. Holding shift would be the
-      // natural place to add a "Quick Run" that skips the config screen.
+    (endpointIds: string[], suiteName: string, suiteId?: string, quick = false) => {
+      // v1.3.1 §5.6 (E6): plain "Run" lands on the runner's configuration view so
+      // the user reviews iterations/delay/data before launching. "Quick Run"
+      // (quick=true) skips the config screen and starts immediately (D-4).
       openOrReuseRunnerTab({
-        autoRun: false,
+        autoRun: quick,
         endpointIds,
         folderName: suiteName,
         sourceType: 'suite',
@@ -675,6 +674,11 @@ export default function TestsPanel() {
                 icon={<Play size={13} />}
                 label={t('testsPanel.runSuite')}
                 onClick={() => handleRunSuite(suite)}
+              />
+              <ContextMenuItem
+                icon={<Play size={13} />}
+                label={t('testsPanel.quickRunSuite') || 'Quick Run (skip config)'}
+                onClick={() => handleRunSuite(suite, true)}
               />
               <ContextMenuItem
                 icon={<Plus size={13} />}

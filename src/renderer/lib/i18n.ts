@@ -916,6 +916,7 @@ const translations: Record<Locale, Record<string, string>> = {
 
     // Tests Panel (sidebar suite context menu & misc)
     'testsPanel.runSuite': 'Run Suite',
+    'testsPanel.quickRunSuite': 'Quick Run (skip config)',
     'testsPanel.newRequest': 'New Request',
     'testsPanel.newRequestDefaultName': 'New Request',
     'testsPanel.importEndpoints': 'Import endpoints from APIs…',
@@ -2404,6 +2405,7 @@ const translations: Record<Locale, Record<string, string>> = {
 
     // Tests Panel (sidebar suite context menu & misc)
     'testsPanel.runSuite': 'Paketi Çalıştır',
+    'testsPanel.quickRunSuite': 'Hızlı Çalıştır (yapılandırmayı atla)',
     'testsPanel.newRequest': 'Yeni İstek',
     'testsPanel.newRequestDefaultName': 'Yeni İstek',
     'testsPanel.importEndpoints': "APIs'ten uç nokta içe aktar…",
