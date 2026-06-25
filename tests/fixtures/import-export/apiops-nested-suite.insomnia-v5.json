@@ -1,0 +1,62 @@
+{
+  "type": "collection.insomnia.rest/5.0",
+  "name": "APIOPS Demo",
+  "meta": { "id": "wrk_demo" },
+  "collection": [
+    {
+      "name": "02 Teardown",
+      "meta": { "id": "fld_teardown", "sortKey": -100 },
+      "children": [
+        {
+          "name": "Cleanup proxy",
+          "url": "{{baseUrl}}/proxies/{{ProxyName}}",
+          "method": "DELETE",
+          "meta": { "id": "req_cleanup" },
+          "scripts": {
+            "afterResponse": "insomnia.test('cleanup ok', function () { insomnia.expect(true).to.be.true; });"
+          }
+        }
+      ]
+    },
+    {
+      "name": "00 Setup",
+      "meta": { "id": "fld_setup", "sortKey": -300 },
+      "scripts": {
+        "preRequest": "insomnia.environment.set('AccessChecked', 'yes');"
+      },
+      "children": [
+        {
+          "name": "Init proxy name",
+          "url": "{{baseUrl}}/init",
+          "method": "POST",
+          "meta": { "id": "req_init" },
+          "scripts": {
+            "preRequest": "insomnia.environment.set('ProxyName', 'proxy-' + (insomnia.environment.get('runId') || 'x'));"
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 Flow",
+      "meta": { "id": "fld_flow", "sortKey": -200 },
+      "authentication": { "type": "bearer", "token": "{{token}}" },
+      "children": [
+        {
+          "name": "Use proxy",
+          "url": "{{baseUrl}}/proxies/{{ProxyName}}",
+          "method": "GET",
+          "meta": { "id": "req_use" }
+        }
+      ]
+    }
+  ],
+  "environments": {
+    "name": "Base (demo)",
+    "meta": { "id": "env_demo" },
+    "data": {
+      "baseUrl": "http://localhost:9999",
+      "token": "demo-token",
+      "runId": "r1"
+    }
+  }
+}
