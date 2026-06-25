@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { HttpMethod } from '../types'
 import { useEnvironmentStore } from './environment.store'
+import { saveDirtyRunItemsBeforeRun } from '../lib/dirty-run-guard'
 
 // ─── Types matching main process runner ─────────────────────
 
@@ -152,6 +153,10 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
     const state = get()
     const selected = state.endpoints.filter((ep) => ep.selected)
     if (selected.length === 0) return
+
+    // Persist the active tab if it's a dirty member of this run (so the run uses
+    // fresh data, not the stale DB snapshot) + warn about other dirty run items.
+    await saveDirtyRunItemsBeforeRun(selected.map((ep) => ep.id))
 
     // total = endpoints × iterations so progress % reflects the real run.
     const expectedTotal = selected.length * Math.max(1, state.iterations)

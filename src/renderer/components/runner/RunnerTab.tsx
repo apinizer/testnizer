@@ -7,6 +7,7 @@ import RunnerSequence from './RunnerSequence'
 import RunnerConfig, { type SchedulePayload } from './RunnerConfig'
 import RunnerResults from './RunnerResults'
 import { openEndpointTab, openSuiteItemTab } from '../../lib/open-endpoint-tab'
+import { saveDirtyRunItemsBeforeRun } from '../../lib/dirty-run-guard'
 import { useUIStore } from '../../stores/ui.store'
 import RunnerVariables from './RunnerVariables'
 import RunnerHistory from './RunnerHistory'
@@ -737,6 +738,10 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const handleRun = useCallback(async () => {
     const selected = endpoints.filter((ep) => ep.selected)
     if (selected.length === 0) return
+
+    // Persist the active tab if it's a dirty member of this run (so the run uses
+    // fresh data, not the stale DB snapshot) + warn about other dirty run items.
+    await saveDirtyRunItemsBeforeRun(selected.map((ep) => ep.id))
 
     setView('results')
     setIsRunning(true)
