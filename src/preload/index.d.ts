@@ -1573,11 +1573,22 @@ interface MoveTestSuiteFolderPayload {
   insertBeforeId: string | null
 }
 
+interface TestSuiteFolderSettings {
+  auth: string | null
+  pre_script: string | null
+  post_script: string | null
+}
+
 interface TestSuiteFolderApi {
   create(input: CreateTestSuiteFolderInput): Promise<IpcResult<TestSuiteFolderRow>>
   rename(id: string, name: string): Promise<IpcResult<TestSuiteFolderRow>>
   delete(id: string): Promise<IpcResult<{ deleted: boolean }>>
   move(payload: MoveTestSuiteFolderPayload): Promise<IpcResult<TestSuiteFolderRow>>
+  getSettings(id: string): Promise<IpcResult<TestSuiteFolderSettings>>
+  updateSettings(
+    id: string,
+    settings: Partial<TestSuiteFolderSettings>,
+  ): Promise<IpcResult<TestSuiteFolderRow>>
 }
 
 // ─── Tree drag-drop ──────────────────────────────────────────────

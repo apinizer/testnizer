@@ -402,6 +402,10 @@ const api = {
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuiteFolder:delete', id),
     move: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('testSuiteFolder:move', payload),
+    getSettings: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('testSuiteFolder:getSettings', id),
+    updateSettings: (id: string, settings: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('testSuiteFolder:updateSettings', id, settings),
   },
 
   // ─── Certificates ───────────────────────────────────────────

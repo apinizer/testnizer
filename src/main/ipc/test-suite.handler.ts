@@ -19,6 +19,7 @@ import {
   listFoldersBySuite,
   moveFolder,
   isDescendantOf,
+  updateFolderSettings,
 } from '../db/test-suite-folder.repo'
 import {
   getEndpointById,
@@ -604,6 +605,37 @@ export function registerTestSuiteHandlers(): void {
       return { success: false, error: (e as Error).message }
     }
   })
+
+  // Folder-level auth + cascade scripts (mirrors the APIs `folder:update` path).
+  ipcMain.handle('testSuiteFolder:getSettings', async (_event, id: string) => {
+    try {
+      const row = getFolderById(id)
+      if (!row) return { success: false, error: 'Folder not found' }
+      return {
+        success: true,
+        data: { auth: row.auth, pre_script: row.pre_script, post_script: row.post_script },
+      }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle(
+    'testSuiteFolder:updateSettings',
+    async (
+      _event,
+      id: string,
+      settings: { auth?: string | null; pre_script?: string | null; post_script?: string | null },
+    ) => {
+      try {
+        const row = updateFolderSettings(id, settings)
+        if (!row) return { success: false, error: 'Folder not found' }
+        return { success: true, data: row }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 
   ipcMain.handle(
     'testSuiteFolder:move',

@@ -21,6 +21,7 @@ import {
   Upload,
   Copy,
   ExternalLink,
+  Settings,
 } from 'lucide-react'
 import type {
   TestSuiteRow,
@@ -30,6 +31,7 @@ import type {
 } from '../../types'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import ImportTestSuiteModal from '../modals/ImportTestSuiteModal'
+import FolderSettingsModal from '../modals/FolderSettingsModal'
 import MethodBadge from '../shared/MethodBadge'
 import { useTranslation } from '../../lib/i18n'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
@@ -976,6 +978,31 @@ function SuiteContentsTree({
   onRemoveItem: (itemId: string) => void
 }) {
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({})
+  // Which suite folder's auth/scripts settings modal is open (D-2).
+  const [settingsFolder, setSettingsFolder] = useState<{ id: string; name: string } | null>(null)
+  const settingsFolderId = settingsFolder?.id
+
+  const loadFolderSettings = useCallback(async () => {
+    if (!settingsFolderId) return undefined
+    const r = (await window.api?.testSuiteFolder?.getSettings(settingsFolderId)) as
+      | {
+          success: boolean
+          data?: { auth: string | null; pre_script: string | null; post_script: string | null }
+        }
+      | undefined
+    return r?.success ? r.data : undefined
+  }, [settingsFolderId])
+
+  const saveFolderSettings = useCallback(
+    async (s: { auth: string | null; pre_script: string | null; post_script: string | null }) => {
+      if (!settingsFolderId) return { success: false, error: 'No folder selected' }
+      const r = (await window.api?.testSuiteFolder?.updateSettings(settingsFolderId, s)) as
+        | { success: boolean; error?: string }
+        | undefined
+      return r ?? { success: false, error: 'Save failed' }
+    },
+    [settingsFolderId],
+  )
 
   // Group items by folder_id (null = suite root).
   const itemsByFolder = new Map<string | null, TestSuiteItem[]>()
@@ -1032,7 +1059,7 @@ function SuiteContentsTree({
     return (
       <div key={folder.id}>
         <div
-          className="flex cursor-pointer items-center gap-1.5 py-[3px] pr-3"
+          className="group flex cursor-pointer items-center gap-1.5 py-[3px] pr-3"
           style={{ color: 'var(--muted)', paddingLeft: FOLDER_BASE + depth * STEP }}
           onClick={() => setCollapsedFolders((s) => ({ ...s, [folder.id]: !collapsed }))}
         >
@@ -1040,9 +1067,28 @@ function SuiteContentsTree({
             {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
           </span>
           <FolderOpen size={12} style={{ color: 'var(--hint)', flexShrink: 0 }} />
-          <span className="truncate" style={{ fontSize: 13, fontWeight: 500 }}>
+          <span className="flex-1 truncate" style={{ fontSize: 13, fontWeight: 500 }}>
             {folder.name}
           </span>
+          {/* Folder auth + cascade scripts (imported setup/teardown lands here). */}
+          <button
+            type="button"
+            title="Folder settings (auth + scripts)"
+            className="flex-shrink-0 opacity-0 group-hover:opacity-100"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              padding: 0,
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setSettingsFolder({ id: folder.id, name: folder.name })
+            }}
+          >
+            <Settings size={12} />
+          </button>
         </div>
         {!collapsed && (
           <>
@@ -1061,6 +1107,16 @@ function SuiteContentsTree({
     <>
       {topFolders.map((folder) => renderFolder(folder, 0, new Set()))}
       {rootItems.map((it) => renderItem(it, 10))}
+      {settingsFolder && (
+        <FolderSettingsModal
+          open
+          folderId={settingsFolder.id}
+          folderName={settingsFolder.name}
+          loadRow={loadFolderSettings}
+          saveSettings={saveFolderSettings}
+          onClose={() => setSettingsFolder(null)}
+        />
+      )}
     </>
   )
 }
