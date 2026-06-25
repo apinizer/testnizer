@@ -13,6 +13,16 @@ import MockServersPanel from '../mock/MockServersPanel'
 export default function LeftPanel() {
   const searchQuery = useWorkspaceStore((s) => s.searchQuery)
   const setSearchQuery = useWorkspaceStore((s) => s.setSearchQuery)
+  const collapseAllNodes = useWorkspaceStore((s) => s.collapseAllNodes)
+  const expandAllNodes = useWorkspaceStore((s) => s.expandAllNodes)
+  // "Expanded" when any non-module node is open — module roots are always in
+  // the open set, so the toggle compares against the top-level module ids.
+  const anyExpanded = useWorkspaceStore((s) => {
+    for (const id of s.openNodeIds) {
+      if (!s.treeData.some((m) => m.id === id)) return true
+    }
+    return false
+  })
   const activeSidebarPage = useUIStore((s) => s.activeSidebarPage)
   const width = useUIStore((s) => s.leftPanelWidth)
   const { t } = useTranslation()
@@ -56,6 +66,57 @@ export default function LeftPanel() {
             <span style={{ fontWeight: 700, fontSize: 15, flex: 1, color: T.text }}>
               {t('leftPanel.apis')}
             </span>
+
+            {/* Collapse / expand all folders in one action (issue #39). */}
+            <button
+              type="button"
+              data-testid="tree-collapse-all"
+              onClick={() => (anyExpanded ? collapseAllNodes() : expandAllNodes())}
+              title={anyExpanded ? t('leftPanel.collapseAll') : t('leftPanel.expandAll')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 26,
+                height: 26,
+                borderRadius: 6,
+                border: 'none',
+                background: 'transparent',
+                color: T.muted,
+                cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = T.surface
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+              }}
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                {anyExpanded ? (
+                  // chevrons pointing together = collapse
+                  <>
+                    <polyline points="7 11 12 6 17 11" />
+                    <polyline points="7 18 12 13 17 18" />
+                  </>
+                ) : (
+                  // chevrons pointing apart = expand
+                  <>
+                    <polyline points="7 6 12 11 17 6" />
+                    <polyline points="7 13 12 18 17 13" />
+                  </>
+                )}
+              </svg>
+            </button>
 
             {/* Import dropdown (lands users on step 2 of the import wizard) */}
             <ImportDropdown />

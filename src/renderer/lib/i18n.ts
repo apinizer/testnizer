@@ -233,6 +233,8 @@ const translations: Record<Locale, Record<string, string>> = {
     // Left Panel
     'leftPanel.apis': 'APIs',
     'leftPanel.search': 'Search...',
+    'leftPanel.collapseAll': 'Collapse all folders',
+    'leftPanel.expandAll': 'Expand all folders',
     'leftPanel.new': 'New',
 
     // Import dropdown (sits next to the "+" New button)
@@ -1718,6 +1720,8 @@ const translations: Record<Locale, Record<string, string>> = {
     // Left Panel
     'leftPanel.apis': "API'ler",
     'leftPanel.search': 'Ara...',
+    'leftPanel.collapseAll': 'Tüm klasörleri daralt',
+    'leftPanel.expandAll': 'Tüm klasörleri genişlet',
     'leftPanel.new': 'Yeni',
 
     // Import dropdown

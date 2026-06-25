@@ -49,7 +49,7 @@ export const BASE_INP: CSSProperties = {
   border: '1px solid var(--border2)',
   borderRadius: 6,
   padding: '4px 8px',
-  fontSize: 13,
+  fontSize: 'var(--font-size-base)',
   color: 'var(--text)',
   outline: 'none',
   boxSizing: 'border-box',
@@ -67,7 +67,7 @@ export const BTN_P: CSSProperties = {
   borderRadius: 6,
   color: '#fff',
   fontWeight: 600,
-  fontSize: 13,
+  fontSize: 'var(--font-size-base)',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
@@ -82,7 +82,7 @@ export const BTN_S: CSSProperties = {
   border: '1px solid var(--border2)',
   borderRadius: 6,
   color: 'var(--sub, #374151)',
-  fontSize: 13,
+  fontSize: 'var(--font-size-base)',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
@@ -91,7 +91,7 @@ export const BTN_S: CSSProperties = {
 }
 
 export const LBL_S: CSSProperties = {
-  fontSize: 13,
+  fontSize: 'var(--font-size-base)',
   color: 'var(--muted)',
   fontWeight: 500,
   marginBottom: 4,
@@ -99,7 +99,7 @@ export const LBL_S: CSSProperties = {
 
 export const KV_HEADER_CELL: CSSProperties = {
   padding: '4px 8px',
-  fontSize: 13,
+  fontSize: 'var(--font-size-base)',
   color: 'var(--hint)',
   fontWeight: 400,
 }

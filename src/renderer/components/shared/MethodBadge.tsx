@@ -20,8 +20,11 @@ export default function MethodBadge({ method, small = false }: MethodBadgeProps)
   return (
     <span
       style={{
+        // `small` (tree rows, tab chips) stays compact; the URL-bar method
+        // selector scales with the project font size so it fills its combo and
+        // grows with the theme (issue #38).
         color: c.color,
-        fontSize: small ? 11 : 11,
+        fontSize: small ? 11 : 'var(--font-size-base)',
         fontWeight: 700,
         fontFamily: 'var(--font-mono)',
         letterSpacing: '0.03em',

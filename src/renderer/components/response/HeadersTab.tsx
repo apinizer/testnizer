@@ -69,7 +69,7 @@ export default function HeadersTab() {
                 fontSize: 13,
               }}
             >
-              KEY
+              Key
               {/* Drag handle straddling the KEY/VALUE border. */}
               <span
                 role="separator"
@@ -101,7 +101,7 @@ export default function HeadersTab() {
                 fontSize: 13,
               }}
             >
-              VALUE
+              Value
             </th>
           </tr>
         </thead>

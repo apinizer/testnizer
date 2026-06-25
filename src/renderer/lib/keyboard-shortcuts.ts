@@ -101,13 +101,16 @@ export function useKeyboardShortcuts(): void {
               ui.setShowSaveModal(true)
               return
             }
-            // Already-persisted rows (saved_request / test_suite_item) skip
-            // the folder-picker modal and write straight back to their row.
+            // Already-persisted rows (endpoint / saved_request / test_suite_item)
+            // skip the folder-picker modal and write straight back to their row.
             // Without this branch a Ctrl+S on a Test Suite item opened a
             // modal that listed the APIs folder tree (wrong tree!) and on
             // submit silently created a duplicate APIs request (v1.4.4
-            // §5.2). For new tabs (no row yet) fall through to the modal.
-            if (active && (active.savedRequestId || active.testSuiteItemId)) {
+            // §5.2). `endpointId` was previously missing here, so Ctrl+S on an
+            // open endpoint popped the Save As modal while the Save button next
+            // to Send saved silently — the two diverged (issue #41). For new
+            // tabs (no row yet) fall through to the modal.
+            if (active && (active.endpointId || active.savedRequestId || active.testSuiteItemId)) {
               void saveActiveRequestInPlace().then((result) => {
                 if (result.notApplicable) {
                   ui.setShowEndpointSaveModal(true)
