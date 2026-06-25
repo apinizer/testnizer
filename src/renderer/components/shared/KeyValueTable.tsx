@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Check, X, Upload } from 'lucide-react'
 import type { KeyValuePair } from '../../types'
 import VariableAutocompleteInput from './VariableAutocompleteInput'
+import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import { filterHeaderSuggestions, filterHeaderValueSuggestions } from '../../lib/http-headers'
 import { rowsToBulkText, bulkTextToRows } from '../../lib/key-value-bulk'
@@ -47,6 +48,12 @@ interface KeyValueTableProps {
    * url-encoded body editors keep the default bordered look.
    */
   flush?: boolean
+  /**
+   * Enable a draggable KEY/VALUE column divider whose width persists in the UI
+   * store (issues #36/#37). Used by the request Params / Headers tables; the
+   * form-data editor (Type column) keeps fixed columns.
+   */
+  resizable?: boolean
 }
 
 interface AutocompleteState {
@@ -125,9 +132,45 @@ export default function KeyValueTable({
   enableFileType = false,
   onReplaceAll,
   flush = false,
+  resizable = false,
 }: KeyValueTableProps) {
   const keyAutocompleteEnabled = !!keyAutocompleteEntries && keyAutocompleteEntries.length > 0
   const { t } = useTranslation()
+
+  // Column resize (issues #36/#37). Only the borderless Params/Headers tables
+  // opt in; the form-data editor keeps its fixed Type column. The KEY width is a
+  // percentage shared across both request tables and persisted in the UI store.
+  const keyColWidth = useUIStore((s) => s.requestKeyColWidth)
+  const setKeyColWidth = useUIStore((s) => s.setRequestKeyColWidth)
+  const commitKeyColWidth = useUIStore((s) => s.commitRequestKeyColWidth)
+  const gridRef = useRef<HTMLDivElement>(null)
+  const resizeActive = resizable && !enableFileType
+  const startColResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      const el = gridRef.current
+      if (!el) return
+      const onMove = (ev: MouseEvent) => {
+        const rect = el.getBoundingClientRect()
+        // 56px = the two fixed 28px gutter columns (checkbox + delete).
+        const usable = rect.width - 56
+        if (usable <= 0) return
+        setKeyColWidth(((ev.clientX - rect.left - 28) / usable) * 100)
+      }
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+        commitKeyColWidth()
+      }
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    },
+    [setKeyColWidth, commitKeyColWidth],
+  )
   const resolvedAddLabel = addLabel ?? `+ ${t('kv.key')} / ${t('kv.value')}`
   const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(null)
   // Anchor for the dropdown — set to the focused key input or the value cell
@@ -271,7 +314,14 @@ export default function KeyValueTable({
     onUpdate(rowId, { filePath: undefined, value: '' })
   }
 
-  const gridCols = enableFileType ? GRID_COLS_FILE : GRID_COLS
+  // When resizing is active the KEY column is a live percentage; the remaining
+  // space splits VALUE:DESCRIPTION 2:1 (mirrors the original minmax 1fr:0.5fr).
+  const restCol = 100 - keyColWidth
+  const gridCols = enableFileType
+    ? GRID_COLS_FILE
+    : resizeActive
+      ? `28px ${keyColWidth}fr ${(restCol * 2) / 3}fr ${restCol / 3}fr 28px`
+      : GRID_COLS
 
   // Bulk-edit mode: hidden when no onReplaceAll handler was passed.
   // File-type rows can't round-trip through a `key:value` textarea (file
@@ -344,6 +394,7 @@ export default function KeyValueTable({
         </>
       ) : (
         <div
+          ref={gridRef}
           className={
             flush ? 'overflow-visible' : 'overflow-visible rounded-md border border-[var(--border)]'
           }
@@ -359,7 +410,26 @@ export default function KeyValueTable({
             }}
           >
             <div />
-            <div className="px-2.5 py-1">{t('kv.key')}</div>
+            <div className="relative px-2.5 py-1">
+              {t('kv.key')}
+              {resizeActive && (
+                <span
+                  role="separator"
+                  aria-orientation="vertical"
+                  data-testid="kv-col-resize"
+                  onMouseDown={startColResize}
+                  className="absolute top-0 z-10"
+                  style={{ right: -3, height: '100%', width: 6, cursor: 'col-resize' }}
+                  onMouseEnter={(e) => {
+                    ;(e.currentTarget as HTMLElement).style.background = 'var(--accent)'
+                    ;(e.currentTarget as HTMLElement).style.opacity = '0.4'
+                  }}
+                  onMouseLeave={(e) => {
+                    ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                  }}
+                />
+              )}
+            </div>
             {enableFileType && <div className="px-2.5 py-1">{t('kv.type')}</div>}
             <div className="px-2.5 py-1">{t('kv.value')}</div>
             {/* Description header doubles as the Bulk Edit toggle anchor (#22). */}

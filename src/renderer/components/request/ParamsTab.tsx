@@ -21,6 +21,7 @@ export default function ParamsTab() {
         onReplaceAll={setParams}
         addLabel="+ Add Parameter"
         flush
+        resizable
       />
     </div>
   )
