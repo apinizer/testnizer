@@ -426,5 +426,43 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
     }
   }
 
+  // ─── Endpoint (lives under APIs module tree) ─────────────────
+  // Mirrors the Save button's in-place branch in UrlBar so Ctrl+S behaves
+  // identically (issue #41): an already-backed endpoint tab saves straight to
+  // its row without popping the "Save As" folder picker. The endpoint row keeps
+  // assertions INSIDE request_schema (no separate column), unlike saved_request.
+  if (activeTab.endpointId) {
+    const schema = {
+      url: effectiveUrl,
+      method: effectiveMethod,
+      params: req.params,
+      headers: req.headers,
+      body: effectiveBody,
+      auth: req.auth,
+      preScript: req.preScript,
+      postScript: req.postScript,
+      assertions: req.assertions ?? [],
+      ...(Object.keys(protocolMeta).length > 0 ? { metadata: protocolMeta } : {}),
+    }
+    try {
+      const result = (await window.api?.endpoint?.update(activeTab.endpointId, {
+        method: effectiveMethod,
+        path: effectiveUrl,
+        request_schema: JSON.stringify(schema),
+      })) as { success: boolean; error?: string } | undefined
+      if (result?.success) {
+        tabs.markDirty(activeTab.id, false)
+        tabs.updateTab(activeTab.id, {
+          method: effectiveMethod,
+          url: effectiveUrl,
+        })
+        return { success: true }
+      }
+      return { success: false, error: result?.error || 'Update failed' }
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  }
+
   return { success: false, notApplicable: true }
 }

@@ -54,3 +54,23 @@ describe('ui.store response Headers column width (issue #20)', () => {
     expect(() => useUIStore.getState().commitResponseHeaderKeyWidth()).not.toThrow()
   })
 })
+
+describe('ui.store request Params/Headers column width (issues #36/#37)', () => {
+  beforeEach(() => {
+    useUIStore.setState({ requestKeyColWidth: 30 })
+  })
+
+  it('setRequestKeyColWidth clamps to [15, 60] percent', () => {
+    useUIStore.getState().setRequestKeyColWidth(45)
+    expect(useUIStore.getState().requestKeyColWidth).toBe(45)
+    useUIStore.getState().setRequestKeyColWidth(5)
+    expect(useUIStore.getState().requestKeyColWidth).toBe(15)
+    useUIStore.getState().setRequestKeyColWidth(90)
+    expect(useUIStore.getState().requestKeyColWidth).toBe(60)
+  })
+
+  it('commitRequestKeyColWidth does not throw without a settings bridge', () => {
+    useUIStore.getState().setRequestKeyColWidth(38)
+    expect(() => useUIStore.getState().commitRequestKeyColWidth()).not.toThrow()
+  })
+})

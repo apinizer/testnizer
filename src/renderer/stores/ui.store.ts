@@ -39,6 +39,8 @@ interface UIStore {
   rightPanelWidth: number
   /** Response Headers table KEY-column width, as a percentage (issue #20). */
   responseHeaderKeyWidth: number
+  /** Request Params/Headers table KEY-column width, as a percentage (issues #36/#37). */
+  requestKeyColWidth: number
   splitPosition: number
   isLeftPanelCollapsed: boolean
   activeSidebarPage: SidebarPage
@@ -86,6 +88,10 @@ interface UIStore {
   setResponseHeaderKeyWidth: (pct: number) => void
   /** Persist the response Headers KEY-column width (called once on drag end). */
   commitResponseHeaderKeyWidth: () => void
+  /** Live setter while dragging the request Params/Headers KEY column (issues #36/#37). */
+  setRequestKeyColWidth: (pct: number) => void
+  /** Persist the request table KEY-column width (called once on drag end). */
+  commitRequestKeyColWidth: () => void
   setSplitPosition: (position: number) => void
   toggleLeftPanel: () => void
   setLeftPanelCollapsed: (collapsed: boolean) => void
@@ -172,6 +178,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   leftPanelWidth: 300,
   rightPanelWidth: 300,
   responseHeaderKeyWidth: 35,
+  requestKeyColWidth: 30,
   splitPosition: 50,
   isLeftPanelCollapsed: false,
   activeSidebarPage: 'apis',
@@ -245,10 +252,20 @@ export const useUIStore = create<UIStore>((set, get) => ({
         'ui.leftPanelWidth',
         'ui.rightPanelWidth',
         'ui.responseHeaderKeyWidth',
+        'ui.requestKeyColWidth',
       ] as const
       const results = await Promise.all(keys.map((k) => api.get!(k)))
-      const [themeRes, localeRes, sizeRes, familyRes, accentRes, leftWRes, rightWRes, hdrKeyWRes] =
-        results
+      const [
+        themeRes,
+        localeRes,
+        sizeRes,
+        familyRes,
+        accentRes,
+        leftWRes,
+        rightWRes,
+        hdrKeyWRes,
+        reqKeyWRes,
+      ] = results
       const patch: Partial<UIStore> = {}
       const themeVal = themeRes?.data as Theme | undefined
       if (themeVal === 'light' || themeVal === 'dark' || themeVal === 'system') {
@@ -289,6 +306,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
       const hdrKeyW = hdrKeyWRes?.data
       if (typeof hdrKeyW === 'number' && hdrKeyW >= 15 && hdrKeyW <= 70)
         patch.responseHeaderKeyWidth = hdrKeyW
+      const reqKeyW = reqKeyWRes?.data
+      if (typeof reqKeyW === 'number' && reqKeyW >= 15 && reqKeyW <= 60)
+        patch.requestKeyColWidth = reqKeyW
       set(patch)
     } catch {
       /* noop */
@@ -312,6 +332,12 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   commitResponseHeaderKeyWidth: () => {
     void persistSetting('ui.responseHeaderKeyWidth', get().responseHeaderKeyWidth)
+  },
+
+  setRequestKeyColWidth: (pct) => set({ requestKeyColWidth: Math.max(15, Math.min(60, pct)) }),
+
+  commitRequestKeyColWidth: () => {
+    void persistSetting('ui.requestKeyColWidth', get().requestKeyColWidth)
   },
 
   setSplitPosition: (position) => set({ splitPosition: Math.max(22, Math.min(78, position)) }),

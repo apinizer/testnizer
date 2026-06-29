@@ -260,3 +260,76 @@ export function computeSideBySide(
     rightLines: rightLinesAll.length,
   }
 }
+
+// ───────────────────────────────────────────────────────────────────
+// Result navigation + find (consumed by the DiffTool result view)
+// ───────────────────────────────────────────────────────────────────
+
+/** Half-open range [start, end) of contiguous rows that form one diff block. */
+export type DiffBlock = { start: number; end: number }
+
+/** A single find hit inside one rendered segment. */
+export type FindMatchRange = { start: number; length: number; globalIndex: number }
+
+export type FindResult = {
+  /** Ordered list of all matches; index is the global match index used for navigation. */
+  matches: { rowIndex: number }[]
+  /** Lookup keyed `${rowIndex}:${side}:${segIndex}` → ranges within that segment. */
+  map: Map<string, FindMatchRange[]>
+}
+
+/**
+ * Group consecutive non-equal rows into navigable diff blocks. Each block is a
+ * half-open range of row indices; `equal` rows separate blocks. Used by the
+ * "previous/next difference" navigation.
+ */
+export function computeDiffBlocks(rows: SideBySideRow[]): DiffBlock[] {
+  const blocks: DiffBlock[] = []
+  let start = -1
+  for (let i = 0; i < rows.length; i++) {
+    const isDiff = rows[i].kind !== 'equal'
+    if (isDiff && start === -1) start = i
+    else if (!isDiff && start !== -1) {
+      blocks.push({ start, end: i })
+      start = -1
+    }
+  }
+  if (start !== -1) blocks.push({ start, end: rows.length })
+  return blocks
+}
+
+/**
+ * Find every case-insensitive occurrence of `query` across the rendered row
+ * segments. Returns the flat ordered match list (for navigation) and a
+ * per-segment lookup map (for in-place highlighting). Walk order matches the
+ * visual reading order: row → left side then right side → segment.
+ */
+export function computeFindMatches(rows: SideBySideRow[], rawQuery: string): FindResult {
+  const query = rawQuery.toLowerCase()
+  const matches: { rowIndex: number }[] = []
+  const map = new Map<string, FindMatchRange[]>()
+  if (!query) return { matches, map }
+
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r]
+    for (const side of ['left', 'right'] as const) {
+      const segs = side === 'left' ? row.leftSegments : row.rightSegments
+      if (!segs) continue
+      for (let s = 0; s < segs.length; s++) {
+        const lower = segs[s].value.toLowerCase()
+        let from = lower.indexOf(query)
+        while (from !== -1) {
+          const globalIndex = matches.length
+          matches.push({ rowIndex: r })
+          const key = `${r}:${side}:${s}`
+          const arr = map.get(key)
+          const range: FindMatchRange = { start: from, length: query.length, globalIndex }
+          if (arr) arr.push(range)
+          else map.set(key, [range])
+          from = lower.indexOf(query, from + query.length)
+        }
+      }
+    }
+  }
+  return { matches, map }
+}

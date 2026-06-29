@@ -475,6 +475,18 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         preScriptLogs.push({ level, message: log.message, timestamp: log.timestamp })
       }
       Object.assign(scriptOverrides, scriptResult.globalUpdates, scriptResult.envUpdates)
+      // Persist pre-request env/global writes back to the store (and DB) so they
+      // survive to the NEXT send — Postman/Insomnia keep pre-request
+      // pm.environment.set values, but here they previously lived only in the
+      // transient scriptOverrides map for this one send. That made a derived
+      // variable set in one request's pre-script invisible to a later request
+      // sent separately (issue #29). Symmetric with the post-response branch.
+      if (
+        Object.keys(scriptResult.envUpdates).length > 0 ||
+        Object.keys(scriptResult.globalUpdates).length > 0
+      ) {
+        void envStore.applyScriptUpdates(scriptResult.envUpdates, scriptResult.globalUpdates)
+      }
       // Later scripts' header mutations take precedence; keep the last non-null.
       if (scriptResult.requestHeaders) preScriptHeaders = scriptResult.requestHeaders
       if (scriptResult.skipRequest) preScriptSkippedRequest = true

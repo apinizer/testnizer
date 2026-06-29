@@ -146,3 +146,28 @@ describe('checkTypeMismatch', () => {
     })
   })
 })
+
+describe('clipboard import (issue #28)', () => {
+  // The clipboard import path reads raw text and runs it through the SAME
+  // detect → mismatch pipeline as file/URL import, but with no file path. These
+  // pin the contract the new "Import from clipboard" button relies on.
+  it('detects each clipboard-importable format from pasted content alone', () => {
+    expect(detectImportFormat('{"openapi":"3.0.0","info":{"title":"X"}}')).toBe('openapi')
+    expect(
+      detectImportFormat(JSON.stringify({ info: { _postman_id: 'a', name: 'C' }, item: [] })),
+    ).toBe('postman')
+    expect(detectImportFormat(JSON.stringify({ type: 'collection.insomnia.rest/5.0.0' }))).toBe(
+      'insomnia',
+    )
+    expect(detectImportFormat('#%RAML 1.0\ntitle: X')).toBe('raml')
+  })
+
+  it('accepts a matching paste and flags one pasted under the wrong format card', () => {
+    const openapi = detectImportFormat('{"openapi":"3.0.0","info":{"title":"X"}}')
+    expect(checkTypeMismatch('openapi', openapi)).toBe(null)
+    expect(checkTypeMismatch('postman', openapi)).toEqual({
+      detected: 'OpenAPI/Swagger',
+      expected: 'Postman',
+    })
+  })
+})

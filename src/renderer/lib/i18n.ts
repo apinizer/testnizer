@@ -233,6 +233,8 @@ const translations: Record<Locale, Record<string, string>> = {
     // Left Panel
     'leftPanel.apis': 'APIs',
     'leftPanel.search': 'Search...',
+    'leftPanel.collapseAll': 'Collapse all folders',
+    'leftPanel.expandAll': 'Expand all folders',
     'leftPanel.new': 'New',
 
     // Import dropdown (sits next to the "+" New button)
@@ -1004,6 +1006,15 @@ const translations: Record<Locale, Record<string, string>> = {
     'tools.diff.compareHint': 'Enter both texts above and click Compare.',
     'tools.diff.removalsLabel': 'removals',
     'tools.diff.additionsLabel': 'additions',
+    'tools.diff.prevDiff': 'Previous difference',
+    'tools.diff.nextDiff': 'Next difference',
+    'tools.diff.noDiffs': 'No differences',
+    'tools.diff.find': 'Find',
+    'tools.diff.findPlaceholder': 'Find in result…',
+    'tools.diff.findPrev': 'Previous match',
+    'tools.diff.findNext': 'Next match',
+    'tools.diff.findClose': 'Close',
+    'tools.diff.noMatches': 'No matches',
     'tools.jsonpath.title': 'JSONPath Evaluator',
     'tools.jsonpath.expression': 'Expression',
     'tools.jsonpath.examples': 'Examples',
@@ -1709,6 +1720,8 @@ const translations: Record<Locale, Record<string, string>> = {
     // Left Panel
     'leftPanel.apis': "API'ler",
     'leftPanel.search': 'Ara...',
+    'leftPanel.collapseAll': 'Tüm klasörleri daralt',
+    'leftPanel.expandAll': 'Tüm klasörleri genişlet',
     'leftPanel.new': 'Yeni',
 
     // Import dropdown
@@ -2481,6 +2494,15 @@ const translations: Record<Locale, Record<string, string>> = {
     'tools.diff.compareHint': "Yukarıya iki metni girin ve Karşılaştır'a basın.",
     'tools.diff.removalsLabel': 'silinen',
     'tools.diff.additionsLabel': 'eklenen',
+    'tools.diff.prevDiff': 'Önceki fark',
+    'tools.diff.nextDiff': 'Sonraki fark',
+    'tools.diff.noDiffs': 'Fark yok',
+    'tools.diff.find': 'Bul',
+    'tools.diff.findPlaceholder': 'Sonuçta bul…',
+    'tools.diff.findPrev': 'Önceki eşleşme',
+    'tools.diff.findNext': 'Sonraki eşleşme',
+    'tools.diff.findClose': 'Kapat',
+    'tools.diff.noMatches': 'Eşleşme yok',
     'tools.jsonpath.title': 'JSONPath Değerlendirici',
     'tools.jsonpath.expression': 'İfade',
     'tools.jsonpath.examples': 'Örnekler',

@@ -374,6 +374,20 @@ export default function TreeView() {
         } else if (node.type === 'request') {
           await window.api?.savedRequest?.update(node.id, { name: newName })
         }
+        // Keep an open tab for this node in sync with the new name — renaming
+        // in the tree left the tab chip showing the stale title until close +
+        // reopen (issue #40). Match by tab id (`tab-<nodeId>`) or by the
+        // endpoint/saved-request id the tab is backed by.
+        if (node.type === 'endpoint' || node.type === 'request') {
+          const tabsStore = useTabsStore.getState()
+          const openTab = tabsStore.tabs.find(
+            (tb) =>
+              tb.id === `tab-${node.id}` ||
+              tb.endpointId === node.id ||
+              tb.savedRequestId === node.id,
+          )
+          if (openTab) tabsStore.updateTab(openTab.id, { name: newName })
+        }
         await refreshTree()
       } catch {
         /* ignore */

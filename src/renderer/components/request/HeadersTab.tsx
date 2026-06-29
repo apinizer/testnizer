@@ -21,6 +21,7 @@ export default function HeadersTab() {
         enableAutocomplete
         keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
         flush
+        resizable
       />
     </div>
   )

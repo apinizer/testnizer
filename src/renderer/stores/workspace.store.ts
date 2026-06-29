@@ -52,6 +52,10 @@ interface WorkspaceStore {
   setActiveProject: (id: string | null) => void
   setTreeData: (data: TreeNode[]) => void
   toggleNode: (id: string) => void
+  /** Collapse every folder/request group in one action, keeping module roots open (issue #39). */
+  collapseAllNodes: () => void
+  /** Expand every node that has children (issue #39). */
+  expandAllNodes: () => void
   setActiveNode: (id: string) => void
   setSearchQuery: (query: string) => void
   fetchWorkspaces: () => Promise<void>
@@ -358,6 +362,36 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       } else {
         next.add(id)
       }
+      return { openNodeIds: next }
+    }),
+
+  collapseAllNodes: () =>
+    set((state) => {
+      // Keep the top-level module roots open so the project stays visible,
+      // but close every folder/group beneath them in one action (issue #39).
+      const next = new Set<string>()
+      const walk = (nodes: TreeNode[]) => {
+        for (const n of nodes) {
+          if (n.type === 'module') next.add(n.id)
+          if (n.children) walk(n.children)
+        }
+      }
+      walk(state.treeData)
+      return { openNodeIds: next }
+    }),
+
+  expandAllNodes: () =>
+    set((state) => {
+      const next = new Set<string>()
+      const walk = (nodes: TreeNode[]) => {
+        for (const n of nodes) {
+          if (n.children && n.children.length > 0) {
+            next.add(n.id)
+            walk(n.children)
+          }
+        }
+      }
+      walk(state.treeData)
       return { openNodeIds: next }
     }),
 

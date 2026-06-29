@@ -80,6 +80,14 @@ beforeAll(
             res.end('boom')
             return
           }
+          // /missing → deterministic 400 so an idempotent-DELETE style test can
+          // assert a non-2xx code is still a PASS when the script allows it
+          // (issue #30).
+          if (url.startsWith('/missing')) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'not found' }))
+            return
+          }
           // Echo back the path + any received body so data-driven row plumbing
           // can be asserted on the wire.
           res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -664,5 +672,82 @@ describe('executeCollection — script variable persistence (issue #12)', () => 
     }
     expect(data.globalUpdates?.gKey).toBe('gVal')
     expect(data.envUpdates?.gKey).toBeUndefined()
+  })
+})
+
+// ─── Issue #30 — assertion-driven verdict on a non-2xx response ───
+
+describe('executeCollection — idempotent non-2xx passes when the script allows it (issue #30)', () => {
+  it('marks a 400 response PASSED when a pm.test accepts the code', async () => {
+    seedActiveBaseEnv()
+    const epId = seedEndpoint({
+      name: 'Delete if exists',
+      method: 'DELETE',
+      url: '{{base}}/missing',
+      postScript: `pm.test('idempotent delete', function () {
+        pm.expect([200, 204, 404, 400]).to.include(pm.response.code)
+      })`,
+    })
+
+    const res = await run({ endpointIds: [epId] })
+
+    expect(res.success).toBe(true)
+    expect(res.data?.results[0].status).toBe(400)
+    // The script test passed → the request is a PASS even though it's a 4xx,
+    // matching Insomnia. (Pre-#16 this bucketed every 4xx as failed.)
+    expect(res.data?.results[0].failed).toBe(0)
+    expect(res.data?.passedEndpoints).toBe(1)
+    expect(res.data?.failedEndpoints).toBe(0)
+  })
+
+  it('still FAILS a bare 400 with no assertions (status fallback preserved)', async () => {
+    seedActiveBaseEnv()
+    const epId = seedEndpoint({ name: 'Bare 400', method: 'DELETE', url: '{{base}}/missing' })
+
+    const res = await run({ endpointIds: [epId] })
+
+    expect(res.data?.results[0].status).toBe(400)
+    expect(res.data?.failedEndpoints).toBe(1)
+    expect(res.data?.passedEndpoints).toBe(0)
+  })
+})
+
+// ─── Issue #29 — derived env var updated mid-run reaches later requests ───
+
+describe('executeCollection — derived env var sync across requests (issue #29)', () => {
+  it('a derived var rebuilt from a fresh runId in one pre-script resolves for later requests', async () => {
+    // Stale values from a previous run are already in the environment.
+    seedActiveEnv({
+      base: `http://127.0.0.1:${port}`,
+      runId: 'OLD',
+      proxyName: 'col-OLD-proxy',
+    })
+
+    // Setup endpoint: bump runId, then rebuild the derived name from it.
+    const setup = seedEndpoint({
+      name: 'Setup',
+      url: '{{base}}/setup',
+      preScript: `pm.environment.set('runId', 'NEW');
+        pm.environment.set('proxyName', 'col-' + pm.environment.get('runId') + '-proxy')`,
+    })
+    // Create uses the derived name straight from the environment.
+    const create = seedEndpoint({ name: 'Create', url: '{{base}}/create?name={{proxyName}}' })
+    // Policy rebuilds the derived name from the current runId in its own
+    // pre-script before sending — must agree with Create.
+    const policy = seedEndpoint({
+      name: 'Policy',
+      url: '{{base}}/policy?name={{proxyName}}',
+      preScript: `pm.environment.set('proxyName', 'col-' + pm.environment.get('runId') + '-proxy')`,
+    })
+
+    const res = await run({ endpointIds: [setup, create, policy] })
+
+    expect(res.success).toBe(true)
+    // Both Create and Policy must hit the NEW proxy name — not the stale one
+    // and not two different names.
+    const wire = received.map((r) => r.url).filter((u) => u.includes('name='))
+    expect(wire).toContain('/create?name=col-NEW-proxy')
+    expect(wire).toContain('/policy?name=col-NEW-proxy')
+    expect(wire.some((u) => u.includes('col-OLD-proxy'))).toBe(false)
   })
 })

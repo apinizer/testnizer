@@ -13,6 +13,9 @@
   --sub: #374151;
   --muted: #6b7280;
   --hint: #6b7280;
+  /* Input placeholders sit a notch lighter than --hint so they read as
+     "type here" hints, not as filled values or column headers (issue #42). */
+  --placeholder: #9ca3af;
   --accent: #2d5fa0;
   --accent-light: #e8f0fa;
   --accent-text: #24507f;
@@ -91,6 +94,7 @@
   --sub: #d0d0d5;
   --muted: #9a9aa3;
   --hint: #9a9aa3;
+  --placeholder: #6b7280;
   --accent: #5a8fd4;
   --accent-light: rgba(45, 95, 160, 0.22);
   --accent-text: #8bb8f0;
@@ -356,7 +360,8 @@ textarea {
 }
 input::placeholder,
 textarea::placeholder {
-  color: var(--hint);
+  color: var(--placeholder);
+  opacity: 1;
 }
 
 select {

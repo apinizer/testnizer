@@ -94,14 +94,15 @@ export default function RequestEditor() {
               className="flex cursor-pointer items-center gap-1 whitespace-nowrap px-2.5 transition-colors"
               style={{
                 height: 30,
-                borderBottom: 'none',
-                borderBottomWidth: 2,
-                borderBottomStyle: 'solid',
-                borderBottomColor: isActive ? 'var(--accent)' : 'transparent',
-                color: isActive ? 'var(--text)' : 'var(--muted)',
-                fontWeight: isActive ? 500 : 400,
                 background: 'transparent',
                 border: 'none',
+                // Match the response pane's active tab: theme-coloured label +
+                // accent underline (issues #32/#33). A trailing `border: none`
+                // longhand previously clobbered the bottom border.
+                color: isActive ? 'var(--accent-text)' : 'var(--muted)',
+                fontWeight: isActive ? 600 : 400,
+                borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                marginBottom: -1,
               }}
             >
               {t(tab.i18n)}
