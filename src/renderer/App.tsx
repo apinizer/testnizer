@@ -4,12 +4,18 @@ import AppShell from './components/layout/AppShell'
 import AboutModal from './components/modals/AboutModal'
 import EulaConsentGate from './components/eula/EulaConsentGate'
 import { useUIStore } from './stores/ui.store'
+import { useWorkspaceStore } from './stores/workspace.store'
 import { initUpdaterListeners } from './stores/updater.store'
 import { initConsoleListeners } from './stores/console.store'
+import { useAutoUpdater } from './lib/use-auto-updater'
 
 function App(): React.JSX.Element {
   const hydrateFromSettings = useUIStore((s) => s.hydrateFromSettings)
   const setShowAboutModal = useUIStore((s) => s.setShowAboutModal)
+  // Drive the "Automatically check / download updates" toggles from the active
+  // project's settings (previously inert — nothing read them).
+  const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
+  useAutoUpdater(activeProjectId)
   useEffect(() => {
     void hydrateFromSettings()
     const cleanupUpdater = initUpdaterListeners()
