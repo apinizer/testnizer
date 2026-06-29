@@ -28,18 +28,34 @@ const INPUT =
   'w-full rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-[13px] outline-none'
 const LABEL = 'mb-1.5 block text-[12px] font-medium'
 
+type FolderSettingsRow = {
+  auth?: string | null
+  pre_script?: string | null
+  post_script?: string | null
+}
+
 export default function FolderSettingsModal({
   folderId,
   folderName,
   open,
   onClose,
   onSaved,
+  loadRow,
+  saveSettings,
 }: {
   folderId: string
   folderName: string
   open: boolean
   onClose: () => void
   onSaved?: () => void
+  /** Optional data source — when set (e.g. test-suite folders) it replaces the
+   *  default APIs `folder.*` IPC path so the same editor serves both trees. */
+  loadRow?: () => Promise<FolderSettingsRow | undefined>
+  saveSettings?: (s: {
+    auth: string | null
+    pre_script: string | null
+    post_script: string | null
+  }) => Promise<{ success: boolean; error?: string }>
 }) {
   const { t } = useTranslation()
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
@@ -57,10 +73,15 @@ export default function FolderSettingsModal({
     setTab('auth')
     ;(async () => {
       try {
-        const res = (await window.api?.folder?.list(activeProjectId ?? '')) as
-          | { success: boolean; data?: Folder[] }
-          | undefined
-        const row = res?.success ? res.data?.find((f) => f.id === folderId) : undefined
+        let row: FolderSettingsRow | undefined
+        if (loadRow) {
+          row = await loadRow()
+        } else {
+          const res = (await window.api?.folder?.list(activeProjectId ?? '')) as
+            | { success: boolean; data?: Folder[] }
+            | undefined
+          row = res?.success ? res.data?.find((f) => f.id === folderId) : undefined
+        }
         if (cancelled) return
         let parsed: AuthConfig = { type: 'inherit' }
         if (row?.auth) {
@@ -80,18 +101,23 @@ export default function FolderSettingsModal({
     return () => {
       cancelled = true
     }
-  }, [open, folderId, activeProjectId])
+  }, [open, folderId, activeProjectId, loadRow])
 
   async function handleSave() {
     setSaving(true)
     try {
       // 'inherit' stores NULL so the folder stays transparent up the chain.
       const authJson = auth.type === 'inherit' ? null : JSON.stringify(auth)
-      const res = (await window.api?.folder?.update(folderId, {
+      const settings = {
         auth: authJson,
         pre_script: preScript.trim() ? preScript : null,
         post_script: postScript.trim() ? postScript : null,
-      })) as { success: boolean; error?: string } | undefined
+      }
+      const res = saveSettings
+        ? await saveSettings(settings)
+        : ((await window.api?.folder?.update(folderId, settings)) as
+            | { success: boolean; error?: string }
+            | undefined)
       if (res?.success) {
         toast.success(t('folderSettings.saved') || 'Folder settings saved')
         onSaved?.()

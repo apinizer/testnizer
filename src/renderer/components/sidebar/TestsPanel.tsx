@@ -21,6 +21,7 @@ import {
   Upload,
   Copy,
   ExternalLink,
+  Settings,
 } from 'lucide-react'
 import type {
   TestSuiteRow,
@@ -30,6 +31,7 @@ import type {
 } from '../../types'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import ImportTestSuiteModal from '../modals/ImportTestSuiteModal'
+import FolderSettingsModal from '../modals/FolderSettingsModal'
 import MethodBadge from '../shared/MethodBadge'
 import { useTranslation } from '../../lib/i18n'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
@@ -190,7 +192,7 @@ export default function TestsPanel() {
   // the main process (see `getRunnableEntity` in runner.handler.ts); we
   // just pass the ordered id list.
   const handleRunSuite = useCallback(
-    async (suite: TestSuite) => {
+    async (suite: TestSuite, quick = false) => {
       let items = suiteContents[suite.id]?.items
       if (!items) {
         const result = await api().testSuite.listEndpoints(suite.id)
@@ -202,6 +204,7 @@ export default function TestsPanel() {
         items.map((i) => i.id),
         suite.name,
         suite.id,
+        quick,
       )
       setContextMenu(null)
     },
@@ -217,14 +220,12 @@ export default function TestsPanel() {
   )
 
   const runEndpoints = useCallback(
-    (endpointIds: string[], suiteName: string, suiteId?: string) => {
-      // v1.3.1 §5.6 (E6): right-click "Run" now lands on the configuration
-      // view of the runner tab so the user reviews iterations/delay/data
-      // before launching, matching the behaviour the rest of the sidebar
-      // (click on suite name) already had. Holding shift would be the
-      // natural place to add a "Quick Run" that skips the config screen.
+    (endpointIds: string[], suiteName: string, suiteId?: string, quick = false) => {
+      // v1.3.1 §5.6 (E6): plain "Run" lands on the runner's configuration view so
+      // the user reviews iterations/delay/data before launching. "Quick Run"
+      // (quick=true) skips the config screen and starts immediately (D-4).
       openOrReuseRunnerTab({
-        autoRun: false,
+        autoRun: quick,
         endpointIds,
         folderName: suiteName,
         sourceType: 'suite',
@@ -385,17 +386,23 @@ export default function TestsPanel() {
   )
 
   // ─── Export suite ─────────────────────────────────────────
-  const handleExportSuite = useCallback(async (suiteId: string) => {
-    try {
-      const result = await api().save?.exportTestSuite?.(suiteId)
-      if (!result?.success && result?.error && result.error !== 'Cancelled') {
-        console.error('Export suite failed:', result.error)
+  // `format` picks the wire shape — the self-contained Testnizer snapshot or a
+  // Postman v2.1 / Insomnia collection so the suite can be carried into those
+  // tools (folder tree + per-item request snapshot + cascade scripts).
+  const handleExportSuite = useCallback(
+    async (suiteId: string, format: 'testnizer' | 'postman' | 'insomnia' = 'testnizer') => {
+      try {
+        const result = await api().save?.exportTestSuite?.(suiteId, format)
+        if (!result?.success && result?.error && result.error !== 'Cancelled') {
+          console.error('Export suite failed:', result.error)
+        }
+      } catch (err) {
+        console.error(err)
       }
-    } catch (err) {
-      console.error(err)
-    }
-    setContextMenu(null)
-  }, [])
+      setContextMenu(null)
+    },
+    [],
+  )
 
   // ─── Import suite ─────────────────────────────────────────
   // Opens a modal that lets the user pick a source format before the OS file
@@ -675,6 +682,11 @@ export default function TestsPanel() {
                 onClick={() => handleRunSuite(suite)}
               />
               <ContextMenuItem
+                icon={<Play size={13} />}
+                label={t('testsPanel.quickRunSuite') || 'Quick Run (skip config)'}
+                onClick={() => handleRunSuite(suite, true)}
+              />
+              <ContextMenuItem
                 icon={<Plus size={13} />}
                 label={t('testsPanel.newRequest')}
                 onClick={() => handleAddItem(suite)}
@@ -704,8 +716,18 @@ export default function TestsPanel() {
               <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
               <ContextMenuItem
                 icon={<Upload size={13} />}
-                label={t('testsPanel.export')}
-                onClick={() => handleExportSuite(suite.id)}
+                label={t('testsPanel.exportTestnizer')}
+                onClick={() => handleExportSuite(suite.id, 'testnizer')}
+              />
+              <ContextMenuItem
+                icon={<Upload size={13} />}
+                label={t('testsPanel.exportPostman')}
+                onClick={() => handleExportSuite(suite.id, 'postman')}
+              />
+              <ContextMenuItem
+                icon={<Upload size={13} />}
+                label={t('testsPanel.exportInsomnia')}
+                onClick={() => handleExportSuite(suite.id, 'insomnia')}
               />
               <ContextMenuItem
                 icon={<Download size={13} />}
@@ -976,9 +998,33 @@ function SuiteContentsTree({
   onRemoveItem: (itemId: string) => void
 }) {
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({})
+  // Which suite folder's auth/scripts settings modal is open (D-2).
+  const [settingsFolder, setSettingsFolder] = useState<{ id: string; name: string } | null>(null)
+  const settingsFolderId = settingsFolder?.id
 
-  // Group items by folder_id (null = suite root). Folders without items are
-  // still rendered as empty groups so the user can see structure.
+  const loadFolderSettings = useCallback(async () => {
+    if (!settingsFolderId) return undefined
+    const r = (await window.api?.testSuiteFolder?.getSettings(settingsFolderId)) as
+      | {
+          success: boolean
+          data?: { auth: string | null; pre_script: string | null; post_script: string | null }
+        }
+      | undefined
+    return r?.success ? r.data : undefined
+  }, [settingsFolderId])
+
+  const saveFolderSettings = useCallback(
+    async (s: { auth: string | null; pre_script: string | null; post_script: string | null }) => {
+      if (!settingsFolderId) return { success: false, error: 'No folder selected' }
+      const r = (await window.api?.testSuiteFolder?.updateSettings(settingsFolderId, s)) as
+        | { success: boolean; error?: string }
+        | undefined
+      return r ?? { success: false, error: 'Save failed' }
+    },
+    [settingsFolderId],
+  )
+
+  // Group items by folder_id (null = suite root).
   const itemsByFolder = new Map<string | null, TestSuiteItem[]>()
   for (const item of contents.items) {
     const key = item.folder_id ?? null
@@ -987,69 +1033,110 @@ function SuiteContentsTree({
     itemsByFolder.set(key, arr)
   }
 
-  // Top-level folders only (parent_id null). Nested folders are a future
-  // step — current import + create paths put items either at suite root or
-  // in a single-level folder, mirroring the APIs tree shape today.
-  const topFolders = contents.folders.filter((f) => f.parent_id === null)
+  // Group folders by parent_id (null = top level), preserving sort order — so
+  // an imported collection's full nested hierarchy (Setup → Flow → Teardown,
+  // arbitrarily deep) renders, not just a single level.
+  const foldersByParent = new Map<string | null, TestSuiteFolder[]>()
+  for (const f of [...contents.folders].sort((a, b) => a.sort_order - b.sort_order)) {
+    const key = f.parent_id ?? null
+    const arr = foldersByParent.get(key) ?? []
+    arr.push(f)
+    foldersByParent.set(key, arr)
+  }
+
+  const FOLDER_BASE = 12
+  const STEP = 14
+
+  const renderItem = (it: TestSuiteItem, indent: number) => (
+    <SuiteItemRow
+      key={it.id}
+      item={it}
+      indent={indent}
+      isRenaming={renamingItemId === it.id}
+      renameValue={renameItemValue}
+      renameRef={renameItemRef}
+      onRenameChange={onItemRenameChange}
+      onRenameSubmit={onItemRenameSubmit}
+      onRenameCancel={onItemRenameCancel}
+      onContextMenu={(e) => onItemContextMenu(it, e)}
+      onMove={onItemMove}
+      onRemove={() => onRemoveItem(it.id)}
+    />
+  )
+
+  // Recursively render a folder, its child folders, then its items. Cycle-safe
+  // via the `seen` set (a corrupt parent loop can't blow the stack).
+  const renderFolder = (
+    folder: TestSuiteFolder,
+    depth: number,
+    seen: Set<string>,
+  ): React.ReactNode => {
+    if (seen.has(folder.id)) return null
+    const nextSeen = new Set(seen).add(folder.id)
+    const collapsed = collapsedFolders[folder.id] ?? false
+    const items = itemsByFolder.get(folder.id) ?? []
+    const childFolders = foldersByParent.get(folder.id) ?? []
+    return (
+      <div key={folder.id}>
+        <div
+          className="group flex cursor-pointer items-center gap-1.5 py-[3px] pr-3"
+          style={{ color: 'var(--muted)', paddingLeft: FOLDER_BASE + depth * STEP }}
+          onClick={() => setCollapsedFolders((s) => ({ ...s, [folder.id]: !collapsed }))}
+        >
+          <span style={{ flexShrink: 0 }}>
+            {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+          </span>
+          <FolderOpen size={12} style={{ color: 'var(--hint)', flexShrink: 0 }} />
+          <span className="flex-1 truncate" style={{ fontSize: 13, fontWeight: 500 }}>
+            {folder.name}
+          </span>
+          {/* Folder auth + cascade scripts (imported setup/teardown lands here). */}
+          <button
+            type="button"
+            title="Folder settings (auth + scripts)"
+            className="flex-shrink-0 opacity-0 group-hover:opacity-100"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              padding: 0,
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setSettingsFolder({ id: folder.id, name: folder.name })
+            }}
+          >
+            <Settings size={12} />
+          </button>
+        </div>
+        {!collapsed && (
+          <>
+            {childFolders.map((cf) => renderFolder(cf, depth + 1, nextSeen))}
+            {items.map((it) => renderItem(it, FOLDER_BASE + (depth + 1) * STEP + 6))}
+          </>
+        )}
+      </div>
+    )
+  }
+
+  const topFolders = foldersByParent.get(null) ?? []
   const rootItems = itemsByFolder.get(null) ?? []
 
   return (
     <>
-      {topFolders.map((folder) => {
-        const collapsed = collapsedFolders[folder.id] ?? false
-        const items = itemsByFolder.get(folder.id) ?? []
-        return (
-          <div key={folder.id}>
-            <div
-              className="flex cursor-pointer items-center gap-1.5 py-[3px] pl-8 pr-3"
-              onClick={() => setCollapsedFolders((s) => ({ ...s, [folder.id]: !collapsed }))}
-              style={{ color: 'var(--muted)' }}
-            >
-              <span style={{ flexShrink: 0 }}>
-                {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
-              </span>
-              <FolderOpen size={12} style={{ color: 'var(--hint)', flexShrink: 0 }} />
-              <span className="truncate" style={{ fontSize: 13, fontWeight: 500 }}>
-                {folder.name}
-              </span>
-            </div>
-            {!collapsed &&
-              items.map((it) => (
-                <SuiteItemRow
-                  key={it.id}
-                  item={it}
-                  indent={20}
-                  isRenaming={renamingItemId === it.id}
-                  renameValue={renameItemValue}
-                  renameRef={renameItemRef}
-                  onRenameChange={onItemRenameChange}
-                  onRenameSubmit={onItemRenameSubmit}
-                  onRenameCancel={onItemRenameCancel}
-                  onContextMenu={(e) => onItemContextMenu(it, e)}
-                  onMove={onItemMove}
-                  onRemove={() => onRemoveItem(it.id)}
-                />
-              ))}
-          </div>
-        )
-      })}
-
-      {rootItems.map((it) => (
-        <SuiteItemRow
-          key={it.id}
-          item={it}
-          indent={10}
-          isRenaming={renamingItemId === it.id}
-          renameValue={renameItemValue}
-          renameRef={renameItemRef}
-          onRenameChange={onItemRenameChange}
-          onRenameSubmit={onItemRenameSubmit}
-          onRenameCancel={onItemRenameCancel}
-          onContextMenu={(e) => onItemContextMenu(it, e)}
-          onMove={onItemMove}
-          onRemove={() => onRemoveItem(it.id)}
+      {topFolders.map((folder) => renderFolder(folder, 0, new Set()))}
+      {rootItems.map((it) => renderItem(it, 10))}
+      {settingsFolder && (
+        <FolderSettingsModal
+          open
+          folderId={settingsFolder.id}
+          folderName={settingsFolder.name}
+          loadRow={loadFolderSettings}
+          saveSettings={saveFolderSettings}
+          onClose={() => setSettingsFolder(null)}
         />
-      ))}
+      )}
     </>
   )
 }

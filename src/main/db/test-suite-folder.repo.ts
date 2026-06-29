@@ -7,6 +7,12 @@ export interface TestSuiteFolderRow {
   parent_id: string | null
   name: string
   sort_order: number
+  /** JSON AuthConfig or null. 'inherit'/null is transparent up the chain. */
+  auth: string | null
+  /** Folder-level pre-request script (cascades project → folder(s) → request). */
+  pre_script: string | null
+  /** Folder-level post-response/test script. */
+  post_script: string | null
   created_at: number
 }
 
@@ -54,6 +60,26 @@ export function createFolder(input: {
      VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(id, input.suite_id, input.parent_id ?? null, input.name, nextSort, now)
   return getFolderById(id)!
+}
+
+// ─── Settings (auth + scripts) ──────────────────────────────
+
+/**
+ * Update a suite folder's auth/script settings. Pass `null` to clear a field
+ * (auth 'inherit' is stored as NULL so the folder stays transparent up the
+ * chain). Mirrors the APIs `folders` update path used by FolderSettingsModal.
+ */
+export function updateFolderSettings(
+  id: string,
+  settings: { auth?: string | null; pre_script?: string | null; post_script?: string | null },
+): TestSuiteFolderRow | undefined {
+  const db = getDb()
+  const existing = getFolderById(id)
+  if (!existing) return undefined
+  db.prepare(
+    'UPDATE test_suite_folders SET auth = ?, pre_script = ?, post_script = ? WHERE id = ?',
+  ).run(settings.auth ?? null, settings.pre_script ?? null, settings.post_script ?? null, id)
+  return getFolderById(id)
 }
 
 // ─── Rename ─────────────────────────────────────────────────

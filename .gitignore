@@ -68,3 +68,12 @@ resources/curl/
 
 # Local scratchpad notes (commit only if explicitly intended).
 todo_for_enterprise.md
+
+# Local-only cross-check artifacts — never committed (R1, second line of
+# defence for the "real customer YAML never enters the public repo" rule).
+# `apiops-real-import.test.ts` reads the customer's real Insomnia export
+# (live secrets + a machine-specific path); the committed CI equivalent is the
+# secret-free `suite-import-run-e2e.test.ts`. `bintest.cjs` is a throwaway
+# HTTP/base64 scratch from an unrelated debug session.
+tests/main/handlers/apiops-real-import.test.ts
+bintest.cjs

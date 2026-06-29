@@ -4,20 +4,44 @@ import { useEnvironmentStore } from './environment.store'
 import { useBranchStore } from './branch.store'
 import { useTabsStore } from './tabs.store'
 import { useConsoleStore } from './console.store'
+import { loadJson, saveJson } from '../lib/persist-helpers'
+
+interface ProjectTabSnapshot {
+  tabs: Tab[]
+  activeTabId: string | null
+}
 
 /**
  * Per-project open-tab snapshots (issue #1). Each project keeps its own set of
  * open tabs so switching projects no longer wipes them — the previous project's
- * tabs are stashed here and restored when you switch back. Module-level (not
- * persisted): it's session state, and only the active project's tabs round-trip
- * through the tabs store's own localStorage.
+ * tabs are stashed here and restored when you switch back.
+ *
+ * Persisted across app restarts (relaunch tab-loss fix): the map used to be
+ * in-memory only, so on boot it was empty and the FIRST `setActiveProject`
+ * restored an empty set via `replaceAllTabs([], …)`, wiping the tabs the user
+ * had open. We now seed the map from localStorage on load and re-persist on
+ * every mutation, so opening a project after a relaunch restores its tabs.
  */
-const tabsByProject = new Map<string, { tabs: Tab[]; activeTabId: string | null }>()
+const TABS_BY_PROJECT_KEY = 'testnizer-tabs-by-project'
+
+const tabsByProject = new Map<string, ProjectTabSnapshot>(
+  Object.entries(loadJson<Record<string, ProjectTabSnapshot>>(TABS_BY_PROJECT_KEY) ?? {}),
+)
+
+function persistTabsByProject(): void {
+  saveJson(TABS_BY_PROJECT_KEY, Object.fromEntries(tabsByProject))
+}
 
 function snapshotProjectTabs(projectId: string | null): void {
   if (!projectId) return
   const ts = useTabsStore.getState()
-  tabsByProject.set(projectId, { tabs: ts.tabs, activeTabId: ts.activeTabId })
+  // Drop `isLoading` so a tab mid-flight at shutdown doesn't return stuck in a
+  // spinner — same normalisation the tabs store applies to its own snapshot.
+  tabsByProject.set(projectId, {
+    tabs: ts.tabs.map((t) => ({ ...t, isLoading: false })),
+    activeTabId: ts.activeTabId,
+  })
+  persistTabsByProject()
 }
 
 /**
@@ -287,6 +311,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // A different workspace has its own projects — reset the open-project
       // header tabs + their cached tab sets (#1).
       tabsByProject.clear()
+      persistTabsByProject()
       set({ openProjectIds: [] })
     }
     set({ activeWorkspaceId: id, activeProjectId: null })
@@ -294,11 +319,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setActiveProject: async (id) => {
     const prevId = get().activeProjectId
-    // Per-project tabs (#1): instead of wiping tabs on switch, stash the
-    // leaving project's tabs and restore the incoming project's. Console +
-    // pending-conflict are still cleared (they're scoped to the old project).
+    // Per-project tabs (#1): instead of wiping tabs on switch we restore the
+    // incoming project's set. The leaving project's snapshot is kept current by
+    // the tabs→localStorage subscription at the bottom of this file (it fires on
+    // every tab change while a project is active), so no explicit stash is
+    // needed here. Console + pending-conflict are scoped to the old project.
     if (prevId && prevId !== id) {
-      snapshotProjectTabs(prevId)
       useConsoleStore.getState().clear()
       useBranchStore.getState().clearPendingConflict()
     }
@@ -485,13 +511,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }
       // The project is gone — drop its open header tab + cached tabs (#1).
       tabsByProject.delete(id)
+      persistTabsByProject()
       set((s) => ({ openProjectIds: s.openProjectIds.filter((p) => p !== id) }))
       // If we just deleted the project we were viewing, drop all
       // project-scoped state (tabs / console / branch) so the UI stops
       // rendering against a dead row.
       if (get().activeProjectId === id) {
+        // Null activeProjectId BEFORE resetProjectScopedState (its closeAllTabs
+        // fires the snapshot subscription) so the deleted project isn't
+        // re-persisted with an empty tab set.
+        set({ activeProjectId: null })
         resetProjectScopedState()
-        set({ activeProjectId: null, treeData: emptyTree() })
+        set({ treeData: emptyTree() })
       }
     } catch {
       // IPC not available
@@ -499,15 +530,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   goHome: () => {
-    // Stash the current project's tabs so returning to it restores them (#1),
-    // and clear the tab view while Home (ProjectHome) is shown.
-    snapshotProjectTabs(get().activeProjectId)
-    useTabsStore.getState().replaceAllTabs([], null)
+    // The current project's tabs are already snapshotted live (subscription
+    // below). Drop activeProjectId FIRST so the empty `replaceAllTabs` that
+    // clears the view while Home (ProjectHome) is shown does NOT trip the
+    // subscription into overwriting the project's stored tabs with an empty set.
     set({ activeProjectId: null })
+    useTabsStore.getState().replaceAllTabs([], null)
   },
 
   closeProjectTab: (id) => {
     tabsByProject.delete(id)
+    persistTabsByProject()
     const wasActive = get().activeProjectId === id
     set((s) => ({ openProjectIds: s.openProjectIds.filter((p) => p !== id) }))
     if (wasActive) {
@@ -516,8 +549,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       if (next) {
         void get().setActiveProject(next)
       } else {
-        useTabsStore.getState().replaceAllTabs([], null)
+        // Null first, then clear the view — same ordering as goHome so the
+        // subscription doesn't re-snapshot the just-closed project.
         set({ activeProjectId: null })
+        useTabsStore.getState().replaceAllTabs([], null)
       }
     }
   },
@@ -535,3 +570,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ treeData: tree })
   },
 }))
+
+// Keep the ACTIVE project's snapshot live + persisted. `snapshotProjectTabs` is
+// otherwise only called when leaving a project; without this, closing the app
+// while a project is focused would persist a stale snapshot (or none, on first
+// open) and the just-opened/edited tabs would be lost on the next relaunch.
+// While on Home (no active project) there is nothing to snapshot — the empty
+// `replaceAllTabs([], null)` that drives Home must NOT overwrite a project's
+// stored tabs.
+useTabsStore.subscribe(() => {
+  const projectId = useWorkspaceStore.getState().activeProjectId
+  if (projectId) snapshotProjectTabs(projectId)
+})

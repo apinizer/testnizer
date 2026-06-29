@@ -402,6 +402,10 @@ const api = {
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuiteFolder:delete', id),
     move: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('testSuiteFolder:move', payload),
+    getSettings: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('testSuiteFolder:getSettings', id),
+    updateSettings: (id: string, settings: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('testSuiteFolder:updateSettings', id, settings),
   },
 
   // ─── Certificates ───────────────────────────────────────────
@@ -557,8 +561,10 @@ const api = {
       ipcRenderer.invoke('save:exportProject', projectId),
     exportFolder: (folderId: string): Promise<unknown> =>
       ipcRenderer.invoke('save:exportFolder', folderId),
-    exportTestSuite: (suiteId: string): Promise<unknown> =>
-      ipcRenderer.invoke('save:exportTestSuite', suiteId),
+    exportTestSuite: (
+      suiteId: string,
+      format?: 'testnizer' | 'postman' | 'insomnia',
+    ): Promise<unknown> => ipcRenderer.invoke('save:exportTestSuite', suiteId, format),
     importProject: (payload: { workspaceId: string; name?: string }): Promise<unknown> =>
       ipcRenderer.invoke('save:importProject', payload),
     importProjectFromContent: (payload: {

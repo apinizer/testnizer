@@ -916,12 +916,16 @@ const translations: Record<Locale, Record<string, string>> = {
 
     // Tests Panel (sidebar suite context menu & misc)
     'testsPanel.runSuite': 'Run Suite',
+    'testsPanel.quickRunSuite': 'Quick Run (skip config)',
     'testsPanel.newRequest': 'New Request',
     'testsPanel.newRequestDefaultName': 'New Request',
     'testsPanel.importEndpoints': 'Import endpoints from APIs…',
     'testsPanel.addEndpoints': 'Add Endpoints',
     'testsPanel.rename': 'Rename',
     'testsPanel.export': 'Export',
+    'testsPanel.exportTestnizer': 'Export (Testnizer)',
+    'testsPanel.exportPostman': 'Export as Postman v2.1',
+    'testsPanel.exportInsomnia': 'Export as Insomnia',
     'testsPanel.import': 'Import…',
     'testsPanel.duplicate': 'Duplicate',
     'testsPanel.delete': 'Delete',
@@ -2404,12 +2408,16 @@ const translations: Record<Locale, Record<string, string>> = {
 
     // Tests Panel (sidebar suite context menu & misc)
     'testsPanel.runSuite': 'Paketi Çalıştır',
+    'testsPanel.quickRunSuite': 'Hızlı Çalıştır (yapılandırmayı atla)',
     'testsPanel.newRequest': 'Yeni İstek',
     'testsPanel.newRequestDefaultName': 'Yeni İstek',
     'testsPanel.importEndpoints': "APIs'ten uç nokta içe aktar…",
     'testsPanel.addEndpoints': 'Uç Nokta Ekle',
     'testsPanel.rename': 'Yeniden Adlandır',
     'testsPanel.export': 'Dışa Aktar',
+    'testsPanel.exportTestnizer': 'Dışa Aktar (Testnizer)',
+    'testsPanel.exportPostman': 'Postman v2.1 olarak dışa aktar',
+    'testsPanel.exportInsomnia': 'Insomnia olarak dışa aktar',
     'testsPanel.import': 'İçe Aktar…',
     'testsPanel.duplicate': 'Çoğalt',
     'testsPanel.delete': 'Sil',

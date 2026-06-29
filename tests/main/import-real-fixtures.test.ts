@@ -65,7 +65,10 @@ function createFullSchema(db: Database.Database): void {
       project_id TEXT NOT NULL,
       parent_id TEXT,
       name TEXT NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      auth TEXT,
+      pre_script TEXT,
+      post_script TEXT
     );
     CREATE TABLE endpoints (
       id TEXT PRIMARY KEY,
@@ -140,6 +143,9 @@ function createFullSchema(db: Database.Database): void {
       parent_id TEXT,
       name TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      auth TEXT,
+      pre_script TEXT,
+      post_script TEXT,
       created_at INTEGER NOT NULL
     );
     CREATE TABLE test_suite_items (

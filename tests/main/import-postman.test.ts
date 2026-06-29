@@ -46,7 +46,10 @@ beforeEach(async () => {
       project_id TEXT NOT NULL,
       parent_id TEXT,
       name TEXT NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      auth TEXT,
+      pre_script TEXT,
+      post_script TEXT
     );
     CREATE TABLE endpoints (
       id TEXT PRIMARY KEY,
@@ -139,9 +142,7 @@ function buildRealisticCollection(): Record<string, unknown> {
               {
                 listen: 'test',
                 script: {
-                  exec: [
-                    'pm.test("status is 200", () => pm.response.to.have.status(200));',
-                  ],
+                  exec: ['pm.test("status is 200", () => pm.response.to.have.status(200));'],
                 },
               },
             ],
@@ -299,9 +300,11 @@ describe('importPostman — realistic v2.1 collection', () => {
     await importPostman('proj-1', JSON.stringify(collection))
 
     const create = JSON.parse(
-      (memDb
-        .prepare('SELECT request_schema FROM endpoints WHERE name = ?')
-        .get('Create Pet') as { request_schema: string }).request_schema,
+      (
+        memDb.prepare('SELECT request_schema FROM endpoints WHERE name = ?').get('Create Pet') as {
+          request_schema: string
+        }
+      ).request_schema,
     )
     expect(create.auth).toEqual({
       type: 'basic',
@@ -310,9 +313,11 @@ describe('importPostman — realistic v2.1 collection', () => {
 
     // List Pets has no per-request auth → falls back to collection-level bearer
     const list = JSON.parse(
-      (memDb
-        .prepare('SELECT request_schema FROM endpoints WHERE name = ?')
-        .get('List Pets') as { request_schema: string }).request_schema,
+      (
+        memDb.prepare('SELECT request_schema FROM endpoints WHERE name = ?').get('List Pets') as {
+          request_schema: string
+        }
+      ).request_schema,
     )
     expect(list.auth.type).toBe('bearer')
     expect((list.auth.bearer as { token: string }).token).toBe('{{collectionToken}}')
@@ -323,9 +328,11 @@ describe('importPostman — realistic v2.1 collection', () => {
     await importPostman('proj-1', JSON.stringify(collection))
 
     const list = JSON.parse(
-      (memDb
-        .prepare('SELECT request_schema FROM endpoints WHERE name = ?')
-        .get('List Pets') as { request_schema: string }).request_schema,
+      (
+        memDb.prepare('SELECT request_schema FROM endpoints WHERE name = ?').get('List Pets') as {
+          request_schema: string
+        }
+      ).request_schema,
     )
     expect(list.url).toContain('{{baseUrl}}')
     expect(list.url).toContain('{{apiVersion}}')
@@ -337,9 +344,11 @@ describe('importPostman — realistic v2.1 collection', () => {
 
     const get = (name: string) =>
       JSON.parse(
-        (memDb
-          .prepare('SELECT request_schema FROM endpoints WHERE name = ?')
-          .get(name) as { request_schema: string }).request_schema,
+        (
+          memDb.prepare('SELECT request_schema FROM endpoints WHERE name = ?').get(name) as {
+            request_schema: string
+          }
+        ).request_schema,
       )
 
     expect(get('Create Pet').body).toEqual({
@@ -413,9 +422,9 @@ describe('importPostman — folder-level auth inheritance', () => {
   const authOf = (name: string): Record<string, unknown> =>
     JSON.parse(
       (
-        memDb
-          .prepare('SELECT request_schema FROM endpoints WHERE name = ?')
-          .get(name) as { request_schema: string }
+        memDb.prepare('SELECT request_schema FROM endpoints WHERE name = ?').get(name) as {
+          request_schema: string
+        }
       ).request_schema,
     ).auth
 
@@ -441,7 +450,10 @@ describe('importPostman — placeholder item filter (B16)', () => {
     // collection had 6 real endpoints but the importer surfaced a 7th
     // "GET New Request" item with no URL — a Postman builder side-effect.
     const collection = {
-      info: { name: 'C', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+      info: {
+        name: 'C',
+        schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+      },
       item: [
         { name: 'A', request: { method: 'GET', url: 'https://api.example.com/a' } },
         { name: 'B', request: { method: 'POST', url: 'https://api.example.com/b' } },
@@ -452,9 +464,7 @@ describe('importPostman — placeholder item filter (B16)', () => {
     const result = await importPostman('proj-1', JSON.stringify(collection))
     expect(result.success).toBe(true)
     expect(result.endpointCount).toBe(2)
-    expect(result.warnings).toEqual(
-      expect.arrayContaining([expect.stringMatching(/placeholder/i)]),
-    )
+    expect(result.warnings).toEqual(expect.arrayContaining([expect.stringMatching(/placeholder/i)]))
   })
 
   it('keeps a real request whose name happens to be empty but URL is present', async () => {
@@ -463,10 +473,11 @@ describe('importPostman — placeholder item filter (B16)', () => {
     // name still imports — better to keep an oddly-named row than to silently
     // delete one a user authored.
     const collection = {
-      info: { name: 'C', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
-      item: [
-        { name: '', request: { method: 'GET', url: 'https://api.example.com/c' } },
-      ],
+      info: {
+        name: 'C',
+        schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+      },
+      item: [{ name: '', request: { method: 'GET', url: 'https://api.example.com/c' } }],
     }
     const result = await importPostman('proj-1', JSON.stringify(collection))
     expect(result.endpointCount).toBe(1)
@@ -515,7 +526,9 @@ describe('Postman round-trip: import → exportAsPostman → re-import', () => {
       event?: Array<{ listen: string; script: { exec: string[] } }>
       item?: Item[]
     }
-    const collectEvents = (items: Item[]): Array<{ listen: string; script: { exec: string[] } }> => {
+    const collectEvents = (
+      items: Item[],
+    ): Array<{ listen: string; script: { exec: string[] } }> => {
       const out: Array<{ listen: string; script: { exec: string[] } }> = []
       for (const it of items) {
         if (it.event) out.push(...it.event)
@@ -580,7 +593,9 @@ describe('Postman round-trip: import → exportAsPostman → re-import', () => {
 
     type Item = {
       name?: string
-      request?: { body?: { mode?: string; formdata?: Array<{ key?: string; type?: string; src?: string }> } }
+      request?: {
+        body?: { mode?: string; formdata?: Array<{ key?: string; type?: string; src?: string }> }
+      }
       item?: Item[]
     }
     const find = (items: Item[], name: string): Item | undefined => {
@@ -687,6 +702,44 @@ describe('importPostman — edge cases', () => {
     expect(folders[1].parent_id).not.toBeNull()
   })
 
+  it('persists folder-level pre/test scripts and auth into the folders table (cascade parity)', async () => {
+    // A Postman "Setup folder → token pre-request script → Bearer inherit"
+    // pattern. Before the parity fix the folder's event[] + auth were dropped on
+    // import, so a suite snapshot copied NULLs and the run lost its token → 401.
+    const withFolderMeta = {
+      info: {
+        name: 'Cascade',
+        schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+      },
+      item: [
+        {
+          name: 'Setup',
+          auth: { type: 'bearer', bearer: [{ key: 'token', value: '{{accessToken}}' }] },
+          event: [
+            { listen: 'prerequest', script: { exec: ["pm.environment.set('accessToken', '1')"] } },
+            { listen: 'test', script: { exec: ['pm.test("ok", () => {})'] } },
+          ],
+          item: [{ name: 'Login', request: { method: 'POST', url: 'https://x/login' } }],
+        },
+      ],
+    }
+    const result = await importPostman('proj-1', JSON.stringify(withFolderMeta))
+    expect(result.success).toBe(true)
+
+    const folder = memDb
+      .prepare(
+        'SELECT auth, pre_script, post_script FROM folders WHERE name = ? AND project_id = ?',
+      )
+      .get('Setup', 'proj-1') as {
+      auth: string | null
+      pre_script: string | null
+      post_script: string | null
+    }
+    expect(folder.pre_script).toContain("pm.environment.set('accessToken'")
+    expect(folder.post_script).toContain('pm.test')
+    expect(JSON.parse(folder.auth!).type).toBe('bearer')
+  })
+
   it('handles requests without a name (falls back to METHOD path)', async () => {
     const noname = {
       info: {
@@ -703,9 +756,9 @@ describe('importPostman — edge cases', () => {
     }
     const result = await importPostman('proj-1', JSON.stringify(noname))
     expect(result.success).toBe(true)
-    const ep = memDb
-      .prepare('SELECT name FROM endpoints WHERE project_id = ?')
-      .get('proj-1') as { name: string }
+    const ep = memDb.prepare('SELECT name FROM endpoints WHERE project_id = ?').get('proj-1') as {
+      name: string
+    }
     // falls back to "GET /widgets"
     expect(ep.name).toMatch(/^GET\s+\/widgets/)
   })
@@ -764,9 +817,11 @@ describe('importPostman — edge cases', () => {
     const result = await importPostman('proj-1', JSON.stringify(withVars))
     expect(result.success).toBe(true)
     const ep = JSON.parse(
-      (memDb
-        .prepare('SELECT request_schema FROM endpoints WHERE project_id = ?')
-        .get('proj-1') as { request_schema: string }).request_schema,
+      (
+        memDb
+          .prepare('SELECT request_schema FROM endpoints WHERE project_id = ?')
+          .get('proj-1') as { request_schema: string }
+      ).request_schema,
     )
     expect(ep.url).toBe('{{baseUrl}}/users/{{userId}}/posts')
   })

@@ -326,18 +326,28 @@ function suiteItemToEndpoint(item: tsiRepo.TestSuiteItemRow): endpointRepo.Endpo
   }
 }
 
+/** Which table a runnable id resolved from — drives folder-chain table choice. */
+type RunnableKind = 'endpoint' | 'saved' | 'suite'
+
+interface RunnableEntity {
+  row: endpointRepo.EndpointRow
+  kind: RunnableKind
+}
+
 /**
  * Look up a runnable entity by ID — supports imported endpoints, manually
  * saved requests, and test-suite items (each item is a fully-snapshotted
- * request and is the source of truth for suite runs).
+ * request and is the source of truth for suite runs). The `kind` tells the
+ * caller which folder table the row's `folder_id` belongs to: suite items
+ * reference `test_suite_folders`, everything else references `folders`.
  */
-function getRunnableEntity(id: string): endpointRepo.EndpointRow | undefined {
+function getRunnableEntity(id: string): RunnableEntity | undefined {
   const endpoint = endpointRepo.getEndpointById(id)
-  if (endpoint) return endpoint
+  if (endpoint) return { row: endpoint, kind: 'endpoint' }
   const saved = endpointRepo.getSavedRequestById(id)
-  if (saved) return savedRequestToEndpoint(saved)
+  if (saved) return { row: savedRequestToEndpoint(saved), kind: 'saved' }
   const suiteItem = tsiRepo.getItemById(id)
-  if (suiteItem) return suiteItemToEndpoint(suiteItem)
+  if (suiteItem) return { row: suiteItemToEndpoint(suiteItem), kind: 'suite' }
   return undefined
 }
 
@@ -358,6 +368,49 @@ function buildFolderChain(folderId: string | null | undefined): FolderRow[] {
     if (!folder) break
     chain.unshift(folder)
     id = folder.parent_id
+  }
+  return chain
+}
+
+/**
+ * Suite-item variant of buildFolderChain: walks `test_suite_folders` instead of
+ * the APIs `folders` table so an imported collection's folder-level auth +
+ * pre/post scripts cascade at run time (project → folder(s) → request). Adapts
+ * each row to the FolderRow shape so it feeds the SAME resolveEffectiveAuth /
+ * collectCascadeScripts the APIs path uses. `project_id` is unused by those and
+ * filled with '' (test_suite_folders has no such column).
+ */
+function buildSuiteFolderChain(folderId: string | null | undefined): FolderRow[] {
+  if (!folderId) return []
+  const db = getDb()
+  const chain: FolderRow[] = []
+  const seen = new Set<string>()
+  let id: string | null = folderId
+  while (id && !seen.has(id)) {
+    seen.add(id)
+    const f = db.prepare('SELECT * FROM test_suite_folders WHERE id = ?').get(id) as
+      | {
+          id: string
+          parent_id: string | null
+          name: string
+          sort_order: number
+          auth?: string | null
+          pre_script?: string | null
+          post_script?: string | null
+        }
+      | undefined
+    if (!f) break
+    chain.unshift({
+      id: f.id,
+      project_id: '',
+      parent_id: f.parent_id,
+      name: f.name,
+      sort_order: f.sort_order,
+      auth: f.auth ?? null,
+      pre_script: f.pre_script ?? null,
+      post_script: f.post_script ?? null,
+    })
+    id = f.parent_id
   }
   return chain
 }
@@ -581,6 +634,12 @@ interface ScriptContext {
   envUpdates: Record<string, string>
   /** Global writes (pm.globals.set) — persisted to project globals, not the env. */
   globalUpdates: Record<string, string>
+  /** pm.variables.set writes. Visible to later requests IN THIS RUN (merged into
+   *  the shared envVars) but deliberately NOT persisted to the DB. This diverges
+   *  from stock Postman/Insomnia (where pm.variables is request-local) — kept on
+   *  purpose so a token set via variables.set survives across a suite run.
+   *  Empty-string value = unset. */
+  varUpdates: Record<string, string>
   iterationData: Record<string, string>
   iterationIndex: number
   iterationCount: number
@@ -608,6 +667,7 @@ function newScriptContext(
     envVars: { ...envVars },
     envUpdates: {},
     globalUpdates: {},
+    varUpdates: {},
     iterationData,
     iterationIndex,
     iterationCount,
@@ -716,19 +776,23 @@ async function runUserScript(
         toObject: () => ({ ...ctx.envVars }),
         replaceIn: (t: string) => substitute(t, ctx.envVars),
       },
-      // pm.variables.* are request-local / ephemeral (Postman semantics): they
-      // resolve within this run for convenience but are deliberately NOT routed
-      // into envUpdates, so "Keep variable values" never persists them.
+      // pm.variables.* route through a run-local `varUpdates` channel: they
+      // propagate to later requests WITHIN this run (merged into the shared
+      // envVars by mergeScriptUpdates) but are never written to the DB, so
+      // "Keep variable values" still won't persist them. This intentionally
+      // diverges from stock Postman/Insomnia (request-local) — see ScriptContext.
       variables: {
         get: (k: string) => ctx.envVars[k] ?? '',
         set: (k: string, v: unknown) => {
           ctx.envVars[k] = String(v)
+          ctx.varUpdates[k] = String(v)
         },
         has: (k: string) => k in ctx.envVars,
         unset: (k: string) => {
           delete ctx.envVars[k]
+          ctx.varUpdates[k] = ''
         },
-        clear: () => clearAll(),
+        clear: () => clearAll(ctx.varUpdates),
         toObject: () => ({ ...ctx.envVars }),
         replaceIn: (t: string) => substitute(t, ctx.envVars),
       },
@@ -1153,18 +1217,35 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   let failedEndpoints = 0
 
   try {
+    // Flow-control map (built once): request NAME → first index in the run list.
+    // pm.execution.setNextRequest(name) jumps to the first case-insensitive match.
+    const nameToIndex = new Map<string, number>()
+    options.endpointIds.forEach((id, idx) => {
+      const nm = (getRunnableEntity(id)?.row.name ?? '').trim().toLowerCase()
+      if (nm && !nameToIndex.has(nm)) nameToIndex.set(nm, idx)
+    })
+
     outer: for (let iter = 0; iter < iterations; iter++) {
+      // Bound jumps so a setNextRequest cycle can't hang the run.
+      let flowVisits = 0
+      const maxVisits = endpointsPerIteration * 10 + 50
       for (let j = 0; j < endpointsPerIteration; j++) {
         if (runState.shouldStop) break outer
+        if (++flowVisits > maxVisits) {
+          console.warn(
+            `[runner] flow-control visit budget (${maxVisits}) exhausted; stopping iteration ${iter + 1}`,
+          )
+          break
+        }
         // Linear position across all iterations (used for progress events).
         const i = iter * endpointsPerIteration + j
 
         // Endpoint id is keyed by the inner loop only — endpointIds has
         // `endpointsPerIteration` elements and is reused across iterations.
         const endpointId = options.endpointIds[j]
-        const endpoint = getRunnableEntity(endpointId)
+        const entity = getRunnableEntity(endpointId)
 
-        if (!endpoint) {
+        if (!entity) {
           const result: EndpointRunResult = {
             endpointId,
             endpointName: 'Unknown',
@@ -1182,6 +1263,35 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
           }
           results.push(result)
           failedEndpoints++
+          sendProgress({ current: i + 1, total, endpointId, result })
+          continue
+        }
+        const endpoint = entity.row
+
+        // The collection runner drives requests through the HTTP engine. SOAP /
+        // GraphQL already ride that path (snapshot carries url + baked body), but
+        // gRPC / WebSocket / SSE / Socket.IO are genuinely non-HTTP. Surface a
+        // clear "unsupported" result (counted as skipped, so it neither fails the
+        // suite nor trips stopOnError) instead of a misleading "No URL".
+        const proto = (endpoint.protocol || 'http').toLowerCase()
+        const HTTP_LIKE = new Set(['http', 'https', 'rest', 'soap', 'graphql', ''])
+        if (!HTTP_LIKE.has(proto)) {
+          const result: EndpointRunResult = {
+            endpointId,
+            endpointName: endpoint.name,
+            method: endpoint.method ?? '',
+            url: endpoint.path,
+            status: null,
+            statusText: 'UNSUPPORTED',
+            duration: 0,
+            passed: 0,
+            failed: 0,
+            skipped: 1,
+            assertions: [],
+            error: `Protocol "${proto}" is not supported in the collection runner yet`,
+            iteration: iter + 1,
+          }
+          results.push(result)
           sendProgress({ current: i + 1, total, endpointId, result })
           continue
         }
@@ -1212,7 +1322,13 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
 
         try {
           // Resolve inherited auth + cascade scripts up the folder/project chain.
-          const folderChain = buildFolderChain(endpoint.folder_id)
+          // Suite items live under test_suite_folders; everything else under the
+          // APIs `folders` table — pick the matching walker so folder-level
+          // setup/teardown scripts + auth cascade for imported suites too.
+          const folderChain =
+            entity.kind === 'suite'
+              ? buildSuiteFolderChain(endpoint.folder_id)
+              : buildFolderChain(endpoint.folder_id)
           const schemaForScripts = parseJsonSafe<{
             preScript?: string
             postScript?: string
@@ -1244,6 +1360,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
           for (const s of preScripts) {
             scriptCtx.envUpdates = {}
             scriptCtx.globalUpdates = {}
+            scriptCtx.varUpdates = {}
             await runUserScript(s, scriptCtx, null)
             mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
           }
@@ -1272,6 +1389,11 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
 
           // Resolve environment variables in request
           const resolvedOptions = resolveRequestOptions(requestOptions, envVars)
+          // Scope the cookie jar to this project so session cookies (login →
+          // protected call) behave the same in Run as they do in Send. Without
+          // it the engine falls back to the shared "_default" jar (issue: Send
+          // OK / Run 401 on cookie-auth flows).
+          resolvedOptions.projectId = options.projectId
           const response = await executeHttpRequest(resolvedOptions)
 
           // Run post-response (test) scripts in cascade order (project →
@@ -1281,6 +1403,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
           for (const s of postScripts) {
             scriptCtx.envUpdates = {}
             scriptCtx.globalUpdates = {}
+            scriptCtx.varUpdates = {}
             await runUserScript(s, scriptCtx, {
               status: response.status,
               statusText: response.statusText,
@@ -1446,6 +1569,24 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
           results.push(result)
           sendProgress({ current: i + 1, total, endpointId, result })
 
+          // Flow control: honour pm.execution.setNextRequest(name|null) from this
+          // request's scripts. null = stop this iteration; a name = jump to that
+          // request (first case-insensitive match); unknown name = warn + continue
+          // linearly. The visit budget above guards against cycles. (skipRequest +
+          // setNextRequest combos aren't honoured — skip short-circuits earlier.)
+          const nextName = scriptCtx.nextRequestName
+          if (nextName === null) break
+          if (typeof nextName === 'string' && nextName.trim()) {
+            const target = nameToIndex.get(nextName.trim().toLowerCase())
+            if (target == null) {
+              console.warn(
+                `[runner] setNextRequest("${nextName}") — no request with that name; continuing linearly`,
+              )
+            } else {
+              j = target - 1 // the for-loop's j++ lands execution on `target`
+            }
+          }
+
           if (stopOnError && !endpointPassed) break outer
         } catch (e) {
           const result: EndpointRunResult = {
@@ -1569,6 +1710,13 @@ function mergeScriptUpdates(
   for (const [k, v] of Object.entries(ctx.globalUpdates)) {
     envVars[k] = v
     runGlobalUpdates[k] = v
+  }
+  // varUpdates (pm.variables.set) propagate within the run only — into the
+  // shared envVars so later requests resolve them, but NOT into runEnvUpdates,
+  // so they never reach persistRunVariableUpdates / the DB.
+  for (const [k, v] of Object.entries(ctx.varUpdates)) {
+    if (v === '') delete envVars[k]
+    else envVars[k] = v
   }
 }
 
