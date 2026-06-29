@@ -11,6 +11,50 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.32
+
+**İçe aktarılan test suite'leri artık uçtan uca çalışıyor, açık sekmeleriniz
+uygulama yeniden başlatıldığında korunuyor ve REST tezgâhı bir cila turu
+geçiriyor.** On beş bildirilen sorunu kapatır.
+
+**Test Suite'leri.** Bir OpenAPI / Postman / Insomnia koleksiyonunu test suite
+olarak içe aktarmak artık iç içe klasörleri ve auth + pre/post script cascade'ini
+koruyor; böylece bir klasör bearer token'ı veya setup script'i miras alan bir
+istek, kaynak araçtaki gibi çalışıyor — 401 ya da "proxy not found" ile başarısız
+olmuyor — ve bir Setup adımında türetilen değişkenler sonraki isteklere akıyor.
+Bir suite klasörünü ağaçtan doğrudan Quick Run ile çalıştırabilir, bir klasörün
+auth ve cascade script'lerini ayarlar penceresinden düzenleyebilirsiniz; düzenlenip
+kaydedilmemiş bir istek, runner çalıştırmadan önce kaydediliyor (hem yapılandırılmış
+çalıştırma hem Quick Run yolunda). Suite'ler ayrıca native formatın yanı sıra
+Postman v2.1 ve Insomnia v4 JSON olarak dışa aktarılıyor.
+
+**İstek tezgâhı.** Açık olan sekmeleriniz — ve içlerindeki istek değerleri —
+uygulamayı yeniden açtığınızda geri yükleniyor; ilk proje açılışında siliniyorlardı
+çünkü proje-başına sekme önbelleği önyüklemede boş başlıyordu, artık başlatmalar
+arasında kalıcı (#31). Yanıt sekme şeridi artık hayalet bir dikey scrollbar
+göstermiyor (#34). İstek sekmesi, yanıt paneli gibi accent rengini ve alt çizgiyi
+kullanıyor ve iki panelin seçili sekmeleri hizalanıyor (#32, #33), yanıt Headers
+kolonları istek tablosuyla eşleşecek şekilde Key / Value okunuyor (#35), URL çubuğu
+method seçici ve adresi font boyutuyla ölçekleniyor (#38), Query Params ve Headers
+tablo kolonları yeniden boyutlandırılabilir (#36, #37), tek tıkla APIs ağacındaki
+her klasör açılıp kapanıyor (#39), bir API'yi yeniden adlandırmak açık sekme
+başlığını anında güncelliyor (#40), Ctrl+S açık bir endpoint sekmesini Save As
+açmadan yerinde kaydediyor (#41) ve boş satır placeholder'ları artık kolon
+başlıkları gibi vurgulanmıyor (#42).
+
+**İstekler & runner.** Bir pre-request script'ten yazılan değer (ör. türetilmiş
+bir `ApiProxyName`) sonraki istekler için korunuyor, böylece policy istekleri
+"proxy not found" ile başarısız olmayı bırakıyor (#29). Geçen bir `pm.test` ile
+2xx olmayan bir yanıt (ör. `oneOf([200, 400])` doğrulayan bir DELETE) Failed değil
+Passed olarak raporlanıyor (#30). İçe aktarma penceresinde bir OpenAPI / Postman /
+Insomnia spec'ini doğrudan panodan yapıştırabilirsiniz (#28).
+
+**Araçlar.** Text Diff sonucu, sonuç-içi bir arama çubuğu (eşleşme vurgulamalı
+Ctrl/Cmd+F) ve önceki / sonraki fark düğmeleri kazanıyor.
+
+1.4.30 x64 yükleyicisinin kurulum sırasında çökmesi (#27) ayrı bir Windows
+paketleme araştırmasıdır ve bu derlemede ele alınmamıştır.
+
 ## v1.4.31
 
 **UX cilası ve güvenilirlik sürümü — kaydedilmemiş düzenlemeleriniz yerinde

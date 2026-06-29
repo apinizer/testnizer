@@ -10,6 +10,49 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.32
+
+**Imported test suites now run end-to-end, your open tabs survive an app
+restart, and the REST workbench gets a polish pass.** Closes fifteen reported
+issues.
+
+**Test Suites.** Importing an OpenAPI / Postman / Insomnia collection as a test
+suite now preserves nested folders and the auth + pre/post script cascade, so a
+request inheriting a folder bearer token or a setup script runs as it did in the
+source tool instead of failing with a 401 or "proxy not found" — and variables
+derived in a Setup step flow through to later requests. You can run a suite folder
+straight from the tree with Quick Run, edit a folder's auth and cascade scripts
+from a settings dialog, and a request edited but not saved is flushed before the
+runner executes it (both the configured-run and Quick Run paths). Suites also
+export to Postman v2.1 and Insomnia v4 JSON, not just the native format.
+
+**Request workbench.** The tabs you had open — and the request values inside
+them — are restored when you reopen the app; they were being wiped on the first
+project open because the per-project tab cache started empty on boot, and it now
+persists across launches (#31). The response tab strip no longer shows a phantom
+vertical scrollbar (#34). The request tab uses the accent colour and underline
+like the response pane and the two panes' selected tabs line up (#32, #33), the
+response Headers columns read Key / Value to match the request table (#35), the
+URL bar method selector and address scale with the font size (#38), the Query
+Params and Headers table columns are resizable (#36, #37), one click collapses or
+expands every folder in the APIs tree (#39), renaming an API updates its open tab
+title immediately (#40), Ctrl+S saves an open endpoint tab in place instead of
+popping Save As (#41), and empty-row placeholders are no longer emphasised like
+column headers (#42).
+
+**Requests & runner.** A value written from a pre-request script (e.g. a derived
+`ApiProxyName`) is kept for the requests that follow, so policy requests stop
+failing with "proxy not found" (#29). A non-2xx response with a passing `pm.test`
+(e.g. a DELETE asserting `oneOf([200, 400])`) is reported as Passed, not Failed
+(#30). You can paste an OpenAPI / Postman / Insomnia spec straight from the
+clipboard in the import dialog (#28).
+
+**Tools.** The Text Diff result gains an in-result find bar (Ctrl/Cmd+F with
+match highlighting) and previous / next difference buttons.
+
+The 1.4.30 x64 installer crash during setup (#27) is a separate Windows packaging
+investigation and is not covered by this build.
+
 ## v1.4.31
 
 **A UX-polish and reliability release — your unsaved edits stay put, the tab
