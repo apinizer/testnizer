@@ -79,6 +79,13 @@ interface OpenApiRoundtripMeta {
   parameters?: Record<string, { required?: boolean; type?: string }>
   /** Original requestBody content keyed by media type — used to round-trip xml/html. */
   requestBodyContent?: Record<string, string>
+  /**
+   * Named `examples` keyed by media type → example name → value. OpenAPI lets a
+   * requestBody carry multiple named examples; the body editor only surfaces one,
+   * so we stash the full set here to round-trip them back to `examples` on export
+   * instead of silently dropping all but the first (B-08).
+   */
+  requestBodyExamples?: Record<string, Record<string, unknown>>
 }
 
 interface OpenApiSecurityScheme {
@@ -889,12 +896,30 @@ async function importOpenApi(
           }
         }
         const requestBodyContent: Record<string, string> = {}
+        const requestBodyExamples: Record<string, Record<string, unknown>> = {}
         if (operation.requestBody?.content) {
           for (const [mt, entry] of Object.entries(operation.requestBody.content)) {
-            const e = entry as { example?: unknown }
+            const e = entry as {
+              example?: unknown
+              examples?: Record<string, { value?: unknown }>
+            }
             if (e.example !== undefined) {
               requestBodyContent[mt] =
                 typeof e.example === 'string' ? e.example : JSON.stringify(e.example, null, 2)
+            } else if (e.examples) {
+              // Plural named `examples` — keep EVERY entry so the exporter can
+              // round-trip them back to `examples`, and seed requestBodyContent
+              // from the first so non-JSON (xml/html) bodies retain a payload (B-08).
+              const named: Record<string, unknown> = {}
+              for (const [exName, exVal] of Object.entries(e.examples)) {
+                if (exVal?.value !== undefined) named[exName] = exVal.value
+              }
+              if (Object.keys(named).length > 0) {
+                requestBodyExamples[mt] = named
+                const firstVal = Object.values(named)[0]
+                requestBodyContent[mt] =
+                  typeof firstVal === 'string' ? firstVal : JSON.stringify(firstVal, null, 2)
+              }
             }
           }
         }
@@ -905,6 +930,8 @@ async function importOpenApi(
           parameters: Object.keys(paramMeta).length > 0 ? paramMeta : undefined,
           requestBodyContent:
             Object.keys(requestBodyContent).length > 0 ? requestBodyContent : undefined,
+          requestBodyExamples:
+            Object.keys(requestBodyExamples).length > 0 ? requestBodyExamples : undefined,
         }
 
         // Build request_schema in app's expected format
@@ -1241,8 +1268,21 @@ function exportProjectAsOpenApi(projectId: string): string {
             },
           }
         } else if (exampleObj !== undefined) {
-          operation.requestBody = {
-            content: { [mediaType]: { example: exampleObj } },
+          // When the import captured multiple named `examples`, round-trip the
+          // whole set — refreshing the first entry from the (possibly edited)
+          // body content so user edits aren't lost — instead of collapsing to a
+          // single `example` and dropping the rest (B-08).
+          const namedExamples = openApiMeta?.requestBodyExamples?.[mediaType]
+          if (namedExamples && Object.keys(namedExamples).length > 0) {
+            const examples = Object.fromEntries(
+              Object.entries(namedExamples).map(([name, value], i) => [
+                name,
+                { value: i === 0 ? exampleObj : value },
+              ]),
+            )
+            operation.requestBody = { content: { [mediaType]: { examples } } }
+          } else {
+            operation.requestBody = { content: { [mediaType]: { example: exampleObj } } }
           }
         }
       }
@@ -1846,12 +1886,31 @@ export async function importPostman(
       const isFolder = Array.isArray(item.item) && !item.request
       if (isFolder) {
         const folderId = randomUUID()
+        // Folder-level cascade metadata — mirror the Insomnia v5 importer so a
+        // Postman "Setup folder → token pre-request script → Bearer inherit"
+        // pattern survives import. Without persisting these, the folder's
+        // scripts/auth were dropped, the suite snapshot copied NULLs into
+        // test_suite_folders, and the run lost the token step → 401 (the exact
+        // parity gap Insomnia already closed).
+        const folderScripts = extractPostmanEventScripts(item.event)
+        const folderAuthUi = mapPostmanAuthToUi(item.auth)
         db.prepare(
-          `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
-        ).run(folderId, projectId, parentFolderId, item.name || 'Folder', folderCount)
+          `INSERT INTO folders (id, project_id, parent_id, name, sort_order, auth, pre_script, post_script)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          folderId,
+          projectId,
+          parentFolderId,
+          item.name || 'Folder',
+          folderCount,
+          folderAuthUi ? JSON.stringify(folderAuthUi) : null,
+          folderScripts.preScript ?? null,
+          folderScripts.postScript ?? null,
+        )
         folderCount++
-        // A folder's own auth overrides the inherited one for its whole subtree;
-        // absent a block, inheritance flows straight through.
+        // A folder's own auth also overrides the inherited one for its whole
+        // subtree on the API-tree send path (which bakes auth onto each child
+        // request); absent a block, inheritance flows straight through.
         const childAuth = item.auth ?? inheritedAuth
         processItems(item.item ?? [], folderId, childAuth)
         continue
@@ -2279,36 +2338,113 @@ function authToPostman(auth: UiRequestSchema['auth']): PostmanAuth | undefined {
   }
 }
 
-export function exportAsPostman(projectId: string): string {
-  const db = getDb()
+// ─── Shared export row shapes ──────────────────────────────────
+// Both project endpoints and test-suite items export through the same
+// collection / Insomnia builders. Suite items keep their request URL in `url`
+// rather than `path`, so the suite wrappers map onto this shape.
+interface ExportFolderRow {
+  id: string
+  parent_id: string | null
+  name: string
+  /** Suite folders carry cascade auth/scripts; project folders pass these undefined. */
+  auth?: string | null
+  pre_script?: string | null
+  post_script?: string | null
+}
 
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
-    | { name: string; description: string | null }
-    | undefined
+interface ExportEndpointRow {
+  id: string
+  folder_id: string | null
+  method: string | null
+  path: string
+  name: string
+  description: string | null
+  request_schema: string | null
+}
 
-  if (!project) throw new Error('Project not found')
+type PostmanScriptEvent = {
+  listen: 'prerequest' | 'test'
+  script: { type: string; exec: string[] }
+}
 
-  const folders = db
-    .prepare('SELECT * FROM folders WHERE project_id = ? ORDER BY sort_order ASC')
-    .all(projectId) as Array<{ id: string; parent_id: string | null; name: string }>
+/** Map a request schema's pre/post scripts onto Postman's event[]. */
+function scriptsToPostmanEvents(pre?: string | null, post?: string | null): PostmanScriptEvent[] {
+  const events: PostmanScriptEvent[] = []
+  if (pre && pre.trim()) {
+    events.push({
+      listen: 'prerequest',
+      script: { type: 'text/javascript', exec: pre.split('\n') },
+    })
+  }
+  if (post && post.trim()) {
+    events.push({ listen: 'test', script: { type: 'text/javascript', exec: post.split('\n') } })
+  }
+  return events
+}
 
-  const endpoints = db
-    .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
-    .all(projectId) as Array<{
-    id: string
-    folder_id: string | null
-    method: string | null
-    path: string
-    name: string
-    description: string | null
-    request_schema: string | null
-  }>
+/**
+ * Pick a project's variable source — its active environment, falling back to
+ * the first one created — and project it as Postman collection variables.
+ * Globals are intentionally excluded: they belong to a different scope and
+ * round-tripping them as collection-level vars would leak across collections.
+ */
+function collectPostmanVariables(
+  db: ReturnType<typeof getDb>,
+  projectId: string,
+): PostmanVariable[] | undefined {
+  const envRow =
+    (db
+      .prepare(
+        `SELECT id FROM environments WHERE project_id = ? AND is_active = 1
+         ORDER BY created_at ASC LIMIT 1`,
+      )
+      .get(projectId) as { id: string } | undefined) ??
+    (db
+      .prepare(
+        `SELECT id FROM environments WHERE project_id = ?
+         ORDER BY created_at ASC LIMIT 1`,
+      )
+      .get(projectId) as { id: string } | undefined)
+  if (!envRow) return undefined
+  const rows = db
+    .prepare(
+      `SELECT key, value FROM environment_variables WHERE environment_id = ?
+       ORDER BY rowid ASC`,
+    )
+    .all(envRow.id) as Array<{ key: string; value: string | null }>
+  if (rows.length === 0) return undefined
+  return rows.map((r) => ({ key: r.key, value: r.value ?? '', type: 'string' }))
+}
 
+/** Build a Postman v2.1 collection from folder + endpoint rows (shared by project & suite export). */
+function buildPostmanCollection(
+  name: string,
+  description: string | null,
+  folders: ExportFolderRow[],
+  endpoints: ExportEndpointRow[],
+  variables?: PostmanVariable[],
+): PostmanCollection {
+  type PostmanFolderNode = PostmanItem & {
+    auth?: ReturnType<typeof authToPostman>
+    event?: PostmanScriptEvent[]
+  }
   const folderMap = new Map<string, PostmanItem>()
   const rootItems: PostmanItem[] = []
 
   for (const folder of folders) {
-    folderMap.set(folder.id, { name: folder.name, item: [] })
+    const node: PostmanFolderNode = { name: folder.name, item: [] }
+    // Suite folders carry cascade auth/scripts → Postman folder-level auth + event.
+    if (folder.auth) {
+      try {
+        const a = authToPostman(JSON.parse(folder.auth) as UiRequestSchema['auth'])
+        if (a) node.auth = a
+      } catch {
+        /* malformed folder auth — skip rather than abort the export */
+      }
+    }
+    const fEvents = scriptsToPostmanEvents(folder.pre_script, folder.post_script)
+    if (fEvents.length > 0) node.event = fEvents
+    folderMap.set(folder.id, node)
   }
 
   for (const folder of folders) {
@@ -2354,24 +2490,9 @@ export function exportAsPostman(projectId: string): string {
     if (auth) item.request!.auth = auth
 
     // Pre-request and test scripts → Postman event[]
-    const events: Array<{
-      listen: 'prerequest' | 'test'
-      script: { type: string; exec: string[] }
-    }> = []
-    if (schema.preScript && schema.preScript.trim()) {
-      events.push({
-        listen: 'prerequest',
-        script: { type: 'text/javascript', exec: schema.preScript.split('\n') },
-      })
-    }
-    if (schema.postScript && schema.postScript.trim()) {
-      events.push({
-        listen: 'test',
-        script: { type: 'text/javascript', exec: schema.postScript.split('\n') },
-      })
-    }
+    const events = scriptsToPostmanEvents(schema.preScript, schema.postScript)
     if (events.length > 0) {
-      ;(item as PostmanItem & { event?: typeof events }).event = events
+      ;(item as PostmanItem & { event?: PostmanScriptEvent[] }).event = events
     }
 
     if (ep.folder_id && folderMap.has(ep.folder_id)) {
@@ -2381,51 +2502,92 @@ export function exportAsPostman(projectId: string): string {
     }
   }
 
-  // Pick the variable source: the project's active environment, falling back
-  // to the first one created. Globals are intentionally excluded — they belong
-  // to a different scope and round-tripping them as collection-level vars
-  // would leak across collections.
-  const envRow =
-    (db
-      .prepare(
-        `SELECT id FROM environments WHERE project_id = ? AND is_active = 1
-         ORDER BY created_at ASC LIMIT 1`,
-      )
-      .get(projectId) as { id: string } | undefined) ??
-    (db
-      .prepare(
-        `SELECT id FROM environments WHERE project_id = ?
-         ORDER BY created_at ASC LIMIT 1`,
-      )
-      .get(projectId) as { id: string } | undefined)
-
-  let variables: PostmanVariable[] | undefined
-  if (envRow) {
-    const rows = db
-      .prepare(
-        `SELECT key, value FROM environment_variables WHERE environment_id = ?
-         ORDER BY rowid ASC`,
-      )
-      .all(envRow.id) as Array<{ key: string; value: string | null }>
-    if (rows.length > 0) {
-      variables = rows.map((r) => ({
-        key: r.key,
-        value: r.value ?? '',
-        type: 'string',
-      }))
-    }
-  }
-
   const collection: PostmanCollection = {
     info: {
-      name: project.name,
-      description: project.description ?? undefined,
+      name,
+      description: description ?? undefined,
       schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
     },
     item: rootItems,
   }
   if (variables) collection.variable = variables
+  return collection
+}
 
+export function exportAsPostman(projectId: string): string {
+  const db = getDb()
+
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
+    | { name: string; description: string | null }
+    | undefined
+  if (!project) throw new Error('Project not found')
+
+  // Project folders don't surface cascade auth/scripts in the collection — keep
+  // the historical shape by selecting only id/parent_id/name.
+  const folders = db
+    .prepare('SELECT id, parent_id, name FROM folders WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as ExportFolderRow[]
+  const endpoints = db
+    .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as ExportEndpointRow[]
+
+  const collection = buildPostmanCollection(
+    project.name,
+    project.description ?? null,
+    folders,
+    endpoints,
+    collectPostmanVariables(db, projectId),
+  )
+  return JSON.stringify(collection, null, 2)
+}
+
+/**
+ * Export a test suite as a Postman v2.1 collection. Suite items carry their
+ * full request snapshot inline (url + request_schema), and suite folders carry
+ * cascade auth / pre / post scripts — both round-trip into the collection so the
+ * suite runs in Postman the way it does here.
+ */
+export function exportSuiteAsPostman(suiteId: string): string {
+  const db = getDb()
+
+  const suite = db.prepare('SELECT * FROM test_suites WHERE id = ?').get(suiteId) as
+    | { name: string; description: string | null; project_id: string }
+    | undefined
+  if (!suite) throw new Error('Test suite not found')
+
+  const folders = db
+    .prepare(
+      `SELECT id, parent_id, name, auth, pre_script, post_script
+       FROM test_suite_folders WHERE suite_id = ? ORDER BY sort_order ASC`,
+    )
+    .all(suiteId) as ExportFolderRow[]
+  const items = db
+    .prepare('SELECT * FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order ASC')
+    .all(suiteId) as Array<{
+    id: string
+    folder_id: string | null
+    method: string | null
+    url: string | null
+    name: string
+    request_schema: string | null
+  }>
+  const endpoints: ExportEndpointRow[] = items.map((it) => ({
+    id: it.id,
+    folder_id: it.folder_id,
+    method: it.method,
+    path: it.url ?? '',
+    name: it.name,
+    description: null,
+    request_schema: it.request_schema,
+  }))
+
+  const collection = buildPostmanCollection(
+    suite.name,
+    suite.description ?? null,
+    folders,
+    endpoints,
+    collectPostmanVariables(db, suite.project_id),
+  )
   return JSON.stringify(collection, null, 2)
 }
 
@@ -4126,39 +4288,22 @@ function authToInsomnia(auth: UiRequestSchema['auth']): InsomniaAuth | undefined
   }
 }
 
-export function exportAsInsomnia(projectId: string): string {
-  const db = getDb()
-
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
-    | { id: string; name: string; description: string | null }
-    | undefined
-  if (!project) throw new Error('Project not found')
-
-  const folders = db
-    .prepare('SELECT * FROM folders WHERE project_id = ? ORDER BY sort_order ASC')
-    .all(projectId) as Array<{ id: string; parent_id: string | null; name: string }>
-
-  const endpoints = db
-    .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
-    .all(projectId) as Array<{
-    id: string
-    folder_id: string | null
-    method: string | null
-    path: string
-    name: string
-    description: string | null
-    request_schema: string | null
-  }>
-
-  const workspaceId = `wrk_${project.id}`
+/** Build Insomnia v4 resources from folder + endpoint rows (shared by project & suite export). */
+function buildInsomniaResources(
+  workspaceId: string,
+  name: string,
+  description: string | null,
+  folders: ExportFolderRow[],
+  endpoints: ExportEndpointRow[],
+): InsomniaResource[] {
   const resources: InsomniaResource[] = []
 
   // Workspace root resource
   resources.push({
     _id: workspaceId,
     _type: 'workspace',
-    name: project.name,
-    description: project.description ?? undefined,
+    name,
+    description: description ?? undefined,
   })
 
   for (const folder of folders) {
@@ -4214,15 +4359,90 @@ export function exportAsInsomnia(projectId: string): string {
     resources.push(resource)
   }
 
-  const doc: InsomniaExport = {
+  return resources
+}
+
+function wrapInsomniaExport(resources: InsomniaResource[]): InsomniaExport {
+  return {
     __export_format: 4,
     __export_date: new Date().toISOString(),
     __export_source: 'testnizer',
     _type: 'export',
     resources,
   }
+}
 
-  return JSON.stringify(doc, null, 2)
+export function exportAsInsomnia(projectId: string): string {
+  const db = getDb()
+
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
+    | { id: string; name: string; description: string | null }
+    | undefined
+  if (!project) throw new Error('Project not found')
+
+  const folders = db
+    .prepare('SELECT id, parent_id, name FROM folders WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as ExportFolderRow[]
+  const endpoints = db
+    .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as ExportEndpointRow[]
+
+  const resources = buildInsomniaResources(
+    `wrk_${project.id}`,
+    project.name,
+    project.description ?? null,
+    folders,
+    endpoints,
+  )
+  return JSON.stringify(wrapInsomniaExport(resources), null, 2)
+}
+
+/**
+ * Export a test suite as an Insomnia v4 export document. Suite items carry their
+ * full request snapshot inline, so each becomes a `request` resource under the
+ * folder tree rebuilt from `test_suite_folders`.
+ */
+export function exportSuiteAsInsomnia(suiteId: string): string {
+  const db = getDb()
+
+  const suite = db.prepare('SELECT * FROM test_suites WHERE id = ?').get(suiteId) as
+    | { id: string; name: string; description: string | null }
+    | undefined
+  if (!suite) throw new Error('Test suite not found')
+
+  const folders = db
+    .prepare(
+      'SELECT id, parent_id, name FROM test_suite_folders WHERE suite_id = ? ORDER BY sort_order ASC',
+    )
+    .all(suiteId) as ExportFolderRow[]
+  const items = db
+    .prepare('SELECT * FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order ASC')
+    .all(suiteId) as Array<{
+    id: string
+    folder_id: string | null
+    method: string | null
+    url: string | null
+    name: string
+    request_schema: string | null
+  }>
+  const endpoints: ExportEndpointRow[] = items.map((it) => ({
+    id: it.id,
+    folder_id: it.folder_id,
+    method: it.method,
+    path: it.url ?? '',
+    name: it.name,
+    description: null,
+    request_schema: it.request_schema,
+  }))
+
+  const resources = buildInsomniaResources(
+    `wrk_${suite.id}`,
+    suite.name,
+    suite.description ?? null,
+    folders,
+    endpoints,
+  )
+  return JSON.stringify(wrapInsomniaExport(resources), null, 2)
 }
 
 /** Map Insomnia authentication onto the renderer's AuthConfig shape. */

@@ -21,11 +21,8 @@ vi.mock('../../src/main/db/database', () => ({
 }))
 
 // Import AFTER vi.mock so the handler picks up our mocked getDb.
-const {
-  detectTestSuiteImportFormat,
-  importTestSuiteFromFile,
-  exportTestSuiteData,
-} = await import('../../src/main/ipc/save.handler')
+const { detectTestSuiteImportFormat, importTestSuiteFromFile, exportTestSuiteData } =
+  await import('../../src/main/ipc/save.handler')
 
 function createSchema(db: Database.Database): void {
   db.exec(`
@@ -308,7 +305,11 @@ describe('importTestSuiteFromFile — Postman v2.1', () => {
           name: 'List pets',
           request: {
             method: 'GET',
-            url: { raw: 'https://api.example.com/pets', host: ['api', 'example', 'com'], path: ['pets'] },
+            url: {
+              raw: 'https://api.example.com/pets',
+              host: ['api', 'example', 'com'],
+              path: ['pets'],
+            },
             header: [],
           },
         },
@@ -316,7 +317,11 @@ describe('importTestSuiteFromFile — Postman v2.1', () => {
           name: 'Create pet',
           request: {
             method: 'POST',
-            url: { raw: 'https://api.example.com/pets', host: ['api', 'example', 'com'], path: ['pets'] },
+            url: {
+              raw: 'https://api.example.com/pets',
+              host: ['api', 'example', 'com'],
+              path: ['pets'],
+            },
             header: [{ key: 'Content-Type', value: 'application/json' }],
             body: { mode: 'raw', raw: '{"name":"rex"}', options: { raw: { language: 'json' } } },
           },
@@ -328,7 +333,11 @@ describe('importTestSuiteFromFile — Postman v2.1', () => {
               name: 'Get pet',
               request: {
                 method: 'GET',
-                url: { raw: 'https://api.example.com/pets/1', host: ['api', 'example', 'com'], path: ['pets', '1'] },
+                url: {
+                  raw: 'https://api.example.com/pets/1',
+                  host: ['api', 'example', 'com'],
+                  path: ['pets', '1'],
+                },
               },
             },
           ],
@@ -360,6 +369,56 @@ describe('importTestSuiteFromFile — Postman v2.1', () => {
       .prepare('SELECT name FROM test_suites WHERE id = ?')
       .get(out.suiteId) as { name: string }
     expect(suiteRow.name).toContain('PetStore')
+  })
+
+  it('carries folder-level scripts and auth into test_suite_folders (cascade parity with Insomnia)', async () => {
+    // The "Setup folder → token pre-request script → Bearer inherit" pattern —
+    // the Postman sibling of the Insomnia v5 cascade test below. importPostman
+    // now persists the folder's event[]/auth onto the folders table, and the
+    // suite snapshot copies them into test_suite_folders so the runner's
+    // cascade actually runs the token step. Before the fix these were NULL and
+    // a real Postman customer's suite would 401 on the first protected request.
+    const collection = {
+      info: {
+        name: 'TokenFlow',
+        schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+      },
+      item: [
+        {
+          name: 'Setup',
+          auth: { type: 'bearer', bearer: [{ key: 'token', value: '{{accessToken}}' }] },
+          event: [
+            {
+              listen: 'prerequest',
+              script: { exec: ["pm.environment.set('accessToken', 'tok')"] },
+            },
+            { listen: 'test', script: { exec: ['pm.test("ok", () => {})'] } },
+          ],
+          item: [
+            {
+              name: 'Login',
+              request: { method: 'POST', url: { raw: 'https://api.example.com/login' } },
+            },
+          ],
+        },
+      ],
+    }
+
+    const out = await importTestSuiteFromFile(JSON.stringify(collection), PROJECT_ID)
+    expect(out.format).toBe('postman')
+
+    const folder = testDb
+      .prepare(
+        'SELECT auth, pre_script, post_script FROM test_suite_folders WHERE suite_id = ? AND name = ?',
+      )
+      .get(out.suiteId, 'Setup') as {
+      auth: string | null
+      pre_script: string | null
+      post_script: string | null
+    }
+    expect(folder.pre_script).toContain("pm.environment.set('accessToken'")
+    expect(folder.post_script).toContain('pm.test')
+    expect(JSON.parse(folder.auth!).type).toBe('bearer')
   })
 })
 
@@ -405,9 +464,7 @@ describe('importTestSuiteFromFile — Insomnia v4', () => {
     expect(suiteRow.name).toBe('My Insomnia Tests')
 
     const items = testDb
-      .prepare(
-        'SELECT method FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order',
-      )
+      .prepare('SELECT method FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order')
       .all(out.suiteId) as { method: string }[]
     expect(items.map((r) => r.method)).toEqual(['GET', 'POST'])
 
@@ -428,7 +485,7 @@ describe('importTestSuiteFromFile — Insomnia v5 YAML', () => {
     // the same shape the APIs-tree importer already handles. JSON.parse fails
     // on YAML so we fall through to js-yaml.
     const yamlDoc = [
-      "type: collection.insomnia.rest/5.0",
+      'type: collection.insomnia.rest/5.0',
       'name: Yaml Suite',
       'collection:',
       '  - name: Ping',
@@ -538,8 +595,17 @@ describe('importTestSuiteFromFile — Insomnia v5 YAML', () => {
     expect(leakedEndpoints.n).toBe(0)
 
     // ── R1: the pre-existing APIs folder + endpoint survive untouched ──
-    expect((testDb.prepare(`SELECT count(*) AS n FROM folders WHERE id='keepf'`).get() as { n: number }).n).toBe(1)
-    expect((testDb.prepare(`SELECT count(*) AS n FROM endpoints WHERE id='keepe'`).get() as { n: number }).n).toBe(1)
+    expect(
+      (testDb.prepare(`SELECT count(*) AS n FROM folders WHERE id='keepf'`).get() as { n: number })
+        .n,
+    ).toBe(1)
+    expect(
+      (
+        testDb.prepare(`SELECT count(*) AS n FROM endpoints WHERE id='keepe'`).get() as {
+          n: number
+        }
+      ).n,
+    ).toBe(1)
   })
 })
 
@@ -573,8 +639,8 @@ describe('importTestSuiteFromFile — error paths', () => {
       endpointCases: [],
       suiteEndpoints: [{ id: 'l', suite_id: 's', endpoint_id: 'x', sort_order: 0 }],
     }
-    await expect(
-      importTestSuiteFromFile(JSON.stringify(legacy), PROJECT_ID),
-    ).rejects.toThrow(/Unsupported Testnizer suite export/)
+    await expect(importTestSuiteFromFile(JSON.stringify(legacy), PROJECT_ID)).rejects.toThrow(
+      /Unsupported Testnizer suite export/,
+    )
   })
 })

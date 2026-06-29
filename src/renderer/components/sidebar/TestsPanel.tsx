@@ -386,17 +386,23 @@ export default function TestsPanel() {
   )
 
   // ─── Export suite ─────────────────────────────────────────
-  const handleExportSuite = useCallback(async (suiteId: string) => {
-    try {
-      const result = await api().save?.exportTestSuite?.(suiteId)
-      if (!result?.success && result?.error && result.error !== 'Cancelled') {
-        console.error('Export suite failed:', result.error)
+  // `format` picks the wire shape — the self-contained Testnizer snapshot or a
+  // Postman v2.1 / Insomnia collection so the suite can be carried into those
+  // tools (folder tree + per-item request snapshot + cascade scripts).
+  const handleExportSuite = useCallback(
+    async (suiteId: string, format: 'testnizer' | 'postman' | 'insomnia' = 'testnizer') => {
+      try {
+        const result = await api().save?.exportTestSuite?.(suiteId, format)
+        if (!result?.success && result?.error && result.error !== 'Cancelled') {
+          console.error('Export suite failed:', result.error)
+        }
+      } catch (err) {
+        console.error(err)
       }
-    } catch (err) {
-      console.error(err)
-    }
-    setContextMenu(null)
-  }, [])
+      setContextMenu(null)
+    },
+    [],
+  )
 
   // ─── Import suite ─────────────────────────────────────────
   // Opens a modal that lets the user pick a source format before the OS file
@@ -710,8 +716,18 @@ export default function TestsPanel() {
               <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
               <ContextMenuItem
                 icon={<Upload size={13} />}
-                label={t('testsPanel.export')}
-                onClick={() => handleExportSuite(suite.id)}
+                label={t('testsPanel.exportTestnizer')}
+                onClick={() => handleExportSuite(suite.id, 'testnizer')}
+              />
+              <ContextMenuItem
+                icon={<Upload size={13} />}
+                label={t('testsPanel.exportPostman')}
+                onClick={() => handleExportSuite(suite.id, 'postman')}
+              />
+              <ContextMenuItem
+                icon={<Upload size={13} />}
+                label={t('testsPanel.exportInsomnia')}
+                onClick={() => handleExportSuite(suite.id, 'insomnia')}
               />
               <ContextMenuItem
                 icon={<Download size={13} />}

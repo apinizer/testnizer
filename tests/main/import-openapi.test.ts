@@ -129,9 +129,7 @@ function seedProject(id: string, name = 'Test Project', description: string | nu
   const wsId = randomUUID()
   const now = Date.now()
   memDb
-    .prepare(
-      'INSERT INTO workspaces (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)',
-    )
+    .prepare('INSERT INTO workspaces (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
     .run(wsId, 'Default', now, now)
   memDb
     .prepare(
@@ -267,9 +265,7 @@ const petstoreSpec = {
         tags: ['pets'],
         summary: 'Get pet by id',
         operationId: 'getPet',
-        parameters: [
-          { name: 'petId', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'petId', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': {
             description: 'OK',
@@ -285,9 +281,7 @@ const petstoreSpec = {
         tags: ['pets'],
         summary: 'Delete pet',
         operationId: 'deletePet',
-        parameters: [
-          { name: 'petId', in: 'path', required: true, schema: { type: 'string' } },
-        ],
+        parameters: [{ name: 'petId', in: 'path', required: true, schema: { type: 'string' } }],
         responses: { '204': { description: 'No Content' } },
         security: [{ basicAuth: [] }],
       },
@@ -344,9 +338,7 @@ const swaggerSpec = {
       get: {
         tags: ['orders'],
         summary: 'Get order',
-        parameters: [
-          { name: 'orderId', in: 'path', required: true, type: 'string' },
-        ],
+        parameters: [{ name: 'orderId', in: 'path', required: true, type: 'string' }],
         responses: { '200': { description: 'OK' } },
       },
     },
@@ -365,8 +357,15 @@ describe('OpenAPI 3.0.3 import — Petstore', () => {
     expect(r.data?.endpointCount).toBe(5)
 
     const rows = memDb
-      .prepare('SELECT method, path, name, description FROM endpoints WHERE project_id = ? ORDER BY sort_order')
-      .all(projectId) as Array<{ method: string; path: string; name: string; description: string | null }>
+      .prepare(
+        'SELECT method, path, name, description FROM endpoints WHERE project_id = ? ORDER BY sort_order',
+      )
+      .all(projectId) as Array<{
+      method: string
+      path: string
+      name: string
+      description: string | null
+    }>
     const methods = rows.map((r) => `${r.method} ${r.path}`)
     expect(methods).toContain('GET https://petstore.example.com/api/v1/pets')
     expect(methods).toContain('POST https://petstore.example.com/api/v1/pets')
@@ -410,7 +409,11 @@ describe('OpenAPI 3.0.3 import — Petstore', () => {
     // APIs (isInsideVariableExpression, suggestion filter) don't crash
     // on a numeric default and unmount the whole React tree
     // (v1.4.4 white-screen hotfix).
-    expect(schema.params[0]).toMatchObject({ key: 'limit', value: '20', description: 'How many to return' })
+    expect(schema.params[0]).toMatchObject({
+      key: 'limit',
+      value: '20',
+      description: 'How many to return',
+    })
     expect(schema.headers).toHaveLength(1)
     expect(schema.headers[0]).toMatchObject({ key: 'X-Trace-Id', description: 'Trace identifier' })
   })
@@ -561,7 +564,7 @@ describe('OpenAPI security schemes', () => {
       rows.map((row) => [row.name, JSON.parse(row.request_schema).auth as { type: string }]),
     )
     const distinct = new Set(Object.values(authsByName).map((a) => a.type))
-    expect(distinct.size).toBeGreaterThan(1)  // not every endpoint is 'none'
+    expect(distinct.size).toBeGreaterThan(1) // not every endpoint is 'none'
     expect([...distinct]).toEqual(expect.arrayContaining(['bearer']))
   })
 })
@@ -582,6 +585,65 @@ describe('OpenAPI examples', () => {
     const schema = JSON.parse(createPet.request_schema)
     expect(schema.body.type).toBe('json')
     expect(schema.body.content).toContain('fluffy')
+  })
+
+  it('preserves ALL named plural examples through an export round-trip (B-08)', async () => {
+    // A requestBody with multiple named `examples` (not a singular `example`).
+    // The body editor can only surface one, but the rest must survive export
+    // instead of being silently dropped.
+    const projectId = randomUUID()
+    seedProject(projectId)
+    const spec = {
+      openapi: '3.0.3',
+      info: { title: 'MultiExample', version: '1' },
+      servers: [{ url: 'https://multi.example.com' }],
+      paths: {
+        '/orders': {
+          post: {
+            summary: 'Create order',
+            requestBody: {
+              content: {
+                'application/json': {
+                  examples: {
+                    minimal: { value: { sku: 'A1' } },
+                    full: { value: { sku: 'A1', qty: 5, gift: true } },
+                    bulk: { value: { sku: 'A1', qty: 100 } },
+                  },
+                },
+              },
+            },
+            responses: { '200': { description: 'OK' } },
+          },
+        },
+      },
+    }
+    const importR = await importOpenApi(projectId, JSON.stringify(spec))
+    expect(importR.success).toBe(true)
+
+    // Body editor is seeded from the FIRST example.
+    const created = memDb
+      .prepare('SELECT request_schema FROM endpoints WHERE name = ?')
+      .get('Create order') as { request_schema: string }
+    const reqSchema = JSON.parse(created.request_schema)
+    expect(reqSchema.body.type).toBe('json')
+    expect(reqSchema.body.content).toContain('A1')
+    // All three named examples are stashed in the round-trip metadata.
+    expect(Object.keys(reqSchema.openApi.requestBodyExamples['application/json'])).toEqual([
+      'minimal',
+      'full',
+      'bulk',
+    ])
+
+    // Export must round-trip the full `examples` map, not collapse to one.
+    const exportR = await exportOpenApi(projectId)
+    expect(exportR.success).toBe(true)
+    const exported = JSON.parse(exportR.data!)
+    const pathKey = Object.keys(exported.paths).find((k) => k.includes('/orders'))!
+    const exportedExamples =
+      exported.paths[pathKey].post.requestBody.content['application/json'].examples
+    expect(Object.keys(exportedExamples)).toEqual(['minimal', 'full', 'bulk'])
+    expect(exportedExamples.full.value).toMatchObject({ sku: 'A1', qty: 5, gift: true })
+    expect(exportedExamples.bulk.value).toMatchObject({ sku: 'A1', qty: 100 })
   })
 })
 
@@ -749,9 +811,7 @@ describe('Round-trip import → export → re-import', () => {
     // relative path. Pin behavior so we notice if it ever changes.
     const exportedPathKeys = Object.keys(exported.paths)
     expect(exportedPathKeys.length).toBeGreaterThan(0)
-    expect(
-      exportedPathKeys.some((k) => k.includes('/pets')),
-    ).toBe(true)
+    expect(exportedPathKeys.some((k) => k.includes('/pets'))).toBe(true)
 
     // Re-import into a fresh project and assert endpoint count matches.
     const projectIdB = randomUUID()
@@ -979,9 +1039,9 @@ describe('Edge cases', () => {
       },
     }
     await importOpenApi(projectId, JSON.stringify(spec))
-    const row = memDb
-      .prepare('SELECT name FROM endpoints WHERE project_id = ?')
-      .get(projectId) as { name: string }
+    const row = memDb.prepare('SELECT name FROM endpoints WHERE project_id = ?').get(projectId) as {
+      name: string
+    }
     expect(row.name).toBe('GET /anon')
   })
 })

@@ -523,10 +523,15 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     )
 
     // Trigger run after a tick so state is updated
-    setTimeout(() => {
+    setTimeout(async () => {
       // Build selected list directly from pending IDs matched against current endpoints
       const matched = endpoints.filter((ep) => targetIds.has(ep.id))
       if (matched.length === 0) return
+
+      // Quick Run bypasses the config screen, so the configured-run dirty guard
+      // (handleRun) never fires here. Flush dirty edits the same way so a
+      // freshly-edited request isn't executed against its stale saved snapshot.
+      await saveDirtyRunItemsBeforeRun(matched.map((ep) => ep.id))
 
       setView('results')
       setIsRunning(true)

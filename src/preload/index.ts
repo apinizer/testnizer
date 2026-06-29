@@ -561,8 +561,10 @@ const api = {
       ipcRenderer.invoke('save:exportProject', projectId),
     exportFolder: (folderId: string): Promise<unknown> =>
       ipcRenderer.invoke('save:exportFolder', folderId),
-    exportTestSuite: (suiteId: string): Promise<unknown> =>
-      ipcRenderer.invoke('save:exportTestSuite', suiteId),
+    exportTestSuite: (
+      suiteId: string,
+      format?: 'testnizer' | 'postman' | 'insomnia',
+    ): Promise<unknown> => ipcRenderer.invoke('save:exportTestSuite', suiteId, format),
     importProject: (payload: { workspaceId: string; name?: string }): Promise<unknown> =>
       ipcRenderer.invoke('save:importProject', payload),
     importProjectFromContent: (payload: {

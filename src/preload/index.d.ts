@@ -1460,7 +1460,10 @@ interface SaveApi {
   history(projectId: string): Promise<IpcResult<SaveHistoryEntry[]>>
   exportProject(projectId: string): Promise<IpcResult<{ path: string }>>
   exportFolder(folderId: string): Promise<IpcResult<{ path: string }>>
-  exportTestSuite(suiteId: string): Promise<IpcResult<{ path: string }>>
+  exportTestSuite(
+    suiteId: string,
+    format?: 'testnizer' | 'postman' | 'insomnia',
+  ): Promise<IpcResult<{ path: string }>>
   importProject(payload: {
     workspaceId: string
     name?: string

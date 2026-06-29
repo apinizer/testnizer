@@ -15,7 +15,12 @@ import { getDb } from '../db/database'
 import { addSaveHistory } from '../db/branch.repo'
 import { encryptSecret, decryptSecret } from '../lib/secure-storage'
 import { assertTmpSubpath, assertImportFilePath, GIT_TMP_PREFIXES } from '../lib/path-safety'
-import { importPostman, importInsomnia } from './import-export.handler'
+import {
+  importPostman,
+  importInsomnia,
+  exportSuiteAsPostman,
+  exportSuiteAsInsomnia,
+} from './import-export.handler'
 import { snapshotEndpointForSuite, ensureUniqueSuiteName } from './test-suite.handler'
 import { getEndpointById } from '../db/endpoint.repo'
 
@@ -1653,18 +1658,42 @@ export function registerSaveHandlers(): void {
   })
 
   // ─── Export Test Suite ─────────────────────────────────────
-  ipcMain.handle('save:exportTestSuite', async (_event, suiteId: string) => {
-    try {
-      const data = exportTestSuiteData(suiteId)
-      const suiteName = ((data.suite?.name as string) || 'suite').replace(/[^a-zA-Z0-9-_]/g, '_')
-      const defaultName = `suite-${suiteName}-${new Date().toISOString().slice(0, 10)}.json`
-      const res = await writeJsonViaSaveDialog(JSON.stringify(data, null, 2), defaultName)
-      if (!res.success) return { success: false, error: res.error }
-      return { success: true, data: { path: res.path } }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  // `format` picks the wire shape: the self-contained Testnizer snapshot
+  // (default) or a Postman v2.1 / Insomnia v4 collection so the suite can be
+  // carried into those tools. Postman/Insomnia exports flatten to a runnable
+  // collection (folder tree + per-item request snapshot + cascade scripts);
+  // they're not round-trip-lossless back into a Testnizer suite.
+  ipcMain.handle(
+    'save:exportTestSuite',
+    async (_event, suiteId: string, format?: 'testnizer' | 'postman' | 'insomnia') => {
+      try {
+        const fmt = format ?? 'testnizer'
+        const suiteName = ((exportTestSuiteData(suiteId).suite?.name as string) || 'suite').replace(
+          /[^a-zA-Z0-9-_]/g,
+          '_',
+        )
+        const date = new Date().toISOString().slice(0, 10)
+        let content: string
+        let suffix: string
+        if (fmt === 'postman') {
+          content = exportSuiteAsPostman(suiteId)
+          suffix = 'postman'
+        } else if (fmt === 'insomnia') {
+          content = exportSuiteAsInsomnia(suiteId)
+          suffix = 'insomnia'
+        } else {
+          content = JSON.stringify(exportTestSuiteData(suiteId), null, 2)
+          suffix = 'testnizer'
+        }
+        const defaultName = `suite-${suiteName}-${suffix}-${date}.json`
+        const res = await writeJsonViaSaveDialog(content, defaultName)
+        if (!res.success) return { success: false, error: res.error }
+        return { success: true, data: { path: res.path } }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 
   // ─── Duplicate Project (in same workspace, optional new name) ──
   // v1.3.1 B3: the project-level "..." menu only offered Rename + Delete,
