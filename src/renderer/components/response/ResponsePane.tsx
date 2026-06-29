@@ -383,8 +383,12 @@ export default function ResponsePane() {
           <HistoryIcon size={14} />
         </button>
 
-        {/* Tabs */}
-        <div className="flex flex-1 items-center gap-0 overflow-x-auto">
+        {/* Tabs. overflow-y-hidden is load-bearing: `overflow-x-auto` alone
+            promotes overflow-y from `visible` to `auto` (CSS spec), so a tab
+            row whose content is even 1px taller than its 34px box sprouts a
+            stray VERTICAL scrollbar (issue #34). Pin Y to hidden; X still
+            scrolls when the tab labels overflow. */}
+        <div className="flex flex-1 items-center gap-0 overflow-x-auto overflow-y-hidden">
           {TABS.map((tab) => {
             const isActive = activeTab === tab.key
             return (
