@@ -11,6 +11,21 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.33
+
+**Otomatik güncellemeler artık gerçekten çalışıyor.**
+
+*Otomatik güncelleme kontrolü* ve *Güncellemeleri otomatik indir* ayarları
+kaydediliyor ama hiçbir şey tarafından okunmuyordu — uygulama yalnızca Ayarlar'ı
+açıp *Güncellemeleri denetle*'ye bastığınızda güncelleniyordu. Artık uçtan uca
+çalışıyor: uygulama açılıştan kısa süre sonra ve birkaç saatte bir yeni sürüm
+kontrol ediyor, o seçenek açıkken otomatik indiriyor ve bir güncelleme bulununca
+güncelleme penceresini açıyor; tek tıkla kurabiliyorsunuz. Çevrimdışıyken veya
+güncelleme zaten bulunmuşken kontrol atlanıyor. (macOS derlemeleri Developer ID
+ile imzalı + notarized, Windows derlemeleri Certum imzalı — yani uygulama içi
+indir-ve-kur yolu ikisinde de çalışıyor; eksik olan yalnızca düğmelerin
+bağlanmasıydı.)
+
 ## v1.4.32
 
 **İçe aktarılan test suite'leri artık uçtan uca çalışıyor, açık sekmeleriniz

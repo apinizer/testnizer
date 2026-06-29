@@ -19,6 +19,14 @@ interface UpdaterStore {
   releaseNotes: string | null
   downloadPercent: number
   errorMessage: string | null
+  /**
+   * Mirror of the project's "Automatically download updates" toggle. Set by the
+   * useAutoUpdater hook from the active project's settings; read in
+   * initUpdaterListeners when an update becomes available to decide whether to
+   * start the download without the user clicking. Defaults false so the manual
+   * flow never downloads unasked.
+   */
+  autoDownload: boolean
 
   check: () => void
   download: () => void
@@ -29,6 +37,7 @@ interface UpdaterStore {
   setReleaseNotes: (notes: string) => void
   setDownloadPercent: (percent: number) => void
   setError: (message: string) => void
+  setAutoDownload: (enabled: boolean) => void
 }
 
 export const useUpdaterStore = create<UpdaterStore>((set) => ({
@@ -37,6 +46,7 @@ export const useUpdaterStore = create<UpdaterStore>((set) => ({
   releaseNotes: null,
   downloadPercent: 0,
   errorMessage: null,
+  autoDownload: false,
 
   check: () => {
     set({ status: 'checking', errorMessage: null })
@@ -113,6 +123,7 @@ export const useUpdaterStore = create<UpdaterStore>((set) => ({
   setReleaseNotes: (notes) => set({ releaseNotes: notes }),
   setDownloadPercent: (percent) => set({ downloadPercent: percent }),
   setError: (message) => set({ status: 'error', errorMessage: message }),
+  setAutoDownload: (enabled) => set({ autoDownload: enabled }),
 }))
 
 /**
@@ -148,6 +159,14 @@ export function initUpdaterListeners(): (() => void) | undefined {
               .join('<hr/>')
             if (joined) store.setReleaseNotes(joined)
           }
+        }
+        // Kick off the download automatically when the user enabled
+        // "Automatically download updates". Without this the toggle was inert —
+        // the update sat at "available" until the user opened Settings and
+        // clicked Download. Guard on status so a redundant 'available' (e.g. a
+        // re-check) doesn't restart an in-flight download.
+        if (store.autoDownload && store.status !== 'downloading' && store.status !== 'ready') {
+          store.download()
         }
         break
       case 'not-available':

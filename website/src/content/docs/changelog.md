@@ -10,6 +10,20 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.33
+
+**Automatic updates now actually run.**
+
+The *Automatically check for updates* and *Automatically download updates*
+settings were saved but read by nothing — the app only updated when you opened
+Settings and clicked *Check for updates*. They now work end to end: the app
+checks for a newer version shortly after launch and every few hours,
+automatically downloads it when that toggle is on, and opens the update dialog
+when one is found so you can install with one click. A check is skipped while
+you're offline or once an update has already been found. (macOS builds are
+Developer ID signed + notarized and Windows builds are Certum signed, so the
+in-app download-and-install path works on both — only the toggles were missing.)
+
 ## v1.4.32
 
 **Imported test suites now run end-to-end, your open tabs survive an app

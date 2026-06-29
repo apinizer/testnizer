@@ -44,6 +44,7 @@ describe('updater store — event → status mapping', () => {
       releaseNotes: null,
       downloadPercent: 0,
       errorMessage: null,
+      autoDownload: false,
     })
   })
   afterEach(() => {
@@ -103,5 +104,86 @@ describe('updater store — event → status mapping', () => {
     vi.advanceTimersByTime(1600)
     expect(useUpdaterStore.getState().status).toBe('available')
     vi.useRealTimers()
+  })
+})
+
+describe('updater store — auto-download on available', () => {
+  let savedApi: unknown
+  let cleanup: (() => void) | undefined
+
+  function installFakeApiWithDownload(): {
+    emit: (e: UpdaterEvent) => void
+    download: ReturnType<typeof vi.fn>
+  } {
+    let cb: ((e: UpdaterEvent) => void) | null = null
+    const download = vi.fn(() => Promise.resolve({ success: true }))
+    ;(window as unknown as { api?: unknown }).api = {
+      updater: {
+        onEvent: (callback: (e: UpdaterEvent) => void) => {
+          cb = callback
+          return () => {
+            cb = null
+          }
+        },
+        download,
+      },
+    }
+    return {
+      emit: (e: UpdaterEvent) => {
+        if (!cb) throw new Error('no updater callback registered')
+        cb(e)
+      },
+      download,
+    }
+  }
+
+  beforeEach(() => {
+    savedApi = (window as unknown as { api?: unknown }).api
+    useUpdaterStore.setState({
+      status: 'idle',
+      version: null,
+      releaseNotes: null,
+      downloadPercent: 0,
+      errorMessage: null,
+      autoDownload: false,
+    })
+  })
+  afterEach(() => {
+    cleanup?.()
+    cleanup = undefined
+    ;(window as unknown as { api?: unknown }).api = savedApi
+  })
+
+  it('auto-starts the download on "available" when autoDownload is on', () => {
+    const bus = installFakeApiWithDownload()
+    cleanup = initUpdaterListeners()
+    useUpdaterStore.getState().setAutoDownload(true)
+
+    bus.emit({ type: 'available', version: '9.9.9' })
+
+    expect(bus.download).toHaveBeenCalledTimes(1)
+    expect(useUpdaterStore.getState().status).toBe('downloading')
+  })
+
+  it('leaves it at "available" when autoDownload is off (manual flow unchanged)', () => {
+    const bus = installFakeApiWithDownload()
+    cleanup = initUpdaterListeners()
+    useUpdaterStore.getState().setAutoDownload(false)
+
+    bus.emit({ type: 'available', version: '9.9.9' })
+
+    expect(bus.download).not.toHaveBeenCalled()
+    expect(useUpdaterStore.getState().status).toBe('available')
+  })
+
+  it('does not restart an in-flight download on a redundant "available"', () => {
+    const bus = installFakeApiWithDownload()
+    cleanup = initUpdaterListeners()
+    useUpdaterStore.getState().setAutoDownload(true)
+
+    bus.emit({ type: 'available', version: '9.9.9' }) // → downloading, 1 call
+    bus.emit({ type: 'available', version: '9.9.9' }) // redundant — must not re-trigger
+
+    expect(bus.download).toHaveBeenCalledTimes(1)
   })
 })
