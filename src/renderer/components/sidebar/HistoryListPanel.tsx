@@ -70,10 +70,10 @@ export default function HistoryListPanel() {
     const tabId = `tab-hist-${entry.id}`
     const protocol = entry.protocol || 'http'
 
-    // History rows live under the History sidebar page, but the tabs they
-    // open belong to the APIs workbench. Without flipping the sidebar page
-    // first, the Workbench filters the new tab out via tabBelongsToPage and
-    // the user sees the History welcome surface instead of the request.
+    // Opening a history entry is an APIs-workbench action, so flip the left
+    // panel to the APIs tree alongside the request being opened. (The tab is
+    // global and would show on any page; this just lands the user with the
+    // matching tree.)
     setActiveSidebarPage('apis')
 
     openPreviewTab({

@@ -347,15 +347,10 @@ export const useUIStore = create<UIStore>((set, get) => ({
   setLeftPanelCollapsed: (collapsed) => set({ isLeftPanelCollapsed: collapsed }),
 
   setActiveSidebarPage: (page) => {
-    // Remember the last-active tab for the page we're leaving, then restore
-    // the previously-active tab for the page we're entering. v1.3.1 B13
-    // (R-6 regression): switching APIs → Tests → APIs reopened the welcome
-    // surface instead of the endpoint preview tab that had been visible
-    // before the round trip. We delegate to tabs.store so the move stays in
-    // sync with whatever tab cleanup happens elsewhere.
-    void import('./tabs.store').then(({ useTabsStore }) => {
-      useTabsStore.getState().rememberAndRestoreForPage(page)
-    })
+    // The sidebar page only swaps the LEFT panel (tree/tools). Open tabs and the
+    // active tab are global (one strip shared across pages), so a page switch
+    // must NOT touch the tabs store — that previously hid/deselected request
+    // tabs and lost unsaved edits when you clicked e.g. Tools.
     set((state) => ({
       activeSidebarPage: page,
       // Tests-only overlays must not survive a workbench switch — otherwise

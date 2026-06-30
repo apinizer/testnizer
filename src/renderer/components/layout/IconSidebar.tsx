@@ -1,9 +1,8 @@
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
-import { useTabsStore } from '../../stores/tabs.store'
 import { T } from '../../styles/tokens'
 import ProjectIcon from '../shared/ProjectIcon'
-import { tabBelongsToPage, type SidebarPage } from '../../lib/sidebar-pages'
+import { type SidebarPage } from '../../lib/sidebar-pages'
 
 interface NavItem {
   id: SidebarPage
@@ -151,16 +150,10 @@ export default function IconSidebar() {
       return
     }
     const page = item.id as SidebarPage
+    // Switching the sidebar page only swaps the left panel; the open tabs and
+    // the active tab are global and stay put (a page switch must never hide or
+    // deselect a tab — that lost unsaved request edits).
     setActivePage(page)
-    // Tab strip stays page-scoped: switching to a page that doesn't host the
-    // currently-active tab's protocol clears the active tab so the workbench
-    // shows the page's welcome surface instead of leaking a runner/mock tab
-    // into the APIs view (and vice versa).
-    const tabsApi = useTabsStore.getState()
-    const active = tabsApi.tabs.find((tab) => tab.id === tabsApi.activeTabId)
-    if (active && !tabBelongsToPage(active, page)) {
-      tabsApi.setActiveTab(null)
-    }
   }
 
   return (

@@ -30,14 +30,11 @@ export function openOrReuseRunnerTab(
 }
 
 /**
- * Open (or re-focus) a runner tab scoped to a specific APIs-tree folder and
- * navigate to the page the runner renders on.
+ * Open (or re-focus) a runner tab scoped to a specific APIs-tree folder.
  *
- * A runner tab `tabBelongsToPage` the **Tests** page (sidebar-pages.ts), so a
- * runner opened from the APIs sidebar becomes the active tab but stays hidden
- * behind the APIs view — the Workbench treats the off-page active tab as absent
- * and shows the APIs welcome instead. That made the folder context-menu "Run"
- * look like a no-op (#39). Switching the sidebar page here surfaces the runner.
+ * The runner tab becomes the global active tab and renders immediately. We also
+ * flip the sidebar to the **Tests** page so the user lands on the Tests panel
+ * (the natural home for a run) rather than staying on the APIs tree (#39).
  */
 export function openFolderRunner(folderId: string, folderName?: string): void {
   const tabsApi = useTabsStore.getState()

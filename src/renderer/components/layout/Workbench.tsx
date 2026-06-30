@@ -59,7 +59,6 @@ import MethodBadge from '../shared/MethodBadge'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import EnvironmentSelector from '../shared/EnvironmentSelector'
 import { T } from '../../styles/tokens'
-import { tabBelongsToPage } from '../../lib/sidebar-pages'
 
 // `cleanupTabState` moved to ../../lib/cleanup-tab-state so the AppShell
 // File → Close Tab menu path can share it (otherwise closing via the menu
@@ -97,9 +96,9 @@ const TOOL_COMPONENTS: Record<string, ComponentType> = {
 }
 
 function EndpointTabBar() {
-  const allTabs = useTabsStore((s) => s.tabs)
-  const activePage = useUIStore((s) => s.activeSidebarPage)
-  const tabs = allTabs.filter((tab) => tabBelongsToPage(tab, activePage))
+  // One global strip: every open tab shows on every sidebar page. The sidebar
+  // page only swaps the left panel, never the tab set.
+  const tabs = useTabsStore((s) => s.tabs)
   const activeTabId = useTabsStore((s) => s.activeTabId)
   const setActiveTab = useTabsStore((s) => s.setActiveTab)
   const closeTab = useTabsStore((s) => s.closeTab)
@@ -145,11 +144,10 @@ function EndpointTabBar() {
   }, [contextMenu])
 
   // Whenever the active tab changes — regardless of where the change came
-  // from (handleSwitchTab, openTab from NewDropdown / Welcome / Tools,
-  // tabs.store.rememberAndRestoreForPage, etc.) — flip every protocol store
-  // to the corresponding tab's cached state. Without this, "+ New" in the
-  // tab strip or "New HTTP endpoint" from the welcome screen left the
-  // editor showing the previous endpoint's data (v1.3.1 M1 / M6).
+  // from (handleSwitchTab, openTab from NewDropdown / Welcome / Tools, etc.) —
+  // flip every protocol store to the corresponding tab's cached state. Without
+  // this, "+ New" in the tab strip or "New HTTP endpoint" from the welcome
+  // screen left the editor showing the previous endpoint's data (v1.3.1 M1/M6).
   useEffect(() => {
     if (!activeTabId) return
     switchToTab(activeTabId)
@@ -772,7 +770,7 @@ function EndpointTabBar() {
 
       <UnsavedChangesDialog
         open={closeConfirmTabId !== null}
-        itemName={allTabs.find((t) => t.id === closeConfirmTabId)?.name ?? 'this request'}
+        itemName={tabs.find((t) => t.id === closeConfirmTabId)?.name ?? 'this request'}
         saving={closeSaving}
         onSave={handleCloseSave}
         onDiscard={handleCloseDiscard}
@@ -834,11 +832,10 @@ export default function Workbench() {
   const tabs = useTabsStore((s) => s.tabs)
   const activeTabId = useTabsStore((s) => s.activeTabId)
   const activeSidebarPage = useUIStore((s) => s.activeSidebarPage)
-  // Tab "lives" on a specific sidebar page (runner → Tests, mockServer → Mocks,
-  // everything else → APIs). When the active tab belongs to a different page
-  // we treat it as absent so the workbench falls through to the page-aware
-  // welcome instead of leaking a runner UI into the APIs view.
-  const activeTab = tabs.find((t) => t.id === activeTabId && tabBelongsToPage(t, activeSidebarPage))
+  // The active tab is global — it renders regardless of which sidebar page is
+  // selected (the page only controls the left panel). PageWelcome shows only
+  // when there is no active tab at all.
+  const activeTab = tabs.find((t) => t.id === activeTabId)
   const protocol = activeTab?.protocol || 'http'
   const addEndpointsSuiteId = useUIStore((s) => s.addEndpointsSuiteId)
 
@@ -976,9 +973,7 @@ export default function Workbench() {
   // tool tab and back, instead of unmounting and losing it. One lightweight
   // instance per open tool tab.
   if (protocol.startsWith('tools.')) {
-    const toolTabs = tabs.filter(
-      (t) => t.protocol.startsWith('tools.') && tabBelongsToPage(t, activeSidebarPage),
-    )
+    const toolTabs = tabs.filter((t) => t.protocol.startsWith('tools.'))
     return (
       <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
         <EndpointTabBar />

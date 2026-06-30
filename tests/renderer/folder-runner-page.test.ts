@@ -1,19 +1,12 @@
 /**
- * Folder context-menu "Run" must land the user on a page where the runner is
- * actually visible (regression #39).
- *
- * A runner tab `tabBelongsToPage` the **Tests** page. When "Run" is invoked
- * from the APIs tree, the runner tab becomes active but the visible sidebar
- * page is still APIs, so the Workbench treats the off-page active tab as absent
- * and shows the APIs welcome — the runner never appears and the click looks
- * like a no-op. openFolderRunner() fixes this by switching to the Tests page.
+ * Folder context-menu "Run" opens a runner tab and lands the user on the Tests
+ * page so they see the run alongside the Tests panel (regression #39).
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import { openFolderRunner } from '../../src/renderer/lib/open-runner-tab'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useUIStore } from '../../src/renderer/stores/ui.store'
-import { tabBelongsToPage } from '../../src/renderer/lib/sidebar-pages'
 
 describe('openFolderRunner — page navigation (#39)', () => {
   beforeEach(() => {
@@ -34,16 +27,9 @@ describe('openFolderRunner — page navigation (#39)', () => {
     expect(activeTabId).toBe('runner-folder-1')
   })
 
-  it('switches the sidebar page to Tests so the runner is visible', () => {
+  it('switches the sidebar page to Tests so the user lands on the Tests panel', () => {
     openFolderRunner('folder-1', 'My Folder')
     expect(useUIStore.getState().activeSidebarPage).toBe('tests')
-
-    // The decisive invariant: the runner tab is visible on the now-active page.
-    // Without the page switch it would belong to Tests while the user is on
-    // APIs — active but hidden (the no-op symptom).
-    const tab = useTabsStore.getState().tabs[0]
-    expect(tabBelongsToPage(tab, 'tests')).toBe(true)
-    expect(tabBelongsToPage(tab, 'apis')).toBe(false)
   })
 
   it('seeds the runner view to config so it shows the folder run, not Overview', () => {

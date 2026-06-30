@@ -2,17 +2,9 @@ import { create } from 'zustand'
 import type { Tab, ToolProtocol } from '../types'
 import { loadJson, saveJson } from '../lib/persist-helpers'
 
-type SidebarPageId = 'apis' | 'tests' | 'docs' | 'history' | 'tools' | 'mocks' | 'settings'
-
 interface TabsStore {
   tabs: Tab[]
   activeTabId: string | null
-  /**
-   * The last active tab per sidebar page. setActiveSidebarPage in ui.store
-   * calls `rememberAndRestoreForPage` so APIs ↔ Tests ↔ Mocks round-trips
-   * land back on the same tab the user had focused (v1.3.1 B13 / R-6).
-   */
-  lastActiveByPage: Partial<Record<SidebarPageId, string | null>>
 
   openTab: (tab: Omit<Tab, 'isDirty' | 'isLoading'>) => void
   /** Open in a preview (temporary) tab — replaces existing preview tab */
@@ -37,11 +29,6 @@ interface TabsStore {
   updateTab: (id: string, updates: Partial<Tab>) => void
   markDirty: (id: string, dirty: boolean) => void
   markLoading: (id: string, loading: boolean) => void
-  /**
-   * Remember the current activeTabId under the OUTGOING page and restore the
-   * one stored for the incoming page. Called from setActiveSidebarPage.
-   */
-  rememberAndRestoreForPage: (incoming: SidebarPageId) => void
 }
 
 const STORAGE_KEY = 'testnizer-tabs'
@@ -72,16 +59,9 @@ function tabKind(tab: { testSuiteItemId?: string; mockServerId?: string }): TabK
   return 'apis'
 }
 
-function pageOfTab(tab: Tab): SidebarPageId {
-  if (tab.protocol === 'mockServer' || tab.mockServerId) return 'mocks'
-  if (tab.testSuiteItemId || tab.protocol === 'runner') return 'tests'
-  return 'apis'
-}
-
 export const useTabsStore = create<TabsStore>((set, get) => ({
   tabs: initialTabs,
   activeTabId: initialActiveTabId,
-  lastActiveByPage: {},
 
   openTab: (tab) => {
     // Match existing tabs that reference the same logical resource so we
@@ -290,28 +270,6 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
     set((state) => ({
       tabs: state.tabs.map((t) => (t.id === id ? { ...t, isLoading: loading } : t)),
     })),
-
-  rememberAndRestoreForPage: (incoming) =>
-    set((state) => {
-      // Bookmark the outgoing page using the current active tab's page.
-      const next = { ...state.lastActiveByPage }
-      const activeTab = state.tabs.find((t) => t.id === state.activeTabId)
-      if (activeTab) {
-        const outgoing = pageOfTab(activeTab)
-        next[outgoing] = state.activeTabId
-      }
-      // If the incoming page has a remembered tab AND that tab still exists,
-      // restore it. Otherwise pick the first tab that belongs to the new page
-      // so the workbench never lands on the welcome screen when there's still
-      // a usable tab open.
-      const remembered = next[incoming] ?? null
-      const stillExists = remembered && state.tabs.some((t) => t.id === remembered)
-      const fallback = state.tabs.find((t) => pageOfTab(t) === incoming)?.id ?? null
-      return {
-        lastActiveByPage: next,
-        activeTabId: stillExists ? remembered : fallback,
-      }
-    }),
 }))
 
 // Persist on every change. `isLoading` is dropped so a tab that was mid-flight
