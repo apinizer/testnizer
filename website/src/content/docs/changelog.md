@@ -10,6 +10,20 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.34
+
+**Switching sidebar pages no longer disturbs your open tabs, and tool inputs
+stick around.**
+
+Open tabs and the active tab are now shared across every sidebar page. Clicking
+**Tools** (or Tests / Mocks / History) no longer hides your request tabs,
+deselects the active one, or loses unsaved edits — the page only swaps the left
+panel, and you come back to exactly the tab you were on. The built-in tools
+(JWT, Diff, Hash, …) now keep what you typed when you switch to a request tab and
+back, instead of resetting. And in the Text Diff tool, long lines in the result
+wrap within their column instead of overflowing and overlapping the neighbouring
+text.
+
 ## v1.4.33
 
 **Automatic updates now actually run.**

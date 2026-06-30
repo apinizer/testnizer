@@ -11,6 +11,19 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.34
+
+**Sidebar sayfaları arasında geçiş artık açık sekmelerinizi bozmuyor ve araç
+girdileri yerinde kalıyor.**
+
+Açık sekmeler ve aktif sekme artık her sidebar sayfasında ortak. **Tools**'a (ya
+da Tests / Mocks / History) basmak artık request sekmelerinizi gizlemiyor, aktif
+sekmeyi bırakmıyor veya kaydedilmemiş düzenlemeleri kaybetmiyor — sayfa yalnızca
+sol paneli değiştiriyor ve tam bıraktığınız sekmeye dönüyorsunuz. Yerleşik
+araçlar (JWT, Diff, Hash, …) bir request sekmesine geçip dönünce yazdığınızı artık
+sıfırlamıyor, koruyor. Ayrıca Text Diff aracında sonuçtaki uzun satırlar komşu
+metnin üstüne taşmak yerine kendi kolonu içinde sarılıyor.
+
 ## v1.4.33
 
 **Otomatik güncellemeler artık gerçekten çalışıyor.**
