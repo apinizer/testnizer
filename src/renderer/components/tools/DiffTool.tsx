@@ -586,7 +586,7 @@ function Cell({
       >
         {num ?? ' '}
       </div>
-      <div className="min-w-0 flex-1 whitespace-pre px-2 py-0.5 break-all">
+      <div className="min-w-0 flex-1 whitespace-pre-wrap px-2 py-0.5 break-all">
         {segments && segments.length > 0
           ? segments.map((s, i) => (
               <SegmentSpan
