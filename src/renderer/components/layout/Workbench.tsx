@@ -880,209 +880,286 @@ export default function Workbench() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Add Endpoints view — takes over the workbench content area
-  if (addEndpointsSuiteId) {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <AddEndpointsView />
-      </div>
-    )
-  }
+  // Tool tabs keep their input in local component state, so they must stay
+  // mounted even when a non-tool tab is active. We compute the active tab's own
+  // content here and render a persistent PersistentToolTabs layer (below) that
+  // overlays it whenever a tool tab is the active one — so switching tool →
+  // request → tool no longer wipes the tool's input.
+  const hasToolTabs = tabs.some((t) => t.protocol.startsWith('tools.'))
+  const toolActive = !!activeTab && protocol.startsWith('tools.')
 
-  // No active tab for the current page — show the page's welcome surface.
-  if (!activeTab) {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <PageWelcome page={activeSidebarPage} />
-      </div>
-    )
-  }
-
-  const isNewEmptyTab = activeTab.name === 'New Request' && !activeTab.url
-
-  if (isNewEmptyTab) {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <NewRequestWelcome />
-      </div>
-    )
-  }
-
-  // Each protocol editor below is keyed by `activeTab.id` so a fast tab
-  // switch remounts the editor with the new tab's state. Without this, local
-  // component state (Monaco models, useState in sub-tabs, scroll positions)
-  // from the previous tab can leak into the next. Zustand state is already
-  // tab-aware; this pins the React tree to the same boundary.
-  if (protocol === 'soap') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <SoapEditor key={activeTab.id} />
-      </div>
-    )
-  }
-
-  if (protocol === 'websocket') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <WebSocketEditor key={activeTab.id} />
-      </div>
-    )
-  }
-
-  if (protocol === 'graphql') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <GraphQLEditor key={activeTab.id} />
-      </div>
-    )
-  }
-
-  if (protocol === 'grpc') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <GrpcEditor key={activeTab.id} />
-      </div>
-    )
-  }
-
-  if (protocol === 'sse') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <SseEditor key={activeTab.id} />
-      </div>
-    )
-  }
-
-  if (protocol === 'ai') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <AiChatEditor key={activeTab.id} />
-      </div>
-    )
-  }
-
-  // Tools (JWT, Hash, Encoders, …): render every OPEN tool tab and toggle
-  // visibility so each tool's local input state survives switching to another
-  // tool tab and back, instead of unmounting and losing it. One lightweight
-  // instance per open tool tab.
-  if (protocol.startsWith('tools.')) {
-    const toolTabs = tabs.filter((t) => t.protocol.startsWith('tools.'))
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <div className="relative flex-1 overflow-hidden">
-          {toolTabs.map((t) => {
-            const ToolComp = TOOL_COMPONENTS[t.protocol]
-            if (!ToolComp) return null
-            const isActive = t.id === activeTab.id
-            return (
-              <div
-                key={t.id}
-                className="absolute inset-0 flex flex-col overflow-hidden"
-                style={{ display: isActive ? 'flex' : 'none' }}
-                aria-hidden={!isActive}
-              >
-                <ToolComp />
-              </div>
-            )
-          })}
+  const content = (() => {
+    // Add Endpoints view — takes over the workbench content area
+    if (addEndpointsSuiteId) {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <AddEndpointsView />
         </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  if (protocol === 'mockServer') {
-    const id = activeTab.mockServerId ?? ''
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <MockServerEditor key={id} serverId={id} />
-      </div>
-    )
-  }
+    // No active tab for the current page — show the page's welcome surface.
+    if (!activeTab) {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <PageWelcome page={activeSidebarPage} />
+        </div>
+      )
+    }
 
-  if (protocol === 'mcp') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <McpEditor key={activeTab.id} />
-      </div>
-    )
-  }
+    const isNewEmptyTab = activeTab.name === 'New Request' && !activeTab.url
 
-  if (protocol === 'socketio') {
-    return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <SocketIOEditor key={activeTab.id} />
-      </div>
-    )
-  }
+    if (isNewEmptyTab) {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <NewRequestWelcome />
+        </div>
+      )
+    }
 
-  if (protocol === 'runner') {
+    // Each protocol editor below is keyed by `activeTab.id` so a fast tab
+    // switch remounts the editor with the new tab's state. Without this, local
+    // component state (Monaco models, useState in sub-tabs, scroll positions)
+    // from the previous tab can leak into the next. Zustand state is already
+    // tab-aware; this pins the React tree to the same boundary.
+    if (protocol === 'soap') {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <SoapEditor key={activeTab.id} />
+        </div>
+      )
+    }
+
+    if (protocol === 'websocket') {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <WebSocketEditor key={activeTab.id} />
+        </div>
+      )
+    }
+
+    if (protocol === 'graphql') {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <GraphQLEditor key={activeTab.id} />
+        </div>
+      )
+    }
+
+    if (protocol === 'grpc') {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <GrpcEditor key={activeTab.id} />
+        </div>
+      )
+    }
+
+    if (protocol === 'sse') {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <SseEditor key={activeTab.id} />
+        </div>
+      )
+    }
+
+    if (protocol === 'ai') {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <AiChatEditor key={activeTab.id} />
+        </div>
+      )
+    }
+
+    // Tools (JWT, Hash, Encoders, …): the actual tool UIs live in the persistent
+    // PersistentToolTabs layer (rendered once, outside this branch). Here we only
+    // lay out the tab strip + the empty content region that layer overlays.
+    if (protocol.startsWith('tools.')) {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <div className="relative flex-1 overflow-hidden" />
+        </div>
+      )
+    }
+
+    if (protocol === 'mockServer') {
+      const id = activeTab.mockServerId ?? ''
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <MockServerEditor key={id} serverId={id} />
+        </div>
+      )
+    }
+
+    if (protocol === 'mcp') {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <McpEditor key={activeTab.id} />
+        </div>
+      )
+    }
+
+    if (protocol === 'socketio') {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <SocketIOEditor key={activeTab.id} />
+        </div>
+      )
+    }
+
+    if (protocol === 'runner') {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <RunnerTab
+            folderId={activeTab.folderId}
+            tabId={activeTab.id}
+            sessionKey={activeTab.sessionKey}
+          />
+        </div>
+      )
+    }
+
     return (
-      <div className="flex flex-1 flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
-        <EndpointTabBar />
-        <RunnerTab
-          folderId={activeTab.folderId}
-          tabId={activeTab.id}
-          sessionKey={activeTab.sessionKey}
-        />
+      <div className="flex flex-1 overflow-hidden" style={{ background: 'var(--white)' }}>
+        {/* Main content */}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* Endpoint tab bar */}
+          <EndpointTabBar />
+
+          {/* URL Bar */}
+          <UrlBar />
+
+          {/* URL Preview — shows resolved variables (Postman-style) */}
+          <UrlPreview />
+
+          {/* Split pane: Request (top) | Response (bottom).
+           *
+           * `key={activeTab.id}` is intentional — it forces RequestEditor and
+           * ResponsePane to remount on every tab switch. Without this, the
+           * Monaco editor inside RequestEditor and any local component state
+           * (`useState` in BodyTab, ResultRow, ResponsePane sub-tabs) would
+           * survive across tabs and could leak the previous request's content
+           * into the next one when the user switches quickly. The Zustand
+           * stores are already tab-aware, but the React component instances
+           * are not — this is the simplest atomic fix. */}
+          <PanelGroup direction="vertical" className="flex-1">
+            <Panel defaultSize={65} minSize={25} maxSize={85}>
+              <RequestEditor key={activeTab.id} />
+            </Panel>
+
+            <PanelResizeHandle
+              className="shrink-0 transition-colors hover:bg-[var(--accent)]"
+              style={{ height: 4, background: 'var(--border)', cursor: 'row-resize' }}
+            />
+
+            <Panel defaultSize={35} minSize={15} maxSize={75}>
+              <ResponsePane key={activeTab.id} />
+            </Panel>
+          </PanelGroup>
+        </div>
+
+        {/* Drag divider between the workbench and the Variables pane (issue #15) */}
+        <EdgeResizeHandle target="right" />
+
+        {/* Right: Postman-style tabbed panel (Variables / Code / ...) */}
+        <RightPanel />
       </div>
     )
-  }
+  })()
 
   return (
-    <div className="flex flex-1 overflow-hidden" style={{ background: 'var(--white)' }}>
-      {/* Main content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Endpoint tab bar */}
-        <EndpointTabBar />
+    <div className="relative flex flex-1 overflow-hidden" style={{ background: 'var(--white)' }}>
+      {content}
+      {hasToolTabs && <PersistentToolTabs visible={toolActive} />}
+    </div>
+  )
+}
 
-        {/* URL Bar */}
-        <UrlBar />
-
-        {/* URL Preview — shows resolved variables (Postman-style) */}
-        <UrlPreview />
-
-        {/* Split pane: Request (top) | Response (bottom).
-         *
-         * `key={activeTab.id}` is intentional — it forces RequestEditor and
-         * ResponsePane to remount on every tab switch. Without this, the
-         * Monaco editor inside RequestEditor and any local component state
-         * (`useState` in BodyTab, ResultRow, ResponsePane sub-tabs) would
-         * survive across tabs and could leak the previous request's content
-         * into the next one when the user switches quickly. The Zustand
-         * stores are already tab-aware, but the React component instances
-         * are not — this is the simplest atomic fix. */}
-        <PanelGroup direction="vertical" className="flex-1">
-          <Panel defaultSize={65} minSize={25} maxSize={85}>
-            <RequestEditor key={activeTab.id} />
-          </Panel>
-
-          <PanelResizeHandle
-            className="shrink-0 transition-colors hover:bg-[var(--accent)]"
-            style={{ height: 4, background: 'var(--border)', cursor: 'row-resize' }}
-          />
-
-          <Panel defaultSize={35} minSize={15} maxSize={75}>
-            <ResponsePane key={activeTab.id} />
-          </Panel>
-        </PanelGroup>
+// Tool tabs (JWT, Hash, Diff, …) hold their input in local component state, so
+// they must stay mounted even while a non-tool tab is active. Rendered once at
+// the Workbench root whenever any tool tab is open, this layer is shown only
+// when the active tab is a tool and overlays the content region just below the
+// tab strip (32px, matching EndpointTabBar's height).
+function PersistentToolTabs({ visible }: { visible: boolean }) {
+  const tabs = useTabsStore((s) => s.tabs)
+  const activeTabId = useTabsStore((s) => s.activeTabId)
+  const toolTabs = tabs.filter((t) => t.protocol.startsWith('tools.'))
+  return (
+    <div
+      className="absolute bottom-0 left-0 right-0 flex flex-col overflow-hidden"
+      style={{ top: 32, display: visible ? 'flex' : 'none', background: 'var(--white)' }}
+      aria-hidden={!visible}
+    >
+      <div className="relative flex-1 overflow-hidden">
+        {toolTabs.map((t) => {
+          const ToolComp = TOOL_COMPONENTS[t.protocol]
+          if (!ToolComp) return null
+          const isActive = t.id === activeTabId
+          return (
+            <div
+              key={t.id}
+              className="absolute inset-0 flex flex-col overflow-hidden"
+              style={{ display: isActive ? 'flex' : 'none' }}
+              aria-hidden={!isActive}
+            >
+              <ToolComp />
+            </div>
+          )
+        })}
       </div>
-
-      {/* Drag divider between the workbench and the Variables pane (issue #15) */}
-      <EdgeResizeHandle target="right" />
-
-      {/* Right: Postman-style tabbed panel (Variables / Code / ...) */}
-      <RightPanel />
     </div>
   )
 }
