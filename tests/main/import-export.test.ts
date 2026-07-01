@@ -489,28 +489,29 @@ describe('extractPostmanEventScripts', () => {
 })
 
 describe('normalizeInsomniaScript', () => {
-  it('rewrites insomnia.* to pm.*', () => {
+  // Since v1.4.19 the shared runtime provides a native `insomnia` binding with
+  // correct Insomnia semantics (numeric `insomnia.response.status`), so the old
+  // `insomnia.*`→`pm.*` rewrite is gone — it silently broke `.status` (issue
+  // #47). Scripts are now stored verbatim.
+  it('keeps insomnia.* verbatim (no rewrite to pm.*)', () => {
     const input = `
       const v = insomnia.iterationData.get('run_once');
       if (v !== 'yes') insomnia.execution.skipRequest();
       insomnia.test('ok', function () {
-        insomnia.expect(insomnia.response.json().status).to.eql('OK');
+        insomnia.expect(insomnia.response.status).to.eql(200);
       });
       insomnia.environment.set('k', '1');
     `
     const out = normalizeInsomniaScript(input)
-    expect(out).toContain("pm.iterationData.get('run_once')")
-    expect(out).toContain('pm.execution.skipRequest()')
-    expect(out).toContain("pm.test('ok'")
-    expect(out).toContain('pm.expect(pm.response.json()')
-    expect(out).toContain("pm.environment.set('k', '1')")
-    expect(out).not.toContain('insomnia.')
+    // Verbatim — the shared `insomnia` binding runs this directly.
+    expect(out).toBe(input)
+    expect(out).toContain('insomnia.response.status')
+    expect(out).not.toContain('pm.response.status')
   })
 
-  it('preserves non-insomnia identifiers', () => {
-    const input = `const insomniaCount = 5; pm.test('x', () => {});`
-    const out = normalizeInsomniaScript(input)
-    expect(out).toContain('insomniaCount = 5') // word boundary should preserve var name
+  it('is a no-op for empty/undefined input', () => {
+    expect(normalizeInsomniaScript('')).toBe('')
+    expect(normalizeInsomniaScript(undefined as unknown as string)).toBe('')
   })
 })
 
@@ -560,9 +561,10 @@ describe('Real-world Insomnia v5 fixture (Oracle CRUD)', () => {
     const first = (root.children as Array<{ name: string; scripts?: { preRequest?: string } }>)[0]
     expect(first.name).toContain('Create Employee')
     expect(first.scripts?.preRequest).toContain('insomnia.environment.set')
+    // Stored verbatim — the shared `insomnia` binding runs it as-is.
     const normalized = normalizeInsomniaScript(first.scripts!.preRequest!)
-    expect(normalized).toContain('pm.environment.set')
-    expect(normalized).not.toContain('insomnia.environment')
+    expect(normalized).toContain('insomnia.environment.set')
+    expect(normalized).toBe(first.scripts!.preRequest!)
   })
 })
 
@@ -574,9 +576,10 @@ describe('Multi-iteration Insomnia fixture', () => {
     )
     expect(text).toContain('insomnia.iterationData.get')
     expect(text).toContain('insomnia.execution.skipRequest')
-    // After normalization the runner sees pm.* equivalents:
-    expect(normalizeInsomniaScript(text)).toContain('pm.iterationData.get')
-    expect(normalizeInsomniaScript(text)).toContain('pm.execution.skipRequest')
+    // Scripts are stored verbatim — the runner executes insomnia.* directly
+    // via the shared runtime binding (no pm.* rewrite).
+    expect(normalizeInsomniaScript(text)).toContain('insomnia.iterationData.get')
+    expect(normalizeInsomniaScript(text)).toContain('insomnia.execution.skipRequest')
   })
 })
 

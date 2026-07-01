@@ -1493,27 +1493,25 @@ interface PostmanEnvironment {
 // ─── Postman / Insomnia script helpers ─────────────────────
 
 /**
- * Normalize an Insomnia v5 script string so it runs against the same `pm`
- * shim as Postman scripts. Replaces `insomnia.*` references with their `pm.*`
- * equivalents — the surface is API-compatible for the cases we care about
- * (environment, response, test/expect, iterationData, execution.skipRequest).
+ * Insomnia after-response / pre-request scripts are stored VERBATIM — no
+ * `insomnia.*`→`pm.*` rewrite.
+ *
+ * Since v1.4.19 the shared script runtime (`src/shared/script`) provides a
+ * native `insomnia` binding (`aliases.ts` → `buildInsomnia`) with the correct
+ * Insomnia semantics, notably **numeric `insomnia.response.status`** (Postman's
+ * `pm.response.status` is the reason-phrase text) and `insomnia.baseEnvironment`
+ * → collection variables. The old blanket rewrite silently flipped
+ * `insomnia.response.status` to the reason phrase, so a user guard like
+ * `if (status < 200 || status >= 300) throw` fired before the body was read
+ * whenever the server sent an empty reason phrase — every body assertion failed
+ * while `Status code is 200` still passed (issue #47). It also mangled
+ * `insomnia.baseEnvironment` into the non-existent `pm.baseEnvironment`.
+ *
+ * Keeping the script untouched means Send and Run execute the identical text
+ * through the same shared `insomnia` binding — one source, no parity drift.
  */
 export function normalizeInsomniaScript(script: string): string {
-  if (!script) return ''
-  return script
-    .replace(/\binsomnia\.iterationData\b/g, 'pm.iterationData')
-    .replace(/\binsomnia\.environment\b/g, 'pm.environment')
-    .replace(/\binsomnia\.globals\b/g, 'pm.globals')
-    .replace(/\binsomnia\.variables\b/g, 'pm.variables')
-    .replace(/\binsomnia\.collectionVariables\b/g, 'pm.collectionVariables')
-    .replace(/\binsomnia\.response\b/g, 'pm.response')
-    .replace(/\binsomnia\.request\b/g, 'pm.request')
-    .replace(/\binsomnia\.test\b/g, 'pm.test')
-    .replace(/\binsomnia\.expect\b/g, 'pm.expect')
-    .replace(/\binsomnia\.execution\b/g, 'pm.execution')
-    .replace(/\binsomnia\.info\b/g, 'pm.info')
-    .replace(/\binsomnia\.sendRequest\b/g, 'pm.sendRequest')
-    .replace(/\binsomnia\b/g, 'pm')
+  return script ?? ''
 }
 
 /** Pull pre/post scripts from a Postman item.event[] array. */

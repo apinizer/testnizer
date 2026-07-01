@@ -233,18 +233,20 @@ describe('importInsomnia v4 — folders, body, auth, scripts, envs', () => {
     })
   })
 
-  it('rewrites pre/post scripts insomnia.* → pm.* and stores them', async () => {
+  it('stores pre/post scripts verbatim (insomnia.* runs natively, issue #47)', async () => {
     await importInsomnia(projectId, JSON.stringify(v4Doc))
     const db = getDb()
     const row = db
       .prepare('SELECT request_schema FROM endpoints WHERE project_id = ? AND name = ?')
       .get(projectId, 'Scripted') as { request_schema: string }
     const schema = JSON.parse(row.request_schema)
-    expect(schema.preScript).toContain("pm.environment.set('a', '1')")
-    expect(schema.preScript).toContain("pm.test('ok'")
-    expect(schema.preScript).not.toContain('insomnia.')
-    expect(schema.postScript).toContain('pm.expect(pm.response.code)')
-    expect(schema.postScript).not.toContain('insomnia.')
+    // No rewrite — the shared runtime executes insomnia.* directly with correct
+    // Insomnia semantics (numeric .status). Rewriting to pm.* broke .status.
+    expect(schema.preScript).toContain("insomnia.environment.set('a', '1')")
+    expect(schema.preScript).toContain("insomnia.test('ok'")
+    expect(schema.preScript).not.toContain('pm.environment.set')
+    expect(schema.postScript).toContain('insomnia.expect(insomnia.response.code)')
+    expect(schema.postScript).not.toContain('pm.response.code')
   })
 
   it('extracts environment vars (legacy data:[{name,value}] form)', async () => {
@@ -608,16 +610,15 @@ describe('importInsomnia v5 — sortKey ordering & inherited auth', () => {
 
 // ─── Script shim coverage on the wider Insomnia surface ────
 
-describe('normalizeInsomniaScript covers the full insomnia.* surface', () => {
-  it('rewrites cookies/vault/sendRequest/info via the catch-all', () => {
-    const out = normalizeInsomniaScript(
-      "insomnia.cookies.jar(); insomnia.vault.get('k'); insomnia.sendRequest('u'); insomnia.info.requestName;",
-    )
-    expect(out).toContain('pm.cookies.jar()')
-    expect(out).toContain("pm.vault.get('k')")
-    expect(out).toContain("pm.sendRequest('u')")
-    expect(out).toContain('pm.info.requestName')
-    expect(out).not.toContain('insomnia.')
+describe('normalizeInsomniaScript stores scripts verbatim', () => {
+  it('does NOT rewrite insomnia.* to pm.* (shared runtime handles insomnia natively)', () => {
+    const input =
+      "insomnia.cookies.jar(); insomnia.sendRequest('u'); insomnia.info.requestName; insomnia.response.status;"
+    const out = normalizeInsomniaScript(input)
+    expect(out).toBe(input)
+    // Critically, insomnia.response.status stays numeric-semantics (issue #47).
+    expect(out).toContain('insomnia.response.status')
+    expect(out).not.toContain('pm.response.status')
   })
 })
 

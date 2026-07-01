@@ -636,23 +636,17 @@ describe('Insomnia v5 Oracle CRUD — field-level audit', () => {
     expect(bodiesAudited).toBeGreaterThan(0)
   })
 
-  it('preserves pre-request and after-response scripts (with insomnia → pm shim applied)', async () => {
+  it('preserves pre-request and after-response scripts verbatim (insomnia.* runs natively)', async () => {
     await importInsomnia(PROJECT_ID, content, null)
     const rows = testDb
       .prepare('SELECT name, request_schema FROM endpoints ORDER BY sort_order')
       .all() as { name: string; request_schema: string }[]
 
-    // The Insomnia importer deliberately rewrites `insomnia.*` references to
-    // their `pm.*` equivalents (the test runner is Postman-compatible). We
-    // apply the same shim to the source script and compare the rewritten
-    // body — that proves the rewrite ran AND that no other bytes were lost.
-    function applyShim(s: string): string {
-      // Importer rewrites every `insomnia.<ident>` to `pm.<ident>`. Match the
-      // same set so the test mirrors the shim without enumerating each
-      // method name.
-      return s.replace(/\binsomnia\.([A-Za-z_$][A-Za-z0-9_$]*)/g, 'pm.$1')
-    }
-
+    // Since v1.4.19 the shared script runtime runs `insomnia.*` natively with
+    // correct Insomnia semantics (numeric `.status`), so the importer stores
+    // scripts VERBATIM — no `insomnia.*`→`pm.*` rewrite (that silently flipped
+    // `.status` to the reason phrase, issue #47). The stored script must contain
+    // the source bytes unchanged.
     let preAudited = 0
     let postAudited = 0
     for (let i = 0; i < sourceRequests.length; i++) {
@@ -662,11 +656,11 @@ describe('Insomnia v5 Oracle CRUD — field-level audit', () => {
         postScript?: string
       }
       if (src.scripts?.preRequest) {
-        expect(schema.preScript).toContain(applyShim(src.scripts.preRequest))
+        expect(schema.preScript).toContain(src.scripts.preRequest)
         preAudited++
       }
       if (src.scripts?.afterResponse) {
-        expect(schema.postScript).toContain(applyShim(src.scripts.afterResponse))
+        expect(schema.postScript).toContain(src.scripts.afterResponse)
         postAudited++
       }
     }
