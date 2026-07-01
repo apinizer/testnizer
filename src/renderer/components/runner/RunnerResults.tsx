@@ -3,6 +3,7 @@ import { RotateCcw, Plus, X, ExternalLink, ChevronDown, ChevronRight } from 'luc
 import { getMethodColors } from '../../styles/tokens'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
+import { endpointDidPass } from '../../../shared/runner-verdict'
 
 type FilterTab = 'all' | 'passed' | 'failed' | 'skipped' | 'errors' | 'console'
 
@@ -49,12 +50,11 @@ export default function RunnerResults({
   // history rows (no `iteration` field) bucket into Iteration 1 cleanly.
   const [collapsedIterations, setCollapsedIterations] = useState<Set<number>>(new Set())
 
-  const totalPassed = results.filter(
-    (r) => !r.error && r.failed === 0 && r.status !== null && r.status < 400,
-  ).length
-  const totalFailed = results.filter(
-    (r) => r.error || r.failed > 0 || (r.status !== null && r.status >= 400),
-  ).length
+  // Verdict via the SHARED rule (shared/runner-verdict.ts) — a passing test that
+  // allows a non-2xx code (idempotent DELETE → 400) must NOT be bucketed as
+  // failed here just because the status is 4xx (issue #16 parity with main).
+  const totalPassed = results.filter(endpointDidPass).length
+  const totalFailed = results.filter((r) => !endpointDidPass(r)).length
   const totalDuration = report
     ? report.completedAt - report.startedAt
     : results.reduce((acc, r) => acc + r.duration, 0)
@@ -75,9 +75,9 @@ export default function RunnerResults({
     return results.filter((r) => {
       switch (activeFilter) {
         case 'passed':
-          return !r.error && r.failed === 0 && r.status !== null && r.status < 400
+          return endpointDidPass(r)
         case 'failed':
-          return r.error || r.failed > 0 || (r.status !== null && r.status >= 400)
+          return !endpointDidPass(r)
         case 'errors':
           return !!r.error
         case 'skipped':
@@ -303,9 +303,7 @@ export default function RunnerResults({
         <div className="flex-1 overflow-auto">
           {iterationGroups.map(([iter, rows]) => {
             const collapsed = collapsedIterations.has(iter)
-            const passed = rows.filter(
-              (r) => !r.error && r.failed === 0 && r.status !== null && r.status < 400,
-            ).length
+            const passed = rows.filter(endpointDidPass).length
             const failed = rows.length - passed
             return (
               <div key={iter}>

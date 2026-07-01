@@ -26,6 +26,7 @@ import {
 } from '../lib/auth-inheritance'
 import { buildScriptBindings, createPmResponse, expect as chaiExpect } from '../../shared/script'
 import type { NormalizedResponse, PmLike } from '../../shared/script'
+import { endpointDidPass } from '../../shared/runner-verdict'
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -1512,22 +1513,6 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
           passedAssertions += passed
           failedAssertions += failed
 
-          // A request's verdict is driven by its ASSERTIONS when it has any: a
-          // test that explicitly allows a non-2xx code (e.g. an idempotent
-          // DELETE asserting `pm.expect(code).to.be.oneOf([200,204,404,400])`)
-          // must count as passed when that assertion holds — matching Postman /
-          // Insomnia (issue #16). The old `(status ?? 0) < 400` guard overrode
-          // passing assertions and bucketed every 4xx/5xx as failed. When a
-          // request carries NO assertions at all we keep the status fallback so
-          // a bare 4xx/5xx still surfaces as a failure (and stopOnError fires).
-          // Genuine transport failures are caught by `!response.error`;
-          // pre-script skips short-circuit before reaching this point.
-          const hasChecks = assertionResults.length > 0
-          const endpointPassed =
-            !response.error && failed === 0 && (hasChecks || (response.status ?? 0) < 400)
-          if (endpointPassed) passedEndpoints++
-          else failedEndpoints++
-
           const result: EndpointRunResult = {
             endpointId,
             endpointName: endpoint.name,
@@ -1565,6 +1550,15 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
               : undefined,
             iteration: iter + 1,
           }
+
+          // Endpoint verdict via the SHARED rule (shared/runner-verdict.ts) so
+          // the live run summary, the HTML report, and the renderer results
+          // views all agree: assertion-driven when the request has any checks
+          // (an idempotent DELETE asserting `oneOf([200,204,404,400])` passes on
+          // 400 — issue #16), HTTP-status fallback only for check-less requests.
+          const endpointPassed = endpointDidPass(result)
+          if (endpointPassed) passedEndpoints++
+          else failedEndpoints++
 
           results.push(result)
           sendProgress({ current: i + 1, total, endpointId, result })
@@ -1790,18 +1784,6 @@ function persistRunVariableUpdates(
 
 function exportAsJson(results: EndpointRunResult[]): string {
   return JSON.stringify(results, null, 2)
-}
-
-/**
- * Whether a finished endpoint counts as passed — mirrors the live runner
- * verdict (`endpointPassed`): assertion-driven when the request has any, with a
- * HTTP-status fallback for requests that carry no assertions (issue #16). Keeps
- * the exported report's totals and per-row status in step with the run summary.
- */
-function endpointDidPass(r: EndpointRunResult): boolean {
-  if (r.error || r.failed > 0) return false
-  if (r.assertions.length === 0) return (r.status ?? 0) < 400
-  return true
 }
 
 function exportAsHtml(results: EndpointRunResult[]): string {

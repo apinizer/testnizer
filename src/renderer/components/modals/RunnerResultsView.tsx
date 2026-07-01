@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useRunnerStore } from '../../stores/runner.store'
 import { getMethodColors } from '../../styles/tokens'
 import { RotateCcw, Plus, ChevronDown, ChevronRight } from 'lucide-react'
+import { endpointDidPass } from '../../../shared/runner-verdict'
 
 type FilterTab = 'all' | 'passed' | 'failed' | 'skipped' | 'errors' | 'console'
 
@@ -21,8 +22,11 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
 
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
 
-  const totalPassed = results.filter((r) => !r.error && r.failed === 0).length
-  const totalFailed = results.filter((r) => r.error || r.failed > 0).length
+  // Verdict via the SHARED rule (shared/runner-verdict.ts) — assertion-driven
+  // when the request has checks (idempotent DELETE → 400 still passes, issue
+  // #16), so pass/fail here stays in step with the main run summary.
+  const totalPassed = results.filter(endpointDidPass).length
+  const totalFailed = results.filter((r) => !endpointDidPass(r)).length
   const totalDuration =
     report?.completedAt && report?.startedAt
       ? report.completedAt - report.startedAt
@@ -37,9 +41,9 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
   const filteredResults = results.filter((r) => {
     switch (activeFilter) {
       case 'passed':
-        return !r.error && r.failed === 0 && r.status !== null && r.status < 400
+        return endpointDidPass(r)
       case 'failed':
-        return r.error || r.failed > 0 || (r.status !== null && r.status >= 400)
+        return !endpointDidPass(r)
       case 'errors':
         return !!r.error
       case 'skipped':
