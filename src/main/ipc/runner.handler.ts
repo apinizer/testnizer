@@ -435,7 +435,7 @@ function requestBodyToString(body?: {
     key: string
     value: string
     enabled?: boolean
-    fieldType?: string
+    type?: string
     filePath?: string
   }>
 }): string | undefined {
@@ -445,9 +445,7 @@ function requestBodyToString(body?: {
   if (body.type === 'form-data' && body.formData) {
     return body.formData
       .filter((k) => k.enabled !== false)
-      .map(
-        (k) => `${k.key}=${k.fieldType === 'file' ? `<file:${k.filePath ?? k.value}>` : k.value}`,
-      )
+      .map((k) => `${k.key}=${k.type === 'file' ? `<file:${k.filePath ?? k.value}>` : k.value}`)
       .join('\n')
   }
   if (body.type === 'urlencoded' && body.urlEncoded) {

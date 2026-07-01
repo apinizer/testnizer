@@ -98,7 +98,7 @@ describe('http.engine — multipart/form-data file upload', () => {
     }
   })
 
-  it('skips file fields whose path does not exist (no crash)', async () => {
+  it('surfaces a clear error (not a silent drop) when the file path does not exist (issue #46)', async () => {
     captured = null
     const result = await executeHttpRequest({
       method: 'POST',
@@ -118,9 +118,61 @@ describe('http.engine — multipart/form-data file upload', () => {
         ],
       },
     })
-    expect(result.status).toBe(200)
-    expect(captured!.body).toContain('name="k"')
-    expect(captured!.body).not.toContain('name="missing"')
+    // Old behaviour silently dropped the file part → the server returned a
+    // confusing "part not present" 400 with no clue why. Now the engine fails
+    // loudly, naming the field + path, and never sends the request.
+    expect(result.error).toBeTruthy()
+    expect(result.error).toContain('missing')
+    expect(result.error).toContain('/this/path/does/not/exist/abc.bin')
+    expect(captured).toBeNull()
+  })
+
+  it('errors when a file field has no path selected (issue #46)', async () => {
+    captured = null
+    const result = await executeHttpRequest({
+      method: 'POST',
+      url: `http://127.0.0.1:${port}/upload`,
+      body: {
+        type: 'form-data',
+        formData: [{ id: '1', key: 'doc', value: '', enabled: true, type: 'file' }],
+      },
+    })
+    expect(result.error).toBeTruthy()
+    expect(result.error).toContain('doc')
+    expect(captured).toBeNull()
+  })
+
+  it('rewrites a boundary-less multipart Content-Type header with the form boundary (issue #46)', async () => {
+    // Insomnia imports carry `Content-Type: multipart/form-data` with NO
+    // boundary; keeping it makes a strict server unable to parse any part. The
+    // engine must replace it with the form-data boundary.
+    const tmpFile = join(tmpdir(), `testnizer-boundary-${Date.now()}.bin`)
+    writeFileSync(tmpFile, 'data')
+    captured = null
+    try {
+      const result = await executeHttpRequest({
+        method: 'PUT',
+        url: `http://127.0.0.1:${port}/upload`,
+        headers: [{ id: '1', key: 'Content-Type', value: 'multipart/form-data', enabled: true }],
+        body: {
+          type: 'form-data',
+          formData: [
+            { id: '1', key: 'fileName', value: 'x.bin', enabled: true, type: 'text' },
+            { id: '2', key: 'file', value: '', enabled: true, type: 'file', filePath: tmpFile },
+          ],
+        },
+      })
+      expect(result.error).toBeUndefined()
+      expect(result.status).toBe(200)
+      expect(captured!.contentType).toMatch(/^multipart\/form-data; boundary=/)
+      expect(captured!.body).toContain('name="file"')
+    } finally {
+      try {
+        unlinkSync(tmpFile)
+      } catch {
+        /* ignore */
+      }
+    }
   })
 
   it('treats undefined type as text (backwards compatibility)', async () => {

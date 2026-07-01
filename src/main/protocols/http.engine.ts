@@ -1005,48 +1005,51 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
           // be loaded into memory. The `form-data` package emits the proper
           // boundary header which axios then forwards as Content-Type.
           const form = new FormData()
-          let hasFileField = false
           if (options.body.formData) {
             for (const item of options.body.formData) {
               if (!item.enabled || !item.key) continue
               if (item.type === 'file') {
-                if (!item.filePath) continue
-                try {
-                  // Validate the file exists & is regular before opening a stream.
-                  const stat = statSync(item.filePath)
-                  if (!stat.isFile()) continue
-                  const stream = createReadStream(item.filePath)
-                  form.append(item.key, stream, {
-                    filename: basename(item.filePath),
-                    knownLength: stat.size,
-                  })
-                  hasFileField = true
-                } catch {
-                  // Skip files that can't be read; the caller will see a
-                  // server-side error if the field was required.
+                // A file field with no path, or an unreadable path, is a HARD
+                // error — never a silent skip. Dropping it quietly produced a
+                // mystery server 400 ("Required part 'file' is not present")
+                // with no clue the file was omitted (issue #46). Surfacing it
+                // lets the runner-result / response panel show the real cause.
+                if (!item.filePath) {
+                  throw new Error(`Multipart file field "${item.key}" has no file selected`)
                 }
+                let stat: ReturnType<typeof statSync>
+                try {
+                  stat = statSync(item.filePath)
+                } catch (e) {
+                  throw new Error(
+                    `Multipart file field "${item.key}": cannot read "${item.filePath}" (${(e as Error).message})`,
+                  )
+                }
+                if (!stat.isFile()) {
+                  throw new Error(
+                    `Multipart file field "${item.key}": "${item.filePath}" is not a regular file`,
+                  )
+                }
+                form.append(item.key, createReadStream(item.filePath), {
+                  filename: basename(item.filePath),
+                  knownLength: stat.size,
+                })
               } else {
                 form.append(item.key, item.value ?? '')
               }
             }
           }
           data = form
-          // Let `form-data` set the Content-Type with the right boundary —
-          // copy its computed headers so axios uses them verbatim.
-          const fdHeaders = form.getHeaders()
-          for (const [k, v] of Object.entries(fdHeaders)) {
-            // Don't clobber an explicit Content-Type override unless we have
-            // a file (which requires the boundary parameter).
-            if (k.toLowerCase() === 'content-type') {
-              if (hasFileField || !headers['Content-Type']) {
-                headers[k] = String(v)
-              }
-            } else {
-              headers[k] = String(v)
-            }
-          }
+          // ALWAYS use the boundary-bearing Content-Type the `form-data` package
+          // computes. An imported Insomnia multipart request carries a
+          // boundary-LESS `Content-Type: multipart/form-data`; keeping it makes a
+          // strict server unable to parse ANY part (issue #46). Drop whatever
+          // came in and apply the form's own header verbatim.
+          delete headers['Content-Type']
+          delete headers['content-type']
+          Object.assign(headers, form.getHeaders())
           // Sentinel so the default Content-Type assignment below skips us.
-          contentType = headers['Content-Type'] ?? 'multipart/form-data'
+          contentType = headers['content-type'] ?? headers['Content-Type'] ?? 'multipart/form-data'
           break
         }
         case 'binary':
