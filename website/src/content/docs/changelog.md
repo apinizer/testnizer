@@ -12,8 +12,8 @@ where signed installers and SHA-256 checksums are attached.
 
 ## v1.4.34
 
-**Switching sidebar pages no longer disturbs your open tabs, and tool inputs
-stick around.**
+**Switching sidebar pages no longer disturbs your open tabs, tool inputs stick
+around — and Test Suite runs now report what your tests actually say.**
 
 Open tabs and the active tab are now shared across every sidebar page. Clicking
 **Tools** (or Tests / Mocks / History) no longer hides your request tabs,
@@ -23,6 +23,19 @@ panel, and you come back to exactly the tab you were on. The built-in tools
 back, instead of resetting. And in the Text Diff tool, long lines in the result
 wrap within their column instead of overflowing and overlapping the neighbouring
 text.
+
+Three fixes land for Test Suite / collection runs. A request whose test
+explicitly accepts a non-2xx code — e.g. an idempotent DELETE asserting the
+status is one of 200 / 204 / 404 / 400 — now counts as **passed** in the run
+summary, matching what the Tests tab shows and Postman / Insomnia; the summary
+used to mark every 4xx/5xx as failed even when the test passed. Imported
+Insomnia after-response scripts that read `insomnia.response.status` / `.body` /
+`.json()` work again during a Run: the importer used to rewrite `insomnia.*` to
+`pm.*`, which silently turned the numeric status into the reason-phrase text and
+broke body assertions while the status check still passed (issue #47). And a
+`form-data` file field bound to a path — like an MMDB upload — is once again sent
+with the file and a correct boundary; an unreadable path now surfaces a clear
+error instead of being silently dropped into a confusing server 400 (issue #46).
 
 ## v1.4.33
 

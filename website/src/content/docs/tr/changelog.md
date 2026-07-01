@@ -13,8 +13,9 @@ orada eklenir.
 
 ## v1.4.34
 
-**Sidebar sayfaları arasında geçiş artık açık sekmelerinizi bozmuyor ve araç
-girdileri yerinde kalıyor.**
+**Sidebar sayfaları arasında geçiş artık açık sekmelerinizi bozmuyor, araç
+girdileri yerinde kalıyor — ve Test Suite koşuları artık testlerinizin gerçekten
+söylediğini raporluyor.**
 
 Açık sekmeler ve aktif sekme artık her sidebar sayfasında ortak. **Tools**'a (ya
 da Tests / Mocks / History) basmak artık request sekmelerinizi gizlemiyor, aktif
@@ -23,6 +24,19 @@ sol paneli değiştiriyor ve tam bıraktığınız sekmeye dönüyorsunuz. Yerle
 araçlar (JWT, Diff, Hash, …) bir request sekmesine geçip dönünce yazdığınızı artık
 sıfırlamıyor, koruyor. Ayrıca Text Diff aracında sonuçtaki uzun satırlar komşu
 metnin üstüne taşmak yerine kendi kolonu içinde sarılıyor.
+
+Test Suite / koleksiyon koşuları için üç düzeltme geliyor. Testi bir 2xx-dışı
+kodu açıkça kabul eden bir istek — örneğin durumun 200 / 204 / 404 / 400'den
+biri olduğunu doğrulayan idempotent bir DELETE — artık koşu özetinde **geçti**
+sayılıyor; bu, Tests sekmesinin ve Postman / Insomnia'nın gösterdiğiyle uyumlu.
+Özet eskiden test geçse bile her 4xx/5xx'i başarısız işaretliyordu. İçe aktarılan
+Insomnia after-response script'lerinde `insomnia.response.status` / `.body` /
+`.json()` okuması bir koşu sırasında yeniden çalışıyor: içe aktarıcı eskiden
+`insomnia.*`'ı `pm.*`'a çeviriyor, bu da sayısal durumu sessizce sebep-ifadesi
+metnine dönüştürüp durum kontrolü geçerken gövde doğrulamalarını bozuyordu (issue
+#47). Ve bir yola bağlı `form-data` dosya alanı — MMDB yüklemesi gibi — yeniden
+dosya ve doğru sınır (boundary) ile gönderiliyor; okunamayan bir yol artık sessizce
+düşürülüp kafa karıştırıcı bir 400 vermek yerine net bir hata gösteriyor (issue #46).
 
 ## v1.4.33
 
