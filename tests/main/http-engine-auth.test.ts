@@ -43,7 +43,8 @@ let port = 0
 let captured: Captured | null = null
 // When set, this overrides the default 200 handler (used for the digest
 // challenge test). Return `true` if it fully handled the response.
-let customHandler: ((cap: Captured, res: import('node:http').ServerResponse) => boolean) | null = null
+let customHandler: ((cap: Captured, res: import('node:http').ServerResponse) => boolean) | null =
+  null
 
 beforeAll(
   () =>
@@ -159,6 +160,37 @@ describe('http.engine auth — bearer', () => {
     })
     expect(captured?.headers.authorization).toBe('Token xyz')
   })
+
+  // issue #48: a per-request Authorization header must win over an
+  // inherited/auth-tab Bearer. In the Runner a setup step's management Bearer is
+  // resolved as the effective auth; the gateway request declares its own header
+  // and that header must reach the wire, not the inherited token.
+  it('does not clobber an explicit Authorization header set in Headers tab', async () => {
+    reset()
+    await executeHttpRequest({
+      method: 'GET',
+      url: baseUrl('/bearer'),
+      headers: [{ id: '1', key: 'Authorization', value: 'Bearer eyJ.header.wins', enabled: true }],
+      auth: { type: 'bearer', bearer: { token: 'apnz_inherited_management_token' } },
+      timeout: 3000,
+    })
+    expect(captured?.headers.authorization).toBe('Bearer eyJ.header.wins')
+  })
+
+  // Same class, case-insensitive: an inherited Bearer must not clobber a
+  // lower-cased `authorization: Basic …` the gateway request declares.
+  it('lets a lower-cased Basic authorization header win over an inherited Bearer', async () => {
+    reset()
+    const basic = 'Basic ' + Buffer.from('client_id:client_secret').toString('base64')
+    await executeHttpRequest({
+      method: 'POST',
+      url: baseUrl('/introspect'),
+      headers: [{ id: '1', key: 'authorization', value: basic, enabled: true }],
+      auth: { type: 'bearer', bearer: { token: 'apnz_inherited_management_token' } },
+      timeout: 3000,
+    })
+    expect(captured?.headers.authorization).toBe(basic)
+  })
 })
 
 // ─── api-key ─────────────────────────────────────────────────
@@ -189,6 +221,19 @@ describe('http.engine auth — api-key', () => {
     // Not added as a header.
     expect(captured?.headers['api_key']).toBeUndefined()
   })
+
+  // issue #48 (same class): an explicit same-named header wins over api-key auth.
+  it('does not clobber a same-named header the request already declares', async () => {
+    reset()
+    await executeHttpRequest({
+      method: 'GET',
+      url: baseUrl('/apikey'),
+      headers: [{ id: '1', key: 'X-Api-Key', value: 'request-own', enabled: true }],
+      auth: { type: 'api-key', apiKey: { key: 'X-Api-Key', value: 'inherited', in: 'header' } },
+      timeout: 3000,
+    })
+    expect(captured?.headers['x-api-key']).toBe('request-own')
+  })
 })
 
 // ─── oauth2 ──────────────────────────────────────────────────
@@ -203,6 +248,20 @@ describe('http.engine auth — oauth2', () => {
       timeout: 3000,
     })
     expect(captured?.headers.authorization).toBe('Bearer oauth-access-token')
+  })
+
+  // issue #48 (same class): a per-request Authorization header wins over an
+  // oauth2 access token resolved from the auth tab / inheritance.
+  it('does not clobber an explicit Authorization header set in Headers tab', async () => {
+    reset()
+    await executeHttpRequest({
+      method: 'GET',
+      url: baseUrl('/oauth2'),
+      headers: [{ id: '1', key: 'Authorization', value: 'Bearer request-own', enabled: true }],
+      auth: { type: 'oauth2', oauth2: { token: 'inherited-oauth-token' } },
+      timeout: 3000,
+    })
+    expect(captured?.headers.authorization).toBe('Bearer request-own')
   })
 })
 
@@ -457,7 +516,11 @@ describe('http.engine auth — hawk', () => {
       url: baseUrl('/hawk/resource?a=1'),
       auth: {
         type: 'hawk',
-        hawk: { authId: 'dh37fgj492je', authKey: 'werxhqb98rpaxn39848xrunpaw3489ru', algorithm: 'sha256' },
+        hawk: {
+          authId: 'dh37fgj492je',
+          authKey: 'werxhqb98rpaxn39848xrunpaw3489ru',
+          algorithm: 'sha256',
+        },
       },
       timeout: 3000,
     })
@@ -511,6 +574,23 @@ describe('http.engine auth — hawk', () => {
     expect(f.mac).toBe(expectedMac)
     // sha1 MAC is 20 bytes → 28 base64 chars.
     expect(Buffer.from(f.mac, 'base64').length).toBe(20)
+  })
+
+  // issue #48 (same class): a per-request Authorization header wins over a
+  // computed Hawk header.
+  it('does not clobber an explicit Authorization header set in Headers tab', async () => {
+    reset()
+    await executeHttpRequest({
+      method: 'GET',
+      url: baseUrl('/hawk'),
+      headers: [{ id: '1', key: 'Authorization', value: 'Bearer request-own', enabled: true }],
+      auth: {
+        type: 'hawk',
+        hawk: { authId: 'idy', authKey: 'keyz', algorithm: 'sha1' },
+      },
+      timeout: 3000,
+    })
+    expect(captured?.headers.authorization).toBe('Bearer request-own')
   })
 })
 

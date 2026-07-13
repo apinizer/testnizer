@@ -11,6 +11,24 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.35
+
+**Collection Runner artık her isteğin kendi Authorization header'ını, miras
+alınan bir yönetim token'ı yerine gönderiyor.**
+
+Çok adımlı bir koşuda, erken bir kurulum adımı çoğu zaman bir yönetim erişim
+token'ı (ör. `Bearer apnz_…`) alır ve bu, koleksiyon / klasör auth'u olarak miras
+alınır. Kendi **Authorization header'ını** tanımlayan sonraki istekler — `Basic
+client_id:secret` taşıyan bir gateway introspect ya da yeni üretilmiş bir `Bearer
+eyJ…` JWT taşıyan bir regenerate — bu header'ın miras alınan token tarafından
+sessizce ezilmesine maruz kalıyordu; sunucu yanlış kimlik bilgisini görüyor ve
+*Missing Parameter: client_id* veya *Invalid JWT serialization* yanıtını
+veriyordu. Artık isteğin kendi Authorization header'ı kazanıyor — Insomnia /
+Postman ile aynı davranış. Bundan önce yalnızca Basic-auth yolu buna karşı
+korumalıydı; koruma artık Bearer, OAuth 2.0, API-key ve Hawk auth'u da kapsıyor.
+Bu, HTTP engine'de tek bir düzeltme olduğu için Send butonu ve Runner birebir aynı
+davranıyor (issue #48).
+
 ## v1.4.34
 
 **Sidebar sayfaları arasında geçiş artık açık sekmelerinizi bozmuyor, araç

@@ -10,6 +10,23 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.35
+
+**The Collection Runner now sends each request's own Authorization header
+instead of an inherited management token.**
+
+In a multi-step run, an early setup step often obtains a management access token
+(e.g. `Bearer apnz_…`) that is inherited as the collection / folder auth. Later
+requests that declare their **own** Authorization header — a gateway introspect
+carrying `Basic client_id:secret`, or a regenerate carrying a freshly minted
+`Bearer eyJ…` JWT — used to have that header silently overwritten by the
+inherited token, so the server saw the wrong credential and answered *Missing
+Parameter: client_id* or *Invalid JWT serialization*. The request's own
+Authorization header now wins, matching Insomnia / Postman. Only the Basic-auth
+path guarded against this before; the guard now covers Bearer, OAuth 2.0,
+API-key, and Hawk auth as well. It's a single fix in the HTTP engine, so the
+Send button and the Runner behave identically (issue #48).
+
 ## v1.4.34
 
 **Switching sidebar pages no longer disturbs your open tabs, tool inputs stick
