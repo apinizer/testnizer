@@ -426,6 +426,22 @@ async function ensureOAuth2Token(auth: AuthConfig | undefined): Promise<void> {
   o.token = res.accessToken
 }
 
+/**
+ * True when the request already carries a header named `name` (case-insensitive)
+ * that the user set explicitly in the Headers tab. Auth-tab / inherited auth must
+ * defer to it: a per-request `Authorization` header wins over any
+ * collection/folder/environment auth, matching Insomnia/Postman (issue #48). The
+ * `basic` case has enforced this since v1.4.4; this generalizes it to every
+ * Authorization-setting auth type so an inherited management Bearer can't clobber
+ * a request's own header (e.g. a gateway step's `Basic client_id:secret` or a
+ * freshly minted `Bearer eyJ…` JWT).
+ */
+function hasExplicitHeader(config: AxiosRequestConfig, name: string): boolean {
+  if (!config.headers) return false
+  const lower = name.toLowerCase()
+  return Object.keys(config.headers).some((k) => k.toLowerCase() === lower)
+}
+
 function applyAuth(
   config: AxiosRequestConfig,
   auth: AuthConfig,
@@ -464,10 +480,7 @@ function applyAuth(
         // explicit header win — preserve that order so a deliberate
         // manual header isn't silently overridden by the auth config.
         config.headers = config.headers || {}
-        const existing = Object.keys(config.headers).some(
-          (k) => k.toLowerCase() === 'authorization',
-        )
-        if (!existing) {
+        if (!hasExplicitHeader(config, 'Authorization')) {
           const token = Buffer.from(`${username}:${password}`).toString('base64')
           config.headers['Authorization'] = `Basic ${token}`
         }
@@ -476,9 +489,13 @@ function applyAuth(
     }
     case 'bearer': {
       if (auth.bearer) {
-        const prefix = auth.bearer.prefix || 'Bearer'
         config.headers = config.headers || {}
-        config.headers['Authorization'] = `${prefix} ${auth.bearer.token}`
+        // Per-request Authorization header wins over an inherited/auth-tab
+        // Bearer (issue #48) — same guard as basic above.
+        if (!hasExplicitHeader(config, 'Authorization')) {
+          const prefix = auth.bearer.prefix || 'Bearer'
+          config.headers['Authorization'] = `${prefix} ${auth.bearer.token}`
+        }
       }
       break
     }
@@ -486,7 +503,10 @@ function applyAuth(
       if (auth.apiKey) {
         if (auth.apiKey.in === 'header') {
           config.headers = config.headers || {}
-          config.headers[auth.apiKey.key] = auth.apiKey.value
+          // Don't overwrite a same-named header the request already declares.
+          if (!hasExplicitHeader(config, auth.apiKey.key)) {
+            config.headers[auth.apiKey.key] = auth.apiKey.value
+          }
         } else {
           config.params = config.params || {}
           ;(config.params as Record<string, string>)[auth.apiKey.key] = auth.apiKey.value
@@ -497,7 +517,9 @@ function applyAuth(
     case 'oauth2': {
       if (auth.oauth2?.token) {
         config.headers = config.headers || {}
-        config.headers['Authorization'] = `Bearer ${auth.oauth2.token}`
+        if (!hasExplicitHeader(config, 'Authorization')) {
+          config.headers['Authorization'] = `Bearer ${auth.oauth2.token}`
+        }
       }
       break
     }
@@ -509,15 +531,17 @@ function applyAuth(
     }
     case 'hawk': {
       if (auth.hawk) {
-        const hawkHeader = generateHawkHeader(
-          method,
-          url,
-          auth.hawk.authId,
-          auth.hawk.authKey,
-          auth.hawk.algorithm,
-        )
         config.headers = config.headers || {}
-        config.headers['Authorization'] = hawkHeader
+        if (!hasExplicitHeader(config, 'Authorization')) {
+          const hawkHeader = generateHawkHeader(
+            method,
+            url,
+            auth.hawk.authId,
+            auth.hawk.authKey,
+            auth.hawk.algorithm,
+          )
+          config.headers['Authorization'] = hawkHeader
+        }
       }
       break
     }
