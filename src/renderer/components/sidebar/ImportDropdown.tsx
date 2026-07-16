@@ -45,6 +45,7 @@ const CATEGORIES: ImportFormatCategory[] = [
   {
     titleKey: 'importDropdown.section.collections',
     options: [
+      { id: 'apinizer', name: 'Apinizer' },
       { id: 'postman', name: 'Postman' },
       { id: 'insomnia', name: 'Insomnia' },
       { id: 'har', name: 'HAR' },

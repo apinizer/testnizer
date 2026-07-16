@@ -138,7 +138,10 @@ export function checkTypeMismatch(
     proto: ['proto'],
     raml: ['raml'],
     openapi: ['openapi'],
-    postman: ['postman'],
+    // Apinizer test collections ARE Postman v2.1 (+ x-apinizer), so they
+    // detect as `postman`; accept them under either the Postman or the
+    // Apinizer import card (both route to importPostman).
+    postman: ['postman', 'apinizer'],
     insomnia: ['insomnia'],
     curl: ['curl'],
     native: ['native'],
@@ -148,7 +151,7 @@ export function checkTypeMismatch(
     // also added here so a Testnizer export that misses the strict tagged
     // detection still routes through the native importer (which carries
     // its own structural validator).
-    json: ['openapi', 'postman', 'insomnia', 'raml', 'native'],
+    json: ['openapi', 'postman', 'apinizer', 'insomnia', 'raml', 'native'],
     xml: ['wsdl', 'soapui'],
   }
 
@@ -159,6 +162,7 @@ export function checkTypeMismatch(
   const human: Record<string, string> = {
     openapi: 'OpenAPI/Swagger',
     postman: 'Postman',
+    apinizer: 'Apinizer',
     insomnia: 'Insomnia',
     curl: 'cURL',
     raml: 'RAML',

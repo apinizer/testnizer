@@ -40,6 +40,17 @@ const IMPORT_FORMATS: ImportFormat[] = [
     color: '#5b52d4',
     mono: true,
   },
+  // Apinizer test collections are Postman v2.1 + `x-apinizer` \u2014 the same
+  // importer handles both (importPostman reads the extension when present).
+  // A dedicated branded card surfaces the first-party interop path.
+  {
+    id: 'apinizer',
+    name: 'Apinizer',
+    icon: 'AP',
+    bg: '#e6f7ee',
+    color: '#1b9a59',
+    mono: true,
+  },
   { id: 'openapi', name: 'OpenAPI/Swagger', icon: '\uD83C\uDF3F', bg: '#e8f9f1', color: '#1a7a4a' },
   { id: 'postman', name: 'Postman', icon: '\uD83D\uDFE0', bg: '#fff0ec', color: '#f25c00' },
   { id: 'insomnia', name: 'Insomnia', icon: '\uD83D\uDFE3', bg: '#faf0ff', color: '#7c4dff' },
@@ -54,6 +65,7 @@ const IMPORT_FORMATS: ImportFormat[] = [
 const URL_IMPORTABLE = ['openapi', 'wsdl', 'raml']
 const FILE_IMPORTABLE = [
   'native',
+  'apinizer',
   'openapi',
   'postman',
   'insomnia',
@@ -67,7 +79,16 @@ const FILE_IMPORTABLE = [
 // Formats whose spec is plain text we can read straight from the clipboard and
 // feed into the same string-based import pipeline (issue #28). cURL has its own
 // paste textarea; proto/WSDL need a file path or a live URL, so both opt out.
-const CLIPBOARD_IMPORTABLE = ['native', 'openapi', 'postman', 'insomnia', 'har', 'raml', 'soapui']
+const CLIPBOARD_IMPORTABLE = [
+  'native',
+  'apinizer',
+  'openapi',
+  'postman',
+  'insomnia',
+  'har',
+  'raml',
+  'soapui',
+]
 
 function FormatIcon({ fmt }: { fmt: ImportFormat }) {
   if (fmt.mono) {
@@ -484,7 +505,10 @@ export default function ImportModal() {
           folderId,
           sourceUrl: pendingSourceUrl || undefined,
         })) as typeof importResult
-      } else if (fmtId === 'postman') {
+      } else if (fmtId === 'postman' || fmtId === 'apinizer') {
+        // Apinizer collections are Postman v2.1 with an `x-apinizer` extension;
+        // importPostman reads that extension when present, so a single code
+        // path serves both cards — the separate card is UX/branding only.
         importResult = (await window.api?.importExport?.importPostman({
           projectId: pid,
           content: pendingFileContent || '',
@@ -593,10 +617,10 @@ export default function ImportModal() {
       const importerOk = importResult?.data?.success !== false
       if (ipcOk && importerOk) {
         await refreshTree()
-        // Postman/Insomnia imports may create a project-scoped environment for
-        // collection variables. Refresh the env store so the new env shows up
-        // in the selector without requiring an app reload.
-        if (fmtId === 'postman' || fmtId === 'insomnia') {
+        // Postman/Apinizer/Insomnia imports may create a project-scoped
+        // environment for collection variables. Refresh the env store so the
+        // new env shows up in the selector without requiring an app reload.
+        if (fmtId === 'postman' || fmtId === 'apinizer' || fmtId === 'insomnia') {
           await useEnvironmentStore.getState().fetchEnvironments()
         }
         toast.success(t('toast.imported'))

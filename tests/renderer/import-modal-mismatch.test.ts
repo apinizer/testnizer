@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  detectImportFormat,
-  checkTypeMismatch,
-} from '../../src/renderer/lib/import-format-detect'
+import { detectImportFormat, checkTypeMismatch } from '../../src/renderer/lib/import-format-detect'
 
 describe('detectImportFormat', () => {
   it('detects WSDL from <?xml + <definitions root', () => {
@@ -144,6 +141,27 @@ describe('checkTypeMismatch', () => {
       detected: 'HAR',
       expected: 'OpenAPI/Swagger',
     })
+  })
+
+  it('accepts a Postman-shaped collection under the Apinizer card (same importer)', () => {
+    // Apinizer test collections ARE Postman v2.1 (+ x-apinizer), so they detect
+    // as `postman`. The Apinizer card must not flag that as a mismatch.
+    expect(checkTypeMismatch('apinizer', 'postman')).toBe(null)
+    expect(checkTypeMismatch('apinizer', 'json')).toBe(null)
+    // And a real Apinizer collection (postman schema + x-apinizer) still detects
+    // as postman → accepted under both cards.
+    const apinizerCol = JSON.stringify({
+      info: {
+        name: 'A',
+        schema: 'https://schema.getpostman.com/json/collection/v2.1.0/',
+        'x-apinizer': { schemaVersion: '1.0', kind: 'test-collection' },
+      },
+      item: [],
+    })
+    const detected = detectImportFormat(apinizerCol)
+    expect(detected).toBe('postman')
+    expect(checkTypeMismatch('apinizer', detected)).toBe(null)
+    expect(checkTypeMismatch('postman', detected)).toBe(null)
   })
 })
 
