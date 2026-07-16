@@ -10,6 +10,26 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.36
+
+**Import Apinizer test collections — and export back to them — at full fidelity.**
+
+The Import dialog (and the sidebar Import menu) now has a first-party **Apinizer**
+option next to Postman. Apinizer test collections are Postman v2.1 collections
+that carry an `x-apinizer` extension, so the same importer handles both — the
+dedicated card just makes importing from Apinizer a named, obvious path. When the
+extension is present it becomes the primary source of truth: you get native
+assertions for all four carryable kinds (status code, body, JSONPath, XPath),
+the raw-body sub-type (JSON / XML / HTML) a plain Postman body would collapse to
+text, and the request timeout. Exporting a project or test suite to Postman now
+embeds `x-apinizer` back on each request that has carryable fidelity so Apinizer
+reads your assertions losslessly; Testnizer-only assertion types stay in
+Testnizer's own channel, and requests with no assertions export as clean plain
+Postman. The exported `testType` / `apiType` are derived from the request
+protocol (REST→RESOURCE, SOAP→WSDL, …) because a test imported into Testnizer is
+standalone and has no Apinizer proxy binding. The whole feature is additive —
+existing Postman / Insomnia / OpenAPI flows are unchanged.
+
 ## v1.4.35
 
 **The Collection Runner now sends each request's own Authorization header

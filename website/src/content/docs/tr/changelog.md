@@ -11,6 +11,26 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.36
+
+**Apinizer test koleksiyonlarını tam-fidelity içe alın — ve onlara geri dışa aktarın.**
+
+Import diyaloğunda (ve kenar çubuğu Import menüsünde) artık Postman'in yanında
+first-party bir **Apinizer** seçeneği var. Apinizer test koleksiyonları,
+`x-apinizer` uzantısı taşıyan Postman v2.1 koleksiyonlarıdır; bu yüzden ikisini de
+aynı içe aktarıcı işler — ayrı kart, Apinizer'dan içe almayı adı konmuş, belirgin
+bir yol yapar. Uzantı mevcutsa birincil doğruluk kaynağı olur: dört taşınabilir
+türün tamamı için native assertion'lar (durum kodu, gövde, JSONPath, XPath), düz
+bir Postman gövdesinin metne indirgeyeceği ham gövde alt-tipi (JSON / XML / HTML)
+ve istek zaman aşımı gelir. Bir projeyi veya test suite'ini Postman'a dışa
+aktarmak artık taşınabilir fidelity'si olan her isteğe `x-apinizer`'ı geri gömer;
+böylece Apinizer assertion'larınızı kayıpsız okur. Testnizer'a özel assertion
+türleri Testnizer'ın kendi kanalında kalır ve assertion'ı olmayan istekler temiz
+düz Postman olarak dışa aktarılır. Dışa aktarılan `testType` / `apiType` istek
+protokolünden türetilir (REST→RESOURCE, SOAP→WSDL, …), çünkü Testnizer'a içe
+alınan bir test standalone'dur ve Apinizer proxy bağı yoktur. Özelliğin tamamı
+eklemelidir — mevcut Postman / Insomnia / OpenAPI akışları değişmez.
+
 ## v1.4.35
 
 **Collection Runner artık her isteğin kendi Authorization header'ını, miras
