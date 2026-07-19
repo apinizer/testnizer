@@ -2,7 +2,10 @@
  * Smoke tests for `certificate:*` IPC handlers.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   setupHandlerHarness,
   makeElectronMock,
@@ -105,6 +108,18 @@ describe('certificate:update + delete', () => {
 })
 
 describe('certificate:pickFile', () => {
+  let srcDir: string
+  beforeEach(() => {
+    srcDir = mkdtempSync(join(tmpdir(), 'testnizer-pick-'))
+  })
+  afterEach(() => {
+    try {
+      rmSync(srcDir, { recursive: true, force: true })
+    } catch {
+      /* best-effort */
+    }
+  })
+
   it('returns success: false on cancel', async () => {
     dialogMock.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
     const res = (await harness.invoke('certificate:pickFile', 'crt')) as {
@@ -114,16 +129,40 @@ describe('certificate:pickFile', () => {
     expect(res.success).toBe(false)
   })
 
-  it('returns the chosen file path on success', async () => {
-    dialogMock.showOpenDialog.mockResolvedValueOnce({
-      canceled: false,
-      filePaths: ['/picked/cert.crt'],
-    })
+  it('copies the picked file into app storage at pick time (Postman-style capture)', async () => {
+    // The fix for the reported mTLS bug: reading the file NOW (while the picker
+    // grant is live) and storing a copy — instead of storing the original path
+    // and re-reading it at request time, which macOS blocks for ~/Downloads.
+    const src = join(srcDir, 'cert.crt')
+    writeFileSync(src, '-----BEGIN CERTIFICATE-----\nHELLO\n-----END CERTIFICATE-----')
+    dialogMock.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [src] })
+
     const res = (await harness.invoke('certificate:pickFile', 'crt')) as {
       success: boolean
       data?: string
     }
     expect(res.success).toBe(true)
-    expect(res.data).toBe('/picked/cert.crt')
+    // Stored path lives in app userData (mock: /tmp/testnizer-test/certs), NOT
+    // the original picked location, and keeps the original filename.
+    expect(res.data).toContain('/certs/')
+    expect(res.data).not.toBe(src)
+    expect(res.data?.endsWith('cert.crt')).toBe(true)
+    // The copy is byte-identical to the source.
+    expect(readFileSync(res.data as string, 'utf8')).toContain('HELLO')
+  })
+
+  it('surfaces an error at pick time when the selected file cannot be read', async () => {
+    // No silent success: if the picked file is unreadable, tell the user now
+    // rather than letting a broken path sit in settings and fail every request.
+    dialogMock.showOpenDialog.mockResolvedValueOnce({
+      canceled: false,
+      filePaths: [join(srcDir, 'nope.crt')], // never written
+    })
+    const res = (await harness.invoke('certificate:pickFile', 'crt')) as {
+      success: boolean
+      error?: string
+    }
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/couldn't read/i)
   })
 })

@@ -82,78 +82,38 @@ async function importWithMockedDb(rows: {
     decryptSecret: (s: string | null) => s,
   }))
 
+  // Exercise the REAL, exported loadCertificatesFor — not an inline copy. The
+  // old harness reimplemented the handler's logic, which is exactly why the
+  // host-match + silent-read-failure bugs were never caught (the copy read
+  // files unconditionally and never ran the real host filter / error path).
   const mod = await import('../../src/main/ipc/request.handler')
-  // loadCertificatesFor is private — re-export through a small probe.
-  // Since it's not exported, we exercise it via the public path. For unit
-  // testing the lookup itself we use the real certificate.repo through
-  // the mocked DB and read the shape of the value the engine receives.
-  // Trick: we monkey-patch the engine to capture the options it received.
-  const certRepo = await import('../../src/main/db/certificate.repo')
-
-  // Recreate loadCertificatesFor inline using the same logic the handler
-  // uses — this guarantees the test will fail if the handler's logic
-  // diverges, since the certificate.repo + safeReadCertFile path is shared.
-  return {
-    loadCertificatesFor: (projectId: string, url: string) => {
-      let host = ''
-      try {
-        host = new URL(url).hostname
-      } catch {
-        return null
-      }
-      const list = certRepo.listCertificatesForHost(projectId, host)
-      if (list.length === 0) return null
-      // Replicate the handler's assembly so we test the same shape.
-      const out: {
-        caCerts?: Buffer[]
-        clientCert?: { cert?: Buffer; key?: Buffer; pfx?: Buffer; passphrase?: string }
-      } = {}
-      for (const r of list) {
-        if (r.kind === 'ca' && r.crt_path) {
-          const buf = require('node:fs').readFileSync(r.crt_path)
-          out.caCerts = [...(out.caCerts ?? []), buf]
-        } else if (r.kind === 'client') {
-          out.clientCert = out.clientCert ?? {}
-          if (r.pfx_path) {
-            out.clientCert.pfx = require('node:fs').readFileSync(r.pfx_path)
-          } else {
-            if (r.crt_path) out.clientCert.cert = require('node:fs').readFileSync(r.crt_path)
-            if (r.key_path) out.clientCert.key = require('node:fs').readFileSync(r.key_path)
-          }
-          if (r.passphrase) out.clientCert.passphrase = r.passphrase
-        }
-      }
-      return out
-    },
-    // module import side-effect — also surfaces a vitest "uses unused" warning
-    // if we forget; keep `mod` referenced so the suite fails loudly on a
-    // future rename.
-    ...({ mod } as object),
-  }
+  return { loadCertificatesFor: mod.loadCertificatesFor }
 }
 
-// ───────── Certificate repo host-matching ─────────
+// ───────── loadCertificatesFor — host matching + read pipeline ─────────
+//
+// These exercise the REAL exported loadCertificatesFor, which returns
+// `{ certificates?, error? }`. `error` is set (and the request fails fast)
+// when a matched, enabled client cert can't be read — no more silent drop.
 
-describe('certificate.repo — listCertificatesForHost', () => {
+interface Certs {
+  caCerts?: Buffer[]
+  clientCert?: { cert?: Buffer; key?: Buffer; pfx?: Buffer; passphrase?: string }
+}
+type Result = { certificates?: Certs; error?: string }
+
+describe('loadCertificatesFor — host matching', () => {
   it('returns CA certs regardless of host (CA is global to the project)', async () => {
     const caPath = join(tmpRoot, 'root.crt')
     writeFileSync(caPath, '-----BEGIN CERTIFICATE-----\nCA-FAKE\n-----END CERTIFICATE-----')
     const { loadCertificatesFor } = await importWithMockedDb({
-      certs: [
-        {
-          kind: 'ca',
-          host: 'somewhere-else.example',
-          crt_path: caPath,
-        },
-      ],
+      certs: [{ kind: 'ca', host: 'somewhere-else.example', crt_path: caPath }],
     })
-    const result = loadCertificatesFor('p1', 'https://expired.badssl.com/') as {
-      caCerts?: Buffer[]
-    } | null
-    expect(result).not.toBeNull()
-    expect(result?.caCerts?.length).toBe(1)
+    const result = loadCertificatesFor('p1', 'https://expired.badssl.com/') as Result
     // A CA's `host` column is advisory — host mismatch on the request URL
     // must NOT exclude the CA from the trust list.
+    expect(result.certificates?.caCerts?.length).toBe(1)
+    expect(result.error).toBeUndefined()
   })
 
   it('matches client cert on exact host', async () => {
@@ -162,21 +122,11 @@ describe('certificate.repo — listCertificatesForHost', () => {
     writeFileSync(certPath, '-----BEGIN CERTIFICATE-----\nC\n-----END CERTIFICATE-----')
     writeFileSync(keyPath, '-----BEGIN PRIVATE KEY-----\nK\n-----END PRIVATE KEY-----')
     const { loadCertificatesFor } = await importWithMockedDb({
-      certs: [
-        {
-          kind: 'client',
-          host: 'client.badssl.com',
-          crt_path: certPath,
-          key_path: keyPath,
-        },
-      ],
+      certs: [{ kind: 'client', host: 'client.badssl.com', crt_path: certPath, key_path: keyPath }],
     })
-    const result = loadCertificatesFor('p1', 'https://client.badssl.com/') as {
-      clientCert?: { cert?: Buffer; key?: Buffer }
-    } | null
-    expect(result).not.toBeNull()
-    expect(result?.clientCert?.cert).toBeInstanceOf(Buffer)
-    expect(result?.clientCert?.key).toBeInstanceOf(Buffer)
+    const result = loadCertificatesFor('p1', 'https://client.badssl.com/') as Result
+    expect(result.certificates?.clientCert?.cert).toBeInstanceOf(Buffer)
+    expect(result.certificates?.clientCert?.key).toBeInstanceOf(Buffer)
   })
 
   it('matches client cert on wildcard host', async () => {
@@ -185,20 +135,53 @@ describe('certificate.repo — listCertificatesForHost', () => {
     writeFileSync(certPath, 'C')
     writeFileSync(keyPath, 'K')
     const { loadCertificatesFor } = await importWithMockedDb({
+      certs: [{ kind: 'client', host: '*', crt_path: certPath, key_path: keyPath }],
+    })
+    const result = loadCertificatesFor('p1', 'https://random.example.com/') as Result
+    expect(result.certificates?.clientCert?.cert).toBeInstanceOf(Buffer)
+  })
+
+  it('matches a client cert whose stored host carries a scheme (regression: mTLS not sent)', async () => {
+    // The exact reported bug: the user pasted "https://sandbox.api.visa.com"
+    // into the Certificates settings, but the request host is the bare
+    // hostname. The old `host = ?` SQL never matched, so the cert was dropped
+    // and the server answered "Expected input credential was not present".
+    const certPath = join(tmpRoot, 'visa.crt')
+    const keyPath = join(tmpRoot, 'visa.key')
+    writeFileSync(certPath, '-----BEGIN CERTIFICATE-----\nVISA\n-----END CERTIFICATE-----')
+    writeFileSync(keyPath, '-----BEGIN PRIVATE KEY-----\nVISA-KEY\n-----END PRIVATE KEY-----')
+    const { loadCertificatesFor } = await importWithMockedDb({
       certs: [
         {
           kind: 'client',
-          host: '*',
+          host: 'https://sandbox.api.visa.com',
           crt_path: certPath,
           key_path: keyPath,
         },
       ],
     })
-    const result = loadCertificatesFor('p1', 'https://random.example.com/') as {
-      clientCert?: { cert?: Buffer }
-    } | null
-    expect(result).not.toBeNull()
-    expect(result?.clientCert?.cert).toBeInstanceOf(Buffer)
+    const result = loadCertificatesFor('p1', 'https://sandbox.api.visa.com/vdp/helloworld') as Result
+    expect(result.certificates?.clientCert?.cert).toBeInstanceOf(Buffer)
+    expect(result.certificates?.clientCert?.key).toBeInstanceOf(Buffer)
+  })
+
+  it('does NOT attach a client cert whose host does not match the request (negative case)', async () => {
+    // Previously untestable: the DB mock returned every row regardless of the
+    // WHERE clause, so host mismatch was never exercised. Now that matching is
+    // in JS, a client cert scoped to a different host must be excluded.
+    const certPath = join(tmpRoot, 'other.crt')
+    const keyPath = join(tmpRoot, 'other.key')
+    writeFileSync(certPath, 'C')
+    writeFileSync(keyPath, 'K')
+    const { loadCertificatesFor } = await importWithMockedDb({
+      certs: [
+        { kind: 'client', host: 'other.example.com', crt_path: certPath, key_path: keyPath },
+      ],
+    })
+    const result = loadCertificatesFor('p1', 'https://sandbox.api.visa.com/vdp/helloworld') as Result
+    // Only one (non-matching) client cert row → nothing matched → no certs, no error.
+    expect(result.certificates).toBeUndefined()
+    expect(result.error).toBeUndefined()
   })
 
   it('prefers PFX path over cert/key when both are present (PFX wins)', async () => {
@@ -220,41 +203,55 @@ describe('certificate.repo — listCertificatesForHost', () => {
         },
       ],
     })
-    const result = loadCertificatesFor('p1', 'https://host.test/') as {
-      clientCert?: { pfx?: Buffer; cert?: Buffer; key?: Buffer; passphrase?: string }
-    } | null
-    expect(result?.clientCert?.pfx?.toString()).toBe('PFX-BYTES')
-    expect(result?.clientCert?.passphrase).toBe('pw')
+    const result = loadCertificatesFor('p1', 'https://host.test/') as Result
+    expect(result.certificates?.clientCert?.pfx?.toString()).toBe('PFX-BYTES')
+    expect(result.certificates?.clientCert?.passphrase).toBe('pw')
     // When PFX is provided the engine ignores cert/key — we mirror that here.
-    expect(result?.clientCert?.cert).toBeUndefined()
-    expect(result?.clientCert?.key).toBeUndefined()
+    expect(result.certificates?.clientCert?.cert).toBeUndefined()
+    expect(result.certificates?.clientCert?.key).toBeUndefined()
+  })
+
+  it('surfaces an error (does NOT silently drop) when a matched client cert file cannot be read', async () => {
+    // The second half of the reported bug: the cert row matched but its file
+    // was unreadable (e.g. macOS EPERM on ~/Downloads). The request used to go
+    // out with NO certificate and got a cryptic server error; now the load
+    // fails fast with a descriptive message that the caller throws.
+    const { loadCertificatesFor } = await importWithMockedDb({
+      certs: [
+        {
+          kind: 'client',
+          host: 'sandbox.api.visa.com',
+          crt_path: join(tmpRoot, 'does-not-exist.pem'),
+          key_path: join(tmpRoot, 'does-not-exist.key'),
+        },
+      ],
+    })
+    const result = loadCertificatesFor('p1', 'https://sandbox.api.visa.com/vdp/helloworld') as Result
+    expect(result.certificates).toBeUndefined()
+    expect(result.error).toMatch(/could not be loaded/i)
+    expect(result.error).toMatch(/file not found/i)
   })
 
   it('skips disabled rows entirely (enabled = 0)', async () => {
     const caPath = join(tmpRoot, 'disabled.crt')
     writeFileSync(caPath, 'CA')
     const { loadCertificatesFor } = await importWithMockedDb({
-      certs: [
-        {
-          kind: 'ca',
-          host: null,
-          crt_path: caPath,
-          enabled: 0,
-        },
-      ],
+      certs: [{ kind: 'ca', host: null, crt_path: caPath, enabled: 0 }],
     })
-    const result = loadCertificatesFor('p1', 'https://example.com/')
-    expect(result).toBeNull()
+    const result = loadCertificatesFor('p1', 'https://example.com/') as Result
+    expect(result.certificates).toBeUndefined()
+    expect(result.error).toBeUndefined()
   })
 
-  it('returns null when the URL is malformed (no host to match)', async () => {
+  it('returns nothing when the URL is malformed (no host to match)', async () => {
     const { loadCertificatesFor } = await importWithMockedDb({
       certs: [{ kind: 'ca', host: null, crt_path: join(tmpRoot, 'whatever.crt') }],
     })
     // No file write — the lookup must short-circuit on the URL parse rather
     // than blowing up further down the pipeline.
-    const result = loadCertificatesFor('p1', 'not a url')
-    expect(result).toBeNull()
+    const result = loadCertificatesFor('p1', 'not a url') as Result
+    expect(result.certificates).toBeUndefined()
+    expect(result.error).toBeUndefined()
   })
 })
 

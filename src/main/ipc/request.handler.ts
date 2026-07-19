@@ -53,54 +53,116 @@ const ALLOWED_CERT_EXTS = new Set(['.crt', '.cer', '.pem', '.key', '.pfx', '.p12
 // file can't OOM the main process.
 const MAX_CERT_BYTES = 1024 * 1024 // 1 MiB
 
-function safeReadCertFile(filePath: string): Buffer | null {
+type CertReadResult = { buf: Buffer } | { error: string }
+
+/** Human-readable, actionable reason for a filesystem error on a cert path. */
+function describeCertFsError(err: NodeJS.ErrnoException, filePath: string): string {
+  if (err?.code === 'ENOENT') return `file not found: ${filePath}`
+  if (err?.code === 'EPERM' || err?.code === 'EACCES') {
+    return (
+      `permission denied reading ${filePath}. On macOS an app cannot read ` +
+      `~/Downloads, ~/Desktop or ~/Documents without access — re-select the ` +
+      `certificate in Project Settings (Testnizer copies it into its own storage ` +
+      `on pick), move it to another folder, or grant Testnizer access under ` +
+      `System Settings › Privacy & Security › Files and Folders.`
+    )
+  }
+  return `cannot read ${filePath}: ${err?.message ?? String(err)}`
+}
+
+/**
+ * Read certificate/key material with safety rails (symlink resolution,
+ * extension whitelist, size cap) but return a DESCRIPTIVE reason on failure
+ * instead of a bare null. A configured client cert that silently failed to load
+ * used to send the request with NO certificate at all, so the server answered
+ * with a confusing "missing credential" error and the user never learned their
+ * .pem was unreadable (e.g. it sat in a macOS-protected folder).
+ */
+function readCertFile(filePath: string): CertReadResult {
+  let abs: string
   try {
     // Resolve symlinks first so an attacker can't bypass the extension
-    // whitelist by symlinking `attack.pem -> /etc/passwd` (the *target*
-    // is what matters for file content, not the link name).
-    const abs = realpathSync(resolve(filePath))
-    const ext = extname(abs).toLowerCase()
-    if (!ALLOWED_CERT_EXTS.has(ext)) return null
+    // whitelist by symlinking `attack.pem -> /etc/passwd` (the *target* is what
+    // matters for file content, not the link name).
+    abs = realpathSync(resolve(filePath))
+  } catch (e) {
+    return { error: describeCertFsError(e as NodeJS.ErrnoException, filePath) }
+  }
+  const ext = extname(abs).toLowerCase()
+  if (!ALLOWED_CERT_EXTS.has(ext)) {
+    return {
+      error: `unsupported file type "${ext || '(none)'}" — expected one of ${[...ALLOWED_CERT_EXTS].join(', ')} (${filePath})`,
+    }
+  }
+  try {
     const st = statSync(abs)
-    if (!st.isFile()) return null
-    if (st.size > MAX_CERT_BYTES) return null
-    return readFileSync(abs)
-  } catch {
-    return null
+    if (!st.isFile()) return { error: `not a regular file: ${filePath}` }
+    if (st.size > MAX_CERT_BYTES) {
+      return {
+        error: `certificate file is larger than the ${MAX_CERT_BYTES}-byte limit: ${filePath}`,
+      }
+    }
+    return { buf: readFileSync(abs) }
+  } catch (e) {
+    return { error: describeCertFsError(e as NodeJS.ErrnoException, filePath) }
   }
 }
 
-function loadCertificatesFor(
-  projectId: string | undefined,
-  url: string,
-): HttpRequestOptions['certificates'] {
-  if (!projectId) return undefined
+export interface CertLoadResult {
+  certificates?: HttpRequestOptions['certificates']
+  /**
+   * Set when a matched, ENABLED client cert could not be loaded. The request
+   * must then fail fast with this message rather than silently go out
+   * unauthenticated (which the server rejects with a cryptic error).
+   */
+  error?: string
+}
+
+/**
+ * Resolve the CA + client certificates configured for a request's host. Exported
+ * so the mTLS pipeline is exercised by the REAL code in tests (previously the
+ * tests reimplemented this inline, which is exactly why the host-match /
+ * silent-read-failure bugs slipped through).
+ */
+export function loadCertificatesFor(projectId: string | undefined, url: string): CertLoadResult {
+  if (!projectId) return {}
+  let host: string
   try {
-    const host = new URL(url).hostname
-    const rows = listCertificatesForHost(projectId, host)
-    if (rows.length === 0) return undefined
-    const caCerts: Buffer[] = []
-    let clientCert: { cert?: Buffer; key?: Buffer; pfx?: Buffer; passphrase?: string } | undefined
-    for (const r of rows) {
-      const passphrase = decryptSecret(r.passphrase) ?? undefined
-      if (r.kind === 'ca' && r.crt_path) {
-        const buf = safeReadCertFile(r.crt_path)
-        if (buf) caCerts.push(buf)
-      } else if (r.kind === 'client') {
-        if (r.pfx_path) {
-          const pfx = safeReadCertFile(r.pfx_path)
-          if (pfx) clientCert = { pfx, passphrase }
-        } else if (r.crt_path && r.key_path) {
-          const cert = safeReadCertFile(r.crt_path)
-          const key = safeReadCertFile(r.key_path)
-          if (cert && key) clientCert = { cert, key, passphrase }
-        }
+    host = new URL(url).hostname
+  } catch {
+    return {}
+  }
+  const rows = listCertificatesForHost(projectId, host)
+  if (rows.length === 0) return {}
+  const caCerts: Buffer[] = []
+  let clientCert: { cert?: Buffer; key?: Buffer; pfx?: Buffer; passphrase?: string } | undefined
+  for (const r of rows) {
+    const passphrase = decryptSecret(r.passphrase) ?? undefined
+    if (r.kind === 'ca' && r.crt_path) {
+      // CA certs are additive trust anchors — a read failure is non-fatal (the
+      // connection may still verify against the system trust store).
+      const res = readCertFile(r.crt_path)
+      if ('buf' in res) caCerts.push(res.buf)
+    } else if (r.kind === 'client') {
+      if (r.pfx_path) {
+        const res = readCertFile(r.pfx_path)
+        if ('error' in res)
+          return { error: `Client certificate for ${host} could not be loaded — ${res.error}` }
+        clientCert = { pfx: res.buf, passphrase }
+      } else if (r.crt_path && r.key_path) {
+        const certRes = readCertFile(r.crt_path)
+        if ('error' in certRes)
+          return { error: `Client certificate for ${host} could not be loaded — ${certRes.error}` }
+        const keyRes = readCertFile(r.key_path)
+        if ('error' in keyRes)
+          return {
+            error: `Client certificate key for ${host} could not be loaded — ${keyRes.error}`,
+          }
+        clientCert = { cert: certRes.buf, key: keyRes.buf, passphrase }
       }
     }
-    return { caCerts: caCerts.length ? caCerts : undefined, clientCert }
-  } catch {
-    return undefined
   }
+  return { certificates: { caCerts: caCerts.length ? caCerts : undefined, clientCert } }
 }
 
 // Map of in-flight request IDs → AbortController, so the renderer can call
@@ -148,11 +210,15 @@ export function registerRequestHandlers(): void {
       let controller: AbortController | undefined
       try {
         // If a project is known and no certificates were explicitly provided,
-        // attempt to pull matching CA / client certs from the project configuration.
+        // attempt to pull matching CA / client certs from the project config.
+        // A configured-but-unreadable client cert throws here so the request
+        // fails fast with a clear message instead of silently going out
+        // without the certificate (the reported mTLS bug).
         if (options._projectId && !options.certificates) {
-          const certs = loadCertificatesFor(options._projectId, options.url)
-          if (certs) {
-            options = { ...options, certificates: certs }
+          const { certificates, error } = loadCertificatesFor(options._projectId, options.url)
+          if (error) throw new Error(error)
+          if (certificates) {
+            options = { ...options, certificates }
           }
         }
         // Renderer sends `cipherPreset` / `ciphersCustom`; resolve to the actual
