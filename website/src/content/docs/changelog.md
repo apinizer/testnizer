@@ -10,6 +10,26 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.4.37
+
+**Client certificates (mTLS) are now actually sent with the request.**
+
+A project Client Certificate could silently fail to attach, so mTLS servers
+rejected the call (e.g. Visa VDP answered *"Expected input credential was not
+present"*). Two separate causes are fixed. First, host matching: the request
+matched certificates by the URL's bare hostname (`sandbox.api.visa.com`), but the
+stored host was whatever you typed — commonly a full base URL
+(`https://sandbox.api.visa.com`) — and the strict exact-match dropped the cert.
+Matching now tolerates a pasted scheme, port, path and case, and supports `*` and
+`*.domain` patterns. Second, the certificate was stored as a file *path* and
+re-read on every send; macOS blocks apps from reading `~/Downloads`, `~/Desktop`
+and `~/Documents`, so that read failed and the request went out with no cert.
+Testnizer now reads the file **when you pick it** and keeps a copy in its own
+storage (the same approach Postman uses), and if a configured cert still can't be
+loaded the request fails with a clear message instead of silently omitting it.
+After updating, re-select your CRT/KEY (or PFX) files once in Project Settings →
+Certificates.
+
 ## v1.4.36
 
 **Import Apinizer test collections — and export back to them — at full fidelity.**

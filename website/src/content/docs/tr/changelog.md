@@ -11,6 +11,26 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.4.37
+
+**İstemci sertifikaları (mTLS) artık istekle birlikte gerçekten gönderiliyor.**
+
+Bir projedeki İstemci Sertifikası sessizce eklenemeyebiliyordu; bu yüzden mTLS
+sunucuları isteği reddediyordu (ör. Visa VDP *"Expected input credential was not
+present"* dönüyordu). İki ayrı neden düzeltildi. Birincisi host eşleşmesi: istek,
+sertifikaları URL'nin çıplak host adıyla (`sandbox.api.visa.com`) eşliyordu; ama
+saklanan host senin yazdığın şeydi — çoğu zaman tam bir temel URL
+(`https://sandbox.api.visa.com`) — ve katı birebir eşleşme sertifikayı düşürüyordu.
+Eşleşme artık yapıştırılan şema, port, path ve büyük/küçük harf farkını tolere
+ediyor ve `*` ile `*.domain` desenlerini destekliyor. İkincisi, sertifika bir dosya
+*yolu* olarak saklanıp her göndermede yeniden okunuyordu; macOS uygulamaların
+`~/Downloads`, `~/Desktop` ve `~/Documents`'i okumasını engellediği için bu okuma
+başarısız oluyor ve istek sertifikasız gidiyordu. Testnizer artık dosyayı **sen
+seçtiğin an** okuyup kendi deposunda bir kopya tutuyor (Postman'in yaptığı gibi) ve
+yapılandırılmış bir sertifika yine de yüklenemezse, isteği sessizce sertifikasız
+göndermek yerine net bir hatayla durduruyor. Güncelledikten sonra Project Settings
+→ Certificates'ten CRT/KEY (veya PFX) dosyalarını bir kez yeniden seç.
+
 ## v1.4.36
 
 **Apinizer test koleksiyonlarını tam-fidelity içe alın — ve onlara geri dışa aktarın.**
