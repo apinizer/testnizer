@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { getDb } from './database'
+import { certHostMatches } from '../lib/cert-host-match'
 
 export type CertificateKind = 'ca' | 'client'
 
@@ -36,13 +37,21 @@ export function listCertificates(projectId: string): CertificateRow[] {
 
 export function listCertificatesForHost(projectId: string, host: string): CertificateRow[] {
   const db = getDb()
-  return db
+  // Host matching happens in JS, NOT in SQL: a strict `host = ?` equality
+  // silently missed the common cases where the stored host carries a scheme
+  // ("https://sandbox.api.visa.com"), a port, a path, or different case — so the
+  // client cert was never attached and the request went out unauthenticated.
+  // `certHostMatches` normalises both sides (and supports '*'/'*.domain'/empty).
+  const rows = db
     .prepare(
       `SELECT * FROM certificates
-     WHERE project_id = ? AND enabled = 1
-       AND (kind = 'ca' OR host = ? OR host = '*' OR host IS NULL OR host = '')`,
+       WHERE project_id = ? AND enabled = 1
+       ORDER BY kind ASC, created_at ASC`,
     )
-    .all(projectId, host) as CertificateRow[]
+    .all(projectId) as CertificateRow[]
+  // CA certs are trust anchors applied to the whole project (their host is
+  // advisory); client certs are matched to the request host.
+  return rows.filter((r) => r.kind === 'ca' || certHostMatches(host, r.host))
 }
 
 export function createCertificate(input: CreateCertificateInput): CertificateRow {

@@ -1,4 +1,7 @@
-import { ipcMain, dialog } from 'electron'
+import { ipcMain, dialog, app } from 'electron'
+import { readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { join, basename } from 'path'
+import { randomUUID } from 'crypto'
 import {
   listCertificates,
   createCertificate,
@@ -7,6 +10,10 @@ import {
   type CertificateKind,
 } from '../db/certificate.repo'
 import { encryptSecret } from '../lib/secure-storage'
+
+// Cap the file we're willing to ingest as certificate material (mirror the
+// request-time reader) so a mis-pick can't copy a multi-GB file into userData.
+const MAX_CERT_BYTES = 1024 * 1024 // 1 MiB
 
 interface Ok<T> {
   success: true
@@ -98,6 +105,36 @@ export function registerCertificateHandlers(): void {
     if (result.canceled || result.filePaths.length === 0) {
       return { success: false as const, error: 'Cancelled' }
     }
-    return { success: true as const, data: result.filePaths[0] }
+    const src = result.filePaths[0]
+    // Read the bytes NOW — while the user's explicit picker selection grants
+    // access — and copy them into the app's own storage (userData is never a
+    // macOS TCC-protected folder). Storing the ORIGINAL path and re-reading it
+    // at request time throws EPERM when the file lives in ~/Downloads,
+    // ~/Desktop or ~/Documents, so the request silently went out without the
+    // client cert (the reported mTLS bug). Postman avoids this by capturing the
+    // content at pick time; we do the same, and store the safe copy's path.
+    try {
+      const bytes = readFileSync(src)
+      if (bytes.length > MAX_CERT_BYTES) {
+        return {
+          success: false as const,
+          error: 'That file is larger than 1 MiB — it does not look like a certificate/key.',
+        }
+      }
+      const destDir = join(app.getPath('userData'), 'certs')
+      mkdirSync(destDir, { recursive: true })
+      // Keep the original filename (so the settings row stays recognisable),
+      // prefixed with a short unique token so repeated picks never collide.
+      const dest = join(destDir, `${randomUUID().slice(0, 8)}-${basename(src)}`)
+      writeFileSync(dest, bytes, { mode: 0o600 })
+      return { success: true as const, data: dest }
+    } catch (e) {
+      // Surface the failure at pick time instead of letting a broken path sit in
+      // settings and fail every future request.
+      return {
+        success: false as const,
+        error: `Couldn't read the selected file: ${e instanceof Error ? e.message : String(e)}`,
+      }
+    }
   })
 }
