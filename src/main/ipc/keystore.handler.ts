@@ -109,6 +109,43 @@ interface AliasDetailPayload {
 type GenerateKeyPairPayload = GenerateKeyPairOptions & { sessionId: string }
 type GenerateSecretKeyPayload = GenerateSecretKeyOptions & { sessionId: string }
 
+/**
+ * Import a PKCS12 source. The source bytes are read in MAIN (no-leak): a
+ * `sourcePath` is `readFileSync`'d here, or `sourceBytes` (base64) is accepted
+ * for programmatic/test callers. Either way the raw bytes never round-trip back
+ * to the renderer — only the updated safe meta does.
+ */
+interface ImportPkcs12Payload {
+  sessionId: string
+  /** File path — read in main (native picker / drag-drop path). */
+  sourcePath?: string
+  /** base64-encoded source bytes — accepted for programmatic callers/tests. */
+  sourceBytes?: string
+  sourcePassword?: string
+  sourceAlias?: string
+  /** Target alias override (single-entry copy). */
+  alias?: string
+}
+
+interface ImportKeyMaterialPayload {
+  sessionId: string
+  alias: string
+  privateKeyPem: string
+  certificatePem: string
+}
+
+interface ImportPemPayload {
+  sessionId: string
+  alias: string
+  pemContent: string
+}
+
+interface ImportTrustedCertPayload {
+  sessionId: string
+  alias: string
+  certificateContent: string
+}
+
 interface LibrarySavePayload {
   sessionId: string
   name: string
@@ -198,6 +235,58 @@ export function registerKeystoreHandlers(): void {
     wrap((): SessionResult => {
       const { sessionId, ...opts } = payload
       const meta = keystoreEngine.generateSecretKey(sessionId, opts)
+      return { sessionId, meta }
+    }),
+  )
+
+  // ── Import (Faz B3) ──────────────────────────────────────────────────────
+
+  // Import from a source PKCS12 (copyEntry). Source bytes are read/decoded in
+  // main; the response carries only the updated safe meta.
+  ipcMain.handle('keystore:importPkcs12', (_e, payload: ImportPkcs12Payload) =>
+    wrap((): SessionResult => {
+      let sourceBytes: Buffer
+      if (payload.sourcePath) {
+        sourceBytes = readKeystoreFile(payload.sourcePath)
+      } else if (payload.sourceBytes) {
+        sourceBytes = Buffer.from(payload.sourceBytes, 'base64')
+      } else {
+        // Empty ⇒ the engine raises the canonical §8 validation string.
+        sourceBytes = Buffer.alloc(0)
+      }
+      const meta = keystoreEngine.importPkcs12(payload.sessionId, {
+        sourceBytes,
+        sourcePassword: payload.sourcePassword,
+        sourceAlias: payload.sourceAlias,
+        targetAlias: payload.alias,
+      })
+      return { sessionId: payload.sessionId, meta }
+    }),
+  )
+
+  // Import a raw private key + certificate chain (PKCS#8 / OpenSSL / SEC1).
+  ipcMain.handle('keystore:importKeyMaterial', (_e, payload: ImportKeyMaterialPayload) =>
+    wrap((): SessionResult => {
+      const { sessionId, ...opts } = payload
+      const meta = keystoreEngine.importKeyMaterial(sessionId, opts)
+      return { sessionId, meta }
+    }),
+  )
+
+  // Import a pasted PEM block (key+cert ⇒ key entry; cert-only ⇒ trusted).
+  ipcMain.handle('keystore:importPem', (_e, payload: ImportPemPayload) =>
+    wrap((): SessionResult => {
+      const { sessionId, ...opts } = payload
+      const meta = keystoreEngine.importPem(sessionId, opts)
+      return { sessionId, meta }
+    }),
+  )
+
+  // Import a trusted certificate (PEM or base64 DER).
+  ipcMain.handle('keystore:importTrustedCert', (_e, payload: ImportTrustedCertPayload) =>
+    wrap((): SessionResult => {
+      const { sessionId, ...opts } = payload
+      const meta = keystoreEngine.importTrustedCertificate(sessionId, opts)
       return { sessionId, meta }
     }),
   )

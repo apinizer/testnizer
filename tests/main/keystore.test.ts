@@ -11,6 +11,14 @@
 import 'reflect-metadata'
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
+import {
+  X509Certificate,
+  createPrivateKey,
+  createSecretKey,
+  generateKeyPairSync,
+  randomBytes,
+  type KeyObject,
+} from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import forge from 'node-forge'
@@ -18,6 +26,7 @@ import * as x509 from '@peculiar/x509'
 import {
   KeystoreEngine,
   KeystoreValidationException,
+  KeystoreEngineException,
   resolveType,
   buildCertificateInfo,
   parseKeyStore,
@@ -534,5 +543,601 @@ describe('reads a keytool-produced JKS fixture (interop read path)', () => {
     expect(meta.aliases[0].hasPrivateKey).toBe(false)
     const detail = engine.aliasDetail(sessionId, 'testca')
     expect(detail.chain[0].subjectDN).toContain('Testnizer Test CA')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Faz B3 — Import (importPkcs12 / importKeyMaterial / importPem /
+// importTrustedCertificate / verifyKeyMatchesCertificate). Spec §8.3.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const read = (f: string): string => readFileSync(join(CERTS, f), 'utf8')
+const bytes = (f: string): Buffer => readFileSync(join(CERTS, f))
+const pubKeyOf = (certFile: string): KeyObject => new X509Certificate(certDer(certFile)).publicKey
+const privKeyOf = (keyFile: string): KeyObject => createPrivateKey(read(keyFile))
+
+describe('importPkcs12 — copyEntry (spec §6.10)', () => {
+  it('KS-F3-01 single-alias key entry into an empty PKCS12 target', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    const meta = engine.importPkcs12(sessionId, {
+      sourceBytes: bytes('client.p12'),
+      sourcePassword: PW,
+      sourceAlias: 'test-client',
+    })
+    expect(meta.aliasCount).toBe(1)
+    const detail = engine.aliasDetail(sessionId, 'test-client')
+    expect(detail.entryType).toBe('KEY')
+    expect(detail.hasPrivateKey).toBe(true)
+    expect(detail.chain.length).toBe(2)
+    expect(detail.chain[0].subjectDN).toContain('test-client')
+  })
+
+  it('KS-F3-02 all-aliases (sourceAlias omitted) from a single-entry source', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    const meta = engine.importPkcs12(sessionId, { sourceBytes: bytes('client.p12'), sourcePassword: PW })
+    expect(meta.aliasCount).toBe(1)
+    expect(meta.aliases[0].alias).toBe('test-client')
+  })
+
+  it('KS-F3-03 all-aliases copies both a KEY and a trusted CERTIFICATE into PKCS12', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    const meta = engine.importPkcs12(sessionId, { sourceBytes: bytes('multi.p12'), sourcePassword: PW })
+    // multi.p12 = key `test-client` + cert `ca-root` + secret `aes-secret`.
+    expect(meta.aliasCount).toBe(3)
+    const kinds = meta.aliases.map((a) => `${a.alias}:${a.entryType}:${a.hasPrivateKey}`).sort()
+    expect(kinds).toContain('test-client:KEY:true')
+    expect(kinds).toContain('ca-root:CERTIFICATE:false')
+    expect(kinds).toContain('aes-secret:KEY:false') // secret entry
+  })
+
+  it('KS-F3-04 target alias override', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.importPkcs12(sessionId, {
+      sourceBytes: bytes('client.p12'),
+      sourcePassword: PW,
+      sourceAlias: 'test-client',
+      targetAlias: 'my-imported-key',
+    })
+    const meta = engine.inspect(sessionId)
+    expect(meta.aliases[0].alias).toBe('my-imported-key')
+  })
+
+  it('KS-F3-06 secret key INTO a PKCS12 target is copied', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    const meta = engine.importPkcs12(sessionId, {
+      sourceBytes: bytes('secret.p12'),
+      sourcePassword: PW,
+      sourceAlias: 'aes-secret',
+    })
+    expect(meta.aliasCount).toBe(1)
+    expect(meta.aliases[0].entryType).toBe('KEY')
+    expect(meta.aliases[0].hasPrivateKey).toBe(false)
+  })
+
+  it('KS-F3-07 FLAGSHIP: all-aliases into JKS skips the secret, copies key/cert', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', PW)
+    const meta = engine.importPkcs12(sessionId, { sourceBytes: bytes('multi.p12'), sourcePassword: PW })
+    expect(meta.aliasCount).toBe(2) // aes-secret skipped
+    expect(meta.aliases.some((a) => a.alias === 'aes-secret')).toBe(false)
+    expect(meta.aliases.some((a) => a.alias === 'test-client')).toBe(true)
+    expect(meta.aliases.some((a) => a.alias === 'ca-root')).toBe(true)
+  })
+
+  it('KS-F3-08 secret-only source into a JKS target → No importable entries', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', PW)
+    expect(() =>
+      engine.importPkcs12(sessionId, {
+        sourceBytes: bytes('secret.p12'),
+        sourcePassword: PW,
+        sourceAlias: 'aes-secret',
+      }),
+    ).toThrow('No importable entries found in the source keystore')
+    expect(engine.inspect(sessionId).aliasCount).toBe(0)
+  })
+
+  it('KS-F3-09 sourceAlias not present → Source alias not found', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importPkcs12(sessionId, {
+        sourceBytes: bytes('client.p12'),
+        sourcePassword: PW,
+        sourceAlias: 'does-not-exist',
+      }),
+    ).toThrow('Source alias not found: does-not-exist')
+  })
+
+  it('KS-F3-10 target alias collision → Target alias already exists', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.importPkcs12(sessionId, {
+      sourceBytes: bytes('client.p12'),
+      sourcePassword: PW,
+      sourceAlias: 'test-client',
+    })
+    expect(() =>
+      engine.importPkcs12(sessionId, {
+        sourceBytes: bytes('client.p12'),
+        sourcePassword: PW,
+        sourceAlias: 'test-client',
+      }),
+    ).toThrow('Target alias already exists: test-client')
+    expect(engine.inspect(sessionId).aliasCount).toBe(1)
+  })
+
+  it('KS-F3-11 empty source content → validation error', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importPkcs12(sessionId, { sourceBytes: Buffer.alloc(0), sourcePassword: PW }),
+    ).toThrow('Source keystore content cannot be empty')
+  })
+
+  it('KS-F3-12 wrong source password → engine error, no key leak', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    try {
+      engine.importPkcs12(sessionId, { sourceBytes: bytes('client.p12'), sourcePassword: 'WRONG' })
+      throw new Error('should have thrown')
+    } catch (e) {
+      expect(e).toBeInstanceOf(KeystoreEngineException)
+      expect(String((e as Error).message)).not.toContain('PRIVATE KEY')
+    }
+    expect(engine.inspect(sessionId).aliasCount).toBe(0)
+  })
+
+  it('KS-F3-13 key entry with an empty certificate chain → throws', () => {
+    // Craft a key-only PKCS12 source (no cert bag) via node-forge low-level.
+    const keys = forge.pki.rsa.generateKeyPair(1024)
+    // Type-correct stand-in for the old `null` cert arg: forge types `cert` as
+    // `Certificate | Certificate[]`, so an empty array is accepted and emits a
+    // key-only P12 (no cert bag). `generateLocalKeyId: false` is required — with
+    // the default forge would try to SHA-1 `cert[0]` (undefined) and throw.
+    const asn1 = forge.pkcs12.toPkcs12Asn1(keys.privateKey, [], PW, {
+      friendlyName: 'orphan-key',
+      algorithm: '3des',
+      generateLocalKeyId: false,
+    })
+    const source = Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary')
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importPkcs12(sessionId, {
+        sourceBytes: source,
+        sourcePassword: PW,
+        sourceAlias: 'orphan-key',
+      }),
+    ).toThrow('Key entry has no certificate chain: orphan-key')
+    expect(engine.inspect(sessionId).aliasCount).toBe(0)
+  })
+
+  it('KS-F3-14 bad/corrupted source bytes → engine error', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importPkcs12(sessionId, { sourceBytes: bytes('bad.p12'), sourcePassword: PW }),
+    ).toThrow(KeystoreEngineException)
+  })
+
+  it('KS-F3-46 copyEntry rejects a source P12 whose key does not match its cert (§6.7)', () => {
+    // Craft a source P12 that pairs a FRESH RSA key with an UNRELATED cert
+    // (server.crt) under one shared localKeyId. parsePkcs12 pairs them by
+    // localKeyId; the copy path must run the key-cert match gate and refuse the
+    // mismatched pair rather than seat it into the target keystore.
+    const wrongKey = forge.pki.rsa.generateKeyPair(1024)
+    const cert = forge.pki.certificateFromPem(read('server.crt'))
+    const asn1obj = forge.pkcs12.toPkcs12Asn1(wrongKey.privateKey, cert, PW, {
+      friendlyName: 'mismatch',
+      algorithm: '3des',
+    })
+    const source = Buffer.from(forge.asn1.toDer(asn1obj).getBytes(), 'binary')
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importPkcs12(sessionId, {
+        sourceBytes: source,
+        sourcePassword: PW,
+        sourceAlias: 'mismatch',
+      }),
+    ).toThrow('Private key does not match the provided certificate')
+    expect(engine.inspect(sessionId).aliasCount).toBe(0)
+  })
+
+  it('KS-F3-47 pairs a localKeyId-less key with its cert by SPKI (§6.10 interop)', () => {
+    // Some Windows CryptoAPI / manual exports omit localKeyId + friendlyName.
+    // The key then has no attribute link to its cert — parsePkcs12 must pair
+    // them by SPKI (authoritative), NOT leave the key with an empty chain.
+    const key = forge.pki.privateKeyFromPem(read('client.key'))
+    const cert = forge.pki.certificateFromPem(read('client.crt'))
+    const asn1obj = forge.pkcs12.toPkcs12Asn1(key, cert, PW, {
+      generateLocalKeyId: false,
+      algorithm: '3des',
+    })
+    const source = Buffer.from(forge.asn1.toDer(asn1obj).getBytes(), 'binary')
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    const meta = engine.importPkcs12(sessionId, { sourceBytes: source, sourcePassword: PW })
+    expect(meta.aliasCount).toBe(1)
+    const alias = meta.aliases[0].alias
+    const d = engine.aliasDetail(sessionId, alias)
+    expect(d.entryType).toBe('KEY')
+    expect(d.hasPrivateKey).toBe(true)
+    // The cert was paired by SPKI despite the missing localKeyId.
+    expect(d.chain.length).toBe(1)
+    expect(d.chain[0].subjectDN).toContain('test-client')
+  })
+})
+
+describe('importKeyMaterial (spec §4.5 / §6.7 / §6.11)', () => {
+  it('KS-F3-15 RSA PKCS#8 key + cert', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    const meta = engine.importKeyMaterial(sessionId, {
+      alias: 'rsa-pkcs8',
+      privateKeyPem: read('client.pkcs8.key'),
+      certificatePem: read('client.crt'),
+    })
+    expect(meta.aliasCount).toBe(1)
+    const d = engine.aliasDetail(sessionId, 'rsa-pkcs8')
+    expect(d.entryType).toBe('KEY')
+    expect(d.hasPrivateKey).toBe(true)
+    expect(d.chain[0].publicKeyAlgorithm).toBe('RSA')
+    expect(d.chain[0].keySize).toBe(2048)
+    expect(d.chain[0].subjectDN).toContain('test-client')
+  })
+
+  it('KS-F3-16 RSA OpenSSL/PKCS#1 traditional key + cert', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.importKeyMaterial(sessionId, {
+      alias: 'rsa-openssl',
+      privateKeyPem: read('client.key'),
+      certificatePem: read('client.crt'),
+    })
+    expect(engine.aliasDetail(sessionId, 'rsa-openssl').chain[0].publicKeyAlgorithm).toBe('RSA')
+  })
+
+  it('KS-F3-17 EC P-256 PKCS#8 key + cert', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.importKeyMaterial(sessionId, {
+      alias: 'ec256',
+      privateKeyPem: read('ec-p256.pkcs8.key'),
+      certificatePem: read('ec-p256.crt'),
+    })
+    const d = engine.aliasDetail(sessionId, 'ec256')
+    expect(d.chain[0].publicKeyAlgorithm).toBe('EC')
+    expect(d.chain[0].keySize).toBe(256)
+  })
+
+  it('KS-F3-18 EC P-256 SEC1 (BEGIN EC PRIVATE KEY) key', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.importKeyMaterial(sessionId, {
+      alias: 'ec256-sec1',
+      privateKeyPem: read('ec-p256.key'),
+      certificatePem: read('ec-p256.crt'),
+    })
+    expect(engine.aliasDetail(sessionId, 'ec256-sec1').chain[0].publicKeyAlgorithm).toBe('EC')
+  })
+
+  it('KS-F3-19 EC P-384 key + cert', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.importKeyMaterial(sessionId, {
+      alias: 'ec384',
+      privateKeyPem: read('ec-p384.pkcs8.key'),
+      certificatePem: read('ec-p384.crt'),
+    })
+    expect(engine.aliasDetail(sessionId, 'ec384').chain[0].keySize).toBe(384)
+  })
+
+  it('KS-F3-20 multi-cert chain — key must match the LEAF, not the CA', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.importKeyMaterial(sessionId, {
+      alias: 'chain-key',
+      privateKeyPem: read('client.pkcs8.key'),
+      certificatePem: read('client.crt') + '\n' + read('ca.crt'),
+    })
+    expect(engine.aliasDetail(sessionId, 'chain-key').chain.length).toBe(2)
+  })
+
+  it('KS-F3-21 key does NOT match certificate → throws, no entry added', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importKeyMaterial(sessionId, {
+        alias: 'mismatch',
+        privateKeyPem: read('client.key'),
+        certificatePem: read('server.crt'),
+      }),
+    ).toThrow('Private key does not match the provided certificate')
+    expect(engine.inspect(sessionId).aliasCount).toBe(0)
+  })
+
+  it('KS-F3-22 empty private key → Private key (PEM) cannot be empty', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importKeyMaterial(sessionId, {
+        alias: 'k',
+        privateKeyPem: '',
+        certificatePem: read('client.crt'),
+      }),
+    ).toThrow('Private key (PEM) cannot be empty')
+  })
+
+  it('KS-F3-23 no key block / unparseable key', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importKeyMaterial(sessionId, {
+        alias: 'k',
+        privateKeyPem: 'hello world',
+        certificatePem: read('client.crt'),
+      }),
+    ).toThrow('No private key found in the provided PEM')
+    expect(() =>
+      engine.importKeyMaterial(sessionId, {
+        alias: 'k',
+        privateKeyPem: '-----BEGIN PRIVATE KEY-----\nZ3JiZ2Jn\n-----END PRIVATE KEY-----',
+        certificatePem: read('client.crt'),
+      }),
+    ).toThrow('Could not parse private key from PEM')
+  })
+
+  it('KS-F3-24 missing/invalid certificate → At least one certificate (PEM) is required', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importKeyMaterial(sessionId, {
+        alias: 'k',
+        privateKeyPem: read('client.pkcs8.key'),
+        certificatePem: '',
+      }),
+    ).toThrow('At least one certificate (PEM) is required')
+    expect(() =>
+      engine.importKeyMaterial(sessionId, {
+        alias: 'k',
+        privateKeyPem: read('client.pkcs8.key'),
+        certificatePem: 'not a cert',
+      }),
+    ).toThrow('At least one certificate (PEM) is required')
+  })
+
+  it('KS-F3-25 alias already exists (requireNewAlias)', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.importKeyMaterial(sessionId, {
+      alias: 'dup',
+      privateKeyPem: read('client.pkcs8.key'),
+      certificatePem: read('client.crt'),
+    })
+    expect(() =>
+      engine.importKeyMaterial(sessionId, {
+        alias: 'dup',
+        privateKeyPem: read('client.pkcs8.key'),
+        certificatePem: read('client.crt'),
+      }),
+    ).toThrow('Alias already exists: dup')
+  })
+
+  it('KS-F3-26 empty alias → Alias cannot be empty', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importKeyMaterial(sessionId, {
+        alias: '',
+        privateKeyPem: read('client.pkcs8.key'),
+        certificatePem: read('client.crt'),
+      }),
+    ).toThrow('Alias cannot be empty')
+  })
+
+  it('KS-F3-48 root-first chain: leaf located anywhere + reordered, not rejected', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    // certChainDer[0] is the CA (root); the leaf that matches the key is SECOND.
+    // The old leaf[0] assumption falsely rejected this — the chain search must
+    // find the matching cert and reorder it to the leaf position.
+    const meta = engine.importKeyMaterial(sessionId, {
+      alias: 'rootfirst',
+      privateKeyPem: read('client.pkcs8.key'),
+      certificatePem: read('ca.crt') + '\n' + read('client.crt'),
+    })
+    expect(meta.aliasCount).toBe(1)
+    const d = engine.aliasDetail(sessionId, 'rootfirst')
+    expect(d.entryType).toBe('KEY')
+    expect(d.chain.length).toBe(2)
+    // Leaf reordered to position 0; the CA follows.
+    expect(d.chain[0].subjectDN).toContain('test-client')
+    expect(d.chain[1].subjectDN).toContain('Testnizer Test CA')
+  })
+})
+
+describe('importPem (spec §4.6)', () => {
+  it('KS-F3-28 combined key+cert block → key entry', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    const meta = engine.importPem(sessionId, {
+      alias: 'combined',
+      pemContent: read('client.pkcs8.key') + '\n' + read('client.crt') + '\n' + read('ca.crt'),
+    })
+    expect(meta.aliasCount).toBe(1)
+    const d = engine.aliasDetail(sessionId, 'combined')
+    expect(d.entryType).toBe('KEY')
+    expect(d.hasPrivateKey).toBe(true)
+    expect(d.chain.length).toBe(2)
+  })
+
+  it('KS-F3-29 cert-only → trusted certificate entry', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.importPem(sessionId, { alias: 'ca-trust', pemContent: read('ca.crt') })
+    const d = engine.aliasDetail(sessionId, 'ca-trust')
+    expect(d.entryType).toBe('CERTIFICATE')
+    expect(d.hasPrivateKey).toBe(false)
+    expect(d.chain[0].subjectDN).toContain('Testnizer Test CA')
+  })
+
+  it('KS-F3-30 cert-only multi-cert PEM imports the FIRST cert', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.importPem(sessionId, {
+      alias: 'first-only',
+      pemContent: read('client.crt') + '\n' + read('ca.crt'),
+    })
+    const d = engine.aliasDetail(sessionId, 'first-only')
+    expect(d.chain.length).toBe(1)
+    expect(d.chain[0].subjectDN).toContain('test-client')
+  })
+
+  it('KS-F3-31 private key present but no certificate → throws', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importPem(sessionId, { alias: 'keyonly', pemContent: read('client.pkcs8.key') }),
+    ).toThrow('A certificate is required to import a private key')
+  })
+
+  it('KS-F3-32 neither key nor certificate → throws', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importPem(sessionId, {
+        alias: 'empty',
+        pemContent: '-----BEGIN NONSENSE-----\nZ3Ji\n-----END NONSENSE-----',
+      }),
+    ).toThrow('No private key or certificate found in the provided PEM')
+    expect(() => engine.importPem(sessionId, { alias: 'e2', pemContent: 'hello world' })).toThrow(
+      'No private key or certificate found in the provided PEM',
+    )
+  })
+
+  it('KS-F3-33 key + mismatched cert in the same block → throws', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importPem(sessionId, {
+        alias: 'mm',
+        pemContent: read('client.key') + '\n' + read('server.crt'),
+      }),
+    ).toThrow('Private key does not match the provided certificate')
+    expect(engine.inspect(sessionId).aliasCount).toBe(0)
+  })
+})
+
+describe('importTrustedCertificate (spec §4.7)', () => {
+  it('KS-F3-34 from PEM', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.importTrustedCertificate(sessionId, { alias: 'ca', certificateContent: read('ca.crt') })
+    const d = engine.aliasDetail(sessionId, 'ca')
+    expect(d.entryType).toBe('CERTIFICATE')
+    expect(d.hasPrivateKey).toBe(false)
+    expect(d.chain[0].subjectDN).toContain('Testnizer Test CA')
+    expect(d.chain[0].issuerDN).toBe(d.chain[0].subjectDN) // self-signed root
+  })
+
+  it('KS-F3-35 from base64 DER (no PEM headers)', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.importTrustedCertificate(sessionId, {
+      alias: 'der-cert',
+      certificateContent: read('client.der.b64'),
+    })
+    expect(engine.aliasDetail(sessionId, 'der-cert').chain[0].subjectDN).toContain('test-client')
+  })
+
+  it('KS-F3-36 content has no certificate → throws', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importTrustedCertificate(sessionId, {
+        alias: 'x',
+        certificateContent: 'not base64, not pem',
+      }),
+    ).toThrow('No certificate found in the provided content')
+    expect(() =>
+      engine.importTrustedCertificate(sessionId, { alias: 'x', certificateContent: 'aGVsbG8=' }),
+    ).toThrow('No certificate found in the provided content')
+  })
+
+  it('KS-F3-37 alias already exists → throws', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.importTrustedCertificate(sessionId, { alias: 'ca', certificateContent: read('ca.crt') })
+    expect(() =>
+      engine.importTrustedCertificate(sessionId, { alias: 'ca', certificateContent: read('ca.crt') }),
+    ).toThrow('Alias already exists: ca')
+  })
+
+  it('KS-F3-38 empty alias → Alias cannot be empty', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    expect(() =>
+      engine.importTrustedCertificate(sessionId, { alias: '', certificateContent: read('ca.crt') }),
+    ).toThrow('Alias cannot be empty')
+  })
+})
+
+describe('verifyKeyMatchesCertificate (spec §6.7 — CRITICAL)', () => {
+  it('KS-F3-39 RSA matching pair passes', () => {
+    const engine = new KeystoreEngine()
+    expect(() =>
+      engine.verifyKeyMatchesCertificate(privKeyOf('client.pkcs8.key'), pubKeyOf('client.crt')),
+    ).not.toThrow()
+  })
+
+  it('KS-F3-40 EC matching pair passes', () => {
+    const engine = new KeystoreEngine()
+    expect(() =>
+      engine.verifyKeyMatchesCertificate(privKeyOf('ec-p256.key'), pubKeyOf('ec-p256.crt')),
+    ).not.toThrow()
+  })
+
+  it('KS-F3-41 mismatched pair throws', () => {
+    const engine = new KeystoreEngine()
+    expect(() =>
+      engine.verifyKeyMatchesCertificate(privKeyOf('client.pkcs8.key'), pubKeyOf('server.crt')),
+    ).toThrow('Private key does not match the provided certificate')
+  })
+
+  it('KS-F3-42 unsupported algorithm (Ed25519) matching pair does not throw', () => {
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519')
+    const engine = new KeystoreEngine()
+    expect(() => engine.verifyKeyMatchesCertificate(privateKey, publicKey)).not.toThrow()
+  })
+
+  it('KS-F3-43 the check actually validates (not stubbed)', () => {
+    const engine = new KeystoreEngine()
+    // Matching passes …
+    expect(() =>
+      engine.verifyKeyMatchesCertificate(privKeyOf('client.pkcs8.key'), pubKeyOf('client.crt')),
+    ).not.toThrow()
+    // … swapping in a different public key throws (real SPKI compare / verify).
+    expect(() =>
+      engine.verifyKeyMatchesCertificate(privKeyOf('client.pkcs8.key'), pubKeyOf('server.crt')),
+    ).toThrow('Private key does not match the provided certificate')
+  })
+
+  it('KS-F3-44 unverifiable pair FAILS CLOSED (rejects, never silently accepts)', () => {
+    const engine = new KeystoreEngine()
+    const priv = privKeyOf('client.pkcs8.key')
+    // A symmetric KeyObject can neither export an SPKI nor verify a sign/verify
+    // probe. The old gate fell through to the probe and SILENTLY ACCEPTED when it
+    // could not run; the fail-closed gate MUST reject an unverifiable pair.
+    const unverifiable = createSecretKey(randomBytes(32))
+    expect(() => engine.verifyKeyMatchesCertificate(priv, unverifiable)).toThrow(
+      KeystoreValidationException,
+    )
   })
 })

@@ -1214,6 +1214,40 @@ const translations: Record<Locale, Record<string, string>> = {
     'tools.keystore.generate.entryPassword': 'Entry password',
     'tools.keystore.generate.submit': 'Generate',
     'tools.keystore.generate.secretKeyNote': 'Secret keys can only be stored in a PKCS12 keystore.',
+    // ── Import (Faz B3) ────────────────────────────────────────────────────
+    'tools.keystore.import.title': 'Import Entry',
+    'tools.keystore.import.format': 'Format',
+    'tools.keystore.import.format.pkcs12': 'PKCS#12 (.p12 / .pfx)',
+    'tools.keystore.import.format.keyMaterial': 'PKCS#8 / OpenSSL (key + certificate)',
+    'tools.keystore.import.format.pem': 'Pasted PEM',
+    'tools.keystore.import.format.trustedCert': 'Trusted certificate',
+    'tools.keystore.import.alias': 'Alias',
+    'tools.keystore.import.targetAlias': 'Target alias',
+    'tools.keystore.import.sourceFile': 'Source file',
+    'tools.keystore.import.chooseFile': 'Choose file…',
+    'tools.keystore.import.noFile': 'No file selected',
+    'tools.keystore.import.sourcePassword': 'Source password',
+    'tools.keystore.import.sourceAlias': 'Source alias',
+    'tools.keystore.import.sourceAliasHint': 'Leave blank to import all entries',
+    'tools.keystore.import.privateKeyPem': 'Private key (PEM)',
+    'tools.keystore.import.privateKeyHint':
+      'PKCS#8 or OpenSSL/PKCS#1 (BEGIN PRIVATE KEY / BEGIN RSA PRIVATE KEY / BEGIN EC PRIVATE KEY)',
+    'tools.keystore.import.certificatePem': 'Certificate (PEM)',
+    'tools.keystore.import.certificateChainHint':
+      'Leaf first; append CA certificates to include the chain',
+    'tools.keystore.import.pemContent': 'PEM content',
+    'tools.keystore.import.pemHint':
+      'Paste a private key + certificate (key entry), or a certificate only (trusted entry)',
+    'tools.keystore.import.certificateContent': 'Certificate',
+    'tools.keystore.import.certificateContentHint':
+      'Paste PEM or base64 DER, or load a certificate file',
+    'tools.keystore.import.loadFile': 'Load from file…',
+    'tools.keystore.import.fileReadError': 'Could not read the selected file.',
+    'tools.keystore.import.submit': 'Import',
+    'tools.keystore.import.error.keyCertMismatch':
+      'Private key does not match the provided certificate',
+    'tools.keystore.import.error.noImportableEntries':
+      'No importable entries found in the source keystore',
     'tools.qr.title': 'QR Code',
     'tools.qr.modeEncode': 'Encode',
     'tools.qr.modeDecode': 'Decode',
@@ -2887,6 +2921,39 @@ const translations: Record<Locale, Record<string, string>> = {
     'tools.keystore.generate.submit': 'Üret',
     'tools.keystore.generate.secretKeyNote':
       'Gizli anahtarlar yalnızca PKCS12 keystore içinde saklanabilir.',
+    // ── İçe Aktar (Faz B3) ─────────────────────────────────────────────────
+    'tools.keystore.import.title': 'Girdi İçe Aktar',
+    'tools.keystore.import.format': 'Biçim',
+    'tools.keystore.import.format.pkcs12': 'PKCS#12 (.p12 / .pfx)',
+    'tools.keystore.import.format.keyMaterial': 'PKCS#8 / OpenSSL (anahtar + sertifika)',
+    'tools.keystore.import.format.pem': 'Yapıştırılan PEM',
+    'tools.keystore.import.format.trustedCert': 'Güvenilir sertifika',
+    'tools.keystore.import.alias': 'Alias',
+    'tools.keystore.import.targetAlias': 'Hedef alias',
+    'tools.keystore.import.sourceFile': 'Kaynak dosya',
+    'tools.keystore.import.chooseFile': 'Dosya seç…',
+    'tools.keystore.import.noFile': 'Dosya seçilmedi',
+    'tools.keystore.import.sourcePassword': 'Kaynak parolası',
+    'tools.keystore.import.sourceAlias': 'Kaynak alias',
+    'tools.keystore.import.sourceAliasHint': 'Tüm girdileri içe aktarmak için boş bırakın',
+    'tools.keystore.import.privateKeyPem': 'Özel anahtar (PEM)',
+    'tools.keystore.import.privateKeyHint':
+      'PKCS#8 ya da OpenSSL/PKCS#1 (BEGIN PRIVATE KEY / BEGIN RSA PRIVATE KEY / BEGIN EC PRIVATE KEY)',
+    'tools.keystore.import.certificatePem': 'Sertifika (PEM)',
+    'tools.keystore.import.certificateChainHint':
+      'Önce yaprak (leaf); zinciri dahil etmek için CA sertifikalarını ekleyin',
+    'tools.keystore.import.pemContent': 'PEM içeriği',
+    'tools.keystore.import.pemHint':
+      'Özel anahtar + sertifika (anahtar girdisi) ya da yalnızca sertifika (güvenilir girdi) yapıştırın',
+    'tools.keystore.import.certificateContent': 'Sertifika',
+    'tools.keystore.import.certificateContentHint':
+      'PEM ya da base64 DER yapıştırın veya bir sertifika dosyası yükleyin',
+    'tools.keystore.import.loadFile': 'Dosyadan yükle…',
+    'tools.keystore.import.fileReadError': 'Seçilen dosya okunamadı.',
+    'tools.keystore.import.submit': 'İçe Aktar',
+    'tools.keystore.import.error.keyCertMismatch': 'Özel anahtar verilen sertifikayla eşleşmiyor',
+    'tools.keystore.import.error.noImportableEntries':
+      'Kaynak keystore içinde içe aktarılabilir girdi bulunamadı',
     'tools.qr.title': 'QR Kod',
     'tools.qr.modeEncode': 'Oluştur',
     'tools.qr.modeDecode': 'Çöz',

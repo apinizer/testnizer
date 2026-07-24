@@ -1920,6 +1920,30 @@ interface KeystoreApi {
     keySize?: number
     entryPassword?: string
   }): Promise<IpcResult<KeystoreSessionResultDto>>
+  importPkcs12(payload: {
+    sessionId: string
+    sourcePath?: string
+    sourceBytes?: string
+    sourcePassword?: string
+    sourceAlias?: string
+    alias?: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  importKeyMaterial(payload: {
+    sessionId: string
+    alias: string
+    privateKeyPem: string
+    certificatePem: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  importPem(payload: {
+    sessionId: string
+    alias: string
+    pemContent: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  importTrustedCert(payload: {
+    sessionId: string
+    alias: string
+    certificateContent: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
   closeSession(sessionId: string): Promise<IpcResult<{ closed: true }>>
   librarySave(payload: {
     sessionId: string

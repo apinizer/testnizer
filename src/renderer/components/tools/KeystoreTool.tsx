@@ -6,6 +6,7 @@ import AliasTable from './keystore/AliasTable'
 import CertificateDetailDialog from './keystore/CertificateDetailDialog'
 import GenerateKeyPairDialog from './keystore/GenerateKeyPairDialog'
 import GenerateSecretKeyDialog from './keystore/GenerateSecretKeyDialog'
+import ImportDialog from './keystore/ImportDialog'
 import { LabeledInput, LabeledSelect, Modal, ModalActions } from './keystore/dialog-ui'
 
 type PasswordPrompt =
@@ -28,6 +29,7 @@ export default function KeystoreTool() {
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [genKeyPairOpen, setGenKeyPairOpen] = useState(false)
   const [genSecretOpen, setGenSecretOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
 
   useEffect(() => {
     void s.loadLibrary()
@@ -93,6 +95,14 @@ export default function KeystoreTool() {
     else setGenSecretOpen(true)
   }
 
+  // Open the Import dialog with a clean error slate (same discipline as the
+  // generators) so a stale banner never leaks into the fresh form.
+  function openImport(): void {
+    setAddMenuOpen(false)
+    s.clearError()
+    setImportOpen(true)
+  }
+
   const isPkcs12 = s.meta?.type === 'PKCS12'
 
   return (
@@ -133,6 +143,7 @@ export default function KeystoreTool() {
               secretEnabled={!!isPkcs12}
               onKeyPair={() => openGenerator('keyPair')}
               onSecret={() => openGenerator('secret')}
+              onImport={openImport}
             />
             <Btn onClick={() => setSaveOpen(true)}>{t('tools.keystore.saveToLibrary')}</Btn>
             <Btn onClick={() => void s.closeSession()}>{t('tools.keystore.close')}</Btn>
@@ -143,7 +154,7 @@ export default function KeystoreTool() {
       {/* While a Generate dialog is open, route its error INTO the dialog only
           (it receives error={s.error}) — suppress the header banner so the same
           message doesn't render twice. */}
-      {s.error && !genKeyPairOpen && !genSecretOpen && (
+      {s.error && !genKeyPairOpen && !genSecretOpen && !importOpen && (
         <div
           className="shrink-0 border-b px-4 py-1.5 text-[11px]"
           style={{ borderColor: 'var(--border)', color: '#cc2200' }}
@@ -185,6 +196,9 @@ export default function KeystoreTool() {
           onClose={() => setGenSecretOpen(false)}
         />
       )}
+
+      {/* import entry (Faz B3) — PKCS12 / key material / pasted PEM / trusted cert */}
+      {importOpen && <ImportDialog error={s.error} onClose={() => setImportOpen(false)} />}
 
       {/* password prompt */}
       {pwPrompt && (
@@ -397,7 +411,7 @@ function Btn({ onClick, children }: { onClick: () => void; children: React.React
 /**
  * "Add Entry ▾" split menu — Generate Key Pair / Generate Secret Key / Import.
  * Secret keys are PKCS12-only, so that item is disabled for JKS sessions
- * (design §9.1); Import is a placeholder wired up in Faz B3.
+ * (design §9.1); Import (Faz B3) opens the multi-format ImportDialog.
  */
 function AddEntryMenu({
   open,
@@ -406,6 +420,7 @@ function AddEntryMenu({
   secretEnabled,
   onKeyPair,
   onSecret,
+  onImport,
 }: {
   open: boolean
   onToggle: () => void
@@ -413,6 +428,7 @@ function AddEntryMenu({
   secretEnabled: boolean
   onKeyPair: () => void
   onSecret: () => void
+  onImport: () => void
 }) {
   const { t } = useTranslation()
   return (
@@ -441,9 +457,7 @@ function AddEntryMenu({
               {t('tools.keystore.generate.secretKey')}
             </MenuItem>
             <div className="my-1 border-t" style={{ borderColor: 'var(--border)' }} />
-            <MenuItem onClick={onClose} disabled>
-              {t('tools.keystore.generate.import')}
-            </MenuItem>
+            <MenuItem onClick={onImport}>{t('tools.keystore.generate.import')}</MenuItem>
           </div>
         </>
       )}

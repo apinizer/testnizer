@@ -6,8 +6,9 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { writeFileSync, readFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { setupHandlerHarness, makeElectronMock, createTestDb } from './helpers'
@@ -412,5 +413,111 @@ describe('Model-B library: save → list → open round-trip', () => {
       name: '   ',
     })) as Res<unknown>
     expect(res.success).toBe(false)
+  })
+})
+
+describe('keystore import handlers (Faz B3) — envelope + no-leak', () => {
+  const CERTS = join(dirname(fileURLToPath(import.meta.url)), '../../fixtures/certs')
+  const readCert = (f: string): string => readFileSync(join(CERTS, f), 'utf8')
+  const readB64 = (f: string): string => readFileSync(join(CERTS, f)).toString('base64')
+
+  async function newPkcs12Session(): Promise<string> {
+    const created = (await harness.invoke('keystore:createNew', {
+      type: 'PKCS12',
+      password: 'changeit',
+    })) as Res<{ sessionId: string }>
+    return created.data!.sessionId
+  }
+
+  it('keystore:importKeyMaterial mutates the session and returns public meta only', async () => {
+    const sessionId = await newPkcs12Session()
+    const res = (await harness.invoke('keystore:importKeyMaterial', {
+      sessionId,
+      alias: 'imported',
+      privateKeyPem: readCert('client.pkcs8.key'),
+      certificatePem: readCert('client.crt'),
+    })) as Res<{ sessionId: string; meta: { aliasCount: number } }>
+    expect(res.success).toBe(true)
+    expect(res.data!.sessionId).toBe(sessionId)
+    expect(res.data!.meta.aliasCount).toBe(1)
+    // NO-LEAK: the private key PEM must never round-trip back to the renderer.
+    const json = JSON.stringify(res)
+    expect(json).not.toContain('PRIVATE KEY')
+    expect(json).not.toContain('changeit')
+  })
+
+  it('keystore:importPkcs12 reads source bytes (base64) in main, leaks nothing', async () => {
+    const sessionId = await newPkcs12Session()
+    const b64 = readB64('client.p12')
+    const res = (await harness.invoke('keystore:importPkcs12', {
+      sessionId,
+      sourceBytes: b64,
+      sourcePassword: 'testpassword',
+      sourceAlias: 'test-client',
+    })) as Res<{ meta: { aliasCount: number } }>
+    expect(res.success).toBe(true)
+    expect(res.data!.meta.aliasCount).toBe(1)
+    const json = JSON.stringify(res)
+    expect(json).not.toContain('PRIVATE KEY')
+    expect(json).not.toContain('testpassword')
+    // The raw source keystore bytes must not travel back to the renderer.
+    expect(json).not.toContain(b64)
+  })
+
+  it('keystore:importPem (cert-only) adds a trusted certificate', async () => {
+    const sessionId = await newPkcs12Session()
+    const res = (await harness.invoke('keystore:importPem', {
+      sessionId,
+      alias: 'ca-trust',
+      pemContent: readCert('ca.crt'),
+    })) as Res<{ meta: { aliases: { entryType: string }[] } }>
+    expect(res.success).toBe(true)
+    expect(res.data!.meta.aliases[0].entryType).toBe('CERTIFICATE')
+  })
+
+  it('keystore:importTrustedCert accepts base64 DER', async () => {
+    const sessionId = await newPkcs12Session()
+    const res = (await harness.invoke('keystore:importTrustedCert', {
+      sessionId,
+      alias: 'der',
+      certificateContent: readCert('client.der.b64'),
+    })) as Res<{ meta: { aliasCount: number } }>
+    expect(res.success).toBe(true)
+    expect(res.data!.meta.aliasCount).toBe(1)
+  })
+
+  it('KS-F3-45 validation error → {success:false} with the verbatim §8 string', async () => {
+    const sessionId = await newPkcs12Session()
+    const res = (await harness.invoke('keystore:importPkcs12', {
+      sessionId,
+      sourceBytes: '',
+      sourcePassword: 'x',
+    })) as Res<unknown>
+    expect(res.success).toBe(false)
+    expect(res.error).toBe('Source keystore content cannot be empty')
+  })
+
+  it('KS-F3-45 engine error (wrong source password) → {success:false}, no key/password leak', async () => {
+    const sessionId = await newPkcs12Session()
+    const res = (await harness.invoke('keystore:importPkcs12', {
+      sessionId,
+      sourceBytes: readB64('client.p12'),
+      sourcePassword: 'WRONG',
+    })) as Res<unknown>
+    expect(res.success).toBe(false)
+    expect(res.error).not.toContain('PRIVATE KEY')
+    expect(res.error).not.toContain('WRONG')
+  })
+
+  it('KS-F3-21 key-cert MISMATCH is rejected at the handler boundary', async () => {
+    const sessionId = await newPkcs12Session()
+    const res = (await harness.invoke('keystore:importKeyMaterial', {
+      sessionId,
+      alias: 'mismatch',
+      privateKeyPem: readCert('client.key'),
+      certificatePem: readCert('server.crt'),
+    })) as Res<unknown>
+    expect(res.success).toBe(false)
+    expect(res.error).toBe('Private key does not match the provided certificate')
   })
 })

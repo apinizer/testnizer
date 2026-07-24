@@ -469,6 +469,30 @@ const api = {
       keySize?: number
       entryPassword?: string
     }): Promise<unknown> => ipcRenderer.invoke('keystore:generateSecretKey', payload),
+    importPkcs12: (payload: {
+      sessionId: string
+      sourcePath?: string
+      sourceBytes?: string
+      sourcePassword?: string
+      sourceAlias?: string
+      alias?: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:importPkcs12', payload),
+    importKeyMaterial: (payload: {
+      sessionId: string
+      alias: string
+      privateKeyPem: string
+      certificatePem: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:importKeyMaterial', payload),
+    importPem: (payload: {
+      sessionId: string
+      alias: string
+      pemContent: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:importPem', payload),
+    importTrustedCert: (payload: {
+      sessionId: string
+      alias: string
+      certificateContent: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:importTrustedCert', payload),
     closeSession: (sessionId: string): Promise<unknown> =>
       ipcRenderer.invoke('keystore:closeSession', sessionId),
     librarySave: (payload: {

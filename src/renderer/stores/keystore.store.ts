@@ -62,6 +62,48 @@ export interface GenerateSecretKeyInput {
   entryPassword?: string
 }
 
+/**
+ * Import inputs (Faz B3). `sessionId` is injected by the store from the open
+ * session — callers pass only the field set collected by ImportDialog (§9.5).
+ *
+ * ADDITIVE-INPUT invariant: a PKCS12 source comes from a FILE (a `sourcePath`
+ * read in MAIN, or `sourceBytes` for programmatic callers); the three PEM paths
+ * take PASTED text (private key / combined PEM / trusted-cert content). Both
+ * routes are honored — the dialog never forces a file for the paste paths.
+ *
+ * No `entryPassword` field: like the generate actions, per-entry passwords are
+ * deferred to Faz B4 (the parse/open path only decrypts with the store
+ * password, so a distinct entry password would make the entry undecryptable on
+ * reopen). Imported entries are protected with the store password.
+ */
+export interface ImportPkcs12Input {
+  /** Source file path — read in MAIN (native picker). */
+  sourcePath?: string
+  /** base64-encoded source bytes — programmatic/test callers only. */
+  sourceBytes?: string
+  sourcePassword?: string
+  /** Blank ⇒ import ALL importable entries from the source. */
+  sourceAlias?: string
+  /** Target alias override (single-entry copy). */
+  alias?: string
+}
+
+export interface ImportKeyMaterialInput {
+  alias: string
+  privateKeyPem: string
+  certificatePem: string
+}
+
+export interface ImportPemInput {
+  alias: string
+  pemContent: string
+}
+
+export interface ImportTrustedCertInput {
+  alias: string
+  certificateContent: string
+}
+
 export interface KeystoreState {
   /** Opaque main-process handle. `null` = empty state (no keystore open). */
   sessionId: string | null
@@ -102,6 +144,24 @@ export interface KeystoreState {
    * refresh `meta`. Raw key bytes never leave main.
    */
   generateSecretKey: (opts: GenerateSecretKeyInput) => Promise<boolean>
+  /**
+   * Import entries from a source PKCS12 (copyEntry) into the CURRENT session,
+   * then refresh `meta`. The source bytes are read/parsed in MAIN; nothing
+   * secret round-trips back.
+   */
+  importPkcs12: (opts: ImportPkcs12Input) => Promise<boolean>
+  /**
+   * Import a private key + certificate chain (PKCS#8 / OpenSSL / SEC1) into the
+   * CURRENT session. Main enforces the key-cert match gate before mutating.
+   */
+  importKeyMaterial: (opts: ImportKeyMaterialInput) => Promise<boolean>
+  /**
+   * Import a pasted PEM block into the CURRENT session (key+cert ⇒ key entry;
+   * cert-only ⇒ trusted entry). Parsed in MAIN.
+   */
+  importPem: (opts: ImportPemInput) => Promise<boolean>
+  /** Import a trusted certificate (PEM or base64 DER) into the CURRENT session. */
+  importTrustedCert: (opts: ImportTrustedCertInput) => Promise<boolean>
   /** Open a saved library entry into a session (password re-entered if not remembered). */
   openFromLibrary: (payload: { id: string; name: string; password?: string }) => Promise<boolean>
   /** Persist the current session to the Model B library. */
@@ -234,6 +294,70 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
       // protected with the store password until Faz B4 wires per-entry passwords.
       const { entryPassword: _entryPasswordB4, ...safeOpts } = opts
       const { meta } = await unwrap(bridge.generateSecretKey({ sessionId, ...safeOpts }))
+      set({ meta, loading: false })
+      return true
+    } catch (e) {
+      return fail(set, e)
+    }
+  },
+
+  importPkcs12: async (opts) => {
+    const bridge = ks()
+    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    const sessionId = get().sessionId
+    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    set({ loading: true, error: null })
+    try {
+      // Import MUTATES the current session; the response carries only refreshed
+      // public meta (never key material / source password / source bytes).
+      const { meta } = await unwrap(bridge.importPkcs12({ sessionId, ...opts }))
+      set({ meta, loading: false })
+      return true
+    } catch (e) {
+      return fail(set, e)
+    }
+  },
+
+  importKeyMaterial: async (opts) => {
+    const bridge = ks()
+    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    const sessionId = get().sessionId
+    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    set({ loading: true, error: null })
+    try {
+      // Main runs the deterministic key-cert match gate before mutating — a
+      // mismatched pair fails with the §8 string and never enters the keystore.
+      const { meta } = await unwrap(bridge.importKeyMaterial({ sessionId, ...opts }))
+      set({ meta, loading: false })
+      return true
+    } catch (e) {
+      return fail(set, e)
+    }
+  },
+
+  importPem: async (opts) => {
+    const bridge = ks()
+    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    const sessionId = get().sessionId
+    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    set({ loading: true, error: null })
+    try {
+      const { meta } = await unwrap(bridge.importPem({ sessionId, ...opts }))
+      set({ meta, loading: false })
+      return true
+    } catch (e) {
+      return fail(set, e)
+    }
+  },
+
+  importTrustedCert: async (opts) => {
+    const bridge = ks()
+    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    const sessionId = get().sessionId
+    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    set({ loading: true, error: null })
+    try {
+      const { meta } = await unwrap(bridge.importTrustedCert({ sessionId, ...opts }))
       set({ meta, loading: false })
       return true
     } catch (e) {

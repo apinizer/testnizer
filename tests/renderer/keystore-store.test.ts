@@ -56,6 +56,10 @@ interface Mocks {
   aliasDetail: ReturnType<typeof vi.fn>
   generateKeyPair: ReturnType<typeof vi.fn>
   generateSecretKey: ReturnType<typeof vi.fn>
+  importPkcs12: ReturnType<typeof vi.fn>
+  importKeyMaterial: ReturnType<typeof vi.fn>
+  importPem: ReturnType<typeof vi.fn>
+  importTrustedCert: ReturnType<typeof vi.fn>
   closeSession: ReturnType<typeof vi.fn>
   librarySave: ReturnType<typeof vi.fn>
   libraryList: ReturnType<typeof vi.fn>
@@ -93,6 +97,43 @@ const META_AFTER_SECRET: KeystoreMeta = {
   ],
 }
 
+// An imported entry grows the alias set; the response carries the SAME sessionId
+// (import mutates the current session) plus refreshed public meta.
+const META_AFTER_IMPORT: KeystoreMeta = {
+  type: 'PKCS12',
+  aliasCount: 2,
+  aliases: [
+    ...META.aliases,
+    {
+      alias: 'imported',
+      entryType: 'KEY',
+      hasPrivateKey: true,
+      subjectDN: 'CN=imported',
+      issuerDN: 'CN=imported',
+      notBefore: '2026-01-01T00:00:00.000Z',
+      notAfter: '2027-01-01T00:00:00.000Z',
+      keyAlgorithm: 'RSA',
+      chainLength: 1,
+    },
+  ],
+}
+
+const META_AFTER_TRUSTED: KeystoreMeta = {
+  type: 'PKCS12',
+  aliasCount: 2,
+  aliases: [
+    ...META.aliases,
+    {
+      alias: 'ca-trust',
+      entryType: 'CERTIFICATE',
+      hasPrivateKey: false,
+      subjectDN: 'CN=Test CA',
+      issuerDN: 'CN=Test CA',
+      chainLength: 1,
+    },
+  ],
+}
+
 const LIB_ROW = {
   id: 'lib1',
   name: 'My keystore',
@@ -123,6 +164,22 @@ function installApi(overrides: Partial<Mocks> = {}): Mocks {
     generateSecretKey: vi.fn(async () => ({
       success: true,
       data: { sessionId: 'sess-1', meta: META_AFTER_SECRET },
+    })),
+    importPkcs12: vi.fn(async () => ({
+      success: true,
+      data: { sessionId: 'sess-1', meta: META_AFTER_IMPORT },
+    })),
+    importKeyMaterial: vi.fn(async () => ({
+      success: true,
+      data: { sessionId: 'sess-1', meta: META_AFTER_IMPORT },
+    })),
+    importPem: vi.fn(async () => ({
+      success: true,
+      data: { sessionId: 'sess-1', meta: META_AFTER_IMPORT },
+    })),
+    importTrustedCert: vi.fn(async () => ({
+      success: true,
+      data: { sessionId: 'sess-1', meta: META_AFTER_TRUSTED },
     })),
     closeSession: vi.fn(async () => ({ success: true, data: { closed: true } })),
     librarySave: vi.fn(async () => ({ success: true, data: LIB_ROW })),
@@ -354,6 +411,162 @@ describe('keystore.store', () => {
     const ok = await useKeystoreStore.getState().generateSecretKey({ alias: 'skjks', keySize: 256 })
     expect(ok).toBe(false)
     expect(useKeystoreStore.getState().error).toContain('PKCS12')
+  })
+
+  it('importPkcs12 injects the current sessionId, forwards source fields, refreshes meta', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META })
+    const ok = await useKeystoreStore.getState().importPkcs12({
+      sourcePath: '/tmp/source.p12',
+      sourcePassword: 'srcpw',
+      sourceAlias: 'test-client',
+      alias: 'imported',
+    })
+    expect(ok).toBe(true)
+    expect(m.importPkcs12).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      sourcePath: '/tmp/source.p12',
+      sourcePassword: 'srcpw',
+      sourceAlias: 'test-client',
+      alias: 'imported',
+    })
+    const st = useKeystoreStore.getState()
+    expect(st.sessionId).toBe('sess-1')
+    expect(st.meta?.aliasCount).toBe(2)
+    expect(st.meta?.aliases.some((a) => a.alias === 'imported')).toBe(true)
+  })
+
+  it('importPkcs12 no-ops (soft fail) when there is no open session', async () => {
+    const m = installApi()
+    const ok = await useKeystoreStore.getState().importPkcs12({ sourcePath: '/tmp/source.p12' })
+    expect(ok).toBe(false)
+    expect(m.importPkcs12).not.toHaveBeenCalled()
+    // FIX 7: the missing-session branch surfaces an error (not a silent false).
+    expect(useKeystoreStore.getState().error).toBeTruthy()
+  })
+
+  it('importKeyMaterial forwards the key + cert PEM and refreshes meta', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META })
+    const ok = await useKeystoreStore.getState().importKeyMaterial({
+      alias: 'imported',
+      privateKeyPem: '-----BEGIN PRIVATE KEY-----\nAAA\n-----END PRIVATE KEY-----',
+      certificatePem: '-----BEGIN CERTIFICATE-----\nBBB\n-----END CERTIFICATE-----',
+    })
+    expect(ok).toBe(true)
+    expect(m.importKeyMaterial).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      alias: 'imported',
+      privateKeyPem: '-----BEGIN PRIVATE KEY-----\nAAA\n-----END PRIVATE KEY-----',
+      certificatePem: '-----BEGIN CERTIFICATE-----\nBBB\n-----END CERTIFICATE-----',
+    })
+    expect(useKeystoreStore.getState().meta?.aliasCount).toBe(2)
+  })
+
+  it('importKeyMaterial surfaces the key-cert mismatch engine error (§8) verbatim', async () => {
+    installApi({
+      importKeyMaterial: vi.fn(async () => ({
+        success: false,
+        error: 'Private key does not match the provided certificate',
+      })),
+    })
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META })
+    const ok = await useKeystoreStore
+      .getState()
+      .importKeyMaterial({ alias: 'bad', privateKeyPem: 'x', certificatePem: 'y' })
+    expect(ok).toBe(false)
+    expect(useKeystoreStore.getState().error).toBe(
+      'Private key does not match the provided certificate',
+    )
+    // A rejected pair must NOT mutate the alias set.
+    expect(useKeystoreStore.getState().meta?.aliasCount).toBe(1)
+  })
+
+  it('importPem forwards the pasted PEM blob and refreshes meta', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META })
+    const ok = await useKeystoreStore
+      .getState()
+      .importPem({ alias: 'imported', pemContent: '-----BEGIN CERTIFICATE-----\nCCC\n-----END CERTIFICATE-----' })
+    expect(ok).toBe(true)
+    expect(m.importPem).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      alias: 'imported',
+      pemContent: '-----BEGIN CERTIFICATE-----\nCCC\n-----END CERTIFICATE-----',
+    })
+    expect(useKeystoreStore.getState().meta?.aliasCount).toBe(2)
+  })
+
+  it('importTrustedCert forwards the certificate content and refreshes meta', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META })
+    const ok = await useKeystoreStore
+      .getState()
+      .importTrustedCert({ alias: 'ca-trust', certificateContent: 'MIIB...base64der' })
+    expect(ok).toBe(true)
+    expect(m.importTrustedCert).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      alias: 'ca-trust',
+      certificateContent: 'MIIB...base64der',
+    })
+    const st = useKeystoreStore.getState()
+    expect(st.meta?.aliases.some((a) => a.alias === 'ca-trust' && a.hasPrivateKey === false)).toBe(
+      true,
+    )
+  })
+
+  it('import actions never let source passwords or key material into state', async () => {
+    installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META })
+    await useKeystoreStore
+      .getState()
+      .importPkcs12({ sourcePath: '/tmp/s.p12', sourcePassword: 'srcsecret' })
+    await useKeystoreStore.getState().importKeyMaterial({
+      alias: 'k',
+      privateKeyPem: '-----BEGIN PRIVATE KEY-----\nSECRETKEY\n-----END PRIVATE KEY-----',
+      certificatePem: '-----BEGIN CERTIFICATE-----\nBBB\n-----END CERTIFICATE-----',
+    })
+    const {
+      pickFile,
+      openFile,
+      createNew,
+      generateKeyPair,
+      generateSecretKey,
+      importPkcs12,
+      importKeyMaterial,
+      importPem,
+      importTrustedCert,
+      openFromLibrary,
+      saveToLibrary,
+      deleteFromLibrary,
+      closeSession,
+      loadLibrary,
+      loadAliasDetail,
+      clearAliasDetail,
+      clearError,
+      ...data
+    } = useKeystoreStore.getState()
+    void pickFile
+    void openFile
+    void createNew
+    void generateKeyPair
+    void generateSecretKey
+    void importPkcs12
+    void importKeyMaterial
+    void importPem
+    void importTrustedCert
+    void openFromLibrary
+    void saveToLibrary
+    void deleteFromLibrary
+    void closeSession
+    void loadLibrary
+    void loadAliasDetail
+    void clearAliasDetail
+    void clearError
+    const json = JSON.stringify(data)
+    expect(json).not.toContain('srcsecret')
+    expect(json).not.toContain('SECRETKEY')
+    expect(json).not.toContain('PRIVATE KEY')
   })
 
   it('openFromLibrary forwards the re-entered password (remember=OFF default)', async () => {

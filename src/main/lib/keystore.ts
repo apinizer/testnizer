@@ -21,11 +21,16 @@
 import 'reflect-metadata'
 import {
   createHash,
+  createPrivateKey,
+  createPublicKey,
   generateKeyPairSync,
   randomBytes,
   randomUUID,
+  sign as cryptoSign,
+  verify as cryptoVerify,
   webcrypto,
   X509Certificate,
+  type KeyObject,
 } from 'node:crypto'
 import forge from 'node-forge'
 import * as x509 from '@peculiar/x509'
@@ -108,6 +113,36 @@ export interface GenerateSecretKeyOptions {
   /** AES key size in bits — 128 | 192 | 256. Defaults to 256. */
   keySize?: number
   entryPassword?: string
+}
+
+/** Import a PKCS12 source keystore via `copyEntry` semantics (spec §4.4 / §6.10). */
+export interface ImportPkcs12Options {
+  /** Source keystore bytes — read in MAIN (never surfaced to the renderer). */
+  sourceBytes: Buffer
+  sourcePassword?: string
+  /** Copy just this source alias; omitted ⇒ copy ALL importable entries. */
+  sourceAlias?: string
+  /** Rename the copied entry (only meaningful for a single-entry copy). */
+  targetAlias?: string
+}
+
+/** Import a raw private key + certificate chain (spec §4.5 / §6.7 / §6.11). */
+export interface ImportKeyMaterialOptions {
+  alias: string
+  privateKeyPem: string
+  certificatePem: string
+}
+
+/** Import a pasted PEM block (key+cert ⇒ key entry, cert-only ⇒ trusted) (spec §4.6). */
+export interface ImportPemOptions {
+  alias: string
+  pemContent: string
+}
+
+/** Import a trusted certificate from PEM or base64 DER (spec §4.7). */
+export interface ImportTrustedCertificateOptions {
+  alias: string
+  certificateContent: string
 }
 
 /** User-fixable error — the message is surfaced verbatim (design §4.3). */
@@ -659,6 +694,26 @@ function decodeSecretBag(bag: Asn1, password: string): SecretEntryModel | null {
   }
 }
 
+/** SPKI DER of the public half of a PKCS#8 private key, or null if it can't be
+ * derived (used to pair a key to its cert when localKeyId is absent). */
+function spkiFromPkcs8Der(pkcs8Der: Buffer): Buffer | null {
+  try {
+    const priv = createPrivateKey({ key: pkcs8Der, format: 'der', type: 'pkcs8' })
+    return createPublicKey(priv).export({ type: 'spki', format: 'der' }) as Buffer
+  } catch {
+    return null
+  }
+}
+
+/** SPKI DER of a certificate's public key, or null if it can't be read. */
+function spkiFromCertDer(certDer: Buffer): Buffer | null {
+  try {
+    return new X509Certificate(certDer).publicKey.export({ type: 'spki', format: 'der' }) as Buffer
+  } catch {
+    return null
+  }
+}
+
 /** Parse PKCS12 DER into the normalized model (RSA + EC, using raw DER — forge
  * can't parse EC cert/key objects, so we read `bag.asn1` fallbacks). Secret keys
  * are lifted out first (forge throws on `secretBag`) and merged back in. */
@@ -741,7 +796,25 @@ export function parsePkcs12(bytes: Buffer, password: string): EntryModel[] {
   }
 
   for (const k of keys) {
-    const leaf = certs.find((c) => c.localKeyId && c.localKeyId === k.localKeyId && !c.trusted)
+    // Pair the key to its leaf by localKeyId (the common case). A P12 that omits
+    // localKeyId attributes (some Windows CryptoAPI / manual exports) leaves the
+    // key with no match — fall back to the cert whose SPKI equals the key's
+    // derived SPKI (authoritative), then to the sole unclaimed non-trusted cert.
+    // localKeyId is only ever a hint here.
+    let leaf = k.localKeyId
+      ? certs.find((c) => c.localKeyId === k.localKeyId && !c.trusted && !usedCerts.has(c))
+      : undefined
+    if (!leaf) {
+      const keySpki = spkiFromPkcs8Der(k.pkcs8Der)
+      const unclaimed = certs.filter((c) => !usedCerts.has(c) && !c.trusted)
+      if (keySpki) {
+        leaf = unclaimed.find((c) => {
+          const cs = spkiFromCertDer(c.certDer)
+          return cs !== null && cs.equals(keySpki)
+        })
+      }
+      if (!leaf && unclaimed.length === 1) leaf = unclaimed[0]
+    }
     const chain: RawCert[] = []
     if (leaf) {
       chain.push(leaf)
@@ -861,6 +934,159 @@ export function serializeKeyStore(
   return type === 'JKS'
     ? serializeJks(entries, storePassword)
     : serializePkcs12(entries, storePassword)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Import parsing + key-cert match (spec §6.7, §6.11) — Faz B3.
+//
+// parsePrivateKey / parseCertificates read EXTERNAL material in ANY algorithm
+// Node can decode (RSA PKCS#1/PKCS#8, EC SEC1/PKCS#8, Ed25519, …) — deliberately
+// NOT limited to the curve set the generate path emits.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** True if the text carries a `-----BEGIN … PRIVATE KEY-----` block of any flavour. */
+function hasPrivateKeyBlock(pem: string): boolean {
+  return /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/.test(pem)
+}
+
+/**
+ * Parse a private key from PEM into a Node `KeyObject`. Recognises PKCS#8
+ * (`BEGIN PRIVATE KEY`), traditional OpenSSL/PKCS#1 (`BEGIN RSA PRIVATE KEY`)
+ * and SEC1 EC (`BEGIN EC PRIVATE KEY`) — Node auto-detects the encoding.
+ */
+export function parsePrivateKey(pem: string): KeyObject {
+  const trimmed = (pem ?? '').trim()
+  if (!trimmed) throw new KeystoreValidationException('Private key (PEM) cannot be empty')
+  if (!hasPrivateKeyBlock(trimmed)) {
+    throw new KeystoreValidationException('No private key found in the provided PEM')
+  }
+  try {
+    return createPrivateKey(trimmed)
+  } catch (e) {
+    throw new KeystoreValidationException(
+      `Could not parse private key from PEM: ${e instanceof Error ? e.message : String(e)}`,
+    )
+  }
+}
+
+/** Collect every `CERTIFICATE` PEM block as DER, in document order (leaf-first). */
+export function parseCertificates(pem: string): Buffer[] {
+  return pemBlocksToDer(pem ?? '', 'CERTIFICATE')
+}
+
+/** Parse a trusted certificate from PEM OR base64 DER; null if none decodes. */
+function parseCertificateFromContent(content: string): Buffer | null {
+  const trimmed = (content ?? '').trim()
+  if (!trimmed) return null
+  if (trimmed.includes('-----BEGIN')) {
+    const ders = pemBlocksToDer(trimmed, 'CERTIFICATE')
+    if (ders.length === 0) return null
+    try {
+      new X509Certificate(ders[0])
+      return ders[0]
+    } catch {
+      return null
+    }
+  }
+  // No PEM armour ⇒ treat as base64-encoded DER (spec §6.11 fallback branch).
+  try {
+    const der = Buffer.from(trimmed.replace(/\s+/g, ''), 'base64')
+    if (der.length === 0) return null
+    new X509Certificate(der) // throws unless it is a real certificate
+    return der
+  } catch {
+    return null
+  }
+}
+
+/**
+ * US-ASCII probe signed then verified to confirm a private key belongs to a
+ * certificate's public key (spec §6.7 secondary check). Ported from Apinizer.
+ */
+const KEY_MATCH_PROBE = Buffer.from('apinizer-keystore-studio-key-match-probe', 'ascii')
+
+/** Outcome of the secondary sign/verify probe. */
+type ProbeResult = 'verified' | 'mismatch' | 'unverifiable'
+
+/**
+ * Secondary sign/verify probe. Returns whether it could POSITIVELY confirm the
+ * pair. Key types it cannot name (Ed25519/Ed448/X25519) or a crypto error yield
+ * `'unverifiable'` — the caller decides (we fail closed). It never accepts on
+ * its own.
+ */
+function signVerifyProbe(privateKey: KeyObject, publicKey: KeyObject): ProbeResult {
+  const t = privateKey.asymmetricKeyType
+  let algorithm: string | null
+  if (t === 'rsa' || t === 'rsa-pss')
+    algorithm = 'RSA-SHA256' // SHA256withRSA
+  else if (t === 'ec')
+    algorithm = 'SHA256' // SHA256withECDSA
+  else algorithm = null
+  if (algorithm === null) return 'unverifiable'
+  try {
+    const signature = cryptoSign(algorithm, KEY_MATCH_PROBE, privateKey)
+    return cryptoVerify(algorithm, KEY_MATCH_PROBE, publicKey, signature) ? 'verified' : 'mismatch'
+  } catch {
+    return 'unverifiable'
+  }
+}
+
+/**
+ * Verify a private key matches a certificate's public key (spec §6.7).
+ *
+ * PRIMARY = deterministic: derive the SPKI DER from the private key and
+ * byte-compare it to the certificate's SPKI DER (correct for RSA / EC / Ed, no
+ * algorithm selection). A byte-equal SPKI is authoritative and accepts.
+ *
+ * When SPKI differs (e.g. an RSASSA-PSS-restricted cert vs a plain rsaEncryption
+ * key of the same modulus) or cannot be exported, the sign/verify probe is the
+ * tiebreaker — and we **fail closed**: ONLY a positive `'verified'` admits the
+ * pair; `'mismatch'` and `'unverifiable'` both throw. A wrong OR unverifiable
+ * key+cert pair can never enter the keystore.
+ */
+export function verifyKeyMatchesCertificate(privateKey: KeyObject, publicKey: KeyObject): void {
+  let derivedSpki: Buffer | null = null
+  let certSpki: Buffer | null = null
+  try {
+    derivedSpki = createPublicKey(privateKey).export({ type: 'spki', format: 'der' }) as Buffer
+    certSpki = publicKey.export({ type: 'spki', format: 'der' }) as Buffer
+  } catch {
+    // SPKI export failed — the probe is the only remaining evidence.
+  }
+  if (derivedSpki && certSpki && derivedSpki.equals(certSpki)) return
+  if (signVerifyProbe(privateKey, publicKey) !== 'verified') {
+    throw new KeystoreValidationException('Private key does not match the provided certificate')
+  }
+}
+
+/**
+ * Locate the leaf in a parsed certificate chain and return the chain reordered
+ * so the leaf sits at position 0 (spec §6.7 / §6.11). Callers may hand the chain
+ * in ANY order — some exports put the CA root first — so we do NOT assume the
+ * leaf is `certChainDer[0]`: we search the WHOLE chain for the cert whose public
+ * key matches `privateKey` via the §6.7 gate. Throws the canonical §8 string if
+ * NO certificate in the chain matches the key.
+ */
+function matchAndOrderChain(privateKey: KeyObject, certChainDer: Buffer[]): Buffer[] {
+  let leafIndex = -1
+  for (let i = 0; i < certChainDer.length; i += 1) {
+    try {
+      verifyKeyMatchesCertificate(privateKey, new X509Certificate(certChainDer[i]).publicKey)
+      leafIndex = i
+      break
+    } catch {
+      // Not this certificate — keep searching the chain.
+    }
+  }
+  if (leafIndex === -1) {
+    throw new KeystoreValidationException('Private key does not match the provided certificate')
+  }
+  if (leafIndex === 0) return certChainDer
+  return [
+    certChainDer[leafIndex],
+    ...certChainDer.slice(0, leafIndex),
+    ...certChainDer.slice(leafIndex + 1),
+  ]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1365,6 +1591,192 @@ export class KeystoreEngine {
     }
     s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
     return this.meta(s)
+  }
+
+  // ── Import (Faz B3, spec §4.4–4.7 / §6.7 / §6.10 / §6.11) ─────────────────
+
+  /**
+   * Validate a NEW alias for the key/pem/trusted-cert import paths: non-blank
+   * and not already present (spec §6.13 `requireNewAlias`). Imports NEVER
+   * silently replace an existing alias.
+   */
+  private requireNewImportAlias(session: KeystoreSession, alias: string): string {
+    const a = requireNonBlank(alias, 'Alias cannot be empty')
+    if (session.entries.some((e) => e.alias === a)) {
+      throw new KeystoreValidationException(`Alias already exists: ${a}`)
+    }
+    return a
+  }
+
+  /**
+   * Import entries from a source PKCS12 keystore via `copyEntry` (spec §6.10).
+   * `sourceAlias` copies a single entry; omitted ⇒ copies ALL importable
+   * entries. Secret keys are copied only into a PKCS12 target (skipped for JKS).
+   * Errors if nothing was copied or a target alias collides.
+   */
+  importPkcs12(sessionId: string, opts: ImportPkcs12Options): KeystoreMeta {
+    const s = this.getSession(sessionId)
+    if (!opts.sourceBytes || opts.sourceBytes.length === 0) {
+      throw new KeystoreValidationException('Source keystore content cannot be empty')
+    }
+    // parsePkcs12 throws KeystoreEngineException on a wrong password / corrupt
+    // bytes — no key material appears in that message.
+    const sourceEntries = parsePkcs12(opts.sourceBytes, opts.sourcePassword ?? '')
+
+    let candidates: EntryModel[]
+    if (opts.sourceAlias && opts.sourceAlias.trim()) {
+      const wanted = opts.sourceAlias.trim()
+      const found = sourceEntries.find((e) => e.alias === wanted)
+      if (!found) {
+        throw new KeystoreValidationException(`Source alias not found: ${wanted}`)
+      }
+      candidates = [found]
+    } else {
+      candidates = sourceEntries
+    }
+
+    const single = candidates.length === 1
+    const override =
+      single && opts.targetAlias && opts.targetAlias.trim() ? opts.targetAlias.trim() : null
+    const toAdd: EntryModel[] = []
+
+    for (const src of candidates) {
+      // A secret key can only live in a PKCS12 target — silently skip it for a
+      // JKS target (spec §6.10: copyEntry returns 0 for the skipped entry).
+      if (src.kind === 'secret' && s.type !== 'PKCS12') continue
+
+      const alias = override ?? src.alias
+      if (s.entries.some((e) => e.alias === alias) || toAdd.some((e) => e.alias === alias)) {
+        throw new KeystoreValidationException(`Target alias already exists: ${alias}`)
+      }
+      // Copied entries are protected with the store password (per-entry
+      // passwords land in Faz B4; reopen only decrypts with the store password).
+      const entryPassword = s.storePassword
+      if (src.kind === 'key') {
+        if (src.certChainDer.length === 0) {
+          throw new KeystoreValidationException(`Key entry has no certificate chain: ${alias}`)
+        }
+        // §6.7 gate on the COPY path too (not just importKeyMaterial/importPem):
+        // a crafted/corrupt source P12 whose localKeyId links a key to the wrong
+        // certificate must not seat a mismatched key+cert pair into the store.
+        verifyKeyMatchesCertificate(
+          createPrivateKey({ key: src.privateKeyPkcs8Der, format: 'der', type: 'pkcs8' }),
+          new X509Certificate(src.certChainDer[0]).publicKey,
+        )
+        toAdd.push({
+          alias,
+          kind: 'key',
+          privateKeyPkcs8Der: src.privateKeyPkcs8Der,
+          certChainDer: src.certChainDer,
+          entryPassword,
+        })
+      } else if (src.kind === 'secret') {
+        toAdd.push({
+          alias,
+          kind: 'secret',
+          keyAlgorithm: src.keyAlgorithm,
+          secretKeyRaw: src.secretKeyRaw,
+          entryPassword,
+        })
+      } else {
+        toAdd.push({ alias, kind: 'cert', certDer: src.certDer })
+      }
+    }
+
+    if (toAdd.length === 0) {
+      throw new KeystoreValidationException('No importable entries found in the source keystore')
+    }
+
+    for (const e of toAdd) {
+      s.entries.push(e)
+    }
+    s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
+    return this.meta(s)
+  }
+
+  /**
+   * Import a raw private key + certificate chain as a key entry (spec §4.5).
+   * The key-cert match gate (§6.7) blocks a wrong pair BEFORE any mutation.
+   */
+  importKeyMaterial(sessionId: string, opts: ImportKeyMaterialOptions): KeystoreMeta {
+    const s = this.getSession(sessionId)
+    const alias = this.requireNewImportAlias(s, opts.alias)
+    const privateKey = parsePrivateKey(opts.privateKeyPem)
+    const certChainDer = parseCertificates(opts.certificatePem)
+    if (certChainDer.length === 0) {
+      throw new KeystoreValidationException('At least one certificate (PEM) is required')
+    }
+    // The leaf may not be certChainDer[0] (some exports are root-first): find the
+    // cert that matches the key anywhere in the chain and reorder it to the leaf.
+    const orderedChain = matchAndOrderChain(privateKey, certChainDer)
+    s.entries.push({
+      alias,
+      kind: 'key',
+      privateKeyPkcs8Der: privateKey.export({ type: 'pkcs8', format: 'der' }) as Buffer,
+      certChainDer: orderedChain,
+      // Imported entries are protected with the store password (per-entry
+      // passwords land in Faz B4; the parse/open path only decrypts with the
+      // store password, so a distinct entry password would be undecryptable).
+      entryPassword: s.storePassword,
+    })
+    s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
+    return this.meta(s)
+  }
+
+  /**
+   * Import a pasted PEM block (spec §4.6): a private key present ⇒ the block
+   * must also carry ≥1 certificate and the pair must match ⇒ a key entry; no
+   * private key ⇒ the FIRST certificate becomes a trusted certificate entry.
+   */
+  importPem(sessionId: string, opts: ImportPemOptions): KeystoreMeta {
+    const s = this.getSession(sessionId)
+    const alias = this.requireNewImportAlias(s, opts.alias)
+    const content = opts.pemContent ?? ''
+    const certChainDer = parseCertificates(content)
+    if (hasPrivateKeyBlock(content)) {
+      if (certChainDer.length === 0) {
+        throw new KeystoreValidationException('A certificate is required to import a private key')
+      }
+      const privateKey = createPrivateKey(content)
+      // Locate the leaf anywhere in the block (root-first order is legal) and
+      // reorder it to position 0; throws if no cert matches the key.
+      const orderedChain = matchAndOrderChain(privateKey, certChainDer)
+      s.entries.push({
+        alias,
+        kind: 'key',
+        privateKeyPkcs8Der: privateKey.export({ type: 'pkcs8', format: 'der' }) as Buffer,
+        certChainDer: orderedChain,
+        // Store-password protected (per-entry passwords land in Faz B4).
+        entryPassword: s.storePassword,
+      })
+    } else if (certChainDer.length > 0) {
+      // Cert-only: import ONLY the first certificate as a trusted entry.
+      s.entries.push({ alias, kind: 'cert', certDer: certChainDer[0] })
+    } else {
+      throw new KeystoreValidationException(
+        'No private key or certificate found in the provided PEM',
+      )
+    }
+    s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
+    return this.meta(s)
+  }
+
+  /** Import a trusted certificate from PEM or base64 DER (spec §4.7). */
+  importTrustedCertificate(sessionId: string, opts: ImportTrustedCertificateOptions): KeystoreMeta {
+    const s = this.getSession(sessionId)
+    const alias = this.requireNewImportAlias(s, opts.alias)
+    const certDer = parseCertificateFromContent(opts.certificateContent)
+    if (!certDer) {
+      throw new KeystoreValidationException('No certificate found in the provided content')
+    }
+    s.entries.push({ alias, kind: 'cert', certDer })
+    s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
+    return this.meta(s)
+  }
+
+  /** Confirm a private key matches a certificate's public key (spec §6.7). */
+  verifyKeyMatchesCertificate(privateKey: KeyObject, publicKey: KeyObject): void {
+    verifyKeyMatchesCertificate(privateKey, publicKey)
   }
 
   /** Dispose a session (frees bytes/passwords held in main). */
