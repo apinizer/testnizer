@@ -1149,6 +1149,10 @@ export function parseCertificates(pem: string): Buffer[] {
   return pemBlocksToDer(pem ?? '', 'CERTIFICATE')
 }
 
+/** Upper bound on pasted/parsed trusted-cert input (mirrors the cert picker +
+ * TLS-inspect file reader). A real cert is a few KiB; anything past this is junk. */
+const MAX_TRUSTED_CERT_BYTES = 1024 * 1024
+
 /** Parse a trusted certificate from PEM OR base64 DER; null if none decodes. */
 function parseCertificateFromContent(content: string): Buffer | null {
   const trimmed = (content ?? '').trim()
@@ -1963,6 +1967,14 @@ export class KeystoreEngine {
   importTrustedCertificate(sessionId: string, opts: ImportTrustedCertificateOptions): KeystoreMeta {
     const s = this.getSession(sessionId)
     const alias = this.requireNewImportAlias(s, opts.alias)
+    // Bound the arbitrary pasted/parsed input (mirrors the 1 MiB cap the cert
+    // picker + TLS-inspect file reader enforce) — a valid cert PEM padded with
+    // megabytes of junk must be rejected, not scanned.
+    if (Buffer.byteLength(opts.certificateContent ?? '', 'utf8') > MAX_TRUSTED_CERT_BYTES) {
+      throw new KeystoreValidationException(
+        'Certificate content is larger than 1 MiB — that does not look like a certificate.',
+      )
+    }
     const certDer = parseCertificateFromContent(opts.certificateContent)
     if (!certDer) {
       throw new KeystoreValidationException('No certificate found in the provided content')

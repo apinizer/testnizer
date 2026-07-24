@@ -39,6 +39,7 @@ export type Protocol =
   | 'tools.otp'
   | 'tools.qr'
   | 'tools.keystore'
+  | 'tools.tlsInspect'
 
 export const TOOL_PROTOCOLS = [
   'tools.jwt',
@@ -65,6 +66,7 @@ export const TOOL_PROTOCOLS = [
   'tools.otp',
   'tools.qr',
   'tools.keystore',
+  'tools.tlsInspect',
 ] as const satisfies readonly Protocol[]
 export type ToolProtocol = (typeof TOOL_PROTOCOLS)[number]
 export function isToolProtocol(p: Protocol): p is ToolProtocol {
@@ -174,6 +176,90 @@ export interface KeystoreAliasDetail {
   entryType: KeystoreEntryType
   hasPrivateKey: boolean
   chain: KeystoreCertificateInfo[]
+}
+
+// ─── TLS Inspector (#64, Faz F) ──────────────────────────────────────────────
+// Renderer-facing mirrors of the main-process DTOs (preload `TlsApi`). Kept
+// structurally identical to the preload interfaces so `window.api.tls.inspect`
+// accepts a `TlsInspectRequest` and returns a `TlsInspectResult`. Also
+// structurally identical to `KeystoreCertificateInfo`, so a TLS chain can reuse
+// the keystore `CertificateDetailDialog` atom without a conversion layer.
+
+/** One presented certificate — PUBLIC material only (no private key bytes). */
+export interface TlsCertificateInfo {
+  subjectDN: string
+  issuerDN: string
+  serialNumber: string
+  version: number
+  sigAlgName: string
+  notBefore: string
+  notAfter: string
+  publicKeyAlgorithm: string
+  keySize: number
+  sha1Fingerprint: string
+  sha256Fingerprint: string
+  subjectAlternativeNames: string[]
+  pem: string
+}
+
+export type TlsCipherPreset = 'modern' | 'intermediate' | 'legacy'
+
+/** Inline (pasted) mTLS client-cert material — carried as strings over IPC. */
+export interface TlsClientCertInline {
+  kind: 'inline'
+  certPem?: string
+  keyPem?: string
+  /** PFX/P12 bytes, base64-encoded. */
+  pfxBase64?: string
+  passphrase?: string
+}
+
+/** File-path mTLS client-cert material — the paths are read in MAIN. */
+export interface TlsClientCertFile {
+  kind: 'file'
+  certPath?: string
+  keyPath?: string
+  pfxPath?: string
+  passphrase?: string
+}
+
+export type TlsClientCert = TlsClientCertInline | TlsClientCertFile
+
+export interface TlsInspectRequest {
+  host: string
+  port?: number
+  servername?: string
+  alpnProtocols?: string[]
+  minVersion?: string
+  maxVersion?: string
+  ciphers?: string
+  cipherPreset?: TlsCipherPreset
+  timeoutMs?: number
+  /** Extra trust anchors — base64-encoded PEM or DER (merged with system roots in main). */
+  caCerts?: string[]
+  clientCert?: TlsClientCert
+}
+
+export interface TlsInspectResult {
+  ok: boolean
+  host: string
+  port: number
+  servername: string
+  protocol: string | null
+  cipher: { name: string; standardName: string; version: string } | null
+  alpnProtocol: string | false
+  /** Independently VALIDATED by the system trust store (present ≠ trusted). */
+  authorized: boolean
+  authorizationError?: string
+  hostnameValid: boolean
+  /** Presented, leaf-first — NOT proof of trust. */
+  chain: TlsCertificateInfo[]
+  selfSigned: boolean
+  expired: boolean
+  notYetValid: boolean
+  daysToExpiry: number
+  validityStatus: 'valid' | 'expiring' | 'expired'
+  error?: string
 }
 
 /** Library row — metadata only; never carries blob or store password. */

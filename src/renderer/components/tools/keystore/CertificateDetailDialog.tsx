@@ -5,12 +5,17 @@ import type { KeystoreAliasDetail, KeystoreCertificateInfo } from '../../../type
 export default function CertificateDetailDialog({
   detail,
   onClose,
+  initialIndex = 0,
 }: {
   detail: KeystoreAliasDetail
   onClose: () => void
+  /** Chain position to open on (clamped). Defaults to the leaf (0). */
+  initialIndex?: number
 }) {
   const { t } = useTranslation()
-  const [index, setIndex] = useState(0)
+  const [index, setIndex] = useState(
+    Math.min(Math.max(initialIndex, 0), Math.max(detail.chain.length - 1, 0)),
+  )
   const cert: KeystoreCertificateInfo | undefined = detail.chain[index]
 
   return (

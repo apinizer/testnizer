@@ -1080,6 +1080,17 @@ describe('importTrustedCertificate (spec §4.7)', () => {
     ).toThrow('Alias already exists: ca')
   })
 
+  it('KS-F3-38 rejects >1 MiB input (a real cert padded with megabytes of junk)', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    // A valid cert PEM followed by >1 MiB of junk: without the size cap this
+    // would be scanned/accepted; with it, it is rejected before parsing.
+    const bloated = read('ca.crt') + '\n' + 'A'.repeat(1024 * 1024 + 1)
+    expect(() =>
+      engine.importTrustedCertificate(sessionId, { alias: 'big', certificateContent: bloated }),
+    ).toThrow(/larger than 1 MiB/)
+  })
+
   it('KS-F3-38 empty alias → Alias cannot be empty', () => {
     const engine = new KeystoreEngine()
     const { sessionId } = engine.createEmpty('PKCS12', PW)

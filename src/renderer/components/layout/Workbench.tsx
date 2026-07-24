@@ -40,6 +40,7 @@ import PasswordGeneratorTool from '../tools/PasswordGeneratorTool'
 import OtpTool from '../tools/OtpTool'
 import QrTool from '../tools/QrTool'
 import KeystoreTool from '../tools/KeystoreTool'
+import TlsInspectorTool from '../tools/TlsInspectorTool'
 import MockServerEditor from '../mock/MockServerEditor'
 import RightPanel from './RightPanel'
 import EdgeResizeHandle from './EdgeResizeHandle'
@@ -101,6 +102,7 @@ const TOOL_COMPONENTS: Record<string, ComponentType> = {
   'tools.otp': OtpTool,
   'tools.qr': QrTool,
   'tools.keystore': KeystoreTool,
+  'tools.tlsInspect': TlsInspectorTool,
 }
 
 function EndpointTabBar() {

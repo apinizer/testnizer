@@ -2002,6 +2002,79 @@ interface KeystoreApi {
   libraryDelete(payload: { id: string }): Promise<IpcResult<{ deleted: true }>>
 }
 
+// ─── TLS Inspector (#64) ─────────────────────────────────────────
+
+/** Renderer-safe certificate projection (mirror of main CertificateInfo). */
+interface TlsCertificateInfoDto {
+  subjectDN: string
+  issuerDN: string
+  serialNumber: string
+  version: number
+  sigAlgName: string
+  notBefore: string
+  notAfter: string
+  publicKeyAlgorithm: string
+  keySize: number
+  sha1Fingerprint: string
+  sha256Fingerprint: string
+  subjectAlternativeNames: string[]
+  pem: string
+}
+
+interface TlsInspectRequestDto {
+  host: string
+  port?: number
+  servername?: string
+  alpnProtocols?: string[]
+  minVersion?: string
+  maxVersion?: string
+  ciphers?: string
+  cipherPreset?: 'modern' | 'intermediate' | 'legacy'
+  timeoutMs?: number
+  /** Extra trust anchors — base64-encoded PEM or DER. */
+  caCerts?: string[]
+  /** Optional mTLS client cert. Base64 strings / paths only — never Buffers. */
+  clientCert?:
+    | {
+        kind: 'inline'
+        certPem?: string
+        keyPem?: string
+        pfxBase64?: string
+        passphrase?: string
+      }
+    | {
+        kind: 'file'
+        certPath?: string
+        keyPath?: string
+        pfxPath?: string
+        passphrase?: string
+      }
+}
+
+interface TlsInspectResultDto {
+  ok: boolean
+  host: string
+  port: number
+  servername: string
+  protocol: string | null
+  cipher: { name: string; standardName: string; version: string } | null
+  alpnProtocol: string | false
+  authorized: boolean
+  authorizationError?: string
+  hostnameValid: boolean
+  chain: TlsCertificateInfoDto[]
+  selfSigned: boolean
+  expired: boolean
+  notYetValid: boolean
+  daysToExpiry: number
+  validityStatus: 'valid' | 'expiring' | 'expired'
+  error?: string
+}
+
+interface TlsApi {
+  inspect(payload: TlsInspectRequestDto): Promise<IpcResult<TlsInspectResultDto>>
+}
+
 // ─── WSSE ────────────────────────────────────────────────────────
 
 interface WsseVerifyResultDto {
@@ -2090,6 +2163,7 @@ interface ApiBridge {
   certificate: CertificateApi
   otp: OtpApi
   keystore: KeystoreApi
+  tls: TlsApi
   testSuite: TestSuiteApi
   testSuiteItem: TestSuiteItemApi
   testSuiteFolder: TestSuiteFolderApi

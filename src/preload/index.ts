@@ -542,6 +542,37 @@ const api = {
       ipcRenderer.invoke('keystore:libraryDelete', payload),
   },
 
+  // ─── TLS Inspector (#64) — public-only endpoint inspection ───
+  tls: {
+    inspect: (payload: {
+      host: string
+      port?: number
+      servername?: string
+      alpnProtocols?: string[]
+      minVersion?: string
+      maxVersion?: string
+      ciphers?: string
+      cipherPreset?: 'modern' | 'intermediate' | 'legacy'
+      timeoutMs?: number
+      caCerts?: string[]
+      clientCert?:
+        | {
+            kind: 'inline'
+            certPem?: string
+            keyPem?: string
+            pfxBase64?: string
+            passphrase?: string
+          }
+        | {
+            kind: 'file'
+            certPath?: string
+            keyPath?: string
+            pfxPath?: string
+            passphrase?: string
+          }
+    }): Promise<unknown> => ipcRenderer.invoke('tls:inspect', payload),
+  },
+
   // ─── GraphQL ────────────────────────────────────────────────
   graphql: {
     execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('graphql:execute', options),

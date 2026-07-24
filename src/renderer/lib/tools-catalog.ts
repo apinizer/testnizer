@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   QrCode,
   FileKey,
+  Globe,
 } from 'lucide-react'
 import type { ToolProtocol } from '../types'
 
@@ -181,6 +182,14 @@ export const TOOL_CATALOG: ToolCatalogItem[] = [
     labelKey: 'tools.keystore.title',
     bg: '#eeecfe',
     color: '#5b52d4',
+    section: 'security',
+  },
+  {
+    protocol: 'tools.tlsInspect',
+    Icon: Globe,
+    labelKey: 'tools.tlsInspect.title',
+    bg: '#e8f4ff',
+    color: '#0066cc',
     section: 'security',
   },
   {
