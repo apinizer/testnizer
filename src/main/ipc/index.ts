@@ -20,6 +20,7 @@ import { registerGitHandlers } from './git.handler'
 import { registerAuthHandlers } from './auth.handler'
 import { registerTestSuiteHandlers } from './test-suite.handler'
 import { registerCertificateHandlers } from './certificate.handler'
+import { registerOtpHandlers } from './otp.handler'
 import { registerWsseHandlers } from './wsse.handler'
 import { registerDialogHandlers } from './dialog.handler'
 import { registerEulaHandlers } from './eula.handler'
@@ -51,6 +52,7 @@ export function registerAllHandlers(): void {
   registerGitHandlers()
   registerTestSuiteHandlers()
   registerCertificateHandlers()
+  registerOtpHandlers()
   registerWsseHandlers()
   registerDialogHandlers()
   registerEulaHandlers()

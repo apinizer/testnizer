@@ -1748,6 +1748,69 @@ interface CertificateApi {
   pickFile(kind: 'crt' | 'key' | 'pfx' | 'ca'): Promise<IpcResult<string>>
 }
 
+// ─── OTP authenticator vault ─────────────────────────────────────
+
+type OtpAlgorithmDto = 'SHA1' | 'SHA256' | 'SHA512'
+type OtpTypeDto = 'totp' | 'hotp'
+
+interface OtpEntryDto {
+  id: string
+  label: string | null
+  issuer: string | null
+  account: string | null
+  algorithm: OtpAlgorithmDto
+  digits: number
+  period: number
+  type: OtpTypeDto
+  counter: number
+  enabled: boolean
+  hasSecret: boolean
+}
+
+interface OtpCodeDto {
+  id: string
+  code: string | null
+  secondsRemaining: number
+  error?: string
+}
+
+interface OtpDraftDto {
+  type: OtpTypeDto
+  label: string
+  issuer: string
+  account: string
+  secret: string
+  algorithm: OtpAlgorithmDto
+  digits: number
+  period: number
+  counter: number
+}
+
+interface OtpAddPayloadDto {
+  label?: string | null
+  issuer?: string | null
+  account?: string | null
+  secret: string
+  algorithm?: OtpAlgorithmDto
+  digits?: number
+  period?: number
+  type?: OtpTypeDto
+  counter?: number
+  enabled?: boolean
+}
+
+interface OtpApi {
+  list(): Promise<IpcResult<OtpEntryDto[]>>
+  add(payload: OtpAddPayloadDto): Promise<IpcResult<OtpEntryDto>>
+  update(payload: OtpAddPayloadDto & { id: string }): Promise<IpcResult<OtpEntryDto | null>>
+  delete(id: string): Promise<IpcResult<boolean>>
+  codes(): Promise<IpcResult<OtpCodeDto[]>>
+  code(id: string): Promise<IpcResult<OtpCodeDto>>
+  parseUri(uri: string): Promise<IpcResult<OtpDraftDto>>
+  reveal(id: string): Promise<IpcResult<string>>
+  uri(id: string): Promise<IpcResult<string>>
+}
+
 // ─── WSSE ────────────────────────────────────────────────────────
 
 interface WsseVerifyResultDto {
@@ -1834,6 +1897,7 @@ interface ApiBridge {
   git: GitApi
   save: SaveApi
   certificate: CertificateApi
+  otp: OtpApi
   testSuite: TestSuiteApi
   testSuiteItem: TestSuiteItemApi
   testSuiteFolder: TestSuiteFolderApi

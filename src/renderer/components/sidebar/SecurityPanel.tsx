@@ -1,10 +1,20 @@
 import { useState } from 'react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
-import { TOOLS_MENU } from '../../lib/tools-catalog'
+import { SECURITY_TOOLS } from '../../lib/tools-catalog'
 import { T } from '../../styles/tokens'
 
-export default function ToolsPanel() {
+/**
+ * The Security left-panel — Testnizer's differentiator, grouping all
+ * key-material / PKI / token / identity capabilities in one place:
+ *   • Stores — persistent, encrypted managed material (keystore library,
+ *     certificates); populated as Keystore Studio (#59) and the Key Material
+ *     Provider (#60) land.
+ *   • Tools — the security tools (Keystore Studio, JWK, JOSE/JWT, WS-Security,
+ *     TLS Inspector, OTP, Password Generator), sourced from `SECURITY_TOOLS`.
+ * Mirrors ToolsPanel so the two panels stay visually consistent.
+ */
+export default function SecurityPanel() {
   const { t } = useTranslation()
   const openToolTab = useTabsStore((s) => s.openToolTab)
   const activeTabProtocol = useTabsStore((s) => {
@@ -14,9 +24,9 @@ export default function ToolsPanel() {
   const [query, setQuery] = useState('')
 
   const q = query.trim().toLowerCase()
-  const filtered = q
-    ? TOOLS_MENU.filter((tool) => t(tool.labelKey).toLowerCase().includes(q))
-    : TOOLS_MENU
+  const tools = q
+    ? SECURITY_TOOLS.filter((tool) => t(tool.labelKey).toLowerCase().includes(q))
+    : SECURITY_TOOLS
 
   return (
     <div className="flex h-full flex-col">
@@ -31,17 +41,13 @@ export default function ToolsPanel() {
           flexShrink: 0,
         }}
       >
-        <span style={{ fontWeight: 700, fontSize: 15, color: T.text }}>{t('sidebar.tools')}</span>
+        <span style={{ fontWeight: 700, fontSize: 15, color: T.text }}>
+          {t('sidebar.security')}
+        </span>
       </div>
 
       {/* Search */}
-      <div
-        style={{
-          padding: '8px 10px',
-          borderBottom: `1px solid ${T.border}`,
-          flexShrink: 0,
-        }}
-      >
+      <div style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
         <div
           style={{
             display: 'flex',
@@ -82,9 +88,20 @@ export default function ToolsPanel() {
         </div>
       </div>
 
-      {/* Tool list */}
       <div className="flex-1 overflow-y-auto" style={{ padding: '6px 6px' }}>
-        {filtered.map((tool) => {
+        {/* Stores section — populated by Keystore library (#59) + Certificates (#60). */}
+        {!q && (
+          <>
+            <SectionHeader label={t('security.stores')} />
+            <div style={{ padding: '4px 12px 8px', fontSize: 12, color: T.ghost }}>
+              {t('security.storesHint')}
+            </div>
+          </>
+        )}
+
+        {/* Tools section. */}
+        {!q && <SectionHeader label={t('security.tools')} />}
+        {tools.map((tool) => {
           const isActive = activeTabProtocol === tool.protocol
           return (
             <button
@@ -127,10 +144,27 @@ export default function ToolsPanel() {
             </button>
           )
         })}
-        {filtered.length === 0 && (
+        {tools.length === 0 && (
           <div style={{ padding: 12, fontSize: 12, color: T.ghost, textAlign: 'center' }}>—</div>
         )}
       </div>
+    </div>
+  )
+}
+
+function SectionHeader({ label }: { label: string }) {
+  return (
+    <div
+      style={{
+        padding: '8px 10px 4px',
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: 0.4,
+        textTransform: 'uppercase',
+        color: T.muted,
+      }}
+    >
+      {label}
     </div>
   )
 }

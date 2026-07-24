@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useUIStore } from '../../stores/ui.store'
 import { T } from '../../styles/tokens'
+import { clampToViewport } from '../../lib/viewport-clamp'
 import {
   Plus,
   Search,
@@ -22,6 +23,7 @@ import {
   Copy,
   ExternalLink,
   Settings,
+  FolderPlus,
 } from 'lucide-react'
 import type {
   TestSuiteRow,
@@ -351,11 +353,16 @@ export default function TestsPanel() {
   // so the user can fill in URL/headers/body/assertions. 9-protocol picker
   // is a follow-up; HTTP covers the dominant case today.
   const handleAddItem = useCallback(
-    async (suite: TestSuite, protocol = 'http', method: string | null = 'GET') => {
+    async (
+      suite: TestSuite,
+      protocol = 'http',
+      method: string | null = 'GET',
+      folderId: string | null = null,
+    ) => {
       const name = t('testsPanel.newRequestDefaultName')
       const result = await api().testSuiteItem.create({
         suite_id: suite.id,
-        folder_id: null,
+        folder_id: folderId,
         protocol,
         name,
         method,
@@ -383,6 +390,62 @@ export default function TestsPanel() {
       setContextMenu(null)
     },
     [loadSuiteContents, t],
+  )
+
+  // ─── Folder CRUD (Tests suites support nested folders) ────
+  // Backend already supports parent_id nesting + cycle-safe move; these wire
+  // the UI actions to the existing testSuiteFolder:* IPC. Returns the new id
+  // so the caller can drop straight into rename mode.
+  const handleCreateFolder = useCallback(
+    async (suiteId: string, parentId: string | null): Promise<string | null> => {
+      const res = await api().testSuiteFolder.create({
+        suite_id: suiteId,
+        parent_id: parentId,
+        name: t('testsPanel.newFolderDefaultName'),
+      })
+      setExpandedSuites((s) => ({ ...s, [suiteId]: true }))
+      await loadSuiteContents(suiteId)
+      return res?.success ? (res.data?.id ?? null) : null
+    },
+    [loadSuiteContents, t],
+  )
+
+  const handleRenameFolder = useCallback(
+    async (suiteId: string, folderId: string, name: string) => {
+      if (!name.trim()) return
+      await api().testSuiteFolder.rename(folderId, name.trim())
+      await loadSuiteContents(suiteId)
+    },
+    [loadSuiteContents],
+  )
+
+  const handleDeleteFolder = useCallback(
+    async (suiteId: string, folderId: string) => {
+      await api().testSuiteFolder.delete(folderId)
+      await loadSuiteContents(suiteId)
+    },
+    [loadSuiteContents],
+  )
+
+  // Drag-drop move/reparent a folder. The backend rejects a move into the
+  // folder's own descendant (cycle-guard) with success:false, so we simply
+  // reload afterwards — a rejected drop is a no-op.
+  const handleMoveFolder = useCallback(
+    async (opts: {
+      folderId: string
+      suiteId: string
+      targetParentId: string | null
+      insertBeforeId: string | null
+    }) => {
+      await api().testSuiteFolder.move({
+        id: opts.folderId,
+        targetSuiteId: opts.suiteId,
+        targetParentId: opts.targetParentId,
+        insertBeforeId: opts.insertBeforeId,
+      })
+      await loadSuiteContents(opts.suiteId)
+    },
+    [loadSuiteContents],
   )
 
   // ─── Export suite ─────────────────────────────────────────
@@ -559,34 +622,6 @@ export default function TestsPanel() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto py-1">
-        {/* New suite input */}
-        {showNewSuiteInput && (
-          <div className="flex items-center gap-2 px-3 py-2">
-            <FolderOpen size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-            <input
-              ref={newSuiteRef}
-              value={newSuiteName}
-              onChange={(e) => setNewSuiteName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreateSuite()
-                if (e.key === 'Escape') setShowNewSuiteInput(false)
-              }}
-              onBlur={() => {
-                if (newSuiteName.trim()) handleCreateSuite()
-                else setShowNewSuiteInput(false)
-              }}
-              placeholder={t('tests.newSuitePlaceholder')}
-              className="flex-1 rounded border px-2 py-1 outline-none"
-              style={{
-                fontSize: 13,
-                borderColor: 'var(--accent)',
-                background: 'var(--input-bg)',
-                color: 'var(--text)',
-              }}
-            />
-          </div>
-        )}
-
         {/* Suite list */}
         {filteredSuites.length === 0 && !showNewSuiteInput ? (
           <div
@@ -654,8 +689,44 @@ export default function TestsPanel() {
               onRenameSubmit={handleRenameSuite}
               onRenameCancel={() => setRenamingSuiteId(null)}
               onRemoveItem={(iid) => handleRemoveItem(suite.id, iid)}
+              onAddRequestToFolder={(folderId) => handleAddItem(suite, 'http', 'GET', folderId)}
+              onCreateFolder={(parentId) => handleCreateFolder(suite.id, parentId)}
+              onRenameFolder={(folderId, name) => handleRenameFolder(suite.id, folderId, name)}
+              onDeleteFolder={(folderId) => handleDeleteFolder(suite.id, folderId)}
+              onMoveFolder={(folderId, targetParentId, insertBeforeId) =>
+                handleMoveFolder({ folderId, suiteId: suite.id, targetParentId, insertBeforeId })
+              }
             />
           ))
+        )}
+
+        {/* New suite input — placed at the bottom so it lines up with where the
+            created suite actually appears (suites are ordered oldest→newest). */}
+        {showNewSuiteInput && (
+          <div className="flex items-center gap-2 px-3 py-2">
+            <FolderOpen size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+            <input
+              ref={newSuiteRef}
+              value={newSuiteName}
+              onChange={(e) => setNewSuiteName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateSuite()
+                if (e.key === 'Escape') setShowNewSuiteInput(false)
+              }}
+              onBlur={() => {
+                if (newSuiteName.trim()) handleCreateSuite()
+                else setShowNewSuiteInput(false)
+              }}
+              placeholder={t('tests.newSuitePlaceholder')}
+              className="flex-1 rounded border px-2 py-1 outline-none"
+              style={{
+                fontSize: 13,
+                borderColor: 'var(--accent)',
+                background: 'var(--input-bg)',
+                color: 'var(--text)',
+              }}
+            />
+          </div>
         )}
       </div>
 
@@ -665,17 +736,7 @@ export default function TestsPanel() {
           const suite = suites.find((s) => s.id === contextMenu.suiteId)
           if (!suite) return null
           return (
-            <div
-              className="fixed z-[500] rounded-lg border py-1"
-              style={{
-                left: contextMenu.x,
-                top: contextMenu.y,
-                background: 'var(--white)',
-                borderColor: 'var(--border)',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-                minWidth: 160,
-              }}
-            >
+            <ContextMenuShell x={contextMenu.x} y={contextMenu.y}>
               <ContextMenuItem
                 icon={<Play size={13} />}
                 label={t('testsPanel.runSuite')}
@@ -690,6 +751,14 @@ export default function TestsPanel() {
                 icon={<Plus size={13} />}
                 label={t('testsPanel.newRequest')}
                 onClick={() => handleAddItem(suite)}
+              />
+              <ContextMenuItem
+                icon={<FolderPlus size={13} />}
+                label={t('testsPanel.newFolder')}
+                onClick={() => {
+                  setContextMenu(null)
+                  void handleCreateFolder(suite.id, null)
+                }}
               />
               <ContextMenuItem
                 icon={<Download size={13} />}
@@ -747,7 +816,7 @@ export default function TestsPanel() {
                   setContextMenu(null)
                 }}
               />
-            </div>
+            </ContextMenuShell>
           )
         })()}
 
@@ -756,17 +825,7 @@ export default function TestsPanel() {
           / Delete never touch the APIs `endpoints` or `saved_requests`
           tables, so a Tests-side action can't drift into the APIs tree. */}
       {itemContextMenu && (
-        <div
-          className="fixed z-[500] rounded-lg border py-1"
-          style={{
-            left: itemContextMenu.x,
-            top: itemContextMenu.y,
-            background: 'var(--white)',
-            borderColor: 'var(--border)',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-            minWidth: 160,
-          }}
-        >
+        <ContextMenuShell x={itemContextMenu.x} y={itemContextMenu.y}>
           <ContextMenuItem
             icon={<ExternalLink size={13} />}
             label={t('testsPanel.openItem')}
@@ -799,7 +858,7 @@ export default function TestsPanel() {
               setItemContextMenu(null)
             }}
           />
-        </div>
+        </ContextMenuShell>
       )}
 
       {/* Delete confirm */}
@@ -848,6 +907,11 @@ function SuiteNode({
   onRenameSubmit,
   onRenameCancel,
   onRemoveItem,
+  onAddRequestToFolder,
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onMoveFolder,
 }: {
   suite: TestSuite
   expanded: boolean
@@ -870,6 +934,15 @@ function SuiteNode({
   onRenameSubmit: () => void
   onRenameCancel: () => void
   onRemoveItem: (itemId: string) => void
+  onAddRequestToFolder: (folderId: string | null) => void
+  onCreateFolder: (parentId: string | null) => Promise<string | null>
+  onRenameFolder: (folderId: string, name: string) => void
+  onDeleteFolder: (folderId: string) => void
+  onMoveFolder: (
+    folderId: string,
+    targetParentId: string | null,
+    insertBeforeId: string | null,
+  ) => void
 }) {
   const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
@@ -964,6 +1037,11 @@ function SuiteNode({
               onItemContextMenu={onItemContextMenu}
               onItemMove={onItemMove}
               onRemoveItem={onRemoveItem}
+              onAddRequestToFolder={onAddRequestToFolder}
+              onCreateFolder={onCreateFolder}
+              onRenameFolder={onRenameFolder}
+              onDeleteFolder={onDeleteFolder}
+              onMoveFolder={onMoveFolder}
             />
           )}
         </div>
@@ -985,6 +1063,11 @@ function SuiteContentsTree({
   onItemContextMenu,
   onItemMove,
   onRemoveItem,
+  onAddRequestToFolder,
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onMoveFolder,
 }: {
   contents: SuiteContents
   renamingItemId: string | null
@@ -996,11 +1079,72 @@ function SuiteContentsTree({
   onItemContextMenu: (item: TestSuiteItem, e: React.MouseEvent) => void
   onItemMove: (itemId: string, targetFolderId: string | null, insertBeforeId: string | null) => void
   onRemoveItem: (itemId: string) => void
+  onAddRequestToFolder: (folderId: string | null) => void
+  onCreateFolder: (parentId: string | null) => Promise<string | null>
+  onRenameFolder: (folderId: string, name: string) => void
+  onDeleteFolder: (folderId: string) => void
+  onMoveFolder: (
+    folderId: string,
+    targetParentId: string | null,
+    insertBeforeId: string | null,
+  ) => void
 }) {
+  const { t } = useTranslation()
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({})
   // Which suite folder's auth/scripts settings modal is open (D-2).
   const [settingsFolder, setSettingsFolder] = useState<{ id: string; name: string } | null>(null)
   const settingsFolderId = settingsFolder?.id
+  // Folder context menu + inline-rename state (nested folder management).
+  const [folderMenu, setFolderMenu] = useState<{
+    folder: TestSuiteFolder
+    x: number
+    y: number
+  } | null>(null)
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null)
+  const [renameFolderValue, setRenameFolderValue] = useState('')
+  // Drag-drop drop indicator for a folder row: before/after = sibling reorder,
+  // inside = reparent into the folder (also where a dropped item lands).
+  const [folderDrop, setFolderDrop] = useState<{
+    id: string
+    pos: 'before' | 'inside' | 'after'
+  } | null>(null)
+
+  const ITEM_DND = 'application/testnizer-suite-item'
+  const FOLDER_DND = 'application/testnizer-suite-folder'
+
+  const startRenameFolder = useCallback((folder: TestSuiteFolder) => {
+    setRenamingFolderId(folder.id)
+    setRenameFolderValue(folder.name)
+    setFolderMenu(null)
+  }, [])
+
+  const submitRenameFolder = useCallback(
+    (folderId: string) => {
+      if (renameFolderValue.trim()) onRenameFolder(folderId, renameFolderValue)
+      setRenamingFolderId(null)
+    },
+    [renameFolderValue, onRenameFolder],
+  )
+
+  const createSubfolder = useCallback(
+    async (parentId: string | null) => {
+      setFolderMenu(null)
+      const id = await onCreateFolder(parentId)
+      if (id) {
+        setRenamingFolderId(id)
+        setRenameFolderValue(t('testsPanel.newFolderDefaultName'))
+      }
+    },
+    [onCreateFolder, t],
+  )
+
+  // Dismiss the folder menu on any outside click.
+  useEffect(() => {
+    if (!folderMenu) return
+    const close = (): void => setFolderMenu(null)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [folderMenu])
 
   const loadFolderSettings = useCallback(async () => {
     if (!settingsFolderId) return undefined
@@ -1076,39 +1220,151 @@ function SuiteContentsTree({
     const collapsed = collapsedFolders[folder.id] ?? false
     const items = itemsByFolder.get(folder.id) ?? []
     const childFolders = foldersByParent.get(folder.id) ?? []
+    const dropLineStyle = (edge: 'top' | 'bottom'): React.CSSProperties => ({
+      position: 'absolute',
+      [edge]: 0,
+      left: FOLDER_BASE + depth * STEP,
+      right: 8,
+      height: 2,
+      background: 'var(--accent)',
+      pointerEvents: 'none',
+      zIndex: 1,
+    })
     return (
       <div key={folder.id}>
-        <div
-          className="group flex cursor-pointer items-center gap-1.5 py-[3px] pr-3"
-          style={{ color: 'var(--muted)', paddingLeft: FOLDER_BASE + depth * STEP }}
-          onClick={() => setCollapsedFolders((s) => ({ ...s, [folder.id]: !collapsed }))}
-        >
-          <span style={{ flexShrink: 0 }}>
-            {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
-          </span>
-          <FolderOpen size={12} style={{ color: 'var(--hint)', flexShrink: 0 }} />
-          <span className="flex-1 truncate" style={{ fontSize: 13, fontWeight: 500 }}>
-            {folder.name}
-          </span>
-          {/* Folder auth + cascade scripts (imported setup/teardown lands here). */}
-          <button
-            type="button"
-            title="Folder settings (auth + scripts)"
-            className="flex-shrink-0 opacity-0 group-hover:opacity-100"
+        <div style={{ position: 'relative' }}>
+          {folderDrop?.id === folder.id && folderDrop.pos === 'before' && (
+            <div style={dropLineStyle('top')} />
+          )}
+          {folderDrop?.id === folder.id && folderDrop.pos === 'after' && (
+            <div style={dropLineStyle('bottom')} />
+          )}
+          <div
+            className="group flex cursor-pointer items-center gap-1.5 py-[3px] pr-3"
+            draggable={renamingFolderId !== folder.id}
             style={{
-              background: 'transparent',
-              border: 'none',
               color: 'var(--muted)',
-              cursor: 'pointer',
-              padding: 0,
+              paddingLeft: FOLDER_BASE + depth * STEP,
+              background:
+                folderDrop?.id === folder.id && folderDrop.pos === 'inside'
+                  ? 'var(--accentLight)'
+                  : undefined,
             }}
-            onClick={(e) => {
+            onClick={() => setCollapsedFolders((s) => ({ ...s, [folder.id]: !collapsed }))}
+            onContextMenu={(e) => {
+              e.preventDefault()
               e.stopPropagation()
-              setSettingsFolder({ id: folder.id, name: folder.name })
+              setFolderMenu({ folder, x: e.clientX, y: e.clientY })
+            }}
+            onDragStart={(e) => {
+              if (renamingFolderId === folder.id) return
+              e.dataTransfer.setData(FOLDER_DND, folder.id)
+              e.dataTransfer.effectAllowed = 'move'
+              e.stopPropagation()
+            }}
+            onDragOver={(e) => {
+              const isItem = e.dataTransfer.types.includes(ITEM_DND)
+              const isFolder = e.dataTransfer.types.includes(FOLDER_DND)
+              if (!isItem && !isFolder) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+              let pos: 'before' | 'inside' | 'after' = 'inside'
+              if (isFolder) {
+                const rect = e.currentTarget.getBoundingClientRect()
+                const y = e.clientY - rect.top
+                pos = y < rect.height * 0.3 ? 'before' : y > rect.height * 0.7 ? 'after' : 'inside'
+              }
+              setFolderDrop((prev) =>
+                prev?.id === folder.id && prev.pos === pos ? prev : { id: folder.id, pos },
+              )
+            }}
+            onDragLeave={() => setFolderDrop((prev) => (prev?.id === folder.id ? null : prev))}
+            onDrop={(e) => {
+              const itemId = e.dataTransfer.getData(ITEM_DND)
+              const draggedFolderId = e.dataTransfer.getData(FOLDER_DND)
+              const target = folderDrop
+              setFolderDrop(null)
+              if (!itemId && !draggedFolderId) return
+              e.preventDefault()
+              e.stopPropagation()
+              if (itemId) {
+                onItemMove(itemId, folder.id, null) // drop an item INTO this folder
+                return
+              }
+              if (draggedFolderId === folder.id) return
+              const pos = target?.id === folder.id ? target.pos : 'inside'
+              if (pos === 'inside') onMoveFolder(draggedFolderId, folder.id, null)
+              else if (pos === 'before') onMoveFolder(draggedFolderId, folder.parent_id, folder.id)
+              else onMoveFolder(draggedFolderId, folder.parent_id, null)
             }}
           >
-            <Settings size={12} />
-          </button>
+            <span style={{ flexShrink: 0 }}>
+              {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+            </span>
+            <FolderOpen size={12} style={{ color: 'var(--hint)', flexShrink: 0 }} />
+            {renamingFolderId === folder.id ? (
+              <input
+                autoFocus
+                value={renameFolderValue}
+                onChange={(e) => setRenameFolderValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') submitRenameFolder(folder.id)
+                  if (e.key === 'Escape') setRenamingFolderId(null)
+                }}
+                onBlur={() => submitRenameFolder(folder.id)}
+                onClick={(e) => e.stopPropagation()}
+                className="flex-1 rounded border px-1.5 py-0.5 outline-none"
+                style={{
+                  fontSize: 13,
+                  borderColor: 'var(--accent)',
+                  background: 'var(--input-bg)',
+                  color: 'var(--text)',
+                }}
+              />
+            ) : (
+              <span className="flex-1 truncate" style={{ fontSize: 13, fontWeight: 500 }}>
+                {folder.name}
+              </span>
+            )}
+            {/* More actions (new request / subfolder / rename / delete) */}
+            <button
+              type="button"
+              title={t('testsPanel.folderActions')}
+              className="flex-shrink-0 opacity-0 group-hover:opacity-100"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--muted)',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                setFolderMenu({ folder, x: e.clientX, y: e.clientY })
+              }}
+            >
+              <MoreHorizontal size={12} />
+            </button>
+            {/* Folder auth + cascade scripts (imported setup/teardown lands here). */}
+            <button
+              type="button"
+              title="Folder settings (auth + scripts)"
+              className="flex-shrink-0 opacity-0 group-hover:opacity-100"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--muted)',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                setSettingsFolder({ id: folder.id, name: folder.name })
+              }}
+            >
+              <Settings size={12} />
+            </button>
+          </div>
         </div>
         {!collapsed && (
           <>
@@ -1136,6 +1392,40 @@ function SuiteContentsTree({
           saveSettings={saveFolderSettings}
           onClose={() => setSettingsFolder(null)}
         />
+      )}
+      {folderMenu && (
+        <ContextMenuShell x={folderMenu.x} y={folderMenu.y}>
+          <ContextMenuItem
+            icon={<Plus size={13} />}
+            label={t('testsPanel.newRequest')}
+            onClick={() => {
+              const id = folderMenu.folder.id
+              setFolderMenu(null)
+              onAddRequestToFolder(id)
+            }}
+          />
+          <ContextMenuItem
+            icon={<FolderPlus size={13} />}
+            label={t('testsPanel.newSubfolder')}
+            onClick={() => void createSubfolder(folderMenu.folder.id)}
+          />
+          <ContextMenuItem
+            icon={<Pencil size={13} />}
+            label={t('testsPanel.rename')}
+            onClick={() => startRenameFolder(folderMenu.folder)}
+          />
+          <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+          <ContextMenuItem
+            icon={<Trash2 size={13} />}
+            label={t('testsPanel.deleteFolder')}
+            danger
+            onClick={() => {
+              const id = folderMenu.folder.id
+              setFolderMenu(null)
+              void onDeleteFolder(id)
+            }}
+          />
+        </ContextMenuShell>
       )}
     </>
   )
@@ -1345,6 +1635,45 @@ function ContextMenuItem({
       {icon}
       {label}
     </button>
+  )
+}
+
+/* ── Context menu shell — positions at (x,y) but clamps/flips into the
+      viewport so a right-click near the bottom/right edge isn't clipped. ── */
+
+function ContextMenuShell({ x, y, children }: { x: number; y: number; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ left: x, top: y })
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const { width, height } = el.getBoundingClientRect()
+    setPos(
+      clampToViewport({
+        x,
+        y,
+        width,
+        height,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      }),
+    )
+  }, [x, y])
+  return (
+    <div
+      ref={ref}
+      className="fixed z-[500] rounded-lg border py-1"
+      style={{
+        left: pos.left,
+        top: pos.top,
+        background: 'var(--white)',
+        borderColor: 'var(--border)',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+        minWidth: 160,
+      }}
+    >
+      {children}
+    </div>
   )
 }
 

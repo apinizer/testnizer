@@ -532,6 +532,48 @@ function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_certificates_project ON certificates(project_id);
   `)
 
+  // ─── OTP authenticator vault (GLOBAL — no project scope) ───
+  // Lives in the always-available Tools panel; holds TOTP/HOTP account
+  // credentials reused across projects. `secret` is stored encrypted
+  // (enc:v1:…) via secure-storage at the handler boundary.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS otp_entries (
+      id TEXT PRIMARY KEY,
+      label TEXT,
+      issuer TEXT,
+      account TEXT,
+      secret TEXT NOT NULL,
+      algorithm TEXT NOT NULL DEFAULT 'SHA1',
+      digits INTEGER NOT NULL DEFAULT 6,
+      period INTEGER NOT NULL DEFAULT 30,
+      type TEXT NOT NULL DEFAULT 'totp',
+      counter INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `)
+
+  // ─── Keystore library (Model B — GLOBAL, no project scope) ───
+  // Persisted Keystore Studio library. `blob` = base64(keystore bytes) and
+  // `store_password` are BOTH encryptSecret-wrapped (enc:v1:…) at the handler
+  // boundary — this repo is secret-agnostic (mirrors otp_entries/certificates).
+  // NULL store_password = "remember password" disabled → prompt on open.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS keystores (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      blob TEXT NOT NULL,
+      store_password TEXT,
+      alias_count INTEGER NOT NULL DEFAULT 0,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `)
+
   // ─── Test Suites ──────────────────────────────────────────
   // Self-contained item model: suites own folders + items (full request
   // snapshots), and items are decoupled from APIs-tree endpoints once

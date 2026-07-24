@@ -118,6 +118,23 @@ function CogIcon() {
   )
 }
 
+function ShieldIcon({ active }: { active: boolean }) {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2 : 1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  )
+}
+
 export default function IconSidebar() {
   const activePage = useUIStore((s) => s.activeSidebarPage)
   const setActivePage = useUIStore((s) => s.setActiveSidebarPage)
@@ -133,6 +150,7 @@ export default function IconSidebar() {
     { id: 'mocks', label: 'Mocks', icon: (a) => <ServerIcon active={a} /> },
     { id: 'history', label: 'History', icon: (a) => <ClockIcon active={a} /> },
     { id: 'tools', label: 'Tools', icon: (a) => <WrenchIcon active={a} /> },
+    { id: 'security', label: 'Security', icon: (a) => <ShieldIcon active={a} /> },
   ]
 
   const bottomItems: NavItem[] = [

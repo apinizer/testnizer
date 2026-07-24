@@ -2,4 +2,12 @@
 // (tree/tools/history) is shown — open tabs and the active tab are global and
 // shared across all pages (one tab strip), so there is no per-page tab scoping.
 
-export type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'tools' | 'mocks' | 'settings'
+export type SidebarPage =
+  | 'apis'
+  | 'tests'
+  | 'docs'
+  | 'history'
+  | 'tools'
+  | 'security'
+  | 'mocks'
+  | 'settings'

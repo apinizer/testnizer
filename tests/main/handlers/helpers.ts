@@ -404,6 +404,35 @@ const SCHEMA_SQL = `
     created_at INTEGER NOT NULL
   );
 
+  CREATE TABLE otp_entries (
+    id TEXT PRIMARY KEY,
+    label TEXT,
+    issuer TEXT,
+    account TEXT,
+    secret TEXT NOT NULL,
+    algorithm TEXT NOT NULL DEFAULT 'SHA1',
+    digits INTEGER NOT NULL DEFAULT 6,
+    period INTEGER NOT NULL DEFAULT 30,
+    type TEXT NOT NULL DEFAULT 'totp',
+    counter INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE keystores (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    blob TEXT NOT NULL,
+    store_password TEXT,
+    alias_count INTEGER NOT NULL DEFAULT 0,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
   CREATE TABLE test_suites (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,

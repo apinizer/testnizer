@@ -35,6 +35,9 @@ export type Protocol =
   | 'tools.uuid'
   | 'tools.regex'
   | 'tools.yamlJson'
+  | 'tools.passwordGen'
+  | 'tools.otp'
+  | 'tools.qr'
 
 export const TOOL_PROTOCOLS = [
   'tools.jwt',
@@ -57,10 +60,64 @@ export const TOOL_PROTOCOLS = [
   'tools.uuid',
   'tools.regex',
   'tools.yamlJson',
+  'tools.passwordGen',
+  'tools.otp',
+  'tools.qr',
 ] as const satisfies readonly Protocol[]
 export type ToolProtocol = (typeof TOOL_PROTOCOLS)[number]
 export function isToolProtocol(p: Protocol): p is ToolProtocol {
   return (TOOL_PROTOCOLS as readonly string[]).includes(p)
+}
+
+// ─── OTP authenticator vault (Tools panel) ──────────────────────────
+export type OtpAlgorithm = 'SHA1' | 'SHA256' | 'SHA512'
+export type OtpType = 'totp' | 'hotp'
+
+/** Renderer-facing OTP entry — never carries the secret. */
+export interface OtpEntry {
+  id: string
+  label: string | null
+  issuer: string | null
+  account: string | null
+  algorithm: OtpAlgorithm
+  digits: number
+  period: number
+  type: OtpType
+  counter: number
+  enabled: boolean
+  hasSecret: boolean
+}
+
+export interface OtpCode {
+  id: string
+  code: string | null
+  secondsRemaining: number
+  error?: string
+}
+
+export interface OtpDraft {
+  type: OtpType
+  label: string
+  issuer: string
+  account: string
+  secret: string
+  algorithm: OtpAlgorithm
+  digits: number
+  period: number
+  counter: number
+}
+
+export interface OtpAddInput {
+  label?: string | null
+  issuer?: string | null
+  account?: string | null
+  secret: string
+  algorithm?: OtpAlgorithm
+  digits?: number
+  period?: number
+  type?: OtpType
+  counter?: number
+  enabled?: boolean
 }
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 export type BodyType =

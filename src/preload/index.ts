@@ -420,6 +420,19 @@ const api = {
       ipcRenderer.invoke('certificate:pickFile', kind),
   },
 
+  // ─── OTP authenticator vault ────────────────────────────────
+  otp: {
+    list: (): Promise<unknown> => ipcRenderer.invoke('otp:list'),
+    add: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('otp:add', payload),
+    update: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('otp:update', payload),
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('otp:delete', id),
+    codes: (): Promise<unknown> => ipcRenderer.invoke('otp:codes'),
+    code: (id: string): Promise<unknown> => ipcRenderer.invoke('otp:code', id),
+    parseUri: (uri: string): Promise<unknown> => ipcRenderer.invoke('otp:parseUri', uri),
+    reveal: (id: string): Promise<unknown> => ipcRenderer.invoke('otp:reveal', id),
+    uri: (id: string): Promise<unknown> => ipcRenderer.invoke('otp:uri', id),
+  },
+
   // ─── GraphQL ────────────────────────────────────────────────
   graphql: {
     execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('graphql:execute', options),

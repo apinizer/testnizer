@@ -20,6 +20,9 @@ import {
   Tag,
   Regex,
   ArrowLeftRight,
+  KeySquare,
+  ShieldCheck,
+  QrCode,
 } from 'lucide-react'
 import type { ToolProtocol } from '../types'
 
@@ -29,6 +32,13 @@ export interface ToolCatalogItem {
   labelKey: string
   bg: string
   color: string
+  /**
+   * Which left-panel this tool lives in. `'security'` → the Security page
+   * (key-material / PKI / token / identity operations); omitted → the generic
+   * Tools page. A tool has exactly ONE home (no double-listing) — Cmd+K and the
+   * catalog search still see the full `TOOL_CATALOG`, so discovery is unchanged.
+   */
+  section?: 'security'
 }
 
 /**
@@ -60,6 +70,7 @@ export const TOOL_CATALOG: ToolCatalogItem[] = [
     labelKey: 'tools.jwt.title',
     bg: '#eeecfe',
     color: '#5b52d4',
+    section: 'security',
   },
   {
     protocol: 'tools.jsonFormat',
@@ -81,6 +92,13 @@ export const TOOL_CATALOG: ToolCatalogItem[] = [
     labelKey: 'tools.encode.title',
     bg: '#e8f9f1',
     color: '#1a7a4a',
+  },
+  {
+    protocol: 'tools.qr',
+    Icon: QrCode,
+    labelKey: 'tools.qr.title',
+    bg: '#eeecfe',
+    color: '#5b52d4',
   },
   {
     protocol: 'tools.diff',
@@ -137,8 +155,25 @@ export const TOOL_CATALOG: ToolCatalogItem[] = [
     labelKey: 'tools.wsse.title',
     bg: '#e8f4ff',
     color: '#0066cc',
+    section: 'security',
   },
   // ── utility calculators ──
+  {
+    protocol: 'tools.passwordGen',
+    Icon: KeySquare,
+    labelKey: 'tools.passwordGen.title',
+    bg: '#eeecfe',
+    color: '#5b52d4',
+    section: 'security',
+  },
+  {
+    protocol: 'tools.otp',
+    Icon: ShieldCheck,
+    labelKey: 'tools.otp.title',
+    bg: '#e8f9f1',
+    color: '#1a7a4a',
+    section: 'security',
+  },
   {
     protocol: 'tools.hash',
     Icon: Hash,
@@ -196,3 +231,19 @@ export const TOOL_CATALOG: ToolCatalogItem[] = [
     color: '#0066cc',
   },
 ]
+
+/**
+ * Tools that live in the generic **Tools** page (everything without a
+ * `section`). This is what `ToolsPanel` renders.
+ */
+export const TOOLS_MENU: ToolCatalogItem[] = TOOL_CATALOG.filter((t) => t.section !== 'security')
+
+/**
+ * Key-material / PKI / token / identity tools that live in the **Security**
+ * page. This is what `SecurityPanel` renders (under its "Tools" heading). New
+ * security features (Keystore Studio, JWK, JOSE, TLS Inspector) are added to
+ * `TOOL_CATALOG` with `section: 'security'` and appear here automatically.
+ */
+export const SECURITY_TOOLS: ToolCatalogItem[] = TOOL_CATALOG.filter(
+  (t) => t.section === 'security',
+)

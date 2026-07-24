@@ -36,6 +36,9 @@ import BaseConverterTool from '../tools/BaseConverterTool'
 import UuidTool from '../tools/UuidTool'
 import RegexTool from '../tools/RegexTool'
 import YamlJsonTool from '../tools/YamlJsonTool'
+import PasswordGeneratorTool from '../tools/PasswordGeneratorTool'
+import OtpTool from '../tools/OtpTool'
+import QrTool from '../tools/QrTool'
 import MockServerEditor from '../mock/MockServerEditor'
 import RightPanel from './RightPanel'
 import EdgeResizeHandle from './EdgeResizeHandle'
@@ -93,6 +96,9 @@ const TOOL_COMPONENTS: Record<string, ComponentType> = {
   'tools.uuid': UuidTool,
   'tools.regex': RegexTool,
   'tools.yamlJson': YamlJsonTool,
+  'tools.passwordGen': PasswordGeneratorTool,
+  'tools.otp': OtpTool,
+  'tools.qr': QrTool,
 }
 
 function EndpointTabBar() {
