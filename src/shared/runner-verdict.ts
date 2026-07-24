@@ -18,6 +18,25 @@
  * the rule here kills that "runner verdict parity" bug class the same way the
  * shared script runtime killed the script-API parity class.
  */
+/**
+ * Which lifecycle phase of a run produced a result. `setup` and `main` are the
+ * run proper; `teardown` is cleanup that is executed even when the run stops
+ * early (stopOnError / transport error / user Stop) — see issue #72.
+ */
+export type RunPhase = 'setup' | 'main' | 'teardown'
+
+/**
+ * Teardown is cleanup, not the thing under test: its results are REPORTED but
+ * must never flip the run's verdict — a green run whose cleanup DELETE 404s is
+ * still green, and a red run whose cleanup succeeds is still red (the original
+ * failure must not be masked). Every pass/fail counter — main live run, HTML
+ * export, both renderer results views — filters through this helper so the
+ * rule can't drift the way the `status < 400` check once did.
+ */
+export function countsTowardRunVerdict(r: { phase?: RunPhase }): boolean {
+  return r.phase !== 'teardown'
+}
+
 export interface EndpointVerdictShape {
   /** Transport-layer error (DNS/TCP/TLS/abort) — always a failure. */
   error?: string

@@ -626,9 +626,23 @@ interface RunnerExecuteOptions {
   /** Postman "Keep variable values" — persist script-written env/global
    *  variables back to the active environment after the run. Default true. */
   keepVariableValues?: boolean
+  /** Run-level SETUP requests — executed once, in order, before the main flow
+   *  (issue #72). Part of the run proper: they count toward the verdict. */
+  setupEndpointIds?: string[]
+  /** Run-level TEARDOWN requests — executed once, in order, after everything
+   *  else, and GUARANTEED to run even when the run stops early. Reported as
+   *  their own phase and excluded from the run's verdict (issue #72). */
+  teardownEndpointIds?: string[]
+  /** Run-level pre script — runs once before setup. */
+  runPreScript?: string
+  /** Run-level post script — runs once at the end of teardown. */
+  runPostScript?: string
   folderName?: string
   sourceLabel?: string
 }
+
+/** Lifecycle phase that produced a result. Absent = 'main' (older reports). */
+type RunPhase = 'setup' | 'main' | 'teardown'
 
 interface EndpointRunResult {
   endpointId: string
@@ -648,6 +662,8 @@ interface EndpointRunResult {
   responseHeaders?: Record<string, string>
   requestHeaders?: Record<string, string>
   requestBody?: string
+  iteration?: number
+  phase?: RunPhase
 }
 
 interface RunnerAssertionResult {
@@ -679,6 +695,12 @@ interface RunnerReport {
    *  keepVariableValues is on) — renderer refreshes its env store from these. */
   envUpdates?: Record<string, string>
   globalUpdates?: Record<string, string>
+  /** Teardown tallies, kept out of passedEndpoints/failedEndpoints so cleanup
+   *  never rewrites the run's verdict (issue #72). */
+  teardownPassedEndpoints?: number
+  teardownFailedEndpoints?: number
+  /** Why the main flow ended early, when it did. */
+  stopReason?: 'stopOnError' | 'cancelled' | 'teardownAborted'
 }
 
 interface RunnerExportOptions {
@@ -783,6 +805,15 @@ interface SchedulerCreatePayload {
   scheduleDays?: number[]
   scheduleCron?: string
   suiteId?: string
+  /**
+   * Run lifecycle (#72) — the same phase model an interactive run uses, so a
+   * scheduled run executes Setup → Flow → Teardown identically. Omitted ⇒
+   * everything runs as flow, which is how tasks saved before this behaved.
+   */
+  setupEndpointIds?: string[]
+  teardownEndpointIds?: string[]
+  runPreScript?: string
+  runPostScript?: string
 }
 
 interface SchedulerUpdatePayload extends SchedulerCreatePayload {

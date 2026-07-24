@@ -14,6 +14,7 @@ import RunnerHistory from './RunnerHistory'
 import ScheduledTasksView from './ScheduledTasksView'
 import TestsHome from './TestsHome'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
+import type { RunPhase } from '../../../shared/runner-verdict'
 import { lockDragStyles } from '../../lib/drag-lock'
 import { setRunnerBusy } from '../../lib/runner-activity'
 
@@ -48,6 +49,12 @@ export interface RunnerEndpointItem {
   url: string
   selected: boolean
   folderName?: string
+  /**
+   * Lifecycle phase for THIS run (issue #72). Undefined = 'main' (the flow).
+   * Setup requests execute once before the flow, teardown once after it — and
+   * teardown still executes when the run stops early.
+   */
+  phase?: RunPhase
 }
 
 export interface RunnerFolderGroup {
@@ -252,6 +259,10 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [stopOnError, setStopOnError] = useState(true)
   const [persistResponses, setPersistResponses] = useState(true)
   const [keepVariableValues, setKeepVariableValues] = useState(true)
+  // Run-level hook scripts (issue #72). Per-run config, like iterations/delay —
+  // deliberately not persisted, see the run-lifecycle notes.
+  const [runPreScript, setRunPreScript] = useState('')
+  const [runPostScript, setRunPostScript] = useState('')
   const [runFolderName, setRunFolderName] = useState('')
   // Default radio selection for the RunnerConfig "Choose how to run" block.
   // We bump configRunModeKey whenever a fresh "New Run" lands on the config
@@ -745,11 +756,34 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     )
   }, [])
 
-  const selectedCount = useMemo(() => endpoints.filter((ep) => ep.selected).length, [endpoints])
+  const setEndpointPhase = useCallback((id: string, phase: RunPhase) => {
+    const apply = (ep: RunnerEndpointItem): RunnerEndpointItem =>
+      ep.id === id ? { ...ep, phase } : ep
+    setEndpoints((eps) => eps.map(apply))
+    setFolderGroups((groups) => groups.map((g) => ({ ...g, endpoints: g.endpoints.map(apply) })))
+  }, [])
+
+  /** Split the selection into the three run phases. Order inside each phase
+   *  follows the sequence list; the run order is always setup → flow → teardown. */
+  const splitByPhase = useCallback((items: RunnerEndpointItem[]) => {
+    const ids = (phase: RunPhase) =>
+      items.filter((ep) => (ep.phase ?? 'main') === phase).map((ep) => ep.id)
+    return { setupIds: ids('setup'), mainIds: ids('main'), teardownIds: ids('teardown') }
+  }, [])
+
+  // "Start run" needs at least one FLOW request — a run made only of fixtures
+  // and cleanup has nothing to test, and the main process rejects an empty
+  // endpointIds list anyway.
+  const selectedCount = useMemo(
+    () => endpoints.filter((ep) => ep.selected && (ep.phase ?? 'main') === 'main').length,
+    [endpoints],
+  )
 
   const handleRun = useCallback(async () => {
     const selected = endpoints.filter((ep) => ep.selected)
     if (selected.length === 0) return
+    const { setupIds, mainIds, teardownIds } = splitByPhase(selected)
+    if (mainIds.length === 0) return
 
     // Persist the active tab if it's a dirty member of this run (so the run uses
     // fresh data, not the stale DB snapshot) + warn about other dirty run items.
@@ -782,7 +816,11 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     try {
       const result = await window.api?.runner?.execute({
         projectId: activeProjectId || '',
-        endpointIds: selected.map((ep) => ep.id),
+        endpointIds: mainIds,
+        setupEndpointIds: setupIds.length > 0 ? setupIds : undefined,
+        teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
+        runPreScript: runPreScript.trim() || undefined,
+        runPostScript: runPostScript.trim() || undefined,
         environmentId: environmentId || undefined,
         workspaceId: activeWorkspaceId || undefined,
         delay,
@@ -818,6 +856,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     runFolderName,
     runOrigin,
     keepVariableValues,
+    runPreScript,
+    runPostScript,
+    splitByPhase,
   ])
 
   const handleStop = useCallback(() => {
@@ -873,6 +914,12 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     async (payload: SchedulePayload) => {
       const selected = endpoints.filter((ep) => ep.selected)
       if (selected.length === 0) return
+      // Carry the phase model into the schedule, exactly as `handleRun` does.
+      // Sending the flat list would silently demote setup/teardown requests to
+      // flow requests, so a scheduled run graded differently from the
+      // interactive one it was created from (#72).
+      const { setupIds, mainIds, teardownIds } = splitByPhase(selected)
+      if (mainIds.length === 0) return
 
       try {
         const result = await window.api.scheduler.create({
@@ -882,7 +929,11 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           // print only the timestamp which made the Scheduled Tasks table
           // unreadable when you had more than a couple of rows.
           name: `${runFolderName || 'Scheduled Run'} — ${new Date().toLocaleString()}`,
-          endpointIds: selected.map((ep) => ep.id),
+          endpointIds: mainIds,
+          setupEndpointIds: setupIds.length > 0 ? setupIds : undefined,
+          teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
+          runPreScript: runPreScript.trim() || undefined,
+          runPostScript: runPostScript.trim() || undefined,
           folderId: folderId || undefined,
           environmentId: environmentId || undefined,
           intervalValue: payload.intervalValue,
@@ -903,7 +954,17 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         console.error('Failed to create scheduled task:', e)
       }
     },
-    [endpoints, activeProjectId, folderId, environmentId, delay, runFolderName, suiteIdForRunner],
+    [
+      endpoints,
+      activeProjectId,
+      folderId,
+      environmentId,
+      delay,
+      runFolderName,
+      suiteIdForRunner,
+      runPreScript,
+      runPostScript,
+    ],
   )
 
   const handleSequenceResize = useCallback((dx: number) => {
@@ -946,6 +1007,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 onSelectAll={selectAll}
                 onDeselectAll={deselectAll}
                 onReset={selectAll}
+                onSetPhase={setEndpointPhase}
                 onReorder={
                   suiteIdForRunner
                     ? async (draggedId, insertBeforeId) => {
@@ -983,6 +1045,10 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 setKeepVariableValues={setKeepVariableValues}
                 iterationData={iterationData}
                 setIterationData={setIterationData}
+                runPreScript={runPreScript}
+                setRunPreScript={setRunPreScript}
+                runPostScript={runPostScript}
+                setRunPostScript={setRunPostScript}
                 onRun={handleRun}
                 onSchedule={handleSchedule}
                 isRunning={isRunning}

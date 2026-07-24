@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { RunPhase } from '../../shared/runner-verdict'
 import type { HttpMethod } from '../types'
 import { useEnvironmentStore } from './environment.store'
 import { saveDirtyRunItemsBeforeRun } from '../lib/dirty-run-guard'
@@ -47,6 +48,11 @@ export interface EndpointRunResult {
    * single Iteration 1 bucket.
    */
   iteration?: number
+  /**
+   * Which lifecycle phase produced this row (issue #72). Absent on results
+   * recorded before run-level hooks existed — treated as 'main'.
+   */
+  phase?: RunPhase
 }
 
 export interface RunnerReport {
@@ -64,6 +70,12 @@ export interface RunnerReport {
    *  refreshes the env store from these so the env editor + next Send see them. */
   envUpdates?: Record<string, string>
   globalUpdates?: Record<string, string>
+  /** Teardown-phase tallies. Deliberately NOT folded into passedEndpoints /
+   *  failedEndpoints — cleanup must not rewrite the run's verdict (issue #72). */
+  teardownPassedEndpoints?: number
+  teardownFailedEndpoints?: number
+  /** Set when the main flow ended before its last request. */
+  stopReason?: 'stopOnError' | 'cancelled' | 'teardownAborted'
 }
 
 type RunnerView = 'config' | 'results'

@@ -933,6 +933,26 @@ const translations: Record<Locale, Record<string, string>> = {
     'runnerVars.add': 'Add',
     'runnerVars.selectEnv': 'Select an environment to see its variables.',
 
+    // Run lifecycle — setup / teardown phases (issue #72)
+    'runPhase.main': 'Flow',
+    'runPhase.setup': 'Setup',
+    'runPhase.teardown': 'Teardown',
+    'runPhase.label': 'Phase',
+    'runPhase.hint':
+      'Setup runs once before the flow; Teardown runs once after it — and still runs when the run stops early.',
+    'runLifecycle.title': 'Run lifecycle',
+    'runLifecycle.preScript': 'Run setup script',
+    'runLifecycle.postScript': 'Run teardown script',
+    'runLifecycle.preScriptHint': 'Runs once before the setup requests.',
+    'runLifecycle.postScriptHint':
+      'Runs once after teardown — even if the run stopped early. Failures are reported but never change the run verdict.',
+    'runLifecycle.teardownSection': 'Teardown',
+    'runLifecycle.setupSection': 'Setup',
+    'runLifecycle.teardownNote': 'Does not affect the run verdict',
+    'runLifecycle.stoppedOnError': 'Stopped early: a request failed and "Stop run on error" is on.',
+    'runLifecycle.stoppedCancelled': 'Stopped by you — teardown still ran.',
+    'runLifecycle.stoppedTeardownAborted': 'Stopped by you — teardown was skipped.',
+
     // Add Endpoints to Test Suite
     'addEndpoints.addTo': 'Import Endpoints into',
     'addEndpoints.subtitle':
@@ -2805,6 +2825,27 @@ const translations: Record<Locale, Record<string, string>> = {
     'runnerVars.noGlobals': 'Bu çalışma alanında global değişken yok.',
     'runnerVars.add': 'Ekle',
     'runnerVars.selectEnv': 'Değişkenleri görmek için bir ortam seçin.',
+
+    // Çalıştırma yaşam döngüsü — setup / teardown fazları (issue #72)
+    'runPhase.main': 'Akış',
+    'runPhase.setup': 'Hazırlık',
+    'runPhase.teardown': 'Temizlik',
+    'runPhase.label': 'Faz',
+    'runPhase.hint':
+      'Hazırlık akıştan önce bir kez, Temizlik akıştan sonra bir kez çalışır — çalıştırma erken durdurulsa bile Temizlik yine çalışır.',
+    'runLifecycle.title': 'Çalıştırma yaşam döngüsü',
+    'runLifecycle.preScript': 'Çalıştırma hazırlık script’i',
+    'runLifecycle.postScript': 'Çalıştırma temizlik script’i',
+    'runLifecycle.preScriptHint': 'Hazırlık isteklerinden önce bir kez çalışır.',
+    'runLifecycle.postScriptHint':
+      'Temizlikten sonra bir kez çalışır — çalıştırma erken durmuş olsa bile. Hataları raporlanır ama çalıştırma sonucunu değiştirmez.',
+    'runLifecycle.teardownSection': 'Temizlik',
+    'runLifecycle.setupSection': 'Hazırlık',
+    'runLifecycle.teardownNote': 'Çalıştırma sonucunu etkilemez',
+    'runLifecycle.stoppedOnError':
+      'Erken durduruldu: bir istek başarısız oldu ve “Hata olursa durdur” açık.',
+    'runLifecycle.stoppedCancelled': 'Sizin tarafınızdan durduruldu — temizlik yine de çalıştı.',
+    'runLifecycle.stoppedTeardownAborted': 'Sizin tarafınızdan durduruldu — temizlik atlandı.',
 
     // Add Endpoints to Test Suite
     'addEndpoints.addTo': 'Uç Noktaları İçe Aktar:',

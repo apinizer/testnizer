@@ -37,6 +37,7 @@
  * to `certificates.caCerts` or to `https.Agent({ ca })`.
  */
 
+import { createHash, createPublicKey, createPrivateKey } from 'node:crypto'
 import { readFileSync, realpathSync, statSync } from 'node:fs'
 import { extname, resolve as resolvePath } from 'node:path'
 import { getKeystore } from '../db/keystore.repo'
@@ -111,7 +112,23 @@ export interface ResolvedKeyMaterial {
    * concept and this resolver does not produce them.
    */
   chainBuffers?: Buffer[]
+
+  // ── need === 'jwk' adds ──
+  /**
+   * PUBLIC JWK of the leaf key, with an RFC 7638 thumbprint as `kid`.
+   * Safe to publish (a JWKS document, a token header) — it never carries a
+   * private member.
+   */
+  publicJwk?: JsonWebKey & { kid: string }
+  /**
+   * PRIVATE JWK. MAIN-ONLY, and only present when the source actually carries a
+   * private key. Never let this reach the renderer or a JWKS body.
+   */
+  privateJwk?: JsonWebKey & { kid: string }
 }
+
+/** Private JWK members — stripped from anything publishable. */
+const PRIVATE_JWK_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'k'] as const
 
 /** Thrown for every resolution failure. Message is safe to surface as `{error}`. */
 export class KeyMaterialError extends Error {
@@ -411,6 +428,77 @@ function pemBlock(pem: string): string {
  * client auth). Nothing here is a CA trust anchor and no `ca`-shaped field is
  * emitted.
  */
+/**
+ * RFC 7638 thumbprint — SHA-256 over the canonical JSON of the REQUIRED members
+ * only, in lexicographic order, base64url-encoded. Kept here rather than pulled
+ * from `jose` deliberately: `jose` is ESM-only and importing it into the main
+ * process is the v1.4.19 launch-crash class (CLAUDE.md). `node:crypto` does the
+ * whole job synchronously, which also keeps `resolveKeyMaterial` synchronous
+ * for its existing callers.
+ */
+function jwkThumbprint(jwk: JsonWebKey): string {
+  let canonical: string
+  switch (jwk.kty) {
+    case 'RSA':
+      canonical = JSON.stringify({ e: jwk.e, kty: jwk.kty, n: jwk.n })
+      break
+    case 'EC':
+      canonical = JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y })
+      break
+    case 'OKP':
+      canonical = JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x })
+      break
+    case 'oct':
+      canonical = JSON.stringify({ k: jwk.k, kty: jwk.kty })
+      break
+    default:
+      throw new KeyMaterialError(`Unsupported key type for a JWK thumbprint: ${String(jwk.kty)}`)
+  }
+  return createHash('sha256').update(canonical).digest('base64url')
+}
+
+/** Drop every private member — what makes a JWK safe to publish. */
+export function toPublicJwk<T extends JsonWebKey>(jwk: T): T {
+  const clean = { ...jwk } as Record<string, unknown>
+  for (const member of PRIVATE_JWK_MEMBERS) delete clean[member]
+  return clean as T
+}
+
+function toJwk(pem: CanonicalPem): ResolvedKeyMaterial {
+  // The certificate's SPKI is the authority for the PUBLIC half: a keystore
+  // entry can hold a cert whose key pair the private key belongs to, and the
+  // public JWK must describe the key the counterparty will verify against.
+  let publicJwk: JsonWebKey
+  try {
+    publicJwk = createPublicKey(pem.certPem).export({ format: 'jwk' }) as JsonWebKey
+  } catch (e) {
+    throw new KeyMaterialError(
+      `Could not read a public key from the certificate: ${(e as Error).message}`,
+    )
+  }
+  const kid = jwkThumbprint(publicJwk)
+
+  let privateJwk: (JsonWebKey & { kid: string }) | undefined
+  if (pem.keyPem) {
+    try {
+      const raw = createPrivateKey(
+        pem.passphrase ? { key: pem.keyPem, passphrase: pem.passphrase } : pem.keyPem,
+      ).export({ format: 'jwk' }) as JsonWebKey
+      privateJwk = { ...raw, kid }
+    } catch (e) {
+      throw new KeyMaterialError(`Could not read the private key: ${(e as Error).message}`)
+    }
+  }
+
+  return {
+    ...pem,
+    // Strip defensively: `export({format:'jwk'})` on a public key should never
+    // emit a private member, but the publishable shape must not depend on that.
+    publicJwk: { ...toPublicJwk(publicJwk), kid },
+    privateJwk,
+  }
+}
+
 function toBuffers(pem: CanonicalPem): ResolvedKeyMaterial {
   const chain = pem.chainPem ?? []
   const bundle = [pem.certPem, ...chain].map(pemBlock).join('')
@@ -470,10 +558,7 @@ export function resolveKeyMaterial(
     case 'buffer':
       return toBuffers(pem)
     case 'jwk':
-      // Faz D1 (#61) turns this into a `jose` importPKCS8/importX509 → exportJWK
-      // branch. `jose` is ESM-only, so it must be imported ONLY on this branch
-      // (ESM-in-main containment, CLAUDE.md ERR_REQUIRE_ESM gotcha).
-      throw new KeyMaterialError('JWK key material is not available until Faz D (#61).')
+      return toJwk(pem)
     default:
       throw new KeyMaterialError(`Unsupported key material need: ${String(need)}`)
   }

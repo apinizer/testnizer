@@ -474,6 +474,23 @@ function runMigrations(database: Database.Database): void {
   if (!stColNames.includes('suite_id')) {
     database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN suite_id TEXT`)
   }
+  // Run lifecycle (issue #72). A scheduled run must execute the SAME phases the
+  // user configured interactively — without these the schedule silently
+  // demoted setup/teardown requests to ordinary flow requests, so cleanup
+  // failures started counting against the verdict. NULL/'[]' = a task saved
+  // before phases existed, i.e. everything is flow.
+  if (!stColNames.includes('setup_endpoint_ids')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN setup_endpoint_ids TEXT`)
+  }
+  if (!stColNames.includes('teardown_endpoint_ids')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN teardown_endpoint_ids TEXT`)
+  }
+  if (!stColNames.includes('run_pre_script')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_pre_script TEXT`)
+  }
+  if (!stColNames.includes('run_post_script')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_post_script TEXT`)
+  }
 
   // ─── Auth tables ─────────────────────────────────────────
   database.exec(`

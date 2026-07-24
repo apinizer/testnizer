@@ -3,6 +3,43 @@
 > Working notes for the next tag. Fold into `docs/release-notes/vX.Y.Z.md`
 > (and mirror into the website changelog) before pushing the tag.
 
+### New — run-level Setup / Teardown, with teardown that always runs
+
+Every request in the Run Sequence now has a **phase**: *Flow* (the default),
+*Setup* or *Teardown*. A run executes **Setup → Flow → Teardown**, whatever
+order the requests appear in, and Setup/Teardown run **once per run** — not once
+per iteration. The run configuration also gained a **Run setup script** and a
+**Run teardown script** (the same `pm.*` API as request scripts), each executed
+once per run.
+
+**Teardown is guaranteed.** It still runs when the flow stops early — when
+"stop on error" halts the run, when a request fails at the network level, and
+when you press **Stop**. Cleanup no longer gets skipped just because something
+went wrong earlier. Pressing **Stop while teardown itself is running** abandons
+the rest of the cleanup, so a cleanup request that never answers can't hold the
+app hostage — but impatient clicking during the flow never costs you cleanup.
+
+**Scheduled runs use the same phases.** A task scheduled from a run keeps its
+Setup / Flow / Teardown assignment and its run-level scripts, so a scheduled run
+grades exactly like the interactive one it came from. Tasks saved before this
+release keep running every request as flow.
+
+**Teardown never rewrites the verdict.** Its results appear in their own
+*Teardown* section of the results and the HTML report, tallied separately: a
+failing cleanup does not turn a green run red, and a successful cleanup does not
+hide the failure that stopped the run. That applies to test counts too — a
+failing cleanup assertion is reported under Teardown and does not show up as a
+failed test on the run in your history. Each teardown request is still scored
+with the normal rules, so an idempotent cleanup `DELETE` whose test allows
+`404`/`400` counts as passed.
+
+**A run script that crashes is reported.** If a *Run setup script* throws (a
+token fetch that fails, say), the run shows it as a failure instead of quietly
+continuing with unresolved variables.
+
+Phases are part of a run's configuration, like iterations and delay — they are
+not saved onto the collection, and scheduled tasks are unchanged.
+
 ### ⚠️ Behaviour change — the Collection Runner now sends your client certificate
 
 **What changed.** Until now, project **client certificates (mTLS) were attached

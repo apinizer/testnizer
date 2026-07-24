@@ -19,7 +19,8 @@
  *                    realpath/symlink-resolve + size cap + keystore-AWARE
  *                    extension whitelist.
  *  - FAIL LOUD     — nothing resolvable throws a clear error, never silent-empty.
- *  - `jwk` need    — stubbed until Faz D (#61).
+ *  - `jwk` need    — public/private JWK split with an RFC 7638 kid; the
+ *                    publishable half never carries a private member.
  */
 
 // reflect-metadata MUST load before @peculiar/x509 (see keystore.ts header).
@@ -518,10 +519,55 @@ describe('BLOCKER — client chain vs CA trust anchors', () => {
 describe('resolveKeyMaterial — needs', () => {
   const certPem = fixture('client.crt').toString('utf8')
 
-  it("need 'jwk' is stubbed until Faz D (#61)", () => {
-    expect(() => resolveKeyMaterial({ kind: 'inline', certPem }, 'jwk')).toThrow(
-      /not available until Faz D/,
-    )
+  // ── need 'jwk' (#61) ───────────────────────────────────────────────────────
+  // Implemented with node:crypto, NOT `jose`: jose is ESM-only and importing it
+  // into main is the v1.4.19 launch-crash class, and its API is async while
+  // every existing caller of resolveKeyMaterial is synchronous.
+  it("need 'jwk' exports a public JWK with an RFC 7638 kid", () => {
+    const m = resolveKeyMaterial({ kind: 'inline', certPem }, 'jwk')
+    expect(m.publicJwk).toBeDefined()
+    expect(m.publicJwk!.kty).toBeTruthy()
+    // base64url SHA-256 → 43 chars, no padding, no + or /
+    expect(m.publicJwk!.kid).toMatch(/^[A-Za-z0-9_-]{43}$/)
+  })
+
+  it("need 'jwk' NEVER puts a private member in the publishable half", () => {
+    const keyPem = fixture('client.key').toString('utf8')
+    const m = resolveKeyMaterial({ kind: 'inline', certPem, keyPem }, 'jwk')
+    for (const member of ['d', 'p', 'q', 'dp', 'dq', 'qi', 'k']) {
+      expect(m.publicJwk).not.toHaveProperty(member)
+    }
+    // …while the private half is available to MAIN for signing.
+    expect(m.privateJwk).toBeDefined()
+    expect(m.privateJwk).toHaveProperty('d')
+    // Both halves describe the same key, so they share the thumbprint.
+    expect(m.privateJwk!.kid).toBe(m.publicJwk!.kid)
+  })
+
+  it("need 'jwk' omits the private JWK for public-only material", () => {
+    const m = resolveKeyMaterial({ kind: 'inline', certPem }, 'jwk')
+    expect(m.privateJwk).toBeUndefined()
+  })
+
+  it("need 'jwk' produces a STABLE kid for the same key", () => {
+    const a = resolveKeyMaterial({ kind: 'inline', certPem }, 'jwk')
+    const b = resolveKeyMaterial({ kind: 'inline', certPem }, 'jwk')
+    expect(a.publicJwk!.kid).toBe(b.publicJwk!.kid)
+  })
+
+  it("need 'jwk' works for an EC key too (not just RSA)", () => {
+    const { generateKeyPairSync, X509Certificate: _X } =
+      require('node:crypto') as typeof import('node:crypto')
+    void _X
+    const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' })
+    // A bare SPKI PEM is a valid `certPem` input for the public half.
+    const spki = publicKey.export({ type: 'spki', format: 'pem' }) as string
+    const pkcs8 = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string
+    const m = resolveKeyMaterial({ kind: 'inline', certPem: spki, keyPem: pkcs8 }, 'jwk')
+    expect(m.publicJwk!.kty).toBe('EC')
+    expect(m.publicJwk!.crv).toBe('P-256')
+    expect(m.publicJwk).not.toHaveProperty('d')
+    expect(m.privateJwk).toHaveProperty('d')
   })
 
   it('rejects an unknown need and an unknown source kind', () => {
@@ -563,7 +609,12 @@ describe('resolveKeyMaterial — needs', () => {
           expect(m.certBuffer).toBeUndefined()
         }
       }
-      expect(() => resolveKeyMaterial(source, 'jwk')).toThrow(/not available until Faz D/)
+      // 'jwk' resolves for every source too, and its publishable half is clean
+      // whatever the source was.
+      const jwk = resolveKeyMaterial(source, 'jwk')
+      expect(jwk.publicJwk?.kid).toMatch(/^[A-Za-z0-9_-]{43}$/)
+      expect(jwk.publicJwk).not.toHaveProperty('d')
+      expect(jwk.privateJwk).toHaveProperty('d')
     }
   })
 })

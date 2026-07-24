@@ -343,7 +343,13 @@ const SCHEMA_SQL = `
     schedule_time TEXT,
     schedule_days TEXT,
     schedule_cron TEXT,
-    suite_id TEXT
+    suite_id TEXT,
+    -- Run lifecycle (#72) — MUST mirror the production ALTERs in
+    -- src/main/db/database.ts (CLAUDE.md test-helper schema-sync gotcha).
+    setup_endpoint_ids TEXT,
+    teardown_endpoint_ids TEXT,
+    run_pre_script TEXT,
+    run_post_script TEXT
   );
 
   CREATE TABLE runner_history (

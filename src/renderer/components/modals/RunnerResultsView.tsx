@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useRunnerStore } from '../../stores/runner.store'
 import { getMethodColors } from '../../styles/tokens'
 import { RotateCcw, Plus, ChevronDown, ChevronRight } from 'lucide-react'
-import { endpointDidPass } from '../../../shared/runner-verdict'
+import { endpointDidPass, countsTowardRunVerdict } from '../../../shared/runner-verdict'
+import { useTranslation } from '../../lib/i18n'
 
 type FilterTab = 'all' | 'passed' | 'failed' | 'skipped' | 'errors' | 'console'
 
@@ -20,13 +21,16 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
   const runStartedAt = useRunnerStore((s) => s.runStartedAt)
   const stop = useRunnerStore((s) => s.stop)
 
+  const { t } = useTranslation()
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
 
   // Verdict via the SHARED rule (shared/runner-verdict.ts) — assertion-driven
   // when the request has checks (idempotent DELETE → 400 still passes, issue
-  // #16), so pass/fail here stays in step with the main run summary.
-  const totalPassed = results.filter(endpointDidPass).length
-  const totalFailed = results.filter((r) => !endpointDidPass(r)).length
+  // #16), so pass/fail here stays in step with the main run summary. Teardown
+  // rows are excluded: cleanup never moves the run's verdict (issue #72).
+  const verdictResults = results.filter(countsTowardRunVerdict)
+  const totalPassed = verdictResults.filter(endpointDidPass).length
+  const totalFailed = verdictResults.filter((r) => !endpointDidPass(r)).length
   const totalDuration =
     report?.completedAt && report?.startedAt
       ? report.completedAt - report.startedAt
@@ -214,9 +218,32 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
           </div>
         )}
 
-        {filteredResults.map((result, idx) => (
-          <ResultRow key={`${result.endpointId}-${idx}`} result={result} />
-        ))}
+        {filteredResults
+          .filter((r) => r.phase !== 'teardown')
+          .map((result, idx) => (
+            <ResultRow key={`${result.endpointId}-${idx}`} result={result} />
+          ))}
+
+        {/* Teardown gets its own titled block so cleanup is never mistaken for
+            part of the run under test (issue #72). */}
+        {filteredResults.some((r) => r.phase === 'teardown') && (
+          <>
+            <div
+              className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-2 font-semibold text-[var(--text)]"
+              style={{ fontSize: 13 }}
+            >
+              <span>{t('runLifecycle.teardownSection')}</span>
+              <span className="font-normal text-[var(--hint)]">
+                · {t('runLifecycle.teardownNote')}
+              </span>
+            </div>
+            {filteredResults
+              .filter((r) => r.phase === 'teardown')
+              .map((result, idx) => (
+                <ResultRow key={`teardown-${result.endpointId}-${idx}`} result={result} />
+              ))}
+          </>
+        )}
       </div>
     </div>
   )

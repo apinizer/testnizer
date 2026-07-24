@@ -287,6 +287,14 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
   if (!stCols.includes('schedule_cron'))
     db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN schedule_cron TEXT`)
   if (!stCols.includes('suite_id')) db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN suite_id TEXT`)
+  if (!stCols.includes('setup_endpoint_ids'))
+    db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN setup_endpoint_ids TEXT`)
+  if (!stCols.includes('teardown_endpoint_ids'))
+    db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN teardown_endpoint_ids TEXT`)
+  if (!stCols.includes('run_pre_script'))
+    db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_pre_script TEXT`)
+  if (!stCols.includes('run_post_script'))
+    db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_post_script TEXT`)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (

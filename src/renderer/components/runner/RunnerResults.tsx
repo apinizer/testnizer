@@ -3,7 +3,8 @@ import { RotateCcw, Plus, X, ExternalLink, ChevronDown, ChevronRight } from 'luc
 import { getMethodColors } from '../../styles/tokens'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
-import { endpointDidPass } from '../../../shared/runner-verdict'
+import { endpointDidPass, countsTowardRunVerdict } from '../../../shared/runner-verdict'
+import { useTranslation } from '../../lib/i18n'
 
 type FilterTab = 'all' | 'passed' | 'failed' | 'skipped' | 'errors' | 'console'
 
@@ -43,6 +44,7 @@ export default function RunnerResults({
   onSelectResult,
   onOpenEndpoint,
 }: RunnerResultsProps) {
+  const { t } = useTranslation()
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
   const [detailTab, setDetailTab] = useState<'response' | 'request'>('response')
   // Per-iteration collapse state. Default is "all expanded" — collapsing is
@@ -53,8 +55,14 @@ export default function RunnerResults({
   // Verdict via the SHARED rule (shared/runner-verdict.ts) — a passing test that
   // allows a non-2xx code (idempotent DELETE → 400) must NOT be bucketed as
   // failed here just because the status is 4xx (issue #16 parity with main).
-  const totalPassed = results.filter(endpointDidPass).length
-  const totalFailed = results.filter((r) => !endpointDidPass(r)).length
+  // Teardown rows are cleanup: reported below, but excluded from the headline
+  // counters so they can't flip the run's verdict (issue #72).
+  const verdictResults = results.filter(countsTowardRunVerdict)
+  const totalPassed = verdictResults.filter(endpointDidPass).length
+  const totalFailed = verdictResults.filter((r) => !endpointDidPass(r)).length
+  const teardownFailedCount = results.filter(
+    (r) => !countsTowardRunVerdict(r) && !endpointDidPass(r),
+  ).length
   const totalDuration = report
     ? report.completedAt - report.startedAt
     : results.reduce((acc, r) => acc + r.duration, 0)
@@ -92,9 +100,21 @@ export default function RunnerResults({
   // the iteration field (older history rows) fall into bucket 1 so the UI
   // stays backwards compatible — a single "Iteration 1" group identical to
   // the previous flat list.
+  // Setup / teardown rows belong to no iteration — they bracket the whole run
+  // and render as their own sections (issue #72).
+  const setupRows = useMemo(
+    () => filteredResults.filter((r) => r.phase === 'setup'),
+    [filteredResults],
+  )
+  const teardownRows = useMemo(
+    () => filteredResults.filter((r) => r.phase === 'teardown'),
+    [filteredResults],
+  )
+
   const iterationGroups = useMemo(() => {
     const map = new Map<number, EndpointRunResult[]>()
     for (const r of filteredResults) {
+      if (r.phase === 'setup' || r.phase === 'teardown') continue
       const iter = r.iteration && r.iteration > 0 ? r.iteration : 1
       const bucket = map.get(iter)
       if (bucket) bucket.push(r)
@@ -248,6 +268,28 @@ export default function RunnerResults({
               </button>
             </div>
 
+            {/* Why the run ended early + whether cleanup got its turn. Without
+                this line a short result list looks like data loss (issue #72). */}
+            {(report?.stopReason || teardownFailedCount > 0) && (
+              <div className="mb-3 flex flex-wrap items-center gap-2" style={{ fontSize: 12 }}>
+                {report?.stopReason && (
+                  <span style={{ color: 'var(--muted)' }}>
+                    {report.stopReason === 'stopOnError'
+                      ? t('runLifecycle.stoppedOnError')
+                      : report.stopReason === 'teardownAborted'
+                        ? t('runLifecycle.stoppedTeardownAborted')
+                        : t('runLifecycle.stoppedCancelled')}
+                  </span>
+                )}
+                {teardownFailedCount > 0 && (
+                  <span style={{ color: '#b35a00' }}>
+                    {t('runLifecycle.teardownSection')}: {teardownFailedCount} ·{' '}
+                    {t('runLifecycle.teardownNote')}
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Stats row */}
             <div className="flex gap-8">
               <StatCell label="Source" value={sourceLabel || 'Runner'} />
@@ -301,6 +343,22 @@ export default function RunnerResults({
             flat list; multi-iteration runs get one collapsible group per
             iteration with pass/fail counts in the header. */}
         <div className="flex-1 overflow-auto">
+          {setupRows.length > 0 && (
+            <PhaseSection title={t('runLifecycle.setupSection')}>
+              {setupRows.map((result, idx) => (
+                <ResultRow
+                  key={`setup-${result.endpointId}-${idx}`}
+                  result={result}
+                  isSelected={result.endpointId === selectedResultId}
+                  onClick={() =>
+                    onSelectResult(
+                      result.endpointId === selectedResultId ? null : result.endpointId,
+                    )
+                  }
+                />
+              ))}
+            </PhaseSection>
+          )}
           {iterationGroups.map(([iter, rows]) => {
             const collapsed = collapsedIterations.has(iter)
             const passed = rows.filter(endpointDidPass).length
@@ -340,6 +398,25 @@ export default function RunnerResults({
               </div>
             )
           })}
+          {teardownRows.length > 0 && (
+            <PhaseSection
+              title={t('runLifecycle.teardownSection')}
+              note={t('runLifecycle.teardownNote')}
+            >
+              {teardownRows.map((result, idx) => (
+                <ResultRow
+                  key={`teardown-${result.endpointId}-${idx}`}
+                  result={result}
+                  isSelected={result.endpointId === selectedResultId}
+                  onClick={() =>
+                    onSelectResult(
+                      result.endpointId === selectedResultId ? null : result.endpointId,
+                    )
+                  }
+                />
+              ))}
+            </PhaseSection>
+          )}
         </div>
       </div>
 
@@ -637,6 +714,34 @@ function MethodLabel({ method }: { method: string }) {
     >
       {method}
     </span>
+  )
+}
+
+/**
+ * Header for a lifecycle phase (Setup / Teardown). Teardown carries a note
+ * spelling out that its outcome does not move the run's verdict — otherwise a
+ * red cleanup row next to a green summary reads like a bug (issue #72).
+ */
+function PhaseSection({
+  title,
+  note,
+  children,
+}: {
+  title: string
+  note?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div>
+      <div
+        className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-2"
+        style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}
+      >
+        <span>{title}</span>
+        {note && <span style={{ fontWeight: 400, color: 'var(--hint)' }}>· {note}</span>}
+      </div>
+      {children}
+    </div>
   )
 }
 

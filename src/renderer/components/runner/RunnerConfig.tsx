@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useEnvironmentStore } from '../../stores/environment.store'
+import { useTranslation } from '../../lib/i18n'
 
 type RunMode = 'manual' | 'schedule'
 type ScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
@@ -28,6 +29,11 @@ interface RunnerConfigProps {
   setKeepVariableValues: (v: boolean) => void
   iterationData?: Record<string, string>[]
   setIterationData?: (rows: Record<string, string>[]) => void
+  /** Run-level hook scripts (issue #72) — one shot each, per run. */
+  runPreScript: string
+  setRunPreScript: (v: string) => void
+  runPostScript: string
+  setRunPostScript: (v: string) => void
   onRun: () => void
   onSchedule?: (payload: SchedulePayload) => void
   isRunning: boolean
@@ -62,6 +68,10 @@ export default function RunnerConfig({
   setKeepVariableValues,
   iterationData,
   setIterationData,
+  runPreScript,
+  setRunPreScript,
+  runPostScript,
+  setRunPostScript,
   onRun,
   onSchedule,
   isRunning,
@@ -70,6 +80,7 @@ export default function RunnerConfig({
   initialRunModeKey,
   canSchedule = true,
 }: RunnerConfigProps) {
+  const { t } = useTranslation()
   const environments = useEnvironmentStore((s) => s.environments)
   const [runMode, setRunMode] = useState<RunMode>(canSchedule ? initialRunMode : 'manual')
   // Force-manual when scheduling is not allowed for this source. This
@@ -424,6 +435,37 @@ export default function RunnerConfig({
           onChange={(rows) => setIterationData?.(rows)}
         />
 
+        {/* Run lifecycle — one-shot scripts that bracket the whole run. The
+         *  teardown script is GUARANTEED: it still runs when the run stops
+         *  early, and its failures never change the run's verdict (issue #72). */}
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
+          {t('runLifecycle.title')}
+        </h3>
+        <div
+          className="mb-5 rounded-[8px] border border-[var(--border)] p-3"
+          style={{
+            background: 'var(--surface)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+          }}
+        >
+          <HookScript
+            label={t('runLifecycle.preScript')}
+            hint={t('runLifecycle.preScriptHint')}
+            value={runPreScript}
+            onChange={setRunPreScript}
+            testId="runner-pre-script"
+          />
+          <HookScript
+            label={t('runLifecycle.postScript')}
+            hint={t('runLifecycle.postScriptHint')}
+            value={runPostScript}
+            onChange={setRunPostScript}
+            testId="runner-post-script"
+          />
+        </div>
+
         {/* Advanced Settings */}
         <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
           Advanced Settings
@@ -473,6 +515,39 @@ export default function RunnerConfig({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** A one-shot run-level script (pm.* API, same runtime as request scripts). */
+function HookScript({
+  label,
+  hint,
+  value,
+  onChange,
+  testId,
+}: {
+  label: string
+  hint: string
+  value: string
+  onChange: (v: string) => void
+  testId: string
+}) {
+  return (
+    <div>
+      <label style={{ display: 'block', color: 'var(--text)', fontWeight: 500, marginBottom: 4 }}>
+        {label}
+      </label>
+      <textarea
+        data-testid={testId}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={3}
+        spellCheck={false}
+        className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+        style={{ fontSize: 12, fontFamily: 'ui-monospace, monospace', resize: 'vertical' }}
+      />
+      <div style={{ color: 'var(--hint)', fontSize: 12, marginTop: 4 }}>{hint}</div>
     </div>
   )
 }

@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react'
 import MethodBadge from '../shared/MethodBadge'
 import { ChevronRight, FolderClosed } from 'lucide-react'
+import type { RunPhase } from '../../../shared/runner-verdict'
+import { useTranslation } from '../../lib/i18n'
 import type { RunnerEndpointItem, RunnerFolderGroup } from './RunnerTab'
 
 interface RunnerSequenceProps {
@@ -10,6 +12,12 @@ interface RunnerSequenceProps {
   onSelectAll: () => void
   onDeselectAll: () => void
   onReset: () => void
+  /**
+   * When provided, each row gets a phase picker (Flow / Setup / Teardown) so a
+   * run can designate its fixtures and its cleanup without a separate screen —
+   * issue #72. Omitted on paths that can't configure a run (auto-run).
+   */
+  onSetPhase?: (id: string, phase: RunPhase) => void
   /**
    * When provided, rows become draggable. `insertBeforeId` is the row that
    * should follow the dragged row after the drop; null means "append".
@@ -64,7 +72,9 @@ export default function RunnerSequence({
   onDeselectAll,
   onReset,
   onReorder,
+  onSetPhase,
 }: RunnerSequenceProps) {
+  const { t } = useTranslation()
   const rows = useMemo(() => buildSequenceRows(folderGroups, endpoints), [folderGroups, endpoints])
 
   return (
@@ -113,6 +123,8 @@ export default function RunnerSequence({
             onToggle={() => onToggle(row.endpoint.id)}
             onReorder={onReorder}
             nextEndpointId={rows[i + 1]?.endpoint.id ?? null}
+            onSetPhase={onSetPhase}
+            t={t}
           />
         ))}
         {endpoints.length === 0 && (
@@ -121,6 +133,16 @@ export default function RunnerSequence({
           </div>
         )}
       </div>
+      {/* Phase legend — the run order is Setup → Flow → Teardown regardless of
+          where a request sits in this list, so say so. */}
+      {onSetPhase && endpoints.length > 0 && (
+        <div
+          className="shrink-0 border-t border-[var(--border)] px-4 py-2"
+          style={{ fontSize: 12, color: 'var(--hint)' }}
+        >
+          {t('runPhase.hint')}
+        </div>
+      )}
     </div>
   )
 }
@@ -134,6 +156,8 @@ function EndpointRow({
   onToggle,
   onReorder,
   nextEndpointId,
+  onSetPhase,
+  t,
 }: {
   index: number
   endpoint: RunnerEndpointItem
@@ -141,6 +165,8 @@ function EndpointRow({
   onToggle: () => void
   onReorder?: (draggedId: string, insertBeforeId: string | null) => void
   nextEndpointId: string | null
+  onSetPhase?: (id: string, phase: RunPhase) => void
+  t: (key: string) => string
 }) {
   const [hovered, setHovered] = useState(false)
   const [dropPos, setDropPos] = useState<'before' | 'after' | null>(null)
@@ -269,6 +295,27 @@ function EndpointRow({
       <span draggable={false} className="flex-1 truncate" style={{ color: 'var(--text)' }}>
         {endpoint.name}
       </span>
+
+      {/* Phase picker — designates this request as run setup or teardown. */}
+      {onSetPhase && (
+        <select
+          value={endpoint.phase ?? 'main'}
+          aria-label={`${t('runPhase.label')}: ${endpoint.name}`}
+          onChange={(e) => onSetPhase(endpoint.id, e.target.value as RunPhase)}
+          onClick={(e) => e.stopPropagation()}
+          className="shrink-0 cursor-pointer rounded-[5px] border border-[var(--border)] bg-[var(--white)] px-1 py-0.5 outline-none"
+          style={{
+            fontSize: 11,
+            color:
+              endpoint.phase && endpoint.phase !== 'main' ? 'var(--accent-text)' : 'var(--muted)',
+            fontWeight: endpoint.phase && endpoint.phase !== 'main' ? 600 : 400,
+          }}
+        >
+          <option value="main">{t('runPhase.main')}</option>
+          <option value="setup">{t('runPhase.setup')}</option>
+          <option value="teardown">{t('runPhase.teardown')}</option>
+        </select>
+      )}
     </div>
   )
 }

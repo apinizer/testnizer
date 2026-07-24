@@ -112,3 +112,53 @@ describe('scheduler:toggle + delete', () => {
     expect(res.success).toBe(false)
   })
 })
+
+describe('scheduler — run lifecycle phases (issue #72)', () => {
+  it('stores setup/teardown ids and the run hook scripts', async () => {
+    const created = (await harness.invoke('scheduler:create', {
+      projectId,
+      name: 'Nightly with cleanup',
+      endpointIds: ['flow-1'],
+      setupEndpointIds: ['setup-1'],
+      teardownEndpointIds: ['cleanup-1', 'cleanup-2'],
+      runPreScript: 'pm.environment.set("t", "1")',
+      runPostScript: 'pm.environment.unset("t")',
+      intervalValue: 1,
+      intervalUnit: 'hours',
+    })) as {
+      success: boolean
+      data?: {
+        setup_endpoint_ids: string | null
+        teardown_endpoint_ids: string | null
+        run_pre_script: string | null
+        run_post_script: string | null
+      }
+    }
+
+    expect(created.success).toBe(true)
+    // A scheduled run must execute the SAME phases as the interactive run it
+    // was created from — sending the flat list would demote cleanup requests to
+    // flow requests, whose failures count against the verdict.
+    expect(JSON.parse(created.data!.setup_endpoint_ids!)).toEqual(['setup-1'])
+    expect(JSON.parse(created.data!.teardown_endpoint_ids!)).toEqual(['cleanup-1', 'cleanup-2'])
+    expect(created.data!.run_pre_script).toContain('pm.environment.set')
+    expect(created.data!.run_post_script).toContain('pm.environment.unset')
+  })
+
+  it('leaves the phase columns NULL for a task created without phases', async () => {
+    const created = (await harness.invoke('scheduler:create', {
+      projectId,
+      name: 'Plain task',
+      endpointIds: ['ep-1'],
+      intervalValue: 30,
+      intervalUnit: 'minutes',
+    })) as {
+      success: boolean
+      data?: { setup_endpoint_ids: string | null; teardown_endpoint_ids: string | null }
+    }
+
+    // Pre-#72 rows behave exactly as before: everything is flow.
+    expect(created.data!.setup_endpoint_ids).toBeNull()
+    expect(created.data!.teardown_endpoint_ids).toBeNull()
+  })
+})

@@ -38,6 +38,11 @@ interface ScheduledTask {
   schedule_days: string | null
   schedule_cron: string | null
   suite_id: string | null
+  /** Run lifecycle (#72) — JSON arrays; NULL on tasks saved before phases. */
+  setup_endpoint_ids: string | null
+  teardown_endpoint_ids: string | null
+  run_pre_script: string | null
+  run_post_script: string | null
 }
 
 interface CreateSchedulePayload {
@@ -54,6 +59,11 @@ interface CreateSchedulePayload {
   scheduleDays?: number[]
   scheduleCron?: string
   suiteId?: string
+  /** Run lifecycle (#72). Omitted ⇒ every request runs as flow, as before. */
+  setupEndpointIds?: string[]
+  teardownEndpointIds?: string[]
+  runPreScript?: string
+  runPostScript?: string
 }
 
 interface UpdateSchedulePayload extends CreateSchedulePayload {
@@ -231,6 +241,17 @@ function cronExpressionValid(expr: string): boolean {
 
 /* ── Run execution ────────────────────────────────────────────── */
 
+/** A stored JSON id array, tolerant of NULL and of pre-#72 rows. */
+function parseIdList(raw: string | null): string[] | undefined {
+  if (!raw) return undefined
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) ? (parsed as string[]) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function executeScheduledRun(task: ScheduledTask): Promise<void> {
   const db = getDb()
   try {
@@ -250,6 +271,14 @@ async function executeScheduledRun(task: ScheduledTask): Promise<void> {
       folderName: task.name,
       sourceLabel: `Scheduled: ${task.name}`,
       scheduledTaskId: task.id,
+      // Run lifecycle (#72): a scheduled run executes the SAME phases the user
+      // configured. Without these a teardown request ran as an ordinary flow
+      // request, so its failures counted against the verdict — a scheduled run
+      // silently graded differently from the interactive one.
+      setupEndpointIds: parseIdList(task.setup_endpoint_ids),
+      teardownEndpointIds: parseIdList(task.teardown_endpoint_ids),
+      runPreScript: task.run_pre_script || undefined,
+      runPostScript: task.run_post_script || undefined,
     })
 
     const nextRun = computeNextRunFor(task)
@@ -427,8 +456,9 @@ export function registerSchedulerHandlers(): void {
         `
         INSERT INTO scheduled_tasks (id, project_id, name, endpoint_ids, folder_id, environment_id,
           interval_value, interval_unit, delay_ms, enabled, next_run_at, created_at,
-          schedule_type, schedule_time, schedule_days, schedule_cron, suite_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+          schedule_type, schedule_time, schedule_days, schedule_cron, suite_id,
+          setup_endpoint_ids, teardown_endpoint_ids, run_pre_script, run_post_script)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       ).run(
         id,
@@ -447,6 +477,10 @@ export function registerSchedulerHandlers(): void {
         norm.scheduleDays,
         norm.scheduleCron,
         payload.suiteId || null,
+        payload.setupEndpointIds?.length ? JSON.stringify(payload.setupEndpointIds) : null,
+        payload.teardownEndpointIds?.length ? JSON.stringify(payload.teardownEndpointIds) : null,
+        payload.runPreScript || null,
+        payload.runPostScript || null,
       )
 
       scheduleNextFire(id)
