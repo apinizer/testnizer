@@ -8,8 +8,19 @@ function workbench(page: Page) {
 }
 
 export async function openTool(page: Page, toolName: string): Promise<void> {
+  // Most utilities live on the Tools page; the security-section tools (JWT,
+  // WS-Security, Password Generator, OTP) were partitioned onto the Security
+  // page, so fall back there when the name isn't on the Tools list.
   await navigateSidebar(page, 'tools')
-  await page.getByText(toolName, { exact: false }).click()
+  let entry = page.getByText(toolName, { exact: false }).first()
+  try {
+    await entry.waitFor({ state: 'visible', timeout: 2_000 })
+  } catch {
+    await navigateSidebar(page, 'security')
+    entry = page.getByText(toolName, { exact: false }).first()
+    await entry.waitFor({ state: 'visible', timeout: 4_000 })
+  }
+  await entry.click()
   await expect(page.getByTestId('workbench')).toBeVisible({ timeout: 8_000 })
 }
 

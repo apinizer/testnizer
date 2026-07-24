@@ -17,6 +17,13 @@ on:
     paths-ignore:
       - 'website/**'
   workflow_dispatch:
+  # Nightly full renderer-e2e run. The per-PR renderer-e2e job below runs only a
+  # curated fast subset (workers:1 makes the full ~165-spec UI suite too slow to
+  # gate every push); this schedule runs the WHOLE `--project=ui` suite once a
+  # day against main. Build/release jobs stay gated on tags + dispatch, so a
+  # scheduled run only exercises cleanup → quality → renderer-e2e (full).
+  schedule:
+    - cron: '0 3 * * *'
 
 # Allow only one concurrent build per ref — cancel stale ones.
 concurrency:
@@ -160,6 +167,101 @@ jobs:
 
       - name: Unit tests
         run: npm run test:unit
+
+  # ---------------------------------------------------------------------------
+  # Renderer UI E2E — screen-render regression gate. LIVE app (600+ users): a
+  # screen that throws on mount / white-screens must turn CI RED, not ship. This
+  # job builds the production bundle once and runs the pageerror-guarded
+  # `--project=ui` Playwright suite, which mounts every screen/tab/modal/protocol
+  # editor in a real Electron window. Runs on push-to-main, PRs, nightly cron and
+  # manual dispatch — NOT just at release (that's what the smoke gate below is,
+  # and smoke only catches a *main-process* load crash, never a per-screen
+  # renderer throw).
+  #
+  # HARD gate — no continue-on-error. Renderer is platform-agnostic, so one Linux
+  # runner (xvfb, like the smoke steps) is sufficient coverage for render bugs.
+  #
+  # Scope split (workers:1 makes the full ~165-spec suite too slow to gate every
+  # push):
+  #   • push / pull_request → CURATED SUBSET (28 specs): the 27 numbered
+  #     `NN-*.spec.ts` screen specs (00-26) directly under tests/e2e/ui/ +
+  #     inventory.spec.ts (verified: 0 tur1/flows specs leak in). These
+  #     are the breadth specs that open every APIs/Request/Response tab, every
+  #     protocol editor, every modal, Tools, Runner, Mock and sidebar page — i.e.
+  #     one mount of every screen, which is exactly the render-regression net.
+  #   • schedule (nightly) / workflow_dispatch → FULL `--project=ui`: the subset
+  #     PLUS the deep flow suites tests/e2e/ui/flows/ (16 specs) and
+  #     tests/e2e/ui/tur1/ (121 specs) that exercise multi-step user journeys.
+  #
+  # Excluded from tag pushes so the release path (build-* → release) is never
+  # gated on or slowed by this job; release keeps its own per-platform smoke.
+  # ---------------------------------------------------------------------------
+  renderer-e2e:
+    name: Renderer UI E2E (screen-render regression gate)
+    needs: quality
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Pin a node-gyp-friendly Python (<=3.11) so the postinstall electron
+      # rebuild of better-sqlite3 is deterministic — same reason as the platform
+      # build jobs.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Electron needs a virtual display on Linux (xvfb), plus the native-module
+      # toolchain for the postinstall better-sqlite3 electron rebuild. Mirrors the
+      # linux build job's system-deps step (minus the packaging-only rpm/fakeroot).
+      - name: Install system deps (xvfb + native build toolchain)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential python3 xvfb
+
+      - name: Install deps (host arch only)
+        run: npm ci
+
+      # The app resolves the bundled curl sidecar from resources/curl at launch;
+      # fetch it so the built bundle matches a real install (plain `npm run build`
+      # has no prebuild hook to download it).
+      - name: Download bundled curl (linux-x64)
+        run: node scripts/download-curl-binaries.js --target=linux-x64
+
+      - name: Build renderer + main
+        run: npm run build
+
+      # push / PR → curated subset; nightly cron & manual dispatch → full suite.
+      - name: Select E2E scope
+        id: scope
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
+      # HARD gate — no continue-on-error. The positional args are Playwright path
+      # regexes matched against each spec's file path; `tests/e2e/ui/[0-9]` hits
+      # the numbered top-level screen specs but NOT tests/e2e/ui/tur1/NN-... or
+      # flows/ (their paths have a subdir before the digit).
+      - name: Renderer UI E2E (Playwright, xvfb)
+        run: |
+          if [ "${{ steps.scope.outputs.full }}" = "true" ]; then
+            echo "Running FULL --project=ui suite (nightly / manual dispatch)"
+            xvfb-run -a npx playwright test --project=ui
+          else
+            echo "Running curated PR subset: numbered screen specs + inventory"
+            xvfb-run -a npx playwright test --project=ui 'tests/e2e/ui/[0-9]' 'tests/e2e/ui/inventory'
+          fi
+        shell: bash
 
   # ---------------------------------------------------------------------------
   # macOS — ONE job builds BOTH arches (arm64 native + x64 cross-build) on a

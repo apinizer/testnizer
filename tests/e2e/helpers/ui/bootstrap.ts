@@ -3,6 +3,24 @@ import { expect } from '@playwright/test'
 
 export const E2E_PROJECT_NAME = 'E2E Test Project'
 
+/**
+ * Headline text the production ErrorBoundary renders when a child screen throws
+ * on mount (src/renderer/components/shared/ErrorBoundary.tsx). This is the SAME
+ * marker the RTL smoke harness (tests/renderer/screens/_mount.tsx) keys on — if
+ * the boundary copy ever changes, update it in all three places together.
+ */
+export const ERROR_BOUNDARY_MARKER = 'Testnizer hit a render error'
+
+/**
+ * Assert the ErrorBoundary recovery panel is NOT showing — i.e. the current
+ * screen mounted without throwing. Cheap: a plain text-count check against the
+ * boundary's stable headline. Call after every navigation / editor / modal open
+ * in the coverage sweeps.
+ */
+export async function expectNoErrorBoundary(page: Page): Promise<void> {
+  await expect(page.getByText(ERROR_BOUNDARY_MARKER)).toHaveCount(0)
+}
+
 /** Wait until preload IPC bridge is ready. */
 export async function waitForApiBridge(page: Page): Promise<void> {
   await page.waitForFunction(() => !!(window as unknown as Window & { api?: { eula?: unknown } }).api?.eula, {
@@ -150,7 +168,7 @@ export async function fillCommandPalette(page: Page, query: string): Promise<voi
 /** Navigate icon sidebar page. */
 export async function navigateSidebar(
   page: Page,
-  pageId: 'apis' | 'tests' | 'mocks' | 'history' | 'tools' | 'settings',
+  pageId: 'apis' | 'tests' | 'mocks' | 'history' | 'tools' | 'security' | 'settings',
 ): Promise<void> {
   await page.getByTestId(`nav-${pageId}`).click()
 }

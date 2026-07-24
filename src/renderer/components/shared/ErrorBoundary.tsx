@@ -27,6 +27,25 @@ interface ErrorBoundaryState {
 
 interface ErrorBoundaryProps {
   children: ReactNode
+  /**
+   * When this value changes while the boundary is in its error state, the
+   * boundary clears the error and re-renders `children`. The content-region
+   * boundary in Workbench passes the active tab id here so switching to a
+   * healthy tab automatically dismisses a previous tab's recovery panel —
+   * the user doesn't have to reload the whole window. Omitted by the root
+   * boundary (`main.tsx`), which stays latched until an explicit Reload,
+   * keeping that usage byte-for-byte identical to before.
+   */
+  resetKey?: unknown
+  /**
+   * `'root'` (default) — full-window recovery panel (`min-height: 100vh`),
+   * the original behaviour used around <App/>. `'inline'` sizes the panel to
+   * fill its parent pane (`height: 100%`) instead of the whole viewport, so a
+   * single crashed screen shows the recovery card INSIDE the Workbench content
+   * pane while the surrounding app frame (header, tabs, tree, footer) stays
+   * usable.
+   */
+  variant?: 'root' | 'inline'
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -40,6 +59,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     this.setState({ errorInfo })
 
     console.error('[ErrorBoundary] render crash:', error, errorInfo)
+  }
+
+  componentDidUpdate(prevProps: ErrorBoundaryProps): void {
+    // Auto-recover when the caller signals a context change (e.g. the active
+    // tab switched). Only act while latched in the error state so a normal
+    // resetKey change during healthy rendering is a no-op.
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, error: null, errorInfo: null })
+    }
   }
 
   handleReload = (): void => {
@@ -82,10 +110,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (!this.state.hasError) return this.props.children
 
     const { error } = this.state
+    const inline = this.props.variant === 'inline'
     return (
       <div
         style={{
-          minHeight: '100vh',
+          // 'inline' fills the parent pane; 'root' fills the viewport.
+          minHeight: inline ? '100%' : '100vh',
+          height: inline ? '100%' : undefined,
+          overflow: inline ? 'auto' : undefined,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',

@@ -61,6 +61,7 @@ import NewRequestWelcome from './NewRequestWelcome'
 import PageWelcome from './PageWelcome'
 import AddEndpointsView from '../runner/AddEndpointsView'
 import MethodBadge from '../shared/MethodBadge'
+import { ErrorBoundary } from '../shared/ErrorBoundary'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import EnvironmentSelector from '../shared/EnvironmentSelector'
 import { T } from '../../styles/tokens'
@@ -1132,7 +1133,16 @@ export default function Workbench() {
 
   return (
     <div className="relative flex flex-1 overflow-hidden" style={{ background: 'var(--white)' }}>
-      {content}
+      {/* Content-region boundary: a single screen's render-throw is contained
+          to this pane — the recovery panel shows INSIDE the Workbench while the
+          app frame (header, tabs, tree, footer, in AppShell) stays usable.
+          `resetKey={activeTabId}` clears the crash the moment the user switches
+          to a healthy tab, so they don't have to reload the whole window. The
+          root boundary around <App/> (main.tsx) is a separate, unchanged
+          instance and still catches anything this one can't. */}
+      <ErrorBoundary variant="inline" resetKey={activeTabId}>
+        {content}
+      </ErrorBoundary>
       {hasToolTabs && <PersistentToolTabs visible={toolActive} />}
     </div>
   )
@@ -1165,7 +1175,13 @@ function PersistentToolTabs({ visible }: { visible: boolean }) {
               style={{ display: isActive ? 'flex' : 'none' }}
               aria-hidden={!isActive}
             >
-              <ToolComp />
+              {/* Each tool editor is contained by its own boundary: a crashing
+                  tool shows the recovery panel in ITS slot only — other tool
+                  tabs and the whole app frame stay alive (a sibling boundary to
+                  the content-region one, since this overlay renders outside it). */}
+              <ErrorBoundary variant="inline" resetKey={t.id}>
+                <ToolComp />
+              </ErrorBoundary>
             </div>
           )
         })}

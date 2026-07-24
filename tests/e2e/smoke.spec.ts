@@ -3,6 +3,11 @@ import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
 import { electronLaunchOptions } from './helpers/electron-env'
+import {
+  bootstrapWorkbench,
+  navigateSidebar,
+  expectNoErrorBoundary,
+} from './helpers/ui/bootstrap'
 
 let app: ElectronApplication
 let window: Page
@@ -46,4 +51,18 @@ test('login or main UI is visible', async () => {
   const body = await window.locator('body').innerText({ timeout: 10_000 })
   const hasWelcome = /Welcome to Testnizer|Testnizer/i.test(body)
   expect(hasWelcome).toBe(true)
+})
+
+test('each sidebar page renders without the recovery panel', async () => {
+  // Cheap screen-aware release gate: drive the production build through the
+  // cold-start bootstrap (EULA → guest → project) and visit each sidebar page.
+  // If any page throws on mount, the ErrorBoundary swaps in its recovery panel
+  // and this smoke step turns RED before the build ships to 600+ users.
+  await bootstrapWorkbench(window)
+  const pages = ['apis', 'tests', 'mocks', 'history', 'tools'] as const
+  for (const pageId of pages) {
+    await navigateSidebar(window, pageId)
+    await expect(window.getByTestId(`nav-${pageId}`)).toBeVisible({ timeout: 10_000 })
+    await expectNoErrorBoundary(window)
+  }
 })
