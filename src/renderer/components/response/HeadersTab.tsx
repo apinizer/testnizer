@@ -1,6 +1,7 @@
 import { useRef, useCallback } from 'react'
 import { useResponseStore } from '../../stores/response.store'
 import { useUIStore } from '../../stores/ui.store'
+import { lockDragStyles } from '../../lib/drag-lock'
 
 /**
  * Postman-style response headers tab — clean 2-column list with a draggable
@@ -34,12 +35,10 @@ export default function HeadersTab() {
       const onUp = () => {
         window.removeEventListener('mousemove', onMove)
         window.removeEventListener('mouseup', onUp)
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
+        releaseStyles()
         commitKeyWidth()
       }
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
+      const releaseStyles = lockDragStyles('col-resize')
       window.addEventListener('mousemove', onMove)
       window.addEventListener('mouseup', onUp)
     },

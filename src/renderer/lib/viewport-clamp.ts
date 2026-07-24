@@ -1,4 +1,8 @@
 /**
+ * @deprecated Superseded by `positionContextMenu` in `./menu-position` — it
+ * flips instead of only clamping and reports a `maxHeight` for menus taller
+ * than the window (issues #58, #67). No callers remain; delete on next sweep.
+ *
  * Pure viewport-clamp math for popovers / context menus (issue #58).
  *
  * Given a desired top-left anchor (x, y) and the element's measured size,

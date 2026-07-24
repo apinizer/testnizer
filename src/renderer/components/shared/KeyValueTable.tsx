@@ -7,6 +7,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import { filterHeaderSuggestions, filterHeaderValueSuggestions } from '../../lib/http-headers'
 import { rowsToBulkText, bulkTextToRows } from '../../lib/key-value-bulk'
+import { lockDragStyles } from '../../lib/drag-lock'
 
 interface KeyValueTableProps {
   rows: KeyValuePair[]
@@ -160,12 +161,10 @@ export default function KeyValueTable({
       const onUp = () => {
         window.removeEventListener('mousemove', onMove)
         window.removeEventListener('mouseup', onUp)
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
+        releaseStyles()
         commitKeyColWidth()
       }
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
+      const releaseStyles = lockDragStyles('col-resize')
       window.addEventListener('mousemove', onMove)
       window.addEventListener('mouseup', onUp)
     },

@@ -14,18 +14,37 @@ uiTest.describe('Tree CRUD (deep)', () => {
     await expect(window.getByTestId('tree-node').first()).toBeVisible()
   })
 
-  uiTest('add folder via context menu on Default module', async ({ window }) => {
+  // Issue #68: Add Folder must PROMPT — nothing is written until the user
+  // confirms a name. The old flow persisted a folder called "New Folder" on the
+  // menu click, so a mis-click left rubbish in the tree.
+  uiTest('add folder via context menu prompts for a name before creating', async ({ window }) => {
     const module = window.getByTestId('tree-node').filter({ hasText: /Default|module/i }).first()
-    if (await module.isVisible()) {
-      await module.click({ button: 'right' })
-      const menu = window.locator('[data-context-menu]')
-      if (await menu.isVisible()) {
-        await menu.getByRole('button', { name: /Add Folder/i }).click()
-        await expect(window.getByTestId('tree-node').filter({ hasText: /New Folder|Folder/i })).toBeVisible({
-          timeout: 8_000,
-        })
-      }
-    }
+    if (!(await module.isVisible())) return
+    await module.click({ button: 'right' })
+    const menu = window.locator('[data-context-menu]')
+    if (!(await menu.isVisible())) return
+
+    await menu.getByRole('button', { name: /Add Folder/i }).click()
+
+    // An empty inline editor appears — and no folder exists yet.
+    const draft = window.getByTestId('new-folder-input')
+    await expect(draft).toBeVisible({ timeout: 8_000 })
+    await expect(draft).toHaveValue('')
+    await expect(window.getByTestId('tree-node').filter({ hasText: /^New Folder$/ })).toHaveCount(0)
+
+    // Escape abandons it without creating anything.
+    await draft.press('Escape')
+    await expect(draft).toBeHidden()
+
+    // Confirming creates the folder under the typed name.
+    await module.click({ button: 'right' })
+    await menu.getByRole('button', { name: /Add Folder/i }).click()
+    const draft2 = window.getByTestId('new-folder-input')
+    await draft2.fill('İade İşlemleri')
+    await draft2.press('Enter')
+    await expect(
+      window.getByTestId('tree-node').filter({ hasText: 'İade İşlemleri' }).first(),
+    ).toBeVisible({ timeout: 8_000 })
   })
 
   uiTest('import dropdown shows format options', async ({ window }) => {

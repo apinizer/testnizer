@@ -1,8 +1,9 @@
-import { useCallback, useState, useRef, useEffect } from 'react'
+import { useCallback, useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { TreeNode as TreeNodeType, Protocol } from '../../types'
 import MethodBadge from '../shared/MethodBadge'
 import { useTranslation } from '../../lib/i18n'
+import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
 import {
   FileText,
   Box,
@@ -176,11 +177,32 @@ function ContextMenu({
     return () => document.removeEventListener('mousedown', handler)
   }, [onClose])
 
-  // Clamp to viewport
+  // Placement is measured, not estimated: the old `items.length * 32` guess
+  // never flipped and could even resolve above 0, so a menu opened low in a
+  // long tree ran off the window edge with Delete unreachable (issue #67).
+  const [pos, setPos] = useState<MenuPosition>({ left: x, top: y })
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const { width, height } = el.getBoundingClientRect()
+    setPos(
+      positionContextMenu({
+        x,
+        y,
+        width,
+        height,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      }),
+    )
+  }, [x, y])
+
   const style: React.CSSProperties = {
     position: 'fixed',
-    left: Math.min(x, window.innerWidth - 220),
-    top: Math.min(y, window.innerHeight - items.length * 32 - 20),
+    left: pos.left,
+    top: pos.top,
+    maxHeight: pos.maxHeight,
+    overflowY: pos.maxHeight ? 'auto' : undefined,
     zIndex: 9999,
     minWidth: 200,
     background: 'var(--white)',

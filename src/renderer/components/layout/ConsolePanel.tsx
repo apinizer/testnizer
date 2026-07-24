@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import ConsoleTab from '../response/ConsoleTab'
+import { lockDragStyles } from '../../lib/drag-lock'
 
 /**
  * Postman-style bottom Console panel.
@@ -23,6 +24,7 @@ export default function ConsolePanel() {
     ? Math.max(360, Math.round(typeof window !== 'undefined' ? window.innerHeight * 0.78 : 600))
     : height
   const dragging = useRef(false)
+  const releaseStyles = useRef<(() => void) | null>(null)
   const startY = useRef(0)
   const startH = useRef(0)
 
@@ -43,8 +45,8 @@ export default function ConsolePanel() {
     }
     function onUp() {
       dragging.current = false
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
+      releaseStyles.current?.()
+      releaseStyles.current = null
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -60,8 +62,7 @@ export default function ConsolePanel() {
     dragging.current = true
     startY.current = e.clientY
     startH.current = height
-    document.body.style.cursor = 'row-resize'
-    document.body.style.userSelect = 'none'
+    releaseStyles.current = lockDragStyles('row-resize')
   }
 
   return (

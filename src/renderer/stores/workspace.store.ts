@@ -77,6 +77,13 @@ interface WorkspaceStore {
   setTreeData: (data: TreeNode[]) => void
   toggleNode: (id: string) => void
   /** Collapse every folder/request group in one action, keeping module roots open (issue #39). */
+  /**
+   * Bumped by collapse-all / expand-all. The tree ignores `openNodeIds` while
+   * a search filter is active (matches are force-expanded), so without this
+   * signal both buttons looked dead during a filter — the same defect issue
+   * #70 reported for the per-folder chevron.
+   */
+  allNodesCommand: { kind: 'collapse' | 'expand'; seq: number }
   collapseAllNodes: () => void
   /** Expand every node that has children (issue #39). */
   expandAllNodes: () => void
@@ -275,6 +282,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   openProjectIds: [],
   treeData: emptyTree(),
   openNodeIds: new Set(['default-module']),
+  allNodesCommand: { kind: 'expand', seq: 0 },
   activeNodeId: null,
   searchQuery: '',
 
@@ -403,7 +411,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         }
       }
       walk(state.treeData)
-      return { openNodeIds: next }
+      return {
+        openNodeIds: next,
+        allNodesCommand: { kind: 'collapse', seq: state.allNodesCommand.seq + 1 },
+      }
     }),
 
   expandAllNodes: () =>
@@ -418,7 +429,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         }
       }
       walk(state.treeData)
-      return { openNodeIds: next }
+      return {
+        openNodeIds: next,
+        allNodesCommand: { kind: 'expand', seq: state.allNodesCommand.seq + 1 },
+      }
     }),
 
   setActiveNode: (id) => set({ activeNodeId: id }),

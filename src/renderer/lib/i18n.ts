@@ -179,6 +179,7 @@ const translations: Record<Locale, Record<string, string>> = {
     // Tree context menu
     'tree.addRequest': 'Add Request',
     'tree.addFolder': 'Add Folder',
+    'tree.newFolderPlaceholder': 'Folder name',
     'tree.run': 'Run',
     'tree.duplicate': 'Duplicate',
     'tree.export': 'Export',
@@ -2050,6 +2051,7 @@ const translations: Record<Locale, Record<string, string>> = {
     // Tree context menu
     'tree.addRequest': 'İstek Ekle',
     'tree.addFolder': 'Klasör Ekle',
+    'tree.newFolderPlaceholder': 'Klasör adı',
     'tree.run': 'Çalıştır',
     'tree.duplicate': 'Çoğalt',
     'tree.export': 'Dışa Aktar',

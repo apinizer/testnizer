@@ -14,6 +14,8 @@ import RunnerHistory from './RunnerHistory'
 import ScheduledTasksView from './ScheduledTasksView'
 import TestsHome from './TestsHome'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
+import { lockDragStyles } from '../../lib/drag-lock'
+import { setRunnerBusy } from '../../lib/runner-activity'
 
 /**
  * After a run, refresh the renderer env store from the DB so script-written
@@ -141,11 +143,9 @@ function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }) {
       const onMouseUp = () => {
         document.removeEventListener('mousemove', onMouseMove)
         document.removeEventListener('mouseup', onMouseUp)
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
+        releaseStyles()
       }
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
+      const releaseStyles = lockDragStyles('col-resize')
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
     },
@@ -269,6 +269,13 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
 
   // Run state
   const [isRunning, setIsRunning] = useState(false)
+  // Publish it so a second "Run" on this folder focuses the live run instead of
+  // remounting the tab out from under it (see runner-activity.ts).
+  useEffect(() => {
+    if (!tabId) return
+    setRunnerBusy(tabId, isRunning)
+    return () => setRunnerBusy(tabId, false)
+  }, [tabId, isRunning])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [totalCount, setTotalCount] = useState(0)
   // Persist the inspected run snapshot too (not just the selectedResultId).

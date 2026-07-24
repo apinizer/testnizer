@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { useUIStore } from '../../stores/ui.store'
+import { lockDragStyles } from '../../lib/drag-lock'
 
 interface Props {
   /**
@@ -44,8 +45,7 @@ export default function EdgeResizeHandle({ target }: Props) {
     e.preventDefault()
     startX.current = e.clientX
     startW.current = width
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
+    const releaseStyles = lockDragStyles('col-resize')
 
     const onMove = (ev: MouseEvent): void => {
       const dx = ev.clientX - startX.current
@@ -56,8 +56,7 @@ export default function EdgeResizeHandle({ target }: Props) {
     const onUp = (): void => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
+      releaseStyles()
       commit()
     }
     window.addEventListener('mousemove', onMove)

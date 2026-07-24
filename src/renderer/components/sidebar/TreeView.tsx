@@ -1,4 +1,4 @@
-import { useRef, useMemo, useCallback, useState } from 'react'
+import { useRef, useMemo, useCallback, useState, useEffect } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
@@ -51,15 +51,25 @@ function flattenTree(nodes: TreeNode[], openIds: Set<string>, depth: number = 0)
 }
 
 /**
- * Flatten with every folder expanded — used while searching so all surviving
- * matches are visible regardless of the user's collapse state.
+ * Flatten while searching: every folder is expanded so all surviving matches
+ * are visible, EXCEPT the ones the user collapsed during this filter session.
+ * Previously this expanded unconditionally, which silently swallowed the
+ * chevron click — `toggleNode` wrote to `openNodeIds`, a set this path never
+ * read (issue #70). Ids of the folders actually expanded are collected into
+ * `openOut` so the chevron arrow matches what is rendered.
  */
-function flattenAll(nodes: TreeNode[], depth: number = 0): FlatNode[] {
+function flattenFiltered(
+  nodes: TreeNode[],
+  collapsedIds: Set<string>,
+  openOut: Set<string>,
+  depth: number = 0,
+): FlatNode[] {
   const result: FlatNode[] = []
   for (const node of nodes) {
     result.push({ node, depth })
-    if (node.children && node.children.length > 0) {
-      result.push(...flattenAll(node.children, depth + 1))
+    if (node.children && node.children.length > 0 && !collapsedIds.has(node.id)) {
+      openOut.add(node.id)
+      result.push(...flattenFiltered(node.children, collapsedIds, openOut, depth + 1))
     }
   }
   return result
@@ -88,6 +98,80 @@ function filterTree(nodes: TreeNode[], q: string): TreeNode[] {
   return out
 }
 
+/** Row id of the not-yet-created folder placeholder (issue #68). */
+const NEW_FOLDER_DRAFT_ID = '__new-folder-draft__'
+
+/**
+ * Inline editor for a folder that does not exist yet. Mirrors TreeNode's
+ * rename input (same borders, same Enter/Escape/blur contract) so creating a
+ * folder feels identical to renaming one. Confirming with an empty name is a
+ * cancel — nothing is written.
+ */
+function NewFolderRow({
+  depth,
+  placeholder,
+  onConfirm,
+  onCancel,
+}: {
+  depth: number
+  placeholder: string
+  onConfirm: (name: string) => void
+  onCancel: () => void
+}) {
+  const [value, setValue] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  // Guards against blur firing after Enter/Escape already settled the row,
+  // which would create the folder twice.
+  const settled = useRef(false)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  const settle = (commit: boolean) => {
+    if (settled.current) return
+    settled.current = true
+    const trimmed = value.trim()
+    if (commit && trimmed) onConfirm(trimmed)
+    else onCancel()
+  }
+
+  return (
+    <div
+      className="flex items-center gap-[5px] rounded-md"
+      style={{ padding: `4px 10px 4px ${10 + depth * 14}px` }}
+    >
+      <span className="inline-block w-2.5 shrink-0" />
+      <input
+        ref={inputRef}
+        data-testid="new-folder-input"
+        type="text"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            settle(true)
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            settle(false)
+          }
+        }}
+        onBlur={() => settle(true)}
+        onClick={(e) => e.stopPropagation()}
+        className="flex-1 rounded border px-1.5 py-0.5 outline-none"
+        style={{
+          borderColor: 'var(--accent)',
+          background: 'var(--white)',
+          color: 'var(--text)',
+          minWidth: 0,
+        }}
+      />
+    </div>
+  )
+}
+
 export default function TreeView() {
   const treeData = useWorkspaceStore((s) => s.treeData)
   const openNodeIds = useWorkspaceStore((s) => s.openNodeIds)
@@ -105,15 +189,90 @@ export default function TreeView() {
 
   const parentRef = useRef<HTMLDivElement>(null)
 
-  const flatNodes = useMemo(() => {
+  // Folders the user collapsed while the search box has text. Lives outside
+  // `openNodeIds` so the real collapse state survives the filter session
+  // untouched; reset once the query is cleared (issue #70).
+  const [filterCollapsedIds, setFilterCollapsedIds] = useState<Set<string>>(() => new Set())
+  // Parent awaiting the inline "new folder" name prompt (issue #68).
+  const [pendingFolder, setPendingFolder] = useState<{
+    parentNodeId: string
+    parentFolderId: string | null
+  } | null>(null)
+
+  useEffect(() => {
+    if (!searchQuery.trim()) setFilterCollapsedIds((prev) => (prev.size > 0 ? new Set() : prev))
+  }, [searchQuery])
+
+  // Collapse-all / expand-all write `openNodeIds`, which the filtered view does
+  // not read — so during a search both buttons did nothing. Mirror the command
+  // into the filter session instead (issue #70, sibling of the chevron fix).
+  const allNodesCommand = useWorkspaceStore((s) => s.allNodesCommand)
+  useEffect(() => {
+    if (!searchQuery.trim() || allNodesCommand.seq === 0) return
+    if (allNodesCommand.kind === 'expand') {
+      setFilterCollapsedIds((prev) => (prev.size > 0 ? new Set() : prev))
+      return
+    }
+    const ids = new Set<string>()
+    const walk = (nodes: TreeNode[]): void => {
+      for (const n of nodes) {
+        if (n.children && n.children.length > 0) {
+          ids.add(n.id)
+          walk(n.children)
+        }
+      }
+    }
+    walk(filterTree(treeData, searchQuery.trim().toLowerCase()))
+    setFilterCollapsedIds(ids)
+    // `treeData`/`searchQuery` are read, not tracked: the command seq is the
+    // only trigger — re-running on every keystroke would fight the user.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allNodesCommand])
+
+  const { flatNodes, effectiveOpenIds } = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
-    if (!q) return flattenTree(treeData, openNodeIds)
-    // When searching, filter the tree and show every surviving match expanded.
-    return flattenAll(filterTree(treeData, q))
-  }, [treeData, openNodeIds, searchQuery])
+    if (!q) return { flatNodes: flattenTree(treeData, openNodeIds), effectiveOpenIds: openNodeIds }
+    // When searching, filter the tree and show every surviving match expanded
+    // unless the user collapsed that folder during this filter session.
+    const expanded = new Set<string>()
+    const nodes = flattenFiltered(filterTree(treeData, q), filterCollapsedIds, expanded)
+    return { flatNodes: nodes, effectiveOpenIds: expanded }
+  }, [treeData, openNodeIds, searchQuery, filterCollapsedIds])
+
+  // Splice the pending-folder placeholder in directly under its parent so the
+  // virtualizer counts it like any other row.
+  const rows = useMemo(() => {
+    if (!pendingFolder) return flatNodes
+    const idx = flatNodes.findIndex((f) => f.node.id === pendingFolder.parentNodeId)
+    if (idx === -1) return flatNodes
+    const draft: FlatNode = {
+      node: { id: NEW_FOLDER_DRAFT_ID, label: '', type: 'folder' },
+      depth: flatNodes[idx].depth + 1,
+    }
+    return [...flatNodes.slice(0, idx + 1), draft, ...flatNodes.slice(idx + 1)]
+  }, [flatNodes, pendingFolder])
+
+  const handleToggle = useCallback(
+    (id: string) => {
+      // While filtering, the tree is force-expanded and `openNodeIds` is not
+      // consulted — writing to it made the chevron look dead (issue #70).
+      // Record the collapse in the filter-session set instead.
+      if (searchQuery.trim()) {
+        setFilterCollapsedIds((prev) => {
+          const next = new Set(prev)
+          if (next.has(id)) next.delete(id)
+          else next.add(id)
+          return next
+        })
+        return
+      }
+      toggleNode(id)
+    },
+    [searchQuery, toggleNode],
+  )
 
   const virtualizer = useVirtualizer({
-    count: flatNodes.length,
+    count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 30,
     overscan: 10,
@@ -405,7 +564,13 @@ export default function TreeView() {
         // Default name + method follow the same conventions as the global
         // "+ New" dropdown (UX 4 — same operation, same defaults everywhere).
         const defaultsByProtocol: Partial<Record<Protocol, { name: string; method: string }>> = {
-          http: { name: 'New Request', method: 'GET' },
+          // 'New Endpoint', not 'New Request': the Workbench treats a tab named
+          // exactly "New Request" with an empty url as the blank scratch tab
+          // and renders the protocol picker instead of the HTTP editor, so the
+          // freshly-created request opened onto the landing screen while every
+          // other protocol (all distinctly named) opened its editor (issue
+          // #69). This also restores the name the global "+ New" dropdown uses.
+          http: { name: 'New Endpoint', method: 'GET' },
           soap: { name: 'New SOAP Method', method: 'POST' },
           websocket: { name: 'New WebSocket', method: 'GET' },
           graphql: { name: 'New GraphQL', method: 'POST' },
@@ -465,15 +630,34 @@ export default function TreeView() {
     [activeProjectId, refreshTree],
   )
 
+  // Issue #68: this used to write a "New Folder" row straight to the DB, so a
+  // mis-click always left a folder behind to delete. Open the inline draft row
+  // instead — nothing is persisted until the user confirms a name.
   const handleAddFolder = useCallback(
-    async (parentNode: TreeNode) => {
+    (parentNode: TreeNode) => {
       if (!activeProjectId) return
+      // Expand the parent so the draft row (spliced in right below it) is
+      // actually on screen.
+      const store = useWorkspaceStore.getState()
+      if (!store.openNodeIds.has(parentNode.id)) store.toggleNode(parentNode.id)
+      setPendingFolder({
+        parentNodeId: parentNode.id,
+        parentFolderId: parentNode.type === 'folder' ? parentNode.id : null,
+      })
+    },
+    [activeProjectId],
+  )
+
+  const handleCreateFolderConfirm = useCallback(
+    async (name: string) => {
+      const target = pendingFolder
+      setPendingFolder(null)
+      if (!target || !activeProjectId) return
       try {
-        const parentFolderId = parentNode.type === 'folder' ? parentNode.id : null
         await window.api?.folder?.create({
           project_id: activeProjectId,
-          parent_id: parentFolderId,
-          name: 'New Folder',
+          parent_id: target.parentFolderId,
+          name,
           // Branch-stamp so a folder added on a non-default branch stays on it
           // (#8 — the exact reported repro).
           branch_id: useBranchStore.getState().getActiveBranchScope(),
@@ -483,7 +667,7 @@ export default function TreeView() {
         /* ignore */
       }
     },
-    [activeProjectId, refreshTree],
+    [pendingFolder, activeProjectId, refreshTree],
   )
 
   const handleDuplicate = useCallback(
@@ -801,7 +985,7 @@ export default function TreeView() {
         }}
       >
         {virtualizer.getVirtualItems().map((virtualRow) => {
-          const { node, depth } = flatNodes[virtualRow.index]
+          const { node, depth } = rows[virtualRow.index]
           return (
             <div
               key={virtualRow.key}
@@ -814,27 +998,36 @@ export default function TreeView() {
                 transform: `translateY(${virtualRow.start}px)`,
               }}
             >
-              <TreeNodeComponent
-                node={node}
-                depth={depth}
-                activeId={activeNodeId}
-                onSelect={handleSelect}
-                onToggle={toggleNode}
-                onDelete={handleDeleteRequest}
-                onRename={handleRename}
-                onAddRequest={handleAddRequest}
-                onAddFolder={handleAddFolder}
-                onDuplicate={handleDuplicate}
-                onRunFolder={handleRunFolder}
-                onExport={handleExport}
-                onImport={handleImportFolder}
-                onCreateTestSuite={handleCreateTestSuite}
-                onCreateMockServer={handleCreateMockServer}
-                onFolderSettings={handleFolderSettings}
-                onDrop={handleDrop}
-                openIds={openNodeIds}
-                isFlat
-              />
+              {node.id === NEW_FOLDER_DRAFT_ID ? (
+                <NewFolderRow
+                  depth={depth}
+                  placeholder={t('tree.newFolderPlaceholder')}
+                  onConfirm={handleCreateFolderConfirm}
+                  onCancel={() => setPendingFolder(null)}
+                />
+              ) : (
+                <TreeNodeComponent
+                  node={node}
+                  depth={depth}
+                  activeId={activeNodeId}
+                  onSelect={handleSelect}
+                  onToggle={handleToggle}
+                  onDelete={handleDeleteRequest}
+                  onRename={handleRename}
+                  onAddRequest={handleAddRequest}
+                  onAddFolder={handleAddFolder}
+                  onDuplicate={handleDuplicate}
+                  onRunFolder={handleRunFolder}
+                  onExport={handleExport}
+                  onImport={handleImportFolder}
+                  onCreateTestSuite={handleCreateTestSuite}
+                  onCreateMockServer={handleCreateMockServer}
+                  onFolderSettings={handleFolderSettings}
+                  onDrop={handleDrop}
+                  openIds={effectiveOpenIds}
+                  isFlat
+                />
+              )}
             </div>
           )
         })}

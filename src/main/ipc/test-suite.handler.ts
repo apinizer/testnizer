@@ -211,10 +211,29 @@ export function registerTestSuiteHandlers(): void {
         // " (1)", " (2)"… until the name is unique so the user can still see
         // both copies, but the names disambiguate clearly.
         const uniqueName = ensureUniqueSuiteName(db, payload.project_id, payload.name)
+        // Append, like the duplicate path below. A hard-coded 0 only LOOKED
+        // like an append because `testSuite:list` breaks ties by created_at —
+        // as soon as any suite in the project had sort_order > 0 (import,
+        // duplicate, manual reorder) the new suite jumped somewhere else,
+        // which is the mismatch issue #57 reported between the inline name
+        // input's position and where the suite actually landed.
+        const maxOrder = db
+          .prepare(
+            'SELECT COALESCE(MAX(sort_order), -1) as mx FROM test_suites WHERE project_id = ?',
+          )
+          .get(payload.project_id) as { mx: number }
         db.prepare(
           `INSERT INTO test_suites (id, project_id, name, description, sort_order, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 0, ?, ?)`,
-        ).run(id, payload.project_id, uniqueName, payload.description || null, now, now)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          id,
+          payload.project_id,
+          uniqueName,
+          payload.description || null,
+          maxOrder.mx + 1,
+          now,
+          now,
+        )
         const suite = db.prepare('SELECT * FROM test_suites WHERE id = ?').get(id) as TestSuiteRow
         return { success: true, data: suite }
       } catch (e) {

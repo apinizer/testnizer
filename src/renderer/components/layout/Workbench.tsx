@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect, type ComponentType } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, type ComponentType } from 'react'
 import { createPortal } from 'react-dom'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { isMac } from '../../lib/platform'
+import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
 import { makeTabId } from '../../lib/utils'
+import { isBlankScratchTab } from '../../lib/tab-kind'
 import UrlBar from './UrlBar'
 import UrlPreview from './UrlPreview'
 import RequestEditor from '../request/RequestEditor'
@@ -717,23 +719,7 @@ function EndpointTabBar() {
 
       {contextMenu &&
         createPortal(
-          <div
-            className="fixed z-[9000] overflow-hidden rounded-[8px]"
-            style={{
-              top: contextMenu.y,
-              left: contextMenu.x,
-              minWidth: 220,
-              background: 'var(--white)',
-              border: '1px solid var(--border)',
-              boxShadow: 'var(--shadow-drop)',
-              padding: 4,
-            }}
-            onClick={(e) => e.stopPropagation()}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-            }}
-          >
+          <TabContextMenuShell x={contextMenu.x} y={contextMenu.y}>
             <ContextMenuItem
               label="New Request"
               shortcut={cmdOrCtrl('T')}
@@ -775,7 +761,7 @@ function EndpointTabBar() {
               danger
               onClick={() => handleTabContextAction(contextMenu.tabId, 'closeAllForce')}
             />
-          </div>,
+          </TabContextMenuShell>,
           document.body,
         )}
 
@@ -796,6 +782,62 @@ function cmdOrCtrl(key: string): string {
 }
 function altCmdOrCtrl(key: string): string {
   return isMac() ? `⌥⌘${key}` : `Ctrl+Alt+${key}`
+}
+
+/* Tab context menu chrome. Positioned from the measured size instead of the
+   raw click point so a right-click on a tab near the right edge (or on a short
+   window) can't push the Close actions out of view. */
+function TabContextMenuShell({
+  x,
+  y,
+  children,
+}: {
+  x: number
+  y: number
+  children: React.ReactNode
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<MenuPosition>({ left: x, top: y })
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const { width, height } = el.getBoundingClientRect()
+    setPos(
+      positionContextMenu({
+        x,
+        y,
+        width,
+        height,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      }),
+    )
+  }, [x, y])
+  return (
+    <div
+      ref={ref}
+      data-context-menu
+      className="fixed z-[9000] overflow-hidden rounded-[8px]"
+      style={{
+        top: pos.top,
+        left: pos.left,
+        maxHeight: pos.maxHeight,
+        overflowY: pos.maxHeight ? 'auto' : undefined,
+        minWidth: 220,
+        background: 'var(--white)',
+        border: '1px solid var(--border)',
+        boxShadow: 'var(--shadow-drop)',
+        padding: 4,
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }}
+    >
+      {children}
+    </div>
+  )
 }
 
 function ContextMenuItem({
@@ -924,7 +966,9 @@ export default function Workbench() {
       )
     }
 
-    const isNewEmptyTab = activeTab.name === 'New Request' && !activeTab.url
+    // Picker vs. editor is decided by identity, not by the display name —
+    // see `isBlankScratchTab` (issue #69).
+    const isNewEmptyTab = isBlankScratchTab(activeTab)
 
     if (isNewEmptyTab) {
       return (
@@ -1074,7 +1118,13 @@ export default function Workbench() {
           style={{ background: 'var(--white)' }}
         >
           <EndpointTabBar />
+          {/* Keyed like every other editor above — two folder runs are two
+              different tabs coming through this one branch, so an unkeyed
+              RunnerTab kept a single instance alive and folder B rendered
+              folder A's results under folder B's tab name (#66). The session
+              part re-arms a tab that is re-opened while already active. */}
           <RunnerTab
+            key={`${activeTab.id}:${activeTab.sessionKey ?? ''}`}
             folderId={activeTab.folderId}
             tabId={activeTab.id}
             sessionKey={activeTab.sessionKey}

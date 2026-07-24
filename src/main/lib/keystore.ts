@@ -38,6 +38,7 @@ import * as x509 from '@peculiar/x509'
 // @ts-ignore — jks-js ships no type declarations
 import * as jksjs from 'jks-js'
 import { encodeJks, type JksEntry } from './jks-writer'
+import { safeFileName } from './filename-safe'
 
 // Route @peculiar/x509 through Node's WebCrypto (design §4.1).
 x509.cryptoProvider.set(webcrypto as unknown as Crypto)
@@ -1191,9 +1192,15 @@ const EXPORT_FORMATS: Record<ExportFormat, ExportFormatSpec> = {
   },
 }
 
-/** Replace every filesystem-unsafe character with `_` (design §6.13). */
+/**
+ * Filesystem-safe name for an exported entry (design §6.13).
+ *
+ * Delegates to the shared sanitiser: the old ASCII whitelist here mangled a
+ * Turkish (or any non-Latin) alias into underscores on its way to the save
+ * dialog — the same defect issue #71 reported for project/folder exports.
+ */
 export function sanitizeFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, '_')
+  return safeFileName(name, 'entry')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

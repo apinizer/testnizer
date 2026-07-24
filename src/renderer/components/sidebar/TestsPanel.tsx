@@ -3,7 +3,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useUIStore } from '../../stores/ui.store'
 import { T } from '../../styles/tokens'
-import { clampToViewport } from '../../lib/viewport-clamp'
+import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
 import {
   Plus,
   Search,
@@ -49,6 +49,11 @@ type SuiteContents = TestSuiteContents
 
 const api = () => window.api
 
+// Shared by the sidebar filter and by the post-create visibility check, so a
+// suite that survives the filter can never be judged hidden (or vice versa).
+const matchesSearch = (name: string, query: string): boolean =>
+  name.toLowerCase().includes(query.trim().toLowerCase())
+
 /* ── Main panel ────────────────────────────────────────────── */
 
 export default function TestsPanel() {
@@ -70,6 +75,9 @@ export default function TestsPanel() {
   const [showNewSuiteInput, setShowNewSuiteInput] = useState(false)
   const [newSuiteName, setNewSuiteName] = useState('')
   const newSuiteRef = useRef<HTMLInputElement>(null)
+  // Last created suite — highlighted and scrolled into view so the append
+  // lands somewhere the user can actually see. Cleared once a suite is opened.
+  const [focusSuiteId, setFocusSuiteId] = useState<string | null>(null)
 
   // Rename
   const [renamingSuiteId, setRenamingSuiteId] = useState<string | null>(null)
@@ -161,13 +169,29 @@ export default function TestsPanel() {
   }, [addEndpointsSuiteId, loadSuiteContents])
 
   // ─── Create suite ─────────────────────────────────────────
+  // A new suite is appended (`testSuite:list` orders by sort_order, then
+  // created_at), which is exactly where the inline input sits — same "new
+  // items go last" rule the APIs tree follows. Two things keep that append
+  // honest: an active search filter is dropped when it would hide the fresh
+  // row, and the row is focused so the user sees where it landed.
   const handleCreateSuite = useCallback(async () => {
-    if (!newSuiteName.trim() || !activeProjectId) return
-    await api().testSuite.create({ project_id: activeProjectId, name: newSuiteName.trim() })
+    const name = newSuiteName.trim()
+    if (!name || !activeProjectId) return
+    const result = await api().testSuite.create({ project_id: activeProjectId, name })
     setNewSuiteName('')
     setShowNewSuiteInput(false)
+    // The main handler de-duplicates the name ("Suite (1)"), so test the
+    // stored name against the filter rather than what the user typed.
+    const created = result?.success ? result.data : undefined
+    if (created && searchQuery.trim() && !matchesSearch(created.name, searchQuery)) {
+      setSearchQuery('')
+    }
     await loadSuites()
-  }, [newSuiteName, activeProjectId, loadSuites])
+    if (created) {
+      setExpandedSuites((s) => ({ ...s, [created.id]: true }))
+      setFocusSuiteId(created.id)
+    }
+  }, [newSuiteName, activeProjectId, searchQuery, loadSuites])
 
   // ─── Delete suite ─────────────────────────────────────────
   const handleDeleteSuite = useCallback(async () => {
@@ -526,7 +550,7 @@ export default function TestsPanel() {
 
   // ─── Filter ───────────────────────────────────────────────
   const filteredSuites = searchQuery.trim()
-    ? suites.filter((s) => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    ? suites.filter((s) => matchesSearch(s.name, searchQuery))
     : suites
 
   return (
@@ -648,6 +672,7 @@ export default function TestsPanel() {
               key={suite.id}
               suite={suite}
               expanded={expandedSuites[suite.id] ?? false}
+              focused={focusSuiteId === suite.id}
               contents={suiteContents[suite.id] || { items: [], folders: [] }}
               isRenaming={renamingSuiteId === suite.id}
               renameValue={renameValue}
@@ -679,6 +704,7 @@ export default function TestsPanel() {
               onToggle={() => setExpandedSuites((s) => ({ ...s, [suite.id]: !s[suite.id] }))}
               onOpen={() => {
                 setExpandedSuites((s) => ({ ...s, [suite.id]: true }))
+                setFocusSuiteId(null)
                 openSuiteInRunner(suite)
               }}
               onContextMenu={(e) => {
@@ -701,9 +727,11 @@ export default function TestsPanel() {
         )}
 
         {/* New suite input — placed at the bottom so it lines up with where the
-            created suite actually appears (suites are ordered oldest→newest). */}
+            created suite actually appears (suites are ordered oldest→newest).
+            `handleCreateSuite` keeps that promise when a search filter is
+            active by clearing the filter (issue #57). */}
         {showNewSuiteInput && (
-          <div className="flex items-center gap-2 px-3 py-2">
+          <div className="flex items-center gap-2 px-3 py-2" data-testid="new-suite-row">
             <FolderOpen size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
             <input
               ref={newSuiteRef}
@@ -888,6 +916,7 @@ export default function TestsPanel() {
 function SuiteNode({
   suite,
   expanded,
+  focused,
   contents,
   isRenaming,
   renameValue,
@@ -915,6 +944,7 @@ function SuiteNode({
 }: {
   suite: TestSuite
   expanded: boolean
+  focused: boolean
   contents: SuiteContents
   isRenaming: boolean
   renameValue: string
@@ -946,6 +976,13 @@ function SuiteNode({
 }) {
   const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  // A just-created suite is appended, so it can land below the fold — pull it
+  // into view. Optional-call because jsdom has no scrollIntoView.
+  useEffect(() => {
+    if (focused) rowRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [focused])
 
   return (
     <div>
@@ -953,8 +990,16 @@ function SuiteNode({
           just expands/collapses. Matches APIs tree's "folder click → folder
           workbench" pattern. */}
       <div
+        ref={rowRef}
+        data-testid="suite-row"
+        data-focused={focused ? 'true' : undefined}
         className="flex items-center gap-1.5 px-3 py-[6px]"
-        style={{ background: hovered ? 'var(--item-hover)' : 'transparent', cursor: 'pointer' }}
+        style={{
+          // T.accentBg, not 'var(--accentLight)' — the theme defines
+          // `--accent-light`, so the camelCase name resolves to nothing.
+          background: hovered ? 'var(--item-hover)' : focused ? T.accentBg : 'transparent',
+          cursor: 'pointer',
+        }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onClick={onOpen}
@@ -1643,13 +1688,13 @@ function ContextMenuItem({
 
 function ContextMenuShell({ x, y, children }: { x: number; y: number; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ left: x, top: y })
+  const [pos, setPos] = useState<MenuPosition>({ left: x, top: y })
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
     const { width, height } = el.getBoundingClientRect()
     setPos(
-      clampToViewport({
+      positionContextMenu({
         x,
         y,
         width,
@@ -1662,10 +1707,13 @@ function ContextMenuShell({ x, y, children }: { x: number; y: number; children: 
   return (
     <div
       ref={ref}
+      data-context-menu
       className="fixed z-[500] rounded-lg border py-1"
       style={{
         left: pos.left,
         top: pos.top,
+        maxHeight: pos.maxHeight,
+        overflowY: pos.maxHeight ? 'auto' : undefined,
         background: 'var(--white)',
         borderColor: 'var(--border)',
         boxShadow: '0 4px 16px rgba(0,0,0,0.12)',

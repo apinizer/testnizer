@@ -15,6 +15,7 @@ import { getDb } from '../db/database'
 import { addSaveHistory } from '../db/branch.repo'
 import { encryptSecret, decryptSecret } from '../lib/secure-storage'
 import { assertTmpSubpath, assertImportFilePath, GIT_TMP_PREFIXES } from '../lib/path-safety'
+import { safeFileName } from '../lib/filename-safe'
 import {
   importPostman,
   importInsomnia,
@@ -1612,10 +1613,7 @@ export function registerSaveHandlers(): void {
         testSuites: data.testSuites?.length ?? 0,
         mockServers: data.mockServers?.length ?? 0,
       }
-      const projectName = ((data.project?.name as string) || 'project').replace(
-        /[^a-zA-Z0-9-_]/g,
-        '_',
-      )
+      const projectName = safeFileName((data.project?.name as string) || 'project', 'project')
       const dateStr = new Date().toISOString().slice(0, 10)
       const defaultName = `${projectName}-${dateStr}.json`
       const res = await writeJsonViaSaveDialog(JSON.stringify(data, null, 2), defaultName)
@@ -1647,7 +1645,7 @@ export function registerSaveHandlers(): void {
         !folder?.name || folder.name.toLowerCase() === 'folder'
           ? project?.name || 'project'
           : folder.name
-      const slug = rawName.replace(/[^a-zA-Z0-9-_]/g, '_')
+      const slug = safeFileName(rawName, 'project')
       const defaultName = `${slug}-${new Date().toISOString().slice(0, 10)}.json`
       const res = await writeJsonViaSaveDialog(JSON.stringify(data, null, 2), defaultName)
       if (!res.success) return { success: false, error: res.error }
@@ -1668,9 +1666,9 @@ export function registerSaveHandlers(): void {
     async (_event, suiteId: string, format?: 'testnizer' | 'postman' | 'insomnia') => {
       try {
         const fmt = format ?? 'testnizer'
-        const suiteName = ((exportTestSuiteData(suiteId).suite?.name as string) || 'suite').replace(
-          /[^a-zA-Z0-9-_]/g,
-          '_',
+        const suiteName = safeFileName(
+          (exportTestSuiteData(suiteId).suite?.name as string) || 'suite',
+          'suite',
         )
         const date = new Date().toISOString().slice(0, 10)
         let content: string
@@ -1869,10 +1867,7 @@ export function registerSaveHandlers(): void {
         }
 
         const data = exportProjectData(payload.projectId)
-        const projectName = ((data.project?.name as string) || 'project').replace(
-          /[^a-zA-Z0-9-_]/g,
-          '_',
-        )
+        const projectName = safeFileName((data.project?.name as string) || 'project', 'project')
         const dateStr = new Date().toISOString().slice(0, 10)
         const fileName = `${projectName}-${dateStr}.json`
         const filePath = join(dirPath, fileName)
@@ -1989,6 +1984,16 @@ export function registerSaveHandlers(): void {
         const { simpleGit } = await import('simple-git')
 
         const data = exportProjectData(payload.projectId)
+        // Deliberately still the ASCII slug (unlike the export dialogs, which
+        // use safeFileName): this names a *tracked* file in the user's repo.
+        // Widening it would push a second, differently-named copy alongside
+        // the one already committed.
+        // KNOWN DIVERGENCE: git.handler.ts:540 slugifies the SAME project name
+        // with '-' instead of '_', so `sağlık` is written here as `sa_l_k.json`
+        // and there as `sa-l-k.json` — a project touched by both paths can end
+        // up tracked twice. Unifying them (ideally on safeFileName) needs a
+        // one-time rename of the already-committed file, so it is its own
+        // change, not a drive-by in an export fix.
         const projectName = ((data.project?.name as string) || 'project').replace(
           /[^a-zA-Z0-9-_]/g,
           '_',
@@ -2100,6 +2105,8 @@ export function registerSaveHandlers(): void {
         const { simpleGit } = await import('simple-git')
 
         const data = exportProjectData(payload.projectId)
+        // ASCII slug on purpose — see the note in `save:git`; this names a
+        // tracked file in the user's repo, not a save-dialog suggestion.
         const projectName = ((data.project?.name as string) || 'project').replace(
           /[^a-zA-Z0-9-_]/g,
           '_',

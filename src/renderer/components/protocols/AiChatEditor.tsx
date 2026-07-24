@@ -237,6 +237,29 @@ function renderInline(text: string): ReactElement[] {
   return parts
 }
 
+// ─── Auto-scroll pinning ────────────────────────────────────
+
+/**
+ * Slack a user gets before we consider them "scrolled away". A couple of
+ * lines' worth: sub-pixel rounding on a zoomed window and trackpad inertia
+ * both leave the view a few px short of the true bottom, and unpinning there
+ * would strand the stream one line above the fold.
+ */
+export const SCROLL_PIN_THRESHOLD_PX = 40
+
+/**
+ * Whether the conversation view is close enough to the bottom that new
+ * content should keep following it. Split out of the effect so the decision
+ * is testable without a real scrolling layout (jsdom reports 0 for every
+ * scroll metric).
+ */
+export function isPinnedToBottom(
+  metrics: { scrollTop: number; scrollHeight: number; clientHeight: number },
+  threshold: number = SCROLL_PIN_THRESHOLD_PX,
+): boolean {
+  return metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight <= threshold
+}
+
 // ─── Editor ─────────────────────────────────────────────────
 
 export default function AiChatEditor(): ReactElement {
@@ -264,20 +287,30 @@ export default function AiChatEditor(): ReactElement {
   const [showApiKey, setShowApiKey] = useState(false)
   const [draft, setDraft] = useState('')
   const conversationRef = useRef<HTMLDivElement>(null)
+  const pinnedRef = useRef(true)
 
   const models = PROVIDER_MODELS[provider]
   const providerInfo = AI_PROVIDERS.find((p) => p.id === provider) ?? AI_PROVIDERS[0]
 
-  // Auto-scroll to bottom on new content.
+  // Auto-scroll follows new content only while the user is parked at the
+  // bottom. Scrolling up mid-stream used to be pointless — every SSE delta
+  // re-ran this effect and yanked the view back down (issue #75).
   useEffect(() => {
     const el = conversationRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
   }, [messages])
+
+  function handleConversationScroll(e: React.UIEvent<HTMLDivElement>): void {
+    pinnedRef.current = isPinnedToBottom(e.currentTarget)
+  }
 
   function handleSend(): void {
     const text = draft.trim()
     if (!text || streaming) return
     setDraft('')
+    // Sending is an explicit "show me what happens next" — re-pin even if the
+    // user was reading scrollback.
+    pinnedRef.current = true
     void sendPrompt(text)
   }
 
@@ -438,7 +471,12 @@ export default function AiChatEditor(): ReactElement {
       </div>
 
       {/* Conversation */}
-      <div ref={conversationRef} className="flex-1 overflow-y-auto p-3.5">
+      <div
+        ref={conversationRef}
+        data-testid="ai-conversation"
+        onScroll={handleConversationScroll}
+        className="flex-1 overflow-y-auto p-3.5"
+      >
         {messages.length === 0 && !errorMessage ? (
           <EmptyState
             icon={Bot}
@@ -460,10 +498,18 @@ export default function AiChatEditor(): ReactElement {
                         color: 'var(--text)',
                       }}
                     >
-                      <div className="flex-1" style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>
+                      <div
+                        data-testid="ai-bubble-text"
+                        className="flex-1 cursor-text select-text"
+                        style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}
+                      >
                         {m.content}
                       </div>
-                      <User size={14} style={{ color: 'var(--accent-text)', marginTop: 2 }} />
+                      <User
+                        size={14}
+                        className="select-none"
+                        style={{ color: 'var(--accent-text)', marginTop: 2 }}
+                      />
                     </div>
                   </div>
                 )
@@ -479,8 +525,16 @@ export default function AiChatEditor(): ReactElement {
                       color: 'var(--text)',
                     }}
                   >
-                    <Bot size={14} style={{ color: 'var(--accent-text)', marginTop: 2 }} />
-                    <div className="flex-1" style={{ fontSize: 13 }}>
+                    <Bot
+                      size={14}
+                      className="select-none"
+                      style={{ color: 'var(--accent-text)', marginTop: 2 }}
+                    />
+                    <div
+                      data-testid="ai-bubble-text"
+                      className="flex-1 cursor-text select-text"
+                      style={{ fontSize: 13 }}
+                    >
                       {m.content ? <MarkdownText text={m.content} /> : null}
                       {isStreamingThis && (
                         <span
