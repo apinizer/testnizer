@@ -54,11 +54,43 @@ interface Mocks {
   open: ReturnType<typeof vi.fn>
   createNew: ReturnType<typeof vi.fn>
   aliasDetail: ReturnType<typeof vi.fn>
+  generateKeyPair: ReturnType<typeof vi.fn>
+  generateSecretKey: ReturnType<typeof vi.fn>
   closeSession: ReturnType<typeof vi.fn>
   librarySave: ReturnType<typeof vi.fn>
   libraryList: ReturnType<typeof vi.fn>
   libraryOpen: ReturnType<typeof vi.fn>
   libraryDelete: ReturnType<typeof vi.fn>
+}
+
+// A generated key-pair grows the alias set; the response carries the SAME
+// sessionId (generate mutates the current session) plus refreshed public meta.
+const META_AFTER_GEN: KeystoreMeta = {
+  type: 'PKCS12',
+  aliasCount: 2,
+  aliases: [
+    ...META.aliases,
+    {
+      alias: 'srv',
+      entryType: 'KEY',
+      hasPrivateKey: true,
+      subjectDN: 'CN=srv',
+      issuerDN: 'CN=srv',
+      notBefore: '2026-01-01T00:00:00.000Z',
+      notAfter: '2027-01-01T00:00:00.000Z',
+      keyAlgorithm: 'RSA',
+      chainLength: 1,
+    },
+  ],
+}
+
+const META_AFTER_SECRET: KeystoreMeta = {
+  type: 'PKCS12',
+  aliasCount: 2,
+  aliases: [
+    ...META.aliases,
+    { alias: 'aes', entryType: 'KEY', hasPrivateKey: false, chainLength: 0 },
+  ],
 }
 
 const LIB_ROW = {
@@ -79,12 +111,26 @@ function installApi(overrides: Partial<Mocks> = {}): Mocks {
       data: { path: '/tmp/client.p12', fileName: 'client.p12', type: 'PKCS12' },
     })),
     open: vi.fn(async () => ({ success: true, data: { sessionId: 'sess-1', meta: META } })),
-    createNew: vi.fn(async () => ({ success: true, data: { sessionId: 'sess-new', meta: { type: 'JKS', aliasCount: 0, aliases: [] } } })),
+    createNew: vi.fn(async () => ({
+      success: true,
+      data: { sessionId: 'sess-new', meta: { type: 'JKS', aliasCount: 0, aliases: [] } },
+    })),
     aliasDetail: vi.fn(async () => ({ success: true, data: DETAIL })),
+    generateKeyPair: vi.fn(async () => ({
+      success: true,
+      data: { sessionId: 'sess-1', meta: META_AFTER_GEN },
+    })),
+    generateSecretKey: vi.fn(async () => ({
+      success: true,
+      data: { sessionId: 'sess-1', meta: META_AFTER_SECRET },
+    })),
     closeSession: vi.fn(async () => ({ success: true, data: { closed: true } })),
     librarySave: vi.fn(async () => ({ success: true, data: LIB_ROW })),
     libraryList: vi.fn(async () => ({ success: true, data: [LIB_ROW] })),
-    libraryOpen: vi.fn(async () => ({ success: true, data: { sessionId: 'sess-lib', meta: META } })),
+    libraryOpen: vi.fn(async () => ({
+      success: true,
+      data: { sessionId: 'sess-lib', meta: META },
+    })),
     libraryDelete: vi.fn(async () => ({ success: true, data: { deleted: true } })),
     ...overrides,
   }
@@ -113,9 +159,18 @@ describe('keystore.store', () => {
     const m = installApi()
     const ok = await useKeystoreStore
       .getState()
-      .openFile({ path: '/tmp/client.p12', fileName: 'client.p12', password: 'topsecret', type: 'PKCS12' })
+      .openFile({
+        path: '/tmp/client.p12',
+        fileName: 'client.p12',
+        password: 'topsecret',
+        type: 'PKCS12',
+      })
     expect(ok).toBe(true)
-    expect(m.open).toHaveBeenCalledWith({ path: '/tmp/client.p12', password: 'topsecret', type: 'PKCS12' })
+    expect(m.open).toHaveBeenCalledWith({
+      path: '/tmp/client.p12',
+      password: 'topsecret',
+      type: 'PKCS12',
+    })
     const st = useKeystoreStore.getState()
     expect(st.sessionId).toBe('sess-1')
     expect(st.fileName).toBe('client.p12')
@@ -126,14 +181,43 @@ describe('keystore.store', () => {
     installApi()
     await useKeystoreStore
       .getState()
-      .openFile({ path: '/tmp/client.p12', fileName: 'client.p12', password: 'topsecret', type: 'PKCS12' })
+      .openFile({
+        path: '/tmp/client.p12',
+        fileName: 'client.p12',
+        password: 'topsecret',
+        type: 'PKCS12',
+      })
     await useKeystoreStore.getState().loadAliasDetail('test-client')
     // Serialize the full store state; no secret / private material may appear.
-    const { pickFile, openFile, createNew, openFromLibrary, saveToLibrary, deleteFromLibrary, closeSession, loadLibrary, loadAliasDetail, clearAliasDetail, clearError, ...data } =
-      useKeystoreStore.getState()
-    void pickFile; void openFile; void createNew; void openFromLibrary; void saveToLibrary
-    void deleteFromLibrary; void closeSession; void loadLibrary; void loadAliasDetail
-    void clearAliasDetail; void clearError
+    const {
+      pickFile,
+      openFile,
+      createNew,
+      generateKeyPair,
+      generateSecretKey,
+      openFromLibrary,
+      saveToLibrary,
+      deleteFromLibrary,
+      closeSession,
+      loadLibrary,
+      loadAliasDetail,
+      clearAliasDetail,
+      clearError,
+      ...data
+    } = useKeystoreStore.getState()
+    void pickFile
+    void openFile
+    void createNew
+    void openFromLibrary
+    void saveToLibrary
+    void deleteFromLibrary
+    void closeSession
+    void loadLibrary
+    void loadAliasDetail
+    void clearAliasDetail
+    void clearError
+    void generateKeyPair
+    void generateSecretKey
     const json = JSON.stringify(data)
     expect(json).not.toContain('topsecret')
     expect(json).not.toContain('PRIVATE KEY')
@@ -153,6 +237,123 @@ describe('keystore.store', () => {
     expect(ok).toBe(true)
     expect(m.createNew).toHaveBeenCalledWith({ type: 'JKS', password: '' })
     expect(useKeystoreStore.getState().meta?.aliasCount).toBe(0)
+  })
+
+  it('generateKeyPair injects the current sessionId, forwards opts, refreshes meta', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META })
+    const ok = await useKeystoreStore.getState().generateKeyPair({
+      alias: 'srv',
+      keyAlgorithm: 'RSA',
+      keySize: 2048,
+      basicConstraintsCa: false,
+      entryPassword: 'entrypw',
+    })
+    expect(ok).toBe(true)
+    // entryPassword is DROPPED by the store: Faz B2 protects generated entries
+    // with the store password (a per-entry password has no parse-side decrypt
+    // yet → silent data loss on reopen). Per-entry passwords land in Faz B4.
+    // The IPC payload must therefore NOT carry entryPassword.
+    expect(m.generateKeyPair).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      alias: 'srv',
+      keyAlgorithm: 'RSA',
+      keySize: 2048,
+      basicConstraintsCa: false,
+    })
+    expect(m.generateKeyPair.mock.calls[0][0]).not.toHaveProperty('entryPassword')
+    // Meta refreshed so the new alias shows up in AliasTable; session unchanged.
+    const st = useKeystoreStore.getState()
+    expect(st.sessionId).toBe('sess-1')
+    expect(st.meta?.aliasCount).toBe(2)
+    expect(st.meta?.aliases.some((a) => a.alias === 'srv')).toBe(true)
+  })
+
+  it('generateKeyPair no-ops (soft fail) when there is no open session', async () => {
+    const m = installApi()
+    // no sessionId set
+    const ok = await useKeystoreStore.getState().generateKeyPair({ alias: 'srv' })
+    expect(ok).toBe(false)
+    expect(m.generateKeyPair).not.toHaveBeenCalled()
+  })
+
+  it('generateKeyPair never lets entryPassword or key material into state', async () => {
+    installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META })
+    await useKeystoreStore
+      .getState()
+      .generateKeyPair({ alias: 'srv', keyAlgorithm: 'RSA', entryPassword: 'topsecret-entry' })
+    const {
+      pickFile,
+      openFile,
+      createNew,
+      generateKeyPair,
+      generateSecretKey,
+      openFromLibrary,
+      saveToLibrary,
+      deleteFromLibrary,
+      closeSession,
+      loadLibrary,
+      loadAliasDetail,
+      clearAliasDetail,
+      clearError,
+      ...data
+    } = useKeystoreStore.getState()
+    void pickFile
+    void openFile
+    void createNew
+    void openFromLibrary
+    void saveToLibrary
+    void deleteFromLibrary
+    void closeSession
+    void loadLibrary
+    void loadAliasDetail
+    void clearAliasDetail
+    void clearError
+    void generateKeyPair
+    void generateSecretKey
+    const json = JSON.stringify(data)
+    expect(json).not.toContain('topsecret-entry')
+    expect(json).not.toContain('PRIVATE KEY')
+  })
+
+  it('generateSecretKey injects sessionId, forwards AES opts, refreshes meta', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META })
+    const ok = await useKeystoreStore
+      .getState()
+      .generateSecretKey({ alias: 'aes', keyAlgorithm: 'AES', keySize: 256, entryPassword: 'x' })
+    expect(ok).toBe(true)
+    // entryPassword DROPPED (see generateKeyPair) — Faz B2 protects the secret
+    // entry with the store password; per-entry passwords land in Faz B4.
+    expect(m.generateSecretKey).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      alias: 'aes',
+      keyAlgorithm: 'AES',
+      keySize: 256,
+    })
+    expect(m.generateSecretKey.mock.calls[0][0]).not.toHaveProperty('entryPassword')
+    const st = useKeystoreStore.getState()
+    expect(st.meta?.aliasCount).toBe(2)
+    expect(st.meta?.aliases.some((a) => a.alias === 'aes' && a.hasPrivateKey === false)).toBe(true)
+  })
+
+  it('generateSecretKey surfaces the PKCS12-only engine error on a JKS session', async () => {
+    // The UI gates the menu item, but the store must still surface the engine
+    // guard verbatim (§8) if a JKS session ever reaches here.
+    installApi({
+      generateSecretKey: vi.fn(async () => ({
+        success: false,
+        error: 'Secret keys can only be stored in a PKCS12 keystore',
+      })),
+    })
+    useKeystoreStore.setState({
+      sessionId: 'sess-jks',
+      meta: { type: 'JKS', aliasCount: 0, aliases: [] },
+    })
+    const ok = await useKeystoreStore.getState().generateSecretKey({ alias: 'skjks', keySize: 256 })
+    expect(ok).toBe(false)
+    expect(useKeystoreStore.getState().error).toContain('PKCS12')
   })
 
   it('openFromLibrary forwards the re-entered password (remember=OFF default)', async () => {
@@ -261,7 +462,10 @@ describe('keystore.store', () => {
 
   it('surfaces an engine error (wrong password / corrupt) without throwing', async () => {
     installApi({
-      open: vi.fn(async () => ({ success: false, error: 'Password is wrong or the file is corrupt.' })),
+      open: vi.fn(async () => ({
+        success: false,
+        error: 'Password is wrong or the file is corrupt.',
+      })),
     })
     const ok = await useKeystoreStore
       .getState()

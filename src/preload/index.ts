@@ -447,6 +447,28 @@ const api = {
     list: (sessionId: string): Promise<unknown> => ipcRenderer.invoke('keystore:list', sessionId),
     aliasDetail: (payload: { sessionId: string; alias: string }): Promise<unknown> =>
       ipcRenderer.invoke('keystore:aliasDetail', payload),
+    generateKeyPair: (payload: {
+      sessionId: string
+      alias: string
+      keyAlgorithm?: string
+      keySize?: number
+      curve?: string
+      subjectDN?: string
+      subjectAlternativeNames?: string[]
+      validityDays?: number
+      serialNumber?: string
+      keyUsage?: string[]
+      basicConstraintsCa?: boolean
+      signatureAlgorithm?: string
+      entryPassword?: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:generateKeyPair', payload),
+    generateSecretKey: (payload: {
+      sessionId: string
+      alias: string
+      keyAlgorithm?: string
+      keySize?: number
+      entryPassword?: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:generateSecretKey', payload),
     closeSession: (sessionId: string): Promise<unknown> =>
       ipcRenderer.invoke('keystore:closeSession', sessionId),
     librarySave: (payload: {

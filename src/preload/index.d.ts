@@ -1898,6 +1898,28 @@ interface KeystoreApi {
     sessionId: string
     alias: string
   }): Promise<IpcResult<KeystoreAliasDetailDto>>
+  generateKeyPair(payload: {
+    sessionId: string
+    alias: string
+    keyAlgorithm?: string
+    keySize?: number
+    curve?: string
+    subjectDN?: string
+    subjectAlternativeNames?: string[]
+    validityDays?: number
+    serialNumber?: string
+    keyUsage?: string[]
+    basicConstraintsCa?: boolean
+    signatureAlgorithm?: string
+    entryPassword?: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  generateSecretKey(payload: {
+    sessionId: string
+    alias: string
+    keyAlgorithm?: string
+    keySize?: number
+    entryPassword?: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
   closeSession(sessionId: string): Promise<IpcResult<{ closed: true }>>
   librarySave(payload: {
     sessionId: string

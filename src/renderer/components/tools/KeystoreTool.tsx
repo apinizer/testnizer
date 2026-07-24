@@ -4,6 +4,9 @@ import { useKeystoreStore } from '../../stores/keystore.store'
 import type { KeystoreLibraryEntry, KeystorePickFileResult, KeystoreType } from '../../types'
 import AliasTable from './keystore/AliasTable'
 import CertificateDetailDialog from './keystore/CertificateDetailDialog'
+import GenerateKeyPairDialog from './keystore/GenerateKeyPairDialog'
+import GenerateSecretKeyDialog from './keystore/GenerateSecretKeyDialog'
+import { LabeledInput, LabeledSelect, Modal, ModalActions } from './keystore/dialog-ui'
 
 type PasswordPrompt =
   | { kind: 'file'; pick: KeystorePickFileResult }
@@ -22,6 +25,9 @@ export default function KeystoreTool() {
   const [saveOpen, setSaveOpen] = useState(false)
   const [saveName, setSaveName] = useState('')
   const [saveRemember, setSaveRemember] = useState(false)
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const [genKeyPairOpen, setGenKeyPairOpen] = useState(false)
+  const [genSecretOpen, setGenSecretOpen] = useState(false)
 
   useEffect(() => {
     void s.loadLibrary()
@@ -78,6 +84,17 @@ export default function KeystoreTool() {
     if (ok) setSaveOpen(false)
   }
 
+  // Open a Generate dialog from the Add Entry menu with a clean error slate so a
+  // stale banner from a previous op does not appear inside the fresh form.
+  function openGenerator(which: 'keyPair' | 'secret'): void {
+    setAddMenuOpen(false)
+    s.clearError()
+    if (which === 'keyPair') setGenKeyPairOpen(true)
+    else setGenSecretOpen(true)
+  }
+
+  const isPkcs12 = s.meta?.type === 'PKCS12'
+
   return (
     <div
       className="flex h-full w-full flex-col overflow-hidden"
@@ -109,13 +126,24 @@ export default function KeystoreTool() {
         </div>
         {s.sessionId && (
           <div className="flex shrink-0 items-center gap-2">
+            <AddEntryMenu
+              open={addMenuOpen}
+              onToggle={() => setAddMenuOpen((v) => !v)}
+              onClose={() => setAddMenuOpen(false)}
+              secretEnabled={!!isPkcs12}
+              onKeyPair={() => openGenerator('keyPair')}
+              onSecret={() => openGenerator('secret')}
+            />
             <Btn onClick={() => setSaveOpen(true)}>{t('tools.keystore.saveToLibrary')}</Btn>
             <Btn onClick={() => void s.closeSession()}>{t('tools.keystore.close')}</Btn>
           </div>
         )}
       </div>
 
-      {s.error && (
+      {/* While a Generate dialog is open, route its error INTO the dialog only
+          (it receives error={s.error}) — suppress the header banner so the same
+          message doesn't render twice. */}
+      {s.error && !genKeyPairOpen && !genSecretOpen && (
         <div
           className="shrink-0 border-b px-4 py-1.5 text-[11px]"
           style={{ borderColor: 'var(--border)', color: '#cc2200' }}
@@ -138,6 +166,24 @@ export default function KeystoreTool() {
       {/* certificate detail dialog */}
       {s.aliasDetail && (
         <CertificateDetailDialog detail={s.aliasDetail} onClose={() => s.clearAliasDetail()} />
+      )}
+
+      {/* generate key pair (Faz B2) */}
+      {genKeyPairOpen && (
+        <GenerateKeyPairDialog
+          error={s.error}
+          onSubmit={(opts) => s.generateKeyPair(opts)}
+          onClose={() => setGenKeyPairOpen(false)}
+        />
+      )}
+
+      {/* generate secret key (Faz B2) — PKCS12 only */}
+      {genSecretOpen && (
+        <GenerateSecretKeyDialog
+          error={s.error}
+          onSubmit={(opts) => s.generateSecretKey(opts)}
+          onClose={() => setGenSecretOpen(false)}
+        />
       )}
 
       {/* password prompt */}
@@ -348,137 +394,80 @@ function Btn({ onClick, children }: { onClick: () => void; children: React.React
   )
 }
 
-function Modal({
-  title,
+/**
+ * "Add Entry ▾" split menu — Generate Key Pair / Generate Secret Key / Import.
+ * Secret keys are PKCS12-only, so that item is disabled for JKS sessions
+ * (design §9.1); Import is a placeholder wired up in Faz B3.
+ */
+function AddEntryMenu({
+  open,
+  onToggle,
   onClose,
-  children,
+  secretEnabled,
+  onKeyPair,
+  onSecret,
 }: {
-  title: string
+  open: boolean
+  onToggle: () => void
   onClose: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6"
-      style={{ background: 'rgba(0,0,0,0.4)' }}
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-sm space-y-3 rounded-lg p-4 shadow-xl"
-        style={{ background: 'var(--white)', border: '1px solid var(--border)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="m-0 text-sm font-semibold" style={{ color: 'var(--heading)' }}>
-          {title}
-        </h3>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function ModalActions({
-  onCancel,
-  onConfirm,
-  confirmLabel,
-  confirmDisabled,
-}: {
-  onCancel: () => void
-  onConfirm: () => void
-  confirmLabel: string
-  confirmDisabled?: boolean
+  secretEnabled: boolean
+  onKeyPair: () => void
+  onSecret: () => void
 }) {
   const { t } = useTranslation()
   return (
-    <div className="flex justify-end gap-2 pt-1">
+    <div className="relative">
       <button
-        onClick={onCancel}
-        className="rounded border px-3 py-1 text-xs"
-        style={{ borderColor: 'var(--border)', background: 'var(--white)', color: 'var(--muted)' }}
+        onClick={onToggle}
+        className="rounded border px-2.5 py-1 text-[11px] font-medium"
+        style={{
+          borderColor: 'var(--border)',
+          background: 'var(--white)',
+          color: 'var(--accentText)',
+        }}
       >
-        {t('tools.keystore.cancel')}
+        {t('tools.keystore.generate.addEntry')} ▾
       </button>
-      <button
-        onClick={onConfirm}
-        disabled={confirmDisabled}
-        className="rounded px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
-        style={{ background: 'var(--accent)' }}
-      >
-        {confirmLabel}
-      </button>
+      {open && (
+        <>
+          {/* click-away backdrop */}
+          <div className="fixed inset-0 z-40" onClick={onClose} />
+          <div
+            className="absolute right-0 z-50 mt-1 w-52 rounded-md py-1 shadow-lg"
+            style={{ background: 'var(--white)', border: '1px solid var(--border)' }}
+          >
+            <MenuItem onClick={onKeyPair}>{t('tools.keystore.generate.keyPair')}</MenuItem>
+            <MenuItem onClick={onSecret} disabled={!secretEnabled}>
+              {t('tools.keystore.generate.secretKey')}
+            </MenuItem>
+            <div className="my-1 border-t" style={{ borderColor: 'var(--border)' }} />
+            <MenuItem onClick={onClose} disabled>
+              {t('tools.keystore.generate.import')}
+            </MenuItem>
+          </div>
+        </>
+      )}
     </div>
   )
 }
 
-function LabeledInput({
-  label,
-  value,
-  onChange,
-  onEnter,
-  type = 'text',
-  autoFocus,
+function MenuItem({
+  onClick,
+  disabled,
+  children,
 }: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  onEnter?: () => void
-  type?: string
-  autoFocus?: boolean
+  onClick: () => void
+  disabled?: boolean
+  children: React.ReactNode
 }) {
   return (
-    <label className="block">
-      <span
-        className="mb-0.5 block text-[10px] uppercase tracking-wide"
-        style={{ color: 'var(--muted)' }}
-      >
-        {label}
-      </span>
-      <input
-        type={type}
-        value={value}
-        autoFocus={autoFocus}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && onEnter) onEnter()
-        }}
-        className="w-full rounded border px-2 py-1 text-xs"
-        style={{ background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--text)' }}
-      />
-    </label>
-  )
-}
-
-function LabeledSelect({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  options: Array<[string, string]>
-}) {
-  return (
-    <label className="block">
-      <span
-        className="mb-0.5 block text-[10px] uppercase tracking-wide"
-        style={{ color: 'var(--muted)' }}
-      >
-        {label}
-      </span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded border px-2 py-1 text-xs"
-        style={{ background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--text)' }}
-      >
-        {options.map(([v, l]) => (
-          <option key={v} value={v}>
-            {l}
-          </option>
-        ))}
-      </select>
-    </label>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="block w-full px-3 py-1.5 text-left text-xs disabled:opacity-40"
+      style={{ color: 'var(--text)' }}
+    >
+      {children}
+    </button>
   )
 }

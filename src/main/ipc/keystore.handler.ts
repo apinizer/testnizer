@@ -7,6 +7,8 @@ import {
   type KeystoreType,
   type KeystoreMeta,
   type KeystoreAliasDetail,
+  type GenerateKeyPairOptions,
+  type GenerateSecretKeyOptions,
 } from '../lib/keystore'
 import { encryptSecret, decryptSecret, isEncryptionAvailable } from '../lib/secure-storage'
 import {
@@ -104,6 +106,9 @@ interface AliasDetailPayload {
   alias: string
 }
 
+type GenerateKeyPairPayload = GenerateKeyPairOptions & { sessionId: string }
+type GenerateSecretKeyPayload = GenerateSecretKeyOptions & { sessionId: string }
+
 interface LibrarySavePayload {
   sessionId: string
   name: string
@@ -173,6 +178,28 @@ export function registerKeystoreHandlers(): void {
   // Full certificate chain for one alias (public material — cert PEM, no key).
   ipcMain.handle('keystore:aliasDetail', (_e, payload: AliasDetailPayload) =>
     wrap((): KeystoreAliasDetail => keystoreEngine.aliasDetail(payload.sessionId, payload.alias)),
+  )
+
+  // ── Generate (Faz B2) ────────────────────────────────────────────────────
+
+  // Generate a key pair + self-signed X.509v3 cert into the current session.
+  // The private key never leaves main — the response carries only public meta.
+  ipcMain.handle('keystore:generateKeyPair', (_e, payload: GenerateKeyPairPayload) =>
+    wrap(async (): Promise<SessionResult> => {
+      const { sessionId, ...opts } = payload
+      const meta = await keystoreEngine.generateKeyPair(sessionId, opts)
+      return { sessionId, meta }
+    }),
+  )
+
+  // Generate an AES secret key into the current session (PKCS12-only). The raw
+  // key material stays in main; the response carries only public meta.
+  ipcMain.handle('keystore:generateSecretKey', (_e, payload: GenerateSecretKeyPayload) =>
+    wrap((): SessionResult => {
+      const { sessionId, ...opts } = payload
+      const meta = keystoreEngine.generateSecretKey(sessionId, opts)
+      return { sessionId, meta }
+    }),
   )
 
   // Dispose a session — frees the bytes/passwords held in main.

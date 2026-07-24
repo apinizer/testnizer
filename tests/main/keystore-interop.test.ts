@@ -136,6 +136,86 @@ gate('keystore interop (keytool + openssl)', () => {
     expect(ossl).toMatch(/friendlyName: test-client/)
   })
 
+  it('engine-GENERATED RSA key pair → PKCS12 opens in keytool -list -v (alias + cert)', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    await engine.generateKeyPair(sessionId, {
+      alias: 'genrsa',
+      keyAlgorithm: 'RSA',
+      keySize: 2048,
+      subjectDN: 'CN=gen-rsa',
+      subjectAlternativeNames: ['gen.example.com'],
+      validityDays: 365,
+    })
+    const p = join(tmp, 'gen-rsa.p12')
+    writeFileSync(p, engine.serialize(sessionId))
+    const out = execFileSync(
+      'keytool',
+      ['-list', '-v', '-keystore', p, '-storetype', 'PKCS12', '-storepass', PW],
+      { encoding: 'utf8' },
+    )
+    expect(out).toMatch(/Alias name: genrsa/)
+    expect(out).toMatch(/Entry type: PrivateKeyEntry/)
+    expect(out).toMatch(/Owner: CN=gen-rsa/)
+  })
+
+  it('engine-GENERATED RSA key pair → JKS opens in keytool -list -v', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', PW)
+    await engine.generateKeyPair(sessionId, {
+      alias: 'genjks',
+      keyAlgorithm: 'RSA',
+      keySize: 2048,
+      subjectDN: 'CN=gen-jks',
+    })
+    const p = join(tmp, 'gen-rsa.jks')
+    writeFileSync(p, engine.serialize(sessionId))
+    const out = execFileSync(
+      'keytool',
+      ['-list', '-v', '-keystore', p, '-storetype', 'JKS', '-storepass', PW],
+      { encoding: 'utf8' },
+    )
+    expect(out).toMatch(/Alias name: genjks/)
+    expect(out).toMatch(/Entry type: PrivateKeyEntry/)
+    expect(out).toMatch(/Owner: CN=gen-jks/)
+  })
+
+  it('engine-GENERATED EC P-256 key pair → PKCS12 opens in keytool -list -v', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    await engine.generateKeyPair(sessionId, {
+      alias: 'genec',
+      keyAlgorithm: 'EC',
+      curve: 'P-256',
+      subjectDN: 'CN=gen-ec',
+    })
+    const p = join(tmp, 'gen-ec.p12')
+    writeFileSync(p, engine.serialize(sessionId))
+    const out = execFileSync(
+      'keytool',
+      ['-list', '-v', '-keystore', p, '-storetype', 'PKCS12', '-storepass', PW],
+      { encoding: 'utf8' },
+    )
+    expect(out).toMatch(/Alias name: genec/)
+    expect(out).toMatch(/Entry type: PrivateKeyEntry/)
+    expect(out).toMatch(/Owner: CN=gen-ec/)
+  })
+
+  it('engine-GENERATED AES-256 secret key shows SecretKeyEntry in keytool (KS-F2-63)', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    engine.generateSecretKey(sessionId, { alias: 'skio', keyAlgorithm: 'AES', keySize: 256, entryPassword: PW })
+    const p = join(tmp, 'skio.p12')
+    writeFileSync(p, engine.serialize(sessionId))
+    const out = execFileSync(
+      'keytool',
+      ['-list', '-keystore', p, '-storepass', PW, '-storetype', 'PKCS12'],
+      { encoding: 'utf8' },
+    )
+    expect(out).toMatch(/skio/)
+    expect(out).toMatch(/SecretKeyEntry/)
+  })
+
   it('engine multi-alias PKCS12 shows every alias with correct friendlyName in keytool', () => {
     const entries = [
       { alias: 'rsa-key', kind: 'key' as const, privateKeyPkcs8Der: keyDer('client.pkcs8.key'), entryPassword: PW, certChainDer: [certDer('client.crt')] },

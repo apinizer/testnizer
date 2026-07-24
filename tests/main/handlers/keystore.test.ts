@@ -155,6 +155,87 @@ describe('keystore:open + list + aliasDetail (no-leak spine)', () => {
   })
 })
 
+describe('keystore:generateKeyPair + generateSecretKey (mutate + no-leak)', () => {
+  it('generateKeyPair mutates the session and returns public meta only', async () => {
+    const created = (await harness.invoke('keystore:createNew', {
+      type: 'PKCS12',
+      password: STORE_PASSWORD,
+    })) as Res<{ sessionId: string }>
+    const sessionId = created.data!.sessionId
+
+    const gen = (await harness.invoke('keystore:generateKeyPair', {
+      sessionId,
+      alias: 'srv',
+      keyAlgorithm: 'RSA',
+      keySize: 1024,
+      subjectDN: 'CN=srv',
+      entryPassword: 'entrypw',
+    })) as Res<{ sessionId: string; meta: { aliasCount: number; aliases: { alias: string }[] } }>
+    expect(gen.success).toBe(true)
+    expect(gen.data?.sessionId).toBe(sessionId)
+    expect(gen.data?.meta.aliasCount).toBe(1)
+    expect(gen.data?.meta.aliases[0].alias).toBe('srv')
+
+    const json = JSON.stringify(gen)
+    expect(json).not.toContain('PRIVATE KEY')
+    expect(json).not.toContain(STORE_PASSWORD)
+    expect(json).not.toContain('entrypw')
+
+    // inspect confirms the alias landed in the live session.
+    const list = (await harness.invoke('keystore:list', sessionId)) as Res<{
+      aliases: { alias: string; hasPrivateKey: boolean }[]
+    }>
+    expect(list.data?.aliases[0].alias).toBe('srv')
+    expect(list.data?.aliases[0].hasPrivateKey).toBe(true)
+  })
+
+  it('generateSecretKey adds an AES entry, leaking no key/password material', async () => {
+    const created = (await harness.invoke('keystore:createNew', {
+      type: 'PKCS12',
+      password: STORE_PASSWORD,
+    })) as Res<{ sessionId: string }>
+    const sessionId = created.data!.sessionId
+
+    const gen = (await harness.invoke('keystore:generateSecretKey', {
+      sessionId,
+      alias: 'skx',
+      keyAlgorithm: 'AES',
+      keySize: 256,
+      entryPassword: 'entrypw',
+    })) as Res<{
+      meta: { type: string; aliasCount: number; aliases: { alias: string; hasPrivateKey: boolean; chainLength: number }[] }
+    }>
+    expect(gen.success).toBe(true)
+    expect(gen.data?.meta.type).toBe('PKCS12')
+    expect(gen.data?.meta.aliasCount).toBe(1)
+    expect(gen.data?.meta.aliases[0]).toMatchObject({
+      alias: 'skx',
+      hasPrivateKey: false,
+      chainLength: 0,
+    })
+    const json = JSON.stringify(gen)
+    expect(json).not.toContain('entrypw')
+    expect(json).not.toContain(STORE_PASSWORD)
+  })
+
+  it('generateSecretKey is rejected on a JKS session', async () => {
+    const created = (await harness.invoke('keystore:createNew', {
+      type: 'JKS',
+      password: STORE_PASSWORD,
+    })) as Res<{ sessionId: string }>
+    const sessionId = created.data!.sessionId
+
+    const gen = (await harness.invoke('keystore:generateSecretKey', {
+      sessionId,
+      alias: 'skjks',
+      keyAlgorithm: 'AES',
+      keySize: 256,
+    })) as Res<unknown>
+    expect(gen.success).toBe(false)
+    expect(gen.error).toBe('Secret keys can only be stored in a PKCS12 keystore')
+  })
+})
+
 describe('keystore:closeSession', () => {
   it('disposes the session so subsequent list fails', async () => {
     const created = (await harness.invoke('keystore:createNew', {

@@ -22,6 +22,7 @@ import 'reflect-metadata'
 import {
   createHash,
   generateKeyPairSync,
+  randomBytes,
   randomUUID,
   webcrypto,
   X509Certificate,
@@ -100,6 +101,15 @@ export interface GenerateKeyPairOptions {
   entryPassword?: string
 }
 
+export interface GenerateSecretKeyOptions {
+  alias: string
+  /** Only `AES` is supported (design §4.9). Defaults to `AES`. */
+  keyAlgorithm?: string
+  /** AES key size in bits — 128 | 192 | 256. Defaults to 256. */
+  keySize?: number
+  entryPassword?: string
+}
+
 /** User-fixable error — the message is surfaced verbatim (design §4.3). */
 export class KeystoreValidationException extends Error {
   constructor(message: string) {
@@ -135,7 +145,18 @@ interface CertEntryModel {
   certDer: Buffer
 }
 
-type EntryModel = KeyEntryModel | CertEntryModel
+/** A symmetric (secret) key entry — PKCS12-only (JKS cannot hold secret keys). */
+interface SecretEntryModel {
+  alias: string
+  kind: 'secret'
+  /** Symmetric algorithm — only `AES` in scope (design §4.9). */
+  keyAlgorithm: string
+  /** Raw symmetric key bytes — stays in main, NEVER surfaced to the renderer. */
+  secretKeyRaw: Buffer
+  entryPassword: string
+}
+
+type EntryModel = KeyEntryModel | CertEntryModel | SecretEntryModel
 
 interface KeystoreSession {
   id: string
@@ -256,7 +277,10 @@ export function buildCertificateInfo(certDer: Buffer): CertificateInfo {
   return {
     subjectDN: formatDn(nx.subject),
     issuerDN: formatDn(nx.issuer),
-    serialNumber: nx.serialNumber.toLowerCase(),
+    // Canonical minimal lowercase hex (spec §8/KS-F2-23..25): no leading zero,
+    // no even-length pad. Node's X509 serialNumber getter keeps the DER pad
+    // (e.g. 0A1B2C3D / 075BCD15); normalize it back to the integer's hex form.
+    serialNumber: BigInt('0x' + nx.serialNumber).toString(16),
     version: 3,
     sigAlgName: mapSigAlg(px),
     notBefore: isoUtc(nx.validFrom),
@@ -350,13 +374,64 @@ function dataContentInfo(safeContents: Asn1): Asn1 {
   return seq([oid(pkiOids.data), ctx0([octet(asn1.toDer(safeContents).getBytes())])])
 }
 
+// Secret (symmetric) key bags — PKCS12 SecretBag holding a pkcs8ShroudedKeyBag
+// whose EncryptedPrivateKeyInfo wraps a PKCS#8 PrivateKeyInfo carrying the raw
+// symmetric key. This is byte-for-byte the shape Oracle keytool writes for
+// `-genseckey` (verified via `openssl asn1parse` on a keytool secret.p12), so
+// `keytool -list` reports the alias as a SecretKeyEntry.
+//   SafeBag { bagId=secretBag,
+//             [0] SecretBag { secretTypeId=pkcs8ShroudedKeyBag,
+//                             [0] OCTETSTRING(EncryptedPrivateKeyInfo) },
+//             attrs }
+// AES parent OID — matches keytool's PrivateKeyInfo algorithm for AES secrets.
+const AES_ALGORITHM_OID = '2.16.840.1.101.3.4.1'
+
+/** Build the inner PKCS#8 PrivateKeyInfo that wraps a raw symmetric key. */
+function secretKeyPkcs8(secretRaw: Buffer, algorithmOid: string): Buffer {
+  const pki = seq([
+    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.INTEGER, false, asn1.integerToDer(0).getBytes()),
+    seq([oid(algorithmOid)]),
+    octet(secretRaw.toString('binary')),
+  ])
+  return Buffer.from(asn1.toDer(pki).getBytes(), 'binary')
+}
+
+function secretBag(
+  secretRaw: Buffer,
+  algorithmOid: string,
+  password: string,
+  bagAttrs: Asn1,
+): Asn1 {
+  const pkcs8Der = secretKeyPkcs8(secretRaw, algorithmOid)
+  const encPki = forge.pki.encryptPrivateKeyInfo(
+    asn1.fromDer(pkcs8Der.toString('binary')),
+    password,
+    {
+      algorithm: 'aes256',
+      count: 2048,
+      saltSize: 8,
+    },
+  )
+  const inner = seq([
+    oid(pkiOids.pkcs8ShroudedKeyBag),
+    ctx0([octet(asn1.toDer(encPki).getBytes())]),
+  ])
+  return seq([oid(pkiOids.secretBag), ctx0([inner]), bagAttrs])
+}
+
 /** Serialize the normalized model to multi-alias PKCS12 DER bytes. */
 export function serializePkcs12(entries: EntryModel[], storePassword: string): Buffer {
   const certBags: Asn1[] = []
   const keyBags: Asn1[] = []
 
   for (const e of entries) {
-    if (e.kind === 'key') {
+    if (e.kind === 'secret') {
+      const localKeyId = sha1Bytes(Buffer.from(e.alias, 'utf8'))
+      const attrs = set([attrFriendlyName(e.alias), attrLocalKeyId(localKeyId)])
+      keyBags.push(
+        secretBag(e.secretKeyRaw, AES_ALGORITHM_OID, e.entryPassword || storePassword, attrs),
+      )
+    } else if (e.kind === 'key') {
       if (e.certChainDer.length === 0) {
         throw new KeystoreValidationException(`Key entry has no certificate chain: ${e.alias}`)
       }
@@ -417,12 +492,181 @@ export function serializePkcs12(entries: EntryModel[], storePassword: string): B
   return Buffer.from(asn1.toDer(pfx).getBytes(), 'binary')
 }
 
+/** Big-endian DER INTEGER content bytes → number (iteration counts only). */
+function derContentToInt(bin: string): number {
+  let n = 0
+  for (let i = 0; i < bin.length; i++) n = n * 256 + bin.charCodeAt(i)
+  return n
+}
+
+/**
+ * node-forge's PKCS12 parser hard-throws on `secretBag` SafeBags, so before we
+ * hand the PFX to forge we walk it, lift out any secret keys into the normalized
+ * model, and rebuild a forge-parseable PFX with the secret bags removed and the
+ * store MAC recomputed over the filtered AuthenticatedSafe. When there are no
+ * secret bags the original bytes are returned untouched (forge sees the exact
+ * same input as before — existing key/cert-only keystores are unaffected).
+ */
+function stripSecretBags(
+  bytes: Buffer,
+  password: string,
+): { secretEntries: SecretEntryModel[]; filtered: Buffer } {
+  const noChange = { secretEntries: [] as SecretEntryModel[], filtered: bytes }
+  let pfx: Asn1
+  try {
+    pfx = asn1.fromDer(bytes.toString('binary'))
+  } catch {
+    return noChange
+  }
+  const pfxChildren = pfx.value as Asn1[]
+  const authSafeCi = pfxChildren[1]
+  if (!authSafeCi || !Array.isArray(authSafeCi.value)) return noChange
+  const authSafeContent = (authSafeCi.value as Asn1[])[1]
+  const authSafeOctet = authSafeContent && (authSafeContent.value as Asn1[])[0]
+  if (!authSafeOctet || typeof authSafeOctet.value !== 'string') return noChange
+
+  let authSafe: Asn1
+  try {
+    authSafe = asn1.fromDer(authSafeOctet.value)
+  } catch {
+    return noChange
+  }
+  const contentInfos = authSafe.value as Asn1[]
+  const secretEntries: SecretEntryModel[] = []
+  let mutated = false
+
+  const rebuiltContentInfos = contentInfos.map((ci) => {
+    const ciChildren = ci.value as Asn1[]
+    const ciTypeNode = ciChildren[0]
+    if (!ciTypeNode || typeof ciTypeNode.value !== 'string') return ci
+    if (asn1.derToOid(ciTypeNode.value) !== pkiOids.data) return ci // encrypted / non-plain
+    const ctx = ciChildren[1]
+    const scOctet = ctx && (ctx.value as Asn1[])[0]
+    if (!scOctet || typeof scOctet.value !== 'string') return ci
+    let safeContents: Asn1
+    try {
+      safeContents = asn1.fromDer(scOctet.value)
+    } catch {
+      return ci
+    }
+    const bags = safeContents.value as Asn1[]
+    const keptBags: Asn1[] = []
+    for (const bag of bags) {
+      const bagChildren = bag.value as Asn1[]
+      const bagId = bagChildren[0]
+      if (
+        bagId &&
+        typeof bagId.value === 'string' &&
+        asn1.derToOid(bagId.value) === pkiOids.secretBag
+      ) {
+        const entry = decodeSecretBag(bag, password)
+        if (entry) {
+          secretEntries.push(entry)
+          mutated = true
+          continue
+        }
+      }
+      keptBags.push(bag)
+    }
+    if (!mutated || keptBags.length === bags.length) return ci
+    const newSc = octet(asn1.toDer(seq(keptBags)).getBytes())
+    return seq([oid(pkiOids.data), ctx0([newSc])])
+  })
+
+  if (!mutated) return noChange
+
+  const newAuthSafeBytes = asn1.toDer(seq(rebuiltContentInfos)).getBytes()
+  const newAuthSafeCi = seq([oid(pkiOids.data), ctx0([octet(newAuthSafeBytes)])])
+
+  // Recompute the store MAC over the filtered AuthenticatedSafe, reusing the
+  // original salt + iteration count so forge's verification passes.
+  const macData = pfxChildren[2]
+  const newChildren: Asn1[] = [pfxChildren[0], newAuthSafeCi]
+  if (macData && Array.isArray(macData.value)) {
+    const macChildren = macData.value as Asn1[]
+    const macSaltNode = macChildren[1]
+    const iterNode = macChildren[2]
+    const macSaltBin = typeof macSaltNode?.value === 'string' ? macSaltNode.value : ''
+    const iterations =
+      iterNode && typeof iterNode.value === 'string' ? derContentToInt(iterNode.value) : 2048
+    const macSaltBuf = forge.util.createBuffer(macSaltBin)
+    const macKey = forge.pkcs12.generateKey(password, macSaltBuf, 3, iterations, 20)
+    const hmac = forge.hmac.create()
+    hmac.start(forge.md.sha1.create(), macKey)
+    hmac.update(newAuthSafeBytes)
+    const macValue = hmac.getMac()
+    newChildren.push(
+      seq([
+        seq([
+          seq([oid(pkiOids.sha1), asn1.create(asn1.Class.UNIVERSAL, asn1.Type.NULL, false, '')]),
+          octet(macValue.getBytes()),
+        ]),
+        octet(macSaltBin),
+        asn1.create(
+          asn1.Class.UNIVERSAL,
+          asn1.Type.INTEGER,
+          false,
+          asn1.integerToDer(iterations).getBytes(),
+        ),
+      ]),
+    )
+  }
+  const filtered = Buffer.from(asn1.toDer(seq(newChildren)).getBytes(), 'binary')
+  return { secretEntries, filtered }
+}
+
+/** Decode one `secretBag` SafeBag into a SecretEntryModel (null if undecryptable). */
+function decodeSecretBag(bag: Asn1, password: string): SecretEntryModel | null {
+  try {
+    const children = bag.value as Asn1[]
+    const secretBagSeq = (children[1].value as Asn1[])[0]
+    const sbChildren = secretBagSeq.value as Asn1[]
+    const epkiOctet = (sbChildren[1].value as Asn1[])[0]
+    if (typeof epkiOctet.value !== 'string') return null
+    const epki = asn1.fromDer(epkiOctet.value)
+    const pkcs8 = forge.pki.decryptPrivateKeyInfo(epki, password)
+    if (!pkcs8) return null
+    const pkChildren = pkcs8.value as Asn1[]
+    const rawNode = pkChildren[2]
+    if (typeof rawNode.value !== 'string') return null
+    const secretKeyRaw = Buffer.from(rawNode.value, 'binary')
+
+    // friendlyName from bag attributes (SET of {oid, SET{value}}).
+    let alias = ''
+    const attrsSet = children[2]
+    if (attrsSet && Array.isArray(attrsSet.value)) {
+      for (const attr of attrsSet.value as Asn1[]) {
+        const ac = attr.value as Asn1[]
+        if (
+          typeof ac[0].value === 'string' &&
+          asn1.derToOid(ac[0].value) === pkiOids.friendlyName
+        ) {
+          // forge's asn1 parser already decodes BMPSTRING content into a JS string.
+          const v = (ac[1].value as Asn1[])[0]
+          if (typeof v.value === 'string') alias = v.value
+        }
+      }
+    }
+    return {
+      alias: alias || 'secret',
+      kind: 'secret',
+      keyAlgorithm: 'AES',
+      secretKeyRaw,
+      entryPassword: password,
+    }
+  } catch {
+    return null
+  }
+}
+
 /** Parse PKCS12 DER into the normalized model (RSA + EC, using raw DER — forge
- * can't parse EC cert/key objects, so we read `bag.asn1` fallbacks). */
+ * can't parse EC cert/key objects, so we read `bag.asn1` fallbacks). Secret keys
+ * are lifted out first (forge throws on `secretBag`) and merged back in. */
 export function parsePkcs12(bytes: Buffer, password: string): EntryModel[] {
+  const { secretEntries, filtered } = stripSecretBags(bytes, password)
   let p12: forge.pkcs12.Pkcs12Pfx
   try {
-    p12 = forge.pkcs12.pkcs12FromAsn1(asn1.fromDer(bytes.toString('binary')), password)
+    p12 = forge.pkcs12.pkcs12FromAsn1(asn1.fromDer(filtered.toString('binary')), password)
   } catch (e) {
     throw new KeystoreEngineException(
       'Password is wrong or the file is corrupt' + (e instanceof Error ? ` (${e.message})` : ''),
@@ -534,6 +778,7 @@ export function parsePkcs12(bytes: Buffer, password: string): EntryModel[] {
     })
   }
 
+  entries.push(...secretEntries)
   return entries
 }
 
@@ -576,8 +821,13 @@ function parseJks(bytes: Buffer, password: string): EntryModel[] {
 }
 
 function serializeJks(entries: EntryModel[], storePassword: string): Buffer {
-  const jksEntries: JksEntry[] = entries.map((e) =>
-    e.kind === 'key'
+  const jksEntries: JksEntry[] = entries.map((e) => {
+    if (e.kind === 'secret') {
+      // Unreachable via generateSecretKey (which rejects JKS up front); guard so
+      // a secret entry can never be silently mis-serialized as a cert.
+      throw new KeystoreValidationException('Secret keys can only be stored in a PKCS12 keystore')
+    }
+    return e.kind === 'key'
       ? {
           alias: e.alias,
           type: 'key',
@@ -585,8 +835,8 @@ function serializeJks(entries: EntryModel[], storePassword: string): Buffer {
           entryPassword: e.entryPassword || storePassword,
           certChainDer: e.certChainDer,
         }
-      : { alias: e.alias, type: 'cert', certDer: e.certDer },
-  )
+      : { alias: e.alias, type: 'cert', certDer: e.certDer }
+  })
   return encodeJks(jksEntries, storePassword)
 }
 
@@ -839,6 +1089,16 @@ function requireNonBlank(value: string | undefined | null, message: string): str
 }
 
 function summarize(entry: EntryModel): AliasSummary {
+  if (entry.kind === 'secret') {
+    // A secret (symmetric) key has no certificate and is not a *private* key —
+    // entryType KEY, hasPrivateKey false, empty chain distinguishes it in the UI.
+    return {
+      alias: entry.alias,
+      entryType: 'KEY',
+      hasPrivateKey: false,
+      chainLength: 0,
+    }
+  }
   if (entry.kind === 'key') {
     const leaf = entry.certChainDer[0]
     const base: AliasSummary = {
@@ -1018,6 +1278,10 @@ export class KeystoreEngine {
     requireNonBlank(alias, 'Alias cannot be empty')
     const entry = s.entries.find((e) => e.alias === alias)
     if (!entry) throw new KeystoreValidationException(`Alias not found: ${alias}`)
+    if (entry.kind === 'secret') {
+      // Secret keys carry no X.509 chain (design §6.5 — leaf is null).
+      return { alias, entryType: 'KEY', hasPrivateKey: false, chain: [] }
+    }
     const chain =
       entry.kind === 'key'
         ? entry.certChainDer.map(buildCertificateInfo)
@@ -1054,6 +1318,47 @@ export class KeystoreEngine {
       privateKeyPkcs8Der: material.privateKeyPkcs8Der,
       entryPassword,
       certChainDer: [material.certDer],
+    })
+    if (opts.entryPassword && opts.entryPassword.trim()) {
+      s.aliasEntryPasswords.set(alias, opts.entryPassword)
+    }
+    s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
+    return this.meta(s)
+  }
+
+  /**
+   * Generate an AES secret key and add it as a SecretKeyEntry (spec §4.9).
+   * PKCS12-only — JKS cannot hold secret keys. Synchronous (Node
+   * `randomBytes`), but returns immediately-serialized safe meta like its
+   * key-pair sibling.
+   */
+  generateSecretKey(sessionId: string, opts: GenerateSecretKeyOptions): KeystoreMeta {
+    const s = this.getSession(sessionId)
+    const alias = requireNonBlank(opts.alias, 'Alias cannot be empty')
+    if (s.type !== 'PKCS12') {
+      throw new KeystoreValidationException('Secret keys can only be stored in a PKCS12 keystore')
+    }
+    if (s.entries.some((e) => e.alias === alias)) {
+      throw new KeystoreValidationException(`Alias already exists: ${alias}`)
+    }
+    const algo = (opts.keyAlgorithm ?? 'AES').trim().toUpperCase()
+    if (algo !== 'AES') {
+      throw new KeystoreValidationException(
+        `Unsupported secret key algorithm: ${opts.keyAlgorithm}`,
+      )
+    }
+    const size = opts.keySize ?? 256
+    if (![128, 192, 256].includes(size)) {
+      throw new KeystoreValidationException(`Unsupported AES key size: ${size}`)
+    }
+    const entryPassword =
+      opts.entryPassword && opts.entryPassword.trim() ? opts.entryPassword : s.storePassword
+    s.entries.push({
+      alias,
+      kind: 'secret',
+      keyAlgorithm: 'AES',
+      secretKeyRaw: randomBytes(size / 8),
+      entryPassword,
     })
     if (opts.entryPassword && opts.entryPassword.trim()) {
       s.aliasEntryPasswords.set(alias, opts.entryPassword)

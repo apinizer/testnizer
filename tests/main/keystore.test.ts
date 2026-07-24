@@ -7,10 +7,14 @@
  * the same engine (which uses jks-js / node-forge under the hood).
  */
 
+// reflect-metadata MUST load before @peculiar/x509 (see keystore.ts header).
+import 'reflect-metadata'
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import forge from 'node-forge'
+import * as x509 from '@peculiar/x509'
 import {
   KeystoreEngine,
   KeystoreValidationException,
@@ -156,6 +160,282 @@ describe('generateKeyPair — RSA + EC self-signed, then inspect/aliasDetail', (
     await expect(
       engine.generateKeyPair(sessionId, { alias: 'x', keyAlgorithm: 'RSA', keySize: 999 }),
     ).rejects.toThrow('Unsupported RSA key size: 999')
+  })
+})
+
+describe('generateKeyPair — Faz 2 full option KATs', () => {
+  it.each([
+    [3072],
+    [4096],
+  ])('RSA %i self-signed → keySize + SHA256withRSA', async (bits) => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    await engine.generateKeyPair(sessionId, {
+      alias: `r${bits}`,
+      keyAlgorithm: 'RSA',
+      keySize: bits,
+      basicConstraintsCa: false,
+    })
+    const info = engine.aliasDetail(sessionId, `r${bits}`).chain[0]
+    expect(info.keySize).toBe(bits)
+    expect(info.publicKeyAlgorithm).toBe('RSA')
+    expect(info.version).toBe(3)
+    expect(info.subjectDN).toBe(info.issuerDN) // self-signed
+  }, 30000)
+
+  it('RSA full option set: SAN (DNS+IP) / keyUsage / serial / validity / CA', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    await engine.generateKeyPair(sessionId, {
+      alias: 'full',
+      keyAlgorithm: 'RSA',
+      keySize: 2048,
+      subjectDN: 'CN=full.example.com, O=Example Inc, C=TR',
+      subjectAlternativeNames: ['full.example.com', '10.0.0.5'],
+      keyUsage: ['digitalSignature', 'keyCertSign', 'cRLSign'],
+      basicConstraintsCa: true,
+      serialNumber: '0x0A1B2C3D',
+      validityDays: 365,
+    })
+    const info = engine.aliasDetail(sessionId, 'full').chain[0]
+    // Serial is rendered as canonical minimal hex (KS-F2-23..25): no leading
+    // zero even though the cert DER integer is even-length padded on the build side.
+    expect(info.serialNumber).toBe('a1b2c3d')
+    expect(info.subjectDN).toContain('CN=full.example.com')
+    expect(info.subjectAlternativeNames).toEqual(
+      expect.arrayContaining(['full.example.com', '10.0.0.5']),
+    )
+    expect(new Date(info.notAfter).getTime() - new Date(info.notBefore).getTime()).toBe(
+      365 * 86400000,
+    )
+    // keyUsage + basicConstraints aren't in CertificateInfo — decode from the PEM.
+    const cert = forge.pki.certificateFromPem(info.pem)
+    const ku = cert.getExtension('keyUsage') as {
+      digitalSignature: boolean
+      keyCertSign: boolean
+      cRLSign: boolean
+    }
+    expect(ku.digitalSignature).toBe(true)
+    expect(ku.keyCertSign).toBe(true)
+    expect(ku.cRLSign).toBe(true)
+    const bc = cert.getExtension('basicConstraints') as { cA: boolean }
+    expect(bc.cA).toBe(true)
+  })
+
+  it('decimal serialNumber is rendered as canonical lowercase hex (no leading zero)', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    await engine.generateKeyPair(sessionId, {
+      alias: 'serdec',
+      keyAlgorithm: 'RSA',
+      keySize: 2048,
+      serialNumber: '123456789',
+    })
+    // 123456789 === 0x75BCD15 (7 hex digits → odd → even-length padded to 075bcd15
+    // in the cert DER, but READ BACK as the minimal canonical hex 75bcd15).
+    expect(engine.aliasDetail(sessionId, 'serdec').chain[0].serialNumber).toBe('75bcd15')
+  })
+
+  it('a 0x-hex serial reads back as minimal canonical hex (no leading zero)', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    // 0x1985E1A5800 is 11 hex digits (odd) → padded to 01985e1a5800 in DER, but
+    // must read back without the leading zero.
+    await engine.generateKeyPair(sessionId, {
+      alias: 'serhex',
+      keyAlgorithm: 'RSA',
+      keySize: 2048,
+      serialNumber: '0x1985E1A5800',
+    })
+    expect(engine.aliasDetail(sessionId, 'serhex').chain[0].serialNumber).toBe('1985e1a5800')
+  })
+
+  it('the default now-millis serial reads back canonical (no leading zero)', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    // No serialNumber ⇒ engine defaults to Date.now() ms. Whatever the value, the
+    // rendered serial is minimal canonical hex: it never carries a DER pad zero.
+    await engine.generateKeyPair(sessionId, { alias: 'serdef', keyAlgorithm: 'RSA', keySize: 2048 })
+    const serial = engine.aliasDetail(sessionId, 'serdef').chain[0].serialNumber
+    expect(serial).not.toMatch(/^0/)
+    // Canonical form is idempotent under BigInt round-trip.
+    expect(serial).toBe(BigInt('0x' + serial).toString(16))
+  })
+})
+
+describe('generateKeyPair — R10 cross-builder parity (node-forge RSA vs @peculiar EC)', () => {
+  it('RSA and EC self-signed certs encode identical keyUsage / basicConstraints / SAN', async () => {
+    // The RSA path builds the X.509 with node-forge; the EC path builds it with
+    // @peculiar/x509. Feeding BOTH the SAME full option set and decoding the two
+    // generated cert PEMs with ONE reader must yield IDENTICAL extension
+    // encodings — otherwise the two builders have silently drifted (R10).
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', PW)
+    const shared = {
+      subjectAlternativeNames: ['api.example.com', '192.168.1.10'],
+      keyUsage: ['digitalSignature', 'keyCertSign', 'cRLSign'],
+      basicConstraintsCa: true,
+      serialNumber: '0x1122334455',
+      validityDays: 730,
+    }
+    await engine.generateKeyPair(sessionId, {
+      alias: 'rsa',
+      keyAlgorithm: 'RSA',
+      keySize: 2048,
+      ...shared,
+    })
+    await engine.generateKeyPair(sessionId, {
+      alias: 'ec',
+      keyAlgorithm: 'EC',
+      curve: 'P-256',
+      ...shared,
+    })
+
+    const rsaPem = engine.aliasDetail(sessionId, 'rsa').chain[0].pem
+    const ecPem = engine.aliasDetail(sessionId, 'ec').chain[0].pem
+
+    // Single reader (@peculiar/x509 parses both RSA and EC certs) → the
+    // comparison isolates the two BUILDERS.
+    const decode = (pem: string) => {
+      const cert = new x509.X509Certificate(pem)
+      const ku = cert.getExtension(x509.KeyUsagesExtension)
+      const bc = cert.getExtension(x509.BasicConstraintsExtension)
+      const san = cert.getExtension(x509.SubjectAlternativeNameExtension)
+      return {
+        keyUsage: ku?.usages ?? 0,
+        kuCritical: ku?.critical ?? false,
+        ca: bc?.ca ?? false,
+        bcCritical: bc?.critical ?? false,
+        sans: (san?.names.items ?? []).map((n) => `${n.type}:${n.value}`).sort(),
+      }
+    }
+    const rsa = decode(rsaPem)
+    const ec = decode(ecPem)
+
+    // Parity: the two builders must produce byte-identical extension semantics.
+    expect(rsa).toEqual(ec)
+
+    // And the shared option set is faithfully encoded on both.
+    const F = x509.KeyUsageFlags
+    expect(rsa.keyUsage).toBe(F.digitalSignature | F.keyCertSign | F.cRLSign)
+    expect(rsa.kuCritical).toBe(true)
+    expect(rsa.ca).toBe(true)
+    expect(rsa.bcCritical).toBe(true)
+
+    // SAN entries via the app's own canonical reader (Node X509) on BOTH certs —
+    // DNS + IP land identically regardless of which builder produced the cert.
+    const rsaSan = buildCertificateInfo(pemToDer(rsaPem, 'CERTIFICATE')).subjectAlternativeNames
+    const ecSan = buildCertificateInfo(pemToDer(ecPem, 'CERTIFICATE')).subjectAlternativeNames
+    expect(rsaSan.sort()).toEqual(ecSan.sort())
+    expect(rsaSan).toEqual(expect.arrayContaining(['api.example.com', '192.168.1.10']))
+  }, 30000)
+})
+
+describe('generateSecretKey — AES, PKCS12-only (Faz 2 Group B)', () => {
+  it('default keySize (256) AES entry: KEY / no-private-key / empty chain', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'changeit')
+    const meta = engine.generateSecretKey(sessionId, { alias: 'aes', entryPassword: 'changeit' })
+    expect(meta.type).toBe('PKCS12')
+    expect(meta.aliasCount).toBe(1)
+    const sum = meta.aliases[0]
+    expect(sum).toMatchObject({
+      alias: 'aes',
+      entryType: 'KEY',
+      hasPrivateKey: false,
+      chainLength: 0,
+    })
+    expect(sum.subjectDN).toBeUndefined()
+    expect(sum.issuerDN).toBeUndefined()
+    const detail = engine.aliasDetail(sessionId, 'aes')
+    expect(detail.hasPrivateKey).toBe(false)
+    expect(detail.chain).toEqual([])
+  })
+
+  it.each([[128], [192], [256]])('AES %i serialize round-trips (reopen sees the secret)', (size) => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'changeit')
+    engine.generateSecretKey(sessionId, { alias: 'sk', keyAlgorithm: 'AES', keySize: size })
+    const bytes = engine.serialize(sessionId)
+    const reopened = engine.open(bytes, 'changeit', 'PKCS12')
+    expect(reopened.meta.aliasCount).toBe(1)
+    expect(reopened.meta.aliases[0]).toMatchObject({
+      alias: 'sk',
+      entryType: 'KEY',
+      hasPrivateKey: false,
+      chainLength: 0,
+    })
+  })
+
+  it('a key pair + a secret key round-trip together through the secret-bag filter', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'changeit')
+    await engine.generateKeyPair(sessionId, { alias: 'rsa', keyAlgorithm: 'RSA', keySize: 2048 })
+    const meta = engine.generateSecretKey(sessionId, {
+      alias: 'aes',
+      keyAlgorithm: 'AES',
+      keySize: 256,
+    })
+    expect(meta.aliasCount).toBe(2)
+    const bytes = engine.serialize(sessionId)
+    const reopened = engine.open(bytes, 'changeit', 'PKCS12')
+    expect(reopened.meta.aliases.map((a) => a.alias).sort()).toEqual(['aes', 'rsa'])
+    const byAlias = Object.fromEntries(reopened.meta.aliases.map((a) => [a.alias, a]))
+    expect(byAlias.rsa.hasPrivateKey).toBe(true)
+    expect(byAlias.aes.hasPrivateKey).toBe(false)
+    expect(byAlias.aes.chainLength).toBe(0)
+  })
+
+  it('a generated key pair + secret key recover with the STORE password (no per-entry-password data loss)', async () => {
+    // Regression guard for the Faz B2 finding: generate protects entries with
+    // the store password only. Reopening with the STORE password must recover
+    // BOTH the private-key bytes and the raw secret bytes — proving no entry is
+    // shrouded under a mismatched per-entry password (which the store-password
+    // parse path could not decrypt → silent data loss).
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'store-pw')
+    await engine.generateKeyPair(sessionId, { alias: 'kp', keyAlgorithm: 'RSA', keySize: 2048 })
+    engine.generateSecretKey(sessionId, { alias: 'sk', keyAlgorithm: 'AES', keySize: 256 })
+    const bytes = engine.serialize(sessionId)
+
+    const parsed = parseKeyStore(bytes, 'store-pw', 'PKCS12')
+    const byAlias = Object.fromEntries(parsed.map((e) => [e.alias, e]))
+    expect(Object.keys(byAlias).sort()).toEqual(['kp', 'sk'])
+
+    const kp = byAlias.kp as { kind: string; privateKeyPkcs8Der: Buffer; certChainDer: Buffer[] }
+    expect(kp.kind).toBe('key')
+    expect(kp.privateKeyPkcs8Der.length).toBeGreaterThan(0) // private key recovered
+    expect(kp.certChainDer).toHaveLength(1)
+
+    const sk = byAlias.sk as { kind: string; secretKeyRaw: Buffer }
+    expect(sk.kind).toBe('secret')
+    expect(sk.secretKeyRaw).toHaveLength(32) // AES-256 raw key recovered
+  }, 30000)
+
+  it('is rejected on a JKS keystore with the exact message', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'changeit')
+    expect(() =>
+      engine.generateSecretKey(sessionId, { alias: 'skjks', keyAlgorithm: 'AES', keySize: 256 }),
+    ).toThrow('Secret keys can only be stored in a PKCS12 keystore')
+    expect(engine.inspect(sessionId).aliasCount).toBe(0)
+  })
+
+  it('rejects unsupported AES key size / non-AES algorithm / duplicate alias', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'changeit')
+    expect(() =>
+      engine.generateSecretKey(sessionId, { alias: 'x', keyAlgorithm: 'AES', keySize: 512 }),
+    ).toThrow('Unsupported AES key size: 512')
+    expect(() =>
+      engine.generateSecretKey(sessionId, { alias: 'x', keyAlgorithm: 'DES', keySize: 56 }),
+    ).toThrow('Unsupported secret key algorithm: DES')
+    expect(() => engine.generateSecretKey(sessionId, { alias: '' })).toThrow('Alias cannot be empty')
+    engine.generateSecretKey(sessionId, { alias: 'dup', keyAlgorithm: 'AES', keySize: 256 })
+    expect(() =>
+      engine.generateSecretKey(sessionId, { alias: 'dup', keyAlgorithm: 'AES', keySize: 256 }),
+    ).toThrow('Alias already exists: dup')
+    expect(engine.inspect(sessionId).aliasCount).toBe(1)
   })
 })
 

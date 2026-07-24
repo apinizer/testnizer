@@ -35,6 +35,33 @@ async function unwrap<T>(p: Promise<{ success: boolean; data?: T; error?: string
   return r.data as T
 }
 
+/**
+ * Renderer-side generate inputs. `sessionId` is added by the store from the
+ * open session — callers pass only the field set collected by the dialogs.
+ * These mirror the preload payloads minus `sessionId` (§9.5 field sets).
+ */
+export interface GenerateKeyPairInput {
+  alias: string
+  keyAlgorithm?: string
+  keySize?: number
+  curve?: string
+  subjectDN?: string
+  subjectAlternativeNames?: string[]
+  validityDays?: number
+  serialNumber?: string
+  keyUsage?: string[]
+  basicConstraintsCa?: boolean
+  signatureAlgorithm?: string
+  entryPassword?: string
+}
+
+export interface GenerateSecretKeyInput {
+  alias: string
+  keyAlgorithm?: string
+  keySize?: number
+  entryPassword?: string
+}
+
 export interface KeystoreState {
   /** Opaque main-process handle. `null` = empty state (no keystore open). */
   sessionId: string | null
@@ -64,6 +91,17 @@ export interface KeystoreState {
   }) => Promise<boolean>
   /** Create a fresh empty keystore session. */
   createNew: (payload?: { type?: string; password?: string }) => Promise<boolean>
+  /**
+   * Generate a key pair + self-signed X.509v3 certificate into the CURRENT
+   * session, then refresh `meta` from the returned safe summary. The private
+   * key never leaves main — only public metadata comes back.
+   */
+  generateKeyPair: (opts: GenerateKeyPairInput) => Promise<boolean>
+  /**
+   * Generate an AES secret key into the CURRENT session (PKCS12-only), then
+   * refresh `meta`. Raw key bytes never leave main.
+   */
+  generateSecretKey: (opts: GenerateSecretKeyInput) => Promise<boolean>
   /** Open a saved library entry into a session (password re-entered if not remembered). */
   openFromLibrary: (payload: { id: string; name: string; password?: string }) => Promise<boolean>
   /** Persist the current session to the Model B library. */
@@ -153,6 +191,50 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
         aliasDetail: null,
         loading: false,
       })
+      return true
+    } catch (e) {
+      return fail(set, e)
+    }
+  },
+
+  generateKeyPair: async (opts) => {
+    const bridge = ks()
+    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    const sessionId = get().sessionId
+    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    set({ loading: true, error: null })
+    try {
+      // Generate MUTATES the current session; the response carries the same
+      // sessionId plus refreshed public meta (never key material).
+      //
+      // Faz B2: entryPassword is intentionally DROPPED here — generated entries
+      // are protected with the store password. The engine can encrypt a bag
+      // under a distinct entry password, but the parse/open path only decrypts
+      // with the store password, so a per-entry password would make the entry
+      // undecryptable on reopen (silent data loss). Per-entry password
+      // protection lands in Faz B4 (setEntryPassword + parse-side
+      // aliasEntryPasswords threading).
+      const { entryPassword: _entryPasswordB4, ...safeOpts } = opts
+      const { meta } = await unwrap(bridge.generateKeyPair({ sessionId, ...safeOpts }))
+      set({ meta, loading: false })
+      return true
+    } catch (e) {
+      return fail(set, e)
+    }
+  },
+
+  generateSecretKey: async (opts) => {
+    const bridge = ks()
+    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    const sessionId = get().sessionId
+    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    set({ loading: true, error: null })
+    try {
+      // entryPassword DROPPED (see generateKeyPair) — the secret entry is
+      // protected with the store password until Faz B4 wires per-entry passwords.
+      const { entryPassword: _entryPasswordB4, ...safeOpts } = opts
+      const { meta } = await unwrap(bridge.generateSecretKey({ sessionId, ...safeOpts }))
+      set({ meta, loading: false })
       return true
     } catch (e) {
       return fail(set, e)
