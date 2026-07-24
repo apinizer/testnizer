@@ -7,6 +7,10 @@ import {
   HttpRequestOptions,
   stripUrlCredentials,
 } from '../protocols/http.engine'
+// THE single cert-attach function — shared with the Send path (`request:send`).
+// Importing it (rather than copying the logic) is what keeps Send≡Run parity
+// structural: one host-match, one keystore branch, one fail-loud message.
+import { loadCertificatesFor } from './request.handler'
 import * as endpointRepo from '../db/endpoint.repo'
 import * as tsiRepo from '../db/test-suite-item.repo'
 import * as historyRepo from '../db/history.repo'
@@ -840,6 +844,14 @@ async function runUserScript(
       // works) and calls the optional Node-style callback. The runner awaits
       // `ctx.pendingSends` so callback-only sends finish too. Mirrors the Send
       // path (test-runner.ts).
+      //
+      // CERT SCOPE (R5, design §4 "Send≡Run parity: pm.sendRequest"): a
+      // script-issued request attaches NO project client certificate — on
+      // EITHER path. Here we call the engine directly with no `projectId`; the
+      // renderer twin (`normalizePmSendInput` in test-runner.ts) likewise emits
+      // no `_projectId`, so `request:send` skips `loadCertificatesFor` too.
+      // That is SYMMETRIC by design — do not add the cert branch to one side
+      // only, or the parity class reopens on the scripted junction.
       sendRequest: (
         req: unknown,
         cb?: (err: Error | null, res: unknown) => void,
@@ -1393,6 +1405,34 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
           // it the engine falls back to the shared "_default" jar (issue: Send
           // OK / Run 401 on cookie-auth flows).
           resolvedOptions.projectId = options.projectId
+
+          // ── R5 (design §2.5 EDIT 2): attach the project's client/CA certs ──
+          //
+          // Until now the Runner NEVER called the cert-attach step, so a
+          // collection that Sends fine with mTLS failed (or went out
+          // unauthenticated) on Run — the Send≡Run parity class. We call the
+          // SAME exported `loadCertificatesFor` the Send path uses; there is
+          // deliberately no Runner-local copy, so the keystore branch (#60)
+          // lights up on both paths at once and can never drift.
+          //
+          // BEHAVIOUR CHANGE: existing runs that previously presented no client
+          // certificate may now present one (host-matched — a cert scoped to
+          // host A is still never sent to host B). Documented in the release
+          // notes.
+          //
+          // FAIL LOUD: a matched-but-unloadable cert throws instead of silently
+          // going out unauthenticated. The throw is caught by THIS iteration's
+          // try/catch below, which turns it into a transport-failure verdict for
+          // this one request — the run continues (unless `stopOnError`).
+          if (options.projectId && !resolvedOptions.certificates) {
+            const { certificates, error } = loadCertificatesFor(
+              options.projectId,
+              resolvedOptions.url,
+            )
+            if (error) throw new Error(error)
+            if (certificates) resolvedOptions.certificates = certificates
+          }
+
           const response = await executeHttpRequest(resolvedOptions)
 
           // Run post-response (test) scripts in cascade order (project →

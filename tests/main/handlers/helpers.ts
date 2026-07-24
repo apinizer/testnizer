@@ -401,7 +401,14 @@ const SCHEMA_SQL = `
     pfx_path TEXT,
     passphrase TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    -- Key Material Provider (#60). MUST mirror the production ALTERs in
+    -- src/main/db/database.ts — createTestDb() never runs them (CLAUDE.md
+    -- "Test helper şema senkronizasyonu" gotcha).
+    source TEXT NOT NULL DEFAULT 'file',
+    keystore_id TEXT,
+    keystore_alias TEXT,
+    keystore_key_password TEXT
   );
 
   CREATE TABLE otp_entries (

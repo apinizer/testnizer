@@ -1027,6 +1027,91 @@ export function serializeKeyStore(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// exportAliasPem (Key Material Provider #60, design §2.2) — THE private-key
+// extraction door.
+//
+// This is the ONLY function that turns a keystore alias into private-key PEM.
+// It deliberately lives INSIDE the engine (rather than exporting `EntryModel`)
+// so private-key material is materialized in exactly one place; the
+// keystore-bridge resolver consumes PEM strings and never sees the internal
+// model. `node:crypto` only — no ESM dependency is dragged into the
+// externalized main bundle (CLAUDE.md ERR_REQUIRE_ESM gotcha).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AliasPemMaterial {
+  /** Leaf certificate PEM (chain position 0). */
+  certPem: string
+  /** Unencrypted PKCS#8 private-key PEM. MAIN-ONLY — never crosses to the renderer. */
+  keyPem: string
+  /** Intermediates/root, leaf-first order (chain positions 1..n). May be empty. */
+  chainPem: string[]
+}
+
+/**
+ * Materialize one keystore alias as PEM.
+ *
+ * R11 double-password: `storePassword` opens the store; `keyPassword` is the
+ * per-alias ENTRY password for a JKS whose entry pw ≠ store pw. It is threaded
+ * through the same `aliasEntryPasswords` map the Faz-B4 reopen path already
+ * uses, so JKS entry passwords are honoured TODAY. PKCS12 readers still open
+ * with a single password (`parsePkcs12` ignores the map), so for PKCS12 the
+ * parameter is currently inert — a wrong-password PKCS12 alias fails loud
+ * rather than silently returning nothing.
+ *
+ * Throws (never returns empty) when: the store will not open, the alias is
+ * missing, the alias holds no private key, or the entry password is wrong.
+ */
+export function exportAliasPem(
+  bytes: Buffer,
+  storePassword: string,
+  type: KeystoreType,
+  alias: string,
+  keyPassword?: string,
+): AliasPemMaterial {
+  const aliasEntryPasswords = keyPassword
+    ? new Map<string, string>([[alias, keyPassword]])
+    : undefined
+  const entries = parseKeyStore(bytes, storePassword, type, aliasEntryPasswords)
+  // keytool lower-cases aliases on write; accept a case-insensitive match so a
+  // stored `keystore_alias` typed by the user still resolves.
+  const entry =
+    entries.find((e) => e.alias === alias) ??
+    entries.find((e) => e.alias.toLowerCase() === alias.toLowerCase())
+  if (!entry) {
+    throw new KeystoreValidationException(`Alias not found in keystore: ${alias}`)
+  }
+  if (entry.kind !== 'key') {
+    throw new KeystoreValidationException(
+      `Alias '${alias}' holds no private key (it is a ${entry.kind === 'cert' ? 'trusted certificate' : 'secret key'} entry).`,
+    )
+  }
+  if (entry.certChainDer.length === 0) {
+    throw new KeystoreEngineException(`Alias '${alias}' has no certificate chain.`)
+  }
+  const keyPem = createPrivateKey({
+    key: entry.privateKeyPkcs8Der,
+    format: 'der',
+    type: 'pkcs8',
+  })
+    .export({ format: 'pem', type: 'pkcs8' })
+    .toString()
+  const certPem = new X509Certificate(entry.certChainDer[0]).toString()
+  const chainPem = entry.certChainDer.slice(1).map((d) => new X509Certificate(d).toString())
+  return { certPem, keyPem, chainPem }
+}
+
+/**
+ * Aliases of the PRIVATE-KEY entries in a keystore, in file order. Public
+ * metadata only — lets the keystore-bridge resolve an ad-hoc container file
+ * without ever touching the internal (un-exported) entry model.
+ */
+export function listKeyAliases(bytes: Buffer, storePassword: string, type: KeystoreType): string[] {
+  return parseKeyStore(bytes, storePassword, type)
+    .filter((e) => e.kind === 'key')
+    .map((e) => e.alias)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Certificate export encoders (spec §4.14 / §6.12) — Faz B4. PUBLIC cert bytes
 // only: DER (raw leaf), PEM (leaf), PKCS7 (full chain, forge-degenerate
 // SignedData), PkiPath (root-first SEQUENCE OF Certificate). Each parses a cert

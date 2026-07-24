@@ -515,6 +515,15 @@ function runMigrations(database: Database.Database): void {
   }
 
   // ─── Certificates (per-project: CA + Client) ──────────────
+  // `source` discriminates HOW the material is obtained (Key Material Provider,
+  // #60): 'file' = the classic crt/key/pfx paths (unchanged default — every
+  // pre-existing row stays byte-for-byte on the old path), 'keystore' = the
+  // row points at a `keystores` library entry + alias and carries NO paths.
+  // R11 double-password: the STORE password lives on the keystores row
+  // (`store_password`), the per-alias KEY password lives here in `passphrase`
+  // (both encryptSecret-wrapped at the handler boundary).
+  // NOTE: a keystore-backed row STILL needs a `host` (or '*') or
+  // `listCertificatesForHost`/`certHostMatches` will never select it.
   database.exec(`
     CREATE TABLE IF NOT EXISTS certificates (
       id TEXT PRIMARY KEY,
@@ -527,6 +536,10 @@ function runMigrations(database: Database.Database): void {
       passphrase TEXT,
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL,
+      source TEXT NOT NULL DEFAULT 'file',
+      keystore_id TEXT,
+      keystore_alias TEXT,
+      keystore_key_password TEXT,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_certificates_project ON certificates(project_id);
@@ -733,6 +746,17 @@ function runMigrations(database: Database.Database): void {
     `ALTER TABLE test_suite_folders ADD COLUMN auth TEXT`,
     `ALTER TABLE test_suite_folders ADD COLUMN pre_script TEXT`,
     `ALTER TABLE test_suite_folders ADD COLUMN post_script TEXT`,
+    // Key Material Provider (#60) — keystore-backed client certificate rows.
+    // Additive: existing installs get source='file' for every row, so the
+    // classic crt/key/pfx path is untouched.
+    `ALTER TABLE certificates ADD COLUMN source TEXT NOT NULL DEFAULT 'file'`,
+    `ALTER TABLE certificates ADD COLUMN keystore_id TEXT`,
+    `ALTER TABLE certificates ADD COLUMN keystore_alias TEXT`,
+    // Per-alias ENTRY password (R11) for keystore-backed rows. Deliberately NOT
+    // `passphrase`: that column is the PFX passphrase of the file path, and
+    // reusing it would let the added keystore option destroy a working file
+    // setting the moment an alias is picked.
+    `ALTER TABLE certificates ADD COLUMN keystore_key_password TEXT`,
   ]
   for (const sql of alters) {
     try {

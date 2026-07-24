@@ -5,6 +5,7 @@ import {
   decryptEnvelope,
   type WsSecurityConfig,
 } from '../protocols/wsse.engine'
+import { resolveWsseKeyMaterial } from '../lib/wsse-key-material'
 
 interface ApplyPayload {
   envelope: string
@@ -33,7 +34,14 @@ export function registerWsseHandlers(): void {
     'wsse:apply',
     async (_event, payload: ApplyPayload): Promise<IpcResult<string>> => {
       try {
-        const result = await applyWsSecurity(payload.envelope, payload.config)
+        // Junction 1 of 2 (#60 / reconcile C-2): resolve `sign.keySource` HERE,
+        // in the orchestration layer, so the standalone WS-Security tool honours
+        // "Use from keystore" exactly like the SOAP path does. With no
+        // keySource this is a no-op and the pasted-PEM config passes through
+        // untouched. Only the signed XML goes back to the renderer — the
+        // resolved PEM never leaves main.
+        const config = resolveWsseKeyMaterial(payload.config)
+        const result = await applyWsSecurity(payload.envelope, config)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: errorMessage(e) }

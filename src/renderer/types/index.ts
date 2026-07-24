@@ -536,12 +536,49 @@ export interface WsTimestampConfig {
   ttlSeconds: number
 }
 
+/**
+ * Renderer-side mirror of the main-process `MaterialSource`
+ * (`src/main/lib/keystore-bridge.ts`) — the Key Material Provider (#60).
+ *
+ * OPAQUE by construction: ids, filesystem paths and user-pasted PEM only. NO
+ * resolved key bytes ever live in this shape, so the renderer can hold and
+ * persist it. The password fields are WRITE-ONLY: they may be sent to main once,
+ * and are never persisted, echoed back, or read out of a stored config.
+ *
+ * Keep structurally mirrored with the main-process union (the two type trees are
+ * hand-kept in sync, like `WsSignConfig` ↔ engine `SignConfig`).
+ */
+export type MaterialSource =
+  | { kind: 'inline'; certPem: string; keyPem?: string; chainPem?: string[]; passphrase?: string }
+  | { kind: 'file'; certPath?: string; keyPath?: string; pfxPath?: string; passphrase?: string }
+  | {
+      kind: 'keystore'
+      keystoreId: string
+      alias: string
+      /** Per-alias ENTRY password (R11). WRITE-ONLY. */
+      keyPassword?: string
+      /** STORE password — required when the keystore row's is NULL. WRITE-ONLY. */
+      storePassword?: string
+    }
+  | { kind: 'certRow'; certificateId: string }
+
 export interface WsSignConfig {
-  privateKeyPem: string
-  certPem: string
+  /**
+   * Pasted private-key PEM — the DEFAULT path, unchanged. OPTIONAL since #60:
+   * a `keySource` may stand in for it, in which case MAIN resolves the PEM and
+   * the renderer never sees it.
+   */
+  privateKeyPem?: string
+  /** Pasted certificate PEM. OPTIONAL for the same reason as `privateKeyPem`. */
+  certPem?: string
   algorithm: WsSignAlgorithm
   references: WsSignReference[]
   keyInfoStrategy: WsKeyInfoStrategy
+  /**
+   * "Use from keystore / Security" — one ADDED option (#60). When absent the
+   * behaviour is byte-for-byte the old pasted-PEM path. Resolved in MAIN only.
+   */
+  keySource?: MaterialSource
 }
 
 export interface WsEncryptConfig {

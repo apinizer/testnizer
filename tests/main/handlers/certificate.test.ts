@@ -24,18 +24,17 @@ vi.mock('../../../src/main/db/database', () => ({
 
 vi.mock('../../../src/main/lib/secure-storage', () => ({
   encryptSecret: (s: string | null | undefined) => (s ? `enc:${s}` : null),
-  decryptSecret: (s: string | null | undefined) =>
-    s ? s.replace(/^enc:/, '') : null,
+  decryptSecret: (s: string | null | undefined) => (s ? s.replace(/^enc:/, '') : null),
 }))
 
 const electron = await import('electron')
-const dialogMock = (electron as unknown as {
-  dialog: { showOpenDialog: ReturnType<typeof vi.fn> }
-}).dialog
+const dialogMock = (
+  electron as unknown as {
+    dialog: { showOpenDialog: ReturnType<typeof vi.fn> }
+  }
+).dialog
 
-const { registerCertificateHandlers } = await import(
-  '../../../src/main/ipc/certificate.handler'
-)
+const { registerCertificateHandlers } = await import('../../../src/main/ipc/certificate.handler')
 
 let projectId: string
 
@@ -83,6 +82,78 @@ describe('certificate:list + add', () => {
       error?: string
     }
     expect(res.success).toBe(false)
+  })
+
+  // ── NO-LEAK (#60) ────────────────────────────────────────────────────────
+  it('NEVER returns a stored secret to the renderer — only whether one is set', async () => {
+    await harness.invoke('certificate:add', {
+      projectId,
+      kind: 'client',
+      host: 'api.example.com',
+      pfxPath: '/path/to/client.pfx',
+      passphrase: 'pfx-secret',
+      keystoreKeyPassword: 'entry-secret',
+    })
+
+    const list = (await harness.invoke('certificate:list', projectId)) as {
+      success: boolean
+      data?: Array<Record<string, unknown>>
+    }
+    const serialised = JSON.stringify(list.data)
+    expect(serialised).not.toContain('pfx-secret')
+    expect(serialised).not.toContain('entry-secret')
+    // …not even the encrypted blob, which is cleartext where safeStorage is
+    // unavailable.
+    expect(serialised).not.toContain('enc:')
+    const row = list.data?.[0] ?? {}
+    expect(row).not.toHaveProperty('passphrase')
+    expect(row).not.toHaveProperty('keystore_key_password')
+    expect(row.has_passphrase).toBe(true)
+    expect(row.has_keystore_key_password).toBe(true)
+  })
+
+  it('reports has_passphrase=false for a row without one, and after it is cleared', async () => {
+    const add = (await harness.invoke('certificate:add', {
+      projectId,
+      kind: 'client',
+      host: 'a.test',
+      crtPath: '/c.crt',
+    })) as { data: { has_passphrase: boolean; id: string } }
+    expect(add.data.has_passphrase).toBe(false)
+
+    await harness.invoke('certificate:update', { id: add.data.id, passphrase: 'later' })
+    let list = (await harness.invoke('certificate:list', projectId)) as {
+      data?: Array<{ has_passphrase: boolean }>
+    }
+    expect(list.data?.[0]?.has_passphrase).toBe(true)
+
+    // '' is the explicit "clear it" signal from the write-only input.
+    await harness.invoke('certificate:update', { id: add.data.id, passphrase: '' })
+    list = (await harness.invoke('certificate:list', projectId)) as {
+      data?: Array<{ has_passphrase: boolean }>
+    }
+    expect(list.data?.[0]?.has_passphrase).toBe(false)
+  })
+
+  it('refuses to half-link a row: source=keystore without a keystore id', async () => {
+    const add = (await harness.invoke('certificate:add', {
+      projectId,
+      kind: 'client',
+      host: 'a.test',
+      crtPath: '/c.crt',
+    })) as { data: { id: string } }
+
+    const res = (await harness.invoke('certificate:update', {
+      id: add.data.id,
+      source: 'keystore',
+    })) as { success: boolean; error?: string }
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/needs a keystore and alias/i)
+
+    const list = (await harness.invoke('certificate:list', projectId)) as {
+      data?: Array<{ source?: string }>
+    }
+    expect(list.data?.[0]?.source).toBe('file')
   })
 })
 

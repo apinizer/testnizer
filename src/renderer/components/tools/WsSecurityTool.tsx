@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
+import KeyMaterialField from '../shared/KeyMaterialField'
 import ToolShell from './ToolShell'
 import { useWsseToolStore } from '../../stores/wsse-tool.store'
 import {
@@ -337,14 +338,30 @@ export default function WsSecurityTool() {
                 <textarea
                   className={TEXTAREA}
                   placeholder="-----BEGIN CERTIFICATE-----..."
-                  value={sign.certPem}
+                  value={sign.certPem ?? ''}
                   onChange={(e) => setSign({ ...sign, certPem: e.target.value })}
                 />
                 <textarea
                   className={TEXTAREA}
                   placeholder="-----BEGIN PRIVATE KEY-----..."
-                  value={sign.privateKeyPem}
+                  value={sign.privateKeyPem ?? ''}
                   onChange={(e) => setSign({ ...sign, privateKeyPem: e.target.value })}
+                />
+                {/* ADDED option (#60). The PEM textareas above stay the default
+                    path; with no source picked the config sent to `wsse:apply`
+                    is byte-for-byte the pre-#60 shape. */}
+                <KeyMaterialField
+                  value={sign.keySource ?? null}
+                  onChange={(sel) => {
+                    if (sel) {
+                      setSign({ ...sign, keySource: sel.source })
+                      return
+                    }
+                    const next = { ...sign }
+                    delete next.keySource
+                    setSign(next)
+                  }}
+                  filter="privateKey"
                 />
               </>
             )}

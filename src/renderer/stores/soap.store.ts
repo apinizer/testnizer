@@ -9,6 +9,7 @@ import type {
 } from '../types'
 import { useResponseStore } from './response.store'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import { stripWsSecuritySecrets } from '../lib/key-material'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
@@ -601,10 +602,21 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
   },
 }))
 
-attachTabbedPersist(useSoapStore, STORAGE_KEY, extractSoapTabState, (s) => ({
-  _tabStates: s._tabStates,
-  _currentTabId: s._currentTabId,
-}))
+attachTabbedPersist(
+  useSoapStore,
+  STORAGE_KEY,
+  extractSoapTabState,
+  (s) => ({
+    _tabStates: s._tabStates,
+    _currentTabId: s._currentTabId,
+  }),
+  // #60: the picker's store/key passwords are WRITE-ONLY. They stay in memory
+  // (so a tab switch keeps the session usable) but never reach localStorage.
+  (st) => {
+    const wsSecurity = stripWsSecuritySecrets(st.wsSecurity)
+    return wsSecurity === st.wsSecurity ? st : { ...st, wsSecurity }
+  },
+)
 
 function flattenSchema(schema: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {}

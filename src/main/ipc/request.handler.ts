@@ -15,6 +15,8 @@ import { realpathSync, statSync } from 'fs'
 import { decryptSecret } from '../lib/secure-storage'
 import { logRequestResponse } from '../lib/console-logger'
 import { getCipherPreset, normaliseTlsVersion } from '../lib/tls-presets'
+import { resolveKeyMaterial } from '../lib/keystore-bridge'
+import type { CertificateRow } from '../db/certificate.repo'
 
 /**
  * Renderer-side TLS payload. The renderer doesn't import the main-process
@@ -108,6 +110,73 @@ function readCertFile(filePath: string): CertReadResult {
   }
 }
 
+/**
+ * Exactly the shape `http.engine.ts` maps onto `https.Agent` (`cert`/`key`/
+ * `pfx`/`passphrase`). Every source arm below produces THIS — which is why the
+ * keystore branch needs zero engine changes.
+ */
+type ClientCertMaterial = { cert?: Buffer; key?: Buffer; pfx?: Buffer; passphrase?: string }
+
+/**
+ * Key Material Provider branch (#60, design §2.5 EDIT 1).
+ *
+ * A `source='keystore'` certificate row carries no crt/key/pfx path — it points
+ * at a `keystores` library entry + alias, and the ONE resolver materialises the
+ * PEM in main. ADDITIVE by construction: rows written before the provider (and
+ * everything the classic file picker writes) carry `source='file'` and never
+ * reach this function.
+ *
+ * R11 double-password: the row's `keystore_key_password` is the per-alias ENTRY
+ * password and is threaded into the resolver — NOT down to `https.Agent`. What
+ * comes back is already-decrypted PKCS#8, so `clientCert.passphrase` carries
+ * only the resolver's own `passphrase` (undefined for keystore-exported
+ * material). The row's `passphrase` column belongs to the FILE path (PFX) and
+ * is deliberately not read here, so trying the keystore option can never
+ * disturb a working file-backed configuration.
+ *
+ * BLOCKER (design §6): the resolved `chainBuffers` are client-chain
+ * intermediates, NOT CA trust anchors. They are deliberately dropped here —
+ * `certBuffer` already carries leaf+intermediates as ONE concatenated PEM
+ * bundle (what a TLS peer consumes for client auth), and `caCerts` (→ Node's
+ * `ca`, which REPLACES the root store used to validate the SERVER cert) is left
+ * untouched.
+ */
+function loadKeystoreClientCert(
+  r: Pick<CertificateRow, 'id' | 'keystore_id' | 'keystore_alias' | 'keystore_key_password'>,
+  keyPassword: string | undefined,
+): { clientCert: ClientCertMaterial } | { error: string } {
+  if (!r.keystore_id || !r.keystore_alias) {
+    return { error: `certificate ${r.id} is keystore-backed but has no keystore/alias link` }
+  }
+  try {
+    const material = resolveKeyMaterial(
+      {
+        kind: 'keystore',
+        keystoreId: r.keystore_id,
+        alias: r.keystore_alias,
+        keyPassword,
+      },
+      'buffer',
+    )
+    if (!material.certBuffer || !material.keyBuffer) {
+      return {
+        error: `keystore alias "${r.keystore_alias}" holds no usable certificate/private key`,
+      }
+    }
+    return {
+      clientCert: {
+        cert: material.certBuffer,
+        key: material.keyBuffer,
+        passphrase: material.passphrase,
+      },
+    }
+  } catch (e) {
+    // FAIL LOUD — an unopenable alias / wrong or missing store password must
+    // surface, never let the request go out silently unauthenticated.
+    return { error: (e as Error).message }
+  }
+}
+
 export interface CertLoadResult {
   certificates?: HttpRequestOptions['certificates']
   /**
@@ -123,6 +192,11 @@ export interface CertLoadResult {
  * so the mTLS pipeline is exercised by the REAL code in tests (previously the
  * tests reimplemented this inline, which is exactly why the host-match /
  * silent-read-failure bugs slipped through).
+ *
+ * THE single cert-attach function — Send calls it from `request:send` below and
+ * the Runner reuses this same export. Do NOT fork a Runner-only copy (the
+ * Send≡Run parity class CLAUDE.md keeps flagging). Adding the keystore branch
+ * here therefore lights up provider-backed client certs on BOTH paths at once.
  */
 export function loadCertificatesFor(projectId: string | undefined, url: string): CertLoadResult {
   if (!projectId) return {}
@@ -135,16 +209,34 @@ export function loadCertificatesFor(projectId: string | undefined, url: string):
   const rows = listCertificatesForHost(projectId, host)
   if (rows.length === 0) return {}
   const caCerts: Buffer[] = []
-  let clientCert: { cert?: Buffer; key?: Buffer; pfx?: Buffer; passphrase?: string } | undefined
+  let clientCert: ClientCertMaterial | undefined
   for (const r of rows) {
     const passphrase = decryptSecret(r.passphrase) ?? undefined
-    if (r.kind === 'ca' && r.crt_path) {
-      // CA certs are additive trust anchors — a read failure is non-fatal (the
-      // connection may still verify against the system trust store).
-      const res = readCertFile(r.crt_path)
-      if ('buf' in res) caCerts.push(res.buf)
+    if (r.kind === 'ca') {
+      if (r.source === 'keystore') {
+        // A trust anchor from a keystore is not wired yet. Say so rather than
+        // silently attaching nothing — a missing anchor shows up much later as
+        // an opaque handshake failure.
+        return {
+          error: `CA certificate for ${host} could not be loaded — keystore-backed CA rows are not supported yet; point the row at a .crt file`,
+        }
+      }
+      if (r.crt_path) {
+        // CA certs are additive trust anchors — a read failure is non-fatal (the
+        // connection may still verify against the system trust store).
+        const res = readCertFile(r.crt_path)
+        if ('buf' in res) caCerts.push(res.buf)
+      }
     } else if (r.kind === 'client') {
-      if (r.pfx_path) {
+      if (r.source === 'keystore') {
+        // Provider branch (#60) — resolved in main, never in the renderer.
+        // R11: the per-alias ENTRY password has its OWN column; `passphrase`
+        // stays the file path's PFX passphrase and is not consulted here.
+        const res = loadKeystoreClientCert(r, decryptSecret(r.keystore_key_password) ?? undefined)
+        if ('error' in res)
+          return { error: `Client certificate for ${host} could not be loaded — ${res.error}` }
+        clientCert = res.clientCert
+      } else if (r.pfx_path) {
         const res = readCertFile(r.pfx_path)
         if ('error' in res)
           return { error: `Client certificate for ${host} could not be loaded — ${res.error}` }

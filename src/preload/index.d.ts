@@ -1718,9 +1718,18 @@ interface CertificateRowDto {
   crt_path: string | null
   key_path: string | null
   pfx_path: string | null
-  passphrase: string | null
   enabled: number
   created_at: number
+  /**
+   * NO-LEAK (#60): the stored secrets never cross IPC. The renderer only learns
+   * WHETHER one is set, which is all a write-only password field needs.
+   */
+  has_passphrase: boolean
+  has_keystore_key_password: boolean
+  /** #60 — 'file' (default, classic crt/key/pfx paths) | 'keystore'. */
+  source?: 'file' | 'keystore'
+  keystore_id?: string | null
+  keystore_alias?: string | null
 }
 
 interface CertificateApi {
@@ -1734,6 +1743,12 @@ interface CertificateApi {
     pfxPath?: string
     passphrase?: string
     enabled?: boolean
+    /** #60 — ADDED, optional. Omitted ⇒ 'file' (unchanged behaviour). */
+    source?: 'file' | 'keystore'
+    keystoreId?: string
+    keystoreAlias?: string
+    /** R11 per-alias ENTRY password — WRITE-ONLY, never returned. */
+    keystoreKeyPassword?: string
   }): Promise<IpcResult<CertificateRowDto>>
   update(payload: {
     id: string
@@ -1743,6 +1758,12 @@ interface CertificateApi {
     pfxPath?: string
     passphrase?: string
     enabled?: boolean
+    /** #60 — ADDED, optional. `''` unlinks; undefined leaves untouched. */
+    source?: 'file' | 'keystore'
+    keystoreId?: string
+    keystoreAlias?: string
+    /** R11 per-alias ENTRY password — WRITE-ONLY. `''` clears it. */
+    keystoreKeyPassword?: string
   }): Promise<IpcResult<CertificateRowDto>>
   delete(id: string): Promise<IpcResult<boolean>>
   pickFile(kind: 'crt' | 'key' | 'pfx' | 'ca'): Promise<IpcResult<string>>

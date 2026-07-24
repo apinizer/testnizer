@@ -8,6 +8,8 @@ import {
   updateCertificate,
   deleteCertificate,
   type CertificateKind,
+  type CertificateRow,
+  type CertificateSource,
 } from '../db/certificate.repo'
 import { encryptSecret } from '../lib/secure-storage'
 
@@ -41,6 +43,12 @@ interface AddPayload {
   pfxPath?: string
   passphrase?: string
   enabled?: boolean
+  /** #60 — ADDED, optional. Omitted ⇒ repo default 'file' = the classic path. */
+  source?: CertificateSource
+  keystoreId?: string
+  keystoreAlias?: string
+  /** R11 per-alias ENTRY password. WRITE-ONLY — never returned by `list`. */
+  keystoreKeyPassword?: string
 }
 
 interface UpdatePayload {
@@ -51,31 +59,77 @@ interface UpdatePayload {
   pfxPath?: string
   passphrase?: string
   enabled?: boolean
+  /** #60 — ADDED, optional. Absent fields are left untouched by the repo. */
+  source?: CertificateSource
+  keystoreId?: string
+  keystoreAlias?: string
+  /** R11 per-alias ENTRY password. WRITE-ONLY; '' clears, undefined keeps. */
+  keystoreKeyPassword?: string
+}
+
+/**
+ * Renderer-facing projection of a certificate row.
+ *
+ * NO-LEAK: the two secret columns never cross the IPC boundary — the renderer
+ * gets a boolean saying whether one is SET, which is all the UI needs to render
+ * a write-only password field. Sending the stored value back would also make it
+ * cleartext-visible on installs where `safeStorage` is unavailable (there,
+ * `encryptSecret` stores the raw string).
+ */
+type CertificateDto = Omit<CertificateRow, 'passphrase' | 'keystore_key_password'> & {
+  has_passphrase: boolean
+  has_keystore_key_password: boolean
+}
+
+function toDto(row: CertificateRow): CertificateDto {
+  const { passphrase, keystore_key_password, ...rest } = row
+  return {
+    ...rest,
+    has_passphrase: passphrase != null && passphrase !== '',
+    has_keystore_key_password: keystore_key_password != null && keystore_key_password !== '',
+  }
 }
 
 export function registerCertificateHandlers(): void {
   ipcMain.handle('certificate:list', (_e, projectId: string) =>
-    wrap(() => listCertificates(projectId)),
+    wrap(() => listCertificates(projectId).map(toDto)),
   )
 
   ipcMain.handle('certificate:add', (_e, payload: AddPayload) =>
     wrap(() =>
-      createCertificate({
-        project_id: payload.projectId,
-        kind: payload.kind,
-        host: payload.host,
-        crt_path: payload.crtPath,
-        key_path: payload.keyPath,
-        pfx_path: payload.pfxPath,
-        passphrase: encryptSecret(payload.passphrase),
-        enabled: payload.enabled,
-      }),
+      toDto(
+        createCertificate({
+          project_id: payload.projectId,
+          kind: payload.kind,
+          host: payload.host,
+          crt_path: payload.crtPath,
+          key_path: payload.keyPath,
+          pfx_path: payload.pfxPath,
+          passphrase: encryptSecret(payload.passphrase),
+          enabled: payload.enabled,
+          source: payload.source,
+          keystore_id: payload.keystoreId,
+          keystore_alias: payload.keystoreAlias,
+          keystore_key_password: encryptSecret(payload.keystoreKeyPassword),
+        }),
+      ),
     ),
   )
 
-  ipcMain.handle('certificate:update', (_e, payload: UpdatePayload) =>
-    wrap(() =>
-      updateCertificate(payload.id, {
+  ipcMain.handle('certificate:update', (_e, payload: UpdatePayload) => {
+    // A keystore row must never be left half-linked: `source:'keystore'` is only
+    // accepted together with the alias it points at (see the renderer's atomic
+    // pick), otherwise every Send AND every Runner iteration for that row would
+    // fail loud until an alias is chosen.
+    if (payload.source === 'keystore' && !payload.keystoreId) {
+      return Promise.resolve({
+        success: false as const,
+        error:
+          'A keystore-backed certificate needs a keystore and alias — pick one before switching the source.',
+      })
+    }
+    return wrap(() => {
+      const row = updateCertificate(payload.id, {
         host: payload.host,
         crt_path: payload.crtPath,
         key_path: payload.keyPath,
@@ -83,9 +137,21 @@ export function registerCertificateHandlers(): void {
         passphrase:
           payload.passphrase !== undefined ? encryptSecret(payload.passphrase) : undefined,
         enabled: payload.enabled,
-      }),
-    ),
-  )
+        source: payload.source,
+        // '' is the renderer's "unlink" signal → NULL out the column; undefined
+        // leaves it untouched (an old-shape patch can never drop the link).
+        keystore_id: payload.keystoreId === '' ? null : payload.keystoreId,
+        keystore_alias: payload.keystoreAlias === '' ? null : payload.keystoreAlias,
+        keystore_key_password:
+          payload.keystoreKeyPassword === ''
+            ? null
+            : payload.keystoreKeyPassword !== undefined
+              ? encryptSecret(payload.keystoreKeyPassword)
+              : undefined,
+      })
+      return row ? toDto(row) : undefined
+    })
+  })
 
   ipcMain.handle('certificate:delete', (_e, id: string) =>
     wrap(() => {

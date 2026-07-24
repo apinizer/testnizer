@@ -569,7 +569,15 @@ export interface PmSendResponse {
   }
 }
 
-/** Normalize a pm.sendRequest input into the engine's request:send options. */
+/**
+ * Normalize a pm.sendRequest input into the engine's request:send options.
+ *
+ * CERT SCOPE (R5, design §4): no `_projectId` is emitted, so `request:send`
+ * skips `loadCertificatesFor` and a script-issued request carries NO project
+ * client certificate. The Run twin (`runner.handler.ts` pm.sendRequest) calls
+ * the engine directly with no projectId either — SYMMETRIC by design. If cert
+ * attach is ever wanted here, add it to BOTH sides in the same change.
+ */
 export function normalizePmSendInput(req: PmSendInput): {
   method: string
   url: string

@@ -609,6 +609,37 @@ const translations: Record<Locale, Record<string, string>> = {
     'certs.save': 'Save certificate',
     'certs.none': 'No certificates yet.',
     'certs.addFirst': 'Add your first certificate.',
+    'certs.source': 'Key material',
+    'certs.sourceFile': 'Files (CRT / KEY / PFX)',
+    'certs.sourceKeystore': 'Keystore / Security',
+    'certs.passphraseSet': 'Saved — type to replace',
+    'certs.passphraseClear': 'Clear passphrase',
+    'certs.filesInactive':
+      'These files stay saved but are not used while the key comes from a keystore.',
+
+    // Key Material Provider (#60) — the ADDED, non-default source picker
+    'keyMaterial.title': 'Use key material from Security',
+    'keyMaterial.useKeystore': 'Use from keystore / Security',
+    'keyMaterial.usePasted': 'Use pasted PEM',
+    'keyMaterial.change': 'Change',
+    'keyMaterial.cancel': 'Cancel',
+    'keyMaterial.tabKeystore': 'Keystore',
+    'keyMaterial.tabCertificate': 'Certificate',
+    'keyMaterial.libraryEmpty': 'No saved keystores yet — save one from Tools → Keystore.',
+    'keyMaterial.storePassword': 'Store password',
+    'keyMaterial.storePasswordHint':
+      'This keystore does not remember its password. It is sent to the app core when the request runs and is never displayed again.',
+    'keyMaterial.keyPassword': 'Key (entry) password',
+    'keyMaterial.rememberRequired':
+      'Only keystores that remember their password can be attached to a certificate — a saved certificate has nowhere to keep a password. Re-save the keystore with "remember password" to use it here.',
+    'keyMaterial.rememberRequiredShort': 'password not remembered',
+    'keyMaterial.optional': 'optional',
+    'keyMaterial.open': 'Open keystore',
+    'keyMaterial.noAliases': 'No usable entries in this keystore.',
+    'keyMaterial.use': 'Use this key',
+    'keyMaterial.certRowsEmpty': 'No saved certificates for this project.',
+    'keyMaterial.optionalHint':
+      'Optional. Leave unset to keep using the fields above — nothing changes until you pick a source here.',
 
     // TLS protocol / cipher overrides (lives inside Certificates pane)
     'tls.title': 'TLS protocol & ciphers',
@@ -2449,6 +2480,37 @@ const translations: Record<Locale, Record<string, string>> = {
     'certs.save': 'Sertifikayı kaydet',
     'certs.none': 'Henüz sertifika yok.',
     'certs.addFirst': 'İlk sertifikanızı ekleyin.',
+    'certs.source': 'Anahtar kaynağı',
+    'certs.sourceFile': 'Dosyalar (CRT / KEY / PFX)',
+    'certs.sourceKeystore': 'Keystore / Security',
+    'certs.passphraseSet': 'Kayıtlı — değiştirmek için yazın',
+    'certs.passphraseClear': 'Passphrase’i temizle',
+    'certs.filesInactive':
+      'Bu dosyalar kayıtlı kalır, ancak anahtar keystore’dan geldiği sürece kullanılmaz.',
+
+    // Key Material Provider (#60) — EKLENEN, varsayılan olmayan kaynak seçici
+    'keyMaterial.title': "Security'den anahtar materyali kullan",
+    'keyMaterial.useKeystore': "Keystore / Security'den kullan",
+    'keyMaterial.usePasted': 'Yapıştırılan PEM’i kullan',
+    'keyMaterial.change': 'Değiştir',
+    'keyMaterial.cancel': 'İptal',
+    'keyMaterial.tabKeystore': 'Keystore',
+    'keyMaterial.tabCertificate': 'Sertifika',
+    'keyMaterial.libraryEmpty': 'Kayıtlı keystore yok — Araçlar → Keystore ekranından kaydedin.',
+    'keyMaterial.storePassword': 'Keystore parolası',
+    'keyMaterial.storePasswordHint':
+      'Bu keystore parolasını hatırlamıyor. Parola yalnızca istek çalışırken uygulama çekirdeğine gönderilir ve bir daha gösterilmez.',
+    'keyMaterial.keyPassword': 'Anahtar (entry) parolası',
+    'keyMaterial.rememberRequired':
+      'Bir sertifikaya yalnızca parolasını hatırlayan keystore’lar bağlanabilir — kayıtlı sertifikanın parola tutacak yeri yoktur. Burada kullanmak için keystore’u “parolayı hatırla” ile yeniden kaydedin.',
+    'keyMaterial.rememberRequiredShort': 'parola hatırlanmıyor',
+    'keyMaterial.optional': 'isteğe bağlı',
+    'keyMaterial.open': 'Keystore’u aç',
+    'keyMaterial.noAliases': 'Bu keystore içinde kullanılabilir kayıt yok.',
+    'keyMaterial.use': 'Bu anahtarı kullan',
+    'keyMaterial.certRowsEmpty': 'Bu proje için kayıtlı sertifika yok.',
+    'keyMaterial.optionalHint':
+      'İsteğe bağlı. Boş bırakırsanız yukarıdaki alanlar kullanılmaya devam eder — burada bir kaynak seçmedikçe hiçbir şey değişmez.',
 
     // TLS protokol / şifre suite override (Sertifikalar panel'i içinde)
     'tls.title': 'TLS protokolü & şifreler',
