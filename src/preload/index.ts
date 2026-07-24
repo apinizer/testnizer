@@ -441,6 +441,7 @@ const api = {
       bytes?: string
       password?: string
       type?: string
+      aliasEntryPasswords?: Record<string, string>
     }): Promise<unknown> => ipcRenderer.invoke('keystore:open', payload),
     createNew: (payload: { type?: string; password?: string }): Promise<unknown> =>
       ipcRenderer.invoke('keystore:createNew', payload),
@@ -493,6 +494,39 @@ const api = {
       alias: string
       certificateContent: string
     }): Promise<unknown> => ipcRenderer.invoke('keystore:importTrustedCert', payload),
+    renameAlias: (payload: {
+      sessionId: string
+      alias: string
+      newAlias: string
+      entryPassword?: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:renameAlias', payload),
+    changeStorePassword: (payload: {
+      sessionId: string
+      newPassword: string
+      aliasEntryPasswords?: Record<string, string>
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:changeStorePassword', payload),
+    setEntryPassword: (payload: {
+      sessionId: string
+      alias: string
+      entryPassword?: string
+      newEntryPassword: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:setEntryPassword', payload),
+    deleteEntry: (payload: { sessionId: string; alias: string }): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:deleteEntry', payload),
+    exportCertificate: (payload: {
+      sessionId: string
+      alias: string
+      format?: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:exportCertificate', payload),
+    convert: (payload: {
+      sessionId: string
+      targetType: string
+      newPassword: string
+      entryPassword?: string
+      aliasEntryPasswords?: Record<string, string>
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:convert', payload),
+    saveAs: (payload: { sessionId: string; suggestedName?: string }): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:saveAs', payload),
     closeSession: (sessionId: string): Promise<unknown> =>
       ipcRenderer.invoke('keystore:closeSession', sessionId),
     librarySave: (payload: {

@@ -1,5 +1,5 @@
 import { ipcMain, dialog } from 'electron'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import {
   keystoreEngine,
@@ -94,6 +94,10 @@ interface OpenPayload {
   bytes?: string
   password?: string
   type?: string
+  /** Per-alias CURRENT key passwords for entries whose pw differs from the store
+   * pw — threaded into the parse so a store whose key password ≠ store password
+   * (or one reopened after setEntryPassword) is openable (design §3.1). */
+  aliasEntryPasswords?: Record<string, string>
 }
 
 interface CreateNewPayload {
@@ -146,6 +150,59 @@ interface ImportTrustedCertPayload {
   certificateContent: string
 }
 
+// ── Faz B4 payload shapes (Edit / Export / Persist) ──────────────────────────
+
+interface RenameAliasPayload {
+  sessionId: string
+  alias: string
+  newAlias: string
+  entryPassword?: string
+}
+
+interface ChangeStorePasswordPayload {
+  sessionId: string
+  newPassword: string
+  /** Per-alias CURRENT key passwords for entries whose pw differs from the store
+   * pw — consumed to read each key before re-encrypting under `newPassword`. */
+  aliasEntryPasswords?: Record<string, string>
+}
+
+interface SetEntryPasswordPayload {
+  sessionId: string
+  alias: string
+  /** Current entry password (omitted ⇒ falls back to the store password). */
+  entryPassword?: string
+  newEntryPassword: string
+}
+
+interface DeleteEntryPayload {
+  sessionId: string
+  alias: string
+}
+
+interface ExportCertificatePayload {
+  sessionId: string
+  alias: string
+  format?: string
+}
+
+interface ConvertPayload {
+  sessionId: string
+  targetType: string
+  newPassword: string
+  entryPassword?: string
+  /** Per-alias CURRENT key passwords (symmetric with changeStorePassword) — each
+   * resolves ahead of the scalar `entryPassword` so a session holding key entries
+   * under DIFFERENT passwords can still be converted. */
+  aliasEntryPasswords?: Record<string, string>
+}
+
+interface SaveAsPayload {
+  sessionId: string
+  /** Optional default filename suggestion for the save dialog. */
+  suggestedName?: string
+}
+
 interface LibrarySavePayload {
   sessionId: string
   name: string
@@ -196,7 +253,7 @@ export function registerKeystoreHandlers(): void {
         throw new Error('A keystore path or bytes must be provided.')
       }
       const type = resolveType(payload.type)
-      return keystoreEngine.open(bytes, payload.password ?? '', type)
+      return keystoreEngine.open(bytes, payload.password ?? '', type, payload.aliasEntryPasswords)
     }),
   )
 
@@ -288,6 +345,103 @@ export function registerKeystoreHandlers(): void {
       const { sessionId, ...opts } = payload
       const meta = keystoreEngine.importTrustedCertificate(sessionId, opts)
       return { sessionId, meta }
+    }),
+  )
+
+  // ── Edit / Export / Persist (Faz B4) ─────────────────────────────────────
+  //
+  // Every mutation returns `{sessionId, meta}` where `meta` carries the safe
+  // alias summaries + the `dirty` flag — never a password, private key, or raw
+  // keystore bytes (design invariant 1). Export/save write disk-to-disk in main
+  // and hand back only a `{path}` (or `{canceled}`).
+
+  // Rename an alias (key vs certificate branch handled in the engine).
+  ipcMain.handle('keystore:renameAlias', (_e, payload: RenameAliasPayload) =>
+    wrap((): SessionResult => {
+      const meta = keystoreEngine.renameAlias(
+        payload.sessionId,
+        payload.alias,
+        payload.newAlias,
+        payload.entryPassword,
+      )
+      return { sessionId: payload.sessionId, meta }
+    }),
+  )
+
+  // Rotate the store password — re-encrypts every key entry under the new pw.
+  ipcMain.handle('keystore:changeStorePassword', (_e, payload: ChangeStorePasswordPayload) =>
+    wrap((): SessionResult => {
+      const meta = keystoreEngine.changeStorePassword(
+        payload.sessionId,
+        payload.newPassword,
+        payload.aliasEntryPasswords,
+      )
+      return { sessionId: payload.sessionId, meta }
+    }),
+  )
+
+  // Set a single key entry's password (key entries only).
+  ipcMain.handle('keystore:setEntryPassword', (_e, payload: SetEntryPasswordPayload) =>
+    wrap((): SessionResult => {
+      const meta = keystoreEngine.setEntryPassword(
+        payload.sessionId,
+        payload.alias,
+        payload.newEntryPassword,
+        payload.entryPassword,
+      )
+      return { sessionId: payload.sessionId, meta }
+    }),
+  )
+
+  // Delete an entry by alias.
+  ipcMain.handle('keystore:deleteEntry', (_e, payload: DeleteEntryPayload) =>
+    wrap((): SessionResult => {
+      const meta = keystoreEngine.deleteEntry(payload.sessionId, payload.alias)
+      return { sessionId: payload.sessionId, meta }
+    }),
+  )
+
+  // Export the PUBLIC certificate(s) of an alias to a user-picked file. The
+  // engine validates alias/format BEFORE the dialog (an unsupported format or a
+  // missing alias never opens a picker). Only `{path}` (or `{canceled}`) returns.
+  ipcMain.handle('keystore:exportCertificate', (_e, payload: ExportCertificatePayload) =>
+    wrap(async (): Promise<{ path: string } | { canceled: true }> => {
+      const result = keystoreEngine.exportCertificate(
+        payload.sessionId,
+        payload.alias,
+        payload.format,
+      )
+      const save = await dialog.showSaveDialog({ defaultPath: result.fileName })
+      if (save.canceled || !save.filePath) return { canceled: true }
+      writeFileSync(save.filePath, result.bytes)
+      return { path: save.filePath }
+    }),
+  )
+
+  // Convert JKS ⇄ PKCS12 into a NEW session (original untouched).
+  ipcMain.handle('keystore:convert', (_e, payload: ConvertPayload) =>
+    wrap((): SessionResult => {
+      return keystoreEngine.convert(
+        payload.sessionId,
+        payload.targetType,
+        payload.newPassword,
+        payload.entryPassword,
+        payload.aliasEntryPasswords,
+      )
+    }),
+  )
+
+  // Save-As (Model A): serialize the current session and write it to a picked
+  // path via a native save dialog. Clears `dirty` ONLY after a real write.
+  ipcMain.handle('keystore:saveAs', (_e, payload: SaveAsPayload) =>
+    wrap(async (): Promise<{ path: string } | { canceled: true }> => {
+      const { bytes, type } = keystoreEngine.snapshot(payload.sessionId)
+      const defaultName = payload.suggestedName ?? `keystore${type === 'JKS' ? '.jks' : '.p12'}`
+      const save = await dialog.showSaveDialog({ defaultPath: defaultName })
+      if (save.canceled || !save.filePath) return { canceled: true }
+      writeFileSync(save.filePath, bytes)
+      keystoreEngine.markSaved(payload.sessionId)
+      return { path: save.filePath }
     }),
   )
 

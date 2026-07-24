@@ -4,6 +4,7 @@ import type {
   KeystoreAliasDetail,
   KeystoreLibraryEntry,
   KeystorePickFileResult,
+  KeystoreWriteResult,
 } from '../types'
 
 /**
@@ -104,6 +105,80 @@ export interface ImportTrustedCertInput {
   certificateContent: string
 }
 
+// ── Faz B4 renderer inputs (Edit / Export / Convert / Persist) ────────────────
+// `sessionId` is injected by the store from the open session — callers pass only
+// the field set collected by the dialogs (§9.5).
+
+export interface RenameAliasInput {
+  alias: string
+  newAlias: string
+  /** Current key-entry password when it differs from the store password (§3.1). */
+  entryPassword?: string
+}
+
+export interface ChangeStorePasswordInput {
+  newPassword: string
+  /** Per-alias CURRENT key passwords for entries whose pw differs from the store
+   * pw — main reads each key with these before re-encrypting under `newPassword`. */
+  aliasEntryPasswords?: Record<string, string>
+}
+
+export interface SetEntryPasswordInput {
+  alias: string
+  /** Current entry password (omitted ⇒ falls back to the store password). */
+  entryPassword?: string
+  newEntryPassword: string
+}
+
+export interface ExportCertificateInput {
+  alias: string
+  /** DER | PEM | PKCS7 | PKIPATH — omitted ⇒ PEM (design §4.14 default). */
+  format?: string
+}
+
+export interface ConvertInput {
+  targetType: string
+  newPassword: string
+  /** Current key-entry password when it differs from the store password. */
+  entryPassword?: string
+  /** Per-alias CURRENT key passwords (symmetric with changeStorePassword) —
+   * resolves ahead of the scalar `entryPassword` for entries under different pws. */
+  aliasEntryPasswords?: Record<string, string>
+}
+
+/**
+ * A recovery-blocked open (FIX 1): the store password validated, but one or more
+ * KEY entries are protected with a password ≠ the store password, so the parse
+ * could not decrypt them. We stash enough to RE-invoke the same open (the source
+ * — a `path` OR base64 `bytes` — plus the type/store password) once the user has
+ * supplied each locked alias's entry password. NO key material or store password
+ * is ever surfaced to the UI beyond what the user typed; the store password held
+ * here is the same value the user just entered to open and is forwarded straight
+ * back to the IPC layer on retry.
+ */
+export interface PendingEntryPasswordOpen {
+  /** Re-open source — a picked file path OR base64 bytes (programmatic callers). */
+  source: { path: string } | { bytes: string }
+  /** Display name carried through to the reopened session. */
+  fileName: string
+  type?: string
+  /** The store password the user already supplied (forwarded verbatim on retry). */
+  storePassword?: string
+  /** The KEY aliases whose entry password is required. */
+  aliases: string[]
+}
+
+/** Extract the alias(es) named by one or more §8 "Cannot recover key entry '…'"
+ * recovery messages. The engine throws on the FIRST unrecoverable key, so this is
+ * usually a single alias — the loop future-proofs a multi-alias message. */
+function parseRecoveryAliases(message: string): string[] {
+  const aliases: string[] = []
+  const re = /Cannot recover key entry '([^']+)'/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(message)) !== null) aliases.push(m[1])
+  return aliases
+}
+
 export interface KeystoreState {
   /** Opaque main-process handle. `null` = empty state (no keystore open). */
   sessionId: string | null
@@ -119,18 +194,46 @@ export interface KeystoreState {
   selectedAlias: string | null
   /** Certificate chain detail for `selectedAlias` (public material only). */
   aliasDetail: KeystoreAliasDetail | null
+  /**
+   * Unsaved-changes flag (design §9.7 dirty-guard). Set `true` after any B2/B3/B4
+   * mutation, cleared on Save-As / library save. Drives the tool-tab close +
+   * app-quit guards. Mirrors `meta.dirty` but is hoisted to the top level so the
+   * guard can read it without a null-check on `meta`.
+   */
+  dirty: boolean
   loading: boolean
   error: string | null
+  /**
+   * Set when an open failed because a KEY entry's password ≠ the store password
+   * (FIX 1). The UI prompts for each locked alias and calls
+   * `retryOpenWithEntryPasswords`. `null` when no such prompt is pending.
+   */
+  pendingEntryPasswordOpen: PendingEntryPasswordOpen | null
 
   /** Native file picker → returns pick result, or `null` on cancel/no-op. */
   pickFile: () => Promise<KeystorePickFileResult | null>
-  /** Open a picked keystore file into a new session. */
+  /**
+   * Open a picked keystore file into a new session. When a key entry's password
+   * differs from the store password, the raw open fails with a §8 recovery error;
+   * rather than surface it, the store parses the offending alias(es) and sets
+   * `pendingEntryPasswordOpen` so the UI can collect them and retry. Pass
+   * `aliasEntryPasswords` directly to skip the prompt (programmatic callers).
+   */
   openFile: (payload: {
     path: string
     fileName: string
     password?: string
     type?: string
+    aliasEntryPasswords?: Record<string, string>
   }) => Promise<boolean>
+  /**
+   * Retry a `pendingEntryPasswordOpen` with the per-alias entry passwords the user
+   * supplied. Clears the pending prompt on success; on another recovery failure it
+   * keeps the prompt open and surfaces the error.
+   */
+  retryOpenWithEntryPasswords: (map: Record<string, string>) => Promise<boolean>
+  /** Dismiss a pending entry-password prompt without opening. */
+  cancelPendingOpen: () => void
   /** Create a fresh empty keystore session. */
   createNew: (payload?: { type?: string; password?: string }) => Promise<boolean>
   /**
@@ -162,6 +265,44 @@ export interface KeystoreState {
   importPem: (opts: ImportPemInput) => Promise<boolean>
   /** Import a trusted certificate (PEM or base64 DER) into the CURRENT session. */
   importTrustedCert: (opts: ImportTrustedCertInput) => Promise<boolean>
+  /**
+   * Rename an alias in the CURRENT session (key vs certificate branch handled in
+   * main). A key entry whose password differs from the store password needs its
+   * `entryPassword`. Sets `dirty` on success.
+   */
+  renameAlias: (opts: RenameAliasInput) => Promise<boolean>
+  /**
+   * Rotate the store password — main re-encrypts every key entry under the new
+   * password (atomic: verified recoverable first). Sets `dirty` on success.
+   */
+  changeStorePassword: (opts: ChangeStorePasswordInput) => Promise<boolean>
+  /**
+   * Set (rotate) a single key entry's password. Key entries only — main rejects a
+   * certificate entry. Sets `dirty` on success.
+   */
+  setEntryPassword: (opts: SetEntryPasswordInput) => Promise<boolean>
+  /** Delete an entry by alias from the CURRENT session. Sets `dirty` on success. */
+  deleteEntry: (alias: string) => Promise<boolean>
+  /**
+   * Export an alias's PUBLIC certificate(s) to a user-picked file (DER/PEM/PKCS7/
+   * PKIPATH). Main validates alias/format BEFORE opening the save dialog and
+   * writes disk-to-disk; the renderer only learns `{path}` or `{canceled}`. Does
+   * NOT affect `dirty` (a read-only export).
+   */
+  exportCertificate: (opts: ExportCertificateInput) => Promise<KeystoreWriteResult | null>
+  /**
+   * Convert the current keystore to the other type (JKS ⇄ PKCS12) into a NEW
+   * session (the original is untouched in main). The store swaps to the new
+   * session and marks it `dirty` (unsaved) — the converted bytes exist only in
+   * memory until Save-As.
+   */
+  convert: (opts: ConvertInput) => Promise<boolean>
+  /**
+   * Save-As (Model A): serialize the current session and write it to a
+   * user-picked path (native save dialog in main). Clears `dirty` ONLY on a real
+   * write; a cancelled dialog leaves `dirty` untouched.
+   */
+  saveAs: (opts?: { suggestedName?: string }) => Promise<KeystoreWriteResult | null>
   /** Open a saved library entry into a session (password re-entered if not remembered). */
   openFromLibrary: (payload: { id: string; name: string; password?: string }) => Promise<boolean>
   /** Persist the current session to the Model B library. */
@@ -192,8 +333,10 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
   library: [],
   selectedAlias: null,
   aliasDetail: null,
+  dirty: false,
   loading: false,
   error: null,
+  pendingEntryPasswordOpen: null,
 
   pickFile: async () => {
     const bridge = ks()
@@ -215,12 +358,14 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
     }
   },
 
-  openFile: async ({ path, fileName, password, type }) => {
+  openFile: async ({ path, fileName, password, type, aliasEntryPasswords }) => {
     const bridge = ks()
     if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
     set({ loading: true, error: null })
     try {
-      const { sessionId, meta } = await unwrap(bridge.open({ path, password, type }))
+      const { sessionId, meta } = await unwrap(
+        bridge.open({ path, password, type, aliasEntryPasswords }),
+      )
       set({
         sessionId,
         meta,
@@ -228,13 +373,78 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
         libraryId: null,
         selectedAlias: null,
         aliasDetail: null,
+        dirty: false,
         loading: false,
+        pendingEntryPasswordOpen: null,
       })
       return true
     } catch (e) {
+      // A §8 recovery failure means a KEY entry's password ≠ the store password.
+      // Instead of surfacing a cryptic error, stash the offending alias(es) so the
+      // UI can prompt for each and retry (FIX 1). Any other error surfaces as-is.
+      const msg = e instanceof Error ? e.message : String(e)
+      const aliases = parseRecoveryAliases(msg)
+      if (aliases.length > 0) {
+        set({
+          loading: false,
+          error: null,
+          pendingEntryPasswordOpen: {
+            source: { path },
+            fileName,
+            type,
+            storePassword: password,
+            aliases,
+          },
+        })
+        return false
+      }
       return fail(set, e)
     }
   },
+
+  retryOpenWithEntryPasswords: async (map) => {
+    const bridge = ks()
+    const pending = get().pendingEntryPasswordOpen
+    if (!bridge || !pending) return false
+    set({ loading: true, error: null })
+    try {
+      const base = {
+        password: pending.storePassword,
+        type: pending.type,
+        aliasEntryPasswords: map,
+      }
+      const payload =
+        'path' in pending.source
+          ? { ...base, path: pending.source.path }
+          : { ...base, bytes: pending.source.bytes }
+      const { sessionId, meta } = await unwrap(bridge.open(payload))
+      set({
+        sessionId,
+        meta,
+        fileName: pending.fileName,
+        libraryId: null,
+        selectedAlias: null,
+        aliasDetail: null,
+        dirty: false,
+        loading: false,
+        pendingEntryPasswordOpen: null,
+      })
+      return true
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      const aliases = parseRecoveryAliases(msg)
+      // Keep the prompt open on a repeat recovery failure (wrong entry pw); refresh
+      // the alias list if the message named different aliases.
+      set({
+        loading: false,
+        error: msg,
+        ...(aliases.length > 0 ? { pendingEntryPasswordOpen: { ...pending, aliases } } : {}),
+      })
+      return false
+    }
+  },
+
+  cancelPendingOpen: () => set({ pendingEntryPasswordOpen: null, error: null }),
 
   createNew: async (payload) => {
     const bridge = ks()
@@ -249,6 +459,7 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
         libraryId: null,
         selectedAlias: null,
         aliasDetail: null,
+        dirty: false,
         loading: false,
       })
       return true
@@ -276,7 +487,7 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
       // aliasEntryPasswords threading).
       const { entryPassword: _entryPasswordB4, ...safeOpts } = opts
       const { meta } = await unwrap(bridge.generateKeyPair({ sessionId, ...safeOpts }))
-      set({ meta, loading: false })
+      set({ meta, dirty: meta.dirty ?? true, loading: false })
       return true
     } catch (e) {
       return fail(set, e)
@@ -294,7 +505,7 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
       // protected with the store password until Faz B4 wires per-entry passwords.
       const { entryPassword: _entryPasswordB4, ...safeOpts } = opts
       const { meta } = await unwrap(bridge.generateSecretKey({ sessionId, ...safeOpts }))
-      set({ meta, loading: false })
+      set({ meta, dirty: meta.dirty ?? true, loading: false })
       return true
     } catch (e) {
       return fail(set, e)
@@ -311,7 +522,7 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
       // Import MUTATES the current session; the response carries only refreshed
       // public meta (never key material / source password / source bytes).
       const { meta } = await unwrap(bridge.importPkcs12({ sessionId, ...opts }))
-      set({ meta, loading: false })
+      set({ meta, dirty: meta.dirty ?? true, loading: false })
       return true
     } catch (e) {
       return fail(set, e)
@@ -328,7 +539,7 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
       // Main runs the deterministic key-cert match gate before mutating — a
       // mismatched pair fails with the §8 string and never enters the keystore.
       const { meta } = await unwrap(bridge.importKeyMaterial({ sessionId, ...opts }))
-      set({ meta, loading: false })
+      set({ meta, dirty: meta.dirty ?? true, loading: false })
       return true
     } catch (e) {
       return fail(set, e)
@@ -343,7 +554,7 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
     set({ loading: true, error: null })
     try {
       const { meta } = await unwrap(bridge.importPem({ sessionId, ...opts }))
-      set({ meta, loading: false })
+      set({ meta, dirty: meta.dirty ?? true, loading: false })
       return true
     } catch (e) {
       return fail(set, e)
@@ -358,10 +569,148 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
     set({ loading: true, error: null })
     try {
       const { meta } = await unwrap(bridge.importTrustedCert({ sessionId, ...opts }))
-      set({ meta, loading: false })
+      set({ meta, dirty: meta.dirty ?? true, loading: false })
       return true
     } catch (e) {
       return fail(set, e)
+    }
+  },
+
+  renameAlias: async (opts) => {
+    const bridge = ks()
+    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    const sessionId = get().sessionId
+    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    set({ loading: true, error: null })
+    try {
+      const { meta } = await unwrap(bridge.renameAlias({ sessionId, ...opts }))
+      set({ meta, dirty: meta.dirty ?? true, loading: false })
+      return true
+    } catch (e) {
+      return fail(set, e)
+    }
+  },
+
+  changeStorePassword: async (opts) => {
+    const bridge = ks()
+    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    const sessionId = get().sessionId
+    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    set({ loading: true, error: null })
+    try {
+      const { meta } = await unwrap(bridge.changeStorePassword({ sessionId, ...opts }))
+      set({ meta, dirty: meta.dirty ?? true, loading: false })
+      return true
+    } catch (e) {
+      return fail(set, e)
+    }
+  },
+
+  setEntryPassword: async (opts) => {
+    const bridge = ks()
+    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    const sessionId = get().sessionId
+    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    set({ loading: true, error: null })
+    try {
+      const { meta } = await unwrap(bridge.setEntryPassword({ sessionId, ...opts }))
+      set({ meta, dirty: meta.dirty ?? true, loading: false })
+      return true
+    } catch (e) {
+      return fail(set, e)
+    }
+  },
+
+  deleteEntry: async (alias) => {
+    const bridge = ks()
+    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    const sessionId = get().sessionId
+    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    set({ loading: true, error: null })
+    try {
+      const { meta } = await unwrap(bridge.deleteEntry({ sessionId, alias }))
+      // If the deleted alias was the one shown in the detail dialog, clear it.
+      const clear = get().selectedAlias === alias
+      set({
+        meta,
+        dirty: meta.dirty ?? true,
+        loading: false,
+        ...(clear ? { selectedAlias: null, aliasDetail: null } : {}),
+      })
+      return true
+    } catch (e) {
+      return fail(set, e)
+    }
+  },
+
+  exportCertificate: async (opts) => {
+    const bridge = ks()
+    if (!bridge) {
+      fail(set, new Error(BRIDGE_UNAVAILABLE))
+      return null
+    }
+    const sessionId = get().sessionId
+    if (!sessionId) {
+      fail(set, new Error(BRIDGE_UNAVAILABLE))
+      return null
+    }
+    try {
+      // Main validates alias/format BEFORE the save dialog, writes disk-to-disk,
+      // and returns ONLY {path} or {canceled}. Export is read-only ⇒ dirty
+      // untouched.
+      const result = await unwrap(bridge.exportCertificate({ sessionId, ...opts }))
+      set({ error: null })
+      return result
+    } catch (e) {
+      fail(set, e)
+      return null
+    }
+  },
+
+  convert: async (opts) => {
+    const bridge = ks()
+    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    const sessionId = get().sessionId
+    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    set({ loading: true, error: null })
+    try {
+      // Convert returns a NEW session (original untouched in main). Swap to it;
+      // the converted bytes are in-memory only ⇒ mark dirty (needs Save-As).
+      const { sessionId: newSessionId, meta } = await unwrap(bridge.convert({ sessionId, ...opts }))
+      set({
+        sessionId: newSessionId,
+        meta,
+        libraryId: null,
+        selectedAlias: null,
+        aliasDetail: null,
+        dirty: meta.dirty ?? true,
+        loading: false,
+      })
+      return true
+    } catch (e) {
+      return fail(set, e)
+    }
+  },
+
+  saveAs: async (opts) => {
+    const bridge = ks()
+    if (!bridge) {
+      fail(set, new Error(BRIDGE_UNAVAILABLE))
+      return null
+    }
+    const sessionId = get().sessionId
+    if (!sessionId) {
+      fail(set, new Error(BRIDGE_UNAVAILABLE))
+      return null
+    }
+    try {
+      const result = await unwrap(bridge.saveAs({ sessionId, ...(opts ?? {}) }))
+      // Model A: clear dirty ONLY on a real write; a cancelled dialog is a no-op.
+      if ('path' in result) set({ dirty: false, error: null })
+      return result
+    } catch (e) {
+      fail(set, e)
+      return null
     }
   },
 
@@ -378,6 +727,7 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
         libraryId: id,
         selectedAlias: null,
         aliasDetail: null,
+        dirty: false,
         loading: false,
       })
       return true
@@ -395,7 +745,8 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
       const entry = await unwrap(
         bridge.librarySave({ sessionId, name, rememberPassword, id: get().libraryId ?? undefined }),
       )
-      set({ fileName: name, libraryId: entry.id, error: null })
+      // A library save persists the current session ⇒ it is no longer dirty.
+      set({ fileName: name, libraryId: entry.id, dirty: false, error: null })
       await get().loadLibrary()
       return true
     } catch (e) {
@@ -434,7 +785,9 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
       libraryId: null,
       selectedAlias: null,
       aliasDetail: null,
+      dirty: false,
       error: null,
+      pendingEntryPasswordOpen: null,
     })
   },
 

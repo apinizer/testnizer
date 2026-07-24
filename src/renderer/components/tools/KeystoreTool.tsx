@@ -1,17 +1,29 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from '../../lib/i18n'
+import { toast } from '../../lib/toast'
 import { useKeystoreStore } from '../../stores/keystore.store'
+import { useTabsStore } from '../../stores/tabs.store'
 import type { KeystoreLibraryEntry, KeystorePickFileResult, KeystoreType } from '../../types'
 import AliasTable from './keystore/AliasTable'
 import CertificateDetailDialog from './keystore/CertificateDetailDialog'
+import ChangeStorePasswordDialog from './keystore/ChangeStorePasswordDialog'
+import ConfirmDialog from './keystore/ConfirmDialog'
+import ConvertDialog from './keystore/ConvertDialog'
+import EntryPasswordPromptDialog from './keystore/EntryPasswordPromptDialog'
+import ExportCertificateDialog from './keystore/ExportCertificateDialog'
 import GenerateKeyPairDialog from './keystore/GenerateKeyPairDialog'
 import GenerateSecretKeyDialog from './keystore/GenerateSecretKeyDialog'
 import ImportDialog from './keystore/ImportDialog'
+import RenameAliasDialog from './keystore/RenameAliasDialog'
+import SetEntryPasswordDialog from './keystore/SetEntryPasswordDialog'
 import { LabeledInput, LabeledSelect, Modal, ModalActions } from './keystore/dialog-ui'
 
 type PasswordPrompt =
   | { kind: 'file'; pick: KeystorePickFileResult }
   | { kind: 'library'; id: string; name: string }
+
+/** An alias-scoped B4 dialog (opened from a row action menu). */
+type RowDialog = { kind: 'rename' | 'setEntryPw' | 'export' | 'delete'; alias: string }
 
 export default function KeystoreTool() {
   const { t } = useTranslation()
@@ -30,11 +42,34 @@ export default function KeystoreTool() {
   const [genKeyPairOpen, setGenKeyPairOpen] = useState(false)
   const [genSecretOpen, setGenSecretOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  // Faz B4 dialogs
+  const [rowDialog, setRowDialog] = useState<RowDialog | null>(null)
+  const [changePwOpen, setChangePwOpen] = useState(false)
+  const [convertOpen, setConvertOpen] = useState(false)
+  const [discardPrompt, setDiscardPrompt] = useState(false)
 
   useEffect(() => {
     void s.loadLibrary()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Dirty-guard (§9.7): mirror the session dirty flag onto the Keystore tool tab
+  // so the shared `closeTabSafely` window.confirm guards a tool-tab close, and
+  // warn the OS before the whole window/app closes on a dirty session.
+  const dirty = s.dirty
+  useEffect(() => {
+    const tab = useTabsStore.getState().tabs.find((tb) => tb.protocol === 'tools.keystore')
+    if (tab) useTabsStore.getState().markDirty(tab.id, dirty)
+  }, [dirty])
+  useEffect(() => {
+    if (!dirty) return
+    const onBeforeUnload = (e: BeforeUnloadEvent): void => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [dirty])
 
   async function handleOpen(): Promise<void> {
     const pick = await s.pickFile()
@@ -103,7 +138,37 @@ export default function KeystoreTool() {
     setImportOpen(true)
   }
 
+  // Open an alias-scoped row dialog with a clean error slate.
+  function openRowDialog(dialog: RowDialog): void {
+    s.clearError()
+    setRowDialog(dialog)
+  }
+  function openChangePw(): void {
+    s.clearError()
+    setChangePwOpen(true)
+  }
+  function openConvert(): void {
+    s.clearError()
+    setConvertOpen(true)
+  }
+
+  async function handleSaveAs(): Promise<void> {
+    const result = await s.saveAs({ suggestedName: s.fileName ?? undefined })
+    if (result && 'path' in result) {
+      toast.success(t('tools.keystore.savedTo').replace('{path}', result.path))
+    }
+  }
+
+  // Close guard (§9.7): a dirty session prompts before discarding; a clean
+  // session closes silently.
+  function requestClose(): void {
+    if (s.dirty) setDiscardPrompt(true)
+    else void s.closeSession()
+  }
+
   const isPkcs12 = s.meta?.type === 'PKCS12'
+  const isKeyAlias = (alias: string): boolean =>
+    s.meta?.aliases.find((a) => a.alias === alias)?.entryType === 'KEY'
 
   return (
     <div
@@ -131,6 +196,14 @@ export default function KeystoreTool() {
               <Pill>
                 {s.meta.aliasCount} {t('tools.keystore.aliasCount')}
               </Pill>
+              {s.dirty && (
+                <span
+                  className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                  style={{ background: '#fff4e0', color: '#b35a00' }}
+                >
+                  {t('tools.keystore.dirty')}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -145,8 +218,11 @@ export default function KeystoreTool() {
               onSecret={() => openGenerator('secret')}
               onImport={openImport}
             />
+            <Btn onClick={openChangePw}>{t('tools.keystore.changePw.title')}</Btn>
+            <Btn onClick={openConvert}>{t('tools.keystore.convert.button')}</Btn>
+            <Btn onClick={() => void handleSaveAs()}>{t('tools.keystore.saveAs')}</Btn>
             <Btn onClick={() => setSaveOpen(true)}>{t('tools.keystore.saveToLibrary')}</Btn>
-            <Btn onClick={() => void s.closeSession()}>{t('tools.keystore.close')}</Btn>
+            <Btn onClick={requestClose}>{t('tools.keystore.close')}</Btn>
           </div>
         )}
       </div>
@@ -154,18 +230,34 @@ export default function KeystoreTool() {
       {/* While a Generate dialog is open, route its error INTO the dialog only
           (it receives error={s.error}) — suppress the header banner so the same
           message doesn't render twice. */}
-      {s.error && !genKeyPairOpen && !genSecretOpen && !importOpen && (
-        <div
-          className="shrink-0 border-b px-4 py-1.5 text-[11px]"
-          style={{ borderColor: 'var(--border)', color: '#cc2200' }}
-        >
-          {s.error}
-        </div>
-      )}
+      {s.error &&
+        !genKeyPairOpen &&
+        !genSecretOpen &&
+        !importOpen &&
+        !rowDialog &&
+        !changePwOpen &&
+        !convertOpen &&
+        !s.pendingEntryPasswordOpen && (
+          <div
+            className="shrink-0 border-b px-4 py-1.5 text-[11px]"
+            style={{ borderColor: 'var(--border)', color: '#cc2200' }}
+          >
+            {s.error}
+          </div>
+        )}
 
       {/* body */}
       {s.sessionId && s.meta ? (
-        <AliasTable aliases={s.meta.aliases} onDetail={(a) => void s.loadAliasDetail(a)} />
+        <AliasTable
+          aliases={s.meta.aliases}
+          actions={{
+            onDetail: (a) => void s.loadAliasDetail(a),
+            onRename: (a) => openRowDialog({ kind: 'rename', alias: a }),
+            onSetEntryPw: (a) => openRowDialog({ kind: 'setEntryPw', alias: a }),
+            onExport: (a) => openRowDialog({ kind: 'export', alias: a }),
+            onDelete: (a) => openRowDialog({ kind: 'delete', alias: a }),
+          }}
+        />
       ) : (
         <EmptyState
           onOpen={handleOpen}
@@ -199,6 +291,99 @@ export default function KeystoreTool() {
 
       {/* import entry (Faz B3) — PKCS12 / key material / pasted PEM / trusted cert */}
       {importOpen && <ImportDialog error={s.error} onClose={() => setImportOpen(false)} />}
+
+      {/* ── Faz B4 dialogs ─────────────────────────────────────────────── */}
+
+      {rowDialog?.kind === 'rename' && (
+        <RenameAliasDialog
+          alias={rowDialog.alias}
+          isKeyEntry={isKeyAlias(rowDialog.alias)}
+          error={s.error}
+          onSubmit={(o) => s.renameAlias(o)}
+          onClose={() => setRowDialog(null)}
+        />
+      )}
+
+      {rowDialog?.kind === 'setEntryPw' && (
+        <SetEntryPasswordDialog
+          alias={rowDialog.alias}
+          error={s.error}
+          onSubmit={(o) => s.setEntryPassword(o)}
+          onClose={() => setRowDialog(null)}
+        />
+      )}
+
+      {rowDialog?.kind === 'export' && (
+        <ExportCertificateDialog
+          alias={rowDialog.alias}
+          error={s.error}
+          onExport={async (o) => {
+            const result = await s.exportCertificate(o)
+            if (result && 'path' in result) {
+              toast.success(t('tools.keystore.export.saved').replace('{path}', result.path))
+            }
+            return result
+          }}
+          onClose={() => setRowDialog(null)}
+        />
+      )}
+
+      {rowDialog?.kind === 'delete' && (
+        <ConfirmDialog
+          title={t('tools.keystore.deleteConfirm.title')}
+          message={t('tools.keystore.deleteConfirm.message').replace('{alias}', rowDialog.alias)}
+          confirmLabel={t('tools.keystore.deleteConfirm.confirm')}
+          danger
+          onCancel={() => setRowDialog(null)}
+          onConfirm={() => {
+            const alias = rowDialog.alias
+            setRowDialog(null)
+            void s.deleteEntry(alias)
+          }}
+        />
+      )}
+
+      {changePwOpen && (
+        <ChangeStorePasswordDialog
+          error={s.error}
+          onSubmit={(o) => s.changeStorePassword(o)}
+          onClose={() => setChangePwOpen(false)}
+        />
+      )}
+
+      {convertOpen && s.meta && (
+        <ConvertDialog
+          currentType={s.meta.type}
+          error={s.error}
+          onSubmit={(o) => s.convert(o)}
+          onClose={() => setConvertOpen(false)}
+        />
+      )}
+
+      {discardPrompt && (
+        <ConfirmDialog
+          title={t('tools.keystore.dirtyGuard.title')}
+          message={t('tools.keystore.dirtyGuard.message')}
+          confirmLabel={t('tools.keystore.dirtyGuard.discard')}
+          cancelLabel={t('tools.keystore.dirtyGuard.keepEditing')}
+          danger
+          onCancel={() => setDiscardPrompt(false)}
+          onConfirm={() => {
+            setDiscardPrompt(false)
+            void s.closeSession()
+          }}
+        />
+      )}
+
+      {/* entry-password prompt (FIX 1) — a key entry's pw ≠ the store pw */}
+      {s.pendingEntryPasswordOpen && (
+        <EntryPasswordPromptDialog
+          aliases={s.pendingEntryPasswordOpen.aliases}
+          error={s.error}
+          onSubmit={(map) => s.retryOpenWithEntryPasswords(map)}
+          onClose={() => s.cancelPendingOpen()}
+        />
+      )}
 
       {/* password prompt */}
       {pwPrompt && (
@@ -307,6 +492,10 @@ function EmptyState({
   const { t } = useTranslation()
   const library = useKeystoreStore((st) => st.library)
   const deleteFromLibrary = useKeystoreStore((st) => st.deleteFromLibrary)
+  // Gate the ✕ (permanent SQLite blob drop) behind the same danger confirm as the
+  // alias-row delete (FIX 3) — hold the pending id, only delete on confirm.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const pendingDeleteName = library.find((l) => l.id === pendingDeleteId)?.name ?? ''
 
   return (
     <div className="min-h-0 flex-1 overflow-auto p-6">
@@ -366,7 +555,7 @@ function EmptyState({
                     </span>
                   </button>
                   <button
-                    onClick={() => void deleteFromLibrary(e.id)}
+                    onClick={() => setPendingDeleteId(e.id)}
                     className="text-[11px]"
                     style={{ color: 'var(--muted)' }}
                     title={t('tools.keystore.delete')}
@@ -379,6 +568,24 @@ function EmptyState({
           )}
         </div>
       </div>
+
+      {pendingDeleteId && (
+        <ConfirmDialog
+          title={t('tools.keystore.libraryDeleteConfirm.title')}
+          message={t('tools.keystore.libraryDeleteConfirm.message').replace(
+            '{name}',
+            pendingDeleteName,
+          )}
+          confirmLabel={t('tools.keystore.libraryDeleteConfirm.confirm')}
+          danger
+          onCancel={() => setPendingDeleteId(null)}
+          onConfirm={() => {
+            const id = pendingDeleteId
+            setPendingDeleteId(null)
+            void deleteFromLibrary(id)
+          }}
+        />
+      )}
     </div>
   )
 }

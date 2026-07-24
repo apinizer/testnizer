@@ -89,6 +89,24 @@ export interface KeystoreMeta {
   type: KeystoreType
   aliasCount: number
   aliases: AliasSummary[]
+  /** Unsaved-changes flag (design §9.7 dirty-guard). Set by any mutation,
+   * cleared by `saveAs`. Absent on the read-only viewer projections is fine —
+   * callers treat `undefined` as `false`. */
+  dirty?: boolean
+}
+
+/** Certificate export encodings (design §4.14 / §6.12). */
+export type ExportFormat = 'DER' | 'PEM' | 'PKCS7' | 'PKIPATH'
+
+/**
+ * Result of `exportCertificate` — PUBLIC certificate bytes only (never a private
+ * key, design invariant 1). The handler writes `bytes` to a user-picked path via
+ * a save dialog; the renderer only ever learns the resulting `{path}`.
+ */
+export interface ExportCertificateResult {
+  bytes: Buffer
+  fileName: string
+  contentType: string
 }
 
 export interface GenerateKeyPairOptions {
@@ -202,6 +220,8 @@ interface KeystoreSession {
   aliasEntryPasswords: Map<string, string>
   /** Last serialized bytes — kept ONLY in main (design §3.4). */
   bytes: Buffer
+  /** Unsaved-changes flag (design §9.7). Any mutation sets it; `saveAs` clears. */
+  dirty: boolean
   /** Epoch ms of the last access — drives idle eviction (design R8). */
   lastAccess: number
 }
@@ -717,7 +737,16 @@ function spkiFromCertDer(certDer: Buffer): Buffer | null {
 /** Parse PKCS12 DER into the normalized model (RSA + EC, using raw DER — forge
  * can't parse EC cert/key objects, so we read `bag.asn1` fallbacks). Secret keys
  * are lifted out first (forge throws on `secretBag`) and merged back in. */
-export function parsePkcs12(bytes: Buffer, password: string): EntryModel[] {
+export function parsePkcs12(
+  bytes: Buffer,
+  password: string,
+  // Accepted for signature parity with parseJks / parseKeyStore (design §3.1).
+  // PKCS12 protects every bag + the MAC with the ONE store password (design §4;
+  // "PKCS12 uses one password"), so node-forge decrypts all bags with `password`;
+  // the per-alias map is a no-op here and every distinct-entry-password scenario
+  // is exercised on JKS instead.
+  _aliasEntryPasswords?: Map<string, string>,
+): EntryModel[] {
   const { secretEntries, filtered } = stripSecretBags(bytes, password)
   let p12: forge.pkcs12.Pkcs12Pfx
   try {
@@ -855,39 +884,91 @@ export function parsePkcs12(bytes: Buffer, password: string): EntryModel[] {
   return entries
 }
 
+/**
+ * Canonical §8 recovery-failure string, shared by every op that must read a key
+ * entry protected with a password different from the store password (open/reopen,
+ * renameAlias, setEntryPassword, changeStorePassword, convert). Never interpolate
+ * any password — only the alias.
+ */
+export function recoveryMessage(alias: string): string {
+  return (
+    `Cannot recover key entry '${alias}'. The entry password differs from the ` +
+    `store password — please provide the entry password.`
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // JKS read (jks-js) + write (jks-writer)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function parseJks(bytes: Buffer, password: string): EntryModel[] {
-  let pems: Record<string, { key?: string; cert?: string; ca?: string }>
+/** Minimal shape of the entries `jks-js`'s `parseJks` returns (it ships no types).
+ * A key entry carries the raw EncryptedPrivateKeyInfo bytes + the cert chain; a
+ * trusted entry carries a single certificate. We decrypt each key ourselves with
+ * its per-alias password so JKS entry passwords that differ from the store
+ * password are honoured (design §3.1). */
+interface JksJsCert {
+  value: Buffer
+}
+interface JksJsKeyEntry {
+  alias: string
+  protectedPrivateKey: Buffer
+  chain: JksJsCert[]
+}
+interface JksJsTrustedEntry {
+  alias: string
+  cert: JksJsCert
+}
+type JksJsEntry = JksJsKeyEntry | JksJsTrustedEntry
+
+// TODO(follow-up): lazy JKS parse — defer key decryption to the first key-op
+// (like `keytool -list`) so open+inspect works without ANY key password. The
+// `aliasEntryPasswords` threading below already restores correctness (a store
+// whose key pw ≠ store pw is openable by supplying the entry password); lazy
+// parse is a future ergonomics enhancement, not a correctness gap.
+function parseJks(
+  bytes: Buffer,
+  password: string,
+  aliasEntryPasswords?: Map<string, string>,
+): EntryModel[] {
+  let jksEntries: JksJsEntry[]
   try {
-    pems = jksjs.toPem(bytes, password) as typeof pems
+    // Validates the store integrity hash with the store password; does NOT yet
+    // decrypt the individual key blobs (that is deferred to `decrypt` below so
+    // each entry can be recovered with its own password).
+    jksEntries = jksjs.parseJks(bytes, password) as JksJsEntry[]
   } catch (e) {
     throw new KeystoreEngineException(
       'Password is wrong or the file is corrupt' + (e instanceof Error ? ` (${e.message})` : ''),
     )
   }
   const entries: EntryModel[] = []
-  for (const [alias, v] of Object.entries(pems)) {
-    if (v.key) {
-      const keyDer = firstPemDer(v.key, 'PRIVATE KEY')
-      const chain = v.cert ? pemBlocksToDer(v.cert, 'CERTIFICATE') : []
+  for (const je of jksEntries) {
+    if ('protectedPrivateKey' in je) {
+      // Per-alias entry password, falling back to the store password (design §3.1).
+      const entryPassword = aliasEntryPasswords?.get(je.alias) ?? password
+      let keyPem: string
+      try {
+        keyPem = jksjs.decrypt(je.protectedPrivateKey, entryPassword) as string
+      } catch {
+        // jks-js throws "Cannot recover key" when the protector integrity digest
+        // fails — i.e. the supplied entry/store password is wrong for this key.
+        throw new KeystoreValidationException(recoveryMessage(je.alias))
+      }
+      const keyDer = firstPemDer(keyPem, 'PRIVATE KEY')
       if (!keyDer) {
-        throw new KeystoreEngineException(`Could not decode private key for alias: ${alias}`)
+        throw new KeystoreEngineException(`Could not decode private key for alias: ${je.alias}`)
       }
       entries.push({
-        alias,
+        alias: je.alias,
         kind: 'key',
         privateKeyPkcs8Der: keyDer,
-        entryPassword: password,
-        certChainDer: chain,
+        entryPassword,
+        certChainDer: je.chain.map((c) => Buffer.from(c.value)),
       })
     } else {
-      const certPem = v.ca ?? v.cert ?? ''
-      const certDer = firstPemDer(certPem, 'CERTIFICATE')
+      const certDer = je.cert?.value ? Buffer.from(je.cert.value) : undefined
       if (!certDer) continue
-      entries.push({ alias, kind: 'cert', certDer })
+      entries.push({ alias: je.alias, kind: 'cert', certDer })
     }
   }
   return entries
@@ -917,12 +998,21 @@ function serializeJks(entries: EntryModel[], storePassword: string): Buffer {
 // loadKeyStore / serialize (spec §6.2, §6.4)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Parse keystore bytes into the normalized model. */
-export function parseKeyStore(bytes: Buffer, password: string, type: KeystoreType): EntryModel[] {
+/** Parse keystore bytes into the normalized model. `aliasEntryPasswords` supplies
+ * per-alias key passwords for reopening a store whose entries were protected with
+ * passwords different from the store password (design §3.1). */
+export function parseKeyStore(
+  bytes: Buffer,
+  password: string,
+  type: KeystoreType,
+  aliasEntryPasswords?: Map<string, string>,
+): EntryModel[] {
   if (!bytes || bytes.length === 0) {
     throw new KeystoreValidationException('Keystore content cannot be empty')
   }
-  return type === 'JKS' ? parseJks(bytes, password) : parsePkcs12(bytes, password)
+  return type === 'JKS'
+    ? parseJks(bytes, password, aliasEntryPasswords)
+    : parsePkcs12(bytes, password, aliasEntryPasswords)
 }
 
 /** Serialize the normalized model to keystore bytes. */
@@ -934,6 +1024,91 @@ export function serializeKeyStore(
   return type === 'JKS'
     ? serializeJks(entries, storePassword)
     : serializePkcs12(entries, storePassword)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Certificate export encoders (spec §4.14 / §6.12) — Faz B4. PUBLIC cert bytes
+// only: DER (raw leaf), PEM (leaf), PKCS7 (full chain, forge-degenerate
+// SignedData), PkiPath (root-first SEQUENCE OF Certificate). Each parses a cert
+// DER through forge's generic ASN.1 reader (round-trips ANY cert incl. EC, which
+// forge's cert-specific parser cannot).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// PKCS#7 signedData / data content-type OIDs (RFC 2315).
+const PKCS7_SIGNED_DATA_OID = '1.2.840.113549.1.7.2'
+
+function intAsn1(value: number): Asn1 {
+  return asn1.create(
+    asn1.Class.UNIVERSAL,
+    asn1.Type.INTEGER,
+    false,
+    asn1.integerToDer(value).getBytes(),
+  )
+}
+
+/** Raw DER leaf certificate (design §4.14 DER row — `.cer`). */
+function exportDer(leafDer: Buffer): Buffer {
+  return leafDer
+}
+
+/** 64-column PEM of the leaf certificate (design §4.14 PEM row — `.pem`). */
+function exportPem(leafDer: Buffer): Buffer {
+  // Node's X509 toString() emits a BEGIN/END CERTIFICATE PEM block.
+  return Buffer.from(new X509Certificate(leafDer).toString(), 'utf8')
+}
+
+/**
+ * Degenerate PKCS#7 SignedData carrying the WHOLE chain and no signers — the
+ * classic `.p7b` cert bundle (design §4.14 PKCS7 row). Built directly from raw
+ * cert DER so EC certs pass through unchanged.
+ */
+function exportPkcs7(chainDer: Buffer[]): Buffer {
+  const certNodes = chainDer.map((d) => asn1.fromDer(d.toString('binary')))
+  const signedData = seq([
+    intAsn1(1), // version
+    set([]), // digestAlgorithms — empty
+    seq([oid(pkiOids.data)]), // encapContentInfo (id-data), no content
+    ctx0(certNodes), // [0] IMPLICIT certificates
+    set([]), // signerInfos — empty
+  ])
+  const contentInfo = seq([oid(PKCS7_SIGNED_DATA_OID), ctx0([signedData])])
+  return Buffer.from(asn1.toDer(contentInfo).getBytes(), 'binary')
+}
+
+/**
+ * PkiPath: a bare DER `SEQUENCE OF Certificate` in ROOT-FIRST order (design
+ * §4.14 — the reverse of the leaf-first chain / of PKCS7), `.pkipath`.
+ */
+function exportPkiPath(chainDer: Buffer[]): Buffer {
+  const rootFirst = [...chainDer].reverse()
+  const certNodes = rootFirst.map((d) => asn1.fromDer(d.toString('binary')))
+  return Buffer.from(asn1.toDer(seq(certNodes)).getBytes(), 'binary')
+}
+
+interface ExportFormatSpec {
+  ext: string
+  contentType: string
+  encode: (leafDer: Buffer, chainDer: Buffer[]) => Buffer
+}
+
+const EXPORT_FORMATS: Record<ExportFormat, ExportFormatSpec> = {
+  DER: { ext: '.cer', contentType: 'application/pkix-cert', encode: (leaf) => exportDer(leaf) },
+  PEM: { ext: '.pem', contentType: 'application/x-pem-file', encode: (leaf) => exportPem(leaf) },
+  PKCS7: {
+    ext: '.p7b',
+    contentType: 'application/x-pkcs7-certificates',
+    encode: (_leaf, chain) => exportPkcs7(chain),
+  },
+  PKIPATH: {
+    ext: '.pkipath',
+    contentType: 'application/pkix-pkipath',
+    encode: (_leaf, chain) => exportPkiPath(chain),
+  },
+}
+
+/** Replace every filesystem-unsafe character with `_` (design §6.13). */
+export function sanitizeFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, '_')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1419,6 +1594,7 @@ export class KeystoreEngine {
       type: session.type,
       aliasCount: session.entries.length,
       aliases: session.entries.map(summarize),
+      dirty: session.dirty,
     }
   }
 
@@ -1458,6 +1634,7 @@ export class KeystoreEngine {
       entries: [],
       aliasEntryPasswords: new Map(),
       bytes: Buffer.alloc(0),
+      dirty: false,
       lastAccess: Date.now(),
     }
     session.bytes = serializeKeyStore(session.entries, session.type, session.storePassword)
@@ -1465,18 +1642,33 @@ export class KeystoreEngine {
     return { sessionId: session.id, meta: this.meta(session) }
   }
 
-  /** Open existing keystore bytes (spec §4.2 / §6.2). */
-  open(bytes: Buffer, password: string, type?: string): { sessionId: string; meta: KeystoreMeta } {
+  /**
+   * Open existing keystore bytes (spec §4.2 / §6.2). `aliasEntryPasswords`
+   * supplies per-alias key passwords so a store whose entries were protected with
+   * distinct passwords can be reopened (design §3.1) — the map is both threaded
+   * into the parse AND retained on the session so subsequent mutations know each
+   * entry's password.
+   */
+  open(
+    bytes: Buffer,
+    password: string,
+    type?: string,
+    aliasEntryPasswords?: Record<string, string> | Map<string, string>,
+  ): { sessionId: string; meta: KeystoreMeta } {
     const resolved = resolveType(type)
-    const entries = parseKeyStore(bytes, password ?? '', resolved)
-    const aliasEntryPasswords = new Map<string, string>()
+    const pwMap =
+      aliasEntryPasswords instanceof Map
+        ? new Map(aliasEntryPasswords)
+        : new Map(Object.entries(aliasEntryPasswords ?? {}))
+    const entries = parseKeyStore(bytes, password ?? '', resolved, pwMap)
     const session: KeystoreSession = {
       id: randomUUID(),
       type: resolved,
       storePassword: password ?? '',
       entries,
-      aliasEntryPasswords,
+      aliasEntryPasswords: pwMap,
       bytes,
+      dirty: false,
       lastAccess: Date.now(),
     }
     this.register(session)
@@ -1488,8 +1680,9 @@ export class KeystoreEngine {
     bytes: Buffer | null | undefined,
     password: string,
     type?: string,
+    aliasEntryPasswords?: Record<string, string> | Map<string, string>,
   ): { sessionId: string; meta: KeystoreMeta } {
-    if (bytes && bytes.length > 0) return this.open(bytes, password, type)
+    if (bytes && bytes.length > 0) return this.open(bytes, password, type, aliasEntryPasswords)
     return this.createEmpty(type ?? 'JKS', password)
   }
 
@@ -1548,6 +1741,7 @@ export class KeystoreEngine {
     if (opts.entryPassword && opts.entryPassword.trim()) {
       s.aliasEntryPasswords.set(alias, opts.entryPassword)
     }
+    s.dirty = true
     s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
     return this.meta(s)
   }
@@ -1589,6 +1783,7 @@ export class KeystoreEngine {
     if (opts.entryPassword && opts.entryPassword.trim()) {
       s.aliasEntryPasswords.set(alias, opts.entryPassword)
     }
+    s.dirty = true
     s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
     return this.meta(s)
   }
@@ -1690,6 +1885,7 @@ export class KeystoreEngine {
     for (const e of toAdd) {
       s.entries.push(e)
     }
+    s.dirty = true
     s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
     return this.meta(s)
   }
@@ -1719,6 +1915,7 @@ export class KeystoreEngine {
       // store password, so a distinct entry password would be undecryptable).
       entryPassword: s.storePassword,
     })
+    s.dirty = true
     s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
     return this.meta(s)
   }
@@ -1757,6 +1954,7 @@ export class KeystoreEngine {
         'No private key or certificate found in the provided PEM',
       )
     }
+    s.dirty = true
     s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
     return this.meta(s)
   }
@@ -1770,6 +1968,7 @@ export class KeystoreEngine {
       throw new KeystoreValidationException('No certificate found in the provided content')
     }
     s.entries.push({ alias, kind: 'cert', certDer })
+    s.dirty = true
     s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
     return this.meta(s)
   }
@@ -1777,6 +1976,269 @@ export class KeystoreEngine {
   /** Confirm a private key matches a certificate's public key (spec §6.7). */
   verifyKeyMatchesCertificate(privateKey: KeyObject, publicKey: KeyObject): void {
     verifyKeyMatchesCertificate(privateKey, publicKey)
+  }
+
+  // ── Edit / Export / Persist (Faz B4, spec §4.10–4.16) ─────────────────────
+
+  /**
+   * Resolve the password used to recover a key/secret entry: the supplied
+   * `entryPassword` when non-blank, else the store password (design §6.13
+   * `resolveEntryPassword`). Because the session keeps decrypted key material,
+   * "recover" reduces to verifying the resolved password equals the password the
+   * entry is currently protected with (`entry.entryPassword`) — a mismatch is the
+   * §8 UnrecoverableKey case.
+   */
+  private assertRecoverable(
+    entry: KeyEntryModel | SecretEntryModel,
+    entryPassword: string | undefined,
+    storePassword: string,
+  ): void {
+    const current = entryPassword && entryPassword.trim() ? entryPassword : storePassword
+    if (current !== entry.entryPassword) {
+      throw new KeystoreValidationException(recoveryMessage(entry.alias))
+    }
+  }
+
+  /**
+   * Rename an alias (spec §4.10). A key/secret entry is re-keyed under the same
+   * (verified) entry password; a certificate entry needs no password. Validation
+   * order matches §8: blank source alias → not found → blank new alias → key
+   * recovery → target-collision.
+   */
+  renameAlias(
+    sessionId: string,
+    alias: string,
+    newAlias: string,
+    entryPassword?: string,
+  ): KeystoreMeta {
+    const s = this.getSession(sessionId)
+    requireNonBlank(alias, 'Alias cannot be empty')
+    const entry = s.entries.find((e) => e.alias === alias)
+    if (!entry) throw new KeystoreValidationException(`Alias not found: ${alias}`)
+    if (!newAlias || !newAlias.trim()) {
+      throw new KeystoreValidationException('New alias cannot be empty')
+    }
+    if (entry.kind === 'key' || entry.kind === 'secret') {
+      this.assertRecoverable(entry, entryPassword, s.storePassword)
+    }
+    // A collision (including renaming to the SAME name — the entry itself matches)
+    // is rejected, mirroring keytool's `requireNewAlias` (design §8 KS-F4-08).
+    if (s.entries.some((e) => e.alias === newAlias)) {
+      throw new KeystoreValidationException(`Alias already exists: ${newAlias}`)
+    }
+    entry.alias = newAlias
+    const tracked = s.aliasEntryPasswords.get(alias)
+    if (tracked !== undefined) {
+      s.aliasEntryPasswords.delete(alias)
+      s.aliasEntryPasswords.set(newAlias, tracked)
+    }
+    s.dirty = true
+    s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
+    return this.meta(s)
+  }
+
+  /**
+   * Rotate the store password (spec §4.11). Every key/secret entry is first
+   * verified recoverable (using `aliasEntryPasswords[alias]` or the OLD store
+   * password) BEFORE any mutation — an unrecoverable entry aborts atomically,
+   * leaving the session on its original store password. On success every key
+   * entry is re-protected under `newPassword`, the working store password becomes
+   * `newPassword`, and the per-alias password map is reset (all entries now share
+   * the new store password).
+   */
+  changeStorePassword(
+    sessionId: string,
+    newPassword: string,
+    aliasEntryPasswords?: Record<string, string>,
+  ): KeystoreMeta {
+    const s = this.getSession(sessionId)
+    if (!newPassword || !newPassword.trim()) {
+      throw new KeystoreValidationException('New password cannot be empty')
+    }
+    // Phase 1 — verify ALL key/secret entries recoverable (atomic; no mutation).
+    for (const e of s.entries) {
+      if (e.kind === 'key' || e.kind === 'secret') {
+        this.assertRecoverable(e, aliasEntryPasswords?.[e.alias], s.storePassword)
+      }
+    }
+    // Phase 2 — re-protect every key/secret entry under the new store password.
+    for (const e of s.entries) {
+      if (e.kind === 'key' || e.kind === 'secret') e.entryPassword = newPassword
+    }
+    s.storePassword = newPassword
+    s.aliasEntryPasswords = new Map()
+    s.dirty = true
+    s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
+    return this.meta(s)
+  }
+
+  /**
+   * Set (rotate) a single key entry's password (spec §4.12). Key entries only —
+   * certificate entries are rejected. The current password (supplied, else store
+   * password) is verified before the new one is applied; the new password is
+   * tracked in the per-alias map so the entry can be reopened with it.
+   */
+  setEntryPassword(
+    sessionId: string,
+    alias: string,
+    newEntryPassword: string,
+    entryPassword?: string,
+  ): KeystoreMeta {
+    const s = this.getSession(sessionId)
+    requireNonBlank(alias, 'Alias cannot be empty')
+    const entry = s.entries.find((e) => e.alias === alias)
+    if (!entry) throw new KeystoreValidationException(`Alias not found: ${alias}`)
+    if (entry.kind !== 'key' && entry.kind !== 'secret') {
+      throw new KeystoreValidationException(
+        `Entry password can only be set on a key entry: ${alias}`,
+      )
+    }
+    if (!newEntryPassword || !newEntryPassword.trim()) {
+      throw new KeystoreValidationException('New entry password cannot be empty')
+    }
+    this.assertRecoverable(entry, entryPassword, s.storePassword)
+    entry.entryPassword = newEntryPassword
+    s.aliasEntryPasswords.set(alias, newEntryPassword)
+    s.dirty = true
+    s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
+    return this.meta(s)
+  }
+
+  /** Delete an entry by alias (spec §4.13). */
+  deleteEntry(sessionId: string, alias: string): KeystoreMeta {
+    const s = this.getSession(sessionId)
+    requireNonBlank(alias, 'Alias cannot be empty')
+    const idx = s.entries.findIndex((e) => e.alias === alias)
+    if (idx === -1) throw new KeystoreValidationException(`Alias not found: ${alias}`)
+    s.entries.splice(idx, 1)
+    s.aliasEntryPasswords.delete(alias)
+    s.dirty = true
+    s.bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
+    return this.meta(s)
+  }
+
+  /**
+   * Export the PUBLIC certificate(s) of an alias (spec §4.14 / §6.12). DER/PEM
+   * emit the leaf only; PKCS7/PKIPATH emit the whole chain. NEVER returns a
+   * private key. The format defaults to PEM; an unknown format is rejected with
+   * the raw (pre-normalization) input echoed in the §8 message.
+   */
+  exportCertificate(sessionId: string, alias: string, format?: string): ExportCertificateResult {
+    const s = this.getSession(sessionId)
+    requireNonBlank(alias, 'Alias cannot be empty')
+    const entry = s.entries.find((e) => e.alias === alias)
+    if (!entry) throw new KeystoreValidationException(`Alias not found: ${alias}`)
+
+    let leafDer: Buffer
+    let chainDer: Buffer[]
+    if (entry.kind === 'key') {
+      if (entry.certChainDer.length === 0) {
+        throw new KeystoreValidationException(`Key entry has no certificate chain: ${alias}`)
+      }
+      leafDer = entry.certChainDer[0]
+      chainDer = entry.certChainDer
+    } else if (entry.kind === 'cert') {
+      leafDer = entry.certDer
+      chainDer = [entry.certDer]
+    } else {
+      throw new KeystoreValidationException(`Secret key has no certificate to export: ${alias}`)
+    }
+
+    const raw = (format ?? 'PEM').trim()
+    const key = raw.toUpperCase()
+    const spec = (EXPORT_FORMATS as Record<string, ExportFormatSpec | undefined>)[key]
+    if (!spec) {
+      throw new KeystoreValidationException(`Unsupported export format: ${format}`)
+    }
+    return {
+      bytes: spec.encode(leafDer, chainDer),
+      fileName: sanitizeFileName(alias) + spec.ext,
+      contentType: spec.contentType,
+    }
+  }
+
+  /**
+   * Convert the keystore to another type into a NEW session, leaving the original
+   * untouched (spec §4.15). Every entry is preserved: key/secret entries are
+   * re-protected under `newPassword` (each first verified recoverable with
+   * `entryPassword` or the current store password), certificate entries are copied
+   * verbatim. Secret keys are silently dropped when the target is JKS (which
+   * cannot hold them). Fails atomically — no new session on any unrecoverable key.
+   */
+  convert(
+    sessionId: string,
+    targetType: string,
+    newPassword: string,
+    entryPassword?: string,
+    aliasEntryPasswords?: Record<string, string>,
+  ): { sessionId: string; meta: KeystoreMeta } {
+    const s = this.getSession(sessionId)
+    const target = resolveType(targetType)
+    if (!newPassword || !newPassword.trim()) {
+      throw new KeystoreValidationException('New store password is required for convert format')
+    }
+    const newEntries: EntryModel[] = []
+    for (const e of s.entries) {
+      // Per-alias current password wins over the scalar fallback (symmetric with
+      // changeStorePassword) so entries under DIFFERENT passwords are convertible.
+      const currentPw = aliasEntryPasswords?.[e.alias] ?? entryPassword
+      if (e.kind === 'key') {
+        this.assertRecoverable(e, currentPw, s.storePassword)
+        newEntries.push({
+          alias: e.alias,
+          kind: 'key',
+          privateKeyPkcs8Der: e.privateKeyPkcs8Der,
+          certChainDer: [...e.certChainDer],
+          entryPassword: newPassword,
+        })
+      } else if (e.kind === 'secret') {
+        if (target !== 'PKCS12') continue // JKS cannot hold secret keys (§6.10)
+        this.assertRecoverable(e, currentPw, s.storePassword)
+        newEntries.push({
+          alias: e.alias,
+          kind: 'secret',
+          keyAlgorithm: e.keyAlgorithm,
+          secretKeyRaw: e.secretKeyRaw,
+          entryPassword: newPassword,
+        })
+      } else {
+        newEntries.push({ alias: e.alias, kind: 'cert', certDer: e.certDer })
+      }
+    }
+    const session: KeystoreSession = {
+      id: randomUUID(),
+      type: target,
+      storePassword: newPassword,
+      entries: newEntries,
+      aliasEntryPasswords: new Map(),
+      bytes: Buffer.alloc(0),
+      dirty: true,
+      lastAccess: Date.now(),
+    }
+    session.bytes = serializeKeyStore(session.entries, session.type, session.storePassword)
+    this.register(session)
+    return { sessionId: session.id, meta: this.meta(session) }
+  }
+
+  /**
+   * MAIN-ONLY save snapshot (spec §4.16). Serializes the current session and
+   * returns the bytes + type for the handler to write to a user-picked path.
+   * Does NOT clear `dirty` — the handler calls {@link markSaved} only after the
+   * bytes actually reach disk (a cancelled dialog leaves the session dirty).
+   * NEVER surface the returned bytes to the renderer (design invariant 1).
+   */
+  snapshot(sessionId: string): { bytes: Buffer; type: KeystoreType } {
+    const s = this.getSession(sessionId)
+    const bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
+    s.bytes = bytes
+    return { bytes, type: s.type }
+  }
+
+  /** Clear the dirty flag after a successful Save-As write (spec §4.16). */
+  markSaved(sessionId: string): KeystoreMeta {
+    const s = this.getSession(sessionId)
+    s.dirty = false
+    return this.meta(s)
   }
 
   /** Dispose a session (frees bytes/passwords held in main). */

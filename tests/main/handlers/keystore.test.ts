@@ -521,3 +521,259 @@ describe('keystore import handlers (Faz B3) — envelope + no-leak', () => {
     expect(res.error).toBe('Private key does not match the provided certificate')
   })
 })
+
+describe('keystore Edit / Export / Persist handlers (Faz B4) — envelope + no-leak', () => {
+  const CERTS = join(dirname(fileURLToPath(import.meta.url)), '../../fixtures/certs')
+  const readCert = (f: string): string => readFileSync(join(CERTS, f), 'utf8')
+
+  /** A PKCS12 session with one RSA key entry (`a`, entry pw == store pw). */
+  async function keySession(): Promise<string> {
+    const created = (await harness.invoke('keystore:createNew', {
+      type: 'PKCS12',
+      password: 'changeit',
+    })) as Res<{ sessionId: string }>
+    const sessionId = created.data!.sessionId
+    await keystoreEngine.generateKeyPair(sessionId, {
+      alias: 'a',
+      keyAlgorithm: 'RSA',
+      keySize: 1024,
+      entryPassword: 'changeit',
+    })
+    return sessionId
+  }
+
+  it('keystore:renameAlias returns {sessionId, meta(dirty)} and no secret', async () => {
+    const sessionId = await keySession()
+    const res = (await harness.invoke('keystore:renameAlias', {
+      sessionId,
+      alias: 'a',
+      newAlias: 'renamed',
+      entryPassword: 'changeit',
+    })) as Res<{ sessionId: string; meta: { aliasCount: number; dirty: boolean; aliases: Array<{ alias: string }> } }>
+    expect(res.success).toBe(true)
+    expect(res.data!.meta.dirty).toBe(true)
+    expect(res.data!.meta.aliases[0].alias).toBe('renamed')
+    const json = JSON.stringify(res)
+    expect(json).not.toContain('changeit')
+    expect(json).not.toContain('PRIVATE KEY')
+  })
+
+  it('keystore:renameAlias surfaces validation errors as {success:false}', async () => {
+    const sessionId = await keySession()
+    const res = (await harness.invoke('keystore:renameAlias', {
+      sessionId,
+      alias: 'ghost',
+      newAlias: 'x',
+    })) as Res<unknown>
+    expect(res.success).toBe(false)
+    expect(res.error).toBe('Alias not found: ghost')
+  })
+
+  it('keystore:deleteEntry decrements the alias count', async () => {
+    const sessionId = await keySession()
+    const res = (await harness.invoke('keystore:deleteEntry', { sessionId, alias: 'a' })) as Res<{
+      meta: { aliasCount: number; dirty: boolean }
+    }>
+    expect(res.success).toBe(true)
+    expect(res.data!.meta.aliasCount).toBe(0)
+    expect(res.data!.meta.dirty).toBe(true)
+  })
+
+  it('keystore:changeStorePassword returns safe meta only', async () => {
+    const sessionId = await keySession()
+    const res = (await harness.invoke('keystore:changeStorePassword', {
+      sessionId,
+      newPassword: 'brand-new-pw',
+    })) as Res<{ meta: { dirty: boolean } }>
+    expect(res.success).toBe(true)
+    expect(res.data!.meta.dirty).toBe(true)
+    const json = JSON.stringify(res)
+    expect(json).not.toContain('brand-new-pw')
+    expect(json).not.toContain('changeit')
+  })
+
+  it('keystore:setEntryPassword returns safe meta only', async () => {
+    const sessionId = await keySession()
+    const res = (await harness.invoke('keystore:setEntryPassword', {
+      sessionId,
+      alias: 'a',
+      entryPassword: 'changeit',
+      newEntryPassword: 'entry-secret',
+    })) as Res<{ meta: { dirty: boolean } }>
+    expect(res.success).toBe(true)
+    expect(res.data!.meta.dirty).toBe(true)
+    const json = JSON.stringify(res)
+    expect(json).not.toContain('entry-secret')
+  })
+
+  it('keystore:exportCertificate writes ONLY {path}, and the file has no private key', async () => {
+    const created = (await harness.invoke('keystore:createNew', {
+      type: 'PKCS12',
+      password: 'changeit',
+    })) as Res<{ sessionId: string }>
+    const sessionId = created.data!.sessionId
+    keystoreEngine.importKeyMaterial(sessionId, {
+      alias: 'leaf',
+      privateKeyPem: readCert('client.pkcs8.key'),
+      certificatePem: readCert('client.crt'),
+    })
+    const outPath = join(tmpdir(), `ks-export-${randomUUID()}.pem`)
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: outPath })
+    const res = (await harness.invoke('keystore:exportCertificate', {
+      sessionId,
+      alias: 'leaf',
+      format: 'PEM',
+    })) as Res<{ path: string }>
+    expect(res.success).toBe(true)
+    expect(res.data).toEqual({ path: outPath })
+    const written = readFileSync(outPath, 'utf8')
+    expect(written.startsWith('-----BEGIN CERTIFICATE-----')).toBe(true)
+    expect(written).not.toContain('PRIVATE KEY')
+  })
+
+  it('keystore:exportCertificate does NOT open the dialog on an unsupported format', async () => {
+    const sessionId = await keySession()
+    vi.mocked(dialog.showSaveDialog).mockClear()
+    const res = (await harness.invoke('keystore:exportCertificate', {
+      sessionId,
+      alias: 'a',
+      format: 'JCEKS',
+    })) as Res<unknown>
+    expect(res.success).toBe(false)
+    expect(res.error).toBe('Unsupported export format: JCEKS')
+    expect(dialog.showSaveDialog).not.toHaveBeenCalled()
+  })
+
+  it('keystore:exportCertificate returns {canceled} when the dialog is cancelled', async () => {
+    const sessionId = await keySession()
+    // Give the key entry a chain so export gets past the chain check.
+    const created = sessionId
+    keystoreEngine.deleteEntry(created, 'a')
+    keystoreEngine.importTrustedCertificate(created, {
+      alias: 'ca',
+      certificateContent: readCert('ca.crt'),
+    })
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: true, filePath: undefined })
+    const res = (await harness.invoke('keystore:exportCertificate', {
+      sessionId: created,
+      alias: 'ca',
+      format: 'DER',
+    })) as Res<{ canceled?: boolean }>
+    expect(res.success).toBe(true)
+    expect(res.data).toEqual({ canceled: true })
+  })
+
+  it('keystore:convert returns a NEW session id + meta', async () => {
+    const sessionId = await keySession()
+    const res = (await harness.invoke('keystore:convert', {
+      sessionId,
+      targetType: 'JKS',
+      newPassword: 'jkspass',
+      entryPassword: 'changeit',
+    })) as Res<{ sessionId: string; meta: { type: string; aliasCount: number } }>
+    expect(res.success).toBe(true)
+    expect(res.data!.sessionId).not.toBe(sessionId)
+    expect(res.data!.meta.type).toBe('JKS')
+    expect(res.data!.meta.aliasCount).toBe(1)
+    const json = JSON.stringify(res)
+    expect(json).not.toContain('jkspass')
+    expect(json).not.toContain('changeit')
+  })
+
+  it('keystore:saveAs writes bytes, returns ONLY {path}, clears dirty, and never leaks', async () => {
+    const sessionId = await keySession()
+    const outPath = join(tmpdir(), `ks-saveas-${randomUUID()}.p12`)
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: outPath })
+    const res = (await harness.invoke('keystore:saveAs', { sessionId })) as Res<{ path: string }>
+    expect(res.success).toBe(true)
+    expect(res.data).toEqual({ path: outPath })
+    // dirty cleared on the session.
+    const list = (await harness.invoke('keystore:list', sessionId)) as Res<{ dirty: boolean }>
+    expect(list.data!.dirty).toBe(false)
+    // Written bytes are a real PKCS12 (forge re-parses with the store pw) and the
+    // store password never appears as ASCII plaintext in the file.
+    const bytes = readFileSync(outPath)
+    expect(bytes.includes(Buffer.from('changeit'))).toBe(false)
+    const p12 = keystoreEngine.open(bytes, 'changeit', 'PKCS12')
+    expect(p12.meta.aliasCount).toBe(1)
+  })
+
+  it('keystore:saveAs returns {canceled} when the dialog is cancelled (dirty stays true)', async () => {
+    const sessionId = await keySession()
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: true, filePath: undefined })
+    const res = (await harness.invoke('keystore:saveAs', { sessionId })) as Res<{ canceled?: boolean }>
+    expect(res.success).toBe(true)
+    expect(res.data).toEqual({ canceled: true })
+    const list = (await harness.invoke('keystore:list', sessionId)) as Res<{ dirty: boolean }>
+    expect(list.data!.dirty).toBe(true)
+  })
+
+  it('KS-F4-54 any B4 op on an unknown session fails cleanly', async () => {
+    const rename = (await harness.invoke('keystore:renameAlias', {
+      sessionId: 'never-existed',
+      alias: 'a',
+      newAlias: 'b',
+    })) as Res<unknown>
+    expect(rename.success).toBe(false)
+    expect(rename.error).toBe('Keystore session not found')
+    const save = (await harness.invoke('keystore:saveAs', { sessionId: 'never-existed' })) as Res<unknown>
+    expect(save.success).toBe(false)
+    expect(save.error).toBe('Keystore session not found')
+  })
+})
+
+describe('keystore:open — aliasEntryPasswords threading (FIX 1)', () => {
+  const CERTS = join(dirname(fileURLToPath(import.meta.url)), '../../fixtures/certs')
+  const readCert = (f: string): string => readFileSync(join(CERTS, f), 'utf8')
+
+  /**
+   * Build a JKS whose single KEY entry is protected with a password DIFFERENT
+   * from the store password (the exact data-lockout FIX 1 addresses): create an
+   * empty JKS under `store`, import a key (initially protected with the store pw),
+   * rotate that entry's password to `keypw`, then serialize. Re-opening now needs
+   * the per-alias entry password — the store password alone cannot recover it.
+   */
+  function jksWithDistinctEntryPwB64(): string {
+    const created = keystoreEngine.createEmpty('JKS', 'store-pw')
+    keystoreEngine.importKeyMaterial(created.sessionId, {
+      alias: 'a',
+      privateKeyPem: readCert('client.pkcs8.key'),
+      certificatePem: readCert('client.crt'),
+    })
+    keystoreEngine.setEntryPassword(created.sessionId, 'a', 'entry-pw', 'store-pw')
+    const bytes = keystoreEngine.serialize(created.sessionId)
+    keystoreEngine.close(created.sessionId)
+    return bytes.toString('base64')
+  }
+
+  it('opens a key whose entry pw ≠ store pw when aliasEntryPasswords is supplied', async () => {
+    const b64 = jksWithDistinctEntryPwB64()
+    const res = (await harness.invoke('keystore:open', {
+      bytes: b64,
+      password: 'store-pw',
+      type: 'JKS',
+      aliasEntryPasswords: { a: 'entry-pw' },
+    })) as Res<{ sessionId: string; meta: { aliasCount: number; aliases: Array<{ alias: string; hasPrivateKey: boolean }> } }>
+    expect(res.success).toBe(true)
+    expect(res.data!.meta.aliasCount).toBe(1)
+    expect(res.data!.meta.aliases[0]).toMatchObject({ alias: 'a', hasPrivateKey: true })
+    // NO-LEAK: neither password nor the private key round-trips to the renderer.
+    const json = JSON.stringify(res)
+    expect(json).not.toContain('entry-pw')
+    expect(json).not.toContain('store-pw')
+    expect(json).not.toContain('PRIVATE KEY')
+  })
+
+  it('fails with the §8 recovery error when the map is omitted', async () => {
+    const b64 = jksWithDistinctEntryPwB64()
+    const res = (await harness.invoke('keystore:open', {
+      bytes: b64,
+      password: 'store-pw',
+      type: 'JKS',
+    })) as Res<unknown>
+    expect(res.success).toBe(false)
+    expect(res.error).toBe(
+      "Cannot recover key entry 'a'. The entry password differs from the store password — please provide the entry password.",
+    )
+  })
+})

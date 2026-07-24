@@ -1141,3 +1141,486 @@ describe('verifyKeyMatchesCertificate (spec §6.7 — CRITICAL)', () => {
     )
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Faz B4 — Edit / Export / Persist (spec §4.10–4.16, §8.4).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const RECOVERY_MSG =
+  "Cannot recover key entry '%'. The entry password differs from the store password — please provide the entry password."
+const recovery = (alias: string): string => RECOVERY_MSG.replace('%', alias)
+
+describe('Keystore Studio — B4 renameAlias', () => {
+  it('KS-F4-01 renames an RSA key entry, preserving key + chain identity', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'testpassword')
+    await engine.generateKeyPair(sessionId, {
+      alias: 'test-client',
+      keyAlgorithm: 'RSA',
+      keySize: 2048,
+      entryPassword: 'testpassword',
+    })
+    const before = engine.aliasDetail(sessionId, 'test-client').chain[0]
+    const meta = engine.renameAlias(sessionId, 'test-client', 'client2', 'testpassword')
+    expect(meta.aliasCount).toBe(1)
+    expect(meta.dirty).toBe(true)
+    expect(meta.aliases.map((a) => a.alias)).toEqual(['client2'])
+    const after = engine.aliasDetail(sessionId, 'client2').chain[0]
+    expect(after.sha1Fingerprint).toBe(before.sha1Fingerprint)
+    expect(after.serialNumber).toBe(before.serialNumber)
+    expect(after.subjectDN).toBe(before.subjectDN)
+  })
+
+  it('KS-F4-02 renames a cert-only entry with no entry password', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'changeit')
+    engine.importTrustedCertificate(sessionId, {
+      alias: 'root',
+      certificateContent: readFileSync(join(CERTS, 'ca.crt'), 'utf8'),
+    })
+    const meta = engine.renameAlias(sessionId, 'root', 'root-ca')
+    expect(meta.aliasCount).toBe(1)
+    expect(meta.dirty).toBe(true)
+    expect(meta.aliases[0]).toMatchObject({
+      alias: 'root-ca',
+      entryType: 'CERTIFICATE',
+      hasPrivateKey: false,
+      chainLength: 1,
+    })
+  })
+
+  it('KS-F4-04 alias not found', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'pw')
+    expect(() => engine.renameAlias(sessionId, 'ghost', 'x')).toThrow('Alias not found: ghost')
+  })
+
+  it('KS-F4-05 empty new alias (incl. whitespace)', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'pw')
+    await engine.generateKeyPair(sessionId, { alias: 'a', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'pw' })
+    expect(() => engine.renameAlias(sessionId, 'a', '')).toThrow('New alias cannot be empty')
+    expect(() => engine.renameAlias(sessionId, 'a', '   ')).toThrow('New alias cannot be empty')
+  })
+
+  it('KS-F4-06 target alias already exists', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'pw')
+    await engine.generateKeyPair(sessionId, { alias: 'a', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'pw' })
+    engine.importTrustedCertificate(sessionId, {
+      alias: 'b',
+      certificateContent: readFileSync(join(CERTS, 'ca.crt'), 'utf8'),
+    })
+    expect(() => engine.renameAlias(sessionId, 'a', 'b', 'pw')).toThrow('Alias already exists: b')
+    expect(engine.inspect(sessionId).aliasCount).toBe(2)
+  })
+
+  it('KS-F4-07 JKS key entry pw differs from store pw and is not supplied', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'storepass')
+    await engine.generateKeyPair(sessionId, { alias: 'a', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'entrypw' })
+    expect(() => engine.renameAlias(sessionId, 'a', 'b')).toThrow(recovery('a'))
+    // Supplying the correct entry pw then succeeds.
+    const meta = engine.renameAlias(sessionId, 'a', 'b', 'entrypw')
+    expect(meta.aliases.map((x) => x.alias)).toEqual(['b'])
+  })
+
+  it('KS-F4-08 rename to the same alias errors; empty source alias errors', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'testpassword')
+    await engine.generateKeyPair(sessionId, { alias: 'test-client', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'testpassword' })
+    expect(() => engine.renameAlias(sessionId, 'test-client', 'test-client', 'testpassword')).toThrow(
+      'Alias already exists: test-client',
+    )
+    expect(() => engine.renameAlias(sessionId, '', 'x')).toThrow('Alias cannot be empty')
+  })
+})
+
+describe('Keystore Studio — B4 changeStorePassword', () => {
+  it('KS-F4-09 reopen works with the NEW password, fails with the OLD', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'oldpass')
+    await engine.generateKeyPair(sessionId, { alias: 'a', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'oldpass' })
+    const meta = engine.changeStorePassword(sessionId, 'newpass')
+    expect(meta.dirty).toBe(true)
+    const bytes = engine.serialize(sessionId)
+    // New password opens; old password fails (MAC).
+    const reopened = engine.open(bytes, 'newpass', 'PKCS12')
+    expect(reopened.meta.aliasCount).toBe(1)
+    expect(reopened.meta.aliases[0].keyAlgorithm).toBe('RSA')
+    expect(() => engine.open(bytes, 'oldpass', 'PKCS12')).toThrow(KeystoreEngineException)
+  })
+
+  it('KS-F4-10 consumes a per-alias password map (distinct JKS entry pws), every key recoverable', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'storepass')
+    await engine.generateKeyPair(sessionId, { alias: 'k1', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'p1' })
+    await engine.generateKeyPair(sessionId, { alias: 'k2', keyAlgorithm: 'EC', curve: 'P-256', entryPassword: 'p2' })
+    const meta = engine.changeStorePassword(sessionId, 'newstore', { k1: 'p1', k2: 'p2' })
+    expect(meta.aliasCount).toBe(2)
+    const bytes = engine.serialize(sessionId)
+    // Every key now recoverable with the new store password (no per-alias map).
+    const reopened = engine.open(bytes, 'newstore', 'JKS')
+    const byAlias = Object.fromEntries(reopened.meta.aliases.map((a) => [a.alias, a]))
+    expect(Object.keys(byAlias).sort()).toEqual(['k1', 'k2'])
+    expect(byAlias.k1.keyAlgorithm).toBe('RSA')
+    expect(byAlias.k2.keyAlgorithm).toBe('EC')
+  })
+
+  it('KS-F4-11 cert-only truststore rotates the integrity password', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'old')
+    engine.importTrustedCertificate(sessionId, {
+      alias: 'ca',
+      certificateContent: readFileSync(join(CERTS, 'ca.crt'), 'utf8'),
+    })
+    engine.changeStorePassword(sessionId, 'brandnew')
+    const bytes = engine.serialize(sessionId)
+    expect(engine.open(bytes, 'brandnew', 'JKS').meta.aliasCount).toBe(1)
+    expect(() => engine.open(bytes, 'old', 'JKS')).toThrow(KeystoreEngineException)
+  })
+
+  it('KS-F4-12 empty new password (incl. whitespace)', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'pw')
+    expect(() => engine.changeStorePassword(sessionId, '')).toThrow('New password cannot be empty')
+    expect(() => engine.changeStorePassword(sessionId, '   ')).toThrow('New password cannot be empty')
+  })
+
+  it('KS-F4-13 an entry pw differs and is missing from the map — atomic failure', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'storepass')
+    await engine.generateKeyPair(sessionId, { alias: 'k1', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'storepass' })
+    await engine.generateKeyPair(sessionId, { alias: 'k2', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'secret2' })
+    expect(() => engine.changeStorePassword(sessionId, 'newstore', {})).toThrow(recovery('k2'))
+    // Store pw NOT changed — still opens with the ORIGINAL store pw for k1's path.
+    const bytes = engine.serialize(sessionId)
+    expect(engine.open(bytes, 'storepass', 'JKS', { k2: 'secret2' }).meta.aliasCount).toBe(2)
+    // Supplying k2's pw then succeeds.
+    const meta = engine.changeStorePassword(sessionId, 'newstore', { k2: 'secret2' })
+    expect(meta.dirty).toBe(true)
+  })
+})
+
+describe('Keystore Studio — B4 setEntryPassword', () => {
+  it('KS-F4-16 rotates a key entry password; entry reopens with the NEW entry pw', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'store')
+    await engine.generateKeyPair(sessionId, { alias: 'a', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'oldentry' })
+    const meta = engine.setEntryPassword(sessionId, 'a', 'newentry', 'oldentry')
+    expect(meta.dirty).toBe(true)
+    // Probe: the old entry pw is now dead.
+    expect(() => engine.renameAlias(sessionId, 'a', 'a', 'oldentry')).toThrow(recovery('a'))
+    // Serialize + reopen: the entry decrypts ONLY with the new entry password
+    // supplied via the aliasEntryPasswords map (threading proof).
+    const bytes = engine.serialize(sessionId)
+    const reopened = engine.open(bytes, 'store', 'JKS', { a: 'newentry' })
+    expect(reopened.meta.aliasCount).toBe(1)
+    // Wrong per-alias pw → recovery failure at reopen.
+    expect(() => engine.open(bytes, 'store', 'JKS', { a: 'oldentry' })).toThrow(recovery('a'))
+    // The rotated pw is live for a further rotation.
+    expect(engine.setEntryPassword(sessionId, 'a', 'newentry2', 'newentry').aliasCount).toBe(1)
+  })
+
+  it('KS-F4-17 current entryPassword omitted falls back to the store pw', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'storepw')
+    await engine.generateKeyPair(sessionId, { alias: 'a', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'storepw' })
+    const meta = engine.setEntryPassword(sessionId, 'a', 'distinct')
+    expect(meta.aliasCount).toBe(1)
+    const bytes = engine.serialize(sessionId)
+    expect(engine.open(bytes, 'storepw', 'JKS', { a: 'distinct' }).meta.aliasCount).toBe(1)
+    expect(() => engine.open(bytes, 'storepw', 'JKS')).toThrow(recovery('a'))
+  })
+
+  it('KS-F4-18 rejected on a certificate-only entry', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'store')
+    engine.importTrustedCertificate(sessionId, {
+      alias: 'ca',
+      certificateContent: readFileSync(join(CERTS, 'ca.crt'), 'utf8'),
+    })
+    expect(() => engine.setEntryPassword(sessionId, 'ca', 'x')).toThrow(
+      'Entry password can only be set on a key entry: ca',
+    )
+  })
+
+  it('KS-F4-19 empty new entry password (incl. whitespace)', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'store')
+    await engine.generateKeyPair(sessionId, { alias: 'a', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'store' })
+    expect(() => engine.setEntryPassword(sessionId, 'a', '', 'store')).toThrow('New entry password cannot be empty')
+    expect(() => engine.setEntryPassword(sessionId, 'a', '   ', 'store')).toThrow('New entry password cannot be empty')
+  })
+
+  it('KS-F4-20 wrong current entry password', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'store')
+    await engine.generateKeyPair(sessionId, { alias: 'a', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'realpw' })
+    expect(() => engine.setEntryPassword(sessionId, 'a', 'new', 'wrongpw')).toThrow(recovery('a'))
+  })
+
+  it('KS-F4-21 alias not found (requireAlias first)', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'store')
+    expect(() => engine.setEntryPassword(sessionId, 'nope', 'x')).toThrow('Alias not found: nope')
+  })
+})
+
+describe('Keystore Studio — B4 deleteEntry', () => {
+  it('KS-F4-23 removes a key entry and decrements aliasCount', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'pw')
+    await engine.generateKeyPair(sessionId, { alias: 'a', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'pw' })
+    engine.importTrustedCertificate(sessionId, {
+      alias: 'b',
+      certificateContent: readFileSync(join(CERTS, 'ca.crt'), 'utf8'),
+    })
+    const meta = engine.deleteEntry(sessionId, 'a')
+    expect(meta.aliasCount).toBe(1)
+    expect(meta.dirty).toBe(true)
+    expect(meta.aliases.map((x) => x.alias)).toEqual(['b'])
+    expect(() => engine.aliasDetail(sessionId, 'a')).toThrow('Alias not found: a')
+  })
+
+  it('KS-F4-26 alias not found', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'pw')
+    expect(() => engine.deleteEntry(sessionId, 'missing')).toThrow('Alias not found: missing')
+  })
+
+  it('KS-F4-27 empty alias (incl. whitespace)', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'pw')
+    expect(() => engine.deleteEntry(sessionId, '')).toThrow('Alias cannot be empty')
+    expect(() => engine.deleteEntry(sessionId, '   ')).toThrow('Alias cannot be empty')
+  })
+})
+
+describe('Keystore Studio — B4 exportCertificate', () => {
+  async function keyStoreWithChain(): Promise<{ engine: KeystoreEngine; sessionId: string; leaf: Buffer; ca: Buffer }> {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'pw')
+    // Import a real leaf+CA chain so PKCS7/PKIPATH have 2 certs.
+    engine.importKeyMaterial(sessionId, {
+      alias: 'test-client',
+      privateKeyPem: readFileSync(join(CERTS, 'client.pkcs8.key'), 'utf8'),
+      certificatePem:
+        readFileSync(join(CERTS, 'client.crt'), 'utf8') + '\n' + readFileSync(join(CERTS, 'ca.crt'), 'utf8'),
+    })
+    return { engine, sessionId, leaf: certDer('client.crt'), ca: certDer('ca.crt') }
+  }
+
+  it('KS-F4-29 PEM emits the leaf, correct ext/contentType', async () => {
+    const { engine, sessionId, leaf } = await keyStoreWithChain()
+    const res = engine.exportCertificate(sessionId, 'test-client', 'PEM')
+    expect(res.fileName).toBe('test-client.pem')
+    expect(res.contentType).toBe('application/x-pem-file')
+    const text = res.bytes.toString('utf8')
+    expect(text.startsWith('-----BEGIN CERTIFICATE-----')).toBe(true)
+    expect(text).not.toContain('PRIVATE KEY')
+    expect(pemToDer(text, 'CERTIFICATE').equals(leaf)).toBe(true)
+    // Only one cert block (leaf-only per §4.14).
+    expect(text.match(/BEGIN CERTIFICATE/g)?.length).toBe(1)
+  })
+
+  it('KS-F4-30 DER produces the raw leaf, .cer / application/pkix-cert', async () => {
+    const { engine, sessionId, leaf } = await keyStoreWithChain()
+    const res = engine.exportCertificate(sessionId, 'test-client', 'DER')
+    expect(res.fileName).toBe('test-client.cer')
+    expect(res.contentType).toBe('application/pkix-cert')
+    expect(res.bytes[0]).toBe(0x30)
+    expect(res.bytes.equals(leaf)).toBe(true)
+    expect(new X509Certificate(res.bytes).subject).toContain('CN=test-client')
+  })
+
+  it('KS-F4-31 PKCS7 emits the full chain, .p7b', async () => {
+    const { engine, sessionId } = await keyStoreWithChain()
+    const res = engine.exportCertificate(sessionId, 'test-client', 'PKCS7')
+    expect(res.fileName).toBe('test-client.p7b')
+    expect(res.contentType).toBe('application/x-pkcs7-certificates')
+    // Decode via forge: certs-only SignedData with 2 certificates.
+    const p7 = forge.pkcs7.messageFromAsn1(forge.asn1.fromDer(res.bytes.toString('binary'))) as unknown as {
+      certificates: forge.pki.Certificate[]
+    }
+    expect(p7.certificates.length).toBe(2)
+    const subjects = p7.certificates.map((c) => c.subject.getField('CN')?.value)
+    expect(subjects).toContain('test-client')
+  })
+
+  it('KS-F4-32 PKIPATH emits a root-first cert SEQUENCE, .pkipath', async () => {
+    const { engine, sessionId, leaf, ca } = await keyStoreWithChain()
+    const res = engine.exportCertificate(sessionId, 'test-client', 'PKIPATH')
+    expect(res.fileName).toBe('test-client.pkipath')
+    expect(res.contentType).toBe('application/pkix-pkipath')
+    const seq = forge.asn1.fromDer(res.bytes.toString('binary'))
+    const kids = seq.value as forge.asn1.Asn1[]
+    expect(kids.length).toBe(2)
+    const der0 = Buffer.from(forge.asn1.toDer(kids[0]).getBytes(), 'binary')
+    const der1 = Buffer.from(forge.asn1.toDer(kids[1]).getBytes(), 'binary')
+    // Root-first: CA precedes the leaf (reverse of the leaf-first chain).
+    expect(der0.equals(ca)).toBe(true)
+    expect(der1.equals(leaf)).toBe(true)
+  })
+
+  it('KS-F4-33 no format defaults to PEM', async () => {
+    const { engine, sessionId } = await keyStoreWithChain()
+    const res = engine.exportCertificate(sessionId, 'test-client')
+    expect(res.fileName).toBe('test-client.pem')
+    expect(res.contentType).toBe('application/x-pem-file')
+  })
+
+  it('KS-F4-35 sanitizes unsafe alias characters in the filename', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'pw')
+    engine.importTrustedCertificate(sessionId, {
+      alias: 'my client:cert/1',
+      certificateContent: readFileSync(join(CERTS, 'ca.crt'), 'utf8'),
+    })
+    const res = engine.exportCertificate(sessionId, 'my client:cert/1', 'DER')
+    expect(res.fileName).toBe('my_client_cert_1.cer')
+  })
+
+  it('KS-F4-36 unsupported format', async () => {
+    const { engine, sessionId } = await keyStoreWithChain()
+    expect(() => engine.exportCertificate(sessionId, 'test-client', 'JCEKS')).toThrow(
+      'Unsupported export format: JCEKS',
+    )
+  })
+
+  it('KS-F4-37 alias not found', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'pw')
+    expect(() => engine.exportCertificate(sessionId, 'nope', 'PEM')).toThrow('Alias not found: nope')
+  })
+})
+
+describe('Keystore Studio — B4 convert', () => {
+  it('KS-F4-40 / round-trip JKS→PKCS12→JKS preserves entry count + key recoverability', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'testpassword')
+    await engine.generateKeyPair(sessionId, { alias: 'k', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'testpassword' })
+    engine.importTrustedCertificate(sessionId, {
+      alias: 'ca',
+      certificateContent: readFileSync(join(CERTS, 'ca.crt'), 'utf8'),
+    })
+    // JKS → PKCS12
+    const toP12 = engine.convert(sessionId, 'PKCS12', 'p12pass', 'testpassword')
+    expect(toP12.meta.type).toBe('PKCS12')
+    expect(toP12.meta.aliasCount).toBe(2)
+    expect(toP12.meta.dirty).toBe(true)
+    // Original untouched.
+    expect(engine.inspect(sessionId).type).toBe('JKS')
+    // PKCS12 → JKS
+    const backToJks = engine.convert(toP12.sessionId, 'JKS', 'jkspass', 'p12pass')
+    expect(backToJks.meta.type).toBe('JKS')
+    expect(backToJks.meta.aliasCount).toBe(2)
+    // Key recoverable in the round-tripped store.
+    const bytes = engine.serialize(backToJks.sessionId)
+    const reopened = engine.open(bytes, 'jkspass', 'JKS')
+    const byAlias = Object.fromEntries(reopened.meta.aliases.map((a) => [a.alias, a]))
+    expect(Object.keys(byAlias).sort()).toEqual(['ca', 'k'])
+    expect(byAlias.k.hasPrivateKey).toBe(true)
+    expect(byAlias.k.keyAlgorithm).toBe('RSA')
+  })
+
+  it('KS-F4-42 PKCS12→JKS skips a secret (AES) key entry', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'pw')
+    engine.generateSecretKey(sessionId, { alias: 'aes', keyAlgorithm: 'AES', keySize: 256, entryPassword: 'pw' })
+    await engine.generateKeyPair(sessionId, { alias: 'kp', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'pw' })
+    const conv = engine.convert(sessionId, 'JKS', 'jkspw', 'pw')
+    expect(conv.meta.type).toBe('JKS')
+    expect(conv.meta.aliasCount).toBe(1)
+    expect(conv.meta.aliases.map((a) => a.alias)).toEqual(['kp'])
+  })
+
+  it('KS-F4-43 cert-only truststore converts with no entry password', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'trust')
+    engine.importTrustedCertificate(sessionId, { alias: 'ca', certificateContent: readFileSync(join(CERTS, 'ca.crt'), 'utf8') })
+    engine.importTrustedCertificate(sessionId, { alias: 'srv', certificateContent: readFileSync(join(CERTS, 'server.crt'), 'utf8') })
+    const conv = engine.convert(sessionId, 'PKCS12', 'p12pw')
+    expect(conv.meta.type).toBe('PKCS12')
+    expect(conv.meta.aliasCount).toBe(2)
+  })
+
+  it('KS-F4-44 empty new store password', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'pw')
+    expect(() => engine.convert(sessionId, 'JKS', '')).toThrow('New store password is required for convert format')
+    expect(() => engine.convert(sessionId, 'JKS', '   ')).toThrow('New store password is required for convert format')
+  })
+
+  it('KS-F4-45 unsupported target type echoes the raw input', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'pw')
+    expect(() => engine.convert(sessionId, 'BKS', 'x')).toThrow('Unsupported keystore type: BKS')
+  })
+
+  it('KS-F4-46 key entry pw differs and is not supplied (UnrecoverableKey)', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'storepass')
+    await engine.generateKeyPair(sessionId, { alias: 'a', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'entrypw' })
+    expect(() => engine.convert(sessionId, 'PKCS12', 'newpw')).toThrow(recovery('a'))
+    // Supplying the entry pw converts.
+    const conv = engine.convert(sessionId, 'PKCS12', 'newpw', 'entrypw')
+    expect(conv.meta.aliasCount).toBe(1)
+  })
+
+  it('KS-F4-47 per-alias map converts entries under DIFFERENT passwords (FIX 2)', () => {
+    // Two key aliases whose entry passwords diverge — a single scalar cannot
+    // cover both, but a per-alias map (symmetric with changeStorePassword) can.
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', 'store')
+    engine.importKeyMaterial(sessionId, {
+      alias: 'a',
+      privateKeyPem: readFileSync(join(CERTS, 'client.pkcs8.key'), 'utf8'),
+      certificatePem: readFileSync(join(CERTS, 'client.crt'), 'utf8'),
+    })
+    engine.importKeyMaterial(sessionId, {
+      alias: 'b',
+      privateKeyPem: readFileSync(join(CERTS, 'ec-p256.pkcs8.key'), 'utf8'),
+      certificatePem: readFileSync(join(CERTS, 'ec-p256.crt'), 'utf8'),
+    })
+    engine.setEntryPassword(sessionId, 'a', 'pwA', 'store')
+    engine.setEntryPassword(sessionId, 'b', 'pwB', 'store')
+
+    // A single scalar (correct for `a`, wrong for `b`) fails on the second entry.
+    expect(() => engine.convert(sessionId, 'PKCS12', 'newpw', 'pwA')).toThrow(recovery('b'))
+
+    // The per-alias map resolves each entry's current password → success.
+    const conv = engine.convert(sessionId, 'PKCS12', 'newpw', undefined, { a: 'pwA', b: 'pwB' })
+    expect(conv.meta.type).toBe('PKCS12')
+    expect(conv.meta.aliasCount).toBe(2)
+    // Keys recoverable under the new store password in the converted store.
+    const reopened = engine.open(engine.serialize(conv.sessionId), 'newpw', 'PKCS12')
+    expect(reopened.meta.aliases.map((x) => x.alias).sort()).toEqual(['a', 'b'])
+  })
+})
+
+describe('Keystore Studio — B4 snapshot / dirty lifecycle', () => {
+  it('KS-F4-48/53 snapshot serializes CURRENT state; markSaved clears dirty', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'oldpw')
+    await engine.generateKeyPair(sessionId, { alias: 'a', keyAlgorithm: 'RSA', keySize: 2048, entryPassword: 'oldpw' })
+    engine.changeStorePassword(sessionId, 'newpw')
+    expect(engine.inspect(sessionId).dirty).toBe(true)
+    const { bytes, type } = engine.snapshot(sessionId)
+    expect(type).toBe('JKS')
+    // Snapshot reflects the post-change password (not the loaded original).
+    expect(engine.open(bytes, 'newpw', 'JKS').meta.aliasCount).toBe(1)
+    expect(() => engine.open(bytes, 'oldpw', 'JKS')).toThrow(KeystoreEngineException)
+    const meta = engine.markSaved(sessionId)
+    expect(meta.dirty).toBe(false)
+  })
+
+  it('KS-F4-54 B4 ops on an unknown/disposed session fail cleanly', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'pw')
+    engine.close(sessionId)
+    expect(() => engine.renameAlias(sessionId, 'a', 'b')).toThrow('Keystore session not found')
+    expect(() => engine.deleteEntry('never', 'a')).toThrow('Keystore session not found')
+    expect(() => engine.snapshot(sessionId)).toThrow('Keystore session not found')
+  })
+})

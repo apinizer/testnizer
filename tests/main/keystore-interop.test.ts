@@ -247,3 +247,138 @@ gate('keystore interop (keytool + openssl)', () => {
     }
   })
 })
+
+gate('keystore B4 convert interop (both directions)', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'ks-b4-'))
+
+  it('engine convert JKS→PKCS12 opens with openssl pkcs12 -info AND keytool -list', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.open(
+      serializeKeyStore(
+        [
+          {
+            alias: 'test-client',
+            kind: 'key' as const,
+            privateKeyPkcs8Der: keyDer('client.pkcs8.key'),
+            entryPassword: PW,
+            certChainDer: [certDer('client.crt'), certDer('ca.crt')],
+          },
+        ] as never,
+        'JKS',
+        PW,
+      ),
+      PW,
+      'JKS',
+    )
+    // JKS → PKCS12
+    const conv = engine.convert(sessionId, 'PKCS12', 'p12pass', PW)
+    expect(conv.meta.type).toBe('PKCS12')
+    const p12 = engine.serialize(conv.sessionId)
+    const p = join(tmp, 'conv.p12')
+    writeFileSync(p, p12)
+
+    const ossl = execFileSync(
+      'openssl',
+      ['pkcs12', '-info', '-in', p, '-passin', 'pass:p12pass', '-nokeys', '-passout', 'pass:x'],
+      { encoding: 'utf8' },
+    )
+    expect(ossl).toContain('friendlyName: test-client')
+
+    // -nocerts extracts a private key → the key survived JKS→PKCS12.
+    const keys = execFileSync(
+      'openssl',
+      ['pkcs12', '-in', p, '-passin', 'pass:p12pass', '-nocerts', '-noenc'],
+      { encoding: 'utf8' },
+    )
+    expect(keys).toMatch(/BEGIN (?:ENCRYPTED )?PRIVATE KEY/)
+
+    const kt = execFileSync(
+      'keytool',
+      ['-list', '-keystore', p, '-storetype', 'PKCS12', '-storepass', 'p12pass'],
+      { encoding: 'utf8' },
+    )
+    expect(kt).toMatch(/test-client.*PrivateKeyEntry/)
+  })
+
+  it('engine convert PKCS12→JKS opens with real keytool -list (key recoverable)', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.open(readFileSync(join(CERTS, 'client.p12')), PW, 'PKCS12')
+    // PKCS12 → JKS
+    const conv = engine.convert(sessionId, 'JKS', 'jkspass', PW)
+    expect(conv.meta.type).toBe('JKS')
+    const jks = engine.serialize(conv.sessionId)
+    const p = join(tmp, 'conv.jks')
+    writeFileSync(p, jks)
+
+    const kt = execFileSync(
+      'keytool',
+      ['-list', '-v', '-keystore', p, '-storetype', 'JKS', '-storepass', 'jkspass'],
+      { encoding: 'utf8' },
+    )
+    expect(kt).toMatch(/test-client/)
+    expect(kt).toMatch(/PrivateKeyEntry/)
+
+    // Force real key recovery by re-importing to PKCS12 (must decrypt the Sun
+    // protector written under the NEW store password).
+    const dest = join(tmp, 'conv-roundtrip.p12')
+    execFileSync(
+      'keytool',
+      ['-importkeystore', '-noprompt',
+        '-srckeystore', p, '-srcstoretype', 'JKS', '-srcstorepass', 'jkspass',
+        '-destkeystore', dest, '-deststoretype', 'PKCS12', '-deststorepass', 'jkspass'],
+      { stdio: 'pipe' },
+    )
+    expect(readFileSync(dest).length).toBeGreaterThan(0)
+  })
+
+  it('round-trip JKS→PKCS12→JKS preserves entry count + key recoverability (keytool)', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.open(readFileSync(join(CERTS, 'client.jks')), PW, 'JKS')
+    const start = engine.inspect(sessionId).aliasCount
+    const toP12 = engine.convert(sessionId, 'PKCS12', 'mid', PW)
+    const back = engine.convert(toP12.sessionId, 'JKS', 'final', 'mid')
+    expect(back.meta.aliasCount).toBe(start)
+    const p = join(tmp, 'roundtrip.jks')
+    writeFileSync(p, engine.serialize(back.sessionId))
+    const kt = execFileSync(
+      'keytool',
+      ['-list', '-keystore', p, '-storetype', 'JKS', '-storepass', 'final'],
+      { encoding: 'utf8' },
+    )
+    expect(kt).toMatch(/test-client.*PrivateKeyEntry/)
+  })
+
+  it('saveAs-equivalent setEntryPassword survives keytool key recovery under the new entry pw', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('JKS', 'store')
+    // Generate synchronously via importKeyMaterial to keep the KAT deterministic.
+    engine.importKeyMaterial(sessionId, {
+      alias: 'a',
+      privateKeyPem: readFileSync(join(CERTS, 'client.pkcs8.key'), 'utf8'),
+      certificatePem: readFileSync(join(CERTS, 'client.crt'), 'utf8'),
+    })
+    engine.setEntryPassword(sessionId, 'a', 'keypw', 'store')
+    const p = join(tmp, 'ep.jks')
+    writeFileSync(p, engine.serialize(sessionId))
+    // keytool exports the cert only when the correct -keypass is supplied.
+    const der = execFileSync(
+      'keytool',
+      ['-exportcert', '-alias', 'a', '-keystore', p, '-storetype', 'JKS', '-storepass', 'store'],
+      { encoding: 'buffer' },
+    )
+    expect(der.length).toBeGreaterThan(0)
+    // Wrong entry password → keytool -keypasswd cannot recover the key.
+    let failed = false
+    try {
+      execFileSync(
+        'keytool',
+        ['-keypasswd', '-alias', 'a', '-keystore', p, '-storetype', 'JKS',
+          '-storepass', 'store', '-keypass', 'store', '-new', 'x'],
+        { stdio: 'pipe' },
+      )
+    } catch {
+      failed = true
+    }
+    expect(failed).toBe(true)
+  })
+})

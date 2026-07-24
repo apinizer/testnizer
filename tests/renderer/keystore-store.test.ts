@@ -60,6 +60,13 @@ interface Mocks {
   importKeyMaterial: ReturnType<typeof vi.fn>
   importPem: ReturnType<typeof vi.fn>
   importTrustedCert: ReturnType<typeof vi.fn>
+  renameAlias: ReturnType<typeof vi.fn>
+  changeStorePassword: ReturnType<typeof vi.fn>
+  setEntryPassword: ReturnType<typeof vi.fn>
+  deleteEntry: ReturnType<typeof vi.fn>
+  exportCertificate: ReturnType<typeof vi.fn>
+  convert: ReturnType<typeof vi.fn>
+  saveAs: ReturnType<typeof vi.fn>
   closeSession: ReturnType<typeof vi.fn>
   librarySave: ReturnType<typeof vi.fn>
   libraryList: ReturnType<typeof vi.fn>
@@ -134,6 +141,27 @@ const META_AFTER_TRUSTED: KeystoreMeta = {
   ],
 }
 
+// A B4 mutation returns the SAME session with refreshed meta carrying dirty:true.
+const META_RENAMED: KeystoreMeta = {
+  type: 'PKCS12',
+  aliasCount: 1,
+  dirty: true,
+  aliases: [{ ...META.aliases[0], alias: 'renamed' }],
+}
+
+const META_DIRTY: KeystoreMeta = { ...META, dirty: true }
+
+// Delete leaves an empty keystore (still dirty).
+const META_EMPTY_DIRTY: KeystoreMeta = { type: 'PKCS12', aliasCount: 0, aliases: [], dirty: true }
+
+// Convert returns a NEW session id + a JKS projection of the same entries.
+const META_CONVERTED: KeystoreMeta = {
+  type: 'JKS',
+  aliasCount: 1,
+  dirty: true,
+  aliases: [{ ...META.aliases[0] }],
+}
+
 const LIB_ROW = {
   id: 'lib1',
   name: 'My keystore',
@@ -181,6 +209,28 @@ function installApi(overrides: Partial<Mocks> = {}): Mocks {
       success: true,
       data: { sessionId: 'sess-1', meta: META_AFTER_TRUSTED },
     })),
+    renameAlias: vi.fn(async () => ({
+      success: true,
+      data: { sessionId: 'sess-1', meta: META_RENAMED },
+    })),
+    changeStorePassword: vi.fn(async () => ({
+      success: true,
+      data: { sessionId: 'sess-1', meta: META_DIRTY },
+    })),
+    setEntryPassword: vi.fn(async () => ({
+      success: true,
+      data: { sessionId: 'sess-1', meta: META_DIRTY },
+    })),
+    deleteEntry: vi.fn(async () => ({
+      success: true,
+      data: { sessionId: 'sess-1', meta: META_EMPTY_DIRTY },
+    })),
+    exportCertificate: vi.fn(async () => ({ success: true, data: { path: '/tmp/test-client.pem' } })),
+    convert: vi.fn(async () => ({
+      success: true,
+      data: { sessionId: 'sess-2', meta: META_CONVERTED },
+    })),
+    saveAs: vi.fn(async () => ({ success: true, data: { path: '/tmp/out.p12' } })),
     closeSession: vi.fn(async () => ({ success: true, data: { closed: true } })),
     librarySave: vi.fn(async () => ({ success: true, data: LIB_ROW })),
     libraryList: vi.fn(async () => ({ success: true, data: [LIB_ROW] })),
@@ -204,8 +254,10 @@ function reset(): void {
     library: [],
     selectedAlias: null,
     aliasDetail: null,
+    dirty: false,
     loading: false,
     error: null,
+    pendingEntryPasswordOpen: null,
   })
 }
 
@@ -686,5 +738,360 @@ describe('keystore.store', () => {
     expect(ok).toBe(false)
     expect(useKeystoreStore.getState().error).toContain('corrupt')
     expect(useKeystoreStore.getState().sessionId).toBeNull()
+  })
+
+  // ── Faz B4 — Edit / Export / Convert / Persist ──────────────────────────────
+
+  it('opening a file starts clean (dirty=false)', async () => {
+    installApi()
+    await useKeystoreStore
+      .getState()
+      .openFile({ path: '/tmp/client.p12', fileName: 'client.p12', password: 'x', type: 'PKCS12' })
+    expect(useKeystoreStore.getState().dirty).toBe(false)
+  })
+
+  it('renameAlias injects sessionId, forwards opts, refreshes meta, marks dirty', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: false })
+    const ok = await useKeystoreStore
+      .getState()
+      .renameAlias({ alias: 'test-client', newAlias: 'renamed', entryPassword: 'ep' })
+    expect(ok).toBe(true)
+    expect(m.renameAlias).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      alias: 'test-client',
+      newAlias: 'renamed',
+      entryPassword: 'ep',
+    })
+    const st = useKeystoreStore.getState()
+    expect(st.meta?.aliases[0].alias).toBe('renamed')
+    expect(st.dirty).toBe(true)
+  })
+
+  it('renameAlias no-ops (soft fail) when there is no open session', async () => {
+    const m = installApi()
+    const ok = await useKeystoreStore.getState().renameAlias({ alias: 'a', newAlias: 'b' })
+    expect(ok).toBe(false)
+    expect(m.renameAlias).not.toHaveBeenCalled()
+  })
+
+  it('renameAlias surfaces the §8 recovery error verbatim, no mutation', async () => {
+    const msg =
+      "Cannot recover key entry 'test-client'. The entry password differs from the store password — please provide the entry password."
+    installApi({ renameAlias: vi.fn(async () => ({ success: false, error: msg })) })
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: false })
+    const ok = await useKeystoreStore
+      .getState()
+      .renameAlias({ alias: 'test-client', newAlias: 'x' })
+    expect(ok).toBe(false)
+    expect(useKeystoreStore.getState().error).toBe(msg)
+    // Failed mutation must not flip dirty or touch the alias set.
+    expect(useKeystoreStore.getState().dirty).toBe(false)
+    expect(useKeystoreStore.getState().meta?.aliases[0].alias).toBe('test-client')
+  })
+
+  it('changeStorePassword forwards the new password (+ optional map) and marks dirty', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: false })
+    const ok = await useKeystoreStore
+      .getState()
+      .changeStorePassword({ newPassword: 'newpass', aliasEntryPasswords: { 'test-client': 'ep' } })
+    expect(ok).toBe(true)
+    expect(m.changeStorePassword).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      newPassword: 'newpass',
+      aliasEntryPasswords: { 'test-client': 'ep' },
+    })
+    expect(useKeystoreStore.getState().dirty).toBe(true)
+  })
+
+  it('setEntryPassword forwards current + new entry passwords and marks dirty', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: false })
+    const ok = await useKeystoreStore
+      .getState()
+      .setEntryPassword({ alias: 'test-client', entryPassword: 'old', newEntryPassword: 'new' })
+    expect(ok).toBe(true)
+    expect(m.setEntryPassword).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      alias: 'test-client',
+      entryPassword: 'old',
+      newEntryPassword: 'new',
+    })
+    expect(useKeystoreStore.getState().dirty).toBe(true)
+  })
+
+  it('deleteEntry forwards the alias, refreshes meta, marks dirty, clears open detail', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({
+      sessionId: 'sess-1',
+      meta: META,
+      dirty: false,
+      selectedAlias: 'test-client',
+      aliasDetail: DETAIL,
+    })
+    const ok = await useKeystoreStore.getState().deleteEntry('test-client')
+    expect(ok).toBe(true)
+    expect(m.deleteEntry).toHaveBeenCalledWith({ sessionId: 'sess-1', alias: 'test-client' })
+    const st = useKeystoreStore.getState()
+    expect(st.meta?.aliasCount).toBe(0)
+    expect(st.dirty).toBe(true)
+    // The deleted alias was the one on screen ⇒ detail cleared.
+    expect(st.selectedAlias).toBeNull()
+    expect(st.aliasDetail).toBeNull()
+  })
+
+  it('exportCertificate returns {path}, forwards format, and does NOT mark dirty', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: false })
+    const result = await useKeystoreStore
+      .getState()
+      .exportCertificate({ alias: 'test-client', format: 'PEM' })
+    expect(result).toEqual({ path: '/tmp/test-client.pem' })
+    expect(m.exportCertificate).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      alias: 'test-client',
+      format: 'PEM',
+    })
+    // Export is read-only — dirty must stay untouched.
+    expect(useKeystoreStore.getState().dirty).toBe(false)
+  })
+
+  it('exportCertificate on an unsupported format surfaces the error and returns null', async () => {
+    installApi({
+      exportCertificate: vi.fn(async () => ({
+        success: false,
+        error: 'Unsupported export format: JCEKS',
+      })),
+    })
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: false })
+    const result = await useKeystoreStore
+      .getState()
+      .exportCertificate({ alias: 'test-client', format: 'JCEKS' })
+    expect(result).toBeNull()
+    expect(useKeystoreStore.getState().error).toBe('Unsupported export format: JCEKS')
+  })
+
+  it('exportCertificate never lets certificate bytes/paths of a key into state', async () => {
+    installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: false })
+    await useKeystoreStore.getState().exportCertificate({ alias: 'test-client', format: 'PEM' })
+    const st = useKeystoreStore.getState()
+    // The write happens disk-to-disk in main; no bytes/path get parked in state.
+    const json = JSON.stringify({ meta: st.meta, aliasDetail: st.aliasDetail })
+    expect(json).not.toContain('/tmp/test-client.pem')
+    expect(json).not.toContain('PRIVATE KEY')
+  })
+
+  it('convert swaps to the NEW session, refreshes meta as the target type, marks dirty', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: false, libraryId: 'lib1' })
+    const ok = await useKeystoreStore
+      .getState()
+      .convert({ targetType: 'JKS', newPassword: 'jkspw', entryPassword: 'ep' })
+    expect(ok).toBe(true)
+    expect(m.convert).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      targetType: 'JKS',
+      newPassword: 'jkspw',
+      entryPassword: 'ep',
+    })
+    const st = useKeystoreStore.getState()
+    // A NEW session id replaces the original; the original is untouched in main.
+    expect(st.sessionId).toBe('sess-2')
+    expect(st.meta?.type).toBe('JKS')
+    expect(st.dirty).toBe(true)
+    // The new in-memory session is not a saved library entry.
+    expect(st.libraryId).toBeNull()
+  })
+
+  it('saveAs clears dirty on a real write and returns {path}', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: true, fileName: 'client.p12' })
+    const result = await useKeystoreStore.getState().saveAs({ suggestedName: 'client.p12' })
+    expect(result).toEqual({ path: '/tmp/out.p12' })
+    expect(m.saveAs).toHaveBeenCalledWith({ sessionId: 'sess-1', suggestedName: 'client.p12' })
+    expect(useKeystoreStore.getState().dirty).toBe(false)
+  })
+
+  it('saveAs leaves dirty untouched when the save dialog is cancelled', async () => {
+    installApi({ saveAs: vi.fn(async () => ({ success: true, data: { canceled: true } })) })
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: true })
+    const result = await useKeystoreStore.getState().saveAs()
+    expect(result).toEqual({ canceled: true })
+    // Model A: only a real write clears dirty.
+    expect(useKeystoreStore.getState().dirty).toBe(true)
+  })
+
+  it('saveToLibrary clears dirty (a library save persists the current session)', async () => {
+    installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: true })
+    const ok = await useKeystoreStore.getState().saveToLibrary({ name: 'My keystore' })
+    expect(ok).toBe(true)
+    expect(useKeystoreStore.getState().dirty).toBe(false)
+  })
+
+  it('a B2/B3 mutation also marks the session dirty', async () => {
+    installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: false })
+    await useKeystoreStore.getState().generateKeyPair({ alias: 'srv', keyAlgorithm: 'RSA' })
+    expect(useKeystoreStore.getState().dirty).toBe(true)
+  })
+
+  it('B4 mutation envelopes never carry passwords or key material into state', async () => {
+    installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: false })
+    await useKeystoreStore
+      .getState()
+      .changeStorePassword({ newPassword: 'topsecret-store' })
+    await useKeystoreStore
+      .getState()
+      .setEntryPassword({ alias: 'test-client', newEntryPassword: 'topsecret-entry' })
+    const st = useKeystoreStore.getState()
+    const json = JSON.stringify({
+      sessionId: st.sessionId,
+      meta: st.meta,
+      aliasDetail: st.aliasDetail,
+      fileName: st.fileName,
+    })
+    expect(json).not.toContain('topsecret-store')
+    expect(json).not.toContain('topsecret-entry')
+    expect(json).not.toContain('PRIVATE KEY')
+  })
+
+  it('closeSession resets dirty to false', async () => {
+    installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: true })
+    await useKeystoreStore.getState().closeSession()
+    expect(useKeystoreStore.getState().dirty).toBe(false)
+  })
+
+  // ── FIX 1: entry-password-differs open flow (pending → retry) ──────────────
+  const RECOVERY =
+    "Cannot recover key entry 'test-client'. The entry password differs from the store password — please provide the entry password."
+
+  it('openFile forwards aliasEntryPasswords through to the bridge', async () => {
+    const m = installApi()
+    const ok = await useKeystoreStore.getState().openFile({
+      path: '/tmp/client.jks',
+      fileName: 'client.jks',
+      password: 'store',
+      type: 'JKS',
+      aliasEntryPasswords: { 'test-client': 'keypw' },
+    })
+    expect(ok).toBe(true)
+    expect(m.open).toHaveBeenCalledWith({
+      path: '/tmp/client.jks',
+      password: 'store',
+      type: 'JKS',
+      aliasEntryPasswords: { 'test-client': 'keypw' },
+    })
+    // A clean open leaves no pending prompt.
+    expect(useKeystoreStore.getState().pendingEntryPasswordOpen).toBeNull()
+  })
+
+  it('a recovery-blocked open sets pendingEntryPasswordOpen instead of surfacing the error', async () => {
+    installApi({ open: vi.fn(async () => ({ success: false, error: RECOVERY })) })
+    const ok = await useKeystoreStore.getState().openFile({
+      path: '/tmp/client.jks',
+      fileName: 'client.jks',
+      password: 'store',
+      type: 'JKS',
+    })
+    expect(ok).toBe(false)
+    const st = useKeystoreStore.getState()
+    // The raw §8 error is NOT surfaced — it becomes a structured prompt instead.
+    expect(st.error).toBeNull()
+    expect(st.sessionId).toBeNull()
+    expect(st.pendingEntryPasswordOpen).toEqual({
+      source: { path: '/tmp/client.jks' },
+      fileName: 'client.jks',
+      type: 'JKS',
+      storePassword: 'store',
+      aliases: ['test-client'],
+    })
+  })
+
+  it('retryOpenWithEntryPasswords re-opens with the same source + collected map, clearing pending', async () => {
+    // Fail on the first (raw) open, succeed on the retry that carries the map.
+    const open = vi
+      .fn()
+      .mockResolvedValueOnce({ success: false, error: RECOVERY })
+      .mockResolvedValueOnce({ success: true, data: { sessionId: 'sess-1', meta: META } })
+    const m = installApi({ open })
+    await useKeystoreStore.getState().openFile({
+      path: '/tmp/client.jks',
+      fileName: 'client.jks',
+      password: 'store',
+      type: 'JKS',
+    })
+    expect(useKeystoreStore.getState().pendingEntryPasswordOpen).not.toBeNull()
+
+    const ok = await useKeystoreStore
+      .getState()
+      .retryOpenWithEntryPasswords({ 'test-client': 'keypw' })
+    expect(ok).toBe(true)
+    // Second call re-uses the stashed source + store password + supplies the map.
+    expect(m.open).toHaveBeenLastCalledWith({
+      path: '/tmp/client.jks',
+      password: 'store',
+      type: 'JKS',
+      aliasEntryPasswords: { 'test-client': 'keypw' },
+    })
+    const st = useKeystoreStore.getState()
+    expect(st.sessionId).toBe('sess-1')
+    expect(st.fileName).toBe('client.jks')
+    expect(st.pendingEntryPasswordOpen).toBeNull()
+  })
+
+  it('a wrong entry password on retry keeps the prompt open and surfaces the error', async () => {
+    const open = vi
+      .fn()
+      .mockResolvedValueOnce({ success: false, error: RECOVERY })
+      .mockResolvedValueOnce({ success: false, error: RECOVERY })
+    installApi({ open })
+    await useKeystoreStore.getState().openFile({
+      path: '/tmp/client.jks',
+      fileName: 'client.jks',
+      password: 'store',
+      type: 'JKS',
+    })
+    const ok = await useKeystoreStore
+      .getState()
+      .retryOpenWithEntryPasswords({ 'test-client': 'wrong' })
+    expect(ok).toBe(false)
+    const st = useKeystoreStore.getState()
+    expect(st.pendingEntryPasswordOpen).not.toBeNull()
+    expect(st.error).toBe(RECOVERY)
+  })
+
+  it('cancelPendingOpen dismisses the prompt', async () => {
+    installApi({ open: vi.fn(async () => ({ success: false, error: RECOVERY })) })
+    await useKeystoreStore.getState().openFile({
+      path: '/tmp/client.jks',
+      fileName: 'client.jks',
+      password: 'store',
+      type: 'JKS',
+    })
+    expect(useKeystoreStore.getState().pendingEntryPasswordOpen).not.toBeNull()
+    useKeystoreStore.getState().cancelPendingOpen()
+    expect(useKeystoreStore.getState().pendingEntryPasswordOpen).toBeNull()
+  })
+
+  it('convert forwards an aliasEntryPasswords map when supplied (FIX 2 plumbing)', async () => {
+    const m = installApi()
+    useKeystoreStore.setState({ sessionId: 'sess-1', meta: META, dirty: false })
+    const ok = await useKeystoreStore.getState().convert({
+      targetType: 'JKS',
+      newPassword: 'jkspw',
+      aliasEntryPasswords: { a: 'pwA', b: 'pwB' },
+    })
+    expect(ok).toBe(true)
+    expect(m.convert).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      targetType: 'JKS',
+      newPassword: 'jkspw',
+      aliasEntryPasswords: { a: 'pwA', b: 'pwB' },
+    })
   })
 })

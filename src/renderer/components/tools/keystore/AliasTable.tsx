@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useTranslation } from '../../../lib/i18n'
 import type { KeystoreAliasSummary } from '../../../types'
 import { certValidityStatus } from './cert-validity'
@@ -44,14 +45,23 @@ function badgeFor(
   return { text: t('tools.keystore.badgeTrusted'), bg: '#e8f4ff', color: '#0066cc' }
 }
 
+export interface AliasRowActions {
+  onDetail: (alias: string) => void
+  onRename: (alias: string) => void
+  onSetEntryPw: (alias: string) => void
+  onExport: (alias: string) => void
+  onDelete: (alias: string) => void
+}
+
 export default function AliasTable({
   aliases,
-  onDetail,
+  actions,
 }: {
   aliases: KeystoreAliasSummary[]
-  onDetail: (alias: string) => void
+  actions: AliasRowActions
 }) {
   const { t } = useTranslation()
+  const [menuAlias, setMenuAlias] = useState<string | null>(null)
 
   if (aliases.length === 0) {
     return (
@@ -114,19 +124,15 @@ export default function AliasTable({
                   )}
                 </Td>
                 <Td>
-                  {a.chainLength > 0 ? (
-                    <button
-                      onClick={() => onDetail(a.alias)}
-                      className="rounded border px-2 py-0.5 text-[11px]"
-                      style={{
-                        borderColor: 'var(--border)',
-                        background: 'var(--white)',
-                        color: 'var(--accentText)',
-                      }}
-                    >
-                      {t('tools.keystore.detail')}
-                    </button>
-                  ) : null}
+                  <RowActions
+                    alias={a.alias}
+                    hasCert={a.chainLength > 0}
+                    isKeyEntry={a.entryType === 'KEY'}
+                    open={menuAlias === a.alias}
+                    onToggle={() => setMenuAlias((v) => (v === a.alias ? null : a.alias))}
+                    onClose={() => setMenuAlias(null)}
+                    actions={actions}
+                  />
                 </Td>
               </tr>
             )
@@ -145,4 +151,103 @@ function Th({ children }: { children: React.ReactNode }) {
 
 function Td({ children }: { children: React.ReactNode }) {
   return <td className="px-3 py-1.5 align-middle">{children}</td>
+}
+
+/**
+ * Per-row action menu (design §9.5 row actions). Detail is always available for
+ * an entry that has a certificate; Rename / Delete apply to any entry; Set Entry
+ * Password is key-entries-only; Export Certificate needs a certificate chain.
+ */
+function RowActions({
+  alias,
+  hasCert,
+  isKeyEntry,
+  open,
+  onToggle,
+  onClose,
+  actions,
+}: {
+  alias: string
+  hasCert: boolean
+  isKeyEntry: boolean
+  open: boolean
+  onToggle: () => void
+  onClose: () => void
+  actions: AliasRowActions
+}) {
+  const { t } = useTranslation()
+
+  function run(fn: (alias: string) => void): void {
+    onClose()
+    fn(alias)
+  }
+
+  return (
+    <div className="relative flex justify-end">
+      <button
+        onClick={onToggle}
+        aria-label={alias}
+        className="rounded border px-2 py-0.5 text-[13px] leading-none"
+        style={{
+          borderColor: 'var(--border)',
+          background: 'var(--white)',
+          color: 'var(--muted)',
+        }}
+      >
+        ⋯
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={onClose} />
+          <div
+            className="absolute right-0 top-full z-50 mt-1 w-52 rounded-md py-1 shadow-lg"
+            style={{ background: 'var(--white)', border: '1px solid var(--border)' }}
+          >
+            {hasCert && (
+              <RowMenuItem onClick={() => run(actions.onDetail)}>
+                {t('tools.keystore.detail')}
+              </RowMenuItem>
+            )}
+            <RowMenuItem onClick={() => run(actions.onRename)}>
+              {t('tools.keystore.actions.rename')}
+            </RowMenuItem>
+            {isKeyEntry && (
+              <RowMenuItem onClick={() => run(actions.onSetEntryPw)}>
+                {t('tools.keystore.actions.setEntryPw')}
+              </RowMenuItem>
+            )}
+            {hasCert && (
+              <RowMenuItem onClick={() => run(actions.onExport)}>
+                {t('tools.keystore.actions.export')}
+              </RowMenuItem>
+            )}
+            <div className="my-1 border-t" style={{ borderColor: 'var(--border)' }} />
+            <RowMenuItem onClick={() => run(actions.onDelete)} danger>
+              {t('tools.keystore.actions.delete')}
+            </RowMenuItem>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function RowMenuItem({
+  onClick,
+  danger,
+  children,
+}: {
+  onClick: () => void
+  danger?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="block w-full px-3 py-1.5 text-left text-xs"
+      style={{ color: danger ? '#cc2200' : 'var(--text)' }}
+    >
+      {children}
+    </button>
+  )
 }

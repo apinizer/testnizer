@@ -1832,7 +1832,12 @@ interface KeystoreMetaDto {
   type: KeystoreTypeDto
   aliasCount: number
   aliases: KeystoreAliasSummaryDto[]
+  /** Unsaved-changes flag (Faz B4 dirty-guard). Absent on read-only projections. */
+  dirty?: boolean
 }
+
+/** Export / Save-As result — a written path, or a cancelled dialog. Never bytes. */
+type KeystoreWriteResultDto = { path: string } | { canceled: true }
 
 interface KeystoreCertificateInfoDto {
   subjectDN: string
@@ -1888,6 +1893,7 @@ interface KeystoreApi {
     bytes?: string
     password?: string
     type?: string
+    aliasEntryPasswords?: Record<string, string>
   }): Promise<IpcResult<KeystoreSessionResultDto>>
   createNew(payload: {
     type?: string
@@ -1944,6 +1950,43 @@ interface KeystoreApi {
     alias: string
     certificateContent: string
   }): Promise<IpcResult<KeystoreSessionResultDto>>
+  renameAlias(payload: {
+    sessionId: string
+    alias: string
+    newAlias: string
+    entryPassword?: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  changeStorePassword(payload: {
+    sessionId: string
+    newPassword: string
+    aliasEntryPasswords?: Record<string, string>
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  setEntryPassword(payload: {
+    sessionId: string
+    alias: string
+    entryPassword?: string
+    newEntryPassword: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  deleteEntry(payload: {
+    sessionId: string
+    alias: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  exportCertificate(payload: {
+    sessionId: string
+    alias: string
+    format?: string
+  }): Promise<IpcResult<KeystoreWriteResultDto>>
+  convert(payload: {
+    sessionId: string
+    targetType: string
+    newPassword: string
+    entryPassword?: string
+    aliasEntryPasswords?: Record<string, string>
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  saveAs(payload: {
+    sessionId: string
+    suggestedName?: string
+  }): Promise<IpcResult<KeystoreWriteResultDto>>
   closeSession(sessionId: string): Promise<IpcResult<{ closed: true }>>
   librarySave(payload: {
     sessionId: string

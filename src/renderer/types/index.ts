@@ -142,7 +142,16 @@ export interface KeystoreMeta {
   type: KeystoreType
   aliasCount: number
   aliases: KeystoreAliasSummary[]
+  /**
+   * Unsaved-changes flag (Faz B4 dirty-guard, design §9.7). Set by any mutation
+   * in main, cleared on Save-As. Absent on read-only projections — callers treat
+   * `undefined` as `false`.
+   */
+  dirty?: boolean
 }
+
+/** Export / Save-As result — a written path, or a cancelled dialog. Never bytes. */
+export type KeystoreWriteResult = { path: string } | { canceled: true }
 
 export interface KeystoreCertificateInfo {
   subjectDN: string
