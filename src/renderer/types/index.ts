@@ -38,6 +38,7 @@ export type Protocol =
   | 'tools.passwordGen'
   | 'tools.otp'
   | 'tools.qr'
+  | 'tools.keystore'
 
 export const TOOL_PROTOCOLS = [
   'tools.jwt',
@@ -63,6 +64,7 @@ export const TOOL_PROTOCOLS = [
   'tools.passwordGen',
   'tools.otp',
   'tools.qr',
+  'tools.keystore',
 ] as const satisfies readonly Protocol[]
 export type ToolProtocol = (typeof TOOL_PROTOCOLS)[number]
 export function isToolProtocol(p: Protocol): p is ToolProtocol {
@@ -119,6 +121,75 @@ export interface OtpAddInput {
   counter?: number
   enabled?: boolean
 }
+// ─── Keystore Studio (renderer-safe DTOs; structural mirror of the preload
+// bridge — public metadata only, never keystore bytes / keys / passwords) ────
+export type KeystoreType = 'JKS' | 'PKCS12'
+export type KeystoreEntryType = 'KEY' | 'CERTIFICATE'
+
+export interface KeystoreAliasSummary {
+  alias: string
+  entryType: KeystoreEntryType
+  hasPrivateKey: boolean
+  subjectDN?: string
+  issuerDN?: string
+  notBefore?: string
+  notAfter?: string
+  keyAlgorithm?: string
+  chainLength: number
+}
+
+export interface KeystoreMeta {
+  type: KeystoreType
+  aliasCount: number
+  aliases: KeystoreAliasSummary[]
+}
+
+export interface KeystoreCertificateInfo {
+  subjectDN: string
+  issuerDN: string
+  serialNumber: string
+  version: number
+  sigAlgName: string
+  notBefore: string
+  notAfter: string
+  publicKeyAlgorithm: string
+  keySize: number
+  sha1Fingerprint: string
+  sha256Fingerprint: string
+  subjectAlternativeNames: string[]
+  pem: string
+}
+
+export interface KeystoreAliasDetail {
+  alias: string
+  entryType: KeystoreEntryType
+  hasPrivateKey: boolean
+  chain: KeystoreCertificateInfo[]
+}
+
+/** Library row — metadata only; never carries blob or store password. */
+export interface KeystoreLibraryEntry {
+  id: string
+  name: string
+  type: KeystoreType
+  alias_count: number
+  size_bytes: number
+  created_at: number
+  updated_at: number
+  /**
+   * Whether a store password is persisted for this entry. Derived from
+   * `store_password != null` — the password value itself never leaves main.
+   * When `false`, the open flow must prompt the user for the password.
+   */
+  remembered: boolean
+}
+
+export interface KeystorePickFileResult {
+  path: string
+  fileName: string
+  type: KeystoreType
+}
+
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 export type BodyType =
   | 'none'

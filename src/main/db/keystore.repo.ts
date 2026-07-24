@@ -34,6 +34,8 @@ export interface KeystoreMetaRow {
   size_bytes: number
   created_at: number
   updated_at: number
+  /** `store_password != null` — the boolean only; never the password value. */
+  remembered: boolean
 }
 
 export interface CreateKeystoreInput {
@@ -56,13 +58,17 @@ export interface UpdateKeystoreInput {
 
 /** List keystore metadata only (never returns blob/password). */
 export function listKeystores(): KeystoreMetaRow[] {
-  return getDb()
+  // `remembered` is derived from whether a store_password is persisted — the
+  // computed column yields only 0/1, never the (encrypted) password value.
+  const rows = getDb()
     .prepare(
-      `SELECT id, name, type, alias_count, size_bytes, created_at, updated_at
+      `SELECT id, name, type, alias_count, size_bytes, created_at, updated_at,
+              (store_password IS NOT NULL) AS remembered
          FROM keystores
         ORDER BY created_at ASC`,
     )
-    .all() as KeystoreMetaRow[]
+    .all() as Array<Omit<KeystoreMetaRow, 'remembered'> & { remembered: number }>
+  return rows.map((r) => ({ ...r, remembered: r.remembered === 1 }))
 }
 
 /** Fetch a full keystore row (blob + wrapped password included). */

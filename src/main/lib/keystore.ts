@@ -146,6 +146,8 @@ interface KeystoreSession {
   aliasEntryPasswords: Map<string, string>
   /** Last serialized bytes — kept ONLY in main (design §3.4). */
   bytes: Buffer
+  /** Epoch ms of the last access — drives idle eviction (design R8). */
+  lastAccess: number
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -869,13 +871,61 @@ function summarize(entry: EntryModel): AliasSummary {
   }
 }
 
+/** Sessions untouched for this long are evicted (design R8 — frees in-main
+ * bytes/passwords that would otherwise linger if the renderer never closes). */
+const SESSION_IDLE_MS = 30 * 60 * 1000
+/** Hard cap on concurrent open sessions — the oldest is evicted past this. */
+const MAX_OPEN_SESSIONS = 32
+/** How often the background sweep disposes idle sessions on a wall-clock basis
+ * (in addition to the on-register sweep — a session left open with no further
+ * IPC would otherwise linger until the next register). */
+const IDLE_SWEEP_INTERVAL_MS = 3 * 60 * 1000
+
 export class KeystoreEngine {
   private readonly sessions = new Map<string, KeystoreSession>()
+  private sweepTimer: ReturnType<typeof setInterval> | null = null
+
+  constructor() {
+    this.startIdleSweep()
+  }
+
+  /** Start the wall-clock idle sweep exactly once. `.unref()` keeps this
+   * housekeeping timer from holding the Node event loop / process open. */
+  private startIdleSweep(): void {
+    if (this.sweepTimer) return
+    const timer = setInterval(() => this.evictIdle(), IDLE_SWEEP_INTERVAL_MS)
+    if (typeof timer.unref === 'function') timer.unref()
+    this.sweepTimer = timer
+  }
 
   private getSession(sessionId: string): KeystoreSession {
     const s = this.sessions.get(sessionId)
-    if (!s) throw new KeystoreValidationException(`Unknown keystore session: ${sessionId}`)
+    // Fixed message — never interpolate the sessionId (a UUID) into a
+    // user-facing string (design §8.1 KS-F3-08/KS-F4-12 canonical string).
+    if (!s) throw new KeystoreValidationException('Keystore session not found')
+    s.lastAccess = Date.now()
     return s
+  }
+
+  /** Drop sessions idle past {@link SESSION_IDLE_MS}; runs on every register
+   * and on the periodic {@link startIdleSweep} wall-clock timer. */
+  private evictIdle(): void {
+    const cutoff = Date.now() - SESSION_IDLE_MS
+    for (const [id, s] of this.sessions) {
+      if (s.lastAccess < cutoff) this.sessions.delete(id)
+    }
+  }
+
+  /** Register a fresh session, first sweeping idle ones and enforcing the cap. */
+  private register(session: KeystoreSession): void {
+    this.evictIdle()
+    while (this.sessions.size >= MAX_OPEN_SESSIONS) {
+      // Map preserves insertion order; the first key is the oldest by creation.
+      const oldest = this.sessions.keys().next().value
+      if (oldest === undefined) break
+      this.sessions.delete(oldest)
+    }
+    this.sessions.set(session.id, session)
   }
 
   private meta(session: KeystoreSession): KeystoreMeta {
@@ -893,6 +943,24 @@ export class KeystoreEngine {
     return s.bytes
   }
 
+  /**
+   * MAIN-ONLY snapshot used by the Model-B library save path. Returns the
+   * serialized bytes together with the store password so the handler can
+   * `encryptSecret`-wrap them for persistence. NEVER surface the returned
+   * `storePassword`/`bytes` to the renderer (design §10, invariant 1).
+   */
+  exportForLibrary(sessionId: string): {
+    bytes: Buffer
+    type: KeystoreType
+    storePassword: string
+    aliasCount: number
+  } {
+    const s = this.getSession(sessionId)
+    const bytes = serializeKeyStore(s.entries, s.type, s.storePassword)
+    s.bytes = bytes
+    return { bytes, type: s.type, storePassword: s.storePassword, aliasCount: s.entries.length }
+  }
+
   /** Create an empty keystore (spec §4.1). */
   createEmpty(type: string, storePassword: string): { sessionId: string; meta: KeystoreMeta } {
     requireNonBlank(storePassword, 'Store password cannot be empty')
@@ -904,9 +972,10 @@ export class KeystoreEngine {
       entries: [],
       aliasEntryPasswords: new Map(),
       bytes: Buffer.alloc(0),
+      lastAccess: Date.now(),
     }
     session.bytes = serializeKeyStore(session.entries, session.type, session.storePassword)
-    this.sessions.set(session.id, session)
+    this.register(session)
     return { sessionId: session.id, meta: this.meta(session) }
   }
 
@@ -922,8 +991,9 @@ export class KeystoreEngine {
       entries,
       aliasEntryPasswords,
       bytes,
+      lastAccess: Date.now(),
     }
-    this.sessions.set(session.id, session)
+    this.register(session)
     return { sessionId: session.id, meta: this.meta(session) }
   }
 

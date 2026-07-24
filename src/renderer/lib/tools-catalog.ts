@@ -23,6 +23,7 @@ import {
   KeySquare,
   ShieldCheck,
   QrCode,
+  FileKey,
 } from 'lucide-react'
 import type { ToolProtocol } from '../types'
 
@@ -172,6 +173,14 @@ export const TOOL_CATALOG: ToolCatalogItem[] = [
     labelKey: 'tools.otp.title',
     bg: '#e8f9f1',
     color: '#1a7a4a',
+    section: 'security',
+  },
+  {
+    protocol: 'tools.keystore',
+    Icon: FileKey,
+    labelKey: 'tools.keystore.title',
+    bg: '#eeecfe',
+    color: '#5b52d4',
     section: 'security',
   },
   {

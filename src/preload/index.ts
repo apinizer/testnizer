@@ -433,6 +433,35 @@ const api = {
     uri: (id: string): Promise<unknown> => ipcRenderer.invoke('otp:uri', id),
   },
 
+  // ─── Keystore Studio (read-only viewer + Model-B library) ───
+  keystore: {
+    pickFile: (): Promise<unknown> => ipcRenderer.invoke('keystore:pickFile'),
+    open: (payload: {
+      path?: string
+      bytes?: string
+      password?: string
+      type?: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:open', payload),
+    createNew: (payload: { type?: string; password?: string }): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:createNew', payload),
+    list: (sessionId: string): Promise<unknown> => ipcRenderer.invoke('keystore:list', sessionId),
+    aliasDetail: (payload: { sessionId: string; alias: string }): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:aliasDetail', payload),
+    closeSession: (sessionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:closeSession', sessionId),
+    librarySave: (payload: {
+      sessionId: string
+      name: string
+      rememberPassword?: boolean
+      id?: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:librarySave', payload),
+    libraryList: (): Promise<unknown> => ipcRenderer.invoke('keystore:libraryList'),
+    libraryOpen: (payload: { id: string; password?: string }): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:libraryOpen', payload),
+    libraryDelete: (payload: { id: string }): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:libraryDelete', payload),
+  },
+
   // ─── GraphQL ────────────────────────────────────────────────
   graphql: {
     execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('graphql:execute', options),

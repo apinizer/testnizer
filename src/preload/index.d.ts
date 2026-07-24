@@ -1811,6 +1811,108 @@ interface OtpApi {
   uri(id: string): Promise<IpcResult<string>>
 }
 
+// ─── Keystore Studio ─────────────────────────────────────────────
+
+type KeystoreTypeDto = 'JKS' | 'PKCS12'
+type KeystoreEntryTypeDto = 'KEY' | 'CERTIFICATE'
+
+interface KeystoreAliasSummaryDto {
+  alias: string
+  entryType: KeystoreEntryTypeDto
+  hasPrivateKey: boolean
+  subjectDN?: string
+  issuerDN?: string
+  notBefore?: string
+  notAfter?: string
+  keyAlgorithm?: string
+  chainLength: number
+}
+
+interface KeystoreMetaDto {
+  type: KeystoreTypeDto
+  aliasCount: number
+  aliases: KeystoreAliasSummaryDto[]
+}
+
+interface KeystoreCertificateInfoDto {
+  subjectDN: string
+  issuerDN: string
+  serialNumber: string
+  version: number
+  sigAlgName: string
+  notBefore: string
+  notAfter: string
+  publicKeyAlgorithm: string
+  keySize: number
+  sha1Fingerprint: string
+  sha256Fingerprint: string
+  subjectAlternativeNames: string[]
+  pem: string
+}
+
+interface KeystoreAliasDetailDto {
+  alias: string
+  entryType: KeystoreEntryTypeDto
+  hasPrivateKey: boolean
+  chain: KeystoreCertificateInfoDto[]
+}
+
+interface KeystoreSessionResultDto {
+  sessionId: string
+  meta: KeystoreMetaDto
+}
+
+interface KeystorePickFileResultDto {
+  path: string
+  fileName: string
+  type: KeystoreTypeDto
+}
+
+/** Library metadata row — never carries the blob or store password. */
+interface KeystoreLibraryEntryDto {
+  id: string
+  name: string
+  type: KeystoreTypeDto
+  alias_count: number
+  size_bytes: number
+  created_at: number
+  updated_at: number
+  /** `store_password != null` — the password value itself never leaves main. */
+  remembered: boolean
+}
+
+interface KeystoreApi {
+  pickFile(): Promise<IpcResult<KeystorePickFileResultDto>>
+  open(payload: {
+    path?: string
+    bytes?: string
+    password?: string
+    type?: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  createNew(payload: {
+    type?: string
+    password?: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  list(sessionId: string): Promise<IpcResult<KeystoreMetaDto>>
+  aliasDetail(payload: {
+    sessionId: string
+    alias: string
+  }): Promise<IpcResult<KeystoreAliasDetailDto>>
+  closeSession(sessionId: string): Promise<IpcResult<{ closed: true }>>
+  librarySave(payload: {
+    sessionId: string
+    name: string
+    rememberPassword?: boolean
+    id?: string
+  }): Promise<IpcResult<KeystoreLibraryEntryDto>>
+  libraryList(): Promise<IpcResult<KeystoreLibraryEntryDto[]>>
+  libraryOpen(payload: {
+    id: string
+    password?: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  libraryDelete(payload: { id: string }): Promise<IpcResult<{ deleted: true }>>
+}
+
 // ─── WSSE ────────────────────────────────────────────────────────
 
 interface WsseVerifyResultDto {
@@ -1898,6 +2000,7 @@ interface ApiBridge {
   save: SaveApi
   certificate: CertificateApi
   otp: OtpApi
+  keystore: KeystoreApi
   testSuite: TestSuiteApi
   testSuiteItem: TestSuiteItemApi
   testSuiteFolder: TestSuiteFolderApi

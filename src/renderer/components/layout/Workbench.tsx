@@ -39,6 +39,7 @@ import YamlJsonTool from '../tools/YamlJsonTool'
 import PasswordGeneratorTool from '../tools/PasswordGeneratorTool'
 import OtpTool from '../tools/OtpTool'
 import QrTool from '../tools/QrTool'
+import KeystoreTool from '../tools/KeystoreTool'
 import MockServerEditor from '../mock/MockServerEditor'
 import RightPanel from './RightPanel'
 import EdgeResizeHandle from './EdgeResizeHandle'
@@ -99,6 +100,7 @@ const TOOL_COMPONENTS: Record<string, ComponentType> = {
   'tools.passwordGen': PasswordGeneratorTool,
   'tools.otp': OtpTool,
   'tools.qr': QrTool,
+  'tools.keystore': KeystoreTool,
 }
 
 function EndpointTabBar() {
