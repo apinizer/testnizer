@@ -55,9 +55,14 @@ export default defineConfig(async () => {
       //     (Node 20) crashes. Verify launch with the built app, not bare node.
       //   • `jose` (#63/#73) is the same shape as uuid: "type":"module" with only
       //     an ESM `default` export condition and NO `require` condition, so it
-      //     must be BUNDLED too. All main-side jose usage is funnelled through
-      //     src/main/lib/jose-runtime.ts — keep it that way, so this exclusion
-      //     stays the single lever that decides how jose enters the bundle.
+      //     must be BUNDLED too. Main-side jose usage is funnelled through TWO
+      //     documented doors and no others: src/main/lib/jose-runtime.ts (the
+      //     jose:* IPC surface) and src/shared/script/jose.ts (the script
+      //     sandbox's `require('jose')` / `pm.jose`, compiled into BOTH bundles
+      //     so it cannot import a src/main module). Both are STATIC imports, so
+      //     this exclusion stays the single lever that decides how jose enters
+      //     the bundle. `tests/main/shared/jose.test.ts` fails if a third door
+      //     appears or if 'jose' drops out of this exclude list.
       plugins: [externalizeDepsPlugin({ exclude: ['uuid', 'jose'] })],
       build: {
         rollupOptions: {
