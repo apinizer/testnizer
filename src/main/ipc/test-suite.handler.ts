@@ -559,7 +559,16 @@ export function registerTestSuiteHandlers(): void {
       },
     ) => {
       try {
-        // Guard: target folder must exist within the same suite.
+        // Guard BOTH sides. Checking only the target folder let a drop carry an
+        // item OUT of its own suite: `moveItem` rewrites `folder_id` but never
+        // `suite_id`, so the item ended up parented into another suite's folder
+        // while still listed under its original suite — visible in one tree,
+        // executed by the other.
+        const item = getItemById(payload.id)
+        if (!item) return { success: false, error: 'Item not found' }
+        if (item.suite_id !== payload.targetSuiteId) {
+          return { success: false, error: 'Cannot move item across suites' }
+        }
         if (payload.targetFolderId) {
           const f = getFolderById(payload.targetFolderId)
           if (!f) return { success: false, error: 'Target folder not found' }

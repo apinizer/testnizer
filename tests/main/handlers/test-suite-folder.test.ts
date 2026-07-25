@@ -12,7 +12,13 @@
  * we assert the delete removes the targeted folder row.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { setupHandlerHarness, makeElectronMock, createTestDb, seedProject, seedWorkspace } from './helpers'
+import {
+  setupHandlerHarness,
+  makeElectronMock,
+  createTestDb,
+  seedProject,
+  seedWorkspace,
+} from './helpers'
 import crypto from 'node:crypto'
 import type Database from 'better-sqlite3'
 
@@ -64,9 +70,11 @@ const rootOrder = (): string[] =>
   ).map((r) => r.id)
 
 const parentOf = (id: string): string | null =>
-  (testDb.prepare('SELECT parent_id FROM test_suite_folders WHERE id = ?').get(id) as {
-    parent_id: string | null
-  }).parent_id
+  (
+    testDb.prepare('SELECT parent_id FROM test_suite_folders WHERE id = ?').get(id) as {
+      parent_id: string | null
+    }
+  ).parent_id
 
 beforeEach(() => {
   harness.reset()
@@ -178,9 +186,7 @@ describe('testSuiteFolder — move (drag-drop reparent + reorder)', () => {
     expect(res.success).toBe(true)
     const order = (
       testDb
-        .prepare(
-          'SELECT id FROM test_suite_folders WHERE parent_id = ? ORDER BY sort_order ASC',
-        )
+        .prepare('SELECT id FROM test_suite_folders WHERE parent_id = ? ORDER BY sort_order ASC')
         .all(box) as Array<{ id: string }>
     ).map((r) => r.id)
     expect(order).toEqual([child.id, loose.id])
@@ -247,5 +253,114 @@ describe('testSuiteFolder — delete', () => {
     const res = (await harness.invoke('testSuiteFolder:delete', 'missing')) as DeleteRes
     expect(res.success).toBe(true)
     expect(res.data?.deleted).toBe(false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cross-suite integrity. Both defects below are invisible from today's UI (the
+// Tests panel has no folder drag-drop yet) and would have shipped the moment
+// #56 added one.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('testSuiteFolder — cross-suite move carries the whole subtree', () => {
+  it('re-stamps suite_id on the folder, its descendants and their items', async () => {
+    const otherSuite = seedSuite(testDb, projectId)
+    const parent = await create('Parent')
+    const child = await create('Child', parent.data!.id)
+
+    // An item living in the child folder must travel with it.
+    const itemId = crypto.randomUUID()
+    const now = Date.now()
+    testDb
+      .prepare(
+        `INSERT INTO test_suite_items
+           (id, suite_id, folder_id, name, protocol, method, url, request_schema,
+            sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, 'Req', 'http', 'GET', 'http://x.test', '{}', 0, ?, ?)`,
+      )
+      .run(itemId, suiteId, child.data!.id, now, now)
+
+    const moved = (await harness.invoke('testSuiteFolder:move', {
+      id: parent.data!.id,
+      targetSuiteId: otherSuite,
+      targetParentId: null,
+      insertBeforeId: null,
+    })) as FolderRes
+    expect(moved.success).toBe(true)
+
+    const suiteOf = (id: string): string =>
+      (
+        testDb.prepare('SELECT suite_id FROM test_suite_folders WHERE id = ?').get(id) as {
+          suite_id: string
+        }
+      ).suite_id
+
+    // Without this, the branch belonged to neither suite: listFoldersBySuite
+    // filters on suite_id, so it vanished from the source tree (its parent moved
+    // away) and never appeared in the target one.
+    expect(suiteOf(parent.data!.id)).toBe(otherSuite)
+    expect(suiteOf(child.data!.id)).toBe(otherSuite)
+    expect(
+      (
+        testDb.prepare('SELECT suite_id FROM test_suite_items WHERE id = ?').get(itemId) as {
+          suite_id: string
+        }
+      ).suite_id,
+    ).toBe(otherSuite)
+  })
+
+  it('leaves suite_id alone for an ordinary same-suite reparent', async () => {
+    const a = await create('A')
+    const b = await create('B')
+    await harness.invoke('testSuiteFolder:move', {
+      id: b.data!.id,
+      targetSuiteId: suiteId,
+      targetParentId: a.data!.id,
+      insertBeforeId: null,
+    })
+    const row = testDb
+      .prepare('SELECT suite_id, parent_id FROM test_suite_folders WHERE id = ?')
+      .get(b.data!.id) as { suite_id: string; parent_id: string | null }
+    expect(row.suite_id).toBe(suiteId)
+    expect(row.parent_id).toBe(a.data!.id)
+  })
+})
+
+describe('testSuiteItem:move — guards the DRAGGED item, not just the target', () => {
+  it('refuses to move an item out of its own suite', async () => {
+    const otherSuite = seedSuite(testDb, projectId)
+    const targetFolder = (await harness.invoke('testSuiteFolder:create', {
+      suite_id: otherSuite,
+      parent_id: null,
+      name: 'Elsewhere',
+    })) as FolderRes
+
+    const itemId = crypto.randomUUID()
+    const now = Date.now()
+    testDb
+      .prepare(
+        `INSERT INTO test_suite_items
+           (id, suite_id, folder_id, name, protocol, method, url, request_schema,
+            sort_order, created_at, updated_at)
+         VALUES (?, ?, NULL, 'Req', 'http', 'GET', 'http://x.test', '{}', 0, ?, ?)`,
+      )
+      .run(itemId, suiteId, now, now)
+
+    const res = (await harness.invoke('testSuiteItem:move', {
+      id: itemId,
+      targetSuiteId: otherSuite,
+      targetFolderId: targetFolder.data!.id,
+      insertBeforeId: null,
+    })) as { success: boolean; error?: string }
+
+    // The old guard only checked the TARGET folder, so this passed and left the
+    // item parented into another suite while still listed under its own.
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/across suites/i)
+    const after = testDb
+      .prepare('SELECT suite_id, folder_id FROM test_suite_items WHERE id = ?')
+      .get(itemId) as { suite_id: string; folder_id: string | null }
+    expect(after.suite_id).toBe(suiteId)
+    expect(after.folder_id).toBeNull()
   })
 })
