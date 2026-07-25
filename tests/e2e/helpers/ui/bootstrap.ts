@@ -23,9 +23,12 @@ export async function expectNoErrorBoundary(page: Page): Promise<void> {
 
 /** Wait until preload IPC bridge is ready. */
 export async function waitForApiBridge(page: Page): Promise<void> {
-  await page.waitForFunction(() => !!(window as unknown as Window & { api?: { eula?: unknown } }).api?.eula, {
-    timeout: 30_000,
-  })
+  await page.waitForFunction(
+    () => !!(window as unknown as Window & { api?: { eula?: unknown } }).api?.eula,
+    {
+      timeout: 30_000,
+    },
+  )
 }
 
 /** Accept EULA gate via UI (checkbox + Accept). */
@@ -71,12 +74,14 @@ export async function loginAsGuest(page: Page): Promise<void> {
 }
 
 /** Create and open a local HTTP project from Project Home. */
-export async function createAndOpenProject(
-  page: Page,
-  name = E2E_PROJECT_NAME,
-): Promise<void> {
+export async function createAndOpenProject(page: Page, name = E2E_PROJECT_NAME): Promise<void> {
   const existing = page.getByTestId('project-card').filter({ hasText: name })
-  if (await existing.first().isVisible().catch(() => false)) {
+  if (
+    await existing
+      .first()
+      .isVisible()
+      .catch(() => false)
+  ) {
     await existing.first().click()
     await expect(page.getByTestId('nav-apis')).toBeVisible({ timeout: 15_000 })
     return
@@ -114,9 +119,7 @@ export async function bootstrapWorkbench(page: Page): Promise<void> {
  * tree can point at different projects.
  */
 export async function ensureCanonicalProject(page: Page): Promise<void> {
-  const tab = page.locator(
-    `[data-testid="header-project-tab"][title="${E2E_PROJECT_NAME}"]`,
-  )
+  const tab = page.locator(`[data-testid="header-project-tab"][title="${E2E_PROJECT_NAME}"]`)
   if ((await tab.count()) > 0) {
     if ((await tab.first().getAttribute('data-active')) !== 'true') {
       await tab.first().click()
@@ -126,7 +129,10 @@ export async function ensureCanonicalProject(page: Page): Promise<void> {
     // Tab was closed by a previous test — reopen from Project Home. When no
     // project is active the app is ALREADY on Project Home (no Header / no
     // header-home is rendered), so only click header-home when it exists.
-    const onProjectHome = await page.getByTestId('project-home').isVisible().catch(() => false)
+    const onProjectHome = await page
+      .getByTestId('project-home')
+      .isVisible()
+      .catch(() => false)
     if (!onProjectHome) {
       await page.getByTestId('header-home').click()
     }
@@ -145,6 +151,28 @@ export async function dismissOverlays(page: Page): Promise<void> {
   for (let i = 0; i < 4; i++) {
     await page.keyboard.press('Escape')
     await page.waitForTimeout(150)
+  }
+}
+
+/**
+ * Close every open workbench tab.
+ *
+ * These UI specs share ONE Electron instance, so tabs opened by an earlier test
+ * stay on screen for the next one — and a tool that has its own search box then
+ * makes `input[placeholder*="Search"]` ambiguous (Playwright strict mode) or
+ * puts a second match in front of the one the test meant. Starting each
+ * tool/panel test from an empty workbench removes that whole class.
+ */
+export async function closeAllTabs(page: Page): Promise<void> {
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  for (let i = 0; i < 40; i++) {
+    const tabs = await page
+      .getByTestId('endpoint-tab')
+      .count()
+      .catch(() => 0)
+    if (tabs === 0) return
+    await page.keyboard.press(`${mod}+KeyW`)
+    await page.waitForTimeout(80)
   }
 }
 
@@ -177,7 +205,10 @@ export async function navigateSidebar(
 export async function openHttpRequestTab(page: Page): Promise<void> {
   await page.getByTestId('new-dropdown-btn').click()
   await expect(page.getByTestId('new-dropdown-menu')).toBeVisible()
-  await page.getByTestId('new-dropdown-menu').getByRole('button', { name: /^HTTP$/i }).click()
+  await page
+    .getByTestId('new-dropdown-menu')
+    .getByRole('button', { name: /^HTTP$/i })
+    .click()
 }
 
 /** Open New (+) dropdown and pick an item by visible label. */

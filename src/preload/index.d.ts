@@ -28,6 +28,7 @@ import type {
   TestSuiteItemRow,
   TestSuiteFolderRow,
   TestSuiteContents,
+  MaterialSource,
 } from '../renderer/types'
 
 // ─── Auth ────────────────────────────────────────────────────────
@@ -2127,6 +2128,159 @@ interface TlsApi {
   inspect(payload: TlsInspectRequestDto): Promise<IpcResult<TlsInspectResultDto>>
 }
 
+// ─── JOSE / JWT (#63) ────────────────────────────────────────────
+//
+// These channels exist so a KEYSTORE-BACKED key can sign without the renderer
+// ever touching key material: main resolves the source, signs, and returns only
+// the token. The `{inline}` arm is the DEFAULT and is byte-for-byte what the
+// Tools → JWT Debugger already does with a pasted secret/PEM — `{source}` is one
+// ADDED arm of the union, never a replacement.
+//
+// NO-LEAK: nothing in any result type below is (or may become) key material.
+
+/** Pasted-by-the-user material. Stays in main; never persisted by these calls. */
+interface JoseInlineKeyDto {
+  /** HS* shared secret. */
+  secret?: string
+  /** PKCS#8 private-key PEM — signing / JWE decryption. */
+  privateKeyPem?: string
+  /** SPKI public-key PEM or an X.509 certificate PEM — verification / JWE encryption. */
+  certPem?: string
+  passphrase?: string
+}
+
+/**
+ * The key a JOSE op runs with. OPAQUE in the `source` arm: a `MaterialSource`
+ * carries ids/aliases/paths only (its password fields are WRITE-ONLY — they may
+ * ride one payload and are never persisted or echoed back).
+ */
+type JoseKeyInputDto = { inline: JoseInlineKeyDto } | { source: MaterialSource }
+
+interface JoseSignRequestDto {
+  /** 'jwt' signs claims; 'jws' signs an arbitrary payload string. */
+  mode: 'jwt' | 'jws'
+  alg: string
+  payload: Record<string, unknown> | string
+  header?: Record<string, unknown>
+  key: JoseKeyInputDto
+}
+
+interface JoseVerifyRequestDto {
+  mode: 'jwt' | 'jws'
+  token: string
+  /**
+   * The algorithm to verify with. Optional for `mode:'jwt'` (main falls back to
+   * the token's own protected header), but REQUIRED for `mode:'jws'` whose
+   * payload is not JSON claims — that fallback decodes the payload as a JWT and
+   * cannot read the header otherwise. Always send it when you know it: the
+   * caller's value WINS over the token's header, which is what stops the
+   * classic `alg`-swap key-confusion attack.
+   */
+  alg?: string
+  /** Restrict acceptable algorithms — refuses a token that swapped `alg`. */
+  algorithms?: string[]
+  key?: JoseKeyInputDto
+  /** Verify against a JWKS document instead of a single key. */
+  jwks?: { keys: JsonWebKey[] }
+  /**
+   * Verify against a JWKS served over HTTP(S). The GET runs in MAIN — the
+   * renderer's CSP (`connect-src 'self'`) cannot reach an IdP at all.
+   */
+  jwksUri?: string
+  /** OPT-IN claim checks. `exp`/`nbf` are always enforced; these are extra. */
+  claims?: JoseClaimChecksDto
+}
+
+/**
+ * Claim checks layered on top of the signature check. All OPT-IN: supplying no
+ * `audience` means `aud` is NOT validated, which is jose's own semantics and
+ * keeps the debugger from reporting failures the user never asked for.
+ */
+interface JoseClaimChecksDto {
+  audience?: string | string[]
+  issuer?: string | string[]
+  subject?: string
+  /** Seconds, or a duration string like '60s'. */
+  clockTolerance?: string | number
+  /** Rejects a token whose `iat` is older than this, e.g. '1h'. */
+  maxTokenAge?: string | number
+  /** Epoch MILLISECONDS to evaluate exp/nbf/iat against ("verify as of"). */
+  currentDate?: number
+}
+
+interface JoseJweRequestDto {
+  alg: string
+  enc: string
+  /** Present for `encrypt`. */
+  plaintext?: string
+  /** Present for `decrypt`. */
+  jwe?: string
+  key: JoseKeyInputDto
+}
+
+/** JWT claims for `mode:'jwt'`; the decoded payload string for `mode:'jws'`. */
+interface JoseVerifyResultDto {
+  payload: Record<string, unknown> | string
+  header: Record<string, unknown>
+}
+
+interface JoseDecryptResultDto {
+  plaintext: string
+  header: Record<string, unknown>
+}
+
+/** Decoded WITHOUT verification — a debugger view, never a trust decision. */
+interface JoseDecodeResultDto {
+  header: Record<string, unknown>
+  payload: Record<string, unknown>
+}
+
+interface JoseApi {
+  /** Returns the compact JWS/JWT string — never the key it was signed with. */
+  sign(payload: JoseSignRequestDto): Promise<IpcResult<string>>
+  verify(payload: JoseVerifyRequestDto): Promise<IpcResult<JoseVerifyResultDto>>
+  /** Returns the compact JWE string. */
+  encrypt(payload: JoseJweRequestDto): Promise<IpcResult<string>>
+  decrypt(payload: JoseJweRequestDto): Promise<IpcResult<JoseDecryptResultDto>>
+  decode(token: string): Promise<IpcResult<JoseDecodeResultDto>>
+  /**
+   * GET a JWKS document from MAIN. Every private JWK member is stripped before
+   * the document crosses the bridge — the URL is user-supplied and may point at
+   * a misconfigured endpoint, so the guard cannot rest on the server behaving.
+   */
+  fetchJwks(uri: string): Promise<IpcResult<{ keys: JsonWebKey[] }>>
+}
+
+// ─── JWKS (#61) ──────────────────────────────────────────────────
+
+interface JwksBuildRequestDto {
+  /** Opaque key-material references — each contributes its PUBLIC half. */
+  sources?: MaterialSource[]
+  /**
+   * Public JWKs the caller already holds (in practice: the keys parsed out of
+   * the mock body being edited) so a second pick ADDS a rotation key instead of
+   * replacing the set. Sanitized in main like everything else.
+   */
+  extraKeys?: JsonWebKey[]
+}
+
+interface JwksBuildResultDto {
+  /** Exactly the text to store in `mock_responses.body` — public keys only. */
+  body: string
+  /** RFC 7638 thumbprints in document order. */
+  kids: string[]
+  count: number
+}
+
+interface JwksApi {
+  /**
+   * Build the STATIC JWKS document for a set of key sources (D1-2). Returns the
+   * body text; the caller writes it into a mock response through the ordinary
+   * `mock:response:create/update` channels (D1-1 — no new mock primitive).
+   */
+  build(payload: JwksBuildRequestDto): Promise<IpcResult<JwksBuildResultDto>>
+}
+
 // ─── WSSE ────────────────────────────────────────────────────────
 
 interface WsseVerifyResultDto {
@@ -2216,6 +2370,8 @@ interface ApiBridge {
   otp: OtpApi
   keystore: KeystoreApi
   tls: TlsApi
+  jose: JoseApi
+  jwks: JwksApi
   testSuite: TestSuiteApi
   testSuiteItem: TestSuiteItemApi
   testSuiteFolder: TestSuiteFolderApi

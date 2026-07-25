@@ -25,6 +25,7 @@ import {
   QrCode,
   FileKey,
   Globe,
+  Key,
 } from 'lucide-react'
 import type { ToolProtocol } from '../types'
 
@@ -70,6 +71,16 @@ export const TOOL_CATALOG: ToolCatalogItem[] = [
     protocol: 'tools.jwt',
     Icon: KeyRound,
     labelKey: 'tools.jwt.title',
+    bg: '#eeecfe',
+    color: '#5b52d4',
+    section: 'security',
+  },
+  {
+    // Sits next to the JWT Debugger on purpose: the same keys, one level down
+    // (PEM ⇄ JWK, thumbprints, the JWKS a verifier fetches).
+    protocol: 'tools.jwk',
+    Icon: Key,
+    labelKey: 'tools.jwk.title',
     bg: '#eeecfe',
     color: '#5b52d4',
     section: 'security',

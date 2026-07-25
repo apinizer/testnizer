@@ -121,3 +121,32 @@ The stored secret no longer leaves the app core at all.
 **Known limitation.** A keystore saved with an *empty* password can't be used as
 a key source yet; give it a password (or re-save it with "remember password") to
 use it here.
+
+### New — sign JWS / JWT inside scripts (pre-request and Tests)
+
+Scripts can now **sign and verify** JSON Web Signatures / JSON Web Tokens, so a
+token can be minted in a pre-request script, stored in a variable and sent by a
+later request — no external tool, no hand-rolled crypto.
+
+```js
+// Pre-request script
+const token = await pm.jose.sign(
+  { iss: 'testnizer', txn: '12345' },
+  pm.environment.get('signingKeyPem'),
+  { alg: 'RS256', header: { kid: 'key-1' }, expiresIn: '5m' },
+)
+pm.environment.set('mkkJwt', token)
+// …then use  Authorization: Bearer {{mkkJwt}}  in the request headers.
+```
+
+- `pm.jose.sign / verify / decode` for JWTs, `pm.jose.signJws / verifyJws` for a
+  raw (non-JSON) payload, and `pm.jose.generateKeyPair(alg)` for throwaway keys.
+- Keys can be a shared secret (HS\*), a PKCS#8 / SPKI / certificate PEM, or a
+  JWK. HMAC secrets default to `HS256`; PEM keys need an explicit `alg`.
+- The full library is also available as `require('jose')` for anything the
+  helper doesn't wrap (JWE, JWKS, flattened serializations, …).
+- Verification failures raise an ordinary script error you can `try/catch`.
+
+Both **Send** and the **Collection Runner / Test Suites / Scheduled runs** get
+this at once — the same signature bytes on either path. Existing scripts are
+untouched, and the script sandbox still refuses any module outside its list.

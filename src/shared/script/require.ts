@@ -15,6 +15,10 @@ import * as xml2js from 'xml2js'
 import { parse as csvParseSync } from 'csv-parse/sync'
 import * as postmanCollection from 'postman-collection'
 import * as chai from 'chai'
+// jose (#73) enters through ./jose — the shared runtime's SINGLE jose door.
+// It must be a static import there (and only there) so Rollup/Vite bundle it;
+// see the header of ./jose.ts for the ERR_REQUIRE_ESM containment story.
+import { joseModule } from './jose'
 import { base64Encode, base64Decode } from './base64'
 
 /** Exact `require('...')` strings Postman supports → the resolved module. */
@@ -32,6 +36,11 @@ const LIBS: Record<string, unknown> = {
   'csv-parse/sync': { parse: csvParseSync },
   'postman-collection': postmanCollection,
   chai,
+  // JWS/JWT signing inside scripts (#73). The namespace object is resolved at
+  // module-eval time, so `require('jose')` is a map lookup — no dynamic module
+  // resolution a bundler could miss. Sub-path specifiers ('jose/jwt/sign', …)
+  // are intentionally NOT registered: the namespace carries every export.
+  jose: joseModule,
 }
 
 /** The synchronous require() exposed inside scripts. */

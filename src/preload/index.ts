@@ -573,6 +573,35 @@ const api = {
     }): Promise<unknown> => ipcRenderer.invoke('tls:inspect', payload),
   },
 
+  // ─── JOSE / JWT (#63) — private-key operations run in MAIN ───
+  //
+  // The `{inline}` arm is the DEFAULT, unchanged path: whatever the user pasted
+  // (a shared secret or a PEM) rides the payload. The `{source}` arm is ONE
+  // added option carrying an OPAQUE MaterialSource (ids/aliases/paths only) —
+  // main resolves it, signs with it, and returns the token. Key material never
+  // travels back across this bridge in either direction.
+  jose: {
+    sign: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('jose:sign', payload),
+    verify: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('jose:verify', payload),
+    encrypt: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('jose:encrypt', payload),
+    decrypt: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('jose:decrypt', payload),
+    decode: (token: string): Promise<unknown> => ipcRenderer.invoke('jose:decode', token),
+    // The JWKS GET runs in MAIN: index.html pins `connect-src 'self'`, so the
+    // renderer cannot reach an IdP's /.well-known/jwks.json at all. What comes
+    // back is stripped of every private JWK member before it crosses.
+    fetchJwks: (uri: string): Promise<unknown> => ipcRenderer.invoke('jose:fetchJwks', uri),
+  },
+
+  // ─── JWKS (#61) — build the STATIC document a mock endpoint serves ───
+  //
+  // Main resolves the opaque MaterialSource, takes its PUBLIC half only, and
+  // returns the finished body text. What comes back is publishable by
+  // construction (no `d,p,q,dp,dq,qi,k`), so this bridge carries no key
+  // material in either direction — only ids in, only public keys out.
+  jwks: {
+    build: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('jwks:build', payload),
+  },
+
   // ─── GraphQL ────────────────────────────────────────────────
   graphql: {
     execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('graphql:execute', options),

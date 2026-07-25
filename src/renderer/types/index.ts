@@ -40,6 +40,7 @@ export type Protocol =
   | 'tools.qr'
   | 'tools.keystore'
   | 'tools.tlsInspect'
+  | 'tools.jwk'
 
 export const TOOL_PROTOCOLS = [
   'tools.jwt',
@@ -67,6 +68,7 @@ export const TOOL_PROTOCOLS = [
   'tools.qr',
   'tools.keystore',
   'tools.tlsInspect',
+  'tools.jwk',
 ] as const satisfies readonly Protocol[]
 export type ToolProtocol = (typeof TOOL_PROTOCOLS)[number]
 export function isToolProtocol(p: Protocol): p is ToolProtocol {

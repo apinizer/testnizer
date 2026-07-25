@@ -4,6 +4,7 @@ import {
   decryptJwe,
   encryptJwe,
   isHmacAlg,
+  isSymmetricJweAlg,
   privateKeyFromPem,
   publicKeyFromPem,
   secretKey,
@@ -12,8 +13,11 @@ import {
   verifyJws,
   verifyJwt,
   verifyJwtWithJwks,
+  verifyJwtWithJwksUri,
   type JoseKeyLike,
+  type JwtClaimChecks,
 } from '../lib/jose-runtime'
+import { PRIVATE_JWK_MEMBERS } from '../lib/jwks'
 import { resolveKeyMaterial, type MaterialSource } from '../lib/keystore-bridge'
 import { ipcResult } from '../lib/ipc-helpers'
 
@@ -49,6 +53,14 @@ interface VerifyPayload {
   key?: KeyInput
   /** Verify against a JWKS document instead of a single key. */
   jwks?: { keys: JsonWebKey[] }
+  /**
+   * Verify against a JWKS served over HTTP(S). Fetched HERE — the renderer's CSP
+   * (`connect-src 'self'`) makes an IdP's `/.well-known/jwks.json` unreachable
+   * from the UI, which is the whole reason this arm exists.
+   */
+  jwksUri?: string
+  /** OPT-IN claim checks (aud/iss/sub/clock skew/max age/"as of" date). */
+  claims?: JwtClaimChecks
 }
 
 interface JwePayload {
@@ -101,6 +113,75 @@ async function resolveVerificationKey(input: KeyInput, alg: string): Promise<Jos
   return publicKeyFromPem(material.certPem, alg)
 }
 
+/**
+ * JWE key resolution.
+ *
+ * Split from the JWS pair because the symmetric FAMILY is different: `dir`,
+ * `A*KW` and `PBES2-*` take a shared secret, and asking `isHmacAlg` (which only
+ * knows HS*) would demand a certificate PEM for `alg:'dir'`. `wantPrivate`
+ * selects the half — encrypt takes the recipient's PUBLIC key, decrypt the
+ * PRIVATE one — which is the mirror image of the JWS sign/verify pair.
+ */
+async function resolveJweKey(
+  input: KeyInput,
+  alg: string,
+  wantPrivate: boolean,
+): Promise<JoseKeyLike> {
+  if (isSymmetricJweAlg(alg)) {
+    if (!('inline' in input)) {
+      throw new Error(`${alg} is a shared-secret algorithm — a keystore key cannot be used for it.`)
+    }
+    const secret = input.inline.secret
+    if (!secret) throw new Error(`${alg} needs a shared secret.`)
+    return secretKey(secret)
+  }
+  if ('inline' in input) {
+    const pem = wantPrivate ? input.inline.privateKeyPem : input.inline.certPem
+    if (!pem) {
+      throw new Error(
+        wantPrivate
+          ? `${alg} needs a private key (PEM) to decrypt.`
+          : `${alg} needs a certificate or public key (PEM) to encrypt.`,
+      )
+    }
+    return wantPrivate ? privateKeyFromPem(pem, alg) : publicKeyFromPem(pem, alg)
+  }
+  const material = resolveKeyMaterial(input.source, 'pem')
+  if (!wantPrivate) return publicKeyFromPem(material.certPem, alg)
+  if (!material.keyPem) throw new Error('That key material holds no private key.')
+  return privateKeyFromPem(material.keyPem, alg)
+}
+
+/**
+ * PUBLIC-JWK-ONLY. A JWKS fetched for the renderer is stripped of every private
+ * member before it crosses the bridge. A well-behaved IdP never publishes one —
+ * which is exactly why the guard cannot depend on that promise: the URL is
+ * user-supplied and may point at anything, including a misconfigured internal
+ * endpoint that really is serving private keys.
+ */
+function sanitizeJwks(doc: unknown): { keys: JsonWebKey[] } {
+  const keys = (doc as { keys?: unknown })?.keys
+  if (!Array.isArray(keys)) throw new Error('That URL did not return a JWKS document ({keys:[…]}).')
+  return {
+    keys: keys.map((k) => {
+      const clean: Record<string, unknown> = { ...(k as Record<string, unknown>) }
+      for (const member of PRIVATE_JWK_MEMBERS) delete clean[member]
+      return clean as JsonWebKey
+    }),
+  }
+}
+
+/** Fetch a JWKS document from MAIN (renderer CSP forbids the cross-origin GET). */
+async function fetchJwks(uri: string): Promise<{ keys: JsonWebKey[] }> {
+  const url = new URL(uri)
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('A JWKS URL must be http(s).')
+  }
+  const res = await fetch(url, { headers: { accept: 'application/json' } })
+  if (!res.ok) throw new Error(`JWKS fetch failed: ${res.status} ${res.statusText}`)
+  return sanitizeJwks(await res.json())
+}
+
 export function registerJoseHandlers(): void {
   ipcMain.handle('jose:sign', (_e, payload: SignPayload) =>
     ipcResult(async () => {
@@ -129,22 +210,29 @@ export function registerJoseHandlers(): void {
       })()
       const alg = payload.alg || headerAlg
       if (!alg) throw new Error('Could not determine the algorithm to verify with.')
+      const allowed = payload.algorithms ?? [alg]
 
+      if (payload.jwksUri) {
+        return verifyJwtWithJwksUri(payload.token, payload.jwksUri, allowed, payload.claims)
+      }
       if (payload.jwks) {
-        return verifyJwtWithJwks(payload.token, payload.jwks as never, payload.algorithms ?? [alg])
+        return verifyJwtWithJwks(payload.token, payload.jwks as never, allowed, payload.claims)
       }
       if (!payload.key) throw new Error('No key supplied to verify with.')
       const key = await resolveVerificationKey(payload.key, alg)
       return payload.mode === 'jwt'
-        ? verifyJwt(payload.token, key, payload.algorithms ?? [alg])
-        : verifyJws(payload.token, key, payload.algorithms ?? [alg])
+        ? verifyJwt(payload.token, key, allowed, payload.claims)
+        : verifyJws(payload.token, key, allowed)
     }),
   )
+
+  /** Fetch a JWKS document — MAIN-side because the renderer's CSP forbids it. */
+  ipcMain.handle('jose:fetchJwks', (_e, uri: string) => ipcResult(() => fetchJwks(uri)))
 
   ipcMain.handle('jose:encrypt', (_e, payload: JwePayload) =>
     ipcResult(async () => {
       if (!payload.plaintext) throw new Error('Nothing to encrypt.')
-      const key = await resolveVerificationKey(payload.key, payload.alg)
+      const key = await resolveJweKey(payload.key, payload.alg, false)
       return encryptJwe(payload.plaintext, key, payload.alg, payload.enc)
     }),
   )
@@ -152,8 +240,11 @@ export function registerJoseHandlers(): void {
   ipcMain.handle('jose:decrypt', (_e, payload: JwePayload) =>
     ipcResult(async () => {
       if (!payload.jwe) throw new Error('Nothing to decrypt.')
-      const key = await resolveSigningKey(payload.key, payload.alg)
-      return decryptJwe(payload.jwe, key)
+      const key = await resolveJweKey(payload.key, payload.alg, true)
+      // Pin the key-management algorithm to what the CALLER asked for, not to
+      // what the token's header claims: PBES2 is refused by jose without an
+      // explicit allowlist, and the pin is what blocks algorithm substitution.
+      return decryptJwe(payload.jwe, key, payload.alg ? [payload.alg] : undefined)
     }),
   )
 

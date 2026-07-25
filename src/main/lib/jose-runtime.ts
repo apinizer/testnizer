@@ -26,6 +26,16 @@
  * key resolution (`resolveKeyMaterial`) and error surfacing. Note that JWK
  * export for the key provider deliberately does NOT live here — node:crypto
  * does that synchronously and dependency-free (see keystore-bridge `toJwk`).
+ *
+ * ── The one other door (#73) ────────────────────────────────────────────────
+ *
+ * `src/shared/script/jose.ts` also imports jose: it is the SHARED script
+ * runtime's jose door, and the shared runtime is compiled into BOTH bundles
+ * (main via runner.handler.ts, renderer via test-runner.ts) — so it cannot
+ * import a `src/main/` module. Both doors are protected by the SAME lever
+ * (`exclude: ['uuid', 'jose']`), and `tests/main/shared/jose.test.ts` asserts
+ * that the whole main graph still has exactly these two `from 'jose'` imports.
+ * Anything else in main goes through THIS file.
  */
 import {
   SignJWT,
@@ -41,6 +51,7 @@ import {
   exportSPKI,
   exportPKCS8,
   createLocalJWKSet,
+  createRemoteJWKSet,
   decodeJwt,
   decodeProtectedHeader,
   type JWTPayload,
@@ -53,6 +64,60 @@ export type JoseKeyLike = CryptoKey | Uint8Array
 /** HMAC algorithms take a shared secret; everything else takes a key. */
 export function isHmacAlg(alg: string): boolean {
   return alg.startsWith('HS')
+}
+
+/**
+ * JWE key-management algorithms whose "key" is a SHARED SECRET rather than a
+ * public/private pair: direct encryption, the AES key-wrap families and the
+ * password-based PBES2 family.
+ *
+ * `isHmacAlg` cannot answer this — it only knows the JWS HS* family — and a JWE
+ * handler that asked it would demand a certificate PEM for `alg:'dir'`. Kept
+ * here next to the jose import so the algorithm taxonomy has one home.
+ */
+export function isSymmetricJweAlg(alg: string): boolean {
+  return alg === 'dir' || /^A\d{3}(GCM)?KW$/.test(alg) || alg.startsWith('PBES2-')
+}
+
+/**
+ * Claim checks a caller may pin on top of the signature check.
+ *
+ * All of them are OPT-IN: jose does not validate `aud`/`iss`/`sub` unless asked,
+ * and this module deliberately does not invent defaults — a tool that silently
+ * enforced an audience would report failures the user never asked for. `exp`
+ * and `nbf` ARE always enforced by jose itself.
+ *
+ * `currentDate` is epoch MILLISECONDS (an IPC payload cannot carry a `Date`);
+ * it makes "would this token verify at time T?" answerable, and makes every
+ * expiry test deterministic instead of racing the wall clock.
+ */
+export interface JwtClaimChecks {
+  audience?: string | string[]
+  issuer?: string | string[]
+  subject?: string
+  /** Seconds (number) or a jose duration string like '60s' / '2 minutes'. */
+  clockTolerance?: string | number
+  /** Rejects a token whose `iat` is older than this, e.g. '1h'. */
+  maxTokenAge?: string | number
+  /** Epoch milliseconds to evaluate exp/nbf/iat against. */
+  currentDate?: number
+}
+
+/** Build the jose verify options from an allowlist + the opt-in claim checks. */
+function verifyOptions(
+  algorithms: string[] | undefined,
+  checks: JwtClaimChecks | undefined,
+): Record<string, unknown> {
+  const opts: Record<string, unknown> = {}
+  if (algorithms?.length) opts.algorithms = algorithms
+  if (!checks) return opts
+  if (checks.audience !== undefined) opts.audience = checks.audience
+  if (checks.issuer !== undefined) opts.issuer = checks.issuer
+  if (checks.subject !== undefined) opts.subject = checks.subject
+  if (checks.clockTolerance !== undefined) opts.clockTolerance = checks.clockTolerance
+  if (checks.maxTokenAge !== undefined) opts.maxTokenAge = checks.maxTokenAge
+  if (typeof checks.currentDate === 'number') opts.currentDate = new Date(checks.currentDate)
+  return opts
 }
 
 /** Secret → key material for the HS* family. */
@@ -100,10 +165,9 @@ export async function verifyJwt(
   token: string,
   key: JoseKeyLike,
   algorithms?: string[],
+  checks?: JwtClaimChecks,
 ): Promise<{ payload: JWTPayload; header: Record<string, unknown> }> {
-  const res = await jwtVerify(token, key as never, {
-    ...(algorithms?.length ? { algorithms } : {}),
-  })
+  const res = await jwtVerify(token, key as never, verifyOptions(algorithms, checks))
   return { payload: res.payload, header: res.protectedHeader as Record<string, unknown> }
 }
 
@@ -146,11 +210,23 @@ export function encryptJwe(
     .encrypt(key as Parameters<CompactEncrypt['encrypt']>[0])
 }
 
+/**
+ * Decrypt a compact JWE.
+ *
+ * `keyManagementAlgorithms` pins which `alg` the recipient will accept. Passing
+ * it is not optional politeness: jose REFUSES the PBES2 family unless it is
+ * explicitly allowed (an attacker-chosen `p2c` iteration count is a DoS vector),
+ * and pinning is also what stops algorithm substitution — the token's own header
+ * must never be the thing that decides how it gets decrypted.
+ */
 export async function decryptJwe(
   jwe: string,
   key: JoseKeyLike,
+  keyManagementAlgorithms?: string[],
 ): Promise<{ plaintext: string; header: Record<string, unknown> }> {
-  const res = await compactDecrypt(jwe, key as never)
+  const res = await compactDecrypt(jwe, key as never, {
+    ...(keyManagementAlgorithms?.length ? { keyManagementAlgorithms } : {}),
+  })
   return {
     plaintext: new TextDecoder().decode(res.plaintext),
     header: res.protectedHeader as Record<string, unknown>,
@@ -162,11 +238,30 @@ export async function verifyJwtWithJwks(
   token: string,
   jwks: JSONWebKeySet,
   algorithms?: string[],
+  checks?: JwtClaimChecks,
 ): Promise<{ payload: JWTPayload; header: Record<string, unknown> }> {
   const keySet = createLocalJWKSet(jwks)
-  const res = await jwtVerify(token, keySet, {
-    ...(algorithms?.length ? { algorithms } : {}),
-  })
+  const res = await jwtVerify(token, keySet, verifyOptions(algorithms, checks))
+  return { payload: res.payload, header: res.protectedHeader as Record<string, unknown> }
+}
+
+/**
+ * Verify against a JWKS served over HTTP(S) — the #61→#63 bridge.
+ *
+ * The fetch happens HERE, in main. The renderer cannot do it: `index.html`'s CSP
+ * pins `connect-src 'self'`, so an identity provider's `/.well-known/jwks.json`
+ * is unreachable from the UI by design. jose picks the key by the token's `kid`
+ * and throws `JWKSNoMatchingKey` when the set has none — there is deliberately
+ * no fallback to "the only key in the set".
+ */
+export async function verifyJwtWithJwksUri(
+  token: string,
+  jwksUri: string,
+  algorithms?: string[],
+  checks?: JwtClaimChecks,
+): Promise<{ payload: JWTPayload; header: Record<string, unknown> }> {
+  const keySet = createRemoteJWKSet(new URL(jwksUri))
+  const res = await jwtVerify(token, keySet, verifyOptions(algorithms, checks))
   return { payload: res.payload, header: res.protectedHeader as Record<string, unknown> }
 }
 

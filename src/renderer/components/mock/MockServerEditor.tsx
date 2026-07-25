@@ -22,6 +22,8 @@ import type {
 import MonacoWrapper from '../shared/MonacoWrapper'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import { CONDITION_SNIPPETS, SCRIPT_SNIPPETS } from '../../lib/mock-snippets'
+import JwksFillButton from './JwksFillButton'
+import { provisionJwksServe } from '../../lib/jwks-serve'
 
 const METHODS: MockMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'ANY']
 const PATH_MODES: MockPathMode[] = ['exact', 'param', 'wildcard', 'regex']
@@ -171,6 +173,7 @@ function EndpointsTab({ serverId }: { serverId: string }) {
   const endpoints = useMockStore((s) => s.endpointsByServer[serverId]) ?? EMPTY_ENDPOINTS
   const loadEndpoints = useMockStore((s) => s.loadEndpoints)
   const createEndpoint = useMockStore((s) => s.createEndpoint)
+  const createResponse = useMockStore((s) => s.createResponse)
   const deleteEndpoint = useMockStore((s) => s.deleteEndpoint)
   const importOpenApi = useMockStore((s) => s.importOpenApi)
   const importPostman = useMockStore((s) => s.importPostman)
@@ -195,6 +198,28 @@ function EndpointsTab({ serverId }: { serverId: string }) {
       pathMode: 'exact',
     })
     if (ep) setActiveId(ep.id)
+  }
+
+  /**
+   * #61 JWKS-serve: publish a built JWKS at `/.well-known/jwks.json`.
+   *
+   * ZERO new mock primitives (reconcile D1-1) — it is one ordinary endpoint row
+   * plus one response row, created through the SAME store actions the Add
+   * button uses. Rotation is just filling the body again (D1-2): the response
+   * update hot-reloads a running server.
+   */
+  async function handleServeJwks(body: string): Promise<void> {
+    try {
+      const { endpoint } = await provisionJwksServe({
+        serverId,
+        body,
+        createEndpoint,
+        createResponse,
+      })
+      setActiveId(endpoint.id)
+    } catch (e) {
+      setImportStatus(e instanceof Error ? e.message : String(e))
+    }
   }
 
   async function handleImport(kind: 'openapi' | 'postman'): Promise<void> {
@@ -254,6 +279,15 @@ function EndpointsTab({ serverId }: { serverId: string }) {
             >
               <Plus size={12} /> {t('mock.add')}
             </button>
+            {/* #61: publish a JWKS at the well-known path. One ordinary
+                endpoint + response row, created through the same store
+                actions — no new mock primitive. */}
+            <JwksFillButton
+              body=""
+              onFill={(built) => void handleServeJwks(built)}
+              label={t('mock.jwksServe')}
+              testId="mock-jwks-serve"
+            />
           </div>
           <div className="flex gap-1">
             <button
@@ -553,6 +587,7 @@ function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: Mo
                 key={activeRespId}
                 response={responses.find((r) => r.id === activeRespId)!}
                 endpointId={endpoint.id}
+                projectId={server?.projectId}
               />
             )}
           </>
@@ -697,7 +732,16 @@ function buildCurl(server: MockServer, endpoint: MockEndpoint): string {
 
 // ─── Response editor ─────────────────────────────────────────────
 
-function ResponseEditor({ response, endpointId }: { response: MockResponse; endpointId: string }) {
+function ResponseEditor({
+  response,
+  endpointId,
+  projectId,
+}: {
+  response: MockResponse
+  endpointId: string
+  /** Lets the JWKS fill offer the project's saved certificate rows. */
+  projectId?: string
+}) {
   const { t } = useTranslation()
   const updateResponse = useMockStore((s) => s.updateResponse)
   const deleteResponse = useMockStore((s) => s.deleteResponse)
@@ -807,12 +851,28 @@ function ResponseEditor({ response, endpointId }: { response: MockResponse; endp
       </div>
 
       <div className="mb-2">
-        <label
-          className="mb-1 block text-[11px] uppercase tracking-wide"
-          style={{ color: 'var(--muted)' }}
-        >
-          {t('mock.body')}
-        </label>
+        {/*
+          The JWKS auto-fill (#61) is ONE ADDED button that writes into the SAME
+          body field below — never a replacement for hand-authoring, which keeps
+          working byte-for-byte.
+        */}
+        <div className="mb-1 flex items-center justify-between">
+          <label
+            className="block text-[11px] uppercase tracking-wide"
+            style={{ color: 'var(--muted)' }}
+          >
+            {t('mock.body')}
+          </label>
+          {/* Only offered where a JWKS could actually live: on an XML or text
+              response the button would replace the body with JSON. */}
+          {response.bodyType === 'json' && (
+            <JwksFillButton
+              body={response.body}
+              projectId={projectId}
+              onFill={(body) => updateResponse(response.id, { body })}
+            />
+          )}
+        </div>
         <div
           data-testid="mock-response-body"
           style={{ height: 200, border: '1px solid var(--border)', borderRadius: 4 }}

@@ -24,6 +24,7 @@ import { registerOtpHandlers } from './otp.handler'
 import { registerKeystoreHandlers } from './keystore.handler'
 import { registerWsseHandlers } from './wsse.handler'
 import { registerJoseHandlers } from './jose.handler'
+import { registerJwksHandlers } from './jwks.handler'
 import { registerDialogHandlers } from './dialog.handler'
 import { registerEulaHandlers } from './eula.handler'
 import { registerMcpHandlers } from './mcp.handler'
@@ -59,6 +60,7 @@ export function registerAllHandlers(): void {
   registerKeystoreHandlers()
   registerWsseHandlers()
   registerJoseHandlers()
+  registerJwksHandlers()
   registerDialogHandlers()
   registerEulaHandlers()
   registerMcpHandlers()

@@ -720,6 +720,12 @@ interface ScriptContext {
    *  finishing a script so callback-style sends complete. */
   pendingSends: Array<Promise<unknown>>
   /**
+   * Async `pm.test(name, async () => …)` callbacks. Awaited before a script is
+   * considered finished, so a rejected assertion rewrites its optimistic PASS
+   * — the Send path has always done this (test-runner.ts).
+   */
+  pendingTests: Array<Promise<void>>
+  /**
    * A top-level throw from the script body (not a failing `pm.test`, which is
    * captured as an assertion). Recorded rather than rethrown so per-request
    * scripts keep their long-standing "log it and carry on" behaviour; the
@@ -747,6 +753,7 @@ function newScriptContext(
     testResults: [],
     consoleLogs: [],
     pendingSends: [],
+    pendingTests: [],
   }
 }
 
@@ -893,7 +900,31 @@ async function runUserScript(
       },
       test: (name: string, fn: () => void | Promise<void>) => {
         try {
-          fn()
+          const result = fn()
+          if (result && typeof (result as Promise<void>).then === 'function') {
+            // An ASYNC callback settles after `test()` returns. Recording a
+            // pass here and walking away made every `pm.test(async () => …)`
+            // report GREEN on Run no matter what it asserted — while Send
+            // (test-runner.ts) already awaited it. `pm.jose.*` is async-only,
+            // so the idiomatic script for issue #73 landed exactly on that
+            // divergence. Mirror Send: optimistic slot, rewritten on rejection,
+            // awaited before the script is considered finished.
+            const idx = ctx.testResults.length
+            ctx.testResults.push({ name, passed: true })
+            ctx.pendingTests.push(
+              (result as Promise<void>).then(
+                () => {},
+                (e: unknown) => {
+                  ctx.testResults[idx] = {
+                    name,
+                    passed: false,
+                    error: e instanceof Error ? e.message : String(e),
+                  }
+                },
+              ),
+            )
+            return
+          }
           ctx.testResults.push({ name, passed: true })
         } catch (e) {
           ctx.testResults.push({ name, passed: false, error: (e as Error).message })
@@ -996,6 +1027,14 @@ async function runUserScript(
   if (ctx.pendingSends.length > 0) {
     await Promise.allSettled(ctx.pendingSends)
     ctx.pendingSends.length = 0
+  }
+  // AFTER the sends: a send callback can register its own `pm.test`, and an
+  // async test can itself await a send. Draining in this order (and looping
+  // while either queue refills) is what makes "the script has finished" true.
+  while (ctx.pendingTests.length > 0 || ctx.pendingSends.length > 0) {
+    const tests = ctx.pendingTests.splice(0)
+    const sends = ctx.pendingSends.splice(0)
+    await Promise.allSettled([...tests, ...sends])
   }
 }
 

@@ -19,49 +19,204 @@ export interface InventoryItem {
 }
 
 export const NAV_ITEMS: InventoryItem[] = [
-  { id: 'nav-apis', description: 'APIs sidebar', selector: '[data-testid="nav-apis"]', action: 'click' },
-  { id: 'nav-tests', description: 'Tests sidebar', selector: '[data-testid="nav-tests"]', action: 'click' },
-  { id: 'nav-mocks', description: 'Mocks sidebar', selector: '[data-testid="nav-mocks"]', action: 'click' },
-  { id: 'nav-history', description: 'History sidebar', selector: '[data-testid="nav-history"]', action: 'click' },
-  { id: 'nav-tools', description: 'Tools sidebar', selector: '[data-testid="nav-tools"]', action: 'click' },
-  { id: 'nav-settings', description: 'Project settings sidebar', selector: '[data-testid="nav-settings"]', action: 'click' },
+  {
+    id: 'nav-apis',
+    description: 'APIs sidebar',
+    selector: '[data-testid="nav-apis"]',
+    action: 'click',
+  },
+  {
+    id: 'nav-tests',
+    description: 'Tests sidebar',
+    selector: '[data-testid="nav-tests"]',
+    action: 'click',
+  },
+  {
+    id: 'nav-mocks',
+    description: 'Mocks sidebar',
+    selector: '[data-testid="nav-mocks"]',
+    action: 'click',
+  },
+  {
+    id: 'nav-history',
+    description: 'History sidebar',
+    selector: '[data-testid="nav-history"]',
+    action: 'click',
+  },
+  {
+    id: 'nav-tools',
+    description: 'Tools sidebar',
+    selector: '[data-testid="nav-tools"]',
+    action: 'click',
+  },
+  {
+    id: 'nav-settings',
+    description: 'Project settings sidebar',
+    selector: '[data-testid="nav-settings"]',
+    action: 'click',
+  },
 ]
 
 export const FOOTER_ITEMS: InventoryItem[] = [
-  { id: 'footer-env', description: 'Environment manager', selector: '[data-testid="footer-env"]', action: 'click' },
-  { id: 'footer-enterprise', description: 'Enterprise modal', selector: '[data-testid="footer-enterprise"]', action: 'click' },
-  { id: 'footer-console', description: 'Console panel toggle', selector: '[data-testid="footer-console"]', action: 'click' },
+  {
+    id: 'footer-env',
+    description: 'Environment manager',
+    selector: '[data-testid="footer-env"]',
+    action: 'click',
+  },
+  {
+    id: 'footer-enterprise',
+    description: 'Enterprise modal',
+    selector: '[data-testid="footer-enterprise"]',
+    action: 'click',
+  },
+  {
+    id: 'footer-console',
+    description: 'Console panel toggle',
+    selector: '[data-testid="footer-console"]',
+    action: 'click',
+  },
 ]
 
 export const REQUEST_TABS: InventoryItem[] = [
-  { id: 'req-tab-params', description: 'Request Params tab', selector: '[data-testid="req-tab-params"]', action: 'click', requiresPage: 'apis' },
-  { id: 'req-tab-headers', description: 'Request Headers tab', selector: '[data-testid="req-tab-headers"]', action: 'click', requiresPage: 'apis' },
-  { id: 'req-tab-auth', description: 'Request Auth tab', selector: '[data-testid="req-tab-auth"]', action: 'click', requiresPage: 'apis' },
-  { id: 'req-tab-body', description: 'Request Body tab', selector: '[data-testid="req-tab-body"]', action: 'click', requiresPage: 'apis' },
-  { id: 'req-tab-scripts', description: 'Request Scripts tab', selector: '[data-testid="req-tab-scripts"]', action: 'click', requiresPage: 'apis' },
-  { id: 'req-tab-tests', description: 'Request Tests tab', selector: '[data-testid="req-tab-tests"]', action: 'click', requiresPage: 'apis' },
-  { id: 'req-tab-settings', description: 'Request Settings tab', selector: '[data-testid="req-tab-settings"]', action: 'click', requiresPage: 'apis' },
+  {
+    id: 'req-tab-params',
+    description: 'Request Params tab',
+    selector: '[data-testid="req-tab-params"]',
+    action: 'click',
+    requiresPage: 'apis',
+  },
+  {
+    id: 'req-tab-headers',
+    description: 'Request Headers tab',
+    selector: '[data-testid="req-tab-headers"]',
+    action: 'click',
+    requiresPage: 'apis',
+  },
+  {
+    id: 'req-tab-auth',
+    description: 'Request Auth tab',
+    selector: '[data-testid="req-tab-auth"]',
+    action: 'click',
+    requiresPage: 'apis',
+  },
+  {
+    id: 'req-tab-body',
+    description: 'Request Body tab',
+    selector: '[data-testid="req-tab-body"]',
+    action: 'click',
+    requiresPage: 'apis',
+  },
+  {
+    id: 'req-tab-scripts',
+    description: 'Request Scripts tab',
+    selector: '[data-testid="req-tab-scripts"]',
+    action: 'click',
+    requiresPage: 'apis',
+  },
+  {
+    id: 'req-tab-tests',
+    description: 'Request Tests tab',
+    selector: '[data-testid="req-tab-tests"]',
+    action: 'click',
+    requiresPage: 'apis',
+  },
+  {
+    id: 'req-tab-settings',
+    description: 'Request Settings tab',
+    selector: '[data-testid="req-tab-settings"]',
+    action: 'click',
+    requiresPage: 'apis',
+  },
 ]
 
 export const URL_BAR_ITEMS: InventoryItem[] = [
-  { id: 'url-input', description: 'URL input', selector: 'input[placeholder*="URL"], input[placeholder*="url"]', action: 'visible', requiresPage: 'apis' },
-  { id: 'send-btn', description: 'Send button', selector: '[data-testid="send-btn"]', action: 'visible', requiresPage: 'apis' },
-  { id: 'save-btn', description: 'Save endpoint button', selector: '[data-testid="save-btn"]', action: 'visible', requiresPage: 'apis' },
+  {
+    id: 'url-input',
+    description: 'URL input',
+    selector: 'input[placeholder*="URL"], input[placeholder*="url"]',
+    action: 'visible',
+    requiresPage: 'apis',
+  },
+  {
+    id: 'send-btn',
+    description: 'Send button',
+    selector: '[data-testid="send-btn"]',
+    action: 'visible',
+    requiresPage: 'apis',
+  },
+  {
+    id: 'save-btn',
+    description: 'Save endpoint button',
+    selector: '[data-testid="save-btn"]',
+    action: 'visible',
+    requiresPage: 'apis',
+  },
 ]
 
 export const KEYBOARD_SHORTCUTS: InventoryItem[] = [
-  { id: 'shortcut-palette', description: 'Command palette', selector: '[data-testid="command-palette"]', action: 'shortcut', shortcut: 'Meta+KeyK' },
-  { id: 'shortcut-cheatsheet', description: 'Shortcut cheatsheet', selector: '[data-testid="shortcut-cheatsheet"]', action: 'shortcut', shortcut: 'Shift+Slash' },
-  { id: 'shortcut-import', description: 'Import modal', selector: '[data-testid="import-modal"]', action: 'shortcut', shortcut: 'Meta+KeyO' },
-  { id: 'shortcut-settings', description: 'Settings modal', selector: '[data-testid="settings-modal"]', action: 'shortcut', shortcut: 'Meta+Comma' },
-  { id: 'shortcut-save-project', description: 'Save project modal', selector: '[data-testid="save-modal"]', action: 'shortcut', shortcut: 'Meta+Shift+KeyS' },
-  { id: 'shortcut-new-tab', description: 'New HTTP tab', selector: '[data-testid="workbench"]', action: 'shortcut', shortcut: 'Meta+KeyT' },
-  { id: 'shortcut-project-hub', description: 'Project hub', selector: '[data-testid="project-home"]', action: 'shortcut', shortcut: 'Meta+KeyP' },
+  {
+    id: 'shortcut-palette',
+    description: 'Command palette',
+    selector: '[data-testid="command-palette"]',
+    action: 'shortcut',
+    shortcut: 'Meta+KeyK',
+  },
+  {
+    id: 'shortcut-cheatsheet',
+    description: 'Shortcut cheatsheet',
+    selector: '[data-testid="shortcut-cheatsheet"]',
+    action: 'shortcut',
+    shortcut: 'Shift+Slash',
+  },
+  {
+    id: 'shortcut-import',
+    description: 'Import modal',
+    selector: '[data-testid="import-modal"]',
+    action: 'shortcut',
+    shortcut: 'Meta+KeyO',
+  },
+  {
+    id: 'shortcut-settings',
+    description: 'Settings modal',
+    selector: '[data-testid="settings-modal"]',
+    action: 'shortcut',
+    shortcut: 'Meta+Comma',
+  },
+  {
+    id: 'shortcut-save-project',
+    description: 'Save project modal',
+    selector: '[data-testid="save-modal"]',
+    action: 'shortcut',
+    shortcut: 'Meta+Shift+KeyS',
+  },
+  {
+    id: 'shortcut-new-tab',
+    description: 'New HTTP tab',
+    selector: '[data-testid="workbench"]',
+    action: 'shortcut',
+    shortcut: 'Meta+KeyT',
+  },
+  {
+    id: 'shortcut-project-hub',
+    description: 'Project hub',
+    selector: '[data-testid="project-home"]',
+    action: 'shortcut',
+    shortcut: 'Meta+KeyP',
+  },
 ]
 
 /** All tools from TOOL_CATALOG — opened via command palette search. */
+/**
+ * Tools that live on the **Tools** page.
+ *
+ * The security-flavoured tools (JWT Debugger, WS-Security, Keystore Studio,
+ * TLS Inspector, JWK/JWKS) moved to the dedicated **Security** page — they are
+ * listed in SECURITY_TOOL_NAMES below and must be asserted there. Keeping them
+ * in this list made 06-tools / 19-tools-deep fail on every nightly run since
+ * the Security page landed.
+ */
 export const TOOL_NAMES = [
-  'JWT Debugger',
   'JSON Formatter',
   'XML Formatter',
   'Encode / Decode',
@@ -72,7 +227,6 @@ export const TOOL_NAMES = [
   'JSON ↔ XML Converter',
   'XSLT Evaluator',
   'Jolt Evaluator',
-  'WS-Security',
   'Hash Calculator',
   'HMAC Generator',
   'Epoch Converter',
@@ -82,6 +236,9 @@ export const TOOL_NAMES = [
   'Regex Tester',
   'YAML ↔ JSON',
 ] as const
+
+/** Tools that live on the Security page (sidebar → Security). */
+export const SECURITY_TOOL_NAMES = ['JWT Debugger', 'WS-Security'] as const
 
 /** Protocol entries in New (+) dropdown. */
 /** Project detail modal sidebar tabs (ProjectDetailModal). */
