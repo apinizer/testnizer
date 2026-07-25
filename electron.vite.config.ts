@@ -23,7 +23,7 @@ async function loadVisualizer(): Promise<PluginOption | null> {
     // eslint-disable-next-line no-console
     console.warn(
       '[electron.vite.config] ANALYZE=true but rollup-plugin-visualizer is not installed. ' +
-        'Run: npm install --save-dev rollup-plugin-visualizer'
+        'Run: npm install --save-dev rollup-plugin-visualizer',
     )
     return null
   }
@@ -53,7 +53,12 @@ export default defineConfig(async () => {
       //   • System Node ≥22 HIDES this class of bug: it supports require(ESM),
       //     so a plain `node -e "require('uuid')"` test passes while Electron
       //     (Node 20) crashes. Verify launch with the built app, not bare node.
-      plugins: [externalizeDepsPlugin({ exclude: ['uuid'] })],
+      //   • `jose` (#63/#73) is the same shape as uuid: "type":"module" with only
+      //     an ESM `default` export condition and NO `require` condition, so it
+      //     must be BUNDLED too. All main-side jose usage is funnelled through
+      //     src/main/lib/jose-runtime.ts — keep it that way, so this exclusion
+      //     stays the single lever that decides how jose enters the bundle.
+      plugins: [externalizeDepsPlugin({ exclude: ['uuid', 'jose'] })],
       build: {
         rollupOptions: {
           external: [
@@ -62,19 +67,19 @@ export default defineConfig(async () => {
             'ws',
             'eventsource',
             '@grpc/grpc-js',
-            '@grpc/proto-loader'
-          ]
-        }
-      }
+            '@grpc/proto-loader',
+          ],
+        },
+      },
     },
     preload: {
-      plugins: [externalizeDepsPlugin()]
+      plugins: [externalizeDepsPlugin()],
     },
     renderer: {
       resolve: {
         alias: {
-          '@renderer': resolve('src/renderer')
-        }
+          '@renderer': resolve('src/renderer'),
+        },
       },
       plugins: rendererPlugins,
       build: {
@@ -88,10 +93,10 @@ export default defineConfig(async () => {
               if (id.includes('node_modules/monaco-editor/')) return 'monaco-editor'
               if (id.includes('node_modules/@monaco-editor/')) return 'monaco-editor'
               return undefined
-            }
-          }
-        }
-      }
-    }
+            },
+          },
+        },
+      },
+    },
   }
 })
