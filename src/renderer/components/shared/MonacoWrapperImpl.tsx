@@ -205,6 +205,11 @@ export default function MonacoWrapperImpl({
   const handleEditorMount = (ed: editor.IStandaloneCodeEditor, monaco: Monaco) => {
     monacoRef.current = monaco
     editorRef.current = ed
+    // A remount brings a NEW editor: the previous collection belongs to a
+    // disposed one, and calling `.set()` on it would throw (and take the whole
+    // decoration path down with it). Drop it so the first apply below creates a
+    // fresh collection against this editor.
+    decoCollectionRef.current = null
     ensureVariableStyle()
     if (!readOnly) {
       registerVariableCompletionProvider(monaco)
