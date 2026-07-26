@@ -175,12 +175,27 @@ export async function closeAllTabs(page: Page): Promise<void> {
   //      subsequent Cmd+W then goes into the MODAL — so the loop burned every
   //      iteration pressing a shortcut at a dialog that only has buttons.
   //
-  // Bound the loop by what is actually open, and discard on the dialog so the
-  // close goes through.
+  // Prefer the app's own bulk action: one right-click instead of hundreds of
+  // Cmd+W round-trips (by the tail of the sweep the loop below took ~90s), and
+  // "Force" is dirty-tab-proof by construction.
   const open = await page
     .getByTestId('endpoint-tab')
     .count()
     .catch(() => 0)
+  if (open === 0) return
+  try {
+    await page.getByTestId('endpoint-tab').first().click({ button: 'right' })
+    const force = page.getByRole('button', { name: /Force Close All Tabs/i })
+    await force.waitFor({ state: 'visible', timeout: 2_000 })
+    await force.click()
+    await expect(page.getByTestId('endpoint-tab')).toHaveCount(0, { timeout: 5_000 })
+    return
+  } catch {
+    // Menu unavailable (no tab bar on this screen, menu markup changed) — fall
+    // through to the keyboard path below.
+    await page.keyboard.press('Escape').catch(() => {})
+  }
+
   for (let i = 0; i < open * 2 + 10; i++) {
     const tabs = await page
       .getByTestId('endpoint-tab')

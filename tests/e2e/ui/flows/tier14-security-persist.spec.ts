@@ -214,6 +214,21 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
       await expect(actual).not.toContainText('secret')
       await expect(actual).not.toContainText('user:secret@')
     }
+
+    // Settle the request before leaving. Port 9 is the discard port — nothing
+    // answers — so this send can outlive the test, and `isLoading` (with it the
+    // Send button, which flips to Cancel) lives in a GLOBAL store rather than
+    // per tab. A leftover in-flight request therefore hands the NEXT spec a
+    // Cancel button: F5 clicked "Send", silently cancelled THIS request instead
+    // of issuing its own, and then timed out for 30s waiting for a response
+    // pane that was never coming.
+    const send = window.getByTestId('send-btn')
+    const stillSending = await send
+      .textContent()
+      .then((t) => /Cancel|İptal/i.test(t ?? ''))
+      .catch(() => false)
+    if (stillSending) await send.click().catch(() => {})
+    await expect(send).not.toContainText(/Cancel|İptal/i, { timeout: 15_000 })
   })
 })
 
