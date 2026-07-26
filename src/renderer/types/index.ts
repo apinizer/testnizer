@@ -41,6 +41,7 @@ export type Protocol =
   | 'tools.keystore'
   | 'tools.tlsInspect'
   | 'tools.jwk'
+  | 'tools.saml'
 
 export const TOOL_PROTOCOLS = [
   'tools.jwt',
@@ -69,6 +70,7 @@ export const TOOL_PROTOCOLS = [
   'tools.keystore',
   'tools.tlsInspect',
   'tools.jwk',
+  'tools.saml',
 ] as const satisfies readonly Protocol[]
 export type ToolProtocol = (typeof TOOL_PROTOCOLS)[number]
 export function isToolProtocol(p: Protocol): p is ToolProtocol {
@@ -617,6 +619,139 @@ export interface WsSecurityConfig {
   passwordType?: 'PasswordText' | 'PasswordDigest'
   /** @deprecated legacy single-mode fields (auto-migrated) */
   addTimestamp?: boolean
+}
+
+// ─── SAML (#65, Faz E) ───────────────────────────────────────
+
+/**
+ * Renderer-side mirror of the SAML engine contracts
+ * (`src/main/protocols/saml.engine.ts`). Hand-kept in sync, exactly like
+ * `WsSignConfig` ↔ the engine's `SignConfig`.
+ *
+ * NOTE the deliberate asymmetry: the engine accepts `string | Date` for
+ * instants and `Date` attribute values; the renderer only ever sends strings
+ * (its forms are text inputs), so the mirror narrows to `string`.
+ */
+export type SamlSignAlgorithm = 'RSA-SHA256' | 'RSA-SHA512' | 'ECDSA-SHA256' | 'ECDSA-SHA512'
+
+export type SamlSignatureTarget = 'assertion' | 'response' | 'root'
+
+export type SamlBinding = 'redirect' | 'post'
+
+export interface SamlAttributeInput {
+  name: string
+  nameFormat?: string
+  friendlyName?: string
+  values: (string | number | boolean)[]
+  valueType?: string
+}
+
+export interface SamlSubjectConfig {
+  nameId: string
+  nameIdFormat?: string
+  nameQualifier?: string
+  spNameQualifier?: string
+  recipient?: string
+  inResponseTo?: string
+  confirmationMethod?: string
+  confirmationNotOnOrAfterSeconds?: number
+}
+
+interface SamlDeterministicFields {
+  id?: string
+  issueInstant?: string
+  now?: string
+}
+
+export interface SamlAuthnRequestConfig extends SamlDeterministicFields {
+  issuer: string
+  destination?: string
+  assertionConsumerServiceURL?: string
+  protocolBinding?: string
+  nameIdFormat?: string
+  allowCreate?: boolean
+  forceAuthn?: boolean
+  isPassive?: boolean
+  authnContextClassRef?: string
+  comparison?: 'exact' | 'minimum' | 'maximum' | 'better'
+}
+
+export interface SamlAssertionConfig extends SamlDeterministicFields {
+  issuer: string
+  subject: SamlSubjectConfig
+  audience?: string | string[]
+  notBeforeSkewSeconds?: number
+  notOnOrAfterSeconds?: number
+  sessionIndex?: string
+  authnInstant?: string
+  authnContextClassRef?: string
+  includeAuthnStatement?: boolean
+  attributes?: SamlAttributeInput[]
+}
+
+export interface SamlResponseConfig extends SamlDeterministicFields {
+  issuer: string
+  destination?: string
+  inResponseTo?: string
+  statusCode?: string
+  statusSubCode?: string
+  statusMessage?: string
+  /** Pre-built (possibly already signed) assertion XML — embedded verbatim. */
+  assertionXml?: string
+  assertion?: SamlAssertionConfig
+}
+
+export interface SamlDocument {
+  xml: string
+  id: string
+  issueInstant: string
+  assertionId?: string
+}
+
+/**
+ * The ONE key-material shape every key-bearing SAML IPC payload uses.
+ * `inline` (pasted PEM) is the DEFAULT; `source` is one ADDED arm resolved in
+ * MAIN — the renderer never sees a resolved key.
+ */
+export type SamlKeyInput =
+  | { inline: { certPem?: string; privateKeyPem?: string; passphrase?: string } }
+  | { source: MaterialSource }
+
+export interface SamlVerifyOptions {
+  requireSignedId?: string
+  requireAssertionSigned?: boolean
+  now?: string
+  clockSkewSeconds?: number
+  validateConditions?: boolean
+  expectedAudience?: string
+  expectedInResponseTo?: string
+}
+
+export interface SamlVerifyCheck {
+  name: string
+  ok: boolean
+  detail?: string
+}
+
+export interface SamlVerifyResult {
+  valid: boolean
+  reason?: string
+  signedReferences: string[]
+  signedContent: string[]
+  signedElement?: { id: string; localName: string }
+  signatureMethod?: string
+  digestMethod?: string
+  canonicalizationMethod?: string
+  certInfo?: {
+    subject?: string
+    issuer?: string
+    notBefore?: string
+    notAfter?: string
+  }
+  conditions?: { notBefore?: string; notOnOrAfter?: string; audiences: string[] }
+  subject?: { nameId?: string; format?: string }
+  /** Every check that ran, in order — the "why did it fail" report. */
+  checks: SamlVerifyCheck[]
 }
 
 export interface WsdlParseResult {

@@ -288,6 +288,17 @@ const api = {
     decrypt: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('wsse:decrypt', payload),
   },
 
+  // ─── SAML (#65) ───────────────────────────────────────────
+  // Payloads carry an OPAQUE key reference at most — the resolved PEM and the
+  // private key never cross back over this bridge.
+  saml: {
+    build: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('saml:build', payload),
+    sign: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('saml:sign', payload),
+    verify: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('saml:verify', payload),
+    encode: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('saml:encode', payload),
+    decode: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('saml:decode', payload),
+  },
+
   // ─── Diagnostics ──────────────────────────────────────────
   diagnostics: {
     export: (): Promise<unknown> => ipcRenderer.invoke('diagnostics:export'),

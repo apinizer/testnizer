@@ -32,6 +32,7 @@ const SECURITY_TOOLS = [
   'OTP Authenticator',
   'Keystore Studio',
   'TLS Inspector',
+  'SAML',
 ] as const
 
 /** A self-signed test key pair, small enough to paste into an editor. */
@@ -98,9 +99,25 @@ uiTest.describe('Security page', () => {
     await expectNoErrorBoundary(window)
   })
 
+  uiTest('SAML builds an assertion from the form', async ({ window }) => {
+    await window.getByText('SAML', { exact: false }).first().click()
+    await expect(window.getByTestId('workbench')).toBeVisible()
+    const build = window.getByRole('button', { name: /Build|Oluştur/i }).first()
+    if (await build.isVisible().catch(() => false)) {
+      await build.click()
+      // A built assertion is XML carrying the SAML namespace — not an error.
+      await expect(window.getByText(/Assertion|saml2?:|urn:oasis/i).first()).toBeVisible({
+        timeout: 8_000,
+      })
+    }
+    await expectNoErrorBoundary(window)
+  })
+
   uiTest('the Security page search filters the tool list', async ({ window }) => {
     const search = window
-      .locator('input[placeholder*="Search"], input[placeholder*="search"], input[placeholder*="Ara"]')
+      .locator(
+        'input[placeholder*="Search"], input[placeholder*="search"], input[placeholder*="Ara"]',
+      )
       .first()
     await search.fill('Keystore')
     await expect(window.getByText('Keystore Studio', { exact: false }).first()).toBeVisible()

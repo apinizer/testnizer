@@ -26,6 +26,7 @@ import {
   FileKey,
   Globe,
   Key,
+  IdCard,
 } from 'lucide-react'
 import type { ToolProtocol } from '../types'
 
@@ -168,6 +169,16 @@ export const TOOL_CATALOG: ToolCatalogItem[] = [
     labelKey: 'tools.wsse.title',
     bg: '#e8f4ff',
     color: '#0066cc',
+    section: 'security',
+  },
+  {
+    // Directly after WS-Security: the same XML-DSig machinery one layer up
+    // (build → sign → verify a SAML assertion, plus the two web bindings).
+    protocol: 'tools.saml',
+    Icon: IdCard,
+    labelKey: 'tools.saml.title',
+    bg: '#fff4e0',
+    color: '#b35a00',
     section: 'security',
   },
   // ── utility calculators ──

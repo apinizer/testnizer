@@ -44,6 +44,7 @@ import QrTool from '../tools/QrTool'
 import KeystoreTool from '../tools/KeystoreTool'
 import TlsInspectorTool from '../tools/TlsInspectorTool'
 import JwkTool from '../tools/JwkTool'
+import SamlTool from '../tools/SamlTool'
 import MockServerEditor from '../mock/MockServerEditor'
 import RightPanel from './RightPanel'
 import EdgeResizeHandle from './EdgeResizeHandle'
@@ -108,6 +109,7 @@ const TOOL_COMPONENTS: Record<string, ComponentType> = {
   'tools.keystore': KeystoreTool,
   'tools.tlsInspect': TlsInspectorTool,
   'tools.jwk': JwkTool,
+  'tools.saml': SamlTool,
 }
 
 function EndpointTabBar() {

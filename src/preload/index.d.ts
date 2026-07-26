@@ -29,6 +29,16 @@ import type {
   TestSuiteFolderRow,
   TestSuiteContents,
   MaterialSource,
+  SamlAuthnRequestConfig,
+  SamlAssertionConfig,
+  SamlResponseConfig,
+  SamlDocument,
+  SamlKeyInput,
+  SamlSignAlgorithm,
+  SamlSignatureTarget,
+  SamlVerifyOptions,
+  SamlVerifyResult,
+  SamlBinding,
 } from '../renderer/types'
 
 // ─── Auth ────────────────────────────────────────────────────────
@@ -2305,6 +2315,60 @@ interface WsseApi {
   }): Promise<IpcResult<string>>
 }
 
+// ─── SAML (#65) ──────────────────────────────────────────────────
+
+type SamlBuildRequestDto =
+  | { kind: 'authnRequest'; config: SamlAuthnRequestConfig }
+  | { kind: 'assertion'; config: SamlAssertionConfig }
+  | { kind: 'response'; config: SamlResponseConfig }
+
+interface SamlSignRequestDto {
+  xml: string
+  algorithm: SamlSignAlgorithm
+  signatureTarget?: SamlSignatureTarget
+  referenceId?: string
+  /**
+   * `{ inline: {...} }` — pasted PEM, the DEFAULT path — or `{ source }`, an
+   * OPAQUE keystore reference resolved in MAIN. The resolved PEM and private
+   * key never come back across this bridge.
+   */
+  key: SamlKeyInput
+}
+
+interface SamlVerifyRequestDto {
+  xml: string
+  /** The TRUST ANCHOR — never the certificate embedded in the document. */
+  key: SamlKeyInput
+  options?: SamlVerifyOptions
+}
+
+interface SamlEncodeRequestDto {
+  xml: string
+  binding: SamlBinding
+  urlEncode?: boolean
+}
+
+interface SamlDecodeRequestDto {
+  value: string
+  binding: SamlBinding
+  maxInflatedBytes?: number
+}
+
+interface SamlApi {
+  build(payload: SamlBuildRequestDto): Promise<IpcResult<SamlDocument>>
+  /** Returns ONLY the signed XML — never the key it was signed with. */
+  sign(payload: SamlSignRequestDto): Promise<IpcResult<{ xml: string }>>
+  /**
+   * A rejected document still resolves `success:true` with
+   * `{ valid:false, reason, checks }` so the UI can show WHICH guarantee failed
+   * (XSW, disallowed algorithm, DOCTYPE, …). Only a key-material failure gives
+   * `success:false`.
+   */
+  verify(payload: SamlVerifyRequestDto): Promise<IpcResult<SamlVerifyResult>>
+  encode(payload: SamlEncodeRequestDto): Promise<IpcResult<{ value: string }>>
+  decode(payload: SamlDecodeRequestDto): Promise<IpcResult<{ xml: string }>>
+}
+
 // ─── Diagnostics ─────────────────────────────────────────────────
 
 interface ThirdPartyLicenseEntry {
@@ -2352,6 +2416,7 @@ interface ApiBridge {
   importExport: ImportExportApi
   soap: SoapApi
   wsse: WsseApi
+  saml: SamlApi
   diagnostics: DiagnosticsApi
   ws: WsApi
   runner: RunnerApi

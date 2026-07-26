@@ -23,6 +23,7 @@ import { registerCertificateHandlers } from './certificate.handler'
 import { registerOtpHandlers } from './otp.handler'
 import { registerKeystoreHandlers } from './keystore.handler'
 import { registerWsseHandlers } from './wsse.handler'
+import { registerSamlHandlers } from './saml.handler'
 import { registerJoseHandlers } from './jose.handler'
 import { registerJwksHandlers } from './jwks.handler'
 import { registerDialogHandlers } from './dialog.handler'
@@ -59,6 +60,7 @@ export function registerAllHandlers(): void {
   registerOtpHandlers()
   registerKeystoreHandlers()
   registerWsseHandlers()
+  registerSamlHandlers()
   registerJoseHandlers()
   registerJwksHandlers()
   registerDialogHandlers()
