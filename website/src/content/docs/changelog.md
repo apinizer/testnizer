@@ -10,6 +10,47 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.5.0
+
+**The security release.** Testnizer now does the certificate, key, token and
+signature work that used to mean `keytool`, `openssl`, jwt.io and a folder of
+one-off scripts — offline, in the same window as your requests.
+
+A new **Security** page collects it all: **Keystore Studio** (open, create,
+edit, convert and export JKS / PKCS#12 keystores and X.509 certificates),
+**JWK / JWKS** (PEM ⇄ JWK, RFC 7638 thumbprints, and serving a JWKS from a mock
+server), **JWT / JOSE** (sign and verify HS/RS/PS/ES, JWE, verify against a
+JWKS), **SAML** (build, sign with XML-DSig, and validate — the validator proves
+*which* element was signed, so wrapping attacks, HMAC algorithm confusion,
+SHA-1, XXE and expired bearer windows are rejected with the exact reason),
+**TLS Inspector**, WS-Security, OTP and the password generator.
+
+Certificates and private keys can now come from a saved keystore anywhere they
+are needed — mTLS, WS-Security signing, JWT/JOSE, SAML — and the key itself
+never reaches the window you are looking at. **Nothing changes unless you use
+it:** pasting a PEM and picking CRT/KEY/PFX files stay the default everywhere.
+
+Scripts join in too: `pm.jose.sign / verify` (and `require('jose')`) let a
+pre-request script mint a token that the next request sends, identically on Send
+and in the Collection Runner.
+
+**Runner: Setup / Teardown that actually runs.** Requests can be tagged *Setup*,
+*Flow* or *Teardown*; teardown still executes when the run stops early — stop on
+error, a network failure, or Stop — and is tallied separately so cleanup can
+neither rescue nor sink a run.
+
+⚠️ **Behaviour change:** the Collection Runner now attaches project client
+certificates, exactly like Send. Runs that previously went out with no
+certificate may now present one — check that every *Client Certificate* entry
+has a specific host rather than `*`.
+
+Also fixed: Add Request → HTTP opens the editor; Add Folder asks for a name;
+the collapse chevron works while searching; context menus no longer get clipped
+at the window edge; running a second folder shows that folder's run; export
+filenames keep Turkish characters; a new test suite lands where the input said;
+Test-suite folders can be managed by hand; AI Chat text is selectable and no
+longer snaps to the bottom mid-stream.
+
 ## v1.4.37
 
 **Client certificates (mTLS) are now actually sent with the request.**

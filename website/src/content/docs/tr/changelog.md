@@ -11,6 +11,49 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.5.0
+
+**Güvenlik sürümü.** Testnizer artık daha önce `keytool`, `openssl`, jwt.io ve
+bir klasör dolusu betik gerektiren sertifika, anahtar, token ve imza işlerini
+kendi içinde yapıyor — çevrimdışı, isteklerinizle aynı pencerede.
+
+Yeni bir **Güvenlik** sayfası hepsini bir araya topluyor: **Keystore Studio**
+(JKS / PKCS#12 keystore'ları ve X.509 sertifikalarını açma, oluşturma,
+düzenleme, dönüştürme ve dışa aktarma), **JWK / JWKS** (PEM ⇄ JWK, RFC 7638
+parmak izleri ve mock sunucudan JWKS yayınlama), **JWT / JOSE** (HS/RS/PS/ES
+imzalama ve doğrulama, JWE, JWKS ile doğrulama), **SAML** (oluşturma, XML-DSig
+ile imzalama ve doğrulama — doğrulayıcı *hangi* elemanın imzalandığını kanıtlar;
+böylece sarmalama saldırıları, HMAC algoritma karışıklığı, SHA-1, XXE ve süresi
+dolmuş bearer pencereleri gerekçesiyle birlikte reddedilir), **TLS Inspector**,
+WS-Security, OTP ve parola üretici.
+
+Sertifikalar ve özel anahtarlar artık ihtiyaç duyulan her yerde — mTLS,
+WS-Security imzalama, JWT/JOSE, SAML — kayıtlı bir keystore'dan gelebiliyor ve
+anahtarın kendisi baktığınız pencereye hiç ulaşmıyor. **Kullanmadığınız sürece
+hiçbir şey değişmiyor:** PEM yapıştırmak ve CRT/KEY/PFX dosyası seçmek her
+ekranda varsayılan olarak kalıyor.
+
+Betikler de dahil: `pm.jose.sign / verify` (ve `require('jose')`) ile bir
+ön-istek betiği token üretip sonraki isteğin göndermesini sağlayabiliyor — Send
+ve Collection Runner'da birebir aynı.
+
+**Runner: gerçekten çalışan Setup / Teardown.** İstekler *Setup*, *Flow* veya
+*Teardown* olarak işaretlenebiliyor; koşu erken bitse bile (hata durdurması, ağ
+hatası veya Stop) teardown yine çalışıyor ve ayrı sayılıyor — temizlik bir koşuyu
+ne kurtarabiliyor ne de batırabiliyor.
+
+⚠️ **Davranış değişikliği:** Collection Runner artık proje istemci
+sertifikalarını tıpkı Send gibi ekliyor. Daha önce sertifikasız giden koşular
+artık sertifika sunabilir — her *İstemci Sertifikası* kaydının `*` yerine belirli
+bir host taşıdığını kontrol edin.
+
+Ayrıca düzeltildi: Add Request → HTTP editörü açıyor; Add Folder isim soruyor;
+arama açıkken klasör daraltma çalışıyor; context menüler pencere kenarında
+kırpılmıyor; ikinci klasörde Run o klasörün koşusunu gösteriyor; dışa aktarma
+dosya adları Türkçe karakterleri koruyor; yeni test suite'i input'un vaat ettiği
+yerde oluşuyor; Test suite klasörleri elle yönetilebiliyor; AI Chat metni
+seçilebiliyor ve akış sırasında ekran dibe zıplamıyor.
+
 ## v1.4.37
 
 **İstemci sertifikaları (mTLS) artık istekle birlikte gerçekten gönderiliyor.**
