@@ -52,14 +52,33 @@ export function stripWsSecuritySecrets<T extends WsSecurityConfig>(config: T): T
   } as T
 }
 
-/** Human label for a stored source, used when a consumer persisted no label. */
-export function describeSource(source: MaterialSource | null | undefined): string {
+/**
+ * Human label for a stored source, used when a consumer persisted no label.
+ *
+ * A `MaterialSource` is deliberately opaque — it carries ids, not names — so
+ * without a resolver the keystore case can only print its UUID, which is what
+ * every consumer showed after a reload dropped the pick-time label. Callers
+ * that can reach the keystore library should pass `resolveKeystoreName`; doing
+ * it here (rather than persisting the label) also means a renamed keystore
+ * shows its new name instead of a stale one.
+ */
+export function describeSource(
+  source: MaterialSource | null | undefined,
+  resolve?: {
+    keystoreName?: (keystoreId: string) => string | undefined
+    certHost?: (certificateId: string) => string | undefined
+  },
+): string {
   if (!source) return ''
   switch (source.kind) {
-    case 'keystore':
-      return `keystore '${source.keystoreId}' › ${source.alias}`
-    case 'certRow':
-      return `certificate ${source.certificateId}`
+    case 'keystore': {
+      const name = resolve?.keystoreName?.(source.keystoreId)
+      return `keystore '${name ?? source.keystoreId}' › ${source.alias}`
+    }
+    case 'certRow': {
+      const host = resolve?.certHost?.(source.certificateId)
+      return `certificate ${host ?? source.certificateId}`
+    }
     case 'file':
       return source.pfxPath || source.certPath || 'file'
     case 'inline':

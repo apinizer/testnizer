@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from '../../lib/i18n'
+import { useKeystoreStore } from '../../stores/keystore.store'
 import KeyMaterialPicker, {
   type KeyMaterialFilter,
   type KeyMaterialSelection,
@@ -39,6 +40,42 @@ export default function KeyMaterialField({
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
 
+  // The pick-time label is component state, so anything that remounts this
+  // field — reopening the tab, switching protocols, restoring persisted config
+  // — loses it and falls back to `describeSource`. That printed the raw
+  // keystore UUID, which reads like a bug even though the selection is intact.
+  // Resolve the name from the library instead, loading it if this is the first
+  // consumer to need it.
+  const library = useKeystoreStore((s) => s.library)
+  const loadLibrary = useKeystoreStore((s) => s.loadLibrary)
+  const needsLibrary = !label && value?.kind === 'keystore' && library.length === 0
+  useEffect(() => {
+    if (needsLibrary) void loadLibrary()
+  }, [needsLibrary, loadLibrary])
+
+  // Same story for a project certificate: the picker labels it by host, the
+  // fallback only has the row id.
+  const [certHosts, setCertHosts] = useState<Record<string, string>>({})
+  const needsCertHosts =
+    !label &&
+    value?.kind === 'certRow' &&
+    !!projectId &&
+    certHosts[value.certificateId] === undefined
+  useEffect(() => {
+    if (!needsCertHosts || !projectId) return
+    let cancelled = false
+    void (async () => {
+      const res = (await window.api?.certificate?.list(projectId)) as
+        | { success: boolean; data?: Array<{ id: string; host?: string }> }
+        | undefined
+      if (cancelled || !res?.success || !res.data) return
+      setCertHosts(Object.fromEntries(res.data.map((c) => [c.id, c.host || '*'])))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [needsCertHosts, projectId])
+
   return (
     <div className="space-y-1">
       {value ? (
@@ -47,7 +84,11 @@ export default function KeyMaterialField({
             className="rounded px-2 py-0.5"
             style={{ background: 'var(--accent-light)', color: 'var(--accent-text)' }}
           >
-            {label || describeSource(value)}
+            {label ||
+              describeSource(value, {
+                keystoreName: (id) => library.find((e) => e.id === id)?.name,
+                certHost: (id) => certHosts[id],
+              })}
           </span>
           <button
             type="button"
