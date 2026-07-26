@@ -18,7 +18,7 @@ import {
   listEnvVariables,
 } from '../../helpers/ui/assert-ipc'
 import { fillUrl, saveRequestToTree } from '../../helpers/ui/request-flow'
-import { addCertificateIpc } from '../../helpers/ui/db-flow'
+import { addCertificateIpc, deleteCertificateIpc } from '../../helpers/ui/db-flow'
 import { importLocalProjectFile } from '../../helpers/ui/export-flow'
 import {
   envVarRowByKey,
@@ -85,24 +85,35 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
     async ({ window }) => {
       const projectId = await getActiveProjectId(window)
       const fakeExe = path.join(CERT_DIR, 'client.crt').replace(/\.crt$/, '.exe')
-      await addCertificateIpc(window, {
+      const certId = await addCertificateIpc(window, {
         projectId,
         kind: 'client',
         host: '127.0.0.1',
         crtPath: fakeExe,
         keyPath: path.join(CERT_DIR, 'client.key'),
       })
-      await openHttpRequestTab(window)
-      await fillUrl(window, `${localHttpBin()}/get?cert-whitelist=1`)
-      await window.getByTestId('send-btn').click()
-      // The rule since the mTLS fix: a matched client certificate that cannot be
-      // read fails the request with a clear message. Silently sending it
-      // UNAUTHENTICATED (the old "ignored, still 200" behaviour this test used to
-      // assert) is exactly the failure mode that made servers answer with cryptic
-      // credential errors.
-      await expect(window.getByText(/could not be loaded|certificate/i).first()).toBeVisible({
-        timeout: 20_000,
-      })
+      try {
+        await openHttpRequestTab(window)
+        await fillUrl(window, `${localHttpBin()}/get?cert-whitelist=1`)
+        await window.getByTestId('send-btn').click()
+        // The rule since the mTLS fix: a matched client certificate that cannot be
+        // read fails the request with a clear message. Silently sending it
+        // UNAUTHENTICATED (the old "ignored, still 200" behaviour this test used to
+        // assert) is exactly the failure mode that made servers answer with cryptic
+        // credential errors.
+        await expect(window.getByText(/could not be loaded|certificate/i).first()).toBeVisible({
+          timeout: 20_000,
+        })
+      } finally {
+        // MANDATORY, and the reason this is a `finally`: certificates match by
+        // HOST, every spec here talks to 127.0.0.1, and this fixture is broken on
+        // purpose. Left in the DB it does exactly what it promises — fails the
+        // next spec's Send at the transport layer, with no status code, so the
+        // response pane renders its error panel and the next test waits out its
+        // full timeout on a tab row that will never appear. That is precisely how
+        // F5 "flaked" for three consecutive full sweeps.
+        await deleteCertificateIpc(window, certId)
+      }
     },
   )
 
@@ -205,9 +216,12 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
     await openHttpRequestTab(window)
     await fillUrl(window, 'http://user:secret@127.0.0.1:9/get')
     await window.getByTestId('send-btn').click()
+    // Short timeout on purpose: this tab only exists once a response arrives,
+    // and the request above is aimed at a dead port. The default 30s would be
+    // spent entirely inside the catch, for nothing.
     await window
       .getByTestId('res-tab-actualRequest')
-      .click()
+      .click({ timeout: 3_000 })
       .catch(() => {})
     const actual = window.getByTestId('actual-request-panel')
     if (await actual.isVisible().catch(() => false)) {
