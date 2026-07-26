@@ -378,6 +378,22 @@ jobs:
           node scripts/verify-natives.js --platform=darwin --arch=arm64
           node scripts/verify-natives.js --platform=darwin --arch=x64
 
+      # Tester drop WITHOUT a tag. `workflow_dispatch` already builds every
+      # target with `--publish never`; until now the installers were thrown
+      # away with the runner. Keeping them lets a release candidate reach
+      # testers without pushing a `v*` tag — which would fire issue-sync's
+      # release gate (closes issues), republish the website against an RC and
+      # put an unvetted build in front of auto-update. Short retention: the
+      # cleanup job above exists because Actions storage fills fast.
+      - name: Upload installers for manual testing
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: testnizer-macos
+          path: dist/ready-packages/*
+          retention-days: 7
+          if-no-files-found: error
+
   # ---------------------------------------------------------------------------
   # Linux — native x64 on ubuntu-latest, native arm64 on ubuntu-24.04-arm.
   # Both run electron-rebuild against the host's glibc, which matches the
@@ -459,6 +475,17 @@ jobs:
 
       - name: Verify native binaries
         run: node scripts/verify-natives.js --platform=linux --arch=${{ matrix.arch }}
+
+      # See the macOS job for why manual dispatch — not a tag — is how a
+      # release candidate reaches testers.
+      - name: Upload installers for manual testing
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: testnizer-linux-${{ matrix.arch }}
+          path: dist/ready-packages/*
+          retention-days: 7
+          if-no-files-found: error
 
   # ---------------------------------------------------------------------------
   # Windows — ONE job builds BOTH arches (x64 native + arm64 cross-build) on a
@@ -594,6 +621,18 @@ jobs:
         run: |
           node scripts/verify-natives.js --platform=win32 --arch=x64
           node scripts/verify-natives.js --platform=win32 --arch=arm64
+
+      # See the macOS job. NOTE: these .exe files are UNSIGNED — Authenticode
+      # signing is a manual per-release step (scripts/sign-windows.sh), so a
+      # dispatch build always trips SmartScreen. Testers need the install note.
+      - name: Upload installers for manual testing
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: testnizer-windows
+          path: dist/ready-packages/*
+          retention-days: 7
+          if-no-files-found: error
 
   # ---------------------------------------------------------------------------
   # Update the release body on tag pushes.
