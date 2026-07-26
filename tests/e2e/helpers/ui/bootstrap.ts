@@ -165,7 +165,23 @@ export async function dismissOverlays(page: Page): Promise<void> {
  */
 export async function closeAllTabs(page: Page): Promise<void> {
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
-  for (let i = 0; i < 40; i++) {
+  // Two ways this used to give up silently, both of which left tabs on screen
+  // and made the CALLER fail with an unrelated-looking assertion (MST-179 hunted
+  // a Tests HOME screen that open tabs were covering):
+  //
+  //   1. A fixed 40-iteration cap. Nothing closes 41 tabs, and by the tail of
+  //      the ~736-case sweep far more than 40 have piled up.
+  //   2. A DIRTY tab. Cmd+W on one opens the unsaved-changes dialog, and every
+  //      subsequent Cmd+W then goes into the MODAL — so the loop burned every
+  //      iteration pressing a shortcut at a dialog that only has buttons.
+  //
+  // Bound the loop by what is actually open, and discard on the dialog so the
+  // close goes through.
+  const open = await page
+    .getByTestId('endpoint-tab')
+    .count()
+    .catch(() => 0)
+  for (let i = 0; i < open * 2 + 10; i++) {
     const tabs = await page
       .getByTestId('endpoint-tab')
       .count()
@@ -173,6 +189,12 @@ export async function closeAllTabs(page: Page): Promise<void> {
     if (tabs === 0) return
     await page.keyboard.press(`${mod}+KeyW`)
     await page.waitForTimeout(80)
+
+    const discard = page.getByTestId('unsaved-discard-btn')
+    if (await discard.isVisible().catch(() => false)) {
+      await discard.click().catch(() => {})
+      await page.waitForTimeout(80)
+    }
   }
 }
 

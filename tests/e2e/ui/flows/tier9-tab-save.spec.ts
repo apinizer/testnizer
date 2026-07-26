@@ -33,7 +33,10 @@ uiTest.describe('Tier 9 — Tab & save lifecycle journeys', () => {
 
     // Freshly saved → clean.
     await expect(activeTab(window)).toHaveAttribute('data-dirty', 'false', { timeout: 8_000 })
-    await expect(window.getByTestId('tab-dirty')).toHaveCount(0)
+    // Scoped to THIS tab. Unscoped, the count also sees dirty tabs left open by
+    // earlier specs in the shared Electron instance — the assertion then failed
+    // on someone else's state while the line above proved our own tab clean.
+    await expect(activeTab(window).getByTestId('tab-dirty')).toHaveCount(0)
 
     // Editing the URL marks the tab dirty.
     await fillUrl(window, `${http()}/get?v=2`)
