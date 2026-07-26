@@ -23,10 +23,22 @@ function ensureVariableStyle(): void {
   document.head.appendChild(style)
 }
 
-/** Scan the model and apply variable highlight decorations. */
-function applyVariableHighlights(ed: editor.IStandaloneCodeEditor, prev: string[]): string[] {
+/**
+ * Scan the model and apply the `{{variable}}` highlight decorations.
+ *
+ * Uses a decorations COLLECTION rather than `deltaDecorations(prev, next)`.
+ * The old call was made from inside `onDidChangeModelContent`, and Monaco
+ * refuses a nested delta with "Invoking deltaDecorations recursively could
+ * lead to leaking decorations" — which it logged on essentially every keystroke
+ * in an editor containing variables. A collection owns its own ids, so there is
+ * no prev/next handoff to re-enter.
+ */
+function applyVariableHighlights(
+  ed: editor.IStandaloneCodeEditor,
+  collectionRef: { current: editor.IEditorDecorationsCollection | null },
+): void {
   const model = ed.getModel()
-  if (!model) return prev
+  if (!model) return
   const text = model.getValue()
   const re = /\{\{[^}]*?\}\}/g
   const decos: editor.IModelDeltaDecoration[] = []
@@ -39,7 +51,8 @@ function applyVariableHighlights(ed: editor.IStandaloneCodeEditor, prev: string[
       options: { inlineClassName: VARIABLE_DECO_CLASS },
     })
   }
-  return ed.deltaDecorations(prev, decos)
+  if (collectionRef.current) collectionRef.current.set(decos)
+  else collectionRef.current = ed.createDecorationsCollection(decos)
 }
 
 // Bundle Monaco locally — @monaco-editor/react defaults to loading from a
@@ -187,7 +200,7 @@ export default function MonacoWrapperImpl({
       : theme
   const monacoRef = useRef<Monaco | null>(null)
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
-  const decoIdsRef = useRef<string[]>([])
+  const decoCollectionRef = useRef<editor.IEditorDecorationsCollection | null>(null)
 
   const handleEditorMount = (ed: editor.IStandaloneCodeEditor, monaco: Monaco) => {
     monacoRef.current = monaco
@@ -197,9 +210,14 @@ export default function MonacoWrapperImpl({
       registerVariableCompletionProvider(monaco)
     }
     // Initial highlight + refresh on content change
-    decoIdsRef.current = applyVariableHighlights(ed, decoIdsRef.current)
+    applyVariableHighlights(ed, decoCollectionRef)
     ed.onDidChangeModelContent(() => {
-      decoIdsRef.current = applyVariableHighlights(ed, decoIdsRef.current)
+      // Leave the change-event stack before touching decorations: Monaco is
+      // still mid-notification here, and re-entering it is what produced the
+      // recursion warning.
+      queueMicrotask(() => {
+        if (editorRef.current === ed) applyVariableHighlights(ed, decoCollectionRef)
+      })
     })
   }
 
@@ -209,7 +227,7 @@ export default function MonacoWrapperImpl({
     // If `value` prop changes from outside, refresh decorations too
     const ed = editorRef.current
     if (ed) {
-      decoIdsRef.current = applyVariableHighlights(ed, decoIdsRef.current)
+      applyVariableHighlights(ed, decoCollectionRef)
     }
   }, [value])
 

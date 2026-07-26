@@ -7,7 +7,14 @@
       Content-Security-Policy for the renderer. This is a desktop app that
       must never connect to the open internet from the renderer process —
       all network traffic flows through the main process via IPC. We therefore
-      forbid `connect-src` to anywhere. Monaco Editor needs `blob:` workers
+      forbid `connect-src` to anywhere.
+
+      NOTE: `frame-ancestors` is deliberately absent. Browsers IGNORE it when it
+      arrives via a <meta> element (it is header-only) and log a console error
+      saying so on every load — which the screen-error tripwire in the E2E suite
+      correctly flags. It was doing nothing here; embedding protection for a
+      packaged desktop app comes from the window itself, not from this tag.
+      Monaco Editor needs `blob:` workers
       and inline styles, and the app uses inline styles via Tailwind and
       Zustand hydration, so `'unsafe-inline'` is kept for styles only.
       `'unsafe-eval'` is required so user-authored pre-request and
@@ -18,7 +25,7 @@
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; frame-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; frame-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'"
     />
     <title>Testnizer</title>
   </head>

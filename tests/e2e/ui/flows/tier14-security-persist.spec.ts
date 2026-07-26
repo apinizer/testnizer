@@ -11,11 +11,21 @@ import {
   openHttpRequestTab,
 } from '../../helpers/ui/bootstrap'
 import { createProject, goToProjectHome } from '../../helpers/ui/workspace-flow'
-import { createFolder, getActiveProjectId, listEnvironmentsByProject, listEnvVariables } from '../../helpers/ui/assert-ipc'
+import {
+  createFolder,
+  getActiveProjectId,
+  listEnvironmentsByProject,
+  listEnvVariables,
+} from '../../helpers/ui/assert-ipc'
 import { fillUrl, saveRequestToTree } from '../../helpers/ui/request-flow'
 import { addCertificateIpc } from '../../helpers/ui/db-flow'
 import { importLocalProjectFile } from '../../helpers/ui/export-flow'
-import { envVarRowByKey, openEnvModal, selectEnvironmentInModal, setupEnvironment } from '../../helpers/ui/env'
+import {
+  envVarRowByKey,
+  openEnvModal,
+  selectEnvironmentInModal,
+  setupEnvironment,
+} from '../../helpers/ui/env'
 import {
   addMockEndpoint,
   addMockResponse,
@@ -70,21 +80,31 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
     expect(move?.error?.length).toBeGreaterThan(0)
   })
 
-  uiTest('MST-283 .exe cert path is ignored on send (no crash)', async ({ window }) => {
-    const projectId = await getActiveProjectId(window)
-    const fakeExe = path.join(CERT_DIR, 'client.crt').replace(/\.crt$/, '.exe')
-    await addCertificateIpc(window, {
-      projectId,
-      kind: 'client',
-      host: '127.0.0.1',
-      crtPath: fakeExe,
-      keyPath: path.join(CERT_DIR, 'client.key'),
-    })
-    await openHttpRequestTab(window)
-    await fillUrl(window, `${localHttpBin()}/get?cert-whitelist=1`)
-    await window.getByTestId('send-btn').click()
-    await expect(window.getByText(/200|OK/i).first()).toBeVisible({ timeout: 20_000 })
-  })
+  uiTest(
+    'MST-283 a non-certificate (.exe) cert path FAILS LOUD instead of sending',
+    async ({ window }) => {
+      const projectId = await getActiveProjectId(window)
+      const fakeExe = path.join(CERT_DIR, 'client.crt').replace(/\.crt$/, '.exe')
+      await addCertificateIpc(window, {
+        projectId,
+        kind: 'client',
+        host: '127.0.0.1',
+        crtPath: fakeExe,
+        keyPath: path.join(CERT_DIR, 'client.key'),
+      })
+      await openHttpRequestTab(window)
+      await fillUrl(window, `${localHttpBin()}/get?cert-whitelist=1`)
+      await window.getByTestId('send-btn').click()
+      // The rule since the mTLS fix: a matched client certificate that cannot be
+      // read fails the request with a clear message. Silently sending it
+      // UNAUTHENTICATED (the old "ignored, still 200" behaviour this test used to
+      // assert) is exactly the failure mode that made servers answer with cryptic
+      // credential errors.
+      await expect(window.getByText(/could not be loaded|certificate/i).first()).toBeVisible({
+        timeout: 20_000,
+      })
+    },
+  )
 
   uiTest('MST-285 tree:move folder into itself is rejected', async ({ window }) => {
     const projectId = await getActiveProjectId(window)
@@ -109,35 +129,44 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
     expect(res.error?.length).toBeGreaterThan(0)
   })
 
-  uiTest('MST-287 secret env export marks type secret and masks current value in UI', async ({ window }) => {
-    const secretVal = `leak-guard-${uid()}`
-    const envName = `SecretEnv ${uid()}`
-    await setupEnvironment(window, envName, [
-      { key: 'apiSecret', initialValue: secretVal, currentValue: secretVal, secret: true },
-    ])
+  uiTest(
+    'MST-287 secret env export marks type secret and masks current value in UI',
+    async ({ window }) => {
+      const secretVal = `leak-guard-${uid()}`
+      const envName = `SecretEnv ${uid()}`
+      await setupEnvironment(window, envName, [
+        { key: 'apiSecret', initialValue: secretVal, currentValue: secretVal, secret: true },
+      ])
 
-    await openEnvModal(window)
-    await selectEnvironmentInModal(window, envName)
-    // hasValue geçerli bir filter değil — value-scan tabanlı satır locator'ı kullan.
-    const row = await envVarRowByKey(window, 'apiSecret')
-    const current = row.getByTestId('env-var-current')
-    await expect(current).toHaveAttribute('type', 'password')
-    await expect(row.locator('select')).toHaveValue('secret')
+      await openEnvModal(window)
+      await selectEnvironmentInModal(window, envName)
+      // hasValue geçerli bir filter değil — value-scan tabanlı satır locator'ı kullan.
+      const row = await envVarRowByKey(window, 'apiSecret')
+      const current = row.getByTestId('env-var-current')
+      await expect(current).toHaveAttribute('type', 'password')
+      await expect(row.locator('select')).toHaveValue('secret')
 
-    const projectId = await getActiveProjectId(window)
-    let envId = ''
-    await expect
-      .poll(async () => {
-        const envs = (await listEnvironmentsByProject(window, projectId)) as Array<{ id: string; name: string }>
-        envId = envs.find((e) => e.name === envName)?.id ?? ''
-        return envId
-      })
-      .not.toBe('')
-    const vars = (await listEnvVariables(window, envId)) as Array<{ key: string; secret?: boolean | number }>
-    expect(vars.find((v) => v.key === 'apiSecret')?.secret).toBeTruthy()
+      const projectId = await getActiveProjectId(window)
+      let envId = ''
+      await expect
+        .poll(async () => {
+          const envs = (await listEnvironmentsByProject(window, projectId)) as Array<{
+            id: string
+            name: string
+          }>
+          envId = envs.find((e) => e.name === envName)?.id ?? ''
+          return envId
+        })
+        .not.toBe('')
+      const vars = (await listEnvVariables(window, envId)) as Array<{
+        key: string
+        secret?: boolean | number
+      }>
+      expect(vars.find((v) => v.key === 'apiSecret')?.secret).toBeTruthy()
 
-    await window.keyboard.press('Escape')
-  })
+      await window.keyboard.press('Escape')
+    },
+  )
 
   uiTest('MST-288 mock infinite-loop script times out without crashing app', async ({ window }) => {
     const port = randomMockPort()
@@ -157,7 +186,11 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
     const url = await getMockEndpointUrl(window)
     const hit = await window.evaluate(async (u) => {
       const w = window as unknown as Window & {
-        api?: { request?: { send: (p: unknown) => Promise<{ success: boolean; data?: { status?: number } }> } }
+        api?: {
+          request?: {
+            send: (p: unknown) => Promise<{ success: boolean; data?: { status?: number } }>
+          }
+        }
       }
       const res = await w.api?.request?.send({ method: 'GET', url: u })
       return res?.data?.status ?? 0
@@ -172,7 +205,10 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
     await openHttpRequestTab(window)
     await fillUrl(window, 'http://user:secret@127.0.0.1:9/get')
     await window.getByTestId('send-btn').click()
-    await window.getByTestId('res-tab-actualRequest').click().catch(() => {})
+    await window
+      .getByTestId('res-tab-actualRequest')
+      .click()
+      .catch(() => {})
     const actual = window.getByTestId('actual-request-panel')
     if (await actual.isVisible().catch(() => false)) {
       await expect(actual).not.toContainText('secret')
@@ -184,7 +220,9 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
 async function listSaved(page: import('@playwright/test').Page, projectId: string) {
   return page.evaluate(async (pid) => {
     const w = window as unknown as Window & {
-      api?: { savedRequest?: { list: (id: string) => Promise<{ success: boolean; data?: unknown[] }> } }
+      api?: {
+        savedRequest?: { list: (id: string) => Promise<{ success: boolean; data?: unknown[] }> }
+      }
     }
     const res = await w.api?.savedRequest?.list(pid)
     return res?.data ?? []
