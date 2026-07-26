@@ -10,6 +10,7 @@ import {
   openNewDropdownItem,
 } from '../../helpers/ui/bootstrap'
 import { importFixtureViaIpc } from '../../helpers/ui/import-flow'
+import { treeClearSearch, treeSearch } from '../../helpers/ui/tree'
 import { localHttpBin } from '../../helpers/test-servers'
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -24,11 +25,18 @@ uiTest.describe('Tur1 — SOAP WSDL [MST-106]', () => {
   uiTest('MST-106 WSDL import creates SOAP endpoints in tree', async ({ window }) => {
     const folder = `WSDL ${uid()}`
     await importFixtureViaIpc(window, 'wsdl', 'sample.wsdl', folder)
+    // Search first. These specs share one Electron instance and by this point
+    // the tree holds hundreds of nodes from earlier specs, so a freshly imported
+    // folder is simply not on screen — the assertion then reports "element(s)
+    // not found" about a folder that is very much in the database.
+    await treeSearch(window, folder)
     await expect(window.getByTestId('tree-node').filter({ hasText: folder })).toBeVisible({ timeout: 20_000 })
     // sample.wsdl defines Calculator operations
     await expect
       .poll(async () => window.getByTestId('tree-node').filter({ hasText: /Add|Calculator|E2E/i }).count())
       .toBeGreaterThan(0)
+    // Never leave a filter behind — it hides nodes from the NEXT spec.
+    await treeClearSearch(window)
   })
 
   uiTest('MST-106 manual SOAP envelope send returns 200', async ({ window }) => {

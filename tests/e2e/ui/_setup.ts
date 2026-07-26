@@ -48,7 +48,7 @@ const KNOWN_BENIGN_CONSOLE_ERRORS: RegExp[] = [
  * Worker-scoped Electron fixture for UI E2E.
  * Bootstraps once per worker: EULA → guest login → test project.
  */
-export const uiTest = test.extend<{ errorGuard: void }, UiFixtures>({
+export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, UiFixtures>({
   app: [
     async ({}, use) => {
       const mainPath = path.resolve(__dirname, '../../../out/main/index.js')
@@ -71,6 +71,29 @@ export const uiTest = test.extend<{ errorGuard: void }, UiFixtures>({
       await use(win)
     },
     { scope: 'worker' },
+  ],
+  /**
+   * Clear the APIs tree filter BEFORE every test (auto).
+   *
+   * These specs share ONE Electron instance, so a search query typed by an
+   * earlier test is still filtering the tree when the next one starts — and a
+   * node that exists in the database is then simply absent from the DOM. The
+   * failure reads "element(s) not found" about something the test just created,
+   * which sends you hunting a persistence bug that isn't there.
+   *
+   * Deliberately in the SETUP phase, not teardown: a test should not have to
+   * clean up after the previous one, and running here keeps this out of the way
+   * of `errorGuard`'s post-test assertion.
+   */
+  treeFilterReset: [
+    async ({ window }, use) => {
+      const search = window.getByTestId('tree-search')
+      if (await search.isVisible().catch(() => false)) {
+        await search.fill('').catch(() => {})
+      }
+      await use()
+    },
+    { auto: true },
   ],
   /**
    * Per-test screen-throw tripwire (auto — runs for EVERY ui test).
