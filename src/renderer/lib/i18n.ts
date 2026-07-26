@@ -713,9 +713,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'sidebar.history': 'History',
     'sidebar.tools': 'Tools',
     'sidebar.security': 'Security',
-    'security.stores': 'Stores',
     'security.tools': 'Tools',
-    'security.storesHint': 'Keystores and certificates you save appear here.',
     'sidebar.settings': 'Settings',
     'sidebar.invite': 'Invite',
 
@@ -2803,9 +2801,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'sidebar.history': 'Geçmiş',
     'sidebar.tools': 'Araçlar',
     'sidebar.security': 'Güvenlik',
-    'security.stores': 'Depolar',
     'security.tools': 'Araçlar',
-    'security.storesHint': 'Kaydettiğiniz keystore ve sertifikalar burada görünür.',
     'sidebar.settings': 'Ayarlar',
     'sidebar.invite': 'Davet Et',
 

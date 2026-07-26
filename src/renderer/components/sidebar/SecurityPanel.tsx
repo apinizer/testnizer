@@ -89,15 +89,12 @@ export default function SecurityPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto" style={{ padding: '6px 6px' }}>
-        {/* Stores section — populated by Keystore library (#59) + Certificates (#60). */}
-        {!q && (
-          <>
-            <SectionHeader label={t('security.stores')} />
-            <div style={{ padding: '4px 12px 8px', fontSize: 12, color: T.ghost }}>
-              {t('security.storesHint')}
-            </div>
-          </>
-        )}
+        {/* No "Stores" section here on purpose. It used to render a standing
+            promise — "keystores and certificates you save appear here" — that
+            nothing ever fulfilled: saving to the library writes a row that only
+            Keystore Studio's own start screen reads. Two surfaces for one list
+            is worse than one, and an empty section that never fills reads as a
+            lost save. The library lives with the tool that owns it. */}
 
         {/* Tools section. */}
         {!q && <SectionHeader label={t('security.tools')} />}
