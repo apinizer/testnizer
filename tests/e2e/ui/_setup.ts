@@ -68,7 +68,7 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
       // then take the process down.
       await Promise.race([
         app.close().catch(() => {}),
-        new Promise((resolve) => setTimeout(resolve, 45_000)),
+        new Promise((resolve) => setTimeout(resolve, 20_000)),
       ])
       try {
         app.process().kill('SIGKILL')
@@ -76,7 +76,15 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
         /* already gone */
       }
 
-      if (fs.existsSync(userDataDir)) fs.rmSync(userDataDir, { recursive: true, force: true })
+      // Deleting the directory is the other half of the same problem: ~700 tests
+      // fill it with Chromium caches, and removing that tree on CI's disk costs
+      // minutes of WORKER teardown — which Playwright budgets against the same
+      // timeout and which then fails a run where every test passed. The runner
+      // is thrown away wholesale, so skip it there and keep the cleanup where a
+      // machine actually persists between runs.
+      if (!process.env.CI && fs.existsSync(userDataDir)) {
+        fs.rmSync(userDataDir, { recursive: true, force: true })
+      }
     },
     { scope: 'worker', timeout: 180_000 },
   ],
