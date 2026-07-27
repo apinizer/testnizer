@@ -9,7 +9,7 @@ import {
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
-import { bootstrapWorkbench } from '../helpers/ui/bootstrap'
+import { bootstrapWorkbench, closeAllTabs } from '../helpers/ui/bootstrap'
 import { electronLaunchOptions } from '../helpers/electron-env'
 
 export interface UiFixtures {
@@ -91,6 +91,23 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
       if (await search.isVisible().catch(() => false)) {
         await search.fill('').catch(() => {})
       }
+
+      // Cap the tab count too. The Workbench keeps EVERY open tab MOUNTED and
+      // only toggles visibility, so each one holds its editors (Monaco included)
+      // alive. Nothing closes tabs between specs, so across ~736 tests the
+      // shared instance climbs past 35 — which a 32 GB dev machine absorbs and a
+      // 7 GB CI runner does not: the app there died with "Target page, context
+      // or browser has been closed" in five specs, and opening 10 tabs took 61s
+      // instead of the asserted 10s. This stayed invisible until the node:sqlite
+      // collection crash was fixed and the full suite ran on CI for the first
+      // time. Reset above a threshold rather than every test, so specs that
+      // deliberately open many tabs still exercise that path.
+      const open = await window
+        .getByTestId('endpoint-tab')
+        .count()
+        .catch(() => 0)
+      if (open > 12) await closeAllTabs(window).catch(() => {})
+
       await use()
     },
     { auto: true },
