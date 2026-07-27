@@ -17,6 +17,11 @@ on:
     paths-ignore:
       - 'website/**'
   workflow_dispatch:
+    inputs:
+      full_e2e:
+        description: 'Run the FULL ui suite (~2.5h) instead of the curated subset'
+        type: boolean
+        default: false
   # Nightly full renderer-e2e run. The per-PR renderer-e2e job below runs only a
   # curated fast subset (workers:1 makes the full ~165-spec UI suite too slow to
   # gate every push); this schedule runs the WHOLE `--project=ui` suite once a
@@ -237,11 +242,19 @@ jobs:
       - name: Build renderer + main
         run: npm run build
 
-      # push / PR → curated subset; nightly cron & manual dispatch → full suite.
+      # Nightly cron → full suite. EVERYTHING else, including manual dispatch →
+      # curated subset.
+      #
+      # Dispatch used to run the full sweep too, which meant a run whose PURPOSE
+      # is producing installers for a tester was gated behind a 2.5-hour job —
+      # the same suite takes 19 minutes on a developer machine, and CI's shared,
+      # GPU-less runner is roughly eight times slower. That turned every attempt
+      # at a fix into a 2.5-hour round trip. The full sweep still runs every
+      # night, where nobody is waiting on it.
       - name: Select E2E scope
         id: scope
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full_e2e }}" = "true" ]; then
             echo "full=true" >> "$GITHUB_OUTPUT"
           else
             echo "full=false" >> "$GITHUB_OUTPUT"

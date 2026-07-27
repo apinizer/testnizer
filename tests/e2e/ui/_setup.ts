@@ -9,6 +9,7 @@ import {
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { bootstrapWorkbench, closeAllTabs } from '../helpers/ui/bootstrap'
 import { electronLaunchOptions } from '../helpers/electron-env'
 
@@ -89,18 +90,31 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
       // is already gone. Nothing is lost: this is a temp profile we throw away,
       // and the app's real graceful-shutdown path has its own coverage in
       // shell-quit.spec.ts rather than riding on fixture teardown.
+      // Kill the TREE, not just the parent. Measured on CI: SIGKILL on the main
+      // process alone still left `close()` hanging for the full 10s cap, because
+      // Electron's renderer/GPU/zygote children survive and keep the inherited
+      // stdio pipes open — so the parent's 'close' event never fires, and both
+      // our await and Playwright's own teardown sit on it. That is the ~230s the
+      // timing marks could not account for.
+      const pid = app.process().pid
+      if (pid) {
+        try {
+          execFileSync('pkill', ['-9', '-P', String(pid)], { stdio: 'ignore' })
+        } catch {
+          /* no children, or pkill unavailable */
+        }
+      }
       try {
         app.process().kill('SIGKILL')
       } catch {
         /* already gone */
       }
-      mark('SIGKILL sent')
+      mark('process tree killed')
 
-      await Promise.race([
-        app.close().catch(() => {}),
-        new Promise((resolve) => setTimeout(resolve, 10_000)),
-      ])
-      mark('app.close settled after kill')
+      // Deliberately NOT awaiting app.close(): the process is gone, so there is
+      // nothing left to close politely, and awaiting it is exactly what used to
+      // stall. Playwright reaps its own side.
+      void app.close().catch(() => {})
 
       // Deleting the directory is the other half of the same problem: ~700 tests
       // fill it with Chromium caches, and removing that tree on CI's disk costs
