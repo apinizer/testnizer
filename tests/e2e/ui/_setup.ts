@@ -58,10 +58,27 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
       const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'testnizer-ui-e2e-'))
       const app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
       await use(app)
-      await app.close()
+
+      // Bound the shutdown. A graceful close asks the app to close every open
+      // tab and flush the SQLite WAL; after ~700 tests on a slow runner that
+      // took longer than the fixture budget, and Playwright failed the ENTIRE
+      // run — "Fixture 'app' timeout exceeded", 733 tests passed, zero failed.
+      // A teardown hang is not a product defect and must not read as one. The
+      // worker is going away regardless, so give the polite path a window and
+      // then take the process down.
+      await Promise.race([
+        app.close().catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, 45_000)),
+      ])
+      try {
+        app.process().kill('SIGKILL')
+      } catch {
+        /* already gone */
+      }
+
       if (fs.existsSync(userDataDir)) fs.rmSync(userDataDir, { recursive: true, force: true })
     },
-    { scope: 'worker' },
+    { scope: 'worker', timeout: 180_000 },
   ],
   window: [
     async ({ app }, use) => {
