@@ -59,6 +59,18 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
       const app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
       await use(app)
 
+      // Teardown timing. Three rounds of "fix the expensive-looking thing and
+      // wait 2.5h for CI" narrowed this without ever measuring it; these marks
+      // say which step actually spends the budget. If they all report fast and
+      // the worker still times out, the remaining time is Playwright's own
+      // teardown, which is a different problem than ours.
+      const teardownStart = Date.now()
+      const mark = (step: string): void => {
+        // eslint-disable-next-line no-console
+        console.log(`[teardown +${Date.now() - teardownStart}ms] ${step}`)
+      }
+      mark('begin')
+
       // Bound the shutdown. A graceful close asks the app to close every open
       // tab and flush the SQLite WAL; after ~700 tests on a slow runner that
       // took longer than the fixture budget, and Playwright failed the ENTIRE
@@ -70,11 +82,14 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
         app.close().catch(() => {}),
         new Promise((resolve) => setTimeout(resolve, 20_000)),
       ])
+      mark('app.close settled (or 20s cap hit)')
+
       try {
         app.process().kill('SIGKILL')
       } catch {
         /* already gone */
       }
+      mark('SIGKILL sent')
 
       // Deleting the directory is the other half of the same problem: ~700 tests
       // fill it with Chromium caches, and removing that tree on CI's disk costs
@@ -84,7 +99,11 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
       // machine actually persists between runs.
       if (!process.env.CI && fs.existsSync(userDataDir)) {
         fs.rmSync(userDataDir, { recursive: true, force: true })
+        mark('userData removed')
+      } else {
+        mark('userData delete skipped (CI)')
       }
+      mark('fixture teardown done — anything beyond this is Playwright internal')
     },
     { scope: 'worker', timeout: 180_000 },
   ],
