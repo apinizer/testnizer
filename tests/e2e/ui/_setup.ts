@@ -78,18 +78,29 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
       // A teardown hang is not a product defect and must not read as one. The
       // worker is going away regardless, so give the polite path a window and
       // then take the process down.
-      await Promise.race([
-        app.close().catch(() => {}),
-        new Promise((resolve) => setTimeout(resolve, 20_000)),
-      ])
-      mark('app.close settled (or 20s cap hit)')
-
+      // Order matters, and the timing marks proved it. Asking politely first
+      // and abandoning the promise was the bug: on CI `app.close()` NEVER
+      // settled — the 20s cap was hit every single time — and the abandoned
+      // promise was still pending when Playwright's own worker teardown waited
+      // on the same close, burning the remaining ~220s of a 240s budget. A run
+      // where all 736 tests passed died there.
+      //
+      // So kill first. `close()` then resolves immediately because the process
+      // is already gone. Nothing is lost: this is a temp profile we throw away,
+      // and the app's real graceful-shutdown path has its own coverage in
+      // shell-quit.spec.ts rather than riding on fixture teardown.
       try {
         app.process().kill('SIGKILL')
       } catch {
         /* already gone */
       }
       mark('SIGKILL sent')
+
+      await Promise.race([
+        app.close().catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, 10_000)),
+      ])
+      mark('app.close settled after kill')
 
       // Deleting the directory is the other half of the same problem: ~700 tests
       // fill it with Chromium caches, and removing that tree on CI's disk costs
