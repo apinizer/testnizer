@@ -29,7 +29,15 @@ export default defineConfig({
       // teardown budget (733 passed, 0 failed, job red). Trace stays on: it IS
       // per-test, and it is what identified the leaked client certificate
       // behind F5.
-      use: { video: 'off' },
+      // `trace` has the same per-CONTEXT problem as video above: 'retain-on-failure'
+      // records continuously and only decides what to keep at the end, so a
+      // worker-scoped context accumulates one 2.5-hour buffer and finalizing it
+      // is what still blew the teardown budget after video was turned off —
+      // including on a run with zero failures, which is what rules out
+      // "saving on failure" as the cause. 'on-first-retry' starts a FRESH trace
+      // only when a test is actually retried, so nothing accumulates and a real
+      // CI failure still arrives with a trace attached.
+      use: { video: 'off', trace: 'on-first-retry' },
       // 90s is calibrated on a developer machine. CI runs the same suite under
       // xvfb with software rendering on two shared cores, where Monaco-heavy
       // screens are an order of magnitude slower — opening ten tabs measured
