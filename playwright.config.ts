@@ -21,7 +21,15 @@ export default defineConfig({
     {
       name: 'ui',
       testDir: './tests/e2e/ui',
-      timeout: 90_000,
+      // 90s is calibrated on a developer machine. CI runs the same suite under
+      // xvfb with software rendering on two shared cores, where Monaco-heavy
+      // screens are an order of magnitude slower — opening ten tabs measured
+      // 61s there against ~1s locally. Four specs consequently blew the 90s
+      // budget and reported "Target page, context or browser has been closed",
+      // which reads like a crash but is Playwright tearing the context down at
+      // the timeout. Give CI room rather than chase phantom crashes; the app
+      // being slow on weak hardware is tracked as its own concern.
+      timeout: process.env.CI ? 240_000 : 90_000,
     },
   ],
 })

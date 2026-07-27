@@ -170,10 +170,13 @@ uiTest.describe('Tur1 — SOAP versions [MST-110]', () => {
     }
 
     await window.getByRole('button', { name: /Generate Envelope/i }).click()
-    await window.waitForTimeout(300)
-    // The Monaco editor should now have a SOAP 1.1 envelope
-    const editorContent = await readSoapBodyMonaco(window)
-    expect(editorContent).toMatch(/schemas\.xmlsoap\.org\/soap\/envelope/i)
+    // Poll rather than sleep 300ms and read once: Monaco needs longer than that
+    // to paint on CI's software renderer, so the single read came back empty and
+    // the failure ("expected /schemas.xmlsoap.org/, received ''") looked like the
+    // app generated nothing.
+    await expect
+      .poll(async () => await readSoapBodyMonaco(window), { timeout: 20_000 })
+      .toMatch(/schemas\.xmlsoap\.org\/soap\/envelope/i)
   })
 
   uiTest('MST-110e SOAP 1.2 namespace used in generated envelope', async ({ window }) => {
@@ -187,8 +190,8 @@ uiTest.describe('Tur1 — SOAP versions [MST-110]', () => {
     }
 
     await window.getByRole('button', { name: /Generate Envelope/i }).click()
-    await window.waitForTimeout(300)
-    const editorContent = await readSoapBodyMonaco(window)
-    expect(editorContent).toMatch(/w3\.org\/2003\/05\/soap-envelope/i)
+    await expect
+      .poll(async () => await readSoapBodyMonaco(window), { timeout: 20_000 })
+      .toMatch(/w3\.org\/2003\/05\/soap-envelope/i)
   })
 })
