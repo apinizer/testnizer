@@ -21,6 +21,15 @@ export default defineConfig({
     {
       name: 'ui',
       testDir: './tests/e2e/ui',
+      // No video here. Video is recorded per BROWSER CONTEXT, not per test, and
+      // this project's Electron app is worker-scoped — one context for all 736
+      // tests. So `retain-on-failure` does not produce a clip per failure; it
+      // produces a single ~2.5-hour recording that tells you nothing about
+      // which test broke, and finalizing it is what kept blowing the worker
+      // teardown budget (733 passed, 0 failed, job red). Trace stays on: it IS
+      // per-test, and it is what identified the leaked client certificate
+      // behind F5.
+      use: { video: 'off' },
       // 90s is calibrated on a developer machine. CI runs the same suite under
       // xvfb with software rendering on two shared cores, where Monaco-heavy
       // screens are an order of magnitude slower — opening ten tabs measured
