@@ -129,6 +129,21 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
         mark('userData delete skipped (CI)')
       }
       mark('fixture teardown done — anything beyond this is Playwright internal')
+
+      // If the worker still refuses to exit past this point, something in the
+      // PROCESS is holding a handle open — a listening server, a live socket, a
+      // timer. Name it instead of guessing; that is what turned the last
+      // teardown mystery into a one-line fix.
+      const proc = process as unknown as {
+        getActiveResourcesInfo?: () => string[]
+        _getActiveHandles?: () => unknown[]
+      }
+      const resources = proc.getActiveResourcesInfo?.() ?? []
+      const handles = (proc._getActiveHandles?.() ?? []).map(
+        (h) => (h as { constructor?: { name?: string } })?.constructor?.name ?? 'unknown',
+      )
+      mark(`active resources: ${resources.join(',') || '(none)'}`)
+      mark(`active handles: ${handles.join(',') || '(none)'}`)
     },
     { scope: 'worker', timeout: 180_000 },
   ],

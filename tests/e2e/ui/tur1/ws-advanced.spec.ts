@@ -64,7 +64,23 @@ async function startSubprotocolServer(
   return {
     close: () =>
       new Promise((resolve, reject) => {
-        wss.close(() => httpServer.close((err) => (err ? reject(err) : resolve())))
+        // `wss.close()` stops accepting new clients; it does NOT hang up the
+        // ones already connected, and `httpServer.close()` then waits on those
+        // sockets. A server helper must not depend on the other side closing
+        // politely — the app under test is killed at teardown, so it never
+        // does. Terminate the clients and drop remaining connections, or the
+        // worker keeps a live handle and cannot exit.
+        for (const client of wss.clients) {
+          try {
+            client.terminate()
+          } catch {
+            /* already gone */
+          }
+        }
+        wss.close(() => {
+          httpServer.closeAllConnections?.()
+          httpServer.close((err) => (err ? reject(err) : resolve()))
+        })
       }),
   }
 }
@@ -86,7 +102,23 @@ async function startBinaryWsServer(port: number): Promise<{ close: () => Promise
   return {
     close: () =>
       new Promise((resolve, reject) => {
-        wss.close(() => httpServer.close((err) => (err ? reject(err) : resolve())))
+        // `wss.close()` stops accepting new clients; it does NOT hang up the
+        // ones already connected, and `httpServer.close()` then waits on those
+        // sockets. A server helper must not depend on the other side closing
+        // politely — the app under test is killed at teardown, so it never
+        // does. Terminate the clients and drop remaining connections, or the
+        // worker keeps a live handle and cannot exit.
+        for (const client of wss.clients) {
+          try {
+            client.terminate()
+          } catch {
+            /* already gone */
+          }
+        }
+        wss.close(() => {
+          httpServer.closeAllConnections?.()
+          httpServer.close((err) => (err ? reject(err) : resolve()))
+        })
       }),
   }
 }
