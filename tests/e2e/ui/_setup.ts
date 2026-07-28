@@ -109,7 +109,22 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
       } catch {
         /* already gone */
       }
-      mark('process tree killed')
+      // Killing the processes is not the same as releasing their HANDLES, and
+      // the handle report proved it: after the tree died the worker still held
+      // a ProcessWrap and seven PipeWraps — the Electron child and its stdio.
+      // Node counts those as live resources and refuses to exit, so Playwright
+      // waits, so the worker teardown times out on a shard where all 242 tests
+      // passed. Destroy the pipes and unref the child.
+      const child = app.process()
+      child.stdout?.destroy()
+      child.stderr?.destroy()
+      child.stdin?.destroy()
+      try {
+        child.unref()
+      } catch {
+        /* not unref-able */
+      }
+      mark('process tree killed, stdio destroyed, child unref-ed')
 
       // Deliberately NOT awaiting app.close(): the process is gone, so there is
       // nothing left to close politely, and awaiting it is exactly what used to
