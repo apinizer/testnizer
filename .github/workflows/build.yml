@@ -202,10 +202,23 @@ jobs:
   # gated on or slowed by this job; release keeps its own per-platform smoke.
   # ---------------------------------------------------------------------------
   renderer-e2e:
-    name: Renderer UI E2E (screen-render regression gate)
+    name: Renderer UI E2E ${{ matrix.shard }}/3 (screen-render regression gate)
     needs: quality
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
+    # Sharded for two reasons, both measured. Wall clock: one worker runs the
+    # 736-case sweep in 2.5h here (19 min on a dev machine — this runner has no
+    # GPU and shares two cores), which turned every CI question into a 2.5-hour
+    # round trip. And robustness: after ~700 tests in a SINGLE worker,
+    # Playwright's own Electron teardown stopped completing — our fixture
+    # teardown was measured at 27ms and all 736 tests passed, yet the job went
+    # red on a 240s worker-teardown timeout with nothing of ours left to blame.
+    # Three shorter-lived workers sidestep that accumulation and finish in
+    # parallel.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
 
@@ -267,12 +280,13 @@ jobs:
       # flows/ (their paths have a subdir before the digit).
       - name: Renderer UI E2E (Playwright, xvfb)
         run: |
+          SHARD="--shard=${{ matrix.shard }}/3"
           if [ "${{ steps.scope.outputs.full }}" = "true" ]; then
-            echo "Running FULL --project=ui suite (nightly / manual dispatch)"
-            xvfb-run -a npx playwright test --project=ui
+            echo "Running FULL --project=ui suite, shard ${{ matrix.shard }}/3"
+            xvfb-run -a npx playwright test --project=ui $SHARD
           else
-            echo "Running curated PR subset: numbered screen specs + inventory"
-            xvfb-run -a npx playwright test --project=ui 'tests/e2e/ui/[0-9]' 'tests/e2e/ui/inventory'
+            echo "Running curated subset, shard ${{ matrix.shard }}/3"
+            xvfb-run -a npx playwright test --project=ui $SHARD 'tests/e2e/ui/[0-9]' 'tests/e2e/ui/inventory'
           fi
         shell: bash
 
