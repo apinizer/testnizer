@@ -140,6 +140,15 @@ export interface RunnerExecuteOptions {
   // Set by executeCollectionForScheduler so we can tie this runner_history
   // row back to its scheduled_tasks row even after a rename / delete.
   scheduledTaskId?: string
+  /**
+   * Runner tab this run belongs to, used only to attribute Console entries
+   * (issue #79). Send already tags its entries with the tab that fired them;
+   * without this a run's traffic lands in the footer Console with no tab, so
+   * the per-tab Console view stays empty for the tab you actually ran from.
+   * Absent for scheduled runs, which have no tab — their entries are
+   * identified by the `run`/`task` metadata instead.
+   */
+  runTabId?: string
 }
 
 export interface RunnerExportOptions {

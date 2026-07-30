@@ -848,6 +848,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             iterationData: iterationData.length > 0 ? iterationData : undefined,
             folderName: runFolderName || undefined,
             sourceLabel,
+            runTabId: tabId,
           },
           { delay, iterations, stopOnError, persistResponses, keepVariableValues },
         ),

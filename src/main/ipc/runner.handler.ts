@@ -11,6 +11,12 @@ import {
 // Importing it (rather than copying the logic) is what keeps Send≡Run parity
 // structural: one host-match, one keystore branch, one fail-loud message.
 import { loadCertificatesFor } from './request.handler'
+// The Console panel is fed from the HANDLER layer, not the engine — Send logs
+// in `request.handler`, every protocol logs in its own handler. The runner
+// called the engine directly and logged nowhere, so a folder/suite run was
+// invisible in the Console even though the requests demonstrably went out
+// (issue #79).
+import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as endpointRepo from '../db/endpoint.repo'
 import * as tsiRepo from '../db/test-suite-item.repo'
 import * as historyRepo from '../db/history.repo'
@@ -572,6 +578,13 @@ interface ScriptContext {
   testResults: Array<{ name: string; passed: boolean; error?: string }>
   /** Console output produced by the script, level-preserving and capped. */
   consoleLogs: ScriptConsoleLog[]
+  /**
+   * Identifies this step in the app-wide Console panel. Set per step so a
+   * script's `console.log` reaches the same place a hand-sent request's does
+   * (issue #79) — `pm.environment.get(...)` debugging was unusable for runs
+   * because script output only ever landed in the run report.
+   */
+  consoleTag?: { tabId?: string; meta: Record<string, string | number | boolean> }
   /** In-flight `pm.sendRequest(...)` promises; the runner awaits these before
    *  finishing a script so callback-style sends complete. */
   pendingSends: Array<Promise<unknown>>
@@ -611,6 +624,29 @@ function newScriptContext(
     pendingSends: [],
     pendingTests: [],
   }
+}
+
+/**
+ * How a run's Console entries identify themselves.
+ *
+ * A run puts many rows in a Console that also carries hand-sent requests, so
+ * every row says which run, step, phase and iteration it came from. `tabId`
+ * mirrors what Send does, which is what makes the per-tab Console view work
+ * for a runner tab; a scheduled run has no tab and is identified by `task`.
+ */
+function runConsoleTag(
+  ctx: RunContext,
+  opts: { step?: string; phase?: RunPhase; iteration?: number } = {},
+): { tabId?: string; meta: Record<string, string | number | boolean> } {
+  const o = ctx.options
+  const meta: Record<string, string | number | boolean> = {
+    run: o.sourceLabel || o.folderName || 'Runner',
+  }
+  if (o.scheduledTaskId) meta.task = o.scheduledTaskId
+  if (opts.step) meta.step = opts.step
+  if (opts.phase) meta.phase = opts.phase
+  if (opts.iteration !== undefined) meta.iteration = opts.iteration
+  return { tabId: o.runTabId, meta }
 }
 
 interface ScriptResponseShape {
@@ -656,14 +692,25 @@ function pushConsoleLog(
     })
     return
   }
-  logs.push({
-    level,
-    message:
-      message.length > CONSOLE_LOG_MAX_CHARS
-        ? `${message.slice(0, CONSOLE_LOG_MAX_CHARS)}… (truncated)`
-        : message,
-    timestamp: Date.now(),
-  })
+  const text =
+    message.length > CONSOLE_LOG_MAX_CHARS
+      ? `${message.slice(0, CONSOLE_LOG_MAX_CHARS)}… (truncated)`
+      : message
+  logs.push({ level, message: text, timestamp: Date.now() })
+
+  // …and mirror it into the app-wide Console panel, where the Send path's
+  // script output already goes. The run report keeps its own copy: that one is
+  // persisted with the run, this one is live and sits next to the traffic.
+  if (ctx.consoleTag) {
+    logEvent({
+      protocol: 'http',
+      category: 'system',
+      level: level === 'warn' ? 'warning' : level === 'error' ? 'error' : 'info',
+      message: text,
+      tabId: ctx.consoleTag.tabId,
+      meta: ctx.consoleTag.meta,
+    })
+  }
 }
 
 async function runUserScript(
@@ -855,16 +902,39 @@ async function runUserScript(
         req: unknown,
         cb?: (err: Error | null, res: unknown) => void,
       ): Promise<unknown> => {
-        const run = executeHttpRequest(normalizeRunnerSendInput(req)).then((apiResp) =>
-          buildResponseShim({
+        const sendOptions = normalizeRunnerSendInput(req)
+        const run = executeHttpRequest(sendOptions).then((apiResp) => {
+          // Send's `pm.sendRequest` goes out through `request:send`, which
+          // logs it. Skipping it here would leave a scripted call visible on
+          // one path and invisible on the other — the parity class this file
+          // works hardest to avoid.
+          if (ctx.consoleTag) {
+            logRequestResponse({
+              protocol: 'http',
+              method: apiResp.actualRequest?.method ?? sendOptions.method,
+              url: apiResp.actualRequest?.url ?? sendOptions.url,
+              status: apiResp.status,
+              statusText: apiResp.statusText,
+              durationMs: apiResp.timing?.total,
+              sizeBytes: apiResp.bodySize,
+              requestHeaders: apiResp.actualRequest?.headers,
+              requestBody: apiResp.actualRequest?.body,
+              responseHeaders: apiResp.headers,
+              responseBody: apiResp.body,
+              error: apiResp.error ? { message: apiResp.error } : undefined,
+              tabId: ctx.consoleTag.tabId,
+              meta: { ...ctx.consoleTag.meta, via: 'pm.sendRequest' },
+            })
+          }
+          return buildResponseShim({
             status: apiResp.status,
             statusText: apiResp.statusText,
             headers: apiResp.headers,
             body: apiResp.body,
             bodySize: apiResp.bodySize,
             cookies: apiResp.cookies,
-          }),
-        )
+          })
+        })
         const handled = run.then(
           (res) => {
             if (cb) cb(null, res)
@@ -1412,6 +1482,8 @@ async function runEndpointStep(
   // Created OUTSIDE the try so the catch below can still report whatever the
   // pre-request script logged before the step blew up.
   const scriptCtx = newScriptContext(envVars, iterationData[iter] ?? {}, iter, iterations)
+  const consoleTag = runConsoleTag(ctx, { step: endpoint.name, phase, iteration })
+  scriptCtx.consoleTag = consoleTag
 
   try {
     // Resolve inherited auth + cascade scripts up the folder/project chain.
@@ -1507,6 +1579,30 @@ async function runEndpointStep(
     }
 
     const response = await executeHttpRequest(resolvedOptions)
+
+    // Mirror Send: report exactly what hit the wire, from the engine's own
+    // `actualRequest`. Uncapped on purpose — the Console keeps a rolling
+    // buffer, and silently dropping a run's rows would recreate the "the
+    // Console says nothing happened" complaint this fixes.
+    logRequestResponse({
+      protocol:
+        endpoint.protocol === 'soap' || endpoint.protocol === 'graphql'
+          ? endpoint.protocol
+          : 'http',
+      method: response.actualRequest?.method ?? resolvedOptions.method,
+      url: response.actualRequest?.url ?? resolvedOptions.url,
+      status: response.status,
+      statusText: response.statusText,
+      durationMs: response.timing?.total,
+      sizeBytes: response.bodySize,
+      requestHeaders: response.actualRequest?.headers,
+      requestBody: response.actualRequest?.body,
+      responseHeaders: response.headers,
+      responseBody: response.body,
+      error: response.error ? { message: response.error } : undefined,
+      tabId: consoleTag.tabId,
+      meta: consoleTag.meta,
+    })
 
     // Run post-response (test) scripts in cascade order (project →
     // folder(s) → request). They share the run's script context, so a
@@ -1674,6 +1770,20 @@ async function runEndpointStep(
     // only the main phase has a sequence to jump around in.
     return { ...outcome, nextRequestName: scriptCtx.nextRequestName }
   } catch (e) {
+    // A step that never reached a response is the one you most want to see in
+    // the Console — DNS failure, TLS refusal, an unloadable client cert.
+    try {
+      logRequestResponse({
+        protocol: 'http',
+        method: requestOptions.method,
+        url: requestOptions.url,
+        error: { message: (e as Error).message },
+        tabId: consoleTag.tabId,
+        meta: consoleTag.meta,
+      })
+    } catch {
+      /* logger must never break the run */
+    }
     const result: EndpointRunResult = {
       endpointId,
       endpointName: endpoint.name,
@@ -1713,6 +1823,7 @@ async function runHookScript(
   if (!script || !script.trim()) return null
   const startedAt = Date.now()
   const scriptCtx = newScriptContext(ctx.envVars, ctx.iterationData[0] ?? {}, 0, ctx.iterations)
+  scriptCtx.consoleTag = runConsoleTag(ctx, { step: label, phase })
   // A hook that THROWS at top level (a bad await, a failed token fetch) must be
   // visible: without this the exception escaped the run, no row was recorded,
   // and a "Run setup script" that never fetched its token looked like nothing
