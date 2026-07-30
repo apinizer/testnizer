@@ -237,6 +237,12 @@ export default function ProjectDetailModal() {
         icon_color: editIconColor,
       })
 
+      // Both writes below used to be swallowed as "non-critical" and the success
+      // toast fired regardless — so a failed git-config or project-settings save
+      // was reported to the user as "Project settings saved". They are part of
+      // what the button promises to save; a failure has to reach the surface.
+      const failures: string[] = []
+
       if (editSaveMode === 'git' || editSaveMode === 'both') {
         if (editGitUrl) {
           try {
@@ -252,16 +258,22 @@ export default function ProjectDetailModal() {
               branch: editGitBranch,
               token: editGitToken || gitConfig?.token,
             })
-          } catch {
-            /* non-critical */
+          } catch (e) {
+            failures.push(`Git: ${e instanceof Error ? e.message : String(e)}`)
           }
         }
       }
 
       try {
         await window.api?.settings?.set(`project.${activeProject.id}.settings`, projSettings)
-      } catch {
-        /* non-critical */
+      } catch (e) {
+        failures.push(`Settings: ${e instanceof Error ? e.message : String(e)}`)
+      }
+
+      if (failures.length > 0) {
+        // Same channel the outer catch uses, and the modal stays open.
+        toast.error(`Save failed: ${failures.join(' · ')}`)
+        return
       }
 
       toast.success(t('modal.saved') || 'Project settings saved')

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   generatePasswords,
+  validateCharacterOptions,
   availablePoolSize,
   estimateEntropyBits,
   strengthFromEntropy,
@@ -290,5 +291,133 @@ describe('EFF wordlist', () => {
     expect(EFF_WORDLIST).toHaveLength(7776)
     expect(new Set(EFF_WORDLIST).size).toBe(7776)
     for (const w of EFF_WORDLIST.slice(0, 100)) expect(w).toMatch(/^[a-z0-9]+$/)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tester-reported behaviours (v1.5.0 QA round)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('validateCharacterOptions — the rules, before Generate is pressed', () => {
+  it('reports the min-symbol trap that unchecking Symbols creates', () => {
+    // `minSymbols` defaults to 1, so simply turning Symbols off used to make
+    // every Generate fail with a rule the user never knowingly set.
+    const opts = { ...DEFAULT_CHARACTER_OPTIONS, symbols: false }
+    expect(validateCharacterOptions(opts)).toMatch(/minimum symbol count/i)
+  })
+
+  it('reports the same for digits', () => {
+    const opts = { ...DEFAULT_CHARACTER_OPTIONS, numbers: false }
+    expect(validateCharacterOptions(opts)).toMatch(/minimum digit count/i)
+  })
+
+  it('reports a length too short for the required rules', () => {
+    const opts = { ...DEFAULT_CHARACTER_OPTIONS, length: 4, minNumbers: 3, minSymbols: 3 }
+    expect(validateCharacterOptions(opts)).toMatch(/too short/i)
+  })
+
+  it('reports a no-repeat request bigger than the unique pool', () => {
+    const opts = {
+      ...DEFAULT_CHARACTER_OPTIONS,
+      symbols: false,
+      minSymbols: 0,
+      numbers: false,
+      minNumbers: 0,
+      uppercase: false,
+      noRepeats: true,
+      length: 40, // only 26 lowercase letters exist
+    }
+    expect(validateCharacterOptions(opts)).toMatch(/unique characters/i)
+  })
+
+  it('returns null for a satisfiable request', () => {
+    expect(validateCharacterOptions(DEFAULT_CHARACTER_OPTIONS)).toBeNull()
+  })
+
+  it('agrees with the generator — the UI and the engine cannot diverge', () => {
+    const opts = { ...DEFAULT_CHARACTER_OPTIONS, symbols: false }
+    expect(validateCharacterOptions(opts)).not.toBeNull()
+    const r = generatePasswords({ mode: 'characters', characters: opts })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toBe(validateCharacterOptions(opts))
+  })
+})
+
+describe('no-repeats is visible in the strength readout', () => {
+  it('reports FEWER bits than the with-replacement estimate', () => {
+    // Ticking the box used to leave the bit count identical, which read as "the
+    // option did nothing".
+    const base = {
+      ...DEFAULT_CHARACTER_OPTIONS,
+      symbols: false,
+      minSymbols: 0,
+      length: 16,
+    }
+    const withRepeats = generatePasswords({ mode: 'characters', characters: base })
+    const without = generatePasswords({
+      mode: 'characters',
+      characters: { ...base, noRepeats: true },
+    })
+    expect(withRepeats.ok && without.ok).toBe(true)
+    if (withRepeats.ok && without.ok) {
+      expect(without.entropyBits).toBeLessThan(withRepeats.entropyBits)
+    }
+  })
+
+  it('still never repeats a character', () => {
+    const opts = {
+      ...DEFAULT_CHARACTER_OPTIONS,
+      symbols: false,
+      minSymbols: 0,
+      noRepeats: true,
+      length: 16,
+    }
+    const r = generatePasswords({ mode: 'characters', count: 20, characters: opts })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      for (const pw of r.passwords) expect(new Set(pw).size).toBe(pw.length)
+    }
+  })
+})
+
+describe('passphrase digit position', () => {
+  const base = { ...DEFAULT_PASSPHRASE_OPTIONS, includeNumber: true, wordCount: 5 }
+
+  it('appends to the LAST word by default — "append" means the end', () => {
+    for (let i = 0; i < 25; i++) {
+      const r = generatePasswords({ mode: 'passphrase', passphrase: base })
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      const words = r.passwords[0].split(base.separator)
+      expect(words[words.length - 1]).toMatch(/\d$/)
+      // …and no OTHER word carries one.
+      expect(words.slice(0, -1).every((w) => !/\d$/.test(w))).toBe(true)
+    }
+  })
+
+  it('still supports a random position when asked', () => {
+    const seen = new Set<number>()
+    for (let i = 0; i < 60; i++) {
+      const r = generatePasswords({
+        mode: 'passphrase',
+        passphrase: { ...base, digitPosition: 'random' },
+      })
+      if (!r.ok) continue
+      const words = r.passwords[0].split(base.separator)
+      words.forEach((w, idx) => {
+        if (/\d$/.test(w)) seen.add(idx)
+      })
+    }
+    expect(seen.size).toBeGreaterThan(1)
+  })
+
+  it('credits the random position with the extra entropy it earns', () => {
+    const fixed = generatePasswords({ mode: 'passphrase', passphrase: base })
+    const random = generatePasswords({
+      mode: 'passphrase',
+      passphrase: { ...base, digitPosition: 'random' },
+    })
+    expect(fixed.ok && random.ok).toBe(true)
+    if (fixed.ok && random.ok) expect(random.entropyBits).toBeGreaterThan(fixed.entropyBits)
   })
 })

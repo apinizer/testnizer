@@ -7,17 +7,41 @@ import { useTranslation } from '../../../lib/i18n'
  * ~200-line rule).
  */
 
+/**
+ * Error line for a dialog. Same treatment the six dialogs that already had one
+ * were using inline, so adopting it changes nothing visually.
+ */
+export function DialogError({ text }: { text: string }) {
+  return (
+    <p role="alert" className="m-0 text-[11px]" style={{ color: '#cc2200' }}>
+      {text}
+    </p>
+  )
+}
+
 export function Modal({
   title,
   onClose,
   children,
   wide,
+  error,
 }: {
   title: string
   onClose: () => void
   children: React.ReactNode
   /** Widen for the field-heavy Generate Key Pair form. */
   wide?: boolean
+  /**
+   * Failure message to show INSIDE the dialog.
+   *
+   * Testers hit this on the Open prompt: the wrong-password message was correct
+   * but landed on the main screen BEHIND the modal, under its dark backdrop, so
+   * the dialog just sat there looking like it had ignored the click. Three
+   * dialogs (Open, Create, Save-to-library) had no error slot at all; the other
+   * six already printed `s.error` themselves, so this prop is what closes the
+   * gap without touching them.
+   */
+  error?: string | null
 }) {
   return (
     <div
@@ -34,6 +58,7 @@ export function Modal({
           {title}
         </h3>
         {children}
+        {error ? <DialogError text={error} /> : null}
       </div>
     </div>
   )

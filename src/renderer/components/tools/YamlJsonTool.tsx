@@ -55,7 +55,11 @@ export default function YamlJsonTool() {
   function switchDirection(next: Direction): void {
     if (next === direction) return
     setDirection(next)
-    setInput(next === 'yaml2json' ? SAMPLE_YAML : SAMPLE_JSON)
+    // Loading the sample is a convenience for an EMPTY or untouched editor. It
+    // used to run unconditionally, so flipping the direction silently threw away
+    // whatever the user had pasted.
+    const untouched = input.trim() === '' || input === SAMPLE_YAML || input === SAMPLE_JSON
+    if (untouched) setInput(next === 'yaml2json' ? SAMPLE_YAML : SAMPLE_JSON)
   }
 
   const inputLang = direction === 'yaml2json' ? 'yaml' : 'json'

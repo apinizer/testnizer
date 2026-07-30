@@ -35,6 +35,7 @@ import { useTranslation } from './i18n'
 import { useRequestStore } from '../stores/request.store'
 import { useTabsStore } from '../stores/tabs.store'
 import { useUIStore } from '../stores/ui.store'
+import { openOrReuseRunnerTab } from './open-runner-tab'
 import { useEnvironmentStore } from '../stores/environment.store'
 import { isMac } from './platform'
 import { makeTabId } from './utils'
@@ -299,7 +300,13 @@ export function useCommandActions(): CommandAction[] {
       group: 'project',
       icon: PlayCircle,
       keywords: ['runner', 'collection', 'tests'],
-      run: () => useUIStore.getState().setShowCollectionRunner(true),
+      // Opens the maintained runner TAB rather than the older modal. The modal
+      // has no setup/teardown, hook-script or iteration-data UI, so a run
+      // launched from here silently lost the run-lifecycle feature entirely.
+      // Lands on the run config, not the Tests overview: this command names the
+      // screen, and once any test suite exists the overview's "New Run" opens a
+      // suite picker with no project-wide option.
+      run: () => void openOrReuseRunnerTab(undefined, 'Runner', { view: 'config' }),
     })
     actions.push({
       id: 'project.newProject',

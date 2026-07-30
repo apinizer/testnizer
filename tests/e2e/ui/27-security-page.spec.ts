@@ -91,11 +91,32 @@ uiTest.describe('Security page', () => {
     await expect(window.getByText(/\S{12,}/).first()).toBeVisible({ timeout: 5_000 })
   })
 
+  uiTest('Password Generator length box can be cleared and retyped', async ({ window }) => {
+    // The exact sequence testers reported: the box could not be emptied, so a
+    // typed digit landed next to the old value ("1" + "3" → 13).
+    await window.getByText('Password Generator', { exact: false }).first().click()
+    const length = window.getByRole('spinbutton').first()
+    await length.fill('')
+    await expect(length).toHaveValue('')
+    await length.fill('16')
+    await expect(length).toHaveValue('16')
+    await window
+      .getByRole('button', { name: /Generate|Üret/i })
+      .first()
+      .click()
+    await expect(window.getByText(/\S{12,}/).first()).toBeVisible({ timeout: 5_000 })
+    await expectNoErrorBoundary(window)
+  })
+
   uiTest('Keystore Studio opens its library without a keystore loaded', async ({ window }) => {
     // The ADDITIVE invariant at the UI level: the app is fully usable with an
     // empty keystore library — no modal, no error, no forced setup.
     await window.getByText('Keystore Studio', { exact: false }).first().click()
     await expect(window.getByTestId('workbench')).toBeVisible()
+    // …and no error banner from an unrelated earlier action. The store is a
+    // module singleton, so a failure elsewhere used to greet the user here as
+    // "Store password cannot be empty" before they had typed anything.
+    await expect(window.getByText(/Store password cannot be empty/i)).toHaveCount(0)
     await expectNoErrorBoundary(window)
   })
 

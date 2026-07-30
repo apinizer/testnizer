@@ -22,6 +22,7 @@ function nextSessionKey(): string {
 export function openOrReuseRunnerTab(
   sessionData?: Record<string, unknown>,
   tabName = 'Runner',
+  opts?: { view?: 'config' },
 ): void {
   const tabsApi = useTabsStore.getState()
   const existing = tabsApi.tabs.find((tab) => tab.protocol === 'runner')
@@ -30,6 +31,17 @@ export function openOrReuseRunnerTab(
 
   if (sessionData) {
     sessionStorage.setItem(`runner-report-${tabId}`, JSON.stringify(sessionData))
+  }
+
+  // A scopeless runner tab lands on the Tests overview by design — dropping
+  // someone into a 200-endpoint "ready to fire" list because they clicked the
+  // Tests sidebar was the screen we removed from every implicit entry point
+  // (#39). An EXPLICIT "open the collection runner" is the exception: the user
+  // named the screen they want, and with any test suite present there is no
+  // other way to reach a project-wide run config. `config-explicit` is a
+  // distinct sentinel so the scope guard on plain `config` is untouched.
+  if (opts?.view === 'config') {
+    sessionStorage.setItem(`runner-view-${tabId}`, 'config-explicit')
   }
 
   if (existing) {

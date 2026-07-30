@@ -18,6 +18,7 @@ import type {
   WsSignReference,
 } from '../../types'
 import { useTranslation } from '../../lib/i18n'
+import { useInvalidateOn } from '../../lib/use-stale-guard'
 
 type Mode = 'sign' | 'verify' | 'encrypt' | 'decrypt' | 'timestamp' | 'username-token'
 
@@ -83,6 +84,22 @@ export default function WsSecurityTool() {
     if (staged) setInput(staged)
   }, [])
 
+  /*
+   * Verify an envelope, get "Signature is valid (1 reference)" in the footer,
+   * then switch to the Encrypt tab: the footer used to keep claiming the
+   * signature was valid, next to a pane still showing the verify JSON. Same on
+   * editing the envelope or swapping the trust certificate.
+   *
+   * The hook is safe here because none of these deps is written by the tool —
+   * `handleRun` only ever writes `output`/`statusLine` (contrast SamlTool, which
+   * feeds its signed document back into its own editor).
+   */
+  useInvalidateOn([mode, input, verifyCert], () => {
+    setOutput('')
+    setStatusLine(null)
+    setError(null)
+  })
+
   function handleSendToSoap() {
     const payload = output || input
     if (!payload) return
@@ -91,7 +108,7 @@ export default function WsSecurityTool() {
     // (v1.4.2 T-12.7 — previously the body was set but the request
     // never went out, so the action felt like a no-op).
     const ok = pushPayloadToActiveSoap(payload, true)
-    setStatusLine(ok ? 'Sent to active SOAP request' : 'No active SOAP request to send to')
+    setStatusLine(ok ? t('tools.wsse.sentToSoap') : t('tools.wsse.noActiveSoap'))
   }
 
   async function handleRun() {
@@ -118,8 +135,8 @@ export default function WsSecurityTool() {
         setOutput(JSON.stringify(r, null, 2))
         setStatusLine(
           r.valid
-            ? `Signature is valid (${r.signedReferences.length} reference${r.signedReferences.length === 1 ? '' : 's'})`
-            : `Signature INVALID${r.reason ? ' — ' + r.reason : ''}`,
+            ? t('tools.wsse.signatureValid').replace('{n}', String(r.signedReferences.length))
+            : `${t('tools.wsse.signatureInvalid')}${r.reason ? ' — ' + r.reason : ''}`,
         )
       } else if (mode === 'decrypt') {
         const r = await decryptEnvelope(input, decryptKey, decryptPass || undefined)
@@ -142,6 +159,22 @@ export default function WsSecurityTool() {
     setInput(SAMPLE_ENVELOPE)
   }
 
+  /*
+   * The footer carries the verify verdict, and "Signature is valid" used to be
+   * rendered in exactly the same grey as "Signature INVALID" — the two answers
+   * this tool exists to tell apart looked identical at a glance.
+   */
+  const footerTone: 'muted' | 'ok' | 'error' | undefined = (() => {
+    if (statusLine == null) return undefined
+    // Compared against the translated strings themselves rather than an English
+    // regex, so the colours stay correct in every locale.
+    if (statusLine.startsWith(t('tools.wsse.signatureInvalid'))) return 'error'
+    if (statusLine === t('tools.wsse.noActiveSoap')) return 'error'
+    if (statusLine === t('tools.wsse.sentToSoap')) return 'ok'
+    if (statusLine.startsWith(t('tools.wsse.signatureValid').split('{')[0])) return 'ok'
+    return 'muted'
+  })()
+
   const toolbar = (
     <>
       <button
@@ -156,7 +189,7 @@ export default function WsSecurityTool() {
         className="cursor-pointer rounded border px-2 py-1 text-xs"
         style={{ borderColor: 'var(--accent)', color: 'var(--accent-text)' }}
       >
-        Send to active SOAP
+        {t('tools.wsse.sendToSoap')}
       </button>
       <button
         onClick={loadSample}
@@ -180,6 +213,7 @@ export default function WsSecurityTool() {
       title={t('tools.wsse.title')}
       toolbar={toolbar}
       footer={statusLine}
+      footerTone={footerTone}
       inputPane={
         <div className="flex h-full flex-col">
           <div
@@ -216,7 +250,7 @@ export default function WsSecurityTool() {
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     className={INPUT}
-                    placeholder="Username"
+                    placeholder={t('tools.wsse.usernamePlaceholder')}
                     value={usernameToken.username}
                     onChange={(e) =>
                       setUsernameToken({ ...usernameToken, username: e.target.value })
@@ -225,7 +259,7 @@ export default function WsSecurityTool() {
                   <input
                     className={INPUT}
                     type="password"
-                    placeholder="Password"
+                    placeholder={t('tools.wsse.passwordPlaceholder')}
                     value={usernameToken.password}
                     onChange={(e) =>
                       setUsernameToken({ ...usernameToken, password: e.target.value })
@@ -323,6 +357,11 @@ export default function WsSecurityTool() {
                       <input
                         type="checkbox"
                         checked={sign.references.includes(ref)}
+                        // A signature over nothing is not a signature, so the
+                        // last remaining reference cannot be removed. It used to
+                        // silently re-tick itself, which looked like the click
+                        // had been ignored.
+                        disabled={sign.references.length === 1 && sign.references.includes(ref)}
                         onChange={(e) => {
                           const next = e.target.checked
                             ? Array.from(new Set([...sign.references, ref]))
@@ -369,7 +408,7 @@ export default function WsSecurityTool() {
             {mode === 'verify' && (
               <textarea
                 className={TEXTAREA}
-                placeholder="X.509 certificate (PEM) used to verify the signature"
+                placeholder={t('tools.wsse.verifyCertPlaceholder')}
                 value={verifyCert}
                 onChange={(e) => setVerifyCert(e.target.value)}
               />
@@ -405,9 +444,22 @@ export default function WsSecurityTool() {
                     ))}
                   </select>
                 </div>
+                {/*
+                  Every algorithm × key-wrap pair here is supported by the
+                  encrypter, so none is blocked. RSA-1.5 is a different matter:
+                  PKCS#1 v1.5 key transport is the Bleichenbacher padding-oracle
+                  target and XML Encryption 1.1 forbids it. A test tool still
+                  needs it to talk to services that only speak it, so this warns
+                  rather than removing the option.
+                */}
+                {encrypt.keyWrap === 'RSA-1.5' && (
+                  <p role="alert" className="text-[11px]" style={{ color: '#b35a00' }}>
+                    {t('tools.wsse.rsa15Warning')}
+                  </p>
+                )}
                 <textarea
                   className={TEXTAREA}
-                  placeholder="Recipient certificate (PEM)"
+                  placeholder={t('tools.wsse.recipientCertPlaceholder')}
                   value={encrypt.recipientCertPem}
                   onChange={(e) => setEncrypt({ ...encrypt, recipientCertPem: e.target.value })}
                 />
@@ -425,7 +477,7 @@ export default function WsSecurityTool() {
                 <input
                   className={INPUT}
                   type="password"
-                  placeholder="Passphrase (optional)"
+                  placeholder={t('tools.wsse.passphrasePlaceholder')}
                   value={decryptPass}
                   onChange={(e) => setDecryptPass(e.target.value)}
                 />

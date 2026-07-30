@@ -3,6 +3,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { transformJolt, JOLT_EXAMPLES } from '../../lib/tools/jolt'
 import { useTranslation } from '../../lib/i18n'
+import { useInvalidateOn } from '../../lib/use-stale-guard'
 
 type JoltResult = ReturnType<typeof transformJolt>
 
@@ -14,6 +15,16 @@ export default function JoltTool() {
   const [input, setInput] = useState(SAMPLE_INPUT)
   const [spec, setSpec] = useState(SAMPLE_SPEC)
   const [result, setResult] = useState<JoltResult | null>(null)
+
+  /*
+   * The result belongs to the input that produced it. Leaving it on screen after
+   * an edit shows an answer about text that is no longer there — and unlike a
+   * generated password there is nothing to lose by dropping it, since pressing
+   * the button again re-derives it from what the user can still see.
+   */
+  useInvalidateOn([input, spec], () => {
+    setResult(null)
+  })
 
   const output = result?.ok ? JSON.stringify(result.output, null, 2) : ''
 

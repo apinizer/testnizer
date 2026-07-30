@@ -1585,6 +1585,28 @@ function requireNonBlank(value: string | undefined | null, message: string): str
   return value
 }
 
+/**
+ * Refuse to protect a key with nothing.
+ *
+ * `createEmpty` now allows an empty PKCS#12 store password so a passwordless
+ * TRUSTSTORE (certificates only) can be created. That is safe precisely because
+ * an empty store holds no key material — but the store password is also the
+ * FALLBACK entry password everywhere a key is added
+ * (`e.entryPassword || storePassword`), and the renderer deliberately drops the
+ * entry-password field when generating (`keystore.store.ts`), so without this
+ * guard "create a passwordless store, then generate a key pair" would silently
+ * write an unprotected private key.
+ *
+ * So: a blank-password store stays a truststore. Adding key material to one
+ * requires an explicit entry password.
+ */
+function assertKeyProtectable(effectivePassword: string, what: string): void {
+  if (effectivePassword.trim()) return
+  throw new KeystoreValidationException(
+    `Cannot add ${what} without a password: this keystore has no store password, so give the entry its own password (or set a store password first).`,
+  )
+}
+
 function summarize(entry: EntryModel): AliasSummary {
   if (entry.kind === 'secret') {
     // A secret (symmetric) key has no certificate and is not a *private* key —
@@ -1719,10 +1741,34 @@ export class KeystoreEngine {
     return { bytes, type: s.type, storePassword: s.storePassword, aliasCount: s.entries.length }
   }
 
-  /** Create an empty keystore (spec §4.1). */
+  /**
+   * Create an empty keystore (spec §4.1).
+   *
+   * The store password may be EMPTY for PKCS#12 — the Create dialog labels the
+   * field "optional" and a passwordless truststore is ordinary practice
+   * (`openssl pkcs12 -passout pass:`). `open` has always accepted an empty
+   * password, so refusing it here was an asymmetry, and it broke the one flow
+   * that most needs it: "Add as trusted" from the TLS Inspector, which creates a
+   * cert-only store.
+   *
+   * JKS is different and stays strict. Its key protector derives its keystream
+   * from the password plus a salt that is written into the file in plaintext
+   * (`jks-writer.ts`), so an empty password is not weak encryption — it is
+   * none — and the store MAC becomes forgeable. Refusing it is a correctness
+   * statement, not a policy preference.
+   *
+   * The complementary guard lives at the key-adding boundary
+   * (`assertKeyProtectable`): a blank-password store may hold certificates, but
+   * a private or secret key must carry its own entry password.
+   */
   createEmpty(type: string, storePassword: string): { sessionId: string; meta: KeystoreMeta } {
-    requireNonBlank(storePassword, 'Store password cannot be empty')
     const resolved = resolveType(type)
+    if (resolved === 'JKS') {
+      requireNonBlank(
+        storePassword,
+        'A JKS keystore requires a store password: with an empty one the key protector derives its keystream from a salt stored in the file, so the key would not actually be encrypted.',
+      )
+    }
     const session: KeystoreSession = {
       id: randomUUID(),
       type: resolved,
@@ -1827,6 +1873,7 @@ export class KeystoreEngine {
     }
     const entryPassword =
       opts.entryPassword && opts.entryPassword.trim() ? opts.entryPassword : s.storePassword
+    assertKeyProtectable(entryPassword, 'a key pair')
     s.entries.push({
       alias,
       kind: 'key',
@@ -1869,6 +1916,7 @@ export class KeystoreEngine {
     }
     const entryPassword =
       opts.entryPassword && opts.entryPassword.trim() ? opts.entryPassword : s.storePassword
+    assertKeyProtectable(entryPassword, 'a secret key')
     s.entries.push({
       alias,
       kind: 'secret',
@@ -1943,6 +1991,9 @@ export class KeystoreEngine {
       // Copied entries are protected with the store password (per-entry
       // passwords land in Faz B4; reopen only decrypts with the store password).
       const entryPassword = s.storePassword
+      if (src.kind === 'key' || src.kind === 'secret') {
+        assertKeyProtectable(entryPassword, `the key entry "${alias}"`)
+      }
       if (src.kind === 'key') {
         if (src.certChainDer.length === 0) {
           throw new KeystoreValidationException(`Key entry has no certificate chain: ${alias}`)
@@ -2001,6 +2052,7 @@ export class KeystoreEngine {
     // The leaf may not be certChainDer[0] (some exports are root-first): find the
     // cert that matches the key anywhere in the chain and reorder it to the leaf.
     const orderedChain = matchAndOrderChain(privateKey, certChainDer)
+    assertKeyProtectable(s.storePassword, 'imported key material')
     s.entries.push({
       alias,
       kind: 'key',
@@ -2034,6 +2086,7 @@ export class KeystoreEngine {
       // Locate the leaf anywhere in the block (root-first order is legal) and
       // reorder it to position 0; throws if no cert matches the key.
       const orderedChain = matchAndOrderChain(privateKey, certChainDer)
+      assertKeyProtectable(s.storePassword, 'an imported private key')
       s.entries.push({
         alias,
         kind: 'key',
@@ -2275,13 +2328,15 @@ export class KeystoreEngine {
     newPassword: string,
     entryPassword?: string,
     aliasEntryPasswords?: Record<string, string>,
-  ): { sessionId: string; meta: KeystoreMeta } {
+  ): { sessionId: string; meta: KeystoreMeta; skipped: string[] } {
     const s = this.getSession(sessionId)
     const target = resolveType(targetType)
     if (!newPassword || !newPassword.trim()) {
       throw new KeystoreValidationException('New store password is required for convert format')
     }
     const newEntries: EntryModel[] = []
+    /** Aliases the target format cannot carry. Reported, never hidden. */
+    const skipped: string[] = []
     for (const e of s.entries) {
       // Per-alias current password wins over the scalar fallback (symmetric with
       // changeStorePassword) so entries under DIFFERENT passwords are convertible.
@@ -2296,7 +2351,14 @@ export class KeystoreEngine {
           entryPassword: newPassword,
         })
       } else if (e.kind === 'secret') {
-        if (target !== 'PKCS12') continue // JKS cannot hold secret keys (§6.10)
+        if (target !== 'PKCS12') {
+          // JKS cannot hold secret keys (§6.10). The entry is still DROPPED —
+          // that is the format's constraint, not a policy we can relax — but it
+          // is no longer dropped in silence: testers watched the alias count go
+          // 4 → 3 with nothing saying which entry left or why.
+          skipped.push(e.alias)
+          continue
+        }
         this.assertRecoverable(e, currentPw, s.storePassword)
         newEntries.push({
           alias: e.alias,
@@ -2321,7 +2383,10 @@ export class KeystoreEngine {
     }
     session.bytes = serializeKeyStore(session.entries, session.type, session.storePassword)
     this.register(session)
-    return { sessionId: session.id, meta: this.meta(session) }
+    // `skipped` rides alongside `meta` rather than inside it: KeystoreMeta is
+    // mirrored in three type declarations and asserted by existing tests, and
+    // this is a fact about ONE conversion, not about the resulting store.
+    return { sessionId: session.id, meta: this.meta(session), skipped }
   }
 
   /**

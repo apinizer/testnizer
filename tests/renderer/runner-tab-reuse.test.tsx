@@ -223,6 +223,52 @@ describe('Runner tab reuse (#66)', () => {
 // own Start-run screen. If the tab being re-armed is mid-run, that remount
 // would drop the live progress + Cancel button while main keeps executing.
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * The Command Palette's "Open collection runner" names the screen it opens.
+ *
+ * A scopeless runner tab lands on the Tests overview by design (#39 — clicking
+ * the Tests sidebar must not drop you into a 200-endpoint "ready to fire"
+ * list). But the overview's "New Run" opens a SUITE PICKER as soon as any test
+ * suite exists, with no project-wide entry, so the palette command would have
+ * left the user with no route to a project-wide run at all.
+ */
+describe('Command Palette → runner tab lands on the run config', () => {
+  beforeEach(() => {
+    useTabsStore.setState({ tabs: [], activeTabId: null })
+    sessionStorage.clear()
+  })
+
+  it('opens the config screen when the caller asks for it explicitly', () => {
+    render(<Workbench />)
+    act(() => {
+      openOrReuseRunnerTab(undefined, 'Runner', { view: 'config' })
+    })
+    expect(screen.getByText('Run Sequence')).toBeTruthy()
+  })
+
+  it('still lands on the Tests overview without that opt-in', () => {
+    render(<Workbench />)
+    act(() => {
+      openOrReuseRunnerTab()
+    })
+    expect(screen.queryByText('Run Sequence')).toBeNull()
+  })
+
+  it('keeps the config screen across a remount', () => {
+    // The persisted view is a distinct sentinel — writing a plain 'config'
+    // would hit the scope guard on the next mount and bounce back to 'home'.
+    render(<Workbench />)
+    act(() => {
+      openOrReuseRunnerTab(undefined, 'Runner', { view: 'config' })
+    })
+    expect(screen.getByText('Run Sequence')).toBeTruthy()
+
+    cleanup()
+    render(<Workbench />)
+    expect(screen.getByText('Run Sequence')).toBeTruthy()
+  })
+})
+
 describe('#66: a Run aimed at a busy runner tab focuses it instead of re-arming', () => {
   beforeEach(() => {
     resetRunnerActivity()

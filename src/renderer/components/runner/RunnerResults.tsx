@@ -3,10 +3,26 @@ import { RotateCcw, Plus, X, ExternalLink, ChevronDown, ChevronRight } from 'luc
 import { getMethodColors } from '../../styles/tokens'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
-import { endpointDidPass, countsTowardRunVerdict } from '../../../shared/runner-verdict'
+import { endpointDidPass, isSkippedStep } from '../../../shared/runner-verdict'
+import { summarizeRun, statusBadge, SYNTHETIC_STATUS } from '../../../shared/runner-summary'
 import { useTranslation } from '../../lib/i18n'
 
 type FilterTab = 'all' | 'passed' | 'failed' | 'skipped' | 'errors' | 'console'
+
+/** Script console output, coloured by level (matches the app's Console tab). */
+const CONSOLE_LEVEL_COLOR: Record<'log' | 'warn' | 'error', string> = {
+  log: 'var(--text)',
+  warn: '#b35a00',
+  error: '#cc2200',
+}
+
+/** Status-badge palette. Keyed by tone so the same mapping serves every row. */
+const BADGE_COLOR: Record<'ok' | 'warn' | 'error' | 'neutral', string> = {
+  ok: '#1a7a4a',
+  warn: '#b35a00',
+  error: '#cc2200',
+  neutral: 'var(--muted)',
+}
 
 interface RunnerResultsProps {
   results: EndpointRunResult[]
@@ -46,28 +62,29 @@ export default function RunnerResults({
 }: RunnerResultsProps) {
   const { t } = useTranslation()
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
-  const [detailTab, setDetailTab] = useState<'response' | 'request'>('response')
+  const [detailTab, setDetailTab] = useState<'response' | 'request' | 'console'>('response')
   // Per-iteration collapse state. Default is "all expanded" — collapsing is
   // an opt-in for long runs. Keyed by 1-based iteration index so older
   // history rows (no `iteration` field) bucket into Iteration 1 cleanly.
   const [collapsedIterations, setCollapsedIterations] = useState<Set<number>>(new Set())
 
-  // Verdict via the SHARED rule (shared/runner-verdict.ts) — a passing test that
-  // allows a non-2xx code (idempotent DELETE → 400) must NOT be bucketed as
-  // failed here just because the status is 4xx (issue #16 parity with main).
-  // Teardown rows are cleanup: reported below, but excluded from the headline
-  // counters so they can't flip the run's verdict (issue #72).
-  const verdictResults = results.filter(countsTowardRunVerdict)
-  const totalPassed = verdictResults.filter(endpointDidPass).length
-  const totalFailed = verdictResults.filter((r) => !endpointDidPass(r)).length
-  const teardownFailedCount = results.filter(
-    (r) => !countsTowardRunVerdict(r) && !endpointDidPass(r),
-  ).length
+  // Every headline number comes from the SHARED summary (shared/runner-summary),
+  // which applies the verdict rule (a test that allows a 400 counts as passed —
+  // issue #16), excludes teardown from the verdict (issue #72) and treats a
+  // skipped row as neither passed nor failed.
+  // The hand-rolled versions that used to live here counted `results.length` as
+  // "All tests" (so setup/teardown/hook rows inflated it) and every row with an
+  // `error` as an error (so a cleanup failure raised the Errors counter this very
+  // feature promises never affects the verdict).
+  const summary = useMemo(() => summarizeRun(results), [results])
+  const totalPassed = summary.passed
+  const totalFailed = summary.failed
+  const teardownFailedCount = summary.teardownFailed
   const totalDuration = report
     ? report.completedAt - report.startedAt
     : results.reduce((acc, r) => acc + r.duration, 0)
-  const totalTests = results.length
-  const totalErrors = results.filter((r) => r.error).length
+  const totalTests = summary.total
+  const totalErrors = summary.errors
   const avgRespTime =
     results.length > 0
       ? Math.round(results.reduce((acc, r) => acc + r.duration, 0) / results.length)
@@ -82,14 +99,19 @@ export default function RunnerResults({
   const filteredResults = useMemo(() => {
     return results.filter((r) => {
       switch (activeFilter) {
+        // A skipped row belongs under exactly one tab — its own. Without the
+        // guard it would also appear under "Passed", since `endpointDidPass`
+        // reads its absent status as a success.
         case 'passed':
-          return endpointDidPass(r)
+          return !isSkippedStep(r) && endpointDidPass(r)
         case 'failed':
-          return !endpointDidPass(r)
+          return !isSkippedStep(r) && !endpointDidPass(r)
         case 'errors':
           return !!r.error
         case 'skipped':
-          return false
+          return isSkippedStep(r)
+        case 'console':
+          return (r.consoleLogs?.length ?? 0) > 0
         default:
           return true
       }
@@ -152,9 +174,9 @@ export default function RunnerResults({
     { key: 'all', label: 'All', count: results.length },
     { key: 'passed', label: 'Passed', count: totalPassed },
     { key: 'failed', label: 'Failed', count: totalFailed },
-    { key: 'skipped', label: 'Skipped', count: 0 },
+    { key: 'skipped', label: 'Skipped', count: summary.skipped },
     { key: 'errors', label: 'Errors', count: totalErrors },
-    { key: 'console', label: 'Console log', count: 0 },
+    { key: 'console', label: 'Console log', count: summary.consoleLogs },
   ]
 
   const formatTime = (ts: number | null) => {
@@ -342,7 +364,7 @@ export default function RunnerResults({
             one group ("Iteration 1") and look identical to the previous
             flat list; multi-iteration runs get one collapsible group per
             iteration with pass/fail counts in the header. */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto" data-testid="runner-results-list">
           {setupRows.length > 0 && (
             <PhaseSection title={t('runLifecycle.setupSection')}>
               {setupRows.map((result, idx) => (
@@ -457,7 +479,15 @@ export default function RunnerResults({
 
           {/* Tabs + status meta */}
           <div className="flex shrink-0 items-center border-b border-[var(--border)] px-4">
-            {(['response', 'request'] as const).map((tab) => (
+            {(
+              [
+                'response',
+                'request',
+                // Only offered when this step actually logged something, so the
+                // tab strip stays quiet for the majority of rows.
+                ...((selectedResult.consoleLogs?.length ?? 0) > 0 ? (['console'] as const) : []),
+              ] as const
+            ).map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -477,17 +507,18 @@ export default function RunnerResults({
             ))}
             {/* Status · duration · size */}
             <div className="ml-auto flex items-center gap-2" style={{ fontSize: 13 }}>
-              {selectedResult.status !== null && (
-                <span
-                  style={{
-                    fontWeight: 600,
-                    color: selectedResult.status < 400 ? '#1a7a4a' : '#cc2200',
-                  }}
-                >
-                  {selectedResult.status}
-                </span>
-              )}
-              {selectedResult.status !== null && <span style={{ color: 'var(--hint)' }}>·</span>}
+              {(() => {
+                const badge = statusBadge(selectedResult)
+                if (!badge) return null
+                return (
+                  <>
+                    <span style={{ fontWeight: 600, color: BADGE_COLOR[badge.tone] }}>
+                      {badge.text}
+                    </span>
+                    <span style={{ color: 'var(--hint)' }}>·</span>
+                  </>
+                )
+              })()}
               <span style={{ color: 'var(--muted)' }}>{selectedResult.duration} ms</span>
               {selectedResult.responseSize != null && selectedResult.responseSize > 0 && (
                 <>
@@ -643,6 +674,24 @@ export default function RunnerResults({
               )}
             </div>
           )}
+
+          {detailTab === 'console' && (
+            <div className="flex-1 overflow-auto px-4 py-3">
+              {(selectedResult.consoleLogs ?? []).map((entry, i) => (
+                <div
+                  key={i}
+                  className="whitespace-pre-wrap break-all"
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 12,
+                    color: CONSOLE_LEVEL_COLOR[entry.level],
+                  }}
+                >
+                  {entry.message}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -755,14 +804,9 @@ function ResultRow({
   onClick: () => void
 }) {
   const mc = getMethodColors(result.method)
-  const statusColor =
-    result.status === null
-      ? '#cc2200'
-      : result.status < 300
-        ? '#1a7a4a'
-        : result.status < 500
-          ? '#b35a00'
-          : '#cc2200'
+  // Shared badge logic: a run-level SCRIPT row is not an HTTP exchange and must
+  // not render main's placeholder 200, and a row that never ran says so.
+  const badge = statusBadge(result)
 
   return (
     <div
@@ -796,14 +840,16 @@ function ResultRow({
         >
           {result.endpointName}
         </span>
-        {result.status !== null && (
-          <span style={{ fontSize: 13, fontWeight: 600, color: statusColor, flexShrink: 0 }}>
-            {result.status}
-          </span>
-        )}
-        {result.error && result.status === null && (
-          <span style={{ fontSize: 13, fontWeight: 500, color: '#cc2200', flexShrink: 0 }}>
-            Error
+        {badge && (
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: badge.tone === 'neutral' ? 500 : 600,
+              color: BADGE_COLOR[badge.tone],
+              flexShrink: 0,
+            }}
+          >
+            {badge.text}
           </span>
         )}
       </div>
@@ -839,7 +885,12 @@ function ResultRow({
           ))}
         </div>
       ) : (
-        <div style={{ fontSize: 13, color: 'var(--hint)' }}>No tests found</div>
+        // "No tests found" is useful under a REQUEST — it says the step ran
+        // unchecked. Under a run-level script row, or a step that never ran, it
+        // is noise about something the user did not ask for.
+        !SYNTHETIC_STATUS.has(result.statusText) && (
+          <div style={{ fontSize: 13, color: 'var(--hint)' }}>No tests found</div>
+        )
       )}
     </div>
   )

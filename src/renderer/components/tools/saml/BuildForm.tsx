@@ -114,6 +114,17 @@ export default function BuildForm({
                 onChange={(e) => patch({ notOnOrAfterSeconds: parseInt(e.target.value, 10) || 0 })}
               />
             </Field>
+            {/*
+              The two fields bracket the assertion's validity window: NotBefore
+              is `now − skew`, NotOnOrAfter is `now + seconds`. Nothing validated
+              the pair, so an inverted or zero-width window produced an assertion
+              that could never be accepted — with no hint as to why.
+            */}
+            {form.notOnOrAfterSeconds <= -form.notBeforeSkewSeconds && (
+              <p role="alert" className="col-span-2 text-[11px]" style={{ color: '#cc2200' }}>
+                {t('tools.saml.emptyValidityWindow')}
+              </p>
+            )}
           </>
         )}
       </div>

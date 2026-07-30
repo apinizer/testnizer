@@ -61,6 +61,12 @@ export default function FolderSettingsModal({
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const [tab, setTab] = useState<'auth' | 'scripts'>('auth')
   const [auth, setAuth] = useState<AuthConfig>({ type: 'inherit' })
+  /**
+   * Set when the stored auth JSON could not be parsed. Saving is blocked while
+   * it is set, because the form is showing a fallback rather than the real
+   * configuration and Save would overwrite the latter with the former.
+   */
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [preScript, setPreScript] = useState('')
   const [postScript, setPostScript] = useState('')
   const [loading, setLoading] = useState(true)
@@ -87,7 +93,13 @@ export default function FolderSettingsModal({
         if (row?.auth) {
           try {
             parsed = JSON.parse(row.auth) as AuthConfig
-          } catch {
+          } catch (e) {
+            // Falling back to 'inherit' SILENTLY was destructive: the form then
+            // showed "inherit", and pressing Save wrote that over the stored
+            // config — so an unreadable row (a hand-edited file, a newer schema)
+            // lost the folder's authentication for good. Say so and block Save
+            // instead; the stored value is still there to be recovered.
+            setLoadError(e instanceof Error ? e.message : String(e))
             parsed = { type: 'inherit' }
           }
         }
@@ -392,6 +404,11 @@ export default function FolderSettingsModal({
           className="flex justify-end gap-2 border-t px-5 py-3"
           style={{ borderColor: 'var(--border)' }}
         >
+          {loadError && (
+            <p role="alert" className="m-0 mr-auto text-[11px]" style={{ color: '#cc2200' }}>
+              {t('folderSettings.authUnreadable')}: {loadError}
+            </p>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -407,7 +424,7 @@ export default function FolderSettingsModal({
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || loading}
+            disabled={saving || loading || loadError !== null}
             className="cursor-pointer rounded-[7px] px-3.5 py-2 text-[13px] font-medium"
             style={{
               background: 'var(--accent)',

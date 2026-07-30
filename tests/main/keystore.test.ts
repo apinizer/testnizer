@@ -72,10 +72,67 @@ describe('createEmpty + validation', () => {
     expect(meta.aliases).toEqual([])
     expect(engine.inspect(sessionId).aliasCount).toBe(0)
   })
-  it('rejects an empty store password', () => {
+  it('rejects an empty store password for JKS', () => {
+    // Not a policy preference: with an empty password the JKS key protector
+    // derives its keystream from a salt written into the file in plaintext, so
+    // the key is not encrypted at all (see jks-writer.ts).
     const engine = new KeystoreEngine()
     expect(() => engine.createEmpty('JKS', '')).toThrow(KeystoreValidationException)
-    expect(() => engine.createEmpty('JKS', '')).toThrow('Store password cannot be empty')
+    expect(() => engine.createEmpty('JKS', '')).toThrow(/requires a store password/i)
+  })
+
+  it('ACCEPTS an empty store password for PKCS#12', () => {
+    // The Create dialog labels the field optional, `open` has always accepted an
+    // empty password, and a passwordless truststore is ordinary practice.
+    const engine = new KeystoreEngine()
+    const { sessionId, meta } = engine.createEmpty('PKCS12', '')
+    expect(meta.type).toBe('PKCS12')
+    expect(meta.aliasCount).toBe(0)
+    // …and it round-trips: the bytes really are a readable PKCS#12.
+    const { bytes } = engine.exportForLibrary(sessionId)
+    const reopened = engine.open(bytes, '', 'PKCS12')
+    expect(reopened.meta.aliasCount).toBe(0)
+  })
+
+  it('refuses to put key material in a store that has no password', async () => {
+    // The store password is the fallback ENTRY password everywhere a key is
+    // added, and the renderer drops the entry-password field when generating —
+    // so without this guard "create a passwordless store, then generate a key
+    // pair" would silently write an unprotected private key.
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', '')
+
+    await expect(
+      engine.generateKeyPair(sessionId, {
+        alias: 'kp',
+        keyAlgorithm: 'EC',
+        keySize: 256,
+        subjectDN: 'CN=test',
+        validityDays: 30,
+      }),
+    ).rejects.toThrow(/without a password/i)
+
+    expect(() => engine.generateSecretKey(sessionId, { alias: 'aes', keySize: 256 })).toThrow(
+      /without a password/i,
+    )
+
+    // The same store still accepts CERTIFICATES — that is the whole point of
+    // allowing an empty password: a truststore.
+    expect(engine.inspect(sessionId).aliasCount).toBe(0)
+  })
+
+  it('allows key material in a passwordless store when the entry carries its own password', async () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', '')
+    const meta = await engine.generateKeyPair(sessionId, {
+      alias: 'kp',
+      keyAlgorithm: 'EC',
+      keySize: 256,
+      subjectDN: 'CN=test',
+      validityDays: 30,
+      entryPassword: 'entry-secret',
+    })
+    expect(meta.aliasCount).toBe(1)
   })
 })
 

@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, Play, Square, RefreshCw } from 'lucide-react'
 import { useMockStore } from '../../stores/mock.store'
 import { useTranslation } from '../../lib/i18n'
+import { useNumberDraft } from '../../lib/number-draft'
 import { toast } from '../../lib/toast'
 import type {
   MockEndpoint,
@@ -405,6 +406,14 @@ function methodStyle(method: string): React.CSSProperties {
 // ─── Endpoint editor ─────────────────────────────────────────────
 
 function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: MockEndpoint }) {
+  // Draft-based so the box can be cleared; `Number('') || 0` used to slam a 0
+  // back in and the next digit landed beside it.
+  const priorityDraft = useNumberDraft({
+    value: endpoint.priority,
+    min: 0,
+    max: 9999,
+    onChange: (v) => updateEndpoint(endpoint.id, { priority: v }),
+  })
   const { t } = useTranslation()
   const updateEndpoint = useMockStore((s) => s.updateEndpoint)
   const responses = useMockStore((s) => s.responsesByEndpoint[endpoint.id]) ?? EMPTY_RESPONSES
@@ -503,10 +512,7 @@ function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: Mo
             {t('mock.priority')}:
             <input
               type="number"
-              value={endpoint.priority}
-              onChange={(e) =>
-                updateEndpoint(endpoint.id, { priority: Number(e.target.value) || 0 })
-              }
+              {...priorityDraft.inputProps}
               className="rounded border px-2 py-1"
               style={{
                 width: 60,
@@ -745,6 +751,18 @@ function ResponseEditor({
   const { t } = useTranslation()
   const updateResponse = useMockStore((s) => s.updateResponse)
   const deleteResponse = useMockStore((s) => s.deleteResponse)
+  const statusDraft = useNumberDraft({
+    value: response.statusCode,
+    min: 100,
+    max: 599,
+    onChange: (v) => updateResponse(response.id, { statusCode: v }),
+  })
+  const delayDraft = useNumberDraft({
+    value: response.delayMs,
+    min: 0,
+    max: 600000,
+    onChange: (v) => updateResponse(response.id, { delayMs: v }),
+  })
   const condStr = useMemo(() => JSON.stringify(response.condition, null, 2), [response.condition])
   const [condText, setCondText] = useState(condStr)
   const [condError, setCondError] = useState<string | null>(null)
@@ -772,10 +790,7 @@ function ResponseEditor({
       <div className="mb-2 grid grid-cols-[140px_1fr_140px_auto] gap-2">
         <input
           type="number"
-          value={response.statusCode}
-          onChange={(e) =>
-            updateResponse(response.id, { statusCode: Number(e.target.value) || 200 })
-          }
+          {...statusDraft.inputProps}
           data-testid="mock-response-status"
           className="rounded border px-2 py-1 text-sm"
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
@@ -818,8 +833,7 @@ function ResponseEditor({
           {t('mock.delayMs')}:
           <input
             type="number"
-            value={response.delayMs}
-            onChange={(e) => updateResponse(response.id, { delayMs: Number(e.target.value) || 0 })}
+            {...delayDraft.inputProps}
             className="ml-1 rounded border px-2 py-1"
             style={{ width: 70, background: 'var(--white)', borderColor: 'var(--border)' }}
           />
@@ -1071,6 +1085,21 @@ function SettingsTab({ server }: { server: MockServer }) {
     updateServer(server.id, { [k]: v })
   }
 
+  // The port box could not be cleared at all: emptying it wrote 0, so a new port
+  // had to be typed around the zero.
+  const portDraft = useNumberDraft({
+    value: draft.port,
+    min: 1,
+    max: 65535,
+    onChange: (v) => setDraft((d) => ({ ...d, port: v })),
+  })
+  const corsDraft = useNumberDraft({
+    value: draft.corsMaxAge,
+    min: 0,
+    max: 86400,
+    onChange: (v) => setDraft((d) => ({ ...d, corsMaxAge: v })),
+  })
+
   return (
     <div className="flex-1 overflow-auto p-4">
       <div className="space-y-3 max-w-2xl">
@@ -1114,9 +1143,11 @@ function SettingsTab({ server }: { server: MockServer }) {
           <Field label={t('mock.port')}>
             <input
               type="number"
-              value={draft.port}
-              onChange={(e) => setDraft({ ...draft, port: Number(e.target.value) || 0 })}
-              onBlur={() => commit('port', draft.port)}
+              {...portDraft.inputProps}
+              onBlur={() => {
+                portDraft.inputProps.onBlur()
+                commit('port', draft.port)
+              }}
               min={1}
               max={65535}
               className="w-full rounded border px-2 py-1 text-sm"
@@ -1200,9 +1231,11 @@ function SettingsTab({ server }: { server: MockServer }) {
               <Field label={t('mock.corsMaxAge')}>
                 <input
                   type="number"
-                  value={draft.corsMaxAge}
-                  onChange={(e) => setDraft({ ...draft, corsMaxAge: Number(e.target.value) || 0 })}
-                  onBlur={() => commit('corsMaxAge', draft.corsMaxAge)}
+                  {...corsDraft.inputProps}
+                  onBlur={() => {
+                    corsDraft.inputProps.onBlur()
+                    commit('corsMaxAge', draft.corsMaxAge)
+                  }}
                   className="w-full rounded border px-2 py-1 text-sm"
                   style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
                 />

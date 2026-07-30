@@ -58,16 +58,24 @@ export default function SignForm({
         </Field>
       </div>
 
+      {/*
+        Disabled while a keystore key is selected. The engine picks the source
+        over the pasted PEM, so leaving these editable let the user type a key
+        that would be silently ignored — the same ambiguity the JWT and JWE
+        screens resolve this way.
+      */}
       <textarea
         className={TEXTAREA}
         placeholder={t('tools.saml.certPemPlaceholder')}
         value={form.certPem}
+        disabled={usingSource}
         onChange={(e) => patch({ certPem: e.target.value })}
       />
       <textarea
         className={TEXTAREA}
         placeholder={t('tools.saml.keyPemPlaceholder')}
         value={form.privateKeyPem}
+        disabled={usingSource}
         onChange={(e) => patch({ privateKeyPem: e.target.value })}
       />
       <input
@@ -75,6 +83,7 @@ export default function SignForm({
         type="password"
         placeholder={t('tools.saml.passphrase')}
         value={form.passphrase}
+        disabled={usingSource}
         onChange={(e) => patch({ passphrase: e.target.value })}
       />
 

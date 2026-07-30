@@ -35,8 +35,10 @@ export default function BaseConverterTool() {
       setFields(bytesToAll(bytes))
       setError(null)
     } catch (e) {
-      // Keep the user's typed value, blank the others until valid.
-      setFields({ ...EMPTY, [source]: raw })
+      // Keep every field as it was and only report the problem. Blanking the
+      // other four on each invalid keystroke destroyed values the user had
+      // typed — mid-edit input is normally invalid, so this fired constantly.
+      setFields((prev) => ({ ...prev, [source]: raw }))
       setError(e instanceof Error ? e.message : String(e))
     }
   }

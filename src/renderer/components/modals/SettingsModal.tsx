@@ -1,4 +1,5 @@
 import { useState, useEffect, useId } from 'react'
+import { toast } from '../../lib/toast'
 import { X } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useUpdaterStore } from '../../stores/updater.store'
@@ -44,6 +45,10 @@ export default function SettingsModal() {
   const proxyPortId = useId()
   const autoUpdateId = useId()
 
+  /** Why the last save failed — keeps the dialog open instead of pretending. */
+  const [saveError, setSaveError] = useState<string | null>(null)
+  /** Why the stored settings could not be read; the form is showing defaults. */
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [settings, setSettings] = useState<SettingsState>({
     theme: currentTheme,
     language: currentLocale,
@@ -80,7 +85,11 @@ export default function SettingsModal() {
           proxyPort: s.proxy?.port != null ? String(s.proxy.port) : prev.proxyPort,
         }))
       })
-      .catch(() => {})
+      .catch((e: unknown) => {
+        // Not silent: the form would otherwise show DEFAULTS that look like the
+        // saved configuration, and pressing Save would write them over it.
+        setLoadError(e instanceof Error ? e.message : String(e))
+      })
   }, [show])
 
   if (!show) return null
@@ -95,14 +104,23 @@ export default function SettingsModal() {
     system: t('settings.system'),
   }
 
-  const handleSave = () => {
+  /**
+   * Persist, THEN close.
+   *
+   * The promise used to be fire-and-forget (`.catch(() => {})`) with an
+   * unconditional `setShow(false)` right after — so a rejected write closed the
+   * dialog exactly like a successful one. That is bad for any setting and
+   * unacceptable for `sslVerification`: a user turning certificate checking off
+   * (or back ON) got no indication their choice never landed.
+   */
+  const handleSave = async (): Promise<void> => {
     setTheme(settings.theme)
     setLocale(settings.language)
     setFontSize(settings.fontSize)
     const api = getSettingsApi()
     if (api?.setAll) {
-      api
-        .setAll({
+      try {
+        const res = await api.setAll({
           defaultTimeout: settings.timeout,
           sslVerification: settings.sslVerification,
           autoUpdate: settings.autoUpdate,
@@ -112,8 +130,14 @@ export default function SettingsModal() {
             ...(settings.proxyPort ? { port: Number(settings.proxyPort) } : {}),
           },
         })
-        .catch(() => {})
+        if (res && res.success === false) throw new Error(res.error ?? t('settings.saveFailed'))
+      } catch (e) {
+        // Stay open so the user can retry or copy their values out.
+        setSaveError(e instanceof Error ? e.message : String(e))
+        return
+      }
     }
+    toast.success(t('settings.saved'))
     setShow(false)
   }
 
@@ -296,6 +320,12 @@ export default function SettingsModal() {
           </div>
         </div>
 
+        {(saveError || loadError) && (
+          <p role="alert" className="mt-4 mb-0 text-xs" style={{ color: '#cc2200' }}>
+            {saveError ?? `${t('settings.loadFailed')}: ${loadError}`}
+          </p>
+        )}
+
         {/* Footer */}
         <div className="mt-6 flex items-center justify-between gap-2.5 border-t border-[var(--border)] pt-4">
           <button
@@ -319,7 +349,7 @@ export default function SettingsModal() {
             </button>
             <button
               type="button"
-              onClick={handleSave}
+              onClick={() => void handleSave()}
               className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
             >
               {t('settings.save')}

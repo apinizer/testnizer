@@ -3,6 +3,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { formatJson, type JsonFormatOptions } from '../../lib/tools/json-format'
 import { useTranslation } from '../../lib/i18n'
+import { useInvalidateOn } from '../../lib/use-stale-guard'
 
 const SAMPLE =
   '{"name":"Yıldız","age":30,"skills":["TypeScript","React"],"address":{"city":"İstanbul","zip":34000}}'
@@ -16,6 +17,16 @@ export default function JsonFormatTool() {
   const [sortKeys, setSortKeys] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [output, setOutput] = useState('')
+
+  /*
+   * The result belongs to the input that produced it. Leaving it on screen after
+   * an edit shows an answer about text that is no longer there — and unlike a
+   * generated password there is nothing to lose by dropping it, since pressing
+   * the button again re-derives it from what the user can still see.
+   */
+  useInvalidateOn([input, indent, sortKeys], () => {
+    setOutput('')
+  })
 
   const opts = useMemo<JsonFormatOptions>(
     () => ({ indent: indent === 'tab' ? '\t' : Number(indent), sortKeys }),

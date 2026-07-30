@@ -18,6 +18,9 @@ export default function VerifyForm({
   patch: (p: Partial<SamlVerifyFormState>) => void
 }) {
   const { t } = useTranslation()
+  // A keystore selection wins over the pasted trust anchor, so the textarea is
+  // disabled rather than left editable-but-ignored.
+  const usingSource = form.keySource !== null
 
   return (
     <Pane>
@@ -25,6 +28,7 @@ export default function VerifyForm({
         className={TEXTAREA}
         placeholder={t('tools.saml.trustCertPlaceholder')}
         value={form.certPem}
+        disabled={usingSource}
         onChange={(e) => patch({ certPem: e.target.value })}
       />
       <div className="text-[10px]" style={{ color: 'var(--hint)' }}>

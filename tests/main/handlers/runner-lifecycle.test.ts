@@ -333,9 +333,14 @@ describe('run lifecycle — guaranteed teardown', () => {
     })
 
     expect(res.success).toBe(true)
-    // The first cleanup ran; the SECOND was abandoned.
+    // The first cleanup ran; the SECOND was abandoned — and now says so, instead
+    // of vanishing from the report.
     expect(received).toEqual(['/main', '/stopTeardown'])
-    expect(teardownRows(res).length).toBe(1)
+    const rows = teardownRows(res)
+    expect(rows.length).toBe(2)
+    expect(rows[0].skipped).toBe(0)
+    expect(rows[1].statusText).toBe('NOT_RUN')
+    expect(rows[1].skipped).toBe(1)
     expect(res.data?.stopReason).toBe('teardownAborted')
   })
 
@@ -356,6 +361,52 @@ describe('run lifecycle — guaranteed teardown', () => {
     expect(received).toEqual(['/fail', '/cleanup'])
     expect(res.data?.failedEndpoints).toBe(1)
     expect(teardownRows(res).length).toBe(1)
+  })
+
+  it('skips the flow on a failed setup even with stopOnError OFF', async () => {
+    // The decisive case. Setup is the run's PRECONDITION, not one of its steps:
+    // if the fixture that creates the record failed, every later assertion is
+    // measuring the wrong world and its failures are noise. So the flow is
+    // skipped regardless of the checkbox — which also means the reason reported
+    // must not be "stopOnError", or the UI would credit a checkbox that is off.
+    const setupId = seedEndpoint({ name: 'Setup', url: `http://127.0.0.1:${port}/fail` })
+    const mainId = seedEndpoint({ name: 'Main', url: `http://127.0.0.1:${port}/main` })
+    const teardownId = seedEndpoint({ name: 'Cleanup', url: `http://127.0.0.1:${port}/cleanup` })
+
+    const res = await run({
+      endpointIds: [mainId],
+      setupEndpointIds: [setupId],
+      teardownEndpointIds: [teardownId],
+      stopOnError: false,
+    })
+
+    expect(res.success).toBe(true)
+    expect(received).toEqual(['/fail', '/cleanup'])
+    expect(res.data?.stopReason).toBe('setupFailed')
+    // Setup counts toward the verdict; cleanup ran; the flow is reported as
+    // not-run rather than omitted.
+    expect(res.data?.failedEndpoints).toBe(1)
+    expect(teardownRows(res).length).toBe(1)
+    const flowRow = res.data!.results.find((r) => r.endpointId === mainId)
+    expect(flowRow?.statusText).toBe('NOT_RUN')
+    expect(flowRow?.skipped).toBe(1)
+  })
+
+  it('does NOT abort the flow for a failing MAIN step when stopOnError is off', async () => {
+    // Guards the scope of the change above: only SETUP failures are
+    // unconditional. A failing flow step still respects the checkbox.
+    const failing = seedEndpoint({ name: 'Fails', url: `http://127.0.0.1:${port}/fail` })
+    const second = seedEndpoint({ name: 'Runs', url: `http://127.0.0.1:${port}/main` })
+
+    const res = await run({
+      endpointIds: [failing, second],
+      stopOnError: false,
+    })
+
+    expect(res.success).toBe(true)
+    expect(received).toEqual(['/fail', '/main'])
+    expect(res.data?.stopReason).toBeUndefined()
+    expect(res.data?.results.some((r) => r.statusText === 'NOT_RUN')).toBe(false)
   })
 })
 

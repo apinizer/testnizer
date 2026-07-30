@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
+import { useNumberDraft } from '../../lib/number-draft'
 
 type RunMode = 'manual' | 'schedule'
 type ScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
@@ -82,6 +83,21 @@ export default function RunnerConfig({
 }: RunnerConfigProps) {
   const { t } = useTranslation()
   const environments = useEnvironmentStore((s) => s.environments)
+  // Same class the testers hit in the Password Generator: `Math.max(1, Number(''))`
+  // is 1, so clearing the box instantly wrote the minimum back and the next digit
+  // landed beside it. No upper bound existed before, so none is introduced here.
+  const iterationsDraft = useNumberDraft({
+    value: iterations,
+    min: 1,
+    max: Number.MAX_SAFE_INTEGER,
+    onChange: setIterations,
+  })
+  const delayDraft = useNumberDraft({
+    value: delay,
+    min: 0,
+    max: Number.MAX_SAFE_INTEGER,
+    onChange: setDelay,
+  })
   const [runMode, setRunMode] = useState<RunMode>(canSchedule ? initialRunMode : 'manual')
   // Force-manual when scheduling is not allowed for this source. This
   // overrides any stale state if the user previously had Schedule selected
@@ -396,9 +412,11 @@ export default function RunnerConfig({
               type="number"
               min={1}
               data-testid="runner-iterations"
-              value={iterations}
-              onFocus={(e) => e.currentTarget.select()}
-              onChange={(e) => setIterations(Math.max(1, Number(e.target.value)))}
+              {...iterationsDraft.inputProps}
+              onFocus={(e) => {
+                iterationsDraft.inputProps.onFocus()
+                e.currentTarget.select()
+              }}
               className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
               style={{ fontSize: 13 }}
             />
@@ -412,9 +430,11 @@ export default function RunnerConfig({
                 type="number"
                 min={0}
                 step={100}
-                value={delay}
-                onFocus={(e) => e.currentTarget.select()}
-                onChange={(e) => setDelay(Math.max(0, Number(e.target.value)))}
+                {...delayDraft.inputProps}
+                onFocus={(e) => {
+                  delayDraft.inputProps.onFocus()
+                  e.currentTarget.select()
+                }}
                 className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                 style={{ fontSize: 13 }}
               />

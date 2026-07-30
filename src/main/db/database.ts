@@ -491,6 +491,14 @@ function runMigrations(database: Database.Database): void {
   if (!stColNames.includes('run_post_script')) {
     database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_post_script TEXT`)
   }
+  // Same parity rule as the phase columns above: a scheduled run must grade the
+  // way the interactive run it was created from does. Without this the "Stop run
+  // if an error occurs" choice was dropped on the way to the schedule, so an
+  // unattended nightly run kept going after a failure. DEFAULT 1 (and the
+  // `!== 0` read in scheduler.handler) puts pre-migration rows on the safer side.
+  if (!stColNames.includes('stop_on_error')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN stop_on_error INTEGER DEFAULT 1`)
+  }
 
   // ─── Auth tables ─────────────────────────────────────────
   database.exec(`

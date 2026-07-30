@@ -3,6 +3,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { evaluateJsonPath, JSONPATH_EXAMPLES, JSONPATH_SAMPLE_DOC } from '../../lib/tools/jsonpath'
 import { useTranslation } from '../../lib/i18n'
+import { useInvalidateOn } from '../../lib/use-stale-guard'
 
 type JsonPathResult = ReturnType<typeof evaluateJsonPath>
 
@@ -11,6 +12,16 @@ export default function JsonPathTool() {
   const [json, setJson] = useState(JSONPATH_SAMPLE_DOC)
   const [expr, setExpr] = useState('$..author')
   const [result, setResult] = useState<JsonPathResult | null>(null)
+
+  /*
+   * The result belongs to the input that produced it. Leaving it on screen after
+   * an edit shows an answer about text that is no longer there — and unlike a
+   * generated password there is nothing to lose by dropping it, since pressing
+   * the button again re-derives it from what the user can still see.
+   */
+  useInvalidateOn([json, expr], () => {
+    setResult(null)
+  })
 
   const output = result?.ok ? JSON.stringify(result.matches, null, 2) : ''
   const matchCount = result?.ok ? result.matches.length : 0

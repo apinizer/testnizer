@@ -312,7 +312,10 @@ describe('inspectTls — caCerts merge makes a local-CA leaf authorized (F-2)', 
 // the gap where only the TLS_INSPECT_NET=1 case proved the property.
 
 describe('buildConnectOptions — F-2 CA merge (deterministic, offline)', () => {
-  const extra = Buffer.from('-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n', 'utf8')
+  const extra = Buffer.from(
+    '-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n',
+    'utf8',
+  )
 
   it('OMITS ca entirely when no caCerts supplied (Node uses the default store)', () => {
     const o = buildConnectOptions({ host: 'h' }, 'h', 443, 'h')
@@ -368,6 +371,38 @@ describe('inspectTls — hostnameValid via tls.checkServerIdentity (F-1)', () =>
     expect(r.hostnameValid).toBe(false)
     // A pure boolean, never the string checkHost would return.
     expect(typeof r.hostnameValid).toBe('boolean')
+    // …and this must be a real FINDING, not the placeholder `baseResult` fills
+    // in on a transport failure — which is also `hostnameValid:false`. Without
+    // these two lines the test passes even when nothing was inspected.
+    expect(r.ok).toBe(true)
+    expect(r.chain.length).toBeGreaterThan(0)
+  })
+
+  it('an EXPIRED certificate still reports ok:true — it is a finding, not a failure', async () => {
+    // The renderer hides certificate verdicts when `ok` is false, so the whole
+    // "misleading badges" fix rests on expired/untrusted/mismatched certificates
+    // keeping `ok:true`. That was covered for self-signed and untrusted but
+    // never for expiry, because every fixture was minted with a future notAfter.
+    const past = mintCert({
+      cn: 'localhost',
+      sans: [
+        { type: 2, value: 'localhost' },
+        { type: 7, ip: '127.0.0.1' },
+      ],
+      notBefore: new Date(Date.now() - 2 * YEAR),
+      notAfter: new Date(Date.now() - YEAR),
+    })
+    const server = await startServer({ cert: past.certPem, key: past.keyPem })
+    try {
+      const r = await inspectTls({ host: '127.0.0.1', port: server.port, timeoutMs: 4000 })
+      expect(r.ok).toBe(true)
+      expect(r.chain.length).toBeGreaterThan(0)
+      expect(r.expired).toBe(true)
+      expect(r.validityStatus).toBe('expired')
+      expect(r.daysToExpiry).toBeLessThan(0)
+    } finally {
+      await closeServer(server)
+    }
   })
 })
 
@@ -551,7 +586,10 @@ describe('tls:inspect handler', () => {
     const json = JSON.stringify(res)
     expect(json).not.toMatch(/BEGIN [A-Z ]*PRIVATE KEY/)
     // The client private key bytes we passed in must not echo back anywhere.
-    const keyBody = client.keyPem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '').slice(0, 64)
+    const keyBody = client.keyPem
+      .replace(/-----[^-]+-----/g, '')
+      .replace(/\s+/g, '')
+      .slice(0, 64)
     expect(json).not.toContain(keyBody)
   })
 })

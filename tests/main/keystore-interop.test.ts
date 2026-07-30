@@ -39,7 +39,10 @@ if (process.env.CI && (!hasKeytool || !hasOpenssl)) {
 }
 
 function pemToDer(pem: string, label: string): Buffer {
-  const b64 = pem.split(`-----BEGIN ${label}-----`)[1].split(`-----END ${label}-----`)[0].replace(/\s+/g, '')
+  const b64 = pem
+    .split(`-----BEGIN ${label}-----`)[1]
+    .split(`-----END ${label}-----`)[0]
+    .replace(/\s+/g, '')
   return Buffer.from(b64, 'base64')
 }
 const certDer = (f: string): Buffer => pemToDer(readFileSync(join(CERTS, f), 'utf8'), 'CERTIFICATE')
@@ -52,7 +55,13 @@ gate('keystore interop (keytool + openssl)', () => {
 
   it('engine-written JKS opens with keytool -list and shows the alias', () => {
     const entries = [
-      { alias: 'test-client', kind: 'key' as const, privateKeyPkcs8Der: keyDer('client.pkcs8.key'), entryPassword: PW, certChainDer: [certDer('client.crt'), certDer('ca.crt')] },
+      {
+        alias: 'test-client',
+        kind: 'key' as const,
+        privateKeyPkcs8Der: keyDer('client.pkcs8.key'),
+        entryPassword: PW,
+        certChainDer: [certDer('client.crt'), certDer('ca.crt')],
+      },
       { alias: 'testca', kind: 'cert' as const, certDer: certDer('ca.crt') },
     ]
     const jks = serializeKeyStore(entries as never, 'JKS', PW)
@@ -77,7 +86,13 @@ gate('keystore interop (keytool + openssl)', () => {
     // the key ciphertext is byte-correct for Java (verify finding: keytool-list alone
     // would pass on a corrupted key).
     const entries = [
-      { alias: 'test-client', kind: 'key' as const, privateKeyPkcs8Der: keyDer('client.pkcs8.key'), entryPassword: PW, certChainDer: [certDer('client.crt'), certDer('ca.crt')] },
+      {
+        alias: 'test-client',
+        kind: 'key' as const,
+        privateKeyPkcs8Der: keyDer('client.pkcs8.key'),
+        entryPassword: PW,
+        certChainDer: [certDer('client.crt'), certDer('ca.crt')],
+      },
     ]
     const src = join(tmp, 'protector.jks')
     writeFileSync(src, serializeKeyStore(entries as never, 'JKS', PW))
@@ -89,9 +104,22 @@ gate('keystore interop (keytool + openssl)', () => {
     // key to re-encrypt it into the PKCS12 destination — that is what exercises protectKey.
     execFileSync(
       'keytool',
-      ['-importkeystore', '-noprompt',
-        '-srckeystore', src, '-srcstoretype', 'JKS', '-srcstorepass', PW,
-        '-destkeystore', dest, '-deststoretype', 'PKCS12', '-deststorepass', PW],
+      [
+        '-importkeystore',
+        '-noprompt',
+        '-srckeystore',
+        src,
+        '-srcstoretype',
+        'JKS',
+        '-srcstorepass',
+        PW,
+        '-destkeystore',
+        dest,
+        '-deststoretype',
+        'PKCS12',
+        '-deststorepass',
+        PW,
+      ],
       { stdio: 'pipe' },
     )
     const listed = execFileSync(
@@ -114,7 +142,13 @@ gate('keystore interop (keytool + openssl)', () => {
 
   it('engine-written PKCS12 opens with BOTH keytool -list and openssl pkcs12 -info', () => {
     const entries = [
-      { alias: 'test-client', kind: 'key' as const, privateKeyPkcs8Der: keyDer('client.pkcs8.key'), entryPassword: PW, certChainDer: [certDer('client.crt')] },
+      {
+        alias: 'test-client',
+        kind: 'key' as const,
+        privateKeyPkcs8Der: keyDer('client.pkcs8.key'),
+        entryPassword: PW,
+        certChainDer: [certDer('client.crt')],
+      },
     ]
     const p12 = serializeKeyStore(entries as never, 'PKCS12', PW)
     const p = join(tmp, 'engine.p12')
@@ -204,7 +238,12 @@ gate('keystore interop (keytool + openssl)', () => {
   it('engine-GENERATED AES-256 secret key shows SecretKeyEntry in keytool (KS-F2-63)', () => {
     const engine = new KeystoreEngine()
     const { sessionId } = engine.createEmpty('PKCS12', PW)
-    engine.generateSecretKey(sessionId, { alias: 'skio', keyAlgorithm: 'AES', keySize: 256, entryPassword: PW })
+    engine.generateSecretKey(sessionId, {
+      alias: 'skio',
+      keyAlgorithm: 'AES',
+      keySize: 256,
+      entryPassword: PW,
+    })
     const p = join(tmp, 'skio.p12')
     writeFileSync(p, engine.serialize(sessionId))
     const out = execFileSync(
@@ -218,8 +257,20 @@ gate('keystore interop (keytool + openssl)', () => {
 
   it('engine multi-alias PKCS12 shows every alias with correct friendlyName in keytool', () => {
     const entries = [
-      { alias: 'rsa-key', kind: 'key' as const, privateKeyPkcs8Der: keyDer('client.pkcs8.key'), entryPassword: PW, certChainDer: [certDer('client.crt')] },
-      { alias: 'ec-key', kind: 'key' as const, privateKeyPkcs8Der: keyDer('ec-p256.pkcs8.key'), entryPassword: PW, certChainDer: [certDer('ec-p256.crt')] },
+      {
+        alias: 'rsa-key',
+        kind: 'key' as const,
+        privateKeyPkcs8Der: keyDer('client.pkcs8.key'),
+        entryPassword: PW,
+        certChainDer: [certDer('client.crt')],
+      },
+      {
+        alias: 'ec-key',
+        kind: 'key' as const,
+        privateKeyPkcs8Der: keyDer('ec-p256.pkcs8.key'),
+        entryPassword: PW,
+        certChainDer: [certDer('ec-p256.crt')],
+      },
       { alias: 'trusted-ca', kind: 'cert' as const, certDer: certDer('ca.crt') },
     ]
     const p12 = serializeKeyStore(entries as never, 'PKCS12', PW)
@@ -323,9 +374,22 @@ gate('keystore B4 convert interop (both directions)', () => {
     const dest = join(tmp, 'conv-roundtrip.p12')
     execFileSync(
       'keytool',
-      ['-importkeystore', '-noprompt',
-        '-srckeystore', p, '-srcstoretype', 'JKS', '-srcstorepass', 'jkspass',
-        '-destkeystore', dest, '-deststoretype', 'PKCS12', '-deststorepass', 'jkspass'],
+      [
+        '-importkeystore',
+        '-noprompt',
+        '-srckeystore',
+        p,
+        '-srcstoretype',
+        'JKS',
+        '-srcstorepass',
+        'jkspass',
+        '-destkeystore',
+        dest,
+        '-deststoretype',
+        'PKCS12',
+        '-deststorepass',
+        'jkspass',
+      ],
       { stdio: 'pipe' },
     )
     expect(readFileSync(dest).length).toBeGreaterThan(0)
@@ -372,13 +436,54 @@ gate('keystore B4 convert interop (both directions)', () => {
     try {
       execFileSync(
         'keytool',
-        ['-keypasswd', '-alias', 'a', '-keystore', p, '-storetype', 'JKS',
-          '-storepass', 'store', '-keypass', 'store', '-new', 'x'],
+        [
+          '-keypasswd',
+          '-alias',
+          'a',
+          '-keystore',
+          p,
+          '-storetype',
+          'JKS',
+          '-storepass',
+          'store',
+          '-keypass',
+          'store',
+          '-new',
+          'x',
+        ],
         { stdio: 'pipe' },
       )
     } catch {
       failed = true
     }
     expect(failed).toBe(true)
+  })
+  /**
+   * GATE for the empty-PKCS#12-password decision.
+   *
+   * `createEmpty` accepts a blank store password for PKCS#12 so a passwordless
+   * TRUSTSTORE can be created (the Create dialog labels the field optional, and
+   * the TLS Inspector's "Add as trusted" needs exactly this). That is only
+   * defensible if the bytes are a real, readable PKCS#12 for the rest of the
+   * world — not just for our own reader. If this test ever fails, the decision
+   * must be reverted to "label the field required" rather than shipping a file
+   * only Testnizer can open.
+   */
+  it('an EMPTY-password PKCS12 truststore is readable by openssl', () => {
+    const engine = new KeystoreEngine()
+    const { sessionId } = engine.createEmpty('PKCS12', '')
+    engine.importTrustedCertificate(sessionId, {
+      alias: 'ca',
+      certificateContent: readFileSync(join(CERTS, 'ca.crt'), 'utf8'),
+    })
+    const p = join(tmp, 'nopass.p12')
+    writeFileSync(p, engine.serialize(sessionId))
+
+    const out = execFileSync(
+      'openssl',
+      ['pkcs12', '-info', '-in', p, '-nokeys', '-passin', 'pass:'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    )
+    expect(out).toMatch(/BEGIN CERTIFICATE|friendlyName/i)
   })
 })

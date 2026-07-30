@@ -31,7 +31,21 @@ import {
 import { buildScriptBindings, createPmResponse, expect as chaiExpect } from '../../shared/script'
 import type { NormalizedResponse, PmLike } from '../../shared/script'
 import { endpointDidPass, countsTowardRunVerdict } from '../../shared/runner-verdict'
+import { summarizeRun } from '../../shared/runner-summary'
 import type { RunPhase } from '../../shared/runner-verdict'
+// Runner IPC shapes live in one place now — see src/shared/runner-types.ts for
+// why (they had already drifted across main / preload / store).
+import type {
+  AssertionResult,
+  EndpointRunResult,
+  ResponseTiming,
+  RunnerExecuteOptions,
+  RunnerExportOptions,
+  RunnerProgress,
+  RunnerReport,
+  RunStopReason,
+  ScriptConsoleLog,
+} from '../../shared/runner-types'
 import type { StoredProjectSettings } from '../lib/project-settings'
 
 // ─── Types ───────────────────────────────────────────────────────
@@ -87,164 +101,6 @@ interface TestAssertion {
   rangeMin?: number
   rangeMax?: number
 }
-
-interface RunnerExecuteOptions {
-  projectId: string
-  endpointIds: string[]
-  environmentId?: string
-  workspaceId?: string
-  /** Delay in milliseconds inserted between requests. */
-  delay?: number
-  /**
-   * Number of iterations. When `iterationData` is supplied, this is overridden
-   * by `iterationData.length`. Defaults to 1.
-   */
-  iterations?: number
-  /**
-   * Per-iteration data rows (Postman / Insomnia compatible). When set, the
-   * runner executes one iteration per row and exposes the row to scripts via
-   * `pm.iterationData.get(key)`.
-   */
-  iterationData?: Record<string, string>[]
-  stopOnError?: boolean
-  /**
-   * When true (default) each result carries the full responseBody +
-   * responseHeaders. Disable to keep memory low for very large collections —
-   * the report still has assertions, status, timing and size.
-   */
-  persistResponses?: boolean
-  /**
-   * Postman "Keep variable values" — when true (default) environment / global
-   * variables written by scripts during the run (`pm.environment.set`,
-   * `insomnia.environment.set`, …) are persisted back to the active environment
-   * after the run completes, so a token fetched once in a setup request is
-   * reused (and refreshed in one place) by every later request and by
-   * subsequent runs. Set false to keep the run side-effect-free (issue #12).
-   */
-  keepVariableValues?: boolean
-  /**
-   * Run-level SETUP requests (issue #72). Executed once, in order, BEFORE the
-   * main flow — not once per iteration: setup is "prepare this run", not
-   * "prepare this iteration". They are part of the run proper, so a setup
-   * failure counts against the run verdict and (with stopOnError) skips the
-   * main flow — but teardown still executes.
-   */
-  setupEndpointIds?: string[]
-  /**
-   * Run-level TEARDOWN requests (issue #72). Executed once, in order, AFTER
-   * everything else — GUARANTEED on a best-effort basis: they still run when
-   * the run stopped early via stopOnError, a transport error, or the user
-   * pressing Stop. A second Stop aborts teardown too, so the UI can never hang.
-   * Their results are reported under the 'teardown' phase and deliberately do
-   * NOT flip the run's verdict (see shared/runner-verdict.ts).
-   */
-  teardownEndpointIds?: string[]
-  /** Run-level pre-request script — runs ONCE before the setup phase. */
-  runPreScript?: string
-  /** Run-level post-run script — runs ONCE at the end of teardown (guaranteed). */
-  runPostScript?: string
-  folderName?: string
-  source?: string
-  sourceLabel?: string
-  // Set by executeCollectionForScheduler so we can tie this runner_history
-  // row back to its scheduled_tasks row even after a rename / delete.
-  scheduledTaskId?: string
-}
-
-interface RunnerExportOptions {
-  results: EndpointRunResult[]
-  format: 'json' | 'html'
-}
-
-interface ResponseTiming {
-  total: number
-  dns?: number
-  tcp?: number
-  tls?: number
-  ttfb?: number
-  download?: number
-}
-
-interface EndpointRunResult {
-  endpointId: string
-  endpointName: string
-  folderName?: string
-  method: string
-  url: string
-  status: number | null
-  statusText: string
-  duration: number
-  passed: number
-  failed: number
-  skipped: number
-  assertions: AssertionResult[]
-  error?: string
-  responseSize?: number
-  responseBody?: string
-  responseHeaders?: Record<string, string>
-  requestHeaders?: Record<string, string>
-  requestBody?: string
-  /** 1-based iteration index. Renderer groups results by this field. */
-  iteration?: number
-  /**
-   * Lifecycle phase that produced this result (issue #72). Absent on reports
-   * written before run-level hooks existed — treated as 'main' everywhere.
-   */
-  phase?: RunPhase
-}
-
-interface AssertionResult {
-  name: string
-  passed: boolean
-  actual?: string | number
-  error?: string
-}
-
-interface RunnerProgress {
-  current: number
-  total: number
-  endpointId: string
-  result: EndpointRunResult
-}
-
-interface RunnerReport {
-  projectId: string
-  startedAt: number
-  completedAt: number
-  totalEndpoints: number
-  passedEndpoints: number
-  failedEndpoints: number
-  totalAssertions: number
-  passedAssertions: number
-  failedAssertions: number
-  results: EndpointRunResult[]
-  /**
-   * Variables written by scripts during the run and (when keepVariableValues
-   * is on) persisted to the active environment / project globals. The renderer
-   * uses these deltas to refresh its in-memory env store so the next "Send"
-   * and the env editor reflect the new values without a manual reload.
-   */
-  envUpdates?: Record<string, string>
-  globalUpdates?: Record<string, string>
-  /**
-   * Teardown-phase tallies, kept OUT of passedEndpoints / failedEndpoints so a
-   * cleanup failure is reported without masking (or manufacturing) the run's
-   * real verdict — issue #72.
-   */
-  teardownPassedEndpoints?: number
-  teardownFailedEndpoints?: number
-  teardownPassedAssertions?: number
-  teardownFailedAssertions?: number
-  /** Why the main flow ended before its last request, when it did. */
-  stopReason?: RunStopReason
-}
-
-/**
- * 'stopOnError' — a request failed and the run was configured to halt.
- * 'cancelled'  — the user pressed Stop.
- * 'teardownAborted' — a SECOND Stop cut cleanup short as well.
- */
-type RunStopReason = 'stopOnError' | 'cancelled' | 'teardownAborted'
 
 // ─── State ───────────────────────────────────────────────────────
 
@@ -714,8 +570,8 @@ interface ScriptContext {
   nextRequestName?: string | null
   /** Test results captured from `pm.test(name, fn)`. */
   testResults: Array<{ name: string; passed: boolean; error?: string }>
-  /** Console output produced by the script. */
-  consoleLogs: string[]
+  /** Console output produced by the script, level-preserving and capped. */
+  consoleLogs: ScriptConsoleLog[]
   /** In-flight `pm.sendRequest(...)` promises; the runner awaits these before
    *  finishing a script so callback-style sends complete. */
   pendingSends: Array<Promise<unknown>>
@@ -776,6 +632,40 @@ interface ScriptResponseShape {
  * iterationData, execution.skipRequest, execution.setNextRequest. More can
  * be added as fixtures demand.
  */
+/** Max console lines kept per step, and max characters kept per line. */
+const CONSOLE_LOG_MAX_ENTRIES = 200
+const CONSOLE_LOG_MAX_CHARS = 4096
+
+/**
+ * Append one console line, enforcing the caps. Past the entry limit a single
+ * summary line replaces the rest, so the report says it truncated instead of
+ * quietly dropping output.
+ */
+function pushConsoleLog(
+  ctx: ScriptContext,
+  level: ScriptConsoleLog['level'],
+  message: string,
+): void {
+  const logs = ctx.consoleLogs
+  if (logs.length > CONSOLE_LOG_MAX_ENTRIES) return
+  if (logs.length === CONSOLE_LOG_MAX_ENTRIES) {
+    logs.push({
+      level: 'warn',
+      message: `…further console output suppressed after ${CONSOLE_LOG_MAX_ENTRIES} lines`,
+      timestamp: Date.now(),
+    })
+    return
+  }
+  logs.push({
+    level,
+    message:
+      message.length > CONSOLE_LOG_MAX_CHARS
+        ? `${message.slice(0, CONSOLE_LOG_MAX_CHARS)}… (truncated)`
+        : message,
+    timestamp: Date.now(),
+  })
+}
+
 async function runUserScript(
   script: string,
   ctx: ScriptContext,
@@ -783,9 +673,18 @@ async function runUserScript(
 ): Promise<void> {
   if (!script) return
 
-  const log = (...args: unknown[]): void => {
-    ctx.consoleLogs.push(args.map(String).join(' '))
-  }
+  // Level-preserving, and capped. The renderer's Send path already keeps
+  // warn/error apart; main used to flatten all three into "log", which is the
+  // per-path divergence `src/shared/script/` exists to prevent. The cap matters
+  // because every result crosses IPC on each progress tick and is persisted into
+  // `runner_history.results_json` — an unbounded `console.log` in a loop would
+  // bloat both.
+  const mkLog =
+    (level: ScriptConsoleLog['level']) =>
+    (...args: unknown[]): void => {
+      pushConsoleLog(ctx, level, args.map(String).join(' '))
+    }
+  const log = mkLog('log')
 
   const normalized: NormalizedResponse | null = response
     ? {
@@ -995,7 +894,7 @@ async function runUserScript(
   const { bindings, legacyTests } = buildScriptBindings({ pm, normalizedResponse: normalized })
   const allBindings: Record<string, unknown> = {
     ...bindings,
-    console: { log, warn: log, error: log },
+    console: { log, warn: mkLog('warn'), error: mkLog('error') },
   }
   const names = Object.keys(allBindings)
   const values = names.map((n) => allBindings[n])
@@ -1013,7 +912,7 @@ async function runUserScript(
     const fn = new AsyncFunction(...names, `{\n${script}\n}`)
     await fn(...values)
   } catch (e) {
-    ctx.consoleLogs.push(`Script error: ${(e as Error).message}`)
+    pushConsoleLog(ctx, 'error', `Script error: ${(e as Error).message}`)
     ctx.scriptError = (e as Error).message
   }
 
@@ -1383,6 +1282,36 @@ function recordStep(ctx: RunContext, result: EndpointRunResult): StepOutcome {
 }
 
 /**
+ * Record a step the run never reached, so an aborted run shows what it skipped.
+ *
+ * Deliberately NOT `recordStep`: that one advances `ctx.emitted` and emits a
+ * progress tick, which would make the progress bar count requests that were
+ * never sent. This only appends the row.
+ *
+ * `statusText` is `NOT_RUN` rather than `SKIPPED` (a user's `skipRequest()`) or
+ * `UNSUPPORTED` (a protocol the runner can't drive) — three different stories
+ * that share one neutral badge.
+ */
+function recordNotRun(ctx: RunContext, endpointId: string, phase: RunPhase, iteration = 0): void {
+  const entity = getRunnableEntity(endpointId)
+  ctx.results.push({
+    endpointId,
+    endpointName: entity?.row.name ?? endpointId,
+    method: '',
+    url: '',
+    status: null,
+    statusText: 'NOT_RUN',
+    duration: 0,
+    passed: 0,
+    failed: 0,
+    skipped: 1,
+    assertions: [],
+    iteration: iteration + 1,
+    phase,
+  })
+}
+
+/**
  * Execute ONE request of a run. Extracted from the old inline double loop so
  * setup, main and teardown all drive the SAME code path: a teardown request
  * resolves `{{vars}}`, inherits folder/project auth, runs the pre/post script
@@ -1480,6 +1409,10 @@ async function runEndpointStep(
     return { ...recordStep(ctx, result), configError: true }
   }
 
+  // Created OUTSIDE the try so the catch below can still report whatever the
+  // pre-request script logged before the step blew up.
+  const scriptCtx = newScriptContext(envVars, iterationData[iter] ?? {}, iter, iterations)
+
   try {
     // Resolve inherited auth + cascade scripts up the folder/project chain.
     // Suite items live under test_suite_folders; everything else under the
@@ -1515,7 +1448,6 @@ async function runEndpointStep(
 
     // Run pre-request scripts in order. They share one context so a
     // project/folder script's env writes are visible to inner scripts.
-    const scriptCtx = newScriptContext(envVars, iterationData[iter] ?? {}, iter, iterations)
     for (const s of preScripts) {
       scriptCtx.envUpdates = {}
       scriptCtx.globalUpdates = {}
@@ -1724,6 +1656,11 @@ async function runEndpointStep(
         : undefined,
       iteration,
       phase,
+      // `scriptCtx` spans BOTH the pre-request and post-response scripts, so by
+      // the time the result is assembled its console output is complete. Not
+      // gated on `persistResponses`: logs are the point of the feature and are
+      // orders of magnitude smaller than bodies.
+      consoleLogs: scriptCtx.consoleLogs.length > 0 ? scriptCtx.consoleLogs : undefined,
     }
 
     // Endpoint verdict via the SHARED rule (shared/runner-verdict.ts) so
@@ -1752,6 +1689,9 @@ async function runEndpointStep(
       error: (e as Error).message,
       iteration,
       phase,
+      // The pre-request script may have logged before the throw — keep it, it is
+      // usually the fastest clue to why this step blew up.
+      consoleLogs: scriptCtx.consoleLogs.length > 0 ? scriptCtx.consoleLogs : undefined,
     }
     return recordStep(ctx, result)
   }
@@ -1813,6 +1753,9 @@ async function runHookScript(
     error: scriptError,
     iteration: undefined,
     phase,
+    // Run-level hooks log too, and theirs is the output users reach for first
+    // when a setup script misbehaves.
+    consoleLogs: scriptCtx.consoleLogs.length > 0 ? scriptCtx.consoleLogs : undefined,
   })
 }
 
@@ -1833,8 +1776,13 @@ async function runTeardownPhase(
 ): Promise<void> {
   const runState = ctx.runState
   runState.teardownStarted = true
-  for (const id of ids) {
-    if (runState.abortTeardown) return
+  for (const [i, id] of ids.entries()) {
+    if (runState.abortTeardown) {
+      // A second Stop cut cleanup short. Say which steps were left undone rather
+      // than ending the report mid-list.
+      for (const remaining of ids.slice(i)) recordNotRun(ctx, remaining, 'teardown')
+      return
+    }
     try {
       await runEndpointStep(ctx, id, 'teardown', 0)
     } catch (e) {
@@ -1980,8 +1928,19 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       RUN_PRE_SCRIPT_ID,
       'Run setup script',
     )
-    let abortPrimary = stopOnError && preOutcome !== null && !preOutcome.didPass
-    if (abortPrimary) stopReason = 'stopOnError'
+    // A failed SETUP step skips the flow whether or not "Stop run if an error
+    // occurs" is checked. Setup is the run's precondition, not one of its steps:
+    // if the fixture that creates the record failed, every later assertion is
+    // measuring the wrong world, and the failures it reports are noise. Teardown
+    // still runs — it is in the `finally` below, and cleanup is exactly what a
+    // half-finished setup needs.
+    let abortPrimary = preOutcome !== null && !preOutcome.didPass
+    if (abortPrimary) stopReason = 'setupFailed'
+
+    // How far each phase got, so the steps that never ran can be reported
+    // instead of simply missing from the report (see recordNotRun).
+    let setupAttempted = 0
+    let mainAbortedAt: { iter: number; index: number } | null = null
 
     for (const id of setupIds) {
       if (abortPrimary) break
@@ -1990,12 +1949,11 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
         abortPrimary = true
         break
       }
+      setupAttempted += 1
       const outcome = await runEndpointStep(ctx, id, 'setup', 0)
-      if (stopOnError && !outcome.didPass && !outcome.skipped) {
-        // A failed fixture makes the main flow meaningless — but teardown must
-        // still get its turn, so we only skip ahead, never return early.
+      if (!outcome.didPass && !outcome.skipped) {
         abortPrimary = true
-        stopReason = 'stopOnError'
+        stopReason = 'setupFailed'
       }
       if (options.delay && options.delay > 0 && !runState.shouldStop && ctx.emitted < total) {
         await delay(options.delay)
@@ -2018,6 +1976,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       for (let j = 0; j < endpointsPerIteration; j++) {
         if (runState.shouldStop) {
           stopReason = 'cancelled'
+          mainAbortedAt = { iter, index: j - 1 }
           break outer
         }
         if (++flowVisits > maxVisits) {
@@ -2052,6 +2011,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
 
           if (stopOnError && !outcome.didPass && !outcome.configError) {
             stopReason = 'stopOnError'
+            mainAbortedAt = { iter, index: j }
             break outer
           }
         }
@@ -2060,6 +2020,30 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
         if (options.delay && options.delay > 0 && ctx.emitted < total && !runState.shouldStop) {
           await delay(options.delay)
         }
+      }
+    }
+
+    // ── Report the steps that never ran ─────────────────────────
+    // A stopped run used to simply omit them: pick 12 requests, cancel after 3,
+    // and the report showed 3 rows with Skipped stuck at 0 — indistinguishable
+    // from a 3-request suite. Only ABORTS produce these rows; a deliberate
+    // `pm.execution.setNextRequest(null)` ends its iteration by design and would
+    // otherwise fill the report with noise on every use.
+    for (const id of setupIds.slice(setupAttempted)) {
+      recordNotRun(ctx, id, 'setup')
+    }
+    if (abortPrimary) {
+      // Setup failed or was cancelled: the whole flow never started.
+      for (let iter = 0; iter < iterations; iter++) {
+        for (const id of options.endpointIds) recordNotRun(ctx, id, 'main', iter)
+      }
+    } else if (mainAbortedAt) {
+      const { iter, index } = mainAbortedAt
+      for (let j = index + 1; j < endpointsPerIteration; j++) {
+        recordNotRun(ctx, options.endpointIds[j], 'main', iter)
+      }
+      for (let next = iter + 1; next < iterations; next++) {
+        for (const id of options.endpointIds) recordNotRun(ctx, id, 'main', next)
       }
     }
   } catch (e) {
@@ -2265,13 +2249,17 @@ function exportAsHtml(results: EndpointRunResult[]): string {
   const totalPassed = results.reduce((sum, r) => sum + r.passed, 0)
   const totalFailed = results.reduce((sum, r) => sum + r.failed, 0)
   const totalDuration = results.reduce((sum, r) => sum + r.duration, 0)
-  // Teardown is its own phase: reported, but excluded from the run's headline
-  // verdict so cleanup can't turn a red run green (or vice versa) — issue #72.
+  // Headline counters from the SHARED summary, so the exported report agrees with
+  // both in-app results views. The local arithmetic it replaces derived failures
+  // as `primary.length - passed`, which buckets a row that never RAN as a
+  // failure (shared/runner-summary explains the whole class).
+  const summary = summarizeRun(results)
   const primary = results.filter(countsTowardRunVerdict)
   const teardown = results.filter((r) => !countsTowardRunVerdict(r))
-  const endpointsPassed = primary.filter(endpointDidPass).length
-  const endpointsFailed = primary.length - endpointsPassed
-  const teardownFailed = teardown.filter((r) => !endpointDidPass(r)).length
+  const endpointsPassed = summary.passed
+  const endpointsFailed = summary.failed
+  const endpointsSkipped = summary.skipped
+  const teardownFailed = summary.teardownFailed
 
   const escapeHtml = (str: string): string =>
     str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -2340,6 +2328,7 @@ function exportAsHtml(results: EndpointRunResult[]): string {
     <div class="stats">
       <div class="stat"><div class="stat-value" style="color:#1a7a4a">${endpointsPassed}</div><div class="stat-label">Passed</div></div>
       <div class="stat"><div class="stat-value" style="color:#cc2200">${endpointsFailed}</div><div class="stat-label">Failed</div></div>
+      ${endpointsSkipped > 0 ? `<div class="stat"><div class="stat-value" style="color:#888">${endpointsSkipped}</div><div class="stat-label">Skipped</div></div>` : ''}
       <div class="stat"><div class="stat-value">${primary.length}</div><div class="stat-label">Total</div></div>
       ${teardown.length > 0 ? `<div class="stat"><div class="stat-value" style="color:${teardownFailed > 0 ? '#b35a00' : '#1a7a4a'}">${teardown.length}</div><div class="stat-label">Teardown</div></div>` : ''}
       <div class="stat"><div class="stat-value" style="color:#0066cc">${totalDuration}ms</div><div class="stat-label">Duration</div></div>

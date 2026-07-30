@@ -201,6 +201,12 @@ export interface KeystoreState {
    * guard can read it without a null-check on `meta`.
    */
   dirty: boolean
+  /**
+   * Aliases the last `convert` could not carry into the target format (a JKS
+   * cannot hold secret keys). Reported so the drop is visible — the alias count
+   * silently going 4 → 3 was the only clue users had.
+   */
+  convertSkipped: string[]
   loading: boolean
   error: string | null
   /**
@@ -325,6 +331,18 @@ function fail(set: (p: Partial<KeystoreState>) => void, e: unknown): false {
   return false
 }
 
+/**
+ * Swap a keystore file name's extension to match its (possibly new) type.
+ * Returns null when there was no name to begin with — a converted session has
+ * not been written anywhere yet.
+ */
+function retypeFileName(current: string | null, type: string): string | null {
+  if (!current) return null
+  const ext = type === 'JKS' ? '.jks' : '.p12'
+  const base = current.replace(/\.(jks|p12|pfx|keystore)$/i, '')
+  return `${base}${ext}`
+}
+
 export const useKeystoreStore = create<KeystoreState>((set, get) => ({
   sessionId: null,
   meta: null,
@@ -333,6 +351,7 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
   library: [],
   selectedAlias: null,
   aliasDetail: null,
+  convertSkipped: [],
   dirty: false,
   loading: false,
   error: null,
@@ -676,14 +695,26 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
     try {
       // Convert returns a NEW session (original untouched in main). Swap to it;
       // the converted bytes are in-memory only ⇒ mark dirty (needs Save-As).
-      const { sessionId: newSessionId, meta } = await unwrap(bridge.convert({ sessionId, ...opts }))
+      const {
+        sessionId: newSessionId,
+        meta,
+        skipped,
+      } = await unwrap(bridge.convert({ sessionId, ...opts }))
       set({
         sessionId: newSessionId,
         meta,
         libraryId: null,
         selectedAlias: null,
         aliasDetail: null,
+        // The converted store is a DIFFERENT format, so the old file name (and
+        // its extension) no longer describes it — Save As would have suggested
+        // `store.jks` for a PKCS#12, or the reverse.
+        fileName: retypeFileName(get().fileName, meta.type),
         dirty: meta.dirty ?? true,
+        // Aliases the target format could not carry. Empty on every conversion
+        // that lost nothing, so the UI only speaks up when there is something
+        // to say.
+        convertSkipped: skipped ?? [],
         loading: false,
       })
       return true

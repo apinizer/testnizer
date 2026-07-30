@@ -1,5 +1,6 @@
 import { useId, useState } from 'react'
 import { useTranslation } from '../../../lib/i18n'
+import { useInvalidateOn } from '../../../lib/use-stale-guard'
 import {
   fetchJwksViaMain,
   verifyInMain,
@@ -48,13 +49,47 @@ export default function JwksVerifyPanel({
   const [audience, setAudience] = useState('')
   const [issuer, setIssuer] = useState('')
   const [tolerance, setTolerance] = useState('')
-  const [busy, setBusy] = useState(false)
+  /**
+   * Which action is running. One shared `busy` flag meant Load and Verify could
+   * not report progress separately — Load's button never changed while it was
+   * fetching, so a slow endpoint looked like a dead button.
+   */
+  const [busyKind, setBusyKind] = useState<'load' | 'verify' | null>(null)
+  const busy = busyKind !== null
   const [result, setResult] = useState<
     | { state: 'idle' }
     | { state: 'valid'; header: Record<string, unknown> }
     | { state: 'invalid'; reason: string }
   >({ state: 'idle' })
-  const [keyCount, setKeyCount] = useState<number | null>(null)
+  /**
+   * Outcome of the LAST Load, kept apart from the verification verdict.
+   *
+   * A failed fetch used to be written into `result` as `{state:'invalid'}`,
+   * which renders far down the panel as a red "Invalid: fetch failed" next to
+   * the Verify button — so an unreachable JWKS endpoint read as "your token is
+   * invalid". They are different questions and now have different answers.
+   */
+  const [loadState, setLoadState] = useState<
+    | { kind: 'idle' }
+    | { kind: 'loaded'; count: number; kids: string[] }
+    | { kind: 'error'; message: string }
+  >({ kind: 'idle' })
+
+  /*
+   * The allowlist is seeded from the decoded header, but `useState(algorithm)`
+   * only reads that ONCE — paste a token signed with a different alg and the pin
+   * silently stayed on the previous one, so verification enforced an algorithm
+   * the user could no longer see any reason for. Re-seed when the prop moves;
+   * the user's own edits still win until the token changes again.
+   */
+  useInvalidateOn([algorithm], () => setAllowed(algorithm))
+
+  /*
+   * A fetched key set describes ONE endpoint. Editing the URI (or switching to
+   * the pasted document) leaves the "Keys fetched (3)" line describing something
+   * that was never loaded.
+   */
+  useInvalidateOn([uri, mode], () => setLoadState({ kind: 'idle' }))
 
   const uriId = useId()
   const pasteId = useId()
@@ -71,21 +106,35 @@ export default function JwksVerifyPanel({
     return Object.keys(checks).length > 0 ? checks : undefined
   }
 
+  /**
+   * Fetch the key set as a PREFLIGHT — it reports what the endpoint serves and
+   * nothing more. Verify deliberately re-fetches: caching the set here would let
+   * a key rotation between Load and Verify produce a confident "signature
+   * invalid" against keys the IdP has already retired.
+   */
   async function loadSet(): Promise<void> {
-    setBusy(true)
-    setKeyCount(null)
+    setBusyKind('load')
+    setLoadState({ kind: 'idle' })
     const res = await fetchJwksViaMain(uri.trim())
-    setBusy(false)
+    setBusyKind(null)
     if (!res.ok) {
-      setResult({ state: 'invalid', reason: res.error })
+      setLoadState({ kind: 'error', message: res.error })
       return
     }
-    setKeyCount(res.value.keys.length)
-    setResult({ state: 'idle' })
+    setLoadState({
+      kind: 'loaded',
+      count: res.value.keys.length,
+      // `kid` is optional in the DOM's JsonWebKey type but is what identifies a
+      // key in practice, so it is read defensively and simply omitted when absent.
+      kids: res.value.keys
+        .map((k) => (k as { kid?: unknown }).kid)
+        .filter((k): k is string => typeof k === 'string' && k.length > 0),
+    })
+    // The previous verification verdict still describes the token, so it stays.
   }
 
   async function run(): Promise<void> {
-    setBusy(true)
+    setBusyKind('verify')
     const algorithms = allowed
       .split(',')
       .map((a) => a.trim())
@@ -98,7 +147,7 @@ export default function JwksVerifyPanel({
         if (!Array.isArray(parsed?.keys)) throw new Error('Expected a {"keys":[…]} document')
         jwks = { keys: parsed.keys }
       } catch (e) {
-        setBusy(false)
+        setBusyKind(null)
         setResult({
           state: 'invalid',
           reason: `JWKS JSON: ${e instanceof Error ? e.message : String(e)}`,
@@ -114,7 +163,7 @@ export default function JwksVerifyPanel({
       ...(mode === 'url' ? { jwksUri: uri.trim() } : { jwks }),
       claims: claimChecks(),
     })
-    setBusy(false)
+    setBusyKind(null)
     if (!res.ok) setResult({ state: 'invalid', reason: res.error })
     else setResult({ state: 'valid', header: res.value.header })
   }
@@ -162,13 +211,33 @@ export default function JwksVerifyPanel({
               className="shrink-0 rounded border px-2 py-1 text-xs disabled:opacity-50"
               style={{ ...FIELD_STYLE, color: 'var(--accentText)' }}
             >
-              {t('tools.jwt.jwksLoad')}
+              {busyKind === 'load' ? t('tools.jwt.loading') : t('tools.jwt.jwksLoad')}
             </button>
           </div>
-          <div className="mt-1 text-[10px]" style={{ color: 'var(--hint)' }}>
-            {keyCount === null ? t('tools.jwt.jwksUrlHint') : t('tools.jwt.jwksLoaded')}
-            {keyCount === null ? '' : ` (${keyCount})`}
-          </div>
+          {/*
+            Load's outcome belongs HERE, beside the button that produced it. A
+            fetch failure used to be routed into the verification verdict far
+            below, where it rendered as "Invalid: fetch failed" — reading as a
+            verdict on the token rather than on the endpoint.
+          */}
+          {loadState.kind === 'error' ? (
+            <div role="alert" className="mt-1 text-[10px]" style={{ color: '#cc2200' }}>
+              {t('tools.jwt.jwksLoadFailed')}: {loadState.message}
+            </div>
+          ) : loadState.kind === 'loaded' ? (
+            <div
+              role="status"
+              className="mt-1 text-[10px]"
+              style={{ color: 'var(--green, #1a7a4a)' }}
+            >
+              {t('tools.jwt.jwksLoaded')} ({loadState.count})
+              {loadState.kids.length > 0 ? ` · ${loadState.kids.join(', ')}` : ''}
+            </div>
+          ) : (
+            <div className="mt-1 text-[10px]" style={{ color: 'var(--hint)' }}>
+              {t('tools.jwt.jwksUrlHint')}
+            </div>
+          )}
         </>
       ) : (
         <>

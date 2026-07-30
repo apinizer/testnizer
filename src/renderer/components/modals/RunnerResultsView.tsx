@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRunnerStore } from '../../stores/runner.store'
 import { getMethodColors } from '../../styles/tokens'
 import { RotateCcw, Plus, ChevronDown, ChevronRight } from 'lucide-react'
-import { endpointDidPass, countsTowardRunVerdict } from '../../../shared/runner-verdict'
+import { endpointDidPass, isSkippedStep } from '../../../shared/runner-verdict'
+import { summarizeRun, statusBadge, SYNTHETIC_STATUS } from '../../../shared/runner-summary'
 import { useTranslation } from '../../lib/i18n'
 
 type FilterTab = 'all' | 'passed' | 'failed' | 'skipped' | 'errors' | 'console'
@@ -24,19 +25,19 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
   const { t } = useTranslation()
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
 
-  // Verdict via the SHARED rule (shared/runner-verdict.ts) — assertion-driven
-  // when the request has checks (idempotent DELETE → 400 still passes, issue
-  // #16), so pass/fail here stays in step with the main run summary. Teardown
-  // rows are excluded: cleanup never moves the run's verdict (issue #72).
-  const verdictResults = results.filter(countsTowardRunVerdict)
-  const totalPassed = verdictResults.filter(endpointDidPass).length
-  const totalFailed = verdictResults.filter((r) => !endpointDidPass(r)).length
+  // Headline numbers from the SHARED summary (shared/runner-summary), the same
+  // one the tab-based results view and the HTML export use. This file used to
+  // compute "All tests" as Σ(passed+failed) — an ASSERTION count — so the two
+  // views disagreed with each other and with runner_history.total_endpoints.
+  const summary = useMemo(() => summarizeRun(results), [results])
+  const totalPassed = summary.passed
+  const totalFailed = summary.failed
   const totalDuration =
     report?.completedAt && report?.startedAt
       ? report.completedAt - report.startedAt
       : results.reduce((acc, r) => acc + r.duration, 0)
-  const totalTests = results.reduce((acc, r) => acc + r.passed + r.failed, 0)
-  const totalErrors = results.filter((r) => r.error).length
+  const totalTests = summary.total
+  const totalErrors = summary.errors
   const avgRespTime =
     results.length > 0
       ? Math.round(results.reduce((acc, r) => acc + r.duration, 0) / results.length)
@@ -44,14 +45,18 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
 
   const filteredResults = results.filter((r) => {
     switch (activeFilter) {
+      // Skipped rows go under their own tab only — `endpointDidPass` would
+      // otherwise read their absent status as a pass.
       case 'passed':
-        return endpointDidPass(r)
+        return !isSkippedStep(r) && endpointDidPass(r)
       case 'failed':
-        return !endpointDidPass(r)
+        return !isSkippedStep(r) && !endpointDidPass(r)
       case 'errors':
         return !!r.error
       case 'skipped':
-        return false
+        return isSkippedStep(r)
+      case 'console':
+        return (r.consoleLogs?.length ?? 0) > 0
       default:
         return true
     }
@@ -78,9 +83,9 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
     { key: 'all', label: 'All', count: results.length },
     { key: 'passed', label: 'Passed', count: totalPassed },
     { key: 'failed', label: 'Failed', count: totalFailed },
-    { key: 'skipped', label: 'Skipped', count: 0 },
+    { key: 'skipped', label: 'Skipped', count: summary.skipped },
     { key: 'errors', label: 'Errors', count: totalErrors },
-    { key: 'console', label: 'Console log' },
+    { key: 'console', label: 'Console log', count: summary.consoleLogs },
   ]
 
   return (
@@ -264,6 +269,14 @@ function StatCell({ label, value, color }: { label: string; value: string; color
 
 /* ── Individual result row (Postman style) ─────────────────── */
 
+/** Status-badge palette, keyed by tone (mirrors RunnerResults). */
+const BADGE_COLOR: Record<'ok' | 'warn' | 'error' | 'neutral', string> = {
+  ok: '#1a7a4a',
+  warn: '#b35a00',
+  error: '#cc2200',
+  neutral: 'var(--muted)',
+}
+
 type DetailTab = 'request' | 'response' | 'tests'
 type DetailSection = 'body' | 'headers'
 
@@ -273,14 +286,9 @@ function ResultRow({ result }: { result: import('../../stores/runner.store').End
   const [section, setSection] = useState<DetailSection>('body')
 
   const mc = getMethodColors(result.method)
-  const statusColor =
-    result.status === null
-      ? '#cc2200'
-      : result.status < 300
-        ? '#1a7a4a'
-        : result.status < 500
-          ? '#b35a00'
-          : '#cc2200'
+  // Shared badge logic — see RunnerResults for why a SCRIPT row must not print
+  // main's placeholder 200.
+  const badge = statusBadge(result)
 
   const hasRequestData = !!(result.requestBody || result.requestHeaders)
   const hasResponseData = !!(result.responseBody || result.responseHeaders)
@@ -306,13 +314,10 @@ function ResultRow({ result }: { result: import('../../stores/runner.store').End
           <span className="text-[var(--text)]">{result.endpointName}</span>
 
           <div className="ml-auto flex items-center gap-3">
-            {result.status !== null && (
-              <span className="font-medium" style={{ color: statusColor }}>
-                {result.status}
+            {badge && (
+              <span className="font-medium" style={{ color: BADGE_COLOR[badge.tone] }}>
+                {badge.text}
               </span>
-            )}
-            {result.error && result.status === null && (
-              <span className="font-medium text-[#cc2200]">Error</span>
             )}
             <span className="text-[var(--muted)]">{result.duration} ms</span>
             {result.responseSize != null && result.responseSize > 0 && (
@@ -340,7 +345,11 @@ function ResultRow({ result }: { result: import('../../stores/runner.store').End
             ))}
           </div>
         ) : (
-          <div className="ml-[20px] mt-1 text-[var(--hint)]">No tests found</div>
+          // Mirrors RunnerResults: meaningful under a request, noise under a
+          // run-level script row or a step that never ran.
+          !SYNTHETIC_STATUS.has(result.statusText) && (
+            <div className="ml-[20px] mt-1 text-[var(--hint)]">No tests found</div>
+          )
         )}
       </button>
 

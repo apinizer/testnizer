@@ -156,7 +156,14 @@ export default function ImportDialog({
       <LabeledSelect
         label={t('tools.keystore.import.format')}
         value={format}
-        onChange={(v) => setFormat(v as ImportFormat)}
+        onChange={(v) => {
+          // The password belongs to the source the user was importing FROM. It
+          // is write-only by design, and leaving it in renderer state after the
+          // user has moved to a different format keeps a secret alive for the
+          // lifetime of the dialog with no way to see or clear it.
+          setSourcePassword('')
+          setFormat(v as ImportFormat)
+        }}
         options={[
           ['pkcs12', t('tools.keystore.import.format.pkcs12')],
           ['keyMaterial', t('tools.keystore.import.format.keyMaterial')],

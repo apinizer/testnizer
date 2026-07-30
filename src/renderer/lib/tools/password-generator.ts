@@ -63,14 +63,25 @@ export interface CharacterOptions {
   noRepeats: boolean
 }
 
+/**
+ * Where the optional digit goes.
+ *
+ * `end` appends it to the LAST word, which is what "append" means and what
+ * testers expected; `random` keeps the previous behaviour (a random word), which
+ * is marginally stronger because the position itself carries entropy.
+ */
+export type DigitPosition = 'end' | 'random'
+
 export interface PassphraseOptions {
   /** Number of words (clamped to 3–12). */
   wordCount: number
   /** Separator placed between words. */
   separator: string
   wordCase: WordCase
-  /** Append a single random digit to one random word. */
+  /** Append a single digit to the passphrase. */
   includeNumber: boolean
+  /** Defaults to `end`. */
+  digitPosition?: DigitPosition
 }
 
 export interface GenerateOptions {
@@ -105,6 +116,7 @@ export const DEFAULT_PASSPHRASE_OPTIONS: PassphraseOptions = {
   separator: '-',
   wordCase: 'lower',
   includeNumber: false,
+  digitPosition: 'end',
 }
 
 // ── secure randomness ──────────────────────────────────────────────────────
@@ -190,6 +202,53 @@ export function availablePoolSize(opts: CharacterOptions): number {
   return filterChars(p.lower + p.upper + p.num + p.sym, opts).length
 }
 
+/**
+ * Why this request cannot be satisfied, or `null` if it can.
+ *
+ * The SAME function the generator throws from, so the form can show the problem
+ * while the user is still configuring instead of only after pressing Generate.
+ * That mattered for a trap testers walked straight into: `minSymbols` defaults
+ * to 1, so simply unchecking Symbols made every Generate fail with "A minimum
+ * symbol count requires the Symbols class to be enabled" — a rule the user never
+ * knowingly set.
+ *
+ * Messages are byte-identical to the ones the engine used to throw inline.
+ */
+export function validateCharacterOptions(opts: CharacterOptions): string | null {
+  const length = clamp(opts.length, PASSWORD_LENGTH_MIN, PASSWORD_LENGTH_MAX)
+  const minNumbers = Math.max(0, Math.floor(opts.minNumbers ?? 0))
+  const minSymbols = Math.max(0, Math.floor(opts.minSymbols ?? 0))
+
+  if (minNumbers > 0 && !opts.numbers) {
+    return 'A minimum digit count requires the Numbers class to be enabled.'
+  }
+  if (minSymbols > 0 && !opts.symbols) {
+    return 'A minimum symbol count requires the Symbols class to be enabled.'
+  }
+
+  const p = classPools(opts)
+  const pools = [p.lower, p.upper, p.num, p.sym].filter((x) => x.length > 0)
+  if (pools.length === 0) {
+    return 'Select at least one character type (and keep its pool non-empty).'
+  }
+
+  const each = opts.requireEachType ? 1 : 0
+  let minTotal = 0
+  if (p.lower) minTotal += each
+  if (p.upper) minTotal += each
+  if (p.num) minTotal += Math.max(each, minNumbers)
+  if (p.sym) minTotal += Math.max(each, minSymbols)
+  if (minTotal > length) {
+    return `Length ${length} is too short for the required character rules (need at least ${minTotal}).`
+  }
+
+  const unique = availablePoolSize(opts)
+  if (opts.noRepeats && length > unique) {
+    return `Only ${unique} unique characters available — cannot build a ${length}-char password without repeats.`
+  }
+  return null
+}
+
 /** Generate one character password. Throws `Error` on an impossible request. */
 function generateCharacterPassword(opts: CharacterOptions): {
   password: string
@@ -201,12 +260,6 @@ function generateCharacterPassword(opts: CharacterOptions): {
 
   const minNumbers = Math.max(0, Math.floor(opts.minNumbers ?? 0))
   const minSymbols = Math.max(0, Math.floor(opts.minSymbols ?? 0))
-  if (minNumbers > 0 && !opts.numbers) {
-    throw new Error('A minimum digit count requires the Numbers class to be enabled.')
-  }
-  if (minSymbols > 0 && !opts.symbols) {
-    throw new Error('A minimum symbol count requires the Symbols class to be enabled.')
-  }
 
   const classes: EnabledClass[] = []
   const addClass = (pool: string, min: number): void => {
@@ -217,23 +270,10 @@ function generateCharacterPassword(opts: CharacterOptions): {
   addClass(numP, Math.max(opts.requireEachType ? 1 : 0, minNumbers))
   addClass(symP, Math.max(opts.requireEachType ? 1 : 0, minSymbols))
 
-  if (classes.length === 0) {
-    throw new Error('Select at least one character type (and keep its pool non-empty).')
-  }
+  const problem = validateCharacterOptions(opts)
+  if (problem) throw new Error(problem)
 
   const fullPool = filterChars(classes.map((c) => c.pool).join(''), opts)
-
-  const minTotal = classes.reduce((s, c) => s + c.min, 0)
-  if (minTotal > length) {
-    throw new Error(
-      `Length ${length} is too short for the required character rules (need at least ${minTotal}).`,
-    )
-  }
-  if (opts.noRepeats && length > fullPool.length) {
-    throw new Error(
-      `Only ${fullPool.length} unique characters available — cannot build a ${length}-char password without repeats.`,
-    )
-  }
 
   const used = new Set<string>()
   const pickFrom = (pool: string): string => {
@@ -256,6 +296,14 @@ function generateCharacterPassword(opts: CharacterOptions): {
   }
   while (chars.length < length) chars.push(pickFrom(fullPool))
 
+  // Cheap post-condition. The draw above cannot repeat a character, but this is
+  // the one property users check by eye and the one they reported as broken, so
+  // a future refactor must not be able to weaken it silently.
+  if (opts.noRepeats && new Set(chars).size !== chars.length) {
+    throw new Error(
+      'Internal error: "no repeats" was requested but the result repeats a character.',
+    )
+  }
   return { password: secureShuffle(chars).join(''), poolSize: fullPool.length }
 }
 
@@ -281,7 +329,12 @@ function generatePassphrase(opts: PassphraseOptions): string {
     words.push(applyWordCase(raw, opts.wordCase))
   }
   if (opts.includeNumber) {
-    const idx = secureRandomInt(words.length)
+    // "Append" now means the END by default. It used to always pick a RANDOM
+    // word, which testers read as a bug ("the position changes with word case")
+    // — it does not depend on case, it is simply re-rolled every time. Random
+    // stays available because the position itself carries a little entropy.
+    const idx =
+      (opts.digitPosition ?? 'end') === 'random' ? secureRandomInt(words.length) : words.length - 1
     words[idx] = words[idx] + String(secureRandomInt(10))
   }
   return words.join(opts.separator)
@@ -301,11 +354,27 @@ export function estimateEntropyBits(opts: GenerateOptions, poolOrWordlistSize: n
     const p = opts.passphrase ?? DEFAULT_PASSPHRASE_OPTIONS
     const wordCount = clamp(p.wordCount, PASSPHRASE_WORDS_MIN, PASSPHRASE_WORDS_MAX)
     let bits = wordCount * Math.log2(poolOrWordlistSize)
-    if (p.includeNumber) bits += Math.log2(10 * wordCount)
+    // A fixed position contributes only the digit; a random one also contributes
+    // the choice of word.
+    if (p.includeNumber) {
+      bits += Math.log2((p.digitPosition ?? 'end') === 'random' ? 10 * wordCount : 10)
+    }
     return bits
   }
   const c = opts.characters ?? DEFAULT_CHARACTER_OPTIONS
   const length = clamp(c.length, PASSWORD_LENGTH_MIN, PASSWORD_LENGTH_MAX)
+  if (c.noRepeats) {
+    // Drawing WITHOUT replacement shrinks the pool by one each time, so the
+    // count is a falling factorial rather than pool^length. Reporting the
+    // with-replacement figure meant ticking "no repeated characters" left the
+    // strength readout completely unchanged — which is exactly what made testers
+    // think the option did nothing.
+    let bits = 0
+    for (let i = 0; i < length && poolOrWordlistSize - i > 1; i++) {
+      bits += Math.log2(poolOrWordlistSize - i)
+    }
+    return bits
+  }
   return length * Math.log2(poolOrWordlistSize)
 }
 

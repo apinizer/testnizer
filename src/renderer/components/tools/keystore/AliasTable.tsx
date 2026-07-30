@@ -186,7 +186,11 @@ function RowActions({
     <div className="relative flex justify-end">
       <button
         onClick={onToggle}
-        aria-label={alias}
+        // The alias alone does not say what the control DOES; every row has one,
+        // so a screen reader announced a list of bare names.
+        aria-label={`${t('tools.keystore.rowActions')}: ${alias}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
         className="rounded border px-2 py-0.5 text-[13px] leading-none"
         style={{
           borderColor: 'var(--border)',

@@ -53,3 +53,18 @@ export function endpointDidPass(r: EndpointVerdictShape): boolean {
   if (r.assertions.length === 0) return (r.status ?? 0) < 400
   return true
 }
+
+/**
+ * A row that never executed: `pm.execution.skipRequest()`, an unsupported
+ * protocol, or a step the run aborted before reaching.
+ *
+ * It is NEITHER passed nor failed, and asking `endpointDidPass` about it gives
+ * the wrong answer — a skipped row has `status: null` and no assertions, so the
+ * no-assertion fallback reads `(null ?? 0) < 400` and scores it as PASSED. Main's
+ * `recordStep` always guarded its tallies with this condition; the renderer
+ * results views and the HTML export did not, so a cancelled 12-step run was
+ * about to report "Passed 9". Every counter must exclude these first.
+ */
+export function isSkippedStep(r: { skipped?: number }): boolean {
+  return (r.skipped ?? 0) > 0
+}

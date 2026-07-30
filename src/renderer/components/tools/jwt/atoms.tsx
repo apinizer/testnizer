@@ -1,5 +1,3 @@
-import { useState } from 'react'
-import { useTranslation } from '../../../lib/i18n'
 import type { ClaimRow } from '../../../lib/tools/jwt'
 
 /**
@@ -86,37 +84,28 @@ export function ModePill({
   )
 }
 
-export function CopyButton({ text }: { text: string }): React.JSX.Element {
-  const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
-  return (
-    <button
-      onClick={async () => {
-        if (!text) return
-        try {
-          await navigator.clipboard.writeText(text)
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1200)
-        } catch {
-          /* ignore */
-        }
-      }}
-      title={copied ? t('tools.common.copied') : t('tools.common.copy')}
-      className="rounded border px-1.5 py-0.5 text-[11px]"
-      style={{
-        borderColor: 'var(--border)',
-        color: copied ? 'var(--green, #1a7a4a)' : 'var(--muted)',
-        background: 'var(--white)',
-      }}
-    >
-      {copied ? '✓' : '⧉'}
-    </button>
-  )
-}
+/**
+ * Re-export of the shared button. The private copy that used to live here
+ * swallowed clipboard failures and had the glyph "⧉" as its only accessible
+ * name; callers keep importing `CopyButton` from this module unchanged.
+ */
+export { default as CopyButton } from '../../shared/CopyButton'
 
-export function ClearButton({ onClick }: { onClick: () => void }): React.JSX.Element {
+/**
+ * `label` is required: these buttons do not clear a field, they reset it to a
+ * template, and a panel can hold more than one of them. The old version was
+ * titled "Clear" in English regardless of locale.
+ */
+export function ClearButton({
+  onClick,
+  label,
+}: {
+  onClick: () => void
+  label: string
+}): React.JSX.Element {
   return (
     <button
+      type="button"
       onClick={onClick}
       className="rounded border px-1.5 py-0.5 text-[11px]"
       style={{
@@ -124,7 +113,8 @@ export function ClearButton({ onClick }: { onClick: () => void }): React.JSX.Ele
         color: 'var(--muted)',
         background: 'var(--white)',
       }}
-      title="Clear"
+      aria-label={label}
+      title={label}
     >
       ✕
     </button>

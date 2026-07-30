@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { toast } from '../../lib/toast'
 import {
   Check,
   Globe,
@@ -204,6 +205,8 @@ export default function NewProjectModal() {
   const [gitToken, setGitToken] = useState('')
   const [showToken, setShowToken] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  /** Why project creation failed — keeps the wizard open instead of closing. */
+  const [createError, setCreateError] = useState<string | null>(null)
 
   const activeEmoji = iconOpt === 'emoji' ? selectedEmoji || customEmoji : ''
 
@@ -445,12 +448,22 @@ export default function NewProjectModal() {
             await ensureDefault(projectId)
           }
 
+          // Steps that can fail WITHOUT invalidating the project itself. They
+          // used to be swallowed as "non-critical" while the success screen
+          // showed regardless — so an import that never happened, or a remote
+          // that was never contacted, looked exactly like a clean run. The
+          // project still exists, so this reports partial success rather than
+          // failing the whole flow.
+          const warnings: string[] = []
+
           // Import data from local file if source was 'local'
           if (source === 'local' && localFilePath) {
             try {
               await window.api?.save?.importLocal({ filePath: localFilePath, projectId })
-            } catch {
-              /* non-critical */
+            } catch (e) {
+              warnings.push(
+                `${t('newProject.importFailed')}: ${e instanceof Error ? e.message : String(e)}`,
+              )
             }
           }
 
@@ -477,19 +490,25 @@ export default function NewProjectModal() {
                 // project data.
                 await window.api.git.push(projectId)
               }
-            } catch {
-              /* non-critical — user can pull/push later */
+            } catch (e) {
+              warnings.push(
+                `${t('newProject.gitFailed')}: ${e instanceof Error ? e.message : String(e)}`,
+              )
             }
           }
 
+          if (warnings.length > 0) toast.warning(warnings.join(' · '))
           setDone(true)
           setTimeout(() => {
             setActiveProject(projectId)
             setShow(false)
           }, 1200)
         }
-      } catch {
-        /* error */
+      } catch (e) {
+        // The project itself could not be created — that IS the operation, so
+        // the dialog stays open with the reason instead of closing as though it
+        // had worked.
+        setCreateError(e instanceof Error ? e.message : String(e))
       }
       setIsCreating(false)
     }
@@ -1225,6 +1244,12 @@ export default function NewProjectModal() {
                 </div>
               </div>
             </div>
+          )}
+
+          {createError && (
+            <p role="alert" className="mb-3 text-xs" style={{ color: '#cc2200' }}>
+              {t('newProject.createFailed')}: {createError}
+            </p>
           )}
 
           {/* ── DONE ── */}

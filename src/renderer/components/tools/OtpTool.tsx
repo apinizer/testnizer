@@ -1,5 +1,8 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import ToolShell from './ToolShell'
+import NumberField from '../shared/NumberField'
+import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
+import { useCopy } from '../../lib/use-copy'
 import { useOtpStore } from '../../stores/otp.store'
 import { decodeQrFromFile, encodeQrDataUrl } from '../../lib/tools/qr'
 import type { OtpAddInput, OtpAlgorithm, OtpType } from '../../types'
@@ -46,8 +49,16 @@ export default function OtpTool() {
   const [revealed, setRevealed] = useState<{ id: string; secret: string } | null>(null)
   // Rendered QR (secret-bearing) for the selected entry, when "Show QR" is on.
   const [qr, setQr] = useState<{ id: string; dataUrl: string } | null>(null)
-  const [qrError, setQrError] = useState<string | null>(null)
+  // Keyed by entry id, like `qr` and `revealed` above, so it self-invalidates
+  // when the selection moves. It used to be a bare string and stayed on screen
+  // describing an entry the user had already navigated away from.
+  const [qrError, setQrError] = useState<{ id: string; message: string } | null>(null)
+  // Deleting an OTP entry destroys the only copy of that shared secret, so it
+  // asks first. The button used to be titled "Clear" and removed the record on
+  // a single click.
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null)
   const qrFileRef = useRef<HTMLInputElement>(null)
+  const codeCopy = useCopy()
 
   useEffect(() => {
     void load()
@@ -104,14 +115,22 @@ export default function OtpTool() {
       try {
         setQr({ id, dataUrl: encodeQrDataUrl(u, { cellSize: 5 }) })
       } catch (e) {
-        setQrError(e instanceof Error ? e.message : String(e))
+        setQrError({ id, message: e instanceof Error ? e.message : String(e) })
       }
     }
   }
 
   async function handleAdd(): Promise<void> {
     if (!form.secret.trim()) return
-    const created = await add({ ...form, secret: form.secret.trim() })
+    // Send only the field the chosen type actually uses. `counter` is hidden for
+    // TOTP and `period` for HOTP, but both were still travelling — so a value
+    // left over from a previous edit reached the store invisibly.
+    const { counter, period, ...common } = form
+    const created = await add({
+      ...common,
+      secret: form.secret.trim(),
+      ...(form.type === 'hotp' ? { counter } : { period }),
+    })
     if (created) {
       setForm({ ...EMPTY_FORM })
       setUri('')
@@ -168,9 +187,15 @@ export default function OtpTool() {
                       <button
                         onClick={(ev) => {
                           ev.stopPropagation()
-                          void remove(e.id)
+                          setPendingDelete({
+                            id: e.id,
+                            name: e.issuer || e.label || t('tools.otp.unnamed'),
+                          })
                         }}
-                        title={t('tools.common.clear')}
+                        aria-label={`${t('tools.common.delete')}: ${
+                          e.issuer || e.label || t('tools.otp.unnamed')
+                        }`}
+                        title={t('tools.common.delete')}
                         className="text-xs"
                         style={{ color: 'var(--muted)' }}
                       >
@@ -272,7 +297,8 @@ export default function OtpTool() {
                 options={ALGORITHMS.map((a) => [a, a])}
                 onChange={(v) => setF('algorithm', v as OtpAlgorithm)}
               />
-              <NumberInput
+              <NumberField
+                dense
                 label={t('tools.otp.digits')}
                 value={form.digits ?? 6}
                 min={6}
@@ -280,7 +306,8 @@ export default function OtpTool() {
                 onChange={(v) => setF('digits', v)}
               />
               {form.type === 'hotp' ? (
-                <NumberInput
+                <NumberField
+                  dense
                   label={t('tools.otp.counter')}
                   value={form.counter ?? 0}
                   min={0}
@@ -288,7 +315,8 @@ export default function OtpTool() {
                   onChange={(v) => setF('counter', v)}
                 />
               ) : (
-                <NumberInput
+                <NumberField
+                  dense
                   label={t('tools.otp.period')}
                   value={form.period ?? 30}
                   min={10}
@@ -312,6 +340,22 @@ export default function OtpTool() {
               </div>
             )}
           </div>
+
+          {/*
+           * Lives in this pane, not the output pane: the delete buttons are in
+           * the list above and an entry can be removed without selecting it.
+           */}
+          <DeleteConfirmDialog
+            open={pendingDelete !== null}
+            itemName={pendingDelete?.name ?? ''}
+            itemType={t('tools.otp.entryType')}
+            description={t('tools.otp.deleteWarning')}
+            onConfirm={() => {
+              if (pendingDelete) void remove(pendingDelete.id)
+              setPendingDelete(null)
+            }}
+            onCancel={() => setPendingDelete(null)}
+          />
         </div>
       }
       outputPane={
@@ -334,17 +378,26 @@ export default function OtpTool() {
               </div>
             ) : (
               <button
-                onClick={() =>
-                  selectedCode?.code &&
-                  navigator.clipboard.writeText(selectedCode.code).catch(() => {})
-                }
-                title={t('tools.common.copy')}
+                onClick={() => selectedCode?.code && void codeCopy.copy(selectedCode.code)}
+                aria-label={t('tools.otp.copyCode')}
+                title={codeCopy.copied ? t('tools.common.copied') : t('tools.otp.copyCode')}
                 className="font-mono tabular-nums"
                 style={{ fontSize: '2.75rem', letterSpacing: '0.05em', color: 'var(--text)' }}
               >
                 {selectedCode?.code ? formatCode(selectedCode.code) : '••• •••'}
               </button>
             )}
+            {/*
+             * The code itself stays on screen, so the confirmation goes under it
+             * rather than replacing the glyphs with a ✓.
+             */}
+            <div
+              className="-mt-3 h-4 text-[11px]"
+              style={{ color: 'var(--green, #1a7a4a)' }}
+              role="status"
+            >
+              {codeCopy.copied ? t('tools.common.copied') : ''}
+            </div>
 
             {selected.type === 'totp' ? (
               <div className="w-48">
@@ -434,9 +487,9 @@ export default function OtpTool() {
             >
               {qr?.id === selected.id ? t('tools.otp.hideQr') : t('tools.otp.showQr')}
             </button>
-            {qrError && (
+            {qrError?.id === selected.id && (
               <div className="text-[11px]" style={{ color: '#cc2200' }}>
-                {qrError}
+                {qrError.message}
               </div>
             )}
             {qr?.id === selected.id && (
@@ -462,12 +515,25 @@ export default function OtpTool() {
 
 // ── small themed form primitives ────────────────────────────────────────────
 
-function Labeled({ label, children }: { label: string; children: ReactNode }) {
-  const id = useId()
+/**
+ * `htmlFor` needs the id of the control it labels. This used to mint an id with
+ * `useId()` and never hand it to the child, so every label in this form — issuer,
+ * account, secret, type, algorithm, digits, period, counter — pointed at nothing
+ * and no screen reader could announce the field it belonged to.
+ */
+function Labeled({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string
+  htmlFor: string
+  children: ReactNode
+}) {
   return (
     <div>
       <label
-        htmlFor={id}
+        htmlFor={htmlFor}
         className="mb-0.5 block text-[10px] uppercase tracking-wide"
         style={{ color: 'var(--muted)' }}
       >
@@ -489,44 +555,15 @@ function TextInput({
   onChange: (v: string) => void
   mono?: boolean
 }) {
+  const id = useId()
   return (
-    <Labeled label={label}>
+    <Labeled label={label} htmlFor={id}>
       <input
+        id={id}
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className={`w-full rounded border px-2 py-1 text-xs ${mono ? 'font-mono' : ''}`}
-        style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
-      />
-    </Labeled>
-  )
-}
-
-function NumberInput({
-  label,
-  value,
-  min,
-  max,
-  onChange,
-}: {
-  label: string
-  value: number
-  min: number
-  max: number
-  onChange: (v: number) => void
-}) {
-  return (
-    <Labeled label={label}>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(e) => {
-          const n = Number(e.target.value)
-          onChange(Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min)
-        }}
-        className="w-full rounded border px-2 py-1 text-xs"
         style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
       />
     </Labeled>
@@ -544,9 +581,11 @@ function SelectInput({
   options: Array<[string, string]>
   onChange: (v: string) => void
 }) {
+  const id = useId()
   return (
-    <Labeled label={label}>
+    <Labeled label={label} htmlFor={id}>
       <select
+        id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full rounded border px-2 py-1 text-xs"

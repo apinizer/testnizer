@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useRunnerStore } from '../../stores/runner.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import MethodBadge from '../shared/MethodBadge'
+import { useNumberDraft } from '../../lib/number-draft'
 import { ChevronRight, GripVertical } from 'lucide-react'
 
 interface RunnerConfigViewProps {
@@ -30,6 +31,21 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
   const isRunning = useRunnerStore((s) => s.isRunning)
   const environments = useEnvironmentStore((s) => s.environments)
   const [environmentId, setEnvironmentId] = useState<string>('')
+  // Draft-backed so the boxes can be emptied and retyped — `Number('')` is 0,
+  // which used to rewrite the field on every keystroke. Same class as the
+  // Password Generator length field the testers reported.
+  const iterationsDraft = useNumberDraft({
+    value: iterations,
+    min: 1,
+    max: Number.MAX_SAFE_INTEGER,
+    onChange: setIterations,
+  })
+  const delayDraft = useNumberDraft({
+    value: delay,
+    min: 0,
+    max: Number.MAX_SAFE_INTEGER,
+    onChange: setDelay,
+  })
 
   const allSelected = endpoints.length > 0 && endpoints.every((ep) => ep.selected)
   const selectedCount = endpoints.filter((ep) => ep.selected).length
@@ -120,8 +136,7 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
                 type="number"
                 min={1}
                 data-testid="runner-iterations"
-                value={iterations}
-                onChange={(e) => setIterations(Number(e.target.value))}
+                {...iterationsDraft.inputProps}
                 className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
               />
             </div>
@@ -132,8 +147,7 @@ export default function RunnerConfigView({ projectId, workspaceId }: RunnerConfi
                   type="number"
                   min={0}
                   step={100}
-                  value={delay}
-                  onChange={(e) => setDelay(Number(e.target.value))}
+                  {...delayDraft.inputProps}
                   className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                 />
                 <span className="shrink-0 text-[var(--muted)]">ms</span>

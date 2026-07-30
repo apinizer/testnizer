@@ -82,7 +82,22 @@ export default function GenerateKeyPairDialog({
     )
   }
 
-  const canSubmit = useMemo(() => alias.trim().length > 0 && !busy, [alias, busy])
+  /**
+   * A certificate whose validity is zero or negative days is expired the moment
+   * it is minted. The field accepted it silently.
+   */
+  const validityWarning: string | null = (() => {
+    const raw = validityDays.trim()
+    if (!raw) return null
+    const n = Number.parseInt(raw, 10)
+    if (!Number.isFinite(n) || n < 1) return t('tools.keystore.generate.validityTooSmall')
+    return null
+  })()
+
+  const canSubmit = useMemo(
+    () => alias.trim().length > 0 && !busy && validityWarning === null,
+    [alias, busy, validityWarning],
+  )
 
   async function submit(): Promise<void> {
     if (!canSubmit) return
@@ -170,6 +185,11 @@ export default function GenerateKeyPairDialog({
           value={validityDays}
           onChange={setValidityDays}
         />
+        {validityWarning && (
+          <p role="alert" className="col-span-2 -mt-2 text-[11px]" style={{ color: '#cc2200' }}>
+            {validityWarning}
+          </p>
+        )}
         <LabeledInput
           label={t('tools.keystore.generate.serialNumber')}
           value={serialNumber}
@@ -211,6 +231,11 @@ export default function GenerateKeyPairDialog({
         />
         {t('tools.keystore.generate.basicConstraintsCa')}
       </label>
+      {basicConstraintsCa && !keyUsage.includes('keyCertSign') && (
+        <p className="text-[11px]" style={{ color: 'var(--orange, #b35a00)' }}>
+          {t('tools.keystore.generate.caNeedsKeyCertSign')}
+        </p>
+      )}
 
       {/* No entry-password field in Faz B2 — generated entries are protected
           with the store password; per-entry passwords land in Faz B4. */}

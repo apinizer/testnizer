@@ -22,6 +22,7 @@ import {
 } from '../../lib/tools/jwt'
 import { signInMain } from '../../lib/tools/jose-bridge'
 import { useTranslation } from '../../lib/i18n'
+import { useInvalidateOn } from '../../lib/use-stale-guard'
 import ClaimsEditor from './jwt/ClaimsEditor'
 import JwksVerifyPanel from './jwt/JwksVerifyPanel'
 import JweBody from './jwt/JweBody'
@@ -97,6 +98,37 @@ export default function JwtTool() {
       setVerifyAlgorithm(alg as JwtAlgorithm)
     }
   }, [jwt])
+
+  /*
+   * Verify a token, get the green "Signature verified", then paste a DIFFERENT
+   * token: the badge used to stay, now vouching for a token nobody checked. The
+   * same applies to changing the secret/public key or the algorithm.
+   *
+   * `token` is user input only — the decoder never writes it back (the encoder's
+   * output is separate state), so an effect is safe here.
+   */
+  useInvalidateOn([token, verifySecret, verifyAlgorithm], () => {
+    setVerification({ state: 'idle' })
+  })
+
+  /*
+   * Key material only makes sense for one FAMILY of algorithms, so crossing the
+   * symmetric/asymmetric line has to drop it.
+   *
+   * Without this the encoder could reach a state with no way out: pick RS256,
+   * choose a keystore key, then switch to HS256. The key-material field unmounts
+   * (it is offered only for asymmetric algorithms) while `encKeySource` stays
+   * set — so signing still takes the keystore path, and the secret box is
+   * `disabled={!!keySource}`. Nothing on screen could clear it.
+   *
+   * The shared secret is dropped for the same reason in the other direction: it
+   * would otherwise sit in a box relabelled "Public Key".
+   */
+  useInvalidateOn([isAsymmetric(encAlgorithm)], () => {
+    setEncKeySource(null)
+    setEncKeyLabel(null)
+    setEncSecret('')
+  })
 
   // ── Verify on demand (button) ────────────────────────────────────
   async function runVerify() {
@@ -388,8 +420,8 @@ function DecoderBody(props: {
           title={t('tools.jwt.encodedToken')}
           actions={
             <>
-              <CopyButton text={token} />
-              <ClearButton onClick={() => setToken('')} />
+              <CopyButton text={token} ariaLabel={t('tools.jwt.copyToken')} />
+              <ClearButton onClick={() => setToken('')} label={t('tools.jwt.clearToken')} />
             </>
           }
         />
@@ -634,8 +666,18 @@ function EncoderBody(props: {
             title={t('tools.jwt.headerLabel')}
             actions={
               <>
-                <CopyButton text={header} />
-                <ClearButton onClick={() => setHeader('{\n  "alg": "HS256",\n  "typ": "JWT"\n}')} />
+                <CopyButton text={header} ariaLabel={t('tools.jwt.copyHeader')} />
+                {/*
+                 * Reset to a template carrying the CURRENTLY selected algorithm.
+                 * It used to hardcode HS256, so pressing this with RS256 chosen
+                 * left the dropdown and the header disagreeing — and the signer
+                 * sends the header verbatim, so the token was signed with a
+                 * header that lied about its own alg.
+                 */}
+                <ClearButton
+                  onClick={() => setHeader(`{\n  "alg": "${algorithm}",\n  "typ": "JWT"\n}`)}
+                  label={t('tools.jwt.resetHeader')}
+                />
               </>
             }
           />
@@ -656,8 +698,11 @@ function EncoderBody(props: {
             title={t('tools.jwt.payloadLabel')}
             actions={
               <>
-                <CopyButton text={payload} />
-                <ClearButton onClick={() => setPayload('{\n  \n}')} />
+                <CopyButton text={payload} ariaLabel={t('tools.jwt.copyPayload')} />
+                <ClearButton
+                  onClick={() => setPayload('{\n  \n}')}
+                  label={t('tools.jwt.resetPayload')}
+                />
               </>
             }
           />
@@ -810,7 +855,10 @@ function EncoderBody(props: {
 
       {/* Right: encoded JWT */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <PanelHeader title={t('tools.jwt.encodedJwt')} actions={<CopyButton text={output} />} />
+        <PanelHeader
+          title={t('tools.jwt.encodedJwt')}
+          actions={<CopyButton text={output} ariaLabel={t('tools.jwt.copyJwt')} />}
+        />
         <div className="flex-1 overflow-auto p-3" style={{ background: 'var(--white)' }}>
           {output ? (
             <ColorizedJwt token={output} />
@@ -845,6 +893,7 @@ function Section({
   json: string
   rows: ClaimRow[]
 }) {
+  const { t } = useTranslation()
   return (
     <div className="border-b" style={{ borderColor: 'var(--border)' }}>
       <div
@@ -864,7 +913,10 @@ function Section({
           <ViewToggle active={view === 'table'} onClick={() => setView('table')}>
             Table
           </ViewToggle>
-          <CopyButton text={view === 'json' ? json : rowsToText(rows)} />
+          <CopyButton
+            text={view === 'json' ? json : rowsToText(rows)}
+            ariaLabel={t('tools.jwt.copyClaims')}
+          />
         </div>
       </div>
       {view === 'json' ? (

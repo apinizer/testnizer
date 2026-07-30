@@ -1,7 +1,9 @@
 import { useCallback, useId, useState, type ReactNode } from 'react'
 import ToolShell from './ToolShell'
 import KeyMaterialField from '../shared/KeyMaterialField'
+import CopyButton from '../shared/CopyButton'
 import { useTranslation } from '../../lib/i18n'
+import { useInvalidateOn } from '../../lib/use-stale-guard'
 import type { MaterialSource } from '../../types'
 import { stripSourceSecrets } from '../../lib/key-material'
 import {
@@ -142,6 +144,14 @@ function useFromPemMode(onAdd: AddKey): ModePanes {
   const [result, setResult] = useState<{ jwk: Jwk; origin: Origin; note?: string } | null>(null)
   const [source, setSource] = useState<MaterialSource | null>(null)
   const [sourceLabel, setSourceLabel] = useState<string | null>(null)
+
+  // Convert PEM A, then paste PEM B: A's JWK card used to stay. Worse for the
+  // keystore arm — clearing the selection left the card and its "from keystore"
+  // note on screen, still describing a key that was no longer selected.
+  useInvalidateOn([pem, alg, source], () => {
+    setResult(null)
+    setError(null)
+  })
 
   async function convert(): Promise<void> {
     setBusy(true)
@@ -290,6 +300,18 @@ function useToPemMode(onAdd: AddKey): ModePanes {
   const [error, setError] = useState<string | null>(null)
   const [keys, setKeys] = useState<Jwk[]>([])
   const [pem, setPem] = useState<{ pem: string; kind: 'public' | 'private' } | null>(null)
+  /** Explicit outcome of the last Validate — the button had no visible effect. */
+  const [verdict, setVerdict] = useState<{ count: number } | null>(null)
+
+  // Editing the JWK invalidates everything derived from the previous one. The
+  // PEM was the dangerous one: convert key A, paste key B, press Validate, and
+  // B's card sat next to A's PEM with nothing saying they disagreed.
+  useInvalidateOn([text], () => {
+    setError(null)
+    setKeys([])
+    setPem(null)
+    setVerdict(null)
+  })
 
   function validate(): Jwk[] | null {
     const parsed = parseJwkText(text)
@@ -297,10 +319,15 @@ function useToPemMode(onAdd: AddKey): ModePanes {
       setError(parsed.error)
       setKeys([])
       setPem(null)
+      setVerdict(null)
       return null
     }
     setError(null)
     setKeys(parsed.value.keys)
+    // The PEM on screen was produced from whatever was in the box at the time;
+    // re-validating does not re-derive it, so it must not survive.
+    setPem(null)
+    setVerdict({ count: parsed.value.keys.length })
     return parsed.value.keys
   }
 
@@ -358,6 +385,20 @@ function useToPemMode(onAdd: AddKey): ModePanes {
   const output = (
     <Pane>
       {error ? <ErrorLine text={error} /> : null}
+      {/*
+       * Validate used to have no success signal at all: on a valid JWK its only
+       * effect was to render the same card "Convert to PEM" already showed, so
+       * pressing it looked like nothing happened. Say the answer out loud.
+       */}
+      {verdict ? (
+        <div
+          role="status"
+          className="px-3 pt-3 text-xs font-medium"
+          style={{ color: 'var(--green, #1a7a4a)' }}
+        >
+          {t('tools.jwk.validLine').replace('{n}', String(verdict.count))}
+        </div>
+      ) : null}
       {keys.length === 0 && !pem && !error ? <Hint text={t('tools.jwk.hintToPem')} /> : null}
       <div className="space-y-3 p-3">
         {keys.map((k, i) => (
@@ -397,6 +438,14 @@ function useGenerateMode(onAdd: AddKey): ModePanes {
   } | null>(null)
 
   const isRsa = alg.startsWith('RS') || alg.startsWith('PS')
+
+  // Generate an ES256 pair, then switch the dropdown to RS256: the ES256 keys
+  // used to stay on screen under a control that now said RS256, so the PEM a
+  // user copied need not be the algorithm they thought they had picked.
+  useInvalidateOn([alg, bits], () => {
+    setPair(null)
+    setError(null)
+  })
 
   async function run(): Promise<void> {
     setBusy(true)
@@ -607,7 +656,11 @@ function useSetMode(
           {t('tools.jwk.publicJwks')}
         </span>
         <KindBadge secret={false} />
-        <CopyButton text={body} label={t('tools.jwk.copyJwks')} />
+        <CopyButton
+          text={body}
+          label={t('tools.jwk.copyJwks')}
+          ariaLabel={t('tools.jwk.copyJwks')}
+        />
       </div>
 
       <div className="space-y-1 px-3 py-2 text-[11px]" style={{ color: 'var(--muted)' }}>
@@ -711,8 +764,23 @@ function JwkCard({
           {summary.alg ? ` · ${summary.alg}` : ''}
         </span>
         <span className="ml-auto flex items-center gap-1">
-          <CopyButton text={json} label={t('tools.common.copy')} />
-          {secret ? <CopyButton text={publicJson} label={t('tools.jwk.copyPublic')} /> : null}
+          {/*
+           * The accessible name has to say WHICH half this copies. On a private
+           * card the generic "Copy" sat right next to "Copy public half" and put
+           * the private key on the clipboard without saying so.
+           */}
+          <CopyButton
+            text={json}
+            label={t('tools.common.copy')}
+            ariaLabel={secret ? t('tools.jwk.copyPrivateJwk') : t('tools.jwk.copyPublicJwk')}
+          />
+          {secret ? (
+            <CopyButton
+              text={publicJson}
+              label={t('tools.jwk.copyPublic')}
+              ariaLabel={t('tools.jwk.copyPublicJwk')}
+            />
+          ) : null}
           {onAdd ? (
             <button
               type="button"
@@ -776,7 +844,11 @@ function PemBlock({ title, pem, secret }: { title: string; pem: string; secret: 
           {title}
         </span>
         <span className="ml-auto">
-          <CopyButton text={pem} label={t('tools.common.copy')} />
+          <CopyButton
+            text={pem}
+            label={t('tools.common.copy')}
+            ariaLabel={t('tools.jwk.copyPem')}
+          />
         </span>
       </div>
       <pre
@@ -821,33 +893,6 @@ function ErrorLine({ text }: { text: string }) {
     <div className="px-3 py-2 text-[11px]" style={{ color: RED }} role="alert">
       {text}
     </div>
-  )
-}
-
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <button
-      type="button"
-      onClick={async () => {
-        if (!text) return
-        try {
-          await navigator.clipboard.writeText(text)
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1200)
-        } catch {
-          /* clipboard unavailable — nothing to recover from */
-        }
-      }}
-      className="rounded border px-1.5 py-0.5 text-[11px]"
-      style={{
-        borderColor: 'var(--border)',
-        background: 'var(--white)',
-        color: copied ? GREEN : 'var(--muted)',
-      }}
-    >
-      {copied ? '✓' : label}
-    </button>
   )
 }
 

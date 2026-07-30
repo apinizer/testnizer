@@ -1,5 +1,6 @@
 import { useId, useMemo, useState } from 'react'
 import { useTranslation } from '../../../lib/i18n'
+import { useInvalidateOn } from '../../../lib/use-stale-guard'
 import KeyMaterialField from '../../shared/KeyMaterialField'
 import type { KeyMaterialSelection } from '../../shared/KeyMaterialPicker'
 import type { MaterialSource } from '../../../types'
@@ -56,6 +57,39 @@ export default function JweBody(): React.JSX.Element {
   const inspected = useMemo(() => (jwe.trim() === '' ? null : parseJoseHeader(jwe)), [jwe])
 
   /**
+   * How many bytes of key material the chosen `enc` consumes. A128* takes 16,
+   * A192* 24, A256* 32; the CBC-HMAC family doubles it (half MAC, half CEK).
+   */
+  const secretPlaceholder = useMemo(() => {
+    const bits = /A(\d{3})/.exec(enc)?.[1]
+    if (!bits) return t('tools.jwt.jweSecret')
+    const bytes = (Number(bits) / 8) * (enc.includes('CBC') ? 2 : 1)
+    return `a ${bytes}-byte secret for ${enc}`
+  }, [enc, t])
+
+  /*
+   * Decrypt a token, then change the key or the algorithm: the plaintext used to
+   * stay on screen as though it were still the answer. `onJweChanged` covers the
+   * token itself (it also mirrors alg/enc, so a paste clears this twice —
+   * harmless).
+   */
+  useInvalidateOn([alg, enc, secret, privatePem, publicPem, keySource], () => {
+    setDecrypted('')
+    setError(null)
+  })
+
+  /*
+   * Same escape hatch as the JWS encoder: the keystore arm is offered only for
+   * asymmetric algorithms, so switching to a symmetric one unmounts the picker
+   * while `keySource` stays set — and the PEM boxes are `disabled={!!keySource}`,
+   * leaving nothing on screen able to clear it.
+   */
+  useInvalidateOn([symmetric], () => {
+    setKeySource(null)
+    setKeyLabel(null)
+  })
+
+  /**
    * Mirror a pasted token's alg/enc into the selects.
    *
    * Decryption PINS the key-management algorithm to what is selected here — the
@@ -69,6 +103,11 @@ export default function JweBody(): React.JSX.Element {
    */
   function onJweChanged(next: string): void {
     setJwe(next)
+    // The plaintext on screen belongs to the PREVIOUS token. Leaving it there
+    // while a different token sits above it reads as "this is what that token
+    // decrypts to" — about a token nobody decrypted.
+    setDecrypted('')
+    setError(null)
     const parsed = parseJoseHeader(next)
     if (parsed.kind !== 'jwe' || !('header' in parsed)) return
     if (typeof parsed.header.alg === 'string') setAlg(parsed.header.alg)
@@ -182,7 +221,10 @@ export default function JweBody(): React.JSX.Element {
                 value={secret}
                 onChange={(e) => setSecret(e.target.value)}
                 rows={2}
-                placeholder="a 32-byte secret for A256GCM"
+                // Derived from the SELECTED content-encryption algorithm. It was
+                // hardcoded to A256GCM's 32 bytes, so picking A128GCM told the
+                // user to supply twice the key material the algorithm takes.
+                placeholder={secretPlaceholder}
                 className="w-full rounded border px-2 py-1 font-mono text-xs"
                 style={FIELD_STYLE}
               />
@@ -243,7 +285,7 @@ export default function JweBody(): React.JSX.Element {
 
         <PanelHeader
           title={t('tools.jwt.jwePlaintext')}
-          actions={<CopyButton text={plaintext} />}
+          actions={<CopyButton text={plaintext} ariaLabel={t('tools.jwt.copyPayload')} />}
         />
         <div className="px-3 py-2">
           <textarea
@@ -282,7 +324,10 @@ export default function JweBody(): React.JSX.Element {
 
       {/* Right: the compact JWE + what came back out of it */}
       <div className="flex min-w-0 flex-1 flex-col overflow-auto">
-        <PanelHeader title={t('tools.jwt.jweToken')} actions={<CopyButton text={jwe} />} />
+        <PanelHeader
+          title={t('tools.jwt.jweToken')}
+          actions={<CopyButton text={jwe} ariaLabel={t('tools.jwt.copyJwe')} />}
+        />
         <div className="px-3 py-2">
           <textarea
             value={jwe}
@@ -316,7 +361,7 @@ export default function JweBody(): React.JSX.Element {
 
         <PanelHeader
           title={t('tools.jwt.jweDecrypted')}
-          actions={<CopyButton text={decrypted} />}
+          actions={<CopyButton text={decrypted} ariaLabel={t('tools.jwt.copyDecrypted')} />}
         />
         <pre
           className="m-0 flex-1 px-3 py-2 font-mono text-xs whitespace-pre-wrap break-all"

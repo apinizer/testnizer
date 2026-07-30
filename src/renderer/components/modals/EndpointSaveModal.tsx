@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { toast } from '../../lib/toast'
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
@@ -113,9 +114,13 @@ export default function EndpointSaveModal() {
         setNewFolderName('')
         await loadFolders()
         await refreshTree()
+        return
       }
-    } catch {
-      // Error
+      // A `success: false` envelope is a failure too — it used to fall through
+      // silently, leaving the name in the box and no folder created.
+      toast.error((result as { error?: string })?.error ?? t('modal.folderCreateFailed'))
+    } catch (e) {
+      toast.error(`${t('modal.folderCreateFailed')}: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
 

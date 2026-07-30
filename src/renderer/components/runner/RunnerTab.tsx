@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { buildExecutePayload, RUNNER_DEFAULTS } from '../../lib/runner-payload'
 import { Braces, ChevronRight } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
@@ -209,9 +210,18 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // mirrors the runner-report sessionStorage prefix so cleanup stays local
   // to RunnerTab.
   const viewStorageKey = tabId ? `runner-view-${tabId}` : null
+  // Set when this tab was opened by an entry point that explicitly asked for the
+  // run config without a suite/folder scope (the Command Palette's "Open
+  // collection runner"). It lets the config screen survive a remount without
+  // loosening the scope guard below for everyone else.
+  const explicitConfig = useRef(false)
   const [view, setView] = useState<'home' | 'config' | 'results' | 'history' | 'scheduled'>(() => {
     if (viewStorageKey) {
       const stored = sessionStorage.getItem(viewStorageKey)
+      if (stored === 'config-explicit') {
+        explicitConfig.current = true
+        return 'config'
+      }
       // 'config' can only be restored when the tab has a concrete scope
       // (suite or APIs folder). Without one, restoring 'config' produces
       // the dreaded "all 200 endpoints from the project" sequence — the
@@ -250,15 +260,25 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // Persist the current view whenever it changes so a remount lands here.
   useEffect(() => {
     if (!viewStorageKey) return
-    sessionStorage.setItem(viewStorageKey, view)
-  }, [view, viewStorageKey])
-  const [delay, setDelay] = useState(0)
-  const [iterations, setIterations] = useState(1)
+    // Keep the sentinel for a scopeless explicit config — writing a plain
+    // 'config' would make the guard above bounce the next remount to 'home'.
+    const scoped = Boolean(folderId)
+    sessionStorage.setItem(
+      viewStorageKey,
+      view === 'config' && explicitConfig.current && !scoped ? 'config-explicit' : view,
+    )
+  }, [view, viewStorageKey, folderId])
+  // Run settings stay LOCAL to this tab on purpose: a runner tab is per-tab
+  // (`tabId`-keyed session storage, the React `key` fix from issue #66), so
+  // hoisting them into the global store would make two open runner tabs share
+  // one set of checkboxes. Only the defaults are shared — see runner-payload.
+  const [delay, setDelay] = useState(RUNNER_DEFAULTS.delay)
+  const [iterations, setIterations] = useState(RUNNER_DEFAULTS.iterations)
   const [iterationData, setIterationData] = useState<Record<string, string>[]>([])
   const [environmentId, setEnvironmentId] = useState('')
-  const [stopOnError, setStopOnError] = useState(true)
-  const [persistResponses, setPersistResponses] = useState(true)
-  const [keepVariableValues, setKeepVariableValues] = useState(true)
+  const [stopOnError, setStopOnError] = useState(RUNNER_DEFAULTS.stopOnError)
+  const [persistResponses, setPersistResponses] = useState(RUNNER_DEFAULTS.persistResponses)
+  const [keepVariableValues, setKeepVariableValues] = useState(RUNNER_DEFAULTS.keepVariableValues)
   // Run-level hook scripts (issue #72). Per-run config, like iterations/delay —
   // deliberately not persisted, see the run-lifecycle notes.
   const [runPreScript, setRunPreScript] = useState('')
@@ -814,22 +834,24 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     setRunSourceLabel(sourceLabel)
 
     try {
-      const result = await window.api?.runner?.execute({
-        projectId: activeProjectId || '',
-        endpointIds: mainIds,
-        setupEndpointIds: setupIds.length > 0 ? setupIds : undefined,
-        teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
-        runPreScript: runPreScript.trim() || undefined,
-        runPostScript: runPostScript.trim() || undefined,
-        environmentId: environmentId || undefined,
-        workspaceId: activeWorkspaceId || undefined,
-        delay,
-        iterations,
-        iterationData: iterationData.length > 0 ? iterationData : undefined,
-        folderName: runFolderName || undefined,
-        sourceLabel,
-        keepVariableValues,
-      })
+      const result = await window.api?.runner?.execute(
+        buildExecutePayload(
+          {
+            projectId: activeProjectId || '',
+            endpointIds: mainIds,
+            setupEndpointIds: setupIds.length > 0 ? setupIds : undefined,
+            teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
+            runPreScript: runPreScript.trim() || undefined,
+            runPostScript: runPostScript.trim() || undefined,
+            environmentId: environmentId || undefined,
+            workspaceId: activeWorkspaceId || undefined,
+            iterationData: iterationData.length > 0 ? iterationData : undefined,
+            folderName: runFolderName || undefined,
+            sourceLabel,
+          },
+          { delay, iterations, stopOnError, persistResponses, keepVariableValues },
+        ),
+      )
 
       if (result?.success && result.data) {
         const rep = result.data as RunnerReport
@@ -856,6 +878,11 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     runFolderName,
     runOrigin,
     keepVariableValues,
+    // These two were absent while the payload ignored them; now that the payload
+    // carries them, leaving them out would freeze whatever value they had when
+    // another dep last changed — a stale checkbox reaching the run.
+    stopOnError,
+    persistResponses,
     runPreScript,
     runPostScript,
     splitByPhase,
@@ -934,6 +961,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
           runPreScript: runPreScript.trim() || undefined,
           runPostScript: runPostScript.trim() || undefined,
+          // Carry the run settings the user configured, so the schedule grades
+          // the way the run they just set up would.
+          stopOnError,
           folderId: folderId || undefined,
           environmentId: environmentId || undefined,
           intervalValue: payload.intervalValue,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
+import CopyButton from '../shared/CopyButton'
 import {
   computeSideBySide,
   computeDiffBlocks,
@@ -284,7 +285,12 @@ function SideBySideDiff({ result }: { result: SideBySideResult }) {
             <span className="text-[11px]" style={{ color: 'var(--muted)' }}>
               {result.leftLines} {t('tools.diff.lines')}
             </span>
-            <CopyButton text={leftText} />
+            {/* Named per side: the two buttons were both called "Copy". */}
+            <CopyButton
+              text={leftText}
+              label={t('tools.common.copy')}
+              ariaLabel={t('tools.diff.copyLeft')}
+            />
           </div>
         </div>
         <div className="flex flex-1 items-center justify-between px-3 py-1.5">
@@ -299,7 +305,11 @@ function SideBySideDiff({ result }: { result: SideBySideResult }) {
             <span className="text-[11px]" style={{ color: 'var(--muted)' }}>
               {result.rightLines} {t('tools.diff.lines')}
             </span>
-            <CopyButton text={rightText} />
+            <CopyButton
+              text={rightText}
+              label={t('tools.common.copy')}
+              ariaLabel={t('tools.diff.copyRight')}
+            />
           </div>
         </div>
       </div>
@@ -656,34 +666,4 @@ function SegmentSpan({
     parts.push(<span key="end">{seg.value.slice(cursor)}</span>)
   }
   return <span style={base}>{parts}</span>
-}
-
-// ─────────────────────────────────────────────────────────────────
-function CopyButton({ text }: { text: string }) {
-  const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
-  return (
-    <button
-      onClick={async () => {
-        if (!text) return
-        try {
-          await navigator.clipboard.writeText(text)
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1200)
-        } catch {
-          /* ignore */
-        }
-      }}
-      title={copied ? t('tools.common.copied') : t('tools.common.copy')}
-      className="rounded border px-1.5 py-0.5 text-[11px]"
-      style={{
-        borderColor: 'var(--border)',
-        color: copied ? '#1a7a4a' : 'var(--muted)',
-        background: 'var(--white)',
-      }}
-    >
-      {copied ? '✓ ' : '⧉ '}
-      {t('tools.common.copy')}
-    </button>
-  )
 }

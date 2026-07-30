@@ -3,6 +3,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { formatXml } from '../../lib/tools/xml-format'
 import { useTranslation } from '../../lib/i18n'
+import { useInvalidateOn } from '../../lib/use-stale-guard'
 
 const SAMPLE = `<?xml version="1.0" encoding="UTF-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetStockPrice><Symbol>AAPL</Symbol></GetStockPrice></soap:Body></soap:Envelope>`
 
@@ -15,6 +16,16 @@ export default function XmlFormatTool() {
   const [sortAttributes, setSortAttributes] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [output, setOutput] = useState('')
+
+  /*
+   * The result belongs to the input that produced it. Leaving it on screen after
+   * an edit shows an answer about text that is no longer there — and unlike a
+   * generated password there is nothing to lose by dropping it, since pressing
+   * the button again re-derives it from what the user can still see.
+   */
+  useInvalidateOn([input, indent, sortAttributes], () => {
+    setOutput('')
+  })
 
   const handleFormat = () => {
     const result = formatXml(input, {

@@ -57,6 +57,27 @@ export default function SamlTool() {
     setVerifyResult(null)
   }
 
+  /**
+   * Drop the verdict because the USER changed what it was a verdict about.
+   *
+   * Verify a signed assertion, get the green "Valid" report, then edit one
+   * character of the XML: the report used to stay on screen, now describing a
+   * document that no longer exists. For a signature checker that is the worst
+   * possible failure mode — it answers "is this trustworthy?" about the wrong
+   * input.
+   *
+   * Deliberately called from the change handlers rather than from an effect on
+   * `xml`: `run()` writes `xml` itself (a built or signed document lands in the
+   * editor), so an effect would also wipe the "Signed" status the action had
+   * just set.
+   */
+  function invalidateVerdict(): void {
+    setStatus(null)
+    setVerifyResult(null)
+    // The encoded blob is derived from the XML too, so it is stale as well.
+    setBindingForm((prev) => (prev.encoded ? { ...prev, encoded: '' } : prev))
+  }
+
   async function run(): Promise<void> {
     reset()
     try {
@@ -209,7 +230,14 @@ export default function SamlTool() {
               <SignForm form={signForm} patch={(p) => setSignForm({ ...signForm, ...p })} />
             )}
             {mode === 'verify' && (
-              <VerifyForm form={verifyForm} patch={(p) => setVerifyForm({ ...verifyForm, ...p })} />
+              <VerifyForm
+                form={verifyForm}
+                patch={(p) => {
+                  // Changing the trust anchor changes the answer.
+                  invalidateVerdict()
+                  setVerifyForm({ ...verifyForm, ...p })
+                }}
+              />
             )}
             {mode === 'binding' && (
               <BindingForm
@@ -220,7 +248,14 @@ export default function SamlTool() {
           </div>
 
           <div className="flex-1 min-h-0">
-            <MonacoWrapper value={xml} onChange={setXml} language="xml" />
+            <MonacoWrapper
+              value={xml}
+              onChange={(v) => {
+                invalidateVerdict()
+                setXml(v)
+              }}
+              language="xml"
+            />
           </div>
         </div>
       }

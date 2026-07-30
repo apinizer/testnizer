@@ -33,7 +33,9 @@ export default function QrTool() {
     if (!encoded.url) return
     const a = document.createElement('a')
     a.href = encoded.url
-    a.download = 'qrcode.gif'
+    // The encoder produces a PNG data URL; the extension said GIF, so saved
+    // files opened with the wrong association on some systems.
+    a.download = 'qrcode.png'
     a.click()
   }
 

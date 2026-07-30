@@ -349,7 +349,8 @@ const SCHEMA_SQL = `
     setup_endpoint_ids TEXT,
     teardown_endpoint_ids TEXT,
     run_pre_script TEXT,
-    run_post_script TEXT
+    run_post_script TEXT,
+    stop_on_error INTEGER DEFAULT 1
   );
 
   CREATE TABLE runner_history (

@@ -145,6 +145,20 @@ export function buildInspectRequest(form: TlsInspectFormState): BuildRequestResu
 
   const servername = form.servername.trim()
   if (servername) request.servername = servername
+  // An inverted range is rejected here rather than at the socket: Node reports
+  // it as an opaque error the user cannot act on, and the two dropdowns make the
+  // mistake easy to walk into.
+  if (form.minVersion && form.maxVersion) {
+    const order = TLS_VERSIONS as readonly string[]
+    const lo = order.indexOf(form.minVersion)
+    const hi = order.indexOf(form.maxVersion)
+    if (lo >= 0 && hi >= 0 && lo > hi) {
+      return {
+        ok: false,
+        error: `Minimum TLS version (${form.minVersion}) is higher than the maximum (${form.maxVersion}).`,
+      }
+    }
+  }
   if (form.minVersion) request.minVersion = form.minVersion
   if (form.maxVersion) request.maxVersion = form.maxVersion
   if (form.cipherPreset && (CIPHER_PRESETS as readonly string[]).includes(form.cipherPreset)) {
@@ -181,9 +195,16 @@ export function buildClientCert(form: TlsClientCertForm): TlsClientCert | undefi
   const pfxPath = form.pfxPath.trim()
   if (!certPath && !keyPath && !pfxPath) return undefined
   const out: TlsClientCert = { kind: 'file' }
+  // A PFX already CONTAINS the certificate and key, so sending it alongside a
+  // separate cert/key pair asks for two contradictory identities. The bundle
+  // wins and the loose pair is dropped, rather than letting the socket decide.
+  if (pfxPath) {
+    out.pfxPath = pfxPath
+    if (form.passphrase) out.passphrase = form.passphrase
+    return out
+  }
   if (certPath) out.certPath = certPath
   if (keyPath) out.keyPath = keyPath
-  if (pfxPath) out.pfxPath = pfxPath
   if (form.passphrase) out.passphrase = form.passphrase
   return out
 }
@@ -191,6 +212,36 @@ export function buildClientCert(form: TlsClientCertForm): TlsClientCert | undefi
 // ── projections for display ────────────────────────────────────────────────
 
 /** Extract a friendly label (CN, else the raw DN) from an X.500 subject DN. */
+/**
+ * What a result is allowed to say.
+ *
+ * `baseResult()` in the engine fills every field before it knows anything —
+ * `authorized:false`, `hostnameValid:false`, `validityStatus:'expired'`,
+ * `daysToExpiry:0` — and returns that shape on a transport failure too. Those
+ * are PLACEHOLDERS, not findings, and the result pane was rendering them as
+ * findings: a DNS miss produced "NOT independently validated", "Hostname
+ * mismatch" and "Expired" next to the ENOTFOUND, plus "expires in 0 days"
+ * (because `expired` is false while `validityStatus` is 'expired' — the screen
+ * contradicted itself).
+ *
+ * Two separate questions, because the answers differ:
+ *
+ *  - `handshook` — did TLS complete? Then protocol/cipher/ALPN are real.
+ *  - `hasLeaf`   — did the server actually present a certificate? Only then do
+ *    trust, hostname and validity mean anything.
+ *
+ * Note `ok` is TRUE for an untrusted, expired or mismatched certificate (the
+ * engine documents this: only transport failures set `ok:false`), so gating on
+ * it does NOT hide the findings this tool exists to report.
+ */
+export function resultVisibility(result: TlsInspectResult): {
+  handshook: boolean
+  hasLeaf: boolean
+} {
+  const handshook = result.ok
+  return { handshook, hasLeaf: handshook && result.chain.length > 0 }
+}
+
 export function leafLabel(subjectDN: string, fallback: string): string {
   const cn = /(?:^|,|\/)\s*CN=([^,/]+)/i.exec(subjectDN)
   if (cn && cn[1].trim()) return cn[1].trim()

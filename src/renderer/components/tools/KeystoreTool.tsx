@@ -49,6 +49,12 @@ export default function KeystoreTool() {
   const [discardPrompt, setDiscardPrompt] = useState(false)
 
   useEffect(() => {
+    // Clear FIRST. The store is a module-level singleton, so an error from an
+    // earlier action outlives this component — testers opened Keystore Studio to
+    // a red "Store password cannot be empty" without having typed anything,
+    // because the TLS Inspector's "Create keystore & add" had failed earlier and
+    // left its message behind.
+    s.clearError()
     void s.loadLibrary()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -72,6 +78,7 @@ export default function KeystoreTool() {
   }, [dirty])
 
   async function handleOpen(): Promise<void> {
+    s.clearError()
     const pick = await s.pickFile()
     if (!pick) return
     setPwValue('')
@@ -104,7 +111,10 @@ export default function KeystoreTool() {
     if (ok) {
       setPwPrompt(null)
       setPwValue('')
+      toast.success(t('tools.keystore.toast.opened'))
     }
+    // On failure the dialog stays open and now shows the reason itself — the
+    // message used to land on the screen BEHIND it.
   }
 
   async function submitCreate(): Promise<void> {
@@ -112,13 +122,21 @@ export default function KeystoreTool() {
     if (ok) {
       setCreateOpen(false)
       setCreatePw('')
+      // The screen that follows says "Untitled / 0 Aliases", which looks the
+      // same whether or not anything happened. Say that it did.
+      toast.success(t('tools.keystore.toast.created'))
     }
   }
 
   async function submitSave(): Promise<void> {
     if (!saveName.trim()) return
     const ok = await s.saveToLibrary({ name: saveName.trim(), rememberPassword: saveRemember })
-    if (ok) setSaveOpen(false)
+    if (ok) {
+      setSaveOpen(false)
+      // The library list only renders on the empty state, so with a session open
+      // there is otherwise NOTHING on screen to show the save happened.
+      toast.success(t('tools.keystore.toast.savedToLibrary'))
+    }
   }
 
   // Open a Generate dialog from the Add Entry menu with a clean error slate so a
@@ -166,6 +184,24 @@ export default function KeystoreTool() {
     else void s.closeSession()
   }
 
+  /**
+   * Is any modal on screen? Every dialog renders `s.error` itself, so the header
+   * banner must stay quiet while one is up — otherwise the message is drawn
+   * twice, and the copy behind the backdrop is the unreadable one.
+   */
+  const anyDialogOpen =
+    genKeyPairOpen ||
+    genSecretOpen ||
+    importOpen ||
+    changePwOpen ||
+    convertOpen ||
+    createOpen ||
+    saveOpen ||
+    discardPrompt ||
+    rowDialog !== null ||
+    pwPrompt !== null ||
+    Boolean(s.pendingEntryPasswordOpen)
+
   const isPkcs12 = s.meta?.type === 'PKCS12'
   const isKeyAlias = (alias: string): boolean =>
     s.meta?.aliases.find((a) => a.alias === alias)?.entryType === 'KEY'
@@ -184,6 +220,16 @@ export default function KeystoreTool() {
           <h2 className="m-0 text-base font-semibold" style={{ color: 'var(--heading)' }}>
             {t('tools.keystore.title')}
           </h2>
+          {/*
+            `s.loading` was set by every action and read by nothing, so opening a
+            large PKCS#12 or generating an RSA-4096 pair looked like a frozen
+            screen.
+          */}
+          {s.loading && (
+            <span role="status" className="text-[11px]" style={{ color: 'var(--muted)' }}>
+              {t('tools.keystore.working')}
+            </span>
+          )}
           {s.sessionId && s.meta && (
             <div
               className="flex min-w-0 items-center gap-2 text-xs"
@@ -227,24 +273,21 @@ export default function KeystoreTool() {
         )}
       </div>
 
-      {/* While a Generate dialog is open, route its error INTO the dialog only
-          (it receives error={s.error}) — suppress the header banner so the same
-          message doesn't render twice. */}
-      {s.error &&
-        !genKeyPairOpen &&
-        !genSecretOpen &&
-        !importOpen &&
-        !rowDialog &&
-        !changePwOpen &&
-        !convertOpen &&
-        !s.pendingEntryPasswordOpen && (
-          <div
-            className="shrink-0 border-b px-4 py-1.5 text-[11px]"
-            style={{ borderColor: 'var(--border)', color: '#cc2200' }}
-          >
-            {s.error}
-          </div>
-        )}
+      {/* While ANY dialog is open the error belongs inside it (every dialog now
+          takes `error`), so the header banner stands down. The condition used to
+          be a hand-maintained list of seven flags and three dialogs were missing
+          from it — those drew a banner nobody could read, behind the modal's own
+          backdrop. Deriving it from one boolean means the list cannot drift
+          again. */}
+      {s.error && !anyDialogOpen && (
+        <div
+          role="alert"
+          className="shrink-0 border-b px-4 py-1.5 text-[11px]"
+          style={{ borderColor: 'var(--border)', color: '#cc2200' }}
+        >
+          {s.error}
+        </div>
+      )}
 
       {/* body */}
       {s.sessionId && s.meta ? (
@@ -308,7 +351,14 @@ export default function KeystoreTool() {
         <SetEntryPasswordDialog
           alias={rowDialog.alias}
           error={s.error}
-          onSubmit={(o) => s.setEntryPassword(o)}
+          onSubmit={async (o) => {
+            const ok = await s.setEntryPassword(o)
+            // The alias table has no column for entry-password state, so the
+            // dialog closing was the ONLY signal that anything happened.
+            if (ok)
+              toast.success(t('tools.keystore.toast.entryPwChanged').replace('{alias}', o.alias))
+            return ok
+          }}
           onClose={() => setRowDialog(null)}
         />
       )}
@@ -346,7 +396,13 @@ export default function KeystoreTool() {
       {changePwOpen && (
         <ChangeStorePasswordDialog
           error={s.error}
-          onSubmit={(o) => s.changeStorePassword(o)}
+          onSubmit={async (o) => {
+            const ok = await s.changeStorePassword(o)
+            // Nothing on screen changes on success — users had to Close and
+            // reopen with the new password just to learn whether it worked.
+            if (ok) toast.success(t('tools.keystore.toast.pwChanged'))
+            return ok
+          }}
           onClose={() => setChangePwOpen(false)}
         />
       )}
@@ -355,7 +411,24 @@ export default function KeystoreTool() {
         <ConvertDialog
           currentType={s.meta.type}
           error={s.error}
-          onSubmit={(o) => s.convert(o)}
+          onSubmit={async (o) => {
+            const ok = await s.convert(o)
+            if (ok) {
+              // "…use Save As" is part of the message on purpose: convert
+              // produces a DIRTY in-memory session, and the type pill flipping
+              // is easy to read as "already written to disk".
+              toast.success(t('tools.keystore.toast.converted').replace('{type}', o.targetType))
+              const skipped = useKeystoreStore.getState().convertSkipped
+              if (skipped.length > 0) {
+                toast.warning(
+                  t('tools.keystore.toast.convertSkipped')
+                    .replace('{n}', String(skipped.length))
+                    .replace('{aliases}', skipped.join(', ')),
+                )
+              }
+            }
+            return ok
+          }}
           onClose={() => setConvertOpen(false)}
         />
       )}
@@ -387,7 +460,11 @@ export default function KeystoreTool() {
 
       {/* password prompt */}
       {pwPrompt && (
-        <Modal title={t('tools.keystore.openTitle')} onClose={() => setPwPrompt(null)}>
+        <Modal
+          title={t('tools.keystore.openTitle')}
+          onClose={() => setPwPrompt(null)}
+          error={s.error}
+        >
           {pwPrompt.kind === 'file' && (
             <LabeledSelect
               label={t('tools.keystore.type')}
@@ -420,7 +497,11 @@ export default function KeystoreTool() {
 
       {/* create prompt */}
       {createOpen && (
-        <Modal title={t('tools.keystore.createTitle')} onClose={() => setCreateOpen(false)}>
+        <Modal
+          title={t('tools.keystore.createTitle')}
+          onClose={() => setCreateOpen(false)}
+          error={s.error}
+        >
           <LabeledSelect
             label={t('tools.keystore.type')}
             value={createType}
@@ -430,13 +511,28 @@ export default function KeystoreTool() {
               ['JKS', 'JKS'],
             ]}
           />
+          {/*
+            "optional" is now the truth, and only for PKCS#12. It used to say
+            optional for both types while the engine rejected an empty password
+            for either — so leaving it blank produced a Create button that did
+            nothing, with the reason printed on the screen behind this dialog.
+          */}
           <LabeledInput
-            label={`${t('tools.keystore.password')} (${t('tools.keystore.optional')})`}
+            label={
+              createType === 'PKCS12'
+                ? `${t('tools.keystore.password')} (${t('tools.keystore.optional')})`
+                : t('tools.keystore.password')
+            }
             type="password"
             value={createPw}
             onChange={setCreatePw}
             onEnter={() => void submitCreate()}
           />
+          {createType === 'PKCS12' && createPw === '' && (
+            <p className="text-[11px]" style={{ color: 'var(--orange, #b35a00)' }}>
+              {t('tools.keystore.emptyPwWarning')}
+            </p>
+          )}
           <ModalActions
             onCancel={() => setCreateOpen(false)}
             confirmLabel={t('tools.keystore.create')}
@@ -447,7 +543,11 @@ export default function KeystoreTool() {
 
       {/* save-to-library prompt */}
       {saveOpen && (
-        <Modal title={t('tools.keystore.saveTitle')} onClose={() => setSaveOpen(false)}>
+        <Modal
+          title={t('tools.keystore.saveTitle')}
+          onClose={() => setSaveOpen(false)}
+          error={s.error}
+        >
           <LabeledInput
             label={t('tools.keystore.name')}
             value={saveName}

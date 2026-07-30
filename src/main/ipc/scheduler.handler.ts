@@ -43,6 +43,9 @@ interface ScheduledTask {
   teardown_endpoint_ids: string | null
   run_pre_script: string | null
   run_post_script: string | null
+  /** "Stop run if an error occurs". NULL on tasks saved before the column
+   *  existed — read with `!== 0` so those inherit the safer ON. */
+  stop_on_error: number | null
 }
 
 interface CreateSchedulePayload {
@@ -64,6 +67,8 @@ interface CreateSchedulePayload {
   teardownEndpointIds?: string[]
   runPreScript?: string
   runPostScript?: string
+  /** Omitted ⇒ ON, matching the interactive runner's default. */
+  stopOnError?: boolean
 }
 
 interface UpdateSchedulePayload extends CreateSchedulePayload {
@@ -279,6 +284,10 @@ async function executeScheduledRun(task: ScheduledTask): Promise<void> {
       teardownEndpointIds: parseIdList(task.teardown_endpoint_ids),
       runPreScript: task.run_pre_script || undefined,
       runPostScript: task.run_post_script || undefined,
+      // Same parity argument as the phases above: the checkbox the user ticked
+      // when creating the schedule has to reach the run, or an unattended
+      // nightly keeps going after a failure while its interactive twin stops.
+      stopOnError: task.stop_on_error !== 0,
     })
 
     const nextRun = computeNextRunFor(task)
@@ -457,8 +466,9 @@ export function registerSchedulerHandlers(): void {
         INSERT INTO scheduled_tasks (id, project_id, name, endpoint_ids, folder_id, environment_id,
           interval_value, interval_unit, delay_ms, enabled, next_run_at, created_at,
           schedule_type, schedule_time, schedule_days, schedule_cron, suite_id,
-          setup_endpoint_ids, teardown_endpoint_ids, run_pre_script, run_post_script)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          setup_endpoint_ids, teardown_endpoint_ids, run_pre_script, run_post_script,
+          stop_on_error)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       ).run(
         id,
@@ -481,6 +491,7 @@ export function registerSchedulerHandlers(): void {
         payload.teardownEndpointIds?.length ? JSON.stringify(payload.teardownEndpointIds) : null,
         payload.runPreScript || null,
         payload.runPostScript || null,
+        payload.stopOnError === false ? 0 : 1,
       )
 
       scheduleNextFire(id)
@@ -511,7 +522,9 @@ export function registerSchedulerHandlers(): void {
           name = ?, endpoint_ids = ?, folder_id = ?, environment_id = ?,
           interval_value = ?, interval_unit = ?, delay_ms = ?,
           schedule_type = ?, schedule_time = ?, schedule_days = ?, schedule_cron = ?,
-          suite_id = ?, next_run_at = ?
+          suite_id = ?, next_run_at = ?,
+          setup_endpoint_ids = ?, teardown_endpoint_ids = ?,
+          run_pre_script = ?, run_post_script = ?, stop_on_error = ?
         WHERE id = ?
       `,
       ).run(
@@ -528,6 +541,16 @@ export function registerSchedulerHandlers(): void {
         norm.scheduleCron,
         payload.suiteId || null,
         nextRun,
+        // These five were absent from the UPDATE while present in the INSERT, so
+        // editing a schedule silently dropped its run lifecycle: setup and
+        // teardown requests were demoted back to ordinary flow steps and the
+        // hook scripts were lost. Same parity rule as everywhere else — a
+        // scheduled run must grade like the interactive one it came from.
+        payload.setupEndpointIds?.length ? JSON.stringify(payload.setupEndpointIds) : null,
+        payload.teardownEndpointIds?.length ? JSON.stringify(payload.teardownEndpointIds) : null,
+        payload.runPreScript || null,
+        payload.runPostScript || null,
+        payload.stopOnError === false ? 0 : 1,
         payload.id,
       )
       scheduleNextFire(payload.id)

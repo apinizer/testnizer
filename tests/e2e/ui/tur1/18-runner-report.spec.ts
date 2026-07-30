@@ -130,18 +130,24 @@ uiTest.describe('Tur1 — Runner report [MST-177, MST-181]', () => {
     await startCollectionRun(window)
     await waitCollectionRunComplete(window)
 
-    const modal = window.getByTestId('collection-runner-modal')
+    // The runner is a tab now, not a modal. Scope to the results LIST, not the
+    // whole workbench: the tab shows the Run Sequence beside the results, and
+    // that list names every selected endpoint whatever the filter says — the
+    // modal simply had nothing else on screen to catch.
+    const workbench = window.getByTestId('workbench')
+    const results = workbench.getByTestId('runner-results-list')
 
     // Click the Failed filter tab.
-    const failedBtn = modal.getByTestId('runner-filter-failed')
+    const failedBtn = workbench.getByTestId('runner-filter-failed')
     await expect(failedBtn).toBeVisible({ timeout: 10_000 })
     await failedBtn.click()
 
     // The failing endpoint should be visible; the passing one should not.
-    await expect(modal.getByText(failName, { exact: false }).first()).toBeVisible({ timeout: 10_000 })
+    await expect(results.getByText(failName, { exact: false }).first()).toBeVisible({
+      timeout: 10_000,
+    })
     // The passing request must not appear in the failed-only view.
-    // (It may appear 0 or > 0 times depending on exact filter UI — assert count <= 0)
-    const passCount = await modal.getByText(passName, { exact: false }).count()
+    const passCount = await results.getByText(passName, { exact: false }).count()
     expect(passCount).toBe(0)
 
     await closeCollectionRunner(window)
