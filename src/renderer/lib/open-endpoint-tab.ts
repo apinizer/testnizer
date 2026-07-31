@@ -64,7 +64,12 @@ export async function openEndpointTab(id: string): Promise<void> {
       })
       const realTabId = useTabsStore.getState().activeTabId || tabId
       useRequestStore.getState().switchToTab(realTabId)
-      useResponseStore.getState().clearResponse()
+      // Named explicitly: this runs inside an async function, and the rule is
+      // that an async writer passes the tab it means (issue #76). It happens to
+      // be correct without it today only because no `await` sits between the
+      // `switchToTab` above and this line — which is not something the next
+      // edit should have to notice.
+      useResponseStore.getState().clearResponse(realTabId)
       useRequestStore.getState().loadFromEndpoint({
         method: (sr.method || 'GET') as HttpMethod,
         url: sr.url,
@@ -149,7 +154,12 @@ export async function openEndpointTab(id: string): Promise<void> {
       })
       const realTabId = useTabsStore.getState().activeTabId || tabId
       useRequestStore.getState().switchToTab(realTabId)
-      useResponseStore.getState().clearResponse()
+      // Named explicitly: this runs inside an async function, and the rule is
+      // that an async writer passes the tab it means (issue #76). It happens to
+      // be correct without it today only because no `await` sits between the
+      // `switchToTab` above and this line — which is not something the next
+      // edit should have to notice.
+      useResponseStore.getState().clearResponse(realTabId)
       useRequestStore.getState().loadFromEndpoint({
         method: method as HttpMethod,
         url,
@@ -254,7 +264,8 @@ export async function openSuiteItemTab(id: string, opts?: { pinned?: boolean }):
     }
     const realTabId = useTabsStore.getState().activeTabId || tabId
     useRequestStore.getState().switchToTab(realTabId)
-    useResponseStore.getState().clearResponse()
+    // Explicit for the same reason as the branches above (issue #76).
+    useResponseStore.getState().clearResponse(realTabId)
     useRequestStore.getState().loadFromEndpoint({
       method: (item.method ?? 'GET') as HttpMethod,
       url: item.url ?? '',

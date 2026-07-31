@@ -68,6 +68,13 @@ uiTest.describe('editor instances do not accumulate (issue #77)', () => {
     await closeAllTabs(window)
   })
 
+  // The `ui` project shares ONE Electron instance with no global teardown, so a
+  // spec that ends with tabs open hands them to the next file. Closing only in
+  // `beforeEach` protects this spec's own tests and nobody else's.
+  uiTest.afterEach(async ({ window }) => {
+    await closeAllTabs(window)
+  })
+
   uiTest('live editors stay flat while hidden tabs pile up', async ({ window }) => {
     const measured: { tabs: number; tool: string; live: number; skeletons: number }[] = []
 

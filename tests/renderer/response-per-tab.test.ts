@@ -141,3 +141,22 @@ describe('the store still works with no tabs at all', () => {
     expect(shown().body).toBe('detached')
   })
 })
+
+describe('an explicit tab id survives an await in the caller', () => {
+  it('clears the tab it was told to, not the one that is active later', async () => {
+    useResponseStore.getState().setResponse(resp('A-result'), A)
+    useResponseStore.getState().setResponse(resp('B-result'), B)
+
+    // What an async opener does: capture the tab, then do asynchronous work
+    // before writing. `open-endpoint-tab.ts` names its tab for exactly this
+    // reason — it is correct today only because no await happens to sit
+    // between its `switchToTab` and its write.
+    const captured = A
+    await Promise.resolve()
+    useTabsStore.getState().setActiveTab(B)
+    useResponseStore.getState().clearResponse(captured)
+
+    expect(useResponseStore.getState().byTab[A].response).toBeNull()
+    expect(useResponseStore.getState().byTab[B].response?.body).toBe('B-result')
+  })
+})
