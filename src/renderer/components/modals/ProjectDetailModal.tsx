@@ -225,23 +225,31 @@ export default function ProjectDetailModal() {
     setSaving(true)
 
     try {
+      // Every write below used to be swallowed as "non-critical" while the
+      // success toast fired regardless — so a failed rename, git-config or
+      // project-settings save was all reported as "Project settings saved".
+      // They are part of what the button promises; a failure has to surface.
+      const failures: string[] = []
+
       if (editName.trim() !== (activeProject.display_name || activeProject.name)) {
-        await renameProject(activeProject.id, editName.trim())
+        // The store swallowed this outcome entirely: the re-fetch put the old
+        // name back on screen while the toast still said "saved".
+        if (!(await renameProject(activeProject.id, editName.trim()))) {
+          failures.push(`${t('overview.name')}: ${t('settings.saveFailed')}`)
+        }
       }
 
       const emojiVal = editIconMode === 'emoji' ? editIconEmoji : null
-      await updateProject(activeProject.id, {
-        save_mode: editSaveMode,
-        local_path: editLocalPath || null,
-        icon_emoji: emojiVal,
-        icon_color: editIconColor,
-      })
-
-      // Both writes below used to be swallowed as "non-critical" and the success
-      // toast fired regardless — so a failed git-config or project-settings save
-      // was reported to the user as "Project settings saved". They are part of
-      // what the button promises to save; a failure has to reach the surface.
-      const failures: string[] = []
+      if (
+        !(await updateProject(activeProject.id, {
+          save_mode: editSaveMode,
+          local_path: editLocalPath || null,
+          icon_emoji: emojiVal,
+          icon_color: editIconColor,
+        }))
+      ) {
+        failures.push(t('settings.saveFailed'))
+      }
 
       /**
        * `settings:set` REPORTS failure as `{success:false, error}` and never

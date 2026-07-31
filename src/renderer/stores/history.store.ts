@@ -6,6 +6,21 @@ import type { HistoryEntry } from '../types'
  * Unlike the in-session Console store, this persists across app restarts and
  * is scoped by project.
  */
+
+/**
+ * Did a delete actually happen? The bridge RESOLVES `{success:false, error}` on
+ * failure instead of throwing, so a plain `await` inside try/catch reads every
+ * refusal as success. Mirrors the helper in `environment.store.ts`; both stores
+ * stay UI-agnostic, so a failure simply leaves the rows listed — the truth.
+ */
+async function deleted(call: Promise<unknown> | undefined): Promise<boolean> {
+  try {
+    const res = (await call) as { success?: boolean } | undefined
+    return !(res && res.success === false)
+  } catch {
+    return false
+  }
+}
 interface HistoryStore {
   entries: HistoryEntry[]
   isLoading: boolean
@@ -73,21 +88,16 @@ export const useHistoryStore = create<HistoryStore>((set) => ({
   },
 
   clear: async (workspaceId) => {
-    try {
-      await window.api?.history?.clear(workspaceId)
-      set({ entries: [] })
-    } catch {
-      /* ignore */
-    }
+    // `{success:false}` is how the bridge reports failure — it resolves rather
+    // than throwing, so the old try/catch let a refused clear empty the list on
+    // screen while every row was still in the database.
+    if (!(await deleted(window.api?.history?.clear(workspaceId)))) return
+    set({ entries: [] })
   },
 
   deleteEntry: async (id) => {
-    try {
-      await window.api?.history?.delete(id)
-      set((state) => ({ entries: state.entries.filter((e) => e.id !== id) }))
-    } catch {
-      /* ignore */
-    }
+    if (!(await deleted(window.api?.history?.delete(id)))) return
+    set((state) => ({ entries: state.entries.filter((e) => e.id !== id) }))
   },
 
   setSearchTerm: (term) => set({ searchTerm: term }),

@@ -1,4 +1,5 @@
 import { useState, useEffect, useId } from 'react'
+import { useNumberDraft } from '../../lib/number-draft'
 import { toast } from '../../lib/toast'
 import { X } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
@@ -98,11 +99,34 @@ export default function SettingsModal() {
       })
   }, [show])
 
-  if (!show) return null
-
   const update = (partial: Partial<SettingsState>) => {
     setSettings((prev) => ({ ...prev, ...partial }))
   }
+
+  /*
+   * Draft-backed so the boxes can actually be emptied while typing. `Number('')`
+   * is 0 and finite, so clearing the font-size field wrote **0 px** into the
+   * app-wide setting — pressing Save then made every label in the application
+   * invisible, with no way to read the dialog that did it. The draft keeps the
+   * text local until it parses in range, and falls back to the last good value
+   * on blur rather than silently picking `min`.
+   *
+   * Declared before the `!show` early return: hooks may not be conditional.
+   */
+  const fontDraft = useNumberDraft({
+    value: settings.fontSize,
+    min: 10,
+    max: 20,
+    onChange: (fontSize) => update({ fontSize }),
+  })
+  const timeoutDraft = useNumberDraft({
+    value: settings.timeout,
+    min: 1,
+    max: 600_000,
+    onChange: (timeout) => update({ timeout }),
+  })
+
+  if (!show) return null
 
   const themeLabels: Record<Theme, string> = {
     light: t('settings.light'),
@@ -224,8 +248,7 @@ export default function SettingsModal() {
             <input
               id={fontId}
               type="number"
-              value={settings.fontSize}
-              onChange={(e) => update({ fontSize: Number(e.target.value) })}
+              {...fontDraft.inputProps}
               min={10}
               max={20}
               className="w-20 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none"
@@ -241,8 +264,8 @@ export default function SettingsModal() {
             <input
               id={timeoutId}
               type="number"
-              value={settings.timeout}
-              onChange={(e) => update({ timeout: Number(e.target.value) })}
+              {...timeoutDraft.inputProps}
+              min={1}
               className="w-28 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none"
             />
             <span className="ml-2 text-[var(--muted)]">ms</span>

@@ -115,6 +115,46 @@ describe('Settings: a failed save is not reported as success (APP-5)', () => {
   })
 })
 
+/* ── PG-1 class: a numeric field the user cannot empty ─────────────────────── */
+
+describe('Settings: numeric fields can be cleared while typing (PG-1 class)', () => {
+  it('never writes 0 px into the app-wide font size', async () => {
+    setAll.mockResolvedValue({ success: true })
+    render(<SettingsModal />)
+
+    const font = (await screen.findByLabelText(/font size/i)) as HTMLInputElement
+    const original = font.value
+    expect(original).not.toBe('')
+    fireEvent.change(font, { target: { value: '' } })
+    // The box is empty on screen — that is the point — but nothing invalid has
+    // been propagated. `Number('')` is 0 and finite, so the old code wrote a
+    // 0 px font size and Save made every label in the app invisible.
+    expect(font.value).toBe('')
+
+    fireEvent.blur(font)
+    // Blur falls back to the last good value, not to `min`.
+    expect(font.value).toBe(original)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(setAll).toHaveBeenCalled())
+  })
+
+  it('lets a timeout be retyped without the old digits sticking', async () => {
+    setAll.mockResolvedValue({ success: true })
+    render(<SettingsModal />)
+
+    const timeout = (await screen.findByLabelText(/timeout/i)) as HTMLInputElement
+    fireEvent.change(timeout, { target: { value: '' } })
+    fireEvent.change(timeout, { target: { value: '5000' } })
+    // Clamping on every keystroke turned "1" + "3" into 13; the draft does not.
+    expect(timeout.value).toBe('5000')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(setAll).toHaveBeenCalled())
+    expect(setAll.mock.calls[0][0]).toMatchObject({ defaultTimeout: 5000 })
+  })
+})
+
 /* ── APP-6: unreadable settings are not shown as defaults ──────────────────── */
 
 describe('Settings: an unreadable config is not disguised as defaults (APP-6)', () => {
@@ -225,6 +265,19 @@ describe('Project details: the success toast follows the writes (APP-4)', () => 
 
     await waitFor(() => expect(toastSuccess).toHaveBeenCalled())
     expect(toastError).not.toHaveBeenCalled()
+  })
+
+  it('reports a refused project update, which the store used to swallow whole', async () => {
+    // `updateProject` returned `Promise<void>` and absorbed the failure, so the
+    // re-fetch quietly restored the old values while the toast said "saved".
+    seed(async () => ({ success: true, data: true }))
+    useWorkspaceStore.setState({ updateProject: vi.fn(async () => false) } as never)
+
+    render(<ProjectDetailModal />)
+    fireEvent.click(await screen.findByRole('button', { name: /Save Changes/i }))
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled())
+    expect(toastSuccess).not.toHaveBeenCalled()
   })
 })
 
