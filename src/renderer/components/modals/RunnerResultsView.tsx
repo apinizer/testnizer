@@ -237,7 +237,14 @@ export default function RunnerResultsView({ onNewRun, onClose }: RunnerResultsVi
               className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-2 font-semibold text-[var(--text)]"
               style={{ fontSize: 13 }}
             >
-              <span>{t('runLifecycle.teardownSection')}</span>
+              <span>
+                {t('runLifecycle.teardownSection')}
+                {/* The failure count belongs next to the promise about it, and
+                    in BOTH views: the tab-based results header already carried
+                    it, so without this the same run read "1 cleanup failed" in
+                    one screen and said nothing in the other. */}
+                {summary.teardownFailed > 0 && `: ${summary.teardownFailed}`}
+              </span>
               <span className="font-normal text-[var(--hint)]">
                 · {t('runLifecycle.teardownNote')}
               </span>

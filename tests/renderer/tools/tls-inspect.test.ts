@@ -12,6 +12,7 @@ import {
   hasLegacySelection,
   isLegacyTlsVersion,
   leafLabel,
+  resultVisibility,
   toCertDetail,
   trustedAliasFor,
   type TlsInspectFormState,
@@ -200,5 +201,44 @@ describe('display projections', () => {
   it('trustedAliasFor builds a host + short-fingerprint alias', () => {
     expect(trustedAliasFor('example.com', leaf)).toBe('tls-example.com-deadbeef0011')
     expect(trustedAliasFor('ex ample.com', undefined)).toBe('tls-ex_ample.com')
+  })
+
+  /*
+   * The engine fills `hostnameValid`, `expired`, `daysToExpiry` and friends with
+   * PLACEHOLDERS when the probe never got a certificate, and the pane used to
+   * render them regardless — so a DNS failure produced a confident
+   * "Hostname mismatch" + "Expired" + "in 0 days" report about a server that was
+   * never reached. `ok` alone was not enough: a handshake can succeed against a
+   * server that presents no certificate at all, which produced the same lie.
+   */
+  describe('resultVisibility gates certificate verdicts on a presented chain', () => {
+    const base = {
+      ok: true,
+      chain: [leaf],
+    } as unknown as TlsInspectResult
+
+    it('hides everything when the probe never completed a handshake', () => {
+      expect(resultVisibility({ ...base, ok: false })).toEqual({
+        handshook: false,
+        hasLeaf: false,
+      })
+    })
+
+    it('shows transport facts but no certificate verdicts on an empty chain', () => {
+      expect(resultVisibility({ ...base, chain: [] })).toEqual({
+        handshook: true,
+        hasLeaf: false,
+      })
+    })
+
+    it('shows both once a leaf was actually presented', () => {
+      // The regression lock in the other direction: over-eager hiding would make
+      // a real inspection render nothing at all.
+      expect(resultVisibility(base)).toEqual({ handshook: true, hasLeaf: true })
+    })
+
+    it('never reports a leaf without a handshake', () => {
+      expect(resultVisibility({ ...base, ok: false, chain: [leaf] }).hasLeaf).toBe(false)
+    })
   })
 })

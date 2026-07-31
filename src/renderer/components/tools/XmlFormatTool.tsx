@@ -60,9 +60,12 @@ export default function XmlFormatTool() {
 
   const toolbar = (
     <>
+      {/* Named after the control, not after one of its values: `indent2` is the
+          "2 spaces" OPTION, so this select announced "2 spaces, combo box,
+          2 spaces". `JsonFormatTool`'s identical select already used this key. */}
       <select
         value={indent}
-        aria-label={t('tools.json.indent2')}
+        aria-label={t('tools.json.indent')}
         onChange={(e) => setIndent(e.target.value as IndentOption)}
         className="rounded border px-2 py-1 text-xs"
         style={{ background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--text)' }}

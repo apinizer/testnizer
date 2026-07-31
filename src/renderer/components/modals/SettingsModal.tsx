@@ -68,6 +68,12 @@ export default function SettingsModal() {
     api
       .getAll()
       .then((res) => {
+        // `{success:false}` is how this bridge REPORTS failure — a thrown
+        // rejection is the rarer path. Returning early here meant the common
+        // case stayed silent and the form showed defaults anyway, which is the
+        // exact behaviour the catch below exists to prevent. The renderer
+        // prefixes the localized sentence, so the detail carried here stays raw.
+        if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
         if (!res?.success || !res.data) return
         const s = res.data as {
           defaultTimeout?: number

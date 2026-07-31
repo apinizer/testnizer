@@ -243,32 +243,46 @@ export default function ProjectDetailModal() {
       // what the button promises to save; a failure has to reach the surface.
       const failures: string[] = []
 
+      /**
+       * `settings:set` REPORTS failure as `{success:false, error}` and never
+       * rejects — so wrapping it in try/catch alone caught nothing that actually
+       * happens, and the success toast fired over a write that did not land.
+       * Both shapes are handled here: the envelope and a genuine throw.
+       */
+      const persist = async (label: string, key: string, value: unknown): Promise<boolean> => {
+        try {
+          const res = (await window.api?.settings?.set(key, value)) as
+            | { success?: boolean; error?: string }
+            | undefined
+          if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
+          return true
+        } catch (e) {
+          failures.push(`${label}: ${e instanceof Error ? e.message : String(e)}`)
+          return false
+        }
+      }
+
       if (editSaveMode === 'git' || editSaveMode === 'both') {
         if (editGitUrl) {
-          try {
-            await window.api?.settings?.set(`git.${activeProject.id}`, {
-              repoUrl: editGitUrl,
-              username: editGitUser,
-              branch: editGitBranch,
-              token: editGitToken || '',
-            })
+          const ok = await persist('Git', `git.${activeProject.id}`, {
+            repoUrl: editGitUrl,
+            username: editGitUser,
+            branch: editGitBranch,
+            token: editGitToken || '',
+          })
+          // Only mirror into local state once the write is known to have landed.
+          if (ok) {
             setGitConfig({
               repoUrl: editGitUrl,
               username: editGitUser,
               branch: editGitBranch,
               token: editGitToken || gitConfig?.token,
             })
-          } catch (e) {
-            failures.push(`Git: ${e instanceof Error ? e.message : String(e)}`)
           }
         }
       }
 
-      try {
-        await window.api?.settings?.set(`project.${activeProject.id}.settings`, projSettings)
-      } catch (e) {
-        failures.push(`Settings: ${e instanceof Error ? e.message : String(e)}`)
-      }
+      await persist('Settings', `project.${activeProject.id}.settings`, projSettings)
 
       if (failures.length > 0) {
         // Same channel the outer catch uses, and the modal stays open.

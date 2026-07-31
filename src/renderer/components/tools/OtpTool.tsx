@@ -225,6 +225,10 @@ export default function OtpTool() {
                 type="text"
                 value={uri}
                 onChange={(e) => setUri(e.target.value)}
+                // A placeholder is not a name: it vanishes as soon as the user
+                // types, and screen readers are not required to announce it. The
+                // heading above this row is a div, so nothing named this field.
+                aria-label={t('tools.otp.uri')}
                 placeholder="otpauth://totp/..."
                 className="min-w-0 flex-1 rounded border px-2 py-1 text-xs font-mono"
                 style={{ background: 'var(--white)', borderColor: 'var(--border)' }}

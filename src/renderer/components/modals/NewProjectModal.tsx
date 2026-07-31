@@ -456,25 +456,45 @@ export default function NewProjectModal() {
           // failing the whole flow.
           const warnings: string[] = []
 
+          /**
+           * Every bridge below REPORTS failure as `{success:false, error}` and
+           * resolves normally — a thrown rejection is the exception, not the
+           * rule. Awaiting inside a try/catch therefore caught nothing that
+           * actually happens, so an import that never ran and a remote that was
+           * never contacted both reached the success screen unremarked.
+           */
+          const settled = async (label: string, call: Promise<unknown>): Promise<boolean> => {
+            try {
+              const res = (await call) as { success?: boolean; error?: string } | undefined
+              if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
+              return true
+            } catch (e) {
+              warnings.push(`${label}: ${e instanceof Error ? e.message : String(e)}`)
+              return false
+            }
+          }
+
           // Import data from local file if source was 'local'
           if (source === 'local' && localFilePath) {
-            try {
-              await window.api?.save?.importLocal({ filePath: localFilePath, projectId })
-            } catch (e) {
-              warnings.push(
-                `${t('newProject.importFailed')}: ${e instanceof Error ? e.message : String(e)}`,
-              )
-            }
+            await settled(
+              t('newProject.importFailed'),
+              Promise.resolve(
+                window.api?.save?.importLocal({ filePath: localFilePath, projectId }),
+              ),
+            )
           }
 
           if ((saveMode === 'git' || saveMode === 'both') && gitUrl) {
             try {
-              await window.api?.settings?.set(`git.${projectId}`, {
+              const cfgRes = (await window.api?.settings?.set(`git.${projectId}`, {
                 repoUrl: gitUrl,
                 username: gitUser,
                 branch: gitBranch,
                 token: gitToken || '',
-              })
+              })) as { success?: boolean; error?: string } | undefined
+              if (cfgRes && cfgRes.success === false) {
+                throw new Error(cfgRes.error ?? 'unknown error')
+              }
 
               if (source === 'git') {
                 // Clone-from-git: the earlier step only inspected a throwaway
@@ -484,11 +504,17 @@ export default function NewProjectModal() {
                 // re-imports the project, so the repo actually lands on disk.
                 // (A push here would instead upload the freshly-created empty
                 // project and risk clobbering the remote.)
-                await window.api.git.pull(projectId)
+                const res = (await window.api.git.pull(projectId)) as
+                  | { success?: boolean; error?: string }
+                  | undefined
+                if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
               } else {
                 // New project with a git remote — seed the remote with the
                 // project data.
-                await window.api.git.push(projectId)
+                const res = (await window.api.git.push(projectId)) as
+                  | { success?: boolean; error?: string }
+                  | undefined
+                if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
               }
             } catch (e) {
               warnings.push(
