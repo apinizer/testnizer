@@ -547,7 +547,21 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         seen.add(lk)
         merged.push({ key: h.key, value: h.value, enabled: true })
       }
-      resolvedHeaders = merged
+      /*
+       * Resolve AGAIN, because this collection is deliberately raw.
+       *
+       * `pm.request.headers` is populated with the user's typed values BEFORE
+       * variable resolution, so a script can read what was written rather than
+       * what it expands to. Assigning it straight back therefore threw away the
+       * resolution done a few lines above — and it happened whenever ANY
+       * pre-request script ran, at project, folder or request level, even one
+       * that never touched a header. `Authorization: Bearer {{token}}` shipped
+       * literally, and `{{$randomInt}}` arrived as the text `{{$randomInt}}`.
+       *
+       * Values a script inserted are resolved too, which is what the URL, query
+       * params and body already do.
+       */
+      resolvedHeaders = resolveKeyValuePairs(merged, activeVars)
     }
     const resolvedBody = resolveRequestBody(body, activeVars) ?? body
     // Use the inherited/effective auth (request → folder → project), not just
