@@ -15,6 +15,8 @@ import type {
   TlsClientCert,
   TlsInspectRequest,
   TlsInspectResult,
+  TlsProbeFailure,
+  TlsProbeSuccess,
 } from '../../types'
 
 /** TLS protocol versions offered in the min/max selects (blank ⇒ engine default). */
@@ -234,6 +236,30 @@ export function buildClientCert(form: TlsClientCertForm): TlsClientCert | undefi
  * engine documents this: only transport failures set `ok:false`), so gating on
  * it does NOT hide the findings this tool exists to report.
  */
+/**
+ * Compile-time guard for the shape this module depends on.
+ *
+ * `TlsInspectResult` is a discriminated union precisely so that a probe which
+ * never handshook cannot carry `chain`, `hostnameValid`, `expired` and friends
+ * — the engine used to fill those with placeholders and the result pane
+ * rendered them, so a DNS failure reported "Hostname mismatch · Expired ·
+ * in 0 days" about a server it never reached.
+ *
+ * Flatten the union back into `ok: boolean` and this stops compiling. It lives
+ * in `src/` on purpose: `tests/` is outside the typecheck projects, so the same
+ * assertion written as a test would pass no matter what.
+ */
+type Assert<T extends true> = T
+export type TlsFailureCarriesNoCertificateFields = Assert<
+  'chain' extends keyof TlsProbeFailure
+    ? false
+    : 'hostnameValid' extends keyof TlsProbeFailure
+      ? false
+      : 'daysToExpiry' extends keyof TlsProbeFailure
+        ? false
+        : true
+>
+
 export function resultVisibility(result: TlsInspectResult): {
   handshook: boolean
   hasLeaf: boolean
@@ -253,7 +279,7 @@ export function leafLabel(subjectDN: string, fallback: string): string {
  * keystore `CertificateDetailDialog` renders it verbatim (the two cert shapes
  * are structurally identical). `startIndex` is clamped to the chain bounds.
  */
-export function toCertDetail(result: TlsInspectResult, host: string): KeystoreAliasDetail {
+export function toCertDetail(result: TlsProbeSuccess, host: string): KeystoreAliasDetail {
   const leaf = result.chain[0]
   return {
     alias: leaf ? leafLabel(leaf.subjectDN, host) : host,

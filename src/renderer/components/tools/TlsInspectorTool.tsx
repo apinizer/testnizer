@@ -135,7 +135,10 @@ export default function TlsInspectorTool() {
         }
       />
 
-      {result && detailIndex !== null && (
+      {/* The dialog projects a PRESENTED chain, so it only exists for a probe
+          that handshook — the union makes that a compile-time fact rather than
+          something to remember. */}
+      {result?.ok && detailIndex !== null && (
         <CertificateDetailDialog
           detail={toCertDetail(result, lastHost)}
           initialIndex={detailIndex}

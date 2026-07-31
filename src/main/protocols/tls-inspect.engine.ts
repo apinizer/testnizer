@@ -81,11 +81,27 @@ export interface TlsCipherInfo {
 
 export type ValidityStatus = 'valid' | 'expiring' | 'expired'
 
-export interface TlsInspectResult {
-  ok: boolean
+/** What was probed — present whether or not the probe got anywhere. */
+export interface TlsProbeTarget {
   host: string
   port: number
   servername: string
+}
+
+/**
+ * No handshake: DNS, TCP, TLS negotiation, timeout, or a handled precondition.
+ * Deliberately carries NOTHING about a certificate — this used to be the same
+ * flat object with placeholder verdicts, which the UI then rendered as findings.
+ */
+export interface TlsProbeFailure extends TlsProbeTarget {
+  ok: false
+  /** Transport-level failure message. */
+  error: string
+}
+
+/** Handshake completed. Certificate verdicts describe `chain[0]`, if any. */
+export interface TlsProbeSuccess extends TlsProbeTarget {
+  ok: true
   /** `socket.getProtocol()` — negotiated TLS version, e.g. `TLSv1.3`. */
   protocol: string | null
   /** `socket.getCipher()`. */
@@ -105,9 +121,9 @@ export interface TlsInspectResult {
   notYetValid: boolean
   daysToExpiry: number
   validityStatus: ValidityStatus
-  /** Transport-level failure message; present only when `ok` is false. */
-  error?: string
 }
+
+export type TlsInspectResult = TlsProbeFailure | TlsProbeSuccess
 
 const MS_PER_DAY = 86_400_000
 const DEFAULT_PORT = 443
@@ -146,24 +162,21 @@ function normaliseAuthError(ae: unknown): string | undefined {
   return String(ae)
 }
 
-function baseResult(opts: TlsInspectOptions, port: number, servername: string): TlsInspectResult {
-  return {
-    ok: false,
-    host: opts.host,
-    port,
-    servername,
-    protocol: null,
-    cipher: null,
-    alpnProtocol: false,
-    authorized: false,
-    hostnameValid: false,
-    chain: [],
-    selfSigned: false,
-    expired: false,
-    notYetValid: false,
-    daysToExpiry: 0,
-    validityStatus: 'expired',
-  }
+/**
+ * A probe that never completed a handshake.
+ *
+ * This used to return a full result object with `ok:false` and every
+ * certificate field set to a placeholder — `hostnameValid:false`,
+ * `expired:false` next to `validityStatus:'expired'`. The UI read them as
+ * findings. The failure variant simply has no such fields.
+ */
+function failure(
+  opts: TlsInspectOptions,
+  port: number,
+  servername: string,
+  error: string,
+): TlsProbeFailure {
+  return { ok: false, host: opts.host, port, servername, error }
 }
 
 /**
@@ -193,8 +206,24 @@ function buildResult(
   opts: TlsInspectOptions,
   port: number,
   servername: string,
-): TlsInspectResult {
-  const result = baseResult(opts, port, servername)
+): TlsProbeSuccess {
+  const result: TlsProbeSuccess = {
+    ok: true,
+    host: opts.host,
+    port,
+    servername,
+    protocol: null,
+    cipher: null,
+    alpnProtocol: false,
+    authorized: false,
+    hostnameValid: false,
+    chain: [],
+    selfSigned: false,
+    expired: false,
+    notYetValid: false,
+    daysToExpiry: 0,
+    validityStatus: 'expired',
+  }
 
   const peer = socket.getPeerCertificate(true) as tls.DetailedPeerCertificate
   const chain = peer && peer.raw && peer.raw.length > 0 ? walkChain(peer) : []
@@ -248,7 +277,6 @@ function buildResult(
     result.selfSigned = leaf.subjectDN === leaf.issuerDN
   }
 
-  result.ok = true
   return result
 }
 
@@ -323,18 +351,14 @@ export async function inspectTls(opts: TlsInspectOptions): Promise<TlsInspectRes
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
   if (!host) {
-    const r = baseResult(opts, port, servername)
-    r.error = 'Host is required'
-    return r
+    return failure(opts, port, servername, 'Host is required')
   }
 
   // F-3 — Electron 33 BoringSSL cannot negotiate TLS 1.0/1.1; there is no curl
   // fallback for raw cert inspection. Refuse BEFORE tls.connect so we surface a
   // handled error string instead of a leaked ERR_SSL_INVALID_COMMAND throw.
   if (isLegacyTlsVersion(opts.minVersion) || isLegacyTlsVersion(opts.maxVersion)) {
-    const r = baseResult(opts, port, servername)
-    r.error = 'Electron cannot negotiate TLS 1.0/1.1 for inspection'
-    return r
+    return failure(opts, port, servername, 'Electron cannot negotiate TLS 1.0/1.1 for inspection')
   }
 
   const connectOpts = buildConnectOptions(opts, host, port, servername)
@@ -356,9 +380,7 @@ export async function inspectTls(opts: TlsInspectOptions): Promise<TlsInspectRes
     }
 
     const timer = setTimeout(() => {
-      const r = baseResult(opts, port, servername)
-      r.error = `TLS inspection timed out after ${timeoutMs}ms`
-      finish(r)
+      finish(failure(opts, port, servername, `TLS inspection timed out after ${timeoutMs}ms`))
     }, timeoutMs)
 
     try {
@@ -366,9 +388,7 @@ export async function inspectTls(opts: TlsInspectOptions): Promise<TlsInspectRes
     } catch (e) {
       // Synchronous throw (e.g. an invalid option BoringSSL rejects) — handle it
       // rather than let it escape as an unhandled rejection.
-      const r = baseResult(opts, port, servername)
-      r.error = errString(e)
-      finish(r)
+      finish(failure(opts, port, servername, errString(e)))
       return
     }
 
@@ -376,16 +396,12 @@ export async function inspectTls(opts: TlsInspectOptions): Promise<TlsInspectRes
       try {
         finish(buildResult(socket, opts, port, servername))
       } catch (e) {
-        const r = baseResult(opts, port, servername)
-        r.error = errString(e)
-        finish(r)
+        finish(failure(opts, port, servername, errString(e)))
       }
     })
 
     socket.once('error', (err) => {
-      const r = baseResult(opts, port, servername)
-      r.error = errString(err)
-      finish(r)
+      finish(failure(opts, port, servername, errString(err)))
     })
     // Timeout is enforced by the module-level `timer` above (socket.setTimeout is
     // never armed), which always destroys the socket via finish().

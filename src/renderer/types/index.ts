@@ -244,11 +244,37 @@ export interface TlsInspectRequest {
   clientCert?: TlsClientCert
 }
 
-export interface TlsInspectResult {
-  ok: boolean
+/** What was probed — present whether or not the probe got anywhere. */
+export interface TlsProbeTarget {
   host: string
   port: number
   servername: string
+}
+
+/**
+ * The probe never completed a handshake: DNS, TCP, TLS negotiation or a timeout.
+ *
+ * Nothing about a certificate exists here, and that is the point. The old shape
+ * was one flat interface with `ok: boolean`, so a failed probe still carried
+ * `hostnameValid`, `expired`, `daysToExpiry` and a `validityStatus` — filled
+ * with placeholders by the engine. The result pane rendered them, and a DNS
+ * failure produced a confident "Hostname mismatch · Expired · in 0 days" report
+ * about a server that was never reached (TLS-1/TLS-6). A render guard fixed the
+ * symptom; splitting the type makes the mistake unwriteable.
+ */
+export interface TlsProbeFailure extends TlsProbeTarget {
+  ok: false
+  error: string
+}
+
+/**
+ * The handshake completed. Transport facts are real; the certificate verdicts
+ * describe `chain[0]` and mean nothing when `chain` is empty — a server may
+ * complete a handshake without presenting one (TLS-5). Use `resultVisibility`
+ * rather than reading them unconditionally.
+ */
+export interface TlsProbeSuccess extends TlsProbeTarget {
+  ok: true
   protocol: string | null
   cipher: { name: string; standardName: string; version: string } | null
   alpnProtocol: string | false
@@ -263,8 +289,9 @@ export interface TlsInspectResult {
   notYetValid: boolean
   daysToExpiry: number
   validityStatus: 'valid' | 'expiring' | 'expired'
-  error?: string
 }
+
+export type TlsInspectResult = TlsProbeFailure | TlsProbeSuccess
 
 /** Library row — metadata only; never carries blob or store password. */
 export interface KeystoreLibraryEntry {

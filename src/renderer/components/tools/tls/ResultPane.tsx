@@ -6,7 +6,7 @@
  * the engine fills those fields with placeholders on a transport failure.
  */
 import { useTranslation } from '../../../lib/i18n'
-import type { TlsCertificateInfo, TlsInspectResult } from '../../../types'
+import type { TlsCertificateInfo, TlsInspectResult, TlsProbeSuccess } from '../../../types'
 import { resultVisibility } from '../../../lib/tools/tls-inspect'
 import { Badge, Caption, Meta, AMBER, AMBER_BG, GREEN, GREEN_BG, RED, RED_BG } from './atoms'
 
@@ -23,6 +23,15 @@ export default function ResultPane({
 }) {
   const { t } = useTranslation()
 
+  /*
+   * Narrow ONCE, here. `TlsInspectResult` is a discriminated union: a probe that
+   * never handshook has no `hostnameValid`, no `expired`, no `chain` — so the
+   * placeholder-as-finding bug (TLS-1/TLS-6) can no longer be written, and the
+   * compiler is what enforces it rather than a render guard everyone has to
+   * remember. `hasLeaf` stays a runtime question: a handshake can complete
+   * against a server that presents no certificate at all (TLS-5).
+   */
+  const probe = result?.ok ? result : null
   const { handshook, hasLeaf } = result
     ? resultVisibility(result)
     : { handshook: false, hasLeaf: false }
@@ -45,10 +54,10 @@ export default function ResultPane({
         </div>
       )}
 
-      {result && hasLeaf && (
+      {probe && hasLeaf && (
         <>
           <div className="flex flex-wrap gap-2">
-            {result.authorized ? (
+            {probe.authorized ? (
               <Badge bg={GREEN_BG} color={GREEN}>
                 {t('tools.tlsInspect.trusted')}
               </Badge>
@@ -58,27 +67,27 @@ export default function ResultPane({
               </Badge>
             )}
             <Badge
-              bg={result.hostnameValid ? GREEN_BG : RED_BG}
-              color={result.hostnameValid ? GREEN : RED}
+              bg={probe.hostnameValid ? GREEN_BG : RED_BG}
+              color={probe.hostnameValid ? GREEN : RED}
             >
-              {(result.hostnameValid
+              {(probe.hostnameValid
                 ? t('tools.tlsInspect.hostnameOkFor')
                 : t('tools.tlsInspect.hostnameBadFor')
-              ).replace('{name}', result.servername || result.host)}
+              ).replace('{name}', probe.servername || probe.host)}
             </Badge>
-            <ValidityBadge result={result} />
-            {result.selfSigned && (
+            <ValidityBadge result={probe} />
+            {probe.selfSigned && (
               <Badge bg={AMBER_BG} color={AMBER}>
                 {t('tools.tlsInspect.selfSigned')}
               </Badge>
             )}
           </div>
 
-          {!result.authorized && result.authorizationError && (
+          {!probe.authorized && probe.authorizationError && (
             <div>
               <Caption>{t('tools.tlsInspect.authError')}</Caption>
               <div className="break-all font-mono text-[11px]" style={{ color: RED }}>
-                {result.authorizationError}
+                {probe.authorizationError}
               </div>
             </div>
           )}
@@ -87,12 +96,12 @@ export default function ResultPane({
             <Meta
               label={t('tools.tlsInspect.expiresIn')}
               value={
-                result.expired
+                probe.expired
                   ? t('tools.tlsInspect.expiredAgo').replace(
                       '{n}',
-                      String(Math.abs(result.daysToExpiry)),
+                      String(Math.abs(probe.daysToExpiry)),
                     )
-                  : t('tools.tlsInspect.inDays').replace('{n}', String(result.daysToExpiry))
+                  : t('tools.tlsInspect.inDays').replace('{n}', String(probe.daysToExpiry))
               }
             />
           </div>
@@ -105,17 +114,17 @@ export default function ResultPane({
         are gated separately: those placeholders would otherwise be read as
         findings.
       */}
-      {result && handshook && (
+      {probe && handshook && (
         <>
           <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-            <Meta label={t('tools.tlsInspect.protocol')} value={result.protocol ?? '—'} />
+            <Meta label={t('tools.tlsInspect.protocol')} value={probe.protocol ?? '—'} />
             <Meta
               label={t('tools.tlsInspect.cipher')}
-              value={result.cipher ? result.cipher.name : '—'}
+              value={probe.cipher ? probe.cipher.name : '—'}
             />
             <Meta
               label={t('tools.tlsInspect.alpn')}
-              value={result.alpnProtocol === false ? '—' : result.alpnProtocol}
+              value={probe.alpnProtocol === false ? '—' : probe.alpnProtocol}
             />
           </div>
 
@@ -127,7 +136,7 @@ export default function ResultPane({
               </span>
             </div>
             <div className="flex flex-col gap-1">
-              {result.chain.map((c, i) => (
+              {probe.chain.map((c, i) => (
                 <div
                   key={`${c.sha256Fingerprint}-${i}`}
                   className="flex items-center gap-2 rounded border px-2.5 py-1.5"
@@ -162,7 +171,7 @@ export default function ResultPane({
                   </button>
                 </div>
               ))}
-              {result.chain.length === 0 && (
+              {probe.chain.length === 0 && (
                 <span className="text-xs" style={{ color: 'var(--hint)' }}>
                   {t('tools.tlsInspect.noChain')}
                 </span>
@@ -178,17 +187,17 @@ export default function ResultPane({
             otherwise reads as "docs.apinizer.com is example.com".
           */}
           <p className="text-[10px]" style={{ color: 'var(--muted)' }}>
-            {result.host}:{result.port}
-            {result.servername && result.servername !== result.host
-              ? ` · SNI: ${result.servername}`
+            {probe.host}:{probe.port}
+            {probe.servername && probe.servername !== probe.host
+              ? ` · SNI: ${probe.servername}`
               : ''}{' '}
             · {t('tools.tlsInspect.presentedFooter')}
           </p>
-          {result.servername && result.servername !== result.host && (
+          {probe.servername && probe.servername !== probe.host && (
             <p className="text-[10px]" style={{ color: AMBER }}>
               {t('tools.tlsInspect.sniDiffers')
-                .replace('{host}', result.host)
-                .replace('{sni}', result.servername)}
+                .replace('{host}', probe.host)
+                .replace('{sni}', probe.servername)}
             </p>
           )}
         </>
@@ -197,7 +206,7 @@ export default function ResultPane({
   )
 }
 
-function ValidityBadge({ result }: { result: TlsInspectResult }) {
+function ValidityBadge({ result }: { result: TlsProbeSuccess }) {
   const { t } = useTranslation()
   const map = {
     valid: { bg: GREEN_BG, color: GREEN, key: 'tools.tlsInspect.valid' },

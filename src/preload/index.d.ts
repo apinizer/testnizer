@@ -2040,11 +2040,21 @@ interface TlsInspectRequestDto {
       }
 }
 
-interface TlsInspectResultDto {
-  ok: boolean
+interface TlsProbeTargetDto {
   host: string
   port: number
   servername: string
+}
+
+/** No handshake — carries nothing about a certificate, by construction. */
+interface TlsProbeFailureDto extends TlsProbeTargetDto {
+  ok: false
+  error: string
+}
+
+/** Handshake completed; certificate verdicts describe `chain[0]`, if any. */
+interface TlsProbeSuccessDto extends TlsProbeTargetDto {
+  ok: true
   protocol: string | null
   cipher: { name: string; standardName: string; version: string } | null
   alpnProtocol: string | false
@@ -2057,8 +2067,9 @@ interface TlsInspectResultDto {
   notYetValid: boolean
   daysToExpiry: number
   validityStatus: 'valid' | 'expiring' | 'expired'
-  error?: string
 }
+
+type TlsInspectResultDto = TlsProbeFailureDto | TlsProbeSuccessDto
 
 interface TlsApi {
   inspect(payload: TlsInspectRequestDto): Promise<IpcResult<TlsInspectResultDto>>

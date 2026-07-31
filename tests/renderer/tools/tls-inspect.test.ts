@@ -217,6 +217,7 @@ describe('display projections', () => {
       chain: [leaf],
     } as unknown as TlsInspectResult
 
+
     it('hides everything when the probe never completed a handshake', () => {
       expect(resultVisibility({ ...base, ok: false })).toEqual({
         handshook: false,
