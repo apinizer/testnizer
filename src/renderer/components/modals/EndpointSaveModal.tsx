@@ -37,6 +37,15 @@ export default function EndpointSaveModal() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [folders, setFolders] = useState<Folder[]>([])
+  /**
+   * Why the folder list is empty.
+   *
+   * "This project has no folders" and "the folder list could not be read" look
+   * identical when both render the same empty-state line — so a failed load
+   * invited the user to save into a root they did not choose, and to create a
+   * folder that may already exist.
+   */
+  const [foldersError, setFoldersError] = useState<string | null>(null)
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({})
 
   // Are we editing an existing saved endpoint? Drives label changes
@@ -62,8 +71,10 @@ export default function EndpointSaveModal() {
       const result = (await window.api?.folder?.list(activeProjectId)) as {
         success: boolean
         data?: Folder[]
+        error?: string
       }
       if (result?.success && result.data) {
+        setFoldersError(null)
         setFolders(result.data)
 
         // Pre-select the existing folder when updating. A null folder_id
@@ -88,8 +99,11 @@ export default function EndpointSaveModal() {
           setSelectedFolder(result.data[0].id)
         }
       }
-    } catch {
-      // IPC not available
+      // A `{success:false}` envelope is how this bridge reports failure; it
+      // resolves, so the catch below never sees it.
+      else setFoldersError(result?.error ?? 'unknown error')
+    } catch (e) {
+      setFoldersError(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -457,8 +471,18 @@ export default function EndpointSaveModal() {
                 return renderNodes(null, 0)
               })()}
 
+              {/* Could not read the list — distinct from "there are none". */}
+              {foldersError && !creatingFolder && (
+                <div
+                  role="alert"
+                  style={{ padding: '12px 0', textAlign: 'center', fontSize: 13, color: '#cc2200' }}
+                >
+                  {t('endpointSave.foldersUnavailable')}: {foldersError}
+                </div>
+              )}
+
               {/* No folders message */}
-              {folders.length === 0 && !creatingFolder && (
+              {folders.length === 0 && !foldersError && !creatingFolder && (
                 <div
                   style={{
                     padding: '12px 0',

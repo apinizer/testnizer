@@ -36,6 +36,7 @@ import SettingsModal from '../../src/renderer/components/modals/SettingsModal'
 import FolderSettingsModal from '../../src/renderer/components/modals/FolderSettingsModal'
 import ProjectDetailModal from '../../src/renderer/components/modals/ProjectDetailModal'
 import NewProjectModal from '../../src/renderer/components/modals/NewProjectModal'
+import EndpointSaveModal from '../../src/renderer/components/modals/EndpointSaveModal'
 import { useUIStore } from '../../src/renderer/stores/ui.store'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
 import { useBranchStore } from '../../src/renderer/stores/branch.store'
@@ -349,5 +350,45 @@ describe('New project: a failed import is reported, not hidden (APP-2)', () => {
 
     await waitFor(() => expect(importLocal).toHaveBeenCalled())
     expect(toastWarning).not.toHaveBeenCalled()
+  })
+})
+
+/* ── APP-9: "no folders" and "couldn't read them" are different ────────────── */
+
+describe('Save endpoint: an unreadable folder list says so (APP-9)', () => {
+  const folderList = vi.fn()
+
+  function seedSave() {
+    ;(window as unknown as { api: Record<string, unknown> }).api = {
+      folder: { list: folderList, create: vi.fn() },
+      savedRequest: { get: vi.fn(async () => ({ success: true, data: {} })) },
+      settings: { setAll, getAll, get: vi.fn(), set: vi.fn() },
+    }
+    useUIStore.setState({ showSettingsModal: false, showEndpointSaveModal: true })
+    useWorkspaceStore.setState({ activeProjectId: 'p1', projects: [] } as never)
+  }
+
+  beforeEach(() => {
+    folderList.mockReset()
+    seedSave()
+  })
+
+  it('reports a refused folder list instead of showing "no folders"', async () => {
+    folderList.mockResolvedValue({ success: false, error: 'SQLITE_CORRUPT' })
+
+    render(<EndpointSaveModal />)
+
+    // The bug: both cases rendered the same empty-state line, so a failed read
+    // invited the user to save into a root they never chose.
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/could not be read/i))
+    expect(screen.getByRole('alert').textContent).toContain('SQLITE_CORRUPT')
+  })
+
+  it('still says "no folders" when the project genuinely has none', async () => {
+    folderList.mockResolvedValue({ success: true, data: [] })
+
+    render(<EndpointSaveModal />)
+
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   })
 })

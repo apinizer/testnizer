@@ -3,6 +3,7 @@ import ToolShell from './ToolShell'
 import KeyMaterialField from '../shared/KeyMaterialField'
 import CopyButton from '../shared/CopyButton'
 import { useTranslation } from '../../lib/i18n'
+import { toast } from '../../lib/toast'
 import { useInvalidateOn } from '../../lib/use-stale-guard'
 import type { MaterialSource } from '../../types'
 import { stripSourceSecrets } from '../../lib/key-material'
@@ -77,6 +78,23 @@ function nextId(): string {
   return `jwk-${entrySeq}`
 }
 
+/**
+ * Are these the same key?
+ *
+ * Compared on canonical JSON — key order in a JWK carries no meaning, so two
+ * documents that differ only in field order describe one key and must not both
+ * end up in the set.
+ */
+function sameJwk(a: Jwk, b: Jwk): boolean {
+  const canon = (j: Jwk): string =>
+    JSON.stringify(
+      Object.fromEntries(
+        Object.entries(j as Record<string, unknown>).sort(([x], [y]) => (x < y ? -1 : 1)),
+      ),
+    )
+  return canon(a) === canon(b)
+}
+
 const SAMPLE_JWK = `{
   "kty": "EC",
   "crv": "P-256",
@@ -90,9 +108,31 @@ export default function JwkTool() {
   const [mode, setMode] = useState<Mode>('fromPem')
   const [entries, setEntries] = useState<KeyEntry[]>([])
 
-  const addKey = useCallback<AddKey>((jwk, origin) => {
-    setEntries((list) => [...list, { id: nextId(), jwk, origin, label: describe(jwk) }])
-  }, [])
+  /*
+   * "Add to set" used to append in silence, from a tab that does not show the
+   * set — so pressing it changed nothing the user could see, and pressing it
+   * twice produced two identical members of a JWKS with no hint that anything
+   * was wrong. Both are answered here: the same key is recognised and reported
+   * instead of duplicated, and every outcome says what happened.
+   */
+  const addKey = useCallback<AddKey>(
+    (jwk, origin) => {
+      setEntries((list) => {
+        if (list.some((e) => sameJwk(e.jwk, jwk))) {
+          toast.info(t('tools.jwk.alreadyInSet').replace('{name}', describe(jwk)))
+          return list
+        }
+        const next = [...list, { id: nextId(), jwk, origin, label: describe(jwk) }]
+        toast.success(
+          t('tools.jwk.addedToSet')
+            .replace('{name}', describe(jwk))
+            .replace('{n}', String(next.length)),
+        )
+        return next
+      })
+    },
+    [t],
+  )
 
   const fromPem = useFromPemMode(addKey)
   const toPem = useToPemMode(addKey)

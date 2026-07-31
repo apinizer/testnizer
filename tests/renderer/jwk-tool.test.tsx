@@ -20,6 +20,17 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+const toastSuccess = vi.fn()
+const toastInfo = vi.fn()
+vi.mock('../../src/renderer/lib/toast', () => ({
+  toast: {
+    success: (...a: unknown[]) => toastSuccess(...a),
+    info: (...a: unknown[]) => toastInfo(...a),
+    error: vi.fn(),
+    warning: vi.fn(),
+  },
+}))
+
 import JwkTool from '../../src/renderer/components/tools/JwkTool'
 
 // Vitest's esbuild transform uses the classic JSX runtime → React must be global.
@@ -220,5 +231,53 @@ describe('JWK Set — the copy affordance publishes the PUBLIC set only', () => 
     expect(copied).not.toContain('LEAKED')
     expect(copied).not.toContain('"d"')
     expect(JSON.parse(copied).keys).toHaveLength(1)
+  })
+})
+
+
+/* ── JWK-4: adding to the set says so, and says when it changed nothing ────── */
+
+describe('adding a key to the set reports what happened (JWK-4)', () => {
+  const KEY = {
+    kty: 'EC',
+    crv: 'P-256',
+    x: 'f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU',
+    y: 'x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0',
+    alg: 'ES256',
+  }
+
+  function addOnce(value: unknown) {
+    fireEvent.change(screen.getByLabelText('JWK or JWK Set'), {
+      target: { value: JSON.stringify(value) },
+    })
+    fireEvent.click(screen.getByText('Add to set'))
+  }
+
+  it('confirms the addition — the button used to append in silence', async () => {
+    render(<JwkTool />)
+    fireEvent.click(screen.getByText(/^JWK Set/))
+
+    addOnce(KEY)
+
+    // "Add to set" is pressed from tabs that do not show the set, so without
+    // this the screen did not change at all.
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled())
+    expect(String(toastSuccess.mock.calls[0][0])).toMatch(/added to the key set/i)
+  })
+
+  it('recognises the same key instead of duplicating it in a JWKS', async () => {
+    render(<JwkTool />)
+    fireEvent.click(screen.getByText(/^JWK Set/))
+
+    addOnce(KEY)
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled())
+    // Same key, fields in a different order — key order carries no meaning in a
+    // JWK, so this is one key, not two.
+    addOnce({ alg: KEY.alg, y: KEY.y, x: KEY.x, crv: KEY.crv, kty: KEY.kty })
+
+    await waitFor(() => expect(toastInfo).toHaveBeenCalled())
+    expect(String(toastInfo.mock.calls[0][0])).toMatch(/already in the set/i)
+    // The tab counter is the visible proof that nothing was appended.
+    expect(screen.getByText(/^JWK Set \(1\)/)).toBeInTheDocument()
   })
 })
