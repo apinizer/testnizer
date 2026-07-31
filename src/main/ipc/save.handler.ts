@@ -24,6 +24,7 @@ import {
 } from './import-export.handler'
 import { snapshotEndpointForSuite, ensureUniqueSuiteName } from './test-suite.handler'
 import { getEndpointById } from '../db/endpoint.repo'
+import { projectFileSlug } from '../lib/project-file'
 
 // ─── Multi-format detection for test suite import ────────────────
 export type TestSuiteImportFormat = 'testnizer' | 'postman' | 'insomnia' | 'unknown'
@@ -1984,20 +1985,11 @@ export function registerSaveHandlers(): void {
         const { simpleGit } = await import('simple-git')
 
         const data = exportProjectData(payload.projectId)
-        // Deliberately still the ASCII slug (unlike the export dialogs, which
-        // use safeFileName): this names a *tracked* file in the user's repo.
-        // Widening it would push a second, differently-named copy alongside
-        // the one already committed.
-        // KNOWN DIVERGENCE: git.handler.ts:540 slugifies the SAME project name
-        // with '-' instead of '_', so `sağlık` is written here as `sa_l_k.json`
-        // and there as `sa-l-k.json` — a project touched by both paths can end
-        // up tracked twice. Unifying them (ideally on safeFileName) needs a
-        // one-time rename of the already-committed file, so it is its own
-        // change, not a drive-by in an export fix.
-        const projectName = ((data.project?.name as string) || 'project').replace(
-          /[^a-zA-Z0-9-_]/g,
-          '_',
-        )
+        // ASCII slug via the SHARED helper (issue #78). This used to slugify
+        // with '_' while git.handler used '-', and `save:git` deletes every
+        // `.json` that is not the name it computed — so the two paths took
+        // turns deleting each other's committed copy.
+        const projectName = projectFileSlug(data.project?.name as string | undefined)
         const authUrl = buildAuthUrl(payload.repoUrl, payload.username, payload.token)
 
         const tmpDir = join(tmpdir(), `testnizer-git-${randomUUID()}`)
@@ -2105,12 +2097,8 @@ export function registerSaveHandlers(): void {
         const { simpleGit } = await import('simple-git')
 
         const data = exportProjectData(payload.projectId)
-        // ASCII slug on purpose — see the note in `save:git`; this names a
-        // tracked file in the user's repo, not a save-dialog suggestion.
-        const projectName = ((data.project?.name as string) || 'project').replace(
-          /[^a-zA-Z0-9-_]/g,
-          '_',
-        )
+        // Shared helper — see the note in `save:git` (issue #78).
+        const projectName = projectFileSlug(data.project?.name as string | undefined)
         const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
 
         const tmpDir = join(tmpdir(), `testnizer-push-${randomUUID()}`)

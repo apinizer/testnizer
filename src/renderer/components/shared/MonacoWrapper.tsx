@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import type { ComponentProps } from 'react'
+import { useEditorVisible } from '../../lib/editor-visibility'
 
 // Lazy-load the heavy Monaco-based implementation. Splitting it out keeps
 // `monaco-editor` (~5–6 MB) out of the initial renderer chunk; it gets fetched
@@ -65,6 +66,24 @@ function MonacoFallback({
 }
 
 export default function MonacoWrapper(props: MonacoWrapperProps) {
+  const visible = useEditorVisible()
+
+  /*
+   * A hidden pane gets the skeleton instead of a live editor (issue #77).
+   *
+   * The Workbench keeps every open tool tab mounted so typed input survives a
+   * tab switch; without this, each of those tabs also kept its Monaco editors
+   * alive — models, workers and DOM for panes nobody is looking at. The text
+   * lives in the tool's own state, so the editor rebuilds from it on the way
+   * back and nothing the user typed is lost.
+   *
+   * Outside a tool tab there is no provider and `visible` is true, so the
+   * request editor and response body are untouched.
+   */
+  if (!visible) {
+    return <MonacoFallback height={props.height} className={props.className} />
+  }
+
   return (
     <Suspense fallback={<MonacoFallback height={props.height} className={props.className} />}>
       <MonacoWrapperImpl {...props} />

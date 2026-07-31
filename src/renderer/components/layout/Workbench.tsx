@@ -78,6 +78,7 @@ import { cleanupTabState } from '../../lib/cleanup-tab-state'
 import { saveActiveRequestInPlace } from '../../lib/save-active-request'
 import UnsavedChangesDialog from '../modals/UnsavedChangesDialog'
 import { toast } from '../../lib/toast'
+import { EditorVisibilityProvider } from '../../lib/editor-visibility'
 
 // Tool-tab protocol → component. The Workbench renders EVERY open tool tab and
 // toggles visibility (rather than mounting only the active one) so a tool's
@@ -1229,12 +1230,16 @@ function PersistentToolTabs({ visible }: { visible: boolean }) {
               style={{ display: isActive ? 'flex' : 'none' }}
               aria-hidden={!isActive}
             >
+              {/* Tools stay mounted (their typed input must survive a tab
+                  switch); their Monaco editors do not — see issue #77. */}
               {/* Each tool editor is contained by its own boundary: a crashing
                   tool shows the recovery panel in ITS slot only — other tool
                   tabs and the whole app frame stay alive (a sibling boundary to
                   the content-region one, since this overlay renders outside it). */}
               <ErrorBoundary variant="inline" resetKey={t.id}>
-                <ToolComp />
+                <EditorVisibilityProvider visible={isActive}>
+                  <ToolComp />
+                </EditorVisibilityProvider>
               </ErrorBoundary>
             </div>
           )
