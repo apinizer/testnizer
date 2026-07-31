@@ -3,6 +3,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyMaterialField from '../shared/KeyMaterialField'
 import ToolShell from './ToolShell'
 import { useWsseToolStore } from '../../stores/wsse-tool.store'
+import { useNumberDraft } from '../../lib/number-draft'
 import {
   applyWsSecurity,
   verifySignature,
@@ -68,6 +69,15 @@ export default function WsSecurityTool() {
   const setUsernameToken = useWsseToolStore((s) => s.setUsernameToken)
   const timestamp = useWsseToolStore((s) => s.timestamp)
   const setTimestamp = useWsseToolStore((s) => s.setTimestamp)
+
+  // Draft-backed: the old expression clamped every keystroke and fell back to
+  // 300 on an empty box, so the TTL could not be cleared and retyped.
+  const ttlDraft = useNumberDraft({
+    value: timestamp.ttlSeconds,
+    min: 1,
+    max: 86_400,
+    onChange: (ttlSeconds) => setTimestamp({ ttlSeconds }),
+  })
   const sign = useWsseToolStore((s) => s.sign)
   const setSign = useWsseToolStore((s) => s.setSign)
   const encrypt = useWsseToolStore((s) => s.encrypt)
@@ -309,15 +319,7 @@ export default function WsSecurityTool() {
             {mode === 'timestamp' && (
               <div className="flex items-center gap-2">
                 <span className="text-[var(--muted)]">TTL (s):</span>
-                <input
-                  className={INPUT}
-                  type="number"
-                  min={1}
-                  value={timestamp.ttlSeconds}
-                  onChange={(e) =>
-                    setTimestamp({ ttlSeconds: Math.max(1, parseInt(e.target.value, 10) || 300) })
-                  }
-                />
+                <input className={INPUT} type="number" min={1} {...ttlDraft.inputProps} />
               </div>
             )}
 

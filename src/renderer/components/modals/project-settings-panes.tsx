@@ -6,6 +6,7 @@ import KeyMaterialField from '../shared/KeyMaterialField'
 import type { KeyMaterialSelection } from '../shared/KeyMaterialPicker'
 import { useTranslation } from '../../lib/i18n'
 import { isMac } from '../../lib/platform'
+import { useNumberDraft } from '../../lib/number-draft'
 import { FONT_PRESETS } from '../../stores/ui.store'
 import { toast } from '../../lib/toast'
 
@@ -210,14 +211,21 @@ function NumberInput({
   max?: number
   suffix?: string
 }) {
+  // Draft-backed: `Number('')` is 0 and finite, so clearing the box wrote a 0
+  // into the setting and the field could never be emptied to retype it.
+  const draft = useNumberDraft({
+    value,
+    min: min ?? 0,
+    max: max ?? Number.MAX_SAFE_INTEGER,
+    onChange,
+  })
   return (
     <div className="flex items-center gap-2">
       <input
         type="number"
-        value={value}
+        {...draft.inputProps}
         min={min}
         max={max}
-        onChange={(e) => onChange(Number(e.target.value))}
         style={{ ...BASE_INP, width: 140 }}
       />
       {suffix && <span style={{ color: 'var(--muted)' }}>{suffix}</span>}
@@ -2122,6 +2130,13 @@ export function ProxyPane({
   function update(patch: Partial<ProjectProxy>) {
     onChange({ proxy: { ...proxy, ...patch } })
   }
+  // Draft-backed: clearing the box wrote port 0, which is not a port.
+  const portDraft = useNumberDraft({
+    value: proxy.port ?? 8080,
+    min: 1,
+    max: 65_535,
+    onChange: (port) => update({ port }),
+  })
   return (
     <div className="p-6">
       <PaneHeader title={t('proxy.title')} subtitle={t('proxy.subtitle')} />
@@ -2183,8 +2198,7 @@ export function ProxyPane({
                 <Label text={t('proxy.port')} />
                 <input
                   type="number"
-                  value={proxy.port ?? 8080}
-                  onChange={(e) => update({ port: Number(e.target.value) })}
+                  {...portDraft.inputProps}
                   style={{ ...BASE_INP, fontFamily: 'var(--font-mono)' }}
                 />
               </div>

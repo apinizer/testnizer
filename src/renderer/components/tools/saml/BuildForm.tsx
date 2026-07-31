@@ -1,6 +1,7 @@
 import { useTranslation } from '../../../lib/i18n'
 import { NAMEID_FORMATS, SAML_BUILD_KINDS, type SamlBuildFormState } from '../../../lib/tools/saml'
 import { Check, Field, INPUT, Pane } from './fields'
+import { useNumberDraft } from '../../../lib/number-draft'
 
 /** Build tab — the AuthnRequest / Assertion / Response form. */
 export default function BuildForm({
@@ -13,6 +14,21 @@ export default function BuildForm({
   const { t } = useTranslation()
   const isRequest = form.kind === 'authnRequest'
   const isResponse = form.kind === 'response'
+
+  // Draft-backed. `parseInt('') || 0` collapsed an empty box to 0, which for
+  // NotOnOrAfter is a zero-width validity window — an assertion nobody accepts.
+  const skewDraft = useNumberDraft({
+    value: form.notBeforeSkewSeconds,
+    min: 0,
+    max: 86_400,
+    onChange: (notBeforeSkewSeconds) => patch({ notBeforeSkewSeconds }),
+  })
+  const windowDraft = useNumberDraft({
+    value: form.notOnOrAfterSeconds,
+    min: 1,
+    max: 86_400,
+    onChange: (notOnOrAfterSeconds) => patch({ notOnOrAfterSeconds }),
+  })
 
   return (
     <Pane>
@@ -99,20 +115,10 @@ export default function BuildForm({
               />
             </Field>
             <Field label={t('tools.saml.notBeforeSkew')}>
-              <input
-                className={INPUT}
-                type="number"
-                value={form.notBeforeSkewSeconds}
-                onChange={(e) => patch({ notBeforeSkewSeconds: parseInt(e.target.value, 10) || 0 })}
-              />
+              <input className={INPUT} type="number" min={0} {...skewDraft.inputProps} />
             </Field>
             <Field label={t('tools.saml.notOnOrAfter')}>
-              <input
-                className={INPUT}
-                type="number"
-                value={form.notOnOrAfterSeconds}
-                onChange={(e) => patch({ notOnOrAfterSeconds: parseInt(e.target.value, 10) || 0 })}
-              />
+              <input className={INPUT} type="number" min={1} {...windowDraft.inputProps} />
             </Field>
             {/*
               The two fields bracket the assertion's validity window: NotBefore

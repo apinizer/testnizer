@@ -2,6 +2,7 @@ import KeyMaterialField from '../../shared/KeyMaterialField'
 import { useTranslation } from '../../../lib/i18n'
 import type { SamlVerifyFormState } from '../../../lib/tools/saml'
 import { Check, Field, INPUT, Pane, TEXTAREA } from './fields'
+import { useNumberDraft } from '../../../lib/number-draft'
 
 /**
  * Verify tab.
@@ -21,6 +22,14 @@ export default function VerifyForm({
   // A keystore selection wins over the pasted trust anchor, so the textarea is
   // disabled rather than left editable-but-ignored.
   const usingSource = form.keySource !== null
+
+  // Draft-backed so the box can be emptied while retyping the tolerance.
+  const skewDraft = useNumberDraft({
+    value: form.clockSkewSeconds,
+    min: 0,
+    max: 86_400,
+    onChange: (clockSkewSeconds) => patch({ clockSkewSeconds }),
+  })
 
   return (
     <Pane>
@@ -64,13 +73,7 @@ export default function VerifyForm({
           />
         </Field>
         <Field label={t('tools.saml.clockSkew')}>
-          <input
-            className={INPUT}
-            type="number"
-            min={0}
-            value={form.clockSkewSeconds}
-            onChange={(e) => patch({ clockSkewSeconds: parseInt(e.target.value, 10) || 0 })}
-          />
+          <input className={INPUT} type="number" min={0} {...skewDraft.inputProps} />
         </Field>
       </div>
 

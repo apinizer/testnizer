@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Shield } from 'lucide-react'
 import { useSoapStore } from '../../stores/soap.store'
+import { useNumberDraft } from '../../lib/number-draft'
 import KeyMaterialField from '../shared/KeyMaterialField'
 import type {
   WsSecurityMode,
@@ -58,6 +59,15 @@ export default function SoapSecuritySection() {
       timestamp: { ttlSeconds: wsSecurity.timestamp?.ttlSeconds ?? 300, ...patch },
     })
   }
+
+  // Draft-backed: the old expression clamped on every keystroke AND fell back to
+  // 300 on an empty box, so the field could not be cleared to retype it.
+  const ttlDraft = useNumberDraft({
+    value: wsSecurity.timestamp?.ttlSeconds ?? 300,
+    min: 1,
+    max: 86_400,
+    onChange: (ttlSeconds) => updateTimestamp({ ttlSeconds }),
+  })
 
   function updateSign(patch: Partial<NonNullable<typeof wsSecurity.sign>>): void {
     setWsSecurity({
@@ -238,17 +248,7 @@ export default function SoapSecuritySection() {
                   </legend>
                   <div>
                     <span className="text-xs text-[var(--muted)]">TTL (seconds)</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={wsSecurity.timestamp?.ttlSeconds ?? 300}
-                      onChange={(e) =>
-                        updateTimestamp({
-                          ttlSeconds: Math.max(1, parseInt(e.target.value, 10) || 300),
-                        })
-                      }
-                      className={INPUT}
-                    />
+                    <input type="number" min={1} {...ttlDraft.inputProps} className={INPUT} />
                   </div>
                 </fieldset>
               )}

@@ -9,6 +9,7 @@
  * forwards to the HTTP engine.
  */
 import { useRequestStore } from '../../stores/request.store'
+import { useNumberDraft } from '../../lib/number-draft'
 
 export default function SettingsTab() {
   const followRedirects = useRequestStore((s) => s.followRedirects)
@@ -19,6 +20,15 @@ export default function SettingsTab() {
   const setSslVerification = useRequestStore((s) => s.setSslVerification)
   const setRequestTimeout = useRequestStore((s) => s.setRequestTimeout)
   const setMaxRedirects = useRequestStore((s) => s.setMaxRedirects)
+
+  // Draft-backed so the box can be emptied and retyped. `Number('')` is 0 and
+  // finite, so clearing it silently meant "do not follow any redirect".
+  const redirectsDraft = useNumberDraft({
+    value: maxRedirects,
+    min: 0,
+    max: 100,
+    onChange: setMaxRedirects,
+  })
 
   return (
     <div className="space-y-5">
@@ -97,8 +107,7 @@ export default function SettingsTab() {
         <div className="flex items-center gap-2">
           <input
             type="number"
-            value={maxRedirects}
-            onChange={(e) => setMaxRedirects(Number(e.target.value))}
+            {...redirectsDraft.inputProps}
             data-testid="settings-max-redirects"
             className="w-24 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 outline-none"
             style={{ color: 'var(--text)' }}
