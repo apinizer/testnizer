@@ -242,7 +242,10 @@ export default function ResponsePane() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex h-full flex-col items-center justify-center bg-[var(--white)]">
+      <div
+        data-testid="response-loading"
+        className="flex h-full flex-col items-center justify-center bg-[var(--white)]"
+      >
         <Loader2 size={24} className="animate-spin text-[var(--accent)]" />
         <span className="mt-2 text-[var(--muted)]">{t('response.sendingRequest')}</span>
       </div>
