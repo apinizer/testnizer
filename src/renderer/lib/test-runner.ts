@@ -383,66 +383,13 @@ interface ResponseToChain {
  * store by lowercased name but preserve the original casing for iteration and
  * the engine handoff.
  */
-export interface HeaderEntry {
-  key: string
-  value: string
-}
-
-export class HeaderCollection {
-  private store: Map<string, HeaderEntry> = new Map()
-
-  constructor(initial?: HeaderEntry[] | Record<string, string>) {
-    if (!initial) return
-    if (Array.isArray(initial)) {
-      for (const h of initial) {
-        if (h && h.key) this.upsert(h)
-      }
-    } else {
-      for (const [k, v] of Object.entries(initial)) {
-        if (k) this.upsert({ key: k, value: v })
-      }
-    }
-  }
-
-  get(name: string): string | undefined {
-    return this.store.get(name.toLowerCase())?.value
-  }
-
-  has(name: string): boolean {
-    return this.store.has(name.toLowerCase())
-  }
-
-  add(h: HeaderEntry): void {
-    // Postman semantics: add overwrites if present (its HeaderList allows
-    // duplicates but most scripts use it interchangeably with upsert). We
-    // pick upsert behaviour to stay aligned with case-insensitive single-
-    // value HTTP header expectations on the wire.
-    this.upsert(h)
-  }
-
-  upsert(h: HeaderEntry): void {
-    if (!h || !h.key) return
-    this.store.set(h.key.toLowerCase(), { key: h.key, value: h.value ?? '' })
-  }
-
-  remove(name: string): void {
-    this.store.delete(name.toLowerCase())
-  }
-
-  each(fn: (h: HeaderEntry) => void): void {
-    for (const entry of this.store.values()) fn(entry)
-  }
-
-  toArray(): HeaderEntry[] {
-    return Array.from(this.store.values())
-  }
-
-  toJSON(): Record<string, string> {
-    const out: Record<string, string> = {}
-    for (const entry of this.store.values()) out[entry.key] = entry.value
-    return out
-  }
-}
+/**
+ * Re-exported so every existing import of `HeaderEntry` / `HeaderCollection`
+ * from this module keeps working; the implementation moved to the shared script
+ * runtime so the Run path can use the same one (Send/Run parity).
+ */
+import { HeaderCollection, type HeaderEntry } from '../../shared/script/headers'
+export { HeaderCollection, type HeaderEntry }
 
 export interface PmRequestInput {
   method: string

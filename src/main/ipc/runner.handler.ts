@@ -35,6 +35,7 @@ import {
   type AuthConfigLike,
 } from '../lib/auth-inheritance'
 import { buildScriptBindings, createPmResponse, expect as chaiExpect } from '../../shared/script'
+import { HeaderCollection, type HeaderEntry } from '../../shared/script/headers'
 import type { NormalizedResponse, PmLike } from '../../shared/script'
 import { endpointDidPass, countsTowardRunVerdict } from '../../shared/runner-verdict'
 import { summarizeRun } from '../../shared/runner-summary'
@@ -569,6 +570,13 @@ interface ScriptContext {
   iterationData: Record<string, string>
   iterationIndex: number
   iterationCount: number
+  /**
+   * The request this step is about to send, as the SCRIPT sees it (issue: the
+   * Run path's `pm.request` was a stub, so a pre-request script could neither
+   * read the URL nor add a header — both work on Send). Raw, pre-resolution,
+   * matching the Send contract; the runner resolves `{{vars}}` afterwards.
+   */
+  request?: { method: string; url: string; headers: HeaderCollection }
   /** Set by `pm.execution.skipRequest()` — runner reads after preScript. */
   skipRequest: boolean
   /** Set by `pm.execution.setNextRequest(name)` — runner uses it after the
@@ -836,7 +844,9 @@ async function runUserScript(
         toObject: () => ({ ...ctx.envVars }),
         replaceIn: (t: string) => substitute(t, ctx.envVars),
       },
-      request: { method: '', url: '', headers: {} },
+      request: ctx.request
+        ? { method: ctx.request.method, url: ctx.request.url, headers: ctx.request.headers }
+        : { method: '', url: '', headers: new HeaderCollection() },
       response: normalized ? createPmResponse(normalized) : null,
       cookies: {
         get: (n: string) => cookieFind(n)?.value,
@@ -1518,6 +1528,32 @@ async function runEndpointStep(
       schemaForScripts.postScript,
     )
 
+    /*
+     * Expose the request the script is about to send, and take back whatever it
+     * changed. Until now `pm.request` was an empty stub on this path: a script
+     * could not read `pm.request.url`, and `pm.request.headers.upsert(...)` —
+     * which Send has honoured since BUG-02 — silently did nothing in a run. A
+     * collection whose pre-request script attaches a correlation or auth header
+     * therefore passed on Send and failed in the Runner.
+     *
+     * Raw values on purpose, matching Send: the script reads what the user
+     * typed. `resolveRequestOptions` below expands `{{vars}}` afterwards, so a
+     * header the script adds is resolved exactly like a typed one.
+     */
+    scriptCtx.request = {
+      method: requestOptions.method,
+      url: requestOptions.url,
+      // ENABLED rows only — same as Send. Seeding from the raw list would put
+      // unchecked headers into the collection, and the fold below marks
+      // everything in it as enabled, so a disabled header would come back to
+      // life the moment any pre-request script existed.
+      headers: new HeaderCollection(
+        ((requestOptions.headers ?? []) as Array<HeaderEntry & { enabled?: boolean }>).filter(
+          (h) => h.enabled !== false,
+        ),
+      ),
+    }
+
     // Run pre-request scripts in order. They share one context so a
     // project/folder script's env writes are visible to inner scripts.
     for (const s of preScripts) {
@@ -1526,6 +1562,18 @@ async function runEndpointStep(
       scriptCtx.varUpdates = {}
       await runUserScript(s, scriptCtx, null)
       mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
+    }
+
+    // Fold the script's header mutations back in. `enabled: true` because a
+    // header a script added is one it means to send.
+    if (preScripts.some((s) => s && s.trim())) {
+      requestOptions.headers = scriptCtx.request.headers
+        .toArray()
+        .map((h) => ({
+          key: h.key,
+          value: h.value,
+          enabled: true,
+        })) as HttpRequestOptions['headers']
     }
     if (scriptCtx.skipRequest) {
       const skipResult: EndpointRunResult = {

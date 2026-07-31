@@ -65,3 +65,4 @@ export function buildScriptBindings(ctx: ScriptHostContext): ScriptBindings {
 
   return { bindings, legacyTests: legacy.tests }
 }
+export { HeaderCollection, type HeaderEntry } from './headers'
