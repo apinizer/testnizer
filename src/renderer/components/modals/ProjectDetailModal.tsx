@@ -242,6 +242,10 @@ export default function ProjectDetailModal() {
       const emojiVal = editIconMode === 'emoji' ? editIconEmoji : null
       if (
         !(await updateProject(activeProject.id, {
+          // The Description box was rendered, edited and then silently dropped:
+          // it never reached this payload, so "Project settings saved" was true
+          // about every field except the one the user had just typed into.
+          description: editDesc,
           save_mode: editSaveMode,
           local_path: editLocalPath || null,
           icon_emoji: emojiVal,

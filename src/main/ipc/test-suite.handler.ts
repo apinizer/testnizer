@@ -125,11 +125,30 @@ export function snapshotEndpointForSuite(endpointId: string): SnapshotForSuite |
         mergedSchema.auth = tryParseJSON(defaultCase.auth, { type: 'none' })
       }
     }
+    /*
+     * The URL the user sees is `request_schema.url`, not `endpoints.path`.
+     *
+     * An importer splits them: `path` keeps the path only, while the schema
+     * keeps the whole thing INCLUDING any `{{variable}}` prefix — a Postman
+     * collection's `{{baseUrl}}/employee` is stored as path `/employee` plus
+     * schema url `{{baseUrl}}/employee`. `open-endpoint-tab.ts` reflects that
+     * (`let url = ep.path` … `if (schema.url) url = schema.url`), so the APIs
+     * editor showed the full URL while a suite built from the same folder got
+     * the bare path — every request in the new suite was unrunnable, with
+     * `{{baseUrl}}` neither preserved nor resolved (reported 30 July).
+     *
+     * The placeholder is kept rather than expanded: collection variables are
+     * imported into a PROJECT-scoped environment, and a suite belongs to the
+     * same project, so `{{baseUrl}}` resolves at run time and keeps following
+     * the active environment — expanding it here would freeze one environment's
+     * value into the suite.
+     */
+    const schemaUrl = typeof mergedSchema.url === 'string' ? mergedSchema.url : null
     return {
       protocol: ep.protocol || 'http',
       name: ep.name,
       method: ep.method,
-      url: ep.path ?? null,
+      url: schemaUrl || ep.path || null,
       request_schema: JSON.stringify(mergedSchema),
       assertions: defaultCase?.assertions ?? null,
       source_endpoint_id: ep.id,

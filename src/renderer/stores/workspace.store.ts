@@ -127,6 +127,12 @@ interface WorkspaceStore {
     data: {
       name?: string
       display_name?: string | null
+      /**
+       * Was missing from this type only — the IPC handler and the repo have
+       * always accepted it. Because the type omitted it, `ProjectDetailModal`
+       * could drop the user's Description on save without a compile error.
+       */
+      description?: string
       save_mode?: string
       local_path?: string | null
       icon_emoji?: string | null

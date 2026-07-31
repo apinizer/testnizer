@@ -258,6 +258,26 @@ describe('Project details: the success toast follows the writes (APP-4)', () => 
     expect(toastSuccess).not.toHaveBeenCalled()
   })
 
+  it('saves the Description the user typed', async () => {
+    // Reported 30 July: the box accepted text, Save reported "saved", and the
+    // value was gone on reopen. It was rendered and edited but never put into
+    // the update payload — and the store's type omitted the field, so nothing
+    // failed to compile. The handler and the repo had always accepted it.
+    const updateProject = vi.fn(async () => true)
+    seed(async () => ({ success: true, data: true }))
+    useWorkspaceStore.setState({ updateProject } as never)
+
+    render(<ProjectDetailModal />)
+    const area = (await screen.findAllByRole('textbox')).find((b) => b.tagName === 'TEXTAREA')
+    if (!area) throw new Error('no Description textarea')
+    fireEvent.change(area, { target: { value: 'rc2-test' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }))
+
+    await waitFor(() => expect(updateProject).toHaveBeenCalled())
+    expect(updateProject.mock.calls[0][1]).toMatchObject({ description: 'rc2-test' })
+  })
+
   it('confirms only when every write landed', async () => {
     seed(async () => ({ success: true, data: true }))
 
