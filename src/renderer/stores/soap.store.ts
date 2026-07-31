@@ -352,8 +352,8 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     const tabsStore = useTabsStore.getState()
     const activeTabId = tabsStore.activeTabId
 
-    responseStore.setLoading(true)
-    responseStore.clearResponse()
+    responseStore.setLoading(true, activeTabId)
+    responseStore.clearResponse(activeTabId)
     if (activeTabId) tabsStore.markLoading(activeTabId, true)
 
     const op = get().getSelectedOperation()
@@ -426,40 +426,46 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
       })
 
       if (result?.success && result.data) {
-        responseStore.setResponse(result.data as ApiResponse)
+        responseStore.setResponse(result.data as ApiResponse, activeTabId)
       } else {
-        responseStore.setResponse({
-          requestId: makeId(),
-          protocol: 'soap',
-          error: result?.error || 'SOAP request failed',
-          timing: { total: 0 },
-        })
+        responseStore.setResponse(
+          {
+            requestId: makeId(),
+            protocol: 'soap',
+            error: result?.error || 'SOAP request failed',
+            timing: { total: 0 },
+          },
+          activeTabId,
+        )
       }
     } catch {
       // Demo mode
-      responseStore.setResponse({
-        requestId: makeId(),
-        protocol: 'soap',
-        status: 200,
-        statusText: 'OK',
-        headers: { 'content-type': 'text/xml; charset=utf-8' },
-        body:
-          op?.exampleResponse ||
-          '<soap:Envelope><soap:Body><Response/></soap:Body></soap:Envelope>',
-        bodySize: (op?.exampleResponse || '').length,
-        timing: { total: 245 },
-        actualRequest: {
-          method: 'POST',
-          url: endpointUrl,
-          headers: {
-            'Content-Type': 'text/xml; charset=utf-8',
-            SOAPAction: op?.soapAction || '',
+      responseStore.setResponse(
+        {
+          requestId: makeId(),
+          protocol: 'soap',
+          status: 200,
+          statusText: 'OK',
+          headers: { 'content-type': 'text/xml; charset=utf-8' },
+          body:
+            op?.exampleResponse ||
+            '<soap:Envelope><soap:Body><Response/></soap:Body></soap:Envelope>',
+          bodySize: (op?.exampleResponse || '').length,
+          timing: { total: 245 },
+          actualRequest: {
+            method: 'POST',
+            url: endpointUrl,
+            headers: {
+              'Content-Type': 'text/xml; charset=utf-8',
+              SOAPAction: op?.soapAction || '',
+            },
+            body: rawXml,
           },
-          body: rawXml,
         },
-      })
+        activeTabId,
+      )
     } finally {
-      responseStore.setLoading(false)
+      responseStore.setLoading(false, activeTabId)
       if (activeTabId) tabsStore.markLoading(activeTabId, false)
       set((s) => (s._inflightRequestId === requestId ? { _inflightRequestId: null } : s))
     }
