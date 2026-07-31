@@ -17,7 +17,6 @@ import EndpointSaveModal from '../modals/EndpointSaveModal'
 import ProjectDetailModal from '../modals/ProjectDetailModal'
 import ProfileModal from '../modals/ProfileModal'
 import EnterpriseModal from '../modals/EnterpriseModal'
-import CollectionRunnerModal from '../modals/CollectionRunnerModal'
 import MergeConflictModal from '../modals/MergeConflictModal'
 import ShortcutCheatsheetModal from '../modals/ShortcutCheatsheetModal'
 import CommandPalette from '../shared/CommandPalette'
@@ -299,7 +298,6 @@ export default function AppShell() {
       <ProjectDetailModal />
       <ProfileModal />
       <EnterpriseModal />
-      <CollectionRunnerModal />
       <MergeConflictModal />
       <ShortcutCheatsheetModal />
       <CommandPalette open={showCommandPalette} onOpenChange={setShowCommandPalette} />

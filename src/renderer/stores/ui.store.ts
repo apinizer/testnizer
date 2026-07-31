@@ -52,7 +52,6 @@ interface UIStore {
   showEnvironmentModal: boolean
   showSettingsModal: boolean
   showCodeGenerator: boolean
-  showCollectionRunner: boolean
   showUpdateModal: boolean
   showSaveModal: boolean
   showNewProjectModal: boolean
@@ -100,7 +99,6 @@ interface UIStore {
   setShowEnvironmentModal: (show: boolean) => void
   setShowSettingsModal: (show: boolean) => void
   setShowCodeGenerator: (show: boolean) => void
-  setShowCollectionRunner: (show: boolean) => void
   setShowUpdateModal: (show: boolean) => void
   setShowSaveModal: (show: boolean) => void
   setShowNewProjectModal: (show: boolean) => void
@@ -187,7 +185,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   showEnvironmentModal: false,
   showSettingsModal: false,
   showCodeGenerator: false,
-  showCollectionRunner: false,
   showUpdateModal: false,
   showSaveModal: false,
   showNewProjectModal: false,
@@ -370,7 +367,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   setShowEnvironmentModal: (show) => set({ showEnvironmentModal: show }),
   setShowSettingsModal: (show) => set({ showSettingsModal: show }),
   setShowCodeGenerator: (show) => set({ showCodeGenerator: show }),
-  setShowCollectionRunner: (show) => set({ showCollectionRunner: show }),
   setShowUpdateModal: (show) => set({ showUpdateModal: show }),
   setShowSaveModal: (show) => set({ showSaveModal: show }),
   setShowNewProjectModal: (show) => set({ showNewProjectModal: show }),

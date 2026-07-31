@@ -11,7 +11,8 @@
  *    promises "does not affect the run verdict".
  *  - `RunnerResultsView.tsx`  computed "All tests" as Σ(passed+failed), i.e. an
  *    assertion count, so the two views disagreed with each other and with
- *    `runner_history.total_endpoints`.
+ *    `runner_history.total_endpoints`. (That second view has since been deleted
+ *    — nothing ever set the flag that showed it.)
  *  - `exportAsHtml`           derived failures as `primary.length - passed`,
  *    which buckets skipped rows as failures.
  *

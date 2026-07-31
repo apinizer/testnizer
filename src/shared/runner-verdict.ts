@@ -1,7 +1,7 @@
 /**
  * Runner / Test-Suite endpoint verdict — the SINGLE source of truth shared by
  * the live run summary (main), the exported HTML report (main), and every
- * renderer results view (RunnerResults, RunnerResultsView).
+ * renderer results view (RunnerResults).
  *
  * A request's verdict is driven by its ASSERTIONS when it has any: a test that
  * explicitly allows a non-2xx code (e.g. an idempotent DELETE asserting

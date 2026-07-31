@@ -3,7 +3,7 @@
  *
  * `tests/main/shared/skipped-step-verdict.test.ts` already pins `summarizeRun`
  * as a function. This file pins the part the tester actually looked at: the
- * counters and badges that the two results views RENDER. That gap is not
+ * counters and badges the results view RENDERS. That gap is not
  * theoretical — every bug in this file's scope was a renderer bug sitting on
  * top of correct main-process data:
  *
@@ -14,22 +14,23 @@
  *   RL-6  the "Console log" filter counter was hardcoded to 0.
  *   RL-8  skipped rows were counted as PASSED, because `(null ?? 0) < 400`.
  *
- * Both views are covered, because they are separate implementations of the same
- * screen and the divergence between them is exactly what shipped.
+ * The second implementation of this screen (`RunnerResultsView`, reachable only
+ * through a modal whose flag nothing ever set) was deleted rather than kept in
+ * sync — see the commit that removed it. What remains is the one view a user
+ * can actually open.
  */
 import * as React from 'react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, within } from '@testing-library/react'
 import type { EndpointRunResult, RunnerReport } from '../../src/shared/runner-types'
 
-// Both views pull in MonacoWrapper to show response bodies; Monaco cannot run
+// The view pulls in MonacoWrapper to show response bodies; Monaco cannot run
 // in jsdom (mirrors the existing renderer tests).
 vi.mock('../../src/renderer/components/shared/MonacoWrapper', () => ({
   default: ({ value }: { value?: string }) => <div data-testid="monaco">{value}</div>,
 }))
 
 import RunnerResults from '../../src/renderer/components/runner/RunnerResults'
-import RunnerResultsView from '../../src/renderer/components/modals/RunnerResultsView'
 import { useRunnerStore } from '../../src/renderer/stores/runner.store'
 
 /* ── Fixtures ──────────────────────────────────────────────────────────────── */
@@ -98,19 +99,6 @@ function renderTab(results: EndpointRunResult[], rep: RunnerReport | null = repo
   )
 }
 
-/** The legacy view reads everything off the store instead of props. */
-function renderLegacy(results: EndpointRunResult[], rep: RunnerReport | null = report) {
-  useRunnerStore.setState({
-    results,
-    report: rep ? { ...rep, results } : null,
-    isRunning: false,
-    currentIndex: 0,
-    totalCount: results.length,
-    runStartedAt: rep?.startedAt ?? null,
-  })
-  return render(<RunnerResultsView onNewRun={noop} onClose={noop} />)
-}
-
 /**
  * Reads the number a `StatCell` renders under the given label. The label and
  * the value are sibling divs, so the cell is the label's PARENT — `closest`
@@ -156,14 +144,6 @@ describe('teardown failures stay out of the run verdict (RL-4)', () => {
     expect(filterCount('failed')).toBe(0)
   })
 
-  it('agrees with the legacy view', () => {
-    renderLegacy(GREEN_RUN_WITH_FAILED_TEARDOWN)
-    expect(stat('Errors')).toBe('0')
-    expect(stat('All tests')).toBe('1')
-    // The two views render the count in different places (header stat line vs
-    // phase-section title); what must not diverge is the number itself.
-    expect(screen.getByText(/Teardown: 1/)).toBeTruthy()
-  })
 })
 
 /* ── RL-5: synthetic rows are not HTTP exchanges ───────────────────────────── */
@@ -218,11 +198,6 @@ describe('skipped rows are scored in neither direction (RL-8)', () => {
     )
   })
 
-  it('agrees with the legacy view', () => {
-    renderLegacy(rows)
-    expect(filterCount('passed')).toBe(1)
-    expect(filterCount('skipped')).toBe(2)
-  })
 })
 
 /* ── RL-6: the Console counter is real ─────────────────────────────────────── */
@@ -253,8 +228,4 @@ describe('script console output is counted and filterable (RL-6)', () => {
     expect(filterCount('console')).toBe(0)
   })
 
-  it('agrees with the legacy view', () => {
-    renderLegacy(rows)
-    expect(filterCount('console')).toBe(3)
-  })
 })

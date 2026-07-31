@@ -44,7 +44,6 @@ import HmacTool from '../../../src/renderer/components/tools/HmacTool'
 import SettingsModal from '../../../src/renderer/components/modals/SettingsModal'
 import EnvironmentModal from '../../../src/renderer/components/modals/EnvironmentModal'
 import ImportModal from '../../../src/renderer/components/modals/ImportModal'
-import RunnerConfigView from '../../../src/renderer/components/modals/RunnerConfigView'
 import ProjectDetailModal from '../../../src/renderer/components/modals/ProjectDetailModal'
 import SaveModal from '../../../src/renderer/components/modals/SaveModal'
 
@@ -176,9 +175,6 @@ describe('Top modals — smoke mount (open state)', () => {
     mountsWithoutCrash(<ImportModal />)
   })
 
-  it('RunnerConfigView', () => {
-    mountsWithoutCrash(<RunnerConfigView projectId="proj-1" workspaceId="ws-1" />)
-  })
 
   it('ProjectDetailModal', () => {
     useUIStore.setState({ showProjectDetailModal: true })
