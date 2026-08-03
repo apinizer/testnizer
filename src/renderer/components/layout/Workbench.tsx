@@ -5,6 +5,7 @@ import { isMac } from '../../lib/platform'
 import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
 import { makeTabId } from '../../lib/utils'
 import { isBlankScratchTab } from '../../lib/tab-kind'
+import { openEndpointTab } from '../../lib/open-endpoint-tab'
 import UrlBar from './UrlBar'
 import UrlPreview from './UrlPreview'
 import RequestEditor from '../request/RequestEditor'
@@ -288,20 +289,73 @@ function EndpointTabBar() {
       return
     }
 
+    /*
+     * A tab backed by a tree row duplicates at the DATA layer too, exactly like
+     * the tree's own Duplicate and the suite-item branch above.
+     *
+     * Copying `endpointId` / `savedRequestId` onto a new tab could never work:
+     * `openTab` deduplicates on precisely those ids, so it found the SOURCE tab,
+     * refocused it and returned without creating anything — and the switch that
+     * followed pointed `activeTabId` at an id that was never added, leaving no
+     * active tab at all. That is why Duplicate landed on the protocol picker
+     * instead of a copy. Suite-item tabs were unaffected because their branch
+     * returns before this point.
+     */
+    if (src.endpointId || src.savedRequestId) {
+      const copyName = `${src.name} (copy)`
+      let createdId: string | undefined
+
+      if (src.savedRequestId) {
+        const res = (await window.api?.savedRequest?.get(src.savedRequestId)) as {
+          success: boolean
+          data?: Record<string, unknown>
+        }
+        if (!res?.success || !res.data) return
+        const created = (await window.api?.savedRequest?.create({
+          ...(res.data as Record<string, unknown>),
+          name: copyName,
+        } as Parameters<typeof window.api.savedRequest.create>[0])) as {
+          success: boolean
+          data?: { id: string }
+        }
+        if (!created?.success || !created.data) return
+        createdId = created.data.id
+      } else if (src.endpointId) {
+        const res = (await window.api?.endpoint?.get(src.endpointId)) as {
+          success: boolean
+          data?: Record<string, unknown>
+        }
+        if (!res?.success || !res.data) return
+        const created = (await window.api?.endpoint?.create({
+          ...(res.data as Record<string, unknown>),
+          name: copyName,
+        } as Parameters<typeof window.api.endpoint.create>[0])) as {
+          success: boolean
+          data?: { id: string }
+        }
+        if (!created?.success || !created.data) return
+        createdId = created.data.id
+      }
+
+      if (!createdId) return
+      await refreshTree()
+      await openEndpointTab(createdId)
+      // Unsaved edits travel with the duplicate: the row is a copy of what is
+      // SAVED, while the user is looking at what they have typed.
+      const openedId = useTabsStore.getState().activeTabId
+      if (openedId) useRequestStore.getState().cloneTabState(tabId, openedId)
+      return
+    }
+
     const newId = makeTabId()
-    // Open with the same metadata. The unsaved/edited state lives in protocol
-    // stores keyed on tabId — clone the source's cache into the new id so
-    // unsaved edits travel with the duplicate. Only the request store has a
-    // public cloneTabState today; other protocols start from the persisted
-    // metadata, which is acceptable until they grow the same hook.
+    // A scratch tab carries no row to copy, so the duplicate is another scratch
+    // tab. No ids means `openTab` has nothing to deduplicate on.
     openTab({
       id: newId,
       name: `${src.name} (copy)`,
       protocol: src.protocol,
       method: src.method,
       url: src.url,
-      endpointId: src.endpointId,
-      savedRequestId: src.savedRequestId,
       folderId: src.folderId,
     })
     useRequestStore.getState().cloneTabState(tabId, newId)
