@@ -729,7 +729,8 @@ function corsResponseHeaders(
         : allow.split(',')[0].trim()
   const out: Record<string, string> = {
     'access-control-allow-origin': allowOrigin,
-    'access-control-allow-methods': cors.allowMethods || 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS',
+    'access-control-allow-methods':
+      cors.allowMethods || 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS,QUERY',
     'access-control-allow-headers':
       cors.allowHeaders && cors.allowHeaders !== '*'
         ? cors.allowHeaders

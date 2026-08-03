@@ -59,6 +59,11 @@
   --mb-options-bg: #e0f2fe;
   --mb-options-fg: #0369a1;
   --mb-options-br: #bae6fd;
+  /* QUERY (RFC 9110-family, safe + idempotent, carries a request body) — teal,
+     kept clear of GET's blue so a glance does not confuse the two. */
+  --mb-query-bg: #ccfbf1;
+  --mb-query-fg: #0f766e;
+  --mb-query-br: #99f6e4;
 
   /* JSON syntax tokens */
   --json-key: #0550ae;
@@ -138,6 +143,9 @@
   --mb-options-bg: rgba(14, 165, 233, 0.18);
   --mb-options-fg: #70c3f0;
   --mb-options-br: rgba(14, 165, 233, 0.35);
+  --mb-query-bg: rgba(20, 184, 166, 0.18);
+  --mb-query-fg: #5ed6c4;
+  --mb-query-br: rgba(20, 184, 166, 0.35);
 
   /* JSON syntax (dark) */
   --json-key: #7fb3ff;

@@ -26,7 +26,17 @@ import { CONDITION_SNIPPETS, SCRIPT_SNIPPETS } from '../../lib/mock-snippets'
 import JwksFillButton from './JwksFillButton'
 import { provisionJwksServe } from '../../lib/jwks-serve'
 
-const METHODS: MockMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'ANY']
+const METHODS: MockMethod[] = [
+  'GET',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+  'HEAD',
+  'OPTIONS',
+  'QUERY',
+  'ANY',
+]
 const PATH_MODES: MockPathMode[] = ['exact', 'param', 'wildcard', 'regex']
 const BODY_TYPES: MockBodyType[] = ['json', 'xml', 'text', 'html']
 

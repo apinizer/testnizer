@@ -6,7 +6,16 @@
  * sync — they cross the IPC boundary as JSON.
  */
 
-export type MockMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS' | 'ANY'
+export type MockMethod =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'PATCH'
+  | 'DELETE'
+  | 'HEAD'
+  | 'OPTIONS'
+  | 'QUERY'
+  | 'ANY'
 
 export type MockPathMode = 'exact' | 'param' | 'wildcard' | 'regex'
 

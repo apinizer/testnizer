@@ -316,7 +316,13 @@ export interface KeystorePickFileResult {
   type: KeystoreType
 }
 
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
+/**
+ * `QUERY` is the safe, idempotent method that carries a request body — the
+ * answer to "GET with a body, or POST?" for read operations whose parameters do
+ * not fit in a URL. Nothing here special-cases a method when deciding whether to
+ * send a body, so it works end to end; it only had to become selectable.
+ */
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS' | 'QUERY'
 export type BodyType =
   | 'none'
   | 'json'
@@ -1187,7 +1193,16 @@ export interface MockServer {
   updatedAt: number
 }
 
-export type MockMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS' | 'ANY'
+export type MockMethod =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'PATCH'
+  | 'DELETE'
+  | 'HEAD'
+  | 'OPTIONS'
+  | 'QUERY'
+  | 'ANY'
 
 export type MockPathMode = 'exact' | 'param' | 'wildcard' | 'regex'
 

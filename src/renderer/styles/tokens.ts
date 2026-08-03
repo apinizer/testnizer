@@ -40,6 +40,11 @@ export const T = {
     color: 'var(--mb-options-fg)',
     border: 'var(--mb-options-br)',
   },
+  QUERY: {
+    bg: 'var(--mb-query-bg)',
+    color: 'var(--mb-query-fg)',
+    border: 'var(--mb-query-br)',
+  },
 } as const
 
 // Standard UI font: 13px — compact desktop density.
@@ -104,7 +109,15 @@ export const KV_HEADER_CELL: CSSProperties = {
   fontWeight: 400,
 }
 
-export type MethodColorKey = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
+export type MethodColorKey =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'PATCH'
+  | 'DELETE'
+  | 'HEAD'
+  | 'OPTIONS'
+  | 'QUERY'
 
 export function getMethodColors(method: string): { bg: string; color: string; border: string } {
   return T[method as MethodColorKey] || T.GET

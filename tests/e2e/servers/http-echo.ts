@@ -145,6 +145,21 @@ export async function startHttpEchoServer(port: number): Promise<HttpEchoServer>
       return
     }
 
+    /*
+     * Method-agnostic echo. Every other route here is keyed to a specific
+     * method, so a request using anything outside the familiar seven — QUERY,
+     * for instance, which is safe, idempotent AND carries a body — could only
+     * ever come back 404, which proves nothing about the client.
+     */
+    if (path === '/echo-method') {
+      jsonResponse(200, {
+        method,
+        body: bodyText,
+        contentType: headers['content-type'] ?? null,
+      })
+      return
+    }
+
     if (path === '/get' && (method === 'GET' || method === 'HEAD' || method === 'OPTIONS')) {
       if (method === 'HEAD') {
         res.writeHead(200, { 'Content-Type': 'application/json' })
