@@ -3,6 +3,7 @@ import { app } from 'electron'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { existsSync, renameSync } from 'fs'
+import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
 
 let db: Database.Database | null = null
 
@@ -789,6 +790,70 @@ function runMigrations(database: Database.Database): void {
     } catch {
       // Column already exists — fine.
     }
+  }
+
+  repairSuiteItemUrls(database)
+}
+
+/**
+ * Repair suite items already on disk whose URL lost its `{{variable}}` prefix
+ * at creation time (reported 30 July; 4 August for rows already on disk).
+ *
+ * The decision of WHAT to repair lives in `lib/suite-url-repair.ts`, because
+ * the suite IMPORT path needs exactly the same rule — an export taken on an
+ * affected build carries the truncated URL, and without the shared rule the
+ * import would quietly reintroduce what this migration just fixed.
+ */
+/** Bumped when a one-shot data repair is added below. */
+const SUITE_URL_REPAIR_VERSION = 1
+
+function repairSuiteItemUrls(database: Database.Database): void {
+  /*
+   * Run once per database, not once per launch.
+   *
+   * The repair is idempotent, so repeating it is harmless — but it would mean
+   * reading and JSON-parsing every suite item's `request_schema` on every cold
+   * start, forever, to find nothing. `user_version` is SQLite's built-in slot
+   * for exactly this and is otherwise unused here, so it costs no schema
+   * change.
+   */
+  let applied = 0
+  try {
+    applied = Number((database.pragma('user_version', { simple: true }) as number) ?? 0)
+  } catch {
+    // Cannot read the marker — fall through and repair; doing it twice is safe.
+  }
+  if (applied >= SUITE_URL_REPAIR_VERSION) return
+
+  let rows: Array<{ id: string; url: string | null; request_schema: string }>
+  try {
+    rows = database
+      .prepare(
+        `SELECT id, url, request_schema FROM test_suite_items
+          WHERE url IS NOT NULL AND url <> '' AND request_schema IS NOT NULL`,
+      )
+      .all() as Array<{ id: string; url: string | null; request_schema: string }>
+  } catch {
+    // Table not present yet (fresh DB mid-migration) — nothing to repair, and
+    // no marker either: a later launch with the table present must still run.
+    return
+  }
+
+  const update = database.prepare(`UPDATE test_suite_items SET url = ? WHERE id = ?`)
+  const repair = database.transaction(
+    (items: Array<{ id: string; url: string | null; request_schema: string }>) => {
+      for (const item of items) {
+        const fixed = repairedSuiteItemUrl(item.url, item.request_schema)
+        if (fixed !== null) update.run(fixed, item.id)
+      }
+    },
+  )
+  repair(rows)
+  try {
+    database.pragma(`user_version = ${SUITE_URL_REPAIR_VERSION}`)
+  } catch {
+    // Marker could not be written — the repair still happened, and running it
+    // again next launch is a no-op.
   }
 }
 

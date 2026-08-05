@@ -25,6 +25,7 @@ import {
 import { snapshotEndpointForSuite, ensureUniqueSuiteName } from './test-suite.handler'
 import { getEndpointById } from '../db/endpoint.repo'
 import { projectFileSlug } from '../lib/project-file'
+import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
 
 // ─── Multi-format detection for test suite import ────────────────
 export type TestSuiteImportFormat = 'testnizer' | 'postman' | 'insomnia' | 'unknown'
@@ -883,6 +884,17 @@ export function importTestSuiteData(
 
     for (const it of items) {
       const newFolderId = it.folder_id ? (folderIdMap.get(it.folder_id as string) ?? null) : null
+      /*
+       * An export taken on a build that still had the truncation bug carries
+       * `url: '/test/healthcheck'` where the schema says
+       * `{{AccessURL}}/test/healthcheck`. This path copies `url` verbatim, so
+       * without the same repair the import would faithfully reproduce the
+       * damage — and reintroduce it on a machine the startup migration had
+       * already fixed. Same rule, applied at both doors — see lib/suite-url-repair.ts.
+       */
+      const storedUrl = (it.url as string | null) ?? null
+      const repairedUrl =
+        repairedSuiteItemUrl(storedUrl, it.request_schema as string | null) ?? storedUrl
       insertItem.run(
         randomUUID(),
         newSuiteId,
@@ -890,7 +902,7 @@ export function importTestSuiteData(
         it.protocol || 'http',
         it.name ?? 'Imported request',
         it.method ?? null,
-        it.url ?? null,
+        repairedUrl,
         (it.request_schema as string) ?? '{}',
         (it.assertions as string) ?? null,
         // source_endpoint_id points at a row in the SOURCE project; keeping
@@ -1466,6 +1478,9 @@ export function importProjectAsNew(
       const newFolderId = it.folder_id
         ? (suiteFolderIdMap.get(it.folder_id as string) ?? null)
         : null
+      // Same repair as the suite-import path: a project export taken on an
+      // affected build carries the truncated URL.
+      const storedItemUrl = (it.url as string | null) ?? null
       insertSuiteItem.run(
         randomUUID(),
         newSuiteId,
@@ -1473,7 +1488,7 @@ export function importProjectAsNew(
         it.protocol || 'http',
         it.name ?? 'Imported request',
         it.method ?? null,
-        it.url ?? null,
+        repairedSuiteItemUrl(storedItemUrl, it.request_schema as string | null) ?? storedItemUrl,
         (it.request_schema as string) ?? '{}',
         (it.assertions as string) ?? null,
         // source_endpoint_id pointed at the source project's row — that id
