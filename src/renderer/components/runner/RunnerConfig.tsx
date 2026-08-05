@@ -422,14 +422,23 @@ export default function RunnerConfig({
             />
           </div>
           <div className="flex-1">
+            {/*
+              Say WHICH gap this delay fills. It sits next to "Iterations", and
+              a bare "Delay" there reads as "delay between iterations" — a
+              tester timed a 2-iteration run and reported the pause after every
+              request as a bug (5 Aug). The behaviour is correct and matches
+              Postman/Insomnia ("set a delay between requests"); only the label
+              was ambiguous.
+            */}
             <label style={{ display: 'block', color: 'var(--muted)', marginBottom: 4 }}>
-              Delay
+              Delay between requests
             </label>
             <div className="flex items-center gap-1.5">
               <input
                 type="number"
                 min={0}
                 step={100}
+                title="Applied after each request, including between iterations"
                 {...delayDraft.inputProps}
                 onFocus={(e) => {
                   delayDraft.inputProps.onFocus()
