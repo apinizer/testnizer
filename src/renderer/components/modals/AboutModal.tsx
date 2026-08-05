@@ -31,6 +31,7 @@ export default function AboutModal() {
   const setOpen = useUIStore((s) => s.setShowAboutModal)
 
   const [version, setVersion] = useState<string>('')
+  const [buildId, setBuildId] = useState<string>('')
   const [licenses, setLicenses] = useState<LicenseEntry[] | null>(null)
   const [licensesError, setLicensesError] = useState<string | null>(null)
   const [legalDoc, setLegalDoc] = useState<'eula' | 'privacy' | null>(null)
@@ -43,8 +44,11 @@ export default function AboutModal() {
     let cancelled = false
     void (async () => {
       try {
-        const v = (await window.api?.app?.version?.()) as IpcResult<{ version: string }> | undefined
+        const v = (await window.api?.app?.version?.()) as
+          | IpcResult<{ version: string; buildId?: string }>
+          | undefined
         if (!cancelled && v?.success && v.data?.version) setVersion(v.data.version)
+        if (!cancelled && v?.success && v.data?.buildId) setBuildId(v.data.buildId)
       } catch {
         /* noop */
       }
@@ -123,6 +127,21 @@ export default function AboutModal() {
             <div style={{ fontSize: 13, color: 'var(--muted)' }}>
               {t('about.version')} {version || '—'}
             </div>
+            {/*
+              The build, not just the version. Pre-release rounds ship under the
+              same version as one another and as the final release, so testers
+              could not say which one they had — and a fix verified on one round
+              came back reported as still broken from another. Selectable so it
+              can be pasted into a bug report.
+            */}
+            {buildId && buildId !== 'unknown' && (
+              <div
+                data-testid="about-build-id"
+                style={{ fontSize: 11, color: 'var(--hint)', userSelect: 'text' }}
+              >
+                {t('about.build')} {buildId}
+              </div>
+            )}
             <button
               type="button"
               onClick={() => openExternal(HOMEPAGE_URL)}
