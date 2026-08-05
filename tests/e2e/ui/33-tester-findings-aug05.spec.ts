@@ -25,8 +25,21 @@ import {
   navigateSidebar,
   openHttpRequestTab,
 } from '../helpers/ui/bootstrap'
-import { fillUrl, saveRequestToTree } from '../helpers/ui/request-flow'
-import { openCollectionRunner } from '../helpers/ui/runner-flow'
+import {
+  addPreScript,
+  clickSend,
+  fillUrl,
+  saveRequestToTree,
+  waitForResponseError,
+} from '../helpers/ui/request-flow'
+import {
+  openCollectionRunner,
+  readRunnerTabSummary,
+  selectOnlyRunnerEndpoint,
+  selectOnlyRunnerEndpoints,
+  startRunnerTabRun,
+  waitRunnerTabComplete,
+} from '../helpers/ui/runner-flow'
 import { openConsolePanel } from '../helpers/ui/console-flow'
 import { localHttpBin } from '../helpers/test-servers'
 
@@ -91,6 +104,126 @@ uiTest.describe('tester findings, 5 August (1.5.0-rc3)', () => {
     // AT the drawer rather than running underneath it.
     expect(formBottom.lowest).toBeLessThanOrEqual(formBottom.drawerTop + 1)
     await expect(workbench).toBeVisible()
+  })
+
+  uiTest('Send does not fire a request whose pre-request script threw', async ({ window }) => {
+    await navigateSidebar(window, 'apis')
+    await openHttpRequestTab(window)
+    await fillUrl(window, `${localHttpBin()}/get?should-not-happen=1`)
+    await addPreScript(window, `throw new Error('boom')`)
+
+    await clickSend(window)
+
+    // The response pane is where the user is looking after pressing Send, so
+    // that is where the error has to appear — it used to go to the Console
+    // only, while the request went out and came back 200.
+    await waitForResponseError(window)
+    const pane = window.getByTestId('response-error')
+    await expect(pane).toContainText(/Pre-request script error/i)
+    await expect(pane).toContainText(/boom/)
+    // No status badge: nothing was sent, so there is no response to score.
+    await expect(window.getByTestId('response-status')).toHaveCount(0)
+  })
+
+  uiTest('a run reports the step that its pre-request script killed', async ({ window }) => {
+    await navigateSidebar(window, 'apis')
+    await openHttpRequestTab(window)
+    await fillUrl(window, `${localHttpBin()}/get?run-script-abort=1`)
+    await addPreScript(window, `throw new Error('boom')`)
+    const name = `Script Abort ${Date.now()}`
+    await saveRequestToTree(window, name)
+
+    await openCollectionRunner(window)
+    await selectOnlyRunnerEndpoint(window, name)
+    await startRunnerTabRun(window)
+    await waitRunnerTabComplete(window)
+
+    // The step is a FAILURE the run can act on — not a pass scored on whatever
+    // the server happened to answer, and not a silent skip.
+    const summary = await readRunnerTabSummary(window)
+    expect(summary.failed).toBe(1)
+    expect(summary.passed).toBe(0)
+
+    // The row carries no status — it never reached the wire — so it reads
+    // "Error" rather than a green 200.
+    const list = window.getByTestId('runner-results-list')
+    await expect(list).toContainText(name)
+    await expect(list).toContainText('Error')
+
+    // Open the row: the reason has to be readable, not just the fact of failure.
+    await list.getByText(name).first().click()
+    await expect(window.getByTestId('workbench')).toContainText(/Pre-request script error/i, {
+      timeout: 10_000,
+    })
+  })
+
+  uiTest('Stop and "Skip teardown" are different buttons, not the same click', async ({
+    window,
+  }) => {
+    /*
+     * The reported scenario, and the property that actually fixes it.
+     *
+     * Abandoning cleanup used to be inferred from a second Stop arriving after
+     * the teardown phase had begun — the user's INTENT read off the CLOCK. The
+     * first Stop cannot cancel the request already on the wire, so people click
+     * again, and whichever click landed inside teardown killed the rest of it.
+     *
+     * What makes that impossible now is that the destructive action is a
+     * DIFFERENT, LABELLED button, reachable only while cleanup is visibly
+     * running. So this pins the label flip — under the old behaviour the button
+     * read "Stop" throughout, and mashing it was enough to lose cleanup.
+     *
+     * The precise race (a click landing at an exact moment inside teardown) is
+     * pinned at the handler level in `runner-lifecycle.test.ts`, where the
+     * timing can be driven deterministically instead of raced.
+     */
+    await navigateSidebar(window, 'apis')
+    const stamp = Date.now()
+    const slowName = `Slow Main ${stamp}`
+    const cleanup1 = `Cleanup A ${stamp}`
+    const cleanup2 = `Cleanup B ${stamp}`
+
+    await openHttpRequestTab(window)
+    await fillUrl(window, `${localHttpBin()}/delay/2`)
+    await saveRequestToTree(window, slowName)
+
+    // A SLOW first cleanup step, so there is a real window during teardown —
+    // which is exactly the window the old code let a stray click fall into.
+    await openHttpRequestTab(window)
+    await fillUrl(window, `${localHttpBin()}/delay/2`)
+    await saveRequestToTree(window, cleanup1)
+
+    await openHttpRequestTab(window)
+    await fillUrl(window, `${localHttpBin()}/get?cleanup=b`)
+    await saveRequestToTree(window, cleanup2)
+
+    await openCollectionRunner(window)
+    await selectOnlyRunnerEndpoints(window, stamp.toString())
+    await window.getByLabel(new RegExp(`: ${cleanup1}$`)).selectOption('teardown')
+    await window.getByLabel(new RegExp(`: ${cleanup2}$`)).selectOption('teardown')
+
+    await startRunnerTabRun(window)
+
+    // Press Stop while the slow main request is still on the wire — then again,
+    // the way a user does when the first press appears to do nothing.
+    const stop = window.getByTestId('runner-stop')
+    await expect(stop).toBeVisible({ timeout: 15_000 })
+    await expect(stop).toHaveText('Stop')
+    await stop.click()
+    await stop.click({ timeout: 3_000 }).catch(() => {})
+
+    // Once cleanup starts, the same position is a DIFFERENT action and says so.
+    // This is the assertion the old behaviour cannot satisfy: it kept saying
+    // "Stop" while quietly meaning "abandon cleanup".
+    await expect(stop).toHaveText('Skip teardown', { timeout: 15_000 })
+
+    // We never pressed it, so every cleanup step runs.
+    await waitRunnerTabComplete(window)
+    const list = window.getByTestId('runner-results-list')
+    await expect(list).toContainText(cleanup1)
+    await expect(list).toContainText(cleanup2)
+    // …and the report does not claim cleanup was skipped when it was not.
+    await expect(window.getByTestId('workbench')).not.toContainText(/teardown was skipped/i)
   })
 
   uiTest('the Delay field says which gap it fills', async ({ window }) => {
