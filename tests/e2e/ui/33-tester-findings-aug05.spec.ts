@@ -187,10 +187,11 @@ uiTest.describe('tester findings, 5 August (1.5.0-rc3)', () => {
     await fillUrl(window, `${localHttpBin()}/delay/2`)
     await saveRequestToTree(window, slowName)
 
-    // A SLOW first cleanup step, so there is a real window during teardown —
-    // which is exactly the window the old code let a stray click fall into.
+    // A SLOW first cleanup step, so there is a wide window during teardown —
+    // exactly the window the old code let a stray click fall into. Wide enough
+    // that a loaded CI machine still observes the phase.
     await openHttpRequestTab(window)
-    await fillUrl(window, `${localHttpBin()}/delay/2`)
+    await fillUrl(window, `${localHttpBin()}/delay/5`)
     await saveRequestToTree(window, cleanup1)
 
     await openHttpRequestTab(window)
@@ -204,18 +205,25 @@ uiTest.describe('tester findings, 5 August (1.5.0-rc3)', () => {
 
     await startRunnerTabRun(window)
 
-    // Press Stop while the slow main request is still on the wire — then again,
-    // the way a user does when the first press appears to do nothing.
+    // Press Stop while the slow main request is still on the wire.
     const stop = window.getByTestId('runner-stop')
     await expect(stop).toBeVisible({ timeout: 15_000 })
     await expect(stop).toHaveText('Stop')
     await stop.click()
-    await stop.click({ timeout: 3_000 }).catch(() => {})
 
-    // Once cleanup starts, the same position is a DIFFERENT action and says so.
-    // This is the assertion the old behaviour cannot satisfy: it kept saying
-    // "Stop" while quietly meaning "abandon cleanup".
-    await expect(stop).toHaveText('Skip teardown', { timeout: 15_000 })
+    /*
+     * Once cleanup starts, the same position is a DIFFERENT action and says so.
+     * This is the assertion the old behaviour cannot satisfy: it kept saying
+     * "Stop" while quietly meaning "abandon cleanup".
+     *
+     * Do NOT click again here. An earlier version of this test pressed Stop a
+     * second time to act out the impatient user — and on CI that click landed
+     * on the button this line is about to assert, skipped the cleanup, ended
+     * the run and removed the button. The fix had worked; the test had
+     * invalidated its own premise. The impatience is what the LABEL protects
+     * against, so checking the label is the whole point.
+     */
+    await expect(stop).toHaveText('Skip teardown', { timeout: 20_000 })
 
     // We never pressed it, so every cleanup step runs.
     await waitRunnerTabComplete(window)
