@@ -443,6 +443,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // headers actually ship on the wire (Mehmet BUG-02).
     let preScriptHeaders: { key: string; value: string }[] | null = null
     let preScriptSkippedRequest = false
+    let preScriptError: string | undefined
 
     // Run pre-request scripts (cascade: project → folder(s) → request) before
     // variables are resolved so they can mutate them. They share `scriptOverrides`
@@ -495,6 +496,56 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       // Later scripts' header mutations take precedence; keep the last non-null.
       if (scriptResult.requestHeaders) preScriptHeaders = scriptResult.requestHeaders
       if (scriptResult.skipRequest) preScriptSkippedRequest = true
+      // Stop at the FIRST script that threw: the scripts cascade
+      // project → folder(s) → request, and running a later one on top of a
+      // half-finished earlier one just compounds the broken state.
+      if (scriptResult.scriptError) {
+        preScriptError = scriptResult.scriptError
+        break
+      }
+    }
+
+    /*
+     * A pre-request script that THREW aborts the send.
+     *
+     * The error used to be written to the console and dropped, so a script
+     * that died while minting a token or signing a payload let the request go
+     * out anyway and the response was scored as if the precondition had held.
+     * Postman and Insomnia both abort here. The Runner has the same guard
+     * (`runner.handler.ts`, "Pre-request script error") — these two must move
+     * together or the Send≡Run parity class reopens.
+     */
+    if (preScriptError) {
+      const errMsg = `Pre-request script error: ${preScriptError}`
+      const reqName = tabsStore.tabs.find((tt) => tt.id === activeTabId)?.name ?? ''
+      useConsoleStore.getState().addEntry({
+        protocol: 'http',
+        level: 'error',
+        category: 'system',
+        method,
+        url,
+        message: `${reqName}${reqName ? ' — ' : ''}${errMsg}`,
+        scriptLogs: preScriptLogs.map((l) => ({
+          level: l.level === 'error' ? 'error' : l.level === 'warn' ? 'warn' : 'log',
+          message: l.message,
+          timestamp: l.timestamp,
+        })),
+      })
+      // Report it where the user is looking, not only in the Console: the
+      // response pane is what they watch after pressing Send.
+      responseStore.setResponse(
+        {
+          requestId: makeId(),
+          protocol: 'http',
+          timing: { total: 0 },
+          error: errMsg,
+          consoleLogs: preScriptLogs,
+        },
+        activeTabId,
+      )
+      if (activeTabId) tabsStore.markLoading(activeTabId, false)
+      responseStore.setLoading(false, activeTabId)
+      return
     }
 
     // pm.execution.skipRequest() — abort the actual HTTP send. Surface the

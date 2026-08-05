@@ -330,7 +330,8 @@ const api = {
   // ─── Collection Runner ──────────────────────────────────────
   runner: {
     execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('runner:execute', options),
-    stop: (): Promise<unknown> => ipcRenderer.invoke('runner:stop'),
+    stop: (opts?: { skipTeardown?: boolean }): Promise<unknown> =>
+      ipcRenderer.invoke('runner:stop', opts),
     export: (options: unknown): Promise<unknown> => ipcRenderer.invoke('runner:export', options),
     onProgress: (callback: (progress: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
@@ -339,6 +340,15 @@ const api = {
       ipcRenderer.on('runner:progress', handler)
       return () => {
         ipcRenderer.removeListener('runner:progress', handler)
+      }
+    },
+    onPhase: (callback: (phase: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('runner:phase', handler)
+      return () => {
+        ipcRenderer.removeListener('runner:phase', handler)
       }
     },
     history: (

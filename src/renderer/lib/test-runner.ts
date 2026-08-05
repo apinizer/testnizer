@@ -1208,6 +1208,21 @@ export interface ScriptRunResult {
   /** Headers AFTER any pm.request.headers.{add,upsert,remove} mutations so
    * callers can fold the mutations back into the outgoing request. */
   requestHeaders: HeaderEntry[]
+  /**
+   * The message of an uncaught throw inside the script body, if any.
+   *
+   * The throw is caught here so one bad script cannot take down the send, but
+   * the caller still has to KNOW: a pre-request script that dies before it
+   * mints a token or signs a payload must abort the request rather than let it
+   * go out with an unsatisfied precondition. Until this field existed the
+   * error was written to the console and dropped, so the request went anyway
+   * and the response was scored as if nothing had happened — the same gap the
+   * Runner had (both paths fixed together, per the Send≡Run parity rule).
+   *
+   * `pm.execution.skipRequest()` is NOT reported here: it signals through
+   * `skipRequest` and is a deliberate control-flow exit, not a failure.
+   */
+  scriptError?: string
 }
 
 /** Backing-store shape the shared layer reads off each variable scope. */
@@ -1264,6 +1279,7 @@ function ensurePmLike(pm: PmApi, normalized: NormalizedResponse | null): void {
 
 export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRunResult> {
   const consoleLogs: ConsoleLog[] = []
+  let scriptError: string | undefined
 
   // Create console capture
   const captureConsole = {
@@ -1332,6 +1348,7 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
         message: `Script error: ${msg}`,
         timestamp: Date.now(),
       })
+      scriptError = msg
     }
   }
 
@@ -1380,6 +1397,7 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
     globalUpdates,
     skipRequest: pmApi._skipRequest,
     requestHeaders: pmApi._requestHeaders.toArray(),
+    scriptError,
   }
 }
 

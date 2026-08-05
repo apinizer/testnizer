@@ -33,6 +33,13 @@ interface RunnerResultsProps {
   runStartedAt: number | null
   sourceLabel?: string
   onStop: () => void
+  /**
+   * The run has reached cleanup. Stop then means something different — the
+   * flow is already over, so the only thing left to abandon is the teardown —
+   * and the button has to SAY so, because that is the difference between a
+   * deliberate skip and the run finishing cleanup normally.
+   */
+  inTeardown?: boolean
   onNewRun: () => void
   onRunAgain: () => void
   onViewAllRuns: () => void
@@ -53,6 +60,7 @@ export default function RunnerResults({
   runStartedAt,
   sourceLabel,
   onStop,
+  inTeardown = false,
   onNewRun,
   onRunAgain,
   onViewAllRuns,
@@ -220,15 +228,23 @@ export default function RunnerResults({
           <div className="shrink-0 border-b border-[var(--border)] px-5 py-3">
             <div className="mb-1.5 flex items-center justify-between" style={{ fontSize: 13 }}>
               <span style={{ color: 'var(--muted)' }}>
-                Running {currentIndex} of {totalCount}...
+                {inTeardown
+                  ? `Cleaning up — ${currentIndex} of ${totalCount}...`
+                  : `Running ${currentIndex} of ${totalCount}...`}
               </span>
               <button
                 type="button"
                 onClick={onStop}
+                data-testid="runner-stop"
+                title={
+                  inTeardown
+                    ? 'Abandon the remaining cleanup steps'
+                    : 'End the run — cleanup still runs'
+                }
                 className="cursor-pointer rounded-[5px] border border-[#cc2200] bg-transparent px-3 py-1"
                 style={{ fontSize: 13, fontWeight: 500, color: '#cc2200' }}
               >
-                Stop
+                {inTeardown ? 'Skip teardown' : 'Stop'}
               </button>
             </div>
             <div className="h-1 overflow-hidden rounded-full bg-[var(--border)]">

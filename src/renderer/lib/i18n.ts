@@ -16,6 +16,7 @@ const translations: Record<Locale, Record<string, string>> = {
     // About modal
     'about.title': 'About',
     'about.version': 'Version',
+    'about.build': 'Build',
     'about.homepage': 'Homepage',
     'about.subtitle': 'Application version, runtime and license info.',
     'about.appName': 'Testnizer',
@@ -949,7 +950,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'runLifecycle.teardownNote': 'Does not affect the run verdict',
     'runLifecycle.stoppedOnError': 'Stopped early: a request failed and "Stop run on error" is on.',
     'runLifecycle.stoppedCancelled': 'Stopped by you — teardown still ran.',
-    'runLifecycle.stoppedTeardownAborted': 'Stopped by you — teardown was skipped.',
+    'runLifecycle.stoppedTeardownAborted':
+      'Stopped by you — the remaining cleanup steps were skipped.',
 
     // Add Endpoints to Test Suite
     'addEndpoints.addTo': 'Import Endpoints into',
@@ -2185,6 +2187,7 @@ const translations: Record<Locale, Record<string, string>> = {
     // About modal
     'about.title': 'Hakkında',
     'about.version': 'Sürüm',
+    'about.build': 'Yapı',
     'about.homepage': 'Web sitesi',
     'about.subtitle': 'Uygulama sürümü, çalışma zamanı ve lisans bilgisi.',
     'about.appName': 'Testnizer',
@@ -3123,7 +3126,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'runLifecycle.stoppedOnError':
       'Erken durduruldu: bir istek başarısız oldu ve “Hata olursa durdur” açık.',
     'runLifecycle.stoppedCancelled': 'Sizin tarafınızdan durduruldu — temizlik yine de çalıştı.',
-    'runLifecycle.stoppedTeardownAborted': 'Sizin tarafınızdan durduruldu — temizlik atlandı.',
+    'runLifecycle.stoppedTeardownAborted':
+      'Sizin tarafınızdan durduruldu — kalan temizlik adımları atlandı.',
 
     // Add Endpoints to Test Suite
     'addEndpoints.addTo': 'Uç Noktaları İçe Aktar:',

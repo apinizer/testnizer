@@ -300,6 +300,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
 
   // Run state
   const [isRunning, setIsRunning] = useState(false)
+  /** Cleanup has begun — signalled by main, since a finished-step tick can't say so. */
+  const [teardownStarted, setTeardownStarted] = useState(false)
   // Publish it so a second "Run" on this folder focuses the live run instead of
   // remounting the tab out from under it (see runner-activity.ts).
   useEffect(() => {
@@ -817,12 +819,20 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     setTotalCount(selected.length)
     setRunStartedAt(Date.now())
     setSelectedResultId(null)
+    setTeardownStarted(false)
 
     const unsubscribe = window.api?.runner?.onProgress?.((progress: unknown) => {
       const p = progress as { current: number; total: number; result: EndpointRunResult }
       setCurrentIndex(p.current)
       setTotalCount(p.total)
       setResults((prev) => [...prev, p.result])
+    })
+    // Cleanup has BEGUN — which a progress tick cannot tell us, because one
+    // arrives only when a step finishes. The case that most needs "Skip
+    // teardown" is a cleanup endpoint that never answers, and that one produces
+    // no result at all.
+    const unsubscribePhase = window.api?.runner?.onPhase?.((phase: unknown) => {
+      if (phase === 'teardown') setTeardownStarted(true)
     })
 
     const sourceLabel =
@@ -866,6 +876,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       // handled by results
     } finally {
       unsubscribe?.()
+      unsubscribePhase?.()
       setIsRunning(false)
     }
   }, [
@@ -889,9 +900,24 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     splitByPhase,
   ])
 
+  /**
+   * True once the run has reached cleanup. Derived from the results the
+   * progress stream has already delivered rather than kept as its own state,
+   * so it can't drift from what the user is looking at, and a new run clears it
+   * for free (`setResults([])`).
+   *
+   * This is what turns Stop into an explicit "Skip teardown": main used to
+   * infer that intent from a second click landing after teardown began, which
+   * made cleanup finish only partway, seemingly at random.
+   */
+  const inTeardown = useMemo(
+    () => teardownStarted || results.some((r) => r.phase === 'teardown'),
+    [teardownStarted, results],
+  )
+
   const handleStop = useCallback(() => {
-    window.api?.runner?.stop()
-  }, [])
+    window.api?.runner?.stop(inTeardown ? { skipTeardown: true } : undefined)
+  }, [inTeardown])
 
   const handleNewRun = useCallback((mode?: 'manual' | 'schedule' | unknown) => {
     // Defensive guard: this callback is wired to several <button onClick>
@@ -1103,6 +1129,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             runStartedAt={runStartedAt}
             sourceLabel={runSourceLabel}
             onStop={handleStop}
+            inTeardown={inTeardown}
             onNewRun={handleNewRun}
             onRunAgain={handleRun}
             onViewAllRuns={handleViewAllRuns}

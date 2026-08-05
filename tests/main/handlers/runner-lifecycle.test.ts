@@ -57,13 +57,31 @@ beforeAll(async () => {
       req.resume()
       req.on('end', () => {
         received.push(url)
-        // /stop → the user pressed Stop while this request was in flight.
-        // /stop2 → they pressed it twice (abort teardown as well).
+        // /stop        → the user pressed Stop while this request was in flight.
+        // /stop2        → they pressed it twice (cleanup must STILL run).
+        // /stopTeardown → they pressed the "Skip teardown" button, which is the
+        //                 ONLY thing that abandons the remaining cleanup. It is
+        //                 a separate, explicit request — never a second plain
+        //                 Stop, because inferring it from click timing made
+        //                 cleanup finish only partway, at random.
+        if (url.startsWith('/stopTeardown')) {
+          void harness.invoke('runner:stop', { skipTeardown: true })
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end('{"ok":true}')
+          return
+        }
+        // A cleanup request that presses PLAIN Stop while cleanup is running —
+        // the impatient user whose click happened to land inside the teardown
+        // phase. It must not abandon the rest of the cleanup.
+        if (url.startsWith('/plainStopInTeardown')) {
+          void harness.invoke('runner:stop')
+          void harness.invoke('runner:stop')
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end('{"ok":true}')
+          return
+        }
         if (url.startsWith('/stop')) {
           void harness.invoke('runner:stop')
-          // /stop2 → pressed twice during the FLOW (cleanup must still run).
-          // /stopTeardown → pressed while cleanup itself is running, which is
-          // the only case that abandons the remaining teardown steps.
           if (url.startsWith('/stop2')) void harness.invoke('runner:stop')
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end('{"ok":true}')
@@ -317,9 +335,65 @@ describe('run lifecycle — guaranteed teardown', () => {
     expect(res.data?.stopReason).toBe('cancelled')
   })
 
-  it('a Stop pressed DURING teardown abandons the rest of it (never hang the UI)', async () => {
-    // `/stopTeardown` is itself a cleanup request that presses Stop while it
-    // runs — the escape hatch for a cleanup endpoint that will not answer.
+  it('a plain Stop landing DURING cleanup still finishes every cleanup step', async () => {
+    /*
+     * The reported bug (5 Aug), reproduced exactly.
+     *
+     * Stop used to mean "abandon cleanup too" whenever it arrived after the
+     * teardown phase had begun. Since the first Stop cannot cancel the request
+     * already on the wire, nothing appears to happen and people click again —
+     * and whichever click landed inside teardown killed the remainder. The
+     * tester saw one cleanup request run, or two with the run-teardown script
+     * missing, and reasonably called it flaky.
+     *
+     * Abandoning cleanup is now a separate, explicit request. Plain Stop —
+     * however many times — always lets cleanup finish.
+     */
+    const mainId = seedEndpoint({ name: 'Main', url: `http://127.0.0.1:${port}/main` })
+    const cleanup1 = seedEndpoint({
+      name: 'Cleanup 1',
+      url: `http://127.0.0.1:${port}/plainStopInTeardown`,
+    })
+    const cleanup2 = seedEndpoint({ name: 'Cleanup 2', url: `http://127.0.0.1:${port}/cleanup2` })
+    const cleanup3 = seedEndpoint({ name: 'Cleanup 3', url: `http://127.0.0.1:${port}/cleanup3` })
+
+    const res = await run({
+      endpointIds: [mainId],
+      teardownEndpointIds: [cleanup1, cleanup2, cleanup3],
+      runPostScript: `pm.test('run teardown ran', function () { pm.expect(1).to.equal(1) })`,
+    })
+
+    expect(res.success).toBe(true)
+    // Every cleanup request ran, in order…
+    expect(received).toEqual(['/main', '/plainStopInTeardown', '/cleanup2', '/cleanup3'])
+    // …and so did the run-teardown script, which used to be the silent casualty.
+    const hook = res.data?.results.find((r) => r.statusText === 'SCRIPT')
+    expect(hook?.phase).toBe('teardown')
+    expect(hook?.passed).toBe(1)
+    // Nothing was skipped, so the report must not claim cleanup was abandoned.
+    expect(res.data?.stopReason).not.toBe('teardownAborted')
+  })
+
+  it('does not claim cleanup was skipped when nothing was left to skip', async () => {
+    // The screen contradicted itself: "teardown was skipped" above a teardown
+    // section listing a green DELETE. A skip requested after the last cleanup
+    // step already finished skipped nothing, and must not say otherwise.
+    const mainId = seedEndpoint({ name: 'Main', url: `http://127.0.0.1:${port}/main` })
+    const onlyCleanup = seedEndpoint({
+      name: 'Cleanup',
+      url: `http://127.0.0.1:${port}/stopTeardown`,
+    })
+
+    const res = await run({ endpointIds: [mainId], teardownEndpointIds: [onlyCleanup] })
+
+    expect(received).toEqual(['/main', '/stopTeardown'])
+    expect(res.data?.stopReason).not.toBe('teardownAborted')
+  })
+
+  it('an explicit Skip teardown abandons the rest of it (never hang the UI)', async () => {
+    // `/stopTeardown` is itself a cleanup request that presses the explicit
+    // "Skip teardown" button while it runs — the escape hatch for a cleanup
+    // endpoint that will not answer.
     const mainId = seedEndpoint({ name: 'Main', url: `http://127.0.0.1:${port}/main` })
     const cleanup1 = seedEndpoint({
       name: 'Cleanup 1',

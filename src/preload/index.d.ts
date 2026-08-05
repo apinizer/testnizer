@@ -672,9 +672,27 @@ interface RunnerHistoryStats {
 
 interface RunnerApi {
   execute(options: RunnerExecuteOptions): Promise<IpcResult<RunnerReport>>
-  stop(): Promise<IpcResult<boolean>>
+  /**
+   * End the run. Cleanup (teardown requests + the run-teardown script) still
+   * runs — that is the whole point of the phase.
+   *
+   * `skipTeardown: true` additionally abandons cleanup. It must come from a
+   * deliberate act (the button that says "Skip teardown", offered only while
+   * teardown is running), never from a second plain Stop: inferring it from
+   * click timing is what made cleanup complete only partially, at random.
+   */
+  stop(opts?: { skipTeardown?: boolean }): Promise<IpcResult<boolean>>
   export(options: RunnerExportOptions): Promise<IpcResult<string>>
   onProgress(callback: (progress: RunnerProgress) => void): () => void
+  /**
+   * A phase has BEGUN — fired before its first step produces a result.
+   *
+   * A progress tick arrives only when a step finishes, so it cannot tell you
+   * that cleanup has started. That distinction decides whether "Skip teardown"
+   * is offered, and it matters most for a cleanup endpoint that never answers,
+   * which produces no result at all.
+   */
+  onPhase(callback: (phase: RunPhase) => void): () => void
   /**
    * String argument → returns a flat `RunnerHistoryEntry[]` (legacy shape).
    * Object argument → returns `{ rows, total }` for paginated views.
@@ -1175,7 +1193,12 @@ interface WindowApi {
 }
 
 interface AppApi {
-  version(): Promise<IpcResult<{ version: string; name: string }>>
+  /**
+   * `buildId` is the short git commit this bundle was built from. The version
+   * alone cannot identify a build: pre-release rounds share it with each other
+   * and with the final release.
+   */
+  version(): Promise<IpcResult<{ version: string; name: string; buildId?: string }>>
   openExternal(url: string): Promise<IpcResult<null>>
   onOpenAbout(callback: () => void): () => void
   onMenuCommand(callback: (command: string) => void): () => void

@@ -147,7 +147,7 @@ describe('#73 — signed token flows into a variable and out via a header (Run p
     expect(payload.iss).toBe('testnizer')
   })
 
-  it('an UNCAUGHT verify failure is a normal script error — the run continues', async () => {
+  it('an UNCAUGHT verify failure is a normal script error — the run continues, unsent', async () => {
     // Send-path twin: tests/renderer/jose-header-flow.test.ts (same script).
     const ep = seedEndpoint(testDb, projectId, {
       url: 'http://jose.test/protected',
@@ -169,7 +169,24 @@ describe('#73 — signed token flows into a variable and out via a header (Run p
     expect(res.success, res.error).toBe(true)
     expect(res.data!.envUpdates.before).toBe('written')
     expect(res.data!.envUpdates.after).toBeUndefined()
-    // The request still went out — a failed script is not a transport abort.
-    expect(sent).toHaveLength(1)
+
+    /*
+     * BEHAVIOUR CHANGE (5 Aug): the request is NOT sent.
+     *
+     * This used to assert `sent` had length 1, on the reasoning that "a failed
+     * script is not a transport abort". That reasoning is about CLASSIFICATION,
+     * and it still holds: the run succeeds, earlier env writes survive, later
+     * requests still run, and the failure is reported as a script error rather
+     * than a transport one.
+     *
+     * Whether to SEND is a different question, and sending was wrong. This
+     * script fails to produce the token the request depends on; issuing the
+     * call anyway means measuring a request whose precondition never held —
+     * and a tester reported exactly that as a bug, having watched a
+     * `throw new Error('boom')` still return 200. Postman and Insomnia both
+     * abort here. See `runner-script-abort.test.ts` for the full contract and
+     * `prescript-throw-aborts-send.test.ts` for the Send-path twin.
+     */
+    expect(sent).toHaveLength(0)
   })
 })

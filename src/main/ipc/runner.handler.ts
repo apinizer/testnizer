@@ -118,20 +118,34 @@ interface TestAssertion {
 interface RunState {
   shouldStop: boolean
   /**
-   * Set by a SECOND `runner:stop` — the escape hatch for a teardown that is
-   * itself hanging (a cleanup endpoint that never answers). The first Stop ends
-   * the main flow but still lets cleanup run; the second abandons cleanup too,
-   * so the UI can never be held hostage by teardown (issue #72).
+   * Abandon cleanup as well — the escape hatch for a teardown that is itself
+   * hanging (a cleanup endpoint that never answers), so the UI can never be
+   * held hostage by teardown (issue #72).
+   *
+   * Set ONLY by an explicit `runner:stop({ skipTeardown: true })`, which the
+   * renderer sends from a button that is labelled "Skip teardown" and is only
+   * reachable once teardown is visibly running.
+   *
+   * It used to be inferred instead: any second Stop set this whenever
+   * `teardownStarted` happened to be true. That reads the user's INTENT off
+   * the CLOCK. The first Stop cannot cancel the request already on the wire,
+   * so nothing appears to happen and people click again — and whichever click
+   * landed after teardown began silently killed the rest of the cleanup. The
+   * result looked random: sometimes one teardown request ran, sometimes two,
+   * sometimes the run-teardown script was the only casualty (reported 5 Aug as
+   * "teardown tutarsız / kısmi çalışıyor", and rightly called flaky).
    */
   abortTeardown: boolean
-  /**
-   * Flips when the teardown phase begins. A second Stop only counts as "skip
-   * cleanup" once cleanup is actually running: pressing Stop twice during the
-   * main flow (which is easy — the first Stop cannot cancel the request already
-   * on the wire, so nothing appears to happen) used to silently cancel a
-   * teardown the user had not even seen start.
-   */
+  /** Flips when the teardown phase begins — drives the renderer's button label. */
   teardownStarted: boolean
+  /**
+   * Set only when an abort actually left cleanup work undone. The report's
+   * "teardown was skipped" line is keyed on THIS, not on `abortTeardown`:
+   * aborting after the last cleanup step had already finished skipped nothing,
+   * and saying otherwise contradicted the very same screen, which listed the
+   * teardown DELETE with a green 200 (also reported 5 Aug).
+   */
+  teardownSkipped: boolean
 }
 const activeRuns = new Map<string, RunState>()
 let nextRunId = 1
@@ -549,6 +563,23 @@ function sendProgress(progress: RunnerProgress): void {
   for (const win of windows) {
     if (!win.isDestroyed()) {
       win.webContents.send('runner:progress', progress)
+    }
+  }
+}
+
+/**
+ * Announce that a phase has BEGUN, before its first step produces a result.
+ *
+ * The renderer cannot infer this from the progress stream: a result arrives
+ * only once a step FINISHES. The one moment the escape hatch matters most is a
+ * cleanup endpoint that never answers — exactly when no teardown result will
+ * ever arrive — so "Skip teardown" has to be offered from the instant cleanup
+ * starts, not from its first completed step.
+ */
+function sendPhaseStarted(phase: RunPhase): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('runner:phase', phase)
     }
   }
 }
@@ -1564,16 +1595,58 @@ async function runEndpointStep(
       mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
     }
 
+    /*
+     * A pre-request script that THREW must stop the request.
+     *
+     * `runUserScript` catches the throw, writes "Script error: …" to the
+     * console and records it on the context — but nothing read it back here,
+     * so the request went out regardless. A script that fails while minting a
+     * token, signing a payload or computing a correlation id therefore issued
+     * a REAL call against the server and the step was scored on the response,
+     * even though its precondition never held (reported 5 Aug: a bare
+     * `throw new Error('boom')` still produced GET → 200).
+     *
+     * Postman and Insomnia both abort the request here. Aborting also makes
+     * "Stop run if an error occurs" behave as the checkbox promises: the step
+     * now fails, so the run stops when the user asked it to.
+     *
+     * Assertions the script managed to register before throwing are kept —
+     * they are evidence about how far it got. The verdict does not depend on
+     * them: `endpointDidPass` fails any result carrying `error`.
+     */
+    if (scriptCtx.scriptError) {
+      const scriptAssertions = scriptCtx.testResults.map((t) => ({
+        name: t.name,
+        passed: t.passed,
+        error: t.error,
+      }))
+      return recordStep(ctx, {
+        endpointId,
+        endpointName: endpoint.name,
+        method: requestOptions.method,
+        url: stripUrlCredentials(requestOptions.url),
+        status: null,
+        statusText: 'SCRIPT',
+        duration: 0,
+        passed: scriptAssertions.filter((a) => a.passed).length,
+        failed: scriptAssertions.filter((a) => !a.passed).length,
+        skipped: 0,
+        assertions: scriptAssertions,
+        error: `Pre-request script error: ${scriptCtx.scriptError}`,
+        iteration,
+        phase,
+        consoleLogs: scriptCtx.consoleLogs.length > 0 ? scriptCtx.consoleLogs : undefined,
+      })
+    }
+
     // Fold the script's header mutations back in. `enabled: true` because a
     // header a script added is one it means to send.
     if (preScripts.some((s) => s && s.trim())) {
-      requestOptions.headers = scriptCtx.request.headers
-        .toArray()
-        .map((h) => ({
-          key: h.key,
-          value: h.value,
-          enabled: true,
-        })) as HttpRequestOptions['headers']
+      requestOptions.headers = scriptCtx.request.headers.toArray().map((h) => ({
+        key: h.key,
+        value: h.value,
+        enabled: true,
+      })) as HttpRequestOptions['headers']
     }
     if (scriptCtx.skipRequest) {
       const skipResult: EndpointRunResult = {
@@ -1781,7 +1854,20 @@ async function runEndpointStep(
       failed,
       skipped: 0,
       assertions: assertionResults,
-      error: response.error,
+      /*
+       * A post-response script that threw is a step whose checks never ran.
+       * The pre-request branch above returns early, so any `scriptError` still
+       * on the context at this point came from a POST script — and without
+       * surfacing it a crashed test script scored as a pass (no assertions +
+       * status < 400 ⇒ green), which is the false-green this file exists to
+       * prevent. A transport error still wins: it explains the script's
+       * failure rather than the other way round.
+       */
+      error:
+        response.error ??
+        (scriptCtx.scriptError
+          ? `Post-response script error: ${scriptCtx.scriptError}`
+          : undefined),
       responseSize: response.bodySize ?? 0,
       responseBody: persistResponses ? (response.body ?? undefined) : undefined,
       responseHeaders: persistResponses ? (response.headers ?? undefined) : undefined,
@@ -1935,10 +2021,12 @@ async function runTeardownPhase(
 ): Promise<void> {
   const runState = ctx.runState
   runState.teardownStarted = true
+  sendPhaseStarted('teardown')
   for (const [i, id] of ids.entries()) {
     if (runState.abortTeardown) {
-      // A second Stop cut cleanup short. Say which steps were left undone rather
-      // than ending the report mid-list.
+      // An explicit "Skip teardown" cut cleanup short. Say which steps were left
+      // undone rather than ending the report mid-list.
+      runState.teardownSkipped = true
       for (const remaining of ids.slice(i)) recordNotRun(ctx, remaining, 'teardown')
       return
     }
@@ -1975,11 +2063,18 @@ async function runTeardownPhase(
       await delay(ctx.options.delay)
     }
   }
-  if (!runState.abortTeardown && postScript) {
-    try {
-      await runHookScript(ctx, postScript, 'teardown', RUN_POST_SCRIPT_ID, 'Run teardown script')
-    } catch (e) {
-      console.error('[runner] run teardown script failed:', (e as Error).message)
+  if (postScript) {
+    if (runState.abortTeardown) {
+      // Skipping the run-teardown script is itself a skipped piece of cleanup —
+      // the case where two teardown REQUESTS ran but the script silently did
+      // not, which is what made the behaviour look random.
+      runState.teardownSkipped = true
+    } else {
+      try {
+        await runHookScript(ctx, postScript, 'teardown', RUN_POST_SCRIPT_ID, 'Run teardown script')
+      } catch (e) {
+        console.error('[runner] run teardown script failed:', (e as Error).message)
+      }
     }
   }
 }
@@ -1990,7 +2085,12 @@ const RUN_POST_SCRIPT_ID = '__run_post_script__'
 
 async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerReport> {
   const runId = String(nextRunId++)
-  const runState: RunState = { shouldStop: false, abortTeardown: false, teardownStarted: false }
+  const runState: RunState = {
+    shouldStop: false,
+    abortTeardown: false,
+    teardownStarted: false,
+    teardownSkipped: false,
+  }
   activeRuns.set(runId, runState)
 
   const startedAt = Date.now()
@@ -2212,7 +2312,8 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   } finally {
     // GUARANTEED teardown — single call site, so it can never run twice.
     await runTeardownPhase(ctx, teardownIds, options.runPostScript)
-    if (runState.abortTeardown) stopReason = 'teardownAborted'
+    // Only when cleanup was actually left unfinished — see RunState.teardownSkipped.
+    if (runState.teardownSkipped) stopReason = 'teardownAborted'
     // Always release the run slot, even on exception — without this an
     // unhandled error would leave the run permanently registered and
     // any "is this run still going?" check would forever say yes.
@@ -2550,7 +2651,7 @@ export function registerRunnerHandlers(): void {
     }
   })
 
-  ipcMain.handle('runner:stop', async () => {
+  ipcMain.handle('runner:stop', async (_event, opts?: { skipTeardown?: boolean }) => {
     try {
       // Stop every in-flight run. Today the renderer doesn't pass a run id,
       // and there's no UI affordance to target one of several concurrent
@@ -2559,14 +2660,12 @@ export function registerRunnerHandlers(): void {
       // — finished runs are no longer in the map.
       let stopped = 0
       for (const run of activeRuns.values()) {
-        // A Stop pressed during the main flow ends the flow but still lets
-        // cleanup run. A Stop pressed while TEARDOWN is already running means
-        // "abandon cleanup too" — the escape hatch for a cleanup endpoint that
-        // never answers. Keyed on the PHASE, not on a click count: the first
-        // Stop cannot cancel the request already on the wire, so users click
-        // again, and counting clicks silently cancelled a teardown they had not
-        // even seen start.
-        if (run.teardownStarted) run.abortTeardown = true
+        // Stop ends the flow; cleanup still runs. Abandoning cleanup as well is
+        // a SEPARATE, EXPLICIT request — the renderer only offers it from a
+        // button labelled "Skip teardown", shown once teardown is visibly
+        // running. Never infer it from a second click: see
+        // RunState.abortTeardown for why that made cleanup partial at random.
+        if (opts?.skipTeardown) run.abortTeardown = true
         run.shouldStop = true
         stopped++
       }
