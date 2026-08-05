@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import ConsoleTab from '../response/ConsoleTab'
@@ -19,7 +19,11 @@ export default function ConsolePanel() {
   const setShow = useUIStore((s) => s.setShowConsolePanel)
   const maximized = useUIStore((s) => s.consolePanelMaximized)
 
-  const [height, setHeight] = useState(280)
+  // Height lives in the store because AppShell has to reserve the same number
+  // of pixels at the bottom of the body — the panel is absolutely positioned
+  // and shrinks nothing by itself. See `consolePanelHeight` in ui.store.
+  const height = useUIStore((s) => s.consolePanelHeight)
+  const setHeight = useUIStore((s) => s.setConsolePanelHeight)
   const effectiveHeight = maximized
     ? Math.max(360, Math.round(typeof window !== 'undefined' ? window.innerHeight * 0.78 : 600))
     : height
@@ -54,7 +58,9 @@ export default function ConsolePanel() {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
-  }, [])
+    // `setHeight` is the store's action — stable for the lifetime of the store,
+    // so the listeners are still attached exactly once.
+  }, [setHeight])
 
   if (!show) return null
 

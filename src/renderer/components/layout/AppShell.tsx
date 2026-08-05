@@ -64,6 +64,12 @@ function GitLoadingOverlay() {
 export default function AppShell() {
   const isLeftPanelCollapsed = useUIStore((s) => s.isLeftPanelCollapsed)
   const activeSidebarPage = useUIStore((s) => s.activeSidebarPage)
+  const showConsolePanel = useUIStore((s) => s.showConsolePanel)
+  // The user-dragged height, NOT the maximised one. Maximised is a deliberate
+  // "show me the console" mode that is meant to cover the workbench; reserving
+  // 78% of the window there would squash the body to nothing. Reserving the
+  // base height keeps that mode's reservation safe and bounded.
+  const consolePanelHeight = useUIStore((s) => s.consolePanelHeight)
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
   const setShowCommandPalette = useUIStore((s) => s.setShowCommandPalette)
   const setShowImportModal = useUIStore((s) => s.setShowImportModal)
@@ -260,8 +266,22 @@ export default function AppShell() {
       {/* Header — full width, 44px */}
       <Header />
 
-      {/* Body — sidebar + content area */}
-      <div className="flex flex-1 overflow-hidden">
+      {/*
+        Body — sidebar + content area.
+
+        The Console drawer below is absolutely positioned so it can slide over
+        the footer, which means it shrinks nothing on its own. Reserve its
+        height here instead. Without this the content area measured full-height
+        while the drawer covered its bottom: `overflow-auto` never overflowed,
+        so no scrollbar appeared and whatever sat under the drawer could be
+        neither reached nor typed into. It showed up on the Runner's Run
+        lifecycle form (reported 5 Aug), but the cause was app-wide — any pane
+        tall enough to reach the bottom of the window had it.
+      */}
+      <div
+        className="flex flex-1 overflow-hidden"
+        style={{ marginBottom: showConsolePanel ? consolePanelHeight : 0 }}
+      >
         {/* Icon Sidebar — 64px, no top border, starts below header */}
         <IconSidebar />
 
