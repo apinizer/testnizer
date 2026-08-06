@@ -2,13 +2,16 @@
 /**
  * Product Hunt call-to-action.
  *
- * `upvote` is our own button, not a Product Hunt badge, because Product Hunt
- * does not offer one for this product: its embed page serves only product-level
- * badges (rating / review / follow), and the launch-level embed URL 404s. Worth
- * knowing that no Product Hunt badge has ever upvoted in place either — even the
- * familiar orange one is a link to the post, since upvoting needs a PH login.
- * So a link is the ceiling here, and drawing it ourselves means it matches the
- * site and doesn't publish a low count the way `featured.svg` would.
+ * `upvote` is our own artwork in Product Hunt's badge language, because the one
+ * badge that carries an upvote arrow — post-level `featured.svg` — also renders
+ * the live vote count, and publishing a low count argues against us on our own
+ * home page. It says "UPVOTE ON", never "FEATURED ON": this product was not
+ * editor-featured, and `featured.svg` itself reads "FIND US ON" for that reason.
+ * Switch to the real badge once the count is worth showing.
+ *
+ * No Product Hunt badge upvotes in place in any case — even the familiar orange
+ * one is a link to the post, since upvoting needs a PH login. A link is the
+ * ceiling, so the only thing lost by drawing it ourselves is the vote count.
  *
  * `review` and `follow` are Product Hunt's own artwork, served from our origin
  * rather than hotlinked off api.producthunt.com. Their SVGs carry no external
@@ -20,10 +23,16 @@
  */
 interface Props {
   variant?: 'upvote' | 'review' | 'follow'
-  /** Button text and accessible name — localised by the caller. */
+  /** Accessible name — localised by the caller. */
   label: string
+  /**
+   * Small line above "Product Hunt" on the `upvote` variant. Deliberately never
+   * "FEATURED ON": this product was not editor-featured, and the badge must not
+   * imply it was.
+   */
+  kicker?: string
 }
-const { variant = 'upvote', label } = Astro.props
+const { variant = 'upvote', label, kicker = 'UPVOTE ON' } = Astro.props
 
 const PRODUCT = 'testnizer-the-offline-api-client'
 const LAUNCH = `https://www.producthunt.com/products/${PRODUCT}/launches/${PRODUCT}`
@@ -43,11 +52,13 @@ const HREF = {
       href={HREF.upvote}
       target="_blank"
       rel="noopener"
-      class="inline-flex items-center gap-2.5 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:border-border-strong hover:bg-bg-muted"
+      aria-label={label}
+      class="inline-flex h-[54px] items-center gap-3 rounded-[10px] border-2 px-4 transition-opacity hover:opacity-85"
+      style="background:#FFFFFF;border-color:#FF6154;"
     >
-      <svg width="18" height="18" viewBox="0 0 31 31" aria-hidden="true" class="shrink-0">
+      <svg width="31" height="31" viewBox="0 0 31 31" aria-hidden="true" class="shrink-0">
         <path
-          fill="#DA552F"
+          fill="#FF6154"
           d="M31,15.5 C31,24.0603917 24.0603917,31 15.5,31 C6.93960833,31 0,24.0603917 0,15.5 C0,6.93960833 6.93960833,0 15.5,0 C24.0603917,0 31,6.93960833 31,15.5"
         />
         <path
@@ -55,7 +66,13 @@ const HREF = {
           d="M17.4329412,15.9558824 L17.4329412,15.9560115 L13.0929412,15.9560115 L13.0929412,11.3060115 L17.4329412,11.3060115 L17.4329412,11.3058824 C18.7018806,11.3058824 19.7305882,12.3468365 19.7305882,13.6308824 C19.7305882,14.9149282 18.7018806,15.9558824 17.4329412,15.9558824 M17.4329412,8.20588235 L17.4329412,8.20601152 L10.0294118,8.20588235 L10.0294118,23.7058824 L13.0929412,23.7058824 L13.0929412,19.0560115 L17.4329412,19.0560115 L17.4329412,19.0558824 C20.3938424,19.0558824 22.7941176,16.6270324 22.7941176,13.6308824 C22.7941176,10.6347324 20.3938424,8.20588235 17.4329412,8.20588235"
         />
       </svg>
-      {label}
+      <span class="flex flex-col items-start leading-none" style="color:#FF6154;">
+        <span class="text-[10px] font-bold tracking-[0.08em]">{kicker}</span>
+        <span class="mt-1 text-[19px] font-bold tracking-tight">Product Hunt</span>
+      </span>
+      <svg width="14" height="9" viewBox="0 0 14 9" aria-hidden="true" class="ml-1 shrink-0">
+        <path fill="#FF6154" d="M7,0 L14,9 L0,9 Z" />
+      </svg>
     </a>
   ) : (
     <a
