@@ -268,14 +268,28 @@ export default function RunnerResults({
                   : `Running ${currentIndex} of ${totalCount}...`}
               </span>
               {/*
-                Two stops, not one control that changes its mind (issue #91).
-                Stop is the safe abort — the flow ends, cleanup still runs — and
-                during cleanup it is the only thing left to abandon, so it says
-                "Skip teardown" there. "Stop now" is the hard halt: it aborts
-                the request on the wire and runs nothing afterwards.
+                Two stops, and each control keeps ONE meaning for the whole run
+                (issue #91).
+
+                LEFT is always the safe abort: the flow ends, every teardown
+                request and the run-teardown script still run. It is never
+                destructive — mash it, hold it, let a click retry land wherever
+                it likes.
+
+                RIGHT is always the hard halt. It renames itself from "Stop now"
+                to "Skip teardown" once cleanup is running, because by then the
+                only thing left to abandon IS the cleanup — but it is the same
+                action in the same place, so the rename cannot surprise anyone.
+
+                The first version of this kept the rename on the LEFT button, so
+                the safe control quietly turned destructive partway through the
+                run. That is the bug issue #84 closed, re-opened by geometry: a
+                second click — or, on CI, Playwright waiting for the disabled
+                button to re-enable and clicking again — abandoned cleanup.
+                Position now carries the meaning, and timing carries none.
 
                 Both report the click immediately. A graceful stop deliberately
-                lets the in-flight request finish, so without this the screen is
+                lets the in-flight request finish, so without that the screen is
                 unchanged for as long as that request takes — which is exactly
                 how "Stop does not work" got reported.
               */}
@@ -284,10 +298,13 @@ export default function RunnerResults({
                   type="button"
                   onClick={onStop}
                   data-testid="runner-stop"
-                  disabled={stopRequested === 'graceful' && !inTeardown}
+                  // Nothing left to end gracefully once cleanup is the only
+                  // phase running — and leaving it live would put a no-op where
+                  // the destructive action used to be.
+                  disabled={inTeardown || stopRequested !== null}
                   title={
                     inTeardown
-                      ? 'Abandon cleanup — including the step currently running'
+                      ? 'Cleanup is running — it will finish on its own'
                       : 'End the run — cleanup still runs (every teardown request and script)'
                   }
                   className="rounded-[5px] border border-[#cc2200] bg-transparent px-3 py-1 disabled:cursor-default disabled:opacity-60"
@@ -295,25 +312,27 @@ export default function RunnerResults({
                     fontSize: 13,
                     fontWeight: 500,
                     color: '#cc2200',
-                    cursor: stopRequested === 'graceful' && !inTeardown ? 'default' : 'pointer',
+                    cursor: inTeardown || stopRequested !== null ? 'default' : 'pointer',
                   }}
                 >
-                  {inTeardown
-                    ? 'Skip teardown'
-                    : stopRequested === 'graceful'
-                      ? 'Stopping…'
-                      : 'Stop'}
+                  {/* No cleanup-specific wording here: the progress line to the
+                      left already says "Cleaning up — N of M", and a second
+                      copy on the button only made the two collide. Disabled
+                      "Stop" during cleanup is the honest reading — there is no
+                      flow left to end — and the title says why. */}
+                  {stopRequested !== null ? 'Stopping…' : 'Stop'}
                 </button>
-                {/* Hidden during cleanup: there it would be the same action as
-                    the button beside it, and two controls doing one thing is
-                    how the original ambiguity started. */}
-                {onStopDirect && !inTeardown && (
+                {onStopDirect && (
                   <button
                     type="button"
                     onClick={onStopDirect}
                     data-testid="runner-stop-direct"
                     disabled={stopRequested === 'direct'}
-                    title="Halt now — abort the request in flight and skip all remaining steps, cleanup included"
+                    title={
+                      inTeardown
+                        ? 'Abandon cleanup — including the step currently running'
+                        : 'Halt now — abort the request in flight and skip all remaining steps, cleanup included'
+                    }
                     className="rounded-[5px] border border-[#cc2200] px-3 py-1 disabled:cursor-default disabled:opacity-60"
                     style={{
                       fontSize: 13,
@@ -323,7 +342,11 @@ export default function RunnerResults({
                       cursor: stopRequested === 'direct' ? 'default' : 'pointer',
                     }}
                   >
-                    {stopRequested === 'direct' ? 'Halting…' : 'Stop now'}
+                    {stopRequested === 'direct'
+                      ? 'Halting…'
+                      : inTeardown
+                        ? 'Skip teardown'
+                        : 'Stop now'}
                   </button>
                 )}
               </div>

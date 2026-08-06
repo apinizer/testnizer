@@ -168,10 +168,16 @@ uiTest.describe('tester findings, 5 August (1.5.0-rc3)', () => {
      * first Stop cannot cancel the request already on the wire, so people click
      * again, and whichever click landed inside teardown killed the rest of it.
      *
-     * What makes that impossible now is that the destructive action is a
-     * DIFFERENT, LABELLED button, reachable only while cleanup is visibly
-     * running. So this pins the label flip — under the old behaviour the button
-     * read "Stop" throughout, and mashing it was enough to lose cleanup.
+     * What makes that impossible now is POSITION, not timing: the safe button
+     * is graceful for the whole run and the destructive one is a separate,
+     * labelled button beside it (issue #91). So this acts out the impatient
+     * user for real — Stop, repeatedly, straight through the teardown phase —
+     * and requires every cleanup step to survive it.
+     *
+     * An intermediate version renamed the SAFE button to "Skip teardown" once
+     * cleanup began. That reintroduced the bug as geometry, and this test
+     * caught it on CI three times in a row: a click retry waiting for the
+     * re-enabled button landed on the rename and lost the cleanup.
      *
      * The precise race (a click landing at an exact moment inside teardown) is
      * pinned at the handler level in `runner-lifecycle.test.ts`, where the
@@ -207,25 +213,42 @@ uiTest.describe('tester findings, 5 August (1.5.0-rc3)', () => {
 
     // Press Stop while the slow main request is still on the wire.
     const stop = window.getByTestId('runner-stop')
+    const direct = window.getByTestId('runner-stop-direct')
     await expect(stop).toBeVisible({ timeout: 15_000 })
     await expect(stop).toHaveText('Stop')
     await stop.click()
 
     /*
-     * Once cleanup starts, the same position is a DIFFERENT action and says so.
-     * This is the assertion the old behaviour cannot satisfy: it kept saying
-     * "Stop" while quietly meaning "abandon cleanup".
-     *
-     * Do NOT click again here. An earlier version of this test pressed Stop a
-     * second time to act out the impatient user — and on CI that click landed
-     * on the button this line is about to assert, skipped the cleanup, ended
-     * the run and removed the button. The fix had worked; the test had
-     * invalidated its own premise. The impatience is what the LABEL protects
-     * against, so checking the label is the whole point.
+     * Wait for cleanup to be visibly running rather than guessing when it
+     * starts. Abandoning cleanup lives on the OTHER button, and only renames
+     * itself once there is cleanup to abandon.
      */
-    await expect(stop).toHaveText('Skip teardown', { timeout: 20_000 })
+    await expect(direct).toHaveText('Skip teardown', { timeout: 20_000 })
 
-    // We never pressed it, so every cleanup step runs.
+    /*
+     * THE assertion. Two things must hold at this instant, and between them no
+     * amount of clicking the left button can lose the cleanup:
+     *
+     *   - it has not become the destructive action (the rename lives on the
+     *     right button), and
+     *   - it is inert, because the flow it ends is already over.
+     *
+     * Removing either one reopens issue #84: the first lets a stray click mean
+     * "abandon cleanup", the second lets a click retry wait for the button to
+     * re-enable and then press it.
+     */
+    await expect(stop).not.toHaveText('Skip teardown')
+    await expect(stop).toBeDisabled()
+
+    // The impatient user, for real: forced clicks straight at the safe button,
+    // inside the teardown phase, where the old bug lived. The first cleanup
+    // step is `/delay/5`, so there is room.
+    for (let i = 0; i < 5; i++) {
+      await stop.click({ force: true }).catch(() => {})
+    }
+
+    // Every cleanup step still runs, despite six presses of Stop straddling the
+    // phase boundary.
     await waitRunnerTabComplete(window)
     const list = window.getByTestId('runner-results-list')
     await expect(list).toContainText(cleanup1)

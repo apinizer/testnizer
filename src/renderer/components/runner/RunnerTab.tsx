@@ -1071,14 +1071,17 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   /**
    * Graceful Stop (issue #91): end the flow, let cleanup finish.
    *
-   * Once cleanup is visibly running there is no flow left to end, so the same
-   * control becomes the hard stop — that is the "Skip teardown" case, and it is
-   * why this one function serves both: the button says which it is.
+   * Note what this does NOT read: `inTeardown`. An earlier version escalated to
+   * a hard stop once cleanup had begun, which put a destructive action behind
+   * the safe button partway through the run — the exact inference issue #84
+   * removed from the main process, smuggled back into the renderer. Intent
+   * comes from WHICH button was pressed and from nothing else, so this one can
+   * be pressed any number of times, at any moment, and cleanup still completes.
    */
   const handleStop = useCallback(() => {
-    setStopRequested(inTeardown ? 'direct' : 'graceful')
-    window.api?.runner?.stop({ mode: inTeardown ? 'direct' : 'graceful' })
-  }, [inTeardown])
+    setStopRequested('graceful')
+    window.api?.runner?.stop({ mode: 'graceful' })
+  }, [])
 
   /**
    * Direct Stop: nothing after this click runs — the request on the wire is

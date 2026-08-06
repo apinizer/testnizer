@@ -66,14 +66,19 @@ describe('the run-in-progress Stop button', () => {
     expect(screen.getByTestId('runner-stop').getAttribute('title')).toMatch(/cleanup still runs/i)
   })
 
-  it('becomes "Skip teardown" once cleanup is running', () => {
+  it('NEVER becomes the destructive action, however far the run has got', () => {
+    // The property that makes mashing Stop safe. An earlier version renamed
+    // THIS button to "Skip teardown" once cleanup began, which put a
+    // destructive action where the safe one had been — the inference issue #84
+    // removed from main, smuggled back in as geometry.
     renderRunning({ inTeardown: true })
-    expect(screen.getByTestId('runner-stop')).toHaveTextContent('Skip teardown')
+    expect(screen.getByTestId('runner-stop')).not.toHaveTextContent('Skip teardown')
+    expect(screen.getByTestId('runner-stop')).toBeDisabled()
   })
 
-  it('says what skipping means, so it is not pressed by reflex', () => {
+  it('says why it has nothing left to do during cleanup', () => {
     renderRunning({ inTeardown: true })
-    expect(screen.getByTestId('runner-stop').getAttribute('title')).toMatch(/abandon/i)
+    expect(screen.getByTestId('runner-stop').getAttribute('title')).toMatch(/will finish/i)
   })
 
   it('tells the user the run has moved on to cleanup', () => {
@@ -83,17 +88,11 @@ describe('the run-in-progress Stop button', () => {
     expect(screen.getByText(/Cleaning up/i)).toBeTruthy()
   })
 
-  it('still calls back on click in both modes', () => {
+  it('calls back on click during the flow', () => {
     const flow = vi.fn()
     renderRunning({ onStop: flow })
     fireEvent.click(screen.getByTestId('runner-stop'))
     expect(flow).toHaveBeenCalledTimes(1)
-    cleanup()
-
-    const teardown = vi.fn()
-    renderRunning({ inTeardown: true, onStop: teardown })
-    fireEvent.click(screen.getByTestId('runner-stop'))
-    expect(teardown).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -131,12 +130,18 @@ describe('the "Stop now" button', () => {
     expect(title).toMatch(/cleanup/i)
   })
 
-  it('disappears during cleanup, where Stop already means the same thing', () => {
-    // Two controls doing one thing is the ambiguity this change removes; the
-    // remaining button says "Skip teardown" and does the hard stop.
+  it('becomes "Skip teardown" during cleanup — same action, same place', () => {
+    // Once cleanup is the only phase left, abandoning it IS the hard stop, so
+    // the rename stays on THIS button. Renaming the safe one instead is what
+    // let a stray click lose the cleanup.
     renderRunning({ inTeardown: true })
-    expect(screen.queryByTestId('runner-stop-direct')).toBeNull()
-    expect(screen.getByTestId('runner-stop')).toHaveTextContent('Skip teardown')
+    expect(screen.getByTestId('runner-stop-direct')).toHaveTextContent('Skip teardown')
+    expect(screen.getByTestId('runner-stop-direct')).not.toBeDisabled()
+  })
+
+  it('says what skipping means, so it is not pressed by reflex', () => {
+    renderRunning({ inTeardown: true })
+    expect(screen.getByTestId('runner-stop-direct').getAttribute('title')).toMatch(/abandon/i)
   })
 
   it('acknowledges the click, because a graceful stop cannot show its work', () => {
@@ -156,12 +161,36 @@ describe('the "Stop now" button', () => {
     expect(screen.getByTestId('runner-stop-direct')).toBeDisabled()
   })
 
-  it('keeps "Skip teardown" clickable after a graceful stop', () => {
+  it('stays available after a graceful stop', () => {
     // Having asked for a graceful stop must not lock the user out of changing
     // their mind once cleanup turns out to be the thing that is hanging.
     renderRunning({ stopRequested: 'graceful', inTeardown: true })
-    const stop = screen.getByTestId('runner-stop')
-    expect(stop).toHaveTextContent('Skip teardown')
-    expect(stop).not.toBeDisabled()
+    const direct = screen.getByTestId('runner-stop-direct')
+    expect(direct).toHaveTextContent('Skip teardown')
+    expect(direct).not.toBeDisabled()
+  })
+
+  it('is the ONLY control that can lose cleanup — at any point in the run', () => {
+    /*
+     * The invariant, stated as one test: whatever the run is doing, clicking
+     * the SAFE button never reaches the destructive handler.
+     *
+     * Two mechanisms hold it up, and they are checked separately elsewhere:
+     * during the flow the safe button is wired to the graceful handler, and
+     * during cleanup it is disabled outright (see "NEVER becomes the
+     * destructive action"). This test is about the outcome of both.
+     */
+    for (const phase of [{}, { inTeardown: true }]) {
+      const graceful = vi.fn()
+      const direct = vi.fn()
+      renderRunning({ ...phase, onStop: graceful, onStopDirect: direct })
+      const stop = screen.getByTestId('runner-stop')
+      for (let i = 0; i < 5; i++) fireEvent.click(stop)
+      expect(direct).not.toHaveBeenCalled()
+      // During the flow the clicks must actually land — otherwise this test
+      // would also "pass" on a Stop button that simply did nothing.
+      if (!('inTeardown' in phase)) expect(graceful).toHaveBeenCalledTimes(5)
+      cleanup()
+    }
   })
 })
