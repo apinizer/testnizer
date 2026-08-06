@@ -87,6 +87,20 @@ export interface RunnerExecuteOptions {
   /** Delay in milliseconds inserted between requests. */
   delay?: number
   /**
+   * Extra delay in milliseconds inserted BETWEEN ITERATIONS — after a full
+   * iteration finishes and before the next one starts (issue #89).
+   *
+   * Separate from `delay` on purpose: `delay` is a per-request pause and
+   * already applies at the iteration boundary too (it follows the last request
+   * of the iteration), so a user who wants "wait a minute between runs of this
+   * flow, but keep requests snappy" could not express that with one field. The
+   * two compose: an iteration boundary waits `delay + iterationDelay`.
+   *
+   * Not applied after the LAST iteration — nothing follows it, and trailing
+   * dead time at the end of a run is pure latency.
+   */
+  iterationDelay?: number
+  /**
    * Number of iterations. When `iterationData` is supplied, this is overridden
    * by `iterationData.length`. Defaults to 1.
    */
@@ -164,17 +178,42 @@ export interface RunnerProgress {
 }
 
 /**
- * 'setupFailed'      — a run-level setup step failed, so the flow was skipped.
- * 'stopOnError'      — a flow request failed and the run was configured to halt.
- * 'cancelled'        — the user pressed Stop.
- * 'teardownAborted'  — a SECOND Stop cut cleanup short as well.
+ * 'setupFailed'        — a run-level setup step failed, so the flow was skipped.
+ * 'stopOnError'        — a flow request failed and the run was configured to halt.
+ * 'cancelled'          — the user pressed Stop (graceful: cleanup still ran).
+ * 'teardownAborted'    — cleanup was cut short after it had already begun.
+ * 'stoppedImmediately' — the user pressed Stop now: the request on the wire was
+ *                        aborted and nothing after the click executed, cleanup
+ *                        included (issue #91).
  *
  * `setupFailed` is distinct from `stopOnError` on purpose: a failed setup skips
  * the flow whether or not "Stop run if an error occurs" is checked, so reusing
  * the stopOnError message would tell the user their checkbox did something it
- * did not do.
+ * did not do. `stoppedImmediately` is likewise distinct from `teardownAborted`:
+ * one says "you asked for a hard halt", the other says "cleanup was already
+ * running and you abandoned the rest of it".
  */
-export type RunStopReason = 'setupFailed' | 'stopOnError' | 'cancelled' | 'teardownAborted'
+export type RunStopReason =
+  | 'setupFailed'
+  | 'stopOnError'
+  | 'cancelled'
+  | 'teardownAborted'
+  | 'stoppedImmediately'
+
+/**
+ * How a manual Stop behaves (issue #91).
+ *
+ * 'graceful' — end the flow, but run every teardown request and the run
+ *              teardown script. The safe abort: whatever the run created still
+ *              gets cleaned up.
+ * 'direct'   — hard halt. Aborts the request currently on the wire and runs
+ *              NOTHING after the click, cleanup included.
+ *
+ * Two modes rather than one, because the single Stop had to guess which one the
+ * user meant and guessed from timing — see RunState.abortTeardown in
+ * runner.handler.ts for how that misfired.
+ */
+export type RunStopMode = 'graceful' | 'direct'
 
 export interface RunnerReport {
   projectId: string

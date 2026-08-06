@@ -138,6 +138,7 @@ describe('buildExecutePayload', () => {
   it('carries every run setting through to the payload', () => {
     const settings: RunSettings = {
       delay: 250,
+      iterationDelay: 750,
       iterations: 3,
       stopOnError: false,
       persistResponses: false,
@@ -163,6 +164,26 @@ describe('RunnerTab → runner:execute payload', () => {
       persistResponses: true,
       keepVariableValues: true,
     })
+  })
+
+  it('sends the delay between iterations the user typed (issue #89)', async () => {
+    render(<Workbench />)
+    act(() => {
+      openFolderRunner('folder-a', 'Folder A')
+    })
+
+    const field = (await screen.findByTestId('runner-iteration-delay')) as HTMLInputElement
+    fireEvent.change(field, { target: { value: '2500' } })
+    fireEvent.blur(field)
+    fireEvent.click(await screen.findByTestId('runner-start'))
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(1))
+
+    // Same class as the stopOnError bug this file exists for: the field can
+    // look right on screen and still never reach the run.
+    const payload = execute.mock.calls[0][0] as RunnerExecuteOptions
+    expect(payload.iterationDelay).toBe(2500)
+    // …and it must not have been mistaken for the per-request delay.
+    expect(payload.delay).toBe(RUNNER_DEFAULTS.delay)
   })
 
   it('sends stopOnError:false when the user unchecks it', async () => {

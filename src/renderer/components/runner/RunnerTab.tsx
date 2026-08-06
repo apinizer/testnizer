@@ -60,7 +60,21 @@ export interface RunnerEndpointItem {
 
 export interface RunnerFolderGroup {
   folderId: string
+  /** Full path ("Module / Auth"), used when the sequence is rendered flat. */
   folderName: string
+  /**
+   * Leaf name only — what a tree row shows (issue #90). Rendering the full path
+   * on every level is what made a nested suite read as a flat list of
+   * lookalike labels.
+   */
+  label: string
+  /**
+   * Parent folder id, or null at the root. Without this the groups were a flat
+   * array whose only clue to the hierarchy was a " / "-joined string, so the
+   * structure could be printed but not walked — no expand/collapse, and no way
+   * to apply a role to a folder AND everything beneath it.
+   */
+  parentId: string | null
   endpoints: RunnerEndpointItem[]
 }
 
@@ -85,11 +99,20 @@ function collectEndpointsFromNode(node: TreeNode): RunnerEndpointItem[] {
   return result
 }
 
-/** Recursively collect folder groups — each folder becomes its own group with full path */
+/**
+ * Recursively collect folder groups — one group per folder, carrying its parent
+ * so the sequence can be rendered as the tree the user organised (issue #90).
+ *
+ * Folders with no DIRECT requests are collected too, even though they produce
+ * no rows themselves: dropping them broke the parent chain, and a child folder
+ * whose parent is missing cannot be placed. The sequence prunes branches that
+ * hold no requests at all at render time, where it can see the whole subtree.
+ */
 function collectFolderGroupsFromNode(
   node: TreeNode,
   groups: RunnerFolderGroup[],
   parentPath?: string,
+  parentId: string | null = null,
 ): void {
   if (!node.children) return
   const fullName = parentPath ? `${parentPath} / ${node.label}` : node.label
@@ -105,12 +128,16 @@ function collectFolderGroupsFromNode(
       })
     }
   }
-  if (directEps.length > 0) {
-    groups.push({ folderId: node.id, folderName: fullName, endpoints: directEps })
-  }
+  groups.push({
+    folderId: node.id,
+    folderName: fullName,
+    label: node.label,
+    parentId,
+    endpoints: directEps,
+  })
   for (const child of node.children) {
     if (child.type === 'folder' || child.type === 'module') {
-      collectFolderGroupsFromNode(child, groups, fullName)
+      collectFolderGroupsFromNode(child, groups, fullName, node.id)
     }
   }
 }
@@ -273,6 +300,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // hoisting them into the global store would make two open runner tabs share
   // one set of checkboxes. Only the defaults are shared — see runner-payload.
   const [delay, setDelay] = useState(RUNNER_DEFAULTS.delay)
+  const [iterationDelay, setIterationDelay] = useState(RUNNER_DEFAULTS.iterationDelay)
   const [iterations, setIterations] = useState(RUNNER_DEFAULTS.iterations)
   const [iterationData, setIterationData] = useState<Record<string, string>[]>([])
   const [environmentId, setEnvironmentId] = useState('')
@@ -302,6 +330,16 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [isRunning, setIsRunning] = useState(false)
   /** Cleanup has begun — signalled by main, since a finished-step tick can't say so. */
   const [teardownStarted, setTeardownStarted] = useState(false)
+  /**
+   * Which stop the user has asked for, if any (issue #91).
+   *
+   * Purely so the click leaves a mark. A graceful Stop cannot interrupt the
+   * request already on the wire, so for up to a request's worth of time the
+   * screen looked exactly as it did before the click — and "the Stop button
+   * does nothing" is precisely how the bug was reported. The buttons read
+   * "Stopping…" / "Halting…" from here.
+   */
+  const [stopRequested, setStopRequested] = useState<'graceful' | 'direct' | null>(null)
   // Publish it so a second "Run" on this folder focuses the live run instead of
   // remounting the tab out from under it (see runner-activity.ts).
   useEffect(() => {
@@ -601,18 +639,33 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       setRunOrigin(origin)
 
       window.api?.runner
-        ?.execute({
-          projectId: activeProjectId || '',
-          endpointIds: matched.map((ep) => ep.id),
-          environmentId: environmentId || undefined,
-          workspaceId: activeWorkspaceId || undefined,
-          delay,
-          iterations,
-          iterationData: iterationData.length > 0 ? iterationData : undefined,
-          folderName: pending.folderName || runFolderName || undefined,
-          sourceLabel,
-          keepVariableValues,
-        })
+        ?.execute(
+          // Quick Run is the THIRD caller of `runner:execute`, and it was still
+          // assembling its payload by hand — dropping `stopOnError` and
+          // `persistResponses` exactly as the runner tab used to. Going through
+          // the shared builder makes every future run setting a compile error
+          // here too, which is the only thing that stops this recurring.
+          buildExecutePayload(
+            {
+              projectId: activeProjectId || '',
+              endpointIds: matched.map((ep) => ep.id),
+              environmentId: environmentId || undefined,
+              workspaceId: activeWorkspaceId || undefined,
+              iterationData: iterationData.length > 0 ? iterationData : undefined,
+              folderName: pending.folderName || runFolderName || undefined,
+              sourceLabel,
+              runTabId: tabId,
+            },
+            {
+              delay,
+              iterationDelay,
+              iterations,
+              stopOnError,
+              persistResponses,
+              keepVariableValues,
+            },
+          ),
+        )
         .then(async (result: unknown) => {
           const res = result as { success: boolean; data?: RunnerReport }
           if (res?.success && res.data) {
@@ -634,11 +687,15 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     activeWorkspaceId,
     environmentId,
     delay,
+    iterationDelay,
     iterations,
     iterationData,
     runFolderName,
     folderId,
     keepVariableValues,
+    stopOnError,
+    persistResponses,
+    tabId,
   ])
 
   // Collect endpoints and folder groups from the target folder/module.
@@ -674,7 +731,15 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         setFolderGroups(
           groups.length > 0
             ? groups
-            : [{ folderId: node.id, folderName: node.label, endpoints: eps }],
+            : [
+                {
+                  folderId: node.id,
+                  folderName: node.label,
+                  label: node.label,
+                  parentId: null,
+                  endpoints: eps,
+                },
+              ],
         )
       }
     }
@@ -698,7 +763,10 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           url: string | null
           folder_id: string | null
         }>
-        folders: Array<{ id: string; name: string }>
+        // `parent_id` has always been in the row (suite folders nest); the
+        // runner simply never read it, which is why a two-level suite arrived
+        // here as one flat level of groups (issue #90).
+        folders: Array<{ id: string; name: string; parent_id?: string | null }>
       }
 
       const toRunnerItem = (it: (typeof items)[number]): RunnerEndpointItem => ({
@@ -712,20 +780,35 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       setEndpoints(items.map(toRunnerItem))
 
       if (folders.length > 0) {
-        const folderById = new Map(folders.map((f) => [f.id, f.name]))
-        const groups: RunnerFolderGroup[] = []
-        const groupByFolderId = new Map<string | 'root', RunnerFolderGroup>()
-        for (const it of items) {
-          const key = it.folder_id ?? 'root'
-          const folderName =
-            key === 'root' ? runFolderName || 'Suite' : folderById.get(it.folder_id!) || 'Folder'
-          let group = groupByFolderId.get(key)
-          if (!group) {
-            group = { folderId: String(key), folderName, endpoints: [] }
-            groupByFolderId.set(key, group)
-            groups.push(group)
+        // One group per suite folder — including empty ones, so a nested
+        // folder's parent chain stays intact. Items at the suite root get no
+        // group at all and render at the top level of the sequence, which is
+        // where they live in the Tests sidebar.
+        const byId = new Map(folders.map((f) => [f.id, f]))
+        const pathOf = (id: string): string => {
+          const parts: string[] = []
+          const seen = new Set<string>()
+          let cur: string | null | undefined = id
+          while (cur && !seen.has(cur)) {
+            seen.add(cur)
+            const f = byId.get(cur)
+            if (!f) break
+            parts.unshift(f.name)
+            cur = f.parent_id ?? null
           }
-          group.endpoints.push(toRunnerItem(it))
+          return parts.join(' / ')
+        }
+        const groups: RunnerFolderGroup[] = folders.map((f) => ({
+          folderId: f.id,
+          folderName: pathOf(f.id),
+          label: f.name,
+          parentId: f.parent_id ?? null,
+          endpoints: [],
+        }))
+        const groupById = new Map(groups.map((g) => [g.folderId, g]))
+        for (const it of items) {
+          if (!it.folder_id) continue
+          groupById.get(it.folder_id)?.endpoints.push(toRunnerItem(it))
         }
         setFolderGroups(groups)
       } else {
@@ -785,6 +868,74 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     setFolderGroups((groups) => groups.map((g) => ({ ...g, endpoints: g.endpoints.map(apply) })))
   }, [])
 
+  /**
+   * Every request id at or below `folderId`, including nested folders.
+   *
+   * Folder-level roles and the folder checkbox both need it (issue #90): a role
+   * on a folder that skipped its subfolders would be a trap — the folder reads
+   * "Teardown" while half the requests inside it still run in the flow.
+   */
+  const collectFolderEndpointIds = useCallback(
+    (folderId: string, groups: RunnerFolderGroup[]): Set<string> => {
+      const childrenOf = new Map<string, RunnerFolderGroup[]>()
+      for (const g of groups) {
+        const key = g.parentId ?? '__root__'
+        const list = childrenOf.get(key)
+        if (list) list.push(g)
+        else childrenOf.set(key, [g])
+      }
+      const ids = new Set<string>()
+      // Iterative walk with a visited set: `parentId` comes from a DB column,
+      // and a cycle there must not hang the UI.
+      const queue = groups.filter((g) => g.folderId === folderId)
+      const visited = new Set<string>()
+      while (queue.length > 0) {
+        const g = queue.shift()!
+        if (visited.has(g.folderId)) continue
+        visited.add(g.folderId)
+        for (const ep of g.endpoints) ids.add(ep.id)
+        queue.push(...(childrenOf.get(g.folderId) ?? []))
+      }
+      return ids
+    },
+    [],
+  )
+
+  /**
+   * Apply a patch to every request at or below a folder, in BOTH stores.
+   *
+   * The flat `endpoints` list is what actually runs (`handleRun` splits from
+   * it) and `folderGroups` is what the sequence draws, so a folder-level action
+   * that touched only one of them would show a role the run then ignored.
+   *
+   * The id set is resolved from the `folderGroups` in scope rather than inside
+   * a `setState` updater — an updater must stay pure, and React may invoke it
+   * more than once.
+   */
+  const patchFolder = useCallback(
+    (folderId: string, patch: Partial<RunnerEndpointItem>) => {
+      const ids = collectFolderEndpointIds(folderId, folderGroups)
+      if (ids.size === 0) return
+      const apply = (ep: RunnerEndpointItem): RunnerEndpointItem =>
+        ids.has(ep.id) ? { ...ep, ...patch } : ep
+      setEndpoints((eps) => eps.map(apply))
+      setFolderGroups((groups) => groups.map((g) => ({ ...g, endpoints: g.endpoints.map(apply) })))
+    },
+    [collectFolderEndpointIds, folderGroups],
+  )
+
+  /** Apply a lifecycle role to a whole folder — subfolders included (issue #90). */
+  const setFolderPhase = useCallback(
+    (folderId: string, phase: RunPhase) => patchFolder(folderId, { phase }),
+    [patchFolder],
+  )
+
+  /** Select / deselect a folder and everything beneath it. */
+  const toggleFolder = useCallback(
+    (folderId: string, selected: boolean) => patchFolder(folderId, { selected }),
+    [patchFolder],
+  )
+
   /** Split the selection into the three run phases. Order inside each phase
    *  follows the sequence list; the run order is always setup → flow → teardown. */
   const splitByPhase = useCallback((items: RunnerEndpointItem[]) => {
@@ -820,6 +971,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     setRunStartedAt(Date.now())
     setSelectedResultId(null)
     setTeardownStarted(false)
+    setStopRequested(null)
 
     const unsubscribe = window.api?.runner?.onProgress?.((progress: unknown) => {
       const p = progress as { current: number; total: number; result: EndpointRunResult }
@@ -860,7 +1012,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             sourceLabel,
             runTabId: tabId,
           },
-          { delay, iterations, stopOnError, persistResponses, keepVariableValues },
+          { delay, iterationDelay, iterations, stopOnError, persistResponses, keepVariableValues },
         ),
       )
 
@@ -885,6 +1037,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     activeWorkspaceId,
     environmentId,
     delay,
+    iterationDelay,
     iterations,
     iterationData,
     runFolderName,
@@ -915,9 +1068,27 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     [teardownStarted, results],
   )
 
+  /**
+   * Graceful Stop (issue #91): end the flow, let cleanup finish.
+   *
+   * Once cleanup is visibly running there is no flow left to end, so the same
+   * control becomes the hard stop — that is the "Skip teardown" case, and it is
+   * why this one function serves both: the button says which it is.
+   */
   const handleStop = useCallback(() => {
-    window.api?.runner?.stop(inTeardown ? { skipTeardown: true } : undefined)
+    setStopRequested(inTeardown ? 'direct' : 'graceful')
+    window.api?.runner?.stop({ mode: inTeardown ? 'direct' : 'graceful' })
   }, [inTeardown])
+
+  /**
+   * Direct Stop: nothing after this click runs — the request on the wire is
+   * aborted, cleanup is abandoned. Deliberately a SEPARATE button from Stop;
+   * the old single control had to guess which of the two the user meant.
+   */
+  const handleStopDirect = useCallback(() => {
+    setStopRequested('direct')
+    window.api?.runner?.stop({ mode: 'direct' })
+  }, [])
 
   const handleNewRun = useCallback((mode?: 'manual' | 'schedule' | unknown) => {
     // Defensive guard: this callback is wired to several <button onClick>
@@ -1065,6 +1236,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 onDeselectAll={deselectAll}
                 onReset={selectAll}
                 onSetPhase={setEndpointPhase}
+                onSetFolderPhase={setFolderPhase}
+                onToggleFolder={toggleFolder}
                 onReorder={
                   suiteIdForRunner
                     ? async (draggedId, insertBeforeId) => {
@@ -1090,6 +1263,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
               <RunnerConfig
                 delay={delay}
                 setDelay={setDelay}
+                iterationDelay={iterationDelay}
+                setIterationDelay={setIterationDelay}
                 iterations={iterations}
                 setIterations={setIterations}
                 environmentId={environmentId}
@@ -1129,7 +1304,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             runStartedAt={runStartedAt}
             sourceLabel={runSourceLabel}
             onStop={handleStop}
+            onStopDirect={handleStopDirect}
             inTeardown={inTeardown}
+            stopRequested={stopRequested}
             onNewRun={handleNewRun}
             onRunAgain={handleRun}
             onViewAllRuns={handleViewAllRuns}

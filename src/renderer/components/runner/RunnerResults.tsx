@@ -5,9 +5,30 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import { endpointDidPass, isSkippedStep } from '../../../shared/runner-verdict'
 import { summarizeRun, statusBadge, SYNTHETIC_STATUS } from '../../../shared/runner-summary'
+import type { RunStopReason } from '../../../shared/runner-types'
 import { useTranslation } from '../../lib/i18n'
 
 type FilterTab = 'all' | 'passed' | 'failed' | 'skipped' | 'errors' | 'console'
+
+/**
+ * Why the run ended early, as a message.
+ *
+ * An exhaustive map rather than a ternary chain: the chain it replaces fell
+ * through to "Stopped by you — teardown still ran" for `setupFailed`, so a run
+ * that nobody stopped told the user they had stopped it. `Record<RunStopReason,
+ * …>` makes the next reason a compile error instead of a wrong sentence.
+ */
+const STOP_REASON_KEY: Record<RunStopReason, string> = {
+  setupFailed: 'runLifecycle.stoppedSetupFailed',
+  stopOnError: 'runLifecycle.stoppedOnError',
+  cancelled: 'runLifecycle.stoppedCancelled',
+  teardownAborted: 'runLifecycle.stoppedTeardownAborted',
+  stoppedImmediately: 'runLifecycle.stoppedImmediately',
+}
+
+function stopReasonKey(reason: RunStopReason): string {
+  return STOP_REASON_KEY[reason] ?? 'runLifecycle.stoppedCancelled'
+}
 
 /** Script console output, coloured by level (matches the app's Console tab). */
 const CONSOLE_LEVEL_COLOR: Record<'log' | 'warn' | 'error', string> = {
@@ -32,7 +53,15 @@ interface RunnerResultsProps {
   totalCount: number
   runStartedAt: number | null
   sourceLabel?: string
+  /** Graceful stop: end the flow, let every teardown step and script finish. */
   onStop: () => void
+  /**
+   * Hard stop (issue #91): abort the request on the wire and run nothing after
+   * the click, cleanup included. A separate button rather than a second meaning
+   * for Stop — the single control had to infer which one the user wanted, and
+   * inferred it from timing.
+   */
+  onStopDirect?: () => void
   /**
    * The run has reached cleanup. Stop then means something different — the
    * flow is already over, so the only thing left to abandon is the teardown —
@@ -40,6 +69,10 @@ interface RunnerResultsProps {
    * deliberate skip and the run finishing cleanup normally.
    */
   inTeardown?: boolean
+  /** A stop has been requested — the buttons say so, since a graceful stop
+   *  cannot interrupt the request already on the wire and otherwise looks
+   *  ignored for as long as that request takes. */
+  stopRequested?: 'graceful' | 'direct' | null
   onNewRun: () => void
   onRunAgain: () => void
   onViewAllRuns: () => void
@@ -60,7 +93,9 @@ export default function RunnerResults({
   runStartedAt,
   sourceLabel,
   onStop,
+  onStopDirect,
   inTeardown = false,
+  stopRequested = null,
   onNewRun,
   onRunAgain,
   onViewAllRuns,
@@ -232,20 +267,66 @@ export default function RunnerResults({
                   ? `Cleaning up — ${currentIndex} of ${totalCount}...`
                   : `Running ${currentIndex} of ${totalCount}...`}
               </span>
-              <button
-                type="button"
-                onClick={onStop}
-                data-testid="runner-stop"
-                title={
-                  inTeardown
-                    ? 'Abandon the remaining cleanup steps'
-                    : 'End the run — cleanup still runs'
-                }
-                className="cursor-pointer rounded-[5px] border border-[#cc2200] bg-transparent px-3 py-1"
-                style={{ fontSize: 13, fontWeight: 500, color: '#cc2200' }}
-              >
-                {inTeardown ? 'Skip teardown' : 'Stop'}
-              </button>
+              {/*
+                Two stops, not one control that changes its mind (issue #91).
+                Stop is the safe abort — the flow ends, cleanup still runs — and
+                during cleanup it is the only thing left to abandon, so it says
+                "Skip teardown" there. "Stop now" is the hard halt: it aborts
+                the request on the wire and runs nothing afterwards.
+
+                Both report the click immediately. A graceful stop deliberately
+                lets the in-flight request finish, so without this the screen is
+                unchanged for as long as that request takes — which is exactly
+                how "Stop does not work" got reported.
+              */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={onStop}
+                  data-testid="runner-stop"
+                  disabled={stopRequested === 'graceful' && !inTeardown}
+                  title={
+                    inTeardown
+                      ? 'Abandon cleanup — including the step currently running'
+                      : 'End the run — cleanup still runs (every teardown request and script)'
+                  }
+                  className="rounded-[5px] border border-[#cc2200] bg-transparent px-3 py-1 disabled:cursor-default disabled:opacity-60"
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: '#cc2200',
+                    cursor: stopRequested === 'graceful' && !inTeardown ? 'default' : 'pointer',
+                  }}
+                >
+                  {inTeardown
+                    ? 'Skip teardown'
+                    : stopRequested === 'graceful'
+                      ? 'Stopping…'
+                      : 'Stop'}
+                </button>
+                {/* Hidden during cleanup: there it would be the same action as
+                    the button beside it, and two controls doing one thing is
+                    how the original ambiguity started. */}
+                {onStopDirect && !inTeardown && (
+                  <button
+                    type="button"
+                    onClick={onStopDirect}
+                    data-testid="runner-stop-direct"
+                    disabled={stopRequested === 'direct'}
+                    title="Halt now — abort the request in flight and skip all remaining steps, cleanup included"
+                    className="rounded-[5px] border border-[#cc2200] px-3 py-1 disabled:cursor-default disabled:opacity-60"
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: '#ffffff',
+                      background: '#cc2200',
+                      cursor: stopRequested === 'direct' ? 'default' : 'pointer',
+                    }}
+                  >
+                    {stopRequested === 'direct' ? 'Halting…' : 'Stop now'}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="h-1 overflow-hidden rounded-full bg-[var(--border)]">
               <div
@@ -312,11 +393,7 @@ export default function RunnerResults({
               <div className="mb-3 flex flex-wrap items-center gap-2" style={{ fontSize: 12 }}>
                 {report?.stopReason && (
                   <span style={{ color: 'var(--muted)' }}>
-                    {report.stopReason === 'stopOnError'
-                      ? t('runLifecycle.stoppedOnError')
-                      : report.stopReason === 'teardownAborted'
-                        ? t('runLifecycle.stoppedTeardownAborted')
-                        : t('runLifecycle.stoppedCancelled')}
+                    {t(stopReasonKey(report.stopReason))}
                   </span>
                 )}
                 {teardownFailedCount > 0 && (

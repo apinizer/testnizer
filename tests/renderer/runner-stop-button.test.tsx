@@ -23,7 +23,12 @@ import RunnerResults from '../../src/renderer/components/runner/RunnerResults'
 
 const noop = () => {}
 
-function renderRunning(opts: { inTeardown?: boolean; onStop?: () => void }) {
+function renderRunning(opts: {
+  inTeardown?: boolean
+  onStop?: () => void
+  onStopDirect?: () => void
+  stopRequested?: 'graceful' | 'direct' | null
+}) {
   const results: EndpointRunResult[] = []
   return render(
     <RunnerResults
@@ -35,6 +40,8 @@ function renderRunning(opts: { inTeardown?: boolean; onStop?: () => void }) {
       runStartedAt={Date.now()}
       sourceLabel="Runner"
       onStop={opts.onStop ?? noop}
+      onStopDirect={opts.onStopDirect ?? noop}
+      stopRequested={opts.stopRequested ?? null}
       inTeardown={opts.inTeardown}
       onNewRun={noop}
       onRunAgain={noop}
@@ -87,5 +94,74 @@ describe('the run-in-progress Stop button', () => {
     renderRunning({ inTeardown: true, onStop: teardown })
     fireEvent.click(screen.getByTestId('runner-stop'))
     expect(teardown).toHaveBeenCalledTimes(1)
+  })
+})
+
+/*
+ * Issue #91 asked for the two intentions to become two controls. The tests
+ * above pin that Stop labels itself honestly; these pin that the hard stop
+ * exists as its own button and is never what a plain Stop does.
+ */
+describe('the "Stop now" button', () => {
+  it('sits beside Stop during the flow', () => {
+    renderRunning({})
+    expect(screen.getByTestId('runner-stop-direct')).toHaveTextContent('Stop now')
+    expect(screen.getByTestId('runner-stop')).toHaveTextContent('Stop')
+  })
+
+  it('is a DIFFERENT callback from Stop — the whole point of splitting them', () => {
+    const graceful = vi.fn()
+    const direct = vi.fn()
+    renderRunning({ onStop: graceful, onStopDirect: direct })
+
+    fireEvent.click(screen.getByTestId('runner-stop'))
+    expect(graceful).toHaveBeenCalledTimes(1)
+    expect(direct).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('runner-stop-direct'))
+    expect(direct).toHaveBeenCalledTimes(1)
+    // Pressing the hard stop must not also be counted as a graceful one.
+    expect(graceful).toHaveBeenCalledTimes(1)
+  })
+
+  it('says it halts everything, so it is not pressed by reflex', () => {
+    renderRunning({})
+    const title = screen.getByTestId('runner-stop-direct').getAttribute('title') ?? ''
+    expect(title).toMatch(/halt/i)
+    expect(title).toMatch(/cleanup/i)
+  })
+
+  it('disappears during cleanup, where Stop already means the same thing', () => {
+    // Two controls doing one thing is the ambiguity this change removes; the
+    // remaining button says "Skip teardown" and does the hard stop.
+    renderRunning({ inTeardown: true })
+    expect(screen.queryByTestId('runner-stop-direct')).toBeNull()
+    expect(screen.getByTestId('runner-stop')).toHaveTextContent('Skip teardown')
+  })
+
+  it('acknowledges the click, because a graceful stop cannot show its work', () => {
+    // The reported symptom: Stop appears to do nothing, so the user clicks
+    // again — and under the old inference that second click killed cleanup.
+    // The flow request in flight is deliberately allowed to finish, so the only
+    // honest feedback available is the button itself.
+    renderRunning({ stopRequested: 'graceful' })
+    const stop = screen.getByTestId('runner-stop')
+    expect(stop).toHaveTextContent('Stopping…')
+    expect(stop).toBeDisabled()
+  })
+
+  it('acknowledges a hard stop too', () => {
+    renderRunning({ stopRequested: 'direct' })
+    expect(screen.getByTestId('runner-stop-direct')).toHaveTextContent('Halting…')
+    expect(screen.getByTestId('runner-stop-direct')).toBeDisabled()
+  })
+
+  it('keeps "Skip teardown" clickable after a graceful stop', () => {
+    // Having asked for a graceful stop must not lock the user out of changing
+    // their mind once cleanup turns out to be the thing that is hanging.
+    renderRunning({ stopRequested: 'graceful', inTeardown: true })
+    const stop = screen.getByTestId('runner-stop')
+    expect(stop).toHaveTextContent('Skip teardown')
+    expect(stop).not.toBeDisabled()
   })
 })

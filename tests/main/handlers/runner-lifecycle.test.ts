@@ -407,14 +407,23 @@ describe('run lifecycle — guaranteed teardown', () => {
     })
 
     expect(res.success).toBe(true)
-    // The first cleanup ran; the SECOND was abandoned — and now says so, instead
-    // of vanishing from the report.
+    // The server saw the first cleanup request; the SECOND never left — and now
+    // says so, instead of vanishing from the report.
     expect(received).toEqual(['/main', '/stopTeardown'])
     const rows = teardownRows(res)
     expect(rows.length).toBe(2)
-    expect(rows[0].skipped).toBe(0)
+    // BEHAVIOUR CHANGE (issue #91): skipping teardown now aborts the cleanup
+    // step ON THE WIRE as well, so this row is CANCELLED rather than a normal
+    // result. It has to be: this button exists for a cleanup endpoint that will
+    // not answer, and waiting for that endpoint is precisely the hang it is
+    // supposed to escape. Cancelled counts as SKIPPED — the user pulled the
+    // plug, which is not a verdict on the endpoint.
+    expect(rows[0].statusText).toBe('CANCELLED')
+    expect(rows[0].skipped).toBe(1)
     expect(rows[1].statusText).toBe('NOT_RUN')
     expect(rows[1].skipped).toBe(1)
+    // Still "cleanup was abandoned", NOT "the run was halted immediately": the
+    // flow had already finished, and only teardown was cut short.
     expect(res.data?.stopReason).toBe('teardownAborted')
   })
 

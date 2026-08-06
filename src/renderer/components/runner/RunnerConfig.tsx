@@ -18,6 +18,9 @@ export interface SchedulePayload {
 interface RunnerConfigProps {
   delay: number
   setDelay: (v: number) => void
+  /** Extra pause between iterations, on top of `delay` (issue #89). */
+  iterationDelay: number
+  setIterationDelay: (v: number) => void
   iterations: number
   setIterations: (v: number) => void
   environmentId: string
@@ -57,6 +60,8 @@ const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 export default function RunnerConfig({
   delay,
   setDelay,
+  iterationDelay,
+  setIterationDelay,
   iterations,
   setIterations,
   environmentId,
@@ -97,6 +102,12 @@ export default function RunnerConfig({
     min: 0,
     max: Number.MAX_SAFE_INTEGER,
     onChange: setDelay,
+  })
+  const iterationDelayDraft = useNumberDraft({
+    value: iterationDelay,
+    min: 0,
+    max: Number.MAX_SAFE_INTEGER,
+    onChange: setIterationDelay,
   })
   const [runMode, setRunMode] = useState<RunMode>(canSchedule ? initialRunMode : 'manual')
   // Force-manual when scheduling is not allowed for this source. This
@@ -450,7 +461,45 @@ export default function RunnerConfig({
               <span style={{ color: 'var(--muted)', flexShrink: 0 }}>ms</span>
             </div>
           </div>
+          <div className="flex-1">
+            {/*
+              A second, independent gap (issue #89). "Delay between requests"
+              already applies at the iteration boundary — it follows the last
+              request of the iteration — so a user who wants requests to stay
+              snappy but a long pause between repeats of the flow could not say
+              so with one field. The two add up at the boundary, and the label
+              underneath says by how much.
+            */}
+            <label style={{ display: 'block', color: 'var(--muted)', marginBottom: 4 }}>
+              Delay between iterations
+            </label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={0}
+                step={100}
+                data-testid="runner-iteration-delay"
+                title="Extra pause after a full iteration finishes, before the next one starts"
+                {...iterationDelayDraft.inputProps}
+                onFocus={(e) => {
+                  iterationDelayDraft.inputProps.onFocus()
+                  e.currentTarget.select()
+                }}
+                className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                style={{ fontSize: 13 }}
+              />
+              <span style={{ color: 'var(--muted)', flexShrink: 0 }}>ms</span>
+            </div>
+          </div>
         </div>
+        {/* Spell out the arithmetic at the boundary rather than making the user
+            discover it by timing a run — which is how the ambiguous "Delay"
+            label became a bug report in the first place. */}
+        {iterations > 1 && iterationDelay > 0 && (
+          <div className="mb-4" style={{ fontSize: 12, color: 'var(--hint)', marginTop: -8 }}>
+            {`Between iterations the runner waits ${delay + iterationDelay} ms (${delay} + ${iterationDelay}).`}
+          </div>
+        )}
 
         {/* Iteration Data */}
         <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>

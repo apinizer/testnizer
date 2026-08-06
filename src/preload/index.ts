@@ -330,7 +330,7 @@ const api = {
   // ─── Collection Runner ──────────────────────────────────────
   runner: {
     execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('runner:execute', options),
-    stop: (opts?: { skipTeardown?: boolean }): Promise<unknown> =>
+    stop: (opts?: { mode?: 'graceful' | 'direct'; skipTeardown?: boolean }): Promise<unknown> =>
       ipcRenderer.invoke('runner:stop', opts),
     export: (options: unknown): Promise<unknown> => ipcRenderer.invoke('runner:export', options),
     onProgress: (callback: (progress: unknown) => void): (() => void) => {

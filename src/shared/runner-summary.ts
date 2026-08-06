@@ -69,7 +69,16 @@ export function summarizeRun(results: readonly SummarizableResult[]): RunSummary
  * exchange. The data has always been there; the results UIs only ever read
  * `status`, which is why a run-level script row rendered a green "200" badge.
  */
-export const SYNTHETIC_STATUS = new Set(['SCRIPT', 'SKIPPED', 'NOT_RUN', 'UNSUPPORTED'])
+export const SYNTHETIC_STATUS = new Set([
+  'SCRIPT',
+  'SKIPPED',
+  'NOT_RUN',
+  'UNSUPPORTED',
+  // "Stop now" aborted this request mid-flight (issue #91). It left the app but
+  // never got an answer, so there is no status to show and no verdict to draw
+  // from it — the user pulled the plug, which is not the endpoint's fault.
+  'CANCELLED',
+])
 
 export type BadgeTone = 'ok' | 'warn' | 'error' | 'neutral'
 

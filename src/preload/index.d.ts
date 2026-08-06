@@ -630,6 +630,7 @@ import type {
   RunnerExportOptions,
   RunnerProgress,
   RunnerReport,
+  RunStopMode,
 } from '../shared/runner-types'
 
 /**
@@ -673,15 +674,23 @@ interface RunnerHistoryStats {
 interface RunnerApi {
   execute(options: RunnerExecuteOptions): Promise<IpcResult<RunnerReport>>
   /**
-   * End the run. Cleanup (teardown requests + the run-teardown script) still
-   * runs — that is the whole point of the phase.
+   * End the run (issue #91).
    *
-   * `skipTeardown: true` additionally abandons cleanup. It must come from a
-   * deliberate act (the button that says "Skip teardown", offered only while
-   * teardown is running), never from a second plain Stop: inferring it from
-   * click timing is what made cleanup complete only partially, at random.
+   * `mode: 'graceful'` (the default) ends the flow but still runs every
+   * teardown request and the run-teardown script — including letting the
+   * request already on the wire finish, since killing it produces exactly the
+   * half-written state cleanup exists to undo.
+   *
+   * `mode: 'direct'` is a hard halt: it aborts the in-flight request and runs
+   * NOTHING after the click, cleanup included. It must come from a deliberate
+   * act — its own labelled button — never from a second plain Stop: inferring
+   * it from click timing is what made cleanup complete only partially, at
+   * random.
+   *
+   * `skipTeardown: true` is the pre-#91 spelling of `mode: 'direct'`, still
+   * honoured so an older renderer cannot silently get a graceful stop.
    */
-  stop(opts?: { skipTeardown?: boolean }): Promise<IpcResult<boolean>>
+  stop(opts?: { mode?: RunStopMode; skipTeardown?: boolean }): Promise<IpcResult<boolean>>
   export(options: RunnerExportOptions): Promise<IpcResult<string>>
   onProgress(callback: (progress: RunnerProgress) => void): () => void
   /**

@@ -937,6 +937,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'runPhase.setup': 'Setup',
     'runPhase.teardown': 'Teardown',
     'runPhase.label': 'Phase',
+    'runPhase.mixed': 'Mixed',
     'runPhase.hint':
       'Setup runs once before the flow; Teardown runs once after it — and still runs when the run stops early.',
     'runLifecycle.title': 'Run lifecycle',
@@ -952,6 +953,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'runLifecycle.stoppedCancelled': 'Stopped by you — teardown still ran.',
     'runLifecycle.stoppedTeardownAborted':
       'Stopped by you — the remaining cleanup steps were skipped.',
+    'runLifecycle.stoppedImmediately':
+      'Halted by you — the request in flight was aborted and nothing after it ran, cleanup included.',
+    'runLifecycle.stoppedSetupFailed':
+      'A setup step failed, so the flow was skipped. Teardown still ran.',
 
     // Add Endpoints to Test Suite
     'addEndpoints.addTo': 'Import Endpoints into',
@@ -3112,6 +3117,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'runPhase.setup': 'Hazırlık',
     'runPhase.teardown': 'Temizlik',
     'runPhase.label': 'Faz',
+    'runPhase.mixed': 'Karışık',
     'runPhase.hint':
       'Hazırlık akıştan önce bir kez, Temizlik akıştan sonra bir kez çalışır — çalıştırma erken durdurulsa bile Temizlik yine çalışır.',
     'runLifecycle.title': 'Çalıştırma yaşam döngüsü',
@@ -3128,6 +3134,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'runLifecycle.stoppedCancelled': 'Sizin tarafınızdan durduruldu — temizlik yine de çalıştı.',
     'runLifecycle.stoppedTeardownAborted':
       'Sizin tarafınızdan durduruldu — kalan temizlik adımları atlandı.',
+    'runLifecycle.stoppedImmediately':
+      'Sizin tarafınızdan anında durduruldu — uçuştaki istek iptal edildi, sonrasında temizlik dâhil hiçbir şey çalışmadı.',
+    'runLifecycle.stoppedSetupFailed':
+      'Bir hazırlık adımı başarısız oldu, akış atlandı. Temizlik yine de çalıştı.',
 
     // Add Endpoints to Test Suite
     'addEndpoints.addTo': 'Uç Noktaları İçe Aktar:',

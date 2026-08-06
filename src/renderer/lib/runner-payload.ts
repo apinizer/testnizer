@@ -27,7 +27,12 @@ import type { RunnerExecuteOptions } from '../../shared/runner-types'
 export type RunSettings = Required<
   Pick<
     RunnerExecuteOptions,
-    'delay' | 'iterations' | 'stopOnError' | 'persistResponses' | 'keepVariableValues'
+    | 'delay'
+    | 'iterationDelay'
+    | 'iterations'
+    | 'stopOnError'
+    | 'persistResponses'
+    | 'keepVariableValues'
   >
 >
 
@@ -38,6 +43,7 @@ export type RunSettings = Required<
  */
 export const RUNNER_DEFAULTS: RunSettings = {
   delay: 0,
+  iterationDelay: 0,
   iterations: 1,
   stopOnError: true,
   persistResponses: true,

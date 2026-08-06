@@ -168,6 +168,10 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
           },
           {
             delay: state.delay,
+            // This surface has no iteration-delay control (it has no lifecycle
+            // UI either); stated explicitly so the omission is a decision rather
+            // than a gap the type system had to catch later.
+            iterationDelay: 0,
             iterations: state.iterations,
             stopOnError: state.stopOnError,
             persistResponses: state.persistResponses,

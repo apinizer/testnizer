@@ -50,6 +50,7 @@ import type {
   RunnerExportOptions,
   RunnerProgress,
   RunnerReport,
+  RunStopMode,
   RunStopReason,
   ScriptConsoleLog,
 } from '../../shared/runner-types'
@@ -136,6 +137,24 @@ interface RunState {
    * "teardown tutarsız / kısmi çalışıyor", and rightly called flaky).
    */
   abortTeardown: boolean
+  /**
+   * The user asked for a HARD halt ("Stop now", issue #91) rather than the
+   * graceful Stop that lets cleanup finish. Recorded separately from
+   * `abortTeardown` — which it also sets — purely so the report can say which
+   * of the two the user pressed: "you stopped the run immediately" and "you
+   * abandoned cleanup that was already running" are different stories, and the
+   * old single reason told the wrong one about half the time.
+   */
+  directStop: boolean
+  /**
+   * Aborts the request currently on the wire, if any. THIS is what made manual
+   * Stop feel broken: `shouldStop` is only read between steps, so pressing Stop
+   * during a 30-second request did nothing observable for 30 seconds and users
+   * concluded the button was dead (issue #91). A graceful Stop still lets the
+   * in-flight request finish — cancelling it would leave exactly the
+   * half-written state teardown exists to clean up — but "Stop now" calls this.
+   */
+  cancelInFlight: (() => void) | null
   /** Flips when the teardown phase begins — drives the renderer's button label. */
   teardownStarted: boolean
   /**
@@ -1157,6 +1176,25 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * A configured pause that a Stop can cut short.
+ *
+ * Every call site already refuses to START a delay once `shouldStop` is set,
+ * but the flag can flip DURING one — and with "Delay between iterations" a run
+ * can now legitimately sit in a 60-second pause. A plain `setTimeout` would
+ * make Stop look ignored for a full minute, which is the complaint that opened
+ * issue #91 in the first place. Polling in 100 ms slices keeps this dependency-
+ * free and adds at most 100 ms to a stop.
+ */
+async function interruptibleDelay(ms: number, runState: RunState): Promise<void> {
+  const deadline = Date.now() + ms
+  while (!runState.shouldStop) {
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) return
+    await delay(Math.min(100, remaining))
+  }
+}
+
 // ─── Variable Resolution ─────────────────────────────────────────
 
 // Variable loading lives in `lib/env-vars.ts` so the mock server can share
@@ -1423,6 +1461,41 @@ function recordNotRun(ctx: RunContext, endpointId: string, phase: RunPhase, iter
 }
 
 /**
+ * Record the step whose request was aborted mid-flight by "Stop now".
+ *
+ * Counted as SKIPPED, not failed: the request never got an answer because the
+ * user cancelled it, and a hard stop that ends with a red row makes the run
+ * look like the API misbehaved. Same treatment as the steps that never started
+ * — the only difference is that this one had already left the building, which
+ * `statusText` says out loud.
+ */
+function recordCancelled(
+  ctx: RunContext,
+  endpointId: string,
+  endpoint: { name: string },
+  requestOptions: HttpRequestOptions,
+  phase: RunPhase,
+  iteration: number | undefined,
+  statusText: 'CANCELLED' | 'NOT_RUN' = 'CANCELLED',
+): StepOutcome {
+  return recordStep(ctx, {
+    endpointId,
+    endpointName: endpoint.name,
+    method: requestOptions.method,
+    url: stripUrlCredentials(requestOptions.url),
+    status: null,
+    statusText,
+    duration: 0,
+    passed: 0,
+    failed: 0,
+    skipped: 1,
+    assertions: [],
+    iteration,
+    phase,
+  })
+}
+
+/**
  * Execute ONE request of a run. Extracted from the old inline double loop so
  * setup, main and teardown all drive the SAME code path: a teardown request
  * resolves `{{vars}}`, inherits folder/project auth, runs the pre/post script
@@ -1522,6 +1595,12 @@ async function runEndpointStep(
 
   // Created OUTSIDE the try so the catch below can still report whatever the
   // pre-request script logged before the step blew up.
+  //
+  // `cancelledOnWire` lives out here for the same reason: aborting an axios
+  // request rejects it, so the hard-stop path lands in the catch, and a catch
+  // that cannot tell "the user pulled the plug" from "DNS failed" would score
+  // every hard stop as a transport failure.
+  let cancelledOnWire = false
   const scriptCtx = newScriptContext(envVars, iterationData[iter] ?? {}, iter, iterations)
   const consoleTag = runConsoleTag(ctx, { step: endpoint.name, phase, iteration })
   scriptCtx.consoleTag = consoleTag
@@ -1699,7 +1778,38 @@ async function runEndpointStep(
       if (certificates) resolvedOptions.certificates = certificates
     }
 
-    const response = await executeHttpRequest(resolvedOptions)
+    // Make THIS request abortable, so "Stop now" halts at the click instead of
+    // at the end of whatever is on the wire (issue #91). The handle lives on the
+    // run, not on a module-level registry: a second runner tab must not be able
+    // to cancel this one's request. Cleared in `finally` below so a stop that
+    // arrives between steps can never abort the NEXT request by accident.
+    // A hard stop that landed while this step's pre-request script was still
+    // running (a token fetch, a signature) has nothing on the wire to abort —
+    // but "nothing after the click runs" has to include the request this step
+    // was about to make. Without this the promise held only when the click
+    // happened to arrive during the HTTP call.
+    if (ctx.runState.directStop) {
+      return recordCancelled(ctx, endpointId, endpoint, requestOptions, phase, iteration, 'NOT_RUN')
+    }
+
+    const controller = new AbortController()
+    resolvedOptions.signal = controller.signal
+    ctx.runState.cancelInFlight = () => {
+      cancelledOnWire = true
+      controller.abort()
+    }
+    const response = await executeHttpRequest(resolvedOptions).finally(() => {
+      ctx.runState.cancelInFlight = null
+    })
+
+    // A cancelled request is neither a pass nor a failure: the server never got
+    // to answer because the user pulled the plug. Scoring it as a transport
+    // error would end a hard-stopped run with a red row the API had nothing to
+    // do with, so it is recorded the same way the steps that never started are.
+    // (Reached when the engine resolves an error response instead of rejecting.)
+    if (cancelledOnWire) {
+      return recordCancelled(ctx, endpointId, endpoint, requestOptions, phase, iteration)
+    }
 
     // Mirror Send: report exactly what hit the wire, from the engine's own
     // `actualRequest`. Uncapped on purpose — the Console keeps a rolling
@@ -1904,6 +2014,12 @@ async function runEndpointStep(
     // only the main phase has a sequence to jump around in.
     return { ...outcome, nextRequestName: scriptCtx.nextRequestName }
   } catch (e) {
+    // "Stop now" aborts the socket, which rejects the request. That is the user
+    // getting what they asked for, not a failure of the endpoint — so it is
+    // recorded as cancelled and never reaches the error reporting below.
+    if (cancelledOnWire) {
+      return recordCancelled(ctx, endpointId, endpoint, requestOptions, phase, iteration)
+    }
     // A step that never reached a response is the one you most want to see in
     // the Console — DNS failure, TLS refusal, an unloadable client cert.
     try {
@@ -2060,7 +2176,7 @@ async function runTeardownPhase(
       !runState.shouldStop &&
       ctx.emitted < ctx.total
     ) {
-      await delay(ctx.options.delay)
+      await interruptibleDelay(ctx.options.delay, runState)
     }
   }
   if (postScript) {
@@ -2088,6 +2204,8 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   const runState: RunState = {
     shouldStop: false,
     abortTeardown: false,
+    directStop: false,
+    cancelInFlight: null,
     teardownStarted: false,
     teardownSkipped: false,
   }
@@ -2215,7 +2333,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
         stopReason = 'setupFailed'
       }
       if (options.delay && options.delay > 0 && !runState.shouldStop && ctx.emitted < total) {
-        await delay(options.delay)
+        await interruptibleDelay(options.delay, runState)
       }
     }
 
@@ -2277,8 +2395,17 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
 
         // Delay between requests if configured
         if (options.delay && options.delay > 0 && ctx.emitted < total && !runState.shouldStop) {
-          await delay(options.delay)
+          await interruptibleDelay(options.delay, runState)
         }
+      }
+
+      // Delay BETWEEN ITERATIONS (issue #89) — on top of the per-request delay
+      // that has just been applied after this iteration's last request. Skipped
+      // after the final iteration: nothing follows it, so the wait would only
+      // add dead time before the report appears.
+      const iterationDelay = options.iterationDelay ?? 0
+      if (iterationDelay > 0 && iter < iterations - 1 && !runState.shouldStop) {
+        await interruptibleDelay(iterationDelay, runState)
       }
     }
 
@@ -2314,6 +2441,10 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
     await runTeardownPhase(ctx, teardownIds, options.runPostScript)
     // Only when cleanup was actually left unfinished — see RunState.teardownSkipped.
     if (runState.teardownSkipped) stopReason = 'teardownAborted'
+    // A hard stop outranks it: the user asked for "nothing after this click",
+    // and reporting that as "cleanup was abandoned" describes a consequence as
+    // though it were the cause.
+    if (runState.directStop) stopReason = 'stoppedImmediately'
     // Always release the run slot, even on exception — without this an
     // unhandled error would leave the run permanently registered and
     // any "is this run still going?" check would forever say yes.
@@ -2651,29 +2782,51 @@ export function registerRunnerHandlers(): void {
     }
   })
 
-  ipcMain.handle('runner:stop', async (_event, opts?: { skipTeardown?: boolean }) => {
-    try {
-      // Stop every in-flight run. Today the renderer doesn't pass a run id,
-      // and there's no UI affordance to target one of several concurrent
-      // runs, so "Stop" is project-wide by design. The shouldStop flag is
-      // per-RunState now, so this only nudges currently-registered runs
-      // — finished runs are no longer in the map.
-      let stopped = 0
-      for (const run of activeRuns.values()) {
-        // Stop ends the flow; cleanup still runs. Abandoning cleanup as well is
-        // a SEPARATE, EXPLICIT request — the renderer only offers it from a
-        // button labelled "Skip teardown", shown once teardown is visibly
-        // running. Never infer it from a second click: see
-        // RunState.abortTeardown for why that made cleanup partial at random.
-        if (opts?.skipTeardown) run.abortTeardown = true
-        run.shouldStop = true
-        stopped++
+  ipcMain.handle(
+    'runner:stop',
+    async (_event, opts?: { mode?: RunStopMode; skipTeardown?: boolean }) => {
+      try {
+        // Stop every in-flight run. Today the renderer doesn't pass a run id,
+        // and there's no UI affordance to target one of several concurrent
+        // runs, so "Stop" is project-wide by design. The shouldStop flag is
+        // per-RunState now, so this only nudges currently-registered runs
+        // — finished runs are no longer in the map.
+        //
+        // `skipTeardown` is the pre-#91 spelling of `mode: 'direct'`, still
+        // accepted so an older renderer talking to a newer main doesn't
+        // silently get a graceful stop when it asked to abandon cleanup.
+        const direct = opts?.mode === 'direct' || opts?.skipTeardown === true
+        let stopped = 0
+        for (const run of activeRuns.values()) {
+          run.shouldStop = true
+          // Graceful Stop ends the flow and leaves cleanup alone — deliberately
+          // including the request already on the wire, because killing it is how
+          // you get the half-written state teardown is there to undo.
+          //
+          // Direct Stop is the opposite promise: nothing after this click runs.
+          // It abandons cleanup AND aborts the socket, so the halt happens now
+          // rather than whenever the current request happens to answer. Never
+          // infer this from a second graceful click — see RunState.abortTeardown
+          // for how reading intent off the clock made cleanup partial at random.
+          if (direct) {
+            run.abortTeardown = true
+            // WHERE the run was when the click arrived decides which story the
+            // report tells. Before cleanup this is a hard halt ("nothing after
+            // the click ran"). Once cleanup is running the flow has already
+            // finished on its own, and the only thing abandoned is the rest of
+            // the teardown — saying "halted immediately" there would describe a
+            // run that mostly completed as one that barely started.
+            if (!run.teardownStarted) run.directStop = true
+            run.cancelInFlight?.()
+          }
+          stopped++
+        }
+        return { success: true, data: stopped > 0 }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
       }
-      return { success: true, data: stopped > 0 }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+    },
+  )
 
   ipcMain.handle('runner:export', async (_event, options: RunnerExportOptions) => {
     try {
