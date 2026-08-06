@@ -90,6 +90,59 @@ uiTest.describe('runner issues, 6 August', () => {
     await expect(seq.getByLabel(new RegExp(`Phase: ${atRoot}$`, 'i'))).toHaveValue('main')
   })
 
+  uiTest('a folder marked Teardown actually runs as cleanup', async ({ window }) => {
+    /*
+     * The screen test above proves the role reaches the requests; the unit
+     * tests prove it reaches the payload. This proves the whole loop — a folder
+     * tagged in the sequence really does execute in the teardown phase — which
+     * is the thing the user asked for and the only place all three layers are
+     * exercised together.
+     */
+    const stamp = uid()
+    const folderName = `Cleanup ${stamp}`
+    const cleanupA = `Wipe A ${stamp}`
+    const cleanupB = `Wipe B ${stamp}`
+    const flow = `Flow ${stamp}`
+
+    await navigateSidebar(window, 'apis')
+    const projectId = await getActiveProjectId(window)
+    await createFolder(window, projectId, folderName)
+
+    await openHttpRequestTab(window)
+    await fillUrl(window, `${localHttpBin()}/get?wipe=a`)
+    await saveRequestToFolder(window, cleanupA, folderName)
+
+    await openHttpRequestTab(window)
+    await fillUrl(window, `${localHttpBin()}/get?wipe=b`)
+    await saveRequestToFolder(window, cleanupB, folderName)
+
+    await openHttpRequestTab(window)
+    await fillUrl(window, `${localHttpBin()}/get?flow=1`)
+    await saveRequestToTree(window, flow)
+
+    await openCollectionRunner(window)
+    await selectOnlyRunnerEndpoints(window, stamp)
+
+    // One control, two requests — instead of tagging each of them.
+    const seq = window.getByTestId('runner-sequence-list')
+    await seq
+      .getByTestId('runner-sequence-folder')
+      .filter({ hasText: folderName })
+      .first()
+      .getByLabel(new RegExp(`Phase — ${folderName}`, 'i'))
+      .selectOption('teardown')
+
+    await startRunnerTabRun(window)
+    await waitRunnerTabComplete(window)
+
+    // Both landed in the Teardown section of the report…
+    const teardown = window.getByTestId('runner-phase-teardown')
+    await expect(teardown).toContainText(cleanupA)
+    await expect(teardown).toContainText(cleanupB)
+    // …and the flow request did not follow them there.
+    await expect(teardown).not.toContainText(flow)
+  })
+
   uiTest('"Stop now" cuts the live request short and skips cleanup', async ({ window }) => {
     const stamp = uid()
     const slowName = `Slow ${stamp}`

@@ -459,7 +459,7 @@ export default function RunnerResults({
             iteration with pass/fail counts in the header. */}
         <div className="flex-1 overflow-auto" data-testid="runner-results-list">
           {setupRows.length > 0 && (
-            <PhaseSection title={t('runLifecycle.setupSection')}>
+            <PhaseSection title={t('runLifecycle.setupSection')} testId="runner-phase-setup">
               {setupRows.map((result, idx) => (
                 <ResultRow
                   key={`setup-${result.endpointId}-${idx}`}
@@ -517,6 +517,7 @@ export default function RunnerResults({
             <PhaseSection
               title={t('runLifecycle.teardownSection')}
               note={t('runLifecycle.teardownNote')}
+              testId="runner-phase-teardown"
             >
               {teardownRows.map((result, idx) => (
                 <ResultRow
@@ -867,14 +868,17 @@ function MethodLabel({ method }: { method: string }) {
 function PhaseSection({
   title,
   note,
+  testId,
   children,
 }: {
   title: string
   note?: string
+  /** Stable handle for tests — the visible title is translated. */
+  testId?: string
   children: React.ReactNode
 }) {
   return (
-    <div>
+    <div data-testid={testId}>
       <div
         className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--surface)] px-5 py-2"
         style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}
