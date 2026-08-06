@@ -2,6 +2,7 @@
 import BaseLayout from '../../layouts/BaseLayout.astro'
 import GuaranteeCard from '../../components/GuaranteeCard.astro'
 import StatBadge from '../../components/StatBadge.astro'
+import ProductHuntBadge from '../../components/ProductHuntBadge.astro'
 import { icons } from '../../components/icons'
 import { fetchLatestRelease, fetchRepoStats, formatCount } from '../../lib/latest-release'
 
@@ -101,6 +102,10 @@ const tools = [
         {stats && stats.downloads > 0 && <StatBadge label="indirme" value={formatCount(stats.downloads)} href={releasesUrl} />}
         {stats && stats.stars > 0 && <StatBadge label="yıldız" value={formatCount(stats.stars)} href="https://github.com/apinizer/testnizer" />}
         <StatBadge label="telemetri" value="yok" />
+      </div>
+
+      <div class="mt-6 flex justify-center">
+        <ProductHuntBadge label="Product Hunt'ta oy verin" />
       </div>
     </div>
   </section>
