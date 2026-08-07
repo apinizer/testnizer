@@ -28,6 +28,7 @@ import {
   openHttpRequestTab,
 } from '../helpers/ui/bootstrap'
 import { fillUrl, saveRequestToFolder } from '../helpers/ui/request-flow'
+import { addVariable, closeEnvModal, createEnvironment, openEnvModal } from '../helpers/ui/env'
 import { createFolder, getActiveProjectId } from '../helpers/ui/assert-ipc'
 import { treeContextAction, treeOpenNode } from '../helpers/ui/tree'
 import { clickContextMenuItem } from '../helpers/ui/context-menu'
@@ -142,42 +143,43 @@ uiTest.describe('tester findings, 7 August', () => {
     await expect(window.getByText(cleanupFolder, { exact: true }).first()).toBeVisible()
   })
 
-  uiTest('Run Sequence for a suite shows the folders and takes a role on one', async ({
-    window,
-  }) => {
-    const stamp = uid()
-    const root = `Runnable ${stamp}`
-    const cleanupFolder = `Cleanup ${stamp}`
-    const flowReq = `Flow ${stamp}`
-    const wipeReq = `Wipe ${stamp}`
+  uiTest(
+    'Run Sequence for a suite shows the folders and takes a role on one',
+    async ({ window }) => {
+      const stamp = uid()
+      const root = `Runnable ${stamp}`
+      const cleanupFolder = `Cleanup ${stamp}`
+      const flowReq = `Flow ${stamp}`
+      const wipeReq = `Wipe ${stamp}`
 
-    await navigateSidebar(window, 'apis')
-    const projectId = await getActiveProjectId(window)
-    const rootId = await createFolder(window, projectId, root)
-    await createSubfolder(window, projectId, rootId, cleanupFolder)
+      await navigateSidebar(window, 'apis')
+      const projectId = await getActiveProjectId(window)
+      const rootId = await createFolder(window, projectId, root)
+      await createSubfolder(window, projectId, rootId, cleanupFolder)
 
-    await seedRequestIn(window, root, flowReq, `${localHttpBin()}/get?flow=1`)
-    await seedRequestIn(window, cleanupFolder, wipeReq, `${localHttpBin()}/get?wipe=1`)
+      await seedRequestIn(window, root, flowReq, `${localHttpBin()}/get?flow=1`)
+      await seedRequestIn(window, cleanupFolder, wipeReq, `${localHttpBin()}/get?wipe=1`)
 
-    await navigateSidebar(window, 'apis')
-    await treeOpenNode(window, root)
-    await treeContextAction(window, root, /Create Test Suite from this folder/i)
+      await navigateSidebar(window, 'apis')
+      await treeOpenNode(window, root)
+      await treeContextAction(window, root, /Create Test Suite from this folder/i)
 
-    await navigateSidebar(window, 'tests')
-    await expect(suiteRow(window, root)).toBeVisible({ timeout: 20_000 })
-    await suiteContextAction(window, root, /Run Suite/i)
+      await navigateSidebar(window, 'tests')
+      await expect(suiteRow(window, root)).toBeVisible({ timeout: 20_000 })
+      await suiteContextAction(window, root, /Run Suite/i)
 
-    // The folder is a row in the sequence — collapsible, with its own role
-    // picker. This is the half that already worked and was never fed.
-    const folderPhase = window.getByLabel(new RegExp(`— ${cleanupFolder}$`))
-    await expect(folderPhase).toBeVisible({ timeout: 30_000 })
+      // The folder is a row in the sequence — collapsible, with its own role
+      // picker. This is the half that already worked and was never fed.
+      const folderPhase = window.getByLabel(new RegExp(`— ${cleanupFolder}$`))
+      await expect(folderPhase).toBeVisible({ timeout: 30_000 })
 
-    // A role applied to the folder, which is the capability #94 asked for on
-    // the suite side. It must stick — a select that resets is the same bug in
-    // a different costume.
-    await folderPhase.selectOption('teardown')
-    await expect(folderPhase).toHaveValue('teardown')
-  })
+      // A role applied to the folder, which is the capability #94 asked for on
+      // the suite side. It must stick — a select that resets is the same bug in
+      // a different costume.
+      await folderPhase.selectOption('teardown')
+      await expect(folderPhase).toHaveValue('teardown')
+    },
+  )
 
   uiTest('a new tab in Tests opens Tests, not the APIs wizard (issue #93)', async ({ window }) => {
     // The tab bar (and with it "+") only renders once something is open, so
@@ -197,5 +199,44 @@ uiTest.describe('tester findings, 7 August', () => {
     await navigateSidebar(window, 'apis')
     await window.getByTestId('tab-new').click()
     await expect(window.getByText(/New Request/i).first()).toBeVisible({ timeout: 15_000 })
+  })
+
+  uiTest('a variable can be found without scrolling for it (issue #95)', async ({ window }) => {
+    const envName = `Search ${uid()}`
+
+    await openEnvModal(window)
+    try {
+      // `createEnvironment` leaves the new environment selected.
+      await createEnvironment(window, envName)
+      await addVariable(window, { key: 'AccessURL', initialValue: 'https://api.example.com' })
+      await addVariable(window, { key: 'ProjectName', initialValue: 'demo-project' })
+      await addVariable(window, { key: 'timeout', initialValue: '30' })
+
+      const search = window.getByTestId('env-var-search')
+      const keys = window.getByTestId('env-var-key')
+
+      await search.fill('access')
+      await expect(keys).toHaveCount(1)
+      await expect(keys.first()).toHaveValue('AccessURL')
+      // The count is what answers the question the issue actually asks —
+      // "is this variable present or missing?"
+      await expect(window.getByTestId('env-var-search-count')).toContainText('1')
+
+      // A variable that isn't there says so. An empty table on its own reads
+      // as "this environment has nothing in it".
+      await search.fill('NotHere')
+      await expect(keys).toHaveCount(0)
+      await expect(window.getByTestId('env-var-no-match')).toBeVisible()
+
+      // And the table underneath still works: adding while a filter is on must
+      // not hide the row it just created.
+      await window.getByTestId('env-var-add').click()
+      await expect(search).toHaveValue('')
+      await expect(keys).toHaveCount(4)
+    } finally {
+      // The modal is shared state for every spec that follows — leaving it
+      // open on a failure would take the next one down with it.
+      await closeEnvModal(window).catch(() => {})
+    }
   })
 })

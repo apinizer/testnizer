@@ -11,6 +11,7 @@ import {
   Copy,
   Download,
   Upload,
+  Search,
 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
@@ -600,6 +601,10 @@ function EnvPane({
       </div>
 
       <VarTable
+        // Remount per environment: a filter belongs to the list you typed it
+        // over, and carrying it across a switch would greet the next
+        // environment with an empty-looking table.
+        key={env.id}
         variables={env.variables}
         onUpdate={(id, updates) => {
           for (const k of Object.keys(updates) as Array<keyof typeof updates>) {
@@ -630,6 +635,25 @@ interface VarRow {
   secret: boolean
 }
 
+/**
+ * Substring match over the three fields the user can actually read in the
+ * table. Values are searched as well as names (issue #95 asked for both):
+ * a secret's value is masked on screen but the per-row reveal toggle is
+ * unconditional, so excluding secrets would only make the search quietly
+ * incomplete without protecting anything.
+ *
+ * Plain `toLowerCase`, not the Turkish locale variant — variable names are
+ * identifiers, and `'ID'.toLocaleLowerCase('tr')` is `'ıd'`, which would stop
+ * `id` from matching `ProjectID`.
+ */
+function matchesQuery(v: VarRow, needle: string): boolean {
+  return (
+    v.key.toLowerCase().includes(needle) ||
+    (v.initialValue ?? '').toLowerCase().includes(needle) ||
+    v.value.toLowerCase().includes(needle)
+  )
+}
+
 function VarTable({
   variables,
   onUpdate,
@@ -641,8 +665,89 @@ function VarTable({
   onRemove: (id: string) => void
   onAdd: () => void
 }) {
+  const { t } = useTranslation()
+  const [query, setQuery] = useState('')
+  // The row the user is typing in. Renaming a key can make it stop matching
+  // the filter, and dropping it right then would pull the input out from under
+  // the cursor mid-keystroke — so a focused row stays visible until the search
+  // itself changes.
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+
+  const needle = query.trim().toLowerCase()
+
+  const matchCount = useMemo(
+    () => (needle ? variables.filter((v) => matchesQuery(v, needle)).length : variables.length),
+    [variables, needle],
+  )
+
+  const shown = useMemo(
+    () =>
+      needle ? variables.filter((v) => v.id === focusedId || matchesQuery(v, needle)) : variables,
+    [variables, needle, focusedId],
+  )
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Search — only meaningful once there is something to search. */}
+      {variables.length > 0 && (
+        <div className="shrink-0 px-5 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div
+            className="flex items-center gap-2 rounded-[8px] px-2.5 py-1.5"
+            style={{ background: 'var(--surface)', border: '1.5px solid var(--border2)' }}
+          >
+            <Search size={13} style={{ color: 'var(--hint)', flexShrink: 0 }} aria-hidden="true" />
+            <input
+              data-testid="env-var-search"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value)
+                setFocusedId(null)
+              }}
+              // No Escape-to-clear here: Radix's dialog listens for Escape on
+              // `document` in the capture phase, so it closes the modal before
+              // anything in the React tree can intercept the key. Clearing the
+              // filter *and* closing the modal is worse than just closing it —
+              // the clear button next to this input is the honest affordance.
+              placeholder={t('env.searchPlaceholder')}
+              aria-label={t('env.searchPlaceholder')}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                fontSize: 13,
+                color: 'var(--text)',
+                width: '100%',
+                fontFamily: 'inherit',
+              }}
+            />
+            {needle && (
+              <>
+                <span
+                  data-testid="env-var-search-count"
+                  title={t('env.searchMatchHint')}
+                  style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}
+                >
+                  {matchCount} / {variables.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuery('')
+                    setFocusedId(null)
+                  }}
+                  aria-label={t('env.searchClear')}
+                  title={t('env.searchClear')}
+                  className="flex cursor-pointer items-center justify-center"
+                  style={{ background: 'transparent', border: 'none', color: 'var(--hint)' }}
+                >
+                  <X size={12} aria-hidden="true" />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Header row */}
       <div
         className="grid shrink-0 items-center px-5 py-2 font-medium uppercase tracking-wide"
@@ -665,19 +770,36 @@ function VarTable({
 
       {/* Rows */}
       <div className="flex-1 overflow-y-auto">
-        {variables.map((v) => (
+        {shown.map((v) => (
           <VarRowView
             key={v.id}
             variable={v}
+            onFocus={() => setFocusedId(v.id)}
             onUpdate={(u) => onUpdate(v.id, u)}
             onRemove={() => onRemove(v.id)}
           />
         ))}
 
+        {shown.length === 0 && (
+          <div
+            data-testid="env-var-no-match"
+            className="px-5 py-6 text-center"
+            style={{ color: 'var(--hint)' }}
+          >
+            {t('env.searchNoMatch')}
+          </div>
+        )}
+
         <button
           type="button"
           data-testid="env-var-add"
-          onClick={onAdd}
+          // A new row starts with an empty key, so an active filter would hide
+          // it the instant it is created and the button would read as broken.
+          onClick={() => {
+            setQuery('')
+            setFocusedId(null)
+            onAdd()
+          }}
           className="m-4 flex w-[calc(100%-2rem)] cursor-pointer items-center justify-center gap-1 rounded-[6px] border border-dashed py-2"
           style={{
             borderColor: 'var(--border2)',
@@ -697,10 +819,12 @@ function VarRowView({
   variable,
   onUpdate,
   onRemove,
+  onFocus,
 }: {
   variable: VarRow
   onUpdate: (updates: Partial<VarRow>) => void
   onRemove: () => void
+  onFocus?: () => void
 }) {
   const [showCurrent, setShowCurrent] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -719,9 +843,13 @@ function VarRowView({
   return (
     <div
       data-testid="env-var-row"
+      onFocusCapture={onFocus}
       className="grid items-center px-5"
       style={{
-        gridTemplateColumns: '22px 1fr 100px 1fr 1fr 28px',
+        // Seven tracks for seven cells, matching the header above. One short
+        // and the remove button wrapped onto a second line, left-aligned under
+        // the checkbox and doubling every row's height.
+        gridTemplateColumns: '22px 1fr 100px 1fr 1fr 28px 28px',
         gap: 12,
         borderBottom: '1px solid var(--border-split)',
       }}

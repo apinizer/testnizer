@@ -161,6 +161,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'env.importPostmanCollectionHint':
       'This looks like a Postman collection, not an environment. Use APIs → Import to bring in the requests.',
 
+    // Environment variable search
+    'env.searchPlaceholder': 'Search variables',
+    'env.searchNoMatch': 'No variable matches this search.',
+    'env.searchClear': 'Clear search',
+    'env.searchMatchHint': 'Matching variables / total',
+
     // KeyValue table
     'kv.key': 'Key',
     'kv.value': 'Value',
@@ -2343,6 +2349,12 @@ const translations: Record<Locale, Record<string, string>> = {
       'Tanınmayan dosya. Postman environment veya Insomnia dışa aktarımı bekleniyor.',
     'env.importPostmanCollectionHint':
       'Bu bir Postman koleksiyonu, environment değil. İstekleri içe aktarmak için APIs → Import kullanın.',
+
+    // Environment variable search
+    'env.searchPlaceholder': 'Değişkenlerde ara',
+    'env.searchNoMatch': 'Bu aramayla eşleşen değişken yok.',
+    'env.searchClear': 'Aramayı temizle',
+    'env.searchMatchHint': 'Eşleşen değişken / toplam',
 
     // KeyValue table
     'kv.key': 'Anahtar',
