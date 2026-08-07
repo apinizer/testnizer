@@ -697,9 +697,10 @@ interface RunnerApi {
    * A phase has BEGUN — fired before its first step produces a result.
    *
    * A progress tick arrives only when a step finishes, so it cannot tell you
-   * that cleanup has started. That distinction decides whether "Skip teardown"
-   * is offered, and it matters most for a cleanup endpoint that never answers,
-   * which produces no result at all.
+   * that cleanup has started. That distinction decides which stop controls are
+   * on screen (issue #92) and what the hard stop will abandon, and it matters
+   * most for a cleanup endpoint that never answers, which produces no result
+   * at all.
    */
   onPhase(callback: (phase: RunPhase) => void): () => void
   /**
@@ -1494,7 +1495,15 @@ interface UpdateTestSuitePayload {
 interface ImportEndpointsPayload {
   suite_id: string
   endpoint_ids: string[]
+  /** Target folder inside the suite; the mirrored source tree hangs off it. */
   folder_id?: string | null
+  /**
+   * The APIs folder the import was launched from. Everything at or above it is
+   * dropped when its subfolders are mirrored into the suite, so "create a suite
+   * from this folder" doesn't nest the collection under a copy of itself
+   * (issue #94). Omit it and the shared ancestor of the selection is used.
+   */
+  source_folder_id?: string | null
 }
 
 interface RemoveEndpointPayload {

@@ -264,29 +264,40 @@ export default function RunnerResults({
             <div className="mb-1.5 flex items-center justify-between" style={{ fontSize: 13 }}>
               <span style={{ color: 'var(--muted)' }}>
                 {inTeardown
-                  ? `Cleaning up — ${currentIndex} of ${totalCount}...`
+                  ? // A graceful Stop ends the flow and then hands over to
+                    // cleanup, which is the phase where its own button goes
+                    // away. Say so here, or the click leaves no trace at all
+                    // and reads as ignored (issue #92).
+                    stopRequested === 'graceful'
+                    ? `Stopped — cleaning up ${currentIndex} of ${totalCount}...`
+                    : `Cleaning up — ${currentIndex} of ${totalCount}...`
                   : `Running ${currentIndex} of ${totalCount}...`}
               </span>
               {/*
                 Two stops, and each control keeps ONE meaning for the whole run
                 (issue #91).
 
-                LEFT is always the safe abort: the flow ends, every teardown
-                request and the run-teardown script still run. It is never
-                destructive — mash it, hold it, let a click retry land wherever
-                it likes.
+                LEFT is the safe abort: the flow ends, every teardown request
+                and the run-teardown script still run. It is never destructive —
+                mash it, hold it, let a click retry land wherever it likes. Once
+                cleanup is the only phase left it has nothing to end, so it is
+                REMOVED rather than disabled: a greyed button is still a button,
+                and testers reported the no-op as "Stop does nothing" (issue
+                #92). The reason it left is on the progress line beside it.
+                Removing it cannot shift the hard halt under a waiting cursor —
+                the row is right-aligned, so RIGHT keeps its position.
 
-                RIGHT is always the hard halt. It renames itself from "Stop now"
-                to "Skip teardown" once cleanup is running, because by then the
-                only thing left to abandon IS the cleanup — but it is the same
-                action in the same place, so the rename cannot surprise anyone.
+                RIGHT is always the hard halt, in the same place under the same
+                name for the whole run. It used to rename itself to "Skip
+                teardown" during cleanup, which is accurate but made the pair of
+                controls read differently depending on when you looked — the
+                exact thing "position carries the meaning, timing carries none"
+                was supposed to rule out. The phase-specific wording now lives
+                in the title, where it explains rather than surprises.
 
-                The first version of this kept the rename on the LEFT button, so
-                the safe control quietly turned destructive partway through the
-                run. That is the bug issue #84 closed, re-opened by geometry: a
-                second click — or, on CI, Playwright waiting for the disabled
-                button to re-enable and clicking again — abandoned cleanup.
-                Position now carries the meaning, and timing carries none.
+                The first version kept the rename on the LEFT button, so the
+                safe control quietly turned destructive partway through the run.
+                That is the bug issue #84 closed, re-opened by geometry.
 
                 Both report the click immediately. A graceful stop deliberately
                 lets the in-flight request finish, so without that the screen is
@@ -294,34 +305,24 @@ export default function RunnerResults({
                 how "Stop does not work" got reported.
               */}
               <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={onStop}
-                  data-testid="runner-stop"
-                  // Nothing left to end gracefully once cleanup is the only
-                  // phase running — and leaving it live would put a no-op where
-                  // the destructive action used to be.
-                  disabled={inTeardown || stopRequested !== null}
-                  title={
-                    inTeardown
-                      ? 'Cleanup is running — it will finish on its own'
-                      : 'End the run — cleanup still runs (every teardown request and script)'
-                  }
-                  className="rounded-[5px] border border-[#cc2200] bg-transparent px-3 py-1 disabled:cursor-default disabled:opacity-60"
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: '#cc2200',
-                    cursor: inTeardown || stopRequested !== null ? 'default' : 'pointer',
-                  }}
-                >
-                  {/* No cleanup-specific wording here: the progress line to the
-                      left already says "Cleaning up — N of M", and a second
-                      copy on the button only made the two collide. Disabled
-                      "Stop" during cleanup is the honest reading — there is no
-                      flow left to end — and the title says why. */}
-                  {stopRequested !== null ? 'Stopping…' : 'Stop'}
-                </button>
+                {!inTeardown && (
+                  <button
+                    type="button"
+                    onClick={onStop}
+                    data-testid="runner-stop"
+                    disabled={stopRequested !== null}
+                    title="End the run — cleanup still runs (every teardown request and script)"
+                    className="rounded-[5px] border border-[#cc2200] bg-transparent px-3 py-1 disabled:cursor-default disabled:opacity-60"
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: '#cc2200',
+                      cursor: stopRequested !== null ? 'default' : 'pointer',
+                    }}
+                  >
+                    {stopRequested !== null ? 'Stopping…' : 'Stop'}
+                  </button>
+                )}
                 {onStopDirect && (
                   <button
                     type="button"
@@ -330,7 +331,7 @@ export default function RunnerResults({
                     disabled={stopRequested === 'direct'}
                     title={
                       inTeardown
-                        ? 'Abandon cleanup — including the step currently running'
+                        ? 'Halt now — abandon cleanup, including the step currently running'
                         : 'Halt now — abort the request in flight and skip all remaining steps, cleanup included'
                     }
                     className="rounded-[5px] border border-[#cc2200] px-3 py-1 disabled:cursor-default disabled:opacity-60"
@@ -342,11 +343,7 @@ export default function RunnerResults({
                       cursor: stopRequested === 'direct' ? 'default' : 'pointer',
                     }}
                   >
-                    {stopRequested === 'direct'
-                      ? 'Halting…'
-                      : inTeardown
-                        ? 'Skip teardown'
-                        : 'Stop now'}
+                    {stopRequested === 'direct' ? 'Halting…' : 'Stop now'}
                   </button>
                 )}
               </div>

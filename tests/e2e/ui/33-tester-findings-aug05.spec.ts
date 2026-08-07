@@ -157,7 +157,7 @@ uiTest.describe('tester findings, 5 August (1.5.0-rc3)', () => {
     })
   })
 
-  uiTest('Stop and "Skip teardown" are different buttons, not the same click', async ({
+  uiTest('the safe Stop and the hard stop are different buttons, not the same click', async ({
     window,
   }) => {
     /*
@@ -178,6 +178,12 @@ uiTest.describe('tester findings, 5 August (1.5.0-rc3)', () => {
      * cleanup began. That reintroduced the bug as geometry, and this test
      * caught it on CI three times in a row: a click retry waiting for the
      * re-enabled button landed on the rename and lost the cleanup.
+     *
+     * The safe button is now REMOVED during cleanup rather than sitting there
+     * disabled, because a tester read the inert control as a broken one (issue
+     * #92). Removing it is only safe if the hard stop does not slide into the
+     * space it leaves — under a cursor that is already on its way down. That is
+     * asserted below with real coordinates, not assumed from the CSS.
      *
      * The precise race (a click landing at an exact moment inside teardown) is
      * pinned at the handler level in `runner-lifecycle.test.ts`, where the
@@ -216,35 +222,48 @@ uiTest.describe('tester findings, 5 August (1.5.0-rc3)', () => {
     const direct = window.getByTestId('runner-stop-direct')
     await expect(stop).toBeVisible({ timeout: 15_000 })
     await expect(stop).toHaveText('Stop')
+    // Where the hard stop sits while the flow is still running. Taken BEFORE
+    // the safe button disappears, so the comparison below is against the
+    // geometry the user's hand learned.
+    const directXDuringFlow = (await direct.boundingBox())?.x ?? -1
+    expect(directXDuringFlow).toBeGreaterThan(0)
     await stop.click()
 
     /*
      * Wait for cleanup to be visibly running rather than guessing when it
-     * starts. Abandoning cleanup lives on the OTHER button, and only renames
-     * itself once there is cleanup to abandon.
+     * starts. The buttons no longer announce the phase — that is the point of
+     * issue #92 — so the progress line is the signal, and it also carries the
+     * acknowledgement that the graceful stop was heard.
      */
-    await expect(direct).toHaveText('Skip teardown', { timeout: 20_000 })
+    await expect(window.getByText(/Stopped — cleaning up|Cleaning up/i)).toBeVisible({
+      timeout: 20_000,
+    })
 
     /*
-     * THE assertion. Two things must hold at this instant, and between them no
-     * amount of clicking the left button can lose the cleanup:
+     * THE assertion, in two halves.
      *
-     *   - it has not become the destructive action (the rename lives on the
-     *     right button), and
-     *   - it is inert, because the flow it ends is already over.
-     *
-     * Removing either one reopens issue #84: the first lets a stray click mean
-     * "abandon cleanup", the second lets a click retry wait for the button to
-     * re-enable and then press it.
+     * First: the safe button is gone, so no amount of clicking can reach the
+     * destructive handler through it. Disabling it was enough for the machine
+     * and not for the human — a click retry could wait for it to re-enable
+     * (issue #84 as geometry), and a tester read the no-op as a dead app
+     * (issue #92). Absent closes both.
      */
-    await expect(stop).not.toHaveText('Skip teardown')
-    await expect(stop).toBeDisabled()
+    await expect(stop).toHaveCount(0)
 
-    // The impatient user, for real: forced clicks straight at the safe button,
-    // inside the teardown phase, where the old bug lived. The first cleanup
-    // step is `/delay/5`, so there is room.
+    /*
+     * Second: removing it must not move the hard stop. If the row collapsed
+     * leftwards, the button that abandons cleanup would slide under a cursor
+     * aimed at the safe one — trading a visible dead control for an invisible
+     * live one.
+     */
+    const directXDuringCleanup = (await direct.boundingBox())?.x ?? -1
+    expect(Math.abs(directXDuringCleanup - directXDuringFlow)).toBeLessThanOrEqual(2)
+
+    // The impatient user, for real: clicks aimed at where the safe button was,
+    // inside the teardown phase, where the old bug lived. Nothing is there to
+    // receive them, and the hard stop has not moved into the target.
     for (let i = 0; i < 5; i++) {
-      await stop.click({ force: true }).catch(() => {})
+      await window.mouse.click(directXDuringFlow - 30, (await direct.boundingBox())!.y + 10)
     }
 
     // Every cleanup step still runs, despite six presses of Stop straddling the

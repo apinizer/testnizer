@@ -124,8 +124,8 @@ interface RunState {
    * held hostage by teardown (issue #72).
    *
    * Set ONLY by an explicit `runner:stop({ skipTeardown: true })`, which the
-   * renderer sends from a button that is labelled "Skip teardown" and is only
-   * reachable once teardown is visibly running.
+   * renderer sends from the hard-stop button ("Stop now") — a separate control
+   * from the safe Stop, in its own fixed position for the whole run.
    *
    * It used to be inferred instead: any second Stop set this whenever
    * `teardownStarted` happened to be true. That reads the user's INTENT off
@@ -592,8 +592,10 @@ function sendProgress(progress: RunnerProgress): void {
  * The renderer cannot infer this from the progress stream: a result arrives
  * only once a step FINISHES. The one moment the escape hatch matters most is a
  * cleanup endpoint that never answers — exactly when no teardown result will
- * ever arrive — so "Skip teardown" has to be offered from the instant cleanup
- * starts, not from its first completed step.
+ * ever arrive — so the hard stop has to be able to abandon cleanup from the
+ * instant cleanup starts, not from its first completed step. The phase is also
+ * what removes the safe Stop from the screen (issue #92), which is the other
+ * reason it cannot wait for a result.
  */
 function sendPhaseStarted(phase: RunPhase): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -2140,7 +2142,7 @@ async function runTeardownPhase(
   sendPhaseStarted('teardown')
   for (const [i, id] of ids.entries()) {
     if (runState.abortTeardown) {
-      // An explicit "Skip teardown" cut cleanup short. Say which steps were left
+      // An explicit hard stop cut cleanup short. Say which steps were left
       // undone rather than ending the report mid-list.
       runState.teardownSkipped = true
       for (const remaining of ids.slice(i)) recordNotRun(ctx, remaining, 'teardown')
