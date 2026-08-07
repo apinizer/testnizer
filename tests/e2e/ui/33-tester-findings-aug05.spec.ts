@@ -195,8 +195,13 @@ uiTest.describe('tester findings, 5 August (1.5.0-rc3)', () => {
     const cleanup1 = `Cleanup A ${stamp}`
     const cleanup2 = `Cleanup B ${stamp}`
 
+    // Long enough that the flow phase is still running by the time the test has
+    // found the button and clicked it. At /delay/2 this passed locally and timed
+    // out on CI every attempt: the safe Stop leaves the DOM when cleanup starts
+    // (issue #92), so a flow that ends early turns the click into a 30s wait for
+    // an element that is never coming back.
     await openHttpRequestTab(window)
-    await fillUrl(window, `${localHttpBin()}/delay/2`)
+    await fillUrl(window, `${localHttpBin()}/delay/8`)
     await saveRequestToTree(window, slowName)
 
     // A SLOW first cleanup step, so there is a wide window during teardown —
@@ -222,12 +227,13 @@ uiTest.describe('tester findings, 5 August (1.5.0-rc3)', () => {
     const direct = window.getByTestId('runner-stop-direct')
     await expect(stop).toBeVisible({ timeout: 15_000 })
     await expect(stop).toHaveText('Stop')
-    // Where the hard stop sits while the flow is still running. Taken BEFORE
-    // the safe button disappears, so the comparison below is against the
-    // geometry the user's hand learned.
+    // Click FIRST: everything else here can be done while the flow winds down,
+    // but this button only exists during the flow.
+    await stop.click()
+    // Where the hard stop sits while the safe button is still beside it — the
+    // geometry the user's hand learned, and the baseline for the check below.
     const directXDuringFlow = (await direct.boundingBox())?.x ?? -1
     expect(directXDuringFlow).toBeGreaterThan(0)
-    await stop.click()
 
     /*
      * Wait for cleanup to be visibly running rather than guessing when it
