@@ -2,12 +2,18 @@
 /**
  * Product Hunt call-to-action.
  *
- * `upvote` is our own artwork in Product Hunt's badge language, because the one
- * badge that carries an upvote arrow — post-level `featured.svg` — also renders
- * the live vote count, and publishing a low count argues against us on our own
- * home page. It says "UPVOTE ON", never "FEATURED ON": this product was not
- * editor-featured, and `featured.svg` itself reads "FIND US ON" for that reason.
- * Switch to the real badge once the count is worth showing.
+ * `upvote` is our own artwork, not Product Hunt's. The one badge that carries an
+ * upvote arrow — post-level `featured.svg` — also renders the live vote count,
+ * and publishing a low count argues against us on our own home page. Drawing it
+ * ourselves also lets it sit at the page's own scale: PH's badges are 54px tall
+ * on a white brick, which on this dark hero outshouted the download button it
+ * was sitting under. This one is sized against StatBadge (20px) and the hero's
+ * secondary text, and it borrows the page's surface treatment rather than
+ * punching a white rectangle through it. The wordmark and the orange stay, so
+ * it still reads as Product Hunt.
+ *
+ * It says "Upvote on", never "Featured on": this product was not editor-featured,
+ * and `featured.svg` itself reads "FIND US ON" for that reason.
  *
  * No Product Hunt badge upvotes in place in any case — even the familiar orange
  * one is a link to the post, since upvoting needs a PH login. A link is the
@@ -23,16 +29,13 @@
  */
 interface Props {
   variant?: 'upvote' | 'review' | 'follow'
-  /** Accessible name — localised by the caller. */
-  label: string
   /**
-   * Small line above "Product Hunt" on the `upvote` variant. Deliberately never
-   * "FEATURED ON": this product was not editor-featured, and the badge must not
-   * imply it was.
+   * Visible text and accessible name — localised by the caller. Phrase it as
+   * "Upvote on Product Hunt": never "Featured on", see above.
    */
-  kicker?: string
+  label: string
 }
-const { variant = 'upvote', label, kicker = 'UPVOTE ON' } = Astro.props
+const { variant = 'upvote', label } = Astro.props
 
 const PRODUCT = 'testnizer-the-offline-api-client'
 const LAUNCH = `https://www.producthunt.com/products/${PRODUCT}/launches/${PRODUCT}`
@@ -44,6 +47,8 @@ const HREF = {
   review: `https://www.producthunt.com/products/${PRODUCT}/reviews/new?utm_source=badge-product_review&utm_medium=badge&utm_source=badge-${PRODUCT}`,
   follow: `https://www.producthunt.com/products/${PRODUCT}?utm_source=badge-follow&utm_medium=badge&utm_source=badge-${PRODUCT}`,
 }
+
+const PH_ORANGE = '#ff6154'
 ---
 
 {
@@ -53,25 +58,21 @@ const HREF = {
       target="_blank"
       rel="noopener"
       aria-label={label}
-      class="inline-flex h-[54px] items-center gap-3 rounded-[10px] border-2 px-4 transition-opacity hover:opacity-85"
-      style="background:#FFFFFF;border-color:#FF6154;"
+      class="ph-upvote inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-medium tracking-tight transition-colors"
     >
-      <svg width="31" height="31" viewBox="0 0 31 31" aria-hidden="true" class="shrink-0">
+      <svg width="15" height="15" viewBox="0 0 31 31" aria-hidden="true" class="shrink-0">
         <path
-          fill="#FF6154"
+          fill={PH_ORANGE}
           d="M31,15.5 C31,24.0603917 24.0603917,31 15.5,31 C6.93960833,31 0,24.0603917 0,15.5 C0,6.93960833 6.93960833,0 15.5,0 C24.0603917,0 31,6.93960833 31,15.5"
         />
         <path
-          fill="#FFFFFF"
+          fill="#050810"
           d="M17.4329412,15.9558824 L17.4329412,15.9560115 L13.0929412,15.9560115 L13.0929412,11.3060115 L17.4329412,11.3060115 L17.4329412,11.3058824 C18.7018806,11.3058824 19.7305882,12.3468365 19.7305882,13.6308824 C19.7305882,14.9149282 18.7018806,15.9558824 17.4329412,15.9558824 M17.4329412,8.20588235 L17.4329412,8.20601152 L10.0294118,8.20588235 L10.0294118,23.7058824 L13.0929412,23.7058824 L13.0929412,19.0560115 L17.4329412,19.0560115 L17.4329412,19.0558824 C20.3938424,19.0558824 22.7941176,16.6270324 22.7941176,13.6308824 C22.7941176,10.6347324 20.3938424,8.20588235 17.4329412,8.20588235"
         />
       </svg>
-      <span class="flex flex-col items-start leading-none" style="color:#FF6154;">
-        <span class="text-[10px] font-bold tracking-[0.08em]">{kicker}</span>
-        <span class="mt-1 text-[19px] font-bold tracking-tight">Product Hunt</span>
-      </span>
-      <svg width="14" height="9" viewBox="0 0 14 9" aria-hidden="true" class="ml-1 shrink-0">
-        <path fill="#FF6154" d="M7,0 L14,9 L0,9 Z" />
+      <span>{label}</span>
+      <svg width="9" height="6" viewBox="0 0 14 9" aria-hidden="true" class="shrink-0 opacity-80">
+        <path fill="currentColor" d="M7,0 L14,9 L0,9 Z" />
       </svg>
     </a>
   ) : (
@@ -87,8 +88,24 @@ const HREF = {
         width="250"
         height="54"
         loading="lazy"
-        class="h-[46px] w-auto"
+        class="h-[38px] w-auto"
       />
     </a>
   )
 }
+
+<style>
+  /* Kept out of the class list so the two orange tints stay next to each other:
+     the border and fill are the brand colour at low alpha, the text is lightened
+     enough to clear contrast on the near-black hero at 12px. */
+  .ph-upvote {
+    border-color: rgb(255 97 84 / 0.32);
+    background: rgb(255 97 84 / 0.08);
+    color: #ff8878;
+  }
+  .ph-upvote:hover {
+    border-color: rgb(255 97 84 / 0.55);
+    background: rgb(255 97 84 / 0.14);
+    color: #ff9b8d;
+  }
+</style>
