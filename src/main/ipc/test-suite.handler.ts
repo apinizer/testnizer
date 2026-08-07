@@ -80,6 +80,8 @@ export interface SnapshotForSuite {
   request_schema: string
   assertions: string | null
   source_endpoint_id: string
+  /** Which APIs folder the source sat in, so the import can rebuild the tree. */
+  source_folder_id: string | null
 }
 
 /**
@@ -152,6 +154,7 @@ export function snapshotEndpointForSuite(endpointId: string): SnapshotForSuite |
       request_schema: JSON.stringify(mergedSchema),
       assertions: defaultCase?.assertions ?? null,
       source_endpoint_id: ep.id,
+      source_folder_id: ep.folder_id ?? null,
     }
   }
   const sr = getSavedRequestById(endpointId)
@@ -174,6 +177,7 @@ export function snapshotEndpointForSuite(endpointId: string): SnapshotForSuite |
       request_schema: JSON.stringify(schema),
       assertions: sr.assertions ?? null,
       source_endpoint_id: sr.id,
+      source_folder_id: sr.folder_id ?? null,
     }
   }
   return null
@@ -186,6 +190,134 @@ function tryParseJSON<T>(raw: string | null, fallback: T): T {
   } catch {
     return fallback
   }
+}
+
+/* ── Folder mirroring on import (issue #94) ──────────────────
+ *
+ * A collection turned into a suite used to arrive as one flat list: every row
+ * was written to a single `folder_id`, and the source hierarchy was read
+ * nowhere. The runner's suite path already renders a tree and already reads
+ * `parent_id` (issue #90) — it was simply never given anything to render, so
+ * the same collection ran as a tree from APIs and as a flat list from Tests.
+ *
+ * `folders` and `test_suite_folders` have the same shape (id, parent_id, name),
+ * so this is a straight copy of the chain above each request, minus a prefix.
+ */
+
+interface SourceFolderRow {
+  id: string
+  parent_id: string | null
+  name: string
+}
+
+/** The chain of source folders above `folderId`, outermost first. */
+function sourceFolderChain(folderId: string | null, byId: Map<string, SourceFolderRow>): string[] {
+  const chain: string[] = []
+  const seen = new Set<string>()
+  let cur = folderId
+  // `seen` guards against a cycle in `parent_id`; a corrupted row must not
+  // spin the import forever.
+  while (cur && !seen.has(cur)) {
+    seen.add(cur)
+    const row = byId.get(cur)
+    if (!row) break
+    chain.unshift(cur)
+    cur = row.parent_id
+  }
+  return chain
+}
+
+/** How many leading folders every chain shares. */
+function commonPrefixLength(chains: string[][]): number {
+  if (chains.length === 0) return 0
+  let i = 0
+  for (; ; i++) {
+    const head = chains[0][i]
+    if (head === undefined) break
+    if (!chains.every((c) => c[i] === head)) break
+  }
+  return i
+}
+
+/**
+ * Rebuild each request's folder chain inside the suite and return a map from
+ * source endpoint id to the suite folder it belongs in.
+ *
+ * Everything at or above the import's root is dropped, because the suite (or
+ * the chosen target folder) already stands for it — mirroring `ApiOps` into a
+ * suite named `ApiOps` would nest the whole collection one pointless level
+ * down. The root is `rootSourceFolderId` when the caller names one ("create a
+ * suite from THIS folder"), and otherwise the deepest folder every selected
+ * request shares, which is the same answer for a folder-shaped selection and a
+ * sensible one for an arbitrary one.
+ *
+ * Folders already in the suite are reused by (parent, name), so importing the
+ * same collection twice updates one tree instead of growing a second copy
+ * beside it.
+ */
+function mirrorSourceFolders(opts: {
+  suiteId: string
+  targetFolderId: string | null
+  rootSourceFolderId?: string | null
+  sources: Array<{ endpointId: string; sourceFolderId: string | null }>
+}): Map<string, string | null> {
+  const placement = new Map<string, string | null>()
+  const withFolder = opts.sources.filter((s) => s.sourceFolderId)
+  if (withFolder.length === 0) {
+    for (const s of opts.sources) placement.set(s.endpointId, opts.targetFolderId)
+    return placement
+  }
+
+  const db = getDb()
+  const byId = new Map<string, SourceFolderRow>(
+    (db.prepare('SELECT id, parent_id, name FROM folders').all() as SourceFolderRow[]).map((r) => [
+      r.id,
+      r,
+    ]),
+  )
+
+  const chains = new Map<string, string[]>()
+  for (const s of opts.sources) {
+    chains.set(s.endpointId, sourceFolderChain(s.sourceFolderId, byId))
+  }
+
+  let trim: number
+  if (opts.rootSourceFolderId) {
+    const rootChain = sourceFolderChain(opts.rootSourceFolderId, byId)
+    trim = rootChain.length
+  } else {
+    // Requests sitting directly at the project root have an empty chain, which
+    // would make the common prefix 0 and keep every folder — the right answer,
+    // since there is no shared root to drop.
+    trim = commonPrefixLength([...chains.values()])
+  }
+
+  // (parent id in the suite, folder name) → suite folder id. Seeded with what
+  // the suite already has so a re-import lands in the existing tree.
+  const existing = new Map<string, string>()
+  const key = (parentId: string | null, name: string): string => `${parentId ?? ''} ${name}`
+  for (const f of listFoldersBySuite(opts.suiteId)) {
+    existing.set(key(f.parent_id ?? null, f.name), f.id)
+  }
+
+  for (const [endpointId, chain] of chains) {
+    let parent = opts.targetFolderId
+    for (const sourceId of chain.slice(trim)) {
+      const row = byId.get(sourceId)
+      if (!row) break
+      const k = key(parent, row.name)
+      const found = existing.get(k)
+      if (found) {
+        parent = found
+        continue
+      }
+      const created = createFolder({ suite_id: opts.suiteId, parent_id: parent, name: row.name })
+      existing.set(k, created.id)
+      parent = created.id
+    }
+    placement.set(endpointId, parent)
+  }
+  return placement
 }
 
 export function registerTestSuiteHandlers(): void {
@@ -435,7 +567,18 @@ export function registerTestSuiteHandlers(): void {
     'testSuite:importEndpoints',
     async (
       _event,
-      payload: { suite_id: string; endpoint_ids: string[]; folder_id?: string | null },
+      payload: {
+        suite_id: string
+        endpoint_ids: string[]
+        folder_id?: string | null
+        /**
+         * The APIs folder this import was launched from, if any. Names the
+         * level that becomes the suite's root, so "create a suite from this
+         * folder" does not nest everything under a copy of that folder
+         * (issue #94). Omit it and the shared ancestor is used instead.
+         */
+        source_folder_id?: string | null
+      },
     ) => {
       try {
         const db = getDb()
@@ -445,7 +588,7 @@ export function registerTestSuiteHandlers(): void {
         if (!suite) return { success: false, error: 'Suite not found' }
 
         const folderId = payload.folder_id ?? null
-        const rows: CreateTestSuiteItemInput[] = []
+        const snapshots: Array<{ id: string; snap: SnapshotForSuite }> = []
         const rejected: string[] = []
         for (const eid of payload.endpoint_ids ?? []) {
           if (typeof eid !== 'string' || !eid) continue
@@ -454,18 +597,30 @@ export function registerTestSuiteHandlers(): void {
             rejected.push(eid)
             continue
           }
-          rows.push({
-            suite_id: payload.suite_id,
-            folder_id: folderId,
-            protocol: snap.protocol,
-            name: snap.name,
-            method: snap.method,
-            url: snap.url,
-            request_schema: snap.request_schema,
-            assertions: snap.assertions,
-            source_endpoint_id: snap.source_endpoint_id,
-          })
+          snapshots.push({ id: eid, snap })
         }
+
+        const placement = mirrorSourceFolders({
+          suiteId: payload.suite_id,
+          targetFolderId: folderId,
+          rootSourceFolderId: payload.source_folder_id ?? null,
+          sources: snapshots.map((s) => ({
+            endpointId: s.id,
+            sourceFolderId: s.snap.source_folder_id,
+          })),
+        })
+
+        const rows: CreateTestSuiteItemInput[] = snapshots.map(({ id, snap }) => ({
+          suite_id: payload.suite_id,
+          folder_id: placement.get(id) ?? folderId,
+          protocol: snap.protocol,
+          name: snap.name,
+          method: snap.method,
+          url: snap.url,
+          request_schema: snap.request_schema,
+          assertions: snap.assertions,
+          source_endpoint_id: snap.source_endpoint_id,
+        }))
         const inserted = bulkInsertItems(rows)
         return {
           success: true,

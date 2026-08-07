@@ -832,6 +832,9 @@ export default function TreeView() {
         await window.api?.testSuite?.importEndpoints({
           suite_id: createRes.data.id,
           endpoint_ids: ids,
+          // The suite IS this folder, so its subfolders should land at the
+          // suite's root rather than inside a copy of it (issue #94).
+          source_folder_id: folderNode.id,
         })
         // Hand the user off to the Tests workbench so they can see the result.
         setActiveSidebarPage('tests')
