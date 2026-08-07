@@ -554,6 +554,9 @@ function EndpointTabBar() {
     clearResponse()
   }
 
+  // Nothing to show without tabs — and nothing is lost by it: the workbench
+  // renders PageWelcome instead, which is a better new-tab surface than this
+  // strip (issue #97, closed as invalid).
   if (tabs.length === 0) return null
 
   return (

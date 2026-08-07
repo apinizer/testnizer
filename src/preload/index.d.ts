@@ -1521,7 +1521,13 @@ interface TestSuiteApi {
   /** Returns `{ items, folders }` — both arrays of repo rows. */
   listEndpoints(suiteId: string): Promise<IpcResult<TestSuiteContents>>
   /** Snapshots endpoints from APIs tree and writes them as suite items. */
-  importEndpoints(payload: ImportEndpointsPayload): Promise<IpcResult<{ added: number }>>
+  /**
+   * `rejected` counts sources that could not be snapshotted — the caller is
+   * expected to say so rather than report a partial copy as a clean one.
+   */
+  importEndpoints(
+    payload: ImportEndpointsPayload,
+  ): Promise<IpcResult<{ added: number; rejected: number; rejectedIds: string[] }>>
   removeEndpoint(payload: RemoveEndpointPayload): Promise<IpcResult<boolean>>
 }
 

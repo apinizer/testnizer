@@ -818,28 +818,63 @@ export default function TreeView() {
     }
   })()
 
+  /**
+   * Convert a folder into a test suite — and say what happened (issue #96).
+   *
+   * Every outcome here used to be silent. An empty folder made the menu item
+   * look broken, a failed create left the user on the APIs tree with no
+   * explanation, the import's result was discarded entirely, and the error path
+   * reached devtools only. Even success said nothing: the sidebar switched to
+   * Tests and the user had to go find the suite.
+   *
+   * `rejected` matters as much as the failures: a suite built from 40 requests
+   * that copied 37 is not a success, and reporting it as one is how a run comes
+   * up short later for no visible reason.
+   */
   const handleCreateTestSuite = useCallback(
     async (folderNode: TreeNode) => {
       if (!activeProjectId) return
       const ids = collectRequestIdsRecursive(folderNode)
-      if (ids.length === 0) return
+      if (ids.length === 0) {
+        toast.info(t('tree.suiteEmptyFolder'))
+        return
+      }
       try {
         const createRes = (await window.api?.testSuite?.create({
           project_id: activeProjectId,
           name: folderNode.label,
-        })) as { success: boolean; data?: { id: string } }
-        if (!createRes?.success || !createRes.data) return
-        await window.api?.testSuite?.importEndpoints({
+        })) as { success: boolean; data?: { id: string }; error?: string }
+        if (!createRes?.success || !createRes.data) {
+          toast.error(`${t('tree.suiteCreateFailed')}: ${createRes?.error || 'unknown error'}`)
+          return
+        }
+        const importRes = (await window.api?.testSuite?.importEndpoints({
           suite_id: createRes.data.id,
           endpoint_ids: ids,
           // The suite IS this folder, so its subfolders should land at the
           // suite's root rather than inside a copy of it (issue #94).
           source_folder_id: folderNode.id,
-        })
+        })) as {
+          success: boolean
+          data?: { added: number; rejected: number }
+          error?: string
+        }
         // Hand the user off to the Tests workbench so they can see the result.
+        // Done before reporting, so a warning lands next to what it describes.
         setActiveSidebarPage('tests')
+        if (!importRes?.success) {
+          toast.error(`${t('tree.suiteCreateFailed')}: ${importRes?.error || 'unknown error'}`)
+          return
+        }
+        const added = importRes.data?.added ?? 0
+        const rejected = importRes.data?.rejected ?? 0
+        if (rejected > 0) {
+          toast.warning(`${t('tree.suiteImportPartial')} — ${added}/${ids.length}`)
+        } else {
+          toast.success(`${t('tree.suiteCreated')}: ${folderNode.label} (${added})`)
+        }
       } catch (err) {
-        console.error('createTestSuite from folder failed:', err)
+        toast.error(`${t('tree.suiteCreateFailed')}: ${(err as Error).message || 'unknown error'}`)
       }
     },
     [activeProjectId, collectRequestIdsRecursive],
