@@ -234,8 +234,22 @@ uiTest.describe('tester findings, 7 August', () => {
       await expect(search).toHaveValue('')
       await expect(keys).toHaveCount(4)
     } finally {
-      // The modal is shared state for every spec that follows — leaving it
-      // open on a failure would take the next one down with it.
+      // The whole ui project shares one Electron instance, and creating an
+      // environment can make it the active one — so this test would decide
+      // which variables every spec after it resolves. Take it back out, and
+      // close the modal either way: left open, it takes the next spec down.
+      await window
+        .getByTestId('env-delete')
+        .click()
+        .catch(() => {})
+      const confirmInput = window.getByTestId('delete-confirm-input')
+      if (await confirmInput.isVisible().catch(() => false)) {
+        await confirmInput.fill('delete')
+      }
+      await window
+        .getByTestId('delete-confirm-btn')
+        .click()
+        .catch(() => {})
       await closeEnvModal(window).catch(() => {})
     }
   })
