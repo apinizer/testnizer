@@ -68,6 +68,14 @@ export function openFolderRunner(folderId: string, folderName?: string): void {
   // scoped to the folder (#39). RunnerTab's view initializer restores 'config'
   // when this key is set AND the tab carries a folder scope.
   sessionStorage.setItem(`runner-view-${tabId}`, 'config')
+  // Re-arming this tab means "here is the next run", so the previous one's
+  // stored report goes with it. RunnerTab keeps that report so a tab switch
+  // can put the results back (issue #93); left behind here it would come back
+  // instead of the Start-run screen, which is issue #66 in reverse. A folder
+  // runner's scope travels on `tab.folderId`, so nothing else in the payload
+  // is worth keeping.
+  sessionStorage.removeItem(`runner-report-${tabId}`)
+  sessionStorage.removeItem(`runner-report-spent-${tabId}`)
   if (isRunnerBusy(tabId)) {
     // That tab's run is still executing. Re-arming would remount it and take
     // the live progress + Cancel button away while main keeps running — focus

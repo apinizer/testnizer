@@ -194,7 +194,9 @@ function EndpointTabBar() {
   function handleTabContextAction(tabId: string, action: TabContextAction) {
     setContextMenu(null)
     if (action === 'newRequest') {
-      handleNewTab()
+      // Named action, literal result — the module-aware "+" is a different
+      // affordance (see handleNewTab).
+      handleNewRequestTab()
       return
     }
     if (action === 'duplicate') {
@@ -508,7 +510,32 @@ function EndpointTabBar() {
     setCloseConfirmTabId(null)
   }
 
+  /**
+   * "+" and Cmd+T open a new tab in the module the user is standing in.
+   *
+   * It always opened an HTTP request, whatever the left panel was showing. On
+   * the Tests page that meant clicking "+" inside Tests and being handed the
+   * APIs protocol picker, with the sidebar still saying Tests (issue #93) —
+   * the one place in the app where a new tab left the module you were in.
+   *
+   * Tests is the only page with its own tab content (the runner tab, which
+   * lands on the overview when it has no suite or folder scope). Tools and
+   * Mocks open their own tabs from their own lists and have no "empty"
+   * screen to offer, so they keep the request default rather than gaining a
+   * blank tab with nothing in it.
+   *
+   * The tab context menu's "New Request" deliberately does NOT come through
+   * here: that one names what it opens.
+   */
   function handleNewTab() {
+    if (useUIStore.getState().activeSidebarPage === 'tests') {
+      openTab({ id: makeTabId(), name: 'Tests', protocol: 'runner' })
+      return
+    }
+    handleNewRequestTab()
+  }
+
+  function handleNewRequestTab() {
     const id = makeTabId()
     openTab({ id, name: 'New Request', protocol: 'http', method: 'GET', url: '' })
     // Reset every protocol store to its empty baseline for the new tab so the
@@ -734,9 +761,14 @@ function EndpointTabBar() {
         )
       })}
 
-      {/* + new tab */}
-      <div
+      {/* + new tab — a real button so it carries a name for the keyboard and
+          for screen readers. What it opens depends on the module (handleNewTab). */}
+      <button
+        type="button"
         onClick={handleNewTab}
+        title="New tab"
+        aria-label="New tab"
+        data-testid="tab-new"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -747,10 +779,12 @@ function EndpointTabBar() {
           color: T.ghost,
           fontSize: 16,
           flexShrink: 0,
+          background: 'transparent',
+          border: 'none',
         }}
       >
         +
-      </div>
+      </button>
 
       {/* Drop zone for "move tab to end" — covers the empty space to the
           right of the + button so users can drop past every existing tab. */}
@@ -964,6 +998,12 @@ export default function Workbench() {
       if (e.key === 't' || e.key === 'T') {
         if (e.altKey || e.shiftKey) return
         e.preventDefault()
+        // Same rule as the "+" button: a new tab belongs to the module you are
+        // standing in (issue #93).
+        if (useUIStore.getState().activeSidebarPage === 'tests') {
+          useTabsStore.getState().openTab({ id: makeTabId(), name: 'Tests', protocol: 'runner' })
+          return
+        }
         const id = makeTabId()
         useTabsStore.getState().openTab({
           id,

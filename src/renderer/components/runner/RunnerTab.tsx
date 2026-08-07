@@ -507,80 +507,120 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     return null
   })
 
-  // Check for pre-loaded report data or viewAllRuns from sidebar
+  /*
+   * The tab's opening instructions, split into two halves that live for
+   * different lengths of time (issue #93).
+   *
+   * SCOPE — which suite this tab is running, its name, its endpoint filter, and
+   * any report it was opened to display — describes what the tab IS, and is
+   * re-applied on every mount. Switching tabs unmounts this component, so
+   * anything held only in React state is gone when the user comes back.
+   *
+   * INTENT — auto-run, the landing view, "open in schedule mode" — describes
+   * what the tab should DO once, at the moment it was opened. Re-applying it on
+   * a remount would restart a finished run and drag the user back to the screen
+   * they had navigated away from.
+   *
+   * The payload used to be deleted the moment it was read, which collapsed both
+   * halves into "one mount only": returning to a suite's runner tab found no
+   * suiteId, concluded the tab had no scope, and fell back to the Tests
+   * overview — the reported symptom. Intent is now marked as spent against the
+   * session token instead, so a fresh Run on the same tab (new token) still
+   * arms it.
+   */
   useEffect(() => {
     if (!tabId) return
-    const key = `runner-report-${tabId}`
-    const stored = sessionStorage.getItem(key)
-    if (stored) {
-      sessionStorage.removeItem(key)
-      try {
-        const data = JSON.parse(stored)
-        if (data.viewHome) {
-          setView('home')
-        } else if (data.viewAllRuns) {
-          setView('history')
-        } else if (data.viewScheduledTasks) {
-          setView('scheduled')
-        } else if (data.sourceType === 'suite' && typeof data.suiteId === 'string') {
-          // Suite mode covers both:
-          //   - auto-run from "Run Suite" (carries endpointIds)
-          //   - browse-only from clicking the suite name (no endpointIds)
-          // The suite-items effect fetches everything from `suiteId`; the
-          // pending ref only fires when auto-run is requested.
-          if (data.autoRun && Array.isArray(data.endpointIds)) {
-            pendingAutoRunRef.current = {
-              endpointIds: data.endpointIds,
-              folderName: data.folderName,
-              sourceType: 'suite',
-            }
-          }
-          if (data.folderName) setRunFolderName(data.folderName)
-          setRunOrigin('suite')
-          setSuiteFilterIds(
-            Array.isArray(data.endpointIds) ? new Set(data.endpointIds as string[]) : null,
-          )
-          setSuiteIdForRunner(data.suiteId)
-          // When the suite was opened explicitly to schedule it (ScheduledTasksView
-          // → "New Run" → pick suite), snap the radio in RunnerConfig to
-          // "Schedule runs" so the user doesn't have to toggle it manually.
-          if (data.scheduleMode) {
-            setDefaultRunMode('schedule')
-            setConfigRunModeKey((k) => k + 1)
-          }
-          // Force the config view — the runner tab is reused, and a previous
-          // session (TestsHome, All Runs, prior results) may have parked it
-          // on another view. Auto-run paths flip to 'results' on their own.
-          setView('config')
-        } else if (data.autoRun && data.endpointIds) {
-          pendingAutoRunRef.current = {
-            endpointIds: data.endpointIds,
-            folderName: data.folderName,
-            sourceType: data.sourceType,
-          }
-          if (data.folderName) setRunFolderName(data.folderName)
-          if (data.sourceType === 'apis') {
-            setRunOrigin('apis')
-            setSuiteFilterIds(null)
-            setSuiteIdForRunner(null)
-          } else {
-            setSuiteFilterIds(null)
-            setSuiteIdForRunner(null)
-          }
-        } else {
-          const typed = data as {
-            results: EndpointRunResult[]
-            report: RunnerReport
-            startedAt: number
-          }
-          setResults(typed.results)
-          setReport(typed.report)
-          setRunStartedAt(typed.startedAt)
-          setView('results')
+    const stored = sessionStorage.getItem(`runner-report-${tabId}`)
+    if (!stored) return
+
+    let data: {
+      viewHome?: boolean
+      viewAllRuns?: boolean
+      viewScheduledTasks?: boolean
+      sourceType?: string
+      suiteId?: string
+      endpointIds?: string[]
+      folderName?: string
+      autoRun?: boolean
+      scheduleMode?: boolean
+      results?: EndpointRunResult[]
+      report?: RunnerReport
+      startedAt?: number
+    }
+    try {
+      data = JSON.parse(stored)
+    } catch {
+      return
+    }
+
+    const isSuite = data.sourceType === 'suite' && typeof data.suiteId === 'string'
+    const isReport = Array.isArray(data.results)
+
+    // ─── SCOPE — applied on every mount ───
+    if (isSuite) {
+      // Covers both "Run Suite" (carries endpointIds) and browse-only from
+      // clicking the suite name (no endpointIds). The suite-items effect
+      // fetches everything from `suiteId`.
+      if (data.folderName) setRunFolderName(data.folderName)
+      setRunOrigin('suite')
+      setSuiteFilterIds(Array.isArray(data.endpointIds) ? new Set(data.endpointIds) : null)
+      setSuiteIdForRunner(data.suiteId ?? null)
+    } else if (data.autoRun && data.endpointIds) {
+      if (data.folderName) setRunFolderName(data.folderName)
+      if (data.sourceType === 'apis') setRunOrigin('apis')
+      setSuiteFilterIds(null)
+      setSuiteIdForRunner(null)
+    }
+
+    // A report carried in the payload is deliberately NOT re-applied here.
+    // Results already survive a remount on their own, through the dedicated
+    // `runner-run-data-${tabId}` snapshot and its lazy initialisers above, and
+    // that snapshot is the fresher of the two: a tab opened on an old report
+    // and then re-run would otherwise have the payload's stale results written
+    // back over the new ones on the next tab switch.
+
+    // ─── INTENT — once per session token ───
+    const spentKey = `runner-report-spent-${tabId}`
+    const token = sessionKey ?? ''
+    if (sessionStorage.getItem(spentKey) === token) return
+    sessionStorage.setItem(spentKey, token)
+
+    if (data.viewHome) {
+      setView('home')
+    } else if (data.viewAllRuns) {
+      setView('history')
+    } else if (data.viewScheduledTasks) {
+      setView('scheduled')
+    } else if (isSuite) {
+      if (data.autoRun && Array.isArray(data.endpointIds)) {
+        pendingAutoRunRef.current = {
+          endpointIds: data.endpointIds,
+          folderName: data.folderName,
+          sourceType: 'suite',
         }
-      } catch {
-        /* ignore */
       }
+      // When the suite was opened explicitly to schedule it (ScheduledTasksView
+      // → "New Run" → pick suite), snap the radio in RunnerConfig to
+      // "Schedule runs" so the user doesn't have to toggle it manually.
+      if (data.scheduleMode) {
+        setDefaultRunMode('schedule')
+        setConfigRunModeKey((k) => k + 1)
+      }
+      // Force the config view — the runner tab is reused, and a previous
+      // session (TestsHome, All Runs, prior results) may have parked it
+      // on another view. Auto-run paths flip to 'results' on their own.
+      setView('config')
+    } else if (data.autoRun && data.endpointIds) {
+      pendingAutoRunRef.current = {
+        endpointIds: data.endpointIds,
+        folderName: data.folderName,
+        sourceType: data.sourceType as 'suite' | 'apis' | 'runner' | undefined,
+      }
+    } else if (isReport) {
+      setResults(data.results ?? [])
+      setReport(data.report ?? null)
+      setRunStartedAt(data.startedAt ?? 0)
+      setView('results')
     }
   }, [tabId, sessionKey])
 
@@ -1059,9 +1099,11 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
    * so it can't drift from what the user is looking at, and a new run clears it
    * for free (`setResults([])`).
    *
-   * This is what turns Stop into an explicit "Skip teardown": main used to
-   * infer that intent from a second click landing after teardown began, which
-   * made cleanup finish only partway, seemingly at random.
+   * It decides two things on screen: the safe Stop leaves (it has no flow left
+   * to end, issue #92) and the hard stop's title switches to what it would now
+   * abandon. Main used to infer the "abandon cleanup" intent from a second
+   * click landing after teardown began, which made cleanup finish only partway,
+   * seemingly at random.
    */
   const inTeardown = useMemo(
     () => teardownStarted || results.some((r) => r.phase === 'teardown'),
