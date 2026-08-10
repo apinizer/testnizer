@@ -343,7 +343,14 @@ const SCHEMA_SQL = `
     schedule_time TEXT,
     schedule_days TEXT,
     schedule_cron TEXT,
-    suite_id TEXT
+    suite_id TEXT,
+    -- Run lifecycle (#72) — MUST mirror the production ALTERs in
+    -- src/main/db/database.ts (CLAUDE.md test-helper schema-sync gotcha).
+    setup_endpoint_ids TEXT,
+    teardown_endpoint_ids TEXT,
+    run_pre_script TEXT,
+    run_post_script TEXT,
+    stop_on_error INTEGER DEFAULT 1
   );
 
   CREATE TABLE runner_history (
@@ -401,7 +408,43 @@ const SCHEMA_SQL = `
     pfx_path TEXT,
     passphrase TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    -- Key Material Provider (#60). MUST mirror the production ALTERs in
+    -- src/main/db/database.ts — createTestDb() never runs them (CLAUDE.md
+    -- "Test helper şema senkronizasyonu" gotcha).
+    source TEXT NOT NULL DEFAULT 'file',
+    keystore_id TEXT,
+    keystore_alias TEXT,
+    keystore_key_password TEXT
+  );
+
+  CREATE TABLE otp_entries (
+    id TEXT PRIMARY KEY,
+    label TEXT,
+    issuer TEXT,
+    account TEXT,
+    secret TEXT NOT NULL,
+    algorithm TEXT NOT NULL DEFAULT 'SHA1',
+    digits INTEGER NOT NULL DEFAULT 6,
+    period INTEGER NOT NULL DEFAULT 30,
+    type TEXT NOT NULL DEFAULT 'totp',
+    counter INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE keystores (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    blob TEXT NOT NULL,
+    store_password TEXT,
+    alias_count INTEGER NOT NULL DEFAULT 0,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
   );
 
   CREATE TABLE test_suites (
@@ -453,7 +496,7 @@ const SCHEMA_SQL = `
     auto_start INTEGER NOT NULL DEFAULT 0,
     cors_enabled INTEGER NOT NULL DEFAULT 0,
     cors_allow_origins TEXT NOT NULL DEFAULT '*',
-    cors_allow_methods TEXT NOT NULL DEFAULT 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS',
+    cors_allow_methods TEXT NOT NULL DEFAULT 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS,QUERY',
     cors_allow_headers TEXT NOT NULL DEFAULT '*',
     cors_allow_credentials INTEGER NOT NULL DEFAULT 0,
     cors_max_age INTEGER NOT NULL DEFAULT 600,

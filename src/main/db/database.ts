@@ -3,6 +3,7 @@ import { app } from 'electron'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { existsSync, renameSync } from 'fs'
+import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
 
 let db: Database.Database | null = null
 
@@ -474,6 +475,31 @@ function runMigrations(database: Database.Database): void {
   if (!stColNames.includes('suite_id')) {
     database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN suite_id TEXT`)
   }
+  // Run lifecycle (issue #72). A scheduled run must execute the SAME phases the
+  // user configured interactively — without these the schedule silently
+  // demoted setup/teardown requests to ordinary flow requests, so cleanup
+  // failures started counting against the verdict. NULL/'[]' = a task saved
+  // before phases existed, i.e. everything is flow.
+  if (!stColNames.includes('setup_endpoint_ids')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN setup_endpoint_ids TEXT`)
+  }
+  if (!stColNames.includes('teardown_endpoint_ids')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN teardown_endpoint_ids TEXT`)
+  }
+  if (!stColNames.includes('run_pre_script')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_pre_script TEXT`)
+  }
+  if (!stColNames.includes('run_post_script')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_post_script TEXT`)
+  }
+  // Same parity rule as the phase columns above: a scheduled run must grade the
+  // way the interactive run it was created from does. Without this the "Stop run
+  // if an error occurs" choice was dropped on the way to the schedule, so an
+  // unattended nightly run kept going after a failure. DEFAULT 1 (and the
+  // `!== 0` read in scheduler.handler) puts pre-migration rows on the safer side.
+  if (!stColNames.includes('stop_on_error')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN stop_on_error INTEGER DEFAULT 1`)
+  }
 
   // ─── Auth tables ─────────────────────────────────────────
   database.exec(`
@@ -515,6 +541,15 @@ function runMigrations(database: Database.Database): void {
   }
 
   // ─── Certificates (per-project: CA + Client) ──────────────
+  // `source` discriminates HOW the material is obtained (Key Material Provider,
+  // #60): 'file' = the classic crt/key/pfx paths (unchanged default — every
+  // pre-existing row stays byte-for-byte on the old path), 'keystore' = the
+  // row points at a `keystores` library entry + alias and carries NO paths.
+  // R11 double-password: the STORE password lives on the keystores row
+  // (`store_password`), the per-alias KEY password lives here in `passphrase`
+  // (both encryptSecret-wrapped at the handler boundary).
+  // NOTE: a keystore-backed row STILL needs a `host` (or '*') or
+  // `listCertificatesForHost`/`certHostMatches` will never select it.
   database.exec(`
     CREATE TABLE IF NOT EXISTS certificates (
       id TEXT PRIMARY KEY,
@@ -527,9 +562,55 @@ function runMigrations(database: Database.Database): void {
       passphrase TEXT,
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL,
+      source TEXT NOT NULL DEFAULT 'file',
+      keystore_id TEXT,
+      keystore_alias TEXT,
+      keystore_key_password TEXT,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_certificates_project ON certificates(project_id);
+  `)
+
+  // ─── OTP authenticator vault (GLOBAL — no project scope) ───
+  // Lives in the always-available Tools panel; holds TOTP/HOTP account
+  // credentials reused across projects. `secret` is stored encrypted
+  // (enc:v1:…) via secure-storage at the handler boundary.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS otp_entries (
+      id TEXT PRIMARY KEY,
+      label TEXT,
+      issuer TEXT,
+      account TEXT,
+      secret TEXT NOT NULL,
+      algorithm TEXT NOT NULL DEFAULT 'SHA1',
+      digits INTEGER NOT NULL DEFAULT 6,
+      period INTEGER NOT NULL DEFAULT 30,
+      type TEXT NOT NULL DEFAULT 'totp',
+      counter INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `)
+
+  // ─── Keystore library (Model B — GLOBAL, no project scope) ───
+  // Persisted Keystore Studio library. `blob` = base64(keystore bytes) and
+  // `store_password` are BOTH encryptSecret-wrapped (enc:v1:…) at the handler
+  // boundary — this repo is secret-agnostic (mirrors otp_entries/certificates).
+  // NULL store_password = "remember password" disabled → prompt on open.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS keystores (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      blob TEXT NOT NULL,
+      store_password TEXT,
+      alias_count INTEGER NOT NULL DEFAULT 0,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `)
 
   // ─── Test Suites ──────────────────────────────────────────
@@ -612,7 +693,7 @@ function runMigrations(database: Database.Database): void {
       auto_start INTEGER NOT NULL DEFAULT 0,
       cors_enabled INTEGER NOT NULL DEFAULT 0,
       cors_allow_origins TEXT NOT NULL DEFAULT '*',
-      cors_allow_methods TEXT NOT NULL DEFAULT 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS',
+      cors_allow_methods TEXT NOT NULL DEFAULT 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS,QUERY',
       cors_allow_headers TEXT NOT NULL DEFAULT '*',
       cors_allow_credentials INTEGER NOT NULL DEFAULT 0,
       cors_max_age INTEGER NOT NULL DEFAULT 600,
@@ -691,6 +772,17 @@ function runMigrations(database: Database.Database): void {
     `ALTER TABLE test_suite_folders ADD COLUMN auth TEXT`,
     `ALTER TABLE test_suite_folders ADD COLUMN pre_script TEXT`,
     `ALTER TABLE test_suite_folders ADD COLUMN post_script TEXT`,
+    // Key Material Provider (#60) — keystore-backed client certificate rows.
+    // Additive: existing installs get source='file' for every row, so the
+    // classic crt/key/pfx path is untouched.
+    `ALTER TABLE certificates ADD COLUMN source TEXT NOT NULL DEFAULT 'file'`,
+    `ALTER TABLE certificates ADD COLUMN keystore_id TEXT`,
+    `ALTER TABLE certificates ADD COLUMN keystore_alias TEXT`,
+    // Per-alias ENTRY password (R11) for keystore-backed rows. Deliberately NOT
+    // `passphrase`: that column is the PFX passphrase of the file path, and
+    // reusing it would let the added keystore option destroy a working file
+    // setting the moment an alias is picked.
+    `ALTER TABLE certificates ADD COLUMN keystore_key_password TEXT`,
   ]
   for (const sql of alters) {
     try {
@@ -698,6 +790,70 @@ function runMigrations(database: Database.Database): void {
     } catch {
       // Column already exists — fine.
     }
+  }
+
+  repairSuiteItemUrls(database)
+}
+
+/**
+ * Repair suite items already on disk whose URL lost its `{{variable}}` prefix
+ * at creation time (reported 30 July; 4 August for rows already on disk).
+ *
+ * The decision of WHAT to repair lives in `lib/suite-url-repair.ts`, because
+ * the suite IMPORT path needs exactly the same rule — an export taken on an
+ * affected build carries the truncated URL, and without the shared rule the
+ * import would quietly reintroduce what this migration just fixed.
+ */
+/** Bumped when a one-shot data repair is added below. */
+const SUITE_URL_REPAIR_VERSION = 1
+
+function repairSuiteItemUrls(database: Database.Database): void {
+  /*
+   * Run once per database, not once per launch.
+   *
+   * The repair is idempotent, so repeating it is harmless — but it would mean
+   * reading and JSON-parsing every suite item's `request_schema` on every cold
+   * start, forever, to find nothing. `user_version` is SQLite's built-in slot
+   * for exactly this and is otherwise unused here, so it costs no schema
+   * change.
+   */
+  let applied = 0
+  try {
+    applied = Number((database.pragma('user_version', { simple: true }) as number) ?? 0)
+  } catch {
+    // Cannot read the marker — fall through and repair; doing it twice is safe.
+  }
+  if (applied >= SUITE_URL_REPAIR_VERSION) return
+
+  let rows: Array<{ id: string; url: string | null; request_schema: string }>
+  try {
+    rows = database
+      .prepare(
+        `SELECT id, url, request_schema FROM test_suite_items
+          WHERE url IS NOT NULL AND url <> '' AND request_schema IS NOT NULL`,
+      )
+      .all() as Array<{ id: string; url: string | null; request_schema: string }>
+  } catch {
+    // Table not present yet (fresh DB mid-migration) — nothing to repair, and
+    // no marker either: a later launch with the table present must still run.
+    return
+  }
+
+  const update = database.prepare(`UPDATE test_suite_items SET url = ? WHERE id = ?`)
+  const repair = database.transaction(
+    (items: Array<{ id: string; url: string | null; request_schema: string }>) => {
+      for (const item of items) {
+        const fixed = repairedSuiteItemUrl(item.url, item.request_schema)
+        if (fixed !== null) update.run(fixed, item.id)
+      }
+    },
+  )
+  repair(rows)
+  try {
+    database.pragma(`user_version = ${SUITE_URL_REPAIR_VERSION}`)
+  } catch {
+    // Marker could not be written — the repair still happened, and running it
+    // again next launch is a no-op.
   }
 }
 

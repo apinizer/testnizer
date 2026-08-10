@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Shield } from 'lucide-react'
 import { useSoapStore } from '../../stores/soap.store'
+import { useNumberDraft } from '../../lib/number-draft'
+import KeyMaterialField from '../shared/KeyMaterialField'
 import type {
   WsSecurityMode,
   WsSignReference,
@@ -58,6 +60,15 @@ export default function SoapSecuritySection() {
     })
   }
 
+  // Draft-backed: the old expression clamped on every keystroke AND fell back to
+  // 300 on an empty box, so the field could not be cleared to retype it.
+  const ttlDraft = useNumberDraft({
+    value: wsSecurity.timestamp?.ttlSeconds ?? 300,
+    min: 1,
+    max: 86_400,
+    onChange: (ttlSeconds) => updateTimestamp({ ttlSeconds }),
+  })
+
   function updateSign(patch: Partial<NonNullable<typeof wsSecurity.sign>>): void {
     setWsSecurity({
       sign: {
@@ -79,6 +90,28 @@ export default function SoapSecuritySection() {
         keyWrap: wsSecurity.encrypt?.keyWrap ?? 'RSA-OAEP',
         targetXpath: wsSecurity.encrypt?.targetXpath,
         ...patch,
+      },
+    })
+  }
+
+  /**
+   * ADDED option (#60). Picking a source only SETS `sign.keySource`; clearing
+   * it REMOVES the key entirely so the persisted config returns to the exact
+   * pre-#60 pasted-PEM shape. The PEM textareas are never touched either way.
+   */
+  function setSignKeySource(source: NonNullable<typeof wsSecurity.sign>['keySource'] | null): void {
+    if (source) {
+      updateSign({ keySource: source })
+      return
+    }
+    const current = wsSecurity.sign
+    setWsSecurity({
+      sign: {
+        privateKeyPem: current?.privateKeyPem ?? '',
+        certPem: current?.certPem ?? '',
+        algorithm: current?.algorithm ?? 'RSA-SHA256',
+        references: current?.references ?? ['Body'],
+        keyInfoStrategy: current?.keyInfoStrategy ?? 'BinarySecurityToken',
       },
     })
   }
@@ -215,17 +248,7 @@ export default function SoapSecuritySection() {
                   </legend>
                   <div>
                     <span className="text-xs text-[var(--muted)]">TTL (seconds)</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={wsSecurity.timestamp?.ttlSeconds ?? 300}
-                      onChange={(e) =>
-                        updateTimestamp({
-                          ttlSeconds: Math.max(1, parseInt(e.target.value, 10) || 300),
-                        })
-                      }
-                      className={INPUT}
-                    />
+                    <input type="number" min={1} {...ttlDraft.inputProps} className={INPUT} />
                   </div>
                 </fieldset>
               )}
@@ -299,6 +322,15 @@ export default function SoapSecuritySection() {
                       placeholder="-----BEGIN PRIVATE KEY-----&#10;..."
                     />
                   </div>
+                  {/* ADDED option (#60): a keystore-backed key source. The PEM
+                      textareas above stay the default path and are never
+                      cleared — with no source picked the config is
+                      byte-for-byte the pre-#60 shape. */}
+                  <KeyMaterialField
+                    value={wsSecurity.sign?.keySource ?? null}
+                    onChange={(sel) => setSignKeySource(sel?.source ?? null)}
+                    filter="privateKey"
+                  />
                 </fieldset>
               )}
 

@@ -3,6 +3,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { transformXslt, XSLT_EXAMPLES } from '../../lib/tools/xslt'
 import { useTranslation } from '../../lib/i18n'
+import { useInvalidateOn } from '../../lib/use-stale-guard'
 
 const SAMPLE_XML = XSLT_EXAMPLES[0].xml
 const SAMPLE_XSL = XSLT_EXAMPLES[0].xsl
@@ -14,6 +15,16 @@ export default function XsltTool() {
   const [output, setOutput] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  /*
+   * The result belongs to the input that produced it. Leaving it on screen after
+   * an edit shows an answer about text that is no longer there — and unlike a
+   * generated password there is nothing to lose by dropping it, since pressing
+   * the button again re-derives it from what the user can still see.
+   */
+  useInvalidateOn([xml, xsl], () => {
+    setOutput('')
+  })
 
   const handleTransform = async () => {
     setBusy(true)

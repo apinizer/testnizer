@@ -23,16 +23,19 @@ uiTest.describe('Tur1 — Binary response download [MST-049]', () => {
     await openHttpRequestTab(window)
   })
 
-  uiTest('MST-049a /bytes/1024 returns 1024-byte octet-stream without error', async ({ window }) => {
-    const res = await sendRequest(window, {
-      method: 'GET',
-      url: `${http()}/bytes/1024`,
-    })
-    expect(res.status).toBe(200)
-    expect(res.error).toBeUndefined()
-    // bodySize should reflect the download
-    expect(res.bodySize ?? 0).toBeGreaterThan(0)
-  })
+  uiTest(
+    'MST-049a /bytes/1024 returns 1024-byte octet-stream without error',
+    async ({ window }) => {
+      const res = await sendRequest(window, {
+        method: 'GET',
+        url: `${http()}/bytes/1024`,
+      })
+      expect(res.status).toBe(200)
+      expect(res.error).toBeUndefined()
+      // bodySize should reflect the download
+      expect(res.bodySize ?? 0).toBeGreaterThan(0)
+    },
+  )
 
   uiTest('MST-049b UI shows body tab for binary /bytes/512 response', async ({ window }) => {
     await fillUrl(window, `${http()}/bytes/512`)
@@ -44,9 +47,11 @@ uiTest.describe('Tur1 — Binary response download [MST-049]', () => {
     await expect(window.getByTestId('res-tab-body')).toBeVisible({ timeout: 5_000 })
     await window.getByTestId('res-tab-body').click()
 
-    // Response pane must not be empty — at minimum the content-type or byte marker
-    const pane = window.getByTestId('res-body-content').or(window.getByTestId('response-pane'))
-    await expect(pane.first()).toBeVisible({ timeout: 10_000 })
+    // A binary body deliberately does NOT render in the text editor: it shows a
+    // preview / download panel instead (issue #25), so `res-body-content` never
+    // appears for one. Assert the panel that DOES.
+    await expect(window.getByTestId('res-binary-type')).toBeVisible({ timeout: 10_000 })
+    await expect(window.getByTestId('res-binary-download')).toBeVisible()
   })
 
   uiTest('MST-049c /image/png returns image content without crash', async ({ window }) => {

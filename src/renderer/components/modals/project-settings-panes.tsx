@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react'
 import { Eye, EyeOff, GitBranch, Plus, Trash2, FileUp } from 'lucide-react'
 import type { Theme, Language } from '../../types'
 import MonacoWrapper from '../shared/MonacoWrapper'
+import KeyMaterialField from '../shared/KeyMaterialField'
+import type { KeyMaterialSelection } from '../shared/KeyMaterialPicker'
 import { useTranslation } from '../../lib/i18n'
 import { isMac } from '../../lib/platform'
+import { useNumberDraft } from '../../lib/number-draft'
 import { FONT_PRESETS } from '../../stores/ui.store'
 import { toast } from '../../lib/toast'
 
@@ -208,14 +211,21 @@ function NumberInput({
   max?: number
   suffix?: string
 }) {
+  // Draft-backed: `Number('')` is 0 and finite, so clearing the box wrote a 0
+  // into the setting and the field could never be emptied to retype it.
+  const draft = useNumberDraft({
+    value,
+    min: min ?? 0,
+    max: max ?? Number.MAX_SAFE_INTEGER,
+    onChange,
+  })
   return (
     <div className="flex items-center gap-2">
       <input
         type="number"
-        value={value}
+        {...draft.inputProps}
         min={min}
         max={max}
-        onChange={(e) => onChange(Number(e.target.value))}
         style={{ ...BASE_INP, width: 140 }}
       />
       {suffix && <span style={{ color: 'var(--muted)' }}>{suffix}</span>}
@@ -1385,9 +1395,17 @@ interface CertRow {
   crt_path: string | null
   key_path: string | null
   pfx_path: string | null
-  passphrase: string | null
+  /**
+   * NO-LEAK (#60): the stored passphrase never leaves main — the list handler
+   * only reports WHETHER one is set, so the input below is write-only.
+   */
+  has_passphrase: boolean
   enabled: number
   created_at: number
+  /** #60 — 'file' (default, the classic paths) | 'keystore' (added option). */
+  source?: 'file' | 'keystore' | null
+  keystore_id?: string | null
+  keystore_alias?: string | null
 }
 
 export function CertificatesPane({
@@ -1501,6 +1519,48 @@ export function CertificatesPane({
             ? { id: c.id, keyPath: pick.data }
             : { id: c.id, pfxPath: pick.data }
       await window.api?.certificate?.update(patch)
+      await reload()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  /**
+   * #60 — flip a client-cert row between the classic file paths (DEFAULT) and a
+   * keystore-backed source. Only `source` is written: crt/key/pfx paths are left
+   * untouched, so switching back restores the exact previous behaviour.
+   */
+  async function handleSetCertSource(c: CertRow, source: 'file' | 'keystore') {
+    try {
+      await window.api?.certificate?.update({ id: c.id, source })
+      await reload()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  /** Persist the picked keystore alias onto the row (schema R11 columns). */
+  async function handlePickKeystore(c: CertRow, sel: KeyMaterialSelection | null) {
+    try {
+      if (!sel) {
+        await window.api?.certificate?.update({
+          id: c.id,
+          source: 'file',
+          keystoreId: '',
+          keystoreAlias: '',
+        })
+      } else if (sel.source.kind === 'keystore') {
+        await window.api?.certificate?.update({
+          id: c.id,
+          source: 'keystore',
+          keystoreId: sel.source.keystoreId,
+          keystoreAlias: sel.source.alias,
+          // R11 — the per-alias ENTRY password gets its OWN column. Writing it
+          // to `passphrase` would destroy the PFX passphrase of the file path
+          // the user can still switch back to.
+          ...(sel.source.keyPassword ? { keystoreKeyPassword: sel.source.keyPassword } : {}),
+        })
+      }
       await reload()
     } catch (err) {
       console.error(err)
@@ -1782,7 +1842,21 @@ export function CertificatesPane({
                   <Trash2 size={14} />
                 </button>
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              {/* #60 — ADDED source choice. Default stays 'file': the CRT/KEY/PFX
+                  pickers below are untouched and remain the primary path. */}
+              <CertSourceChoice
+                row={c}
+                onSetSource={(s) => handleSetCertSource(c, s)}
+                onPick={(sel) => handlePickKeystore(c, sel)}
+              />
+              {/* Kept mounted and editable when a keystore source is active —
+                  nothing is wiped, so switching back restores the exact old
+                  setup — but visibly inert, since the resolver ignores them. */}
+              <div
+                className="grid grid-cols-3 gap-2"
+                style={{ opacity: c.source === 'keystore' ? 0.55 : 1 }}
+                title={c.source === 'keystore' ? t('certs.filesInactive') : undefined}
+              >
                 <CertFileField
                   label={t('certs.crt')}
                   path={c.crt_path}
@@ -1799,15 +1873,16 @@ export function CertificatesPane({
                   onPick={() => handlePickClientFile(c, 'pfx')}
                 />
               </div>
-              <div>
-                <Label text={t('certs.passphrase')} />
-                <input
-                  type="password"
-                  value={c.passphrase || ''}
-                  onChange={(e) => handleEditPassphrase(c, e.target.value)}
-                  style={BASE_INP}
-                />
-              </div>
+              {c.source === 'keystore' && (
+                <div className="text-[10px]" style={{ color: 'var(--hint)' }}>
+                  {t('certs.filesInactive')}
+                </div>
+              )}
+              <CertPassphraseField
+                key={`${c.id}:${c.has_passphrase}`}
+                row={c}
+                onSave={(pw) => handleEditPassphrase(c, pw)}
+              />
             </div>
           ))}
         </CertSection>
@@ -1858,6 +1933,137 @@ function CertSection({
       </div>
       <div className="flex flex-col gap-2">{children}</div>
     </SectionCard>
+  )
+}
+
+/**
+ * The ADDED "Use from keystore / Security" choice for a client-cert row (#60).
+ * `file` is the default and stays selected for every existing row (the column
+ * defaults to 'file'), so behaviour without a keystore is byte-for-byte the old
+ * path. Picking a keystore alias writes `source`/`keystore_id`/`keystore_alias`
+ * and leaves the crt/key/pfx paths in place.
+ */
+function CertSourceChoice({
+  row,
+  onSetSource,
+  onPick,
+}: {
+  row: CertRow
+  onSetSource: (source: 'file' | 'keystore') => void
+  onPick: (selection: KeyMaterialSelection | null) => void
+}) {
+  const { t } = useTranslation()
+  const persisted: 'file' | 'keystore' = row.source === 'keystore' ? 'keystore' : 'file'
+  // Selecting "Keystore / Security" only REVEALS the picker — nothing is
+  // written until an alias is actually chosen. Persisting `source:'keystore'`
+  // on the click alone would leave the row half-linked, and a half-linked row
+  // fails loud on every Send and on every Runner iteration until it is fixed.
+  // Derived, not synced: `null` means "follow the row". A local choice only
+  // overrides it until the row itself changes to match.
+  const [pending, setPending] = useState<'file' | 'keystore' | null>(null)
+  const source = pending ?? persisted
+
+  function choose(next: 'file' | 'keystore'): void {
+    setPending(next)
+    // Going BACK to files is a complete instruction on its own — persist it so
+    // the classic path resumes immediately.
+    if (next === 'file' && persisted === 'keystore') onSetSource('file')
+  }
+
+  return (
+    <div>
+      <Label text={t('certs.source')} />
+      <div className="flex gap-2">
+        {(
+          [
+            { id: 'file' as const, label: t('certs.sourceFile') },
+            { id: 'keystore' as const, label: t('certs.sourceKeystore') },
+          ] as const
+        ).map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => choose(opt.id)}
+            className="flex-1 cursor-pointer rounded-[7px] px-2 py-1.5"
+            style={{
+              border: `2px solid ${source === opt.id ? 'var(--accent)' : 'var(--border)'}`,
+              background: source === opt.id ? 'var(--accent-light)' : 'var(--white)',
+              color: source === opt.id ? 'var(--accent-text)' : 'var(--text)',
+              fontWeight: source === opt.id ? 600 : 400,
+            }}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      {source === 'keystore' && (
+        <div className="mt-2">
+          <KeyMaterialField
+            value={
+              row.keystore_id && row.keystore_alias
+                ? { kind: 'keystore', keystoreId: row.keystore_id, alias: row.keystore_alias }
+                : null
+            }
+            label={row.keystore_alias ? `keystore › ${row.keystore_alias}` : undefined}
+            onChange={(sel) => {
+              if (!sel) setPending('file')
+              onPick(sel)
+            }}
+            filter="privateKey"
+            // The row persists the selection and has nowhere to hold a
+            // write-only store password (R11) — so only remembered stores
+            // can back it.
+            requireRemembered
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Write-only PFX passphrase field (#60 NO-LEAK).
+ *
+ * The stored value never crosses IPC — `certificate:list` reports only whether
+ * one is set — so this input starts EMPTY on every load and shows a "saved"
+ * placeholder instead. Typing replaces it; clearing an existing one is an
+ * explicit action, not an accident of an empty controlled input.
+ */
+function CertPassphraseField({ row, onSave }: { row: CertRow; onSave: (pw: string) => void }) {
+  const { t } = useTranslation()
+  // The draft is reset by REMOUNTING (see the `key` at the call site) rather
+  // than by an effect — there is no stored value to fall back to.
+  const [draft, setDraft] = useState('')
+
+  return (
+    <div>
+      <Label text={t('certs.passphrase')} />
+      <input
+        type="password"
+        value={draft}
+        placeholder={row.has_passphrase ? t('certs.passphraseSet') : ''}
+        aria-label={t('certs.passphrase')}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (draft !== '') onSave(draft)
+        }}
+        style={BASE_INP}
+      />
+      {row.has_passphrase && (
+        <button
+          type="button"
+          onClick={() => onSave('')}
+          className="mt-1 cursor-pointer rounded border px-2 py-0.5 text-[10px]"
+          style={{
+            borderColor: 'var(--border)',
+            color: 'var(--muted)',
+            background: 'var(--white)',
+          }}
+        >
+          {t('certs.passphraseClear')}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -1924,6 +2130,13 @@ export function ProxyPane({
   function update(patch: Partial<ProjectProxy>) {
     onChange({ proxy: { ...proxy, ...patch } })
   }
+  // Draft-backed: clearing the box wrote port 0, which is not a port.
+  const portDraft = useNumberDraft({
+    value: proxy.port ?? 8080,
+    min: 1,
+    max: 65_535,
+    onChange: (port) => update({ port }),
+  })
   return (
     <div className="p-6">
       <PaneHeader title={t('proxy.title')} subtitle={t('proxy.subtitle')} />
@@ -1985,8 +2198,7 @@ export function ProxyPane({
                 <Label text={t('proxy.port')} />
                 <input
                   type="number"
-                  value={proxy.port ?? 8080}
-                  onChange={(e) => update({ port: Number(e.target.value) })}
+                  {...portDraft.inputProps}
                   style={{ ...BASE_INP, fontFamily: 'var(--font-mono)' }}
                 />
               </div>

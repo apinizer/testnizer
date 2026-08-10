@@ -3,7 +3,7 @@ import type { Theme, Language } from '../types'
 import { setLocale as setI18nLocale } from '../lib/i18n'
 
 type Locale = Language
-type SidebarPage = 'apis' | 'tests' | 'docs' | 'history' | 'tools' | 'mocks' | 'settings'
+import type { SidebarPage } from '../lib/sidebar-pages'
 export type RightPanelTab = 'variables' | 'code'
 
 // Preset font stacks offered as quick picks. The stored `fontFamily` is always
@@ -52,7 +52,6 @@ interface UIStore {
   showEnvironmentModal: boolean
   showSettingsModal: boolean
   showCodeGenerator: boolean
-  showCollectionRunner: boolean
   showUpdateModal: boolean
   showSaveModal: boolean
   showNewProjectModal: boolean
@@ -61,6 +60,20 @@ interface UIStore {
   showHistoryPanel: boolean
   showConsolePanel: boolean
   consolePanelMaximized: boolean
+  /**
+   * Live height of the Console drawer, in px.
+   *
+   * The panel is positioned absolutely so it can slide over the footer, which
+   * means it does NOT shrink the workbench on its own. AppShell reserves this
+   * many pixels at the bottom of the body instead. Without that the content
+   * area still measured full-height, so its `overflow-auto` never overflowed:
+   * no scrollbar appeared and everything below the drawer was simply
+   * unreachable — the Runner's "Run teardown script" box could not be scrolled
+   * to or typed into while the Console was open (reported 5 Aug). It lives in
+   * the store rather than in ConsolePanel because the reserving element is a
+   * sibling, and it must track the drag handle live.
+   */
+  consolePanelHeight: number
   showProfileModal: boolean
   showAboutModal: boolean
   showEnterpriseModal: boolean
@@ -100,7 +113,6 @@ interface UIStore {
   setShowEnvironmentModal: (show: boolean) => void
   setShowSettingsModal: (show: boolean) => void
   setShowCodeGenerator: (show: boolean) => void
-  setShowCollectionRunner: (show: boolean) => void
   setShowUpdateModal: (show: boolean) => void
   setShowSaveModal: (show: boolean) => void
   setShowNewProjectModal: (show: boolean) => void
@@ -110,6 +122,7 @@ interface UIStore {
   setShowConsolePanel: (show: boolean) => void
   toggleConsolePanel: () => void
   toggleConsolePanelMaximized: () => void
+  setConsolePanelHeight: (height: number) => void
   setShowProfileModal: (show: boolean) => void
   setShowAboutModal: (show: boolean) => void
   setShowEnterpriseModal: (show: boolean) => void
@@ -187,7 +200,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   showEnvironmentModal: false,
   showSettingsModal: false,
   showCodeGenerator: false,
-  showCollectionRunner: false,
   showUpdateModal: false,
   showSaveModal: false,
   showNewProjectModal: false,
@@ -196,6 +208,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   showHistoryPanel: false,
   showConsolePanel: false,
   consolePanelMaximized: false,
+  consolePanelHeight: 280,
   showProfileModal: false,
   showAboutModal: false,
   showEnterpriseModal: false,
@@ -370,7 +383,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   setShowEnvironmentModal: (show) => set({ showEnvironmentModal: show }),
   setShowSettingsModal: (show) => set({ showSettingsModal: show }),
   setShowCodeGenerator: (show) => set({ showCodeGenerator: show }),
-  setShowCollectionRunner: (show) => set({ showCollectionRunner: show }),
   setShowUpdateModal: (show) => set({ showUpdateModal: show }),
   setShowSaveModal: (show) => set({ showSaveModal: show }),
   setShowNewProjectModal: (show) => set({ showNewProjectModal: show }),
@@ -379,6 +391,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   setShowHistoryPanel: (show) => set({ showHistoryPanel: show }),
   setShowConsolePanel: (show) => set({ showConsolePanel: show }),
   toggleConsolePanel: () => set((s) => ({ showConsolePanel: !s.showConsolePanel })),
+  setConsolePanelHeight: (height) => set({ consolePanelHeight: height }),
   toggleConsolePanelMaximized: () =>
     set((s) => ({ consolePanelMaximized: !s.consolePanelMaximized })),
   setShowProfileModal: (show) => set({ showProfileModal: show }),

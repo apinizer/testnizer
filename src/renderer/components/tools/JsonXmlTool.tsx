@@ -82,7 +82,10 @@ export default function JsonXmlTool() {
   function handleSwitchDirection(next: Direction) {
     if (next === direction) return
     setDirection(next)
-    setInput(next === 'json2xml' ? SAMPLE_JSON : SAMPLE_XML)
+    // Same rule as the YAML/JSON tool: only seed a sample when there is nothing
+    // of the user's to lose.
+    const untouched = input.trim() === '' || input === SAMPLE_JSON || input === SAMPLE_XML
+    if (untouched) setInput(next === 'json2xml' ? SAMPLE_JSON : SAMPLE_XML)
     setOutput('')
     setError(null)
   }

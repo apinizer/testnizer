@@ -10,7 +10,7 @@ import VariableAutocompleteInput from '../shared/VariableAutocompleteInput'
 import { T, BTN_P, BTN_S, BASE_INP } from '../../styles/tokens'
 import type { HttpMethod } from '../../types'
 
-const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
+const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'QUERY']
 
 export default function UrlBar() {
   const method = useRequestStore((s) => s.method)

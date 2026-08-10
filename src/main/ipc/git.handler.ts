@@ -5,6 +5,7 @@ import { getDb } from '../db/database'
 import { exportProjectData, importProjectDataFromJson } from './save.handler'
 import { asConflictAwareGit, runGitOpWithConflictHandling } from '../lib/git-conflict'
 import type { SimpleGit, BranchSummaryBranch } from 'simple-git'
+import { projectFileSlug } from '../lib/project-file'
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -537,7 +538,7 @@ export function registerGitHandlers(): void {
 
       // Export project data and write to repo before pushing
       const data = exportProjectData(projectId)
-      const slug = ((data.project?.name as string) || 'project').replace(/[^a-zA-Z0-9\-_]/g, '-')
+      const slug = projectFileSlug(data.project?.name as string | undefined)
       const displayName =
         ((data.project?.display_name || data.project?.name) as string) || 'project'
       const fileName = `${slug}.json`

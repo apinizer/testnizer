@@ -10,6 +10,7 @@ import {
   migrateLegacyConfig,
   type WsSecurityConfig as WsseConfig,
 } from './wsse.engine'
+import { resolveWsseKeyMaterial } from '../lib/wsse-key-material'
 import { applyDefaultUserAgent } from '../lib/user-agent'
 import { classifyTransportError } from '../lib/error-classifier'
 import { normaliseTlsVersion, isLegacyTlsVersion, type TlsOptions } from '../lib/tls-presets'
@@ -783,7 +784,11 @@ export async function executeSoap(options: SoapExecuteOptions): Promise<SoapApiR
 
     // Apply WS-Security via shared engine (UsernameToken / Timestamp / Sign / Encrypt)
     if (options.wsSecurity?.enabled) {
-      const wsseConfig = migrateLegacyConfig(options.wsSecurity)
+      // Junction 2 of 2 (#60 / reconcile C-2 + C-4): resolve `sign.keySource`
+      // AFTER migrateLegacyConfig (a modern config passes through untouched, so
+      // keySource survives) and BEFORE applyWsSecurity, which stays pure. With
+      // no keySource this is a no-op — the pasted-PEM path is unchanged.
+      const wsseConfig = resolveWsseKeyMaterial(migrateLegacyConfig(options.wsSecurity))
       envelope = await applyWsSecurity(envelope, wsseConfig)
     }
 

@@ -5,20 +5,43 @@
 
 import { useTabsStore } from '../stores/tabs.store'
 import { useUIStore } from '../stores/ui.store'
+import { isRunnerBusy } from './runner-activity'
 
 const RUNNER_TAB_ID = 'runner-main'
+
+// Monotonic session token. Two opens can land inside the same millisecond
+// (a second right-click → Run), and a repeated Date.now() would look like
+// "same session" to the runner tab — it would then keep showing the previous
+// screen instead of re-arming (#66).
+let sessionCounter = 0
+function nextSessionKey(): string {
+  sessionCounter += 1
+  return `${Date.now()}-${sessionCounter}`
+}
 
 export function openOrReuseRunnerTab(
   sessionData?: Record<string, unknown>,
   tabName = 'Runner',
+  opts?: { view?: 'config' },
 ): void {
   const tabsApi = useTabsStore.getState()
   const existing = tabsApi.tabs.find((tab) => tab.protocol === 'runner')
   const tabId = existing ? existing.id : RUNNER_TAB_ID
-  const sessionKey = String(Date.now())
+  const sessionKey = nextSessionKey()
 
   if (sessionData) {
     sessionStorage.setItem(`runner-report-${tabId}`, JSON.stringify(sessionData))
+  }
+
+  // A scopeless runner tab lands on the Tests overview by design — dropping
+  // someone into a 200-endpoint "ready to fire" list because they clicked the
+  // Tests sidebar was the screen we removed from every implicit entry point
+  // (#39). An EXPLICIT "open the collection runner" is the exception: the user
+  // named the screen they want, and with any test suite present there is no
+  // other way to reach a project-wide run config. `config-explicit` is a
+  // distinct sentinel so the scope guard on plain `config` is untouched.
+  if (opts?.view === 'config') {
+    sessionStorage.setItem(`runner-view-${tabId}`, 'config-explicit')
   }
 
   if (existing) {
@@ -45,11 +68,33 @@ export function openFolderRunner(folderId: string, folderName?: string): void {
   // scoped to the folder (#39). RunnerTab's view initializer restores 'config'
   // when this key is set AND the tab carries a folder scope.
   sessionStorage.setItem(`runner-view-${tabId}`, 'config')
+  // Re-arming this tab means "here is the next run", so the previous one's
+  // stored report goes with it. RunnerTab keeps that report so a tab switch
+  // can put the results back (issue #93); left behind here it would come back
+  // instead of the Start-run screen, which is issue #66 in reverse. A folder
+  // runner's scope travels on `tab.folderId`, so nothing else in the payload
+  // is worth keeping.
+  sessionStorage.removeItem(`runner-report-${tabId}`)
+  sessionStorage.removeItem(`runner-report-spent-${tabId}`)
+  if (isRunnerBusy(tabId)) {
+    // That tab's run is still executing. Re-arming would remount it and take
+    // the live progress + Cancel button away while main keeps running — focus
+    // the run the user already started instead.
+    tabsApi.openTab({ id: tabId, name: folderName || 'Runner', protocol: 'runner', folderId })
+    tabsApi.setActiveTab(tabId)
+    useUIStore.getState().setActiveSidebarPage('tests')
+    return
+  }
+  // A fresh session token on every Run. When the tab is already open (and even
+  // already active, parked on a previous run's results) this is what tells the
+  // workbench to re-arm it, so the user always lands on the Start-run screen
+  // instead of staring at the old results (#66).
   tabsApi.openTab({
     id: tabId,
     name: folderName || 'Runner',
     protocol: 'runner',
     folderId,
+    sessionKey: nextSessionKey(),
   })
   useUIStore.getState().setActiveSidebarPage('tests')
 }

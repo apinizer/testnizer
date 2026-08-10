@@ -41,6 +41,10 @@ describe('ConsoleTab — virtualization', () => {
     HTMLElement.prototype.scrollTo = vi.fn() as unknown as typeof window.scrollTo
   })
 
+  // 1000 store writes plus a virtualized render in jsdom is genuinely CPU-bound
+  // — on a contended CI runner it crosses vitest's 5s default and fails a test
+  // that is asserting virtualization, not speed. Give this one case its own
+  // budget rather than raising testTimeout for the whole suite.
   it('renders 1000 entries without rendering them all (virtualized)', () => {
     const store = useConsoleStore.getState()
     for (let i = 0; i < 1000; i++) {
@@ -68,7 +72,7 @@ describe('ConsoleTab — virtualization', () => {
     const rows = list.querySelectorAll('[data-index]')
     expect(rows.length).toBeGreaterThan(0)
     expect(rows.length).toBeLessThan(useConsoleStore.getState().entries.length)
-  })
+  }, 30_000)
 
   it('shows the empty state when there are no entries', () => {
     render(<ConsoleTab />)

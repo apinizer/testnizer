@@ -267,8 +267,8 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     const ownerTabId = get()._currentTabId
 
     set({ isLoading: true })
-    responseStore.setLoading(true)
-    responseStore.clearResponse()
+    responseStore.setLoading(true, activeTabId)
+    responseStore.clearResponse(activeTabId)
     if (activeTabId) tabsStore.markLoading(activeTabId, true)
 
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
@@ -322,7 +322,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
         const apiResp = result.data as ApiResponse
         applyToOwner({ response: apiResp })
         if (get()._currentTabId === ownerTabId) {
-          responseStore.setResponse(apiResp)
+          responseStore.setResponse(apiResp, activeTabId)
         }
       } else {
         const errResp: ApiResponse = {
@@ -333,7 +333,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
         }
         applyToOwner({ response: errResp })
         if (get()._currentTabId === ownerTabId) {
-          responseStore.setResponse(errResp)
+          responseStore.setResponse(errResp, activeTabId)
         }
       }
     } catch {
@@ -364,7 +364,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
       }
       applyToOwner({ response: demoResp })
       if (get()._currentTabId === ownerTabId) {
-        responseStore.setResponse(demoResp)
+        responseStore.setResponse(demoResp, activeTabId)
       }
     } finally {
       const current = get()
@@ -385,7 +385,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
         })
         set({ _tabStates: map })
       }
-      responseStore.setLoading(false)
+      responseStore.setLoading(false, activeTabId)
       if (activeTabId) tabsStore.markLoading(activeTabId, false)
     }
   },

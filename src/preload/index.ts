@@ -288,6 +288,17 @@ const api = {
     decrypt: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('wsse:decrypt', payload),
   },
 
+  // ─── SAML (#65) ───────────────────────────────────────────
+  // Payloads carry an OPAQUE key reference at most — the resolved PEM and the
+  // private key never cross back over this bridge.
+  saml: {
+    build: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('saml:build', payload),
+    sign: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('saml:sign', payload),
+    verify: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('saml:verify', payload),
+    encode: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('saml:encode', payload),
+    decode: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('saml:decode', payload),
+  },
+
   // ─── Diagnostics ──────────────────────────────────────────
   diagnostics: {
     export: (): Promise<unknown> => ipcRenderer.invoke('diagnostics:export'),
@@ -319,7 +330,8 @@ const api = {
   // ─── Collection Runner ──────────────────────────────────────
   runner: {
     execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('runner:execute', options),
-    stop: (): Promise<unknown> => ipcRenderer.invoke('runner:stop'),
+    stop: (opts?: { mode?: 'graceful' | 'direct'; skipTeardown?: boolean }): Promise<unknown> =>
+      ipcRenderer.invoke('runner:stop', opts),
     export: (options: unknown): Promise<unknown> => ipcRenderer.invoke('runner:export', options),
     onProgress: (callback: (progress: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
@@ -328,6 +340,15 @@ const api = {
       ipcRenderer.on('runner:progress', handler)
       return () => {
         ipcRenderer.removeListener('runner:progress', handler)
+      }
+    },
+    onPhase: (callback: (phase: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('runner:phase', handler)
+      return () => {
+        ipcRenderer.removeListener('runner:phase', handler)
       }
     },
     history: (
@@ -418,6 +439,188 @@ const api = {
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('certificate:delete', id),
     pickFile: (kind: 'crt' | 'key' | 'pfx' | 'ca'): Promise<unknown> =>
       ipcRenderer.invoke('certificate:pickFile', kind),
+  },
+
+  // ─── OTP authenticator vault ────────────────────────────────
+  otp: {
+    list: (): Promise<unknown> => ipcRenderer.invoke('otp:list'),
+    add: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('otp:add', payload),
+    update: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('otp:update', payload),
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('otp:delete', id),
+    codes: (): Promise<unknown> => ipcRenderer.invoke('otp:codes'),
+    code: (id: string): Promise<unknown> => ipcRenderer.invoke('otp:code', id),
+    parseUri: (uri: string): Promise<unknown> => ipcRenderer.invoke('otp:parseUri', uri),
+    reveal: (id: string): Promise<unknown> => ipcRenderer.invoke('otp:reveal', id),
+    uri: (id: string): Promise<unknown> => ipcRenderer.invoke('otp:uri', id),
+  },
+
+  // ─── Keystore Studio (read-only viewer + Model-B library) ───
+  keystore: {
+    pickFile: (): Promise<unknown> => ipcRenderer.invoke('keystore:pickFile'),
+    open: (payload: {
+      path?: string
+      bytes?: string
+      password?: string
+      type?: string
+      aliasEntryPasswords?: Record<string, string>
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:open', payload),
+    createNew: (payload: { type?: string; password?: string }): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:createNew', payload),
+    list: (sessionId: string): Promise<unknown> => ipcRenderer.invoke('keystore:list', sessionId),
+    aliasDetail: (payload: { sessionId: string; alias: string }): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:aliasDetail', payload),
+    generateKeyPair: (payload: {
+      sessionId: string
+      alias: string
+      keyAlgorithm?: string
+      keySize?: number
+      curve?: string
+      subjectDN?: string
+      subjectAlternativeNames?: string[]
+      validityDays?: number
+      serialNumber?: string
+      keyUsage?: string[]
+      basicConstraintsCa?: boolean
+      signatureAlgorithm?: string
+      entryPassword?: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:generateKeyPair', payload),
+    generateSecretKey: (payload: {
+      sessionId: string
+      alias: string
+      keyAlgorithm?: string
+      keySize?: number
+      entryPassword?: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:generateSecretKey', payload),
+    importPkcs12: (payload: {
+      sessionId: string
+      sourcePath?: string
+      sourceBytes?: string
+      sourcePassword?: string
+      sourceAlias?: string
+      alias?: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:importPkcs12', payload),
+    importKeyMaterial: (payload: {
+      sessionId: string
+      alias: string
+      privateKeyPem: string
+      certificatePem: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:importKeyMaterial', payload),
+    importPem: (payload: {
+      sessionId: string
+      alias: string
+      pemContent: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:importPem', payload),
+    importTrustedCert: (payload: {
+      sessionId: string
+      alias: string
+      certificateContent: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:importTrustedCert', payload),
+    renameAlias: (payload: {
+      sessionId: string
+      alias: string
+      newAlias: string
+      entryPassword?: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:renameAlias', payload),
+    changeStorePassword: (payload: {
+      sessionId: string
+      newPassword: string
+      aliasEntryPasswords?: Record<string, string>
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:changeStorePassword', payload),
+    setEntryPassword: (payload: {
+      sessionId: string
+      alias: string
+      entryPassword?: string
+      newEntryPassword: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:setEntryPassword', payload),
+    deleteEntry: (payload: { sessionId: string; alias: string }): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:deleteEntry', payload),
+    exportCertificate: (payload: {
+      sessionId: string
+      alias: string
+      format?: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:exportCertificate', payload),
+    convert: (payload: {
+      sessionId: string
+      targetType: string
+      newPassword: string
+      entryPassword?: string
+      aliasEntryPasswords?: Record<string, string>
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:convert', payload),
+    saveAs: (payload: { sessionId: string; suggestedName?: string }): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:saveAs', payload),
+    closeSession: (sessionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:closeSession', sessionId),
+    librarySave: (payload: {
+      sessionId: string
+      name: string
+      rememberPassword?: boolean
+      id?: string
+    }): Promise<unknown> => ipcRenderer.invoke('keystore:librarySave', payload),
+    libraryList: (): Promise<unknown> => ipcRenderer.invoke('keystore:libraryList'),
+    libraryOpen: (payload: { id: string; password?: string }): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:libraryOpen', payload),
+    libraryDelete: (payload: { id: string }): Promise<unknown> =>
+      ipcRenderer.invoke('keystore:libraryDelete', payload),
+  },
+
+  // ─── TLS Inspector (#64) — public-only endpoint inspection ───
+  tls: {
+    inspect: (payload: {
+      host: string
+      port?: number
+      servername?: string
+      alpnProtocols?: string[]
+      minVersion?: string
+      maxVersion?: string
+      ciphers?: string
+      cipherPreset?: 'modern' | 'intermediate' | 'legacy'
+      timeoutMs?: number
+      caCerts?: string[]
+      clientCert?:
+        | {
+            kind: 'inline'
+            certPem?: string
+            keyPem?: string
+            pfxBase64?: string
+            passphrase?: string
+          }
+        | {
+            kind: 'file'
+            certPath?: string
+            keyPath?: string
+            pfxPath?: string
+            passphrase?: string
+          }
+    }): Promise<unknown> => ipcRenderer.invoke('tls:inspect', payload),
+  },
+
+  // ─── JOSE / JWT (#63) — private-key operations run in MAIN ───
+  //
+  // The `{inline}` arm is the DEFAULT, unchanged path: whatever the user pasted
+  // (a shared secret or a PEM) rides the payload. The `{source}` arm is ONE
+  // added option carrying an OPAQUE MaterialSource (ids/aliases/paths only) —
+  // main resolves it, signs with it, and returns the token. Key material never
+  // travels back across this bridge in either direction.
+  jose: {
+    sign: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('jose:sign', payload),
+    verify: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('jose:verify', payload),
+    encrypt: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('jose:encrypt', payload),
+    decrypt: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('jose:decrypt', payload),
+    decode: (token: string): Promise<unknown> => ipcRenderer.invoke('jose:decode', token),
+    // The JWKS GET runs in MAIN: index.html pins `connect-src 'self'`, so the
+    // renderer cannot reach an IdP's /.well-known/jwks.json at all. What comes
+    // back is stripped of every private JWK member before it crosses.
+    fetchJwks: (uri: string): Promise<unknown> => ipcRenderer.invoke('jose:fetchJwks', uri),
+  },
+
+  // ─── JWKS (#61) — build the STATIC document a mock endpoint serves ───
+  //
+  // Main resolves the opaque MaterialSource, takes its PUBLIC half only, and
+  // returns the finished body text. What comes back is publishable by
+  // construction (no `d,p,q,dp,dq,qi,k`), so this bridge carries no key
+  // material in either direction — only ids in, only public keys out.
+  jwks: {
+    build: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('jwks:build', payload),
   },
 
   // ─── GraphQL ────────────────────────────────────────────────

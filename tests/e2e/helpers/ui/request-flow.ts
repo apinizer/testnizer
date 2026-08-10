@@ -94,7 +94,20 @@ export async function addHeader(page: Page, key: string, value: string): Promise
 
 export async function sendAndWaitResponse(page: Page, timeoutMs = 30_000): Promise<void> {
   await page.getByTestId('send-btn').click()
-  await expect(page.getByTestId('res-tab-body')).toBeVisible({ timeout: timeoutMs })
+
+  // A transport-level failure (no status code at all) makes ResponsePane render
+  // its error panel INSTEAD of the tab row, so waiting on `res-tab-body` alone
+  // burns the full timeout and then reports "element(s) not found" — hiding the
+  // one thing worth knowing: what the request actually failed with. Race the two
+  // outcomes and surface the message.
+  const body = page.getByTestId('res-tab-body')
+  const failed = page.getByTestId('response-error')
+  await expect(body.or(failed)).toBeVisible({ timeout: timeoutMs })
+  if (await failed.isVisible().catch(() => false)) {
+    const detail = (await failed.innerText().catch(() => '')).replace(/\s+/g, ' ').trim()
+    throw new Error(`Send failed at transport level (no status): ${detail}`)
+  }
+
   await expect(page.getByText(/200|OK/i).first()).toBeVisible({ timeout: 10_000 })
 }
 

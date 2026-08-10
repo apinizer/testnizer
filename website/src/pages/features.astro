@@ -128,7 +128,11 @@ const sections = [
 ]
 
 const tools = [
-  { icon: icons.key, title: 'JWT Debugger', body: 'Decode + encode in one tool. Header / payload as JSON or table view, intra-line claim descriptions, ISO-rendered date claims. Verify HS / RS / PS / ES / EdDSA signatures, sign with shared secret or PEM private key. Generate working sample tokens per algorithm.' },
+  { icon: icons.key, title: 'JWT / JOSE — full lifecycle', body: 'Decode, sign and verify in one tool: HS / RS / PS / ES signatures, JWE encrypt/decrypt, claim editing with human-readable expiry, and verification against a JWKS. Sign with a shared secret, a PEM key, or an alias from your keystore — in that last case the private key stays in the app core and never reaches the editor.' },
+  { icon: icons.key, title: 'Keystore Studio', body: 'Open, create, edit, convert and export JKS / PKCS#12 keystores and X.509 certificates — without keytool or openssl. Generate key pairs and secret keys, import five formats, manage aliases and both password levels, export entries as PEM / DER / PKCS#12. Key↔certificate match is checked cryptographically, not by name.' },
+  { icon: icons.fingerprint, title: 'JWK / JWKS', body: 'PEM ⇄ JWK both ways, key-pair generation, RFC 7638 thumbprints as kid, JWK-Set assembly — and serving a JWKS from a mock server at /.well-known/jwks.json so a service under test can fetch your keys. Public keys only, enforced at the boundary.' },
+  { icon: icons.lock, title: 'SAML — build, sign, validate', body: 'Assemble an AuthnRequest / Assertion / Response, sign it with enveloped XML-DSig, and validate one — including the Redirect and POST bindings. The validator proves WHICH element was signed, so XML Signature Wrapping, algorithm confusion (HMAC keyed with your trusted certificate), SHA-1, XXE and expired bearer windows are rejected with the exact reason.' },
+  { icon: icons.building, title: 'TLS Inspector', body: 'Point it at a live endpoint and read back the certificate chain, expiry, protocol versions and negotiated ciphers — the same TLS settings your requests use.' },
   { icon: icons.fileText, title: 'JSON / XML Formatters', body: 'Pretty-print, minify, validate. Multi-line input, syntax errors with line numbers. Sort-keys / sort-attributes options.' },
   { icon: icons.fileText, title: 'Encoders / Decoders', body: 'Base64, URL, Hex, HTML entities, Unicode escape — paired text fields, instant convert.' },
   { icon: icons.eyeOff, title: 'Text Diff', body: 'Side-by-side aligned diff with character-level intra-line highlights for paired modified rows. Per-side line counts and additions / removals tally; ignore-whitespace and ignore-case toggles.' },
@@ -145,7 +149,8 @@ const tools = [
   { icon: icons.fingerprint, title: 'UUID Generator', body: 'v1 / v4 / v5 / v7 in batches up to 1000, with namespace presets (DNS / URL / OID / X.500) for deterministic v5. Lower / upper / no-dashes / urn / braces formats. Validate + version-detect any UUID.' },
   { icon: icons.search, title: 'Regex Tester', body: 'Live regex match with named + numbered group captures, replacement preview with $1 backreferences, all six JS flags toggleable, and a built-in cheatsheet (email / URL / IPv4 / UUID / ISO 8601 / JWT / hex color / phone).' },
   { icon: icons.repeat, title: 'YAML ↔ JSON Converter', body: 'Bidirectional with indent + sort-keys options. JSON_SCHEMA-safe (no `!!js/*` tags). Convenient for OpenAPI specs, Kubernetes configs, and Helm charts.' },
-  { icon: icons.building, title: 'Certificate Manager', body: 'Local cert store, mTLS / client certificates per project, OS keychain encryption for passphrases.' },
+  { icon: icons.building, title: 'Certificate Manager', body: 'Local cert store, mTLS / client certificates per project, OS keychain encryption for passphrases. A client certificate can also come straight from a saved keystore alias.' },
+  { icon: icons.fileCode, title: 'JWS/JWT in scripts', body: 'pm.jose.sign / verify / decode (plus require("jose")) inside pre-request and Tests scripts, so a token can be minted in one step of a flow and used by the next. Identical on Send and in the Collection Runner.' },
 ]
 ---
 
@@ -156,7 +161,7 @@ const tools = [
         Everything in one app. Everything on-device.
       </h1>
       <p class="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-text-muted">
-        Testnizer covers the full enterprise API surface — REST, SOAP, gRPC, GraphQL, WebSocket, SSE, Socket.IO and MCP, plus an AI client and a workbench of cryptographic tools. None of it phones home.
+        Testnizer covers the full enterprise API surface — REST, SOAP, gRPC, GraphQL, WebSocket, SSE, Socket.IO and MCP, plus an AI client and a complete security workbench: keystores, certificates, JWT/JOSE, JWK/JWKS, SAML and TLS inspection. The work that usually means keytool, openssl, jwt.io and a folder of scripts happens here, offline. None of it phones home.
       </p>
     </div>
   </section>

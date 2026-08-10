@@ -28,6 +28,17 @@ import type {
   TestSuiteItemRow,
   TestSuiteFolderRow,
   TestSuiteContents,
+  MaterialSource,
+  SamlAuthnRequestConfig,
+  SamlAssertionConfig,
+  SamlResponseConfig,
+  SamlDocument,
+  SamlKeyInput,
+  SamlSignAlgorithm,
+  SamlSignatureTarget,
+  SamlVerifyOptions,
+  SamlVerifyResult,
+  SamlBinding,
 } from '../renderer/types'
 
 // ─── Auth ────────────────────────────────────────────────────────
@@ -611,80 +622,16 @@ interface WsApi {
 
 // ─── Collection Runner ───────────────────────────────────────────
 
-interface RunnerExecuteOptions {
-  projectId: string
-  endpointIds: string[]
-  environmentId?: string
-  workspaceId?: string
-  delay?: number
-  iterations?: number
-  iterationData?: Record<string, string>[]
-  stopOnError?: boolean
-  /** Persist requestHeaders/requestBody/responseHeaders/responseBody on each
-   *  result. Default true; set false to keep memory low for very large runs. */
-  persistResponses?: boolean
-  /** Postman "Keep variable values" — persist script-written env/global
-   *  variables back to the active environment after the run. Default true. */
-  keepVariableValues?: boolean
-  folderName?: string
-  sourceLabel?: string
-}
-
-interface EndpointRunResult {
-  endpointId: string
-  endpointName: string
-  method: string
-  url: string
-  status: number | null
-  statusText: string
-  duration: number
-  passed: number
-  failed: number
-  skipped: number
-  assertions: RunnerAssertionResult[]
-  error?: string
-  responseSize?: number
-  responseBody?: string
-  responseHeaders?: Record<string, string>
-  requestHeaders?: Record<string, string>
-  requestBody?: string
-}
-
-interface RunnerAssertionResult {
-  name: string
-  passed: boolean
-  actual?: string | number
-  error?: string
-}
-
-interface RunnerProgress {
-  current: number
-  total: number
-  endpointId: string
-  result: EndpointRunResult
-}
-
-interface RunnerReport {
-  projectId: string
-  startedAt: number
-  completedAt: number
-  totalEndpoints: number
-  passedEndpoints: number
-  failedEndpoints: number
-  totalAssertions: number
-  passedAssertions: number
-  failedAssertions: number
-  results: EndpointRunResult[]
-  /** Variables written by scripts during the run (and persisted when
-   *  keepVariableValues is on) — renderer refreshes its env store from these. */
-  envUpdates?: Record<string, string>
-  globalUpdates?: Record<string, string>
-}
-
-interface RunnerExportOptions {
-  results: EndpointRunResult[]
-  format: 'json' | 'html'
-}
+// Runner IPC shapes are imported, not re-declared. This copy had already
+// drifted from main's: `folderName` was missing from EndpointRunResult and
+// `RunPhase` was defined locally instead of shared. See src/shared/runner-types.ts.
+import type {
+  RunnerExecuteOptions,
+  RunnerExportOptions,
+  RunnerProgress,
+  RunnerReport,
+  RunStopMode,
+} from '../shared/runner-types'
 
 /**
  * Row shape returned by `runner:history`. Mirrors the `runner_history` DB
@@ -726,9 +673,36 @@ interface RunnerHistoryStats {
 
 interface RunnerApi {
   execute(options: RunnerExecuteOptions): Promise<IpcResult<RunnerReport>>
-  stop(): Promise<IpcResult<boolean>>
+  /**
+   * End the run (issue #91).
+   *
+   * `mode: 'graceful'` (the default) ends the flow but still runs every
+   * teardown request and the run-teardown script — including letting the
+   * request already on the wire finish, since killing it produces exactly the
+   * half-written state cleanup exists to undo.
+   *
+   * `mode: 'direct'` is a hard halt: it aborts the in-flight request and runs
+   * NOTHING after the click, cleanup included. It must come from a deliberate
+   * act — its own labelled button — never from a second plain Stop: inferring
+   * it from click timing is what made cleanup complete only partially, at
+   * random.
+   *
+   * `skipTeardown: true` is the pre-#91 spelling of `mode: 'direct'`, still
+   * honoured so an older renderer cannot silently get a graceful stop.
+   */
+  stop(opts?: { mode?: RunStopMode; skipTeardown?: boolean }): Promise<IpcResult<boolean>>
   export(options: RunnerExportOptions): Promise<IpcResult<string>>
   onProgress(callback: (progress: RunnerProgress) => void): () => void
+  /**
+   * A phase has BEGUN — fired before its first step produces a result.
+   *
+   * A progress tick arrives only when a step finishes, so it cannot tell you
+   * that cleanup has started. That distinction decides which stop controls are
+   * on screen (issue #92) and what the hard stop will abandon, and it matters
+   * most for a cleanup endpoint that never answers, which produces no result
+   * at all.
+   */
+  onPhase(callback: (phase: RunPhase) => void): () => void
   /**
    * String argument → returns a flat `RunnerHistoryEntry[]` (legacy shape).
    * Object argument → returns `{ rows, total }` for paginated views.
@@ -783,6 +757,20 @@ interface SchedulerCreatePayload {
   scheduleDays?: number[]
   scheduleCron?: string
   suiteId?: string
+  /**
+   * Run lifecycle (#72) — the same phase model an interactive run uses, so a
+   * scheduled run executes Setup → Flow → Teardown identically. Omitted ⇒
+   * everything runs as flow, which is how tasks saved before this behaved.
+   */
+  setupEndpointIds?: string[]
+  teardownEndpointIds?: string[]
+  runPreScript?: string
+  runPostScript?: string
+  /**
+   * "Stop run if an error occurs", carried from the run the schedule was created
+   * from. Omitted ⇒ ON, matching the interactive runner's default.
+   */
+  stopOnError?: boolean
 }
 
 interface SchedulerUpdatePayload extends SchedulerCreatePayload {
@@ -1215,7 +1203,12 @@ interface WindowApi {
 }
 
 interface AppApi {
-  version(): Promise<IpcResult<{ version: string; name: string }>>
+  /**
+   * `buildId` is the short git commit this bundle was built from. The version
+   * alone cannot identify a build: pre-release rounds share it with each other
+   * and with the final release.
+   */
+  version(): Promise<IpcResult<{ version: string; name: string; buildId?: string }>>
   openExternal(url: string): Promise<IpcResult<null>>
   onOpenAbout(callback: () => void): () => void
   onMenuCommand(callback: (command: string) => void): () => void
@@ -1502,7 +1495,15 @@ interface UpdateTestSuitePayload {
 interface ImportEndpointsPayload {
   suite_id: string
   endpoint_ids: string[]
+  /** Target folder inside the suite; the mirrored source tree hangs off it. */
   folder_id?: string | null
+  /**
+   * The APIs folder the import was launched from. Everything at or above it is
+   * dropped when its subfolders are mirrored into the suite, so "create a suite
+   * from this folder" doesn't nest the collection under a copy of itself
+   * (issue #94). Omit it and the shared ancestor of the selection is used.
+   */
+  source_folder_id?: string | null
 }
 
 interface RemoveEndpointPayload {
@@ -1520,7 +1521,13 @@ interface TestSuiteApi {
   /** Returns `{ items, folders }` — both arrays of repo rows. */
   listEndpoints(suiteId: string): Promise<IpcResult<TestSuiteContents>>
   /** Snapshots endpoints from APIs tree and writes them as suite items. */
-  importEndpoints(payload: ImportEndpointsPayload): Promise<IpcResult<{ added: number }>>
+  /**
+   * `rejected` counts sources that could not be snapshotted — the caller is
+   * expected to say so rather than report a partial copy as a clean one.
+   */
+  importEndpoints(
+    payload: ImportEndpointsPayload,
+  ): Promise<IpcResult<{ added: number; rejected: number; rejectedIds: string[] }>>
   removeEndpoint(payload: RemoveEndpointPayload): Promise<IpcResult<boolean>>
 }
 
@@ -1718,9 +1725,18 @@ interface CertificateRowDto {
   crt_path: string | null
   key_path: string | null
   pfx_path: string | null
-  passphrase: string | null
   enabled: number
   created_at: number
+  /**
+   * NO-LEAK (#60): the stored secrets never cross IPC. The renderer only learns
+   * WHETHER one is set, which is all a write-only password field needs.
+   */
+  has_passphrase: boolean
+  has_keystore_key_password: boolean
+  /** #60 — 'file' (default, classic crt/key/pfx paths) | 'keystore'. */
+  source?: 'file' | 'keystore'
+  keystore_id?: string | null
+  keystore_alias?: string | null
 }
 
 interface CertificateApi {
@@ -1734,6 +1750,12 @@ interface CertificateApi {
     pfxPath?: string
     passphrase?: string
     enabled?: boolean
+    /** #60 — ADDED, optional. Omitted ⇒ 'file' (unchanged behaviour). */
+    source?: 'file' | 'keystore'
+    keystoreId?: string
+    keystoreAlias?: string
+    /** R11 per-alias ENTRY password — WRITE-ONLY, never returned. */
+    keystoreKeyPassword?: string
   }): Promise<IpcResult<CertificateRowDto>>
   update(payload: {
     id: string
@@ -1743,9 +1765,514 @@ interface CertificateApi {
     pfxPath?: string
     passphrase?: string
     enabled?: boolean
+    /** #60 — ADDED, optional. `''` unlinks; undefined leaves untouched. */
+    source?: 'file' | 'keystore'
+    keystoreId?: string
+    keystoreAlias?: string
+    /** R11 per-alias ENTRY password — WRITE-ONLY. `''` clears it. */
+    keystoreKeyPassword?: string
   }): Promise<IpcResult<CertificateRowDto>>
   delete(id: string): Promise<IpcResult<boolean>>
   pickFile(kind: 'crt' | 'key' | 'pfx' | 'ca'): Promise<IpcResult<string>>
+}
+
+// ─── OTP authenticator vault ─────────────────────────────────────
+
+type OtpAlgorithmDto = 'SHA1' | 'SHA256' | 'SHA512'
+type OtpTypeDto = 'totp' | 'hotp'
+
+interface OtpEntryDto {
+  id: string
+  label: string | null
+  issuer: string | null
+  account: string | null
+  algorithm: OtpAlgorithmDto
+  digits: number
+  period: number
+  type: OtpTypeDto
+  counter: number
+  enabled: boolean
+  hasSecret: boolean
+}
+
+interface OtpCodeDto {
+  id: string
+  code: string | null
+  secondsRemaining: number
+  error?: string
+}
+
+interface OtpDraftDto {
+  type: OtpTypeDto
+  label: string
+  issuer: string
+  account: string
+  secret: string
+  algorithm: OtpAlgorithmDto
+  digits: number
+  period: number
+  counter: number
+}
+
+interface OtpAddPayloadDto {
+  label?: string | null
+  issuer?: string | null
+  account?: string | null
+  secret: string
+  algorithm?: OtpAlgorithmDto
+  digits?: number
+  period?: number
+  type?: OtpTypeDto
+  counter?: number
+  enabled?: boolean
+}
+
+interface OtpApi {
+  list(): Promise<IpcResult<OtpEntryDto[]>>
+  add(payload: OtpAddPayloadDto): Promise<IpcResult<OtpEntryDto>>
+  update(payload: OtpAddPayloadDto & { id: string }): Promise<IpcResult<OtpEntryDto | null>>
+  delete(id: string): Promise<IpcResult<boolean>>
+  codes(): Promise<IpcResult<OtpCodeDto[]>>
+  code(id: string): Promise<IpcResult<OtpCodeDto>>
+  parseUri(uri: string): Promise<IpcResult<OtpDraftDto>>
+  reveal(id: string): Promise<IpcResult<string>>
+  uri(id: string): Promise<IpcResult<string>>
+}
+
+// ─── Keystore Studio ─────────────────────────────────────────────
+
+type KeystoreTypeDto = 'JKS' | 'PKCS12'
+type KeystoreEntryTypeDto = 'KEY' | 'CERTIFICATE'
+
+interface KeystoreAliasSummaryDto {
+  alias: string
+  entryType: KeystoreEntryTypeDto
+  hasPrivateKey: boolean
+  subjectDN?: string
+  issuerDN?: string
+  notBefore?: string
+  notAfter?: string
+  keyAlgorithm?: string
+  chainLength: number
+}
+
+interface KeystoreMetaDto {
+  type: KeystoreTypeDto
+  aliasCount: number
+  aliases: KeystoreAliasSummaryDto[]
+  /** Unsaved-changes flag (Faz B4 dirty-guard). Absent on read-only projections. */
+  dirty?: boolean
+}
+
+/** Export / Save-As result — a written path, or a cancelled dialog. Never bytes. */
+type KeystoreWriteResultDto = { path: string } | { canceled: true }
+
+interface KeystoreCertificateInfoDto {
+  subjectDN: string
+  issuerDN: string
+  serialNumber: string
+  version: number
+  sigAlgName: string
+  notBefore: string
+  notAfter: string
+  publicKeyAlgorithm: string
+  keySize: number
+  sha1Fingerprint: string
+  sha256Fingerprint: string
+  subjectAlternativeNames: string[]
+  pem: string
+}
+
+interface KeystoreAliasDetailDto {
+  alias: string
+  entryType: KeystoreEntryTypeDto
+  hasPrivateKey: boolean
+  chain: KeystoreCertificateInfoDto[]
+}
+
+interface KeystoreSessionResultDto {
+  sessionId: string
+  meta: KeystoreMetaDto
+  /**
+   * Aliases a `convert` could not carry into the target format (a JKS cannot
+   * hold secret keys). Optional because every other session-producing call —
+   * open, createNew — has nothing to skip. Deliberately NOT part of
+   * `KeystoreMetaDto`: it describes one conversion, not the resulting store,
+   * and `meta`'s shape is asserted by existing engine tests.
+   */
+  skipped?: string[]
+}
+
+interface KeystorePickFileResultDto {
+  path: string
+  fileName: string
+  type: KeystoreTypeDto
+}
+
+/** Library metadata row — never carries the blob or store password. */
+interface KeystoreLibraryEntryDto {
+  id: string
+  name: string
+  type: KeystoreTypeDto
+  alias_count: number
+  size_bytes: number
+  created_at: number
+  updated_at: number
+  /** `store_password != null` — the password value itself never leaves main. */
+  remembered: boolean
+}
+
+interface KeystoreApi {
+  pickFile(): Promise<IpcResult<KeystorePickFileResultDto>>
+  open(payload: {
+    path?: string
+    bytes?: string
+    password?: string
+    type?: string
+    aliasEntryPasswords?: Record<string, string>
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  createNew(payload: {
+    type?: string
+    password?: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  list(sessionId: string): Promise<IpcResult<KeystoreMetaDto>>
+  aliasDetail(payload: {
+    sessionId: string
+    alias: string
+  }): Promise<IpcResult<KeystoreAliasDetailDto>>
+  generateKeyPair(payload: {
+    sessionId: string
+    alias: string
+    keyAlgorithm?: string
+    keySize?: number
+    curve?: string
+    subjectDN?: string
+    subjectAlternativeNames?: string[]
+    validityDays?: number
+    serialNumber?: string
+    keyUsage?: string[]
+    basicConstraintsCa?: boolean
+    signatureAlgorithm?: string
+    entryPassword?: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  generateSecretKey(payload: {
+    sessionId: string
+    alias: string
+    keyAlgorithm?: string
+    keySize?: number
+    entryPassword?: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  importPkcs12(payload: {
+    sessionId: string
+    sourcePath?: string
+    sourceBytes?: string
+    sourcePassword?: string
+    sourceAlias?: string
+    alias?: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  importKeyMaterial(payload: {
+    sessionId: string
+    alias: string
+    privateKeyPem: string
+    certificatePem: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  importPem(payload: {
+    sessionId: string
+    alias: string
+    pemContent: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  importTrustedCert(payload: {
+    sessionId: string
+    alias: string
+    certificateContent: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  renameAlias(payload: {
+    sessionId: string
+    alias: string
+    newAlias: string
+    entryPassword?: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  changeStorePassword(payload: {
+    sessionId: string
+    newPassword: string
+    aliasEntryPasswords?: Record<string, string>
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  setEntryPassword(payload: {
+    sessionId: string
+    alias: string
+    entryPassword?: string
+    newEntryPassword: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  deleteEntry(payload: {
+    sessionId: string
+    alias: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  exportCertificate(payload: {
+    sessionId: string
+    alias: string
+    format?: string
+  }): Promise<IpcResult<KeystoreWriteResultDto>>
+  convert(payload: {
+    sessionId: string
+    targetType: string
+    newPassword: string
+    entryPassword?: string
+    aliasEntryPasswords?: Record<string, string>
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  saveAs(payload: {
+    sessionId: string
+    suggestedName?: string
+  }): Promise<IpcResult<KeystoreWriteResultDto>>
+  closeSession(sessionId: string): Promise<IpcResult<{ closed: true }>>
+  librarySave(payload: {
+    sessionId: string
+    name: string
+    rememberPassword?: boolean
+    id?: string
+  }): Promise<IpcResult<KeystoreLibraryEntryDto>>
+  libraryList(): Promise<IpcResult<KeystoreLibraryEntryDto[]>>
+  libraryOpen(payload: {
+    id: string
+    password?: string
+  }): Promise<IpcResult<KeystoreSessionResultDto>>
+  libraryDelete(payload: { id: string }): Promise<IpcResult<{ deleted: true }>>
+}
+
+// ─── TLS Inspector (#64) ─────────────────────────────────────────
+
+/** Renderer-safe certificate projection (mirror of main CertificateInfo). */
+interface TlsCertificateInfoDto {
+  subjectDN: string
+  issuerDN: string
+  serialNumber: string
+  version: number
+  sigAlgName: string
+  notBefore: string
+  notAfter: string
+  publicKeyAlgorithm: string
+  keySize: number
+  sha1Fingerprint: string
+  sha256Fingerprint: string
+  subjectAlternativeNames: string[]
+  pem: string
+}
+
+interface TlsInspectRequestDto {
+  host: string
+  port?: number
+  servername?: string
+  alpnProtocols?: string[]
+  minVersion?: string
+  maxVersion?: string
+  ciphers?: string
+  cipherPreset?: 'modern' | 'intermediate' | 'legacy'
+  timeoutMs?: number
+  /** Extra trust anchors — base64-encoded PEM or DER. */
+  caCerts?: string[]
+  /** Optional mTLS client cert. Base64 strings / paths only — never Buffers. */
+  clientCert?:
+    | {
+        kind: 'inline'
+        certPem?: string
+        keyPem?: string
+        pfxBase64?: string
+        passphrase?: string
+      }
+    | {
+        kind: 'file'
+        certPath?: string
+        keyPath?: string
+        pfxPath?: string
+        passphrase?: string
+      }
+}
+
+interface TlsProbeTargetDto {
+  host: string
+  port: number
+  servername: string
+}
+
+/** No handshake — carries nothing about a certificate, by construction. */
+interface TlsProbeFailureDto extends TlsProbeTargetDto {
+  ok: false
+  error: string
+}
+
+/** Handshake completed; certificate verdicts describe `chain[0]`, if any. */
+interface TlsProbeSuccessDto extends TlsProbeTargetDto {
+  ok: true
+  protocol: string | null
+  cipher: { name: string; standardName: string; version: string } | null
+  alpnProtocol: string | false
+  authorized: boolean
+  authorizationError?: string
+  hostnameValid: boolean
+  chain: TlsCertificateInfoDto[]
+  selfSigned: boolean
+  expired: boolean
+  notYetValid: boolean
+  daysToExpiry: number
+  validityStatus: 'valid' | 'expiring' | 'expired'
+}
+
+type TlsInspectResultDto = TlsProbeFailureDto | TlsProbeSuccessDto
+
+interface TlsApi {
+  inspect(payload: TlsInspectRequestDto): Promise<IpcResult<TlsInspectResultDto>>
+}
+
+// ─── JOSE / JWT (#63) ────────────────────────────────────────────
+//
+// These channels exist so a KEYSTORE-BACKED key can sign without the renderer
+// ever touching key material: main resolves the source, signs, and returns only
+// the token. The `{inline}` arm is the DEFAULT and is byte-for-byte what the
+// Tools → JWT Debugger already does with a pasted secret/PEM — `{source}` is one
+// ADDED arm of the union, never a replacement.
+//
+// NO-LEAK: nothing in any result type below is (or may become) key material.
+
+/** Pasted-by-the-user material. Stays in main; never persisted by these calls. */
+interface JoseInlineKeyDto {
+  /** HS* shared secret. */
+  secret?: string
+  /** PKCS#8 private-key PEM — signing / JWE decryption. */
+  privateKeyPem?: string
+  /** SPKI public-key PEM or an X.509 certificate PEM — verification / JWE encryption. */
+  certPem?: string
+  passphrase?: string
+}
+
+/**
+ * The key a JOSE op runs with. OPAQUE in the `source` arm: a `MaterialSource`
+ * carries ids/aliases/paths only (its password fields are WRITE-ONLY — they may
+ * ride one payload and are never persisted or echoed back).
+ */
+type JoseKeyInputDto = { inline: JoseInlineKeyDto } | { source: MaterialSource }
+
+interface JoseSignRequestDto {
+  /** 'jwt' signs claims; 'jws' signs an arbitrary payload string. */
+  mode: 'jwt' | 'jws'
+  alg: string
+  payload: Record<string, unknown> | string
+  header?: Record<string, unknown>
+  key: JoseKeyInputDto
+}
+
+interface JoseVerifyRequestDto {
+  mode: 'jwt' | 'jws'
+  token: string
+  /**
+   * The algorithm to verify with. Optional for `mode:'jwt'` (main falls back to
+   * the token's own protected header), but REQUIRED for `mode:'jws'` whose
+   * payload is not JSON claims — that fallback decodes the payload as a JWT and
+   * cannot read the header otherwise. Always send it when you know it: the
+   * caller's value WINS over the token's header, which is what stops the
+   * classic `alg`-swap key-confusion attack.
+   */
+  alg?: string
+  /** Restrict acceptable algorithms — refuses a token that swapped `alg`. */
+  algorithms?: string[]
+  key?: JoseKeyInputDto
+  /** Verify against a JWKS document instead of a single key. */
+  jwks?: { keys: JsonWebKey[] }
+  /**
+   * Verify against a JWKS served over HTTP(S). The GET runs in MAIN — the
+   * renderer's CSP (`connect-src 'self'`) cannot reach an IdP at all.
+   */
+  jwksUri?: string
+  /** OPT-IN claim checks. `exp`/`nbf` are always enforced; these are extra. */
+  claims?: JoseClaimChecksDto
+}
+
+/**
+ * Claim checks layered on top of the signature check. All OPT-IN: supplying no
+ * `audience` means `aud` is NOT validated, which is jose's own semantics and
+ * keeps the debugger from reporting failures the user never asked for.
+ */
+interface JoseClaimChecksDto {
+  audience?: string | string[]
+  issuer?: string | string[]
+  subject?: string
+  /** Seconds, or a duration string like '60s'. */
+  clockTolerance?: string | number
+  /** Rejects a token whose `iat` is older than this, e.g. '1h'. */
+  maxTokenAge?: string | number
+  /** Epoch MILLISECONDS to evaluate exp/nbf/iat against ("verify as of"). */
+  currentDate?: number
+}
+
+interface JoseJweRequestDto {
+  alg: string
+  enc: string
+  /** Present for `encrypt`. */
+  plaintext?: string
+  /** Present for `decrypt`. */
+  jwe?: string
+  key: JoseKeyInputDto
+}
+
+/** JWT claims for `mode:'jwt'`; the decoded payload string for `mode:'jws'`. */
+interface JoseVerifyResultDto {
+  payload: Record<string, unknown> | string
+  header: Record<string, unknown>
+}
+
+interface JoseDecryptResultDto {
+  plaintext: string
+  header: Record<string, unknown>
+}
+
+/** Decoded WITHOUT verification — a debugger view, never a trust decision. */
+interface JoseDecodeResultDto {
+  header: Record<string, unknown>
+  payload: Record<string, unknown>
+}
+
+interface JoseApi {
+  /** Returns the compact JWS/JWT string — never the key it was signed with. */
+  sign(payload: JoseSignRequestDto): Promise<IpcResult<string>>
+  verify(payload: JoseVerifyRequestDto): Promise<IpcResult<JoseVerifyResultDto>>
+  /** Returns the compact JWE string. */
+  encrypt(payload: JoseJweRequestDto): Promise<IpcResult<string>>
+  decrypt(payload: JoseJweRequestDto): Promise<IpcResult<JoseDecryptResultDto>>
+  decode(token: string): Promise<IpcResult<JoseDecodeResultDto>>
+  /**
+   * GET a JWKS document from MAIN. Every private JWK member is stripped before
+   * the document crosses the bridge — the URL is user-supplied and may point at
+   * a misconfigured endpoint, so the guard cannot rest on the server behaving.
+   */
+  fetchJwks(uri: string): Promise<IpcResult<{ keys: JsonWebKey[] }>>
+}
+
+// ─── JWKS (#61) ──────────────────────────────────────────────────
+
+interface JwksBuildRequestDto {
+  /** Opaque key-material references — each contributes its PUBLIC half. */
+  sources?: MaterialSource[]
+  /**
+   * Public JWKs the caller already holds (in practice: the keys parsed out of
+   * the mock body being edited) so a second pick ADDS a rotation key instead of
+   * replacing the set. Sanitized in main like everything else.
+   */
+  extraKeys?: JsonWebKey[]
+}
+
+interface JwksBuildResultDto {
+  /** Exactly the text to store in `mock_responses.body` — public keys only. */
+  body: string
+  /** RFC 7638 thumbprints in document order. */
+  kids: string[]
+  count: number
+}
+
+interface JwksApi {
+  /**
+   * Build the STATIC JWKS document for a set of key sources (D1-2). Returns the
+   * body text; the caller writes it into a mock response through the ordinary
+   * `mock:response:create/update` channels (D1-1 — no new mock primitive).
+   */
+  build(payload: JwksBuildRequestDto): Promise<IpcResult<JwksBuildResultDto>>
 }
 
 // ─── WSSE ────────────────────────────────────────────────────────
@@ -1770,6 +2297,60 @@ interface WsseApi {
     privateKeyPem: string
     passphrase?: string
   }): Promise<IpcResult<string>>
+}
+
+// ─── SAML (#65) ──────────────────────────────────────────────────
+
+type SamlBuildRequestDto =
+  | { kind: 'authnRequest'; config: SamlAuthnRequestConfig }
+  | { kind: 'assertion'; config: SamlAssertionConfig }
+  | { kind: 'response'; config: SamlResponseConfig }
+
+interface SamlSignRequestDto {
+  xml: string
+  algorithm: SamlSignAlgorithm
+  signatureTarget?: SamlSignatureTarget
+  referenceId?: string
+  /**
+   * `{ inline: {...} }` — pasted PEM, the DEFAULT path — or `{ source }`, an
+   * OPAQUE keystore reference resolved in MAIN. The resolved PEM and private
+   * key never come back across this bridge.
+   */
+  key: SamlKeyInput
+}
+
+interface SamlVerifyRequestDto {
+  xml: string
+  /** The TRUST ANCHOR — never the certificate embedded in the document. */
+  key: SamlKeyInput
+  options?: SamlVerifyOptions
+}
+
+interface SamlEncodeRequestDto {
+  xml: string
+  binding: SamlBinding
+  urlEncode?: boolean
+}
+
+interface SamlDecodeRequestDto {
+  value: string
+  binding: SamlBinding
+  maxInflatedBytes?: number
+}
+
+interface SamlApi {
+  build(payload: SamlBuildRequestDto): Promise<IpcResult<SamlDocument>>
+  /** Returns ONLY the signed XML — never the key it was signed with. */
+  sign(payload: SamlSignRequestDto): Promise<IpcResult<{ xml: string }>>
+  /**
+   * A rejected document still resolves `success:true` with
+   * `{ valid:false, reason, checks }` so the UI can show WHICH guarantee failed
+   * (XSW, disallowed algorithm, DOCTYPE, …). Only a key-material failure gives
+   * `success:false`.
+   */
+  verify(payload: SamlVerifyRequestDto): Promise<IpcResult<SamlVerifyResult>>
+  encode(payload: SamlEncodeRequestDto): Promise<IpcResult<{ value: string }>>
+  decode(payload: SamlDecodeRequestDto): Promise<IpcResult<{ xml: string }>>
 }
 
 // ─── Diagnostics ─────────────────────────────────────────────────
@@ -1819,6 +2400,7 @@ interface ApiBridge {
   importExport: ImportExportApi
   soap: SoapApi
   wsse: WsseApi
+  saml: SamlApi
   diagnostics: DiagnosticsApi
   ws: WsApi
   runner: RunnerApi
@@ -1834,6 +2416,11 @@ interface ApiBridge {
   git: GitApi
   save: SaveApi
   certificate: CertificateApi
+  otp: OtpApi
+  keystore: KeystoreApi
+  tls: TlsApi
+  jose: JoseApi
+  jwks: JwksApi
   testSuite: TestSuiteApi
   testSuiteItem: TestSuiteItemApi
   testSuiteFolder: TestSuiteFolderApi

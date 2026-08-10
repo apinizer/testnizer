@@ -319,11 +319,22 @@ describe('executeCollection — stopOnError', () => {
     })
 
     expect(res.success).toBe(true)
-    // Only the first (failing) endpoint executed; the run halted.
-    expect(res.data?.results.length).toBe(1)
+    // Only the first (failing) endpoint EXECUTED; the run halted. The second is
+    // still reported — as a row that never ran, so a stopped run is
+    // distinguishable from a shorter collection (it used to be simply absent,
+    // which is what testers saw as "Skipped stays 0").
+    expect(res.data?.results.length).toBe(2)
     expect(res.data?.results[0].endpointId).toBe(failingId)
     expect(res.data?.results[0].status).toBe(500)
     expect(res.data?.failedEndpoints).toBe(1)
+
+    const notRun = res.data!.results[1]
+    expect(notRun.endpointId).toBe(secondId)
+    expect(notRun.statusText).toBe('NOT_RUN')
+    expect(notRun.skipped).toBe(1)
+    expect(notRun.status).toBeNull()
+    // A row that never ran is neither passed nor failed.
+    expect(res.data?.passedEndpoints).toBe(0)
 
     // The second endpoint's path was never requested.
     expect(received.some((r) => r.url.startsWith('/never'))).toBe(false)

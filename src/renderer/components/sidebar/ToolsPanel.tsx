@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
-import { TOOL_CATALOG } from '../../lib/tools-catalog'
+import { TOOLS_MENU } from '../../lib/tools-catalog'
 import { T } from '../../styles/tokens'
 
 export default function ToolsPanel() {
@@ -15,8 +15,8 @@ export default function ToolsPanel() {
 
   const q = query.trim().toLowerCase()
   const filtered = q
-    ? TOOL_CATALOG.filter((tool) => t(tool.labelKey).toLowerCase().includes(q))
-    : TOOL_CATALOG
+    ? TOOLS_MENU.filter((tool) => t(tool.labelKey).toLowerCase().includes(q))
+    : TOOLS_MENU
 
   return (
     <div className="flex h-full flex-col">

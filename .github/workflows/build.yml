@@ -17,6 +17,18 @@ on:
     paths-ignore:
       - 'website/**'
   workflow_dispatch:
+    inputs:
+      full_e2e:
+        description: 'Run the FULL ui suite (~2.5h) instead of the curated subset'
+        type: boolean
+        default: false
+  # Nightly full renderer-e2e run. The per-PR renderer-e2e job below runs only a
+  # curated fast subset (workers:1 makes the full ~165-spec UI suite too slow to
+  # gate every push); this schedule runs the WHOLE `--project=ui` suite once a
+  # day against main. Build/release jobs stay gated on tags + dispatch, so a
+  # scheduled run only exercises cleanup → quality → renderer-e2e (full).
+  schedule:
+    - cron: '0 3 * * *'
 
 # Allow only one concurrent build per ref — cancel stale ones.
 concurrency:
@@ -123,6 +135,26 @@ jobs:
           node-version: 20
           cache: npm
 
+      # Keystore Studio's interop test (tests/main/keystore-interop.test.ts)
+      # shells out to `keytool` to prove the pure-TS JKS writer is byte-correct
+      # against a real JDK. In CI that test HARD-FAILS instead of skipping
+      # (it throws when `process.env.CI` is set but keytool is missing), so the
+      # quality job MUST guarantee a JDK is on PATH. Pin the distribution +
+      # major version so a runner-image change can't silently drop the only
+      # proof the key protector + integrity hash are correct (risk R1).
+      - name: Set up JDK (Temurin) — keytool for the keystore interop test
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # The keystore interop gate needs openssl too (PKCS12 side). ubuntu-latest
+      # ships it, but pin the dependency explicitly like the JDK: this step fails
+      # LOUD if a future runner image ever drops openssl, instead of the interop
+      # gate throwing with a cryptic message deep in the test run.
+      - name: Verify openssl present — PKCS12 half of the keystore interop test
+        run: openssl version
+
       - name: Install deps
         run: npm ci
 
@@ -140,6 +172,123 @@ jobs:
 
       - name: Unit tests
         run: npm run test:unit
+
+  # ---------------------------------------------------------------------------
+  # Renderer UI E2E — screen-render regression gate. LIVE app (600+ users): a
+  # screen that throws on mount / white-screens must turn CI RED, not ship. This
+  # job builds the production bundle once and runs the pageerror-guarded
+  # `--project=ui` Playwright suite, which mounts every screen/tab/modal/protocol
+  # editor in a real Electron window. Runs on push-to-main, PRs, nightly cron and
+  # manual dispatch — NOT just at release (that's what the smoke gate below is,
+  # and smoke only catches a *main-process* load crash, never a per-screen
+  # renderer throw).
+  #
+  # HARD gate — no continue-on-error. Renderer is platform-agnostic, so one Linux
+  # runner (xvfb, like the smoke steps) is sufficient coverage for render bugs.
+  #
+  # Scope split (workers:1 makes the full ~165-spec suite too slow to gate every
+  # push):
+  #   • push / pull_request → CURATED SUBSET (28 specs): the 27 numbered
+  #     `NN-*.spec.ts` screen specs (00-26) directly under tests/e2e/ui/ +
+  #     inventory.spec.ts (verified: 0 tur1/flows specs leak in). These
+  #     are the breadth specs that open every APIs/Request/Response tab, every
+  #     protocol editor, every modal, Tools, Runner, Mock and sidebar page — i.e.
+  #     one mount of every screen, which is exactly the render-regression net.
+  #   • schedule (nightly) / workflow_dispatch → FULL `--project=ui`: the subset
+  #     PLUS the deep flow suites tests/e2e/ui/flows/ (16 specs) and
+  #     tests/e2e/ui/tur1/ (121 specs) that exercise multi-step user journeys.
+  #
+  # Excluded from tag pushes so the release path (build-* → release) is never
+  # gated on or slowed by this job; release keeps its own per-platform smoke.
+  # ---------------------------------------------------------------------------
+  renderer-e2e:
+    name: Renderer UI E2E ${{ matrix.shard }}/3 (screen-render regression gate)
+    needs: quality
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    # Sharded for two reasons, both measured. Wall clock: one worker runs the
+    # 736-case sweep in 2.5h here (19 min on a dev machine — this runner has no
+    # GPU and shares two cores), which turned every CI question into a 2.5-hour
+    # round trip. And robustness: after ~700 tests in a SINGLE worker,
+    # Playwright's own Electron teardown stopped completing — our fixture
+    # teardown was measured at 27ms and all 736 tests passed, yet the job went
+    # red on a 240s worker-teardown timeout with nothing of ours left to blame.
+    # Three shorter-lived workers sidestep that accumulation and finish in
+    # parallel.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Pin a node-gyp-friendly Python (<=3.11) so the postinstall electron
+      # rebuild of better-sqlite3 is deterministic — same reason as the platform
+      # build jobs.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Electron needs a virtual display on Linux (xvfb), plus the native-module
+      # toolchain for the postinstall better-sqlite3 electron rebuild. Mirrors the
+      # linux build job's system-deps step (minus the packaging-only rpm/fakeroot).
+      - name: Install system deps (xvfb + native build toolchain)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential python3 xvfb
+
+      - name: Install deps (host arch only)
+        run: npm ci
+
+      # The app resolves the bundled curl sidecar from resources/curl at launch;
+      # fetch it so the built bundle matches a real install (plain `npm run build`
+      # has no prebuild hook to download it).
+      - name: Download bundled curl (linux-x64)
+        run: node scripts/download-curl-binaries.js --target=linux-x64
+
+      - name: Build renderer + main
+        run: npm run build
+
+      # Nightly cron → full suite. EVERYTHING else, including manual dispatch →
+      # curated subset.
+      #
+      # Dispatch used to run the full sweep too, which meant a run whose PURPOSE
+      # is producing installers for a tester was gated behind a 2.5-hour job —
+      # the same suite takes 19 minutes on a developer machine, and CI's shared,
+      # GPU-less runner is roughly eight times slower. That turned every attempt
+      # at a fix into a 2.5-hour round trip. The full sweep still runs every
+      # night, where nobody is waiting on it.
+      - name: Select E2E scope
+        id: scope
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full_e2e }}" = "true" ]; then
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
+      # HARD gate — no continue-on-error. The positional args are Playwright path
+      # regexes matched against each spec's file path; `tests/e2e/ui/[0-9]` hits
+      # the numbered top-level screen specs but NOT tests/e2e/ui/tur1/NN-... or
+      # flows/ (their paths have a subdir before the digit).
+      - name: Renderer UI E2E (Playwright, xvfb)
+        run: |
+          SHARD="--shard=${{ matrix.shard }}/3"
+          if [ "${{ steps.scope.outputs.full }}" = "true" ]; then
+            echo "Running FULL --project=ui suite, shard ${{ matrix.shard }}/3"
+            xvfb-run -a npx playwright test --project=ui $SHARD
+          else
+            echo "Running curated subset, shard ${{ matrix.shard }}/3"
+            xvfb-run -a npx playwright test --project=ui $SHARD 'tests/e2e/ui/[0-9]' 'tests/e2e/ui/inventory'
+          fi
+        shell: bash
 
   # ---------------------------------------------------------------------------
   # macOS — ONE job builds BOTH arches (arm64 native + x64 cross-build) on a
@@ -256,6 +405,22 @@ jobs:
           node scripts/verify-natives.js --platform=darwin --arch=arm64
           node scripts/verify-natives.js --platform=darwin --arch=x64
 
+      # Tester drop WITHOUT a tag. `workflow_dispatch` already builds every
+      # target with `--publish never`; until now the installers were thrown
+      # away with the runner. Keeping them lets a release candidate reach
+      # testers without pushing a `v*` tag — which would fire issue-sync's
+      # release gate (closes issues), republish the website against an RC and
+      # put an unvetted build in front of auto-update. Short retention: the
+      # cleanup job above exists because Actions storage fills fast.
+      - name: Upload installers for manual testing
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: testnizer-macos
+          path: dist/ready-packages/*
+          retention-days: 7
+          if-no-files-found: error
+
   # ---------------------------------------------------------------------------
   # Linux — native x64 on ubuntu-latest, native arm64 on ubuntu-24.04-arm.
   # Both run electron-rebuild against the host's glibc, which matches the
@@ -337,6 +502,17 @@ jobs:
 
       - name: Verify native binaries
         run: node scripts/verify-natives.js --platform=linux --arch=${{ matrix.arch }}
+
+      # See the macOS job for why manual dispatch — not a tag — is how a
+      # release candidate reaches testers.
+      - name: Upload installers for manual testing
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: testnizer-linux-${{ matrix.arch }}
+          path: dist/ready-packages/*
+          retention-days: 7
+          if-no-files-found: error
 
   # ---------------------------------------------------------------------------
   # Windows — ONE job builds BOTH arches (x64 native + arm64 cross-build) on a
@@ -472,6 +648,18 @@ jobs:
         run: |
           node scripts/verify-natives.js --platform=win32 --arch=x64
           node scripts/verify-natives.js --platform=win32 --arch=arm64
+
+      # See the macOS job. NOTE: these .exe files are UNSIGNED — Authenticode
+      # signing is a manual per-release step (scripts/sign-windows.sh), so a
+      # dispatch build always trips SmartScreen. Testers need the install note.
+      - name: Upload installers for manual testing
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: testnizer-windows
+          path: dist/ready-packages/*
+          retention-days: 7
+          if-no-files-found: error
 
   # ---------------------------------------------------------------------------
   # Update the release body on tag pushes.

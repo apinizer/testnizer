@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import ToolShell from './ToolShell'
+import CopyButton from '../shared/CopyButton'
 import {
   detectUnit,
   epochToDate,
@@ -11,6 +12,7 @@ import {
   type EpochUnit,
 } from '../../lib/tools/epoch'
 import { useTranslation } from '../../lib/i18n'
+import { useNumberDraft } from '../../lib/number-draft'
 
 export default function EpochTool() {
   const { t } = useTranslation()
@@ -101,7 +103,7 @@ export default function EpochTool() {
             >
               {now}
             </span>
-            <CopyButton text={String(now)} />
+            <CopyButton text={String(now)} ariaLabel={t('tools.epoch.copyEpoch')} />
           </div>
 
           <label htmlFor={tsInputId} className="mb-1 text-xs" style={{ color: 'var(--muted)' }}>
@@ -199,7 +201,30 @@ export default function EpochTool() {
             <select
               id={zoneId}
               value={zone}
-              onChange={(e) => setZone(e.target.value as 'gmt' | 'local')}
+              onChange={(e) => {
+                // Re-express the SAME instant in the new zone. Changing the
+                // dropdown used to leave the Y/M/D H:M:S boxes untouched, which
+                // silently reinterpreted them — so the composed epoch jumped by
+                // the UTC offset without a single visible field changing.
+                const next = e.target.value as 'gmt' | 'local'
+                const instant = fromParts({ y: yr, mo, d: day, h: hr, mi, s: se }, zone)
+                if (next === 'gmt') {
+                  setYr(instant.getUTCFullYear())
+                  setMo(instant.getUTCMonth() + 1)
+                  setDay(instant.getUTCDate())
+                  setHr(instant.getUTCHours())
+                  setMi(instant.getUTCMinutes())
+                  setSe(instant.getUTCSeconds())
+                } else {
+                  setYr(instant.getFullYear())
+                  setMo(instant.getMonth() + 1)
+                  setDay(instant.getDate())
+                  setHr(instant.getHours())
+                  setMi(instant.getMinutes())
+                  setSe(instant.getSeconds())
+                }
+                setZone(next)
+              }}
               className="rounded border px-2 py-1"
               style={{
                 background: 'var(--white)',
@@ -258,6 +283,10 @@ function NumberField({
   width: number
 }) {
   const id = useId()
+  // Same draft behaviour as the shared NumberField: `Number('') || 0` meant a
+  // date part could never be cleared — backspacing "12" put a 0 in its place and
+  // the next digit landed beside it.
+  const draft = useNumberDraft({ value, min: 0, max: 9999, onChange: setValue })
   return (
     <div className="flex flex-col">
       <label htmlFor={id} className="text-[10px]" style={{ color: 'var(--muted)' }}>
@@ -266,8 +295,7 @@ function NumberField({
       <input
         id={id}
         type="number"
-        value={value}
-        onChange={(e) => setValue(Number(e.target.value) || 0)}
+        {...draft.inputProps}
         className="rounded border px-2 py-1 font-mono"
         style={{
           width,
@@ -291,6 +319,7 @@ function Row({
   copy?: string
   mono?: boolean
 }) {
+  const { t } = useTranslation()
   return (
     <div className="flex items-start gap-2">
       <span className="shrink-0 text-xs" style={{ color: 'var(--muted)', minWidth: 110 }}>
@@ -302,35 +331,7 @@ function Row({
       >
         {value}
       </span>
-      {copy ? <CopyButton text={copy} /> : null}
+      {copy ? <CopyButton text={copy} ariaLabel={`${t('tools.common.copy')}: ${label}`} /> : null}
     </div>
-  )
-}
-
-function CopyButton({ text }: { text: string }) {
-  const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
-  return (
-    <button
-      onClick={async () => {
-        if (!text) return
-        try {
-          await navigator.clipboard.writeText(text)
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1200)
-        } catch {
-          /* ignore */
-        }
-      }}
-      title={copied ? t('tools.common.copied') : t('tools.common.copy')}
-      className="rounded border px-1.5 py-0.5 text-[11px]"
-      style={{
-        borderColor: 'var(--border)',
-        color: copied ? '#1a7a4a' : 'var(--muted)',
-        background: 'var(--white)',
-      }}
-    >
-      {copied ? '✓' : '⧉'}
-    </button>
   )
 }

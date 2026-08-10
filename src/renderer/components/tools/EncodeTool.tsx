@@ -3,6 +3,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { ENCODERS, type EncoderId } from '../../lib/tools/encoders'
 import { useTranslation } from '../../lib/i18n'
+import { useInvalidateOn } from '../../lib/use-stale-guard'
 
 const ENCODER_IDS: EncoderId[] = ['base64', 'base64url', 'url', 'hex', 'html', 'unicode']
 
@@ -12,6 +13,17 @@ export default function EncodeTool() {
   const [input, setInput] = useState('')
   const [output, setOutput] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  /*
+   * The result belongs to the input that produced it. Leaving it on screen after
+   * an edit shows an answer about text that is no longer there — and unlike a
+   * generated password there is nothing to lose by dropping it, since pressing
+   * the button again re-derives it from what the user can still see.
+   */
+  useInvalidateOn([active, input], () => {
+    setOutput('')
+    setError(null)
+  })
 
   const handleEncode = () => {
     const r = ENCODERS[active].encode(input)

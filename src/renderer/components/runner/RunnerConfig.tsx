@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useEnvironmentStore } from '../../stores/environment.store'
+import { useTranslation } from '../../lib/i18n'
+import { useNumberDraft } from '../../lib/number-draft'
 
 type RunMode = 'manual' | 'schedule'
 type ScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
@@ -16,6 +18,9 @@ export interface SchedulePayload {
 interface RunnerConfigProps {
   delay: number
   setDelay: (v: number) => void
+  /** Extra pause between iterations, on top of `delay` (issue #89). */
+  iterationDelay: number
+  setIterationDelay: (v: number) => void
   iterations: number
   setIterations: (v: number) => void
   environmentId: string
@@ -28,6 +33,11 @@ interface RunnerConfigProps {
   setKeepVariableValues: (v: boolean) => void
   iterationData?: Record<string, string>[]
   setIterationData?: (rows: Record<string, string>[]) => void
+  /** Run-level hook scripts (issue #72) — one shot each, per run. */
+  runPreScript: string
+  setRunPreScript: (v: string) => void
+  runPostScript: string
+  setRunPostScript: (v: string) => void
   onRun: () => void
   onSchedule?: (payload: SchedulePayload) => void
   isRunning: boolean
@@ -50,6 +60,8 @@ const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 export default function RunnerConfig({
   delay,
   setDelay,
+  iterationDelay,
+  setIterationDelay,
   iterations,
   setIterations,
   environmentId,
@@ -62,6 +74,10 @@ export default function RunnerConfig({
   setKeepVariableValues,
   iterationData,
   setIterationData,
+  runPreScript,
+  setRunPreScript,
+  runPostScript,
+  setRunPostScript,
   onRun,
   onSchedule,
   isRunning,
@@ -70,7 +86,29 @@ export default function RunnerConfig({
   initialRunModeKey,
   canSchedule = true,
 }: RunnerConfigProps) {
+  const { t } = useTranslation()
   const environments = useEnvironmentStore((s) => s.environments)
+  // Same class the testers hit in the Password Generator: `Math.max(1, Number(''))`
+  // is 1, so clearing the box instantly wrote the minimum back and the next digit
+  // landed beside it. No upper bound existed before, so none is introduced here.
+  const iterationsDraft = useNumberDraft({
+    value: iterations,
+    min: 1,
+    max: Number.MAX_SAFE_INTEGER,
+    onChange: setIterations,
+  })
+  const delayDraft = useNumberDraft({
+    value: delay,
+    min: 0,
+    max: Number.MAX_SAFE_INTEGER,
+    onChange: setDelay,
+  })
+  const iterationDelayDraft = useNumberDraft({
+    value: iterationDelay,
+    min: 0,
+    max: Number.MAX_SAFE_INTEGER,
+    onChange: setIterationDelay,
+  })
   const [runMode, setRunMode] = useState<RunMode>(canSchedule ? initialRunMode : 'manual')
   // Force-manual when scheduling is not allowed for this source. This
   // overrides any stale state if the user previously had Schedule selected
@@ -385,25 +423,68 @@ export default function RunnerConfig({
               type="number"
               min={1}
               data-testid="runner-iterations"
-              value={iterations}
-              onFocus={(e) => e.currentTarget.select()}
-              onChange={(e) => setIterations(Math.max(1, Number(e.target.value)))}
+              {...iterationsDraft.inputProps}
+              onFocus={(e) => {
+                iterationsDraft.inputProps.onFocus()
+                e.currentTarget.select()
+              }}
               className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
               style={{ fontSize: 13 }}
             />
           </div>
           <div className="flex-1">
+            {/*
+              Say WHICH gap this delay fills. It sits next to "Iterations", and
+              a bare "Delay" there reads as "delay between iterations" — a
+              tester timed a 2-iteration run and reported the pause after every
+              request as a bug (5 Aug). The behaviour is correct and matches
+              Postman/Insomnia ("set a delay between requests"); only the label
+              was ambiguous.
+            */}
             <label style={{ display: 'block', color: 'var(--muted)', marginBottom: 4 }}>
-              Delay
+              Delay between requests
             </label>
             <div className="flex items-center gap-1.5">
               <input
                 type="number"
                 min={0}
                 step={100}
-                value={delay}
-                onFocus={(e) => e.currentTarget.select()}
-                onChange={(e) => setDelay(Math.max(0, Number(e.target.value)))}
+                title="Applied after each request, including between iterations"
+                {...delayDraft.inputProps}
+                onFocus={(e) => {
+                  delayDraft.inputProps.onFocus()
+                  e.currentTarget.select()
+                }}
+                className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                style={{ fontSize: 13 }}
+              />
+              <span style={{ color: 'var(--muted)', flexShrink: 0 }}>ms</span>
+            </div>
+          </div>
+          <div className="flex-1">
+            {/*
+              A second, independent gap (issue #89). "Delay between requests"
+              already applies at the iteration boundary — it follows the last
+              request of the iteration — so a user who wants requests to stay
+              snappy but a long pause between repeats of the flow could not say
+              so with one field. The two add up at the boundary, and the label
+              underneath says by how much.
+            */}
+            <label style={{ display: 'block', color: 'var(--muted)', marginBottom: 4 }}>
+              Delay between iterations
+            </label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={0}
+                step={100}
+                data-testid="runner-iteration-delay"
+                title="Extra pause after a full iteration finishes, before the next one starts"
+                {...iterationDelayDraft.inputProps}
+                onFocus={(e) => {
+                  iterationDelayDraft.inputProps.onFocus()
+                  e.currentTarget.select()
+                }}
                 className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                 style={{ fontSize: 13 }}
               />
@@ -411,6 +492,14 @@ export default function RunnerConfig({
             </div>
           </div>
         </div>
+        {/* Spell out the arithmetic at the boundary rather than making the user
+            discover it by timing a run — which is how the ambiguous "Delay"
+            label became a bug report in the first place. */}
+        {iterations > 1 && iterationDelay > 0 && (
+          <div className="mb-4" style={{ fontSize: 12, color: 'var(--hint)', marginTop: -8 }}>
+            {`Between iterations the runner waits ${delay + iterationDelay} ms (${delay} + ${iterationDelay}).`}
+          </div>
+        )}
 
         {/* Iteration Data */}
         <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
@@ -423,6 +512,37 @@ export default function RunnerConfig({
           rows={iterationData ?? []}
           onChange={(rows) => setIterationData?.(rows)}
         />
+
+        {/* Run lifecycle — one-shot scripts that bracket the whole run. The
+         *  teardown script is GUARANTEED: it still runs when the run stops
+         *  early, and its failures never change the run's verdict (issue #72). */}
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
+          {t('runLifecycle.title')}
+        </h3>
+        <div
+          className="mb-5 rounded-[8px] border border-[var(--border)] p-3"
+          style={{
+            background: 'var(--surface)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+          }}
+        >
+          <HookScript
+            label={t('runLifecycle.preScript')}
+            hint={t('runLifecycle.preScriptHint')}
+            value={runPreScript}
+            onChange={setRunPreScript}
+            testId="runner-pre-script"
+          />
+          <HookScript
+            label={t('runLifecycle.postScript')}
+            hint={t('runLifecycle.postScriptHint')}
+            value={runPostScript}
+            onChange={setRunPostScript}
+            testId="runner-post-script"
+          />
+        </div>
 
         {/* Advanced Settings */}
         <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
@@ -473,6 +593,39 @@ export default function RunnerConfig({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** A one-shot run-level script (pm.* API, same runtime as request scripts). */
+function HookScript({
+  label,
+  hint,
+  value,
+  onChange,
+  testId,
+}: {
+  label: string
+  hint: string
+  value: string
+  onChange: (v: string) => void
+  testId: string
+}) {
+  return (
+    <div>
+      <label style={{ display: 'block', color: 'var(--text)', fontWeight: 500, marginBottom: 4 }}>
+        {label}
+      </label>
+      <textarea
+        data-testid={testId}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={3}
+        spellCheck={false}
+        className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+        style={{ fontSize: 12, fontFamily: 'ui-monospace, monospace', resize: 'vertical' }}
+      />
+      <div style={{ color: 'var(--hint)', fontSize: 12, marginTop: 4 }}>{hint}</div>
     </div>
   )
 }

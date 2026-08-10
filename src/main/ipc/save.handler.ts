@@ -15,6 +15,7 @@ import { getDb } from '../db/database'
 import { addSaveHistory } from '../db/branch.repo'
 import { encryptSecret, decryptSecret } from '../lib/secure-storage'
 import { assertTmpSubpath, assertImportFilePath, GIT_TMP_PREFIXES } from '../lib/path-safety'
+import { safeFileName } from '../lib/filename-safe'
 import {
   importPostman,
   importInsomnia,
@@ -23,6 +24,8 @@ import {
 } from './import-export.handler'
 import { snapshotEndpointForSuite, ensureUniqueSuiteName } from './test-suite.handler'
 import { getEndpointById } from '../db/endpoint.repo'
+import { projectFileSlug } from '../lib/project-file'
+import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
 
 // ─── Multi-format detection for test suite import ────────────────
 export type TestSuiteImportFormat = 'testnizer' | 'postman' | 'insomnia' | 'unknown'
@@ -881,6 +884,17 @@ export function importTestSuiteData(
 
     for (const it of items) {
       const newFolderId = it.folder_id ? (folderIdMap.get(it.folder_id as string) ?? null) : null
+      /*
+       * An export taken on a build that still had the truncation bug carries
+       * `url: '/test/healthcheck'` where the schema says
+       * `{{AccessURL}}/test/healthcheck`. This path copies `url` verbatim, so
+       * without the same repair the import would faithfully reproduce the
+       * damage — and reintroduce it on a machine the startup migration had
+       * already fixed. Same rule, applied at both doors — see lib/suite-url-repair.ts.
+       */
+      const storedUrl = (it.url as string | null) ?? null
+      const repairedUrl =
+        repairedSuiteItemUrl(storedUrl, it.request_schema as string | null) ?? storedUrl
       insertItem.run(
         randomUUID(),
         newSuiteId,
@@ -888,7 +902,7 @@ export function importTestSuiteData(
         it.protocol || 'http',
         it.name ?? 'Imported request',
         it.method ?? null,
-        it.url ?? null,
+        repairedUrl,
         (it.request_schema as string) ?? '{}',
         (it.assertions as string) ?? null,
         // source_endpoint_id points at a row in the SOURCE project; keeping
@@ -1464,6 +1478,9 @@ export function importProjectAsNew(
       const newFolderId = it.folder_id
         ? (suiteFolderIdMap.get(it.folder_id as string) ?? null)
         : null
+      // Same repair as the suite-import path: a project export taken on an
+      // affected build carries the truncated URL.
+      const storedItemUrl = (it.url as string | null) ?? null
       insertSuiteItem.run(
         randomUUID(),
         newSuiteId,
@@ -1471,7 +1488,7 @@ export function importProjectAsNew(
         it.protocol || 'http',
         it.name ?? 'Imported request',
         it.method ?? null,
-        it.url ?? null,
+        repairedSuiteItemUrl(storedItemUrl, it.request_schema as string | null) ?? storedItemUrl,
         (it.request_schema as string) ?? '{}',
         (it.assertions as string) ?? null,
         // source_endpoint_id pointed at the source project's row — that id
@@ -1612,10 +1629,7 @@ export function registerSaveHandlers(): void {
         testSuites: data.testSuites?.length ?? 0,
         mockServers: data.mockServers?.length ?? 0,
       }
-      const projectName = ((data.project?.name as string) || 'project').replace(
-        /[^a-zA-Z0-9-_]/g,
-        '_',
-      )
+      const projectName = safeFileName((data.project?.name as string) || 'project', 'project')
       const dateStr = new Date().toISOString().slice(0, 10)
       const defaultName = `${projectName}-${dateStr}.json`
       const res = await writeJsonViaSaveDialog(JSON.stringify(data, null, 2), defaultName)
@@ -1647,7 +1661,7 @@ export function registerSaveHandlers(): void {
         !folder?.name || folder.name.toLowerCase() === 'folder'
           ? project?.name || 'project'
           : folder.name
-      const slug = rawName.replace(/[^a-zA-Z0-9-_]/g, '_')
+      const slug = safeFileName(rawName, 'project')
       const defaultName = `${slug}-${new Date().toISOString().slice(0, 10)}.json`
       const res = await writeJsonViaSaveDialog(JSON.stringify(data, null, 2), defaultName)
       if (!res.success) return { success: false, error: res.error }
@@ -1668,9 +1682,9 @@ export function registerSaveHandlers(): void {
     async (_event, suiteId: string, format?: 'testnizer' | 'postman' | 'insomnia') => {
       try {
         const fmt = format ?? 'testnizer'
-        const suiteName = ((exportTestSuiteData(suiteId).suite?.name as string) || 'suite').replace(
-          /[^a-zA-Z0-9-_]/g,
-          '_',
+        const suiteName = safeFileName(
+          (exportTestSuiteData(suiteId).suite?.name as string) || 'suite',
+          'suite',
         )
         const date = new Date().toISOString().slice(0, 10)
         let content: string
@@ -1869,10 +1883,7 @@ export function registerSaveHandlers(): void {
         }
 
         const data = exportProjectData(payload.projectId)
-        const projectName = ((data.project?.name as string) || 'project').replace(
-          /[^a-zA-Z0-9-_]/g,
-          '_',
-        )
+        const projectName = safeFileName((data.project?.name as string) || 'project', 'project')
         const dateStr = new Date().toISOString().slice(0, 10)
         const fileName = `${projectName}-${dateStr}.json`
         const filePath = join(dirPath, fileName)
@@ -1989,10 +2000,11 @@ export function registerSaveHandlers(): void {
         const { simpleGit } = await import('simple-git')
 
         const data = exportProjectData(payload.projectId)
-        const projectName = ((data.project?.name as string) || 'project').replace(
-          /[^a-zA-Z0-9-_]/g,
-          '_',
-        )
+        // ASCII slug via the SHARED helper (issue #78). This used to slugify
+        // with '_' while git.handler used '-', and `save:git` deletes every
+        // `.json` that is not the name it computed — so the two paths took
+        // turns deleting each other's committed copy.
+        const projectName = projectFileSlug(data.project?.name as string | undefined)
         const authUrl = buildAuthUrl(payload.repoUrl, payload.username, payload.token)
 
         const tmpDir = join(tmpdir(), `testnizer-git-${randomUUID()}`)
@@ -2100,10 +2112,8 @@ export function registerSaveHandlers(): void {
         const { simpleGit } = await import('simple-git')
 
         const data = exportProjectData(payload.projectId)
-        const projectName = ((data.project?.name as string) || 'project').replace(
-          /[^a-zA-Z0-9-_]/g,
-          '_',
-        )
+        // Shared helper — see the note in `save:git` (issue #78).
+        const projectName = projectFileSlug(data.project?.name as string | undefined)
         const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
 
         const tmpDir = join(tmpdir(), `testnizer-push-${randomUUID()}`)

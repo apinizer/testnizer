@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import ConsoleTab from '../response/ConsoleTab'
+import { lockDragStyles } from '../../lib/drag-lock'
 
 /**
  * Postman-style bottom Console panel.
@@ -18,11 +19,16 @@ export default function ConsolePanel() {
   const setShow = useUIStore((s) => s.setShowConsolePanel)
   const maximized = useUIStore((s) => s.consolePanelMaximized)
 
-  const [height, setHeight] = useState(280)
+  // Height lives in the store because AppShell has to reserve the same number
+  // of pixels at the bottom of the body — the panel is absolutely positioned
+  // and shrinks nothing by itself. See `consolePanelHeight` in ui.store.
+  const height = useUIStore((s) => s.consolePanelHeight)
+  const setHeight = useUIStore((s) => s.setConsolePanelHeight)
   const effectiveHeight = maximized
     ? Math.max(360, Math.round(typeof window !== 'undefined' ? window.innerHeight * 0.78 : 600))
     : height
   const dragging = useRef(false)
+  const releaseStyles = useRef<(() => void) | null>(null)
   const startY = useRef(0)
   const startH = useRef(0)
 
@@ -43,8 +49,8 @@ export default function ConsolePanel() {
     }
     function onUp() {
       dragging.current = false
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
+      releaseStyles.current?.()
+      releaseStyles.current = null
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -52,7 +58,9 @@ export default function ConsolePanel() {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
-  }, [])
+    // `setHeight` is the store's action — stable for the lifetime of the store,
+    // so the listeners are still attached exactly once.
+  }, [setHeight])
 
   if (!show) return null
 
@@ -60,8 +68,7 @@ export default function ConsolePanel() {
     dragging.current = true
     startY.current = e.clientY
     startH.current = height
-    document.body.style.cursor = 'row-resize'
-    document.body.style.userSelect = 'none'
+    releaseStyles.current = lockDragStyles('row-resize')
   }
 
   return (

@@ -1,10 +1,35 @@
 import { resolve } from 'path'
+import { execSync } from 'node:child_process'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import type { PluginOption } from 'vite'
 
 const ANALYZE = process.env.ANALYZE === 'true'
+
+/**
+ * Which build this is, stamped in at compile time.
+ *
+ * Pre-release rounds ship under the SAME `version` as each other and as the
+ * final release (1.5.0-rc2, -rc3 and 1.5.0 all report "1.5.0"), so a tester
+ * cannot tell from inside the app which one they installed. That is not
+ * cosmetic: a fix verified on one round was reported as still broken from
+ * another, and the investigation went looking for a platform difference that
+ * did not exist. The commit is the one thing that always distinguishes them.
+ */
+function buildId(): string {
+  const fromCi = process.env.GITHUB_SHA
+  if (fromCi) return fromCi.slice(0, 7)
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim()
+  } catch {
+    // A source tarball with no git metadata — the app still runs, it just
+    // cannot name its own build.
+    return 'unknown'
+  }
+}
 
 // Visualizer is a dev-only optional dep; loaded lazily so production builds
 // don't require it to be installed when ANALYZE isn't set.
@@ -23,7 +48,7 @@ async function loadVisualizer(): Promise<PluginOption | null> {
     // eslint-disable-next-line no-console
     console.warn(
       '[electron.vite.config] ANALYZE=true but rollup-plugin-visualizer is not installed. ' +
-        'Run: npm install --save-dev rollup-plugin-visualizer'
+        'Run: npm install --save-dev rollup-plugin-visualizer',
     )
     return null
   }
@@ -53,7 +78,20 @@ export default defineConfig(async () => {
       //   • System Node ≥22 HIDES this class of bug: it supports require(ESM),
       //     so a plain `node -e "require('uuid')"` test passes while Electron
       //     (Node 20) crashes. Verify launch with the built app, not bare node.
-      plugins: [externalizeDepsPlugin({ exclude: ['uuid'] })],
+      //   • `jose` (#63/#73) is the same shape as uuid: "type":"module" with only
+      //     an ESM `default` export condition and NO `require` condition, so it
+      //     must be BUNDLED too. Main-side jose usage is funnelled through TWO
+      //     documented doors and no others: src/main/lib/jose-runtime.ts (the
+      //     jose:* IPC surface) and src/shared/script/jose.ts (the script
+      //     sandbox's `require('jose')` / `pm.jose`, compiled into BOTH bundles
+      //     so it cannot import a src/main module). Both are STATIC imports, so
+      //     this exclusion stays the single lever that decides how jose enters
+      //     the bundle. `tests/main/shared/jose.test.ts` fails if a third door
+      //     appears or if 'jose' drops out of this exclude list.
+      plugins: [externalizeDepsPlugin({ exclude: ['uuid', 'jose'] })],
+      define: {
+        __BUILD_ID__: JSON.stringify(buildId()),
+      },
       build: {
         rollupOptions: {
           external: [
@@ -62,19 +100,19 @@ export default defineConfig(async () => {
             'ws',
             'eventsource',
             '@grpc/grpc-js',
-            '@grpc/proto-loader'
-          ]
-        }
-      }
+            '@grpc/proto-loader',
+          ],
+        },
+      },
     },
     preload: {
-      plugins: [externalizeDepsPlugin()]
+      plugins: [externalizeDepsPlugin()],
     },
     renderer: {
       resolve: {
         alias: {
-          '@renderer': resolve('src/renderer')
-        }
+          '@renderer': resolve('src/renderer'),
+        },
       },
       plugins: rendererPlugins,
       build: {
@@ -88,10 +126,10 @@ export default defineConfig(async () => {
               if (id.includes('node_modules/monaco-editor/')) return 'monaco-editor'
               if (id.includes('node_modules/@monaco-editor/')) return 'monaco-editor'
               return undefined
-            }
-          }
-        }
-      }
-    }
+            },
+          },
+        },
+      },
+    },
   }
 })

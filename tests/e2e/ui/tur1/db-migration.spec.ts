@@ -24,7 +24,28 @@ import fs from 'node:fs'
 // Electron ABI (for the packaged app), so importing it directly in the
 // Playwright/Node test process throws "compiled against a different Node.js
 // version". node:sqlite has no such ABI coupling.
-import { DatabaseSync } from 'node:sqlite'
+//
+// It IS, however, a Node 22.5+ builtin, and CI pins Node 20 to match Electron
+// 33's runtime. A STATIC import there fails at module-load — which Playwright
+// counts as a collection error that fails the ENTIRE `--project=ui` run before
+// a single test executes. That is how the nightly full sweep had been dying:
+// invisibly, because the per-PR subset never loads tests/e2e/ui/tur1/. Resolve
+// it lazily and skip the group instead of taking the suite down with us.
+type SqliteStatement = { run(...params: unknown[]): unknown }
+type SqliteDatabase = {
+  exec(sql: string): void
+  prepare(sql: string): SqliteStatement
+  close(): void
+}
+type SqliteCtor = new (path: string) => SqliteDatabase
+
+const DatabaseSync: SqliteCtor | null = (() => {
+  try {
+    return (require('node:sqlite') as { DatabaseSync: SqliteCtor }).DatabaseSync
+  } catch {
+    return null
+  }
+})()
 import { electronLaunchOptions } from '../../helpers/electron-env'
 
 const mainPath = path.resolve(__dirname, '../../../../out/main/index.js')
@@ -46,6 +67,7 @@ async function launchApp(
  */
 function seedOldSchemaDb(userDataDir: string): void {
   const dbPath = path.join(userDataDir, 'testnizer.db')
+  if (!DatabaseSync) throw new Error('node:sqlite unavailable — this group should have skipped')
   const db = new DatabaseSync(dbPath)
   db.exec('PRAGMA journal_mode = WAL')
   db.exec('PRAGMA foreign_keys = ON')
@@ -211,6 +233,8 @@ function seedOldSchemaDb(userDataDir: string): void {
 }
 
 test.describe('Tur1 — DB schema migration forward [MST-281]', () => {
+  test.skip(!DatabaseSync, 'node:sqlite needs Node >= 22.5; CI pins Node 20 to match Electron 33')
+
   test('MST-281 app runs migrations on old-schema DB without crashing', async () => {
     if (!fs.existsSync(mainPath)) {
       throw new Error(`Build artifact not found: ${mainPath}. Run "npm run build" first.`)

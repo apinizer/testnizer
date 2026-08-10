@@ -5,6 +5,10 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { randomUUID } from 'node:crypto'
 import { setupHandlerHarness, makeElectronMock, createTestDb } from './helpers'
 
 const harness = setupHandlerHarness()
@@ -44,17 +48,25 @@ vi.mock('../../../src/main/protocols/http.engine', () => ({
   }),
 }))
 
+/** Rows `loadCertificatesFor` sees. Empty by default = today's behaviour. */
+let certRows: Array<Record<string, unknown>> = []
 vi.mock('../../../src/main/db/certificate.repo', () => ({
-  listCertificatesForHost: () => [],
+  listCertificatesForHost: () => certRows,
+  // keystore-bridge imports this for its `certRow` arm — the mock must export
+  // it or the resolver's module binding is missing.
+  getCertificate: (id: string) => certRows.find((r) => r.id === id),
 }))
 
 const { registerRequestHandlers } = await import('../../../src/main/ipc/request.handler')
+const { executeHttpRequest } = await import('../../../src/main/protocols/http.engine')
 
 beforeEach(() => {
   harness.reset()
   testDb = createTestDb()
   engineShouldThrow = false
   engineResponseOverride = null
+  certRows = []
+  vi.mocked(executeHttpRequest).mockClear()
   registerRequestHandlers()
 })
 
@@ -105,6 +117,111 @@ describe('request:send', () => {
     const snap = JSON.parse(row!.response_snapshot) as { bodyEncoding?: string; body?: string }
     expect(snap.bodyEncoding).toBe('base64')
     expect(snap.body).toBe('iVBORw0KGgo=')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Key Material Provider (#60) EDIT 1 — NO-LEAK at the IPC boundary.
+//
+// Resolved PEM / key bytes / passphrases are MAIN-ONLY. They must reach the
+// engine and NOTHING else: not the `{success,data}` reply, not the history
+// snapshot the handler persists.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const CERTS = join(dirname(fileURLToPath(import.meta.url)), '../../fixtures/certs')
+
+describe('request:send — keystore-backed client cert never leaks to the renderer', () => {
+  it('attaches the cert to the engine but returns no key material', async () => {
+    const jks = readFileSync(join(CERTS, 'client.jks'))
+    const ksId = randomUUID()
+    testDb
+      .prepare(
+        `INSERT INTO keystores (id, name, type, blob, store_password, alias_count, size_bytes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(ksId, 'client.jks', 'JKS', jks.toString('base64'), 'testpassword', 1, jks.length, 0, 0)
+    certRows = [
+      {
+        id: 'cert-1',
+        project_id: 'p1',
+        kind: 'client',
+        host: 'example',
+        crt_path: null,
+        key_path: null,
+        pfx_path: null,
+        passphrase: null,
+        enabled: 1,
+        created_at: 0,
+        source: 'keystore',
+        keystore_id: ksId,
+        keystore_alias: 'test-client',
+      },
+    ]
+
+    const res = (await harness.invoke('request:send', {
+      method: 'GET',
+      url: 'http://example/x',
+      _projectId: 'p1',
+      _workspaceId: 'w1',
+    })) as { success: boolean; data?: unknown }
+    expect(res.success).toBe(true)
+
+    // The engine DID receive the resolved material (main-side).
+    const sent = vi.mocked(executeHttpRequest).mock.calls[0]?.[0] as {
+      certificates?: { clientCert?: { cert?: Buffer; key?: Buffer } }
+    }
+    expect(sent?.certificates?.clientCert?.key?.toString('utf8')).toContain('PRIVATE KEY')
+
+    // …and the renderer-bound reply carries none of it.
+    const reply = JSON.stringify(res)
+    expect(reply).not.toContain('PRIVATE KEY')
+    expect(reply).not.toContain('BEGIN CERTIFICATE')
+    expect(reply).not.toContain('testpassword')
+    expect(reply).not.toContain('certificates')
+
+    // Neither does the persisted history snapshot.
+    const row = testDb
+      .prepare('SELECT request_snapshot FROM history ORDER BY executed_at DESC LIMIT 1')
+      .get() as { request_snapshot: string } | undefined
+    expect(row?.request_snapshot).not.toContain('PRIVATE KEY')
+    expect(row?.request_snapshot).not.toContain('BEGIN CERTIFICATE')
+  })
+
+  it('FAIL LOUD: an unopenable alias fails the send instead of going out unauthenticated', async () => {
+    const jks = readFileSync(join(CERTS, 'client.jks'))
+    const ksId = randomUUID()
+    testDb
+      .prepare(
+        `INSERT INTO keystores (id, name, type, blob, store_password, alias_count, size_bytes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(ksId, 'client.jks', 'JKS', jks.toString('base64'), 'testpassword', 1, jks.length, 0, 0)
+    certRows = [
+      {
+        id: 'cert-1',
+        project_id: 'p1',
+        kind: 'client',
+        host: 'example',
+        crt_path: null,
+        key_path: null,
+        pfx_path: null,
+        passphrase: null,
+        enabled: 1,
+        created_at: 0,
+        source: 'keystore',
+        keystore_id: ksId,
+        keystore_alias: 'ghost',
+      },
+    ]
+    const res = (await harness.invoke('request:send', {
+      method: 'GET',
+      url: 'http://example/x',
+      _projectId: 'p1',
+    })) as { success: boolean; error?: string }
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/could not be loaded/i)
+    // The request never reached the wire.
+    expect(vi.mocked(executeHttpRequest)).not.toHaveBeenCalled()
   })
 })
 

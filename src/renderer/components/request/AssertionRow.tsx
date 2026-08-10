@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Check, ToggleLeft, ToggleRight, Pencil } from 'lucide-react'
 import type { TestAssertion } from '../../types'
+import { useNumberDraft } from '../../lib/number-draft'
 
 const TYPE_STYLES: Record<string, { color: string; bg: string }> = {
   status_equals: { color: 'var(--green)', bg: 'var(--green-bg)' },
@@ -134,10 +135,11 @@ function AssertionFields({
       return (
         <div className="flex items-center gap-2">
           <span className="text-[var(--muted)]">Expected status:</span>
-          <input
-            type="number"
-            value={assertion.expected ?? 200}
-            onChange={(e) => onUpdate({ expected: Number(e.target.value) })}
+          <DraftNumber
+            value={Number(assertion.expected ?? 200)}
+            min={100}
+            max={599}
+            onChange={(expected) => onUpdate({ expected })}
             className={`${inputCls} w-20`}
           />
           <BadgePill color={display.color} bg={display.bg}>
@@ -150,17 +152,19 @@ function AssertionFields({
       return (
         <div className="flex items-center gap-2">
           <span className="text-[var(--muted)]">Range:</span>
-          <input
-            type="number"
+          <DraftNumber
             value={assertion.rangeMin ?? 200}
-            onChange={(e) => onUpdate({ rangeMin: Number(e.target.value) })}
+            min={100}
+            max={599}
+            onChange={(rangeMin) => onUpdate({ rangeMin })}
             className={`${inputCls} w-20`}
           />
           <span className="text-[var(--muted)]">to</span>
-          <input
-            type="number"
+          <DraftNumber
             value={assertion.rangeMax ?? 299}
-            onChange={(e) => onUpdate({ rangeMax: Number(e.target.value) })}
+            min={100}
+            max={599}
+            onChange={(rangeMax) => onUpdate({ rangeMax })}
             className={`${inputCls} w-20`}
           />
           <BadgePill color={display.color} bg={display.bg}>
@@ -296,10 +300,11 @@ function AssertionFields({
       return (
         <div className="flex items-center gap-2">
           <span className="text-[var(--muted)]">Max time:</span>
-          <input
-            type="number"
-            value={assertion.expected ?? 2000}
-            onChange={(e) => onUpdate({ expected: Number(e.target.value) })}
+          <DraftNumber
+            value={Number(assertion.expected ?? 2000)}
+            min={1}
+            max={600_000}
+            onChange={(expected) => onUpdate({ expected })}
             className={`${inputCls} w-24`}
           />
           <span className="text-[var(--muted)]">ms</span>
@@ -313,10 +318,11 @@ function AssertionFields({
       return (
         <div className="flex items-center gap-2">
           <span className="text-[var(--muted)]">Max size:</span>
-          <input
-            type="number"
-            value={assertion.expected ?? 10240}
-            onChange={(e) => onUpdate({ expected: Number(e.target.value) })}
+          <DraftNumber
+            value={Number(assertion.expected ?? 10240)}
+            min={1}
+            max={1_073_741_824}
+            onChange={(expected) => onUpdate({ expected })}
             className={`${inputCls} w-24`}
           />
           <span className="text-[var(--muted)]">bytes</span>
@@ -350,4 +356,30 @@ function BadgePill({
       {children}
     </span>
   )
+}
+
+/**
+ * A number box whose text can actually be emptied while retyping.
+ *
+ * These live inside a `switch` in the render function, so the draft hook cannot
+ * be called at their call sites — hence the wrapper. `Number('')` is 0 and
+ * finite, so the old handlers wrote 0 into the assertion the moment the box was
+ * cleared: "expected status 0", "max time 0 ms". The draft keeps partial input
+ * local and clamps on blur.
+ */
+function DraftNumber({
+  value,
+  min,
+  max,
+  onChange,
+  className,
+}: {
+  value: number
+  min: number
+  max: number
+  onChange: (v: number) => void
+  className: string
+}) {
+  const draft = useNumberDraft({ value, min, max, onChange })
+  return <input type="number" {...draft.inputProps} className={className} />
 }

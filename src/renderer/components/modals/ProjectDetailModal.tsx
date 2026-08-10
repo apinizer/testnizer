@@ -225,43 +225,81 @@ export default function ProjectDetailModal() {
     setSaving(true)
 
     try {
+      // Every write below used to be swallowed as "non-critical" while the
+      // success toast fired regardless — so a failed rename, git-config or
+      // project-settings save was all reported as "Project settings saved".
+      // They are part of what the button promises; a failure has to surface.
+      const failures: string[] = []
+
       if (editName.trim() !== (activeProject.display_name || activeProject.name)) {
-        await renameProject(activeProject.id, editName.trim())
+        // The store swallowed this outcome entirely: the re-fetch put the old
+        // name back on screen while the toast still said "saved".
+        if (!(await renameProject(activeProject.id, editName.trim()))) {
+          failures.push(`${t('overview.name')}: ${t('settings.saveFailed')}`)
+        }
       }
 
       const emojiVal = editIconMode === 'emoji' ? editIconEmoji : null
-      await updateProject(activeProject.id, {
-        save_mode: editSaveMode,
-        local_path: editLocalPath || null,
-        icon_emoji: emojiVal,
-        icon_color: editIconColor,
-      })
+      if (
+        !(await updateProject(activeProject.id, {
+          // The Description box was rendered, edited and then silently dropped:
+          // it never reached this payload, so "Project settings saved" was true
+          // about every field except the one the user had just typed into.
+          description: editDesc,
+          save_mode: editSaveMode,
+          local_path: editLocalPath || null,
+          icon_emoji: emojiVal,
+          icon_color: editIconColor,
+        }))
+      ) {
+        failures.push(t('settings.saveFailed'))
+      }
+
+      /**
+       * `settings:set` REPORTS failure as `{success:false, error}` and never
+       * rejects — so wrapping it in try/catch alone caught nothing that actually
+       * happens, and the success toast fired over a write that did not land.
+       * Both shapes are handled here: the envelope and a genuine throw.
+       */
+      const persist = async (label: string, key: string, value: unknown): Promise<boolean> => {
+        try {
+          const res = (await window.api?.settings?.set(key, value)) as
+            | { success?: boolean; error?: string }
+            | undefined
+          if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
+          return true
+        } catch (e) {
+          failures.push(`${label}: ${e instanceof Error ? e.message : String(e)}`)
+          return false
+        }
+      }
 
       if (editSaveMode === 'git' || editSaveMode === 'both') {
         if (editGitUrl) {
-          try {
-            await window.api?.settings?.set(`git.${activeProject.id}`, {
-              repoUrl: editGitUrl,
-              username: editGitUser,
-              branch: editGitBranch,
-              token: editGitToken || '',
-            })
+          const ok = await persist('Git', `git.${activeProject.id}`, {
+            repoUrl: editGitUrl,
+            username: editGitUser,
+            branch: editGitBranch,
+            token: editGitToken || '',
+          })
+          // Only mirror into local state once the write is known to have landed.
+          if (ok) {
             setGitConfig({
               repoUrl: editGitUrl,
               username: editGitUser,
               branch: editGitBranch,
               token: editGitToken || gitConfig?.token,
             })
-          } catch {
-            /* non-critical */
           }
         }
       }
 
-      try {
-        await window.api?.settings?.set(`project.${activeProject.id}.settings`, projSettings)
-      } catch {
-        /* non-critical */
+      await persist('Settings', `project.${activeProject.id}.settings`, projSettings)
+
+      if (failures.length > 0) {
+        // Same channel the outer catch uses, and the modal stays open.
+        toast.error(`Save failed: ${failures.join(' · ')}`)
+        return
       }
 
       toast.success(t('modal.saved') || 'Project settings saved')

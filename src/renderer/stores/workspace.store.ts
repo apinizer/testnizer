@@ -6,6 +6,25 @@ import { useTabsStore } from './tabs.store'
 import { useConsoleStore } from './console.store'
 import { loadJson, saveJson } from '../lib/persist-helpers'
 
+/**
+ * Did a write actually land?
+ *
+ * The bridge REPORTS failure as `{success:false, error}` and resolves; only a
+ * missing bridge throws. Swallowing both meant `renameProject` / `updateProject`
+ * reported nothing at all, and `ProjectDetailModal` went on to show
+ * "Project settings saved" while the re-fetch quietly put the old name back.
+ *
+ * The store stays UI-agnostic; it returns the outcome and lets the caller say so.
+ */
+async function persisted(call: Promise<unknown> | undefined): Promise<boolean> {
+  try {
+    const res = (await call) as { success?: boolean } | undefined
+    return !(res && res.success === false)
+  } catch {
+    return false
+  }
+}
+
 interface ProjectTabSnapshot {
   tabs: Tab[]
   activeTabId: string | null
@@ -77,6 +96,13 @@ interface WorkspaceStore {
   setTreeData: (data: TreeNode[]) => void
   toggleNode: (id: string) => void
   /** Collapse every folder/request group in one action, keeping module roots open (issue #39). */
+  /**
+   * Bumped by collapse-all / expand-all. The tree ignores `openNodeIds` while
+   * a search filter is active (matches are force-expanded), so without this
+   * signal both buttons looked dead during a filter — the same defect issue
+   * #70 reported for the per-folder chevron.
+   */
+  allNodesCommand: { kind: 'collapse' | 'expand'; seq: number }
   collapseAllNodes: () => void
   /** Expand every node that has children (issue #39). */
   expandAllNodes: () => void
@@ -94,18 +120,25 @@ interface WorkspaceStore {
     iconColor?: string,
     displayName?: string,
   ) => Promise<string | null>
-  renameProject: (id: string, newName: string) => Promise<void>
+  /** Resolves false when the write was refused — see `persisted()` below. */
+  renameProject: (id: string, newName: string) => Promise<boolean>
   updateProject: (
     id: string,
     data: {
       name?: string
       display_name?: string | null
+      /**
+       * Was missing from this type only — the IPC handler and the repo have
+       * always accepted it. Because the type omitted it, `ProjectDetailModal`
+       * could drop the user's Description on save without a compile error.
+       */
+      description?: string
       save_mode?: string
       local_path?: string | null
       icon_emoji?: string | null
       icon_color?: string | null
     },
-  ) => Promise<void>
+  ) => Promise<boolean>
   deleteProject: (id: string) => Promise<void>
   /** Close a project's header tab (#1): drops its tab snapshot and, if it was
    *  active, falls back to another open project or Home. */
@@ -275,6 +308,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   openProjectIds: [],
   treeData: emptyTree(),
   openNodeIds: new Set(['default-module']),
+  allNodesCommand: { kind: 'expand', seq: 0 },
   activeNodeId: null,
   searchQuery: '',
 
@@ -403,7 +437,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         }
       }
       walk(state.treeData)
-      return { openNodeIds: next }
+      return {
+        openNodeIds: next,
+        allNodesCommand: { kind: 'collapse', seq: state.allNodesCommand.seq + 1 },
+      }
     }),
 
   expandAllNodes: () =>
@@ -418,7 +455,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         }
       }
       walk(state.treeData)
-      return { openNodeIds: next }
+      return {
+        openNodeIds: next,
+        allNodesCommand: { kind: 'expand', seq: state.allNodesCommand.seq + 1 },
+      }
     }),
 
   setActiveNode: (id) => set({ activeNodeId: id }),
@@ -483,23 +523,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   renameProject: async (id, newName) => {
-    try {
-      await window.api?.project?.update(id, { display_name: newName })
-      const wsId = get().activeWorkspaceId
-      if (wsId) await get().fetchProjects(wsId)
-    } catch {
-      // IPC not available
-    }
+    const ok = await persisted(window.api?.project?.update(id, { display_name: newName }))
+    const wsId = get().activeWorkspaceId
+    if (wsId) await get().fetchProjects(wsId)
+    return ok
   },
 
   updateProject: async (id, data) => {
-    try {
-      await window.api?.project?.update(id, data)
-      const wsId = get().activeWorkspaceId
-      if (wsId) await get().fetchProjects(wsId)
-    } catch {
-      // IPC not available
-    }
+    const ok = await persisted(window.api?.project?.update(id, data))
+    const wsId = get().activeWorkspaceId
+    if (wsId) await get().fetchProjects(wsId)
+    return ok
   },
 
   deleteProject: async (id) => {

@@ -108,7 +108,13 @@ ipcMain.handle('app:version', () => {
       }
     })()
     const version = pkg.version || runtimeVersion || 'unknown'
-    return { success: true, data: { version, name: app.name } }
+    // Which BUILD this is. Pre-release rounds share a version string with each
+    // other and with the final release, so the version alone cannot answer
+    // "which one am I running?" — and a fix verified on one round was reported
+    // as still broken from another because of exactly that. See __BUILD_ID__ in
+    // electron.vite.config.ts.
+    const buildId = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'unknown'
+    return { success: true, data: { version, name: app.name, buildId } }
   } catch (e) {
     return { success: false, error: (e as Error).message }
   }

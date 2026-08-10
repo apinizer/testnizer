@@ -20,12 +20,18 @@ import { registerGitHandlers } from './git.handler'
 import { registerAuthHandlers } from './auth.handler'
 import { registerTestSuiteHandlers } from './test-suite.handler'
 import { registerCertificateHandlers } from './certificate.handler'
+import { registerOtpHandlers } from './otp.handler'
+import { registerKeystoreHandlers } from './keystore.handler'
 import { registerWsseHandlers } from './wsse.handler'
+import { registerSamlHandlers } from './saml.handler'
+import { registerJoseHandlers } from './jose.handler'
+import { registerJwksHandlers } from './jwks.handler'
 import { registerDialogHandlers } from './dialog.handler'
 import { registerEulaHandlers } from './eula.handler'
 import { registerMcpHandlers } from './mcp.handler'
 import { registerSocketIOHandlers } from './socketio.handler'
 import { registerMockHandlers } from './mock.handler'
+import { registerTlsHandlers } from './tls.handler'
 import { registerDiagnosticsHandlers } from '../diagnostics'
 
 export function registerAllHandlers(): void {
@@ -51,12 +57,18 @@ export function registerAllHandlers(): void {
   registerGitHandlers()
   registerTestSuiteHandlers()
   registerCertificateHandlers()
+  registerOtpHandlers()
+  registerKeystoreHandlers()
   registerWsseHandlers()
+  registerSamlHandlers()
+  registerJoseHandlers()
+  registerJwksHandlers()
   registerDialogHandlers()
   registerEulaHandlers()
   registerMcpHandlers()
   registerSocketIOHandlers()
   registerMockHandlers()
+  registerTlsHandlers()
   registerDiagnosticsHandlers()
 
   // Start scheduled task timers after all handlers are registered

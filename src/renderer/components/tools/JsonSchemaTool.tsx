@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import CopyButton from '../shared/CopyButton'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { generateJsonSchema } from '../../lib/tools/json-schema'
@@ -80,20 +81,12 @@ export default function JsonSchemaTool() {
       >
         {t('tools.common.loadSample')}
       </button>
-      <button
-        onClick={async () => {
-          if (!output) return
-          try {
-            await navigator.clipboard.writeText(output)
-          } catch {
-            /* ignore */
-          }
-        }}
-        className="rounded px-3 py-1 text-xs font-medium text-white"
-        style={{ background: 'var(--accent)' }}
-      >
-        {t('tools.common.copy')}
-      </button>
+      <CopyButton
+        text={output}
+        label={t('tools.common.copy')}
+        ariaLabel={t('tools.jsonSchema.copyOutput')}
+        className="rounded px-3 py-1 text-xs font-medium"
+      />
     </>
   )
 

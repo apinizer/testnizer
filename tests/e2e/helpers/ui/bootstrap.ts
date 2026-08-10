@@ -3,11 +3,32 @@ import { expect } from '@playwright/test'
 
 export const E2E_PROJECT_NAME = 'E2E Test Project'
 
+/**
+ * Headline text the production ErrorBoundary renders when a child screen throws
+ * on mount (src/renderer/components/shared/ErrorBoundary.tsx). This is the SAME
+ * marker the RTL smoke harness (tests/renderer/screens/_mount.tsx) keys on — if
+ * the boundary copy ever changes, update it in all three places together.
+ */
+export const ERROR_BOUNDARY_MARKER = 'Testnizer hit a render error'
+
+/**
+ * Assert the ErrorBoundary recovery panel is NOT showing — i.e. the current
+ * screen mounted without throwing. Cheap: a plain text-count check against the
+ * boundary's stable headline. Call after every navigation / editor / modal open
+ * in the coverage sweeps.
+ */
+export async function expectNoErrorBoundary(page: Page): Promise<void> {
+  await expect(page.getByText(ERROR_BOUNDARY_MARKER)).toHaveCount(0)
+}
+
 /** Wait until preload IPC bridge is ready. */
 export async function waitForApiBridge(page: Page): Promise<void> {
-  await page.waitForFunction(() => !!(window as unknown as Window & { api?: { eula?: unknown } }).api?.eula, {
-    timeout: 30_000,
-  })
+  await page.waitForFunction(
+    () => !!(window as unknown as Window & { api?: { eula?: unknown } }).api?.eula,
+    {
+      timeout: 30_000,
+    },
+  )
 }
 
 /** Accept EULA gate via UI (checkbox + Accept). */
@@ -53,12 +74,14 @@ export async function loginAsGuest(page: Page): Promise<void> {
 }
 
 /** Create and open a local HTTP project from Project Home. */
-export async function createAndOpenProject(
-  page: Page,
-  name = E2E_PROJECT_NAME,
-): Promise<void> {
+export async function createAndOpenProject(page: Page, name = E2E_PROJECT_NAME): Promise<void> {
   const existing = page.getByTestId('project-card').filter({ hasText: name })
-  if (await existing.first().isVisible().catch(() => false)) {
+  if (
+    await existing
+      .first()
+      .isVisible()
+      .catch(() => false)
+  ) {
     await existing.first().click()
     await expect(page.getByTestId('nav-apis')).toBeVisible({ timeout: 15_000 })
     return
@@ -96,9 +119,7 @@ export async function bootstrapWorkbench(page: Page): Promise<void> {
  * tree can point at different projects.
  */
 export async function ensureCanonicalProject(page: Page): Promise<void> {
-  const tab = page.locator(
-    `[data-testid="header-project-tab"][title="${E2E_PROJECT_NAME}"]`,
-  )
+  const tab = page.locator(`[data-testid="header-project-tab"][title="${E2E_PROJECT_NAME}"]`)
   if ((await tab.count()) > 0) {
     if ((await tab.first().getAttribute('data-active')) !== 'true') {
       await tab.first().click()
@@ -108,7 +129,10 @@ export async function ensureCanonicalProject(page: Page): Promise<void> {
     // Tab was closed by a previous test — reopen from Project Home. When no
     // project is active the app is ALREADY on Project Home (no Header / no
     // header-home is rendered), so only click header-home when it exists.
-    const onProjectHome = await page.getByTestId('project-home').isVisible().catch(() => false)
+    const onProjectHome = await page
+      .getByTestId('project-home')
+      .isVisible()
+      .catch(() => false)
     if (!onProjectHome) {
       await page.getByTestId('header-home').click()
     }
@@ -127,6 +151,65 @@ export async function dismissOverlays(page: Page): Promise<void> {
   for (let i = 0; i < 4; i++) {
     await page.keyboard.press('Escape')
     await page.waitForTimeout(150)
+  }
+}
+
+/**
+ * Close every open workbench tab.
+ *
+ * These UI specs share ONE Electron instance, so tabs opened by an earlier test
+ * stay on screen for the next one — and a tool that has its own search box then
+ * makes `input[placeholder*="Search"]` ambiguous (Playwright strict mode) or
+ * puts a second match in front of the one the test meant. Starting each
+ * tool/panel test from an empty workbench removes that whole class.
+ */
+export async function closeAllTabs(page: Page): Promise<void> {
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  // Two ways this used to give up silently, both of which left tabs on screen
+  // and made the CALLER fail with an unrelated-looking assertion (MST-179 hunted
+  // a Tests HOME screen that open tabs were covering):
+  //
+  //   1. A fixed 40-iteration cap. Nothing closes 41 tabs, and by the tail of
+  //      the ~736-case sweep far more than 40 have piled up.
+  //   2. A DIRTY tab. Cmd+W on one opens the unsaved-changes dialog, and every
+  //      subsequent Cmd+W then goes into the MODAL — so the loop burned every
+  //      iteration pressing a shortcut at a dialog that only has buttons.
+  //
+  // Prefer the app's own bulk action: one right-click instead of hundreds of
+  // Cmd+W round-trips (by the tail of the sweep the loop below took ~90s), and
+  // "Force" is dirty-tab-proof by construction.
+  const open = await page
+    .getByTestId('endpoint-tab')
+    .count()
+    .catch(() => 0)
+  if (open === 0) return
+  try {
+    await page.getByTestId('endpoint-tab').first().click({ button: 'right' })
+    const force = page.getByRole('button', { name: /Force Close All Tabs/i })
+    await force.waitFor({ state: 'visible', timeout: 2_000 })
+    await force.click()
+    await expect(page.getByTestId('endpoint-tab')).toHaveCount(0, { timeout: 5_000 })
+    return
+  } catch {
+    // Menu unavailable (no tab bar on this screen, menu markup changed) — fall
+    // through to the keyboard path below.
+    await page.keyboard.press('Escape').catch(() => {})
+  }
+
+  for (let i = 0; i < open * 2 + 10; i++) {
+    const tabs = await page
+      .getByTestId('endpoint-tab')
+      .count()
+      .catch(() => 0)
+    if (tabs === 0) return
+    await page.keyboard.press(`${mod}+KeyW`)
+    await page.waitForTimeout(80)
+
+    const discard = page.getByTestId('unsaved-discard-btn')
+    if (await discard.isVisible().catch(() => false)) {
+      await discard.click().catch(() => {})
+      await page.waitForTimeout(80)
+    }
   }
 }
 
@@ -150,7 +233,7 @@ export async function fillCommandPalette(page: Page, query: string): Promise<voi
 /** Navigate icon sidebar page. */
 export async function navigateSidebar(
   page: Page,
-  pageId: 'apis' | 'tests' | 'mocks' | 'history' | 'tools' | 'settings',
+  pageId: 'apis' | 'tests' | 'mocks' | 'history' | 'tools' | 'security' | 'settings',
 ): Promise<void> {
   await page.getByTestId(`nav-${pageId}`).click()
 }
@@ -159,7 +242,10 @@ export async function navigateSidebar(
 export async function openHttpRequestTab(page: Page): Promise<void> {
   await page.getByTestId('new-dropdown-btn').click()
   await expect(page.getByTestId('new-dropdown-menu')).toBeVisible()
-  await page.getByTestId('new-dropdown-menu').getByRole('button', { name: /^HTTP$/i }).click()
+  await page
+    .getByTestId('new-dropdown-menu')
+    .getByRole('button', { name: /^HTTP$/i })
+    .click()
 }
 
 /** Open New (+) dropdown and pick an item by visible label. */

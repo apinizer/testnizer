@@ -10,6 +10,9 @@
 
 import * as crypto from 'node:crypto'
 import { SignedXml } from 'xml-crypto'
+// TYPE-ONLY (erased at build): the engine stays pure — no keystore bridge, no
+// DB, no IPC in this module's runtime graph.
+import type { MaterialSource } from '../lib/keystore-bridge'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const xmlenc = require('xml-encryption') as {
   encrypt: (
@@ -85,11 +88,25 @@ export interface TimestampConfig {
 }
 
 export interface SignConfig {
-  privateKeyPem: string
-  certPem: string
+  /**
+   * PEM private key. OPTIONAL since the Key Material Provider (#60): when the
+   * user picks `keySource` instead of pasting, the ORCHESTRATION layer
+   * (`resolveWsseKeyMaterial` in `lib/wsse-key-material.ts`, called from
+   * `wsse.handler` and `executeSoap`) populates this BEFORE `applyWsSecurity`.
+   * This engine stays pure — it never resolves a `keySource` itself.
+   */
+  privateKeyPem?: string
+  /** PEM certificate. OPTIONAL for the same reason as `privateKeyPem`. */
+  certPem?: string
   algorithm: SignAlgorithm
   references: SignReference[]
   keyInfoStrategy: KeyInfoStrategy
+  /**
+   * Opaque key-material reference (#60) — ids / paths / pasted PEM only, never
+   * key bytes. Resolved in MAIN by the orchestration layer; this shared engine
+   * deliberately ignores it (keeping the keystore bridge out of pure code).
+   */
+  keySource?: MaterialSource
 }
 
 export interface EncryptConfig {
@@ -336,6 +353,18 @@ interface SignArgs {
 function applySignature(args: SignArgs): string {
   const { envelope, config, headerTokenIds } = args
 
+  // FAIL LOUD (#60). `privateKeyPem`/`certPem` became optional so a `keySource`
+  // can stand in for them, but the ORCHESTRATION layer must have resolved it
+  // before we get here. Reaching this point with neither is a config gap, not a
+  // reason to emit a silently unsigned envelope.
+  const certPem = config.certPem
+  const privateKeyPem = config.privateKeyPem
+  if (!certPem || !certPem.trim() || !privateKeyPem || !privateKeyPem.trim()) {
+    throw new Error(
+      'WS-Security signing requires a certificate and a private key — paste both PEMs or select key material from the keystore.',
+    )
+  }
+
   // Ensure Body has wsu:Id; if not provided, inject one
   let signedEnvelope = envelope
   let bodyId = args.bodyId
@@ -348,7 +377,7 @@ function applySignature(args: SignArgs): string {
   }
 
   const bstId = genId('X509')
-  const certDer = pemToBase64(config.certPem)
+  const certDer = pemToBase64(certPem)
 
   // Inject BinarySecurityToken into <wsse:Security> (before signing) if strategy uses it
   if (config.keyInfoStrategy === 'BinarySecurityToken') {
@@ -360,12 +389,12 @@ function applySignature(args: SignArgs): string {
   }
 
   const sig = new SignedXml({
-    privateKey: config.privateKeyPem,
-    publicCert: config.certPem,
+    privateKey: privateKeyPem,
+    publicCert: certPem,
     signatureAlgorithm: SIGN_ALGO_URI[config.algorithm],
     canonicalizationAlgorithm: 'http://www.w3.org/2001/10/xml-exc-c14n#',
     idMode: 'wssecurity',
-    getKeyInfoContent: buildKeyInfoProvider(config.certPem, config.keyInfoStrategy, bstId),
+    getKeyInfoContent: buildKeyInfoProvider(certPem, config.keyInfoStrategy, bstId),
   })
 
   const ids = { body: bodyId, ...headerTokenIds }

@@ -112,3 +112,143 @@ describe('scheduler:toggle + delete', () => {
     expect(res.success).toBe(false)
   })
 })
+
+describe('scheduler — run lifecycle phases (issue #72)', () => {
+  it('stores setup/teardown ids and the run hook scripts', async () => {
+    const created = (await harness.invoke('scheduler:create', {
+      projectId,
+      name: 'Nightly with cleanup',
+      endpointIds: ['flow-1'],
+      setupEndpointIds: ['setup-1'],
+      teardownEndpointIds: ['cleanup-1', 'cleanup-2'],
+      runPreScript: 'pm.environment.set("t", "1")',
+      runPostScript: 'pm.environment.unset("t")',
+      intervalValue: 1,
+      intervalUnit: 'hours',
+    })) as {
+      success: boolean
+      data?: {
+        setup_endpoint_ids: string | null
+        teardown_endpoint_ids: string | null
+        run_pre_script: string | null
+        run_post_script: string | null
+      }
+    }
+
+    expect(created.success).toBe(true)
+    // A scheduled run must execute the SAME phases as the interactive run it
+    // was created from — sending the flat list would demote cleanup requests to
+    // flow requests, whose failures count against the verdict.
+    expect(JSON.parse(created.data!.setup_endpoint_ids!)).toEqual(['setup-1'])
+    expect(JSON.parse(created.data!.teardown_endpoint_ids!)).toEqual(['cleanup-1', 'cleanup-2'])
+    expect(created.data!.run_pre_script).toContain('pm.environment.set')
+    expect(created.data!.run_post_script).toContain('pm.environment.unset')
+  })
+
+  it('leaves the phase columns NULL for a task created without phases', async () => {
+    const created = (await harness.invoke('scheduler:create', {
+      projectId,
+      name: 'Plain task',
+      endpointIds: ['ep-1'],
+      intervalValue: 30,
+      intervalUnit: 'minutes',
+    })) as {
+      success: boolean
+      data?: { setup_endpoint_ids: string | null; teardown_endpoint_ids: string | null }
+    }
+
+    // Pre-#72 rows behave exactly as before: everything is flow.
+    expect(created.data!.setup_endpoint_ids).toBeNull()
+    expect(created.data!.teardown_endpoint_ids).toBeNull()
+  })
+})
+
+describe('scheduler — stopOnError parity', () => {
+  /** Reads a task row back through the list handler. */
+  async function row(id: string): Promise<Record<string, unknown>> {
+    const listed = (await harness.invoke('scheduler:list', projectId)) as {
+      data?: Record<string, unknown>[]
+    }
+    const found = listed.data?.find((t) => t.id === id)
+    if (!found) throw new Error(`task ${id} not found`)
+    return found
+  }
+
+  it('stores the stopOnError choice', async () => {
+    const on = (await harness.invoke('scheduler:create', {
+      projectId,
+      name: 'Halting',
+      endpointIds: ['ep-1'],
+      intervalValue: 1,
+      intervalUnit: 'hours',
+      stopOnError: true,
+    })) as { success: boolean; data?: { id: string; stop_on_error: number } }
+    const off = (await harness.invoke('scheduler:create', {
+      projectId,
+      name: 'Carry on',
+      endpointIds: ['ep-1'],
+      intervalValue: 1,
+      intervalUnit: 'hours',
+      stopOnError: false,
+    })) as { success: boolean; data?: { id: string; stop_on_error: number } }
+
+    expect(on.data!.stop_on_error).toBe(1)
+    expect(off.data!.stop_on_error).toBe(0)
+  })
+
+  it('defaults to ON when omitted, matching the interactive runner', async () => {
+    // A task created before the column existed reads NULL, and the handler's
+    // `!== 0` puts it on the same (safer) side as this default.
+    const created = (await harness.invoke('scheduler:create', {
+      projectId,
+      name: 'Legacy shape',
+      endpointIds: ['ep-1'],
+      intervalValue: 1,
+      intervalUnit: 'hours',
+    })) as { success: boolean; data?: { stop_on_error: number } }
+
+    expect(created.data!.stop_on_error).toBe(1)
+  })
+
+  it('keeps the run lifecycle when a task is EDITED', async () => {
+    // The UPDATE statement used to omit these five columns entirely, so editing
+    // a schedule's interval silently demoted its setup/teardown requests back to
+    // ordinary flow steps and discarded both hook scripts.
+    const created = (await harness.invoke('scheduler:create', {
+      projectId,
+      name: 'Nightly',
+      endpointIds: ['flow-1'],
+      setupEndpointIds: ['setup-1'],
+      teardownEndpointIds: ['cleanup-1'],
+      runPreScript: 'pm.environment.set("t","1")',
+      runPostScript: 'pm.environment.unset("t")',
+      intervalValue: 1,
+      intervalUnit: 'hours',
+      stopOnError: false,
+    })) as { success: boolean; data?: { id: string } }
+    const id = created.data!.id
+
+    const updated = (await harness.invoke('scheduler:update', {
+      id,
+      projectId,
+      name: 'Nightly (edited)',
+      endpointIds: ['flow-1'],
+      setupEndpointIds: ['setup-1'],
+      teardownEndpointIds: ['cleanup-1'],
+      runPreScript: 'pm.environment.set("t","1")',
+      runPostScript: 'pm.environment.unset("t")',
+      intervalValue: 2,
+      intervalUnit: 'hours',
+      stopOnError: false,
+    })) as { success: boolean }
+
+    expect(updated.success).toBe(true)
+    const after = await row(id)
+    expect(after.name).toBe('Nightly (edited)')
+    expect(JSON.parse(after.setup_endpoint_ids as string)).toEqual(['setup-1'])
+    expect(JSON.parse(after.teardown_endpoint_ids as string)).toEqual(['cleanup-1'])
+    expect(after.run_pre_script).toContain('pm.environment.set')
+    expect(after.run_post_script).toContain('pm.environment.unset')
+    expect(after.stop_on_error).toBe(0)
+  })
+})

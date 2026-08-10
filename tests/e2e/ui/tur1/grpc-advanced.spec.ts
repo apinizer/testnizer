@@ -345,16 +345,27 @@ uiTest.describe('Tur1 — gRPC advanced [MST-133..140]', () => {
     await expect(window.getByTestId('grpc-method-select')).toBeVisible({ timeout: 15_000 })
     await fillMonaco(window, 'grpc-request-editor', '{"message":"mst140"}')
 
-    // Click execute and try to cancel immediately
+    // Click execute, then try to cancel inside the flight window.
     await window.getByTestId('grpc-execute').click()
-    const cancelBtn = window.getByRole('button', { name: /Cancel/i })
-    if (await cancelBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await cancelBtn.click()
-      // After cancel, execute button should reappear
-      await expect(window.getByTestId('grpc-execute')).toBeVisible({ timeout: 10_000 })
-    } else {
-      // Request completed before cancel window — just verify the result came back
-      await expect(window.getByTestId('grpc-response-status')).toBeVisible({ timeout: 20_000 })
-    }
+
+    /*
+     * Clicking Cancel is BEST EFFORT, and deliberately so.
+     *
+     * `isVisible()` followed by `click()` is check-then-act: the echo call can
+     * finish in the gap, the button turns back into Execute, and the click then
+     * waits the full 30s for a locator that will never reappear. That is what
+     * made this test fail roughly one run in three — nothing to do with the
+     * behaviour under test.
+     *
+     * What must hold whether the cancel landed or the call simply completed is
+     * the thing the test is named after: the UI leaves the loading state and
+     * Execute is available again.
+     */
+    await window
+      .getByRole('button', { name: /Cancel/i })
+      .click({ timeout: 2_000 })
+      .catch(() => {})
+
+    await expect(window.getByTestId('grpc-execute')).toBeVisible({ timeout: 20_000 })
   })
 })

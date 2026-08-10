@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import type { EndpointRunResult, RunnerReport } from '../../shared/runner-types'
+import { buildExecutePayload, RUNNER_DEFAULTS } from '../lib/runner-payload'
 import type { HttpMethod } from '../types'
 import { useEnvironmentStore } from './environment.store'
 import { saveDirtyRunItemsBeforeRun } from '../lib/dirty-run-guard'
@@ -13,58 +15,18 @@ export interface RunnerEndpoint {
   selected: boolean
 }
 
-export interface AssertionResult {
-  name: string
-  passed: boolean
-  actual?: string | number
-  error?: string
-}
-
-export interface EndpointRunResult {
-  endpointId: string
-  endpointName: string
-  folderName?: string
-  method: string
-  url: string
-  status: number | null
-  statusText: string
-  duration: number
-  passed: number
-  failed: number
-  skipped: number
-  assertions: AssertionResult[]
-  error?: string
-  responseSize?: number
-  responseBody?: string
-  responseHeaders?: Record<string, string>
-  requestHeaders?: Record<string, string>
-  requestBody?: string
-  /**
-   * 1-based iteration index this result belongs to. When iterations > 1
-   * (or iterationData is supplied) the RunnerResults UI groups rows by
-   * iteration. Optional for backwards compatibility with reports stored
-   * before this field was added — older history rows are treated as a
-   * single Iteration 1 bucket.
-   */
-  iteration?: number
-}
-
-export interface RunnerReport {
-  projectId: string
-  startedAt: number
-  completedAt: number
-  totalEndpoints: number
-  passedEndpoints: number
-  failedEndpoints: number
-  totalAssertions: number
-  passedAssertions: number
-  failedAssertions: number
-  results: EndpointRunResult[]
-  /** Script-written variables persisted during the run (issue #12). The store
-   *  refreshes the env store from these so the env editor + next Send see them. */
-  envUpdates?: Record<string, string>
-  globalUpdates?: Record<string, string>
-}
+/**
+ * Re-exported from the shared runner contract so the ~15 renderer modules that
+ * import these from the store keep working. The local copies they replace had
+ * already drifted from main's (see src/shared/runner-types.ts).
+ */
+export type {
+  AssertionResult,
+  EndpointRunResult,
+  RunnerReport,
+  RunStopReason,
+  ScriptConsoleLog,
+} from '../../shared/runner-types'
 
 type RunnerView = 'config' | 'results'
 
@@ -109,12 +71,15 @@ interface RunnerStore {
 export const useRunnerStore = create<RunnerStore>((set, get) => ({
   // Config
   endpoints: [],
+  // NOTE: this surface keeps a 1s inter-request delay (it predates the runner
+  // tab and its users expect the gentler pacing); everything else comes from the
+  // shared defaults so the two surfaces cannot drift apart again.
   delay: 1000,
-  iterations: 1,
+  iterations: RUNNER_DEFAULTS.iterations,
   iterationData: [],
-  stopOnError: true,
-  persistResponses: true,
-  keepVariableValues: true,
+  stopOnError: RUNNER_DEFAULTS.stopOnError,
+  persistResponses: RUNNER_DEFAULTS.persistResponses,
+  keepVariableValues: RUNNER_DEFAULTS.keepVariableValues,
   saveCookies: true,
 
   // State
@@ -187,17 +152,33 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
     })
 
     try {
-      const result = await window.api?.runner?.execute({
-        projectId,
-        endpointIds: selected.map((ep) => ep.id),
-        environmentId,
-        workspaceId,
-        delay: state.delay,
-        iterations: state.iterations,
-        stopOnError: state.stopOnError,
-        persistResponses: state.persistResponses,
-        keepVariableValues: state.keepVariableValues,
-      })
+      const result = await window.api?.runner?.execute(
+        buildExecutePayload(
+          {
+            projectId,
+            endpointIds: selected.map((ep) => ep.id),
+            environmentId,
+            workspaceId,
+            // This surface has no setup/teardown or hook-script UI, so those
+            // stay undefined — but VISIBLY so, in a payload the shared builder
+            // produced, rather than by omission. Omission is what let the runner
+            // tab drop `stopOnError` unnoticed.
+            iterationData: state.iterationData.length > 0 ? state.iterationData : undefined,
+            sourceLabel: 'Runner',
+          },
+          {
+            delay: state.delay,
+            // This surface has no iteration-delay control (it has no lifecycle
+            // UI either); stated explicitly so the omission is a decision rather
+            // than a gap the type system had to catch later.
+            iterationDelay: 0,
+            iterations: state.iterations,
+            stopOnError: state.stopOnError,
+            persistResponses: state.persistResponses,
+            keepVariableValues: state.keepVariableValues,
+          },
+        ),
+      )
 
       acceptProgress = false
 

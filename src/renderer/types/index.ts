@@ -35,6 +35,13 @@ export type Protocol =
   | 'tools.uuid'
   | 'tools.regex'
   | 'tools.yamlJson'
+  | 'tools.passwordGen'
+  | 'tools.otp'
+  | 'tools.qr'
+  | 'tools.keystore'
+  | 'tools.tlsInspect'
+  | 'tools.jwk'
+  | 'tools.saml'
 
 export const TOOL_PROTOCOLS = [
   'tools.jwt',
@@ -57,12 +64,265 @@ export const TOOL_PROTOCOLS = [
   'tools.uuid',
   'tools.regex',
   'tools.yamlJson',
+  'tools.passwordGen',
+  'tools.otp',
+  'tools.qr',
+  'tools.keystore',
+  'tools.tlsInspect',
+  'tools.jwk',
+  'tools.saml',
 ] as const satisfies readonly Protocol[]
 export type ToolProtocol = (typeof TOOL_PROTOCOLS)[number]
 export function isToolProtocol(p: Protocol): p is ToolProtocol {
   return (TOOL_PROTOCOLS as readonly string[]).includes(p)
 }
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
+
+// ─── OTP authenticator vault (Tools panel) ──────────────────────────
+export type OtpAlgorithm = 'SHA1' | 'SHA256' | 'SHA512'
+export type OtpType = 'totp' | 'hotp'
+
+/** Renderer-facing OTP entry — never carries the secret. */
+export interface OtpEntry {
+  id: string
+  label: string | null
+  issuer: string | null
+  account: string | null
+  algorithm: OtpAlgorithm
+  digits: number
+  period: number
+  type: OtpType
+  counter: number
+  enabled: boolean
+  hasSecret: boolean
+}
+
+export interface OtpCode {
+  id: string
+  code: string | null
+  secondsRemaining: number
+  error?: string
+}
+
+export interface OtpDraft {
+  type: OtpType
+  label: string
+  issuer: string
+  account: string
+  secret: string
+  algorithm: OtpAlgorithm
+  digits: number
+  period: number
+  counter: number
+}
+
+export interface OtpAddInput {
+  label?: string | null
+  issuer?: string | null
+  account?: string | null
+  secret: string
+  algorithm?: OtpAlgorithm
+  digits?: number
+  period?: number
+  type?: OtpType
+  counter?: number
+  enabled?: boolean
+}
+// ─── Keystore Studio (renderer-safe DTOs; structural mirror of the preload
+// bridge — public metadata only, never keystore bytes / keys / passwords) ────
+export type KeystoreType = 'JKS' | 'PKCS12'
+export type KeystoreEntryType = 'KEY' | 'CERTIFICATE'
+
+export interface KeystoreAliasSummary {
+  alias: string
+  entryType: KeystoreEntryType
+  hasPrivateKey: boolean
+  subjectDN?: string
+  issuerDN?: string
+  notBefore?: string
+  notAfter?: string
+  keyAlgorithm?: string
+  chainLength: number
+}
+
+export interface KeystoreMeta {
+  type: KeystoreType
+  aliasCount: number
+  aliases: KeystoreAliasSummary[]
+  /**
+   * Unsaved-changes flag (Faz B4 dirty-guard, design §9.7). Set by any mutation
+   * in main, cleared on Save-As. Absent on read-only projections — callers treat
+   * `undefined` as `false`.
+   */
+  dirty?: boolean
+}
+
+/** Export / Save-As result — a written path, or a cancelled dialog. Never bytes. */
+export type KeystoreWriteResult = { path: string } | { canceled: true }
+
+export interface KeystoreCertificateInfo {
+  subjectDN: string
+  issuerDN: string
+  serialNumber: string
+  version: number
+  sigAlgName: string
+  notBefore: string
+  notAfter: string
+  publicKeyAlgorithm: string
+  keySize: number
+  sha1Fingerprint: string
+  sha256Fingerprint: string
+  subjectAlternativeNames: string[]
+  pem: string
+}
+
+export interface KeystoreAliasDetail {
+  alias: string
+  entryType: KeystoreEntryType
+  hasPrivateKey: boolean
+  chain: KeystoreCertificateInfo[]
+}
+
+// ─── TLS Inspector (#64, Faz F) ──────────────────────────────────────────────
+// Renderer-facing mirrors of the main-process DTOs (preload `TlsApi`). Kept
+// structurally identical to the preload interfaces so `window.api.tls.inspect`
+// accepts a `TlsInspectRequest` and returns a `TlsInspectResult`. Also
+// structurally identical to `KeystoreCertificateInfo`, so a TLS chain can reuse
+// the keystore `CertificateDetailDialog` atom without a conversion layer.
+
+/** One presented certificate — PUBLIC material only (no private key bytes). */
+export interface TlsCertificateInfo {
+  subjectDN: string
+  issuerDN: string
+  serialNumber: string
+  version: number
+  sigAlgName: string
+  notBefore: string
+  notAfter: string
+  publicKeyAlgorithm: string
+  keySize: number
+  sha1Fingerprint: string
+  sha256Fingerprint: string
+  subjectAlternativeNames: string[]
+  pem: string
+}
+
+export type TlsCipherPreset = 'modern' | 'intermediate' | 'legacy'
+
+/** Inline (pasted) mTLS client-cert material — carried as strings over IPC. */
+export interface TlsClientCertInline {
+  kind: 'inline'
+  certPem?: string
+  keyPem?: string
+  /** PFX/P12 bytes, base64-encoded. */
+  pfxBase64?: string
+  passphrase?: string
+}
+
+/** File-path mTLS client-cert material — the paths are read in MAIN. */
+export interface TlsClientCertFile {
+  kind: 'file'
+  certPath?: string
+  keyPath?: string
+  pfxPath?: string
+  passphrase?: string
+}
+
+export type TlsClientCert = TlsClientCertInline | TlsClientCertFile
+
+export interface TlsInspectRequest {
+  host: string
+  port?: number
+  servername?: string
+  alpnProtocols?: string[]
+  minVersion?: string
+  maxVersion?: string
+  ciphers?: string
+  cipherPreset?: TlsCipherPreset
+  timeoutMs?: number
+  /** Extra trust anchors — base64-encoded PEM or DER (merged with system roots in main). */
+  caCerts?: string[]
+  clientCert?: TlsClientCert
+}
+
+/** What was probed — present whether or not the probe got anywhere. */
+export interface TlsProbeTarget {
+  host: string
+  port: number
+  servername: string
+}
+
+/**
+ * The probe never completed a handshake: DNS, TCP, TLS negotiation or a timeout.
+ *
+ * Nothing about a certificate exists here, and that is the point. The old shape
+ * was one flat interface with `ok: boolean`, so a failed probe still carried
+ * `hostnameValid`, `expired`, `daysToExpiry` and a `validityStatus` — filled
+ * with placeholders by the engine. The result pane rendered them, and a DNS
+ * failure produced a confident "Hostname mismatch · Expired · in 0 days" report
+ * about a server that was never reached (TLS-1/TLS-6). A render guard fixed the
+ * symptom; splitting the type makes the mistake unwriteable.
+ */
+export interface TlsProbeFailure extends TlsProbeTarget {
+  ok: false
+  error: string
+}
+
+/**
+ * The handshake completed. Transport facts are real; the certificate verdicts
+ * describe `chain[0]` and mean nothing when `chain` is empty — a server may
+ * complete a handshake without presenting one (TLS-5). Use `resultVisibility`
+ * rather than reading them unconditionally.
+ */
+export interface TlsProbeSuccess extends TlsProbeTarget {
+  ok: true
+  protocol: string | null
+  cipher: { name: string; standardName: string; version: string } | null
+  alpnProtocol: string | false
+  /** Independently VALIDATED by the system trust store (present ≠ trusted). */
+  authorized: boolean
+  authorizationError?: string
+  hostnameValid: boolean
+  /** Presented, leaf-first — NOT proof of trust. */
+  chain: TlsCertificateInfo[]
+  selfSigned: boolean
+  expired: boolean
+  notYetValid: boolean
+  daysToExpiry: number
+  validityStatus: 'valid' | 'expiring' | 'expired'
+}
+
+export type TlsInspectResult = TlsProbeFailure | TlsProbeSuccess
+
+/** Library row — metadata only; never carries blob or store password. */
+export interface KeystoreLibraryEntry {
+  id: string
+  name: string
+  type: KeystoreType
+  alias_count: number
+  size_bytes: number
+  created_at: number
+  updated_at: number
+  /**
+   * Whether a store password is persisted for this entry. Derived from
+   * `store_password != null` — the password value itself never leaves main.
+   * When `false`, the open flow must prompt the user for the password.
+   */
+  remembered: boolean
+}
+
+export interface KeystorePickFileResult {
+  path: string
+  fileName: string
+  type: KeystoreType
+}
+
+/**
+ * `QUERY` is the safe, idempotent method that carries a request body — the
+ * answer to "GET with a body, or POST?" for read operations whose parameters do
+ * not fit in a URL. Nothing here special-cases a method when deciding whether to
+ * send a body, so it works end to end; it only had to become selectable.
+ */
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS' | 'QUERY'
 export type BodyType =
   | 'none'
   | 'json'
@@ -313,12 +573,49 @@ export interface WsTimestampConfig {
   ttlSeconds: number
 }
 
+/**
+ * Renderer-side mirror of the main-process `MaterialSource`
+ * (`src/main/lib/keystore-bridge.ts`) — the Key Material Provider (#60).
+ *
+ * OPAQUE by construction: ids, filesystem paths and user-pasted PEM only. NO
+ * resolved key bytes ever live in this shape, so the renderer can hold and
+ * persist it. The password fields are WRITE-ONLY: they may be sent to main once,
+ * and are never persisted, echoed back, or read out of a stored config.
+ *
+ * Keep structurally mirrored with the main-process union (the two type trees are
+ * hand-kept in sync, like `WsSignConfig` ↔ engine `SignConfig`).
+ */
+export type MaterialSource =
+  | { kind: 'inline'; certPem: string; keyPem?: string; chainPem?: string[]; passphrase?: string }
+  | { kind: 'file'; certPath?: string; keyPath?: string; pfxPath?: string; passphrase?: string }
+  | {
+      kind: 'keystore'
+      keystoreId: string
+      alias: string
+      /** Per-alias ENTRY password (R11). WRITE-ONLY. */
+      keyPassword?: string
+      /** STORE password — required when the keystore row's is NULL. WRITE-ONLY. */
+      storePassword?: string
+    }
+  | { kind: 'certRow'; certificateId: string }
+
 export interface WsSignConfig {
-  privateKeyPem: string
-  certPem: string
+  /**
+   * Pasted private-key PEM — the DEFAULT path, unchanged. OPTIONAL since #60:
+   * a `keySource` may stand in for it, in which case MAIN resolves the PEM and
+   * the renderer never sees it.
+   */
+  privateKeyPem?: string
+  /** Pasted certificate PEM. OPTIONAL for the same reason as `privateKeyPem`. */
+  certPem?: string
   algorithm: WsSignAlgorithm
   references: WsSignReference[]
   keyInfoStrategy: WsKeyInfoStrategy
+  /**
+   * "Use from keystore / Security" — one ADDED option (#60). When absent the
+   * behaviour is byte-for-byte the old pasted-PEM path. Resolved in MAIN only.
+   */
+  keySource?: MaterialSource
 }
 
 export interface WsEncryptConfig {
@@ -355,6 +652,139 @@ export interface WsSecurityConfig {
   passwordType?: 'PasswordText' | 'PasswordDigest'
   /** @deprecated legacy single-mode fields (auto-migrated) */
   addTimestamp?: boolean
+}
+
+// ─── SAML (#65, Faz E) ───────────────────────────────────────
+
+/**
+ * Renderer-side mirror of the SAML engine contracts
+ * (`src/main/protocols/saml.engine.ts`). Hand-kept in sync, exactly like
+ * `WsSignConfig` ↔ the engine's `SignConfig`.
+ *
+ * NOTE the deliberate asymmetry: the engine accepts `string | Date` for
+ * instants and `Date` attribute values; the renderer only ever sends strings
+ * (its forms are text inputs), so the mirror narrows to `string`.
+ */
+export type SamlSignAlgorithm = 'RSA-SHA256' | 'RSA-SHA512' | 'ECDSA-SHA256' | 'ECDSA-SHA512'
+
+export type SamlSignatureTarget = 'assertion' | 'response' | 'root'
+
+export type SamlBinding = 'redirect' | 'post'
+
+export interface SamlAttributeInput {
+  name: string
+  nameFormat?: string
+  friendlyName?: string
+  values: (string | number | boolean)[]
+  valueType?: string
+}
+
+export interface SamlSubjectConfig {
+  nameId: string
+  nameIdFormat?: string
+  nameQualifier?: string
+  spNameQualifier?: string
+  recipient?: string
+  inResponseTo?: string
+  confirmationMethod?: string
+  confirmationNotOnOrAfterSeconds?: number
+}
+
+interface SamlDeterministicFields {
+  id?: string
+  issueInstant?: string
+  now?: string
+}
+
+export interface SamlAuthnRequestConfig extends SamlDeterministicFields {
+  issuer: string
+  destination?: string
+  assertionConsumerServiceURL?: string
+  protocolBinding?: string
+  nameIdFormat?: string
+  allowCreate?: boolean
+  forceAuthn?: boolean
+  isPassive?: boolean
+  authnContextClassRef?: string
+  comparison?: 'exact' | 'minimum' | 'maximum' | 'better'
+}
+
+export interface SamlAssertionConfig extends SamlDeterministicFields {
+  issuer: string
+  subject: SamlSubjectConfig
+  audience?: string | string[]
+  notBeforeSkewSeconds?: number
+  notOnOrAfterSeconds?: number
+  sessionIndex?: string
+  authnInstant?: string
+  authnContextClassRef?: string
+  includeAuthnStatement?: boolean
+  attributes?: SamlAttributeInput[]
+}
+
+export interface SamlResponseConfig extends SamlDeterministicFields {
+  issuer: string
+  destination?: string
+  inResponseTo?: string
+  statusCode?: string
+  statusSubCode?: string
+  statusMessage?: string
+  /** Pre-built (possibly already signed) assertion XML — embedded verbatim. */
+  assertionXml?: string
+  assertion?: SamlAssertionConfig
+}
+
+export interface SamlDocument {
+  xml: string
+  id: string
+  issueInstant: string
+  assertionId?: string
+}
+
+/**
+ * The ONE key-material shape every key-bearing SAML IPC payload uses.
+ * `inline` (pasted PEM) is the DEFAULT; `source` is one ADDED arm resolved in
+ * MAIN — the renderer never sees a resolved key.
+ */
+export type SamlKeyInput =
+  | { inline: { certPem?: string; privateKeyPem?: string; passphrase?: string } }
+  | { source: MaterialSource }
+
+export interface SamlVerifyOptions {
+  requireSignedId?: string
+  requireAssertionSigned?: boolean
+  now?: string
+  clockSkewSeconds?: number
+  validateConditions?: boolean
+  expectedAudience?: string
+  expectedInResponseTo?: string
+}
+
+export interface SamlVerifyCheck {
+  name: string
+  ok: boolean
+  detail?: string
+}
+
+export interface SamlVerifyResult {
+  valid: boolean
+  reason?: string
+  signedReferences: string[]
+  signedContent: string[]
+  signedElement?: { id: string; localName: string }
+  signatureMethod?: string
+  digestMethod?: string
+  canonicalizationMethod?: string
+  certInfo?: {
+    subject?: string
+    issuer?: string
+    notBefore?: string
+    notAfter?: string
+  }
+  conditions?: { notBefore?: string; notOnOrAfter?: string; audiences: string[] }
+  subject?: { nameId?: string; format?: string }
+  /** Every check that ran, in order — the "why did it fail" report. */
+  checks: SamlVerifyCheck[]
 }
 
 export interface WsdlParseResult {
@@ -763,7 +1193,16 @@ export interface MockServer {
   updatedAt: number
 }
 
-export type MockMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS' | 'ANY'
+export type MockMethod =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'PATCH'
+  | 'DELETE'
+  | 'HEAD'
+  | 'OPTIONS'
+  | 'QUERY'
+  | 'ANY'
 
 export type MockPathMode = 'exact' | 'param' | 'wildcard' | 'regex'
 

@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { buildExecutePayload, RUNNER_DEFAULTS } from '../../lib/runner-payload'
 import { Braces, ChevronRight } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
@@ -14,6 +15,9 @@ import RunnerHistory from './RunnerHistory'
 import ScheduledTasksView from './ScheduledTasksView'
 import TestsHome from './TestsHome'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
+import type { RunPhase } from '../../../shared/runner-verdict'
+import { lockDragStyles } from '../../lib/drag-lock'
+import { setRunnerBusy } from '../../lib/runner-activity'
 
 /**
  * After a run, refresh the renderer env store from the DB so script-written
@@ -46,11 +50,31 @@ export interface RunnerEndpointItem {
   url: string
   selected: boolean
   folderName?: string
+  /**
+   * Lifecycle phase for THIS run (issue #72). Undefined = 'main' (the flow).
+   * Setup requests execute once before the flow, teardown once after it — and
+   * teardown still executes when the run stops early.
+   */
+  phase?: RunPhase
 }
 
 export interface RunnerFolderGroup {
   folderId: string
+  /** Full path ("Module / Auth"), used when the sequence is rendered flat. */
   folderName: string
+  /**
+   * Leaf name only — what a tree row shows (issue #90). Rendering the full path
+   * on every level is what made a nested suite read as a flat list of
+   * lookalike labels.
+   */
+  label: string
+  /**
+   * Parent folder id, or null at the root. Without this the groups were a flat
+   * array whose only clue to the hierarchy was a " / "-joined string, so the
+   * structure could be printed but not walked — no expand/collapse, and no way
+   * to apply a role to a folder AND everything beneath it.
+   */
+  parentId: string | null
   endpoints: RunnerEndpointItem[]
 }
 
@@ -75,11 +99,20 @@ function collectEndpointsFromNode(node: TreeNode): RunnerEndpointItem[] {
   return result
 }
 
-/** Recursively collect folder groups — each folder becomes its own group with full path */
+/**
+ * Recursively collect folder groups — one group per folder, carrying its parent
+ * so the sequence can be rendered as the tree the user organised (issue #90).
+ *
+ * Folders with no DIRECT requests are collected too, even though they produce
+ * no rows themselves: dropping them broke the parent chain, and a child folder
+ * whose parent is missing cannot be placed. The sequence prunes branches that
+ * hold no requests at all at render time, where it can see the whole subtree.
+ */
 function collectFolderGroupsFromNode(
   node: TreeNode,
   groups: RunnerFolderGroup[],
   parentPath?: string,
+  parentId: string | null = null,
 ): void {
   if (!node.children) return
   const fullName = parentPath ? `${parentPath} / ${node.label}` : node.label
@@ -95,12 +128,16 @@ function collectFolderGroupsFromNode(
       })
     }
   }
-  if (directEps.length > 0) {
-    groups.push({ folderId: node.id, folderName: fullName, endpoints: directEps })
-  }
+  groups.push({
+    folderId: node.id,
+    folderName: fullName,
+    label: node.label,
+    parentId,
+    endpoints: directEps,
+  })
   for (const child of node.children) {
     if (child.type === 'folder' || child.type === 'module') {
-      collectFolderGroupsFromNode(child, groups, fullName)
+      collectFolderGroupsFromNode(child, groups, fullName, node.id)
     }
   }
 }
@@ -141,11 +178,9 @@ function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }) {
       const onMouseUp = () => {
         document.removeEventListener('mousemove', onMouseMove)
         document.removeEventListener('mouseup', onMouseUp)
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
+        releaseStyles()
       }
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
+      const releaseStyles = lockDragStyles('col-resize')
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
     },
@@ -202,9 +237,18 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // mirrors the runner-report sessionStorage prefix so cleanup stays local
   // to RunnerTab.
   const viewStorageKey = tabId ? `runner-view-${tabId}` : null
+  // Set when this tab was opened by an entry point that explicitly asked for the
+  // run config without a suite/folder scope (the Command Palette's "Open
+  // collection runner"). It lets the config screen survive a remount without
+  // loosening the scope guard below for everyone else.
+  const explicitConfig = useRef(false)
   const [view, setView] = useState<'home' | 'config' | 'results' | 'history' | 'scheduled'>(() => {
     if (viewStorageKey) {
       const stored = sessionStorage.getItem(viewStorageKey)
+      if (stored === 'config-explicit') {
+        explicitConfig.current = true
+        return 'config'
+      }
       // 'config' can only be restored when the tab has a concrete scope
       // (suite or APIs folder). Without one, restoring 'config' produces
       // the dreaded "all 200 endpoints from the project" sequence — the
@@ -243,15 +287,30 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // Persist the current view whenever it changes so a remount lands here.
   useEffect(() => {
     if (!viewStorageKey) return
-    sessionStorage.setItem(viewStorageKey, view)
-  }, [view, viewStorageKey])
-  const [delay, setDelay] = useState(0)
-  const [iterations, setIterations] = useState(1)
+    // Keep the sentinel for a scopeless explicit config — writing a plain
+    // 'config' would make the guard above bounce the next remount to 'home'.
+    const scoped = Boolean(folderId)
+    sessionStorage.setItem(
+      viewStorageKey,
+      view === 'config' && explicitConfig.current && !scoped ? 'config-explicit' : view,
+    )
+  }, [view, viewStorageKey, folderId])
+  // Run settings stay LOCAL to this tab on purpose: a runner tab is per-tab
+  // (`tabId`-keyed session storage, the React `key` fix from issue #66), so
+  // hoisting them into the global store would make two open runner tabs share
+  // one set of checkboxes. Only the defaults are shared — see runner-payload.
+  const [delay, setDelay] = useState(RUNNER_DEFAULTS.delay)
+  const [iterationDelay, setIterationDelay] = useState(RUNNER_DEFAULTS.iterationDelay)
+  const [iterations, setIterations] = useState(RUNNER_DEFAULTS.iterations)
   const [iterationData, setIterationData] = useState<Record<string, string>[]>([])
   const [environmentId, setEnvironmentId] = useState('')
-  const [stopOnError, setStopOnError] = useState(true)
-  const [persistResponses, setPersistResponses] = useState(true)
-  const [keepVariableValues, setKeepVariableValues] = useState(true)
+  const [stopOnError, setStopOnError] = useState(RUNNER_DEFAULTS.stopOnError)
+  const [persistResponses, setPersistResponses] = useState(RUNNER_DEFAULTS.persistResponses)
+  const [keepVariableValues, setKeepVariableValues] = useState(RUNNER_DEFAULTS.keepVariableValues)
+  // Run-level hook scripts (issue #72). Per-run config, like iterations/delay —
+  // deliberately not persisted, see the run-lifecycle notes.
+  const [runPreScript, setRunPreScript] = useState('')
+  const [runPostScript, setRunPostScript] = useState('')
   const [runFolderName, setRunFolderName] = useState('')
   // Default radio selection for the RunnerConfig "Choose how to run" block.
   // We bump configRunModeKey whenever a fresh "New Run" lands on the config
@@ -269,6 +328,25 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
 
   // Run state
   const [isRunning, setIsRunning] = useState(false)
+  /** Cleanup has begun — signalled by main, since a finished-step tick can't say so. */
+  const [teardownStarted, setTeardownStarted] = useState(false)
+  /**
+   * Which stop the user has asked for, if any (issue #91).
+   *
+   * Purely so the click leaves a mark. A graceful Stop cannot interrupt the
+   * request already on the wire, so for up to a request's worth of time the
+   * screen looked exactly as it did before the click — and "the Stop button
+   * does nothing" is precisely how the bug was reported. The buttons read
+   * "Stopping…" / "Halting…" from here.
+   */
+  const [stopRequested, setStopRequested] = useState<'graceful' | 'direct' | null>(null)
+  // Publish it so a second "Run" on this folder focuses the live run instead of
+  // remounting the tab out from under it (see runner-activity.ts).
+  useEffect(() => {
+    if (!tabId) return
+    setRunnerBusy(tabId, isRunning)
+    return () => setRunnerBusy(tabId, false)
+  }, [tabId, isRunning])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [totalCount, setTotalCount] = useState(0)
   // Persist the inspected run snapshot too (not just the selectedResultId).
@@ -429,80 +507,120 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     return null
   })
 
-  // Check for pre-loaded report data or viewAllRuns from sidebar
+  /*
+   * The tab's opening instructions, split into two halves that live for
+   * different lengths of time (issue #93).
+   *
+   * SCOPE — which suite this tab is running, its name, its endpoint filter, and
+   * any report it was opened to display — describes what the tab IS, and is
+   * re-applied on every mount. Switching tabs unmounts this component, so
+   * anything held only in React state is gone when the user comes back.
+   *
+   * INTENT — auto-run, the landing view, "open in schedule mode" — describes
+   * what the tab should DO once, at the moment it was opened. Re-applying it on
+   * a remount would restart a finished run and drag the user back to the screen
+   * they had navigated away from.
+   *
+   * The payload used to be deleted the moment it was read, which collapsed both
+   * halves into "one mount only": returning to a suite's runner tab found no
+   * suiteId, concluded the tab had no scope, and fell back to the Tests
+   * overview — the reported symptom. Intent is now marked as spent against the
+   * session token instead, so a fresh Run on the same tab (new token) still
+   * arms it.
+   */
   useEffect(() => {
     if (!tabId) return
-    const key = `runner-report-${tabId}`
-    const stored = sessionStorage.getItem(key)
-    if (stored) {
-      sessionStorage.removeItem(key)
-      try {
-        const data = JSON.parse(stored)
-        if (data.viewHome) {
-          setView('home')
-        } else if (data.viewAllRuns) {
-          setView('history')
-        } else if (data.viewScheduledTasks) {
-          setView('scheduled')
-        } else if (data.sourceType === 'suite' && typeof data.suiteId === 'string') {
-          // Suite mode covers both:
-          //   - auto-run from "Run Suite" (carries endpointIds)
-          //   - browse-only from clicking the suite name (no endpointIds)
-          // The suite-items effect fetches everything from `suiteId`; the
-          // pending ref only fires when auto-run is requested.
-          if (data.autoRun && Array.isArray(data.endpointIds)) {
-            pendingAutoRunRef.current = {
-              endpointIds: data.endpointIds,
-              folderName: data.folderName,
-              sourceType: 'suite',
-            }
-          }
-          if (data.folderName) setRunFolderName(data.folderName)
-          setRunOrigin('suite')
-          setSuiteFilterIds(
-            Array.isArray(data.endpointIds) ? new Set(data.endpointIds as string[]) : null,
-          )
-          setSuiteIdForRunner(data.suiteId)
-          // When the suite was opened explicitly to schedule it (ScheduledTasksView
-          // → "New Run" → pick suite), snap the radio in RunnerConfig to
-          // "Schedule runs" so the user doesn't have to toggle it manually.
-          if (data.scheduleMode) {
-            setDefaultRunMode('schedule')
-            setConfigRunModeKey((k) => k + 1)
-          }
-          // Force the config view — the runner tab is reused, and a previous
-          // session (TestsHome, All Runs, prior results) may have parked it
-          // on another view. Auto-run paths flip to 'results' on their own.
-          setView('config')
-        } else if (data.autoRun && data.endpointIds) {
-          pendingAutoRunRef.current = {
-            endpointIds: data.endpointIds,
-            folderName: data.folderName,
-            sourceType: data.sourceType,
-          }
-          if (data.folderName) setRunFolderName(data.folderName)
-          if (data.sourceType === 'apis') {
-            setRunOrigin('apis')
-            setSuiteFilterIds(null)
-            setSuiteIdForRunner(null)
-          } else {
-            setSuiteFilterIds(null)
-            setSuiteIdForRunner(null)
-          }
-        } else {
-          const typed = data as {
-            results: EndpointRunResult[]
-            report: RunnerReport
-            startedAt: number
-          }
-          setResults(typed.results)
-          setReport(typed.report)
-          setRunStartedAt(typed.startedAt)
-          setView('results')
+    const stored = sessionStorage.getItem(`runner-report-${tabId}`)
+    if (!stored) return
+
+    let data: {
+      viewHome?: boolean
+      viewAllRuns?: boolean
+      viewScheduledTasks?: boolean
+      sourceType?: string
+      suiteId?: string
+      endpointIds?: string[]
+      folderName?: string
+      autoRun?: boolean
+      scheduleMode?: boolean
+      results?: EndpointRunResult[]
+      report?: RunnerReport
+      startedAt?: number
+    }
+    try {
+      data = JSON.parse(stored)
+    } catch {
+      return
+    }
+
+    const isSuite = data.sourceType === 'suite' && typeof data.suiteId === 'string'
+    const isReport = Array.isArray(data.results)
+
+    // ─── SCOPE — applied on every mount ───
+    if (isSuite) {
+      // Covers both "Run Suite" (carries endpointIds) and browse-only from
+      // clicking the suite name (no endpointIds). The suite-items effect
+      // fetches everything from `suiteId`.
+      if (data.folderName) setRunFolderName(data.folderName)
+      setRunOrigin('suite')
+      setSuiteFilterIds(Array.isArray(data.endpointIds) ? new Set(data.endpointIds) : null)
+      setSuiteIdForRunner(data.suiteId ?? null)
+    } else if (data.autoRun && data.endpointIds) {
+      if (data.folderName) setRunFolderName(data.folderName)
+      if (data.sourceType === 'apis') setRunOrigin('apis')
+      setSuiteFilterIds(null)
+      setSuiteIdForRunner(null)
+    }
+
+    // A report carried in the payload is deliberately NOT re-applied here.
+    // Results already survive a remount on their own, through the dedicated
+    // `runner-run-data-${tabId}` snapshot and its lazy initialisers above, and
+    // that snapshot is the fresher of the two: a tab opened on an old report
+    // and then re-run would otherwise have the payload's stale results written
+    // back over the new ones on the next tab switch.
+
+    // ─── INTENT — once per session token ───
+    const spentKey = `runner-report-spent-${tabId}`
+    const token = sessionKey ?? ''
+    if (sessionStorage.getItem(spentKey) === token) return
+    sessionStorage.setItem(spentKey, token)
+
+    if (data.viewHome) {
+      setView('home')
+    } else if (data.viewAllRuns) {
+      setView('history')
+    } else if (data.viewScheduledTasks) {
+      setView('scheduled')
+    } else if (isSuite) {
+      if (data.autoRun && Array.isArray(data.endpointIds)) {
+        pendingAutoRunRef.current = {
+          endpointIds: data.endpointIds,
+          folderName: data.folderName,
+          sourceType: 'suite',
         }
-      } catch {
-        /* ignore */
       }
+      // When the suite was opened explicitly to schedule it (ScheduledTasksView
+      // → "New Run" → pick suite), snap the radio in RunnerConfig to
+      // "Schedule runs" so the user doesn't have to toggle it manually.
+      if (data.scheduleMode) {
+        setDefaultRunMode('schedule')
+        setConfigRunModeKey((k) => k + 1)
+      }
+      // Force the config view — the runner tab is reused, and a previous
+      // session (TestsHome, All Runs, prior results) may have parked it
+      // on another view. Auto-run paths flip to 'results' on their own.
+      setView('config')
+    } else if (data.autoRun && data.endpointIds) {
+      pendingAutoRunRef.current = {
+        endpointIds: data.endpointIds,
+        folderName: data.folderName,
+        sourceType: data.sourceType as 'suite' | 'apis' | 'runner' | undefined,
+      }
+    } else if (isReport) {
+      setResults(data.results ?? [])
+      setReport(data.report ?? null)
+      setRunStartedAt(data.startedAt ?? 0)
+      setView('results')
     }
   }, [tabId, sessionKey])
 
@@ -561,18 +679,33 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       setRunOrigin(origin)
 
       window.api?.runner
-        ?.execute({
-          projectId: activeProjectId || '',
-          endpointIds: matched.map((ep) => ep.id),
-          environmentId: environmentId || undefined,
-          workspaceId: activeWorkspaceId || undefined,
-          delay,
-          iterations,
-          iterationData: iterationData.length > 0 ? iterationData : undefined,
-          folderName: pending.folderName || runFolderName || undefined,
-          sourceLabel,
-          keepVariableValues,
-        })
+        ?.execute(
+          // Quick Run is the THIRD caller of `runner:execute`, and it was still
+          // assembling its payload by hand — dropping `stopOnError` and
+          // `persistResponses` exactly as the runner tab used to. Going through
+          // the shared builder makes every future run setting a compile error
+          // here too, which is the only thing that stops this recurring.
+          buildExecutePayload(
+            {
+              projectId: activeProjectId || '',
+              endpointIds: matched.map((ep) => ep.id),
+              environmentId: environmentId || undefined,
+              workspaceId: activeWorkspaceId || undefined,
+              iterationData: iterationData.length > 0 ? iterationData : undefined,
+              folderName: pending.folderName || runFolderName || undefined,
+              sourceLabel,
+              runTabId: tabId,
+            },
+            {
+              delay,
+              iterationDelay,
+              iterations,
+              stopOnError,
+              persistResponses,
+              keepVariableValues,
+            },
+          ),
+        )
         .then(async (result: unknown) => {
           const res = result as { success: boolean; data?: RunnerReport }
           if (res?.success && res.data) {
@@ -594,11 +727,15 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     activeWorkspaceId,
     environmentId,
     delay,
+    iterationDelay,
     iterations,
     iterationData,
     runFolderName,
     folderId,
     keepVariableValues,
+    stopOnError,
+    persistResponses,
+    tabId,
   ])
 
   // Collect endpoints and folder groups from the target folder/module.
@@ -634,7 +771,15 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         setFolderGroups(
           groups.length > 0
             ? groups
-            : [{ folderId: node.id, folderName: node.label, endpoints: eps }],
+            : [
+                {
+                  folderId: node.id,
+                  folderName: node.label,
+                  label: node.label,
+                  parentId: null,
+                  endpoints: eps,
+                },
+              ],
         )
       }
     }
@@ -658,7 +803,10 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           url: string | null
           folder_id: string | null
         }>
-        folders: Array<{ id: string; name: string }>
+        // `parent_id` has always been in the row (suite folders nest); the
+        // runner simply never read it, which is why a two-level suite arrived
+        // here as one flat level of groups (issue #90).
+        folders: Array<{ id: string; name: string; parent_id?: string | null }>
       }
 
       const toRunnerItem = (it: (typeof items)[number]): RunnerEndpointItem => ({
@@ -672,20 +820,35 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       setEndpoints(items.map(toRunnerItem))
 
       if (folders.length > 0) {
-        const folderById = new Map(folders.map((f) => [f.id, f.name]))
-        const groups: RunnerFolderGroup[] = []
-        const groupByFolderId = new Map<string | 'root', RunnerFolderGroup>()
-        for (const it of items) {
-          const key = it.folder_id ?? 'root'
-          const folderName =
-            key === 'root' ? runFolderName || 'Suite' : folderById.get(it.folder_id!) || 'Folder'
-          let group = groupByFolderId.get(key)
-          if (!group) {
-            group = { folderId: String(key), folderName, endpoints: [] }
-            groupByFolderId.set(key, group)
-            groups.push(group)
+        // One group per suite folder — including empty ones, so a nested
+        // folder's parent chain stays intact. Items at the suite root get no
+        // group at all and render at the top level of the sequence, which is
+        // where they live in the Tests sidebar.
+        const byId = new Map(folders.map((f) => [f.id, f]))
+        const pathOf = (id: string): string => {
+          const parts: string[] = []
+          const seen = new Set<string>()
+          let cur: string | null | undefined = id
+          while (cur && !seen.has(cur)) {
+            seen.add(cur)
+            const f = byId.get(cur)
+            if (!f) break
+            parts.unshift(f.name)
+            cur = f.parent_id ?? null
           }
-          group.endpoints.push(toRunnerItem(it))
+          return parts.join(' / ')
+        }
+        const groups: RunnerFolderGroup[] = folders.map((f) => ({
+          folderId: f.id,
+          folderName: pathOf(f.id),
+          label: f.name,
+          parentId: f.parent_id ?? null,
+          endpoints: [],
+        }))
+        const groupById = new Map(groups.map((g) => [g.folderId, g]))
+        for (const it of items) {
+          if (!it.folder_id) continue
+          groupById.get(it.folder_id)?.endpoints.push(toRunnerItem(it))
         }
         setFolderGroups(groups)
       } else {
@@ -738,11 +901,102 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     )
   }, [])
 
-  const selectedCount = useMemo(() => endpoints.filter((ep) => ep.selected).length, [endpoints])
+  const setEndpointPhase = useCallback((id: string, phase: RunPhase) => {
+    const apply = (ep: RunnerEndpointItem): RunnerEndpointItem =>
+      ep.id === id ? { ...ep, phase } : ep
+    setEndpoints((eps) => eps.map(apply))
+    setFolderGroups((groups) => groups.map((g) => ({ ...g, endpoints: g.endpoints.map(apply) })))
+  }, [])
+
+  /**
+   * Every request id at or below `folderId`, including nested folders.
+   *
+   * Folder-level roles and the folder checkbox both need it (issue #90): a role
+   * on a folder that skipped its subfolders would be a trap — the folder reads
+   * "Teardown" while half the requests inside it still run in the flow.
+   */
+  const collectFolderEndpointIds = useCallback(
+    (folderId: string, groups: RunnerFolderGroup[]): Set<string> => {
+      const childrenOf = new Map<string, RunnerFolderGroup[]>()
+      for (const g of groups) {
+        const key = g.parentId ?? '__root__'
+        const list = childrenOf.get(key)
+        if (list) list.push(g)
+        else childrenOf.set(key, [g])
+      }
+      const ids = new Set<string>()
+      // Iterative walk with a visited set: `parentId` comes from a DB column,
+      // and a cycle there must not hang the UI.
+      const queue = groups.filter((g) => g.folderId === folderId)
+      const visited = new Set<string>()
+      while (queue.length > 0) {
+        const g = queue.shift()!
+        if (visited.has(g.folderId)) continue
+        visited.add(g.folderId)
+        for (const ep of g.endpoints) ids.add(ep.id)
+        queue.push(...(childrenOf.get(g.folderId) ?? []))
+      }
+      return ids
+    },
+    [],
+  )
+
+  /**
+   * Apply a patch to every request at or below a folder, in BOTH stores.
+   *
+   * The flat `endpoints` list is what actually runs (`handleRun` splits from
+   * it) and `folderGroups` is what the sequence draws, so a folder-level action
+   * that touched only one of them would show a role the run then ignored.
+   *
+   * The id set is resolved from the `folderGroups` in scope rather than inside
+   * a `setState` updater — an updater must stay pure, and React may invoke it
+   * more than once.
+   */
+  const patchFolder = useCallback(
+    (folderId: string, patch: Partial<RunnerEndpointItem>) => {
+      const ids = collectFolderEndpointIds(folderId, folderGroups)
+      if (ids.size === 0) return
+      const apply = (ep: RunnerEndpointItem): RunnerEndpointItem =>
+        ids.has(ep.id) ? { ...ep, ...patch } : ep
+      setEndpoints((eps) => eps.map(apply))
+      setFolderGroups((groups) => groups.map((g) => ({ ...g, endpoints: g.endpoints.map(apply) })))
+    },
+    [collectFolderEndpointIds, folderGroups],
+  )
+
+  /** Apply a lifecycle role to a whole folder — subfolders included (issue #90). */
+  const setFolderPhase = useCallback(
+    (folderId: string, phase: RunPhase) => patchFolder(folderId, { phase }),
+    [patchFolder],
+  )
+
+  /** Select / deselect a folder and everything beneath it. */
+  const toggleFolder = useCallback(
+    (folderId: string, selected: boolean) => patchFolder(folderId, { selected }),
+    [patchFolder],
+  )
+
+  /** Split the selection into the three run phases. Order inside each phase
+   *  follows the sequence list; the run order is always setup → flow → teardown. */
+  const splitByPhase = useCallback((items: RunnerEndpointItem[]) => {
+    const ids = (phase: RunPhase) =>
+      items.filter((ep) => (ep.phase ?? 'main') === phase).map((ep) => ep.id)
+    return { setupIds: ids('setup'), mainIds: ids('main'), teardownIds: ids('teardown') }
+  }, [])
+
+  // "Start run" needs at least one FLOW request — a run made only of fixtures
+  // and cleanup has nothing to test, and the main process rejects an empty
+  // endpointIds list anyway.
+  const selectedCount = useMemo(
+    () => endpoints.filter((ep) => ep.selected && (ep.phase ?? 'main') === 'main').length,
+    [endpoints],
+  )
 
   const handleRun = useCallback(async () => {
     const selected = endpoints.filter((ep) => ep.selected)
     if (selected.length === 0) return
+    const { setupIds, mainIds, teardownIds } = splitByPhase(selected)
+    if (mainIds.length === 0) return
 
     // Persist the active tab if it's a dirty member of this run (so the run uses
     // fresh data, not the stale DB snapshot) + warn about other dirty run items.
@@ -756,12 +1010,21 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     setTotalCount(selected.length)
     setRunStartedAt(Date.now())
     setSelectedResultId(null)
+    setTeardownStarted(false)
+    setStopRequested(null)
 
     const unsubscribe = window.api?.runner?.onProgress?.((progress: unknown) => {
       const p = progress as { current: number; total: number; result: EndpointRunResult }
       setCurrentIndex(p.current)
       setTotalCount(p.total)
       setResults((prev) => [...prev, p.result])
+    })
+    // Cleanup has BEGUN — which a progress tick cannot tell us, because one
+    // arrives only when a step finishes. The case that most needs "Skip
+    // teardown" is a cleanup endpoint that never answers, and that one produces
+    // no result at all.
+    const unsubscribePhase = window.api?.runner?.onPhase?.((phase: unknown) => {
+      if (phase === 'teardown') setTeardownStarted(true)
     })
 
     const sourceLabel =
@@ -773,18 +1036,25 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     setRunSourceLabel(sourceLabel)
 
     try {
-      const result = await window.api?.runner?.execute({
-        projectId: activeProjectId || '',
-        endpointIds: selected.map((ep) => ep.id),
-        environmentId: environmentId || undefined,
-        workspaceId: activeWorkspaceId || undefined,
-        delay,
-        iterations,
-        iterationData: iterationData.length > 0 ? iterationData : undefined,
-        folderName: runFolderName || undefined,
-        sourceLabel,
-        keepVariableValues,
-      })
+      const result = await window.api?.runner?.execute(
+        buildExecutePayload(
+          {
+            projectId: activeProjectId || '',
+            endpointIds: mainIds,
+            setupEndpointIds: setupIds.length > 0 ? setupIds : undefined,
+            teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
+            runPreScript: runPreScript.trim() || undefined,
+            runPostScript: runPostScript.trim() || undefined,
+            environmentId: environmentId || undefined,
+            workspaceId: activeWorkspaceId || undefined,
+            iterationData: iterationData.length > 0 ? iterationData : undefined,
+            folderName: runFolderName || undefined,
+            sourceLabel,
+            runTabId: tabId,
+          },
+          { delay, iterationDelay, iterations, stopOnError, persistResponses, keepVariableValues },
+        ),
+      )
 
       if (result?.success && result.data) {
         const rep = result.data as RunnerReport
@@ -798,6 +1068,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       // handled by results
     } finally {
       unsubscribe?.()
+      unsubscribePhase?.()
       setIsRunning(false)
     }
   }, [
@@ -806,15 +1077,62 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     activeWorkspaceId,
     environmentId,
     delay,
+    iterationDelay,
     iterations,
     iterationData,
     runFolderName,
     runOrigin,
     keepVariableValues,
+    // These two were absent while the payload ignored them; now that the payload
+    // carries them, leaving them out would freeze whatever value they had when
+    // another dep last changed — a stale checkbox reaching the run.
+    stopOnError,
+    persistResponses,
+    runPreScript,
+    runPostScript,
+    splitByPhase,
   ])
 
+  /**
+   * True once the run has reached cleanup. Derived from the results the
+   * progress stream has already delivered rather than kept as its own state,
+   * so it can't drift from what the user is looking at, and a new run clears it
+   * for free (`setResults([])`).
+   *
+   * It decides two things on screen: the safe Stop leaves (it has no flow left
+   * to end, issue #92) and the hard stop's title switches to what it would now
+   * abandon. Main used to infer the "abandon cleanup" intent from a second
+   * click landing after teardown began, which made cleanup finish only partway,
+   * seemingly at random.
+   */
+  const inTeardown = useMemo(
+    () => teardownStarted || results.some((r) => r.phase === 'teardown'),
+    [teardownStarted, results],
+  )
+
+  /**
+   * Graceful Stop (issue #91): end the flow, let cleanup finish.
+   *
+   * Note what this does NOT read: `inTeardown`. An earlier version escalated to
+   * a hard stop once cleanup had begun, which put a destructive action behind
+   * the safe button partway through the run — the exact inference issue #84
+   * removed from the main process, smuggled back into the renderer. Intent
+   * comes from WHICH button was pressed and from nothing else, so this one can
+   * be pressed any number of times, at any moment, and cleanup still completes.
+   */
   const handleStop = useCallback(() => {
-    window.api?.runner?.stop()
+    setStopRequested('graceful')
+    window.api?.runner?.stop({ mode: 'graceful' })
+  }, [])
+
+  /**
+   * Direct Stop: nothing after this click runs — the request on the wire is
+   * aborted, cleanup is abandoned. Deliberately a SEPARATE button from Stop;
+   * the old single control had to guess which of the two the user meant.
+   */
+  const handleStopDirect = useCallback(() => {
+    setStopRequested('direct')
+    window.api?.runner?.stop({ mode: 'direct' })
   }, [])
 
   const handleNewRun = useCallback((mode?: 'manual' | 'schedule' | unknown) => {
@@ -866,6 +1184,12 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     async (payload: SchedulePayload) => {
       const selected = endpoints.filter((ep) => ep.selected)
       if (selected.length === 0) return
+      // Carry the phase model into the schedule, exactly as `handleRun` does.
+      // Sending the flat list would silently demote setup/teardown requests to
+      // flow requests, so a scheduled run graded differently from the
+      // interactive one it was created from (#72).
+      const { setupIds, mainIds, teardownIds } = splitByPhase(selected)
+      if (mainIds.length === 0) return
 
       try {
         const result = await window.api.scheduler.create({
@@ -875,7 +1199,14 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           // print only the timestamp which made the Scheduled Tasks table
           // unreadable when you had more than a couple of rows.
           name: `${runFolderName || 'Scheduled Run'} — ${new Date().toLocaleString()}`,
-          endpointIds: selected.map((ep) => ep.id),
+          endpointIds: mainIds,
+          setupEndpointIds: setupIds.length > 0 ? setupIds : undefined,
+          teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
+          runPreScript: runPreScript.trim() || undefined,
+          runPostScript: runPostScript.trim() || undefined,
+          // Carry the run settings the user configured, so the schedule grades
+          // the way the run they just set up would.
+          stopOnError,
           folderId: folderId || undefined,
           environmentId: environmentId || undefined,
           intervalValue: payload.intervalValue,
@@ -896,7 +1227,17 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         console.error('Failed to create scheduled task:', e)
       }
     },
-    [endpoints, activeProjectId, folderId, environmentId, delay, runFolderName, suiteIdForRunner],
+    [
+      endpoints,
+      activeProjectId,
+      folderId,
+      environmentId,
+      delay,
+      runFolderName,
+      suiteIdForRunner,
+      runPreScript,
+      runPostScript,
+    ],
   )
 
   const handleSequenceResize = useCallback((dx: number) => {
@@ -939,6 +1280,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 onSelectAll={selectAll}
                 onDeselectAll={deselectAll}
                 onReset={selectAll}
+                onSetPhase={setEndpointPhase}
+                onSetFolderPhase={setFolderPhase}
+                onToggleFolder={toggleFolder}
                 onReorder={
                   suiteIdForRunner
                     ? async (draggedId, insertBeforeId) => {
@@ -964,6 +1308,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
               <RunnerConfig
                 delay={delay}
                 setDelay={setDelay}
+                iterationDelay={iterationDelay}
+                setIterationDelay={setIterationDelay}
                 iterations={iterations}
                 setIterations={setIterations}
                 environmentId={environmentId}
@@ -976,6 +1322,10 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 setKeepVariableValues={setKeepVariableValues}
                 iterationData={iterationData}
                 setIterationData={setIterationData}
+                runPreScript={runPreScript}
+                setRunPreScript={setRunPreScript}
+                runPostScript={runPostScript}
+                setRunPostScript={setRunPostScript}
                 onRun={handleRun}
                 onSchedule={handleSchedule}
                 isRunning={isRunning}
@@ -999,6 +1349,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             runStartedAt={runStartedAt}
             sourceLabel={runSourceLabel}
             onStop={handleStop}
+            onStopDirect={handleStopDirect}
+            inTeardown={inTeardown}
+            stopRequested={stopRequested}
             onNewRun={handleNewRun}
             onRunAgain={handleRun}
             onViewAllRuns={handleViewAllRuns}

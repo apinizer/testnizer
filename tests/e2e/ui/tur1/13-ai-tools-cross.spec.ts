@@ -13,9 +13,15 @@ uiTest.describe('Tur1 — Tools & palette [MST-204..207]', () => {
 
   uiTest('MST-207 Tools panel lists core utilities', async ({ window }) => {
     await navigateSidebar(window, 'tools')
-    for (const label of [/JWT/i, /JSONPath/i, /Hash/i, /UUID/i]) {
+    for (const label of [/JSONPath/i, /Hash/i, /UUID/i]) {
       await expect(window.getByText(label).first()).toBeVisible({ timeout: 10_000 })
     }
+    // JWT lives on the Security page now (it moved there with the security
+    // batch); asserting it on the Tools page has been failing every nightly
+    // run since.
+    await navigateSidebar(window, 'security')
+    await expect(window.getByText(/JWT/i).first()).toBeVisible({ timeout: 10_000 })
+    await navigateSidebar(window, 'tools')
   })
 
   uiTest('MST-205 command palette opens and finds New Request', async ({ window }) => {
@@ -25,6 +31,8 @@ uiTest.describe('Tur1 — Tools & palette [MST-204..207]', () => {
     await expect(palette.getByRole('option', { name: /New tab|Yeni sekme/i }).first()).toBeVisible({
       timeout: 8_000,
     })
-    await pressModShortcut(window, 'k', { shift: true }).catch(() => window.keyboard.press('Escape'))
+    await pressModShortcut(window, 'k', { shift: true }).catch(() =>
+      window.keyboard.press('Escape'),
+    )
   })
 })

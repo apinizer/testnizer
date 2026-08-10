@@ -73,7 +73,10 @@ export default function HmacTool() {
             </label>
             <input
               id={secretId}
-              type="text"
+              // Masked like every other secret field in the app. It was the one
+              // plain-text one, which is a shoulder-surfing hazard in exactly
+              // the situation this tool is used: someone else's desk.
+              type="password"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
               placeholder="secret key"

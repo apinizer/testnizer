@@ -114,6 +114,21 @@ export function deleteFolder(id: string): boolean {
  * responsibility — the IPC handler already enforces this for APIs tree
  * moves, and the test-suite move handler will reuse that check.
  */
+/** The folder plus every folder beneath it, breadth-first. Cycle-safe. */
+function collectSubtreeIds(db: ReturnType<typeof getDb>, rootId: string): string[] {
+  const ids: string[] = [rootId]
+  const seen = new Set<string>([rootId])
+  const stmt = db.prepare('SELECT id FROM test_suite_folders WHERE parent_id = ?')
+  for (let i = 0; i < ids.length; i++) {
+    for (const child of stmt.all(ids[i]) as Array<{ id: string }>) {
+      if (seen.has(child.id)) continue
+      seen.add(child.id)
+      ids.push(child.id)
+    }
+  }
+  return ids
+}
+
 export function moveFolder(opts: {
   id: string
   targetSuiteId: string
@@ -125,6 +140,23 @@ export function moveFolder(opts: {
   if (!existing) return undefined
 
   const txn = db.transaction(() => {
+    // A move ACROSS suites has to carry the whole subtree with it. Updating
+    // only `parent_id` left the folder (and every folder/item beneath it)
+    // stamped with the OLD suite_id: `listFoldersBySuite`/`listItemsBySuite`
+    // filter on that column, so the branch vanished from the source suite
+    // (its parent now lives elsewhere) AND from the target one (its suite_id
+    // still points away) — an orphaned subtree with no UI path back.
+    if (existing.suite_id !== opts.targetSuiteId) {
+      const subtree = collectSubtreeIds(db, opts.id)
+      const folderPlaceholders = subtree.map(() => '?').join(', ')
+      db.prepare(
+        `UPDATE test_suite_folders SET suite_id = ? WHERE id IN (${folderPlaceholders})`,
+      ).run(opts.targetSuiteId, ...subtree)
+      db.prepare(
+        `UPDATE test_suite_items SET suite_id = ? WHERE folder_id IN (${folderPlaceholders})`,
+      ).run(opts.targetSuiteId, ...subtree)
+    }
+
     db.prepare('UPDATE test_suite_folders SET parent_id = ? WHERE id = ?').run(
       opts.targetParentId,
       opts.id,

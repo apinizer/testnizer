@@ -193,7 +193,9 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
   `)
 
   // ── Incremental ALTER TABLE migrations (mirror of database.ts) ──────
-  const projectCols = (db.pragma('table_info(projects)') as Array<{ name: string }>).map(c => c.name)
+  const projectCols = (db.pragma('table_info(projects)') as Array<{ name: string }>).map(
+    (c) => c.name,
+  )
   if (!projectCols.includes('save_mode'))
     db.exec(`ALTER TABLE projects ADD COLUMN save_mode TEXT NOT NULL DEFAULT 'local'`)
   if (!projectCols.includes('local_path'))
@@ -205,18 +207,22 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
   if (!projectCols.includes('display_name'))
     db.exec(`ALTER TABLE projects ADD COLUMN display_name TEXT`)
 
-  const envCols = (db.pragma('table_info(environments)') as Array<{ name: string }>).map(c => c.name)
+  const envCols = (db.pragma('table_info(environments)') as Array<{ name: string }>).map(
+    (c) => c.name,
+  )
   if (!envCols.includes('project_id')) {
     db.exec(`ALTER TABLE environments ADD COLUMN project_id TEXT`)
   }
 
-  const gvCols = (db.pragma('table_info(global_variables)') as Array<{ name: string }>).map(c => c.name)
+  const gvCols = (db.pragma('table_info(global_variables)') as Array<{ name: string }>).map(
+    (c) => c.name,
+  )
   if (!gvCols.includes('project_id')) {
     db.exec(`ALTER TABLE global_variables ADD COLUMN project_id TEXT`)
   }
 
   for (const tbl of ['folders', 'endpoints', 'saved_requests']) {
-    const tcols = (db.pragma(`table_info(${tbl})`) as Array<{ name: string }>).map(c => c.name)
+    const tcols = (db.pragma(`table_info(${tbl})`) as Array<{ name: string }>).map((c) => c.name)
     if (!tcols.includes('branch_id')) {
       db.exec(`ALTER TABLE ${tbl} ADD COLUMN branch_id TEXT`)
     }
@@ -259,7 +265,9 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
     );
   `)
 
-  const rhCols = (db.pragma('table_info(runner_history)') as Array<{ name: string }>).map(c => c.name)
+  const rhCols = (db.pragma('table_info(runner_history)') as Array<{ name: string }>).map(
+    (c) => c.name,
+  )
   if (!rhCols.includes('folder_name'))
     db.exec(`ALTER TABLE runner_history ADD COLUMN folder_name TEXT`)
   if (!rhCols.includes('source_label'))
@@ -267,7 +275,9 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
   if (!rhCols.includes('scheduled_task_id'))
     db.exec(`ALTER TABLE runner_history ADD COLUMN scheduled_task_id TEXT`)
 
-  const stCols = (db.pragma('table_info(scheduled_tasks)') as Array<{ name: string }>).map(c => c.name)
+  const stCols = (db.pragma('table_info(scheduled_tasks)') as Array<{ name: string }>).map(
+    (c) => c.name,
+  )
   if (!stCols.includes('schedule_type'))
     db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN schedule_type TEXT DEFAULT 'interval'`)
   if (!stCols.includes('schedule_time'))
@@ -276,8 +286,15 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
     db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN schedule_days TEXT`)
   if (!stCols.includes('schedule_cron'))
     db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN schedule_cron TEXT`)
-  if (!stCols.includes('suite_id'))
-    db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN suite_id TEXT`)
+  if (!stCols.includes('suite_id')) db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN suite_id TEXT`)
+  if (!stCols.includes('setup_endpoint_ids'))
+    db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN setup_endpoint_ids TEXT`)
+  if (!stCols.includes('teardown_endpoint_ids'))
+    db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN teardown_endpoint_ids TEXT`)
+  if (!stCols.includes('run_pre_script'))
+    db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_pre_script TEXT`)
+  if (!stCols.includes('run_post_script'))
+    db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_post_script TEXT`)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -303,7 +320,7 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
     );
   `)
 
-  const userCols = (db.pragma('table_info(users)') as Array<{ name: string }>).map(c => c.name)
+  const userCols = (db.pragma('table_info(users)') as Array<{ name: string }>).map((c) => c.name)
   if (!userCols.includes('recovery_email'))
     db.exec(`ALTER TABLE users ADD COLUMN recovery_email TEXT`)
 
@@ -318,7 +335,11 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
       pfx_path TEXT,
       passphrase TEXT,
       enabled INTEGER NOT NULL DEFAULT 1,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      source TEXT NOT NULL DEFAULT 'file',
+      keystore_id TEXT,
+      keystore_alias TEXT,
+      keystore_key_password TEXT
     );
 
     CREATE TABLE IF NOT EXISTS test_suites (
@@ -434,7 +455,11 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
     `ALTER TABLE mock_servers ADD COLUMN proxy_record INTEGER NOT NULL DEFAULT 0`,
   ]
   for (const sql of alters) {
-    try { db.exec(sql) } catch { /* column already exists */ }
+    try {
+      db.exec(sql)
+    } catch {
+      /* column already exists */
+    }
   }
 
   return db
@@ -444,16 +469,14 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
 
 function tableNames(db: Database.Database): string[] {
   return (
-    db
-      .prepare(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`)
-      .all() as Array<{ name: string }>
+    db.prepare(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`).all() as Array<{
+      name: string
+    }>
   ).map((r) => r.name)
 }
 
 function columnNames(db: Database.Database, table: string): string[] {
-  return (db.pragma(`table_info(${table})`) as Array<{ name: string }>)
-    .map((c) => c.name)
-    .sort()
+  return (db.pragma(`table_info(${table})`) as Array<{ name: string }>).map((c) => c.name).sort()
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -511,9 +534,7 @@ describe('MST-282 — createTestDb ↔ production schema sync', () => {
     const missingInProd = helperTables.filter((t) => !prodSet.has(t))
     // Soft check: warn only.  Some test-only helper tables may exist.
     if (missingInProd.length > 0) {
-      console.warn(
-        `createTestDb has extra tables not in production: ${missingInProd.join(', ')}`,
-      )
+      console.warn(`createTestDb has extra tables not in production: ${missingInProd.join(', ')}`)
     }
     // The primary assertion: production tables are a subset of helper tables.
     expect(missingInProd.length).toBeGreaterThanOrEqual(0) // always passes — informational

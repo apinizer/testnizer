@@ -132,7 +132,12 @@ interface RequestStore extends TabRequestState {
    * before `window.api.request.send(...)` is dispatched and cleared in the
    * `finally` of the same call. `cancelRequest` reads this to abort.
    */
-  _inflightRequestId: string | null
+  /**
+   * In-flight request id PER TAB (issue #76). A single id meant Cancel aborted
+   * whichever request had started most recently, from any tab — pressing Cancel
+   * in tab B killed tab A's request.
+   */
+  _inflightByTab: Record<string, string>
 
   setMethod: (method: HttpMethod) => void
   setUrl: (url: string) => void
@@ -218,7 +223,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   requestTimeout: persisted.current.requestTimeout ?? null,
   _tabStates: persisted._tabStates,
   _currentTabId: persisted._currentTabId,
-  _inflightRequestId: null,
+  _inflightByTab: {},
 
   setMethod: (method) => {
     set({ method })
@@ -438,6 +443,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // headers actually ship on the wire (Mehmet BUG-02).
     let preScriptHeaders: { key: string; value: string }[] | null = null
     let preScriptSkippedRequest = false
+    let preScriptError: string | undefined
 
     // Run pre-request scripts (cascade: project → folder(s) → request) before
     // variables are resolved so they can mutate them. They share `scriptOverrides`
@@ -490,6 +496,56 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       // Later scripts' header mutations take precedence; keep the last non-null.
       if (scriptResult.requestHeaders) preScriptHeaders = scriptResult.requestHeaders
       if (scriptResult.skipRequest) preScriptSkippedRequest = true
+      // Stop at the FIRST script that threw: the scripts cascade
+      // project → folder(s) → request, and running a later one on top of a
+      // half-finished earlier one just compounds the broken state.
+      if (scriptResult.scriptError) {
+        preScriptError = scriptResult.scriptError
+        break
+      }
+    }
+
+    /*
+     * A pre-request script that THREW aborts the send.
+     *
+     * The error used to be written to the console and dropped, so a script
+     * that died while minting a token or signing a payload let the request go
+     * out anyway and the response was scored as if the precondition had held.
+     * Postman and Insomnia both abort here. The Runner has the same guard
+     * (`runner.handler.ts`, "Pre-request script error") — these two must move
+     * together or the Send≡Run parity class reopens.
+     */
+    if (preScriptError) {
+      const errMsg = `Pre-request script error: ${preScriptError}`
+      const reqName = tabsStore.tabs.find((tt) => tt.id === activeTabId)?.name ?? ''
+      useConsoleStore.getState().addEntry({
+        protocol: 'http',
+        level: 'error',
+        category: 'system',
+        method,
+        url,
+        message: `${reqName}${reqName ? ' — ' : ''}${errMsg}`,
+        scriptLogs: preScriptLogs.map((l) => ({
+          level: l.level === 'error' ? 'error' : l.level === 'warn' ? 'warn' : 'log',
+          message: l.message,
+          timestamp: l.timestamp,
+        })),
+      })
+      // Report it where the user is looking, not only in the Console: the
+      // response pane is what they watch after pressing Send.
+      responseStore.setResponse(
+        {
+          requestId: makeId(),
+          protocol: 'http',
+          timing: { total: 0 },
+          error: errMsg,
+          consoleLogs: preScriptLogs,
+        },
+        activeTabId,
+      )
+      if (activeTabId) tabsStore.markLoading(activeTabId, false)
+      responseStore.setLoading(false, activeTabId)
+      return
     }
 
     // pm.execution.skipRequest() — abort the actual HTTP send. Surface the
@@ -512,7 +568,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         })),
       })
       if (activeTabId) tabsStore.markLoading(activeTabId, false)
-      responseStore.setLoading(false)
+      responseStore.setLoading(false, activeTabId)
       return
     }
 
@@ -542,7 +598,21 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         seen.add(lk)
         merged.push({ key: h.key, value: h.value, enabled: true })
       }
-      resolvedHeaders = merged
+      /*
+       * Resolve AGAIN, because this collection is deliberately raw.
+       *
+       * `pm.request.headers` is populated with the user's typed values BEFORE
+       * variable resolution, so a script can read what was written rather than
+       * what it expands to. Assigning it straight back therefore threw away the
+       * resolution done a few lines above — and it happened whenever ANY
+       * pre-request script ran, at project, folder or request level, even one
+       * that never touched a header. `Authorization: Bearer {{token}}` shipped
+       * literally, and `{{$randomInt}}` arrived as the text `{{$randomInt}}`.
+       *
+       * Values a script inserted are resolved too, which is what the URL, query
+       * params and body already do.
+       */
+      resolvedHeaders = resolveKeyValuePairs(merged, activeVars)
     }
     const resolvedBody = resolveRequestBody(body, activeVars) ?? body
     // Use the inherited/effective auth (request → folder → project), not just
@@ -550,8 +620,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // project credential on Send, matching the Runner.
     const resolvedAuth = resolveAuth(effectiveAuth ?? undefined, activeVars)
 
-    responseStore.setLoading(true)
-    responseStore.clearResponse()
+    responseStore.setLoading(true, activeTabId)
+    responseStore.clearResponse(activeTabId)
     if (activeTabId) {
       tabsStore.markLoading(activeTabId, true)
     }
@@ -618,7 +688,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // `pendingRequests` map and aborts the underlying axios request when
     // `request:cancel` arrives.
     const requestId = makeId()
-    set({ _inflightRequestId: requestId })
+    if (activeTabId)
+      set((s) => ({ _inflightByTab: { ...s._inflightByTab, [activeTabId]: requestId } }))
 
     // Per-request Settings tab (#24-27) override the project-level network
     // defaults. These now actually reach the engine: timeout (0 = no timeout),
@@ -727,7 +798,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           consoleLogs: allConsoleLogs.length > 0 ? allConsoleLogs : undefined,
         }
 
-        responseStore.setResponse(enrichedResp)
+        responseStore.setResponse(enrichedResp, activeTabId)
         useConsoleStore.getState().addFromResponse(consoleReq, enrichedResp)
       } else {
         const errResp: ApiResponse = {
@@ -736,7 +807,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           error: result?.error || 'Request failed',
           timing: { total: 0 },
         }
-        responseStore.setResponse(errResp)
+        responseStore.setResponse(errResp, activeTabId)
         useConsoleStore.getState().addFromResponse(consoleReq, errResp)
       }
     } catch {
@@ -746,7 +817,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         error: 'Request failed — IPC not available',
         timing: { total: 0 },
       }
-      responseStore.setResponse(errResp)
+      responseStore.setResponse(errResp, activeTabId)
       // IPC layer broken — main never logged anything. Push a synthetic
       // entry so the user can see the failure in the console panel.
       useConsoleStore.getState().addEntry({
@@ -760,16 +831,24 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         details: { error: { message: 'Request failed — IPC not available' } },
       })
     } finally {
-      responseStore.setLoading(false)
+      responseStore.setLoading(false, activeTabId)
       if (activeTabId) {
         tabsStore.markLoading(activeTabId, false)
       }
-      set((s) => (s._inflightRequestId === requestId ? { _inflightRequestId: null } : s))
+      set((s) => {
+        if (!activeTabId || s._inflightByTab[activeTabId] !== requestId) return s
+        const next = { ...s._inflightByTab }
+        delete next[activeTabId]
+        return { _inflightByTab: next }
+      })
     }
   },
 
   cancelRequest: async () => {
-    const inflightId = get()._inflightRequestId
+    // Cancel THIS tab's request. Reading a global id here is what let a Cancel
+    // pressed in one tab abort another tab's in-flight request.
+    const tabId = useTabsStore.getState().activeTabId
+    const inflightId = tabId ? get()._inflightByTab[tabId] : undefined
     if (!inflightId) return
     try {
       await window.api?.request?.cancel(inflightId)
@@ -781,7 +860,12 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // error, which falls into the catch above and renders an error response.
     // Clear the inflight marker eagerly so the UI flips back to "Send" even
     // if the abort beats the IPC reply.
-    set({ _inflightRequestId: null })
+    set((s) => {
+      if (!tabId) return s
+      const next = { ...s._inflightByTab }
+      delete next[tabId]
+      return { _inflightByTab: next }
+    })
   },
 
   loadFromEndpoint: (data) => {

@@ -6,8 +6,22 @@ interface ToolShellProps {
   inputPane: ReactNode
   outputPane: ReactNode
   footer?: ReactNode
+  /**
+   * Colour for the footer text. Defaults to muted.
+   *
+   * A verdict belongs in colour: WS-Security printed "Signature is valid" and
+   * "Signature INVALID" in the same grey, so the two outcomes a signature
+   * checker exists to distinguish looked identical at a glance.
+   */
+  footerTone?: 'muted' | 'ok' | 'error'
   inputLabel?: string
   outputLabel?: string
+}
+
+const FOOTER_TONE_COLOR: Record<'muted' | 'ok' | 'error', string> = {
+  muted: 'var(--muted)',
+  ok: 'var(--green, #1a7a4a)',
+  error: '#cc2200',
 }
 
 /**
@@ -20,6 +34,7 @@ export default function ToolShell({
   inputPane,
   outputPane,
   footer,
+  footerTone,
   inputLabel,
   outputLabel,
 }: ToolShellProps) {
@@ -68,11 +83,13 @@ export default function ToolShell({
 
       {footer ? (
         <div
+          role="status"
           className="shrink-0 border-t px-3 py-1.5 text-xs"
           style={{
             borderColor: 'var(--border)',
             background: 'var(--white)',
-            color: 'var(--muted)',
+            color: FOOTER_TONE_COLOR[footerTone ?? 'muted'],
+            fontWeight: footerTone && footerTone !== 'muted' ? 600 : undefined,
           }}
         >
           {footer}

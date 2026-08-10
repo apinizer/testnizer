@@ -1,5 +1,8 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import MonacoWrapper from '../shared/MonacoWrapper'
+import KeyMaterialField from '../shared/KeyMaterialField'
+import type { KeyMaterialSelection } from '../shared/KeyMaterialPicker'
+import type { MaterialSource } from '../../types'
 import {
   decodeJwt,
   verifyJwt,
@@ -10,18 +13,38 @@ import {
   generateSampleJwt,
   isAsymmetric,
   claimsToTable,
+  applyClaimEdits,
+  claimEditsFromPayload,
   JWT_ALGORITHMS,
   type JwtAlgorithm,
   type ClaimRow,
+  type ClaimEdits,
 } from '../../lib/tools/jwt'
+import { signInMain } from '../../lib/tools/jose-bridge'
 import { useTranslation } from '../../lib/i18n'
+import { useInvalidateOn } from '../../lib/use-stale-guard'
+import ClaimsEditor from './jwt/ClaimsEditor'
+import JwksVerifyPanel from './jwt/JwksVerifyPanel'
+import JweBody from './jwt/JweBody'
+import {
+  Badge,
+  ClearButton,
+  ColorizedJwt,
+  CopyButton,
+  ModePill,
+  PanelHeader,
+  ViewToggle,
+  colorizeJson,
+  rowsToText,
+  type View,
+} from './jwt/atoms'
 
 const SAMPLE_JWT =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.KMUFsIDTnFmyG3nMiGM6H9FNFUROf3wh7SmqJp-QV30'
 const SAMPLE_HS256_SECRET = 'a-string-secret-at-least-256-bits-long'
 
-type Mode = 'decode' | 'encode'
-type View = 'json' | 'table'
+/** `jwe` is ADDED by #63; `decode`/`encode` behave exactly as they always have. */
+type Mode = 'decode' | 'encode' | 'jwe'
 
 type Verification =
   | { state: 'idle' }
@@ -51,6 +74,14 @@ export default function JwtTool() {
   const [encSecret, setEncSecret] = useState(SAMPLE_HS256_SECRET)
   const [encOutput, setEncOutput] = useState('')
   const [encError, setEncError] = useState<string | null>(null)
+  /**
+   * Claim editor + keystore source — both ADDED by #63 and both inert by
+   * default: `{}` edits change nothing, and with no `keySource` the signing
+   * path is byte-for-byte the pre-#63 renderer one.
+   */
+  const [claimEdits, setClaimEdits] = useState<ClaimEdits>({})
+  const [encKeySource, setEncKeySource] = useState<MaterialSource | null>(null)
+  const [encKeyLabel, setEncKeyLabel] = useState<string | null>(null)
 
   // ── Decoder derivations ──────────────────────────────────────────
   const decoded = useMemo(() => (token.trim() === '' ? null : decodeJwt(token)), [token])
@@ -68,6 +99,37 @@ export default function JwtTool() {
     }
   }, [jwt])
 
+  /*
+   * Verify a token, get the green "Signature verified", then paste a DIFFERENT
+   * token: the badge used to stay, now vouching for a token nobody checked. The
+   * same applies to changing the secret/public key or the algorithm.
+   *
+   * `token` is user input only — the decoder never writes it back (the encoder's
+   * output is separate state), so an effect is safe here.
+   */
+  useInvalidateOn([token, verifySecret, verifyAlgorithm], () => {
+    setVerification({ state: 'idle' })
+  })
+
+  /*
+   * Key material only makes sense for one FAMILY of algorithms, so crossing the
+   * symmetric/asymmetric line has to drop it.
+   *
+   * Without this the encoder could reach a state with no way out: pick RS256,
+   * choose a keystore key, then switch to HS256. The key-material field unmounts
+   * (it is offered only for asymmetric algorithms) while `encKeySource` stays
+   * set — so signing still takes the keystore path, and the secret box is
+   * `disabled={!!keySource}`. Nothing on screen could clear it.
+   *
+   * The shared secret is dropped for the same reason in the other direction: it
+   * would otherwise sit in a box relabelled "Public Key".
+   */
+  useInvalidateOn([isAsymmetric(encAlgorithm)], () => {
+    setEncKeySource(null)
+    setEncKeyLabel(null)
+    setEncSecret('')
+  })
+
   // ── Verify on demand (button) ────────────────────────────────────
   async function runVerify() {
     if (!jwt) return
@@ -77,6 +139,21 @@ export default function JwtTool() {
     else if (r.valid) setVerification({ state: 'valid' })
     else setVerification({ state: 'invalid', reason: r.reason })
   }
+
+  /**
+   * The payload as it would be signed — the JSON the user typed, with the claim
+   * editor's registered claims merged on top. With no edits this is the parsed
+   * JSON unchanged, which is what keeps the pre-#63 encoder byte-for-byte.
+   */
+  const encPayloadPreview = useMemo(() => {
+    try {
+      const parsed = JSON.parse(encPayload) as Record<string, unknown>
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
+      return applyClaimEdits(parsed, claimEdits)
+    } catch {
+      return {}
+    }
+  }, [encPayload, claimEdits])
 
   // ── Sign (encoder) ───────────────────────────────────────────────
   async function runSign() {
@@ -101,6 +178,29 @@ export default function JwtTool() {
       setEncError(`Header JSON: ${e instanceof Error ? e.message : String(e)}`)
       return
     }
+    // Registered-claim edits are applied here, not in the payload editor, so the
+    // relative offsets ('15m') resolve against the instant of signing.
+    payloadObj = applyClaimEdits(payloadObj, claimEdits)
+
+    // ONE added arm: a keystore-backed key signs IN MAIN — the private key must
+    // never reach this process. Everything else keeps the original local path.
+    if (encKeySource) {
+      const r = await signInMain({
+        mode: 'jwt',
+        alg: encAlgorithm,
+        payload: payloadObj,
+        header: headerObj,
+        key: { source: encKeySource },
+      })
+      if (!r.ok) {
+        setEncError(r.error)
+        setEncOutput('')
+        return
+      }
+      setEncOutput(r.value)
+      return
+    }
+
     const r = await signJwt(payloadObj, encSecret, encAlgorithm, headerObj)
     if (!r.ok) {
       setEncError(r.error)
@@ -170,6 +270,9 @@ export default function JwtTool() {
           <ModePill active={mode === 'encode'} onClick={() => setMode('encode')}>
             {t('tools.jwt.tabEncoder')}
           </ModePill>
+          <ModePill active={mode === 'jwe'} onClick={() => setMode('jwe')}>
+            {t('tools.jwt.tabJwe')}
+          </ModePill>
         </div>
 
         <div className="flex items-center gap-2">
@@ -222,6 +325,8 @@ export default function JwtTool() {
           runVerify={runVerify}
           t={t}
         />
+      ) : mode === 'jwe' ? (
+        <JweBody />
       ) : (
         <EncoderBody
           algorithm={encAlgorithm}
@@ -235,6 +340,15 @@ export default function JwtTool() {
           output={encOutput}
           error={encError}
           runSign={runSign}
+          claimEdits={claimEdits}
+          setClaimEdits={setClaimEdits}
+          claimPreview={encPayloadPreview}
+          keySource={encKeySource}
+          keyLabel={encKeyLabel}
+          onKeySource={(sel) => {
+            setEncKeySource(sel ? sel.source : null)
+            setEncKeyLabel(sel ? sel.label : null)
+          }}
           t={t}
         />
       )}
@@ -306,8 +420,8 @@ function DecoderBody(props: {
           title={t('tools.jwt.encodedToken')}
           actions={
             <>
-              <CopyButton text={token} />
-              <ClearButton onClick={() => setToken('')} />
+              <CopyButton text={token} ariaLabel={t('tools.jwt.copyToken')} />
+              <ClearButton onClick={() => setToken('')} label={t('tools.jwt.clearToken')} />
             </>
           }
         />
@@ -456,6 +570,13 @@ function DecoderBody(props: {
                 ) : null}
               </div>
             </div>
+
+            {/*
+              ADDED by #63: one MORE way to verify. The pasted secret/PEM block
+              above is untouched and remains the default path — this panel is
+              inert until the user fills it in.
+            */}
+            <JwksVerifyPanel token={token} algorithm={verifyAlgorithm} />
           </>
         )}
       </div>
@@ -478,6 +599,12 @@ function EncoderBody(props: {
   output: string
   error: string | null
   runSign: () => void
+  claimEdits: ClaimEdits
+  setClaimEdits: (e: ClaimEdits) => void
+  claimPreview: Record<string, unknown>
+  keySource: MaterialSource | null
+  keyLabel: string | null
+  onKeySource: (sel: KeyMaterialSelection | null) => void
   t: (k: string) => string
 }) {
   const {
@@ -492,8 +619,20 @@ function EncoderBody(props: {
     output,
     error,
     runSign,
+    claimEdits,
+    setClaimEdits,
+    claimPreview,
+    keySource,
+    keyLabel,
+    onKeySource,
     t,
   } = props
+  /**
+   * One instant for the whole editing session. Reading the clock during render
+   * would make the expiry preview drift on every keystroke and would say
+   * something different from what the eventual sign actually writes.
+   */
+  const [nowSeconds] = useState(() => Math.floor(Date.now() / 1000))
 
   const algId = useId()
   const signSecretId = useId()
@@ -527,8 +666,18 @@ function EncoderBody(props: {
             title={t('tools.jwt.headerLabel')}
             actions={
               <>
-                <CopyButton text={header} />
-                <ClearButton onClick={() => setHeader('{\n  "alg": "HS256",\n  "typ": "JWT"\n}')} />
+                <CopyButton text={header} ariaLabel={t('tools.jwt.copyHeader')} />
+                {/*
+                 * Reset to a template carrying the CURRENTLY selected algorithm.
+                 * It used to hardcode HS256, so pressing this with RS256 chosen
+                 * left the dropdown and the header disagreeing — and the signer
+                 * sends the header verbatim, so the token was signed with a
+                 * header that lied about its own alg.
+                 */}
+                <ClearButton
+                  onClick={() => setHeader(`{\n  "alg": "${algorithm}",\n  "typ": "JWT"\n}`)}
+                  label={t('tools.jwt.resetHeader')}
+                />
               </>
             }
           />
@@ -549,8 +698,11 @@ function EncoderBody(props: {
             title={t('tools.jwt.payloadLabel')}
             actions={
               <>
-                <CopyButton text={payload} />
-                <ClearButton onClick={() => setPayload('{\n  \n}')} />
+                <CopyButton text={payload} ariaLabel={t('tools.jwt.copyPayload')} />
+                <ClearButton
+                  onClick={() => setPayload('{\n  \n}')}
+                  label={t('tools.jwt.resetPayload')}
+                />
               </>
             }
           />
@@ -563,6 +715,37 @@ function EncoderBody(props: {
             ) : (
               <Badge color="#cc2200">{t('tools.jwt.invalidJson')}</Badge>
             )}
+          </div>
+        </div>
+
+        {/* ADDED by #63 — registered claims merged over the payload JSON above. */}
+        <div className="border-b" style={{ borderColor: 'var(--border)' }}>
+          <ClaimsEditor
+            edits={claimEdits}
+            onChange={setClaimEdits}
+            previewPayload={claimPreview}
+            nowSeconds={nowSeconds}
+          />
+          <div className="px-3 pb-2">
+            <button
+              onClick={() => {
+                try {
+                  const parsed = JSON.parse(payload) as Record<string, unknown>
+                  setClaimEdits(claimEditsFromPayload(parsed, nowSeconds))
+                } catch {
+                  /* invalid JSON — the payload panel already says so */
+                }
+              }}
+              disabled={!payloadValid}
+              className="rounded border px-2 py-0.5 text-[11px] disabled:opacity-50"
+              style={{
+                borderColor: 'var(--border)',
+                color: 'var(--muted)',
+                background: 'var(--white)',
+              }}
+            >
+              {t('tools.jwt.claimsSeed')}
+            </button>
           </div>
         </div>
 
@@ -619,18 +802,36 @@ function EncoderBody(props: {
                 value={secret}
                 onChange={(e) => setSecret(e.target.value)}
                 rows={asymmetric ? 6 : 2}
+                disabled={!!keySource}
                 placeholder={
                   asymmetric
                     ? '-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----'
                     : 'shared secret'
                 }
-                className="w-full rounded border px-2 py-1 font-mono text-xs"
+                className="w-full rounded border px-2 py-1 font-mono text-xs disabled:opacity-50"
                 style={{
                   background: 'var(--white)',
                   borderColor: 'var(--border)',
                   color: 'var(--text)',
                 }}
               />
+            )}
+
+            {/*
+              ADDED by #63. Pasting a key above stays the DEFAULT: picking
+              nothing here leaves the signing path exactly as it was. Choosing a
+              source moves the signature into MAIN — the private key is resolved
+              there and the renderer only ever receives the finished token.
+            */}
+            {asymmetric && (
+              <div className="mt-2">
+                <KeyMaterialField
+                  value={keySource}
+                  label={keyLabel}
+                  hint={t('tools.jwt.keySourceHint')}
+                  onChange={onKeySource}
+                />
+              </div>
             )}
 
             <div className="mt-2 flex items-center gap-2">
@@ -654,7 +855,10 @@ function EncoderBody(props: {
 
       {/* Right: encoded JWT */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <PanelHeader title={t('tools.jwt.encodedJwt')} actions={<CopyButton text={output} />} />
+        <PanelHeader
+          title={t('tools.jwt.encodedJwt')}
+          actions={<CopyButton text={output} ariaLabel={t('tools.jwt.copyJwt')} />}
+        />
         <div className="flex-1 overflow-auto p-3" style={{ background: 'var(--white)' }}>
           {output ? (
             <ColorizedJwt token={output} />
@@ -670,25 +874,12 @@ function EncoderBody(props: {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Shared helpers & UI atoms
+// Decoded sections
+//
+// The presentational atoms (PanelHeader/Badge/CopyButton/…) moved to
+// ./jwt/atoms when #63 added the claim editor, the JWKS panel and the JWE
+// screen — same markup, so these views render exactly as before.
 // ─────────────────────────────────────────────────────────────────
-function PanelHeader({ title, actions }: { title: string; actions?: React.ReactNode }) {
-  return (
-    <div
-      className="flex shrink-0 items-center justify-between border-b px-3 py-1.5"
-      style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
-    >
-      <span
-        className="text-[11px] font-semibold uppercase tracking-wide"
-        style={{ color: 'var(--muted)' }}
-      >
-        {title}
-      </span>
-      {actions ? <div className="flex items-center gap-1">{actions}</div> : null}
-    </div>
-  )
-}
-
 function Section({
   title,
   view,
@@ -702,6 +893,7 @@ function Section({
   json: string
   rows: ClaimRow[]
 }) {
+  const { t } = useTranslation()
   return (
     <div className="border-b" style={{ borderColor: 'var(--border)' }}>
       <div
@@ -721,7 +913,10 @@ function Section({
           <ViewToggle active={view === 'table'} onClick={() => setView('table')}>
             Table
           </ViewToggle>
-          <CopyButton text={view === 'json' ? json : rowsToText(rows)} />
+          <CopyButton
+            text={view === 'json' ? json : rowsToText(rows)}
+            ariaLabel={t('tools.jwt.copyClaims')}
+          />
         </div>
       </div>
       {view === 'json' ? (
@@ -799,155 +994,4 @@ function ClaimTable({ rows }: { rows: ClaimRow[] }) {
       </table>
     </div>
   )
-}
-
-function rowsToText(rows: ClaimRow[]): string {
-  return rows.map((r) => `${r.key}: ${r.value}${r.iso ? ` (${r.iso})` : ''}`).join('\n')
-}
-
-function ViewToggle({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="rounded px-2 py-0.5 text-[11px] font-medium"
-      style={{
-        background: active ? 'var(--accentLight)' : 'transparent',
-        color: active ? 'var(--accentText)' : 'var(--muted)',
-        border: '1px solid',
-        borderColor: active ? 'var(--accentText)' : 'var(--border)',
-      }}
-    >
-      {children}
-    </button>
-  )
-}
-
-function ModePill({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="rounded-full px-3 py-1 text-xs font-semibold"
-      style={{
-        background: active ? 'var(--white)' : 'transparent',
-        color: active ? 'var(--text)' : 'var(--muted)',
-        boxShadow: active ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
-      }}
-    >
-      {children}
-    </button>
-  )
-}
-
-function CopyButton({ text }: { text: string }) {
-  const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
-  return (
-    <button
-      onClick={async () => {
-        if (!text) return
-        try {
-          await navigator.clipboard.writeText(text)
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1200)
-        } catch {
-          /* ignore */
-        }
-      }}
-      title={copied ? t('tools.common.copied') : t('tools.common.copy')}
-      className="rounded border px-1.5 py-0.5 text-[11px]"
-      style={{
-        borderColor: 'var(--border)',
-        color: copied ? 'var(--green, #1a7a4a)' : 'var(--muted)',
-        background: 'var(--white)',
-      }}
-    >
-      {copied ? '✓' : '⧉'}
-    </button>
-  )
-}
-
-function ClearButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="rounded border px-1.5 py-0.5 text-[11px]"
-      style={{
-        borderColor: 'var(--border)',
-        color: 'var(--muted)',
-        background: 'var(--white)',
-      }}
-      title="Clear"
-    >
-      ✕
-    </button>
-  )
-}
-
-function Badge({ color, children }: { color: string; children: React.ReactNode }) {
-  return (
-    <span
-      className="inline-block rounded px-1.5 py-0.5 text-[11px] font-medium"
-      style={{ background: color + '15', color, border: `1px solid ${color}40` }}
-    >
-      {children}
-    </span>
-  )
-}
-
-/** jwt.io-style three-color JWT split by dots. */
-function ColorizedJwt({ token }: { token: string }) {
-  const parts = token.split('.')
-  const colors = ['#b35a00', '#7c1fa6', '#0a7a5a']
-  return (
-    <div className="font-mono text-xs break-all leading-relaxed">
-      {parts.map((p, i) => (
-        <span key={i}>
-          <span style={{ color: colors[i] ?? 'var(--text)' }}>{p}</span>
-          {i < parts.length - 1 ? <span style={{ color: 'var(--muted)' }}>.</span> : null}
-        </span>
-      ))}
-    </div>
-  )
-}
-
-/** Very small JSON colorizer for the read-only decoded view (keys / strings / numbers / bools). */
-function colorizeJson(src: string): React.ReactNode {
-  const tokens: { v: string; c: string }[] = []
-  const re =
-    /("(?:[^"\\]|\\.)*")(\s*:)?|(\b-?\d+(?:\.\d+)?(?:e[+-]?\d+)?\b)|(\btrue\b|\bfalse\b|\bnull\b)|([\s\S])/gi
-  let m: RegExpExecArray | null
-  while ((m = re.exec(src)) !== null) {
-    if (m[1] !== undefined) {
-      const isKey = !!m[2]
-      tokens.push({ v: m[1], c: isKey ? '#0066cc' : '#1a7a4a' })
-      if (m[2]) tokens.push({ v: m[2], c: 'inherit' })
-    } else if (m[3] !== undefined) {
-      tokens.push({ v: m[3], c: '#0066cc' })
-    } else if (m[4] !== undefined) {
-      tokens.push({ v: m[4], c: '#b35a00' })
-    } else {
-      tokens.push({ v: m[5], c: 'inherit' })
-    }
-  }
-  return tokens.map((t, i) => (
-    <span key={i} style={{ color: t.c }}>
-      {t.v}
-    </span>
-  ))
 }

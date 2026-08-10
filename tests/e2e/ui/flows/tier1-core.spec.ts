@@ -4,8 +4,6 @@ import { dismissOverlays, ensureCanonicalProject, navigateSidebar, openHttpReque
 import { setupEnvironment } from '../../helpers/ui/env'
 import {
   addHeader,
-  addPostScript,
-  addPreScript,
   addVisualAssertion,
   expectTestResults,
   fillUrl,
@@ -29,7 +27,7 @@ import {
   runSuiteAndAssert,
 } from '../../helpers/ui/suite-flow'
 import { localHttpBin } from '../../helpers/test-servers'
-import { treeClickNode } from '../../helpers/ui/tree'
+import { treeClearSearch, treeOpenNode } from '../../helpers/ui/tree'
 
 const http = () => localHttpBin()
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -99,12 +97,18 @@ uiTest.describe('Tier 1 — Core HTTP journeys', () => {
     expect(detail.post_script).toContain('Status is 200')
     expect(detail.assertions).toContain('status_equals')
 
-    await treeClickNode(window, name)
+    // Search-then-click, not a bare click: by this point in the sweep the tree
+    // holds hundreds of nodes inside collapsed folders (and may still carry an
+    // earlier spec's filter), so the node exists in the DB — asserted above —
+    // yet is nowhere on screen. Clear the filter afterwards; a stale one hides
+    // nodes from the NEXT spec.
+    await treeOpenNode(window, name)
     await expect(window.getByTestId('url-input')).toHaveValue(`${http()}/get?persist=1`, { timeout: 8_000 })
     await window.getByTestId('req-tab-tests').click()
     await expect(window.getByTestId('assertion-enable').first()).toBeVisible()
     await sendAndWaitResponse(window)
     await expectTestResults(window, { passed: 2, total: 2 })
+    await treeClearSearch(window)
   })
 
   uiTest('F3 visual assertions: pass and fail matrix', async ({ window }) => {

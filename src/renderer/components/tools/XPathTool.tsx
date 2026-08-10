@@ -3,6 +3,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { evaluateXPath, XPATH_EXAMPLES, XPATH_SAMPLE_DOC } from '../../lib/tools/xpath'
 import { useTranslation } from '../../lib/i18n'
+import { useInvalidateOn } from '../../lib/use-stale-guard'
 
 type XPathResult = ReturnType<typeof evaluateXPath>
 
@@ -20,6 +21,16 @@ export default function XPathTool() {
   const [expr, setExpr] = useState('//title')
   const [namespaces, setNamespaces] = useState<NsRow[]>([])
   const [result, setResult] = useState<XPathResult | null>(null)
+
+  /*
+   * The result belongs to the input that produced it. Leaving it on screen after
+   * an edit shows an answer about text that is no longer there — and unlike a
+   * generated password there is nothing to lose by dropping it, since pressing
+   * the button again re-derives it from what the user can still see.
+   */
+  useInvalidateOn([xml, expr, namespaces], () => {
+    setResult(null)
+  })
 
   const nsMap = useMemo(() => {
     const m: Record<string, string> = {}

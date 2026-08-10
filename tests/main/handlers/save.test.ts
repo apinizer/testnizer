@@ -32,8 +32,7 @@ vi.mock('../../../src/main/db/database', () => ({
 
 vi.mock('../../../src/main/lib/secure-storage', () => ({
   encryptSecret: (s: string | null | undefined) => (s ? `enc:${s}` : null),
-  decryptSecret: (s: string | null | undefined) =>
-    s ? s.replace(/^enc:/, '') : null,
+  decryptSecret: (s: string | null | undefined) => (s ? s.replace(/^enc:/, '') : null),
 }))
 
 // Avoid pulling in the import-export.handler graph, which registers itself
@@ -49,12 +48,14 @@ vi.mock('../../../src/main/ipc/test-suite.handler', () => ({
 }))
 
 const electron = await import('electron')
-const dialogMock = (electron as unknown as {
-  dialog: {
-    showOpenDialog: ReturnType<typeof vi.fn>
-    showSaveDialog: ReturnType<typeof vi.fn>
+const dialogMock = (
+  electron as unknown as {
+    dialog: {
+      showOpenDialog: ReturnType<typeof vi.fn>
+      showSaveDialog: ReturnType<typeof vi.fn>
+    }
   }
-}).dialog
+).dialog
 
 const { registerSaveHandlers } = await import('../../../src/main/ipc/save.handler')
 
@@ -81,6 +82,16 @@ describe('save:exportProject', () => {
     }
     expect(res.success).toBe(false)
     expect(res.error).toMatch(/Cancelled|cancel/i)
+  })
+
+  // Issue #71: the suggested filename went through an ASCII whitelist, so a
+  // Turkish project was offered as "sa_l_k_bakanl___-<date>.json".
+  it('keeps non-ASCII letters in the suggested filename', async () => {
+    const turkishProject = seedProject(testDb, seedWorkspace(testDb), 'sağlık_bakanlığı')
+    dialogMock.showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: undefined })
+    await harness.invoke('save:exportProject', turkishProject)
+    const opts = dialogMock.showSaveDialog.mock.calls[0]?.[1] as { defaultPath: string }
+    expect(opts.defaultPath).toMatch(/^sağlık_bakanlığı-\d{4}-\d{2}-\d{2}\.json$/)
   })
 
   it('returns error envelope for unknown project id', async () => {

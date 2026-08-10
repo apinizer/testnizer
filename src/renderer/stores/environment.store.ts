@@ -3,6 +3,27 @@ import type { Environment, GlobalVariable, EnvironmentVariable } from '../types'
 import { useWorkspaceStore } from './workspace.store'
 
 /**
+ * Did a delete actually happen?
+ *
+ * The IPC bridge signals failure by RESOLVING `{success:false, error}`; a thrown
+ * rejection is the rare path. Awaiting inside try/catch therefore treated every
+ * refused delete as a success, and the caller removed the row from state anyway
+ * — so the record vanished from the UI while it was still in the database and
+ * reappeared on the next launch.
+ *
+ * Stores here stay UI-agnostic (none of them import `toast`), so the honest
+ * outcome is to leave state alone: the row remains listed, which is the truth.
+ */
+async function deleted(call: Promise<unknown> | undefined): Promise<boolean> {
+  try {
+    const res = (await call) as { success?: boolean } | undefined
+    return !(res && res.success === false)
+  } catch {
+    return false
+  }
+}
+
+/**
  * Environment + Globals store — **per-project scope**.
  *
  * Postman maintains a workspace-wide environments list, but Testnizer scopes
@@ -348,15 +369,16 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
   },
 
   deleteEnvironment: async (id) => {
+    // Drop it from state only once the DB confirms, and treat `{success:false}`
+    // as failure — the bridge reports that way and does not throw. Removing it
+    // first meant a refused delete made the environment disappear from the UI
+    // while it was still on disk, so it came back on the next launch with no
+    // explanation. Leaving the row visible is the truthful outcome.
+    if (!(await deleted(window.api?.environment?.delete(id)))) return
     set((state) => ({
       environments: state.environments.filter((e) => e.id !== id),
       activeEnvironmentId: state.activeEnvironmentId === id ? null : state.activeEnvironmentId,
     }))
-    try {
-      await window.api?.environment?.delete(id)
-    } catch {
-      /* ignore */
-    }
   },
 
   addGlobalVariable: async (variable) => {
@@ -421,12 +443,9 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
   },
 
   deleteGlobalVariable: async (id) => {
+    // Same rule as deleteEnvironment: confirm, then forget.
+    if (!(await deleted(window.api?.globalVariable?.delete(id)))) return
     set((state) => ({ globalVariables: state.globalVariables.filter((g) => g.id !== id) }))
-    try {
-      await window.api?.globalVariable?.delete(id)
-    } catch {
-      /* ignore */
-    }
   },
 
   setGlobalVariables: (vars) => set({ globalVariables: vars }),

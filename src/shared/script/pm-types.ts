@@ -6,6 +6,7 @@
  * legacy `postman.*`/`responseBody`/`tests` globals stay identical on both.
  */
 import type { Expect } from './expect'
+import type { JoseHelper } from './jose'
 import type { PmResponse } from './response'
 import type { NormalizedResponse } from './types'
 
@@ -55,6 +56,9 @@ export interface PmLike {
   expect: Expect
   sendRequest: (input: unknown, cb?: (err: Error | null, res: unknown) => void) => Promise<unknown>
   execution: { setNextRequest(name: string | null): void; skipRequest(): void }
+  /** JWS/JWT helper (#73). Hosts do NOT supply it — `buildScriptBindings`
+   *  attaches the one shared instance, so Send and Run get the same object. */
+  jose?: JoseHelper
 }
 
 /** Everything a host (each path) must supply to build the full pm + aliases. */

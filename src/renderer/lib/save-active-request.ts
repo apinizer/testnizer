@@ -17,6 +17,7 @@ import { useSseStore } from '../stores/sse.store'
 import { useSocketIOStore } from '../stores/socketio.store'
 import { useGrpcStore } from '../stores/grpc.store'
 import { useGraphQLStore } from '../stores/graphql.store'
+import { stripWsSecuritySecrets } from './key-material'
 import type { Tab, KeyValuePair } from '../types'
 
 type SseHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -62,7 +63,11 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
           selectedPort: soap.selectedPort,
           selectedOperation: soap.selectedOperation,
           bodyMode: soap.bodyMode,
-          wsSecurity: soap.wsSecurity,
+          // #60: strip the picker's WRITE-ONLY store/key passwords before the
+          // config is written to `endpoints.metadata` (a plain TEXT column).
+          // Identity-preserving: a config with no `keySource` is the exact
+          // same object the pre-#60 code persisted.
+          wsSecurity: stripWsSecuritySecrets(soap.wsSecurity),
         },
       },
     }

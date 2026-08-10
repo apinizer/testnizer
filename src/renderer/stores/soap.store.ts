@@ -9,6 +9,7 @@ import type {
 } from '../types'
 import { useResponseStore } from './response.store'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import { stripWsSecuritySecrets } from '../lib/key-material'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
@@ -351,8 +352,8 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     const tabsStore = useTabsStore.getState()
     const activeTabId = tabsStore.activeTabId
 
-    responseStore.setLoading(true)
-    responseStore.clearResponse()
+    responseStore.setLoading(true, activeTabId)
+    responseStore.clearResponse(activeTabId)
     if (activeTabId) tabsStore.markLoading(activeTabId, true)
 
     const op = get().getSelectedOperation()
@@ -425,40 +426,46 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
       })
 
       if (result?.success && result.data) {
-        responseStore.setResponse(result.data as ApiResponse)
+        responseStore.setResponse(result.data as ApiResponse, activeTabId)
       } else {
-        responseStore.setResponse({
-          requestId: makeId(),
-          protocol: 'soap',
-          error: result?.error || 'SOAP request failed',
-          timing: { total: 0 },
-        })
+        responseStore.setResponse(
+          {
+            requestId: makeId(),
+            protocol: 'soap',
+            error: result?.error || 'SOAP request failed',
+            timing: { total: 0 },
+          },
+          activeTabId,
+        )
       }
     } catch {
       // Demo mode
-      responseStore.setResponse({
-        requestId: makeId(),
-        protocol: 'soap',
-        status: 200,
-        statusText: 'OK',
-        headers: { 'content-type': 'text/xml; charset=utf-8' },
-        body:
-          op?.exampleResponse ||
-          '<soap:Envelope><soap:Body><Response/></soap:Body></soap:Envelope>',
-        bodySize: (op?.exampleResponse || '').length,
-        timing: { total: 245 },
-        actualRequest: {
-          method: 'POST',
-          url: endpointUrl,
-          headers: {
-            'Content-Type': 'text/xml; charset=utf-8',
-            SOAPAction: op?.soapAction || '',
+      responseStore.setResponse(
+        {
+          requestId: makeId(),
+          protocol: 'soap',
+          status: 200,
+          statusText: 'OK',
+          headers: { 'content-type': 'text/xml; charset=utf-8' },
+          body:
+            op?.exampleResponse ||
+            '<soap:Envelope><soap:Body><Response/></soap:Body></soap:Envelope>',
+          bodySize: (op?.exampleResponse || '').length,
+          timing: { total: 245 },
+          actualRequest: {
+            method: 'POST',
+            url: endpointUrl,
+            headers: {
+              'Content-Type': 'text/xml; charset=utf-8',
+              SOAPAction: op?.soapAction || '',
+            },
+            body: rawXml,
           },
-          body: rawXml,
         },
-      })
+        activeTabId,
+      )
     } finally {
-      responseStore.setLoading(false)
+      responseStore.setLoading(false, activeTabId)
       if (activeTabId) tabsStore.markLoading(activeTabId, false)
       set((s) => (s._inflightRequestId === requestId ? { _inflightRequestId: null } : s))
     }
@@ -601,10 +608,21 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
   },
 }))
 
-attachTabbedPersist(useSoapStore, STORAGE_KEY, extractSoapTabState, (s) => ({
-  _tabStates: s._tabStates,
-  _currentTabId: s._currentTabId,
-}))
+attachTabbedPersist(
+  useSoapStore,
+  STORAGE_KEY,
+  extractSoapTabState,
+  (s) => ({
+    _tabStates: s._tabStates,
+    _currentTabId: s._currentTabId,
+  }),
+  // #60: the picker's store/key passwords are WRITE-ONLY. They stay in memory
+  // (so a tab switch keeps the session usable) but never reach localStorage.
+  (st) => {
+    const wsSecurity = stripWsSecuritySecrets(st.wsSecurity)
+    return wsSecurity === st.wsSecurity ? st : { ...st, wsSecurity }
+  },
+)
 
 function flattenSchema(schema: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {}

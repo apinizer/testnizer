@@ -8,7 +8,13 @@
  * via `app.evaluate()` so the test can exercise the full import/export IPC
  * flow without needing real file-picker interaction.
  */
-import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import {
+  test,
+  expect,
+  _electron as electron,
+  type ElectronApplication,
+  type Page,
+} from '@playwright/test'
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
@@ -22,7 +28,9 @@ const OPENAPI_FIXTURE = path.join(FIXTURES, 'import-export', 'openapi-3.0.json')
 const CERT_PFX = path.join(FIXTURES, 'certs', 'client.p12')
 const CERT_CRT = path.join(FIXTURES, 'certs', 'client.crt')
 
-async function launchBootstrapped(userDataDir: string): Promise<{ app: ElectronApplication; window: Page }> {
+async function launchBootstrapped(
+  userDataDir: string,
+): Promise<{ app: ElectronApplication; window: Page }> {
   const app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
   const window = await app.firstWindow()
   await window.waitForLoadState('domcontentloaded')
@@ -38,16 +46,13 @@ async function mockOpenDialog(
   app: ElectronApplication,
   filePaths: string[],
 ): Promise<() => Promise<void>> {
-  await app.evaluate(
-    ({ dialog }, paths) => {
-      // Store original so we can restore
-      ;(dialog as unknown as { __orig_showOpenDialog?: unknown }).__orig_showOpenDialog =
-        dialog.showOpenDialog
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(dialog as any).showOpenDialog = async () => ({ canceled: false, filePaths: paths })
-    },
-    filePaths,
-  )
+  await app.evaluate(({ dialog }, paths) => {
+    // Store original so we can restore
+    ;(dialog as unknown as { __orig_showOpenDialog?: unknown }).__orig_showOpenDialog =
+      dialog.showOpenDialog
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(dialog as any).showOpenDialog = async () => ({ canceled: false, filePaths: paths })
+  }, filePaths)
   return async () => {
     await app.evaluate(({ dialog }) => {
       const d = dialog as unknown as { __orig_showOpenDialog?: unknown }
@@ -68,15 +73,12 @@ async function mockSaveDialog(
   app: ElectronApplication,
   filePath: string,
 ): Promise<() => Promise<void>> {
-  await app.evaluate(
-    ({ dialog }, fp) => {
-      ;(dialog as unknown as { __orig_showSaveDialog?: unknown }).__orig_showSaveDialog =
-        dialog.showSaveDialog
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(dialog as any).showSaveDialog = async () => ({ canceled: false, filePath: fp })
-    },
-    filePath,
-  )
+  await app.evaluate(({ dialog }, fp) => {
+    ;(dialog as unknown as { __orig_showSaveDialog?: unknown }).__orig_showSaveDialog =
+      dialog.showSaveDialog
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(dialog as any).showSaveDialog = async () => ({ canceled: false, filePath: fp })
+  }, filePath)
   return async () => {
     await app.evaluate(({ dialog }) => {
       const d = dialog as unknown as { __orig_showSaveDialog?: unknown }
@@ -111,7 +113,10 @@ test.describe('Tur1 — Shell native dialogs [MST-223..226]', () => {
         const w = window as unknown as Window & {
           api?: {
             importExport?: {
-              openFile: () => Promise<{ success: boolean; data?: { filePath: string; content: string } | null }>
+              openFile: () => Promise<{
+                success: boolean
+                data?: { filePath: string; content: string } | null
+              }>
             }
           }
         }
@@ -193,7 +198,10 @@ test.describe('Tur1 — Shell native dialogs [MST-223..226]', () => {
           const w = window as unknown as Window & {
             api?: {
               importExport?: {
-                saveFile: (content: string, defaultName: string) => Promise<{ success: boolean; data?: string | null }>
+                saveFile: (
+                  content: string,
+                  defaultName: string,
+                ) => Promise<{ success: boolean; data?: string | null }>
               }
             }
           }
@@ -239,7 +247,10 @@ test.describe('Tur1 — Shell native dialogs [MST-223..226]', () => {
         const w = window as unknown as Window & {
           api?: {
             importExport?: {
-              saveFile: (content: string, defaultName: string) => Promise<{ success: boolean; data?: null }>
+              saveFile: (
+                content: string,
+                defaultName: string,
+              ) => Promise<{ success: boolean; data?: null }>
             }
           }
         }
@@ -269,7 +280,9 @@ test.describe('Tur1 — Shell native dialogs [MST-223..226]', () => {
       // Create a project via IPC to delete
       const wsRes = await window.evaluate(async () => {
         const w = window as unknown as Window & {
-          api?: { workspace?: { list: () => Promise<{ success: boolean; data?: Array<{ id: string }> }> } }
+          api?: {
+            workspace?: { list: () => Promise<{ success: boolean; data?: Array<{ id: string }> }> }
+          }
         }
         return w.api?.workspace?.list()
       })
@@ -281,7 +294,9 @@ test.describe('Tur1 — Shell native dialogs [MST-223..226]', () => {
         async ({ workspaceId, name }) => {
           const w = window as unknown as Window & {
             api?: {
-              project?: { create: (p: unknown) => Promise<{ success: boolean; data?: { id: string } }> }
+              project?: {
+                create: (p: unknown) => Promise<{ success: boolean; data?: { id: string } }>
+              }
             }
           }
           // project:create → projectRepo.createProject expects snake_case
@@ -296,27 +311,25 @@ test.describe('Tur1 — Shell native dialogs [MST-223..226]', () => {
       expect(projectId).toBeTruthy()
 
       // Delete the project via IPC (bypasses native dialog — tests IPC contract)
-      const deleteRes = await window.evaluate(
-        async (pid) => {
-          const w = window as unknown as Window & {
-            api?: { project?: { delete: (id: string) => Promise<{ success: boolean }> } }
-          }
-          return w.api?.project?.delete(pid)
-        },
-        projectId as string,
-      )
+      const deleteRes = await window.evaluate(async (pid) => {
+        const w = window as unknown as Window & {
+          api?: { project?: { delete: (id: string) => Promise<{ success: boolean }> } }
+        }
+        return w.api?.project?.delete(pid)
+      }, projectId as string)
       expect(deleteRes?.success).toBe(true)
 
       // Verify project is gone
-      const listAfter = await window.evaluate(
-        async (wid) => {
-          const w = window as unknown as Window & {
-            api?: { project?: { list: (id: string) => Promise<{ success: boolean; data?: Array<{ id: string }> }> } }
+      const listAfter = await window.evaluate(async (wid) => {
+        const w = window as unknown as Window & {
+          api?: {
+            project?: {
+              list: (id: string) => Promise<{ success: boolean; data?: Array<{ id: string }> }>
+            }
           }
-          return w.api?.project?.list(wid)
-        },
-        wsId as string,
-      )
+        }
+        return w.api?.project?.list(wid)
+      }, wsId as string)
       const ids = listAfter?.data?.map((p) => p.id) ?? []
       expect(ids).not.toContain(projectId)
     } finally {
@@ -345,14 +358,23 @@ test.describe('Tur1 — Shell native dialogs [MST-223..226]', () => {
         const w = window as unknown as Window & {
           api?: {
             certificate?: {
-              pickFile: (kind: string) => Promise<{ success: boolean; data?: string; error?: string }>
+              pickFile: (
+                kind: string,
+              ) => Promise<{ success: boolean; data?: string; error?: string }>
             }
           }
         }
         return w.api?.certificate?.pickFile('pfx')
       })
       expect(pfxResult?.success).toBe(true)
-      expect(pfxResult?.data).toBe(CERT_PFX)
+      // `pickFile` deliberately COPIES the chosen file into the app's own
+      // storage at pick time and returns the copy's path: re-reading the
+      // original at request time throws EPERM when it lives in ~/Downloads or
+      // ~/Desktop (macOS TCC), which silently sent requests with no client
+      // certificate. So assert the copy, and that its BYTES match the pick.
+      expect(pfxResult?.data).not.toBe(CERT_PFX)
+      expect(pfxResult?.data).toContain('certs')
+      expect(fs.readFileSync(pfxResult!.data!)).toEqual(fs.readFileSync(CERT_PFX))
 
       // Restore and mock for CRT pick
       await restoreDialog()
@@ -362,14 +384,17 @@ test.describe('Tur1 — Shell native dialogs [MST-223..226]', () => {
         const w = window as unknown as Window & {
           api?: {
             certificate?: {
-              pickFile: (kind: string) => Promise<{ success: boolean; data?: string; error?: string }>
+              pickFile: (
+                kind: string,
+              ) => Promise<{ success: boolean; data?: string; error?: string }>
             }
           }
         }
         return w.api?.certificate?.pickFile('crt')
       })
       expect(crtResult?.success).toBe(true)
-      expect(crtResult?.data).toBe(CERT_CRT)
+      expect(crtResult?.data).not.toBe(CERT_CRT)
+      expect(fs.readFileSync(crtResult!.data!)).toEqual(fs.readFileSync(CERT_CRT))
     } finally {
       if (restoreDialog) await restoreDialog().catch(() => {})
       if (app) await app.close().catch(() => {})
@@ -399,7 +424,9 @@ test.describe('Tur1 — Shell native dialogs [MST-223..226]', () => {
         const w = window as unknown as Window & {
           api?: {
             certificate?: {
-              pickFile: (kind: string) => Promise<{ success: boolean; data?: string; error?: string }>
+              pickFile: (
+                kind: string,
+              ) => Promise<{ success: boolean; data?: string; error?: string }>
             }
           }
         }
@@ -431,36 +458,40 @@ test.describe('Tur1 — Shell native dialogs [MST-223..226]', () => {
       // Get workspace and create a project to import into
       const wsRes = await window.evaluate(async () => {
         const w = window as unknown as Window & {
-          api?: { workspace?: { list: () => Promise<{ success: boolean; data?: Array<{ id: string }> }> } }
+          api?: {
+            workspace?: { list: () => Promise<{ success: boolean; data?: Array<{ id: string }> }> }
+          }
         }
         return w.api?.workspace?.list()
       })
       const wsId = wsRes?.data?.[0]?.id
 
-      const projRes = await window.evaluate(
-        async (wid) => {
-          const w = window as unknown as Window & {
-            api?: { project?: { create: (p: unknown) => Promise<{ success: boolean; data?: { id: string } }> } }
+      const projRes = await window.evaluate(async (wid) => {
+        const w = window as unknown as Window & {
+          api?: {
+            project?: {
+              create: (p: unknown) => Promise<{ success: boolean; data?: { id: string } }>
+            }
           }
-          // snake_case workspace_id required (NOT NULL column) — see MST-225.
-          return w.api?.project?.create({ workspace_id: wid, name: `ImportTest ${Date.now()}`, type: 'http' })
-        },
-        wsId,
-      )
+        }
+        // snake_case workspace_id required (NOT NULL column) — see MST-225.
+        return w.api?.project?.create({
+          workspace_id: wid,
+          name: `ImportTest ${Date.now()}`,
+          type: 'http',
+        })
+      }, wsId)
       const projectId = projRes?.data?.id
       expect(projectId).toBeTruthy()
       if (!projectId) throw new Error('project create failed')
 
       // Ensure a default branch exists
-      await window.evaluate(
-        async (pid) => {
-          const w = window as unknown as Window & {
-            api?: { branch?: { ensureDefault: (id: string) => Promise<unknown> } }
-          }
-          return w.api?.branch?.ensureDefault(pid)
-        },
-        projectId,
-      )
+      await window.evaluate(async (pid) => {
+        const w = window as unknown as Window & {
+          api?: { branch?: { ensureDefault: (id: string) => Promise<unknown> } }
+        }
+        return w.api?.branch?.ensureDefault(pid)
+      }, projectId)
 
       // Mock the open dialog
       restoreDialog = await mockOpenDialog(app, [OPENAPI_FIXTURE])
@@ -486,11 +517,17 @@ test.describe('Tur1 — Shell native dialogs [MST-223..226]', () => {
           const w = window as unknown as Window & {
             api?: {
               importExport?: {
-                importOpenApi: (p: unknown) => Promise<{ success: boolean; data?: { endpointCount?: number } }>
+                importOpenApi: (
+                  p: unknown,
+                ) => Promise<{ success: boolean; data?: { endpointCount?: number } }>
               }
             }
           }
-          return w.api?.importExport?.importOpenApi({ projectId: pid, content: cnt, format: 'openapi3' })
+          return w.api?.importExport?.importOpenApi({
+            projectId: pid,
+            content: cnt,
+            format: 'openapi3',
+          })
         },
         { pid: projectId, cnt: content },
       )

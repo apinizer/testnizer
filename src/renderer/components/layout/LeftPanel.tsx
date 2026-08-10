@@ -8,6 +8,7 @@ import ImportDropdown from '../sidebar/ImportDropdown'
 import HistorySidebar from '../sidebar/HistorySidebar'
 import TestsPanel from '../sidebar/TestsPanel'
 import ToolsPanel from '../sidebar/ToolsPanel'
+import SecurityPanel from '../sidebar/SecurityPanel'
 import MockServersPanel from '../mock/MockServersPanel'
 
 export default function LeftPanel() {
@@ -47,6 +48,8 @@ export default function LeftPanel() {
         <TestsPanel />
       ) : activeSidebarPage === 'tools' ? (
         <ToolsPanel />
+      ) : activeSidebarPage === 'security' ? (
+        <SecurityPanel />
       ) : activeSidebarPage === 'mocks' ? (
         <MockServersPanel />
       ) : (

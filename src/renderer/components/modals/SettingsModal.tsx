@@ -1,4 +1,6 @@
 import { useState, useEffect, useId } from 'react'
+import { useNumberDraft } from '../../lib/number-draft'
+import { toast } from '../../lib/toast'
 import { X } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useUpdaterStore } from '../../stores/updater.store'
@@ -44,6 +46,10 @@ export default function SettingsModal() {
   const proxyPortId = useId()
   const autoUpdateId = useId()
 
+  /** Why the last save failed — keeps the dialog open instead of pretending. */
+  const [saveError, setSaveError] = useState<string | null>(null)
+  /** Why the stored settings could not be read; the form is showing defaults. */
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [settings, setSettings] = useState<SettingsState>({
     theme: currentTheme,
     language: currentLocale,
@@ -63,6 +69,12 @@ export default function SettingsModal() {
     api
       .getAll()
       .then((res) => {
+        // `{success:false}` is how this bridge REPORTS failure — a thrown
+        // rejection is the rarer path. Returning early here meant the common
+        // case stayed silent and the form showed defaults anyway, which is the
+        // exact behaviour the catch below exists to prevent. The renderer
+        // prefixes the localized sentence, so the detail carried here stays raw.
+        if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
         if (!res?.success || !res.data) return
         const s = res.data as {
           defaultTimeout?: number
@@ -80,14 +92,41 @@ export default function SettingsModal() {
           proxyPort: s.proxy?.port != null ? String(s.proxy.port) : prev.proxyPort,
         }))
       })
-      .catch(() => {})
+      .catch((e: unknown) => {
+        // Not silent: the form would otherwise show DEFAULTS that look like the
+        // saved configuration, and pressing Save would write them over it.
+        setLoadError(e instanceof Error ? e.message : String(e))
+      })
   }, [show])
-
-  if (!show) return null
 
   const update = (partial: Partial<SettingsState>) => {
     setSettings((prev) => ({ ...prev, ...partial }))
   }
+
+  /*
+   * Draft-backed so the boxes can actually be emptied while typing. `Number('')`
+   * is 0 and finite, so clearing the font-size field wrote **0 px** into the
+   * app-wide setting — pressing Save then made every label in the application
+   * invisible, with no way to read the dialog that did it. The draft keeps the
+   * text local until it parses in range, and falls back to the last good value
+   * on blur rather than silently picking `min`.
+   *
+   * Declared before the `!show` early return: hooks may not be conditional.
+   */
+  const fontDraft = useNumberDraft({
+    value: settings.fontSize,
+    min: 10,
+    max: 20,
+    onChange: (fontSize) => update({ fontSize }),
+  })
+  const timeoutDraft = useNumberDraft({
+    value: settings.timeout,
+    min: 1,
+    max: 600_000,
+    onChange: (timeout) => update({ timeout }),
+  })
+
+  if (!show) return null
 
   const themeLabels: Record<Theme, string> = {
     light: t('settings.light'),
@@ -95,14 +134,23 @@ export default function SettingsModal() {
     system: t('settings.system'),
   }
 
-  const handleSave = () => {
+  /**
+   * Persist, THEN close.
+   *
+   * The promise used to be fire-and-forget (`.catch(() => {})`) with an
+   * unconditional `setShow(false)` right after — so a rejected write closed the
+   * dialog exactly like a successful one. That is bad for any setting and
+   * unacceptable for `sslVerification`: a user turning certificate checking off
+   * (or back ON) got no indication their choice never landed.
+   */
+  const handleSave = async (): Promise<void> => {
     setTheme(settings.theme)
     setLocale(settings.language)
     setFontSize(settings.fontSize)
     const api = getSettingsApi()
     if (api?.setAll) {
-      api
-        .setAll({
+      try {
+        const res = await api.setAll({
           defaultTimeout: settings.timeout,
           sslVerification: settings.sslVerification,
           autoUpdate: settings.autoUpdate,
@@ -112,8 +160,14 @@ export default function SettingsModal() {
             ...(settings.proxyPort ? { port: Number(settings.proxyPort) } : {}),
           },
         })
-        .catch(() => {})
+        if (res && res.success === false) throw new Error(res.error ?? t('settings.saveFailed'))
+      } catch (e) {
+        // Stay open so the user can retry or copy their values out.
+        setSaveError(e instanceof Error ? e.message : String(e))
+        return
+      }
     }
+    toast.success(t('settings.saved'))
     setShow(false)
   }
 
@@ -194,8 +248,7 @@ export default function SettingsModal() {
             <input
               id={fontId}
               type="number"
-              value={settings.fontSize}
-              onChange={(e) => update({ fontSize: Number(e.target.value) })}
+              {...fontDraft.inputProps}
               min={10}
               max={20}
               className="w-20 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none"
@@ -211,8 +264,8 @@ export default function SettingsModal() {
             <input
               id={timeoutId}
               type="number"
-              value={settings.timeout}
-              onChange={(e) => update({ timeout: Number(e.target.value) })}
+              {...timeoutDraft.inputProps}
+              min={1}
               className="w-28 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none"
             />
             <span className="ml-2 text-[var(--muted)]">ms</span>
@@ -296,6 +349,12 @@ export default function SettingsModal() {
           </div>
         </div>
 
+        {(saveError || loadError) && (
+          <p role="alert" className="mt-4 mb-0 text-xs" style={{ color: '#cc2200' }}>
+            {saveError ?? `${t('settings.loadFailed')}: ${loadError}`}
+          </p>
+        )}
+
         {/* Footer */}
         <div className="mt-6 flex items-center justify-between gap-2.5 border-t border-[var(--border)] pt-4">
           <button
@@ -319,7 +378,7 @@ export default function SettingsModal() {
             </button>
             <button
               type="button"
-              onClick={handleSave}
+              onClick={() => void handleSave()}
               className="cursor-pointer rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-colors hover:opacity-90"
             >
               {t('settings.save')}

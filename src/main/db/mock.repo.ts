@@ -88,7 +88,7 @@ export function createMockServer(input: CreateMockServerInput): MockServerRow {
     auto_start: input.autoStart ? 1 : 0,
     cors_enabled: input.corsEnabled ? 1 : 0,
     cors_allow_origins: input.corsAllowOrigins ?? '*',
-    cors_allow_methods: 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS',
+    cors_allow_methods: 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS,QUERY',
     cors_allow_headers: '*',
     cors_allow_credentials: 0,
     cors_max_age: 600,

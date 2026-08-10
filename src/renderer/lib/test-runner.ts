@@ -383,66 +383,13 @@ interface ResponseToChain {
  * store by lowercased name but preserve the original casing for iteration and
  * the engine handoff.
  */
-export interface HeaderEntry {
-  key: string
-  value: string
-}
-
-export class HeaderCollection {
-  private store: Map<string, HeaderEntry> = new Map()
-
-  constructor(initial?: HeaderEntry[] | Record<string, string>) {
-    if (!initial) return
-    if (Array.isArray(initial)) {
-      for (const h of initial) {
-        if (h && h.key) this.upsert(h)
-      }
-    } else {
-      for (const [k, v] of Object.entries(initial)) {
-        if (k) this.upsert({ key: k, value: v })
-      }
-    }
-  }
-
-  get(name: string): string | undefined {
-    return this.store.get(name.toLowerCase())?.value
-  }
-
-  has(name: string): boolean {
-    return this.store.has(name.toLowerCase())
-  }
-
-  add(h: HeaderEntry): void {
-    // Postman semantics: add overwrites if present (its HeaderList allows
-    // duplicates but most scripts use it interchangeably with upsert). We
-    // pick upsert behaviour to stay aligned with case-insensitive single-
-    // value HTTP header expectations on the wire.
-    this.upsert(h)
-  }
-
-  upsert(h: HeaderEntry): void {
-    if (!h || !h.key) return
-    this.store.set(h.key.toLowerCase(), { key: h.key, value: h.value ?? '' })
-  }
-
-  remove(name: string): void {
-    this.store.delete(name.toLowerCase())
-  }
-
-  each(fn: (h: HeaderEntry) => void): void {
-    for (const entry of this.store.values()) fn(entry)
-  }
-
-  toArray(): HeaderEntry[] {
-    return Array.from(this.store.values())
-  }
-
-  toJSON(): Record<string, string> {
-    const out: Record<string, string> = {}
-    for (const entry of this.store.values()) out[entry.key] = entry.value
-    return out
-  }
-}
+/**
+ * Re-exported so every existing import of `HeaderEntry` / `HeaderCollection`
+ * from this module keeps working; the implementation moved to the shared script
+ * runtime so the Run path can use the same one (Send/Run parity).
+ */
+import { HeaderCollection, type HeaderEntry } from '../../shared/script/headers'
+export { HeaderCollection, type HeaderEntry }
 
 export interface PmRequestInput {
   method: string
@@ -569,7 +516,15 @@ export interface PmSendResponse {
   }
 }
 
-/** Normalize a pm.sendRequest input into the engine's request:send options. */
+/**
+ * Normalize a pm.sendRequest input into the engine's request:send options.
+ *
+ * CERT SCOPE (R5, design §4): no `_projectId` is emitted, so `request:send`
+ * skips `loadCertificatesFor` and a script-issued request carries NO project
+ * client certificate. The Run twin (`runner.handler.ts` pm.sendRequest) calls
+ * the engine directly with no projectId either — SYMMETRIC by design. If cert
+ * attach is ever wanted here, add it to BOTH sides in the same change.
+ */
 export function normalizePmSendInput(req: PmSendInput): {
   method: string
   url: string
@@ -1253,6 +1208,21 @@ export interface ScriptRunResult {
   /** Headers AFTER any pm.request.headers.{add,upsert,remove} mutations so
    * callers can fold the mutations back into the outgoing request. */
   requestHeaders: HeaderEntry[]
+  /**
+   * The message of an uncaught throw inside the script body, if any.
+   *
+   * The throw is caught here so one bad script cannot take down the send, but
+   * the caller still has to KNOW: a pre-request script that dies before it
+   * mints a token or signs a payload must abort the request rather than let it
+   * go out with an unsatisfied precondition. Until this field existed the
+   * error was written to the console and dropped, so the request went anyway
+   * and the response was scored as if nothing had happened — the same gap the
+   * Runner had (both paths fixed together, per the Send≡Run parity rule).
+   *
+   * `pm.execution.skipRequest()` is NOT reported here: it signals through
+   * `skipRequest` and is a deliberate control-flow exit, not a failure.
+   */
+  scriptError?: string
 }
 
 /** Backing-store shape the shared layer reads off each variable scope. */
@@ -1309,6 +1279,7 @@ function ensurePmLike(pm: PmApi, normalized: NormalizedResponse | null): void {
 
 export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRunResult> {
   const consoleLogs: ConsoleLog[] = []
+  let scriptError: string | undefined
 
   // Create console capture
   const captureConsole = {
@@ -1377,6 +1348,7 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
         message: `Script error: ${msg}`,
         timestamp: Date.now(),
       })
+      scriptError = msg
     }
   }
 
@@ -1425,6 +1397,7 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
     globalUpdates,
     skipRequest: pmApi._skipRequest,
     requestHeaders: pmApi._requestHeaders.toArray(),
+    scriptError,
   }
 }
 

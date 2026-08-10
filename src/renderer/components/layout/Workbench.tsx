@@ -1,8 +1,11 @@
-import { useState, useRef, useEffect, type ComponentType } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, type ComponentType } from 'react'
 import { createPortal } from 'react-dom'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { isMac } from '../../lib/platform'
+import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
 import { makeTabId } from '../../lib/utils'
+import { isBlankScratchTab } from '../../lib/tab-kind'
+import { openEndpointTab } from '../../lib/open-endpoint-tab'
 import UrlBar from './UrlBar'
 import UrlPreview from './UrlPreview'
 import RequestEditor from '../request/RequestEditor'
@@ -36,6 +39,13 @@ import BaseConverterTool from '../tools/BaseConverterTool'
 import UuidTool from '../tools/UuidTool'
 import RegexTool from '../tools/RegexTool'
 import YamlJsonTool from '../tools/YamlJsonTool'
+import PasswordGeneratorTool from '../tools/PasswordGeneratorTool'
+import OtpTool from '../tools/OtpTool'
+import QrTool from '../tools/QrTool'
+import KeystoreTool from '../tools/KeystoreTool'
+import TlsInspectorTool from '../tools/TlsInspectorTool'
+import JwkTool from '../tools/JwkTool'
+import SamlTool from '../tools/SamlTool'
 import MockServerEditor from '../mock/MockServerEditor'
 import RightPanel from './RightPanel'
 import EdgeResizeHandle from './EdgeResizeHandle'
@@ -56,6 +66,7 @@ import NewRequestWelcome from './NewRequestWelcome'
 import PageWelcome from './PageWelcome'
 import AddEndpointsView from '../runner/AddEndpointsView'
 import MethodBadge from '../shared/MethodBadge'
+import { ErrorBoundary } from '../shared/ErrorBoundary'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import EnvironmentSelector from '../shared/EnvironmentSelector'
 import { T } from '../../styles/tokens'
@@ -68,6 +79,7 @@ import { cleanupTabState } from '../../lib/cleanup-tab-state'
 import { saveActiveRequestInPlace } from '../../lib/save-active-request'
 import UnsavedChangesDialog from '../modals/UnsavedChangesDialog'
 import { toast } from '../../lib/toast'
+import { EditorVisibilityProvider } from '../../lib/editor-visibility'
 
 // Tool-tab protocol → component. The Workbench renders EVERY open tool tab and
 // toggles visibility (rather than mounting only the active one) so a tool's
@@ -93,6 +105,13 @@ const TOOL_COMPONENTS: Record<string, ComponentType> = {
   'tools.uuid': UuidTool,
   'tools.regex': RegexTool,
   'tools.yamlJson': YamlJsonTool,
+  'tools.passwordGen': PasswordGeneratorTool,
+  'tools.otp': OtpTool,
+  'tools.qr': QrTool,
+  'tools.keystore': KeystoreTool,
+  'tools.tlsInspect': TlsInspectorTool,
+  'tools.jwk': JwkTool,
+  'tools.saml': SamlTool,
 }
 
 function EndpointTabBar() {
@@ -175,7 +194,9 @@ function EndpointTabBar() {
   function handleTabContextAction(tabId: string, action: TabContextAction) {
     setContextMenu(null)
     if (action === 'newRequest') {
-      handleNewTab()
+      // Named action, literal result — the module-aware "+" is a different
+      // affordance (see handleNewTab).
+      handleNewRequestTab()
       return
     }
     if (action === 'duplicate') {
@@ -270,20 +291,73 @@ function EndpointTabBar() {
       return
     }
 
+    /*
+     * A tab backed by a tree row duplicates at the DATA layer too, exactly like
+     * the tree's own Duplicate and the suite-item branch above.
+     *
+     * Copying `endpointId` / `savedRequestId` onto a new tab could never work:
+     * `openTab` deduplicates on precisely those ids, so it found the SOURCE tab,
+     * refocused it and returned without creating anything — and the switch that
+     * followed pointed `activeTabId` at an id that was never added, leaving no
+     * active tab at all. That is why Duplicate landed on the protocol picker
+     * instead of a copy. Suite-item tabs were unaffected because their branch
+     * returns before this point.
+     */
+    if (src.endpointId || src.savedRequestId) {
+      const copyName = `${src.name} (copy)`
+      let createdId: string | undefined
+
+      if (src.savedRequestId) {
+        const res = (await window.api?.savedRequest?.get(src.savedRequestId)) as {
+          success: boolean
+          data?: Record<string, unknown>
+        }
+        if (!res?.success || !res.data) return
+        const created = (await window.api?.savedRequest?.create({
+          ...(res.data as Record<string, unknown>),
+          name: copyName,
+        } as Parameters<typeof window.api.savedRequest.create>[0])) as {
+          success: boolean
+          data?: { id: string }
+        }
+        if (!created?.success || !created.data) return
+        createdId = created.data.id
+      } else if (src.endpointId) {
+        const res = (await window.api?.endpoint?.get(src.endpointId)) as {
+          success: boolean
+          data?: Record<string, unknown>
+        }
+        if (!res?.success || !res.data) return
+        const created = (await window.api?.endpoint?.create({
+          ...(res.data as Record<string, unknown>),
+          name: copyName,
+        } as Parameters<typeof window.api.endpoint.create>[0])) as {
+          success: boolean
+          data?: { id: string }
+        }
+        if (!created?.success || !created.data) return
+        createdId = created.data.id
+      }
+
+      if (!createdId) return
+      await refreshTree()
+      await openEndpointTab(createdId)
+      // Unsaved edits travel with the duplicate: the row is a copy of what is
+      // SAVED, while the user is looking at what they have typed.
+      const openedId = useTabsStore.getState().activeTabId
+      if (openedId) useRequestStore.getState().cloneTabState(tabId, openedId)
+      return
+    }
+
     const newId = makeTabId()
-    // Open with the same metadata. The unsaved/edited state lives in protocol
-    // stores keyed on tabId — clone the source's cache into the new id so
-    // unsaved edits travel with the duplicate. Only the request store has a
-    // public cloneTabState today; other protocols start from the persisted
-    // metadata, which is acceptable until they grow the same hook.
+    // A scratch tab carries no row to copy, so the duplicate is another scratch
+    // tab. No ids means `openTab` has nothing to deduplicate on.
     openTab({
       id: newId,
       name: `${src.name} (copy)`,
       protocol: src.protocol,
       method: src.method,
       url: src.url,
-      endpointId: src.endpointId,
-      savedRequestId: src.savedRequestId,
       folderId: src.folderId,
     })
     useRequestStore.getState().cloneTabState(tabId, newId)
@@ -436,7 +510,32 @@ function EndpointTabBar() {
     setCloseConfirmTabId(null)
   }
 
+  /**
+   * "+" and Cmd+T open a new tab in the module the user is standing in.
+   *
+   * It always opened an HTTP request, whatever the left panel was showing. On
+   * the Tests page that meant clicking "+" inside Tests and being handed the
+   * APIs protocol picker, with the sidebar still saying Tests (issue #93) —
+   * the one place in the app where a new tab left the module you were in.
+   *
+   * Tests is the only page with its own tab content (the runner tab, which
+   * lands on the overview when it has no suite or folder scope). Tools and
+   * Mocks open their own tabs from their own lists and have no "empty"
+   * screen to offer, so they keep the request default rather than gaining a
+   * blank tab with nothing in it.
+   *
+   * The tab context menu's "New Request" deliberately does NOT come through
+   * here: that one names what it opens.
+   */
   function handleNewTab() {
+    if (useUIStore.getState().activeSidebarPage === 'tests') {
+      openTab({ id: makeTabId(), name: 'Tests', protocol: 'runner' })
+      return
+    }
+    handleNewRequestTab()
+  }
+
+  function handleNewRequestTab() {
     const id = makeTabId()
     openTab({ id, name: 'New Request', protocol: 'http', method: 'GET', url: '' })
     // Reset every protocol store to its empty baseline for the new tab so the
@@ -455,6 +554,9 @@ function EndpointTabBar() {
     clearResponse()
   }
 
+  // Nothing to show without tabs — and nothing is lost by it: the workbench
+  // renders PageWelcome instead, which is a better new-tab surface than this
+  // strip (issue #97, closed as invalid).
   if (tabs.length === 0) return null
 
   return (
@@ -662,9 +764,14 @@ function EndpointTabBar() {
         )
       })}
 
-      {/* + new tab */}
-      <div
+      {/* + new tab — a real button so it carries a name for the keyboard and
+          for screen readers. What it opens depends on the module (handleNewTab). */}
+      <button
+        type="button"
         onClick={handleNewTab}
+        title="New tab"
+        aria-label="New tab"
+        data-testid="tab-new"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -675,10 +782,12 @@ function EndpointTabBar() {
           color: T.ghost,
           fontSize: 16,
           flexShrink: 0,
+          background: 'transparent',
+          border: 'none',
         }}
       >
         +
-      </div>
+      </button>
 
       {/* Drop zone for "move tab to end" — covers the empty space to the
           right of the + button so users can drop past every existing tab. */}
@@ -706,23 +815,7 @@ function EndpointTabBar() {
 
       {contextMenu &&
         createPortal(
-          <div
-            className="fixed z-[9000] overflow-hidden rounded-[8px]"
-            style={{
-              top: contextMenu.y,
-              left: contextMenu.x,
-              minWidth: 220,
-              background: 'var(--white)',
-              border: '1px solid var(--border)',
-              boxShadow: 'var(--shadow-drop)',
-              padding: 4,
-            }}
-            onClick={(e) => e.stopPropagation()}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-            }}
-          >
+          <TabContextMenuShell x={contextMenu.x} y={contextMenu.y}>
             <ContextMenuItem
               label="New Request"
               shortcut={cmdOrCtrl('T')}
@@ -764,7 +857,7 @@ function EndpointTabBar() {
               danger
               onClick={() => handleTabContextAction(contextMenu.tabId, 'closeAllForce')}
             />
-          </div>,
+          </TabContextMenuShell>,
           document.body,
         )}
 
@@ -785,6 +878,62 @@ function cmdOrCtrl(key: string): string {
 }
 function altCmdOrCtrl(key: string): string {
   return isMac() ? `⌥⌘${key}` : `Ctrl+Alt+${key}`
+}
+
+/* Tab context menu chrome. Positioned from the measured size instead of the
+   raw click point so a right-click on a tab near the right edge (or on a short
+   window) can't push the Close actions out of view. */
+function TabContextMenuShell({
+  x,
+  y,
+  children,
+}: {
+  x: number
+  y: number
+  children: React.ReactNode
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<MenuPosition>({ left: x, top: y })
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const { width, height } = el.getBoundingClientRect()
+    setPos(
+      positionContextMenu({
+        x,
+        y,
+        width,
+        height,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      }),
+    )
+  }, [x, y])
+  return (
+    <div
+      ref={ref}
+      data-context-menu
+      className="fixed z-[9000] overflow-hidden rounded-[8px]"
+      style={{
+        top: pos.top,
+        left: pos.left,
+        maxHeight: pos.maxHeight,
+        overflowY: pos.maxHeight ? 'auto' : undefined,
+        minWidth: 220,
+        background: 'var(--white)',
+        border: '1px solid var(--border)',
+        boxShadow: 'var(--shadow-drop)',
+        padding: 4,
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }}
+    >
+      {children}
+    </div>
+  )
 }
 
 function ContextMenuItem({
@@ -852,6 +1001,12 @@ export default function Workbench() {
       if (e.key === 't' || e.key === 'T') {
         if (e.altKey || e.shiftKey) return
         e.preventDefault()
+        // Same rule as the "+" button: a new tab belongs to the module you are
+        // standing in (issue #93).
+        if (useUIStore.getState().activeSidebarPage === 'tests') {
+          useTabsStore.getState().openTab({ id: makeTabId(), name: 'Tests', protocol: 'runner' })
+          return
+        }
         const id = makeTabId()
         useTabsStore.getState().openTab({
           id,
@@ -913,7 +1068,9 @@ export default function Workbench() {
       )
     }
 
-    const isNewEmptyTab = activeTab.name === 'New Request' && !activeTab.url
+    // Picker vs. editor is decided by identity, not by the display name —
+    // see `isBlankScratchTab` (issue #69).
+    const isNewEmptyTab = isBlankScratchTab(activeTab)
 
     if (isNewEmptyTab) {
       return (
@@ -1063,7 +1220,13 @@ export default function Workbench() {
           style={{ background: 'var(--white)' }}
         >
           <EndpointTabBar />
+          {/* Keyed like every other editor above — two folder runs are two
+              different tabs coming through this one branch, so an unkeyed
+              RunnerTab kept a single instance alive and folder B rendered
+              folder A's results under folder B's tab name (#66). The session
+              part re-arms a tab that is re-opened while already active. */}
           <RunnerTab
+            key={`${activeTab.id}:${activeTab.sessionKey ?? ''}`}
             folderId={activeTab.folderId}
             tabId={activeTab.id}
             sessionKey={activeTab.sessionKey}
@@ -1122,7 +1285,16 @@ export default function Workbench() {
 
   return (
     <div className="relative flex flex-1 overflow-hidden" style={{ background: 'var(--white)' }}>
-      {content}
+      {/* Content-region boundary: a single screen's render-throw is contained
+          to this pane — the recovery panel shows INSIDE the Workbench while the
+          app frame (header, tabs, tree, footer, in AppShell) stays usable.
+          `resetKey={activeTabId}` clears the crash the moment the user switches
+          to a healthy tab, so they don't have to reload the whole window. The
+          root boundary around <App/> (main.tsx) is a separate, unchanged
+          instance and still catches anything this one can't. */}
+      <ErrorBoundary variant="inline" resetKey={activeTabId}>
+        {content}
+      </ErrorBoundary>
       {hasToolTabs && <PersistentToolTabs visible={toolActive} />}
     </div>
   )
@@ -1155,7 +1327,17 @@ function PersistentToolTabs({ visible }: { visible: boolean }) {
               style={{ display: isActive ? 'flex' : 'none' }}
               aria-hidden={!isActive}
             >
-              <ToolComp />
+              {/* Tools stay mounted (their typed input must survive a tab
+                  switch); their Monaco editors do not — see issue #77. */}
+              {/* Each tool editor is contained by its own boundary: a crashing
+                  tool shows the recovery panel in ITS slot only — other tool
+                  tabs and the whole app frame stay alive (a sibling boundary to
+                  the content-region one, since this overlay renders outside it). */}
+              <ErrorBoundary variant="inline" resetKey={t.id}>
+                <EditorVisibilityProvider visible={isActive}>
+                  <ToolComp />
+                </EditorVisibilityProvider>
+              </ErrorBoundary>
             </div>
           )
         })}

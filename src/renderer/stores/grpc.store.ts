@@ -580,8 +580,8 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       halfClosed: false,
     })
     if (isStream) set({ isStreaming: true })
-    responseStore.setLoading(true)
-    responseStore.clearResponse()
+    responseStore.setLoading(true, activeTabId)
+    responseStore.clearResponse(activeTabId)
     if (activeTabId) tabsStore.markLoading(activeTabId, true)
 
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
@@ -610,8 +610,8 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         isStreaming: false,
         errorMessage: errResp.error ?? null,
       })
-      responseStore.setResponse(errResp)
-      responseStore.setLoading(false)
+      responseStore.setResponse(errResp, activeTabId)
+      responseStore.setLoading(false, activeTabId)
       if (activeTabId) tabsStore.markLoading(activeTabId, false)
       return
     }
@@ -674,8 +674,8 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       // active — otherwise the user is looking at another tab's response.
       const current = get()
       if (current._currentTabId === ownerTabId) {
-        responseStore.setResponse(apiResp)
-        responseStore.setLoading(false)
+        responseStore.setResponse(apiResp, activeTabId)
+        responseStore.setLoading(false, activeTabId)
         if (activeTabId) tabsStore.markLoading(activeTabId, false)
       }
     }
@@ -730,7 +730,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
           })
           const cur = get()
           if (cur._currentTabId === ownerTabId) {
-            responseStore.setLoading(false)
+            responseStore.setLoading(false, activeTabId)
             if (activeTabId) tabsStore.markLoading(activeTabId, false)
           }
         } else if (evt.type === 'error') {
@@ -743,7 +743,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
           })
           const cur = get()
           if (cur._currentTabId === ownerTabId) {
-            responseStore.setLoading(false)
+            responseStore.setLoading(false, activeTabId)
             if (activeTabId) tabsStore.markLoading(activeTabId, false)
           }
         }
@@ -808,8 +808,8 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       })
       const cur = get()
       if (cur._currentTabId === ownerTabId) {
-        responseStore.setResponse(errResp)
-        responseStore.setLoading(false)
+        responseStore.setResponse(errResp, activeTabId)
+        responseStore.setLoading(false, activeTabId)
         if (activeTabId) tabsStore.markLoading(activeTabId, false)
       }
     }
@@ -868,7 +868,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const activeTabId = tabsStore.activeTabId
-    responseStore.setLoading(false)
+    responseStore.setLoading(false, activeTabId)
     if (activeTabId) tabsStore.markLoading(activeTabId, false)
 
     const grpcApi = window.api?.grpc

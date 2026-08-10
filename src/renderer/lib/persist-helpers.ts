@@ -82,19 +82,29 @@ export function loadTabbedState<TState>(
  * snapshot to localStorage on every change. Pass an `extractCurrent` that
  * returns just the *editable* state (excludes connection ids, in-flight
  * flags, response bodies — anything transient).
+ *
+ * `sanitize` (optional) is applied to the active state AND to every cached
+ * tab state on the way OUT to storage only. Use it for write-only secrets
+ * (e.g. the Key Material Provider's store/key passwords, #60): they stay
+ * usable in memory for the session — switching tabs must not lose them —
+ * while never being written to disk or read back after a reload.
  */
 export function attachTabbedPersist<TStore, TState>(
   store: { subscribe: (cb: (s: TStore) => void) => () => void },
   storageKey: string,
   extractCurrent: (s: TStore) => TState,
   extractTabMap: (s: TStore) => { _tabStates: Map<string, TState>; _currentTabId: string | null },
+  sanitize?: (s: TState) => TState,
 ): void {
   store.subscribe((state) => {
     const tabbed = extractTabMap(state)
+    const clean = sanitize ?? ((s: TState) => s)
     saveJson(storageKey, {
-      current: extractCurrent(state),
+      current: clean(extractCurrent(state)),
       _currentTabId: tabbed._currentTabId,
-      _tabStates: mapToEntries(tabbed._tabStates),
+      _tabStates: mapToEntries(tabbed._tabStates).map(
+        ([id, st]) => [id, clean(st)] as [string, TState],
+      ),
     })
   })
 }

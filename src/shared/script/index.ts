@@ -9,12 +9,15 @@
  */
 import { expect } from './expect'
 import { sandboxRequire, scriptGlobals } from './require'
+import { createJoseHelper } from './jose'
 import { buildInsomnia, buildBruno } from './aliases'
 import { buildLegacyGlobals } from './legacy'
 import type { ScriptHostContext } from './pm-types'
 
 export { createPmResponse } from './response'
 export type { PmResponse } from './response'
+export { createJoseHelper, joseModule } from './jose'
+export type { JoseHelper, JoseKeyInput, JoseSignOptions, JoseVerifyOptions } from './jose'
 export { expect, deepEqual } from './expect'
 export { sandboxRequire, scriptGlobals } from './require'
 export type { NormalizedResponse, ScriptTestResult } from './types'
@@ -28,7 +31,16 @@ export interface ScriptBindings {
   legacyTests: Record<string, boolean>
 }
 
+/** Stateless — one instance for the whole process, shared by every script run
+ *  on BOTH paths, so `pm.jose` is literally the same object graph on Send and
+ *  Run (issue #73). Attached here, in the single assembly point, instead of in
+ *  each host's pm builder — that is what keeps the two paths from drifting. */
+const joseHelper = createJoseHelper()
+
 export function buildScriptBindings(ctx: ScriptHostContext): ScriptBindings {
+  // Attach before the alias layers: `insomnia` is Object.create(pm), and Bruno's
+  // req/res close over pm — both then see pm.jose too.
+  if (!ctx.pm.jose) ctx.pm.jose = joseHelper
   const insomnia = buildInsomnia(ctx)
   const { bru, req, res } = buildBruno(ctx)
   const legacy = buildLegacyGlobals(ctx)
@@ -53,3 +65,4 @@ export function buildScriptBindings(ctx: ScriptHostContext): ScriptBindings {
 
   return { bindings, legacyTests: legacy.tests }
 }
+export { HeaderCollection, type HeaderEntry } from './headers'

@@ -43,14 +43,31 @@ export async function treeAddHttpRequest(page: Page, folderLabel: string): Promi
   await clickContextSubmenuItem(page, /Add Request/i, /HTTP/i)
 }
 
-/** Add folder under project root or folder via context menu (creates "New Folder"). */
-export async function treeAddFolder(page: Page, parentLabel: string): Promise<void> {
+/**
+ * Add a folder under a project root or another folder, via the context menu.
+ *
+ * Since issue #68 the menu entry PROMPTS: an inline editor appears and nothing
+ * is written until the name is confirmed. The helper therefore types a name —
+ * `New Folder` by default, so specs that were written against the old
+ * create-then-rename behaviour keep working unchanged.
+ */
+export async function treeAddFolder(
+  page: Page,
+  parentLabel: string,
+  name = 'New Folder',
+): Promise<void> {
   const node = page.getByTestId('tree-node').filter({ hasText: parentLabel }).first()
   await node.click({ button: 'right' })
   await clickContextMenuItem(page, /Add Folder/i)
+
+  const draft = page.getByTestId('new-folder-input')
+  await draft.waitFor({ state: 'visible', timeout: 10_000 })
+  await draft.fill(name)
+  await draft.press('Enter')
+
   await page
     .getByTestId('tree-node')
-    .filter({ hasText: /New Folder/i })
+    .filter({ hasText: name })
     .first()
     .waitFor({ state: 'visible', timeout: 10_000 })
 }

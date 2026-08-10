@@ -1,5 +1,9 @@
 import { useId, useMemo, useState } from 'react'
 import ToolShell from './ToolShell'
+import NumberField from '../shared/NumberField'
+import CopyButton from '../shared/CopyButton'
+import { useCopy } from '../../lib/use-copy'
+import { useStaleFlag } from '../../lib/use-stale-guard'
 import {
   detectVersion,
   generateUuids,
@@ -34,9 +38,14 @@ export default function UuidTool() {
   const namespaceId = useId()
   const namespaceCustomId = useId()
   const nameId = useId()
-  const countId = useId()
   const formatId = useId()
   const validateId = useId()
+
+  const rowCopy = useCopy()
+  // A list of v4 UUIDs stays on screen after switching to v5, which reads as
+  // "these are v5". They are still the user's output, so they are marked stale
+  // rather than deleted.
+  const { stale, markFresh } = useStaleFlag([version, format, count, namespace, name])
 
   function handleGenerate(): void {
     const r = generateUuids(version, {
@@ -48,18 +57,11 @@ export default function UuidTool() {
     if (r.ok) {
       setOutput(r.uuids)
       setError(null)
+      markFresh()
     } else {
       setError(r.error)
       setOutput([])
-    }
-  }
-
-  async function copyAll(): Promise<void> {
-    if (output.length === 0) return
-    try {
-      await navigator.clipboard.writeText(output.join('\n'))
-    } catch {
-      /* ignore */
+      markFresh()
     }
   }
 
@@ -169,25 +171,13 @@ export default function UuidTool() {
           )}
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label
-                htmlFor={countId}
-                className="mb-1 block text-[11px] uppercase tracking-wide"
-                style={{ color: 'var(--muted)' }}
-              >
-                {t('tools.uuid.count')}
-              </label>
-              <input
-                id={countId}
-                type="number"
-                min={1}
-                max={1000}
-                value={count}
-                onChange={(e) => setCount(Number(e.target.value) || 1)}
-                className="w-full rounded border px-2 py-1 text-sm"
-                style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
-              />
-            </div>
+            <NumberField
+              label={t('tools.uuid.count')}
+              value={count}
+              min={1}
+              max={1000}
+              onChange={setCount}
+            />
             <div>
               <label
                 htmlFor={formatId}
@@ -262,30 +252,39 @@ export default function UuidTool() {
             >
               <span style={{ color: 'var(--muted)' }}>
                 {output.length} {t('tools.uuid.generated')}
+                {stale ? (
+                  <span style={{ color: 'var(--orange, #b35a00)' }}>
+                    {' · '}
+                    {t('tools.common.staleOutput')}
+                  </span>
+                ) : null}
+                {rowCopy.copied ? (
+                  <span style={{ color: 'var(--green, #1a7a4a)' }}>
+                    {' · '}
+                    {t('tools.common.copied')}
+                  </span>
+                ) : null}
               </span>
-              <button
-                onClick={copyAll}
+              <CopyButton
+                text={output.join('\n')}
+                label={`⧉ ${t('tools.common.copy')}`}
+                ariaLabel={t('tools.uuid.copyAll')}
                 className="rounded border px-2 py-0.5 text-[11px]"
-                style={{
-                  borderColor: 'var(--border)',
-                  background: 'var(--white)',
-                  color: 'var(--muted)',
-                }}
-              >
-                ⧉ {t('tools.common.copy')}
-              </button>
+              />
             </div>
             <div className="flex-1 overflow-auto p-3 font-mono text-xs">
               {output.map((u, i) => (
-                <div
+                <button
                   key={i}
-                  className="cursor-pointer rounded px-2 py-0.5 hover:bg-[var(--surface)]"
-                  onClick={() => navigator.clipboard.writeText(u).catch(() => {})}
+                  type="button"
+                  className="block w-full cursor-pointer rounded px-2 py-0.5 text-left hover:bg-[var(--surface)]"
+                  onClick={() => void rowCopy.copy(u)}
+                  aria-label={`${t('tools.common.copy')}: ${u}`}
                   title={t('tools.common.copy')}
                   style={{ color: 'var(--text)' }}
                 >
                   {u}
-                </div>
+                </button>
               ))}
             </div>
           </div>

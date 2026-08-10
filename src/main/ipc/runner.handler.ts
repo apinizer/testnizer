@@ -7,6 +7,16 @@ import {
   HttpRequestOptions,
   stripUrlCredentials,
 } from '../protocols/http.engine'
+// THE single cert-attach function — shared with the Send path (`request:send`).
+// Importing it (rather than copying the logic) is what keeps Send≡Run parity
+// structural: one host-match, one keystore branch, one fail-loud message.
+import { loadCertificatesFor } from './request.handler'
+// The Console panel is fed from the HANDLER layer, not the engine — Send logs
+// in `request.handler`, every protocol logs in its own handler. The runner
+// called the engine directly and logged nowhere, so a folder/suite run was
+// invisible in the Console even though the requests demonstrably went out
+// (issue #79).
+import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as endpointRepo from '../db/endpoint.repo'
 import * as tsiRepo from '../db/test-suite-item.repo'
 import * as historyRepo from '../db/history.repo'
@@ -25,8 +35,26 @@ import {
   type AuthConfigLike,
 } from '../lib/auth-inheritance'
 import { buildScriptBindings, createPmResponse, expect as chaiExpect } from '../../shared/script'
+import { HeaderCollection, type HeaderEntry } from '../../shared/script/headers'
 import type { NormalizedResponse, PmLike } from '../../shared/script'
-import { endpointDidPass } from '../../shared/runner-verdict'
+import { endpointDidPass, countsTowardRunVerdict } from '../../shared/runner-verdict'
+import { summarizeRun } from '../../shared/runner-summary'
+import type { RunPhase } from '../../shared/runner-verdict'
+// Runner IPC shapes live in one place now — see src/shared/runner-types.ts for
+// why (they had already drifted across main / preload / store).
+import type {
+  AssertionResult,
+  EndpointRunResult,
+  ResponseTiming,
+  RunnerExecuteOptions,
+  RunnerExportOptions,
+  RunnerProgress,
+  RunnerReport,
+  RunStopMode,
+  RunStopReason,
+  ScriptConsoleLog,
+} from '../../shared/runner-types'
+import type { StoredProjectSettings } from '../lib/project-settings'
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -82,120 +110,6 @@ interface TestAssertion {
   rangeMax?: number
 }
 
-interface RunnerExecuteOptions {
-  projectId: string
-  endpointIds: string[]
-  environmentId?: string
-  workspaceId?: string
-  /** Delay in milliseconds inserted between requests. */
-  delay?: number
-  /**
-   * Number of iterations. When `iterationData` is supplied, this is overridden
-   * by `iterationData.length`. Defaults to 1.
-   */
-  iterations?: number
-  /**
-   * Per-iteration data rows (Postman / Insomnia compatible). When set, the
-   * runner executes one iteration per row and exposes the row to scripts via
-   * `pm.iterationData.get(key)`.
-   */
-  iterationData?: Record<string, string>[]
-  stopOnError?: boolean
-  /**
-   * When true (default) each result carries the full responseBody +
-   * responseHeaders. Disable to keep memory low for very large collections —
-   * the report still has assertions, status, timing and size.
-   */
-  persistResponses?: boolean
-  /**
-   * Postman "Keep variable values" — when true (default) environment / global
-   * variables written by scripts during the run (`pm.environment.set`,
-   * `insomnia.environment.set`, …) are persisted back to the active environment
-   * after the run completes, so a token fetched once in a setup request is
-   * reused (and refreshed in one place) by every later request and by
-   * subsequent runs. Set false to keep the run side-effect-free (issue #12).
-   */
-  keepVariableValues?: boolean
-  folderName?: string
-  source?: string
-  sourceLabel?: string
-  // Set by executeCollectionForScheduler so we can tie this runner_history
-  // row back to its scheduled_tasks row even after a rename / delete.
-  scheduledTaskId?: string
-}
-
-interface RunnerExportOptions {
-  results: EndpointRunResult[]
-  format: 'json' | 'html'
-}
-
-interface ResponseTiming {
-  total: number
-  dns?: number
-  tcp?: number
-  tls?: number
-  ttfb?: number
-  download?: number
-}
-
-interface EndpointRunResult {
-  endpointId: string
-  endpointName: string
-  folderName?: string
-  method: string
-  url: string
-  status: number | null
-  statusText: string
-  duration: number
-  passed: number
-  failed: number
-  skipped: number
-  assertions: AssertionResult[]
-  error?: string
-  responseSize?: number
-  responseBody?: string
-  responseHeaders?: Record<string, string>
-  requestHeaders?: Record<string, string>
-  requestBody?: string
-  /** 1-based iteration index. Renderer groups results by this field. */
-  iteration?: number
-}
-
-interface AssertionResult {
-  name: string
-  passed: boolean
-  actual?: string | number
-  error?: string
-}
-
-interface RunnerProgress {
-  current: number
-  total: number
-  endpointId: string
-  result: EndpointRunResult
-}
-
-interface RunnerReport {
-  projectId: string
-  startedAt: number
-  completedAt: number
-  totalEndpoints: number
-  passedEndpoints: number
-  failedEndpoints: number
-  totalAssertions: number
-  passedAssertions: number
-  failedAssertions: number
-  results: EndpointRunResult[]
-  /**
-   * Variables written by scripts during the run and (when keepVariableValues
-   * is on) persisted to the active environment / project globals. The renderer
-   * uses these deltas to refresh its in-memory env store so the next "Send"
-   * and the env editor reflect the new values without a manual reload.
-   */
-  envUpdates?: Record<string, string>
-  globalUpdates?: Record<string, string>
-}
-
 // ─── State ───────────────────────────────────────────────────────
 
 // Each in-flight run is tracked independently so that stopping one Runner
@@ -204,6 +118,53 @@ interface RunnerReport {
 // stuck (review findings BLOCKER + HIGH on runner concurrency).
 interface RunState {
   shouldStop: boolean
+  /**
+   * Abandon cleanup as well — the escape hatch for a teardown that is itself
+   * hanging (a cleanup endpoint that never answers), so the UI can never be
+   * held hostage by teardown (issue #72).
+   *
+   * Set ONLY by an explicit `runner:stop({ skipTeardown: true })`, which the
+   * renderer sends from the hard-stop button ("Stop now") — a separate control
+   * from the safe Stop, in its own fixed position for the whole run.
+   *
+   * It used to be inferred instead: any second Stop set this whenever
+   * `teardownStarted` happened to be true. That reads the user's INTENT off
+   * the CLOCK. The first Stop cannot cancel the request already on the wire,
+   * so nothing appears to happen and people click again — and whichever click
+   * landed after teardown began silently killed the rest of the cleanup. The
+   * result looked random: sometimes one teardown request ran, sometimes two,
+   * sometimes the run-teardown script was the only casualty (reported 5 Aug as
+   * "teardown tutarsız / kısmi çalışıyor", and rightly called flaky).
+   */
+  abortTeardown: boolean
+  /**
+   * The user asked for a HARD halt ("Stop now", issue #91) rather than the
+   * graceful Stop that lets cleanup finish. Recorded separately from
+   * `abortTeardown` — which it also sets — purely so the report can say which
+   * of the two the user pressed: "you stopped the run immediately" and "you
+   * abandoned cleanup that was already running" are different stories, and the
+   * old single reason told the wrong one about half the time.
+   */
+  directStop: boolean
+  /**
+   * Aborts the request currently on the wire, if any. THIS is what made manual
+   * Stop feel broken: `shouldStop` is only read between steps, so pressing Stop
+   * during a 30-second request did nothing observable for 30 seconds and users
+   * concluded the button was dead (issue #91). A graceful Stop still lets the
+   * in-flight request finish — cancelling it would leave exactly the
+   * half-written state teardown exists to clean up — but "Stop now" calls this.
+   */
+  cancelInFlight: (() => void) | null
+  /** Flips when the teardown phase begins — drives the renderer's button label. */
+  teardownStarted: boolean
+  /**
+   * Set only when an abort actually left cleanup work undone. The report's
+   * "teardown was skipped" line is keyed on THIS, not on `abortTeardown`:
+   * aborting after the last cleanup step had already finished skipped nothing,
+   * and saying otherwise contradicted the very same screen, which listed the
+   * teardown DELETE with a green 200 (also reported 5 Aug).
+   */
+  teardownSkipped: boolean
 }
 const activeRuns = new Map<string, RunState>()
 let nextRunId = 1
@@ -625,6 +586,25 @@ function sendProgress(progress: RunnerProgress): void {
   }
 }
 
+/**
+ * Announce that a phase has BEGUN, before its first step produces a result.
+ *
+ * The renderer cannot infer this from the progress stream: a result arrives
+ * only once a step FINISHES. The one moment the escape hatch matters most is a
+ * cleanup endpoint that never answers — exactly when no teardown result will
+ * ever arrive — so the hard stop has to be able to abandon cleanup from the
+ * instant cleanup starts, not from its first completed step. The phase is also
+ * what removes the safe Stop from the screen (issue #92), which is the other
+ * reason it cannot wait for a result.
+ */
+function sendPhaseStarted(phase: RunPhase): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('runner:phase', phase)
+    }
+  }
+}
+
 // ─── pm/insomnia script execution (main-process sandbox) ─────────
 
 interface ScriptContext {
@@ -642,6 +622,13 @@ interface ScriptContext {
   iterationData: Record<string, string>
   iterationIndex: number
   iterationCount: number
+  /**
+   * The request this step is about to send, as the SCRIPT sees it (issue: the
+   * Run path's `pm.request` was a stub, so a pre-request script could neither
+   * read the URL nor add a header — both work on Send). Raw, pre-resolution,
+   * matching the Send contract; the runner resolves `{{vars}}` afterwards.
+   */
+  request?: { method: string; url: string; headers: HeaderCollection }
   /** Set by `pm.execution.skipRequest()` — runner reads after preScript. */
   skipRequest: boolean
   /** Set by `pm.execution.setNextRequest(name)` — runner uses it after the
@@ -649,11 +636,32 @@ interface ScriptContext {
   nextRequestName?: string | null
   /** Test results captured from `pm.test(name, fn)`. */
   testResults: Array<{ name: string; passed: boolean; error?: string }>
-  /** Console output produced by the script. */
-  consoleLogs: string[]
+  /** Console output produced by the script, level-preserving and capped. */
+  consoleLogs: ScriptConsoleLog[]
+  /**
+   * Identifies this step in the app-wide Console panel. Set per step so a
+   * script's `console.log` reaches the same place a hand-sent request's does
+   * (issue #79) — `pm.environment.get(...)` debugging was unusable for runs
+   * because script output only ever landed in the run report.
+   */
+  consoleTag?: { tabId?: string; meta: Record<string, string | number | boolean> }
   /** In-flight `pm.sendRequest(...)` promises; the runner awaits these before
    *  finishing a script so callback-style sends complete. */
   pendingSends: Array<Promise<unknown>>
+  /**
+   * Async `pm.test(name, async () => …)` callbacks. Awaited before a script is
+   * considered finished, so a rejected assertion rewrites its optimistic PASS
+   * — the Send path has always done this (test-runner.ts).
+   */
+  pendingTests: Array<Promise<void>>
+  /**
+   * A top-level throw from the script body (not a failing `pm.test`, which is
+   * captured as an assertion). Recorded rather than rethrown so per-request
+   * scripts keep their long-standing "log it and carry on" behaviour; the
+   * RUN-LEVEL hooks read it and surface the failure, because a setup hook that
+   * never fetched its token must not report green (issue #72).
+   */
+  scriptError?: string
 }
 
 function newScriptContext(
@@ -674,7 +682,31 @@ function newScriptContext(
     testResults: [],
     consoleLogs: [],
     pendingSends: [],
+    pendingTests: [],
   }
+}
+
+/**
+ * How a run's Console entries identify themselves.
+ *
+ * A run puts many rows in a Console that also carries hand-sent requests, so
+ * every row says which run, step, phase and iteration it came from. `tabId`
+ * mirrors what Send does, which is what makes the per-tab Console view work
+ * for a runner tab; a scheduled run has no tab and is identified by `task`.
+ */
+function runConsoleTag(
+  ctx: RunContext,
+  opts: { step?: string; phase?: RunPhase; iteration?: number } = {},
+): { tabId?: string; meta: Record<string, string | number | boolean> } {
+  const o = ctx.options
+  const meta: Record<string, string | number | boolean> = {
+    run: o.sourceLabel || o.folderName || 'Runner',
+  }
+  if (o.scheduledTaskId) meta.task = o.scheduledTaskId
+  if (opts.step) meta.step = opts.step
+  if (opts.phase) meta.phase = opts.phase
+  if (opts.iteration !== undefined) meta.iteration = opts.iteration
+  return { tabId: o.runTabId, meta }
 }
 
 interface ScriptResponseShape {
@@ -696,6 +728,51 @@ interface ScriptResponseShape {
  * iterationData, execution.skipRequest, execution.setNextRequest. More can
  * be added as fixtures demand.
  */
+/** Max console lines kept per step, and max characters kept per line. */
+const CONSOLE_LOG_MAX_ENTRIES = 200
+const CONSOLE_LOG_MAX_CHARS = 4096
+
+/**
+ * Append one console line, enforcing the caps. Past the entry limit a single
+ * summary line replaces the rest, so the report says it truncated instead of
+ * quietly dropping output.
+ */
+function pushConsoleLog(
+  ctx: ScriptContext,
+  level: ScriptConsoleLog['level'],
+  message: string,
+): void {
+  const logs = ctx.consoleLogs
+  if (logs.length > CONSOLE_LOG_MAX_ENTRIES) return
+  if (logs.length === CONSOLE_LOG_MAX_ENTRIES) {
+    logs.push({
+      level: 'warn',
+      message: `…further console output suppressed after ${CONSOLE_LOG_MAX_ENTRIES} lines`,
+      timestamp: Date.now(),
+    })
+    return
+  }
+  const text =
+    message.length > CONSOLE_LOG_MAX_CHARS
+      ? `${message.slice(0, CONSOLE_LOG_MAX_CHARS)}… (truncated)`
+      : message
+  logs.push({ level, message: text, timestamp: Date.now() })
+
+  // …and mirror it into the app-wide Console panel, where the Send path's
+  // script output already goes. The run report keeps its own copy: that one is
+  // persisted with the run, this one is live and sits next to the traffic.
+  if (ctx.consoleTag) {
+    logEvent({
+      protocol: 'http',
+      category: 'system',
+      level: level === 'warn' ? 'warning' : level === 'error' ? 'error' : 'info',
+      message: text,
+      tabId: ctx.consoleTag.tabId,
+      meta: ctx.consoleTag.meta,
+    })
+  }
+}
+
 async function runUserScript(
   script: string,
   ctx: ScriptContext,
@@ -703,9 +780,18 @@ async function runUserScript(
 ): Promise<void> {
   if (!script) return
 
-  const log = (...args: unknown[]): void => {
-    ctx.consoleLogs.push(args.map(String).join(' '))
-  }
+  // Level-preserving, and capped. The renderer's Send path already keeps
+  // warn/error apart; main used to flatten all three into "log", which is the
+  // per-path divergence `src/shared/script/` exists to prevent. The cap matters
+  // because every result crosses IPC on each progress tick and is persisted into
+  // `runner_history.results_json` — an unbounded `console.log` in a loop would
+  // bloat both.
+  const mkLog =
+    (level: ScriptConsoleLog['level']) =>
+    (...args: unknown[]): void => {
+      pushConsoleLog(ctx, level, args.map(String).join(' '))
+    }
+  const log = mkLog('log')
 
   const normalized: NormalizedResponse | null = response
     ? {
@@ -810,7 +896,9 @@ async function runUserScript(
         toObject: () => ({ ...ctx.envVars }),
         replaceIn: (t: string) => substitute(t, ctx.envVars),
       },
-      request: { method: '', url: '', headers: {} },
+      request: ctx.request
+        ? { method: ctx.request.method, url: ctx.request.url, headers: ctx.request.headers }
+        : { method: '', url: '', headers: new HeaderCollection() },
       response: normalized ? createPmResponse(normalized) : null,
       cookies: {
         get: (n: string) => cookieFind(n)?.value,
@@ -820,7 +908,31 @@ async function runUserScript(
       },
       test: (name: string, fn: () => void | Promise<void>) => {
         try {
-          fn()
+          const result = fn()
+          if (result && typeof (result as Promise<void>).then === 'function') {
+            // An ASYNC callback settles after `test()` returns. Recording a
+            // pass here and walking away made every `pm.test(async () => …)`
+            // report GREEN on Run no matter what it asserted — while Send
+            // (test-runner.ts) already awaited it. `pm.jose.*` is async-only,
+            // so the idiomatic script for issue #73 landed exactly on that
+            // divergence. Mirror Send: optimistic slot, rewritten on rejection,
+            // awaited before the script is considered finished.
+            const idx = ctx.testResults.length
+            ctx.testResults.push({ name, passed: true })
+            ctx.pendingTests.push(
+              (result as Promise<void>).then(
+                () => {},
+                (e: unknown) => {
+                  ctx.testResults[idx] = {
+                    name,
+                    passed: false,
+                    error: e instanceof Error ? e.message : String(e),
+                  }
+                },
+              ),
+            )
+            return
+          }
           ctx.testResults.push({ name, passed: true })
         } catch (e) {
           ctx.testResults.push({ name, passed: false, error: (e as Error).message })
@@ -840,20 +952,51 @@ async function runUserScript(
       // works) and calls the optional Node-style callback. The runner awaits
       // `ctx.pendingSends` so callback-only sends finish too. Mirrors the Send
       // path (test-runner.ts).
+      //
+      // CERT SCOPE (R5, design §4 "Send≡Run parity: pm.sendRequest"): a
+      // script-issued request attaches NO project client certificate — on
+      // EITHER path. Here we call the engine directly with no `projectId`; the
+      // renderer twin (`normalizePmSendInput` in test-runner.ts) likewise emits
+      // no `_projectId`, so `request:send` skips `loadCertificatesFor` too.
+      // That is SYMMETRIC by design — do not add the cert branch to one side
+      // only, or the parity class reopens on the scripted junction.
       sendRequest: (
         req: unknown,
         cb?: (err: Error | null, res: unknown) => void,
       ): Promise<unknown> => {
-        const run = executeHttpRequest(normalizeRunnerSendInput(req)).then((apiResp) =>
-          buildResponseShim({
+        const sendOptions = normalizeRunnerSendInput(req)
+        const run = executeHttpRequest(sendOptions).then((apiResp) => {
+          // Send's `pm.sendRequest` goes out through `request:send`, which
+          // logs it. Skipping it here would leave a scripted call visible on
+          // one path and invisible on the other — the parity class this file
+          // works hardest to avoid.
+          if (ctx.consoleTag) {
+            logRequestResponse({
+              protocol: 'http',
+              method: apiResp.actualRequest?.method ?? sendOptions.method,
+              url: apiResp.actualRequest?.url ?? sendOptions.url,
+              status: apiResp.status,
+              statusText: apiResp.statusText,
+              durationMs: apiResp.timing?.total,
+              sizeBytes: apiResp.bodySize,
+              requestHeaders: apiResp.actualRequest?.headers,
+              requestBody: apiResp.actualRequest?.body,
+              responseHeaders: apiResp.headers,
+              responseBody: apiResp.body,
+              error: apiResp.error ? { message: apiResp.error } : undefined,
+              tabId: ctx.consoleTag.tabId,
+              meta: { ...ctx.consoleTag.meta, via: 'pm.sendRequest' },
+            })
+          }
+          return buildResponseShim({
             status: apiResp.status,
             statusText: apiResp.statusText,
             headers: apiResp.headers,
             body: apiResp.body,
             bodySize: apiResp.bodySize,
             cookies: apiResp.cookies,
-          }),
-        )
+          })
+        })
         const handled = run.then(
           (res) => {
             if (cb) cb(null, res)
@@ -883,7 +1026,7 @@ async function runUserScript(
   const { bindings, legacyTests } = buildScriptBindings({ pm, normalizedResponse: normalized })
   const allBindings: Record<string, unknown> = {
     ...bindings,
-    console: { log, warn: log, error: log },
+    console: { log, warn: mkLog('warn'), error: mkLog('error') },
   }
   const names = Object.keys(allBindings)
   const values = names.map((n) => allBindings[n])
@@ -901,7 +1044,8 @@ async function runUserScript(
     const fn = new AsyncFunction(...names, `{\n${script}\n}`)
     await fn(...values)
   } catch (e) {
-    ctx.consoleLogs.push(`Script error: ${(e as Error).message}`)
+    pushConsoleLog(ctx, 'error', `Script error: ${(e as Error).message}`)
+    ctx.scriptError = (e as Error).message
   }
 
   // Drain the legacy `tests` object (tests['name'] = bool) into test results.
@@ -914,6 +1058,14 @@ async function runUserScript(
   if (ctx.pendingSends.length > 0) {
     await Promise.allSettled(ctx.pendingSends)
     ctx.pendingSends.length = 0
+  }
+  // AFTER the sends: a send callback can register its own `pm.test`, and an
+  // async test can itself await a send. Draining in this order (and looping
+  // while either queue refills) is what makes "the script has finished" true.
+  while (ctx.pendingTests.length > 0 || ctx.pendingSends.length > 0) {
+    const tests = ctx.pendingTests.splice(0)
+    const sends = ctx.pendingSends.splice(0)
+    await Promise.allSettled([...tests, ...sends])
   }
 }
 
@@ -1024,6 +1176,25 @@ function buildResponseShim(response: ScriptResponseShape) {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * A configured pause that a Stop can cut short.
+ *
+ * Every call site already refuses to START a delay once `shouldStop` is set,
+ * but the flag can flip DURING one — and with "Delay between iterations" a run
+ * can now legitimately sit in a 60-second pause. A plain `setTimeout` would
+ * make Stop look ignored for a full minute, which is the complaint that opened
+ * issue #91 in the first place. Polling in 100 ms slices keeps this dependency-
+ * free and adds at most 100 ms to a stop.
+ */
+async function interruptibleDelay(ms: number, runState: RunState): Promise<void> {
+  const deadline = Date.now() + ms
+  while (!runState.shouldStop) {
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) return
+    await delay(Math.min(100, remaining))
+  }
 }
 
 // ─── Variable Resolution ─────────────────────────────────────────
@@ -1158,9 +1329,888 @@ function resolveRequestOptions(
 
 // ─── Runner Execution ────────────────────────────────────────────
 
+/** Per-run mutable state shared by every phase (setup / main / teardown). */
+interface RunTotals {
+  totalAssertions: number
+  passedAssertions: number
+  failedAssertions: number
+  passedEndpoints: number
+  failedEndpoints: number
+  teardownPassedEndpoints: number
+  teardownFailedEndpoints: number
+  /**
+   * Teardown assertions, kept out of the primary tallies for the same reason
+   * the endpoint counters are: `runner_history.failed_tests` feeds every
+   * history list, so a failing cleanup assertion would show a green run as
+   * having failed tests.
+   */
+  teardownPassedAssertions: number
+  teardownFailedAssertions: number
+}
+
+interface RunContext {
+  options: RunnerExecuteOptions
+  runState: RunState
+  /** Live variable map — mutated by scripts, shared across ALL phases so a
+   *  token fetched in setup resolves in the main flow AND in teardown. */
+  envVars: Record<string, string>
+  projectSettings: StoredProjectSettings | undefined
+  projectAuth: AuthConfigLike | null
+  iterationData: Record<string, string>[]
+  iterations: number
+  persistResponses: boolean
+  runEnvUpdates: Record<string, string>
+  runGlobalUpdates: Record<string, string>
+  results: EndpointRunResult[]
+  totals: RunTotals
+  /** Expected progress ticks (setup + main×iterations + teardown + hooks). */
+  total: number
+  /** Ticks emitted so far — drives `current` in the progress event. */
+  emitted: number
+}
+
+interface StepOutcome {
+  didPass: boolean
+  skipped: boolean
+  /** pm.execution.setNextRequest(): null = end this iteration, string = jump. */
+  nextRequestName?: string | null
+  /**
+   * A row that failed because its DEFINITION is broken (deleted endpoint, no
+   * URL) rather than because the request came back bad. These counted as
+   * failures before run-level phases existed but did NOT trip `stopOnError` —
+   * the loop `continue`d past them — so a collection carrying one stale
+   * reference still ran to the end. Keeping that: halting an entire nightly run
+   * on a leftover row would be a silent, unrequested behaviour change.
+   */
+  configError?: boolean
+}
+
+/**
+ * Push a finished result, score it, and emit the progress tick — the ONE place
+ * a run's counters move. Teardown results are tallied separately
+ * (`countsTowardRunVerdict`) so cleanup can neither rescue a failed run nor
+ * fail a green one; skipped rows stay neutral exactly as they did before.
+ */
+function recordStep(ctx: RunContext, result: EndpointRunResult): StepOutcome {
+  ctx.results.push(result)
+  const didPass = endpointDidPass(result)
+  const skipped = (result.skipped ?? 0) > 0
+  const primary = countsTowardRunVerdict(result)
+
+  // Assertions are tallied HERE, next to the endpoint counters, so both obey
+  // the same phase rule. Counting them at the call site (once per phase) let
+  // teardown assertion failures leak into `failedAssertions` →
+  // `runner_history.failed_tests` → every history UI.
+  const assertionPassed = result.assertions.filter((a) => a.passed).length
+  const assertionFailed = result.assertions.length - assertionPassed
+  if (primary) {
+    ctx.totals.totalAssertions += result.assertions.length
+    ctx.totals.passedAssertions += assertionPassed
+    ctx.totals.failedAssertions += assertionFailed
+  } else {
+    ctx.totals.teardownPassedAssertions += assertionPassed
+    ctx.totals.teardownFailedAssertions += assertionFailed
+  }
+
+  if (!skipped) {
+    if (primary) {
+      if (didPass) ctx.totals.passedEndpoints++
+      else ctx.totals.failedEndpoints++
+    } else if (didPass) {
+      ctx.totals.teardownPassedEndpoints++
+    } else {
+      ctx.totals.teardownFailedEndpoints++
+    }
+  }
+  ctx.emitted++
+  sendProgress({
+    current: ctx.emitted,
+    total: Math.max(ctx.total, ctx.emitted),
+    endpointId: result.endpointId,
+    result,
+  })
+  return { didPass, skipped }
+}
+
+/**
+ * Record a step the run never reached, so an aborted run shows what it skipped.
+ *
+ * Deliberately NOT `recordStep`: that one advances `ctx.emitted` and emits a
+ * progress tick, which would make the progress bar count requests that were
+ * never sent. This only appends the row.
+ *
+ * `statusText` is `NOT_RUN` rather than `SKIPPED` (a user's `skipRequest()`) or
+ * `UNSUPPORTED` (a protocol the runner can't drive) — three different stories
+ * that share one neutral badge.
+ */
+function recordNotRun(ctx: RunContext, endpointId: string, phase: RunPhase, iteration = 0): void {
+  const entity = getRunnableEntity(endpointId)
+  ctx.results.push({
+    endpointId,
+    endpointName: entity?.row.name ?? endpointId,
+    method: '',
+    url: '',
+    status: null,
+    statusText: 'NOT_RUN',
+    duration: 0,
+    passed: 0,
+    failed: 0,
+    skipped: 1,
+    assertions: [],
+    iteration: iteration + 1,
+    phase,
+  })
+}
+
+/**
+ * Record the step whose request was aborted mid-flight by "Stop now".
+ *
+ * Counted as SKIPPED, not failed: the request never got an answer because the
+ * user cancelled it, and a hard stop that ends with a red row makes the run
+ * look like the API misbehaved. Same treatment as the steps that never started
+ * — the only difference is that this one had already left the building, which
+ * `statusText` says out loud.
+ */
+function recordCancelled(
+  ctx: RunContext,
+  endpointId: string,
+  endpoint: { name: string },
+  requestOptions: HttpRequestOptions,
+  phase: RunPhase,
+  iteration: number | undefined,
+  statusText: 'CANCELLED' | 'NOT_RUN' = 'CANCELLED',
+): StepOutcome {
+  return recordStep(ctx, {
+    endpointId,
+    endpointName: endpoint.name,
+    method: requestOptions.method,
+    url: stripUrlCredentials(requestOptions.url),
+    status: null,
+    statusText,
+    duration: 0,
+    passed: 0,
+    failed: 0,
+    skipped: 1,
+    assertions: [],
+    iteration,
+    phase,
+  })
+}
+
+/**
+ * Execute ONE request of a run. Extracted from the old inline double loop so
+ * setup, main and teardown all drive the SAME code path: a teardown request
+ * resolves `{{vars}}`, inherits folder/project auth, runs the pre/post script
+ * cascade, attaches client certs and scores assertions exactly like a main-flow
+ * request. A phase-local copy of this logic would have re-opened precisely the
+ * parity bug class this file keeps closing.
+ */
+async function runEndpointStep(
+  ctx: RunContext,
+  endpointId: string,
+  phase: RunPhase,
+  iter: number,
+): Promise<StepOutcome> {
+  const options = ctx.options
+  const envVars = ctx.envVars
+  const iterationData = ctx.iterationData
+  const iterations = ctx.iterations
+  const persistResponses = ctx.persistResponses
+  const runEnvUpdates = ctx.runEnvUpdates
+  const runGlobalUpdates = ctx.runGlobalUpdates
+  const projectSettings = ctx.projectSettings
+  const projectAuth = ctx.projectAuth
+  // Only the main flow is iterated; setup/teardown run once per RUN, so their
+  // rows carry no iteration index and the results UI shows them as own phases.
+  const iteration = phase === 'main' ? iter + 1 : undefined
+  const entity = getRunnableEntity(endpointId)
+
+  if (!entity) {
+    const result: EndpointRunResult = {
+      endpointId,
+      endpointName: 'Unknown',
+      method: 'GET',
+      url: '',
+      status: null,
+      statusText: '',
+      duration: 0,
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+      assertions: [],
+      error: 'Endpoint not found',
+      iteration,
+      phase,
+    }
+    return { ...recordStep(ctx, result), configError: true }
+  }
+  const endpoint = entity.row
+
+  // The collection runner drives requests through the HTTP engine. SOAP /
+  // GraphQL already ride that path (snapshot carries url + baked body), but
+  // gRPC / WebSocket / SSE / Socket.IO are genuinely non-HTTP. Surface a
+  // clear "unsupported" result (counted as skipped, so it neither fails the
+  // suite nor trips stopOnError) instead of a misleading "No URL".
+  const proto = (endpoint.protocol || 'http').toLowerCase()
+  const HTTP_LIKE = new Set(['http', 'https', 'rest', 'soap', 'graphql', ''])
+  if (!HTTP_LIKE.has(proto)) {
+    const result: EndpointRunResult = {
+      endpointId,
+      endpointName: endpoint.name,
+      method: endpoint.method ?? '',
+      url: endpoint.path,
+      status: null,
+      statusText: 'UNSUPPORTED',
+      duration: 0,
+      passed: 0,
+      failed: 0,
+      skipped: 1,
+      assertions: [],
+      error: `Protocol "${proto}" is not supported in the collection runner yet`,
+      iteration,
+      phase,
+    }
+    return recordStep(ctx, result)
+  }
+
+  const requestOptions = buildRequestFromEndpoint(endpoint)
+
+  if (!requestOptions) {
+    const result: EndpointRunResult = {
+      endpointId,
+      endpointName: endpoint.name,
+      method: endpoint.method ?? 'GET',
+      url: endpoint.path,
+      status: null,
+      statusText: '',
+      duration: 0,
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+      assertions: [],
+      error: 'No URL configured for endpoint',
+      iteration,
+      phase,
+    }
+    return { ...recordStep(ctx, result), configError: true }
+  }
+
+  // Created OUTSIDE the try so the catch below can still report whatever the
+  // pre-request script logged before the step blew up.
+  //
+  // `cancelledOnWire` lives out here for the same reason: aborting an axios
+  // request rejects it, so the hard-stop path lands in the catch, and a catch
+  // that cannot tell "the user pulled the plug" from "DNS failed" would score
+  // every hard stop as a transport failure.
+  let cancelledOnWire = false
+  const scriptCtx = newScriptContext(envVars, iterationData[iter] ?? {}, iter, iterations)
+  const consoleTag = runConsoleTag(ctx, { step: endpoint.name, phase, iteration })
+  scriptCtx.consoleTag = consoleTag
+
+  try {
+    // Resolve inherited auth + cascade scripts up the folder/project chain.
+    // Suite items live under test_suite_folders; everything else under the
+    // APIs `folders` table — pick the matching walker so folder-level
+    // setup/teardown scripts + auth cascade for imported suites too.
+    const folderChain =
+      entity.kind === 'suite'
+        ? buildSuiteFolderChain(endpoint.folder_id)
+        : buildFolderChain(endpoint.folder_id)
+    const schemaForScripts = parseJsonSafe<{
+      preScript?: string
+      postScript?: string
+      auth?: AuthConfig
+    }>(endpoint.request_schema, {})
+
+    // Auth: request → nearest folder → project (override; 'inherit'/unset
+    // is transparent, explicit 'none' stops). Replaces the request's own
+    // auth on the outgoing options before variable resolution.
+    const effectiveAuth = resolveEffectiveAuth(
+      requestOptions.auth as unknown as AuthConfigLike | null | undefined,
+      folderChain,
+      projectAuth,
+    )
+    requestOptions.auth = (effectiveAuth ?? undefined) as unknown as HttpRequestOptions['auth']
+
+    // Scripts: cascade top-down (project → folder(s) → request).
+    const { pre: preScripts, post: postScripts } = collectCascadeScripts(
+      folderChain,
+      projectSettings,
+      schemaForScripts.preScript,
+      schemaForScripts.postScript,
+    )
+
+    /*
+     * Expose the request the script is about to send, and take back whatever it
+     * changed. Until now `pm.request` was an empty stub on this path: a script
+     * could not read `pm.request.url`, and `pm.request.headers.upsert(...)` —
+     * which Send has honoured since BUG-02 — silently did nothing in a run. A
+     * collection whose pre-request script attaches a correlation or auth header
+     * therefore passed on Send and failed in the Runner.
+     *
+     * Raw values on purpose, matching Send: the script reads what the user
+     * typed. `resolveRequestOptions` below expands `{{vars}}` afterwards, so a
+     * header the script adds is resolved exactly like a typed one.
+     */
+    scriptCtx.request = {
+      method: requestOptions.method,
+      url: requestOptions.url,
+      // ENABLED rows only — same as Send. Seeding from the raw list would put
+      // unchecked headers into the collection, and the fold below marks
+      // everything in it as enabled, so a disabled header would come back to
+      // life the moment any pre-request script existed.
+      headers: new HeaderCollection(
+        ((requestOptions.headers ?? []) as Array<HeaderEntry & { enabled?: boolean }>).filter(
+          (h) => h.enabled !== false,
+        ),
+      ),
+    }
+
+    // Run pre-request scripts in order. They share one context so a
+    // project/folder script's env writes are visible to inner scripts.
+    for (const s of preScripts) {
+      scriptCtx.envUpdates = {}
+      scriptCtx.globalUpdates = {}
+      scriptCtx.varUpdates = {}
+      await runUserScript(s, scriptCtx, null)
+      mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
+    }
+
+    /*
+     * A pre-request script that THREW must stop the request.
+     *
+     * `runUserScript` catches the throw, writes "Script error: …" to the
+     * console and records it on the context — but nothing read it back here,
+     * so the request went out regardless. A script that fails while minting a
+     * token, signing a payload or computing a correlation id therefore issued
+     * a REAL call against the server and the step was scored on the response,
+     * even though its precondition never held (reported 5 Aug: a bare
+     * `throw new Error('boom')` still produced GET → 200).
+     *
+     * Postman and Insomnia both abort the request here. Aborting also makes
+     * "Stop run if an error occurs" behave as the checkbox promises: the step
+     * now fails, so the run stops when the user asked it to.
+     *
+     * Assertions the script managed to register before throwing are kept —
+     * they are evidence about how far it got. The verdict does not depend on
+     * them: `endpointDidPass` fails any result carrying `error`.
+     */
+    if (scriptCtx.scriptError) {
+      const scriptAssertions = scriptCtx.testResults.map((t) => ({
+        name: t.name,
+        passed: t.passed,
+        error: t.error,
+      }))
+      return recordStep(ctx, {
+        endpointId,
+        endpointName: endpoint.name,
+        method: requestOptions.method,
+        url: stripUrlCredentials(requestOptions.url),
+        status: null,
+        statusText: 'SCRIPT',
+        duration: 0,
+        passed: scriptAssertions.filter((a) => a.passed).length,
+        failed: scriptAssertions.filter((a) => !a.passed).length,
+        skipped: 0,
+        assertions: scriptAssertions,
+        error: `Pre-request script error: ${scriptCtx.scriptError}`,
+        iteration,
+        phase,
+        consoleLogs: scriptCtx.consoleLogs.length > 0 ? scriptCtx.consoleLogs : undefined,
+      })
+    }
+
+    // Fold the script's header mutations back in. `enabled: true` because a
+    // header a script added is one it means to send.
+    if (preScripts.some((s) => s && s.trim())) {
+      requestOptions.headers = scriptCtx.request.headers.toArray().map((h) => ({
+        key: h.key,
+        value: h.value,
+        enabled: true,
+      })) as HttpRequestOptions['headers']
+    }
+    if (scriptCtx.skipRequest) {
+      const skipResult: EndpointRunResult = {
+        endpointId,
+        endpointName: endpoint.name,
+        method: requestOptions.method,
+        url: requestOptions.url,
+        status: null,
+        statusText: 'SKIPPED',
+        duration: 0,
+        passed: 0,
+        failed: 0,
+        skipped: 1,
+        assertions: [],
+        iteration,
+        phase,
+      }
+      return recordStep(ctx, skipResult)
+    }
+
+    // Resolve environment variables in request
+    const resolvedOptions = resolveRequestOptions(requestOptions, envVars)
+    // Scope the cookie jar to this project so session cookies (login →
+    // protected call) behave the same in Run as they do in Send. Without
+    // it the engine falls back to the shared "_default" jar (issue: Send
+    // OK / Run 401 on cookie-auth flows).
+    resolvedOptions.projectId = options.projectId
+
+    // ── R5 (design §2.5 EDIT 2): attach the project's client/CA certs ──
+    //
+    // Until now the Runner NEVER called the cert-attach step, so a
+    // collection that Sends fine with mTLS failed (or went out
+    // unauthenticated) on Run — the Send≡Run parity class. We call the
+    // SAME exported `loadCertificatesFor` the Send path uses; there is
+    // deliberately no Runner-local copy, so the keystore branch (#60)
+    // lights up on both paths at once and can never drift.
+    //
+    // BEHAVIOUR CHANGE: existing runs that previously presented no client
+    // certificate may now present one (host-matched — a cert scoped to
+    // host A is still never sent to host B). Documented in the release
+    // notes.
+    //
+    // FAIL LOUD: a matched-but-unloadable cert throws instead of silently
+    // going out unauthenticated. The throw is caught by THIS iteration's
+    // try/catch below, which turns it into a transport-failure verdict for
+    // this one request — the run continues (unless `stopOnError`).
+    if (options.projectId && !resolvedOptions.certificates) {
+      const { certificates, error } = loadCertificatesFor(options.projectId, resolvedOptions.url)
+      if (error) throw new Error(error)
+      if (certificates) resolvedOptions.certificates = certificates
+    }
+
+    // Make THIS request abortable, so "Stop now" halts at the click instead of
+    // at the end of whatever is on the wire (issue #91). The handle lives on the
+    // run, not on a module-level registry: a second runner tab must not be able
+    // to cancel this one's request. Cleared in `finally` below so a stop that
+    // arrives between steps can never abort the NEXT request by accident.
+    // A hard stop that landed while this step's pre-request script was still
+    // running (a token fetch, a signature) has nothing on the wire to abort —
+    // but "nothing after the click runs" has to include the request this step
+    // was about to make. Without this the promise held only when the click
+    // happened to arrive during the HTTP call.
+    if (ctx.runState.directStop) {
+      return recordCancelled(ctx, endpointId, endpoint, requestOptions, phase, iteration, 'NOT_RUN')
+    }
+
+    const controller = new AbortController()
+    resolvedOptions.signal = controller.signal
+    ctx.runState.cancelInFlight = () => {
+      cancelledOnWire = true
+      controller.abort()
+    }
+    const response = await executeHttpRequest(resolvedOptions).finally(() => {
+      ctx.runState.cancelInFlight = null
+    })
+
+    // A cancelled request is neither a pass nor a failure: the server never got
+    // to answer because the user pulled the plug. Scoring it as a transport
+    // error would end a hard-stopped run with a red row the API had nothing to
+    // do with, so it is recorded the same way the steps that never started are.
+    // (Reached when the engine resolves an error response instead of rejecting.)
+    if (cancelledOnWire) {
+      return recordCancelled(ctx, endpointId, endpoint, requestOptions, phase, iteration)
+    }
+
+    // Mirror Send: report exactly what hit the wire, from the engine's own
+    // `actualRequest`. Uncapped on purpose — the Console keeps a rolling
+    // buffer, and silently dropping a run's rows would recreate the "the
+    // Console says nothing happened" complaint this fixes.
+    logRequestResponse({
+      protocol:
+        endpoint.protocol === 'soap' || endpoint.protocol === 'graphql'
+          ? endpoint.protocol
+          : 'http',
+      method: response.actualRequest?.method ?? resolvedOptions.method,
+      url: response.actualRequest?.url ?? resolvedOptions.url,
+      status: response.status,
+      statusText: response.statusText,
+      durationMs: response.timing?.total,
+      sizeBytes: response.bodySize,
+      requestHeaders: response.actualRequest?.headers,
+      requestBody: response.actualRequest?.body,
+      responseHeaders: response.headers,
+      responseBody: response.body,
+      error: response.error ? { message: response.error } : undefined,
+      tabId: consoleTag.tabId,
+      meta: consoleTag.meta,
+    })
+
+    // Run post-response (test) scripts in cascade order (project →
+    // folder(s) → request). They share the run's script context, so a
+    // folder/project test sees the same response + env the request used.
+    const scriptTestResults: AssertionResult[] = []
+    for (const s of postScripts) {
+      scriptCtx.envUpdates = {}
+      scriptCtx.globalUpdates = {}
+      scriptCtx.varUpdates = {}
+      await runUserScript(s, scriptCtx, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        body: response.body,
+        bodySize: response.bodySize,
+        cookies: response.cookies,
+      })
+      mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
+    }
+    // Collect every pm.test() the scripts registered (pre + post).
+    for (const t of scriptCtx.testResults) {
+      scriptTestResults.push({
+        name: t.name,
+        passed: t.passed,
+        error: t.error,
+      })
+    }
+
+    // Auto-save to history
+    try {
+      // Mirror request.handler.ts: scrub `user:pass@host` userinfo
+      // from the persisted URL so a credential-bearing URL bar entry
+      // (or one synthesised by a misconfigured importer) doesn't
+      // land on disk in the history table.
+      const sanitizedRunnerUrl = stripUrlCredentials(resolvedOptions.url)
+      historyRepo.addHistory({
+        workspace_id: options.workspaceId,
+        project_id: options.projectId,
+        endpoint_id: endpointId,
+        protocol: endpoint.protocol || 'http',
+        method: resolvedOptions.method,
+        url: sanitizedRunnerUrl,
+        status_code: response.status,
+        duration_ms: response.timing?.total ? Math.round(response.timing.total) : undefined,
+        // Capture the headers/params/body that actually went out on the
+        // wire so the Run Details "Request" tab can show the full picture
+        // (auto-applied headers from the auth tab, resolved query params,
+        // etc.). Without these the UI looked like the runner had stripped
+        // them — v1.3.1 §5.7 / §5.8.
+        request_snapshot: JSON.stringify({
+          method: resolvedOptions.method,
+          url: sanitizedRunnerUrl,
+          headers: resolvedOptions.headers ?? [],
+          params: resolvedOptions.params ?? [],
+          body: resolvedOptions.body
+            ? {
+                type: (resolvedOptions.body as RequestBody).type,
+                content: ((resolvedOptions.body as RequestBody).content ?? '').slice(0, 4096),
+              }
+            : undefined,
+          auth: resolvedOptions.auth
+            ? { type: (resolvedOptions.auth as AuthConfig).type }
+            : undefined,
+        }),
+        response_snapshot: JSON.stringify({
+          status: response.status,
+          statusText: response.statusText,
+          timing: response.timing,
+          // Persist the response body + headers + size so opening a
+          // historical run entry shows the same response detail
+          // users would have seen at run time. Without these, the
+          // History "Today" entry for a suite-run request opened
+          // with empty Response / Headers / Test Results panels
+          // (v1.4.2 T-12.5).
+          body: persistResponses ? response.body : undefined,
+          headers: persistResponses ? response.headers : undefined,
+          // Carry the binary flag so a base64 image/PDF restored from a
+          // run's history previews as the file, not its base64 text
+          // (issue #25 follow-up).
+          bodyEncoding: response.bodyEncoding,
+          bodySize: response.bodySize,
+        }),
+      })
+    } catch {
+      // History save failure should not affect runner
+    }
+
+    // Parse assertions from request schema
+    const schema = parseJsonSafe<{ assertions?: TestAssertion[] }>(endpoint.request_schema, {})
+    const assertions = schema.assertions ?? []
+
+    const declarativeAssertions = runAssertionsMainProcess(
+      assertions,
+      {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        body: response.body,
+        bodySize: response.bodySize,
+        timing: response.timing,
+      },
+      // envVars at this point reflects any pre-script `pm.environment.set`
+      // calls — assertions see the same variable space the request did.
+      envVars,
+    )
+    const assertionResults = [...declarativeAssertions, ...scriptTestResults]
+
+    const passed = assertionResults.filter((a) => a.passed).length
+    const failed = assertionResults.filter((a) => !a.passed).length
+    // Tallying happens in recordStep (phase-aware) — only the per-result
+    // numbers are computed here.
+
+    const result: EndpointRunResult = {
+      endpointId,
+      endpointName: endpoint.name,
+      method: requestOptions.method,
+      // Use the final URL the engine actually hit (after query
+      // params + variable substitution + redirects) so the
+      // Request tab in run-results shows the same URL the wire
+      // saw — not the unresolved configured URL. `actualRequest.url`
+      // is already credential-stripped by the engine; the fallback
+      // `requestOptions.url` is not, so scrub it here.
+      url: response.actualRequest?.url ?? stripUrlCredentials(requestOptions.url),
+      status: response.status ?? null,
+      statusText: response.statusText ?? '',
+      duration: response.timing.total,
+      passed,
+      failed,
+      skipped: 0,
+      assertions: assertionResults,
+      /*
+       * A post-response script that threw is a step whose checks never ran.
+       * The pre-request branch above returns early, so any `scriptError` still
+       * on the context at this point came from a POST script — and without
+       * surfacing it a crashed test script scored as a pass (no assertions +
+       * status < 400 ⇒ green), which is the false-green this file exists to
+       * prevent. A transport error still wins: it explains the script's
+       * failure rather than the other way round.
+       */
+      error:
+        response.error ??
+        (scriptCtx.scriptError
+          ? `Post-response script error: ${scriptCtx.scriptError}`
+          : undefined),
+      responseSize: response.bodySize ?? 0,
+      responseBody: persistResponses ? (response.body ?? undefined) : undefined,
+      responseHeaders: persistResponses ? (response.headers ?? undefined) : undefined,
+      // Prefer the engine's `actualRequest.headers` over the
+      // configured headers array — the engine snapshots what was
+      // actually put on the wire after auth-tab injection, default
+      // Content-Type/Host/User-Agent fill-ins, and content-length
+      // calculation. Without this, the Test Suite run-results
+      // request tab only showed the user-typed headers and dropped
+      // Authorization / Content-Type / Host (v1.4.2 T-5.1, T-5.3).
+      requestHeaders: persistResponses
+        ? (response.actualRequest?.headers ?? headersArrayToRecord(resolvedOptions.headers))
+        : undefined,
+      requestBody: persistResponses
+        ? (response.actualRequest?.body ?? requestBodyToString(resolvedOptions.body))
+        : undefined,
+      iteration,
+      phase,
+      // `scriptCtx` spans BOTH the pre-request and post-response scripts, so by
+      // the time the result is assembled its console output is complete. Not
+      // gated on `persistResponses`: logs are the point of the feature and are
+      // orders of magnitude smaller than bodies.
+      consoleLogs: scriptCtx.consoleLogs.length > 0 ? scriptCtx.consoleLogs : undefined,
+    }
+
+    // Endpoint verdict via the SHARED rule (shared/runner-verdict.ts) so
+    // the live run summary, the HTML report, and the renderer results
+    // views all agree: assertion-driven when the request has any checks
+    // (an idempotent DELETE asserting `oneOf([200,204,404,400])` passes on
+    // 400 — issue #16), HTTP-status fallback only for check-less requests.
+    // `recordStep` applies it and routes the tally to the right phase.
+    const outcome = recordStep(ctx, result)
+    // Hand the caller whatever pm.execution.setNextRequest() asked for —
+    // only the main phase has a sequence to jump around in.
+    return { ...outcome, nextRequestName: scriptCtx.nextRequestName }
+  } catch (e) {
+    // "Stop now" aborts the socket, which rejects the request. That is the user
+    // getting what they asked for, not a failure of the endpoint — so it is
+    // recorded as cancelled and never reaches the error reporting below.
+    if (cancelledOnWire) {
+      return recordCancelled(ctx, endpointId, endpoint, requestOptions, phase, iteration)
+    }
+    // A step that never reached a response is the one you most want to see in
+    // the Console — DNS failure, TLS refusal, an unloadable client cert.
+    try {
+      logRequestResponse({
+        protocol: 'http',
+        method: requestOptions.method,
+        url: requestOptions.url,
+        error: { message: (e as Error).message },
+        tabId: consoleTag.tabId,
+        meta: consoleTag.meta,
+      })
+    } catch {
+      /* logger must never break the run */
+    }
+    const result: EndpointRunResult = {
+      endpointId,
+      endpointName: endpoint.name,
+      method: requestOptions.method,
+      url: requestOptions.url,
+      status: null,
+      statusText: '',
+      duration: 0,
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+      assertions: [],
+      error: (e as Error).message,
+      iteration,
+      phase,
+      // The pre-request script may have logged before the throw — keep it, it is
+      // usually the fastest clue to why this step blew up.
+      consoleLogs: scriptCtx.consoleLogs.length > 0 ? scriptCtx.consoleLogs : undefined,
+    }
+    return recordStep(ctx, result)
+  }
+}
+
+/**
+ * Run a run-level hook script (`runPreScript` / `runPostScript`) once. Any
+ * `pm.test()` the hook registers is surfaced as a synthetic result row so its
+ * failures are visible in the report — under the hook's own phase, which means
+ * a teardown hook can't flip the run verdict either.
+ */
+async function runHookScript(
+  ctx: RunContext,
+  script: string,
+  phase: RunPhase,
+  endpointId: string,
+  label: string,
+): Promise<StepOutcome | null> {
+  if (!script || !script.trim()) return null
+  const startedAt = Date.now()
+  const scriptCtx = newScriptContext(ctx.envVars, ctx.iterationData[0] ?? {}, 0, ctx.iterations)
+  scriptCtx.consoleTag = runConsoleTag(ctx, { step: label, phase })
+  // A hook that THROWS at top level (a bad await, a failed token fetch) must be
+  // visible: without this the exception escaped the run, no row was recorded,
+  // and a "Run setup script" that never fetched its token looked like nothing
+  // happened. `pm.test` failures are already captured inside runUserScript.
+  await runUserScript(script, scriptCtx, null)
+  // `runUserScript` records a top-level throw instead of propagating it (per-
+  // request scripts log and carry on). A run-level hook must not: a setup hook
+  // that failed to fetch its token used to leave no row at all, and the
+  // synthetic row it does leave scored as a PASS.
+  const scriptError = scriptCtx.scriptError
+  mergeScriptUpdates(scriptCtx, ctx.envVars, ctx.runEnvUpdates, ctx.runGlobalUpdates)
+
+  const assertions: AssertionResult[] = scriptCtx.testResults.map((t) => ({
+    name: t.name,
+    passed: t.passed,
+    error: t.error,
+  }))
+  const passed = assertions.filter((a) => a.passed).length
+  const failed = assertions.length - passed
+  // Tallying happens in recordStep (phase-aware).
+
+  return recordStep(ctx, {
+    endpointId,
+    endpointName: label,
+    method: '',
+    url: '',
+    // A hook is a script, not a request: `status: null` would make the
+    // no-assertion fallback in `endpointDidPass` read `0 < 400` and score a
+    // hook that blew up as a PASS. 200 says "the script itself ran"; a real
+    // failure is carried by `error`, which outranks everything.
+    status: scriptError ? null : 200,
+    statusText: 'SCRIPT',
+    duration: Date.now() - startedAt,
+    passed,
+    failed,
+    skipped: 0,
+    assertions,
+    error: scriptError,
+    iteration: undefined,
+    phase,
+    // Run-level hooks log too, and theirs is the output users reach for first
+    // when a setup script misbehaves.
+    consoleLogs: scriptCtx.consoleLogs.length > 0 ? scriptCtx.consoleLogs : undefined,
+  })
+}
+
+/**
+ * TEARDOWN — the guarantee at the heart of issue #72.
+ *
+ * Reached from a `finally`, so it executes after a normal finish, after a
+ * stopOnError abort, after a transport error, and after the user pressed Stop.
+ * It never throws (a broken cleanup must not swallow the report) and it never
+ * runs twice (single call site + `teardownRan` latch). A SECOND Stop sets
+ * `abortTeardown` and the loop bails immediately, so a hanging cleanup endpoint
+ * can't hold the UI hostage.
+ */
+async function runTeardownPhase(
+  ctx: RunContext,
+  ids: string[],
+  postScript?: string,
+): Promise<void> {
+  const runState = ctx.runState
+  runState.teardownStarted = true
+  sendPhaseStarted('teardown')
+  for (const [i, id] of ids.entries()) {
+    if (runState.abortTeardown) {
+      // An explicit hard stop cut cleanup short. Say which steps were left
+      // undone rather than ending the report mid-list.
+      runState.teardownSkipped = true
+      for (const remaining of ids.slice(i)) recordNotRun(ctx, remaining, 'teardown')
+      return
+    }
+    try {
+      await runEndpointStep(ctx, id, 'teardown', 0)
+    } catch (e) {
+      // Defensive: runEndpointStep already converts request failures into
+      // results. Anything escaping here is a bug in the runner itself — record
+      // it rather than losing the whole report.
+      recordStep(ctx, {
+        endpointId: id,
+        endpointName: 'Teardown',
+        method: '',
+        url: '',
+        status: null,
+        statusText: '',
+        duration: 0,
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+        assertions: [],
+        error: (e as Error).message,
+        phase: 'teardown',
+      })
+    }
+    // Teardown deliberately ignores stopOnError: cleanup is best-effort, so a
+    // failing step must not prevent the remaining cleanup from running.
+    if (
+      ctx.options.delay &&
+      ctx.options.delay > 0 &&
+      !runState.shouldStop &&
+      ctx.emitted < ctx.total
+    ) {
+      await interruptibleDelay(ctx.options.delay, runState)
+    }
+  }
+  if (postScript) {
+    if (runState.abortTeardown) {
+      // Skipping the run-teardown script is itself a skipped piece of cleanup —
+      // the case where two teardown REQUESTS ran but the script silently did
+      // not, which is what made the behaviour look random.
+      runState.teardownSkipped = true
+    } else {
+      try {
+        await runHookScript(ctx, postScript, 'teardown', RUN_POST_SCRIPT_ID, 'Run teardown script')
+      } catch (e) {
+        console.error('[runner] run teardown script failed:', (e as Error).message)
+      }
+    }
+  }
+}
+
+/** Synthetic ids for the run-level hook rows (never collide with a real id). */
+const RUN_PRE_SCRIPT_ID = '__run_pre_script__'
+const RUN_POST_SCRIPT_ID = '__run_post_script__'
+
 async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerReport> {
   const runId = String(nextRunId++)
-  const runState: RunState = { shouldStop: false }
+  const runState: RunState = {
+    shouldStop: false,
+    abortTeardown: false,
+    directStop: false,
+    cancelInFlight: null,
+    teardownStarted: false,
+    teardownSkipped: false,
+  }
   activeRuns.set(runId, runState)
 
   const startedAt = Date.now()
@@ -1171,7 +2221,14 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   const stopOnError = options.stopOnError ?? false
   const persistResponses = options.persistResponses ?? true
   const endpointsPerIteration = options.endpointIds.length
-  const total = endpointsPerIteration * iterations
+  // Setup + teardown are per-RUN, not per-iteration (issue #72): "prepare this
+  // run / clean up after this run" is what teams model with Setup / Teardown
+  // folders today, and multiplying them by the iteration count would create
+  // duplicate fixtures.
+  const setupIds = Array.isArray(options.setupEndpointIds) ? options.setupEndpointIds : []
+  const teardownIds = Array.isArray(options.teardownEndpointIds) ? options.teardownEndpointIds : []
+  const hookRows = (options.runPreScript?.trim() ? 1 : 0) + (options.runPostScript?.trim() ? 1 : 0)
+  const total = setupIds.length + endpointsPerIteration * iterations + teardownIds.length + hookRows
 
   // Load environment variables for interpolation.
   //
@@ -1209,13 +2266,80 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   const runEnvUpdates: Record<string, string> = {}
   const runGlobalUpdates: Record<string, string> = {}
 
-  let totalAssertions = 0
-  let passedAssertions = 0
-  let failedAssertions = 0
-  let passedEndpoints = 0
-  let failedEndpoints = 0
+  const totals: RunTotals = {
+    totalAssertions: 0,
+    passedAssertions: 0,
+    failedAssertions: 0,
+    passedEndpoints: 0,
+    failedEndpoints: 0,
+    teardownPassedEndpoints: 0,
+    teardownFailedEndpoints: 0,
+    teardownPassedAssertions: 0,
+    teardownFailedAssertions: 0,
+  }
+
+  const ctx: RunContext = {
+    options,
+    runState,
+    envVars,
+    projectSettings,
+    projectAuth,
+    iterationData,
+    iterations,
+    persistResponses,
+    runEnvUpdates,
+    runGlobalUpdates,
+    results,
+    totals,
+    total,
+    emitted: 0,
+  }
+
+  let stopReason: RunStopReason | undefined
+  let orchestrationError: unknown
 
   try {
+    // ── Run-level pre script + setup phase ──────────────────────
+    const preOutcome = await runHookScript(
+      ctx,
+      options.runPreScript ?? '',
+      'setup',
+      RUN_PRE_SCRIPT_ID,
+      'Run setup script',
+    )
+    // A failed SETUP step skips the flow whether or not "Stop run if an error
+    // occurs" is checked. Setup is the run's precondition, not one of its steps:
+    // if the fixture that creates the record failed, every later assertion is
+    // measuring the wrong world, and the failures it reports are noise. Teardown
+    // still runs — it is in the `finally` below, and cleanup is exactly what a
+    // half-finished setup needs.
+    let abortPrimary = preOutcome !== null && !preOutcome.didPass
+    if (abortPrimary) stopReason = 'setupFailed'
+
+    // How far each phase got, so the steps that never ran can be reported
+    // instead of simply missing from the report (see recordNotRun).
+    let setupAttempted = 0
+    let mainAbortedAt: { iter: number; index: number } | null = null
+
+    for (const id of setupIds) {
+      if (abortPrimary) break
+      if (runState.shouldStop) {
+        stopReason = 'cancelled'
+        abortPrimary = true
+        break
+      }
+      setupAttempted += 1
+      const outcome = await runEndpointStep(ctx, id, 'setup', 0)
+      if (!outcome.didPass && !outcome.skipped) {
+        abortPrimary = true
+        stopReason = 'setupFailed'
+      }
+      if (options.delay && options.delay > 0 && !runState.shouldStop && ctx.emitted < total) {
+        await interruptibleDelay(options.delay, runState)
+      }
+    }
+
+    // ── Main flow ───────────────────────────────────────────────
     // Flow-control map (built once): request NAME → first index in the run list.
     // pm.execution.setNextRequest(name) jumps to the first case-insensitive match.
     const nameToIndex = new Map<string, number>()
@@ -1224,349 +2348,34 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       if (nm && !nameToIndex.has(nm)) nameToIndex.set(nm, idx)
     })
 
-    outer: for (let iter = 0; iter < iterations; iter++) {
+    outer: for (let iter = 0; iter < iterations && !abortPrimary; iter++) {
       // Bound jumps so a setNextRequest cycle can't hang the run.
       let flowVisits = 0
       const maxVisits = endpointsPerIteration * 10 + 50
       for (let j = 0; j < endpointsPerIteration; j++) {
-        if (runState.shouldStop) break outer
+        if (runState.shouldStop) {
+          stopReason = 'cancelled'
+          mainAbortedAt = { iter, index: j - 1 }
+          break outer
+        }
         if (++flowVisits > maxVisits) {
           console.warn(
             `[runner] flow-control visit budget (${maxVisits}) exhausted; stopping iteration ${iter + 1}`,
           )
           break
         }
-        // Linear position across all iterations (used for progress events).
-        const i = iter * endpointsPerIteration + j
 
         // Endpoint id is keyed by the inner loop only — endpointIds has
         // `endpointsPerIteration` elements and is reused across iterations.
-        const endpointId = options.endpointIds[j]
-        const entity = getRunnableEntity(endpointId)
+        const outcome = await runEndpointStep(ctx, options.endpointIds[j], 'main', iter)
 
-        if (!entity) {
-          const result: EndpointRunResult = {
-            endpointId,
-            endpointName: 'Unknown',
-            method: 'GET',
-            url: '',
-            status: null,
-            statusText: '',
-            duration: 0,
-            passed: 0,
-            failed: 0,
-            skipped: 0,
-            assertions: [],
-            error: 'Endpoint not found',
-            iteration: iter + 1,
-          }
-          results.push(result)
-          failedEndpoints++
-          sendProgress({ current: i + 1, total, endpointId, result })
-          continue
-        }
-        const endpoint = entity.row
-
-        // The collection runner drives requests through the HTTP engine. SOAP /
-        // GraphQL already ride that path (snapshot carries url + baked body), but
-        // gRPC / WebSocket / SSE / Socket.IO are genuinely non-HTTP. Surface a
-        // clear "unsupported" result (counted as skipped, so it neither fails the
-        // suite nor trips stopOnError) instead of a misleading "No URL".
-        const proto = (endpoint.protocol || 'http').toLowerCase()
-        const HTTP_LIKE = new Set(['http', 'https', 'rest', 'soap', 'graphql', ''])
-        if (!HTTP_LIKE.has(proto)) {
-          const result: EndpointRunResult = {
-            endpointId,
-            endpointName: endpoint.name,
-            method: endpoint.method ?? '',
-            url: endpoint.path,
-            status: null,
-            statusText: 'UNSUPPORTED',
-            duration: 0,
-            passed: 0,
-            failed: 0,
-            skipped: 1,
-            assertions: [],
-            error: `Protocol "${proto}" is not supported in the collection runner yet`,
-            iteration: iter + 1,
-          }
-          results.push(result)
-          sendProgress({ current: i + 1, total, endpointId, result })
-          continue
-        }
-
-        const requestOptions = buildRequestFromEndpoint(endpoint)
-
-        if (!requestOptions) {
-          const result: EndpointRunResult = {
-            endpointId,
-            endpointName: endpoint.name,
-            method: endpoint.method ?? 'GET',
-            url: endpoint.path,
-            status: null,
-            statusText: '',
-            duration: 0,
-            passed: 0,
-            failed: 0,
-            skipped: 0,
-            assertions: [],
-            error: 'No URL configured for endpoint',
-            iteration: iter + 1,
-          }
-          results.push(result)
-          failedEndpoints++
-          sendProgress({ current: i + 1, total, endpointId, result })
-          continue
-        }
-
-        try {
-          // Resolve inherited auth + cascade scripts up the folder/project chain.
-          // Suite items live under test_suite_folders; everything else under the
-          // APIs `folders` table — pick the matching walker so folder-level
-          // setup/teardown scripts + auth cascade for imported suites too.
-          const folderChain =
-            entity.kind === 'suite'
-              ? buildSuiteFolderChain(endpoint.folder_id)
-              : buildFolderChain(endpoint.folder_id)
-          const schemaForScripts = parseJsonSafe<{
-            preScript?: string
-            postScript?: string
-            auth?: AuthConfig
-          }>(endpoint.request_schema, {})
-
-          // Auth: request → nearest folder → project (override; 'inherit'/unset
-          // is transparent, explicit 'none' stops). Replaces the request's own
-          // auth on the outgoing options before variable resolution.
-          const effectiveAuth = resolveEffectiveAuth(
-            requestOptions.auth as unknown as AuthConfigLike | null | undefined,
-            folderChain,
-            projectAuth,
-          )
-          requestOptions.auth = (effectiveAuth ??
-            undefined) as unknown as HttpRequestOptions['auth']
-
-          // Scripts: cascade top-down (project → folder(s) → request).
-          const { pre: preScripts, post: postScripts } = collectCascadeScripts(
-            folderChain,
-            projectSettings,
-            schemaForScripts.preScript,
-            schemaForScripts.postScript,
-          )
-
-          // Run pre-request scripts in order. They share one context so a
-          // project/folder script's env writes are visible to inner scripts.
-          const scriptCtx = newScriptContext(envVars, iterationData[iter] ?? {}, iter, iterations)
-          for (const s of preScripts) {
-            scriptCtx.envUpdates = {}
-            scriptCtx.globalUpdates = {}
-            scriptCtx.varUpdates = {}
-            await runUserScript(s, scriptCtx, null)
-            mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
-          }
-          if (scriptCtx.skipRequest) {
-            const skipResult: EndpointRunResult = {
-              endpointId,
-              endpointName: endpoint.name,
-              method: requestOptions.method,
-              url: requestOptions.url,
-              status: null,
-              statusText: 'SKIPPED',
-              duration: 0,
-              passed: 0,
-              failed: 0,
-              skipped: 1,
-              assertions: [],
-              iteration: iter + 1,
-            }
-            results.push(skipResult)
-            sendProgress({ current: i + 1, total, endpointId, result: skipResult })
-            if (options.delay && options.delay > 0 && i < total - 1 && !runState.shouldStop) {
-              await delay(options.delay)
-            }
-            continue
-          }
-
-          // Resolve environment variables in request
-          const resolvedOptions = resolveRequestOptions(requestOptions, envVars)
-          // Scope the cookie jar to this project so session cookies (login →
-          // protected call) behave the same in Run as they do in Send. Without
-          // it the engine falls back to the shared "_default" jar (issue: Send
-          // OK / Run 401 on cookie-auth flows).
-          resolvedOptions.projectId = options.projectId
-          const response = await executeHttpRequest(resolvedOptions)
-
-          // Run post-response (test) scripts in cascade order (project →
-          // folder(s) → request). They share the run's script context, so a
-          // folder/project test sees the same response + env the request used.
-          const scriptTestResults: AssertionResult[] = []
-          for (const s of postScripts) {
-            scriptCtx.envUpdates = {}
-            scriptCtx.globalUpdates = {}
-            scriptCtx.varUpdates = {}
-            await runUserScript(s, scriptCtx, {
-              status: response.status,
-              statusText: response.statusText,
-              headers: response.headers,
-              body: response.body,
-              bodySize: response.bodySize,
-              cookies: response.cookies,
-            })
-            mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
-          }
-          // Collect every pm.test() the scripts registered (pre + post).
-          for (const t of scriptCtx.testResults) {
-            scriptTestResults.push({
-              name: t.name,
-              passed: t.passed,
-              error: t.error,
-            })
-          }
-
-          // Auto-save to history
-          try {
-            // Mirror request.handler.ts: scrub `user:pass@host` userinfo
-            // from the persisted URL so a credential-bearing URL bar entry
-            // (or one synthesised by a misconfigured importer) doesn't
-            // land on disk in the history table.
-            const sanitizedRunnerUrl = stripUrlCredentials(resolvedOptions.url)
-            historyRepo.addHistory({
-              workspace_id: options.workspaceId,
-              project_id: options.projectId,
-              endpoint_id: endpointId,
-              protocol: endpoint.protocol || 'http',
-              method: resolvedOptions.method,
-              url: sanitizedRunnerUrl,
-              status_code: response.status,
-              duration_ms: response.timing?.total ? Math.round(response.timing.total) : undefined,
-              // Capture the headers/params/body that actually went out on the
-              // wire so the Run Details "Request" tab can show the full picture
-              // (auto-applied headers from the auth tab, resolved query params,
-              // etc.). Without these the UI looked like the runner had stripped
-              // them — v1.3.1 §5.7 / §5.8.
-              request_snapshot: JSON.stringify({
-                method: resolvedOptions.method,
-                url: sanitizedRunnerUrl,
-                headers: resolvedOptions.headers ?? [],
-                params: resolvedOptions.params ?? [],
-                body: resolvedOptions.body
-                  ? {
-                      type: (resolvedOptions.body as RequestBody).type,
-                      content: ((resolvedOptions.body as RequestBody).content ?? '').slice(0, 4096),
-                    }
-                  : undefined,
-                auth: resolvedOptions.auth
-                  ? { type: (resolvedOptions.auth as AuthConfig).type }
-                  : undefined,
-              }),
-              response_snapshot: JSON.stringify({
-                status: response.status,
-                statusText: response.statusText,
-                timing: response.timing,
-                // Persist the response body + headers + size so opening a
-                // historical run entry shows the same response detail
-                // users would have seen at run time. Without these, the
-                // History "Today" entry for a suite-run request opened
-                // with empty Response / Headers / Test Results panels
-                // (v1.4.2 T-12.5).
-                body: persistResponses ? response.body : undefined,
-                headers: persistResponses ? response.headers : undefined,
-                // Carry the binary flag so a base64 image/PDF restored from a
-                // run's history previews as the file, not its base64 text
-                // (issue #25 follow-up).
-                bodyEncoding: response.bodyEncoding,
-                bodySize: response.bodySize,
-              }),
-            })
-          } catch {
-            // History save failure should not affect runner
-          }
-
-          // Parse assertions from request schema
-          const schema = parseJsonSafe<{ assertions?: TestAssertion[] }>(
-            endpoint.request_schema,
-            {},
-          )
-          const assertions = schema.assertions ?? []
-
-          const declarativeAssertions = runAssertionsMainProcess(
-            assertions,
-            {
-              status: response.status,
-              statusText: response.statusText,
-              headers: response.headers,
-              body: response.body,
-              bodySize: response.bodySize,
-              timing: response.timing,
-            },
-            // envVars at this point reflects any pre-script `pm.environment.set`
-            // calls — assertions see the same variable space the request did.
-            envVars,
-          )
-          const assertionResults = [...declarativeAssertions, ...scriptTestResults]
-
-          const passed = assertionResults.filter((a) => a.passed).length
-          const failed = assertionResults.filter((a) => !a.passed).length
-
-          totalAssertions += assertionResults.length
-          passedAssertions += passed
-          failedAssertions += failed
-
-          const result: EndpointRunResult = {
-            endpointId,
-            endpointName: endpoint.name,
-            method: requestOptions.method,
-            // Use the final URL the engine actually hit (after query
-            // params + variable substitution + redirects) so the
-            // Request tab in run-results shows the same URL the wire
-            // saw — not the unresolved configured URL. `actualRequest.url`
-            // is already credential-stripped by the engine; the fallback
-            // `requestOptions.url` is not, so scrub it here.
-            url: response.actualRequest?.url ?? stripUrlCredentials(requestOptions.url),
-            status: response.status ?? null,
-            statusText: response.statusText ?? '',
-            duration: response.timing.total,
-            passed,
-            failed,
-            skipped: 0,
-            assertions: assertionResults,
-            error: response.error,
-            responseSize: response.bodySize ?? 0,
-            responseBody: persistResponses ? (response.body ?? undefined) : undefined,
-            responseHeaders: persistResponses ? (response.headers ?? undefined) : undefined,
-            // Prefer the engine's `actualRequest.headers` over the
-            // configured headers array — the engine snapshots what was
-            // actually put on the wire after auth-tab injection, default
-            // Content-Type/Host/User-Agent fill-ins, and content-length
-            // calculation. Without this, the Test Suite run-results
-            // request tab only showed the user-typed headers and dropped
-            // Authorization / Content-Type / Host (v1.4.2 T-5.1, T-5.3).
-            requestHeaders: persistResponses
-              ? (response.actualRequest?.headers ?? headersArrayToRecord(resolvedOptions.headers))
-              : undefined,
-            requestBody: persistResponses
-              ? (response.actualRequest?.body ?? requestBodyToString(resolvedOptions.body))
-              : undefined,
-            iteration: iter + 1,
-          }
-
-          // Endpoint verdict via the SHARED rule (shared/runner-verdict.ts) so
-          // the live run summary, the HTML report, and the renderer results
-          // views all agree: assertion-driven when the request has any checks
-          // (an idempotent DELETE asserting `oneOf([200,204,404,400])` passes on
-          // 400 — issue #16), HTTP-status fallback only for check-less requests.
-          const endpointPassed = endpointDidPass(result)
-          if (endpointPassed) passedEndpoints++
-          else failedEndpoints++
-
-          results.push(result)
-          sendProgress({ current: i + 1, total, endpointId, result })
-
+        if (!outcome.skipped) {
           // Flow control: honour pm.execution.setNextRequest(name|null) from this
           // request's scripts. null = stop this iteration; a name = jump to that
           // request (first case-insensitive match); unknown name = warn + continue
           // linearly. The visit budget above guards against cycles. (skipRequest +
           // setNextRequest combos aren't honoured — skip short-circuits earlier.)
-          const nextName = scriptCtx.nextRequestName
+          const nextName = outcome.nextRequestName
           if (nextName === null) break
           if (typeof nextName === 'string' && nextName.trim()) {
             const target = nameToIndex.get(nextName.trim().toLowerCase())
@@ -1579,42 +2388,72 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
             }
           }
 
-          if (stopOnError && !endpointPassed) break outer
-        } catch (e) {
-          const result: EndpointRunResult = {
-            endpointId,
-            endpointName: endpoint.name,
-            method: requestOptions.method,
-            url: requestOptions.url,
-            status: null,
-            statusText: '',
-            duration: 0,
-            passed: 0,
-            failed: 0,
-            skipped: 0,
-            assertions: [],
-            error: (e as Error).message,
-            iteration: iter + 1,
+          if (stopOnError && !outcome.didPass && !outcome.configError) {
+            stopReason = 'stopOnError'
+            mainAbortedAt = { iter, index: j }
+            break outer
           }
-          results.push(result)
-          failedEndpoints++
-          sendProgress({ current: i + 1, total, endpointId, result })
-
-          if (stopOnError) break outer
         }
 
         // Delay between requests if configured
-        if (options.delay && options.delay > 0 && i < total - 1 && !runState.shouldStop) {
-          await delay(options.delay)
+        if (options.delay && options.delay > 0 && ctx.emitted < total && !runState.shouldStop) {
+          await interruptibleDelay(options.delay, runState)
         }
       }
+
+      // Delay BETWEEN ITERATIONS (issue #89) — on top of the per-request delay
+      // that has just been applied after this iteration's last request. Skipped
+      // after the final iteration: nothing follows it, so the wait would only
+      // add dead time before the report appears.
+      const iterationDelay = options.iterationDelay ?? 0
+      if (iterationDelay > 0 && iter < iterations - 1 && !runState.shouldStop) {
+        await interruptibleDelay(iterationDelay, runState)
+      }
     }
+
+    // ── Report the steps that never ran ─────────────────────────
+    // A stopped run used to simply omit them: pick 12 requests, cancel after 3,
+    // and the report showed 3 rows with Skipped stuck at 0 — indistinguishable
+    // from a 3-request suite. Only ABORTS produce these rows; a deliberate
+    // `pm.execution.setNextRequest(null)` ends its iteration by design and would
+    // otherwise fill the report with noise on every use.
+    for (const id of setupIds.slice(setupAttempted)) {
+      recordNotRun(ctx, id, 'setup')
+    }
+    if (abortPrimary) {
+      // Setup failed or was cancelled: the whole flow never started.
+      for (let iter = 0; iter < iterations; iter++) {
+        for (const id of options.endpointIds) recordNotRun(ctx, id, 'main', iter)
+      }
+    } else if (mainAbortedAt) {
+      const { iter, index } = mainAbortedAt
+      for (let j = index + 1; j < endpointsPerIteration; j++) {
+        recordNotRun(ctx, options.endpointIds[j], 'main', iter)
+      }
+      for (let next = iter + 1; next < iterations; next++) {
+        for (const id of options.endpointIds) recordNotRun(ctx, id, 'main', next)
+      }
+    }
+  } catch (e) {
+    // An escape from the phase orchestration itself. Remember it, finish
+    // teardown, then rethrow — cleanup must not be lost to a runner bug.
+    orchestrationError = e
   } finally {
+    // GUARANTEED teardown — single call site, so it can never run twice.
+    await runTeardownPhase(ctx, teardownIds, options.runPostScript)
+    // Only when cleanup was actually left unfinished — see RunState.teardownSkipped.
+    if (runState.teardownSkipped) stopReason = 'teardownAborted'
+    // A hard stop outranks it: the user asked for "nothing after this click",
+    // and reporting that as "cleanup was abandoned" describes a consequence as
+    // though it were the cause.
+    if (runState.directStop) stopReason = 'stoppedImmediately'
     // Always release the run slot, even on exception — without this an
     // unhandled error would leave the run permanently registered and
     // any "is this run still going?" check would forever say yes.
     activeRuns.delete(runId)
   }
+
+  if (orchestrationError) throw orchestrationError
 
   // Persist script-written variables back to the DB (Postman "Keep variable
   // values", default on). Mirrors the renderer's Send-path
@@ -1623,6 +2462,13 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   if (options.keepVariableValues !== false) {
     persistRunVariableUpdates(effectiveEnvId, options.projectId, runEnvUpdates, runGlobalUpdates)
   }
+
+  const { totalAssertions, passedAssertions, failedAssertions, passedEndpoints, failedEndpoints } =
+    totals
+  // Rows that feed the verdict — the denominator for passed/failed. Teardown
+  // and hook rows are reported separately (they can neither rescue nor sink a
+  // run), so counting them here would make every summary fail to add up.
+  const primaryRowCount = results.filter(countsTowardRunVerdict).length
 
   const completedAt = Date.now()
   const durationMs = completedAt - startedAt
@@ -1650,7 +2496,10 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
       options.source || 'Runner',
       iterations,
       durationMs,
-      results.length,
+      // Count only the rows the verdict counters cover, so a history row's
+      // total / passed / failed still add up. Teardown + hook rows live in
+      // results_json and are surfaced from there.
+      primaryRowCount,
       passedEndpoints,
       failedEndpoints,
       totalAssertions,
@@ -1672,7 +2521,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
     projectId: options.projectId,
     startedAt,
     completedAt,
-    totalEndpoints: results.length,
+    totalEndpoints: primaryRowCount,
     passedEndpoints,
     failedEndpoints,
     totalAssertions,
@@ -1681,6 +2530,11 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
     results,
     envUpdates: runEnvUpdates,
     globalUpdates: runGlobalUpdates,
+    teardownPassedEndpoints: totals.teardownPassedEndpoints,
+    teardownFailedEndpoints: totals.teardownFailedEndpoints,
+    teardownPassedAssertions: totals.teardownPassedAssertions,
+    teardownFailedAssertions: totals.teardownFailedAssertions,
+    stopReason,
   }
 }
 
@@ -1788,28 +2642,38 @@ function exportAsHtml(results: EndpointRunResult[]): string {
   const totalPassed = results.reduce((sum, r) => sum + r.passed, 0)
   const totalFailed = results.reduce((sum, r) => sum + r.failed, 0)
   const totalDuration = results.reduce((sum, r) => sum + r.duration, 0)
-  const endpointsPassed = results.filter(endpointDidPass).length
-  const endpointsFailed = results.length - endpointsPassed
+  // Headline counters from the SHARED summary, so the exported report agrees with
+  // both in-app results views. The local arithmetic it replaces derived failures
+  // as `primary.length - passed`, which buckets a row that never RAN as a
+  // failure (shared/runner-summary explains the whole class).
+  const summary = summarizeRun(results)
+  const primary = results.filter(countsTowardRunVerdict)
+  const teardown = results.filter((r) => !countsTowardRunVerdict(r))
+  const endpointsPassed = summary.passed
+  const endpointsFailed = summary.failed
+  const endpointsSkipped = summary.skipped
+  const teardownFailed = summary.teardownFailed
 
   const escapeHtml = (str: string): string =>
     str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-  const rows = results
-    .map((r) => {
-      const didPass = endpointDidPass(r)
-      const statusColor = r.error ? '#cc2200' : !didPass ? '#b35a00' : '#1a7a4a'
-      const statusBg = r.error ? '#fff0f0' : !didPass ? '#fff4e0' : '#e8f9f1'
-      const statusText = r.error ? 'Error' : !didPass ? 'Failed' : 'Passed'
+  const renderRows = (list: EndpointRunResult[]): string =>
+    list
+      .map((r) => {
+        const didPass = endpointDidPass(r)
+        const statusColor = r.error ? '#cc2200' : !didPass ? '#b35a00' : '#1a7a4a'
+        const statusBg = r.error ? '#fff0f0' : !didPass ? '#fff4e0' : '#e8f9f1'
+        const statusText = r.error ? 'Error' : !didPass ? 'Failed' : 'Passed'
 
-      const assertionRows = r.assertions
-        .map((a) => {
-          const aColor = a.passed ? '#1a7a4a' : '#cc2200'
-          const aIcon = a.passed ? '&#10003;' : '&#10007;'
-          return `<tr><td style="padding:4px 12px;color:${aColor}">${aIcon} ${escapeHtml(a.name)}</td><td style="padding:4px 12px">${a.actual !== undefined ? escapeHtml(String(a.actual)) : ''}</td><td style="padding:4px 12px;color:${aColor}">${a.error ? escapeHtml(a.error) : ''}</td></tr>`
-        })
-        .join('')
+        const assertionRows = r.assertions
+          .map((a) => {
+            const aColor = a.passed ? '#1a7a4a' : '#cc2200'
+            const aIcon = a.passed ? '&#10003;' : '&#10007;'
+            return `<tr><td style="padding:4px 12px;color:${aColor}">${aIcon} ${escapeHtml(a.name)}</td><td style="padding:4px 12px">${a.actual !== undefined ? escapeHtml(String(a.actual)) : ''}</td><td style="padding:4px 12px;color:${aColor}">${a.error ? escapeHtml(a.error) : ''}</td></tr>`
+          })
+          .join('')
 
-      return `
+        return `
       <div style="margin-bottom:16px;border:1px solid #e8e8ed;border-radius:8px;overflow:hidden">
         <div style="display:flex;align-items:center;padding:12px 16px;background:${statusBg};gap:12px">
           <span style="font-weight:600;color:${statusColor};min-width:60px">${escapeHtml(r.method)}</span>
@@ -1820,8 +2684,20 @@ function exportAsHtml(results: EndpointRunResult[]): string {
         ${r.assertions.length > 0 ? `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#fafafa;border-top:1px solid #e8e8ed"><th style="padding:6px 12px;text-align:left">Assertion</th><th style="padding:6px 12px;text-align:left">Actual</th><th style="padding:6px 12px;text-align:left">Error</th></tr></thead><tbody>${assertionRows}</tbody></table>` : ''}
         ${r.error ? `<div style="padding:8px 16px;color:#cc2200;font-size:13px;border-top:1px solid #e8e8ed">${escapeHtml(r.error)}</div>` : ''}
       </div>`
-    })
-    .join('')
+      })
+      .join('')
+
+  const rows = renderRows(primary)
+  // Teardown gets its own titled section so a reader can tell cleanup apart
+  // from the run under test at a glance.
+  const teardownSection =
+    teardown.length > 0
+      ? `<h3 style="margin:28px 0 12px;font-size:15px;font-weight:600">Teardown${
+          teardownFailed > 0
+            ? ` <span style="font-weight:500;font-size:13px;color:#b35a00">(${teardownFailed} failed — does not affect the run verdict)</span>`
+            : ''
+        }</h3>${renderRows(teardown)}`
+      : ''
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1845,13 +2721,16 @@ function exportAsHtml(results: EndpointRunResult[]): string {
     <div class="stats">
       <div class="stat"><div class="stat-value" style="color:#1a7a4a">${endpointsPassed}</div><div class="stat-label">Passed</div></div>
       <div class="stat"><div class="stat-value" style="color:#cc2200">${endpointsFailed}</div><div class="stat-label">Failed</div></div>
-      <div class="stat"><div class="stat-value">${results.length}</div><div class="stat-label">Total</div></div>
+      ${endpointsSkipped > 0 ? `<div class="stat"><div class="stat-value" style="color:#888">${endpointsSkipped}</div><div class="stat-label">Skipped</div></div>` : ''}
+      <div class="stat"><div class="stat-value">${primary.length}</div><div class="stat-label">Total</div></div>
+      ${teardown.length > 0 ? `<div class="stat"><div class="stat-value" style="color:${teardownFailed > 0 ? '#b35a00' : '#1a7a4a'}">${teardown.length}</div><div class="stat-label">Teardown</div></div>` : ''}
       <div class="stat"><div class="stat-value" style="color:#0066cc">${totalDuration}ms</div><div class="stat-label">Duration</div></div>
       <div class="stat"><div class="stat-value" style="color:#1a7a4a">${totalPassed}</div><div class="stat-label">Assertions Passed</div></div>
       <div class="stat"><div class="stat-value" style="color:#cc2200">${totalFailed}</div><div class="stat-label">Assertions Failed</div></div>
     </div>
   </div>
   ${rows}
+  ${teardownSection}
 </body>
 </html>`
 }
@@ -1878,7 +2757,15 @@ export function registerRunnerHandlers(): void {
       if (typeof options.projectId !== 'string' || !options.projectId) {
         return { success: false, error: 'Missing projectId' }
       }
-      for (const id of options.endpointIds) {
+      // Setup / teardown ids go through the SAME validation + ownership guard
+      // as the main flow — a cleanup request is still a request, and a run-level
+      // hook must not become a way to reach another project's endpoints.
+      const allIds = [
+        ...options.endpointIds,
+        ...(Array.isArray(options.setupEndpointIds) ? options.setupEndpointIds : []),
+        ...(Array.isArray(options.teardownEndpointIds) ? options.teardownEndpointIds : []),
+      ]
+      for (const id of allIds) {
         if (typeof id !== 'string' || !id) {
           return { success: false, error: 'Invalid endpoint id in payload' }
         }
@@ -1897,23 +2784,51 @@ export function registerRunnerHandlers(): void {
     }
   })
 
-  ipcMain.handle('runner:stop', async () => {
-    try {
-      // Stop every in-flight run. Today the renderer doesn't pass a run id,
-      // and there's no UI affordance to target one of several concurrent
-      // runs, so "Stop" is project-wide by design. The shouldStop flag is
-      // per-RunState now, so this only nudges currently-registered runs
-      // — finished runs are no longer in the map.
-      let stopped = 0
-      for (const run of activeRuns.values()) {
-        run.shouldStop = true
-        stopped++
+  ipcMain.handle(
+    'runner:stop',
+    async (_event, opts?: { mode?: RunStopMode; skipTeardown?: boolean }) => {
+      try {
+        // Stop every in-flight run. Today the renderer doesn't pass a run id,
+        // and there's no UI affordance to target one of several concurrent
+        // runs, so "Stop" is project-wide by design. The shouldStop flag is
+        // per-RunState now, so this only nudges currently-registered runs
+        // — finished runs are no longer in the map.
+        //
+        // `skipTeardown` is the pre-#91 spelling of `mode: 'direct'`, still
+        // accepted so an older renderer talking to a newer main doesn't
+        // silently get a graceful stop when it asked to abandon cleanup.
+        const direct = opts?.mode === 'direct' || opts?.skipTeardown === true
+        let stopped = 0
+        for (const run of activeRuns.values()) {
+          run.shouldStop = true
+          // Graceful Stop ends the flow and leaves cleanup alone — deliberately
+          // including the request already on the wire, because killing it is how
+          // you get the half-written state teardown is there to undo.
+          //
+          // Direct Stop is the opposite promise: nothing after this click runs.
+          // It abandons cleanup AND aborts the socket, so the halt happens now
+          // rather than whenever the current request happens to answer. Never
+          // infer this from a second graceful click — see RunState.abortTeardown
+          // for how reading intent off the clock made cleanup partial at random.
+          if (direct) {
+            run.abortTeardown = true
+            // WHERE the run was when the click arrived decides which story the
+            // report tells. Before cleanup this is a hard halt ("nothing after
+            // the click ran"). Once cleanup is running the flow has already
+            // finished on its own, and the only thing abandoned is the rest of
+            // the teardown — saying "halted immediately" there would describe a
+            // run that mostly completed as one that barely started.
+            if (!run.teardownStarted) run.directStop = true
+            run.cancelInFlight?.()
+          }
+          stopped++
+        }
+        return { success: true, data: stopped > 0 }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
       }
-      return { success: true, data: stopped > 0 }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+    },
+  )
 
   ipcMain.handle('runner:export', async (_event, options: RunnerExportOptions) => {
     try {

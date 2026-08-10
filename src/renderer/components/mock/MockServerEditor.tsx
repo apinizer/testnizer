@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, Play, Square, RefreshCw } from 'lucide-react'
 import { useMockStore } from '../../stores/mock.store'
 import { useTranslation } from '../../lib/i18n'
+import { useNumberDraft } from '../../lib/number-draft'
 import { toast } from '../../lib/toast'
 import type {
   MockEndpoint,
@@ -22,8 +23,20 @@ import type {
 import MonacoWrapper from '../shared/MonacoWrapper'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import { CONDITION_SNIPPETS, SCRIPT_SNIPPETS } from '../../lib/mock-snippets'
+import JwksFillButton from './JwksFillButton'
+import { provisionJwksServe } from '../../lib/jwks-serve'
 
-const METHODS: MockMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'ANY']
+const METHODS: MockMethod[] = [
+  'GET',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+  'HEAD',
+  'OPTIONS',
+  'QUERY',
+  'ANY',
+]
 const PATH_MODES: MockPathMode[] = ['exact', 'param', 'wildcard', 'regex']
 const BODY_TYPES: MockBodyType[] = ['json', 'xml', 'text', 'html']
 
@@ -171,6 +184,7 @@ function EndpointsTab({ serverId }: { serverId: string }) {
   const endpoints = useMockStore((s) => s.endpointsByServer[serverId]) ?? EMPTY_ENDPOINTS
   const loadEndpoints = useMockStore((s) => s.loadEndpoints)
   const createEndpoint = useMockStore((s) => s.createEndpoint)
+  const createResponse = useMockStore((s) => s.createResponse)
   const deleteEndpoint = useMockStore((s) => s.deleteEndpoint)
   const importOpenApi = useMockStore((s) => s.importOpenApi)
   const importPostman = useMockStore((s) => s.importPostman)
@@ -195,6 +209,28 @@ function EndpointsTab({ serverId }: { serverId: string }) {
       pathMode: 'exact',
     })
     if (ep) setActiveId(ep.id)
+  }
+
+  /**
+   * #61 JWKS-serve: publish a built JWKS at `/.well-known/jwks.json`.
+   *
+   * ZERO new mock primitives (reconcile D1-1) — it is one ordinary endpoint row
+   * plus one response row, created through the SAME store actions the Add
+   * button uses. Rotation is just filling the body again (D1-2): the response
+   * update hot-reloads a running server.
+   */
+  async function handleServeJwks(body: string): Promise<void> {
+    try {
+      const { endpoint } = await provisionJwksServe({
+        serverId,
+        body,
+        createEndpoint,
+        createResponse,
+      })
+      setActiveId(endpoint.id)
+    } catch (e) {
+      setImportStatus(e instanceof Error ? e.message : String(e))
+    }
   }
 
   async function handleImport(kind: 'openapi' | 'postman'): Promise<void> {
@@ -254,6 +290,15 @@ function EndpointsTab({ serverId }: { serverId: string }) {
             >
               <Plus size={12} /> {t('mock.add')}
             </button>
+            {/* #61: publish a JWKS at the well-known path. One ordinary
+                endpoint + response row, created through the same store
+                actions — no new mock primitive. */}
+            <JwksFillButton
+              body=""
+              onFill={(built) => void handleServeJwks(built)}
+              label={t('mock.jwksServe')}
+              testId="mock-jwks-serve"
+            />
           </div>
           <div className="flex gap-1">
             <button
@@ -371,6 +416,14 @@ function methodStyle(method: string): React.CSSProperties {
 // ─── Endpoint editor ─────────────────────────────────────────────
 
 function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: MockEndpoint }) {
+  // Draft-based so the box can be cleared; `Number('') || 0` used to slam a 0
+  // back in and the next digit landed beside it.
+  const priorityDraft = useNumberDraft({
+    value: endpoint.priority,
+    min: 0,
+    max: 9999,
+    onChange: (v) => updateEndpoint(endpoint.id, { priority: v }),
+  })
   const { t } = useTranslation()
   const updateEndpoint = useMockStore((s) => s.updateEndpoint)
   const responses = useMockStore((s) => s.responsesByEndpoint[endpoint.id]) ?? EMPTY_RESPONSES
@@ -469,10 +522,7 @@ function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: Mo
             {t('mock.priority')}:
             <input
               type="number"
-              value={endpoint.priority}
-              onChange={(e) =>
-                updateEndpoint(endpoint.id, { priority: Number(e.target.value) || 0 })
-              }
+              {...priorityDraft.inputProps}
               className="rounded border px-2 py-1"
               style={{
                 width: 60,
@@ -553,6 +603,7 @@ function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: Mo
                 key={activeRespId}
                 response={responses.find((r) => r.id === activeRespId)!}
                 endpointId={endpoint.id}
+                projectId={server?.projectId}
               />
             )}
           </>
@@ -697,10 +748,31 @@ function buildCurl(server: MockServer, endpoint: MockEndpoint): string {
 
 // ─── Response editor ─────────────────────────────────────────────
 
-function ResponseEditor({ response, endpointId }: { response: MockResponse; endpointId: string }) {
+function ResponseEditor({
+  response,
+  endpointId,
+  projectId,
+}: {
+  response: MockResponse
+  endpointId: string
+  /** Lets the JWKS fill offer the project's saved certificate rows. */
+  projectId?: string
+}) {
   const { t } = useTranslation()
   const updateResponse = useMockStore((s) => s.updateResponse)
   const deleteResponse = useMockStore((s) => s.deleteResponse)
+  const statusDraft = useNumberDraft({
+    value: response.statusCode,
+    min: 100,
+    max: 599,
+    onChange: (v) => updateResponse(response.id, { statusCode: v }),
+  })
+  const delayDraft = useNumberDraft({
+    value: response.delayMs,
+    min: 0,
+    max: 600000,
+    onChange: (v) => updateResponse(response.id, { delayMs: v }),
+  })
   const condStr = useMemo(() => JSON.stringify(response.condition, null, 2), [response.condition])
   const [condText, setCondText] = useState(condStr)
   const [condError, setCondError] = useState<string | null>(null)
@@ -728,10 +800,7 @@ function ResponseEditor({ response, endpointId }: { response: MockResponse; endp
       <div className="mb-2 grid grid-cols-[140px_1fr_140px_auto] gap-2">
         <input
           type="number"
-          value={response.statusCode}
-          onChange={(e) =>
-            updateResponse(response.id, { statusCode: Number(e.target.value) || 200 })
-          }
+          {...statusDraft.inputProps}
           data-testid="mock-response-status"
           className="rounded border px-2 py-1 text-sm"
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
@@ -774,8 +843,7 @@ function ResponseEditor({ response, endpointId }: { response: MockResponse; endp
           {t('mock.delayMs')}:
           <input
             type="number"
-            value={response.delayMs}
-            onChange={(e) => updateResponse(response.id, { delayMs: Number(e.target.value) || 0 })}
+            {...delayDraft.inputProps}
             className="ml-1 rounded border px-2 py-1"
             style={{ width: 70, background: 'var(--white)', borderColor: 'var(--border)' }}
           />
@@ -807,12 +875,28 @@ function ResponseEditor({ response, endpointId }: { response: MockResponse; endp
       </div>
 
       <div className="mb-2">
-        <label
-          className="mb-1 block text-[11px] uppercase tracking-wide"
-          style={{ color: 'var(--muted)' }}
-        >
-          {t('mock.body')}
-        </label>
+        {/*
+          The JWKS auto-fill (#61) is ONE ADDED button that writes into the SAME
+          body field below — never a replacement for hand-authoring, which keeps
+          working byte-for-byte.
+        */}
+        <div className="mb-1 flex items-center justify-between">
+          <label
+            className="block text-[11px] uppercase tracking-wide"
+            style={{ color: 'var(--muted)' }}
+          >
+            {t('mock.body')}
+          </label>
+          {/* Only offered where a JWKS could actually live: on an XML or text
+              response the button would replace the body with JSON. */}
+          {response.bodyType === 'json' && (
+            <JwksFillButton
+              body={response.body}
+              projectId={projectId}
+              onFill={(body) => updateResponse(response.id, { body })}
+            />
+          )}
+        </div>
         <div
           data-testid="mock-response-body"
           style={{ height: 200, border: '1px solid var(--border)', borderRadius: 4 }}
@@ -1011,6 +1095,21 @@ function SettingsTab({ server }: { server: MockServer }) {
     updateServer(server.id, { [k]: v })
   }
 
+  // The port box could not be cleared at all: emptying it wrote 0, so a new port
+  // had to be typed around the zero.
+  const portDraft = useNumberDraft({
+    value: draft.port,
+    min: 1,
+    max: 65535,
+    onChange: (v) => setDraft((d) => ({ ...d, port: v })),
+  })
+  const corsDraft = useNumberDraft({
+    value: draft.corsMaxAge,
+    min: 0,
+    max: 86400,
+    onChange: (v) => setDraft((d) => ({ ...d, corsMaxAge: v })),
+  })
+
   return (
     <div className="flex-1 overflow-auto p-4">
       <div className="space-y-3 max-w-2xl">
@@ -1054,9 +1153,11 @@ function SettingsTab({ server }: { server: MockServer }) {
           <Field label={t('mock.port')}>
             <input
               type="number"
-              value={draft.port}
-              onChange={(e) => setDraft({ ...draft, port: Number(e.target.value) || 0 })}
-              onBlur={() => commit('port', draft.port)}
+              {...portDraft.inputProps}
+              onBlur={() => {
+                portDraft.inputProps.onBlur()
+                commit('port', draft.port)
+              }}
               min={1}
               max={65535}
               className="w-full rounded border px-2 py-1 text-sm"
@@ -1140,9 +1241,11 @@ function SettingsTab({ server }: { server: MockServer }) {
               <Field label={t('mock.corsMaxAge')}>
                 <input
                   type="number"
-                  value={draft.corsMaxAge}
-                  onChange={(e) => setDraft({ ...draft, corsMaxAge: Number(e.target.value) || 0 })}
-                  onBlur={() => commit('corsMaxAge', draft.corsMaxAge)}
+                  {...corsDraft.inputProps}
+                  onBlur={() => {
+                    corsDraft.inputProps.onBlur()
+                    commit('corsMaxAge', draft.corsMaxAge)
+                  }}
                   className="w-full rounded border px-2 py-1 text-sm"
                   style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
                 />

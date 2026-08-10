@@ -28,11 +28,29 @@
 # session is not active.
 set -euo pipefail
 
-TAG="${1:-}"
-if [[ -z "$TAG" || "$TAG" == -* ]]; then
-  echo "Usage: $0 <release-tag>      e.g.  $0 v1.4.20"
-  exit 1
-fi
+# Two sources, ONE signing implementation. A release tag is the normal path; a
+# local directory covers a tester RC, which has no tag and no GitHub release by
+# design (tagging fires issue-sync's release gate, republishes the website and
+# offers an unvetted build to auto-update). Copying the osslsigncode call into a
+# second script is how the `-ac` intermediate or the timestamp URL silently goes
+# missing from one of them — and an RC that testers install on Windows is
+# exactly where an unverifiable signature would be noticed last.
+TAG=""
+LOCAL_DIR=""
+case "${1:-}" in
+  --dir)
+    LOCAL_DIR="${2:-}"
+    [[ -d "$LOCAL_DIR" ]] || { echo "Usage: $0 --dir <klasör>   (klasör bulunamadı: ${2:-})"; exit 1; }
+    ;;
+  ''|-*)
+    echo "Usage: $0 <release-tag>      e.g.  $0 v1.4.20"
+    echo "       $0 --dir <klasör>     tag'siz yerel imzalama (RC dağıtımı)"
+    exit 1
+    ;;
+  *)
+    TAG="$1"
+    ;;
+esac
 
 REPO="apinizer/testnizer"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -78,12 +96,22 @@ KEY_URI="pkcs11:token=Code%20Signing;id=$ID_URI;type=private"
 WORK="$(mktemp -d -t testnizer-sign-XXXXXX)"
 UNSIGNED="$WORK/unsigned"; SIGNED="$WORK/signed"
 mkdir -p "$UNSIGNED" "$SIGNED"
-echo "ℹ️  $TAG asset'leri indiriliyor → $WORK"
-gh release download "$TAG" --repo "$REPO" --dir "$UNSIGNED" --pattern '*.exe' --pattern 'latest.yml'
-
 shopt -s nullglob
+if [[ -n "$LOCAL_DIR" ]]; then
+  echo "ℹ️  Yerel klasörden imzalanacak: $LOCAL_DIR → $WORK"
+  # Copy rather than sign in place: a half-written .exe from an interrupted
+  # signing run must not replace the artifact you still need.
+  for f in "$LOCAL_DIR"/*.exe "$LOCAL_DIR"/latest.yml; do
+    [[ -f "$f" ]] && cp "$f" "$UNSIGNED/"
+  done
+else
+  echo "ℹ️  $TAG asset'leri indiriliyor → $WORK"
+  gh release download "$TAG" --repo "$REPO" --dir "$UNSIGNED" --pattern '*.exe' --pattern 'latest.yml'
+fi
+
 exes=("$UNSIGNED"/*.exe)
-[[ ${#exes[@]} -gt 0 ]] || die "$TAG release'inde .exe bulunamadı."
+SOURCE_LABEL="${LOCAL_DIR:-$TAG}"
+[[ ${#exes[@]} -gt 0 ]] || die "$SOURCE_LABEL içinde .exe bulunamadı."
 
 # ── sign + verify each .exe into signed/ (same basename) ────────────────────
 for exe in "${exes[@]}"; do
@@ -121,6 +149,14 @@ echo ""
 echo "İmzalanan dosyalar ($SIGNED):"
 ls -1 "$SIGNED"
 echo ""
+if [[ -n "$LOCAL_DIR" ]]; then
+  # No release to upload to — hand the signed files back and let the caller
+  # place them. Overwriting the caller's directory is not this script's call.
+  echo "✅ İmzalandı. İmzalı dosyalar: $SIGNED"
+  echo "ℹ️  Kaynak klasöre almak için:  cp $SIGNED/*.exe \"$LOCAL_DIR\"/"
+  exit 0
+fi
+
 read -r -p "Bunları '$TAG' release'ine yükle (--clobber)? [y/N] " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
   upload=("$SIGNED"/*.exe)
