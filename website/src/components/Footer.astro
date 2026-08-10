@@ -1,40 +1,93 @@
 ---
+/**
+ * Same rule as the nav: internal links follow the page's language. A Turkish
+ * reader clicking "Features" in the footer used to land on the English page.
+ * External links and mailto are left alone.
+ */
+const isTr = Astro.url.pathname === '/tr' || Astro.url.pathname.startsWith('/tr/')
+const p = (href: string): string => (isTr ? `/tr${href}` : href)
+
+const t = isTr
+  ? {
+      product: 'Ürün',
+      features: 'Özellikler',
+      tools: 'Güvenlik araçları',
+      security: 'Güvenlik',
+      download: 'İndir',
+      changelog: 'Sürüm notları',
+      documentation: 'Dokümanlar',
+      gettingStarted: 'Başlarken',
+      importExport: 'İçe & dışa aktarma',
+      protocols: 'Protokoller',
+      scripts: 'Betikler & testler',
+      certificates: 'Sertifikalar',
+      community: 'Topluluk',
+      releases: 'Sürümler',
+      issues: 'Sorunlar',
+      contact: 'İletişim',
+      company: 'Şirket',
+      license: 'EULA & Lisans',
+      privacy: 'Gizlilik Politikası',
+    }
+  : {
+      product: 'Product',
+      features: 'Features',
+      tools: 'Security tools',
+      security: 'Security',
+      download: 'Download',
+      changelog: 'Changelog',
+      documentation: 'Documentation',
+      gettingStarted: 'Getting started',
+      importExport: 'Import & export',
+      protocols: 'Protocols',
+      scripts: 'Scripts & tests',
+      certificates: 'Certificates',
+      community: 'Community',
+      releases: 'Releases',
+      issues: 'Issues',
+      contact: 'Contact',
+      company: 'Company',
+      license: 'EULA & License',
+      privacy: 'Privacy Policy',
+    }
+
 const cols = [
   {
-    title: 'Product',
+    title: t.product,
     links: [
-      { href: '/features', label: 'Features' },
-      { href: '/security', label: 'Security' },
-      { href: '/download', label: 'Download' },
-      { href: '/docs/changelog', label: 'Changelog' },
+      { href: p('/features'), label: t.features },
+      { href: p('/security-tools'), label: t.tools },
+      { href: p('/security'), label: t.security },
+      { href: p('/download'), label: t.download },
+      { href: p('/docs/changelog'), label: t.changelog },
     ],
   },
   {
-    title: 'Documentation',
+    title: t.documentation,
     links: [
-      { href: '/docs/getting-started', label: 'Getting started' },
-      { href: '/docs/import-formats', label: 'Import & export' },
-      { href: '/docs/protocols', label: 'Protocols' },
-      { href: '/docs/ws-security', label: 'WS-Security' },
-      { href: '/docs/scripts', label: 'Scripts & tests' },
-      { href: '/docs/certificates', label: 'Certificates' },
+      { href: p('/docs/getting-started'), label: t.gettingStarted },
+      { href: p('/docs/import-formats'), label: t.importExport },
+      { href: p('/docs/protocols'), label: t.protocols },
+      { href: p('/docs/ws-security'), label: 'WS-Security' },
+      { href: p('/docs/scripts'), label: t.scripts },
+      { href: p('/docs/certificates'), label: t.certificates },
     ],
   },
   {
-    title: 'Community',
+    title: t.community,
     links: [
       { href: 'https://github.com/apinizer/testnizer', label: 'GitHub', external: true },
-      { href: 'https://github.com/apinizer/testnizer/releases', label: 'Releases', external: true },
-      { href: 'https://github.com/apinizer/testnizer/issues', label: 'Issues', external: true },
-      { href: 'mailto:info@testnizer.com', label: 'Contact' },
+      { href: 'https://github.com/apinizer/testnizer/releases', label: t.releases, external: true },
+      { href: 'https://github.com/apinizer/testnizer/issues', label: t.issues, external: true },
+      { href: 'mailto:info@testnizer.com', label: t.contact },
     ],
   },
   {
-    title: 'Company',
+    title: t.company,
     links: [
       { href: 'https://apinizer.com', label: 'Apinizer', external: true },
-      { href: '/license', label: 'EULA & License' },
-      { href: '/privacy', label: 'Privacy Policy' },
+      { href: p('/license'), label: t.license },
+      { href: p('/privacy'), label: t.privacy },
     ],
   },
 ]

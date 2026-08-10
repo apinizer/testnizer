@@ -1,0 +1,225 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import { icons } from '../../components/icons'
+
+/**
+ * Güvenlik araç kutusu, kendi giriş kapısı olarak.
+ *
+ * /tr/security güven sayfasıdır — uygulamanın yapmayı reddettiği şeyler. Bu
+ * sayfa yetenek sayfasıdır: jwt.io, keytool, KeyStore Explorer ve bir klasör
+ * dolusu betiğin yerine ne yaptığı. Birbirine bağlanır, tekrar etmezler.
+ */
+
+const tools = [
+  {
+    id: 'keystore',
+    icon: icons.key,
+    name: 'Keystore Studio',
+    tagline: 'keytool ve openssl için, sözdizimini ezberlemek zorunda olmadığınız bir arayüz.',
+    body: 'JKS ve PKCS#12 keystore\'ları komut satırı olmadan açın, oluşturun, düzenleyin, dönüştürün ve dışa aktarın; X.509 sertifikalarını okuyun. Anahtar çifti ve gizli anahtar üretin, PEM/DER/PFX materyali içe aktarın, bir anahtarın sertifikasıyla eşleşip eşleşmediğini kontrol edin, depo ve giriş parolalarını değiştirin.',
+    points: [
+      'JKS ⇄ PKCS#12 dönüşümü — yolculuktan sağ çıkamayacak olan, onaylamadan önce adıyla söylenir',
+      'Sertifika ayrıntıları: subject, issuer, SAN\'lar, anahtar kullanımı, geçerlilik, parmak izleri',
+      'Anahtar çifti ve gizli anahtar üretimi; uzantılar tahmin edilmez, açıkça yazılır',
+      'Kaydedilen keystore sonra mTLS, WS-Security, JWT/JOSE ve SAML için anahtar sağlayabilir',
+    ],
+  },
+  {
+    id: 'jwt',
+    icon: icons.fingerprint,
+    name: 'JWT / JOSE',
+    tagline: 'Token\'ınızı hiç görmeyen bir JWT debugger.',
+    body: 'Çözün, imzalayın, doğrulayın, şifreleyin ve deşifre edin. HS256/384/512, RS, PS ve ES aileleri; şifreli token\'lar için JWE. Yapıştırılan bir anahtarla, bir keystore girişiyle ya da bir JWKS uç noktasıyla doğrulayın. Header ve claim\'ler düzenlenebilir, imza siz yazdıkça yeniden hesaplanır.',
+    points: [
+      'İmzalama ve doğrulama — yalnızca decode değil',
+      'Seçtiğiniz anahtar yönetimi / içerik şifreleme çiftiyle JWE şifreleme ve çözme',
+      'Canlı JWKS ile doğrulama; algoritma allowlist\'i elinizdeki token\'a sabitlenir',
+      'Betiklerin içinde de var: pm.jose.sign / verify, Send ve Runner\'da birebir aynı',
+    ],
+  },
+  {
+    id: 'jwk',
+    icon: icons.hash,
+    name: 'JWK / JWKS',
+    tagline: 'PEM girer, JWK çıkar — gerektiğinde de bir JWKS uç noktası.',
+    body: 'PEM\'i JWK\'ya ve geri çevirin, doğrudan JWK olarak anahtar üretin, RFC 7638 parmak izlerini hesaplayın ve bir anahtar seti kurun. Dahili mock sunucu bu seti JWKS uç noktası olarak yayınlayabilir; böylece bir kimlik akışı tek makinede uçtan uca test edilir.',
+    points: [
+      'RSA ve EC anahtarları için PEM ⇄ JWK',
+      'RFC 7638 parmak izleri',
+      'JWKS oluşturup yerel mock sunucudan yayınlama',
+      'Yalnızca-public dışa aktarım — özel anahtar yanlışlıkla verilmez',
+    ],
+  },
+  {
+    id: 'saml',
+    icon: icons.fileCode,
+    name: 'SAML 2.0',
+    tagline: 'Üretin, imzalayın ve genelde atlanan kısmı yapın: doğrulayın.',
+    body: 'AuthnRequest ya da imzalı assertion üretin, PEM veya keystore girişiyle XML-DSig imzalayın ve geleni doğrulayın. Doğrulayıcı, imzanın gerçekte hangi elemanı kapsadığını kanıtlar; imzalı görünüp aslında imzalı olmayan bir doküman gerekçesiyle reddedilir.',
+    points: [
+      'İmza sarmalama reddedilir — doğrulayıcı hangi elemanın kapsandığını bildirir',
+      'HMAC algoritma karışıklığı, SHA-1 ve XXE gerekçesi söylenerek reddedilir',
+      'Bearer koşul pencereleri, saat kayması dâhil kontrol edilir',
+      'Redirect ve POST binding\'leri, her birinin gerektirdiği kodlamayla',
+    ],
+  },
+  {
+    id: 'ws-security',
+    icon: icons.fileText,
+    name: 'WS-Security',
+    tagline: 'SOAP imzalama ve şifreleme, onu gönderen isteğin yanında.',
+    body: 'SOAP zarflarını X.509 token\'larıyla imzalayın ve şifreleyin, hangi elemanların kapsanacağını seçin, imzalı bir yanıtı doğrulayın. Sonuç bir metin editöründen kopyalanmak yerine doğrudan üzerinde çalıştığınız SOAP isteğine aktarılabilir.',
+    points: [
+      'Timestamp, UsernameToken ve BinarySecurityToken',
+      'Eleman düzeyinde imzalama ve şifreleme',
+      'İmzalı zarfı doğrulayın ve imzanın neyi kapsadığını görün',
+      'Anahtarlar bir PEM dosyasından ya da keystore girişinden gelir',
+    ],
+  },
+  {
+    id: 'tls',
+    icon: icons.globe,
+    name: 'TLS Inspector',
+    tagline: 'Canlı bir uç noktanın gerçekte ne sunduğu: zincir, protokol, şifre takımları.',
+    body: 'Bir host gösterin ve sunduğu sertifika zincirini okuyun: subject ve issuer, SAN\'lar, geçerlilik, imza algoritmaları, anlaşılan protokol sürümü ve cipher, ALPN. El sıkışma başarısız olduğunda ve hata mesajı sebebini söylemediğinde işe yarar.',
+    points: [
+      'Leaf, ara sertifikalar ve eksik olanla birlikte tam zincir',
+      'Süre dolması ve hostname uyuşmazlığı açıkça belirtilir',
+      'Gerektiğinde SNI host\'tan bağımsız ayarlanır',
+      'Sunulan bir sertifika güvenilir olarak keystore\'a kaydedilebilir',
+    ],
+    online: true,
+  },
+  {
+    id: 'utilities',
+    icon: icons.calculator,
+    name: 'Parola, OTP ve QR',
+    tagline: 'Bir web sitesi açtığınız küçük işler.',
+    body: 'Gerçek entropi okumasıyla parola ve parola ifadesi üretin, TOTP/HOTP gizli anahtarlarını yerel bir kasada tutup güncel kodu okuyun, QR üretin ya da okuyun — otpauth:// dâhil, böylece bir test hesabını kaydetmek için telefona gerek kalmaz.',
+    points: [
+      'Dürüst bir güç tahminiyle parola ve parola ifadesi üretimi',
+      'Yerel olarak saklanan TOTP / HOTP kasası',
+      'QR üretimi ve okuma, otpauth:// dâhil',
+      'Aynı panelde hash, HMAC, kodlayıcılar ve daha fazlası',
+    ],
+  },
+]
+---
+
+<BaseLayout
+  lang="tr"
+  title="Çevrimdışı güvenlik araçları — JWT debugger, keystore, SAML, TLS | Testnizer"
+  description="Çevrimdışı JWT debugger, keytool gerektirmeyen JKS ve PKCS#12 keystore yöneticisi, SAML üret/imzala/doğrula, WS-Security, JWK/JWKS ve canlı TLS inceleyici — ücretsiz bir masaüstü API istemcisinin içinde. Anahtarlar makinenizden çıkmaz."
+>
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-4xl px-6 py-20 text-center md:py-24">
+      <div class="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1 text-xs font-medium text-accent-text shadow-sm">
+        <Fragment set:html={icons.key} />
+        Güvenlik araç kutusu
+      </div>
+      <!-- Manuel <br> yok: doğal sarmayla çakışıp tek kelimeyi ayrı satırda
+           bırakıyordu. Genişlik sınırı + text-balance, satırları her ekran
+           boyutunda tarayıcıya dengeletir. -->
+      <h1 class="mx-auto max-w-3xl text-balance text-4xl font-semibold tracking-tight text-text md:text-5xl">
+        Bir itiraf: production JWT'nizi kaç kez bir web sitesine yapıştırdınız?
+      </h1>
+      <p class="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-text-muted">
+        Hepimiz yaptık — sertifikaya bakmak için ayrı program kurmak, <code class="rounded bg-bg px-1.5 py-0.5 text-[13px] text-text">keytool</code> sözdizimini yine aramak ve keystore parolasını bir yerlere not etmek de dâhil. Hiçbiri dikkatsizlik değil. Araçlar başka yerde olduğunda olan şey bu.
+      </p>
+      <p class="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-text-muted">
+        Testnizer onları isteğin zaten durduğu yere koyuyor. İmzalama, çözme ve anahtar üretimi sizin makinenizde, uygulamanın kendi süreci içinde yapılıyor.
+      </p>
+      <div class="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <a
+          href="/tr/download"
+          class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
+        >
+          <Fragment set:html={icons.download} />
+          İndir — ücretsiz, hesap yok
+        </a>
+        <a
+          href="/tr/security"
+          class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted"
+          >
+          Çevrimdışı model nasıl zorunlu kılınıyor
+          <Fragment set:html={icons.arrowRight} />
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <div class="space-y-5">
+        {tools.map((t) => (
+          <article id={t.id} class="scroll-mt-20 rounded-card border border-border bg-bg p-7">
+            <div class="flex items-start gap-4">
+              <span class="grid h-9 w-9 flex-shrink-0 place-items-center rounded-lg bg-accent-light text-accent-text">
+                <Fragment set:html={t.icon} />
+              </span>
+              <div class="min-w-0 flex-1">
+                <h2 class="text-lg font-semibold text-text">{t.name}</h2>
+                <p class="mt-1 text-sm font-medium text-accent-text">{t.tagline}</p>
+                <p class="mt-3 text-sm leading-relaxed text-text-muted">{t.body}</p>
+                <ul class="mt-4 space-y-2">
+                  {t.points.map((p) => (
+                    <li class="flex items-start gap-2.5 text-sm leading-relaxed text-text-muted">
+                      <span class="mt-0.5 flex-shrink-0 text-accent-text">
+                        <Fragment set:html={icons.check} />
+                      </span>
+                      <span>{p}</span>
+                    </li>
+                  ))}
+                </ul>
+                {t.online && (
+                  <p class="mt-4 rounded-lg border border-border bg-bg-soft px-3.5 py-2.5 text-xs leading-relaxed text-text-soft">
+                    "Kablo çekiliyken çalışır" iddiasının istisnası bu: canlı bir uç noktayı incelemek ona bağlanmak demektir. Yine de hiçbir şey yüklemez — sunucunun sunduğunu okur.
+                  </p>
+                )}
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border bg-bg-soft py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Bunları neden yaptık</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">
+        Var olmadıkları için değil.
+      </h2>
+      <div class="mt-6 space-y-5 text-base leading-relaxed text-text-muted">
+        <p>
+          Buradaki araçların her biri zaten bir yerde var. Sorun tam olarak bu. Her biri ya bir web sitesinde, ya ayrı bir programda, ya da sözdizimini her seferinde aradığınız bir komutta yaşıyor — yani birini kullanmak, üzerinde çalıştığınız isteği bırakmak ve çoğu zaman bir şeyi denetiminizde olmayan bir sayfaya yapıştırmak demek.
+        </p>
+        <p>
+          Bankacılıkta, kamuda, sigortada ve sağlıkta bu alışkanlığın denetim raporunda bir adı var. Kimse kötü niyetli olduğu için değil; bir tarayıcı sekmesindeki production token, sonunda bir şey olsun ya da olmasın, bir ifşadır.
+        </p>
+        <p>
+          Yani amaç hiçbir zaman daha iyi bir JWT çözücü yapmak değildi. Başka yere gitme sebebini ortadan kaldırmaktı. Araçlar onlara ihtiyaç duyan isteğin yanında duruyor, özel anahtar uygulama çekirdeğinde kalıp baktığınız pencereye hiç ulaşmıyor ve işlenmek üzere hiçbir yere yüklenmiyor.
+        </p>
+        <p class="text-text">
+          Ağ kablosunu çekin; bu sayfadaki her araç çalışmaya devam eder — uzaktaki bir uç noktayla konuşmak için var olan TLS inceleyici hariç. İddianın tamamı bu ve test edilmek için yazıldı.
+        </p>
+      </div>
+      <div class="mt-9 flex flex-col gap-3 sm:flex-row">
+        <a
+          href="/tr/download"
+          class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
+        >
+          <Fragment set:html={icons.download} />
+          macOS, Windows, Linux için indir
+        </a>
+        <a
+          href="/tr/docs/jwt-debugger"
+          class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted"
+        >
+          Dokümanları okuyun
+          <Fragment set:html={icons.arrowRight} />
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

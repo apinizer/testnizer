@@ -1,13 +1,37 @@
 ---
 import LanguageSwitcher from './LanguageSwitcher.astro'
 
-const links = [
-  { href: '/features', label: 'Features' },
-  { href: '/security', label: 'Security' },
-  { href: '/docs/getting-started', label: 'Docs' },
-  { href: '/download', label: 'Download' },
-]
 const pathname = Astro.url.pathname
+
+/**
+ * The nav follows the page's own language.
+ *
+ * Every link used to be an absolute English path, so a visitor who landed on a
+ * Turkish page was pushed back into English by their first click — the language
+ * switcher was the only thing that knew about /tr. Prefixing here keeps a
+ * reader inside the language they arrived in, which is the whole point of
+ * having the Turkish pages indexed separately.
+ */
+const isTr = pathname === '/tr' || pathname.startsWith('/tr/')
+const p = (href: string): string => (isTr ? `/tr${href}` : href)
+
+const labels = isTr
+  ? { features: 'Özellikler', tools: 'Güvenlik araçları', security: 'Güvenlik', docs: 'Dokümanlar' }
+  : { features: 'Features', tools: 'Security tools', security: 'Security', docs: 'Docs' }
+
+// `match` is the prefix that lights the link up, which is not always the href:
+// Docs points at one page but owns the whole section, and /security must not
+// claim /security-tools just because the string starts the same way. Download
+// is not listed — it is the button on the right.
+const links = [
+  { href: p('/features'), match: p('/features'), label: labels.features },
+  { href: p('/security-tools'), match: p('/security-tools'), label: labels.tools },
+  { href: p('/security'), match: p('/security'), label: labels.security },
+  { href: p('/docs/getting-started'), match: p('/docs'), label: labels.docs },
+]
+
+const isActive = (match: string): boolean =>
+  pathname === match || pathname.startsWith(`${match}/`)
 ---
 
 <header class="sticky top-0 z-40 w-full border-b border-border bg-bg/80 backdrop-blur-md">
@@ -18,12 +42,12 @@ const pathname = Astro.url.pathname
     </a>
 
     <nav class="hidden items-center gap-1 md:flex">
-      {links.map(({ href, label }) => (
+      {links.map(({ href, match, label }) => (
         <a
           href={href}
           class:list={[
             'rounded-md px-3 py-1.5 text-sm transition-colors',
-            pathname.startsWith(href)
+            isActive(match)
               ? 'text-accent-text bg-accent-light'
               : 'text-text-muted hover:text-text hover:bg-bg-muted',
           ]}
@@ -53,10 +77,10 @@ const pathname = Astro.url.pathname
         GitHub
       </a>
       <a
-        href="/download"
+        href={p('/download')}
         class="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
       >
-        Download
+        {isTr ? 'İndir' : 'Download'}
       </a>
     </div>
   </div>
