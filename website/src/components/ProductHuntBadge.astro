@@ -1,0 +1,111 @@
+---
+/**
+ * Product Hunt call-to-action.
+ *
+ * `upvote` is our own artwork, not Product Hunt's. The one badge that carries an
+ * upvote arrow — post-level `featured.svg` — also renders the live vote count,
+ * and publishing a low count argues against us on our own home page. Drawing it
+ * ourselves also lets it sit at the page's own scale: PH's badges are 54px tall
+ * on a white brick, which on this dark hero outshouted the download button it
+ * was sitting under. This one is sized against StatBadge (20px) and the hero's
+ * secondary text, and it borrows the page's surface treatment rather than
+ * punching a white rectangle through it. The wordmark and the orange stay, so
+ * it still reads as Product Hunt.
+ *
+ * It says "Upvote on", never "Featured on": this product was not editor-featured,
+ * and `featured.svg` itself reads "FIND US ON" for that reason.
+ *
+ * No Product Hunt badge upvotes in place in any case — even the familiar orange
+ * one is a link to the post, since upvoting needs a PH login. A link is the
+ * ceiling, so the only thing lost by drawing it ourselves is the vote count.
+ *
+ * `review` and `follow` are Product Hunt's own artwork, served from our origin
+ * rather than hotlinked off api.producthunt.com. Their SVGs carry no external
+ * references, so the copy is exact — same reasoning as StatBadge vs shields.io.
+ * Both are static artwork, so a stored copy cannot go stale. The third badge PH
+ * offers, `product_rating`, is deliberately absent: it renders the live score,
+ * currently "(0.0) based on 0 reviews". Revisit once reviews exist — it needs a
+ * build-time fetch (see lib/latest-release.ts), not a stored file.
+ */
+interface Props {
+  variant?: 'upvote' | 'review' | 'follow'
+  /**
+   * Visible text and accessible name — localised by the caller. Phrase it as
+   * "Upvote on Product Hunt": never "Featured on", see above.
+   */
+  label: string
+}
+const { variant = 'upvote', label } = Astro.props
+
+const PRODUCT = 'testnizer-the-offline-api-client'
+const LAUNCH = `https://www.producthunt.com/products/${PRODUCT}/launches/${PRODUCT}`
+
+// The image-badge hrefs are verbatim from Product Hunt's embed page, duplicated
+// `utm_source` included: that is their attribution scheme, not ours to tidy up.
+const HREF = {
+  upvote: `${LAUNCH}?utm_source=badge-upvote&utm_medium=badge`,
+  review: `https://www.producthunt.com/products/${PRODUCT}/reviews/new?utm_source=badge-product_review&utm_medium=badge&utm_source=badge-${PRODUCT}`,
+  follow: `https://www.producthunt.com/products/${PRODUCT}?utm_source=badge-follow&utm_medium=badge&utm_source=badge-${PRODUCT}`,
+}
+
+const PH_ORANGE = '#ff6154'
+---
+
+{
+  variant === 'upvote' ? (
+    <a
+      href={HREF.upvote}
+      target="_blank"
+      rel="noopener"
+      aria-label={label}
+      class="ph-upvote inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-medium tracking-tight transition-colors"
+    >
+      <svg width="15" height="15" viewBox="0 0 31 31" aria-hidden="true" class="shrink-0">
+        <path
+          fill={PH_ORANGE}
+          d="M31,15.5 C31,24.0603917 24.0603917,31 15.5,31 C6.93960833,31 0,24.0603917 0,15.5 C0,6.93960833 6.93960833,0 15.5,0 C24.0603917,0 31,6.93960833 31,15.5"
+        />
+        <path
+          fill="#050810"
+          d="M17.4329412,15.9558824 L17.4329412,15.9560115 L13.0929412,15.9560115 L13.0929412,11.3060115 L17.4329412,11.3060115 L17.4329412,11.3058824 C18.7018806,11.3058824 19.7305882,12.3468365 19.7305882,13.6308824 C19.7305882,14.9149282 18.7018806,15.9558824 17.4329412,15.9558824 M17.4329412,8.20588235 L17.4329412,8.20601152 L10.0294118,8.20588235 L10.0294118,23.7058824 L13.0929412,23.7058824 L13.0929412,19.0560115 L17.4329412,19.0560115 L17.4329412,19.0558824 C20.3938424,19.0558824 22.7941176,16.6270324 22.7941176,13.6308824 C22.7941176,10.6347324 20.3938424,8.20588235 17.4329412,8.20588235"
+        />
+      </svg>
+      <span>{label}</span>
+      <svg width="9" height="6" viewBox="0 0 14 9" aria-hidden="true" class="shrink-0 opacity-80">
+        <path fill="currentColor" d="M7,0 L14,9 L0,9 Z" />
+      </svg>
+    </a>
+  ) : (
+    <a
+      href={HREF[variant]}
+      target="_blank"
+      rel="noopener"
+      class="inline-block transition-opacity hover:opacity-80"
+    >
+      <img
+        src={`/producthunt-${variant}.svg`}
+        alt={label}
+        width="250"
+        height="54"
+        loading="lazy"
+        class="h-[38px] w-auto"
+      />
+    </a>
+  )
+}
+
+<style>
+  /* Kept out of the class list so the two orange tints stay next to each other:
+     the border and fill are the brand colour at low alpha, the text is lightened
+     enough to clear contrast on the near-black hero at 12px. */
+  .ph-upvote {
+    border-color: rgb(255 97 84 / 0.32);
+    background: rgb(255 97 84 / 0.08);
+    color: #ff8878;
+  }
+  .ph-upvote:hover {
+    border-color: rgb(255 97 84 / 0.55);
+    background: rgb(255 97 84 / 0.14);
+    color: #ff9b8d;
+  }
+</style>
