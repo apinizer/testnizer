@@ -24,11 +24,50 @@ isteği ortamlar, değişken zincirleme ve test onayı takibiyle sırayla çalı
    - **Ortam** — hangi ortamın değişkenlerini kullanacağınızı seçin
    - **Yineleme** — tüm diziyi kaç kez çalıştıracağınız (yük örnekleme veya
      veri güdümlü test için kullanışlıdır)
-   - **Gecikme** — istekler arasında milisaniye cinsinden duraklama (hız sınırlarını
-     zorlamamak için)
+   - **İstekler arası gecikme** — her istek arasında milisaniye cinsinden duraklama
+   - **İterasyonlar arası gecikme** — tam turlar arasındaki duraklama; bu farklı
+     bir boşluktur ve çoğu zaman asıl istediğiniz odur
    - **İlk başarısızlıkta dur** — herhangi bir test onayı başarısız olursa çalıştırmayı
      durdur
 4. **Başlat**'a tıklayın
+
+### Setup, Flow ve Teardown
+
+Dizideki her istek bir rol taşır; bir klasör de içindeki her şey için bir rol
+taşıyabilir:
+
+| Rol | Ne zaman koşar | Karara sayılır mı |
+|---|---|---|
+| **Setup** | akıştan önce | evet |
+| **Flow** | koşunun kendisi | evet |
+| **Teardown** | akıştan sonra, her hâlükârda | hayır — ayrı raporlanır |
+
+**Teardown her zaman koşar.** Akış bittiyse de, hatada durduysa da, ağ
+koptuysa da, Stop'a bastıysanız da temizlik yine çalışır. Bir şeyi Teardown
+olarak işaretlemenin anlamı budur: koşu ters gittiğinde bile oluşturduğunuz
+test verisi silinir.
+
+**Başarısız bir Setup adımı akışı atlar.** Koşunun bağlı olduğu şey
+oluşturulamadıysa, yarım kurulmuş bir dünyaya karşı akışı çalıştırmak hiçbir
+anlamı olmayan hatalar üretir. Akış atlanır, teardown yine koşar — ve bu, *İlk
+başarısızlıkta dur* ayarından bağımsız olur; çünkü bu bir tercih değil,
+başarısız bir ön koşulun anlamıdır.
+
+**Teardown bir koşuyu ne kurtarabilir ne batırabilir.** Sonuçları kendi
+satırında sayılır, üst düzey hata sayacında değil. Başarısız bir temizlik adımı
+görülmeye değerdir, ama geçen bir koşuyu kalan bir koşuya çevirmez.
+
+### Bir koşuyu durdurmak
+
+İki buton ve her aşamada farklı anlamları var:
+
+- **Stop** — koşuyu bitir, ama temizliğin tamamlanmasına izin ver. Her teardown
+  isteği ve betiği yine çalışır.
+- **Stop now** — hemen dur; uçuştaki her şeyi, temizlik dâhil, bırak.
+
+Hiç koşmamış istekler sonuçlarda dışarıda bırakılmaz, `NOT_RUN` olarak
+listelenir; böylece yarıda kesilen on iki adımlık bir koşu yine on iki satır
+gösterir. Bunlar atlanmış sayılır — ne geçti ne kaldı.
 
 ### Değişken zincirleme
 

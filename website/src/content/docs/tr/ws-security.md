@@ -99,6 +99,20 @@ istediğinizde kullanışlıdır.
 
 Aynı motor, aynı özel anahtarlar — çevrimiçi araç gerekmez.
 
+Alt bilgideki yargı, o an ekranda olana aittir: modu, girdiyi ya da sertifikayı
+değiştirdiğinizde önceki "Signature is valid", o zamandan beri düzenlediğiniz
+XML'in üzerinde asılı kalmaz, temizlenir.
+
+## Keystore'dan anahtarlar
+
+Sertifika ve özel anahtar, yapıştırılmış PEM yerine kayıtlı bir
+[keystore](/tr/docs/keystore-studio) girişinden gelebilir. Depoyu ve alias'ı
+seçin; seçtiğinizde PEM alanları devre dışı kalır, böylece hangi anahtarın
+kullanıldığı soru olmaz.
+
+İmzalama ve şifreleme main process'te koşar — özel anahtar pencereye hiç
+ulaşmaz. PEM yapıştırmak çalışmaya devam eder ve hâlâ varsayılandır.
+
 ## Bu neden önemli
 
 Çevrimiçi "SOAP hata ayıklayıcıları", üretim XML envelope'larının başkasının

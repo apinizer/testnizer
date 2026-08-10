@@ -1,0 +1,224 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro'
+import { icons } from '../components/icons'
+
+/**
+ * The security toolbox, as its own entry point.
+ *
+ * /security is the trust page — what the app refuses to do. This page is the
+ * capability page: what it does instead of jwt.io, keytool, KeyStore Explorer
+ * and a folder of one-off scripts. They cross-link; neither repeats the other.
+ */
+
+const tools = [
+  {
+    id: 'keystore',
+    icon: icons.key,
+    name: 'Keystore Studio',
+    tagline: 'A GUI for keytool and openssl that you do not have to memorise.',
+    body: 'Open, create, edit, convert and export JKS and PKCS#12 keystores, and read X.509 certificates without a command line. Generate key pairs and secret keys, import PEM/DER/PFX material, match a key against its certificate, change store and entry passwords, and convert between formats in place.',
+    points: [
+      'JKS ⇄ PKCS#12 conversion, with what cannot survive the trip named before you commit',
+      'Certificate details — subject, issuer, SANs, key usage, validity, fingerprints',
+      'Key pair and secret key generation with the extensions spelled out, not guessed',
+      'A saved keystore can then supply the key for mTLS, WS-Security, JWT/JOSE and SAML',
+    ],
+  },
+  {
+    id: 'jwt',
+    icon: icons.fingerprint,
+    name: 'JWT / JOSE',
+    tagline: 'A JWT debugger that never sees your token.',
+    body: 'Decode, sign, verify, encrypt and decrypt. HS256/384/512, RS, PS and ES families, plus JWE for encrypted tokens. Verify against a pasted key, a keystore entry, or a JWKS endpoint. The header and claims are editable, and the signature is recomputed as you type.',
+    points: [
+      'Sign and verify — not just decode',
+      'JWE encrypt/decrypt with the key-management and content-encryption pair you choose',
+      'Verify against a live JWKS, with the algorithm allowlist pinned to the token you are holding',
+      'Available inside scripts too: pm.jose.sign / verify, identical on Send and in the Runner',
+    ],
+  },
+  {
+    id: 'jwk',
+    icon: icons.hash,
+    name: 'JWK / JWKS',
+    tagline: 'PEM in, JWK out — and a JWKS endpoint when you need one.',
+    body: 'Convert PEM to JWK and back, generate keys directly as JWK, compute RFC 7638 thumbprints, and assemble a key set. The built-in mock server can serve that set as a JWKS endpoint, so an identity flow can be tested end to end on one machine.',
+    points: [
+      'PEM ⇄ JWK for RSA and EC keys',
+      'RFC 7638 thumbprints',
+      'Build a JWKS and serve it from the local mock server',
+      'Public-only export, so a private key is never handed over by accident',
+    ],
+  },
+  {
+    id: 'saml',
+    icon: icons.fileCode,
+    name: 'SAML 2.0',
+    tagline: 'Build, sign and — the part that usually gets skipped — validate.',
+    body: 'Produce an AuthnRequest or a signed assertion, sign it with XML-DSig from a PEM or a keystore entry, and validate what comes back. The validator proves which element the signature actually covers, so a document that looks signed but is not gets rejected with the reason.',
+    points: [
+      'Signature wrapping rejected — the validator reports which element was covered',
+      'HMAC algorithm confusion, SHA-1 and XXE refused with a stated cause',
+      'Bearer condition windows checked, including clock skew',
+      'Redirect and POST bindings, with the encoding each one requires',
+    ],
+  },
+  {
+    id: 'ws-security',
+    icon: icons.fileText,
+    name: 'WS-Security',
+    tagline: 'SOAP signing and encryption, attached to the request that sends it.',
+    body: 'Sign and encrypt SOAP envelopes with X.509 tokens, choose which elements are covered, and verify a signed response. The result can be pushed straight into the SOAP request you are working on rather than copied through a text editor.',
+    points: [
+      'Timestamp, UsernameToken and BinarySecurityToken',
+      'Element-level signing and encryption',
+      'Verify a signed envelope and see what the signature covers',
+      'Keys come from a PEM file or a keystore entry',
+    ],
+  },
+  {
+    id: 'tls',
+    icon: icons.globe,
+    name: 'TLS Inspector',
+    tagline: 'What a live endpoint actually presents — chain, protocol, ciphers.',
+    body: 'Point it at a host and read the certificate chain it serves: subject and issuer, SANs, validity, signature algorithms, the negotiated protocol version and cipher, and ALPN. Useful when a handshake fails and the error message is not telling you why.',
+    points: [
+      'Full chain with the leaf, intermediates and what is missing',
+      'Expiry and hostname mismatch called out plainly',
+      'SNI set independently of the host, when they need to differ',
+      'A presented certificate can be saved into a keystore as trusted',
+    ],
+    online: true,
+  },
+  {
+    id: 'utilities',
+    icon: icons.calculator,
+    name: 'Passwords, OTP and QR',
+    tagline: 'The small things you were opening a website for.',
+    body: 'Generate passwords and passphrases with real entropy readings, keep TOTP/HOTP secrets in a local vault and read the current code, and produce or scan QR codes — including the otpauth:// kind, so enrolling a test account does not involve a phone.',
+    points: [
+      'Password and passphrase generation with an honest strength estimate',
+      'TOTP / HOTP vault, stored locally',
+      'QR generation and decoding, otpauth:// included',
+      'Hashing, HMAC, encoders, JWT-adjacent conversions and more in the same panel',
+    ],
+  },
+]
+---
+
+<BaseLayout
+  title="Offline security tools — JWT debugger, keystore explorer, SAML, TLS | Testnizer"
+  description="An offline JWT debugger, a keytool-free JKS and PKCS#12 keystore explorer, SAML build/sign/validate, WS-Security, JWK/JWKS and a live TLS inspector — inside a free desktop API client. Keys never leave your machine."
+>
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-4xl px-6 py-20 text-center md:py-24">
+      <div class="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1 text-xs font-medium text-accent-text shadow-sm">
+        <Fragment set:html={icons.key} />
+        Security toolbox
+      </div>
+      <!-- No manual <br>: it fought the natural wrap and left "pasted" alone on
+           its own line. A max width plus text-balance lets the browser even the
+           lines out at every viewport instead. -->
+      <h1 class="mx-auto max-w-3xl text-balance text-4xl font-semibold tracking-tight text-text md:text-5xl">
+        Be honest: how many times have you pasted a production JWT into a website?
+      </h1>
+      <p class="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-text-muted">
+        We have all done it — along with installing a separate program to read a certificate, looking up <code class="rounded bg-bg px-1.5 py-0.5 text-[13px] text-text">keytool</code> syntax again, and writing the keystore password down somewhere. None of it is carelessness. It is what happens when the tools live somewhere else.
+      </p>
+      <p class="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-text-muted">
+        Testnizer puts them where the request already is. The signing, the decoding and the key generation all happen on your machine, in the app's own process.
+      </p>
+      <div class="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <a
+          href="/download"
+          class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
+        >
+          <Fragment set:html={icons.download} />
+          Download — free, no account
+        </a>
+        <a
+          href="/security"
+          class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted"
+        >
+          How the offline model is enforced
+          <Fragment set:html={icons.arrowRight} />
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <div class="space-y-5">
+        {tools.map((t) => (
+          <article id={t.id} class="scroll-mt-20 rounded-card border border-border bg-bg p-7">
+            <div class="flex items-start gap-4">
+              <span class="grid h-9 w-9 flex-shrink-0 place-items-center rounded-lg bg-accent-light text-accent-text">
+                <Fragment set:html={t.icon} />
+              </span>
+              <div class="min-w-0 flex-1">
+                <h2 class="text-lg font-semibold text-text">{t.name}</h2>
+                <p class="mt-1 text-sm font-medium text-accent-text">{t.tagline}</p>
+                <p class="mt-3 text-sm leading-relaxed text-text-muted">{t.body}</p>
+                <ul class="mt-4 space-y-2">
+                  {t.points.map((p) => (
+                    <li class="flex items-start gap-2.5 text-sm leading-relaxed text-text-muted">
+                      <span class="mt-0.5 flex-shrink-0 text-accent-text">
+                        <Fragment set:html={icons.check} />
+                      </span>
+                      <span>{p}</span>
+                    </li>
+                  ))}
+                </ul>
+                {t.online && (
+                  <p class="mt-4 rounded-lg border border-border bg-bg-soft px-3.5 py-2.5 text-xs leading-relaxed text-text-soft">
+                    This one is the exception to "works with the cable pulled": inspecting a live endpoint means connecting to it. It still uploads nothing — it reads what the server presents.
+                  </p>
+                )}
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="border-t border-border bg-bg-soft py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Why we built these</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">
+        Not because they did not exist.
+      </h2>
+      <div class="mt-6 space-y-5 text-base leading-relaxed text-text-muted">
+        <p>
+          Every one of these tools already exists somewhere. That is the problem. Each of them lives on a website, in a separate program, or in a command whose syntax you look up every time — so using one means leaving the request you were working on, and often means pasting something into a page you do not control.
+        </p>
+        <p>
+          In banking, government, insurance and healthcare, that habit has a name in the audit report. Not because anyone acted in bad faith, but because a production token in a browser tab is a disclosure whether or not anything went wrong.
+        </p>
+        <p>
+          So the point was never to build a better JWT decoder. It was to remove the reason to go somewhere else. The tools sit next to the request that needs them, the private key stays in the app core and never reaches the window you are looking at, and nothing is uploaded to be processed.
+        </p>
+        <p class="text-text">
+          Pull the network cable and every tool on this page still works — except the TLS inspector, which exists to talk to a remote endpoint. That is the whole claim, and it is meant to be tested.
+        </p>
+      </div>
+      <div class="mt-9 flex flex-col gap-3 sm:flex-row">
+        <a
+          href="/download"
+          class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
+        >
+          <Fragment set:html={icons.download} />
+          Download for macOS, Windows, Linux
+        </a>
+        <a
+          href="/docs/jwt-debugger"
+          class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted"
+        >
+          Read the docs
+          <Fragment set:html={icons.arrowRight} />
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

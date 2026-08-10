@@ -1,7 +1,7 @@
 ---
 title: Yerleşik araçlar
 description: Testnizer ile gelen offline araçların referansı — JWT decoder/encoder, biçimlendiriciler, encoder'lar, diff, JSONPath, XPath, XSLT, Jolt, WS-Security, hash, HMAC, JSON Schema, JSON↔XML, epoch, HTTP durum kodları, sayı tabanı dönüştürücü.
-order: 2
+order: 6
 section: Araçlar
 ---
 
