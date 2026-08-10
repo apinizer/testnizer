@@ -24,9 +24,50 @@ clicking Send on each one.
    - **Environment** — pick which environment's variables to use
    - **Iterations** — number of times to run the entire sequence (useful for
      load-sampling or data-driven testing)
-   - **Delay** — ms pause between requests (avoids hammering rate limits)
+   - **Delay between requests** — ms pause between each request
+   - **Delay between iterations** — ms pause between whole passes, which is a
+     different gap and often the one you actually want
    - **Stop on first failure** — halt the run if any test assertion fails
 4. Click **Start**
+
+### Setup, Flow and Teardown
+
+Every request in the sequence carries a role, and a folder can carry one for
+everything inside it:
+
+| Role | When it runs | Counts toward the verdict |
+|---|---|---|
+| **Setup** | before the flow | yes |
+| **Flow** | the run itself | yes |
+| **Teardown** | after the flow, always | no — reported separately |
+
+**Teardown always runs.** Whether the flow finished, stopped on an error, lost
+the network, or you pressed Stop, the cleanup still executes. That is the point
+of marking something Teardown: the test data you created gets removed even when
+the run went wrong.
+
+**A failed Setup step skips the flow.** If the thing the run depends on could
+not be created, running the flow against a half-built world produces failures
+that mean nothing. The flow is skipped and teardown still runs — and this
+happens regardless of the *Stop on first failure* setting, because it is not a
+preference, it is what a failed precondition means.
+
+**Teardown cannot rescue or sink a run.** Its results are tallied on their own
+line, not in the top-level error count. A cleanup step that fails is worth
+seeing, but it does not turn a passing run into a failing one.
+
+### Stopping a run
+
+Two buttons, and they mean different things in every phase:
+
+- **Stop** — end the run, but let cleanup finish. Every teardown request and
+  script still executes.
+- **Stop now** — halt immediately, abandoning whatever is in flight, cleanup
+  included.
+
+Requests that never ran are listed in the results as `NOT_RUN` rather than
+being left out, so an interrupted run of twelve steps still shows twelve rows.
+They are counted as skipped — neither passed nor failed.
 
 ### Variable chaining
 

@@ -159,26 +159,61 @@ Decoder sekmesine kopyalayıp Verify panelinde açık anahtarı yapıştırarak
 imza çiftini round-trip doğrulayabilirsiniz — istemci/sunucu eşleşmesini
 hızlıca kontrol etmek için faydalı.
 
-### Script içinde programatik token üretimi
+## Keystore anahtarıyla imzalama
 
-Bir istek akışı sırasında test token'ları üretmek için pre-request
-script'inde `crypto` modülünü kullanın:
+Aracın özel anahtar istediği her yerde, PEM yapıştırmak yerine kayıtlı bir
+**[keystore](/tr/docs/keystore-studio)** girişini gösterebilirsiniz. Depoyu
+seçin, alias'ı seçin, imzalayın.
+
+Anahtarın kendisi pencereye hiç ulaşmaz: imzalama uygulamanın main process'inde
+olur ve geriye yalnızca token döner. Keystore girişi seçildiğinde PEM alanı
+devre dışı kalır, böylece hangi anahtarın kullanıldığı hiç soru olmaz.
+
+PEM yapıştırmak çalışmaya devam eder ve hâlâ varsayılandır. Hiçbir şey keystore
+kullanmanızı zorunlu kılmaz.
+
+## JWE — şifreli token'lar
+
+**JWE** sekmesi imzalamaz, şifreler ve çözer. İki şey seçersiniz ve bunlar
+ayrıdır:
+
+- **`alg`** — içerik anahtarının nasıl yönetileceği (`RSA-OAEP`, `A256KW`, `dir`, …)
+- **`enc`** — içeriğin nasıl şifreleneceği (`A128GCM`, `A256GCM`, `A256CBC-HS512`, …)
+
+Anahtar alanı, gerçekten seçtiğiniz çift için ne istediğini söyler — `dir` +
+`A128GCM` bileşimi 16 bayt ister, `A256GCM`'in isteyeceği 32'yi değil. Simetrik
+ile asimetrik `alg` arasında geçiş yapmak anahtar alanlarını temizler; simetrik
+bir ayarın üstünde kilitli bir public-key kutusu bırakmaz.
+
+## Tazelik
+
+Token'ı, anahtarı ya da algoritmayı değiştirin — önceki doğrulama sonucu
+kaybolur. O zamandan beri düzenlediğiniz bir token'ın yanında duran yeşil bir
+"Signature verified" yanlış bir güvenlik cevabıdır; yanlış okunmaya
+bırakılmak yerine temizlenir.
+
+## Betikten imzalama
+
+Bir istek akışı sırasında token üretmenin desteklenen yolu `pm.jose`'dur —
+**Send** ile **[Collection Runner](/tr/docs/cli-and-automation)** üzerinde
+birebir aynı çalışır:
 
 ```js
-// Ön istek scripti — HS256 ile JWT imzala
-const crypto = require('crypto')
-const header  = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url')
-const payload = Buffer.from(JSON.stringify({
-  sub:  pm.environment.get('userId'),
-  iat:  Math.floor(Date.now() / 1000),
-  exp:  Math.floor(Date.now() / 1000) + 3600,
-})).toString('base64url')
-const secret  = pm.environment.get('signingSecret')
-const sig     = crypto.createHmac('sha256', secret)
-                      .update(`${header}.${payload}`)
-                      .digest('base64url')
-pm.environment.set('testToken', `${header}.${payload}.${sig}`)
+// Ön istek scripti — HS256 ile imzala
+const token = await pm.jose.sign(
+  { sub: pm.environment.get('userId'), exp: Math.floor(Date.now() / 1000) + 3600 },
+  { alg: 'HS256', secret: pm.environment.get('signingSecret') },
+)
+pm.environment.set('testToken', token)
 ```
+
+`pm.jose.verify` diğer yarısıdır. İkisi de asenkrondur, `await` edin — ve
+async callback'li bir `pm.test`'in iki yolda da beklendiğini unutmayın; yani
+içindeki bir assertion varsayılan olarak geçemez.
+
+Doğrudan kütüphaneye ihtiyacınız varsa `require('jose')` da mevcuttur;
+`require('crypto')` ve [betik sanal alanının](/tr/docs/scripts) geri kalanı da
+öyle.
 
 Elde edilen `{{testToken}}` değişkeni istek header'larında kullanılabilir ve
 **Değişkenden** seçeneğiyle JWT hata ayıklayıcıda incelenebilir.

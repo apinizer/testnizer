@@ -450,6 +450,46 @@ fetch + inspect a token up front.
 > paste a token, or use Client Credentials / Password for fully automatic
 > tokens.
 
+## Signing tokens — `pm.jose`
+
+When you need to mint or check a JWS/JWT inside a script — a signed assertion
+for a token exchange, a request signature, a token the API expects you to
+produce rather than receive — `pm.jose` does it without leaving the sandbox:
+
+```js
+// Pre-request — sign
+const token = await pm.jose.sign(
+  { iss: 'testnizer', sub: pm.environment.get('userId'), exp: Math.floor(Date.now() / 1000) + 300 },
+  { alg: 'RS256', privateKey: pm.environment.get('signingKeyPem') },
+)
+pm.environment.set('assertion', token)
+```
+
+```js
+// Post-response — verify what came back
+const result = await pm.jose.verify(pm.response.json().id_token, {
+  alg: 'RS256',
+  publicKey: pm.environment.get('idpPublicKey'),
+})
+pm.test('id_token is signed by the IdP', () => {
+  pm.expect(result.payload.aud).to.eql('my-client-id')
+})
+```
+
+`require('jose')` is available too if you need the library's own surface.
+
+Two things to hold on to:
+
+- **Both are asynchronous.** `await` them. A `pm.test` whose callback is
+  `async` is awaited on **Send** and in the **Runner** alike, so an assertion
+  inside one cannot quietly pass while the promise is still pending.
+- **Send and Run behave identically.** The script runtime is a single shared
+  implementation, so a token that signs correctly when you press Send signs
+  correctly in a scheduled run.
+
+For the interactive equivalent — and for JWE, JWKS and keystore-backed keys —
+see the [JWT / JOSE tool](/docs/jwt-debugger).
+
 ## Recipes
 
 ### HMAC signature (pre-request) — with CryptoJS

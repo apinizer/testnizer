@@ -35,6 +35,20 @@ before any HTTP authentication. This is common in:
 |---|---|---|
 | PEM certificate + PEM private key | `.pem` / `.crt` + `.key` | Most common on Linux/macOS |
 | PFX / PKCS#12 bundle | `.pfx` / `.p12` | Common on Windows; may require a passphrase |
+| A saved keystore entry | — | An alias from a store in your [keystore library](/docs/keystore-studio) |
+
+### Using a keystore instead of files
+
+If the certificate already lives in a JKS or PKCS#12 you opened in
+[Keystore Studio](/docs/keystore-studio), you can point at the alias rather than
+exporting files first. Pick the store, pick the alias, done.
+
+The private key stays in the app's main process — it is used to build the TLS
+context and never reaches the renderer, so it cannot appear in the window,
+in a log, or in an exported project.
+
+This is additive: the file pickers above are unchanged and remain the default.
+A keystore is one more source, not a replacement.
 
 ### Adding a PEM certificate
 

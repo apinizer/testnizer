@@ -1,6 +1,6 @@
 ---
 title: JWT Debugger
-description: Decode, encode, verify, and inspect JSON Web Tokens entirely offline — no website, no network call.
+description: Decode, sign, verify, encrypt and decrypt JSON Web Tokens entirely offline — HS/RS/PS/ES, JWE, JWKS and keystore keys, with no website in the loop.
 order: 1
 section: Tools
 ---
@@ -157,26 +157,61 @@ signed token into the Decoder tab, paste the public key in the Verify
 panel, and round-trip the verification — handy for quickly checking a
 client / server signature pair.
 
-### Programmatic token generation in scripts
+## Signing with a keystore key
 
-For generating test tokens during a request flow, use the `crypto` module
-in a pre-request script:
+Anywhere the tool asks for a private key you can point at an entry in a saved
+**[keystore](/docs/keystore-studio)** instead of pasting a PEM. Pick the store,
+pick the alias, and sign.
+
+The key itself never reaches the window: signing happens in the app's main
+process and only the resulting token comes back. When a keystore entry is
+selected the PEM field is disabled, so there is never a question of which key
+was used.
+
+Pasting a PEM still works and is still the default. Nothing requires a
+keystore.
+
+## JWE — encrypted tokens
+
+The **JWE** tab encrypts and decrypts, rather than signs. You choose two
+things, and they are separate:
+
+- **`alg`** — how the content key is managed (`RSA-OAEP`, `A256KW`, `dir`, …)
+- **`enc`** — how the content is encrypted (`A128GCM`, `A256GCM`, `A256CBC-HS512`, …)
+
+The key field tells you what it wants for the pair you actually selected — a
+`dir` + `A128GCM` combination needs 16 bytes, not the 32 that `A256GCM` would
+need. Switching between a symmetric and an asymmetric `alg` clears the key
+fields rather than leaving a public-key box locked over a symmetric setting.
+
+## Freshness
+
+Change the token, the key or the algorithm and the previous verification result
+disappears. A green "Signature verified" sitting next to a token you have since
+edited is a wrong security answer, so it is cleared rather than left to be
+misread.
+
+## Signing from a script
+
+`pm.jose` is the supported way to mint a token during a request flow — it runs
+identically on **Send** and in the **[Collection Runner](/docs/cli-and-automation)**:
 
 ```js
-// Pre-request script — sign a JWT with HS256
-const crypto = require('crypto')
-const header  = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url')
-const payload = Buffer.from(JSON.stringify({
-  sub:  pm.environment.get('userId'),
-  iat:  Math.floor(Date.now() / 1000),
-  exp:  Math.floor(Date.now() / 1000) + 3600,
-})).toString('base64url')
-const secret  = pm.environment.get('signingSecret')
-const sig     = crypto.createHmac('sha256', secret)
-                      .update(`${header}.${payload}`)
-                      .digest('base64url')
-pm.environment.set('testToken', `${header}.${payload}.${sig}`)
+// Pre-request script — sign with HS256
+const token = await pm.jose.sign(
+  { sub: pm.environment.get('userId'), exp: Math.floor(Date.now() / 1000) + 3600 },
+  { alg: 'HS256', secret: pm.environment.get('signingSecret') },
+)
+pm.environment.set('testToken', token)
 ```
 
-The resulting `{{testToken}}` variable can then be used in request headers
-and inspected in the JWT debugger using **From variable**.
+`pm.jose.verify` is the other half. Both are asynchronous, so `await` them —
+and note that a `pm.test` with an async callback is awaited on both paths, so
+an assertion inside one cannot pass by default.
+
+`require('jose')` is also available if you need the library directly, as are
+`require('crypto')` and the rest of the
+[script sandbox](/docs/scripts).
+
+The resulting `{{testToken}}` variable can then be used in request headers and
+inspected in the JWT debugger using **From variable**.

@@ -98,6 +98,20 @@ envelope and want to inspect it before sending a real one.
 
 Same engine, same private keys — no online tool needed.
 
+The verdict in the footer belongs to what is currently on screen: change the
+mode, the input or the certificate and the previous "Signature is valid" is
+cleared rather than left standing over XML you have since edited.
+
+## Keys from a keystore
+
+The certificate and private key can come from an entry in a saved
+[keystore](/docs/keystore-studio) instead of pasted PEM. Select the store and
+the alias; when you do, the PEM fields are disabled so there is no question
+about which key is in use.
+
+Signing and encryption run in the main process — the private key never reaches
+the window. Pasting PEM still works and is still the default.
+
 ## Why this matters
 
 Online "SOAP debuggers" are how production XML envelopes end up in someone

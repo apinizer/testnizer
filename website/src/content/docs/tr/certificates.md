@@ -35,6 +35,20 @@ yaygındır:
 |---|---|---|
 | PEM sertifika + PEM özel anahtar | `.pem` / `.crt` + `.key` | Linux/macOS'ta en yaygın |
 | PFX / PKCS#12 paketi | `.pfx` / `.p12` | Windows'ta yaygın; parola ifadesi gerekebilir |
+| Kayıtlı bir keystore girişi | — | [Keystore kütüphanenizdeki](/tr/docs/keystore-studio) bir depodan alias |
+
+### Dosya yerine keystore kullanmak
+
+Sertifika, [Keystore Studio](/tr/docs/keystore-studio)'da açtığınız bir JKS ya
+da PKCS#12 içinde zaten duruyorsa, önce dosya dışa aktarmak yerine doğrudan
+alias'ı gösterebilirsiniz. Depoyu seçin, alias'ı seçin, bitti.
+
+Özel anahtar uygulamanın main process'inde kalır — TLS bağlamını kurmak için
+kullanılır ve renderer'a hiç ulaşmaz; dolayısıyla pencerede, bir logda ya da
+dışa aktarılmış bir projede görünemez.
+
+Bu bir eklemedir: yukarıdaki dosya seçiciler değişmedi ve varsayılan olarak
+kalıyor. Keystore bir kaynak daha, yerine geçen bir şey değil.
 
 ### PEM sertifikası ekleme
 

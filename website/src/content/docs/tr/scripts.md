@@ -454,6 +454,46 @@ sekmesindeki **Get New Access Token**'ı kullanın.
 > değildir — bir token yapıştırın veya tam otomatik token'lar için Client
 > Credentials / Password kullanın.
 
+## Token imzalama — `pm.jose`
+
+Bir betiğin içinde JWS/JWT üretmeniz ya da kontrol etmeniz gerektiğinde — token
+takası için imzalı bir assertion, istek imzası, API'nin almanızı değil
+üretmenizi beklediği bir token — `pm.jose` bunu sanal alandan çıkmadan yapar:
+
+```js
+// Ön istek — imzala
+const token = await pm.jose.sign(
+  { iss: 'testnizer', sub: pm.environment.get('userId'), exp: Math.floor(Date.now() / 1000) + 300 },
+  { alg: 'RS256', privateKey: pm.environment.get('signingKeyPem') },
+)
+pm.environment.set('assertion', token)
+```
+
+```js
+// Yanıt sonrası — geleni doğrula
+const result = await pm.jose.verify(pm.response.json().id_token, {
+  alg: 'RS256',
+  publicKey: pm.environment.get('idpPublicKey'),
+})
+pm.test('id_token IdP tarafından imzalanmış', () => {
+  pm.expect(result.payload.aud).to.eql('my-client-id')
+})
+```
+
+Kütüphanenin kendi yüzeyine ihtiyacınız varsa `require('jose')` da mevcuttur.
+
+Akılda tutulacak iki şey:
+
+- **İkisi de asenkrondur.** `await` edin. Callback'i `async` olan bir `pm.test`
+  hem **Send**'de hem **Runner**'da beklenir; yani içindeki bir assertion,
+  promise hâlâ beklerken sessizce geçemez.
+- **Send ve Run birebir aynı davranır.** Betik çalışma zamanı tek bir paylaşılan
+  implementasyondur; Send'e bastığınızda doğru imzalanan bir token, zamanlanmış
+  bir koşuda da doğru imzalanır.
+
+Etkileşimli karşılığı — ve JWE, JWKS ile keystore destekli anahtarlar — için
+[JWT / JOSE aracına](/tr/docs/jwt-debugger) bakın.
+
 ## Tarifler
 
 ### HMAC imzası (ön istek) — CryptoJS ile
