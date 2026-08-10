@@ -54,6 +54,21 @@ dosya adları Türkçe karakterleri koruyor; yeni test suite'i input'un vaat ett
 yerde oluşuyor; Test suite klasörleri elle yönetilebiliyor; AI Chat metni
 seçilebiliyor ve akış sırasında ekran dibe zıplamıyor.
 
+**Dört tur elle testin ardından.** Hata fırlatan bir ön-istek betiği artık
+isteği yine de göndermek yerine durduruyor. Stop artık teardown'ın bir kısmını
+atlamıyor; güvenli **Stop** ile anında duran **Stop now** iki ayrı buton ve
+koşunun her aşamasında aynı şekilde okunuyor. Console çekmecesi workbench'in
+altını kapatmıyor. Runner'a *iterasyonlar arası* gecikme eklendi, mevcut Delay
+alanı da hangi boşluğu doldurduğunu söylüyor. Klasörler hem Run Sequence'te hem
+test suite'lerinde yapısını koruyor ve kendi Setup / Flow / Teardown rolünü
+alabiliyor. Bir suite'in runner sekmesi başka bir sekmeye gidip dönmeye
+dayanıyor; Tests içinde açılan yeni sekme Tests'te kalıyor. "Create Test Suite
+from this folder" sessizce başarısız olmak yerine ne olduğunu söylüyor. URL
+düzeltmesinden önce oluşturulmuş test suite'leri açılışta kendini onarıyor.
+About hangi build'i çalıştırdığınızı gösteriyor. Ve environment değişkenleri
+tablosu bir arama kutusu kazandı — en baştan hak ettiği satır düzeniyle
+birlikte.
+
 ## v1.4.37
 
 **İstemci sertifikaları (mTLS) artık istekle birlikte gerçekten gönderiliyor.**

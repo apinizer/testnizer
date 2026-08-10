@@ -51,6 +51,20 @@ filenames keep Turkish characters; a new test suite lands where the input said;
 Test-suite folders can be managed by hand; AI Chat text is selectable and no
 longer snaps to the bottom mid-stream.
 
+**From four rounds of manual testing.** A pre-request script that throws now
+stops the request instead of sending it anyway. Stop no longer skips part of the
+teardown, and the safe **Stop** and the immediate **Stop now** are two separate
+buttons that read the same in every phase of a run. The Console drawer no longer
+covers the bottom of the workbench. The Runner gained a delay *between
+iterations*, and the existing Delay field now says which gap it fills. Folders
+keep their shape in Run Sequence and in test suites, and can take a Setup / Flow
+/ Teardown role of their own. A suite's runner tab survives a trip to another
+tab, and a new tab opened inside Tests stays in Tests. "Create Test Suite from
+this folder" now says what happened instead of failing silently. Test suites
+created before the URL fix repair themselves at startup. About shows which build
+you are running. And the environment variables table gained a search box — with
+the row layout it should have had all along.
+
 ## v1.4.37
 
 **Client certificates (mTLS) are now actually sent with the request.**
