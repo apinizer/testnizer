@@ -23,7 +23,7 @@ const principles = [
 
 const claims = [
   { label: 'Telemetri yok', body: 'Devre dışı bırakılacak bir analitik uç noktamız yoktur. Katılım seçeneği de yoktur.' },
-  { label: 'Giriş yok', body: 'Hesap oluşturma yok. SSO yok. Hiçbir satıcı sunucusu uygulamanın varlığından bile haberdar olmaz.' },
+  { label: 'Bulut girişi yok', body: 'Hesap oluşturma yok. SSO yok. Opsiyonel uygulama kilidi, makinenizde scrypt ile hash\'lenen yerel bir paroladır — hiçbir satıcı sunucusu uygulamanın varlığından bile haberdar olmaz.' },
   { label: 'Bulut senkronizasyonu yok', body: 'Koleksiyonlarınız yerel bir SQLite içinde yaşar. Yedeklemeler sizin sorumluluğunuzdadır. Bu, yapılan takas budur.' },
   { label: 'Arka plan çıkışı yok', body: "Renderer'ın CSP'si bunu engeller. Ana süreç yalnızca sizin tetiklediğiniz bağlantıları açar." },
   { label: 'Üçüncü taraf JWT çözme yok', body: "Çözme, Node'un crypto modülüyle yerel olarak çalışır. Token asla süreçten çıkmaz." },

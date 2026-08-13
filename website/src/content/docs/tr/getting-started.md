@@ -16,8 +16,10 @@ Yükleyiciyi çalıştırmadan önce bütünlüğünü doğrulamak isterseniz, [
 
 ## İlk açılış
 
-Testnizer, Hoş Geldiniz ekranıyla açılır. Hesap oluşturma yok, giriş yok,
-"senkronize etmek için oturum açın" istemi yok. Şunları yapabilirsiniz:
+Testnizer, Hoş Geldiniz ekranıyla açılır. Hesap oluşturma yok, bulut girişi yok,
+"senkronize etmek için oturum açın" istemi yok. (İsterseniz uygulamayı yerel bir
+parolayla koruyabilirsiniz — parola scrypt ile hash'lenir ve makinenizden asla
+çıkmaz.) Şunları yapabilirsiniz:
 
 - **Yeni bir çalışma alanı oluştur** — çalışma alanları proje barındırır; projeler koleksiyon barındırır
 - **Mevcut bir çalışma alanını aç** — diskteki bir klasörü işaret et

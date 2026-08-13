@@ -19,8 +19,9 @@ If you want to verify the integrity of the installer before running it, see [Ver
 
 ## First launch
 
-Testnizer opens to a Welcome screen. There is no account creation, no login, no
-"sign in to sync" prompt. You can:
+Testnizer opens to a Welcome screen. There is no account creation, no cloud
+login, no "sign in to sync" prompt. (You can optionally protect the app with a
+local password — it is scrypt-hashed and never leaves your machine.) You can:
 
 - **Create a new workspace** — workspaces hold projects; projects hold collections
 - **Open an existing workspace** — point at a folder on disk
