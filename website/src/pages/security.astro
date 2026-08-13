@@ -23,7 +23,7 @@ const principles = [
 
 const claims = [
   { label: 'No telemetry', body: "We don't have an analytics endpoint to disable. There is no opt-in either." },
-  { label: 'No login', body: 'No account creation. No SSO. No vendor server even knows the app exists.' },
+  { label: 'No cloud login', body: 'No account creation. No SSO. The optional app lock is a local, scrypt-hashed password on your machine — no vendor server even knows the app exists.' },
   { label: 'No cloud sync', body: "Your collections live in a local SQLite. Backups are your responsibility. That's the trade-off." },
   { label: 'No background egress', body: "The renderer's CSP blocks it. The main process only opens connections you trigger." },
   { label: 'No third-party JWT decode', body: "Decode runs locally with Node's crypto module. The token never leaves the process." },
