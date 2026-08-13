@@ -10,6 +10,28 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.5.1
+
+**Cookies now behave like a real cookie jar — plus sidebar search and layout fixes.**
+
+- **Cookie jar:** a `Set-Cookie` from one request is now sent on subsequent
+  requests in the same project — consistently. The Send path never told the
+  HTTP engine which project it belonged to, so hand-sent requests used a shared
+  default jar while the Runner used the per-project jar: a login done via Send
+  never reached a Run, and every project's Send cookies bled into one shared
+  jar. Send, the Runner, test suites, the scheduler and `pm.sendRequest`
+  (script-driven logins) now share one jar per project; different projects stay
+  isolated from each other.
+- **Sidebar search:** searching for a folder name showed its matching
+  subfolders but hid requests sitting directly at the folder's root level. A
+  folder-name match now keeps everything underneath it — matching Postman /
+  Insomnia / Bruno behaviour.
+- **Folder tree:** right-click a folder → **Expand All** / **Collapse All** —
+  recursively opens or closes the whole subtree, including while a search
+  filter is active.
+- **Cookies tab:** long cookie values (JWT-sized tokens) now wrap inside their
+  own column instead of running across Domain / Path / Flags.
+
 ## v1.5.0
 
 **The security release.** Testnizer now does the certificate, key, token and
