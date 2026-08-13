@@ -11,6 +11,20 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.5.2
+
+**Parola sıfırlama artık Windows'ta etki alanı (Active Directory) hesaplarıyla çalışıyor.**
+
+- **Parola sıfırlama / sistem parolası doğrulaması:** Windows'ta doğrulama
+  yalnızca **yerel** hesapları kontrol ediyordu — etki alanı (Active
+  Directory) hesabında doğru sistem parolası reddediliyor, kurumsal ağ/VPN
+  dışındaki bir makinede ise doğrulama hiç yapılamıyordu. Doğrulama zinciri
+  artık AD hesaplarını kapsıyor; etki alanı denetleyicisine erişilemediğinde
+  Windows kilit ekranının kullandığı yerel kimlik önbelleğine karşı doğrulama
+  da dahil. Doğrulama yine de başarısız olursa hata mesajı artık yalnızca
+  "parola hatalı" demek yerine etki alanı denetleyicisine erişilemiyor
+  olabileceğini söylüyor.
+
 ## v1.5.1
 
 **Cookie'ler artık gerçek bir cookie jar gibi davranıyor — artı kenar çubuğu araması ve yerleşim düzeltmeleri.**

@@ -10,6 +10,20 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.5.2
+
+**Password reset now works for domain (Active Directory) accounts on Windows.**
+
+- **Password reset / system-password verification:** on Windows the check only
+  ever validated **local** accounts — for a domain (Active Directory) account
+  the correct system password was rejected, and a machine away from the
+  corporate network/VPN could not validate at all. The verification chain now
+  covers AD accounts, including validation against the same local credential
+  cache the Windows lock screen uses when no domain controller is reachable.
+  If verification still fails on a domain-joined machine, the error now says
+  the domain controller may be unreachable instead of only claiming the
+  password is wrong.
+
 ## v1.5.1
 
 **Cookies now behave like a real cookie jar — plus sidebar search and layout fixes.**
