@@ -11,8 +11,13 @@ your browser sandbox.
 
 ## Methods
 
-GET · POST · PUT · PATCH · DELETE · HEAD · OPTIONS · CONNECT · TRACE, plus any
-custom method string you type in the method picker.
+GET · POST · PUT · PATCH · DELETE · HEAD · OPTIONS · QUERY · CONNECT · TRACE,
+plus any custom method string you type in the method picker.
+
+**QUERY** is the safe, idempotent method that carries a request body — the
+standard answer to "GET with a body, or POST?" for reads whose parameters do
+not fit in a URL. It has its own badge and is also selectable in
+[mock servers](/docs/mock-server).
 
 ## URL bar
 
@@ -143,6 +148,29 @@ are persisted to history.
 
 The status line above the tabs shows HTTP status code (colored by class),
 response time (ms), and response size.
+
+## Cookies
+
+Testnizer keeps an automatic, **project-scoped cookie jar**. When a response
+carries `Set-Cookie`, the cookie is stored and sent automatically — as a
+`Cookie` header — on subsequent requests in the same project that match the
+cookie's domain and path. A login request followed by an authenticated request
+works with zero configuration, the way it does in a browser.
+
+One jar per project, on every path:
+
+- **Send**, the **Collection Runner**, **test suites**, **scheduled runs** and
+  script-driven `pm.sendRequest(...)` calls all share the same jar — a login
+  done via Send is visible to a Run, and a `pm.sendRequest` login benefits the
+  requests that follow it.
+- Different projects are **isolated** from each other: a session cookie stored
+  in one project is never sent from another, even for the same host.
+- **Quick Test** uses a separate, unscoped jar by design.
+
+The jar lives in memory — restarting Testnizer clears it. Cookies set by the
+current response are listed in the **Cookies** tab of the response pane with
+their domain, path and flags; long values (JWT-sized tokens) wrap inside their
+own column and stay selectable for copying.
 
 ## Code snippet generation
 

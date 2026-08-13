@@ -216,6 +216,13 @@ const translations: Record<Locale, Record<string, string>> = {
     'tree.suiteCreated': 'Test suite created',
     'tree.suiteCreateFailed': 'Could not create the test suite',
     'tree.suiteImportPartial': 'Some requests could not be copied into the suite',
+    'suiteFromFolder.title': 'Create Test Suite',
+    'suiteFromFolder.subtitle':
+      'Choose which requests go into the suite. Subfolders keep their structure.',
+    'suiteFromFolder.selectAll': 'Select all',
+    'suiteFromFolder.deselectAll': 'Deselect all',
+    'suiteFromFolder.selectedCount': '{selected}/{total} selected',
+    'suiteFromFolder.create': 'Create Suite',
     'tree.createMockServer': 'Create Mock Server from this folder',
     'tree.createMockServerFromProject': 'Create Mock Server from this project',
     'tree.createMockServerFromRequest': 'Create Mock Server from this request',
@@ -943,6 +950,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'runnerVars.noGlobals': 'No global variables in this workspace.',
     'runnerVars.add': 'Add',
     'runnerVars.selectEnv': 'Select an environment to see its variables.',
+
+    // Suite run configuration persistence (issue #100)
+    'runnerConfig.saveConfig': 'Save configuration',
+    'runnerConfig.saveConfigHint': 'Saved to this suite — restored the next time you open it.',
+    'runnerConfig.saveConfigSaved': 'Run configuration saved',
+    'runnerConfig.saveConfigFailed': 'Failed to save run configuration',
 
     // Run lifecycle — setup / teardown phases (issue #72)
     'runPhase.main': 'Flow',
@@ -2407,6 +2420,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'tree.suiteCreated': 'Test suite oluşturuldu',
     'tree.suiteCreateFailed': 'Test suite oluşturulamadı',
     'tree.suiteImportPartial': 'Bazı istekler suite’e kopyalanamadı',
+    'suiteFromFolder.title': 'Test Suite Oluştur',
+    'suiteFromFolder.subtitle': 'Suite’e girecek istekleri seç. Alt klasör yapısı korunur.',
+    'suiteFromFolder.selectAll': 'Tümünü seç',
+    'suiteFromFolder.deselectAll': 'Tümünü bırak',
+    'suiteFromFolder.selectedCount': '{selected}/{total} seçili',
+    'suiteFromFolder.create': 'Suite Oluştur',
     'tree.createMockServer': 'Bu klasörden Mock Sunucu oluştur',
     'tree.createMockServerFromProject': 'Bu projeden Mock Sunucu oluştur',
     'tree.createMockServerFromRequest': 'Bu istekten Mock Sunucu oluştur',
@@ -3135,6 +3154,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'runnerVars.noGlobals': 'Bu çalışma alanında global değişken yok.',
     'runnerVars.add': 'Ekle',
     'runnerVars.selectEnv': 'Değişkenleri görmek için bir ortam seçin.',
+
+    // Suite çalıştırma yapılandırması kalıcılığı (issue #100)
+    'runnerConfig.saveConfig': 'Yapılandırmayı kaydet',
+    'runnerConfig.saveConfigHint': 'Bu suite’e kaydedilir — bir sonraki açılışta geri yüklenir.',
+    'runnerConfig.saveConfigSaved': 'Çalıştırma yapılandırması kaydedildi',
+    'runnerConfig.saveConfigFailed': 'Çalıştırma yapılandırması kaydedilemedi',
 
     // Çalıştırma yaşam döngüsü — setup / teardown fazları (issue #72)
     'runPhase.main': 'Akış',

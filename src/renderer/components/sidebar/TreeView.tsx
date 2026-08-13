@@ -18,6 +18,8 @@ import type {
 import TreeNodeComponent, { type DragPayload, type DropPosition } from './TreeNode'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import FolderSettingsModal from '../modals/FolderSettingsModal'
+import CreateSuiteFromFolderModal from '../modals/CreateSuiteFromFolderModal'
+import { collectRequestIds } from '../../lib/folder-request-selection'
 import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
 import { openFolderRunner } from '../../lib/open-runner-tab'
@@ -495,6 +497,8 @@ export default function TreeView() {
 
   // Delete confirmation dialog state
   const [deleteTarget, setDeleteTarget] = useState<TreeNode | null>(null)
+  // Folder/project → test suite request-selection modal (issue #102)
+  const [suiteSelectTarget, setSuiteSelectTarget] = useState<TreeNode | null>(null)
   const [folderSettingsTarget, setFolderSettingsTarget] = useState<{
     id: string
     name: string
@@ -844,15 +848,10 @@ export default function TreeView() {
    * descendants in nested sub-folders. Operates on the in-memory tree so we
    * don't need a new IPC for "list endpoints recursively" (UX 6).
    */
-  const collectRequestIdsRecursive = useCallback((folderNode: TreeNode): string[] => {
-    const ids: string[] = []
-    function walk(n: TreeNode): void {
-      if (n.type === 'endpoint' || n.type === 'request') ids.push(n.id)
-      if (n.children) for (const c of n.children) walk(c)
-    }
-    walk(folderNode)
-    return ids
-  }, [])
+  const collectRequestIdsRecursive = useCallback(
+    (folderNode: TreeNode): string[] => collectRequestIds(folderNode),
+    [],
+  )
 
   const setActiveSidebarPage = (() => {
     // Late-import via dynamic require so we don't pull the store at module top
@@ -876,15 +875,13 @@ export default function TreeView() {
    * `rejected` matters as much as the failures: a suite built from 40 requests
    * that copied 37 is not a success, and reporting it as one is how a run comes
    * up short later for no visible reason.
+   *
+   * Shared by the direct single-request path and the selection modal's confirm
+   * (#102) — `ids` is the (possibly user-narrowed) request set to copy.
    */
-  const handleCreateTestSuite = useCallback(
-    async (folderNode: TreeNode) => {
-      if (!activeProjectId) return
-      const ids = collectRequestIdsRecursive(folderNode)
-      if (ids.length === 0) {
-        toast.info(t('tree.suiteEmptyFolder'))
-        return
-      }
+  const performCreateTestSuite = useCallback(
+    async (folderNode: TreeNode, ids: string[]) => {
+      if (!activeProjectId || ids.length === 0) return
       try {
         const createRes = (await window.api?.testSuite?.create({
           project_id: activeProjectId,
@@ -923,7 +920,30 @@ export default function TreeView() {
         toast.error(`${t('tree.suiteCreateFailed')}: ${(err as Error).message || 'unknown error'}`)
       }
     },
-    [activeProjectId, collectRequestIdsRecursive],
+    [activeProjectId],
+  )
+
+  /**
+   * Entry point for the three context-menu items. A single request has nothing
+   * to choose from, so it creates directly; folders and the project root get a
+   * selection step first — the old behaviour copied EVERY request under the
+   * folder into the suite, and a subset required post-create pruning (#102).
+   */
+  const handleCreateTestSuite = useCallback(
+    (folderNode: TreeNode) => {
+      if (!activeProjectId) return
+      const ids = collectRequestIdsRecursive(folderNode)
+      if (ids.length === 0) {
+        toast.info(t('tree.suiteEmptyFolder'))
+        return
+      }
+      if (folderNode.type === 'folder' || folderNode.type === 'module') {
+        setSuiteSelectTarget(folderNode)
+        return
+      }
+      void performCreateTestSuite(folderNode, ids)
+    },
+    [activeProjectId, collectRequestIdsRecursive, performCreateTestSuite],
   )
 
   /**
@@ -1126,6 +1146,21 @@ export default function TreeView() {
           folderId={folderSettingsTarget.id}
           folderName={folderSettingsTarget.name}
           onClose={() => setFolderSettingsTarget(null)}
+        />
+      )}
+
+      {/* Folder/project → test suite request selection (issue #102). Mounted
+          per open so the modal's "all selected" default resets every time. */}
+      {suiteSelectTarget && (
+        <CreateSuiteFromFolderModal
+          open
+          folder={suiteSelectTarget}
+          onConfirm={(ids) => {
+            const target = suiteSelectTarget
+            setSuiteSelectTarget(null)
+            void performCreateTestSuite(target, ids)
+          }}
+          onCancel={() => setSuiteSelectTarget(null)}
         />
       )}
 

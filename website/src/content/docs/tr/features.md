@@ -106,11 +106,26 @@ Base dönüştürücü · Regex test · Diff · Epoch / timestamp · UUID üreti
 JSON ↔ XML · YAML ↔ JSON · Jolt transform · JSON Schema · JSON / XML formatlayıcı ·
 HTTP status referansı · WS-Security yardımcısı.
 
+## Güvenlik araçları
+
+**Security** sayfası anahtar, PKI, token ve kimlik takımını bir arada toplar:
+[Keystore Studio](/tr/docs/keystore-studio) (JKS / PKCS#12),
+[JWK / JWKS](/tr/docs/jwk-jwks), [JWT / JOSE debugger](/tr/docs/jwt-debugger)
+(imzalama, doğrulama, JWE), [TLS Inspector](/tr/docs/tls-inspector),
+[SAML](/tr/docs/saml) oluşturma / imzalama / doğrulama; ayrıca bir OTP
+Authenticator (TOTP / HOTP), bir Parola Üretici ve bir QR aracı. Tamamı offline
+çalışır — tasarımı gereği işaret ettiğiniz endpoint'e bağlanan TLS Inspector
+hariç.
+
 ## Organizasyon & versiyon kontrol
 
 - **Workspace → Proje → Branch** hiyerarşisi
 - **Git entegrasyonu** (proje başına branch, conflict yönetimi) — bkz. [Git entegrasyonu](/tr/docs/git-branches)
 - Sürükle-bırak sıralamalı endpoint / klasör ağacı
+- Eşleşen bir klasörün **tüm alt ağacını** koruyan ağaç **araması** — kök
+  düzeydeki istekler dahil (Postman / Insomnia davranışı)
+- Bir klasöre sağ tıklayın → tüm alt ağaç için **Expand All / Collapse All** —
+  arama filtresi aktifken bile
 
 ## İstek geçmişi
 

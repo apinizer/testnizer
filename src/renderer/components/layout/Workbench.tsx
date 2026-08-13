@@ -5,6 +5,7 @@ import { isMac } from '../../lib/platform'
 import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
 import { makeTabId } from '../../lib/utils'
 import { isBlankScratchTab } from '../../lib/tab-kind'
+import { isRequestLikeTab } from '../../lib/mark-dirty'
 import { openEndpointTab } from '../../lib/open-endpoint-tab'
 import UrlBar from './UrlBar'
 import UrlPreview from './UrlPreview'
@@ -482,9 +483,32 @@ function EndpointTabBar() {
     try {
       // `saveActiveRequestInPlace` targets the ACTIVE tab — make the closing tab
       // active first so a background tab's × still saves the right request.
-      if (useTabsStore.getState().activeTabId !== tabId) activateTab(tabId)
+      // `activateTab` only flips the protocol stores' live slices; it does NOT
+      // touch `tabs.activeTabId`, so without the explicit `setActiveTab` the
+      // save resolved the PREVIOUS active tab and wrote the closing tab's
+      // editor content into that tab's row (background-tab × corruption).
+      if (useTabsStore.getState().activeTabId !== tabId) {
+        activateTab(tabId)
+        useTabsStore.getState().setActiveTab(tabId)
+      }
       const result = await saveActiveRequestInPlace()
-      if (!result.success && !result.notApplicable) {
+      if (result.notApplicable) {
+        // Never-saved tab (New → HTTP etc.): there is no row to write in
+        // place. Route to the "Save As" modal — the same fallback Ctrl+S
+        // uses — and keep the tab OPEN: the modal's success path attaches
+        // the new savedRequestId and clears the dirty flag, after which a
+        // plain × closes without prompting. Previously this branch fell
+        // through to doCloseTab, so "Save & Close" on a new tab silently
+        // discarded the edits (issue #101).
+        setCloseSaving(false)
+        setCloseConfirmTabId(null)
+        const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)
+        if (tab && isRequestLikeTab(tab)) {
+          useUIStore.getState().setShowEndpointSaveModal(true)
+        }
+        return
+      }
+      if (!result.success) {
         toast.error(`Failed to save: ${result.error ?? 'unknown error'}`)
         setCloseSaving(false)
         return // keep the dialog open so the user can retry or cancel

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
 import { useNumberDraft } from '../../lib/number-draft'
+import { toast } from '../../lib/toast'
 
 type RunMode = 'manual' | 'schedule'
 type ScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
@@ -53,6 +54,12 @@ interface RunnerConfigProps {
   // path implies (Scheduled Tasks list, history-by-task, etc.) only ever
   // surfaces when the runner is actually wired to a suite.
   canSchedule?: boolean
+  /**
+   * Persist the run configuration to the suite (issue #100). Only provided
+   * for suite-scoped runs — APIs/folder runs have no suite row to save to,
+   * so the button is hidden there. Resolves true on success.
+   */
+  onSaveConfig?: () => Promise<boolean>
 }
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -85,8 +92,22 @@ export default function RunnerConfig({
   initialRunMode = 'manual',
   initialRunModeKey,
   canSchedule = true,
+  onSaveConfig,
 }: RunnerConfigProps) {
   const { t } = useTranslation()
+  const [isSavingConfig, setIsSavingConfig] = useState(false)
+
+  const handleSaveConfig = async () => {
+    if (!onSaveConfig || isSavingConfig) return
+    setIsSavingConfig(true)
+    try {
+      const ok = await onSaveConfig()
+      if (ok) toast.success(t('runnerConfig.saveConfigSaved'))
+      else toast.error(t('runnerConfig.saveConfigFailed'))
+    } finally {
+      setIsSavingConfig(false)
+    }
+  }
   const environments = useEnvironmentStore((s) => s.environments)
   // Same class the testers hit in the Password Generator: `Math.max(1, Number(''))`
   // is 1, so clearing the box instantly wrote the minimum back and the next digit
@@ -566,8 +587,8 @@ export default function RunnerConfig({
           />
         </div>
 
-        {/* Start run / Schedule */}
-        <div style={{ marginTop: 24 }}>
+        {/* Start run / Schedule + Save configuration (suite-scoped only, #100) */}
+        <div style={{ marginTop: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
           <button
             type="button"
             data-testid="runner-start"
@@ -591,6 +612,19 @@ export default function RunnerConfig({
               <path d="M5 12l-2 2-2-2" />
             </svg>
           </button>
+          {onSaveConfig && (
+            <button
+              type="button"
+              data-testid="runner-save-config"
+              onClick={handleSaveConfig}
+              disabled={isSavingConfig}
+              title={t('runnerConfig.saveConfigHint')}
+              className="cursor-pointer rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-4 py-2 font-semibold text-[var(--text)] hover:bg-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ fontSize: 13 }}
+            >
+              {t('runnerConfig.saveConfig')}
+            </button>
+          )}
         </div>
       </div>
     </div>

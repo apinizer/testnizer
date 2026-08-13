@@ -10,8 +10,13 @@ ve tarayıcı sandbox'ınızda değil, Node ana sürecinde çalışan bir script
 
 ## Metodlar
 
-GET · POST · PUT · PATCH · DELETE · HEAD · OPTIONS · CONNECT · TRACE ve metod
-seçicide yazdığınız herhangi bir özel metod dizesi.
+GET · POST · PUT · PATCH · DELETE · HEAD · OPTIONS · QUERY · CONNECT · TRACE
+ve metod seçicide yazdığınız herhangi bir özel metod dizesi.
+
+**QUERY**, istek gövdesi taşıyan güvenli ve idempotent metoddur — parametreleri
+bir URL'ye sığmayan okumalar için "GET'e gövde mi, yoksa POST mu?" sorusunun
+standart yanıtı. Kendi rozetine sahiptir ve
+[mock sunucularda](/tr/docs/mock-server) da seçilebilir.
 
 ## URL çubuğu
 
@@ -140,6 +145,29 @@ geçmişe kaydedilir.
 
 Sekmelerin üzerindeki durum satırı HTTP durum kodunu (sınıfa göre renklendirilmiş),
 yanıt süresini (ms) ve yanıt boyutunu gösterir.
+
+## Cookie'ler
+
+Testnizer otomatik, **proje kapsamlı bir cookie kavanozu (cookie jar)** tutar.
+Bir yanıt `Set-Cookie` taşıdığında cookie saklanır ve aynı projede cookie'nin
+domain'i ile path'ine uyan sonraki isteklerde otomatik olarak — `Cookie`
+header'ı şeklinde — gönderilir. Bir login isteğinin ardından gelen kimlik
+doğrulamalı istek, tarayıcıda olduğu gibi sıfır yapılandırmayla çalışır.
+
+Proje başına tek kavanoz, her yolda:
+
+- **Send**, **Collection Runner**, **test suite'leri**, **zamanlanmış
+  çalıştırmalar** ve script kaynaklı `pm.sendRequest(...)` çağrıları aynı
+  kavanozu paylaşır — Send ile yapılan bir login Run'da görünür ve
+  `pm.sendRequest` ile yapılan bir login sonraki isteklere yarar.
+- Farklı projeler birbirinden **izoledir**: bir projede saklanan oturum
+  cookie'si, aynı host için bile başka bir projeden asla gönderilmez.
+- **Quick Test** tasarım gereği ayrı, kapsamsız bir kavanoz kullanır.
+
+Kavanoz bellekte yaşar — Testnizer'ı yeniden başlatmak onu temizler. Geçerli
+yanıtın ayarladığı cookie'ler, yanıt panelinin **Cookies** sekmesinde
+domain'i, path'i ve bayraklarıyla listelenir; uzun değerler (JWT boyutundaki
+token'lar) kendi sütunlarında sarılır ve kopyalamak için seçilebilir kalır.
 
 ## Kod snippet oluşturma
 

@@ -122,13 +122,17 @@ pm.info.requestId        // isteğin id'si
 
 ### pm.cookies
 
-İstekle paylaşılan çerez kavanozu:
+Geçerli alışverişte görünen cookie'ler (`pm.response.cookies` ile aynı küme):
 
 ```js
 pm.cookies.get('session')   // → değer | undefined
 pm.cookies.has('session')   // → boolean
 pm.cookies.toObject()       // → { name: value, ... }
 ```
+
+Cookie *saklama* işi betiğin dışında yürür: Testnizer otomatik, proje kapsamlı
+bir cookie kavanozu tutar; bir istekten gelen `Set-Cookie` sonraki isteklerde
+gönderilir — bkz. [Cookie'ler](/tr/docs/protocols/http#cookieler).
 
 ### pm.request (yalnızca ön istek betiği)
 
@@ -309,6 +313,15 @@ pm.sendRequest('https://api.example.com/ping', function (err, res) {
 Yanıt, `pm.response` ile aynı yüzeyi sunar — `.code`, `.status`, `.json()`,
 `.text()`, `.headers.get(name)`, `.cookies.get(name)` vb.
 
+Send ve Run'da birebir aynı olan iki kapsam kuralı:
+
+- `pm.sendRequest`, ana istekle **projenin cookie kavanozunu** paylaşır — bir ön
+  istek betiğinde yapılan login, oturum cookie'sini aynı kavanoza yazar ve
+  ardından gelen istekler onu otomatik gönderir. Bkz.
+  [Cookie'ler](/tr/docs/protocols/http#cookieler).
+- **Proje istemci sertifikası** (mTLS) eklemez — bkz.
+  [Sertifikalar](/tr/docs/certificates).
+
 ### pm.execution
 
 ```js
@@ -421,6 +434,16 @@ Bunları şuralarda yapılandırın:
 Bu, kesişen kurulumlar için idealdir — örn. bir kez token yenileyen ve altındaki her
 istek tarafından miras alınan bir proje ön istek betiği. Kademelenme hem **Send**
 hem de **Run** için geçerlidir.
+
+### Run düzeyi setup & teardown betikleri
+
+Collection Runner'ın yapılandırmasında iki slot daha vardır: **Run setup
+script** ve **Run teardown script**. Bunlar iterasyon başına değil, **run
+başına bir kez** çalışır — ilk istekten önce ve son istekten sonra. Teardown
+betiği garantilidir: run bir hata ya da elle basılan Stop ile erken durduğunda
+da çalışır. Sonuçlarda betik satırları **SCRIPT** rozetiyle görünür ve hata
+fırlatan bir betik hata olarak raporlanır. Bkz.
+[Setup, Flow ve Teardown](/tr/docs/cli-and-automation#setup-flow-ve-teardown).
 
 ## Auth (kimlik) mirası
 

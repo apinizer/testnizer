@@ -401,6 +401,10 @@ const api = {
       ipcRenderer.invoke('testSuite:importEndpoints', payload),
     removeEndpoint: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('testSuite:removeEndpoint', payload),
+    getRunConfig: (suiteId: string): Promise<unknown> =>
+      ipcRenderer.invoke('testSuite:getRunConfig', suiteId),
+    saveRunConfig: (suiteId: string, runConfig: string | null): Promise<unknown> =>
+      ipcRenderer.invoke('testSuite:saveRunConfig', suiteId, runConfig),
   },
 
   // ─── Test Suite Items (inline request snapshots) ─────────────

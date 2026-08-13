@@ -1,5 +1,11 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { buildExecutePayload, RUNNER_DEFAULTS } from '../../lib/runner-payload'
+import {
+  applyRunConfigToItems,
+  buildSuiteRunConfig,
+  parseSuiteRunConfig,
+} from '../../lib/suite-run-config'
+import type { SuiteRunConfig } from '../../types'
 import { Braces, ChevronRight } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
@@ -507,6 +513,17 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     return null
   })
 
+  /**
+   * Which suite's persisted run config has already been loaded into this tab
+   * (issue #100). The suite-items effect loads the config on its FIRST fetch
+   * per suite — one sequential async path, so saved options land in the same
+   * render batch as the endpoints and no load-order race exists. Event-driven
+   * refetches (`tests:suite-item-changed`) skip the config and merge the
+   * user's current in-session toggles instead. Reset by `handleNewRun` so
+   * re-picking a suite reloads its saved config.
+   */
+  const configLoadedForSuiteRef = useRef<string | null>(null)
+
   /*
    * The tab's opening instructions, split into two halves that live for
    * different lengths of time (issue #93).
@@ -809,6 +826,35 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         folders: Array<{ id: string; name: string; parent_id?: string | null }>
       }
 
+      // Persisted per-suite run configuration (issue #100): loaded once per
+      // suite, on the first items fetch, so saved options reach their state in
+      // the same render batch as the endpoints themselves. A missing / corrupt
+      // config falls through to defaults — it must never block suite open.
+      let config: SuiteRunConfig | null = null
+      if (configLoadedForSuiteRef.current !== suiteIdForRunner) {
+        configLoadedForSuiteRef.current = suiteIdForRunner
+        try {
+          const cfgRes = await window.api?.testSuite?.getRunConfig?.(suiteIdForRunner)
+          if (cfgRes?.success) config = parseSuiteRunConfig(cfgRes.data)
+          else if (cfgRes) console.warn('runner: failed to load suite run config:', cfgRes.error)
+        } catch (err) {
+          console.warn('runner: failed to load suite run config:', (err as Error).message)
+        }
+        if (cancelled) return
+        if (config) {
+          setDelay(config.delay)
+          setIterationDelay(config.iterationDelay)
+          setIterations(config.iterations)
+          setStopOnError(config.stopOnError)
+          setPersistResponses(config.persistResponses)
+          setKeepVariableValues(config.keepVariableValues)
+          setEnvironmentId(config.environmentId ?? '')
+          setRunPreScript(config.runPreScript ?? '')
+          setRunPostScript(config.runPostScript ?? '')
+        }
+      }
+      const savedConfig = config
+
       const toRunnerItem = (it: (typeof items)[number]): RunnerEndpointItem => ({
         id: it.id,
         name: it.name,
@@ -817,7 +863,25 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         selected: true,
       })
 
-      setEndpoints(items.map(toRunnerItem))
+      /**
+       * selected/phase for the freshly fetched rows. Refetches (rename /
+       * reorder events) MERGE the user's current in-session state — before
+       * this, any drag-reorder rebuilt the list with everything re-selected
+       * and every lifecycle role dropped. On the first load per suite the
+       * saved config is applied on top (prev state is empty then anyway).
+       */
+      const decorate = (built: RunnerEndpointItem[], prevById: Map<string, RunnerEndpointItem>) => {
+        let next = built.map((it) => {
+          const p = prevById.get(it.id)
+          return p ? { ...it, selected: p.selected, phase: p.phase } : it
+        })
+        if (savedConfig) next = applyRunConfigToItems(next, savedConfig)
+        return next
+      }
+
+      setEndpoints((prev) =>
+        decorate(items.map(toRunnerItem), new Map(prev.map((ep) => [ep.id, ep]))),
+      )
 
       if (folders.length > 0) {
         // One group per suite folder — including empty ones, so a nested
@@ -838,19 +902,32 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           }
           return parts.join(' / ')
         }
-        const groups: RunnerFolderGroup[] = folders.map((f) => ({
-          folderId: f.id,
-          folderName: pathOf(f.id),
-          label: f.name,
-          parentId: f.parent_id ?? null,
-          endpoints: [],
-        }))
-        const groupById = new Map(groups.map((g) => [g.folderId, g]))
-        for (const it of items) {
-          if (!it.folder_id) continue
-          groupById.get(it.folder_id)?.endpoints.push(toRunnerItem(it))
-        }
-        setFolderGroups(groups)
+        // Functional updater for the same reason as `setEndpoints` above: the
+        // previous groups carry the user's in-session selected/phase state and
+        // must survive an event-driven refetch. Group construction is pure, so
+        // rebuilding inside the updater is double-invoke safe.
+        setFolderGroups((prevGroups) => {
+          const prevById = new Map<string, RunnerEndpointItem>()
+          for (const g of prevGroups) {
+            for (const ep of g.endpoints) prevById.set(ep.id, ep)
+          }
+          const groups: RunnerFolderGroup[] = folders.map((f) => ({
+            folderId: f.id,
+            folderName: pathOf(f.id),
+            label: f.name,
+            parentId: f.parent_id ?? null,
+            endpoints: [],
+          }))
+          const groupById = new Map(groups.map((g) => [g.folderId, g]))
+          for (const it of items) {
+            if (!it.folder_id) continue
+            groupById.get(it.folder_id)?.endpoints.push(toRunnerItem(it))
+          }
+          for (const g of groups) {
+            g.endpoints = decorate(g.endpoints, prevById)
+          }
+          return groups
+        })
       } else {
         setFolderGroups([])
       }
@@ -1157,6 +1234,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     setSuiteIdForRunner(null)
     setRunOrigin('runner')
     setRunFolderName('')
+    // Scope cleared → forget which suite's saved run config was loaded, so
+    // re-picking a suite (even the same one) reloads it from the DB.
+    configLoadedForSuiteRef.current = null
   }, [])
 
   const handleViewAllRuns = useCallback(() => {
@@ -1239,6 +1319,55 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       runPostScript,
     ],
   )
+
+  /**
+   * Persist the current run configuration to the suite (issue #100) —
+   * sequence selection + lifecycle roles, run options, environment, and the
+   * run hook scripts. EXPLICIT save on purpose: the auto-run path rewrites
+   * `selected` programmatically (sidebar "Run Suite" targets specific ids),
+   * so auto-saving would silently clobber a curated config on every quick
+   * run. Returns success so RunnerConfig can toast in the user's language.
+   */
+  const handleSaveConfig = useCallback(async (): Promise<boolean> => {
+    if (!suiteIdForRunner) return false
+    const config = buildSuiteRunConfig(endpoints, {
+      delay,
+      iterationDelay,
+      iterations,
+      stopOnError,
+      persistResponses,
+      keepVariableValues,
+      environmentId,
+      runPreScript,
+      runPostScript,
+    })
+    try {
+      const res = await window.api?.testSuite?.saveRunConfig?.(
+        suiteIdForRunner,
+        JSON.stringify(config),
+      )
+      if (!res?.success) {
+        console.warn('runner: failed to save suite run config:', res?.error)
+        return false
+      }
+      return true
+    } catch (err) {
+      console.warn('runner: failed to save suite run config:', (err as Error).message)
+      return false
+    }
+  }, [
+    suiteIdForRunner,
+    endpoints,
+    delay,
+    iterationDelay,
+    iterations,
+    stopOnError,
+    persistResponses,
+    keepVariableValues,
+    environmentId,
+    runPreScript,
+    runPostScript,
+  ])
 
   const handleSequenceResize = useCallback((dx: number) => {
     setSequenceWidth((w) => Math.max(200, Math.min(600, w + dx)))
@@ -1336,6 +1465,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 // one-shots; hiding the Schedule radio prevents stranded
                 // "Scheduled: ad-hoc" tasks that no one knows where to find.
                 canSchedule={!!suiteIdForRunner}
+                // Saving a run configuration also lives on Test Suites — an
+                // APIs / folder run has no suite row to store it on (#100).
+                onSaveConfig={suiteIdForRunner ? handleSaveConfig : undefined}
               />
             </div>
           </>

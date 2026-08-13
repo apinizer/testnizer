@@ -1268,6 +1268,8 @@ export interface TestSuiteRow {
   name: string
   description: string | null
   sort_order: number
+  /** Persisted Runner configuration (issue #100) — JSON `SuiteRunConfig`; null = never saved. */
+  run_config?: string | null
   created_at: number
   updated_at: number
 }
@@ -1299,6 +1301,40 @@ export interface TestSuiteFolderRow {
 export interface TestSuiteContents {
   items: TestSuiteItemRow[]
   folders: TestSuiteFolderRow[]
+}
+
+/**
+ * Persisted Runner run configuration for a test suite (issue #100).
+ *
+ * Serialised to JSON and stored opaquely in `test_suites.run_config`;
+ * parse/build/apply helpers live in `src/renderer/lib/suite-run-config.ts`.
+ * Sequence ORDER is deliberately absent — it already persists in
+ * `test_suite_items.sort_order` (drag-reorder goes through the move IPC), and
+ * duplicating it here would create a second source of truth. `iterationData`
+ * (CSV/JSON data files) is also excluded: it is file-derived and potentially
+ * MB-scale — like Postman, the user re-picks the data file per session.
+ */
+export interface SuiteRunConfigItem {
+  /** `test_suite_items.id` the entry applies to. */
+  id: string
+  selected: boolean
+  /** Lifecycle role — structurally identical to shared `RunPhase`. Omitted = 'main'. */
+  phase?: 'setup' | 'main' | 'teardown'
+}
+
+export interface SuiteRunConfig {
+  version: 1
+  /** Per-item selection + lifecycle role, keyed by suite item id. */
+  items: SuiteRunConfigItem[]
+  delay: number
+  iterationDelay: number
+  iterations: number
+  stopOnError: boolean
+  persistResponses: boolean
+  keepVariableValues: boolean
+  environmentId?: string
+  runPreScript?: string
+  runPostScript?: string
 }
 
 export type MockServerStatus = 'stopped' | 'starting' | 'running' | 'error'

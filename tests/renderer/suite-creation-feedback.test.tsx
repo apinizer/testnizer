@@ -87,13 +87,22 @@ function installApi(create: CreateResult, importRes: ImportResult): void {
   }
 }
 
-/** Right-click the folder and pick "Create Test Suite from this folder". */
-async function createSuiteFromFolder(): Promise<void> {
+/**
+ * Right-click the folder and pick "Create Test Suite from this folder".
+ * Since #102 a request-selection modal sits between the menu item and the
+ * create; confirming its default (everything selected) reproduces the old
+ * one-click behaviour these tests were written against. The empty-folder case
+ * never reaches the modal, so it passes `confirmModal: false`.
+ */
+async function createSuiteFromFolder(confirmModal = true): Promise<void> {
   const node = screen.getAllByTestId('tree-node').find((n) => n.textContent?.includes(FOLDER))
   if (!node) throw new Error('folder node not rendered')
   fireEvent.contextMenu(node)
   const item = await screen.findByText(/Create Test Suite from this folder/i)
   fireEvent.click(item)
+  if (confirmModal) {
+    fireEvent.click(await screen.findByTestId('suite-select-confirm'))
+  }
 }
 
 beforeEach(() => {
@@ -105,7 +114,10 @@ beforeEach(() => {
     openNodeIds: new Set(['mod', 'folder-a']),
     searchQuery: '',
   })
-  installApi({ success: true, data: { id: 'suite-1' } }, { success: true, data: { added: 1, rejected: 0 } })
+  installApi(
+    { success: true, data: { id: 'suite-1' } },
+    { success: true, data: { added: 1, rejected: 0 } },
+  )
 })
 
 afterEach(cleanup)
@@ -124,7 +136,7 @@ describe('creating a test suite from a folder reports what happened (#96)', () =
   it('says an empty folder is empty instead of doing nothing', async () => {
     useWorkspaceStore.setState({ treeData: tree(false) })
     render(<TreeView />)
-    await createSuiteFromFolder()
+    await createSuiteFromFolder(false)
 
     // The reported symptom is a menu item that appears broken. Any message is
     // better than none; it must not be an error, since nothing went wrong.
@@ -134,7 +146,10 @@ describe('creating a test suite from a folder reports what happened (#96)', () =
   })
 
   it('surfaces a failed create, with the reason', async () => {
-    installApi({ success: false, error: 'name already taken' }, { success: true, data: { added: 0, rejected: 0 } })
+    installApi(
+      { success: false, error: 'name already taken' },
+      { success: true, data: { added: 0, rejected: 0 } },
+    )
     render(<TreeView />)
     await createSuiteFromFolder()
 
@@ -145,7 +160,10 @@ describe('creating a test suite from a folder reports what happened (#96)', () =
   })
 
   it('surfaces a failed import', async () => {
-    installApi({ success: true, data: { id: 'suite-1' } }, { success: false, error: 'suite not found' })
+    installApi(
+      { success: true, data: { id: 'suite-1' } },
+      { success: false, error: 'suite not found' },
+    )
     render(<TreeView />)
     await createSuiteFromFolder()
 
@@ -158,7 +176,10 @@ describe('creating a test suite from a folder reports what happened (#96)', () =
     // The quiet one: a suite built from a folder of 1 that copied 0 used to be
     // indistinguishable from a complete success, and only showed up later as a
     // run that came up short.
-    installApi({ success: true, data: { id: 'suite-1' } }, { success: true, data: { added: 0, rejected: 1 } })
+    installApi(
+      { success: true, data: { id: 'suite-1' } },
+      { success: true, data: { added: 0, rejected: 1 } },
+    )
     render(<TreeView />)
     await createSuiteFromFolder()
 

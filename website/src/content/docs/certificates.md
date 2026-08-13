@@ -84,6 +84,23 @@ handshake. The hostname field supports:
 If multiple certificates match a hostname, the most specific pattern wins
 (exact > subdomain wildcard > `*`).
 
+### Runs present client certificates too
+
+The **Collection Runner**, **test suites** and **scheduled runs** use the exact
+same certificate logic as Send — a request that authenticates via mTLS when
+you press Send authenticates the same way in a run.
+
+Certificates are still matched to the request host, but a client certificate
+whose host is `*` matches **every** host a collection touches — including
+third-party APIs. Give every client certificate a specific host; a wildcard is
+fine for CA / trust entries, but for a client certificate it means your
+identity is presented to every host in the run.
+
+Failures are loud: a matching certificate that cannot be loaded fails that
+single request with a clear message instead of quietly going out
+unauthenticated. `pm.sendRequest(...)` attaches no project certificate, on
+either path.
+
 ## CA certificates (custom trust anchors)
 
 Use this when your server presents a certificate signed by a private CA —

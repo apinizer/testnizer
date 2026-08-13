@@ -453,6 +453,7 @@ const SCHEMA_SQL = `
     name TEXT NOT NULL,
     description TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0,
+    run_config TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );

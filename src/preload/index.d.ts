@@ -1529,6 +1529,12 @@ interface TestSuiteApi {
     payload: ImportEndpointsPayload,
   ): Promise<IpcResult<{ added: number; rejected: number; rejectedIds: string[] }>>
   removeEndpoint(payload: RemoveEndpointPayload): Promise<IpcResult<boolean>>
+  /**
+   * Per-suite Runner configuration (issue #100). The payload is an opaque JSON
+   * string (renderer-owned `SuiteRunConfig` shape); null = never saved / clear.
+   */
+  getRunConfig(suiteId: string): Promise<IpcResult<string | null>>
+  saveRunConfig(suiteId: string, runConfig: string | null): Promise<IpcResult<boolean>>
 }
 
 interface CreateTestSuiteItemInput {
