@@ -34,6 +34,9 @@ vi.mock('../../../src/main/db/database', () => ({
 
 // Stub http.engine to avoid real network in the success path.
 vi.mock('../../../src/main/protocols/http.engine', () => ({
+  // The handler also imports stripUrlCredentials (history snapshots / result
+  // rows) — the mock must export it or the success path throws mid-run.
+  stripUrlCredentials: (u: string) => u,
   executeHttpRequest: vi.fn(async () => ({
     status: 200,
     statusText: 'OK',
@@ -46,6 +49,7 @@ vi.mock('../../../src/main/protocols/http.engine', () => ({
 }))
 
 const { registerRunnerHandlers } = await import('../../../src/main/ipc/runner.handler')
+const { executeHttpRequest } = await import('../../../src/main/protocols/http.engine')
 
 let projectId: string
 
@@ -82,6 +86,52 @@ describe('runner:execute — validation', () => {
     })) as { success: boolean; error?: string }
     expect(res.success).toBe(false)
     expect(res.error).toMatch(/does not belong to project/)
+  })
+})
+
+// Regression guard for issue #104: the run loop scopes the engine's cookie
+// jar to the project (`resolvedOptions.projectId = options.projectId` in
+// `executeEndpointRequest`). Losing it would silently push every Run back
+// onto the shared "_default" jar — login-cookie flows would pass on Send
+// and 401 on Run.
+describe('runner:execute — engine receives projectId (cookie jar scope)', () => {
+  it('passes the run projectId through to executeHttpRequest', async () => {
+    const endpointId = crypto.randomUUID()
+    const now = Date.now()
+    testDb
+      .prepare(
+        `INSERT INTO endpoints
+          (id, project_id, folder_id, name, protocol, method, path, status,
+           request_schema, sort_order, created_at, updated_at)
+         VALUES (?, ?, NULL, 'EP', 'http', 'GET', 'http://x/ping', 'developing', ?, 0, ?, ?)`,
+      )
+      .run(
+        endpointId,
+        projectId,
+        JSON.stringify({
+          method: 'GET',
+          url: 'http://x/ping',
+          params: [],
+          headers: [],
+          auth: { type: 'none' },
+          assertions: [],
+        }),
+        now,
+        now,
+      )
+
+    vi.mocked(executeHttpRequest).mockClear()
+    const res = (await harness.invoke('runner:execute', {
+      projectId,
+      endpointIds: [endpointId],
+    })) as { success: boolean }
+    expect(res.success).toBe(true)
+
+    expect(vi.mocked(executeHttpRequest)).toHaveBeenCalled()
+    const sent = vi.mocked(executeHttpRequest).mock.calls[0]?.[0] as {
+      projectId?: string | null
+    }
+    expect(sent?.projectId).toBe(projectId)
   })
 })
 
