@@ -106,11 +106,26 @@ Base converter · Regex tester · Diff · Epoch / timestamp · UUID generator ·
 JSON ↔ XML · YAML ↔ JSON · Jolt transform · JSON Schema · JSON / XML formatter ·
 HTTP status reference · WS-Security helper.
 
+## Security tools
+
+The **Security** page collects the key, PKI, token and identity suite:
+[Keystore Studio](/docs/keystore-studio) (JKS / PKCS#12),
+[JWK / JWKS](/docs/jwk-jwks), the [JWT / JOSE debugger](/docs/jwt-debugger)
+(sign, verify, JWE), the [TLS Inspector](/docs/tls-inspector),
+[SAML](/docs/saml) build / sign / validate, plus an OTP Authenticator
+(TOTP / HOTP), a Password Generator and a QR tool. All of it runs offline —
+except the TLS Inspector, which by design connects to the endpoint you point
+it at.
+
 ## Organization & version control
 
 - **Workspaces → Projects → Branches** hierarchy
 - **Git integration** (per-project branches, conflict handling) — see [Git integration](/docs/git-branches)
 - Endpoint / folder tree with drag-and-drop ordering
+- Tree **search** that keeps a matching folder's whole subtree — root-level
+  requests included (Postman / Insomnia behaviour)
+- Right-click a folder → **Expand All / Collapse All** for the whole subtree,
+  even while a search filter is active
 
 ## Request history
 

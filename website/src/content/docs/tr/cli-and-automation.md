@@ -57,6 +57,13 @@ başarısız bir ön koşulun anlamıdır.
 satırında sayılır, üst düzey hata sayacında değil. Başarısız bir temizlik adımı
 görülmeye değerdir, ama geçen bir koşuyu kalan bir koşuya çevirmez.
 
+**Run düzeyi betikler.** İstek başına rollerin yanında, koşu yapılandırmasında
+bir **Run setup script** ve bir **Run teardown script** vardır. Bunlar
+iterasyon başına değil, run başına bir kez çalışır — ve teardown betiği,
+teardown isteklerinin garantilendiği şekilde garantilidir: akış erken
+durduğunda da koşar. Sonuçlarda betik satırları bir durum kodu yerine
+**SCRIPT** rozeti taşır ve hata fırlatan bir betik hata olarak raporlanır.
+
 ### Bir koşuyu durdurmak
 
 İki buton ve her aşamada farklı anlamları var:

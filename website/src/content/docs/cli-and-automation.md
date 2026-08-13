@@ -56,6 +56,13 @@ preference, it is what a failed precondition means.
 line, not in the top-level error count. A cleanup step that fails is worth
 seeing, but it does not turn a passing run into a failing one.
 
+**Run-level scripts.** Alongside the per-request roles, the run configuration
+has a **Run setup script** and a **Run teardown script**. They execute once per
+run — not once per iteration — and the teardown script is guaranteed the same
+way teardown requests are: it still runs when the flow stops early. In the
+results, script rows carry a **SCRIPT** chip rather than a status code, and a
+script that threw is reported as an error.
+
 ### Stopping a run
 
 Two buttons, and they mean different things in every phase:

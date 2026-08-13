@@ -121,13 +121,19 @@ pm.info.requestId        // the request's id
 
 ### pm.cookies
 
-The cookie jar shared with the request:
+The cookies visible on the current exchange (the same set as
+`pm.response.cookies`):
 
 ```js
 pm.cookies.get('session')   // → value | undefined
 pm.cookies.has('session')   // → boolean
 pm.cookies.toObject()       // → { name: value, ... }
 ```
+
+Cookie *storage* is handled outside the script: Testnizer keeps an automatic
+project-scoped cookie jar, so a `Set-Cookie` from one request is sent on the
+requests that follow it — see
+[Cookies](/docs/protocols/http#cookies).
 
 ### pm.request (pre-request only)
 
@@ -308,6 +314,15 @@ pm.sendRequest('https://api.example.com/ping', function (err, res) {
 The response exposes the same surface as `pm.response` — `.code`, `.status`,
 `.json()`, `.text()`, `.headers.get(name)`, `.cookies.get(name)`, and so on.
 
+Two scoping rules, identical on Send and Run:
+
+- `pm.sendRequest` shares the **project's cookie jar** with the main request —
+  a login performed in a pre-request script stores its session cookie in the
+  same jar, so the requests that follow send it automatically. See
+  [Cookies](/docs/protocols/http#cookies).
+- It attaches **no project client certificate** (mTLS) — see
+  [Certificates](/docs/certificates).
+
 ### pm.execution
 
 ```js
@@ -418,6 +433,16 @@ Configure them in:
 This is ideal for cross-cutting setup — e.g. a project pre-request script that
 refreshes a token once, inherited by every request below it. The cascade applies
 to both **Send** and **Run**.
+
+### Run-level setup & teardown scripts
+
+The Collection Runner's configuration carries two more slots: **Run setup
+script** and **Run teardown script**. They execute **once per run** — not once
+per iteration — before the first request and after the last. The teardown
+script is guaranteed: it still runs when the run stops early on an error or a
+manual Stop. In the results, script rows appear with a **SCRIPT** chip, and a
+script that threw is reported as an error. See
+[Setup, Flow and Teardown](/docs/cli-and-automation#setup-flow-and-teardown).
 
 ## Auth inheritance
 

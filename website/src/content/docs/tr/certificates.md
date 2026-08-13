@@ -84,6 +84,22 @@ seçer. Ana bilgisayar adı alanı şunları destekler:
 Birden fazla sertifika bir ana bilgisayar adıyla eşleşirse, en spesifik kalıp
 kazanır (tam > alt etki alanı joker > `*`).
 
+### Koşular da istemci sertifikası sunar
+
+**Collection Runner**, **test suite'leri** ve **zamanlanmış koşular**, Send ile
+birebir aynı sertifika mantığını kullanır — Send'e bastığınızda mTLS ile kimlik
+doğrulayan bir istek, bir koşuda da aynı şekilde doğrular.
+
+Sertifikalar yine isteğin host'una göre eşleştirilir; ancak host'u `*` olan bir
+istemci sertifikası, koleksiyonun dokunduğu **her** host'la eşleşir — üçüncü
+taraf API'ler dahil. Her istemci sertifikasına spesifik bir host verin; joker
+karakter CA / güven girdileri için sorun değildir, ama bir istemci sertifikası
+için kimliğinizin koşudaki her host'a sunulması anlamına gelir.
+
+Hatalar sessiz kalmaz: eşleşen ama yüklenemeyen bir sertifika, isteği sessizce
+kimliksiz göndermek yerine o tek isteği net bir mesajla başarısız kılar.
+`pm.sendRequest(...)` iki yolda da proje sertifikası eklemez.
+
 ## CA sertifikaları (özel güven çıpaları)
 
 Sunucunuz özel bir CA tarafından imzalanmış bir sertifika sunduğunda bunu kullanın
