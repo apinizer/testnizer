@@ -125,6 +125,9 @@ uiTest.describe('tester findings, 7 August', () => {
     await navigateSidebar(window, 'apis')
     await treeOpenNode(window, root)
     await treeContextAction(window, root, /Create Test Suite from this folder/i)
+    // #102: a request-selection step now sits between the menu item and the
+    // create — confirming the default (everything selected) keeps this flow.
+    await window.getByTestId('suite-select-confirm').click()
 
     // It hands off to Tests. The suite is named after the folder.
     await navigateSidebar(window, 'tests')
@@ -163,6 +166,8 @@ uiTest.describe('tester findings, 7 August', () => {
       await navigateSidebar(window, 'apis')
       await treeOpenNode(window, root)
       await treeContextAction(window, root, /Create Test Suite from this folder/i)
+      // #102: confirm the selection modal's all-selected default.
+      await window.getByTestId('suite-select-confirm').click()
 
       await navigateSidebar(window, 'tests')
       await expect(suiteRow(window, root)).toBeVisible({ timeout: 20_000 })
