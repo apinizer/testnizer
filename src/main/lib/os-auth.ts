@@ -80,15 +80,34 @@ export function cleanPowerShellStderr(raw: string): string {
   return (i >= 0 ? raw.slice(0, i) : raw).trim()
 }
 
-function verifyWindows(username: string, password: string): Promise<OsAuthResult> {
-  return new Promise((resolve) => {
-    // Credentials ride env vars so they never appear in the process command
-    // line visible to other users. The verdict is printed as TZ_OK / TZ_FAIL.
-    const script = `
+/**
+ * The PowerShell verification program, exported for tests (the LogonUser /
+ * AccountManagement calls themselves only run on Windows).
+ *
+ * Attempt chain — ordered local-first, then Active Directory (issue #82: a
+ * domain account always failed because only `domain '.'` = local SAM and the
+ * two ValidateCredentials contexts were tried; the Domain context throws when
+ * the DC is unreachable, so a laptop off the corporate network/VPN reported
+ * "incorrect password" for a password Windows itself accepts via its cache):
+ *
+ *   1. LogonUser  '.'          NETWORK(3)   — local account
+ *   2. LogonUser  USERDOMAIN   NETWORK(3)   — AD account, DC reachable
+ *   3. LogonUser  USERDOMAIN   INTERACTIVE(2) — AD policies that reject NETWORK
+ *   4. LogonUser  USERDOMAIN   CACHED_INTERACTIVE(11) — DC unreachable; checks
+ *      the same cached verifier the Windows lock screen uses
+ *   5. LogonUser  UPN (user@USERDNSDOMAIN)  NETWORK(3)
+ *   6. PrincipalContext Machine → Domain ValidateCredentials (legacy fallback)
+ *
+ * A failure on a domain-joined machine prints TZ_FAIL_DOMAIN so the caller can
+ * say "DC may be unreachable" instead of only "incorrect password".
+ */
+export function buildWindowsAuthScript(): string {
+  return `
 $ProgressPreference = 'SilentlyContinue'
 $ErrorActionPreference = 'SilentlyContinue'
 $u = $env:TESTNIZER_OS_USER
 $p = $env:TESTNIZER_OS_PW
+$domainJoined = ($env:USERDOMAIN) -and ($env:USERDOMAIN -ne $env:COMPUTERNAME)
 try {
   $sig = @'
 [DllImport("advapi32.dll", SetLastError=true)]
@@ -98,8 +117,21 @@ public static extern bool CloseHandle(System.IntPtr handle);
 '@
   $api = Add-Type -MemberDefinition $sig -Name 'TZLogon' -Namespace 'TZ' -PassThru
   $tok = [System.IntPtr]::Zero
+  $ok = $false
   # LOGON32_LOGON_NETWORK = 3, LOGON32_PROVIDER_DEFAULT = 0; domain '.' = local SAM
-  if ($api::LogonUser($u, '.', $p, 3, 0, [ref]$tok)) { [void]$api::CloseHandle($tok); Write-Output 'TZ_OK'; exit 0 }
+  if ($api::LogonUser($u, '.', $p, 3, 0, [ref]$tok)) { $ok = $true }
+  # Active Directory (issue #82): the account's real domain. INTERACTIVE(2)
+  # covers policies that refuse NETWORK; CACHED_INTERACTIVE(11) validates
+  # against the local credential cache when no domain controller is reachable.
+  if (-not $ok -and $domainJoined) {
+    if ($api::LogonUser($u, $env:USERDOMAIN, $p, 3, 0, [ref]$tok)) { $ok = $true }
+    elseif ($api::LogonUser($u, $env:USERDOMAIN, $p, 2, 0, [ref]$tok)) { $ok = $true }
+    elseif ($api::LogonUser($u, $env:USERDOMAIN, $p, 11, 0, [ref]$tok)) { $ok = $true }
+  }
+  if (-not $ok -and $env:USERDNSDOMAIN) {
+    if ($api::LogonUser("$u@$env:USERDNSDOMAIN", $null, $p, 3, 0, [ref]$tok)) { $ok = $true }
+  }
+  if ($ok) { [void]$api::CloseHandle($tok); Write-Output 'TZ_OK'; exit 0 }
 } catch { }
 try {
   Add-Type -AssemblyName System.DirectoryServices.AccountManagement
@@ -110,9 +142,17 @@ try {
   $d = New-Object System.DirectoryServices.AccountManagement.PrincipalContext('Domain')
   if ($d.ValidateCredentials($u, $p)) { Write-Output 'TZ_OK'; exit 0 }
 } catch { }
-Write-Output 'TZ_FAIL'
+if ($domainJoined) { Write-Output 'TZ_FAIL_DOMAIN' } else { Write-Output 'TZ_FAIL' }
 exit 1
 `
+}
+
+function verifyWindows(username: string, password: string): Promise<OsAuthResult> {
+  return new Promise((resolve) => {
+    // Credentials ride env vars so they never appear in the process command
+    // line visible to other users. The verdict is printed as TZ_OK / TZ_FAIL /
+    // TZ_FAIL_DOMAIN.
+    const script = buildWindowsAuthScript()
     // PowerShell requires UTF-16LE base64 for -EncodedCommand.
     const encoded = Buffer.from(script, 'utf16le').toString('base64')
     const proc = spawn(
@@ -139,9 +179,16 @@ exit 1
         return
       }
       const detail = cleanPowerShellStderr(stderr)
+      // Domain-joined machine: "wrong password" is not the only explanation —
+      // every cached/online AD attempt failed, which also happens when the
+      // account can't be validated locally and no DC answers (issue #82).
+      const domainHint = stdout.includes('TZ_FAIL_DOMAIN')
+        ? ' — if your domain (Active Directory) password is correct, the domain controller may be unreachable; connect to the corporate network or VPN and try again'
+        : ''
       resolve({
         ok: false,
-        error: 'Incorrect system password' + (detail ? ` (${detail.slice(0, 200)})` : ''),
+        error:
+          'Incorrect system password' + domainHint + (detail ? ` (${detail.slice(0, 200)})` : ''),
       })
     })
   })
