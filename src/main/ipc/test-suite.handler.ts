@@ -532,6 +532,47 @@ export function registerTestSuiteHandlers(): void {
     }
   })
 
+  // ─── Run configuration (issue #100) ───────────────────────
+  // The Runner's per-suite run configuration — sequence selection + lifecycle
+  // roles, iterations/delays, stop-on-error, run hook scripts — stored as an
+  // opaque JSON string in `test_suites.run_config`. The renderer owns the
+  // shape (`SuiteRunConfig`); main just persists the blob so closing and
+  // reopening a suite restores the last saved setup. NULL = never saved.
+  ipcMain.handle('testSuite:getRunConfig', async (_event, suiteId: string) => {
+    try {
+      const db = getDb()
+      const row = db.prepare('SELECT run_config FROM test_suites WHERE id = ?').get(suiteId) as
+        | { run_config: string | null }
+        | undefined
+      if (!row) return { success: false, error: 'Test suite not found' }
+      return { success: true, data: row.run_config ?? null }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle(
+    'testSuite:saveRunConfig',
+    async (_event, suiteId: string, runConfig: string | null) => {
+      try {
+        if (runConfig !== null && typeof runConfig !== 'string') {
+          return { success: false, error: 'run config must be a JSON string or null' }
+        }
+        const db = getDb()
+        const exists = db.prepare('SELECT id FROM test_suites WHERE id = ?').get(suiteId)
+        if (!exists) return { success: false, error: 'Test suite not found' }
+        db.prepare('UPDATE test_suites SET run_config = ?, updated_at = ? WHERE id = ?').run(
+          runConfig,
+          Date.now(),
+          suiteId,
+        )
+        return { success: true, data: true }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
+
   // ─── Delete suite ─────────────────────────────────────────
   ipcMain.handle('testSuite:delete', async (_event, id: string) => {
     try {

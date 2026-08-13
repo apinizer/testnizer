@@ -626,6 +626,7 @@ function runMigrations(database: Database.Database): void {
       name TEXT NOT NULL,
       description TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      run_config TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -772,6 +773,10 @@ function runMigrations(database: Database.Database): void {
     `ALTER TABLE test_suite_folders ADD COLUMN auth TEXT`,
     `ALTER TABLE test_suite_folders ADD COLUMN pre_script TEXT`,
     `ALTER TABLE test_suite_folders ADD COLUMN post_script TEXT`,
+    // Per-suite Runner configuration (issue #100): sequence selection + roles,
+    // iterations/delays, stop-on-error, run lifecycle scripts — one opaque
+    // JSON blob owned by the renderer. NULL = never saved.
+    `ALTER TABLE test_suites ADD COLUMN run_config TEXT`,
     // Key Material Provider (#60) — keystore-backed client certificate rows.
     // Additive: existing installs get source='file' for every row, so the
     // classic crt/key/pfx path is untouched.
