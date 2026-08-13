@@ -1,6 +1,6 @@
 import { useRef, useMemo, useCallback, useState, useEffect } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useWorkspaceStore } from '../../stores/workspace.store'
+import { useWorkspaceStore, collectExpandableIds } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
@@ -87,11 +87,16 @@ function filterTree(nodes: TreeNode[], q: string): TreeNode[] {
       node.label.toLowerCase().includes(q) || (node.path?.toLowerCase().includes(q) ?? false)
     const children = node.children ? filterTree(node.children, q) : []
     if (selfMatch || children.length > 0) {
-      // A self-matching folder keeps its full subtree; a folder kept only
-      // because a descendant matched shows just the matching branch.
+      // A self-matching folder keeps its full subtree (Postman/Insomnia/Bruno
+      // behaviour); a folder kept only because a descendant matched shows just
+      // the matching branch. The self-match check must win: preferring the
+      // filtered children whenever ANY descendant also matched silently
+      // dropped the folder's non-matching direct children — e.g. a request at
+      // the root of a matching folder that also had matching sub-folders
+      // (issue #107).
       out.push({
         ...node,
-        children: children.length > 0 ? children : selfMatch ? node.children : [],
+        children: selfMatch ? node.children : children,
       })
     }
   }
@@ -726,6 +731,47 @@ export default function TreeView() {
     [refreshTree],
   )
 
+  // Issue #106: right-click → Collapse All / Expand All on a folder. While a
+  // search filter is active the tree renders from the filter session
+  // (`filterCollapsedIds`) and ignores `openNodeIds`, so the command is
+  // mirrored there instead — the same dead-control trap issue #70 documented
+  // for the chevron and the panel-level collapse/expand buttons.
+  const collapseSubtree = useWorkspaceStore((s) => s.collapseSubtree)
+  const expandSubtree = useWorkspaceStore((s) => s.expandSubtree)
+
+  const handleCollapseSubtree = useCallback(
+    (node: TreeNode) => {
+      if (searchQuery.trim()) {
+        setFilterCollapsedIds((prev) => {
+          const next = new Set(prev)
+          // Descendants only — the folder row itself stays open, matching
+          // the store action's semantics.
+          for (const id of collectExpandableIds(node.children ?? [])) next.add(id)
+          return next
+        })
+        return
+      }
+      collapseSubtree(node.id)
+    },
+    [searchQuery, collapseSubtree],
+  )
+
+  const handleExpandSubtree = useCallback(
+    (node: TreeNode) => {
+      if (searchQuery.trim()) {
+        setFilterCollapsedIds((prev) => {
+          const next = new Set(prev)
+          // Self-inclusive — mirrors the store action's expandSubtree.
+          for (const id of collectExpandableIds([node])) next.delete(id)
+          return next
+        })
+        return
+      }
+      expandSubtree(node.id)
+    },
+    [searchQuery, expandSubtree],
+  )
+
   const handleRunFolder = useCallback((node: TreeNode) => {
     // Open the runner AND switch to the Tests page where it renders — without
     // the page switch the tab opened but stayed hidden behind the APIs view, so
@@ -1061,6 +1107,8 @@ export default function TreeView() {
                   onCreateTestSuite={handleCreateTestSuite}
                   onCreateMockServer={handleCreateMockServer}
                   onFolderSettings={handleFolderSettings}
+                  onCollapseAll={handleCollapseSubtree}
+                  onExpandAll={handleExpandSubtree}
                   onDrop={handleDrop}
                   openIds={effectiveOpenIds}
                   isFlat

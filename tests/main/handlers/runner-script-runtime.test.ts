@@ -128,6 +128,35 @@ describe('runner script runtime parity', () => {
     expect(res.data!.envUpdates.auxCode).toBe('200')
   })
 
+  it('pm.sendRequest lands in the same project cookie jar as the main request (issue #104 parity)', async () => {
+    // The main Run request is jar-scoped (resolvedOptions.projectId); a script
+    // login must reach the SAME jar or its session cookie never carries over.
+    // Cert scope stays none for scripted sends (R5): projectId here scopes the
+    // engine's cookie jar only — `certificates` must remain absent.
+    const { executeHttpRequest } = await import('../../../src/main/protocols/http.engine')
+    const engineMock = vi.mocked(executeHttpRequest)
+    engineMock.mockClear()
+    const ep = seedEndpoint(testDb, projectId, {
+      url: 'http://api.test/main',
+      method: 'GET',
+      postScript: `await pm.sendRequest('http://api.test/login')`,
+    })
+    const res = (await harness.invoke('runner:execute', {
+      projectId,
+      environmentId: envId,
+      endpointIds: [ep],
+    })) as { success: boolean }
+    expect(res.success).toBe(true)
+    const calls = engineMock.mock.calls.map(
+      (c) => c[0] as { url: string; projectId?: string; certificates?: unknown },
+    )
+    const aux = calls.find((c) => c.url.includes('/login'))
+    const main = calls.find((c) => c.url.includes('/main'))
+    expect(main?.projectId).toBe(projectId)
+    expect(aux?.projectId).toBe(projectId)
+    expect(aux?.certificates).toBeUndefined()
+  })
+
   // Parity with the Send path: pm.response.body must be the raw body string so
   // real token scripts (String(pm.response.body).trim() → JSON.parse) work. Was
   // undefined on Run → token scripts produced {} → accessToken cleared → 401.

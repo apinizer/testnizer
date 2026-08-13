@@ -313,6 +313,17 @@ export function registerRequestHandlers(): void {
             options = { ...options, certificates }
           }
         }
+        // Scope the engine's cookie jar to the active project (issue #104).
+        // The renderer sends the project as `_projectId` (history metadata);
+        // without mapping it onto the engine's `projectId`, every Send
+        // read/wrote the shared "_default" jar while the Runner used the
+        // per-project jar — a login cookie stored by Send never reached a
+        // Run (and vice versa), and two projects' Send cookies bled into
+        // each other. Quick Test sends no `_projectId` and stays on
+        // "_default" by design.
+        if (options.projectId == null && options._projectId) {
+          options = { ...options, projectId: options._projectId }
+        }
         // Renderer sends `cipherPreset` / `ciphersCustom`; resolve to the actual
         // OpenSSL cipher string here so the engine never has to know about
         // presets.

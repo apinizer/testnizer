@@ -522,8 +522,13 @@ export interface PmSendResponse {
  * CERT SCOPE (R5, design §4): no `_projectId` is emitted, so `request:send`
  * skips `loadCertificatesFor` and a script-issued request carries NO project
  * client certificate. The Run twin (`runner.handler.ts` pm.sendRequest) calls
- * the engine directly with no projectId either — SYMMETRIC by design. If cert
- * attach is ever wanted here, add it to BOTH sides in the same change.
+ * the engine the same way — SYMMETRIC by design. If cert attach is ever
+ * wanted here, add it to BOTH sides in the same change.
+ *
+ * JAR SCOPE (issue #104): the CALLER spreads an engine-level `projectId` on
+ * top of this result so a script login lands in the same per-project cookie
+ * jar as the main request. `projectId` scopes only the engine's cookie jar —
+ * it does not trigger the cert branch, keeping R5 intact.
  */
 export function normalizePmSendInput(req: PmSendInput): {
   method: string
@@ -607,6 +612,11 @@ export function createPmApi(
      * pm.request when no real response.actualRequest is available yet
      * — pre-request scope. Mehmet BUG-01. */
     request?: PmRequestInput
+    /** Scopes pm.sendRequest to the active project's cookie jar so a script
+     * login shares its session cookie with the main request (issue #104).
+     * Engine-level `projectId` only — never `_projectId`, which would also
+     * attach project client certificates (R5 keeps scripted sends cert-free). */
+    projectId?: string
   },
 ): PmApi {
   const testResults: PmTestResult[] = []
@@ -979,7 +989,10 @@ export function createPmApi(
         if (!api?.request?.send) {
           throw new Error('pm.sendRequest: request bridge unavailable in this context')
         }
-        const result = await api.request.send(normalizePmSendInput(req))
+        const result = await api.request.send({
+          ...normalizePmSendInput(req),
+          projectId: meta?.projectId,
+        })
         if (!result?.success || !result.data) {
           throw new Error(result?.error || 'pm.sendRequest failed')
         }

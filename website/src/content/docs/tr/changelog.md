@@ -11,6 +11,29 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.5.1
+
+**Cookie'ler artık gerçek bir cookie jar gibi davranıyor — artı kenar çubuğu araması ve yerleşim düzeltmeleri.**
+
+- **Cookie jar:** bir istekten dönen `Set-Cookie` artık aynı projedeki sonraki
+  isteklerde — tutarlı biçimde — gönderiliyor. Send yolu HTTP motoruna hangi
+  projeye ait olduğunu hiç söylemiyordu; elle gönderilen istekler paylaşılan
+  varsayılan jar'ı kullanırken Runner proje-bazlı jar'ı kullanıyordu: Send ile
+  yapılan bir login Run'a hiç ulaşmıyor, tüm projelerin Send cookie'leri tek
+  jar'da birbirine karışıyordu. Send, Runner, test suite'leri, zamanlayıcı ve
+  `pm.sendRequest` (script ile login) artık proje başına tek jar paylaşıyor;
+  farklı projeler birbirinden yalıtılmış kalıyor.
+- **Kenar çubuğu araması:** bir klasör adı arandığında eşleşen alt klasörler
+  görünüyor ama klasörün kök seviyesindeki istekler gizleniyordu. Klasör adı
+  eşleşmesi artık altındaki her şeyi koruyor — Postman / Insomnia / Bruno
+  davranışıyla aynı.
+- **Klasör ağacı:** klasöre sağ tık → **Tümünü Genişlet** / **Tümünü Daralt** —
+  tüm alt ağacı özyinelemeli açar ya da kapatır; arama filtresi aktifken de
+  çalışır.
+- **Cookies sekmesi:** uzun cookie değerleri (JWT boyutunda token'lar) artık
+  Domain / Path / Flags kolonlarının üzerine taşmak yerine kendi kolonunda
+  satır atlıyor.
+
 ## v1.5.0
 
 **Güvenlik sürümü.** Testnizer artık daha önce `keytool`, `openssl`, jwt.io ve

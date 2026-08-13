@@ -645,6 +645,10 @@ interface ScriptContext {
    * because script output only ever landed in the run report.
    */
   consoleTag?: { tabId?: string; meta: Record<string, string | number | boolean> }
+  /** Scopes `pm.sendRequest` to the run's per-project cookie jar so a script
+   *  login shares its session cookie with the main request (issue #104).
+   *  Cookie-jar scope ONLY — cert scope stays none for scripted sends (R5). */
+  projectId?: string
   /** In-flight `pm.sendRequest(...)` promises; the runner awaits these before
    *  finishing a script so callback-style sends complete. */
   pendingSends: Array<Promise<unknown>>
@@ -955,16 +959,21 @@ async function runUserScript(
       //
       // CERT SCOPE (R5, design §4 "Send≡Run parity: pm.sendRequest"): a
       // script-issued request attaches NO project client certificate — on
-      // EITHER path. Here we call the engine directly with no `projectId`; the
-      // renderer twin (`normalizePmSendInput` in test-runner.ts) likewise emits
-      // no `_projectId`, so `request:send` skips `loadCertificatesFor` too.
+      // EITHER path. We pass `certificates`-free options; the renderer twin
+      // (`normalizePmSendInput` in test-runner.ts) likewise emits no
+      // `_projectId`, so `request:send` skips `loadCertificatesFor` too.
       // That is SYMMETRIC by design — do not add the cert branch to one side
       // only, or the parity class reopens on the scripted junction.
+      //
+      // JAR SCOPE (issue #104): engine-level `projectId` IS passed — on both
+      // paths — so a script login lands in the same per-project cookie jar as
+      // the main request. `projectId` scopes only the engine's cookie jar; it
+      // never loads certificates (that's a handler concern), so R5 holds.
       sendRequest: (
         req: unknown,
         cb?: (err: Error | null, res: unknown) => void,
       ): Promise<unknown> => {
-        const sendOptions = normalizeRunnerSendInput(req)
+        const sendOptions = { ...normalizeRunnerSendInput(req), projectId: ctx.projectId }
         const run = executeHttpRequest(sendOptions).then((apiResp) => {
           // Send's `pm.sendRequest` goes out through `request:send`, which
           // logs it. Skipping it here would leave a scripted call visible on
@@ -1606,6 +1615,7 @@ async function runEndpointStep(
   const scriptCtx = newScriptContext(envVars, iterationData[iter] ?? {}, iter, iterations)
   const consoleTag = runConsoleTag(ctx, { step: endpoint.name, phase, iteration })
   scriptCtx.consoleTag = consoleTag
+  scriptCtx.projectId = ctx.options.projectId
 
   try {
     // Resolve inherited auth + cascade scripts up the folder/project chain.
@@ -2076,6 +2086,7 @@ async function runHookScript(
   const startedAt = Date.now()
   const scriptCtx = newScriptContext(ctx.envVars, ctx.iterationData[0] ?? {}, 0, ctx.iterations)
   scriptCtx.consoleTag = runConsoleTag(ctx, { step: label, phase })
+  scriptCtx.projectId = ctx.options.projectId
   // A hook that THROWS at top level (a bad await, a failed token fetch) must be
   // visible: without this the exception escaped the run, no row was recorded,
   // and a "Run setup script" that never fetched its token looked like nothing

@@ -225,6 +225,46 @@ describe('request:send — keystore-backed client cert never leaks to the render
   })
 })
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Issue #104 — the Send path must scope the engine's cookie jar to the
+// project. The renderer sends the active project as `_projectId` (history
+// metadata); the handler must map it onto the engine's `projectId` field,
+// otherwise every Send reads/writes the shared "_default" jar while the
+// Runner uses the per-project jar — a login cookie stored by Send never
+// reaches a Run (and vice versa), and two projects' Send cookies bleed
+// into each other.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('request:send — cookie jar project scoping (issue #104)', () => {
+  it('maps _projectId onto the engine options as projectId', async () => {
+    const res = (await harness.invoke('request:send', {
+      method: 'GET',
+      url: 'http://example/x',
+      _projectId: 'p1',
+      _workspaceId: 'w1',
+    })) as { success: boolean }
+    expect(res.success).toBe(true)
+
+    const sent = vi.mocked(executeHttpRequest).mock.calls[0]?.[0] as {
+      projectId?: string | null
+    }
+    expect(sent?.projectId).toBe('p1')
+  })
+
+  it('leaves projectId unset without _projectId so Quick Test stays on the "_default" jar', async () => {
+    const res = (await harness.invoke('request:send', {
+      method: 'GET',
+      url: 'http://example/x',
+    })) as { success: boolean }
+    expect(res.success).toBe(true)
+
+    const sent = vi.mocked(executeHttpRequest).mock.calls[0]?.[0] as {
+      projectId?: string | null
+    }
+    expect(sent?.projectId ?? undefined).toBeUndefined()
+  })
+})
+
 describe('request:cancel', () => {
   it('returns success envelope with data: false when no in-flight request', async () => {
     const res = (await harness.invoke('request:cancel', 'no-such-id')) as {
