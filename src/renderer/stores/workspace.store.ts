@@ -324,11 +324,19 @@ function findNodeById(nodes: TreeNode[], id: string): TreeNode | null {
   return null
 }
 
-/** Ids of every descendant of `node` that can be expanded (has children). */
-function collectExpandableDescendantIds(node: TreeNode, out: string[] = []): string[] {
-  for (const child of node.children ?? []) {
-    if (child.children && child.children.length > 0) out.push(child.id)
-    collectExpandableDescendantIds(child, out)
+/**
+ * Ids of every node in `nodes` — the nodes themselves included — that has
+ * children, i.e. every expandable row. The ONLY subtree walker: the store's
+ * expand/collapse actions and TreeView's search-session mirror all derive
+ * from it (self-inclusive: pass `[node]`; descendants-only: pass
+ * `node.children ?? []`), so the variants can't drift apart.
+ */
+export function collectExpandableIds(nodes: TreeNode[], out: string[] = []): string[] {
+  for (const n of nodes) {
+    if (n.children && n.children.length > 0) {
+      out.push(n.id)
+      collectExpandableIds(n.children, out)
+    }
   }
   return out
 }
@@ -478,22 +486,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }),
 
   expandAllNodes: () =>
-    set((state) => {
-      const next = new Set<string>()
-      const walk = (nodes: TreeNode[]) => {
-        for (const n of nodes) {
-          if (n.children && n.children.length > 0) {
-            next.add(n.id)
-            walk(n.children)
-          }
-        }
-      }
-      walk(state.treeData)
-      return {
-        openNodeIds: next,
-        allNodesCommand: { kind: 'expand', seq: state.allNodesCommand.seq + 1 },
-      }
-    }),
+    set((state) => ({
+      openNodeIds: new Set(collectExpandableIds(state.treeData)),
+      allNodesCommand: { kind: 'expand', seq: state.allNodesCommand.seq + 1 },
+    })),
 
   collapseSubtree: (id) =>
     set((state) => {
@@ -502,7 +498,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const next = new Set(state.openNodeIds)
       // Descendants only — the folder itself stays open so the collapsed
       // children remain in view (issue #106).
-      for (const descendantId of collectExpandableDescendantIds(target)) {
+      for (const descendantId of collectExpandableIds(target.children ?? [])) {
         next.delete(descendantId)
       }
       return { openNodeIds: next }
@@ -513,9 +509,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const target = findNodeById(state.treeData, id)
       if (!target) return {}
       const next = new Set(state.openNodeIds)
-      if (target.children && target.children.length > 0) next.add(target.id)
-      for (const descendantId of collectExpandableDescendantIds(target)) {
-        next.add(descendantId)
+      // Self-inclusive — see the interface doc for why the folder opens too.
+      for (const nodeId of collectExpandableIds([target])) {
+        next.add(nodeId)
       }
       return { openNodeIds: next }
     }),

@@ -138,6 +138,40 @@ describe('pm.sendRequest (Send path)', () => {
     )
     expect(out.envUpdates.err).toBe('caught')
   })
+
+  it('scopes the auxiliary request to the project cookie jar (issue #104 parity)', async () => {
+    // The main Send request is jar-scoped via _projectId → projectId; a
+    // script login (pm.sendRequest) must land in the SAME jar or its session
+    // cookie never reaches the main request. Engine-level projectId only —
+    // _projectId would additionally trigger loadCertificatesFor (R5 keeps
+    // scripted sends cert-free on both paths).
+    const send = vi.fn(async (_opts: Record<string, unknown>) => ({
+      success: true,
+      data: { status: 200, statusText: 'OK', body: '{}', headers: {}, timing: { total: 1 } },
+    }))
+    ;(window as unknown as { api: unknown }).api = { request: { send } }
+    const pm = createPmApi(resp(), new Map(), new Map(), {
+      eventName: 'prerequest',
+      projectId: 'proj-1',
+    })
+    await runScript(`await pm.sendRequest('https://auth/login')`, pm)
+    expect(send).toHaveBeenCalledTimes(1)
+    const opts = send.mock.calls[0][0]
+    expect(opts.projectId).toBe('proj-1')
+    expect(opts._projectId).toBeUndefined()
+  })
+
+  it('leaves the jar unscoped when no project is active (Quick Test)', async () => {
+    const send = vi.fn(async (_opts: Record<string, unknown>) => ({
+      success: true,
+      data: { status: 200, statusText: 'OK', body: '{}', headers: {}, timing: { total: 1 } },
+    }))
+    ;(window as unknown as { api: unknown }).api = { request: { send } }
+    const pm = createPmApi(resp(), new Map(), new Map(), { eventName: 'test' })
+    await runScript(`await pm.sendRequest('https://x')`, pm)
+    const opts = send.mock.calls[0][0]
+    expect(opts.projectId).toBeUndefined()
+  })
 })
 
 describe('pm.response.body — raw string (real Postman/Insomnia token script)', () => {

@@ -472,6 +472,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           url,
           headers: headers.filter((h) => h.enabled).map((h) => ({ key: h.key, value: h.value })),
         },
+        // pm.sendRequest shares the main request's per-project cookie jar
+        // (issue #104) — a script login's session cookie must carry over.
+        projectId: wsStore.activeProjectId || undefined,
       })
       const scriptResult = await runScript(script, pmApi)
       // test-runner emits 'info'/'debug' via console.info/debug — flatten those
@@ -773,6 +776,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           const pmApi = createPmApi(apiResp, envMap, globalMap, {
             eventName: 'test',
             requestName,
+            projectId: wsStore.activeProjectId || undefined,
           })
           const scriptResult = await runScript(script, pmApi)
           allTestResults.push(...scriptResult.results)

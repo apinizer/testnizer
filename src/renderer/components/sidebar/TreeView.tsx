@@ -1,6 +1,6 @@
 import { useRef, useMemo, useCallback, useState, useEffect } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useWorkspaceStore } from '../../stores/workspace.store'
+import { useWorkspaceStore, collectExpandableIds } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
@@ -739,19 +739,6 @@ export default function TreeView() {
   const collapseSubtree = useWorkspaceStore((s) => s.collapseSubtree)
   const expandSubtree = useWorkspaceStore((s) => s.expandSubtree)
 
-  /** Ids of `node` + every descendant that has children (expandable rows). */
-  const subtreeFolderIds = useCallback((node: TreeNode): string[] => {
-    const ids: string[] = []
-    const walk = (n: TreeNode): void => {
-      if (n.children && n.children.length > 0) {
-        ids.push(n.id)
-        for (const child of n.children) walk(child)
-      }
-    }
-    walk(node)
-    return ids
-  }, [])
-
   const handleCollapseSubtree = useCallback(
     (node: TreeNode) => {
       if (searchQuery.trim()) {
@@ -759,14 +746,14 @@ export default function TreeView() {
           const next = new Set(prev)
           // Descendants only — the folder row itself stays open, matching
           // the store action's semantics.
-          for (const id of subtreeFolderIds(node)) if (id !== node.id) next.add(id)
+          for (const id of collectExpandableIds(node.children ?? [])) next.add(id)
           return next
         })
         return
       }
       collapseSubtree(node.id)
     },
-    [searchQuery, collapseSubtree, subtreeFolderIds],
+    [searchQuery, collapseSubtree],
   )
 
   const handleExpandSubtree = useCallback(
@@ -774,14 +761,15 @@ export default function TreeView() {
       if (searchQuery.trim()) {
         setFilterCollapsedIds((prev) => {
           const next = new Set(prev)
-          for (const id of subtreeFolderIds(node)) next.delete(id)
+          // Self-inclusive — mirrors the store action's expandSubtree.
+          for (const id of collectExpandableIds([node])) next.delete(id)
           return next
         })
         return
       }
       expandSubtree(node.id)
     },
-    [searchQuery, expandSubtree, subtreeFolderIds],
+    [searchQuery, expandSubtree],
   )
 
   const handleRunFolder = useCallback((node: TreeNode) => {
