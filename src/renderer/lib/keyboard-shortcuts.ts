@@ -8,7 +8,7 @@ import { useUIStore } from '../stores/ui.store'
 import { useWorkspaceStore } from '../stores/workspace.store'
 import { isMac } from './platform'
 import { makeTabId } from './utils'
-import { isToolProtocol } from '../types'
+import { isRequestLikeTab } from './mark-dirty'
 import { saveActiveRequestInPlace } from './save-active-request'
 import { toast } from './toast'
 
@@ -84,19 +84,14 @@ export function useKeyboardShortcuts(): void {
             const tabs = useTabsStore.getState()
             const active = tabs.tabs.find((t) => t.id === tabs.activeTabId)
             // A tab is a request tab if (a) it carries one of the resource ids
-            // — endpoint / saved request / mock / test suite item — or (b) its
+            // — endpoint / saved request / test suite item — or (b) its
             // protocol is a regular request protocol. Without the id-based
             // check, freshly-opened "New Request" tabs whose protocol field
             // hadn't propagated yet fell through to the project-save branch
-            // (v1.3.1 M8).
-            const isRequestTab =
-              !!active &&
-              (!!active.endpointId ||
-                !!active.savedRequestId ||
-                !!active.testSuiteItemId ||
-                (!isToolProtocol(active.protocol) &&
-                  active.protocol !== 'runner' &&
-                  active.protocol !== 'mockServer'))
+            // (v1.3.1 M8). The predicate is shared with the dirty-dot logic
+            // (`mark-dirty.ts`, issue #101) so Ctrl+S routing and the unsaved
+            // indicator can never disagree about what counts as a request tab.
+            const isRequestTab = !!active && isRequestLikeTab(active)
             if (!isRequestTab) {
               ui.setShowSaveModal(true)
               return

@@ -4,8 +4,10 @@
  * shared `markActiveTabDirty` helper so editing a SOAP / WebSocket / SSE /
  * Socket.IO / gRPC / GraphQL request flags its tab dirty too.
  *
- * `markActiveTabDirty` only marks tabs that are backed by a saved request /
- * endpoint, so each case below opens a tab carrying a `savedRequestId` and
+ * `markActiveTabDirty` marks every request-like tab — row-backed (saved
+ * request / endpoint / test-suite item) AND brand-new scratch tabs (issue
+ * #101; scratch tabs used to be exempt, which silently discarded their edits
+ * on close). Each case below opens a tab carrying a `savedRequestId` and
  * makes it active before driving a representative setter.
  *
  * It must ALSO stay clean across the hydration paths: switching to a tab and
@@ -95,7 +97,7 @@ describe('protocol dirty indicator (#8)', () => {
     expect(isActiveTabDirty()).toBe(true)
   })
 
-  it('does not flag a scratch tab (no saved request / endpoint backing)', () => {
+  it('flags a scratch request tab too — new tabs must not lose edits silently (#101)', () => {
     useTabsStore.setState({
       tabs: [
         { id: 'tab-scratch', name: 'Scratch', protocol: 'graphql', isDirty: false, isLoading: false },
@@ -103,7 +105,7 @@ describe('protocol dirty indicator (#8)', () => {
       activeTabId: 'tab-scratch',
     })
     useGraphQLStore.getState().setQuery('query { me { id } }')
-    expect(isActiveTabDirty()).toBe(false)
+    expect(isActiveTabDirty()).toBe(true)
   })
 
   it('switchToTab does NOT flag the target tab dirty (hydration path)', () => {
