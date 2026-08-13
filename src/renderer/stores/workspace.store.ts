@@ -106,6 +106,19 @@ interface WorkspaceStore {
   collapseAllNodes: () => void
   /** Expand every node that has children (issue #39). */
   expandAllNodes: () => void
+  /**
+   * Collapse every open descendant of the given folder, leaving the folder's
+   * OWN open-state untouched — the user keeps seeing its direct children, now
+   * all collapsed (issue #106, right-click → Collapse All). Unknown id = no-op.
+   */
+  collapseSubtree: (id: string) => void
+  /**
+   * Expand the given folder AND every descendant that has children (issue
+   * #106, right-click → Expand All). Including the folder itself is
+   * deliberate: expanding only the descendants of a closed folder would
+   * visibly do nothing — the dead-control class of #39/#70. Unknown id = no-op.
+   */
+  expandSubtree: (id: string) => void
   setActiveNode: (id: string) => void
   setSearchQuery: (query: string) => void
   fetchWorkspaces: () => Promise<void>
@@ -299,6 +312,27 @@ function emptyTree(): TreeNode[] {
   ]
 }
 
+/** Depth-first lookup of a tree node by id. */
+function findNodeById(nodes: TreeNode[], id: string): TreeNode | null {
+  for (const n of nodes) {
+    if (n.id === id) return n
+    if (n.children) {
+      const hit = findNodeById(n.children, id)
+      if (hit) return hit
+    }
+  }
+  return null
+}
+
+/** Ids of every descendant of `node` that can be expanded (has children). */
+function collectExpandableDescendantIds(node: TreeNode, out: string[] = []): string[] {
+  for (const child of node.children ?? []) {
+    if (child.children && child.children.length > 0) out.push(child.id)
+    collectExpandableDescendantIds(child, out)
+  }
+  return out
+}
+
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   initialized: false,
   workspaces: [],
@@ -459,6 +493,31 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         openNodeIds: next,
         allNodesCommand: { kind: 'expand', seq: state.allNodesCommand.seq + 1 },
       }
+    }),
+
+  collapseSubtree: (id) =>
+    set((state) => {
+      const target = findNodeById(state.treeData, id)
+      if (!target) return {}
+      const next = new Set(state.openNodeIds)
+      // Descendants only — the folder itself stays open so the collapsed
+      // children remain in view (issue #106).
+      for (const descendantId of collectExpandableDescendantIds(target)) {
+        next.delete(descendantId)
+      }
+      return { openNodeIds: next }
+    }),
+
+  expandSubtree: (id) =>
+    set((state) => {
+      const target = findNodeById(state.treeData, id)
+      if (!target) return {}
+      const next = new Set(state.openNodeIds)
+      if (target.children && target.children.length > 0) next.add(target.id)
+      for (const descendantId of collectExpandableDescendantIds(target)) {
+        next.add(descendantId)
+      }
+      return { openNodeIds: next }
     }),
 
   setActiveNode: (id) => set({ activeNodeId: id }),

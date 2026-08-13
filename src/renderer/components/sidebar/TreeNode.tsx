@@ -19,6 +19,8 @@ import {
   Hexagon,
   Cloud,
   Settings,
+  ChevronsDownUp,
+  ChevronsUpDown,
 } from 'lucide-react'
 
 export interface DragPayload {
@@ -45,6 +47,10 @@ interface TreeNodeProps {
   onCreateTestSuite?: (node: TreeNodeType) => void
   onCreateMockServer?: (node: TreeNodeType) => void
   onFolderSettings?: (node: TreeNodeType) => void
+  /** Recursively collapse everything under this folder (issue #106). */
+  onCollapseAll?: (node: TreeNodeType) => void
+  /** Recursively expand everything under this folder (issue #106). */
+  onExpandAll?: (node: TreeNodeType) => void
   onDrop?: (target: TreeNodeType, payload: DragPayload, position: DropPosition) => void
   openIds: Set<string>
   isFlat?: boolean
@@ -465,6 +471,8 @@ export default function TreeNodeComponent({
   onCreateTestSuite,
   onCreateMockServer,
   onFolderSettings,
+  onCollapseAll,
+  onExpandAll,
   onDrop,
   openIds,
   isFlat = false,
@@ -556,6 +564,24 @@ export default function TreeNodeComponent({
           icon: RunIcon,
           separator: true,
           action: () => onRunFolder(node),
+        })
+      }
+      // Recursive open/close of everything under this folder (issue #106).
+      // Offered on empty folders too — a harmless no-op beats a menu whose
+      // entries appear and disappear depending on content.
+      if (onExpandAll) {
+        items.push({
+          label: t('tree.expandAll'),
+          icon: <ChevronsUpDown size={14} />,
+          separator: true,
+          action: () => onExpandAll(node),
+        })
+      }
+      if (onCollapseAll) {
+        items.push({
+          label: t('tree.collapseAll'),
+          icon: <ChevronsDownUp size={14} />,
+          action: () => onCollapseAll(node),
         })
       }
       // UX 6: One-click "convert this folder/project to a test suite / mock
@@ -929,6 +955,8 @@ export default function TreeNodeComponent({
             onImport={onImport}
             onCreateTestSuite={onCreateTestSuite}
             onCreateMockServer={onCreateMockServer}
+            onCollapseAll={onCollapseAll}
+            onExpandAll={onExpandAll}
             onDrop={onDrop}
             openIds={openIds}
           />
