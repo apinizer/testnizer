@@ -108,7 +108,8 @@ const TOOL_COMPONENTS: Record<string, ComponentType> = {
   'tools.saml': SamlTool,
 }
 
-function EndpointTabBar() {
+/** Exported for the zero-tab regression test (issue #97). */
+export function EndpointTabBar() {
   // One global strip: every open tab shows on every sidebar page. The sidebar
   // page only swaps the left panel, never the tab set.
   const tabs = useTabsStore((s) => s.tabs)
@@ -544,10 +545,13 @@ function EndpointTabBar() {
     clearResponse()
   }
 
-  // Nothing to show without tabs — and nothing is lost by it: the workbench
-  // renders PageWelcome instead, which is a better new-tab surface than this
-  // strip (issue #97, closed as invalid).
-  if (tabs.length === 0) return null
+  // The strip used to unmount itself when the last tab closed, taking the "+"
+  // with it (issue #97). The workbench does render PageWelcome in that state —
+  // a grid of nine protocol cards, a richer new-tab surface than this strip —
+  // but the two are not alternatives: the affordance the user was just
+  // clicking should not vanish at the moment they finish tidying up. The strip
+  // now stays put with the "+" alone in it, and PageWelcome fills the space
+  // below exactly as before.
 
   return (
     <div
