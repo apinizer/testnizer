@@ -48,13 +48,26 @@ describe('telling a local account from a directory one', () => {
   })
 })
 
-describe('what a failed PAM check means', () => {
-  it('accepts only a clean exit', () => {
-    expect(classifySuResult(0, '')).toEqual({ ok: true })
+describe('what a PAM check result means', () => {
+  it('accepts a clean exit that was actually authenticated', () => {
+    expect(classifySuResult(0, 'Password: ')).toEqual({ ok: true })
+  })
+
+  it('refuses a clean exit when su never asked for a password', () => {
+    // pam_wheel with the `trust` option grants su to wheel members WITHOUT
+    // authenticating. This function decides who may reset the app password, so
+    // a bare exit 0 there would accept literally any input.
+    const r = classifySuResult(0, '')
+    expect(r.ok).toBe(false)
+    expect(r.error).toMatch(/without asking for a password/i)
+  })
+
+  it('recognises the prompt wherever it lands in the output', () => {
+    expect(classifySuResult(0, 'some pty noise\r\nPassword:').ok).toBe(true)
   })
 
   it('reports a wrong password plainly', () => {
-    expect(classifySuResult(1, 'su: Authentication failure')).toEqual({
+    expect(classifySuResult(1, 'Password: \r\nsu: Authentication failure')).toEqual({
       ok: false,
       error: 'Incorrect system password',
     })

@@ -225,16 +225,34 @@ export function isLocalAccount(passwdFile: string, username: string): boolean {
   return passwdFile.split('\n').some((line) => line.split(':')[0] === username)
 }
 
+/** `su` asks for the password with this, under LC_ALL=C. */
+export const SU_PROMPT = /password\s*:/i
+
 /**
  * Turn `su`'s exit code into a verdict.
  *
- * Only exit 0 is a pass. Everything else is a failure, but the reason matters
- * to the user: `su` restricted by `pam_wheel`, and a domain controller that
- * cannot be reached, are not "you typed it wrong" and telling the user it was
- * would send them to reset a password that is fine.
+ * Only exit 0 is a pass — AND only when `su` actually asked for a password.
+ * That second half is not paranoia: `pam_wheel` with the `trust` option grants
+ * `su` to members of the wheel group WITHOUT authenticating, and this function
+ * decides whether someone may reset the app password. Accepting a bare exit 0
+ * would accept literally any input on such a machine. If no prompt was seen,
+ * the run proves nothing and must not be read as proof.
+ *
+ * Everything else is a failure, but the reason matters to the user: `su`
+ * restricted by `pam_wheel`, and a domain controller that cannot be reached,
+ * are not "you typed it wrong" — telling the user it was would send them to
+ * reset a password that is fine.
  */
 export function classifySuResult(code: number | null, output: string): OsAuthResult {
-  if (code === 0) return { ok: true }
+  if (code === 0) {
+    if (SU_PROMPT.test(output)) return { ok: true }
+    return {
+      ok: false,
+      error:
+        'This machine grants su without asking for a password, so it cannot be used to ' +
+        'verify yours. Reset the app password from another machine, or ask your administrator.',
+    }
+  }
   const text = output.toLowerCase()
   if (text.includes('permission denied') || text.includes('pam_wheel')) {
     return {
@@ -321,15 +339,44 @@ function verifyLinuxPam(
     const collect = (d: Buffer): void => {
       output += d.toString()
     }
-    proc.stdout.on('data', collect)
-    proc.stderr.on('data', collect)
-    proc.on('error', (err) => resolve({ ok: false, error: err.message }))
-    proc.on('close', (code) => resolve(classifySuResult(code, output)))
-    // `su` prints its prompt before reading; writing straight away is safe
-    // because the pty buffers, and waiting for the prompt would tie us to its
-    // wording, which is localised.
-    proc.stdin.write(password + '\n')
-    proc.stdin.end()
+    /*
+     * Wait for the prompt before answering it.
+     *
+     * A pty echoes what it receives until the reader turns echo off, and
+     * `su` only does that once it starts reading. Writing the password before
+     * then would echo it straight back into `output` — which is scanned, and
+     * which nothing should ever have to be careful about holding. LC_ALL=C is
+     * set precisely so the prompt is not localised and can be waited for.
+     *
+     * The fallback write covers a `su` that prompts differently: better a
+     * verification that still works than one that hangs. `classifySuResult`
+     * refuses to read exit 0 as a pass when no prompt was seen either way, so
+     * the fallback cannot turn into a bypass.
+     */
+    let answered = false
+    const answer = (): void => {
+      if (answered) return
+      answered = true
+      proc.stdin.write(password + '\n')
+      proc.stdin.end()
+    }
+    const fallback = setTimeout(answer, 3_000)
+    proc.stdout.on('data', (d: Buffer) => {
+      collect(d)
+      if (SU_PROMPT.test(output)) answer()
+    })
+    proc.stderr.on('data', (d: Buffer) => {
+      collect(d)
+      if (SU_PROMPT.test(output)) answer()
+    })
+    proc.on('error', (err) => {
+      clearTimeout(fallback)
+      resolve({ ok: false, error: err.message })
+    })
+    proc.on('close', (code) => {
+      clearTimeout(fallback)
+      resolve(classifySuResult(code, output))
+    })
   })
 }
 
