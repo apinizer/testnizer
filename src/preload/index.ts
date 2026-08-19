@@ -71,6 +71,12 @@ const api = {
     reset: (): Promise<unknown> => ipcRenderer.invoke('eula:reset'),
   },
 
+  // ─── Native right-click menu (issue #113) ───────────────
+  contextMenu: {
+    show: (target: { editable: boolean; hasSelection: boolean }): Promise<unknown> =>
+      ipcRenderer.invoke('contextMenu:show', target),
+  },
+
   // ─── Dialog ─────────────────────────────────────────────
   dialog: {
     openFile: (options?: {

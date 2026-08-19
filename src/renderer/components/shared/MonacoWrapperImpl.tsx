@@ -253,6 +253,11 @@ export default function MonacoWrapperImpl({
         onMount={handleEditorMount}
         options={{
           minimap: { enabled: false },
+          // Monaco's own menu offers a Paste that calls
+          // `document.execCommand('paste')`, which Chromium refuses in a
+          // renderer — it looked available and did nothing (issue #113). The
+          // native menu popped from main replaces it and actually pastes.
+          contextmenu: false,
           lineNumbers,
           lineNumbersMinChars: 3,
           folding: true,
