@@ -120,6 +120,21 @@ interface WorkspaceStore {
    */
   expandSubtree: (id: string) => void
   setActiveNode: (id: string) => void
+  /**
+   * Signal for TreeView to scroll a revealed row into view (issue #115).
+   * Bumped by `revealNode`; `seq === 0` means "nothing revealed yet".
+   */
+  revealCommand: { nodeId: string; seq: number }
+  /**
+   * Bring `id` into view in the APIs tree: open every ancestor folder, clear
+   * the search box (a filtered tree can hide the very node being revealed),
+   * select the row and ask TreeView to scroll to it.
+   *
+   * Returns false when the id is not in the tree — a request that has since
+   * been deleted, or a suite item that never lived in APIs — so the caller can
+   * say so instead of navigating to nothing.
+   */
+  revealNode: (id: string) => boolean
   setSearchQuery: (query: string) => void
   fetchWorkspaces: () => Promise<void>
   createWorkspace: (name: string, description?: string) => Promise<void>
@@ -312,6 +327,23 @@ function emptyTree(): TreeNode[] {
   ]
 }
 
+/**
+ * Ids of every ancestor of `id`, outermost first — the folders that have to be
+ * open for the node to be on screen. Empty when the node is a root, `null`
+ * when it is not in the tree at all (the two are NOT the same: a root node is
+ * revealable, a missing one is not).
+ */
+export function ancestorPath(nodes: TreeNode[], id: string): string[] | null {
+  for (const n of nodes) {
+    if (n.id === id) return []
+    if (n.children) {
+      const below = ancestorPath(n.children, id)
+      if (below) return [n.id, ...below]
+    }
+  }
+  return null
+}
+
 /** Depth-first lookup of a tree node by id. */
 function findNodeById(nodes: TreeNode[], id: string): TreeNode | null {
   for (const n of nodes) {
@@ -350,6 +382,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   openProjectIds: [],
   treeData: emptyTree(),
   openNodeIds: new Set(['default-module']),
+  revealCommand: { nodeId: '', seq: 0 },
   allNodesCommand: { kind: 'expand', seq: 0 },
   activeNodeId: null,
   searchQuery: '',
@@ -517,6 +550,26 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }),
 
   setActiveNode: (id) => set({ activeNodeId: id }),
+
+  revealNode: (id) => {
+    const state = get()
+    const path = ancestorPath(state.treeData, id)
+    if (!path) return false
+    const openNodeIds = new Set(state.openNodeIds)
+    for (const ancestor of path) openNodeIds.add(ancestor)
+    set({
+      openNodeIds,
+      activeNodeId: id,
+      // A live filter force-expands its own matches and ignores `openNodeIds`
+      // entirely, so revealing into a filtered tree would land on a row that
+      // is not rendered. Clearing the box is the only way the reveal is
+      // guaranteed to be visible.
+      searchQuery: '',
+      revealCommand: { nodeId: id, seq: state.revealCommand.seq + 1 },
+    })
+    return true
+  },
+
   setSearchQuery: (query) => set({ searchQuery: query }),
 
   fetchWorkspaces: async () => {

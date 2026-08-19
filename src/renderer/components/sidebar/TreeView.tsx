@@ -285,6 +285,19 @@ export default function TreeView() {
     overscan: 10,
   })
 
+  // Scroll a revealed row into view (issue #115). The store has already opened
+  // the ancestors and cleared the search box; by the time this effect runs the
+  // row is in `rows`, so its index is scrollable. Runs on the command seq only
+  // — re-scrolling on every `rows` change would fight the user's own scrolling.
+  const revealCommand = useWorkspaceStore((s) => s.revealCommand)
+  useEffect(() => {
+    if (revealCommand.seq === 0) return
+    const idx = rows.findIndex((r) => r.node.id === revealCommand.nodeId)
+    if (idx === -1) return
+    virtualizer.scrollToIndex(idx, { align: 'center' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealCommand])
+
   /** After openPreviewTab, get the actual active tab ID (might be a reused preview tab) */
   function getActiveTabId(): string {
     return useTabsStore.getState().activeTabId || ''
