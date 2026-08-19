@@ -4,12 +4,12 @@
 // built-in authentication helper.
 //
 //   macOS  → dscl . -authonly <user> <password>    (Directory Service)
-//   Linux  → unix_chkpwd <user> nullok             (PAM helper, setuid)
+//   Linux  → unix_chkpwd, then the full PAM stack   (issue #82)
 //   Windows→ PrincipalContext.ValidateCredentials  (local + domain fallback)
 
 import { spawn } from 'child_process'
 import os from 'os'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 
 export interface OsAuthResult {
   ok: boolean
@@ -195,39 +195,168 @@ function verifyWindows(username: string, password: string): Promise<OsAuthResult
 }
 
 // ─── Linux ────────────────────────────────────────────────────────
-function verifyLinux(username: string, password: string): Promise<OsAuthResult> {
-  return new Promise((resolve) => {
-    // unix_chkpwd is the setuid PAM helper that ships with libpam. It
-    // reads the password (NUL-terminated) from stdin and exits 0 on match.
-    // When invoked by an unprivileged user it only authenticates that
-    // user's own account, which is exactly what we want.
-    const candidates = ['/usr/sbin/unix_chkpwd', '/sbin/unix_chkpwd', '/usr/libexec/unix_chkpwd']
-    const bin = candidates.find((p) => existsSync(p))
-    if (!bin) {
-      resolve({
-        ok: false,
-        error: 'System password helper (unix_chkpwd) was not found on this machine',
-      })
-      return
+/*
+ * Issue #82, Linux leg.
+ *
+ * `unix_chkpwd` is `pam_unix`'s helper and nothing more: it reads
+ * `/etc/shadow`. On a machine joined to Active Directory through SSSD (the
+ * `realm join` default on Ubuntu) the user's account is not in `/etc/shadow`
+ * at all, so a perfectly correct domain password came back as "Incorrect
+ * system password" — the same shape of defect the Windows leg had, where
+ * verification only ever tried local accounts.
+ *
+ * The fix is to consult the FULL PAM stack, which is what actually decides
+ * whether a password is valid on that machine: `pam_unix` for local accounts,
+ * `pam_sss` for domain ones, including SSSD's offline credential cache when
+ * the domain controller is unreachable.
+ *
+ * There is no PAM binding here (a native module for one call is not worth its
+ * rebuild-per-ABI cost), so the stack is reached through `su`, which is the
+ * canonical PAM consumer present on every distribution. `su` insists on a
+ * terminal for the prompt, hence `script`, whose only job is to allocate one.
+ *
+ * `unix_chkpwd` still runs FIRST and unchanged: local accounts keep the exact
+ * path they had, so this cannot regress the case that already worked, and the
+ * slower fallback only runs once the fast one has said no.
+ */
+
+/** Local-account check: `/etc/passwd` holds exactly the accounts pam_unix knows. */
+export function isLocalAccount(passwdFile: string, username: string): boolean {
+  return passwdFile.split('\n').some((line) => line.split(':')[0] === username)
+}
+
+/**
+ * Turn `su`'s exit code into a verdict.
+ *
+ * Only exit 0 is a pass. Everything else is a failure, but the reason matters
+ * to the user: `su` restricted by `pam_wheel`, and a domain controller that
+ * cannot be reached, are not "you typed it wrong" and telling the user it was
+ * would send them to reset a password that is fine.
+ */
+export function classifySuResult(code: number | null, output: string): OsAuthResult {
+  if (code === 0) return { ok: true }
+  const text = output.toLowerCase()
+  if (text.includes('permission denied') || text.includes('pam_wheel')) {
+    return {
+      ok: false,
+      error:
+        'This machine does not allow password verification for your account (su is restricted). ' +
+        'Reset the app password from another machine, or ask your administrator.',
     }
-    const proc = spawn(bin, [username, 'nullok'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    let stderr = ''
-    proc.stderr.on('data', (d: Buffer) => {
-      stderr += d.toString()
-    })
-    proc.on('error', (err) => resolve({ ok: false, error: err.message }))
-    proc.on('close', (code) => {
-      if (code === 0) resolve({ ok: true })
-      else
-        resolve({
-          ok: false,
-          error: 'Incorrect system password' + (stderr.trim() ? ` (${stderr.trim()})` : ''),
-        })
-    })
-    // Write password followed by a NUL terminator, as expected by unix_chkpwd.
+  }
+  if (
+    text.includes('cannot contact') ||
+    text.includes('offline') ||
+    text.includes('server not found') ||
+    text.includes('no logon servers')
+  ) {
+    return {
+      ok: false,
+      error:
+        'Could not reach the domain controller to verify your password. ' +
+        'Connect to the corporate network or VPN and try again.',
+    }
+  }
+  return { ok: false, error: 'Incorrect system password' }
+}
+
+/** Message for the case where nothing on this machine can verify a password. */
+export function noLinuxHelperError(local: boolean): string {
+  return local
+    ? 'System password helper (unix_chkpwd) was not found on this machine'
+    : // A directory account with no way to reach PAM is worth naming precisely:
+      // the user would otherwise read "wrong password" about a correct one.
+      'Your account is managed by a directory service (e.g. Active Directory via SSSD), ' +
+        'and this machine has no helper available to verify its password ' +
+        '(neither unix_chkpwd nor su/script). Reset the app password from another machine.'
+}
+
+function readPasswdFile(): string {
+  try {
+    return readFileSync('/etc/passwd', 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+const UNIX_CHKPWD = ['/usr/sbin/unix_chkpwd', '/sbin/unix_chkpwd', '/usr/libexec/unix_chkpwd']
+const SCRIPT_BIN = ['/usr/bin/script', '/bin/script']
+const SU_BIN = ['/bin/su', '/usr/bin/su']
+
+function verifyLinuxChkpwd(bin: string, username: string, password: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    // unix_chkpwd reads the password (NUL-terminated) from stdin and exits 0
+    // on match. Invoked unprivileged it only authenticates the caller's own
+    // account, which is exactly what we want.
+    const proc = spawn(bin, [username, 'nullok'], { stdio: ['pipe', 'pipe', 'pipe'] })
+    proc.on('error', () => resolve(false))
+    proc.on('close', (code) => resolve(code === 0))
     proc.stdin.write(password + '\0')
     proc.stdin.end()
   })
+}
+
+/**
+ * Ask PAM, through `su`, whether this password authenticates the user.
+ *
+ * `script -q -e -c "su <user> -c true" /dev/null` gives `su` the terminal it
+ * demands and passes its exit status back out (`-e`). The password goes to the
+ * pty on stdin. Nothing is echoed and nothing is logged by us.
+ */
+function verifyLinuxPam(
+  scriptBin: string,
+  suBin: string,
+  username: string,
+  password: string,
+): Promise<OsAuthResult> {
+  return new Promise((resolve) => {
+    const proc = spawn(scriptBin, ['-q', '-e', '-c', `${suBin} ${username} -c true`, '/dev/null'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      // A failed PAM authentication sleeps (pam_faildelay, ~2s by default);
+      // the cap keeps a hung prompt from hanging the recovery dialog forever.
+      timeout: 20_000,
+      env: { ...process.env, LC_ALL: 'C', LANG: 'C' },
+    })
+    let output = ''
+    const collect = (d: Buffer): void => {
+      output += d.toString()
+    }
+    proc.stdout.on('data', collect)
+    proc.stderr.on('data', collect)
+    proc.on('error', (err) => resolve({ ok: false, error: err.message }))
+    proc.on('close', (code) => resolve(classifySuResult(code, output)))
+    // `su` prints its prompt before reading; writing straight away is safe
+    // because the pty buffers, and waiting for the prompt would tie us to its
+    // wording, which is localised.
+    proc.stdin.write(password + '\n')
+    proc.stdin.end()
+  })
+}
+
+async function verifyLinux(username: string, password: string): Promise<OsAuthResult> {
+  const local = isLocalAccount(readPasswdFile(), username)
+
+  const chkpwd = UNIX_CHKPWD.find((p) => existsSync(p))
+  if (chkpwd && (await verifyLinuxChkpwd(chkpwd, username, password))) return { ok: true }
+
+  // Running as root, `su` does not authenticate at all — it just switches.
+  // Treating its exit 0 as a verified password would accept ANY input.
+  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0
+  const scriptBin = SCRIPT_BIN.find((p) => existsSync(p))
+  const suBin = SU_BIN.find((p) => existsSync(p))
+  if (isRoot || !scriptBin || !suBin) {
+    if (chkpwd) {
+      return {
+        ok: false,
+        error: local
+          ? 'Incorrect system password'
+          : // The account is not in /etc/passwd, so unix_chkpwd could never
+            // have authenticated it however correct the password was.
+            'Incorrect system password, or your directory account could not be verified on this machine.',
+      }
+    }
+    return { ok: false, error: noLinuxHelperError(local) }
+  }
+
+  return verifyLinuxPam(scriptBin, suBin, username, password)
 }
