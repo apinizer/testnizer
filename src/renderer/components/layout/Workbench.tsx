@@ -7,6 +7,7 @@ import { makeTabId } from '../../lib/utils'
 import { isBlankScratchTab } from '../../lib/tab-kind'
 import { isRequestLikeTab } from '../../lib/mark-dirty'
 import { openEndpointTab } from '../../lib/open-endpoint-tab'
+import { activateTabStores, switchActiveTab } from '../../lib/activate-tab'
 import UrlBar from './UrlBar'
 import UrlPreview from './UrlPreview'
 import RequestEditor from '../request/RequestEditor'
@@ -55,14 +56,6 @@ import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
-import { useSoapStore } from '../../stores/soap.store'
-import { useWebSocketStore } from '../../stores/websocket.store'
-import { useSseStore } from '../../stores/sse.store'
-import { useGrpcStore } from '../../stores/grpc.store'
-import { useGraphQLStore } from '../../stores/graphql.store'
-import { useAiChatStore } from '../../stores/ai-chat.store'
-import { useMcpStore } from '../../stores/mcp.store'
-import { useSocketIOStore } from '../../stores/socketio.store'
 import NewRequestWelcome from './NewRequestWelcome'
 import PageWelcome from './PageWelcome'
 import AddEndpointsView from '../runner/AddEndpointsView'
@@ -115,17 +108,16 @@ const TOOL_COMPONENTS: Record<string, ComponentType> = {
   'tools.saml': SamlTool,
 }
 
-function EndpointTabBar() {
+/** Exported for the zero-tab regression test (issue #97). */
+export function EndpointTabBar() {
   // One global strip: every open tab shows on every sidebar page. The sidebar
   // page only swaps the left panel, never the tab set.
   const tabs = useTabsStore((s) => s.tabs)
   const activeTabId = useTabsStore((s) => s.activeTabId)
-  const setActiveTab = useTabsStore((s) => s.setActiveTab)
   const closeTab = useTabsStore((s) => s.closeTab)
   const openTab = useTabsStore((s) => s.openTab)
   const pinTab = useTabsStore((s) => s.pinTab)
   const updateTab = useTabsStore((s) => s.updateTab)
-  const switchToTab = useRequestStore((s) => s.switchToTab)
   const clearResponse = useResponseStore((s) => s.clearResponse)
   const refreshTree = useWorkspaceStore((s) => s.refreshTree)
 
@@ -170,16 +162,8 @@ function EndpointTabBar() {
   // screen left the editor showing the previous endpoint's data (v1.3.1 M1/M6).
   useEffect(() => {
     if (!activeTabId) return
-    switchToTab(activeTabId)
-    useSoapStore.getState().switchToTab(activeTabId)
-    useWebSocketStore.getState().switchToTab(activeTabId)
-    useSseStore.getState().switchToTab(activeTabId)
-    useGrpcStore.getState().switchToTab(activeTabId)
-    useGraphQLStore.getState().switchToTab(activeTabId)
-    useAiChatStore.getState().switchToTab(activeTabId)
-    useMcpStore.getState().switchToTab(activeTabId)
-    useSocketIOStore.getState().switchToTab(activeTabId)
-  }, [activeTabId, switchToTab])
+    activateTabStores(activeTabId)
+  }, [activeTabId])
 
   type TabContextAction =
     | 'newRequest'
@@ -423,30 +407,18 @@ function EndpointTabBar() {
     // Each protocol store keeps its own per-tab cache — switch them all so
     // every editor renders the activated tab's saved state. Stores that have
     // never seen this tab fall back to their empty/default state.
-    switchToTab(tabId)
-    useSoapStore.getState().switchToTab(tabId)
-    useWebSocketStore.getState().switchToTab(tabId)
-    useSseStore.getState().switchToTab(tabId)
-    useGrpcStore.getState().switchToTab(tabId)
-    useGraphQLStore.getState().switchToTab(tabId)
-    useAiChatStore.getState().switchToTab(tabId)
-    useMcpStore.getState().switchToTab(tabId)
-    useSocketIOStore.getState().switchToTab(tabId)
-    clearResponse()
-    setActiveTab(tabId)
+    //
+    // The response is NOT cleared here: it belongs to the tab (issue #76), so
+    // the tab we are leaving keeps its own and the tab we arrive at shows the
+    // one it already had. The clear that used to sit on this line ran while
+    // the response store still pointed at the tab being left, so switching
+    // away threw that tab's response away (issue #112).
+    switchActiveTab(tabId)
   }
 
   /** Switch the active tab + every protocol store to `tabId`. */
   function activateTab(tabId: string) {
-    switchToTab(tabId)
-    useSoapStore.getState().switchToTab(tabId)
-    useWebSocketStore.getState().switchToTab(tabId)
-    useSseStore.getState().switchToTab(tabId)
-    useGrpcStore.getState().switchToTab(tabId)
-    useGraphQLStore.getState().switchToTab(tabId)
-    useAiChatStore.getState().switchToTab(tabId)
-    useMcpStore.getState().switchToTab(tabId)
-    useSocketIOStore.getState().switchToTab(tabId)
+    activateTabStores(tabId)
   }
 
   /** Actually close a tab (cleanup + close + re-sync the new active tab). */
@@ -454,10 +426,11 @@ function EndpointTabBar() {
     cleanupTabState(tabId)
     closeTab(tabId)
     const newActiveId = useTabsStore.getState().activeTabId
-    if (newActiveId) {
-      activateTab(newActiveId)
-      clearResponse()
-    }
+    // No clear here either: by this point the response store has already been
+    // re-pointed at the surviving tab, so clearing would discard the response
+    // of a tab the user never closed (issue #112). The closed tab's own slice
+    // is dropped by the store's own subscription.
+    if (newActiveId) activateTab(newActiveId)
   }
 
   /** Close a tab, prompting first if it has unsaved changes (issue #9). */
@@ -566,22 +539,19 @@ function EndpointTabBar() {
     // editor doesn't keep showing the previous endpoint's URL / params /
     // headers / scripts. v1.3.1 M1: "+ New" used to clone the last request
     // because activeTabId changed but no store ever flipped to a fresh state.
-    switchToTab(id)
-    useSoapStore.getState().switchToTab(id)
-    useWebSocketStore.getState().switchToTab(id)
-    useSseStore.getState().switchToTab(id)
-    useGrpcStore.getState().switchToTab(id)
-    useGraphQLStore.getState().switchToTab(id)
-    useAiChatStore.getState().switchToTab(id)
-    useMcpStore.getState().switchToTab(id)
-    useSocketIOStore.getState().switchToTab(id)
+    activateTabStores(id)
+    // A brand-new tab has no response slice of its own; the clear is aimed at
+    // the tab `openTab` just activated, which is already empty.
     clearResponse()
   }
 
-  // Nothing to show without tabs — and nothing is lost by it: the workbench
-  // renders PageWelcome instead, which is a better new-tab surface than this
-  // strip (issue #97, closed as invalid).
-  if (tabs.length === 0) return null
+  // The strip used to unmount itself when the last tab closed, taking the "+"
+  // with it (issue #97). The workbench does render PageWelcome in that state —
+  // a grid of nine protocol cards, a richer new-tab surface than this strip —
+  // but the two are not alternatives: the affordance the user was just
+  // clicking should not vanish at the moment they finish tidying up. The strip
+  // now stays put with the "+" alone in it, and PageWelcome fills the space
+  // below exactly as before.
 
   return (
     <div

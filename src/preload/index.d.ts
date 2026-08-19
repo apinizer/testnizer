@@ -1713,6 +1713,11 @@ interface DialogFileResult {
   size: number
 }
 
+/** Native right-click menu (issue #113). */
+interface ContextMenuApi {
+  show(target: { editable: boolean; hasSelection: boolean }): Promise<IpcResult<{ shown: boolean }>>
+}
+
 interface DialogApi {
   openFile(options?: {
     title?: string
@@ -2433,6 +2438,7 @@ interface ApiBridge {
   tree: TreeApi
   mock: MockApi
   dialog: DialogApi
+  contextMenu: ContextMenuApi
 }
 
 declare global {

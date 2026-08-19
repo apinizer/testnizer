@@ -243,7 +243,15 @@ export default function MonacoWrapperImpl({
   }, [])
 
   return (
-    <div className={className} style={{ height }}>
+    // The right-click menu is popped from main (issue #113), and a read-only
+    // editor must not be offered an enabled Paste — the exact "looks available,
+    // does nothing" defect that issue is about. Monaco's read-only state is
+    // internal, so it is declared here where it is already known.
+    <div
+      className={className}
+      style={{ height }}
+      data-monaco-readonly={readOnly ? 'true' : 'false'}
+    >
       <Editor
         height="100%"
         language={language}
@@ -253,6 +261,11 @@ export default function MonacoWrapperImpl({
         onMount={handleEditorMount}
         options={{
           minimap: { enabled: false },
+          // Monaco's own menu offers a Paste that calls
+          // `document.execCommand('paste')`, which Chromium refuses in a
+          // renderer — it looked available and did nothing (issue #113). The
+          // native menu popped from main replaces it and actually pastes.
+          contextmenu: false,
           lineNumbers,
           lineNumbersMinChars: 3,
           folding: true,

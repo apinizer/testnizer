@@ -26,6 +26,7 @@ import { registerWsseHandlers } from './wsse.handler'
 import { registerSamlHandlers } from './saml.handler'
 import { registerJoseHandlers } from './jose.handler'
 import { registerJwksHandlers } from './jwks.handler'
+import { registerContextMenuHandlers } from './context-menu.handler'
 import { registerDialogHandlers } from './dialog.handler'
 import { registerEulaHandlers } from './eula.handler'
 import { registerMcpHandlers } from './mcp.handler'
@@ -63,6 +64,7 @@ export function registerAllHandlers(): void {
   registerSamlHandlers()
   registerJoseHandlers()
   registerJwksHandlers()
+  registerContextMenuHandlers()
   registerDialogHandlers()
   registerEulaHandlers()
   registerMcpHandlers()

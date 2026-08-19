@@ -16,6 +16,8 @@ import RunnerResults from './RunnerResults'
 import { openEndpointTab, openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import { saveDirtyRunItemsBeforeRun } from '../../lib/dirty-run-guard'
 import { useUIStore } from '../../stores/ui.store'
+import { toast } from '../../lib/toast'
+import { t } from '../../lib/i18n'
 import RunnerVariables from './RunnerVariables'
 import RunnerHistory from './RunnerHistory'
 import ScheduledTasksView from './ScheduledTasksView'
@@ -1489,6 +1491,19 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             onViewAllRuns={handleViewAllRuns}
             selectedResultId={selectedResultId}
             onSelectResult={setSelectedResultId}
+            // Suite runs carry test-suite item ids, which have no row in the
+            // APIs tree — the control is not offered there rather than offered
+            // and always failing (issue #115).
+            onRevealInApis={
+              runOrigin === 'suite'
+                ? undefined
+                : (endpointId) => {
+                    useUIStore.getState().setActiveSidebarPage('apis')
+                    if (!useWorkspaceStore.getState().revealNode(endpointId)) {
+                      toast.info(t('runResults.revealNotFound'))
+                    }
+                  }
+            }
             onOpenEndpoint={(itemId) => {
               // Suite runs carry test_suite_items ids — those open as suite
               // item tabs and the sidebar stays on Tests. APIs / Runner runs

@@ -1,14 +1,28 @@
 import { useState, useMemo, useEffect } from 'react'
-import { RotateCcw, Plus, X, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
+import {
+  RotateCcw,
+  Plus,
+  X,
+  ExternalLink,
+  ChevronDown,
+  ChevronRight,
+  Search,
+  FolderTree,
+} from 'lucide-react'
 import { getMethodColors } from '../../styles/tokens'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
-import { endpointDidPass, isSkippedStep } from '../../../shared/runner-verdict'
+import { endpointDidPass } from '../../../shared/runner-verdict'
 import { summarizeRun, statusBadge, SYNTHETIC_STATUS } from '../../../shared/runner-summary'
 import type { RunStopReason } from '../../../shared/runner-types'
 import { useTranslation } from '../../lib/i18n'
+import {
+  filterRunResults,
+  runResultMethods,
+  type RunResultTab,
+} from '../../lib/runner-result-filter'
 
-type FilterTab = 'all' | 'passed' | 'failed' | 'skipped' | 'errors' | 'console'
+type FilterTab = RunResultTab
 
 /**
  * Why the run ended early, as a message.
@@ -82,6 +96,13 @@ interface RunnerResultsProps {
    * that navigates the user to the endpoint editor tab so they can fix the
    * request without leaving the runner. */
   onOpenEndpoint?: (endpointId: string) => void
+  /**
+   * Reveal a result's request in the APIs tree (issue #115). Absent when the
+   * run's ids are not APIs nodes at all — a suite run carries test-suite item
+   * ids, which have no row in that tree — so the control is simply not offered
+   * rather than offered and always failing.
+   */
+  onRevealInApis?: (endpointId: string) => void
 }
 
 export default function RunnerResults({
@@ -102,9 +123,15 @@ export default function RunnerResults({
   selectedResultId,
   onSelectResult,
   onOpenEndpoint,
+  onRevealInApis,
 }: RunnerResultsProps) {
   const { t } = useTranslation()
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
+  // Search + method narrowing on top of the outcome tabs (issue #114): a
+  // 500-request run is unusable with All/Passed/Failed alone.
+  const [searchText, setSearchText] = useState('')
+  const [methodFilter, setMethodFilter] = useState<string[]>([])
+  const [methodMenuOpen, setMethodMenuOpen] = useState(false)
   const [detailTab, setDetailTab] = useState<'response' | 'request' | 'console'>('response')
   // Per-iteration collapse state. Default is "all expanded" — collapsing is
   // an opt-in for long runs. Keyed by 1-based iteration index so older
@@ -139,27 +166,20 @@ export default function RunnerResults({
     [results, selectedResultId],
   )
 
-  const filteredResults = useMemo(() => {
-    return results.filter((r) => {
-      switch (activeFilter) {
-        // A skipped row belongs under exactly one tab — its own. Without the
-        // guard it would also appear under "Passed", since `endpointDidPass`
-        // reads its absent status as a success.
-        case 'passed':
-          return !isSkippedStep(r) && endpointDidPass(r)
-        case 'failed':
-          return !isSkippedStep(r) && !endpointDidPass(r)
-        case 'errors':
-          return !!r.error
-        case 'skipped':
-          return isSkippedStep(r)
-        case 'console':
-          return (r.consoleLogs?.length ?? 0) > 0
-        default:
-          return true
-      }
-    })
-  }, [results, activeFilter])
+  // The outcome tab, the search box and the method chips all narrow the same
+  // list, so they live in one pure predicate (lib/runner-result-filter) that
+  // is unit-tested on its own. Everything downstream — setup/teardown
+  // sections, iteration bucketing, the empty state — composes for free.
+  const filteredResults = useMemo(
+    () => filterRunResults(results, { tab: activeFilter, text: searchText, methods: methodFilter }),
+    [results, activeFilter, searchText, methodFilter],
+  )
+
+  /** Methods this run actually contains — chips that can never match are not offered. */
+  const availableMethods = useMemo(() => runResultMethods(results), [results])
+
+  const toggleMethod = (m: string) =>
+    setMethodFilter((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]))
 
   // Bucket filtered results by 1-based iteration index. Results predating
   // the iteration field (older history rows) fall into bucket 1 so the UI
@@ -465,10 +485,114 @@ export default function RunnerResults({
               </button>
             ))}
             <div className="flex-1" />
-            <div className="flex items-center gap-1.5" style={{ fontSize: 13 }}>
-              <span style={{ fontWeight: 600, color: 'var(--text)' }}>List</span>
-              <span style={{ color: 'var(--border2)' }}>|</span>
-              <span style={{ color: 'var(--muted)' }}>Grid</span>
+
+            {/* Search + method narrowing (issue #114). Sits next to the tabs
+                rather than above the list so all four controls read as one
+                filter row. */}
+            <div className="flex items-center gap-2 py-1.5">
+              <div
+                className="flex items-center gap-1.5 rounded border px-2"
+                style={{ borderColor: 'var(--border2)', background: 'var(--white)', height: 26 }}
+              >
+                <Search size={13} color="var(--hint)" />
+                <input
+                  type="text"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder={t('runResults.search')}
+                  aria-label={t('runResults.search')}
+                  data-testid="runner-results-search"
+                  className="border-none bg-transparent outline-none"
+                  style={{ fontSize: 12, width: 150, color: 'var(--text)' }}
+                />
+                {searchText && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchText('')}
+                    aria-label={t('runResults.clearFilters')}
+                    className="cursor-pointer border-none bg-transparent p-0 text-[var(--hint)] hover:text-[var(--text)]"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+
+              {availableMethods.length > 1 && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setMethodMenuOpen((v) => !v)}
+                    data-testid="runner-results-method-filter"
+                    aria-expanded={methodMenuOpen}
+                    className="flex cursor-pointer items-center gap-1 rounded border px-2"
+                    style={{
+                      height: 26,
+                      fontSize: 12,
+                      borderColor: methodFilter.length > 0 ? 'var(--accent)' : 'var(--border2)',
+                      color: methodFilter.length > 0 ? 'var(--accentText)' : 'var(--muted)',
+                      background: methodFilter.length > 0 ? 'var(--accentLight)' : 'var(--white)',
+                    }}
+                  >
+                    {methodFilter.length > 0
+                      ? methodFilter.join(', ')
+                      : `${t('runResults.method')}: ${t('runResults.allMethods')}`}
+                    <ChevronDown size={12} />
+                  </button>
+                  {methodMenuOpen && (
+                    <>
+                      {/* Click-away layer: the menu is multi-select, so it must
+                          stay open across several clicks and close only when
+                          the user leaves it. */}
+                      <div
+                        className="fixed inset-0"
+                        style={{ zIndex: 40 }}
+                        onClick={() => setMethodMenuOpen(false)}
+                      />
+                      <div
+                        className="absolute right-0 mt-1 rounded border py-1 shadow-lg"
+                        style={{
+                          zIndex: 41,
+                          minWidth: 140,
+                          background: 'var(--white)',
+                          borderColor: 'var(--border2)',
+                        }}
+                      >
+                        {availableMethods.map((m) => (
+                          <label
+                            key={m}
+                            className="flex cursor-pointer items-center gap-2 px-2.5 py-1 hover:bg-[var(--surface)]"
+                            style={{ fontSize: 12, color: 'var(--text)' }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={methodFilter.includes(m)}
+                              onChange={() => toggleMethod(m)}
+                              data-testid={`runner-results-method-${m}`}
+                            />
+                            <MethodLabel method={m} />
+                          </label>
+                        ))}
+                        {methodFilter.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setMethodFilter([])}
+                            className="mt-1 w-full cursor-pointer border-none bg-transparent px-2.5 py-1 text-left hover:bg-[var(--surface)]"
+                            style={{ fontSize: 12, color: 'var(--muted)' }}
+                          >
+                            {t('runResults.allMethods')}
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center gap-1.5" style={{ fontSize: 13 }}>
+                <span style={{ fontWeight: 600, color: 'var(--text)' }}>List</span>
+                <span style={{ color: 'var(--border2)' }}>|</span>
+                <span style={{ color: 'var(--muted)' }}>Grid</span>
+              </div>
             </div>
           </div>
         )}
@@ -490,6 +614,7 @@ export default function RunnerResults({
                       result.endpointId === selectedResultId ? null : result.endpointId,
                     )
                   }
+                  onReveal={onRevealInApis && (() => onRevealInApis(result.endpointId))}
                 />
               ))}
             </PhaseSection>
@@ -528,6 +653,7 @@ export default function RunnerResults({
                           result.endpointId === selectedResultId ? null : result.endpointId,
                         )
                       }
+                      onReveal={onRevealInApis && (() => onRevealInApis(result.endpointId))}
                     />
                   ))}
               </div>
@@ -549,9 +675,19 @@ export default function RunnerResults({
                       result.endpointId === selectedResultId ? null : result.endpointId,
                     )
                   }
+                  onReveal={onRevealInApis && (() => onRevealInApis(result.endpointId))}
                 />
               ))}
             </PhaseSection>
+          )}
+          {results.length > 0 && filteredResults.length === 0 && (
+            <div
+              data-testid="runner-results-empty"
+              className="px-5 py-10 text-center"
+              style={{ fontSize: 13, color: 'var(--muted)' }}
+            >
+              {t('runResults.noMatches')}
+            </div>
           )}
         </div>
       </div>
@@ -915,11 +1051,15 @@ function ResultRow({
   result,
   isSelected,
   onClick,
+  onReveal,
 }: {
   result: EndpointRunResult
   isSelected: boolean
   onClick: () => void
+  /** Jump to this request in the APIs tree (issue #115). Absent = not offered. */
+  onReveal?: () => void
 }) {
+  const { t } = useTranslation()
   const mc = getMethodColors(result.method)
   // Shared badge logic: a run-level SCRIPT row is not an HTTP exchange and must
   // not render main's placeholder 200, and a row that never ran says so.
@@ -968,6 +1108,24 @@ function ResultRow({
           >
             {badge.text}
           </span>
+        )}
+        {/* Row click still opens the details pane (issue #115 is explicit that
+            it must stay); revealing is a separate control, so the click is
+            stopped from bubbling into the row. */}
+        {onReveal && (
+          <button
+            type="button"
+            data-testid={`runner-reveal-${result.endpointId}`}
+            title={t('runResults.revealInApis')}
+            aria-label={t('runResults.revealInApis')}
+            onClick={(e) => {
+              e.stopPropagation()
+              onReveal()
+            }}
+            className="shrink-0 cursor-pointer rounded border-none bg-transparent p-1 text-[var(--hint)] hover:text-[var(--accent)]"
+          >
+            <FolderTree size={14} />
+          </button>
         )}
       </div>
 
