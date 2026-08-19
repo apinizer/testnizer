@@ -220,6 +220,21 @@ function verifyWindows(username: string, password: string): Promise<OsAuthResult
  * slower fallback only runs once the fast one has said no.
  */
 
+/**
+ * Usernames this code will interpolate into a shell command.
+ *
+ * `script -c` runs its argument through `sh -c`, so anything outside this set
+ * would be reinterpreted by the shell — on the path that decides who may reset
+ * the app password. Refusing an unusual name is the right failure here;
+ * mangling the command is not. SSSD's fully-qualified `user@domain` form fits;
+ * a winbind-style `DOMAIN\\user` deliberately does not.
+ */
+const SHELL_SAFE_USERNAME = /^[A-Za-z0-9._@-]+$/
+
+export function isShellSafeUsername(username: string): boolean {
+  return SHELL_SAFE_USERNAME.test(username)
+}
+
 /** Local-account check: `/etc/passwd` holds exactly the accounts pam_unix knows. */
 export function isLocalAccount(passwdFile: string, username: string): boolean {
   return passwdFile.split('\n').some((line) => line.split(':')[0] === username)
@@ -309,6 +324,9 @@ function verifyLinuxChkpwd(bin: string, username: string, password: string): Pro
     const proc = spawn(bin, [username, 'nullok'], { stdio: ['pipe', 'pipe', 'pipe'] })
     proc.on('error', () => resolve(false))
     proc.on('close', (code) => resolve(code === 0))
+    // An EPIPE from a helper that exited first is an ordinary outcome, not a
+    // reason to take the main process down with an uncaught stream error.
+    proc.stdin.on('error', () => {})
     proc.stdin.write(password + '\0')
     proc.stdin.end()
   })
@@ -360,6 +378,14 @@ function verifyLinuxPam(
       proc.stdin.write(password + '\n')
       proc.stdin.end()
     }
+    /*
+     * The answer is deliberately late, so by the time it is written `su` may
+     * already be gone — a rejected account, an early PAM error. Writing to its
+     * closed stdin raises EPIPE, and an unhandled 'error' on a stream is an
+     * uncaught exception that takes the whole main process down. The verdict
+     * still comes from the exit code either way.
+     */
+    proc.stdin.on('error', () => {})
     const fallback = setTimeout(answer, 3_000)
     proc.stdout.on('data', (d: Buffer) => {
       collect(d)
@@ -386,11 +412,25 @@ async function verifyLinux(username: string, password: string): Promise<OsAuthRe
   const chkpwd = UNIX_CHKPWD.find((p) => existsSync(p))
   if (chkpwd && (await verifyLinuxChkpwd(chkpwd, username, password))) return { ok: true }
 
+  // A LOCAL account that pam_unix just rejected has nothing to gain from the
+  // PAM fallback — the password is simply wrong — and the second attempt costs
+  // the ~2s pam_faildelay and, worse, a second tick against pam_faillock's
+  // lockout counter for a single typo.
+  if (local && chkpwd) return { ok: false, error: 'Incorrect system password' }
+
   // Running as root, `su` does not authenticate at all — it just switches.
   // Treating its exit 0 as a verified password would accept ANY input.
   const isRoot = typeof process.getuid === 'function' && process.getuid() === 0
   const scriptBin = SCRIPT_BIN.find((p) => existsSync(p))
   const suBin = SU_BIN.find((p) => existsSync(p))
+  if (!isShellSafeUsername(username)) {
+    return {
+      ok: false,
+      error:
+        `This machine cannot verify the password for the account "${username}". ` +
+        'Reset the app password from another machine, or ask your administrator.',
+    }
+  }
   if (isRoot || !scriptBin || !suBin) {
     if (chkpwd) {
       return {

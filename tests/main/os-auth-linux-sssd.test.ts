@@ -16,7 +16,12 @@
  * The end-to-end check is on the reporter's machine, as with the Windows leg.
  */
 import { describe, it, expect } from 'vitest'
-import { isLocalAccount, classifySuResult, noLinuxHelperError } from '../../src/main/lib/os-auth'
+import {
+  isLocalAccount,
+  classifySuResult,
+  noLinuxHelperError,
+  isShellSafeUsername,
+} from '../../src/main/lib/os-auth'
 
 const PASSWD = [
   'root:x:0:0:root:/root:/bin/bash',
@@ -104,5 +109,42 @@ describe('when the machine can verify nothing at all', () => {
     const msg = noLinuxHelperError(false)
     expect(msg).toMatch(/directory service/i)
     expect(msg).toMatch(/SSSD/)
+  })
+})
+
+describe('usernames that are safe to put in a shell command', () => {
+  it('accepts the forms SSSD actually hands out', () => {
+    // Bare short name and the fully-qualified form `realm join` produces.
+    for (const name of [
+      'ncetinkaya',
+      'ncetinkaya@corp.example',
+      'nihat.cetinkaya',
+      'svc_test-01',
+    ]) {
+      expect(isShellSafeUsername(name), name).toBe(true)
+    }
+  })
+
+  it('refuses anything the shell would reinterpret', () => {
+    // `script -c` runs its argument through `sh -c`. On a path that decides who
+    // may reset the app password, a name carrying shell syntax must be refused,
+    // never silently mangled into a different command.
+    for (const name of [
+      'a; id',
+      'a$(id)',
+      'a`id`',
+      'a|b',
+      'a b',
+      'a&b',
+      'a>b',
+      "a'b",
+      'DOMAIN\\user',
+    ]) {
+      expect(isShellSafeUsername(name), name).toBe(false)
+    }
+  })
+
+  it('refuses an empty name', () => {
+    expect(isShellSafeUsername('')).toBe(false)
   })
 })
