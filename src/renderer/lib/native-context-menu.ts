@@ -73,9 +73,18 @@ export function describeContextTarget(
 
   if (host.classList.contains('monaco-editor')) {
     // Monaco draws its selection instead of making one in the DOM, so there is
-    // nothing to inspect from here. Cut/Copy stay enabled: with no selection
-    // they act on the current line, which is what every code editor does.
-    return { editable: true, hasSelection: true }
+    // nothing to inspect from here. Cut/Copy stay enabled either way: with no
+    // selection they act on the current line, which is what every code editor
+    // does — and reporting "no selection" would leave the response pane with
+    // no menu at all.
+    //
+    // A read-only editor (the response body) is NOT editable, though. Calling
+    // it editable would offer an enabled Paste that silently does nothing —
+    // the very defect this whole change exists to remove — on the most
+    // right-clicked surface in the app. Monaco keeps its read-only state
+    // internal, so `MonacoWrapperImpl` declares it on the wrapper element.
+    const readOnly = host.closest('[data-monaco-readonly="true"]') !== null
+    return { editable: !readOnly, hasSelection: true }
   }
 
   return { editable: true, hasSelection: windowSelection.trim().length > 0 }

@@ -57,10 +57,32 @@ describe('the code editor', () => {
     // Monaco draws its selection rather than making a DOM one, so there is
     // nothing to inspect; with no selection those commands act on the current
     // line, which is what every code editor does.
-    expect(describeContextTarget(el('<div class="monaco-editor"></div>'), '')).toEqual({
-      editable: true,
-      hasSelection: true,
-    })
+    expect(
+      describeContextTarget(
+        el('<div data-monaco-readonly="false"><div class="monaco-editor"></div></div>')
+          .firstElementChild!,
+        '',
+      ),
+    ).toEqual({ editable: true, hasSelection: true })
+  })
+
+  it('does not call a read-only editor editable', () => {
+    // The response body is a read-only Monaco. Calling it editable would offer
+    // an enabled Paste that silently does nothing — the exact defect this
+    // change removes — on the most right-clicked surface in the app.
+    const readOnly = el(
+      '<div data-monaco-readonly="true"><div class="monaco-editor"></div></div>',
+    ).firstElementChild!
+    expect(describeContextTarget(readOnly, '')).toEqual({ editable: false, hasSelection: true })
+  })
+
+  it('still offers Copy on a read-only editor', () => {
+    // Reporting "no selection" instead would leave the response pane with no
+    // menu at all, which is worse than the bug being fixed.
+    const readOnly = el(
+      '<div data-monaco-readonly="true"><div class="monaco-editor"></div></div>',
+    ).firstElementChild!
+    expect(describeContextTarget(readOnly, '').hasSelection).toBe(true)
   })
 })
 
