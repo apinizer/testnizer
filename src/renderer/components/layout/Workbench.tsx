@@ -1051,12 +1051,18 @@ export default function Workbench() {
     }
 
     // No active tab for the current page — show the page's welcome surface.
+    // The strip goes ABOVE it, exactly as in every branch below: issue #97 was
+    // only half-fixed by making `EndpointTabBar` stop returning null at zero
+    // tabs, because this branch — the one that actually renders when the last
+    // tab closes — never mounted the strip at all. PageWelcome fills the space
+    // underneath, so both affordances are present instead of either/or.
     if (!activeTab) {
       return (
         <div
           className="flex flex-1 flex-col overflow-hidden"
           style={{ background: 'var(--white)' }}
         >
+          <EndpointTabBar />
           <PageWelcome page={activeSidebarPage} />
         </div>
       )

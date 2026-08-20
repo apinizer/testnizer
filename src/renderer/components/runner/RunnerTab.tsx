@@ -834,7 +834,6 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       // config falls through to defaults — it must never block suite open.
       let config: SuiteRunConfig | null = null
       if (configLoadedForSuiteRef.current !== suiteIdForRunner) {
-        configLoadedForSuiteRef.current = suiteIdForRunner
         try {
           const cfgRes = await window.api?.testSuite?.getRunConfig?.(suiteIdForRunner)
           if (cfgRes?.success) config = parseSuiteRunConfig(cfgRes.data)
@@ -843,6 +842,16 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           console.warn('runner: failed to load suite run config:', (err as Error).message)
         }
         if (cancelled) return
+        /*
+         * Marked only once the load has actually SURVIVED to here. Marking it
+         * before the await meant a cancelled effect — this one re-runs
+         * whenever its deps change — left the suite flagged as "config
+         * loaded" while nothing had been applied, and the next run skipped
+         * the load for good. That is why the saved config came back only
+         * after a detour through another tab: the remount reset the ref
+         * (issue #100 retest).
+         */
+        configLoadedForSuiteRef.current = suiteIdForRunner
         if (config) {
           setDelay(config.delay)
           setIterationDelay(config.iterationDelay)
@@ -948,7 +957,11 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       cancelled = true
       window.removeEventListener('tests:suite-item-changed', refetch)
     }
-  }, [suiteIdForRunner, runFolderName])
+    // `runFolderName` is deliberately NOT a dependency: nothing in this effect
+    // reads it, but it is set from the session payload right after mount, and
+    // as a dep that turned every suite open into cancel-and-refetch — the
+    // churn the config load was losing its race against.
+  }, [suiteIdForRunner])
 
   const toggleEndpoint = useCallback((id: string) => {
     setEndpoints((eps) => eps.map((ep) => (ep.id === id ? { ...ep, selected: !ep.selected } : ep)))
