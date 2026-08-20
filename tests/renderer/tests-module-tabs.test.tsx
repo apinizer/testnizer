@@ -17,6 +17,7 @@
  * happens between components rather than inside one.
  */
 import * as React from 'react'
+import { runnerKey } from '../../src/renderer/lib/runner-storage'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, act, fireEvent } from '@testing-library/react'
 
@@ -62,9 +63,7 @@ function suiteApi() {
         Promise.resolve({
           success: true,
           data: {
-            items: [
-              { id: 'item-1', name: SUITE_ITEM, method: 'GET', url: '/s', folder_id: null },
-            ],
+            items: [{ id: 'item-1', name: SUITE_ITEM, method: 'GET', url: '/s', folder_id: null }],
             folders: [],
           },
         }),
@@ -157,7 +156,7 @@ describe('a suite runner tab survives a trip to another tab (#93 B)', () => {
     })
 
     const tabId = useTabsStore.getState().activeTabId!
-    const stored = sessionStorage.getItem(`runner-report-${tabId}`)
+    const stored = sessionStorage.getItem(runnerKey('report', tabId) as string)
     expect(stored).toBeTruthy()
     expect(JSON.parse(stored!).suiteId).toBe('suite-1')
   })

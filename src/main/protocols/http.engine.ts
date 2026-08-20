@@ -338,7 +338,26 @@ interface CachedOAuth2Token {
 // OAuth2 vs hand-scripting a token-fetch request.
 const oauth2TokenCache = new Map<string, CachedOAuth2Token>()
 
-function oauth2CacheKey(o: OAuth2GrantConfig): string {
+/**
+ * Identity of a cached token.
+ *
+ * The secret half of the credentials belongs in here as much as the public
+ * half: same token URL, same client id, different secret is one client's
+ * token being handed to another caller. That happens for real when two
+ * projects target the same identity provider with the same client id and a
+ * per-tenant secret, and on any secret rotation — where the stale token would
+ * otherwise keep being served for the rest of its lifetime (an hour by
+ * default). Same reasoning for the password grant: `username` was keyed,
+ * `password` was not.
+ *
+ * Hashed rather than stored: this key lives in a long-lived in-process Map,
+ * and there is no reason for a plaintext secret to sit in it when a digest
+ * distinguishes credentials just as well.
+ */
+export function oauth2CacheKey(o: OAuth2GrantConfig): string {
+  const secrets = createHash('sha256')
+    .update(`${o.clientSecret ?? ''}\u0000${o.password ?? ''}`)
+    .digest('hex')
   return JSON.stringify({
     t: o.tokenUrl ?? '',
     c: o.clientId ?? '',
@@ -346,6 +365,7 @@ function oauth2CacheKey(o: OAuth2GrantConfig): string {
     g: o.grantType ?? 'client_credentials',
     u: o.username ?? '',
     a: o.clientAuth ?? 'header',
+    k: secrets,
   })
 }
 

@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'
+import { runnerKey } from '../../src/renderer/lib/runner-storage'
 import { openFolderRunner } from '../../src/renderer/lib/open-runner-tab'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useUIStore } from '../../src/renderer/stores/ui.store'
@@ -38,7 +39,7 @@ describe('openFolderRunner — page navigation (#39)', () => {
     // folder. RunnerTab restores 'config' from this key when the tab has a
     // folder scope.
     openFolderRunner('folder-1', 'My Folder')
-    expect(sessionStorage.getItem('runner-view-runner-folder-1')).toBe('config')
+    expect(sessionStorage.getItem(runnerKey('view', 'runner-folder-1') as string)).toBe('config')
   })
 
   it('falls back to a generic name when none is given', () => {

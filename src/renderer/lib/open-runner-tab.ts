@@ -6,6 +6,7 @@
 import { useTabsStore } from '../stores/tabs.store'
 import { useUIStore } from '../stores/ui.store'
 import { isRunnerBusy } from './runner-activity'
+import { runnerKey } from './runner-storage'
 
 const RUNNER_TAB_ID = 'runner-main'
 
@@ -30,7 +31,8 @@ export function openOrReuseRunnerTab(
   const sessionKey = nextSessionKey()
 
   if (sessionData) {
-    sessionStorage.setItem(`runner-report-${tabId}`, JSON.stringify(sessionData))
+    const reportKey = runnerKey('report', tabId)
+    if (reportKey) sessionStorage.setItem(reportKey, JSON.stringify(sessionData))
   }
 
   // A scopeless runner tab lands on the Tests overview by design — dropping
@@ -41,7 +43,8 @@ export function openOrReuseRunnerTab(
   // other way to reach a project-wide run config. `config-explicit` is a
   // distinct sentinel so the scope guard on plain `config` is untouched.
   if (opts?.view === 'config') {
-    sessionStorage.setItem(`runner-view-${tabId}`, 'config-explicit')
+    const viewKey = runnerKey('view', tabId)
+    if (viewKey) sessionStorage.setItem(viewKey, 'config-explicit')
   }
 
   if (existing) {
@@ -67,15 +70,18 @@ export function openFolderRunner(folderId: string, folderName?: string): void {
   // this the folder runner opened on the generic Overview instead of a run
   // scoped to the folder (#39). RunnerTab's view initializer restores 'config'
   // when this key is set AND the tab carries a folder scope.
-  sessionStorage.setItem(`runner-view-${tabId}`, 'config')
+  const viewKey = runnerKey('view', tabId)
+  if (viewKey) sessionStorage.setItem(viewKey, 'config')
   // Re-arming this tab means "here is the next run", so the previous one's
   // stored report goes with it. RunnerTab keeps that report so a tab switch
   // can put the results back (issue #93); left behind here it would come back
   // instead of the Start-run screen, which is issue #66 in reverse. A folder
   // runner's scope travels on `tab.folderId`, so nothing else in the payload
   // is worth keeping.
-  sessionStorage.removeItem(`runner-report-${tabId}`)
-  sessionStorage.removeItem(`runner-report-spent-${tabId}`)
+  const staleReport = runnerKey('report', tabId)
+  const staleSpent = runnerKey('report-spent', tabId)
+  if (staleReport) sessionStorage.removeItem(staleReport)
+  if (staleSpent) sessionStorage.removeItem(staleSpent)
   if (isRunnerBusy(tabId)) {
     // That tab's run is still executing. Re-arming would remount it and take
     // the live progress + Cancel button away while main keeps running — focus
