@@ -11,6 +11,7 @@
  * These tests drive the REAL Workbench so the keying itself is under test.
  */
 import * as React from 'react'
+import { runnerKey } from '../../src/renderer/lib/runner-storage'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, act } from '@testing-library/react'
 
@@ -114,9 +115,9 @@ function seedFinishedRun(tabId: string): void {
     },
   ]
   report.results = results
-  sessionStorage.setItem(`runner-view-${tabId}`, 'results')
+  sessionStorage.setItem(runnerKey('view', tabId) as string, 'results')
   sessionStorage.setItem(
-    `runner-run-data-${tabId}`,
+    runnerKey('run-data', tabId) as string,
     JSON.stringify({ results, report, startedAt: 1 }),
   )
 }

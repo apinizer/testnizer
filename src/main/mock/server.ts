@@ -140,9 +140,22 @@ class MockServerManager extends EventEmitter {
         s.def.host === def.host &&
         (s.status === 'running' || s.status === 'starting')
       ) {
+        /*
+         * This manager is process-global: it holds the running servers of
+         * EVERY project, and nothing stops another project's servers when the
+         * user switches. The message used to say "in this project", which sent
+         * the user looking through the current project for a server that is
+         * not there — the port is held by one they cannot see from here.
+         */
+        const sameProject =
+          (s.def.projectId ?? null) === (def.projectId ?? null) || !s.def.projectId
         return {
           ok: false,
-          error: `Port ${def.port} is already in use by another mock server in this project`,
+          error: sameProject
+            ? `Port ${def.port} is already in use by mock server "${s.def.name}" in this project`
+            : `Port ${def.port} is already in use by mock server "${s.def.name}", which belongs to ` +
+              'another project. Mock servers keep running when you switch projects — stop it there, ' +
+              'or use a different port.',
         }
       }
     }

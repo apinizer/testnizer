@@ -14,6 +14,7 @@ import RunnerSequence from './RunnerSequence'
 import RunnerConfig, { type SchedulePayload } from './RunnerConfig'
 import RunnerResults from './RunnerResults'
 import { openEndpointTab, openSuiteItemTab } from '../../lib/open-endpoint-tab'
+import { runnerKey } from '../../lib/runner-storage'
 import { saveDirtyRunItemsBeforeRun } from '../../lib/dirty-run-guard'
 import { useUIStore } from '../../stores/ui.store'
 import { toast } from '../../lib/toast'
@@ -244,7 +245,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // bounce the user back to "config" (v1.3.1 §5.11 E11). The key intentionally
   // mirrors the runner-report sessionStorage prefix so cleanup stays local
   // to RunnerTab.
-  const viewStorageKey = tabId ? `runner-view-${tabId}` : null
+  const viewStorageKey = runnerKey('view', tabId)
   // Set when this tab was opened by an entry point that explicitly asked for the
   // run config without a suite/folder scope (the Command Palette's "Open
   // collection runner"). It lets the config screen survive a remount without
@@ -264,7 +265,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       // 'home' so the user lands on the curated Tests overview instead.
       if (stored === 'config') {
         try {
-          const sess = tabId ? sessionStorage.getItem(`runner-report-${tabId}`) : null
+          const reportKey = runnerKey('report', tabId)
+          const sess = reportKey ? sessionStorage.getItem(reportKey) : null
           const data = sess ? (JSON.parse(sess) as { sourceType?: string; suiteId?: string }) : null
           const hasSuiteScope = data?.sourceType === 'suite' && typeof data.suiteId === 'string'
           if (hasSuiteScope || folderId) return 'config'
@@ -369,7 +371,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // happens exactly once, on first mount. An IIFE at component scope would
   // re-run on every render and do an MB-scale JSON.parse per re-render for
   // big runs.
-  const runDataStorageKey = tabId ? `runner-run-data-${tabId}` : null
+  const runDataStorageKey = runnerKey('run-data', tabId)
   const readStoredRunData = (): {
     results: EndpointRunResult[]
     report: RunnerReport | null
@@ -401,7 +403,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // tab (or switching between Overview / All Runs and back to a results
   // view) does not drop the user back to an unscoped blank state
   // (v1.4.2 T-5.6, T-12.5).
-  const resultsStorageKey = tabId ? `runner-results-${tabId}` : null
+  const resultsStorageKey = runnerKey('results', tabId)
   const [selectedResultId, setSelectedResultId] = useState<string | null>(() => {
     if (!resultsStorageKey) return null
     try {
@@ -479,7 +481,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [suiteFilterIds, setSuiteFilterIds] = useState<Set<string> | null>(() => {
     if (!tabId) return null
     try {
-      const stored = sessionStorage.getItem(`runner-report-${tabId}`)
+      const reportKey = runnerKey('report', tabId)
+      const stored = reportKey ? sessionStorage.getItem(reportKey) : null
       if (!stored) return null
       const data = JSON.parse(stored) as {
         sourceType?: string
@@ -503,7 +506,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [suiteIdForRunner, setSuiteIdForRunner] = useState<string | null>(() => {
     if (!tabId) return null
     try {
-      const stored = sessionStorage.getItem(`runner-report-${tabId}`)
+      const reportKey = runnerKey('report', tabId)
+      const stored = reportKey ? sessionStorage.getItem(reportKey) : null
       if (!stored) return null
       const data = JSON.parse(stored) as { sourceType?: string; suiteId?: string }
       if (data.sourceType === 'suite' && typeof data.suiteId === 'string') {
@@ -549,7 +553,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
    */
   useEffect(() => {
     if (!tabId) return
-    const stored = sessionStorage.getItem(`runner-report-${tabId}`)
+    const reportKey = runnerKey('report', tabId)
+    const stored = reportKey ? sessionStorage.getItem(reportKey) : null
     if (!stored) return
 
     let data: {
@@ -599,7 +604,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     // back over the new ones on the next tab switch.
 
     // ─── INTENT — once per session token ───
-    const spentKey = `runner-report-spent-${tabId}`
+    const spentKey = runnerKey('report-spent', tabId) ?? ''
     const token = sessionKey ?? ''
     if (sessionStorage.getItem(spentKey) === token) return
     sessionStorage.setItem(spentKey, token)
