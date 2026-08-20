@@ -10,6 +10,38 @@ import { useTabsStore } from '../stores/tabs.store'
 import { useRequestStore } from '../stores/request.store'
 import { useResponseStore } from '../stores/response.store'
 import { restoreProtocolFromMetadata } from './save-active-request'
+import { switchActiveTab } from './activate-tab'
+
+/**
+ * If `id` already has a tab open, focus it and report that nothing else is
+ * needed.
+ *
+ * Every open path below finishes with `clearResponse` + a re-hydrate from the
+ * DB, which is right for a tab being filled for the first time and wrong for
+ * one the user is already using: `openPreviewTab` activates an existing tab
+ * rather than minting a second, so those two calls landed on live state and
+ * wiped the response that tab had just received — clicking a request you had
+ * already sent made it look as though you never had (issue #112, the paths
+ * left over after the tab strip was fixed). An open tab is the newer state,
+ * unsaved edits included; the DB copy is not.
+ *
+ * Exported so the APIs tree can ask the same question before its own inline
+ * open path, which predates this helper.
+ */
+export function focusOpenTabFor(id: string): boolean {
+  const existing = useTabsStore
+    .getState()
+    .tabs.find(
+      (tab) =>
+        tab.id === `tab-${id}` ||
+        tab.endpointId === id ||
+        tab.savedRequestId === id ||
+        tab.testSuiteItemId === id,
+    )
+  if (!existing) return false
+  switchActiveTab(existing.id)
+  return true
+}
 
 /**
  * Open an endpoint or saved request in a new (or reused) preview tab and
@@ -23,6 +55,7 @@ import { restoreProtocolFromMetadata } from './save-active-request'
  */
 export async function openEndpointTab(id: string): Promise<void> {
   const tabId = `tab-${id}`
+  if (focusOpenTabFor(id)) return
 
   // Try saved_requests first — the only place users land here from manually
   // created requests is the suite tree, and we want the cheaper lookup to
@@ -201,6 +234,7 @@ export async function openEndpointTab(id: string): Promise<void> {
  */
 export async function openSuiteItemTab(id: string, opts?: { pinned?: boolean }): Promise<void> {
   const tabId = `tab-${id}`
+  if (focusOpenTabFor(id)) return
   try {
     const result = (await window.api?.testSuiteItem?.get(id)) as {
       success: boolean

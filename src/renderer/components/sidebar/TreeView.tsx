@@ -23,7 +23,7 @@ import { collectRequestIds } from '../../lib/folder-request-selection'
 import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
 import { openFolderRunner } from '../../lib/open-runner-tab'
-import { openEndpointTab } from '../../lib/open-endpoint-tab'
+import { openEndpointTab, focusOpenTabFor } from '../../lib/open-endpoint-tab'
 import { restoreProtocolFromMetadata } from '../../lib/save-active-request'
 
 // Re-alias for flattenTree signature
@@ -312,6 +312,18 @@ export default function TreeView() {
 
       const tabId = `tab-${node.id}`
       const method = (node.method || 'GET') as HttpMethod
+
+      /*
+       * The request may already be open. Every branch below opens a preview
+       * tab and then re-hydrates it from the DB and calls `clearResponse()` —
+       * but `openPreviewTab` recognises an already-open endpoint / saved
+       * request and just ACTIVATES it, so those two calls landed on a live
+       * tab: the response the user had just received was wiped and the tab
+       * reset to its saved state (issue #112, second path — the tab strip was
+       * fixed, the tree was not). Focus it and stop; the open tab already
+       * holds that state, unsaved edits included.
+       */
+      if (focusOpenTabFor(node.id)) return
 
       if (node.type === 'request') {
         // Load full saved request data from DB
