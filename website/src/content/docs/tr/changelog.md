@@ -11,6 +11,78 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.5.3
+
+**Parola sıfırlama artık Linux'ta da etki alanı hesaplarıyla çalışıyor — ve
+sekmeler nereden gezinirseniz gezinin yanıtlarını koruyor.**
+
+- **Linux / Active Directory'de parola sıfırlama:** sistem parolası doğrulaması
+  yalnızca `/etc/shadow` dosyasını okuyan `unix_chkpwd` üzerinden yapılıyordu.
+  SSSD ile etki alanına katılmış (`realm join`, Ubuntu'nun varsayılanı) bir
+  hesap orada **hiç bulunmaz**; bu yüzden doğru bir etki alanı parolası hiçbir
+  zaman doğrulanamıyordu. Doğrulama artık **tam PAM yığınına** düşüyor —
+  yerel hesaplar için `pam_unix`, etki alanı hesapları için `pam_sss`; etki
+  alanı denetleyicisine erişilemediğinde SSSD'nin çevrimdışı kimlik önbelleği
+  de dahil. Yerel hesaplar zaten çalışan yolda kalıyor. Hata mesajları artık
+  "parola hatalı" durumunu, "bu makinede `su` kısıtlanmış" ve "etki alanı
+  denetleyicisine erişilemiyor" durumlarından ayırıyor — son ikisini parola
+  hatası diye bildirmek, insanları sorunsuz bir parolayı sıfırlamaya
+  yönlendiriyordu. Bu, v1.5.2'nin Windows tarafında yaptığı işi tamamlıyor.
+- **İstek sekmeleri:** yanıt sekme başına saklanıyor, ama sekme şeridi tek
+  yanıtlı dönemden kalma bir yanıt temizleme çağrısını hâlâ çalıştırıyordu —
+  üstelik bunu aktif sekme değişmeden *önce* yapıyordu, dolayısıyla her geçiş
+  ayrıldığınız sekmenin yanıtını siliyordu. Sekme kapatmada aynı hatanın
+  ayna görüntüsü vardı. Ayrıca kenar çubuğunda **zaten açık** bir isteğe
+  tıklamak, açma yolunun tamamını canlı sekme üzerinde yeniden çalıştırıyor;
+  yanıtı siliyor ve kaydedilmemiş değişiklikleri geri alıyordu. Artık her
+  açma yolu var olan sekmeyi öne getiriyor. Sekme şeridi de son sekme
+  kapandığında — içindeki **+** ile birlikte — yerinde kalıyor; eskiden onunla
+  beraber ekrandan kalkıyordu.
+- **Collection Runner:** çalıştırma yapılandırması artık suite başına
+  saklanıyor — sıra seçimi, Setup/Flow/Teardown rolleri, iterasyonlar,
+  gecikmeler, hatada durdurma, yaşam döngüsü script'leri ve seçilen ortam
+  açık bir **Save configuration** düğmesiyle kaydediliyor ve suite yeniden
+  açıldığında, klasör ağacından doğrudan açıldığında da geri geliyor.
+  Çalıştırma sonuçlarına bir **arama kutusu** (istek adı, klasör ve URL) ve
+  bir **HTTP metot filtresi** eklendi; ikisi de mevcut All / Passed / Failed
+  sekmeleriyle birlikte çalışıyor. Satır başına **Reveal in APIs** eylemi ise
+  isteğin klasörlerini ağaçta açıp satıra kaydırıyor.
+- **Projeler arası izolasyon:** açık projeler arasında üç şey sızıyordu.
+  Runner sekmesi bilinçli olarak tekil olduğundan, kimliğine bağlı her durum
+  parçası — çalıştırma sonuçları, rapor, suite kapsamı, görünüm — projeler
+  arasında paylaşılıyordu: bir projede suite koşturun, projeyi değiştirin,
+  Runner'ı açın; diğer projenin sonuçları orada duruyordu. Mock sunucular
+  proje değiştirdiğinizde çalışmaya devam eder (bilerek), ama bir port
+  çakışması portun "bu projede" kullanıldığını söylüyor ve kullanıcıyı yanlış
+  projede aramaya yolluyordu; artık sunucunun adını veriyor ve portu hangi
+  projenin tuttuğunu söylüyor. OAuth 2.0 token önbelleği kimlik bilgilerinin
+  yalnız açık yarısını anahtarlıyordu; aynı token adresi ve client id ama
+  **farklı secret** kullanan yapılandırmalar tek bir token'ı paylaşıyordu —
+  kiracı başına secret kullanımında ve her secret rotasyonunda gerçekten
+  yaşanan bir durum: eski token süresi dolana kadar sunulmayı sürdürüyordu.
+- **Sağ tık menüsü:** uygulamanın kendine ait bir bağlam menüsü yoktu ve
+  Electron da sağlamıyor; bu yüzden bir alana sağ tıklamak hiçbir şey sunmuyor,
+  yapıştırmanın tek yolu Ctrl+V oluyordu. Girdi alanları, header/param
+  satırları ve kod editörleri artık yerel bir Kes / Kopyala / Yapıştır /
+  Tümünü Seç menüsü gösteriyor; yanıt gövdesi gibi salt-okunur alanlarda
+  yalnız Kopyala ve Tümünü Seç çıkıyor.
+- **Kaydedilmemiş değişiklik göstergesi:** New → HTTP (ya da başka bir
+  protokol) ile açılan bir sekmenin henüz veritabanında bir karşılığı olmuyor
+  ve değişiklik işaretleyen yardımcı tam da o sekmeleri atlıyordu — yepyeni
+  bir istekteki düzenlemeler nokta göstermiyor, onay sormuyor ve kapanışta
+  sessizce kayboluyordu. Artık istek benzeri her sekme "kaydedilmedi"
+  olabiliyor; araç, Runner ve Mock Server sekmeleri hiçbir zaman olmuyor.
+- **Klasörden Test Suite oluşturma:** eylem klasörün tüm alt ağacını seçim
+  imkânı olmadan içeri alıyordu. Artık önce bir seçim adımı açılıyor; alt ağaç
+  listeleniyor ve her istek için onay kutusu geliyor.
+
+**Testler:** süit 297 dosyada 3674 teste ulaştı. Bu sürümdeki her düzeltme,
+düzeltmeden önce başarısız olduğu kanıtlanmış bir regresyon testiyle geliyor.
+Linux PAM kararları (hangi hesap yerel sayılır, her çıkış kodu ne demektir,
+hangi kullanıcı adları kabuğa güvenle geçirilebilir) birim testli; PAM
+çağrısının kendisi CI'da koşamadığı için uçtan uca doğrulama etki alanına
+katılmış bir makinede yapılıyor.
+
 ## v1.5.2
 
 **Parola sıfırlama artık Windows'ta etki alanı (Active Directory) hesaplarıyla çalışıyor.**

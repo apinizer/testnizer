@@ -10,6 +10,73 @@ source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
 
+## v1.5.3
+
+**Password reset now works for domain accounts on Linux as well — and tabs keep
+their responses, wherever you navigate from.**
+
+- **Password reset on Linux / Active Directory:** system-password verification
+  went through `unix_chkpwd`, which reads `/etc/shadow` and nothing else. An
+  account joined through SSSD (`realm join`, the Ubuntu default) is not in
+  `/etc/shadow` at all, so a correct domain password could never be validated
+  there. Verification now falls back to the **full PAM stack** — `pam_unix` for
+  local accounts, `pam_sss` for domain ones, including SSSD's offline
+  credential cache when no domain controller is reachable. Local accounts keep
+  the path that already worked. Errors now distinguish "the password is wrong"
+  from "`su` is restricted on this machine" and "the domain controller is
+  unreachable" — reporting the latter two as a wrong password sends people to
+  reset a password that is fine. This completes the work v1.5.2 did for the
+  Windows side.
+- **Request tabs:** a response is kept per tab, but the tab strip still ran a
+  leftover response reset from the single-response era — and it ran *before*
+  the active tab changed, so every switch discarded the response of the tab
+  being left. Closing a tab had the mirror image of the same bug. Separately,
+  clicking a request in the sidebar that was **already open** re-ran the whole
+  open path over the live tab, wiping the response and reverting unsaved edits;
+  every open path now focuses the existing tab instead. The tab strip also
+  keeps its place — with the **+** in it — when the last tab is closed, instead
+  of unmounting along with it.
+- **Collection Runner:** run configuration now persists per suite — sequence
+  selection, Setup/Flow/Teardown roles, iterations, delays, stop-on-error,
+  lifecycle scripts and the chosen environment are saved with an explicit
+  **Save configuration** button and restored when the suite is reopened,
+  including when it is opened straight from the folder tree. Run results gained
+  a **search box** (request name, folder and URL) and an **HTTP method filter**
+  that compose with the existing All / Passed / Failed tabs, plus a per-row
+  **Reveal in APIs** action that opens the request's folders in the tree and
+  scrolls to it.
+- **Multi-project isolation:** three things bled between open projects. The
+  Runner tab is a deliberate singleton, so every piece of state keyed to its id
+  — run results, report, suite scope, view — was shared across projects: run a
+  suite in one project, switch, open the Runner, and the other project's
+  results were sitting there. Mock servers keep running when you switch
+  projects (by design), but a port conflict reported the port as taken "in this
+  project", sending the user hunting through the wrong project; it now names
+  the server and says which project holds it. The OAuth 2.0 token cache keyed
+  the public half of the credentials only, so the same token URL and client id
+  with a **different secret** shared one token — real for a per-tenant secret,
+  and on every secret rotation, where the stale token kept being served until
+  it expired.
+- **Right-click menu:** the app shipped no context menu of its own and Electron
+  provides none, so right-clicking an input offered nothing and Ctrl+V was the
+  only way to paste. Inputs, headers, params and the code editors now get a
+  native Cut / Copy / Paste / Select All menu; read-only areas such as the
+  response body offer Copy and Select All only.
+- **Unsaved-changes indicator:** a tab opened from New → HTTP (or any other
+  protocol) carried no backing row yet, and the dirty-marking helper skipped
+  exactly those tabs — so edits in a brand-new request showed no dot, raised no
+  confirmation, and were lost silently on close. Any request-like tab can now
+  be dirty; tool, Runner and Mock Server tabs still never are.
+- **Create Test Suite from a folder:** the action imported the folder's entire
+  subtree with no way to choose. It now opens a selection step first, with the
+  subtree listed and checkboxes per request.
+
+**Tests:** the suite grew to 3674 across 297 files. Every fix in this release
+ships with a regression test proven to fail before it. The Linux PAM decisions
+(which accounts count as local, what each exit status means, which usernames
+are safe to pass to a shell) are unit-tested; the PAM call itself cannot run on
+CI, so end-to-end verification happens on a domain-joined machine.
+
 ## v1.5.2
 
 **Password reset now works for domain (Active Directory) accounts on Windows.**
