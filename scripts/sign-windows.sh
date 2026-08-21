@@ -101,12 +101,12 @@ if [[ -n "$LOCAL_DIR" ]]; then
   echo "ℹ️  Yerel klasörden imzalanacak: $LOCAL_DIR → $WORK"
   # Copy rather than sign in place: a half-written .exe from an interrupted
   # signing run must not replace the artifact you still need.
-  for f in "$LOCAL_DIR"/*.exe "$LOCAL_DIR"/latest.yml; do
+  for f in "$LOCAL_DIR"/*.exe "$LOCAL_DIR"/latest.yml "$LOCAL_DIR"/checksums.txt; do
     [[ -f "$f" ]] && cp "$f" "$UNSIGNED/"
   done
 else
   echo "ℹ️  $TAG asset'leri indiriliyor → $WORK"
-  gh release download "$TAG" --repo "$REPO" --dir "$UNSIGNED" --pattern '*.exe' --pattern 'latest.yml'
+  gh release download "$TAG" --repo "$REPO" --dir "$UNSIGNED" --pattern '*.exe' --pattern 'latest.yml' --pattern 'checksums.txt'
 fi
 
 exes=("$UNSIGNED"/*.exe)
@@ -144,6 +144,26 @@ else
   echo "⚠️  latest.yml release'de yok — yalnızca .exe imzalanacak (auto-update manifesti elle güncellenmeli)."
 fi
 
+# ── rebuild checksums.txt for the signed files ──────────────────────────────
+# Signing rewrites the .exe, so CI's SHA-256 list — generated from the UNSIGNED
+# artifacts — stops matching what people actually download. Left stale, anyone
+# who verifies a download against it concludes the file was tampered with. This
+# was caught by hand on v1.5.3; it is rebuilt here so it cannot be missed again.
+HAS_SUMS=0
+if [[ -f "$UNSIGNED/checksums.txt" ]]; then
+  echo "🔁 checksums.txt yeniden hesaplanıyor"
+  while IFS= read -r line; do
+    name="${line#*  }"
+    if [[ -f "$SIGNED/$name" ]]; then
+      printf '%s  %s\n' "$(shasum -a 256 "$SIGNED/$name" | awk '{print $1}')" "$name"
+      echo "  • $name → yeniden hesaplandı" >&2
+    else
+      printf '%s\n' "$line"
+    fi
+  done < "$UNSIGNED/checksums.txt" > "$SIGNED/checksums.txt"
+  HAS_SUMS=1
+fi
+
 # ── confirm, then upload (outward-facing → explicit y/N) ─────────────────────
 echo ""
 echo "İmzalanan dosyalar ($SIGNED):"
@@ -160,11 +180,15 @@ fi
 read -r -p "Bunları '$TAG' release'ine yükle (--clobber)? [y/N] " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
   upload=("$SIGNED"/*.exe)
-  [[ $HAS_YML -eq 1 ]] && upload+=("$SIGNED/latest.yml")
+  if [[ $HAS_YML -eq 1 ]]; then upload+=("$SIGNED/latest.yml"); fi
+  if [[ $HAS_SUMS -eq 1 ]]; then upload+=("$SIGNED/checksums.txt"); fi
   gh release upload "$TAG" --repo "$REPO" --clobber "${upload[@]}"
   echo "✅ Yüklendi: $TAG"
   echo "ℹ️  Doğrula: indirip Windows'ta SmartScreen 'unknown publisher' çıkmamalı; auto-update sha512 latest.yml ile eşleşmeli."
 else
   echo "⏭️  Upload atlandı. İmzalı dosyalar burada: $SIGNED"
-  echo "    Elle yüklemek için:  gh release upload $TAG --repo $REPO --clobber $SIGNED/*.exe${HAS_YML:+ $SIGNED/latest.yml}"
+  hint="$SIGNED/*.exe"
+  if [[ $HAS_YML -eq 1 ]]; then hint="$hint $SIGNED/latest.yml"; fi
+  if [[ $HAS_SUMS -eq 1 ]]; then hint="$hint $SIGNED/checksums.txt"; fi
+  echo "    Elle yüklemek için:  gh release upload $TAG --repo $REPO --clobber $hint"
 fi
