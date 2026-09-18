@@ -6,6 +6,7 @@ import { exportProjectData, importProjectDataFromJson } from './save.handler'
 import { asConflictAwareGit, runGitOpWithConflictHandling } from '../lib/git-conflict'
 import type { SimpleGit, BranchSummaryBranch } from 'simple-git'
 import { projectFileSlug } from '../lib/project-file'
+import { decryptSecret } from '../lib/secure-storage'
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -51,17 +52,30 @@ async function getProjectGitConfig(projectId: string): Promise<{
     const config = gitConfig?.[projectId]
     if (!config?.repoUrl) return null
 
+    // `settings:set` transparently encrypts every field named `token`
+    // (safeStorage `enc:v1:` envelope). The raw electron-store read above
+    // therefore yields ciphertext; embedding that as the HTTPS password made
+    // GitHub answer "Invalid username or token" (issue #127). Decrypt here —
+    // legacy plaintext passes through unchanged.
     return {
       repoUrl: config.repoUrl,
       username: config.username || '',
       branch: config.branch || 'main',
-      token: config.token || '',
+      token: decryptSecret(config.token || '') || '',
       localPath: project?.local_path || '',
     }
   } catch {
     return null
   }
 }
+
+/**
+ * A configured remote without a usable token can only fail at GitHub with an
+ * opaque 401. Surface the real cause (never saved, or the OS keychain could
+ * not decrypt it) so the user knows to re-enter the PAT.
+ */
+const GIT_TOKEN_MISSING_ERROR =
+  'Git token bulunamadı veya şifresi çözülemedi. Proje Ayarları → Storage bölümünden Personal Access Token’ı yeniden girin.'
 
 function buildAuthUrl(repoUrl: string, username: string, token: string): string {
   const urlObj = new URL(repoUrl)
@@ -529,6 +543,9 @@ export function registerGitHandlers(): void {
       if (!config?.repoUrl || !config.localPath) {
         return { success: false, error: 'Git yapılandırması bulunamadı.' }
       }
+      if (!config.token) {
+        return { success: false, error: GIT_TOKEN_MISSING_ERROR }
+      }
 
       const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
       const git = await ensureGitRepo(config.localPath, authUrl, config.branch)
@@ -578,6 +595,9 @@ export function registerGitHandlers(): void {
       const config = await getProjectGitConfig(projectId)
       if (!config?.repoUrl || !config.localPath) {
         return { success: false, error: 'Git yapılandırması bulunamadı.' }
+      }
+      if (!config.token) {
+        return { success: false, error: GIT_TOKEN_MISSING_ERROR }
       }
 
       const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
