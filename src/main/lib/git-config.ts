@@ -213,12 +213,24 @@ export function gitAuth(repoUrl: string, username: string, token: string): GitAu
 }
 
 /**
- * Environment variables simple-git refuses to forward (its argv-parser
- * `parseEnv` blocklist): editors, pagers, askpass, ssh command, config path
- * overrides. A developer shell that exports GIT_EDITOR=vim would otherwise
- * make EVERY git call fail with "Use of GIT_EDITOR is not permitted".
+ * Environment variables never forwarded to the git child process.
+ *
+ * - editors / pagers / askpass / ssh command / config-path overrides: the
+ *   spawn layer rejects them ("Use of GIT_EDITOR is not permitted"), so a
+ *   developer shell that exports GIT_EDITOR=vim would otherwise make EVERY
+ *   git call fail. (GIT_CONFIG_GLOBAL is in this set too — a proxy/CA the
+ *   user keeps there must live in the system or repo config instead.)
+ * - GIT_TRACE* / GIT_CURL_VERBOSE: git echoes the request headers, i.e. the
+ *   `Authorization: Basic …` credential, onto stderr — which we surface to
+ *   the user as the error text.
  */
 const BLOCKED_GIT_ENV = new Set([
+  'git_trace',
+  'git_trace_curl',
+  'git_trace_packet',
+  'git_trace_setup',
+  'git_trace_performance',
+  'git_curl_verbose',
   'editor',
   'pager',
   'prefix',
@@ -245,7 +257,12 @@ export function gitProcessEnv(auth: GitAuth): Record<string, string> {
   for (const [k, v] of Object.entries(process.env)) {
     if (v === undefined) continue
     const lower = k.toLowerCase()
-    if (BLOCKED_GIT_ENV.has(lower) || /^git_config_(key|value)_\d+$/.test(lower)) continue
+    if (
+      BLOCKED_GIT_ENV.has(lower) ||
+      /^git_config_(key|value)_\d+$/.test(lower) ||
+      lower.startsWith('git_trace2')
+    )
+      continue
     out[k] = v
   }
   return { ...out, ...auth.env }
@@ -262,7 +279,11 @@ export async function gitClientOptions(
 }> {
   return {
     ...(baseDir ? { baseDir } : {}),
-    config: [...auth.config, ...(await identityConfig())],
+    // Merge, never rebase, when Pull meets a divergent remote (a teammate or
+    // a second machine pushed since our auto-commit). Without this, git ≥2.27
+    // refuses with "Need to specify how to reconcile divergent branches" and
+    // the raw text reached the toast.
+    config: [...auth.config, 'pull.rebase=false', ...(await identityConfig())],
     unsafe: { allowUnsafeCredentialHelper: true },
   }
 }
@@ -299,4 +320,69 @@ export async function identityConfig(): Promise<string[]> {
 /** Test seam. */
 export function _resetIdentityConfigCache(): void {
   identityConfigCache = null
+}
+
+/** Push refused because the remote moved on — not an auth problem. */
+export const GIT_PUSH_REJECTED_ERROR =
+  'Uzak depo yerel kopyanızdan ileride (non-fast-forward). Önce Pull yapın, sonra tekrar Push deneyin.'
+
+/** True for git's "remote is ahead" refusals. */
+export function isPushRejectedError(message: string): boolean {
+  return /non-fast-forward|fetch first|\[rejected\]|Updates were rejected/i.test(message)
+}
+
+/** Remote could not be reached at all (DNS, proxy, offline, wrong host). */
+export function unreachableRemoteError(detail: string): string {
+  return `Uzak depoya erişilemedi: ${detail.split('\n')[0]}`
+}
+
+/**
+ * `local_path` already holds a git checkout of ANOTHER remote. Re-pointing
+ * its origin would hijack the user's unrelated repository, so refuse.
+ */
+export function foreignRepoError(localPath: string, existingRemote: string): string {
+  return `${localPath} zaten başka bir uzak depoya bağlı bir git deposu (${existingRemote}). Proje Ayarları → Storage bölümünden boş veya bu depoya ait bir klasör seçin.`
+}
+
+/**
+ * Same repository? Ignores credentials in the URL (older builds embedded the
+ * PAT), a trailing `.git`, trailing slashes and host/scheme case.
+ */
+export function sameRemote(a: string | undefined, b: string | undefined): boolean {
+  const norm = (u: string | undefined): string => {
+    const t = (u ?? '').trim()
+    if (!t) return ''
+    try {
+      if (/^https?:\/\//i.test(t)) {
+        const url = new URL(t)
+        const host = url.host.toLowerCase()
+        const p = url.pathname.replace(/\/+$/, '').replace(/\.git$/i, '')
+        return `${url.protocol.toLowerCase()}//${host}${p}`
+      }
+    } catch {
+      /* fall through to string compare */
+    }
+    return t
+      .replace(/\/+$/, '')
+      .replace(/\.git$/i, '')
+      .toLowerCase()
+  }
+  const na = norm(a)
+  const nb = norm(b)
+  return na !== '' && na === nb
+}
+
+/**
+ * ONE mapping from a git failure to the text the user sees: token redacted,
+ * 401/403 → explicit auth message, "remote is ahead" → pull-first hint.
+ * Every push/pull catch (git.handler AND save.handler) goes through here so
+ * the two paths cannot drift again.
+ */
+export function describeGitError(e: unknown, token: string | undefined): string {
+  const raw = e instanceof Error ? e.message : String(e)
+  const msg = redactToken(raw, token)
+  if (msg.startsWith(GIT_AUTH_FAILED_ERROR)) return msg
+  if (isGitAuthError(msg)) return `${GIT_AUTH_FAILED_ERROR} (${msg.split('\n')[0]})`
+  if (isPushRejectedError(msg)) return GIT_PUSH_REJECTED_ERROR
+  return msg
 }

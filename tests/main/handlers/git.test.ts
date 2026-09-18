@@ -13,7 +13,13 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { setupHandlerHarness, makeElectronMock, createTestDb, seedProject, seedWorkspace } from './helpers'
+import {
+  setupHandlerHarness,
+  makeElectronMock,
+  createTestDb,
+  seedProject,
+  seedWorkspace,
+} from './helpers'
 
 const harness = setupHandlerHarness()
 vi.mock('electron', () => makeElectronMock())
@@ -46,6 +52,9 @@ vi.mock('simple-git', () => ({
   simpleGit: () => ({
     fetch: async () => {},
     raw: async () => '',
+    listRemote: async () => '',
+    getRemotes: async () => [],
+    rm: async () => {},
     env: () => ({}),
     branch: async () => ({ branches: {}, current: '' }),
     revparse: async () => '',
@@ -55,7 +64,7 @@ vi.mock('simple-git', () => ({
     pull: async () => ({ summary: {} }),
     add: async () => {},
     commit: async () => ({}),
-    status: async () => ({ files: [] }),
+    status: async () => ({ files: [], modified: [], deleted: [], staged: [] }),
     log: async () => ({ all: [] }),
     init: async () => {},
     addRemote: async () => {},

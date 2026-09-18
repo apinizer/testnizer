@@ -5,7 +5,7 @@ import { getDb } from '../db/database'
 import { exportProjectData, importProjectDataFromJson } from './save.handler'
 import { asConflictAwareGit, runGitOpWithConflictHandling } from '../lib/git-conflict'
 import type { SimpleGit, BranchSummaryBranch } from 'simple-git'
-import { projectFileSlug } from '../lib/project-file'
+import { projectFileSlug, pickProjectFile } from '../lib/project-file'
 import {
   getProjectGitConfig,
   gitAuth,
@@ -13,9 +13,13 @@ import {
   gitProcessEnv,
   isGitAuthError,
   redactToken,
+  describeGitError,
+  sameRemote,
+  foreignRepoError,
+  unreachableRemoteError,
   GIT_TOKEN_MISSING_ERROR,
-  GIT_AUTH_FAILED_ERROR,
   type ProjectGitConfig,
+  type GitAuth,
 } from '../lib/git-config'
 
 // ─── Helpers ─────────────────────────────────────────────────────
@@ -46,8 +50,42 @@ async function pointHeadAt(git: SimpleGit, branch: string): Promise<void> {
 }
 
 function authFailure(e: unknown, token: string): Error {
-  const detail = redactToken((e as Error).message ?? String(e), token)
-  return new Error(`${GIT_AUTH_FAILED_ERROR} (${detail.split('\n')[0]})`)
+  return new Error(describeGitError(e, token))
+}
+
+/**
+ * `git ls-remote --heads` — the branches the remote has RIGHT NOW. Decides,
+ * before anything touches disk, whether the remote is empty (init locally),
+ * has the configured branch (clone it) or has history on another branch
+ * (clone that, create ours on top). Any failure is RETHROWN: an unreachable
+ * remote used to fall through to `git init`, leaving an unrelated local
+ * history that made every later Push non-fast-forward and every Pull
+ * "refusing to merge unrelated histories".
+ */
+async function remoteHeads(bare: SimpleGit, auth: GitAuth, token: string): Promise<Set<string>> {
+  let out: string
+  try {
+    out = await bare.listRemote(['--heads', auth.cleanUrl])
+  } catch (e) {
+    if (isGitAuthError((e as Error).message)) throw authFailure(e, token)
+    throw new Error(unreachableRemoteError(redactToken((e as Error).message, token)))
+  }
+  const heads = new Set<string>()
+  for (const line of out.split('\n')) {
+    const ref = line.split('\t')[1]?.trim()
+    if (ref?.startsWith('refs/heads/')) heads.add(ref.slice('refs/heads/'.length))
+  }
+  return heads
+}
+
+/** The fetch URL of `origin`, or undefined when the repo has no origin. */
+async function originUrl(git: SimpleGit): Promise<string | undefined> {
+  try {
+    const remotes = await git.getRemotes(true)
+    return remotes.find((r) => r.name === 'origin')?.refs.fetch
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -73,6 +111,12 @@ async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
   const gitDir = join(localPath, '.git')
   if (existsSync(gitDir)) {
     const git = await openRepo(config)
+    const existing = await originUrl(git)
+    if (existing && !sameRemote(existing, auth.cleanUrl)) {
+      // Not ours: a checkout of some other repository lives here. Re-pointing
+      // its origin would hijack it (and Push would commit its files).
+      throw new Error(foreignRepoError(localPath, redactToken(existing, config.token)))
+    }
     // Keep origin pointing at the clean URL (also replaces token-bearing
     // URLs written by older builds).
     try {
@@ -89,27 +133,29 @@ async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
 
   const dirContents = readDirSync(localPath)
   const bare = simpleGit(await gitClientOptions(auth)).env(gitProcessEnv(auth))
+  const heads = await remoteHeads(bare, auth, config.token)
 
   if (dirContents.length === 0) {
-    // Empty directory — clone into it.
-    try {
+    if (heads.size === 0) {
+      // Genuinely empty remote — init locally; the first push seeds it.
+      const localGit = await openRepo(config)
+      await localGit.init()
+      await pointHeadAt(localGit, defaultBranch)
+      await localGit.addRemote('origin', auth.cleanUrl)
+      return localGit
+    }
+    if (heads.has(defaultBranch)) {
       await bare.clone(auth.cleanUrl, localPath, ['--branch', defaultBranch])
       return openRepo(config)
-    } catch (e1) {
-      if (isGitAuthError((e1 as Error).message)) throw authFailure(e1, config.token)
-      try {
-        await bare.clone(auth.cleanUrl, localPath)
-        return openRepo(config)
-      } catch (e2) {
-        if (isGitAuthError((e2 as Error).message)) throw authFailure(e2, config.token)
-        // Genuinely empty remote — init locally; first push seeds it.
-        const localGit = await openRepo(config)
-        await localGit.init()
-        await pointHeadAt(localGit, defaultBranch)
-        await localGit.addRemote('origin', auth.cleanUrl)
-        return localGit
-      }
     }
+    // The remote has history but not OUR branch (e.g. it was created with
+    // `master`, Storage says `main`). Clone its default branch and start the
+    // configured branch from there — the same thing Save → Git does, so both
+    // Push buttons land the project on the same branch.
+    await bare.clone(auth.cleanUrl, localPath)
+    const git = await openRepo(config)
+    await git.checkoutLocalBranch(defaultBranch)
+    return git
   }
 
   // Non-empty directory (project files already exist) — init in place.
@@ -117,15 +163,9 @@ async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
   await localGit.init()
   await pointHeadAt(localGit, defaultBranch)
   await localGit.addRemote('origin', auth.cleanUrl)
-  try {
-    await localGit.fetch('origin')
-    const remoteBranches = await localGit.branch(['-r'])
-    if (Object.keys(remoteBranches.branches).some((b) => b.includes(defaultBranch))) {
-      await localGit.checkout(['-b', defaultBranch, `origin/${defaultBranch}`])
-    }
-  } catch (e) {
-    if (isGitAuthError((e as Error).message)) throw authFailure(e, config.token)
-    // Remote is empty — fine, we'll push first.
+  if (heads.has(defaultBranch)) {
+    await localGit.fetch('origin', defaultBranch)
+    await localGit.checkout(['-b', defaultBranch, `origin/${defaultBranch}`])
   }
   return localGit
 }
@@ -156,12 +196,20 @@ async function getCurrentBranch(
 // Returns false (not throwing) only when no .json file is found.
 function reimportProjectFromDir(dir: string, projectId: string): boolean {
   const jsonFiles = readDirSync(dir).filter(
-    (f: string) => f.endsWith('.json') && f !== 'package.json',
+    (f: string) => f.endsWith('.json') && f !== 'package.json' && !f.startsWith('.'),
   )
   if (jsonFiles.length === 0) return false
-  const jsonContent = readFileSync(join(dir, jsonFiles[0]), 'utf-8')
+  const file = pickProjectFile(jsonFiles, projectNameOf(projectId))
+  const jsonContent = readFileSync(join(dir, file), 'utf-8')
   importProjectDataFromJson(jsonContent, projectId)
   return true
+}
+
+function projectNameOf(projectId: string): string | undefined {
+  const row = getDb().prepare('SELECT name FROM projects WHERE id = ?').get(projectId) as
+    | { name: string }
+    | undefined
+  return row?.name
 }
 
 // ─── Register handlers ──────────────────────────────────────────
@@ -539,20 +587,24 @@ export function registerGitHandlers(): void {
       const fileName = `${slug}.json`
       writeFileSync(join(config.localPath, fileName), JSON.stringify(data, null, 2), 'utf-8')
 
-      // Clean up old .json files that don't match current slug
-      try {
-        const { unlinkSync } = await import('fs')
-        for (const f of readDirSync(config.localPath)) {
-          if (f.endsWith('.json') && f !== fileName && f !== 'package.json') {
-            unlinkSync(join(config.localPath, f))
-          }
+      // Retire the file an older name produced — but ONLY files git already
+      // tracks. `local_path` may be a folder the user picked (Downloads…);
+      // deleting every other .json there and `git add .` used to commit the
+      // whole directory to GitHub.
+      const tracked = (await git.raw(['ls-files', '--', '*.json']))
+        .split('\n')
+        .map((f) => f.trim())
+        .filter((f) => f && f !== fileName && f !== 'package.json' && !f.includes('/'))
+      for (const f of tracked) {
+        try {
+          await git.rm([f])
+        } catch {
+          /* already gone */
         }
-      } catch {
-        /* ignore cleanup errors */
       }
 
-      // Stage and commit
-      await git.add('.')
+      // Stage ONLY the project file and commit
+      await git.add([fileName])
       const status = await git.status()
       if (status.staged.length > 0) {
         await git.commit(`Update ${displayName} — ${new Date().toLocaleString()}`)
@@ -563,14 +615,7 @@ export function registerGitHandlers(): void {
 
       return { success: true, data: { branch: currentBranch, pushed: true } }
     } catch (e) {
-      const msg = redactToken((e as Error).message, config?.token)
-      return {
-        success: false,
-        error:
-          isGitAuthError(msg) && !msg.startsWith(GIT_AUTH_FAILED_ERROR)
-            ? `${GIT_AUTH_FAILED_ERROR} (${msg.split('\n')[0]})`
-            : msg,
-      }
+      return { success: false, error: describeGitError(e, config?.token) }
     }
   })
 
@@ -590,10 +635,11 @@ export function registerGitHandlers(): void {
 
       const currentBranch = await getCurrentBranch(git, config.branch)
 
-      // Auto-commit before pull
+      // Auto-commit edits to TRACKED files before pull (never sweep the
+      // directory's untracked files into the repo — see push).
       const status = await git.status()
-      if (status.modified.length > 0 || status.not_added.length > 0 || status.created.length > 0) {
-        await git.add('.')
+      if (status.modified.length > 0 || status.deleted.length > 0) {
+        await git.raw(['add', '-u'])
         await git.commit('Auto-save before pull')
       }
 
@@ -627,14 +673,7 @@ export function registerGitHandlers(): void {
       }
       return { success: true, data: { pulled: true, state: 'clean', branch: currentBranch } }
     } catch (e) {
-      const msg = redactToken((e as Error).message, config?.token)
-      return {
-        success: false,
-        error:
-          isGitAuthError(msg) && !msg.startsWith(GIT_AUTH_FAILED_ERROR)
-            ? `${GIT_AUTH_FAILED_ERROR} (${msg.split('\n')[0]})`
-            : msg,
-      }
+      return { success: false, error: describeGitError(e, config?.token) }
     }
   })
 

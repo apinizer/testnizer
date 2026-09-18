@@ -47,9 +47,14 @@ const {
   gitProcessEnv,
   gitClientOptions,
   isGitAuthError,
+  isPushRejectedError,
+  sameRemote,
+  describeGitError,
   redactToken,
   legacyCredentialKey,
   GIT_SSH_URL_ERROR,
+  GIT_AUTH_FAILED_ERROR,
+  GIT_PUSH_REJECTED_ERROR,
 } = await import('../../src/main/lib/git-config')
 
 const enc = (s: string) => 'enc:v1:' + Buffer.from(s, 'utf-8').reverse().toString('base64')
@@ -180,6 +185,9 @@ describe('gitProcessEnv / gitClientOptions', () => {
     process.env.GIT_SSH_COMMAND = 'ssh -i x'
     process.env.GIT_CONFIG_COUNT = '1'
     process.env.GIT_CONFIG_KEY_0 = 'x'
+    process.env.GIT_TRACE = '1'
+    process.env.GIT_CURL_VERBOSE = '1'
+    process.env.GIT_TRACE2_EVENT = '/tmp/t'
     process.env.KEEP_ME = '1'
     try {
       const env = gitProcessEnv(gitAuth('https://h/r.git', 'u', 't'))
@@ -189,6 +197,10 @@ describe('gitProcessEnv / gitClientOptions', () => {
         'GIT_SSH_COMMAND',
         'GIT_CONFIG_COUNT',
         'GIT_CONFIG_KEY_0',
+        // git would echo the Authorization header onto stderr → the toast
+        'GIT_TRACE',
+        'GIT_CURL_VERBOSE',
+        'GIT_TRACE2_EVENT',
       ]) {
         expect(k in env).toBe(false)
       }
@@ -203,6 +215,57 @@ describe('gitProcessEnv / gitClientOptions', () => {
     expect(opts.baseDir).toBe('/repo')
     expect(opts.unsafe).toEqual({ allowUnsafeCredentialHelper: true })
     expect(opts.config).toContain('credential.helper=')
+    // Divergent branches merge instead of failing with "Need to specify how
+    // to reconcile divergent branches".
+    expect(opts.config).toContain('pull.rebase=false')
+  })
+})
+
+describe('sameRemote', () => {
+  it('ignores credentials, .git suffix, trailing slash and case', () => {
+    expect(
+      sameRemote('https://u:tok@GitHub.com/Acme/apis.git', 'https://github.com/Acme/apis/'),
+    ).toBe(true)
+    expect(
+      sameRemote('https://github.com/acme/apis.git', 'https://github.com/acme/other.git'),
+    ).toBe(false)
+    expect(sameRemote('https://github.com/acme/apis.git', 'https://gitlab.com/acme/apis.git')).toBe(
+      false,
+    )
+    expect(sameRemote('/tmp/bare.git', '/tmp/bare')).toBe(true)
+    expect(sameRemote(undefined, 'https://h/r.git')).toBe(false)
+    expect(sameRemote('', '')).toBe(false)
+  })
+})
+
+describe('describeGitError — the one mapping both handlers use', () => {
+  it('maps 401/403 to the auth message with the token redacted', () => {
+    const out = describeGitError(
+      new Error("fatal: Authentication failed for 'https://github.com/a/b.git/' (ghp_secret)"),
+      'ghp_secret',
+    )
+    expect(out.startsWith(GIT_AUTH_FAILED_ERROR)).toBe(true)
+    expect(out).not.toContain('ghp_secret')
+  })
+
+  it('maps a non-fast-forward rejection to the pull-first hint', () => {
+    expect(isPushRejectedError(' ! [rejected] main -> main (fetch first)')).toBe(true)
+    expect(isPushRejectedError('Updates were rejected because the remote contains work')).toBe(true)
+    expect(isPushRejectedError('fatal: repository not found')).toBe(false)
+    expect(
+      describeGitError(
+        new Error('error: failed to push some refs\n ! [rejected] main -> main (non-fast-forward)'),
+        'tok_abc',
+      ),
+    ).toBe(GIT_PUSH_REJECTED_ERROR)
+  })
+
+  it('is idempotent on an already-mapped auth message and passes other text through redacted', () => {
+    const mapped = `${GIT_AUTH_FAILED_ERROR} (x)`
+    expect(describeGitError(new Error(mapped), 'tok_abc')).toBe(mapped)
+    expect(describeGitError(new Error('Could not resolve host: github.com tok123'), 'tok123')).toBe(
+      'Could not resolve host: github.com ***',
+    )
   })
 })
 

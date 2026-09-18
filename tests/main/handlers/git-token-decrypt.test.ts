@@ -73,6 +73,9 @@ vi.mock('simple-git', () => {
     const instance = {
       env: () => instance,
       raw: async () => '',
+      listRemote: async () => '',
+      getRemotes: async () => [],
+      rm: async () => {},
       getConfig: async () => ({
         key: 'user.name',
         value: 'Existing User',
@@ -89,7 +92,14 @@ vi.mock('simple-git', () => {
       pull: async () => ({ summary: {} }),
       add: async () => {},
       commit: async () => ({}),
-      status: async () => ({ files: [], modified: [], not_added: [], created: [], staged: [] }),
+      status: async () => ({
+        files: [],
+        modified: [],
+        deleted: [],
+        not_added: [],
+        created: [],
+        staged: [],
+      }),
       log: async () => ({ all: [] }),
       init: async () => {},
       addRemote: async (_name: string, url: string) => {

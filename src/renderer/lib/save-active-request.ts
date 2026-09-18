@@ -64,6 +64,11 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
           selectedPort: soap.selectedPort,
           selectedOperation: soap.selectedOperation,
           bodyMode: soap.bodyMode,
+          // WSDL-mode transport (Send ≡ Run parity): the Runner has no WSDL
+          // to consult, so the operation's action and the document's version
+          // travel with the row — `soapTransportFromMeta` reads exactly these.
+          soapVersion: soap.parsedWsdl?.soapVersion,
+          soapAction: soap.mode === 'manual' ? undefined : soap.getSelectedOperation()?.soapAction,
           // Manual-mode fields (issue #124): endpoint URL, body, SOAPAction /
           // version, operation name + namespace and the editor mode itself.
           // Before these were written, reopening a manual request showed an

@@ -33,3 +33,24 @@ export function projectFileSlug(name: string | undefined | null): string {
 export function projectFileName(name: string | undefined | null): string {
   return `${projectFileSlug(name)}.json`
 }
+
+/**
+ * Which `.json` in a checkout is THIS project? Prefer `<slug>.json` (what Push
+ * writes); a lone file is fine too. Two or more candidates with no slug match
+ * used to import `readdir()[0]` — whichever project sorted first — so that
+ * case is now an explicit error instead of a silent overwrite of the wrong
+ * project (and a repo shared by two projects no longer has them destroy each
+ * other).
+ */
+export function pickProjectFile(
+  jsonFiles: string[],
+  projectName: string | undefined | null,
+): string {
+  const preferred = projectFileName(projectName)
+  if (jsonFiles.includes(preferred)) return preferred
+  if (jsonFiles.length === 1) return jsonFiles[0]
+  if (jsonFiles.length === 0) throw new Error('Depoda proje dosyası (.json) bulunamadı.')
+  throw new Error(
+    `Depoda birden fazla proje dosyası var (${jsonFiles.join(', ')}) ve hiçbiri bu projenin adıyla (${preferred}) eşleşmiyor. Proje adını dosya adına uydurun veya fazla dosyaları kaldırın.`,
+  )
+}

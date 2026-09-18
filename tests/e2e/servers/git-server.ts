@@ -81,7 +81,8 @@ export async function startGitServer(port: number): Promise<GitServer> {
         execFileSync('git', ['-C', dir, 'config', 'http.receivepack', 'true'])
       }
       res.writeHead(201, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ repo: `http://127.0.0.1:${port}/${name}.git` }))
+      // `dir` lets a spec seed/advance the bare repo out-of-band (a "teammate").
+      res.end(JSON.stringify({ repo: `http://127.0.0.1:${port}/${name}.git`, dir }))
       return
     }
 

@@ -30,11 +30,12 @@ import {
   gitAuth,
   gitClientOptions,
   gitProcessEnv,
+  describeGitError,
   getSettingsStore,
   getLegacyCredentialStore,
   legacyCredentialKey,
 } from '../lib/git-config'
-import { projectFileSlug } from '../lib/project-file'
+import { projectFileSlug, pickProjectFile } from '../lib/project-file'
 import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
 
 // ─── Multi-format detection for test suite import ────────────────
@@ -2118,7 +2119,7 @@ export function registerSaveHandlers(): void {
 
         return { success: true, data: { repoUrl: payload.repoUrl, branch: payload.branch } }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: describeGitError(e, payload.token) }
       }
     },
   )
@@ -2133,8 +2134,9 @@ export function registerSaveHandlers(): void {
         commitMessage?: string
       },
     ) => {
+      let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
       try {
-        const config = await getProjectGitConfig(payload.projectId)
+        config = await getProjectGitConfig(payload.projectId)
         if (!config || !config.repoUrl || !config.token) {
           return {
             success: false,
@@ -2221,7 +2223,7 @@ export function registerSaveHandlers(): void {
           data: { repoUrl: config.repoUrl, branch: config.branch, message: msg },
         }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: describeGitError(e, config?.token) }
       }
     },
   )
@@ -2235,8 +2237,9 @@ export function registerSaveHandlers(): void {
         projectId: string
       },
     ) => {
+      let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
       try {
-        const config = await getProjectGitConfig(payload.projectId)
+        config = await getProjectGitConfig(payload.projectId)
         if (!config || !config.repoUrl || !config.token) {
           return {
             success: false,
@@ -2283,8 +2286,13 @@ export function registerSaveHandlers(): void {
           return { success: false, error: "Git repository'de proje dosyası bulunamadı." }
         }
 
-        // Read first (or matching) JSON file
-        const content = readFileSync(join(tmpDir, files[0]), 'utf-8')
+        // The file that belongs to THIS project (slug match, or the only one).
+        const ownName = (
+          getDb().prepare('SELECT name FROM projects WHERE id = ?').get(payload.projectId) as
+            | { name: string }
+            | undefined
+        )?.name
+        const content = readFileSync(join(tmpDir, pickProjectFile(files, ownName)), 'utf-8')
         const data = JSON.parse(content) as ProjectExport
 
         if (!data.version || !data.project) {
@@ -2318,7 +2326,7 @@ export function registerSaveHandlers(): void {
           },
         }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: describeGitError(e, config?.token) }
       }
     },
   )
@@ -2430,7 +2438,7 @@ export function registerSaveHandlers(): void {
 
         return { success: true, data: { tmpDir, files, isEmpty } }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: describeGitError(e, payload.token) }
       }
     },
   )
@@ -2474,8 +2482,9 @@ export function registerSaveHandlers(): void {
   ipcMain.handle(
     'save:gitDiff',
     async (_event, payload: { projectId: string; direction: 'push' | 'pull' }) => {
+      let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
       try {
-        const config = await getProjectGitConfig(payload.projectId)
+        config = await getProjectGitConfig(payload.projectId)
         if (!config || !config.repoUrl || !config.token) {
           return { success: false, error: 'Git configuration not found.' }
         }
@@ -2612,7 +2621,7 @@ export function registerSaveHandlers(): void {
           },
         }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: describeGitError(e, config?.token) }
       }
     },
   )
