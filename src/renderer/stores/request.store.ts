@@ -227,6 +227,11 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
 
   setMethod: (method) => {
     set({ method })
+    // Mirror onto the tab so the strip's method badge follows the editor
+    // immediately instead of waiting for Save (issue #122). `tab.method` has a
+    // single consumer (the badge), so tracking the working copy is safe.
+    const { activeTabId, updateTab } = useTabsStore.getState()
+    if (activeTabId) updateTab(activeTabId, { method })
     markActiveDirty()
   },
   setUrl: (url) => {

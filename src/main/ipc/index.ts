@@ -4,6 +4,7 @@ import { registerProjectHandlers } from './project.handler'
 import { registerEndpointHandlers } from './endpoint.handler'
 import { registerEnvironmentHandlers } from './environment.handler'
 import { registerHistoryHandlers } from './history.handler'
+import { registerSavedResponseHandlers } from './saved-response.handler'
 import { registerSettingsHandlers } from './settings.handler'
 import { registerImportExportHandlers } from './import-export.handler'
 import { registerSoapHandlers } from './soap.handler'
@@ -43,6 +44,7 @@ export function registerAllHandlers(): void {
   registerEndpointHandlers()
   registerEnvironmentHandlers()
   registerHistoryHandlers()
+  registerSavedResponseHandlers()
   registerSettingsHandlers()
   registerImportExportHandlers()
   registerSoapHandlers()

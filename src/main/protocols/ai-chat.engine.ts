@@ -33,9 +33,20 @@ export interface AiStreamOptions {
   provider: AiProvider
   /** Required when provider === 'custom'; otherwise overrides the default URL. */
   url?: string
-  apiKey: string
+  /**
+   * Optional (issue #121): the endpoint may be authenticated some other way
+   * (user-defined headers, gateway-side key, none). When empty no credential
+   * header is emitted at all.
+   */
+  apiKey?: string
   model: string
   messages: AiChatMessage[]
+  /**
+   * User-defined HTTP headers (issue #120). Merged over the provider
+   * defaults case-insensitively — a custom `Authorization` replaces the
+   * generated Bearer header instead of duplicating it.
+   */
+  headers?: Record<string, string>
   /** Optional generation knobs forwarded to the provider. */
   temperature?: number
   maxTokens?: number
@@ -85,21 +96,40 @@ export function resolveProviderUrl(provider: AiProvider, customUrl?: string): st
   return url
 }
 
-export function buildHeaders(provider: AiProvider, apiKey: string): Record<string, string> {
+export function buildHeaders(
+  provider: AiProvider,
+  apiKey: string | undefined,
+  extra?: Record<string, string>,
+): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
   }
+  const key = (apiKey ?? '').trim()
   if (provider === 'anthropic') {
-    headers['x-api-key'] = apiKey
+    // An empty `x-api-key` / `Authorization: Bearer ` is rejected by most
+    // gateways and would shadow a user-supplied auth header — only emit the
+    // credential when there is one (issue #121).
+    if (key) headers['x-api-key'] = key
     headers['anthropic-version'] = '2023-06-01'
-  } else {
+  } else if (key) {
     // openai / openrouter / custom — Bearer is the most common pattern
-    headers['Authorization'] = `Bearer ${apiKey}`
+    headers['Authorization'] = `Bearer ${key}`
   }
   if (provider === 'openrouter') {
     headers['HTTP-Referer'] = 'https://testnizer.app'
     headers['X-Title'] = 'Testnizer'
+  }
+  // User-defined headers win, case-insensitively (issue #120).
+  if (extra) {
+    for (const [rawKey, value] of Object.entries(extra)) {
+      const name = rawKey.trim()
+      if (!name) continue
+      for (const existing of Object.keys(headers)) {
+        if (existing.toLowerCase() === name.toLowerCase()) delete headers[existing]
+      }
+      headers[name] = value
+    }
   }
   return headers
 }
@@ -193,12 +223,8 @@ export async function* streamChatCompletion(
 ): AsyncGenerator<AiStreamChunk, void, void> {
   const { provider, url, apiKey, model, messages, temperature, maxTokens, signal } = options
 
-  if (!apiKey || !apiKey.trim()) {
-    throw new Error('API key is required')
-  }
-
   const endpoint = resolveProviderUrl(provider, url)
-  const headers = buildHeaders(provider, apiKey)
+  const headers = buildHeaders(provider, apiKey, options.headers)
   const body = buildBody({ provider, model, messages, temperature, maxTokens })
 
   const response = await fetch(endpoint, {

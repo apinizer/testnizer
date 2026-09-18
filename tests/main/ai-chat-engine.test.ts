@@ -63,6 +63,46 @@ describe('buildHeaders', () => {
     const h = buildHeaders('custom', 'whatever')
     expect(h['Authorization']).toBe('Bearer whatever')
   })
+
+  // issue #121 — API key is optional
+  it('emits NO credential header when the API key is empty', () => {
+    const h = buildHeaders('openai', '')
+    expect(h['Authorization']).toBeUndefined()
+    expect(h['Content-Type']).toBe('application/json')
+    const a = buildHeaders('anthropic', '   ')
+    expect(a['x-api-key']).toBeUndefined()
+    expect(a['anthropic-version']).toBe('2023-06-01')
+    expect(buildHeaders('custom', undefined)['Authorization']).toBeUndefined()
+  })
+
+  // issue #120 — user-defined headers
+  it('merges user-defined headers over the defaults', () => {
+    const h = buildHeaders('openai', 'sk-test', { 'X-Tenant-Id': 'acme', 'x-api-key': 'k2' })
+    expect(h['Authorization']).toBe('Bearer sk-test')
+    expect(h['X-Tenant-Id']).toBe('acme')
+    expect(h['x-api-key']).toBe('k2')
+  })
+
+  it('lets a custom Authorization header replace the generated one, case-insensitively', () => {
+    const h = buildHeaders('openai', 'sk-test', { authorization: 'Basic abc' })
+    expect(Object.keys(h).filter((k) => k.toLowerCase() === 'authorization')).toEqual([
+      'authorization',
+    ])
+    expect(h['authorization']).toBe('Basic abc')
+  })
+
+  it('custom Authorization with an empty API key is the "auth configured elsewhere" case', () => {
+    const h = buildHeaders('custom', '', { Authorization: 'Bearer from-header' })
+    expect(h['Authorization']).toBe('Bearer from-header')
+    expect(Object.keys(h).filter((k) => k.toLowerCase() === 'authorization')).toHaveLength(1)
+  })
+
+  it('ignores blank header names and lets custom Content-Type override', () => {
+    const h = buildHeaders('openai', 'k', { '': 'x', 'content-type': 'application/vnd+json' })
+    expect(h['']).toBeUndefined()
+    expect(h['Content-Type']).toBeUndefined()
+    expect(h['content-type']).toBe('application/vnd+json')
+  })
 })
 
 describe('buildBody', () => {
@@ -233,16 +273,50 @@ describe('streamChatCompletion', () => {
     }).rejects.toThrow(/401/)
   })
 
-  it('rejects when no API key is supplied', async () => {
-    await expect(async () => {
-      for await (const _ of streamChatCompletion({
-        provider: 'openai',
-        apiKey: '',
-        model: 'gpt-4o',
-        messages: [{ role: 'user', content: 'hi' }],
-      })) {
-        void _
-      }
-    }).rejects.toThrow(/API key is required/)
+  it('streams without an API key and sends no Authorization header (issue #121)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(makeSseStream(['data: {"choices":[{"delta":{"content":"ok"}}]}\n\n']), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      }),
+    )
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const out: string[] = []
+    for await (const chunk of streamChatCompletion({
+      provider: 'openai',
+      apiKey: '',
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+    })) {
+      out.push(chunk.delta)
+    }
+    expect(out).toEqual(['ok'])
+    const sentHeaders = fetchMock.mock.calls[0][1].headers as Record<string, string>
+    expect(Object.keys(sentHeaders).some((k) => k.toLowerCase() === 'authorization')).toBe(false)
+  })
+
+  it('forwards user-defined headers to fetch (issue #120)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(makeSseStream(['data: [DONE]\n\n']), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      }),
+    )
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    for await (const _ of streamChatCompletion({
+      provider: 'custom',
+      url: 'https://gw.example/v1/chat/completions',
+      apiKey: '',
+      headers: { Authorization: 'Bearer gw-token', 'X-Tenant-Id': 'acme' },
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+    })) {
+      void _
+    }
+    const sentHeaders = fetchMock.mock.calls[0][1].headers as Record<string, string>
+    expect(sentHeaders['Authorization']).toBe('Bearer gw-token')
+    expect(sentHeaders['X-Tenant-Id']).toBe('acme')
   })
 })

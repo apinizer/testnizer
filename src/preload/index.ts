@@ -229,6 +229,17 @@ const api = {
       ipcRenderer.invoke('history:prune', limit, workspaceId),
   },
 
+  // ─── Saved responses (issue #125) ──────────────────────────
+  savedResponse: {
+    list: (ownerType: string, ownerId: string): Promise<unknown> =>
+      ipcRenderer.invoke('savedResponse:list', ownerType, ownerId),
+    create: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('savedResponse:create', payload),
+    rename: (id: string, name: string): Promise<unknown> =>
+      ipcRenderer.invoke('savedResponse:rename', id, name),
+    delete: (id: string): Promise<unknown> => ipcRenderer.invoke('savedResponse:delete', id),
+  },
+
   // ─── Settings ────────────────────────────────────────────
   settings: {
     getAll: (): Promise<unknown> => ipcRenderer.invoke('settings:getAll'),

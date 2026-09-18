@@ -24,6 +24,7 @@ import {
 } from './import-export.handler'
 import { snapshotEndpointForSuite, ensureUniqueSuiteName } from './test-suite.handler'
 import { getEndpointById } from '../db/endpoint.repo'
+import { SAVED_RESPONSE_COLUMNS } from '../db/saved-response.repo'
 import { projectFileSlug } from '../lib/project-file'
 import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
 
@@ -92,6 +93,8 @@ interface ProjectExport {
   mockEndpoints?: Record<string, unknown>[]
   mockResponses?: Record<string, unknown>[]
   certificates?: Record<string, unknown>[]
+  // Named response examples (issue #125) — git-tracked since v1.5.4.
+  savedResponses?: Record<string, unknown>[]
 }
 
 // ─── Folder Export Format ────────────────────────────────────────
@@ -339,6 +342,12 @@ export function exportProjectData(projectId: string): ProjectExport {
     .prepare('SELECT * FROM certificates WHERE project_id = ?')
     .all(projectId) as Record<string, unknown>[]
 
+  // Named response examples (issue #125). Anything not listed here is
+  // silently dropped from the project file / Git sync.
+  const savedResponses = db
+    .prepare('SELECT * FROM saved_responses WHERE project_id = ?')
+    .all(projectId) as Record<string, unknown>[]
+
   return {
     version: 'testnizer-project/2.0',
     exportedAt: Date.now(),
@@ -358,6 +367,7 @@ export function exportProjectData(projectId: string): ProjectExport {
     mockEndpoints,
     mockResponses,
     certificates,
+    savedResponses,
   }
 }
 
@@ -553,6 +563,12 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   }
   if (data.mockResponses?.length) {
     upsert('mock_responses', data.mockResponses, [...MOCK_RESPONSE_COLUMNS])
+  }
+
+  // Named response examples (issue #125). Owner ids are stable in the
+  // upsert model (same project, same row ids), so no remapping needed.
+  if (data.savedResponses?.length) {
+    upsert('saved_responses', data.savedResponses, [...SAVED_RESPONSE_COLUMNS])
   }
 
   // Import client certificates (mTLS / SSL pinning configs).
@@ -1361,6 +1377,37 @@ export function importProjectAsNew(
         s.sort_order ?? 0,
         (s.created_at as number) || now,
         now,
+      )
+    }
+
+    // Named response examples (issue #125) — re-key onto the new endpoint /
+    // saved-request ids; rows whose owner did not come along are dropped.
+    const insertSavedResponse = db.prepare(
+      `INSERT INTO saved_responses (${SAVED_RESPONSE_COLUMNS.join(', ')})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    for (const r of data.savedResponses || []) {
+      const ownerType = r.owner_type as string
+      const oldOwner = r.owner_id as string
+      const newOwner =
+        ownerType === 'endpoint'
+          ? endpointIdMap.get(oldOwner)
+          : ownerType === 'saved_request'
+            ? savedReqIdMap.get(oldOwner)
+            : undefined
+      if (!newOwner) continue
+      insertSavedResponse.run(
+        randomUUID(),
+        newProjectId,
+        ownerType,
+        newOwner,
+        r.name,
+        r.protocol || 'http',
+        r.method ?? null,
+        r.url ?? null,
+        r.status_code ?? null,
+        r.response_json,
+        (r.created_at as number) || now,
       )
     }
 

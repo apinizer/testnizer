@@ -3,10 +3,32 @@
 // streaming response with cancellation. State is in-memory only (no DB).
 
 import { create } from 'zustand'
-import { resolveVariables } from '../lib/variable-resolver'
+import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { useEnvironmentStore } from './environment.store'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { makeId } from '../lib/utils'
+import type { KeyValuePair } from '../types'
+
+function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
+  return { id: makeId(), key, value, enabled }
+}
+
+/**
+ * Enabled, non-blank custom headers → the map sent to main (issue #120).
+ * `{{var}}` in names and values is resolved against the active environment.
+ */
+export function buildCustomHeaderMap(
+  rows: KeyValuePair[],
+  envVars: Record<string, string>,
+): Record<string, string> {
+  const resolved = resolveKeyValuePairs(
+    rows.filter((h) => h.enabled && h.key.trim()),
+    envVars,
+  )
+  const map: Record<string, string> = {}
+  for (const row of resolved) map[row.key.trim()] = row.value
+  return map
+}
 
 export type AiProvider =
   | 'openai'
@@ -235,6 +257,8 @@ interface TabAiChatState {
   apiKey: string
   model: string
   systemPrompt: string
+  /** User-defined HTTP headers sent with every completion request (issue #120). */
+  customHeaders: KeyValuePair[]
   messages: AiChatMessage[]
   streaming: boolean
   pendingResponseId: string | null
@@ -252,6 +276,10 @@ interface AiChatStore extends TabAiChatState {
   setApiKey: (key: string) => void
   setModel: (model: string) => void
   setSystemPrompt: (prompt: string) => void
+  addHeader: () => void
+  updateHeader: (id: string, updates: Partial<KeyValuePair>) => void
+  removeHeader: (id: string) => void
+  setHeaders: (headers: KeyValuePair[]) => void
 
   sendPrompt: (content: string) => Promise<void>
   cancel: () => Promise<void>
@@ -276,6 +304,7 @@ function emptyTabState(): TabAiChatState {
     apiKey: '',
     model: defaultModelFor('openai'),
     systemPrompt: '',
+    customHeaders: [defaultKv()],
     messages: [],
     streaming: false,
     pendingResponseId: null,
@@ -291,6 +320,7 @@ function extractState(s: AiChatStore): TabAiChatState {
     apiKey: s.apiKey,
     model: s.model,
     systemPrompt: s.systemPrompt,
+    customHeaders: s.customHeaders,
     messages: s.messages,
     streaming: s.streaming,
     pendingResponseId: s.pendingResponseId,
@@ -346,6 +376,14 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
   setApiKey: (apiKey) => set({ apiKey }),
   setModel: (model) => set({ model }),
   setSystemPrompt: (systemPrompt) => set({ systemPrompt }),
+  addHeader: () => set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] })),
+  updateHeader: (id, updates) =>
+    set((state) => ({
+      customHeaders: state.customHeaders.map((h) => (h.id === id ? { ...h, ...updates } : h)),
+    })),
+  removeHeader: (id) =>
+    set((state) => ({ customHeaders: state.customHeaders.filter((h) => h.id !== id) })),
+  setHeaders: (customHeaders) => set({ customHeaders }),
 
   sendPrompt: async (content) => {
     const trimmed = content.trim()
@@ -353,13 +391,13 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     const state = get()
     if (state.streaming) return
 
-    if (!state.apiKey.trim()) {
-      set({ errorMessage: 'API key is required' })
-      return
-    }
+    // The API key is optional (issue #121): auth may come from a custom
+    // header, a gateway, or not be needed at all. main emits no credential
+    // header when it is empty.
 
     // Resolve {{var}} substitutions against active env + globals.
     const envVars = useEnvironmentStore.getState().getActiveVariables()
+    const headerMap = buildCustomHeaderMap(state.customHeaders ?? [], envVars)
     const resolvedContent = resolveVariables(trimmed, envVars)
     const resolvedSystem = state.systemPrompt ? resolveVariables(state.systemPrompt, envVars) : ''
     const resolvedUrl = state.customUrl
@@ -400,6 +438,7 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
         provider: state.provider,
         url: resolvedUrl || undefined,
         apiKey: state.apiKey,
+        headers: Object.keys(headerMap).length > 0 ? headerMap : undefined,
         model: state.model,
         messages: history,
       })) as { success: boolean; data?: { messageId: string }; error?: string }
@@ -523,7 +562,8 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     const currentKey = state._currentTabId === null ? '__null__' : state._currentTabId
     tabStates.set(currentKey, extractState(state))
 
-    const target = tabStates.get(tabId) || emptyTabState()
+    // Backfill fields added after a snapshot was cached (e.g. customHeaders).
+    const target = { ...emptyTabState(), ...(tabStates.get(tabId) ?? {}) }
 
     set({
       ...target,

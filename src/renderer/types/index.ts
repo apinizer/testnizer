@@ -977,6 +977,24 @@ export interface HistoryEntry {
   executed_at: number
 }
 
+/** Named response example pinned to a request (issue #125). */
+export type SavedResponseOwnerType = 'endpoint' | 'saved_request' | 'test_suite_item'
+
+export interface SavedResponse {
+  id: string
+  project_id: string | null
+  owner_type: SavedResponseOwnerType
+  owner_id: string
+  name: string
+  protocol: string
+  method: string | null
+  url: string | null
+  status_code: number | null
+  /** JSON-serialised Partial<ApiResponse> — same shape as history.response_snapshot. */
+  response_json: string
+  created_at: number
+}
+
 // ─── Import/Export ───────────────────────────────────────────
 
 export type ImportFormat =

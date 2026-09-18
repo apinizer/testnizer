@@ -280,7 +280,9 @@ export default function ProjectDetailModal() {
             repoUrl: editGitUrl,
             username: editGitUser,
             branch: editGitBranch,
-            token: editGitToken || '',
+            // Empty field = keep the stored token (matches the placeholder
+            // hint); previously this wiped it (issue #127 follow-up).
+            token: editGitToken || gitConfig?.token || '',
           })
           // Only mirror into local state once the write is known to have landed.
           if (ok) {

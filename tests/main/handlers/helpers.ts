@@ -302,6 +302,20 @@ const SCHEMA_SQL = `
     executed_at INTEGER NOT NULL
   );
 
+  CREATE TABLE saved_responses (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    owner_type TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    protocol TEXT NOT NULL DEFAULT 'http',
+    method TEXT,
+    url TEXT,
+    status_code INTEGER,
+    response_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
   CREATE TABLE settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

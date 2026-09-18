@@ -194,6 +194,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'tree.export': 'Export',
     'tree.importFolder': 'Import Folder…',
     'tree.rename': 'Rename',
+    'tree.projectRenameFailed': 'Project could not be renamed',
     'tree.delete': 'Delete',
     'tree.folderSettings': 'Settings',
     'folderSettings.title': 'Folder Settings',
@@ -306,7 +307,11 @@ const translations: Record<Locale, Record<string, string>> = {
     'aiChat.placeholder': 'Ask anything… (Enter to send, Shift+Enter for newline)',
     'aiChat.inputHint': 'Tip: use {{variable}} to substitute environment values.',
     'aiChat.emptyTitle': 'Start a conversation',
-    'aiChat.emptyHint': 'Pick a provider, paste your API key, then send a prompt.',
+    'aiChat.emptyHint': 'Pick a provider, set the endpoint and credentials, then send a prompt.',
+    'aiChat.headers': 'Custom Headers',
+    'aiChat.headersHint':
+      'Sent with every request. A header named Authorization replaces the generated Bearer header; the API key is optional when auth is configured here.',
+    'aiChat.addHeader': '+ Add Header',
 
     // URL Bar
     'urlBar.send': 'Send',
@@ -335,6 +340,17 @@ const translations: Record<Locale, Record<string, string>> = {
     'response.tests': 'Tests',
     'response.save': 'Save',
     'response.copy': 'Copy',
+    'response.saveResponse': 'Save response',
+    'response.savedResponses': 'Saved',
+    'response.saveResponseName': 'Name, e.g. "200 success sample"',
+    'response.saveResponseNeedsSavedRequest':
+      'Save the request first — responses are pinned to a saved request.',
+    'response.savedResponseSaved': 'Response saved',
+    'response.savedResponsesEmpty': 'No saved responses',
+    'response.savedResponsesHint':
+      'Send a request and click "Save response" to keep the result for later review.',
+    'response.openSavedResponse': 'Open',
+    'response.deleteSavedResponse': 'Delete saved response',
     'response.code': 'Code',
     'response.sendingRequest': 'Sending request...',
     'response.requestFailed': 'Request Failed',
@@ -2405,6 +2421,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'tree.export': 'Dışa Aktar',
     'tree.importFolder': 'Klasör İçe Aktar…',
     'tree.rename': 'Yeniden Adlandır',
+    'tree.projectRenameFailed': 'Proje yeniden adlandırılamadı',
     'tree.delete': 'Sil',
     'tree.folderSettings': 'Ayarlar',
     'folderSettings.title': 'Klasör Ayarları',
@@ -2516,7 +2533,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'aiChat.placeholder': 'Bir sey sor… (Enter gonderir, Shift+Enter yeni satir)',
     'aiChat.inputHint': 'Ipucu: ortam degiskenleri icin {{degisken}} kullanabilirsiniz.',
     'aiChat.emptyTitle': 'Yeni bir sohbet baslatin',
-    'aiChat.emptyHint': 'Saglayiciyi secin, API anahtarinizi yapistirin ve bir prompt gonderin.',
+    'aiChat.emptyHint':
+      'Sağlayıcıyı seçin, uç nokta ve kimlik bilgilerini ayarlayın, sonra bir prompt gönderin.',
+    'aiChat.headers': 'Özel Başlıklar',
+    'aiChat.headersHint':
+      'Her istekle gönderilir. Authorization adlı bir başlık üretilen Bearer başlığının yerine geçer; kimlik doğrulama burada yapılandırılmışsa API anahtarı zorunlu değildir.',
+    'aiChat.addHeader': '+ Başlık Ekle',
 
     // URL Bar
     'urlBar.send': 'Gonder',
@@ -2545,6 +2567,17 @@ const translations: Record<Locale, Record<string, string>> = {
     'response.tests': 'Testler',
     'response.save': 'Kaydet',
     'response.copy': 'Kopyala',
+    'response.saveResponse': 'Yanıtı kaydet',
+    'response.savedResponses': 'Kayıtlı',
+    'response.saveResponseName': 'Ad, örn. "200 başarılı örnek"',
+    'response.saveResponseNeedsSavedRequest':
+      'Önce isteği kaydedin — yanıtlar kayıtlı bir isteğe bağlanır.',
+    'response.savedResponseSaved': 'Yanıt kaydedildi',
+    'response.savedResponsesEmpty': 'Kayıtlı yanıt yok',
+    'response.savedResponsesHint':
+      'Bir istek gönderip "Yanıtı kaydet"e tıklayarak sonucu daha sonra incelemek için saklayın.',
+    'response.openSavedResponse': 'Aç',
+    'response.deleteSavedResponse': 'Kayıtlı yanıtı sil',
     'response.code': 'Kod',
     'response.sendingRequest': 'Istek gonderiliyor...',
     'response.requestFailed': 'Istek Basarisiz',

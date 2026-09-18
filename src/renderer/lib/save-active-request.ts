@@ -63,6 +63,17 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
           selectedPort: soap.selectedPort,
           selectedOperation: soap.selectedOperation,
           bodyMode: soap.bodyMode,
+          // Manual-mode fields (issue #124): endpoint URL, body, SOAPAction /
+          // version, operation name + namespace and the editor mode itself.
+          // Before these were written, reopening a manual request showed an
+          // empty URL/body and landed on WSDL Import.
+          mode: soap.mode,
+          endpointUrl: soap.endpointUrl,
+          rawXml: soap.rawXml,
+          manualSoapAction: soap.manualSoapAction,
+          manualSoapVersion: soap.manualSoapVersion,
+          manualOperationName: soap.manualOperationName,
+          manualOperationNamespace: soap.manualOperationNamespace,
           // #60: strip the picker's WRITE-ONLY store/key passwords before the
           // config is written to `endpoints.metadata` (a plain TEXT column).
           // Identity-preserving: a config with no `keySource` is the exact
@@ -256,23 +267,53 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
 
   if (protocol === 'soap' && meta.soap && typeof meta.soap === 'object') {
     const s = meta.soap as Record<string, unknown>
-    useSoapStore.getState().loadFromEndpoint({
-      url: (s.endpointUrl as string) || '',
-      // loadFromEndpoint reads `body.content` and falls back to
-      // `soap.exampleRequest` — we don't write a separate body field
-      // since the request body is `effectiveBody = { type:'xml', content: rawXml }`
-      // already restored by the request-store branch upstream.
+    const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
+    // Every caller hydrates the request store BEFORE calling us, and the
+    // request row's url/body were always written from the SOAP store
+    // (effectiveUrl / effectiveBody). Fall back to them so rows saved before
+    // the manual fields were snapshotted (issue #124) still restore their
+    // URL and envelope instead of coming back blank.
+    const req = useRequestStore.getState()
+    const endpointUrl = str(s.endpointUrl) || req.url || ''
+    const rawXml = str(s.rawXml) ?? (req.body?.type === 'xml' ? req.body.content || '' : '')
+    const wsdlUrl = str(s.wsdlUrl)
+    const operationName = str(s.operationName ?? s.selectedOperation)
+    // Explicit mode when present; older rows have none — a request with no
+    // WSDL and no selected operation can only have been built manually.
+    const manual = s.mode === 'manual' || (s.mode === undefined && !wsdlUrl && !operationName)
+    const soap = useSoapStore.getState()
+
+    if (manual) {
+      // No `soap` meta → loadFromEndpoint takes the raw-XML branch, so no
+      // synthetic WSDL is fabricated and the Manual form + raw body render.
+      soap.loadFromEndpoint({ url: endpointUrl, body: { type: 'xml', content: rawXml } })
+      soap.setMode('manual')
+      const action = str(s.manualSoapAction)
+      if (action !== undefined) soap.setManualSoapAction(action)
+      const version = str(s.manualSoapVersion)
+      if (version === 'soap11' || version === 'soap12') soap.setManualSoapVersion(version)
+      const opName = str(s.manualOperationName)
+      if (opName !== undefined) soap.setManualOperationName(opName)
+      const opNs = str(s.manualOperationNamespace)
+      if (opNs !== undefined) soap.setManualOperationNamespace(opNs)
+      return
+    }
+
+    soap.loadFromEndpoint({
+      url: endpointUrl,
+      body: { type: 'xml', content: rawXml },
       soap: {
-        wsdlUrl: s.wsdlUrl as string | undefined,
+        wsdlUrl,
         // snapshotProtocol writes `selectedService/Port/Operation`;
         // SoapEndpointMeta wants `serviceName/portName/operationName`.
         // Accept both shapes so older rows still load.
-        serviceName: (s.serviceName ?? s.selectedService) as string | undefined,
-        portName: (s.portName ?? s.selectedPort) as string | undefined,
-        operationName: (s.operationName ?? s.selectedOperation) as string | undefined,
-        endpointUrl: s.endpointUrl as string | undefined,
+        serviceName: str(s.serviceName ?? s.selectedService),
+        portName: str(s.portName ?? s.selectedPort),
+        operationName,
+        endpointUrl,
       },
     })
+    soap.setMode('wsdl')
     return
   }
 

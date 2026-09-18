@@ -11,6 +11,7 @@ import {
   Trash2,
   Bot,
   User,
+  Settings2,
 } from 'lucide-react'
 import {
   useAiChatStore,
@@ -22,6 +23,8 @@ import {
 } from '../../stores/ai-chat.store'
 import { useTranslation } from '../../lib/i18n'
 import EmptyState from '../shared/EmptyState'
+import KeyValueTable from '../shared/KeyValueTable'
+import { STANDARD_HTTP_HEADERS } from '../../lib/http-headers'
 
 function ProviderAvatar({
   info,
@@ -269,6 +272,7 @@ export default function AiChatEditor(): ReactElement {
   const apiKey = useAiChatStore((s) => s.apiKey)
   const model = useAiChatStore((s) => s.model)
   const systemPrompt = useAiChatStore((s) => s.systemPrompt)
+  const customHeaders = useAiChatStore((s) => s.customHeaders)
   const messages = useAiChatStore((s) => s.messages)
   const streaming = useAiChatStore((s) => s.streaming)
   const errorMessage = useAiChatStore((s) => s.errorMessage)
@@ -279,12 +283,18 @@ export default function AiChatEditor(): ReactElement {
   const setApiKey = useAiChatStore((s) => s.setApiKey)
   const setModel = useAiChatStore((s) => s.setModel)
   const setSystemPrompt = useAiChatStore((s) => s.setSystemPrompt)
+  const addHeader = useAiChatStore((s) => s.addHeader)
+  const updateHeader = useAiChatStore((s) => s.updateHeader)
+  const removeHeader = useAiChatStore((s) => s.removeHeader)
+  const setHeaders = useAiChatStore((s) => s.setHeaders)
   const sendPrompt = useAiChatStore((s) => s.sendPrompt)
   const cancel = useAiChatStore((s) => s.cancel)
   const clearConversation = useAiChatStore((s) => s.clearConversation)
 
   const [settingsExpanded, setSettingsExpanded] = useState(true)
   const [showApiKey, setShowApiKey] = useState(false)
+  const [headersExpanded, setHeadersExpanded] = useState(false)
+  const enabledHeaderCount = (customHeaders ?? []).filter((h) => h.enabled && h.key.trim()).length
   const [draft, setDraft] = useState('')
   const conversationRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
@@ -466,6 +476,49 @@ export default function AiChatEditor(): ReactElement {
                 style={{ fontSize: 13 }}
               />
             </label>
+
+            {/* Custom headers (issue #120) */}
+            <div
+              className="rounded-md border border-[var(--border)]"
+              style={{ gridColumn: '1 / -1' }}
+              data-testid="ai-chat-headers"
+            >
+              <button
+                type="button"
+                onClick={() => setHeadersExpanded((v) => !v)}
+                className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[var(--text)] hover:bg-[var(--hover)]"
+                style={{ background: 'transparent', border: 'none', fontSize: 12 }}
+                aria-expanded={headersExpanded}
+              >
+                {headersExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <Settings2 size={14} className="text-[var(--muted)]" />
+                <span>{t('aiChat.headers')}</span>
+                {enabledHeaderCount > 0 && (
+                  <span
+                    className="ml-1 rounded-full px-[5px]"
+                    style={{ background: 'var(--green-bg)', color: 'var(--green)' }}
+                  >
+                    {enabledHeaderCount}
+                  </span>
+                )}
+              </button>
+              {headersExpanded && (
+                <div className="border-t border-[var(--border)] p-3">
+                  <p className="mb-2 text-[var(--muted)]" style={{ fontSize: 11 }}>
+                    {t('aiChat.headersHint')}
+                  </p>
+                  <KeyValueTable
+                    rows={customHeaders ?? []}
+                    onUpdate={updateHeader}
+                    onRemove={removeHeader}
+                    onAdd={addHeader}
+                    onReplaceAll={setHeaders}
+                    addLabel={t('aiChat.addHeader')}
+                    keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -598,7 +651,7 @@ export default function AiChatEditor(): ReactElement {
             <button
               type="button"
               onClick={handleSend}
-              disabled={!draft.trim() || !apiKey.trim()}
+              disabled={!draft.trim()}
               title={t('aiChat.send')}
               className="flex h-9 cursor-pointer items-center gap-1 rounded-md px-3 font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: 'var(--accent)', border: 'none', fontSize: 13 }}

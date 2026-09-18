@@ -362,6 +362,41 @@ interface HistoryApi {
   prune(limit: number, workspaceId?: string): Promise<IpcResult<number>>
 }
 
+// ─── Saved responses (issue #125) ────────────────────────────────
+
+type SavedResponseOwnerType = 'endpoint' | 'saved_request' | 'test_suite_item'
+
+interface SavedResponseRow {
+  id: string
+  project_id: string | null
+  owner_type: SavedResponseOwnerType
+  owner_id: string
+  name: string
+  protocol: string
+  method: string | null
+  url: string | null
+  status_code: number | null
+  response_json: string
+  created_at: number
+}
+
+interface SavedResponseApi {
+  list(ownerType: SavedResponseOwnerType, ownerId: string): Promise<IpcResult<SavedResponseRow[]>>
+  create(payload: {
+    project_id?: string | null
+    owner_type: SavedResponseOwnerType
+    owner_id: string
+    name: string
+    protocol?: string
+    method?: string | null
+    url?: string | null
+    status_code?: number | null
+    response_json: string
+  }): Promise<IpcResult<SavedResponseRow>>
+  rename(id: string, name: string): Promise<IpcResult<boolean>>
+  delete(id: string): Promise<IpcResult<boolean>>
+}
+
 // ─── Settings ────────────────────────────────────────────────────
 
 interface SettingsApi {
@@ -1086,9 +1121,11 @@ type AiProviderId =
 interface AiChatSendPayload {
   provider: AiProviderId
   url?: string
-  apiKey: string
+  apiKey?: string
   model: string
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>
+  /** User-defined HTTP headers (issue #120). */
+  headers?: Record<string, string>
   temperature?: number
   maxTokens?: number
 }
@@ -2407,6 +2444,7 @@ interface ApiBridge {
   envVariable: EnvVariableApi
   globalVariable: GlobalVariableApi
   history: HistoryApi
+  savedResponse: SavedResponseApi
   settings: SettingsApi
   importExport: ImportExportApi
   soap: SoapApi

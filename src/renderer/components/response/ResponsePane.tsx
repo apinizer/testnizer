@@ -9,13 +9,16 @@ import HeadersTab from './HeadersTab'
 import TestResultsTab from './TestResultsTab'
 import EventsTab from './EventsTab'
 import WsseResponsePanel from './WsseResponsePanel'
+import SavedResponsesTab from './SavedResponsesTab'
+import SaveResponseButton from './SaveResponseButton'
+import { useSavedResponseStore, savedResponseOwnerForTab } from '../../stores/saved-response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import EmptyState from '../shared/EmptyState'
 import StatusBadge from '../shared/StatusBadge'
 import { useUIStore } from '../../stores/ui.store'
 import type { ApiResponse } from '../../types'
 
-type ResTabKey = 'body' | 'events' | 'cookies' | 'headers' | 'testResults' | 'wsse'
+type ResTabKey = 'body' | 'events' | 'cookies' | 'headers' | 'testResults' | 'wsse' | 'saved'
 
 /** Extract hostname from URL safely */
 function extractHost(url?: string): string {
@@ -205,6 +208,16 @@ export default function ResponsePane() {
   const setActiveSidebarPage = useUIStore((s) => s.setActiveSidebarPage)
   const setShowCodeGenerator = useUIStore((s) => s.setShowCodeGenerator)
   const activeProtocolTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
+  // Saved response examples for the request this tab is backed by (issue #125).
+  const savedItems = useSavedResponseStore((s) => s.items)
+  const loadSaved = useSavedResponseStore((s) => s.load)
+  const savedOwner = savedResponseOwnerForTab(activeProtocolTab)
+  const savedOwnerKey = savedOwner ? `${savedOwner.type}:${savedOwner.id}` : null
+  useEffect(() => {
+    void loadSaved(savedOwner)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedOwnerKey])
+  const savedCount = savedOwnerKey ? savedItems.length : 0
   const [activeTab, setActiveTab] = useState<ResTabKey>('body')
   const [showNetworkInfo, setShowNetworkInfo] = useState(false)
   const networkBtnRef = useRef<HTMLButtonElement>(null)
@@ -252,8 +265,32 @@ export default function ResponsePane() {
     )
   }
 
-  // Empty state
+  // Empty state — a request with saved examples (issue #125) lists them here
+  // so they can be reviewed without sending first.
   if (!response) {
+    if (savedCount > 0) {
+      return (
+        <div className="flex h-full flex-col bg-[var(--white)]" data-testid="response-saved-only">
+          <div
+            className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3"
+            style={{ height: 34 }}
+          >
+            <span className="font-semibold" style={{ color: 'var(--accent-text)' }}>
+              {t('response.savedResponses')}
+            </span>
+            <span
+              className="rounded-full px-[5px] font-semibold"
+              style={{ background: 'var(--accent-light)', color: 'var(--accent-text)' }}
+            >
+              {savedCount}
+            </span>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <SavedResponsesTab />
+          </div>
+        </div>
+      )
+    }
     return (
       <div className="flex h-full items-center justify-center bg-[var(--white)]">
         <EmptyState
@@ -350,6 +387,18 @@ export default function ResponsePane() {
       countColor: testTotal > 0 ? (testFailed > 0 ? 'var(--red)' : 'var(--green)') : undefined,
     },
     ...(isSoapResponse ? [{ key: 'wsse' as ResTabKey, label: 'WS-Security' }] : []),
+    // Saved response examples (issue #125) — only for tabs backed by a row.
+    ...(savedOwnerKey
+      ? [
+          {
+            key: 'saved' as ResTabKey,
+            label: t('response.savedResponses'),
+            count: savedCount || undefined,
+            countBg: 'var(--accent-light)',
+            countColor: 'var(--accent-text)',
+          },
+        ]
+      : []),
     // NOTE: "Console" and "Actual" tabs were removed. The footer Console
     // (sağ alt) already shows the same data: script logs land as their own
     // entry via `console.store.addFromResponse`, and the per-request entry
@@ -459,6 +508,7 @@ export default function ResponsePane() {
               {sizeKB} KB
             </span>
           </span>
+          <SaveResponseButton onSaved={() => setActiveTab('saved')} />
           <button
             type="button"
             data-testid="response-code-btn"
@@ -504,6 +554,7 @@ export default function ResponsePane() {
         {activeTab === 'headers' && <HeadersTab />}
         {activeTab === 'testResults' && <TestResultsTab />}
         {activeTab === 'wsse' && <WsseResponsePanel body={response.body ?? ''} />}
+        {activeTab === 'saved' && <SavedResponsesTab />}
       </div>
     </div>
   )
