@@ -282,6 +282,33 @@ describe('ai-chat.store — per-tab isolation', () => {
     expect(useAiChatStore.getState().messages[0].content).toBe('hello A')
   })
 
+  it('keeps customHeaders isolated per tab and backfills old snapshots (issue #120)', () => {
+    const s = useAiChatStore.getState()
+    s.switchToTab('tab-A')
+    useAiChatStore.getState().addHeader()
+    const row = useAiChatStore.getState().customHeaders.at(-1)!
+    useAiChatStore.getState().updateHeader(row.id, { key: 'X-Tenant-Id', value: 'acme' })
+
+    useAiChatStore.getState().switchToTab('tab-B')
+    expect(
+      useAiChatStore.getState().customHeaders.some((h) => h.key === 'X-Tenant-Id'),
+    ).toBe(false)
+
+    // A snapshot cached before customHeaders existed must not crash the UI.
+    const legacy = new Map(useAiChatStore.getState()._tabStates)
+    const snap = { ...legacy.get('tab-A')! } as Record<string, unknown>
+    delete snap.customHeaders
+    legacy.set('tab-legacy', snap as never)
+    useAiChatStore.setState({ _tabStates: legacy })
+    useAiChatStore.getState().switchToTab('tab-legacy')
+    expect(Array.isArray(useAiChatStore.getState().customHeaders)).toBe(true)
+
+    useAiChatStore.getState().switchToTab('tab-A')
+    expect(
+      useAiChatStore.getState().customHeaders.some((h) => h.key === 'X-Tenant-Id'),
+    ).toBe(true)
+  })
+
   it('removeTabState(A) leaves tab B intact', () => {
     const s = useAiChatStore.getState()
     s.switchToTab('tab-A')

@@ -10,9 +10,11 @@ import { logRequestResponse, logEvent } from '../lib/console-logger'
 interface AiChatSendPayload {
   provider: AiProvider
   url?: string
-  apiKey: string
+  apiKey?: string
   model: string
   messages: AiChatMessage[]
+  /** User-defined headers (issue #120) — never logged, may carry credentials. */
+  headers?: Record<string, string>
   temperature?: number
   maxTokens?: number
 }
@@ -61,6 +63,7 @@ export function registerAiChatHandlers(): void {
             provider: payload.provider,
             url: payload.url,
             apiKey: payload.apiKey,
+            headers: payload.headers,
             model: payload.model,
             messages: payload.messages,
             temperature: payload.temperature,

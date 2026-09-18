@@ -307,7 +307,11 @@ const translations: Record<Locale, Record<string, string>> = {
     'aiChat.placeholder': 'Ask anything… (Enter to send, Shift+Enter for newline)',
     'aiChat.inputHint': 'Tip: use {{variable}} to substitute environment values.',
     'aiChat.emptyTitle': 'Start a conversation',
-    'aiChat.emptyHint': 'Pick a provider, paste your API key, then send a prompt.',
+    'aiChat.emptyHint': 'Pick a provider, set the endpoint and credentials, then send a prompt.',
+    'aiChat.headers': 'Custom Headers',
+    'aiChat.headersHint':
+      'Sent with every request. A header named Authorization replaces the generated Bearer header; the API key is optional when auth is configured here.',
+    'aiChat.addHeader': '+ Add Header',
 
     // URL Bar
     'urlBar.send': 'Send',
@@ -2518,7 +2522,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'aiChat.placeholder': 'Bir sey sor… (Enter gonderir, Shift+Enter yeni satir)',
     'aiChat.inputHint': 'Ipucu: ortam degiskenleri icin {{degisken}} kullanabilirsiniz.',
     'aiChat.emptyTitle': 'Yeni bir sohbet baslatin',
-    'aiChat.emptyHint': 'Saglayiciyi secin, API anahtarinizi yapistirin ve bir prompt gonderin.',
+    'aiChat.emptyHint':
+      'Sağlayıcıyı seçin, uç nokta ve kimlik bilgilerini ayarlayın, sonra bir prompt gönderin.',
+    'aiChat.headers': 'Özel Başlıklar',
+    'aiChat.headersHint':
+      'Her istekle gönderilir. Authorization adlı bir başlık üretilen Bearer başlığının yerine geçer; kimlik doğrulama burada yapılandırılmışsa API anahtarı zorunlu değildir.',
+    'aiChat.addHeader': '+ Başlık Ekle',
 
     // URL Bar
     'urlBar.send': 'Gonder',

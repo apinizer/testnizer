@@ -25,9 +25,11 @@ vi.mock('electron', () => ({
   },
 }))
 
+const engineSpy = vi.hoisted(() => ({ calls: [] as Array<Record<string, unknown>> }))
 vi.mock('../../../src/main/protocols/ai-chat.engine', () => ({
-  // Async generator that yields one chunk and resolves.
-  streamChatCompletion: async function* () {
+  // Async generator that yields one chunk and resolves; records its options.
+  streamChatCompletion: async function* (opts: Record<string, unknown>) {
+    engineSpy.calls.push(opts)
     yield { delta: 'hello' }
   },
 }))
@@ -40,6 +42,22 @@ beforeEach(() => {
 })
 
 describe('aichat:send', () => {
+  it('forwards user-defined headers and tolerates a missing apiKey (issues #120/#121)', async () => {
+    engineSpy.calls.length = 0
+    const res = (await harness.invoke('aichat:send', {
+      provider: 'custom',
+      url: 'https://gw.example/v1/chat/completions',
+      model: 'm',
+      headers: { Authorization: 'Bearer gw', 'X-Tenant-Id': 'acme' },
+      messages: [{ role: 'user', content: 'hi' }],
+    })) as { success: boolean }
+    expect(res.success).toBe(true)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(engineSpy.calls).toHaveLength(1)
+    expect(engineSpy.calls[0].headers).toEqual({ Authorization: 'Bearer gw', 'X-Tenant-Id': 'acme' })
+    expect(engineSpy.calls[0].apiKey).toBeUndefined()
+  })
+
   it('returns success envelope with a messageId', async () => {
     const res = (await harness.invoke('aichat:send', {
       provider: 'openai',

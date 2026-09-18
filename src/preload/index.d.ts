@@ -1086,9 +1086,11 @@ type AiProviderId =
 interface AiChatSendPayload {
   provider: AiProviderId
   url?: string
-  apiKey: string
+  apiKey?: string
   model: string
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>
+  /** User-defined HTTP headers (issue #120). */
+  headers?: Record<string, string>
   temperature?: number
   maxTokens?: number
 }
