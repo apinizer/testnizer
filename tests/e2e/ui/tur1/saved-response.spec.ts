@@ -8,6 +8,7 @@ import {
   closeAllTabs,
   dismissOverlays,
   ensureCanonicalProject,
+  navigateSidebar,
   openHttpRequestTab,
 } from '../../helpers/ui/bootstrap'
 import { fillUrl, saveRequestToTree, sendAndWaitResponse } from '../../helpers/ui/request-flow'
@@ -23,6 +24,7 @@ uiTest.describe('Tur1 — Save response [issue #125]', () => {
     await closeAllTabs(window)
     const name = `saved-resp-${uid()}`
 
+    await navigateSidebar(window, 'apis')
     await openHttpRequestTab(window)
     await fillUrl(window, `${localHttpBin()}/get?x=1`)
     await sendAndWaitResponse(window)
@@ -79,6 +81,7 @@ uiTest.describe('Tur1 — Save response [issue #125]', () => {
       const a = `sr-a-${uid()}`
       const b = `sr-b-${uid()}`
 
+      await navigateSidebar(window, 'apis')
       await openHttpRequestTab(window)
       await fillUrl(window, `${localHttpBin()}/get?a=1`)
       await sendAndWaitResponse(window)
@@ -87,6 +90,7 @@ uiTest.describe('Tur1 — Save response [issue #125]', () => {
       await window.getByTestId('response-save-popover').locator('input').press('Enter')
       await expect(window.getByTestId('saved-response-row')).toHaveCount(1)
 
+      await navigateSidebar(window, 'apis')
       await openHttpRequestTab(window)
       await fillUrl(window, `${localHttpBin()}/get?b=1`)
       await saveRequestToTree(window, b)

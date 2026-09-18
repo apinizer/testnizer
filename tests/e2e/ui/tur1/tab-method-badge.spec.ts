@@ -8,6 +8,7 @@ import {
   closeAllTabs,
   dismissOverlays,
   ensureCanonicalProject,
+  navigateSidebar,
   openHttpRequestTab,
 } from '../../helpers/ui/bootstrap'
 import { fillUrl, saveRequestToTree, setHttpMethod } from '../../helpers/ui/request-flow'
@@ -21,6 +22,9 @@ uiTest.describe('Tur1 — tab method badge [issue #122]', () => {
     await dismissOverlays(window)
     await ensureCanonicalProject(window)
     await closeAllTabs(window)
+    // The New (+) dropdown lives in the APIs panel; a suite spec before us may
+    // have left the sidebar on Tests (shared Electron, no global reset).
+    await navigateSidebar(window, 'apis')
 
     await openHttpRequestTab(window)
     await fillUrl(window, `${localHttpBin()}/post`)
@@ -30,6 +34,7 @@ uiTest.describe('Tur1 — tab method badge [issue #122]', () => {
     await expect(activeTab(window)).toHaveAttribute('data-dirty', 'true')
 
     // Second tab stays GET; switching back keeps POST on the first.
+    await navigateSidebar(window, 'apis')
     await openHttpRequestTab(window)
     await expect(activeTab(window)).toContainText('GET')
     const tabs = window.getByTestId('endpoint-tab')
