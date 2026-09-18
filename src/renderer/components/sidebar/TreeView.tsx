@@ -437,6 +437,7 @@ export default function TreeView() {
             let postScript = ''
             let endpointAssertions: TestAssertion[] = []
             let soapMeta: Record<string, unknown> | undefined
+            let metadata: unknown = undefined
             let schemaUrl = ep.path
             let schemaMethod = ep.method || 'GET'
 
@@ -451,6 +452,7 @@ export default function TreeView() {
                 postScript = schema.postScript ?? ''
                 endpointAssertions = schema.assertions ?? []
                 soapMeta = schema.soap
+                metadata = schema.metadata
                 if (schema.url) schemaUrl = schema.url
                 if (schema.method) schemaMethod = schema.method
               } catch {
@@ -474,26 +476,39 @@ export default function TreeView() {
             switchToTab(realTabId)
             clearResponse()
 
+            // Always hydrate the request store (auth / headers / scripts /
+            // assertions live there for every protocol), then restore the
+            // protocol-specific slice from `metadata` exactly like
+            // lib/open-endpoint-tab.ts. The old SOAP-only branch skipped both,
+            // so a manual SOAP endpoint reopened blank (issue #124 follow-up).
+            loadFromEndpoint({
+              method: schemaMethod as HttpMethod,
+              url: schemaUrl,
+              params,
+              headers,
+              body,
+              auth,
+              preScript,
+              postScript,
+              assertions: endpointAssertions,
+            })
             if (effectiveProtocol === 'soap') {
               switchSoapToTab(realTabId)
-              loadSoapFromEndpoint({
-                url: schemaUrl,
-                body: body as { type: string; content?: string },
-                headers: headers as Array<{ key: string; value: string; enabled: boolean }>,
-                soap: undefined,
-              })
-            } else {
-              loadFromEndpoint({
-                method: schemaMethod as HttpMethod,
-                url: schemaUrl,
-                params,
-                headers,
-                body,
-                auth,
-                preScript,
-                postScript,
-                assertions: endpointAssertions,
-              })
+              if (!metadata) {
+                loadSoapFromEndpoint({
+                  url: schemaUrl,
+                  body: body as { type: string; content?: string },
+                  headers: headers as Array<{ key: string; value: string; enabled: boolean }>,
+                  soap: undefined,
+                })
+              }
+            }
+            if (metadata) {
+              try {
+                restoreProtocolFromMetadata(effectiveProtocol, metadata)
+              } catch {
+                /* malformed metadata — skip protocol restore */
+              }
             }
             return
           }

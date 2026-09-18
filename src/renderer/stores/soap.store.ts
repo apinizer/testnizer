@@ -18,6 +18,7 @@ import { makeId } from '../lib/utils'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for SOAP, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
+import { soapTransportHeaders } from '../../shared/soap-transport'
 
 /** SOAP metadata stored in endpoint request_schema.soap */
 interface SoapEndpointMeta {
@@ -199,6 +200,28 @@ function emptySoapTabState(): TabSoapState {
 
 const STORAGE_KEY = 'testnizer-soap'
 const persisted = loadTabbedState<TabSoapState>(STORAGE_KEY, emptySoapTabState)
+
+/**
+ * Inverse of `soapTransportHeaders`: recover version + action from a stored
+ * header list (SOAP 1.1 `SOAPAction: "…"`, SOAP 1.2 `Content-Type: …; action="…"`).
+ */
+function soapTransportFromHeaders(
+  headers: Array<{ key: string; value: string; enabled: boolean }> | undefined,
+): { version?: 'soap11' | 'soap12'; action?: string } {
+  const out: { version?: 'soap11' | 'soap12'; action?: string } = {}
+  for (const h of headers ?? []) {
+    const key = h.key.trim().toLowerCase()
+    if (key === 'soapaction') {
+      out.version = 'soap11'
+      out.action = h.value.trim().replace(/^"|"$/g, '')
+    } else if (key === 'content-type' && /application\/soap\+xml/i.test(h.value)) {
+      out.version = 'soap12'
+      const m = /action="([^"]*)"/i.exec(h.value)
+      if (m) out.action = m[1]
+    }
+  }
+  return out
+}
 
 export const useSoapStore = create<SoapStore>((set, get) => ({
   ...persisted.current,
@@ -413,23 +436,9 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
       op?.soapAction || manualSoapAction || '',
       activeVars,
     )
-    const headerPairs =
-      effectiveVersion === 'soap12'
-        ? [
-            {
-              key: 'Content-Type',
-              value: resolvedSoapAction
-                ? `application/soap+xml; charset=utf-8; action="${resolvedSoapAction}"`
-                : 'application/soap+xml; charset=utf-8',
-              enabled: true,
-            },
-          ]
-        : [
-            { key: 'Content-Type', value: 'text/xml; charset=utf-8', enabled: true },
-            // SOAP 1.1 requires the action quoted; an unquoted/empty value is
-            // what the server rejected in the report.
-            { key: 'SOAPAction', value: `"${resolvedSoapAction}"`, enabled: true },
-          ]
+    // Transport headers come from the SHARED helper so Send and the Runner
+    // agree (src/shared/soap-transport.ts).
+    const headerPairs = soapTransportHeaders(effectiveVersion, resolvedSoapAction)
     const resolvedHeaders = resolveKeyValuePairs(headerPairs, activeVars)
     const resolvedWsseUsername = resolveVariables(
       wsSecurity.usernameToken?.username || wsSecurity.username || '',
@@ -569,8 +578,13 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         endpointUrl,
       })
     } else {
-      // No SOAP metadata — just load raw XML
+      // No SOAP metadata at all (rows imported/saved before metadata existed):
+      // there is no WSDL to show, so this IS a manual request — open the
+      // Manual form over the raw XML instead of an empty WSDL editor, and read
+      // the action/version back from the stored transport headers.
+      const transport = soapTransportFromHeaders(data.headers)
       set({
+        mode: 'manual',
         wsdlUrl: '',
         parsedWsdl: null,
         isLoading: false,
@@ -582,6 +596,8 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         bodyMode: 'raw',
         formValues: {},
         endpointUrl,
+        ...(transport.action !== undefined ? { manualSoapAction: transport.action } : {}),
+        ...(transport.version ? { manualSoapVersion: transport.version } : {}),
       })
     }
   },

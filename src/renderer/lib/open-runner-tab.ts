@@ -45,6 +45,18 @@ export function openOrReuseRunnerTab(
   if (opts?.view === 'config') {
     const viewKey = runnerKey('view', tabId)
     if (viewKey) sessionStorage.setItem(viewKey, 'config-explicit')
+    // An explicit "open the collection runner" is a NEW, project-wide intent.
+    // The reused tab may still hold the previous session's payload (a
+    // ScheduledTasks/AllRuns view, a suite scope, an auto-run) which the
+    // remounted RunnerTab replays once per session token — so the palette
+    // landed on Scheduled Tasks, or on a suite-filtered list that hid the
+    // request the user just saved. Same clearing openFolderRunner does.
+    if (!sessionData) {
+      const staleReport = runnerKey('report', tabId)
+      const staleSpent = runnerKey('report-spent', tabId)
+      if (staleReport) sessionStorage.removeItem(staleReport)
+      if (staleSpent) sessionStorage.removeItem(staleSpent)
+    }
   }
 
   if (existing) {

@@ -9,6 +9,7 @@ import { startGraphqlServer, type GraphqlServer } from './graphql-server'
 import { startGrpcServer, type GrpcServer } from './grpc-server'
 import { startMcpServer, type McpServer } from './mcp-server'
 import { startFakeLlmServer, type FakeLlmServer } from './fake-llm'
+import { startGitServer, type GitServer } from './git-server'
 
 export const SERVERS_STATE_FILE = path.join(__dirname, '.test-servers.json')
 
@@ -22,6 +23,7 @@ export interface RunningServers {
   grpc: GrpcServer
   mcp: McpServer
   llm: FakeLlmServer
+  git: GitServer
 }
 
 export async function startAllTestServers(): Promise<RunningServers> {
@@ -34,9 +36,10 @@ export async function startAllTestServers(): Promise<RunningServers> {
     grpc: await getFreePort(),
     mcp: await getFreePort(),
     llm: await getFreePort(),
+    git: await getFreePort(),
   }
 
-  const [http, ws, sse, socketio, graphql, grpc, mcp, llm] = await Promise.all([
+  const [http, ws, sse, socketio, graphql, grpc, mcp, llm, git] = await Promise.all([
     startHttpEchoServer(ports.http),
     startWsEchoServer(ports.ws),
     startSseServer(ports.sse),
@@ -45,9 +48,10 @@ export async function startAllTestServers(): Promise<RunningServers> {
     startGrpcServer(ports.grpc),
     startMcpServer(ports.mcp),
     startFakeLlmServer(ports.llm),
+    startGitServer(ports.git),
   ])
 
-  const state: RunningServers = { ports, http, ws, sse, socketio, graphql, grpc, mcp, llm }
+  const state: RunningServers = { ports, http, ws, sse, socketio, graphql, grpc, mcp, llm, git }
 
   fs.writeFileSync(
     SERVERS_STATE_FILE,
@@ -63,7 +67,10 @@ export async function startAllTestServers(): Promise<RunningServers> {
           grpc: grpc.address,
           mcp: mcp.url,
           llm: llm.url.replace('/v1/chat/completions', ''),
+          git: git.url,
         },
+        // Credentials the local git server accepts (issue #127 e2e).
+        git: { username: git.username, token: git.token },
       },
       null,
       2,
@@ -89,6 +96,7 @@ export async function stopAllTestServers(servers: RunningServers): Promise<void>
     servers.grpc.close(),
     servers.mcp.close(),
     servers.llm.close(),
+    servers.git.close(),
   ])
   if (fs.existsSync(SERVERS_STATE_FILE)) {
     fs.unlinkSync(SERVERS_STATE_FILE)

@@ -5,91 +5,104 @@ import { getDb } from '../db/database'
 import { exportProjectData, importProjectDataFromJson } from './save.handler'
 import { asConflictAwareGit, runGitOpWithConflictHandling } from '../lib/git-conflict'
 import type { SimpleGit, BranchSummaryBranch } from 'simple-git'
-import { projectFileSlug } from '../lib/project-file'
-import { decryptSecret } from '../lib/secure-storage'
+import { projectFileSlug, pickProjectFile } from '../lib/project-file'
+import {
+  getProjectGitConfig,
+  gitAuth,
+  gitClientOptions,
+  gitProcessEnv,
+  isGitAuthError,
+  redactToken,
+  describeGitError,
+  sameRemote,
+  foreignRepoError,
+  unreachableRemoteError,
+  GIT_TOKEN_MISSING_ERROR,
+  type ProjectGitConfig,
+  type GitAuth,
+} from '../lib/git-config'
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
-function getSettingsStore(): Promise<{
-  get(key: string): unknown
-  set(key: string, value: unknown): void
-}> {
-  return import('electron-store').then(({ default: Store }) => {
-    return new Store({
-      name: 'settings',
-    }) as unknown as { get(key: string): unknown; set(key: string, value: unknown): void }
-  })
+/** simple-git bound to `localPath` with per-process auth + identity config. */
+async function openRepo(
+  config: ProjectGitConfig,
+  localPath = config.localPath,
+): Promise<SimpleGit> {
+  const { simpleGit } = await import('simple-git')
+  const auth = gitAuth(config.repoUrl, config.username, config.token)
+  return simpleGit(await gitClientOptions(auth, localPath)).env(gitProcessEnv(auth))
 }
 
-async function getProjectGitConfig(projectId: string): Promise<{
-  repoUrl: string
-  username: string
-  branch: string
-  token: string
-  localPath: string
-} | null> {
+/**
+ * A fresh `git init` puts HEAD on the machine's init.defaultBranch (still
+ * `master` on many installs), but every later step commits to and pushes
+ * `config.branch` — so the first push to an EMPTY remote failed with
+ * "src refspec main does not match any". Point HEAD at the configured branch
+ * before the first commit (works with no commits yet, unlike checkout -b).
+ */
+async function pointHeadAt(git: SimpleGit, branch: string): Promise<void> {
   try {
-    const db = getDb()
-    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
-      | {
-          local_path?: string
-        }
-      | undefined
-
-    const settingsStore = await getSettingsStore()
-    const gitConfig = settingsStore.get('git') as
-      | Record<
-          string,
-          {
-            repoUrl?: string
-            username?: string
-            branch?: string
-            token?: string
-          }
-        >
-      | undefined
-
-    const config = gitConfig?.[projectId]
-    if (!config?.repoUrl) return null
-
-    // `settings:set` transparently encrypts every field named `token`
-    // (safeStorage `enc:v1:` envelope). The raw electron-store read above
-    // therefore yields ciphertext; embedding that as the HTTPS password made
-    // GitHub answer "Invalid username or token" (issue #127). Decrypt here —
-    // legacy plaintext passes through unchanged.
-    return {
-      repoUrl: config.repoUrl,
-      username: config.username || '',
-      branch: config.branch || 'main',
-      token: decryptSecret(config.token || '') || '',
-      localPath: project?.local_path || '',
-    }
+    await git.raw(['symbolic-ref', 'HEAD', `refs/heads/${branch}`])
   } catch {
-    return null
+    /* non-fatal — push will report the real branch state */
+  }
+}
+
+function authFailure(e: unknown, token: string): Error {
+  return new Error(describeGitError(e, token))
+}
+
+/**
+ * `git ls-remote --heads` — the branches the remote has RIGHT NOW. Decides,
+ * before anything touches disk, whether the remote is empty (init locally),
+ * has the configured branch (clone it) or has history on another branch
+ * (clone that, create ours on top). Any failure is RETHROWN: an unreachable
+ * remote used to fall through to `git init`, leaving an unrelated local
+ * history that made every later Push non-fast-forward and every Pull
+ * "refusing to merge unrelated histories".
+ */
+async function remoteHeads(bare: SimpleGit, auth: GitAuth, token: string): Promise<Set<string>> {
+  let out: string
+  try {
+    out = await bare.listRemote(['--heads', auth.cleanUrl])
+  } catch (e) {
+    if (isGitAuthError((e as Error).message)) throw authFailure(e, token)
+    throw new Error(unreachableRemoteError(redactToken((e as Error).message, token)))
+  }
+  const heads = new Set<string>()
+  for (const line of out.split('\n')) {
+    const ref = line.split('\t')[1]?.trim()
+    if (ref?.startsWith('refs/heads/')) heads.add(ref.slice('refs/heads/'.length))
+  }
+  return heads
+}
+
+/** The fetch URL of `origin`, or undefined when the repo has no origin. */
+async function originUrl(git: SimpleGit): Promise<string | undefined> {
+  try {
+    const remotes = await git.getRemotes(true)
+    return remotes.find((r) => r.name === 'origin')?.refs.fetch
+  } catch {
+    return undefined
   }
 }
 
 /**
- * A configured remote without a usable token can only fail at GitHub with an
- * opaque 401. Surface the real cause (never saved, or the OS keychain could
- * not decrypt it) so the user knows to re-enter the PAT.
+ * Make `config.localPath` a working checkout of `config.repoUrl` and return a
+ * git bound to it. The remote URL written to `.git/config` is always the
+ * CLEAN one — credentials travel per process (see `gitAuth`), which also
+ * scrubs the `https://user:PAT@…` URLs older builds persisted.
+ *
+ * A 401/403 from the remote is RETHROWN, never swallowed: the old code fell
+ * back to `init` + `addRemote` on any clone/fetch error, so a wrong PAT left
+ * the user with an unrelated local repo and "phantom success" everywhere but
+ * Push/Pull.
  */
-const GIT_TOKEN_MISSING_ERROR =
-  'Git token bulunamadı veya şifresi çözülemedi. Proje Ayarları → Storage bölümünden Personal Access Token’ı yeniden girin.'
-
-function buildAuthUrl(repoUrl: string, username: string, token: string): string {
-  const urlObj = new URL(repoUrl)
-  urlObj.username = encodeURIComponent(username)
-  urlObj.password = encodeURIComponent(token)
-  return urlObj.toString()
-}
-
-async function ensureGitRepo(
-  localPath: string,
-  authUrl: string,
-  defaultBranch: string,
-): Promise<SimpleGit> {
+async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
   const { simpleGit } = await import('simple-git')
+  const { localPath, branch: defaultBranch } = config
+  const auth = gitAuth(config.repoUrl, config.username, config.token)
 
   if (!existsSync(localPath)) {
     mkdirSync(localPath, { recursive: true })
@@ -97,15 +110,20 @@ async function ensureGitRepo(
 
   const gitDir = join(localPath, '.git')
   if (existsSync(gitDir)) {
-    // Repo already exists — just return git instance
-    const git = simpleGit(localPath)
-    // Update remote URL in case credentials changed
+    const git = await openRepo(config)
+    const existing = await originUrl(git)
+    if (existing && !sameRemote(existing, auth.cleanUrl)) {
+      // Not ours: a checkout of some other repository lives here. Re-pointing
+      // its origin would hijack it (and Push would commit its files).
+      throw new Error(foreignRepoError(localPath, redactToken(existing, config.token)))
+    }
+    // Keep origin pointing at the clean URL (also replaces token-bearing
+    // URLs written by older builds).
     try {
-      await git.remote(['set-url', 'origin', authUrl])
+      await git.remote(['set-url', 'origin', auth.cleanUrl])
     } catch {
-      // Remote doesn't exist, add it
       try {
-        await git.addRemote('origin', authUrl)
+        await git.addRemote('origin', auth.cleanUrl)
       } catch {
         /* already exists */
       }
@@ -113,48 +131,43 @@ async function ensureGitRepo(
     return git
   }
 
-  // Directory exists but no .git — check if empty for clone, else init
   const dirContents = readDirSync(localPath)
+  const bare = simpleGit(await gitClientOptions(auth)).env(gitProcessEnv(auth))
+  const heads = await remoteHeads(bare, auth, config.token)
 
   if (dirContents.length === 0) {
-    // Empty directory — try to clone into it
-    const git = simpleGit()
-    try {
-      await git.clone(authUrl, localPath, ['--branch', defaultBranch])
-      return simpleGit(localPath)
-    } catch {
-      try {
-        await git.clone(authUrl, localPath)
-        return simpleGit(localPath)
-      } catch {
-        // Empty remote repo — init locally
-        const localGit = simpleGit(localPath)
-        await localGit.init()
-        await localGit.addRemote('origin', authUrl)
-        return localGit
-      }
+    if (heads.size === 0) {
+      // Genuinely empty remote — init locally; the first push seeds it.
+      const localGit = await openRepo(config)
+      await localGit.init()
+      await pointHeadAt(localGit, defaultBranch)
+      await localGit.addRemote('origin', auth.cleanUrl)
+      return localGit
     }
-  } else {
-    // Non-empty directory (project files already exist) — init in place
-    const localGit = simpleGit(localPath)
-    await localGit.init()
-    await localGit.addRemote('origin', authUrl)
-
-    // Try to pull from remote if it has content
-    try {
-      await localGit.fetch('origin')
-      // Check if remote has the default branch
-      const remoteBranches = await localGit.branch(['-r'])
-      if (Object.keys(remoteBranches.branches).some((b) => b.includes(defaultBranch))) {
-        // Remote has content — set tracking and pull
-        await localGit.checkout(['-b', defaultBranch, `origin/${defaultBranch}`])
-      }
-    } catch {
-      // Remote is empty — that's fine, we'll push first
+    if (heads.has(defaultBranch)) {
+      await bare.clone(auth.cleanUrl, localPath, ['--branch', defaultBranch])
+      return openRepo(config)
     }
-
-    return localGit
+    // The remote has history but not OUR branch (e.g. it was created with
+    // `master`, Storage says `main`). Clone its default branch and start the
+    // configured branch from there — the same thing Save → Git does, so both
+    // Push buttons land the project on the same branch.
+    await bare.clone(auth.cleanUrl, localPath)
+    const git = await openRepo(config)
+    await git.checkoutLocalBranch(defaultBranch)
+    return git
   }
+
+  // Non-empty directory (project files already exist) — init in place.
+  const localGit = await openRepo(config)
+  await localGit.init()
+  await pointHeadAt(localGit, defaultBranch)
+  await localGit.addRemote('origin', auth.cleanUrl)
+  if (heads.has(defaultBranch)) {
+    await localGit.fetch('origin', defaultBranch)
+    await localGit.checkout(['-b', defaultBranch, `origin/${defaultBranch}`])
+  }
+  return localGit
 }
 
 async function getCurrentBranch(
@@ -162,10 +175,17 @@ async function getCurrentBranch(
   fallback: string,
 ): Promise<string> {
   try {
-    return (await git.revparse(['--abbrev-ref', 'HEAD'])).trim()
+    const name = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim()
+    if (name && name !== 'HEAD') return name
   } catch {
-    return fallback
+    /* unborn HEAD (fresh init, or clone of an EMPTY remote) — handled below */
   }
+  // No commits yet: HEAD is an unborn ref named after init.defaultBranch
+  // (often `master`). Every later step commits to and pushes `fallback`, so
+  // point HEAD there now or the first push fails with "src refspec … does
+  // not match any" — the empty-remote first-push bug.
+  await pointHeadAt(git, fallback)
+  return fallback
 }
 
 // Finds the project's exported .json in `dir` and imports it into SQLite.
@@ -176,12 +196,20 @@ async function getCurrentBranch(
 // Returns false (not throwing) only when no .json file is found.
 function reimportProjectFromDir(dir: string, projectId: string): boolean {
   const jsonFiles = readDirSync(dir).filter(
-    (f: string) => f.endsWith('.json') && f !== 'package.json',
+    (f: string) => f.endsWith('.json') && f !== 'package.json' && !f.startsWith('.'),
   )
   if (jsonFiles.length === 0) return false
-  const jsonContent = readFileSync(join(dir, jsonFiles[0]), 'utf-8')
+  const file = pickProjectFile(jsonFiles, projectNameOf(projectId))
+  const jsonContent = readFileSync(join(dir, file), 'utf-8')
   importProjectDataFromJson(jsonContent, projectId)
   return true
+}
+
+function projectNameOf(projectId: string): string | undefined {
+  const row = getDb().prepare('SELECT name FROM projects WHERE id = ?').get(projectId) as
+    | { name: string }
+    | undefined
+  return row?.name
 }
 
 // ─── Register handlers ──────────────────────────────────────────
@@ -195,8 +223,7 @@ export function registerGitHandlers(): void {
         return { success: false, error: 'Git yapılandırması bulunamadı.' }
       }
 
-      const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
-      const git = await ensureGitRepo(config.localPath, authUrl, config.branch)
+      const git = await ensureGitRepo(config)
 
       // Fetch latest from remote
       try {
@@ -261,8 +288,7 @@ export function registerGitHandlers(): void {
         return { success: false, error: 'Git yapılandırması bulunamadı.' }
       }
 
-      const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
-      const git = await ensureGitRepo(config.localPath, authUrl, config.branch)
+      const git = await ensureGitRepo(config)
       const current = await getCurrentBranch(git, config.branch)
 
       return { success: true, data: current }
@@ -288,8 +314,7 @@ export function registerGitHandlers(): void {
           return { success: false, error: 'Git yapılandırması bulunamadı.' }
         }
 
-        const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
-        const git = await ensureGitRepo(config.localPath, authUrl, config.branch)
+        const git = await ensureGitRepo(config)
 
         // If baseBranch specified, checkout it first
         if (payload.baseBranch) {
@@ -299,14 +324,19 @@ export function registerGitHandlers(): void {
         // Create and checkout new branch
         await git.checkoutLocalBranch(payload.branchName)
 
-        // Push to remote
-        try {
-          await git.push('origin', payload.branchName, ['--set-upstream'])
-        } catch {
-          /* offline OK — will push later */
+        // Push to remote — only when we actually hold a credential; with none
+        // the push can only 401 and the old code swallowed that as "offline".
+        let remotePushed = false
+        if (config.token) {
+          try {
+            await git.push('origin', payload.branchName, ['--set-upstream'])
+            remotePushed = true
+          } catch {
+            /* offline OK — will push later */
+          }
         }
 
-        return { success: true, data: { branch: payload.branchName } }
+        return { success: true, data: { branch: payload.branchName, remotePushed } }
       } catch (e) {
         return { success: false, error: (e as Error).message }
       }
@@ -329,8 +359,7 @@ export function registerGitHandlers(): void {
           return { success: false, error: 'Git yapılandırması bulunamadı.' }
         }
 
-        const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
-        const git = await ensureGitRepo(config.localPath, authUrl, config.branch)
+        const git = await ensureGitRepo(config)
 
         // Auto-commit any uncommitted changes before switching
         const status = await git.status()
@@ -381,8 +410,7 @@ export function registerGitHandlers(): void {
           return { success: false, error: 'Git yapılandırması bulunamadı.' }
         }
 
-        const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
-        const git = await ensureGitRepo(config.localPath, authUrl, config.branch)
+        const git = await ensureGitRepo(config)
 
         // Auto-commit before merge
         const status = await git.status()
@@ -463,8 +491,7 @@ export function registerGitHandlers(): void {
         if (payload.side !== 'ours' && payload.side !== 'theirs') {
           return { success: false, error: `Invalid side: ${payload.side}` }
         }
-        const { simpleGit } = await import('simple-git')
-        const git = simpleGit(config.localPath)
+        const git = await openRepo(config)
 
         await git.checkout([`--${payload.side}`, payload.file])
         await git.add(payload.file)
@@ -518,8 +545,7 @@ export function registerGitHandlers(): void {
       if (!config?.localPath) {
         return { success: false, error: 'Git yapılandırması bulunamadı.' }
       }
-      const { simpleGit } = await import('simple-git')
-      const git = simpleGit(config.localPath)
+      const git = await openRepo(config)
       try {
         await git.merge(['--abort'])
       } catch {
@@ -538,8 +564,9 @@ export function registerGitHandlers(): void {
 
   // ─── Push current branch ──────────────────────────────────
   ipcMain.handle('git:push', async (_event, projectId: string) => {
+    let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
     try {
-      const config = await getProjectGitConfig(projectId)
+      config = await getProjectGitConfig(projectId)
       if (!config?.repoUrl || !config.localPath) {
         return { success: false, error: 'Git yapılandırması bulunamadı.' }
       }
@@ -547,8 +574,7 @@ export function registerGitHandlers(): void {
         return { success: false, error: GIT_TOKEN_MISSING_ERROR }
       }
 
-      const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
-      const git = await ensureGitRepo(config.localPath, authUrl, config.branch)
+      const git = await ensureGitRepo(config)
 
       // Determine current branch — may fail if no commits yet
       const currentBranch = await getCurrentBranch(git, config.branch)
@@ -561,20 +587,24 @@ export function registerGitHandlers(): void {
       const fileName = `${slug}.json`
       writeFileSync(join(config.localPath, fileName), JSON.stringify(data, null, 2), 'utf-8')
 
-      // Clean up old .json files that don't match current slug
-      try {
-        const { unlinkSync } = await import('fs')
-        for (const f of readDirSync(config.localPath)) {
-          if (f.endsWith('.json') && f !== fileName && f !== 'package.json') {
-            unlinkSync(join(config.localPath, f))
-          }
+      // Retire the file an older name produced — but ONLY files git already
+      // tracks. `local_path` may be a folder the user picked (Downloads…);
+      // deleting every other .json there and `git add .` used to commit the
+      // whole directory to GitHub.
+      const tracked = (await git.raw(['ls-files', '--', '*.json']))
+        .split('\n')
+        .map((f) => f.trim())
+        .filter((f) => f && f !== fileName && f !== 'package.json' && !f.includes('/'))
+      for (const f of tracked) {
+        try {
+          await git.rm([f])
+        } catch {
+          /* already gone */
         }
-      } catch {
-        /* ignore cleanup errors */
       }
 
-      // Stage and commit
-      await git.add('.')
+      // Stage ONLY the project file and commit
+      await git.add([fileName])
       const status = await git.status()
       if (status.staged.length > 0) {
         await git.commit(`Update ${displayName} — ${new Date().toLocaleString()}`)
@@ -585,14 +615,15 @@ export function registerGitHandlers(): void {
 
       return { success: true, data: { branch: currentBranch, pushed: true } }
     } catch (e) {
-      return { success: false, error: (e as Error).message }
+      return { success: false, error: describeGitError(e, config?.token) }
     }
   })
 
   // ─── Pull current branch ─────────────────────────────────
   ipcMain.handle('git:pull', async (_event, projectId: string) => {
+    let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
     try {
-      const config = await getProjectGitConfig(projectId)
+      config = await getProjectGitConfig(projectId)
       if (!config?.repoUrl || !config.localPath) {
         return { success: false, error: 'Git yapılandırması bulunamadı.' }
       }
@@ -600,15 +631,15 @@ export function registerGitHandlers(): void {
         return { success: false, error: GIT_TOKEN_MISSING_ERROR }
       }
 
-      const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
-      const git = await ensureGitRepo(config.localPath, authUrl, config.branch)
+      const git = await ensureGitRepo(config)
 
       const currentBranch = await getCurrentBranch(git, config.branch)
 
-      // Auto-commit before pull
+      // Auto-commit edits to TRACKED files before pull (never sweep the
+      // directory's untracked files into the repo — see push).
       const status = await git.status()
-      if (status.modified.length > 0 || status.not_added.length > 0 || status.created.length > 0) {
-        await git.add('.')
+      if (status.modified.length > 0 || status.deleted.length > 0) {
+        await git.raw(['add', '-u'])
         await git.commit('Auto-save before pull')
       }
 
@@ -642,7 +673,7 @@ export function registerGitHandlers(): void {
       }
       return { success: true, data: { pulled: true, state: 'clean', branch: currentBranch } }
     } catch (e) {
-      return { success: false, error: (e as Error).message }
+      return { success: false, error: describeGitError(e, config?.token) }
     }
   })
 
@@ -654,8 +685,7 @@ export function registerGitHandlers(): void {
         return { success: false, error: 'Git yapılandırması bulunamadı.' }
       }
 
-      const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
-      const git = await ensureGitRepo(config.localPath, authUrl, config.branch)
+      const git = await ensureGitRepo(config)
 
       const status = await git.status()
       const currentBranch = await getCurrentBranch(git, config.branch)
@@ -708,8 +738,7 @@ export function registerGitHandlers(): void {
         if (!config?.repoUrl || !config.localPath) {
           return { success: false, error: 'Git yapılandırması bulunamadı.' }
         }
-        const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
-        const git = await ensureGitRepo(config.localPath, authUrl, config.branch)
+        const git = await ensureGitRepo(config)
         const limit = Math.max(1, Math.min(500, payload.limit ?? 100))
         const logArgs: Record<string, unknown> = { maxCount: limit }
         if (payload.branch) {
@@ -757,8 +786,7 @@ export function registerGitHandlers(): void {
           return { success: false, error: 'Git yapılandırması bulunamadı.' }
         }
 
-        const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
-        const git = await ensureGitRepo(config.localPath, authUrl, config.branch)
+        const git = await ensureGitRepo(config)
 
         const currentBranch = await getCurrentBranch(git, config.branch)
         if (currentBranch === payload.branchName) {
@@ -772,11 +800,13 @@ export function registerGitHandlers(): void {
           /* might not exist locally */
         }
 
-        // Delete remote
-        try {
-          await git.push('origin', `:${payload.branchName}`)
-        } catch {
-          /* might not exist remotely */
+        // Delete remote (skip without a credential — see createBranch)
+        if (config.token) {
+          try {
+            await git.push('origin', `:${payload.branchName}`)
+          } catch {
+            /* might not exist remotely */
+          }
         }
 
         return { success: true, data: { deleted: payload.branchName } }
@@ -802,8 +832,7 @@ export function registerGitHandlers(): void {
           return { success: false, error: 'Git yapılandırması bulunamadı.' }
         }
 
-        const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
-        const git = await ensureGitRepo(config.localPath, authUrl, config.branch)
+        const git = await ensureGitRepo(config)
 
         const log = await git.log({ maxCount: payload.count || 20 })
         const commits = log.all.map((c) => ({
@@ -825,7 +854,15 @@ export function registerGitHandlers(): void {
   ipcMain.handle('git:hasConfig', async (_event, projectId: string) => {
     try {
       const config = await getProjectGitConfig(projectId)
-      return { success: true, data: { hasGit: !!(config?.repoUrl && config.localPath) } }
+      return {
+        success: true,
+        data: {
+          hasGit: !!(config?.repoUrl && config.localPath),
+          // A remote without a usable token can only fail at the server; let
+          // the UI say so up front instead of firing network calls.
+          hasToken: !!config?.token,
+        },
+      }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

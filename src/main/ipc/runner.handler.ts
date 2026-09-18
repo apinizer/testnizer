@@ -29,6 +29,11 @@ import { loadEnvVars } from '../lib/env-vars'
 import { evaluateJsonPath } from '../lib/json-path'
 import { loadProjectSettings } from '../lib/project-settings'
 import {
+  soapTransportFromMeta,
+  withSoapTransportHeaders,
+  type SoapTransportMeta,
+} from '../../shared/soap-transport'
+import {
   projectAuthToAuthConfig,
   resolveEffectiveAuth,
   collectCascadeScripts,
@@ -180,7 +185,9 @@ function parseJsonSafe<T>(json: string | null, fallback: T): T {
   }
 }
 
-function buildRequestFromEndpoint(endpoint: endpointRepo.EndpointRow): HttpRequestOptions | null {
+export function buildRequestFromEndpoint(
+  endpoint: endpointRepo.EndpointRow,
+): HttpRequestOptions | null {
   const schema = parseJsonSafe<{
     method?: string
     url?: string
@@ -192,16 +199,32 @@ function buildRequestFromEndpoint(endpoint: endpointRepo.EndpointRow): HttpReque
     followRedirects?: boolean
     maxRedirects?: number
     sslVerification?: boolean
+    metadata?: { soap?: SoapTransportMeta }
   }>(endpoint.request_schema, {})
 
   const url = schema.url || endpoint.path
   if (!url) return null
 
+  // SOAP requests (issue #124 follow-up): Send derives Content-Type /
+  // SOAPAction from the SOAP version + action; the Runner used to post the
+  // envelope as plain application/xml with no action. Same rule, one helper.
+  let headers = schema.headers
+  if (endpoint.protocol === 'soap') {
+    const transport = soapTransportFromMeta(schema.metadata?.soap)
+    if (transport) {
+      headers = withSoapTransportHeaders(
+        schema.headers,
+        transport.version,
+        transport.action,
+      ) as KeyValuePair[]
+    }
+  }
+
   return {
     method: schema.method || endpoint.method || 'GET',
     url,
     params: schema.params,
-    headers: schema.headers,
+    headers,
     body: schema.body as HttpRequestOptions['body'],
     auth: schema.auth as HttpRequestOptions['auth'],
     // Mirror the engine's "explicit 0 = no timeout" semantics (issue #24)
@@ -233,6 +256,8 @@ function savedRequestToEndpoint(saved: endpointRepo.SavedRequestRow): endpointRe
     preScript: saved.pre_script ?? undefined,
     postScript: saved.post_script ?? undefined,
     assertions: parseJsonSafe<unknown[]>(saved.assertions, []),
+    // Protocol metadata (SOAP version/action, …) — the Runner needs it too.
+    metadata: saved.metadata ? parseJsonSafe<unknown>(saved.metadata, undefined) : undefined,
   })
   return {
     id: saved.id,

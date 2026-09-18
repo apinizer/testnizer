@@ -23,7 +23,13 @@ export async function startFakeLlmServer(port: number): Promise<FakeLlmServer> {
         stream?: boolean
       }
       const last = body.messages?.at(-1)?.content ?? ''
-      const reply = `E2E stub reply to: ${last.slice(0, 80)}`
+      // Echo selected request headers so specs can prove what reached the wire
+      // (issue #120 custom headers, #121 optional key): the AI Chat editor has
+      // no network panel of its own.
+      const echo = req.headers['x-e2e-echo']
+      const auth = req.headers['authorization']
+      const suffix = `${echo ? ` [echo=${String(echo)}]` : ''}${auth ? ` [auth=${String(auth)}]` : ' [auth=none]'}`
+      const reply = `E2E stub reply to: ${last.slice(0, 80)}${suffix}`
 
       if (body.stream) {
         res.writeHead(200, { 'Content-Type': 'text/event-stream' })

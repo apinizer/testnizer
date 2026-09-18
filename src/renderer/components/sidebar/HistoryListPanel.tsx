@@ -98,22 +98,46 @@ export default function HistoryListPanel() {
       // soapStore.loadFromEndpoint expects so the editor restores wsdl
       // selection + envelope XML.
       const envelope = typeof snap.envelope === 'string' ? snap.envelope : ''
-      soapLoadFromEndpoint({
-        url: entry.url,
-        body: envelope ? { type: 'xml', content: envelope } : undefined,
-        headers: snap.headers as
-          | Array<{ key: string; value: string; enabled: boolean }>
-          | undefined,
-        soap: {
-          wsdlUrl: snap.wsdlUrl as string | undefined,
-          endpointUrl: (snap.endpointUrl as string | undefined) || entry.url,
-          operationName: snap.operationName as string | undefined,
-          serviceName: snap.serviceName as string | undefined,
-          portName: snap.portName as string | undefined,
-          soapVersion: snap.soapVersion as 'soap11' | 'soap12' | undefined,
-          exampleRequest: envelope,
-        },
-      })
+      const hasWsdlSnapshot = Boolean(snap.wsdlUrl || snap.operationName || envelope)
+      if (!hasWsdlSnapshot) {
+        // Manual-mode SOAP sends go through the HTTP path and snapshot
+        // {method,url,headers,body}; fabricating a WSDL from that produced an
+        // "Unknown" operation with an empty body (issue #124 follow-up).
+        const hdrs = (snap.headers as Array<{ key: string; value: string }> | undefined) ?? []
+        const find = (k: string) => hdrs.find((h) => h.key.toLowerCase() === k.toLowerCase())?.value
+        const contentType = find('content-type') ?? ''
+        const soapActionHeader = find('soapaction')
+        const version = /application\/soap\+xml/i.test(contentType) ? 'soap12' : 'soap11'
+        const action =
+          version === 'soap12'
+            ? (/action="([^"]*)"/.exec(contentType)?.[1] ?? '')
+            : (soapActionHeader ?? '').replace(/^"|"$/g, '')
+        const soapStore = useSoapStore.getState()
+        soapLoadFromEndpoint({
+          url: entry.url,
+          body: snap.body as { type: string; content?: string } | undefined,
+          headers: hdrs as Array<{ key: string; value: string; enabled: boolean }>,
+        })
+        soapStore.setMode('manual')
+        soapStore.setManualSoapVersion(version)
+        soapStore.setManualSoapAction(action)
+      } else
+        soapLoadFromEndpoint({
+          url: entry.url,
+          body: envelope ? { type: 'xml', content: envelope } : undefined,
+          headers: snap.headers as
+            | Array<{ key: string; value: string; enabled: boolean }>
+            | undefined,
+          soap: {
+            wsdlUrl: snap.wsdlUrl as string | undefined,
+            endpointUrl: (snap.endpointUrl as string | undefined) || entry.url,
+            operationName: snap.operationName as string | undefined,
+            serviceName: snap.serviceName as string | undefined,
+            portName: snap.portName as string | undefined,
+            soapVersion: snap.soapVersion as 'soap11' | 'soap12' | undefined,
+            exampleRequest: envelope,
+          },
+        })
     } else {
       switchToTab(realTabId)
       clearResponse()

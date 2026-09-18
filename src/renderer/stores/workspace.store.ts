@@ -549,7 +549,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const tree = await buildTreeFromDB(id, projectName)
     // Per-project search + expansion (issue #123): restore what the user had
     // in this project, or defaults (root + first-level folders, empty search).
-    set({ treeData: tree, ...restoreProjectTreeState(id, tree) })
+    const restored = restoreProjectTreeState(id, tree)
+    if (prevId === id) {
+      // Same-project re-entry (branch switch, git pull): the tree content
+      // changed under us — keep the user's expansion but also open any NEW
+      // first-level folders, as the pre-#123 code always did.
+      for (const n of computeDefaultOpenIds(tree)) restored.openNodeIds.add(n)
+    }
+    set({ treeData: tree, ...restored })
   },
 
   setTreeData: (data) => set({ treeData: data }),

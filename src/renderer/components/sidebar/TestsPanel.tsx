@@ -65,6 +65,11 @@ export default function TestsPanel() {
   const addEndpointsSuiteId = useUIStore((s) => s.addEndpointsSuiteId)
 
   const [searchQuery, setSearchQuery] = useState('')
+  // Component-local, and LeftPanel renders TestsPanel without a key — reset
+  // on project switch or project A's filter leaks into project B (#123 class).
+  useEffect(() => {
+    setSearchQuery('')
+  }, [activeProjectId])
   const [suites, setSuites] = useState<TestSuite[]>([])
   const [expandedSuites, setExpandedSuites] = useState<Record<string, boolean>>({})
   // Suite contents — items + folders, keyed by suite id. Replaces the old

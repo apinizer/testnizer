@@ -158,14 +158,9 @@ export default function Header() {
         setStatusMsg(`Pull başarılı (${result.data?.branch || 'branch'})`)
         setPullStatus('success')
 
-        // Full app refresh — re-read everything from DB
-        // Re-import pulled data into DB first
-        try {
-          await window.api.save.gitPull({ projectId: activeProject.id })
-        } catch {
-          /* pulled data may not need DB import if using file-based */
-        }
-
+        // git:pull already re-imported the pulled project file into the DB;
+        // the old extra `save:gitPull` here cloned the remote a SECOND time
+        // into a temp dir and imported again (nondeterministic file pick).
         // Refresh tree, tabs, and all stores
         await refreshTree()
         // Force full project reload to refresh all data

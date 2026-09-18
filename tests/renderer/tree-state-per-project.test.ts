@@ -6,15 +6,19 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.hoisted(() => {
-  const ok = (data: unknown) => Promise.resolve({ success: true, data })
-  const folders: Record<string, unknown[]> = {
+const folderRows = vi.hoisted(() => {
+  const folders: Record<string, Array<Record<string, unknown>>> = {
     A: [
       { id: 'fa1', name: 'Payments', parent_id: null, sort_order: 0 },
       { id: 'fa2', name: 'Refunds', parent_id: 'fa1', sort_order: 0 },
     ],
     B: [{ id: 'fb1', name: 'Users', parent_id: null, sort_order: 0 }],
   }
+  return folders
+})
+vi.hoisted(() => {
+  const ok = (data: unknown) => Promise.resolve({ success: true, data })
+  const folders = folderRows
   const stub = {
     folder: { list: (projectId: string) => ok(folders[projectId] ?? []) },
     endpoint: { listByProject: () => ok([]) },
@@ -66,7 +70,12 @@ describe('restoreProjectTreeState (pure)', () => {
         type: 'module' as const,
         label: 'X',
         children: [
-          { id: 'f1', type: 'folder' as const, label: 'F1', children: [{ id: 'f2', type: 'folder' as const, label: 'F2' }] },
+          {
+            id: 'f1',
+            type: 'folder' as const,
+            label: 'F1',
+            children: [{ id: 'f2', type: 'folder' as const, label: 'F2' }],
+          },
         ],
       },
     ]
@@ -106,6 +115,23 @@ describe('setActiveProject — per-project search + expansion (issue #123)', () 
     expect(s().searchQuery).toBe('users')
     expect(s().openNodeIds.has('fb1')).toBe(false)
     expect(s().openNodeIds.has('project-B')).toBe(true)
+  })
+
+  it('same-project re-entry (branch switch / pull) keeps expansion AND opens new first-level folders', async () => {
+    await s().setActiveProject('A')
+    s().toggleNode('fa2') // deep folder open
+    s().toggleNode('fa1') // first-level folder closed by the user
+    s().setSearchQuery('keep')
+    // Pretend a branch switch added a first-level folder to A.
+    folderRows.A.push({ id: 'fa3', name: 'NewOnBranch', parent_id: null, sort_order: 1 })
+    await s().setActiveProject('A')
+    expect(s().searchQuery).toBe('keep')
+    expect(s().openNodeIds.has('fa2')).toBe(true)
+    // New first-level folder auto-opens (pre-#123 behaviour preserved) …
+    expect(s().openNodeIds.has('fa3')).toBe(true)
+    // … which also re-opens fa1 (defaults are unioned in on re-entry).
+    expect(s().openNodeIds.has('fa1')).toBe(true)
+    folderRows.A.pop()
   })
 
   it('Home (goHome) keeps the project snapshot for the next visit', async () => {

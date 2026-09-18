@@ -60,7 +60,8 @@ export default function SaveResponseButton({ onSaved }: { onSaved?: () => void }
     setBusy(false)
     if (result.ok) {
       setOpen(false)
-      toast.success(t('response.savedResponseSaved'))
+      if (result.bodyDropped) toast.warning(t('response.savedResponseBodyDropped'))
+      else toast.success(t('response.savedResponseSaved'))
       onSaved?.()
     } else {
       toast.error(

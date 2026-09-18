@@ -15,7 +15,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { setupHandlerHarness, makeElectronMock, createTestDb, seedProject, seedWorkspace } from './helpers'
+import {
+  setupHandlerHarness,
+  makeElectronMock,
+  createTestDb,
+  seedProject,
+  seedWorkspace,
+} from './helpers'
 
 const harness = setupHandlerHarness()
 
@@ -55,34 +61,70 @@ vi.mock('../../../src/main/ipc/save.handler', () => ({
   importProjectDataFromJson: vi.fn(),
 }))
 
-// Record every URL that reaches simple-git so we can assert on the password part.
-const recorded = vi.hoisted(() => ({ urls: [] as string[] }))
+// Record every simple-git construction (its `-c` config carries the
+// credential as `http.extraHeader`) and every remote URL that reaches git —
+// the URL must be CLEAN (no userinfo) since v1.5.4.
+const recorded = vi.hoisted(() => ({
+  urls: [] as string[],
+  configs: [] as string[][],
+}))
 vi.mock('simple-git', () => {
-  const instance = {
-    fetch: async () => {},
-    branch: async () => ({ branches: {}, current: 'main', all: [] }),
-    revparse: async () => 'main',
-    checkout: async () => {},
-    checkoutLocalBranch: async () => {},
-    push: async () => {},
-    pull: async () => ({ summary: {} }),
-    add: async () => {},
-    commit: async () => ({}),
-    status: async () => ({ files: [], modified: [], not_added: [], created: [], staged: [] }),
-    log: async () => ({ all: [] }),
-    init: async () => {},
-    addRemote: async (_name: string, url: string) => {
-      recorded.urls.push(url)
-    },
-    remote: async (args: string[]) => {
-      if (args[0] === 'set-url') recorded.urls.push(args[2])
-    },
-    clone: async (url: string) => {
-      recorded.urls.push(url)
-      throw new Error('empty remote')
+  const makeInstance = (cfg: string[]) => {
+    const instance = {
+      env: () => instance,
+      raw: async () => '',
+      listRemote: async () => '',
+      getRemotes: async () => [],
+      rm: async () => {},
+      getConfig: async () => ({
+        key: 'user.name',
+        value: 'Existing User',
+        values: [],
+        scopes: new Map(),
+      }),
+      addConfig: async () => {},
+      fetch: async () => {},
+      branch: async () => ({ branches: {}, current: 'main', all: [] }),
+      revparse: async () => 'main',
+      checkout: async () => {},
+      checkoutLocalBranch: async () => {},
+      push: async () => {},
+      pull: async () => ({ summary: {} }),
+      add: async () => {},
+      commit: async () => ({}),
+      status: async () => ({
+        files: [],
+        modified: [],
+        deleted: [],
+        not_added: [],
+        created: [],
+        staged: [],
+      }),
+      log: async () => ({ all: [] }),
+      init: async () => {},
+      addRemote: async (_name: string, url: string) => {
+        recorded.urls.push(url)
+      },
+      remote: async (args: string[]) => {
+        if (args[0] === 'set-url') recorded.urls.push(args[2])
+      },
+      clone: async (url: string) => {
+        recorded.urls.push(url)
+        throw new Error('fatal: could not read from remote repository (empty)')
+      },
+    }
+    recorded.configs.push(cfg)
+    return instance
+  }
+  return {
+    simpleGit: (optsOrDir?: unknown) => {
+      const cfg =
+        optsOrDir && typeof optsOrDir === 'object'
+          ? ((optsOrDir as { config?: string[] }).config ?? [])
+          : []
+      return makeInstance(cfg)
     },
   }
-  return { simpleGit: () => instance }
 })
 
 const { registerGitHandlers } = await import('../../../src/main/ipc/git.handler')
@@ -92,6 +134,7 @@ let projectId: string
 beforeEach(() => {
   harness.reset()
   recorded.urls.length = 0
+  recorded.configs.length = 0
   encryptionAvailable.value = true
   testDb = createTestDb()
   projectId = seedProject(testDb, seedWorkspace(testDb))
@@ -108,50 +151,95 @@ beforeEach(() => {
   registerGitHandlers()
 })
 
+const basicFor = (user: string, token: string) =>
+  `http.extraHeader=Authorization: Basic ${Buffer.from(`${user}:${token}`, 'utf8').toString('base64')}`
+
+/** Every http.extraHeader entry simple-git was constructed with. */
+function sentAuthHeaders(): string[] {
+  return recorded.configs.flat().filter((c) => c.startsWith('http.extraHeader='))
+}
+
 describe('issue #127 — git token decryption', () => {
-  it('git:push embeds the DECRYPTED token in the remote URL', async () => {
-    const res = (await harness.invoke('git:push', projectId)) as { success: boolean; error?: string }
+  it('git:push authenticates with the DECRYPTED token and keeps the remote URL clean', async () => {
+    const res = (await harness.invoke('git:push', projectId)) as {
+      success: boolean
+      error?: string
+    }
     expect(res.success).toBe(true)
+    const headers = sentAuthHeaders()
+    expect(headers.length).toBeGreaterThan(0)
+    for (const h of headers) expect(h).toBe(basicFor('acme-user', PLAIN_TOKEN))
+    // Ciphertext must never reach git, and the token must never sit in a URL
+    // (that is what older builds persisted into .git/config).
     expect(recorded.urls.length).toBeGreaterThan(0)
     for (const url of recorded.urls) {
-      const parsed = new URL(url)
-      expect(decodeURIComponent(parsed.password)).toBe(PLAIN_TOKEN)
-      expect(decodeURIComponent(parsed.username)).toBe('acme-user')
-      expect(url).not.toContain('enc%3Av1')
+      expect(url).toBe('https://github.com/acme/apis.git')
       expect(url).not.toContain('enc:v1')
+      expect(url).not.toContain(PLAIN_TOKEN)
     }
+    expect(JSON.stringify(recorded.configs)).not.toContain('enc:v1')
   })
 
-  it('git:pull embeds the DECRYPTED token in the remote URL', async () => {
+  it('git:pull authenticates with the DECRYPTED token', async () => {
     const res = (await harness.invoke('git:pull', projectId)) as { success: boolean }
     expect(res.success).toBe(true)
-    expect(recorded.urls.length).toBeGreaterThan(0)
-    for (const url of recorded.urls) {
-      expect(decodeURIComponent(new URL(url).password)).toBe(PLAIN_TOKEN)
-    }
+    const headers = sentAuthHeaders()
+    expect(headers.length).toBeGreaterThan(0)
+    for (const h of headers) expect(h).toBe(basicFor('acme-user', PLAIN_TOKEN))
   })
 
   it('legacy plaintext tokens still pass through unchanged', async () => {
     ;(storeState.git[projectId] as { token: string }).token = PLAIN_TOKEN
     const res = (await harness.invoke('git:push', projectId)) as { success: boolean }
     expect(res.success).toBe(true)
-    expect(decodeURIComponent(new URL(recorded.urls[0]).password)).toBe(PLAIN_TOKEN)
+    expect(sentAuthHeaders()[0]).toBe(basicFor('acme-user', PLAIN_TOKEN))
   })
 
   it('surfaces an explicit error when the token cannot be decrypted (locked keychain)', async () => {
     encryptionAvailable.value = false
-    const res = (await harness.invoke('git:push', projectId)) as { success: boolean; error?: string }
+    const res = (await harness.invoke('git:push', projectId)) as {
+      success: boolean
+      error?: string
+    }
     expect(res.success).toBe(false)
     expect(res.error).toMatch(/token/i)
-    // Must never reach the remote with a bogus password.
+    // Must never reach the remote with a bogus credential.
     expect(recorded.urls).toEqual([])
   })
 
   it('surfaces an explicit error when no token was ever saved', async () => {
     ;(storeState.git[projectId] as { token?: string }).token = undefined
-    const res = (await harness.invoke('git:pull', projectId)) as { success: boolean; error?: string }
+    const res = (await harness.invoke('git:pull', projectId)) as {
+      success: boolean
+      error?: string
+    }
     expect(res.success).toBe(false)
     expect(res.error).toMatch(/token/i)
     expect(recorded.urls).toEqual([])
+  })
+
+  it('git:hasConfig reports hasToken so the UI can warn before hitting the network', async () => {
+    let res = (await harness.invoke('git:hasConfig', projectId)) as {
+      data: { hasGit: boolean; hasToken: boolean }
+    }
+    expect(res.data).toEqual({ hasGit: true, hasToken: true })
+    ;(storeState.git[projectId] as { token?: string }).token = undefined
+    res = (await harness.invoke('git:hasConfig', projectId)) as {
+      data: { hasGit: boolean; hasToken: boolean }
+    }
+    expect(res.data).toEqual({ hasGit: true, hasToken: false })
+  })
+
+  it('a Git-only project without local_path gets a default checkout dir instead of "no config"', async () => {
+    testDb.prepare('UPDATE projects SET local_path = NULL WHERE id = ?').run(projectId)
+    const res = (await harness.invoke('git:push', projectId)) as {
+      success: boolean
+      error?: string
+    }
+    expect(res.success).toBe(true)
+    const row = testDb.prepare('SELECT local_path FROM projects WHERE id = ?').get(projectId) as {
+      local_path: string
+    }
+    expect(row.local_path).toContain(projectId)
   })
 })

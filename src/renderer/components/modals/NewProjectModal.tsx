@@ -21,6 +21,12 @@ import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
 import Modal from '../shared/Modal'
 
+/** Directory of a native-dialog path — Windows returns backslashes. */
+function parentDir(filePath: string): string {
+  const cut = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
+  return cut > 0 ? filePath.substring(0, cut) : filePath
+}
+
 const COLORS = [
   '#2D5FA0',
   '#e85d4a',
@@ -359,7 +365,7 @@ export default function NewProjectModal() {
             .replace(/^-|-$/g, ''),
         )
       }
-      const dir = result.data.filePath.substring(0, result.data.filePath.lastIndexOf('/'))
+      const dir = parentDir(result.data.filePath)
       setLocalFolder(dir)
       setSaveMode('local')
     }
@@ -405,7 +411,7 @@ export default function NewProjectModal() {
                   .replace(/^-|-$/g, ''),
               )
             }
-            const dir = result.data.filePath.substring(0, result.data.filePath.lastIndexOf('/'))
+            const dir = parentDir(result.data.filePath)
             setLocalFolder(dir)
             setSaveMode('local')
             setStep(2)

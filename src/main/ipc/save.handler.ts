@@ -25,7 +25,17 @@ import {
 import { snapshotEndpointForSuite, ensureUniqueSuiteName } from './test-suite.handler'
 import { getEndpointById } from '../db/endpoint.repo'
 import { SAVED_RESPONSE_COLUMNS } from '../db/saved-response.repo'
-import { projectFileSlug } from '../lib/project-file'
+import {
+  getProjectGitConfig,
+  gitAuth,
+  gitClientOptions,
+  gitProcessEnv,
+  describeGitError,
+  getSettingsStore,
+  getLegacyCredentialStore,
+  legacyCredentialKey,
+} from '../lib/git-config'
+import { projectFileSlug, pickProjectFile } from '../lib/project-file'
 import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
 
 // ─── Multi-format detection for test suite import ────────────────
@@ -106,6 +116,8 @@ interface FolderExport {
   folders: Record<string, unknown>[]
   endpoints: Record<string, unknown>[]
   endpointCases: Record<string, unknown>[]
+  // Named response examples of the folder's endpoints / saved requests (issue #125).
+  savedResponses?: Record<string, unknown>[]
   // Ad-hoc saved requests live in their own table (`saved_requests`), separate
   // from the structured `endpoints`. The full project export already carried
   // them; a folder export that only collected `endpoints` silently dropped
@@ -583,6 +595,7 @@ function collectFolderTree(rootFolderId: string): {
   endpoints: Record<string, unknown>[]
   endpointCases: Record<string, unknown>[]
   savedRequests: Record<string, unknown>[]
+  savedResponses: Record<string, unknown>[]
 } {
   const db = getDb()
 
@@ -590,7 +603,7 @@ function collectFolderTree(rootFolderId: string): {
     | Record<string, unknown>
     | undefined
   if (!rootFolder) {
-    return { folders: [], endpoints: [], endpointCases: [], savedRequests: [] }
+    return { folders: [], endpoints: [], endpointCases: [], savedRequests: [], savedResponses: [] }
   }
 
   // Recursively gather all descendant folder IDs (BFS)
@@ -629,11 +642,24 @@ function collectFolderTree(rootFolderId: string): {
     .prepare(`SELECT * FROM saved_requests WHERE folder_id IN (${ph})`)
     .all(...folderIds) as Record<string, unknown>[]
 
-  return { folders, endpoints, endpointCases, savedRequests }
+  // Named response examples pinned to those rows (issue #125).
+  const ownerIds = [...endpointIds, ...savedRequests.map((r) => r.id as string)]
+  let savedResponses: Record<string, unknown>[] = []
+  if (ownerIds.length > 0) {
+    const oph = ownerIds.map(() => '?').join(',')
+    savedResponses = db
+      .prepare(
+        `SELECT * FROM saved_responses WHERE owner_type IN ('endpoint','saved_request') AND owner_id IN (${oph})`,
+      )
+      .all(...ownerIds) as Record<string, unknown>[]
+  }
+
+  return { folders, endpoints, endpointCases, savedRequests, savedResponses }
 }
 
 export function exportFolderData(folderId: string): FolderExport {
-  const { folders, endpoints, endpointCases, savedRequests } = collectFolderTree(folderId)
+  const { folders, endpoints, endpointCases, savedRequests, savedResponses } =
+    collectFolderTree(folderId)
   return {
     version: '1.0.0',
     exportedAt: Date.now(),
@@ -643,6 +669,7 @@ export function exportFolderData(folderId: string): FolderExport {
     endpoints,
     endpointCases,
     savedRequests,
+    savedResponses,
   }
 }
 
@@ -775,6 +802,37 @@ export function importFolderData(
         s.sort_order ?? 0,
         (s.created_at as number) || now,
         now,
+      )
+    }
+
+    // Named response examples — re-key onto the new endpoint / saved-request
+    // ids (issue #125); rows whose owner did not come along are dropped.
+    const insertSavedResponse = db.prepare(
+      `INSERT INTO saved_responses (${SAVED_RESPONSE_COLUMNS.join(', ')})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    for (const r of data.savedResponses || []) {
+      const ownerType = r.owner_type as string
+      const oldOwner = r.owner_id as string
+      const newOwner =
+        ownerType === 'endpoint'
+          ? endpointIdMap.get(oldOwner)
+          : ownerType === 'saved_request'
+            ? savedReqIdMap.get(oldOwner)
+            : undefined
+      if (!newOwner) continue
+      insertSavedResponse.run(
+        randomUUID(),
+        projectId,
+        ownerType,
+        newOwner,
+        r.name,
+        r.protocol || 'http',
+        r.method ?? null,
+        r.url ?? null,
+        r.status_code ?? null,
+        r.response_json,
+        (r.created_at as number) || now,
       )
     }
   })
@@ -1239,7 +1297,9 @@ export function importProjectAsNew(
   const savedReqIdMap = new Map<string, string>()
   const envIdMap = new Map<string, string>()
   const suiteIdMap = new Map<string, string>()
+  const suiteItemIdMap = new Map<string, string>()
 
+  for (const it of data.testSuiteItems || []) suiteItemIdMap.set(it.id as string, randomUUID())
   for (const f of data.folders) folderIdMap.set(f.id as string, randomUUID())
   for (const e of data.endpoints) endpointIdMap.set(e.id as string, randomUUID())
   for (const s of data.savedRequests) savedReqIdMap.set(s.id as string, randomUUID())
@@ -1380,37 +1440,6 @@ export function importProjectAsNew(
       )
     }
 
-    // Named response examples (issue #125) — re-key onto the new endpoint /
-    // saved-request ids; rows whose owner did not come along are dropped.
-    const insertSavedResponse = db.prepare(
-      `INSERT INTO saved_responses (${SAVED_RESPONSE_COLUMNS.join(', ')})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    for (const r of data.savedResponses || []) {
-      const ownerType = r.owner_type as string
-      const oldOwner = r.owner_id as string
-      const newOwner =
-        ownerType === 'endpoint'
-          ? endpointIdMap.get(oldOwner)
-          : ownerType === 'saved_request'
-            ? savedReqIdMap.get(oldOwner)
-            : undefined
-      if (!newOwner) continue
-      insertSavedResponse.run(
-        randomUUID(),
-        newProjectId,
-        ownerType,
-        newOwner,
-        r.name,
-        r.protocol || 'http',
-        r.method ?? null,
-        r.url ?? null,
-        r.status_code ?? null,
-        r.response_json,
-        (r.created_at as number) || now,
-      )
-    }
-
     // Environments
     const insertEnv = db.prepare(
       `INSERT INTO environments (id, workspace_id, name, is_active, created_at, updated_at, project_id)
@@ -1529,7 +1558,7 @@ export function importProjectAsNew(
       // affected build carries the truncated URL.
       const storedItemUrl = (it.url as string | null) ?? null
       insertSuiteItem.run(
-        randomUUID(),
+        suiteItemIdMap.get(it.id as string) ?? randomUUID(),
         newSuiteId,
         newFolderId,
         it.protocol || 'http',
@@ -1546,94 +1575,43 @@ export function importProjectAsNew(
         now,
       )
     }
+
+    // Named response examples (issue #125) — re-key onto the new endpoint /
+    // saved-request ids; rows whose owner did not come along are dropped.
+    const insertSavedResponse = db.prepare(
+      `INSERT INTO saved_responses (${SAVED_RESPONSE_COLUMNS.join(', ')})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    for (const r of data.savedResponses || []) {
+      const ownerType = r.owner_type as string
+      const oldOwner = r.owner_id as string
+      const newOwner =
+        ownerType === 'endpoint'
+          ? endpointIdMap.get(oldOwner)
+          : ownerType === 'saved_request'
+            ? savedReqIdMap.get(oldOwner)
+            : ownerType === 'test_suite_item'
+              ? suiteItemIdMap.get(oldOwner)
+              : undefined
+      if (!newOwner) continue
+      insertSavedResponse.run(
+        randomUUID(),
+        newProjectId,
+        ownerType,
+        newOwner,
+        r.name,
+        r.protocol || 'http',
+        r.method ?? null,
+        r.url ?? null,
+        r.status_code ?? null,
+        r.response_json,
+        (r.created_at as number) || now,
+      )
+    }
   })
   tx()
 
   return { projectId: newProjectId }
-}
-
-// ─── Git helpers ─────────────────────────────────────────────────
-function getSecureStore(): Promise<{
-  get(key: string): unknown
-  set(key: string, value: unknown): void
-}> {
-  // NOTE: electron-store `encryptionKey` is obfuscation, not real security
-  // (the key sits in the binary). The actual sensitive credentials should
-  // be wrapped with safeStorage at write-time — `secure-storage.ts` handles
-  // that. After the rename, existing users will see an empty credentials
-  // store and be prompted to re-enter their git token; that's the migration.
-  return import('electron-store').then(({ default: Store }) => {
-    return new Store({
-      name: 'git-credentials',
-      encryptionKey: 'testnizer-secure-key-v1',
-    }) as unknown as { get(key: string): unknown; set(key: string, value: unknown): void }
-  })
-}
-
-function buildAuthUrl(repoUrl: string, username: string, token: string): string {
-  const urlObj = new URL(repoUrl)
-  urlObj.username = encodeURIComponent(username)
-  urlObj.password = encodeURIComponent(token)
-  return urlObj.toString()
-}
-
-function getSettingsStore(): Promise<{
-  get(key: string): unknown
-  set(key: string, value: unknown): void
-}> {
-  return import('electron-store').then(({ default: Store }) => {
-    return new Store({
-      name: 'settings',
-    }) as unknown as { get(key: string): unknown; set(key: string, value: unknown): void }
-  })
-}
-
-async function getProjectGitConfig(projectId: string): Promise<{
-  repoUrl: string
-  username: string
-  branch: string
-  token: string
-} | null> {
-  try {
-    const settingsStore = await getSettingsStore()
-    const gitConfig = settingsStore.get(`git`) as
-      | Record<
-          string,
-          {
-            repoUrl?: string
-            username?: string
-            branch?: string
-            token?: string
-          }
-        >
-      | undefined
-
-    const config = gitConfig?.[projectId]
-    if (!config?.repoUrl) return null
-
-    // Token may be in config directly, or in secure store (legacy).
-    // Values written since the safeStorage migration are decrypted here.
-    let token = decryptSecret(config.token || '') || ''
-    if (!token) {
-      try {
-        const secureStore = await getSecureStore()
-        const b64Key = `git.${Buffer.from(config.repoUrl).toString('base64').slice(0, 32)}`
-        const creds = secureStore.get(b64Key) as { token?: string } | undefined
-        token = decryptSecret(creds?.token || '') || ''
-      } catch {
-        /* ignore */
-      }
-    }
-
-    return {
-      repoUrl: config.repoUrl,
-      username: config.username || '',
-      branch: config.branch || 'main',
-      token,
-    }
-  } catch {
-    return null
-  }
 }
 
 // ─── Register all handlers ───────────────────────────────────────
@@ -2052,17 +2030,19 @@ export function registerSaveHandlers(): void {
         // `.json` that is not the name it computed — so the two paths took
         // turns deleting each other's committed copy.
         const projectName = projectFileSlug(data.project?.name as string | undefined)
-        const authUrl = buildAuthUrl(payload.repoUrl, payload.username, payload.token)
+        const auth = gitAuth(payload.repoUrl, payload.username, payload.token)
+        const gitOpts = await gitClientOptions(auth)
+        const gitEnv = gitProcessEnv(auth)
 
         const tmpDir = join(tmpdir(), `testnizer-git-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
-        const git = simpleGit()
+        const git = simpleGit(gitOpts).env(gitEnv)
 
         // Clone
         let isEmptyRepo = false
         try {
-          await git.clone(authUrl, tmpDir, [
+          await git.clone(auth.cleanUrl, tmpDir, [
             '--branch',
             payload.branch,
             '--single-branch',
@@ -2074,22 +2054,22 @@ export function registerSaveHandlers(): void {
           rmSync(tmpDir, { recursive: true, force: true })
           mkdirSync(tmpDir, { recursive: true })
           try {
-            await git.clone(authUrl, tmpDir, ['--depth', '1'])
-            const gitRepo = simpleGit(tmpDir)
+            await git.clone(auth.cleanUrl, tmpDir, ['--depth', '1'])
+            const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
             await gitRepo.checkoutLocalBranch(payload.branch)
           } catch {
             // Completely empty repo — init locally
             rmSync(tmpDir, { recursive: true, force: true })
             mkdirSync(tmpDir, { recursive: true })
-            const gitRepo = simpleGit(tmpDir)
+            const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
             await gitRepo.init()
-            await gitRepo.addRemote('origin', authUrl)
+            await gitRepo.addRemote('origin', auth.cleanUrl)
             await gitRepo.checkoutLocalBranch(payload.branch)
             isEmptyRepo = true
           }
         }
 
-        const gitRepo = simpleGit(tmpDir)
+        const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
 
         // Write project JSON
         const fileName = `${projectName}.json`
@@ -2113,13 +2093,20 @@ export function registerSaveHandlers(): void {
         await gitRepo.commit(payload.commitMessage || `Update ${projectName}`)
         await gitRepo.push('origin', payload.branch, isEmptyRepo ? ['--set-upstream'] : [])
 
-        // Save credentials securely (token is wrapped via OS keychain).
-        const store = await getSecureStore()
-        store.set(`git.${Buffer.from(payload.repoUrl).toString('base64').slice(0, 32)}`, {
+        // Persist the remote config where EVERY git path reads it
+        // (`settings.git.<projectId>`, token safeStorage-encrypted) so the
+        // toolbar Push/Pull work right after a manual "Save → Git". The old
+        // code wrote only the legacy `git-credentials` store, which carries
+        // the token but not the URL → "Git yapılandırması bulunamadı".
+        const settings = await getSettingsStore()
+        const allGit = (settings.get('git') as Record<string, unknown> | undefined) ?? {}
+        allGit[payload.projectId] = {
           repoUrl: payload.repoUrl,
           username: payload.username,
+          branch: payload.branch,
           token: encryptSecret(payload.token),
-        })
+        }
+        settings.set('git', allGit)
 
         addSaveHistory({
           project_id: payload.projectId,
@@ -2132,7 +2119,7 @@ export function registerSaveHandlers(): void {
 
         return { success: true, data: { repoUrl: payload.repoUrl, branch: payload.branch } }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: describeGitError(e, payload.token) }
       }
     },
   )
@@ -2147,8 +2134,9 @@ export function registerSaveHandlers(): void {
         commitMessage?: string
       },
     ) => {
+      let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
       try {
-        const config = await getProjectGitConfig(payload.projectId)
+        config = await getProjectGitConfig(payload.projectId)
         if (!config || !config.repoUrl || !config.token) {
           return {
             success: false,
@@ -2161,17 +2149,19 @@ export function registerSaveHandlers(): void {
         const data = exportProjectData(payload.projectId)
         // Shared helper — see the note in `save:git` (issue #78).
         const projectName = projectFileSlug(data.project?.name as string | undefined)
-        const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
+        const auth = gitAuth(config.repoUrl, config.username, config.token)
+        const gitOpts = await gitClientOptions(auth)
+        const gitEnv = gitProcessEnv(auth)
 
         const tmpDir = join(tmpdir(), `testnizer-push-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
-        const git = simpleGit()
+        const git = simpleGit(gitOpts).env(gitEnv)
 
         // Clone
         let isEmptyRepo = false
         try {
-          await git.clone(authUrl, tmpDir, [
+          await git.clone(auth.cleanUrl, tmpDir, [
             '--branch',
             config.branch,
             '--single-branch',
@@ -2182,22 +2172,22 @@ export function registerSaveHandlers(): void {
           rmSync(tmpDir, { recursive: true, force: true })
           mkdirSync(tmpDir, { recursive: true })
           try {
-            await git.clone(authUrl, tmpDir, ['--depth', '1'])
-            const gitRepo = simpleGit(tmpDir)
+            await git.clone(auth.cleanUrl, tmpDir, ['--depth', '1'])
+            const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
             await gitRepo.checkoutLocalBranch(config.branch)
           } catch {
             // Completely empty repo — init locally
             rmSync(tmpDir, { recursive: true, force: true })
             mkdirSync(tmpDir, { recursive: true })
-            const gitRepo = simpleGit(tmpDir)
+            const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
             await gitRepo.init()
-            await gitRepo.addRemote('origin', authUrl)
+            await gitRepo.addRemote('origin', auth.cleanUrl)
             await gitRepo.checkoutLocalBranch(config.branch)
             isEmptyRepo = true
           }
         }
 
-        const gitRepo = simpleGit(tmpDir)
+        const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
 
         // Write project JSON
         const fileName = `${projectName}.json`
@@ -2233,7 +2223,7 @@ export function registerSaveHandlers(): void {
           data: { repoUrl: config.repoUrl, branch: config.branch, message: msg },
         }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: describeGitError(e, config?.token) }
       }
     },
   )
@@ -2247,8 +2237,9 @@ export function registerSaveHandlers(): void {
         projectId: string
       },
     ) => {
+      let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
       try {
-        const config = await getProjectGitConfig(payload.projectId)
+        config = await getProjectGitConfig(payload.projectId)
         if (!config || !config.repoUrl || !config.token) {
           return {
             success: false,
@@ -2258,15 +2249,17 @@ export function registerSaveHandlers(): void {
 
         const { simpleGit } = await import('simple-git')
 
-        const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
+        const auth = gitAuth(config.repoUrl, config.username, config.token)
+        const gitOpts = await gitClientOptions(auth)
+        const gitEnv = gitProcessEnv(auth)
 
         const tmpDir = join(tmpdir(), `testnizer-pull-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
-        const git = simpleGit()
+        const git = simpleGit(gitOpts).env(gitEnv)
 
         try {
-          await git.clone(authUrl, tmpDir, [
+          await git.clone(auth.cleanUrl, tmpDir, [
             '--branch',
             config.branch,
             '--single-branch',
@@ -2278,7 +2271,7 @@ export function registerSaveHandlers(): void {
           rmSync(tmpDir, { recursive: true, force: true })
           mkdirSync(tmpDir, { recursive: true })
           try {
-            await git.clone(authUrl, tmpDir, ['--depth', '1'])
+            await git.clone(auth.cleanUrl, tmpDir, ['--depth', '1'])
           } catch {
             // Empty repo — nothing to pull
             rmSync(tmpDir, { recursive: true, force: true })
@@ -2293,8 +2286,13 @@ export function registerSaveHandlers(): void {
           return { success: false, error: "Git repository'de proje dosyası bulunamadı." }
         }
 
-        // Read first (or matching) JSON file
-        const content = readFileSync(join(tmpDir, files[0]), 'utf-8')
+        // The file that belongs to THIS project (slug match, or the only one).
+        const ownName = (
+          getDb().prepare('SELECT name FROM projects WHERE id = ?').get(payload.projectId) as
+            | { name: string }
+            | undefined
+        )?.name
+        const content = readFileSync(join(tmpDir, pickProjectFile(files, ownName)), 'utf-8')
         const data = JSON.parse(content) as ProjectExport
 
         if (!data.version || !data.project) {
@@ -2328,7 +2326,7 @@ export function registerSaveHandlers(): void {
           },
         }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: describeGitError(e, config?.token) }
       }
     },
   )
@@ -2345,9 +2343,8 @@ export function registerSaveHandlers(): void {
       },
     ) => {
       try {
-        const store = await getSecureStore()
-        const b64Key = `git.${Buffer.from(payload.repoUrl).toString('base64').slice(0, 32)}`
-        store.set(b64Key, {
+        const store = await getLegacyCredentialStore()
+        store.set(legacyCredentialKey(payload.repoUrl), {
           repoUrl: payload.repoUrl,
           username: payload.username,
           token: encryptSecret(payload.token),
@@ -2395,16 +2392,18 @@ export function registerSaveHandlers(): void {
       try {
         const { simpleGit } = await import('simple-git')
 
-        const authUrl = buildAuthUrl(payload.repoUrl, payload.username, payload.token)
+        const auth = gitAuth(payload.repoUrl, payload.username, payload.token)
+        const gitOpts = await gitClientOptions(auth)
+        const gitEnv = gitProcessEnv(auth)
 
         const tmpDir = join(tmpdir(), `testnizer-git-list-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
-        const git = simpleGit()
+        const git = simpleGit(gitOpts).env(gitEnv)
 
         let isEmpty = false
         try {
-          await git.clone(authUrl, tmpDir, [
+          await git.clone(auth.cleanUrl, tmpDir, [
             '--branch',
             payload.branch,
             '--single-branch',
@@ -2416,14 +2415,14 @@ export function registerSaveHandlers(): void {
           rmSync(tmpDir, { recursive: true, force: true })
           mkdirSync(tmpDir, { recursive: true })
           try {
-            await git.clone(authUrl, tmpDir, ['--depth', '1'])
+            await git.clone(auth.cleanUrl, tmpDir, ['--depth', '1'])
           } catch {
             // Completely empty repo — init locally and set remote
             rmSync(tmpDir, { recursive: true, force: true })
             mkdirSync(tmpDir, { recursive: true })
-            const gitRepo = simpleGit(tmpDir)
+            const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
             await gitRepo.init()
-            await gitRepo.addRemote('origin', authUrl)
+            await gitRepo.addRemote('origin', auth.cleanUrl)
             isEmpty = true
           }
         }
@@ -2439,7 +2438,7 @@ export function registerSaveHandlers(): void {
 
         return { success: true, data: { tmpDir, files, isEmpty } }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: describeGitError(e, payload.token) }
       }
     },
   )
@@ -2471,7 +2470,7 @@ export function registerSaveHandlers(): void {
   // ─── Stored Git Credentials ────────────────────────────────
   ipcMain.handle('save:getGitCredentials', async () => {
     try {
-      const store = await getSecureStore()
+      const store = await getLegacyCredentialStore()
       const all = store.get('git') as Record<string, unknown> | undefined
       return { success: true, data: all || {} }
     } catch (e) {
@@ -2483,23 +2482,26 @@ export function registerSaveHandlers(): void {
   ipcMain.handle(
     'save:gitDiff',
     async (_event, payload: { projectId: string; direction: 'push' | 'pull' }) => {
+      let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
       try {
-        const config = await getProjectGitConfig(payload.projectId)
+        config = await getProjectGitConfig(payload.projectId)
         if (!config || !config.repoUrl || !config.token) {
           return { success: false, error: 'Git configuration not found.' }
         }
 
         const { simpleGit } = await import('simple-git')
-        const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
+        const auth = gitAuth(config.repoUrl, config.username, config.token)
+        const gitOpts = await gitClientOptions(auth)
+        const gitEnv = gitProcessEnv(auth)
 
         const tmpDir = join(tmpdir(), `testnizer-diff-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
-        const git = simpleGit()
+        const git = simpleGit(gitOpts).env(gitEnv)
 
         let cloned = true
         try {
-          await git.clone(authUrl, tmpDir, [
+          await git.clone(auth.cleanUrl, tmpDir, [
             '--branch',
             config.branch,
             '--single-branch',
@@ -2619,7 +2621,7 @@ export function registerSaveHandlers(): void {
           },
         }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: describeGitError(e, config?.token) }
       }
     },
   )

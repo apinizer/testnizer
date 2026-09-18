@@ -18,6 +18,7 @@ import { useSocketIOStore } from '../stores/socketio.store'
 import { useGrpcStore } from '../stores/grpc.store'
 import { useGraphQLStore } from '../stores/graphql.store'
 import { stripWsSecuritySecrets } from './key-material'
+import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
 
 type SseHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -63,6 +64,11 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
           selectedPort: soap.selectedPort,
           selectedOperation: soap.selectedOperation,
           bodyMode: soap.bodyMode,
+          // WSDL-mode transport (Send ≡ Run parity): the Runner has no WSDL
+          // to consult, so the operation's action and the document's version
+          // travel with the row — `soapTransportFromMeta` reads exactly these.
+          soapVersion: soap.parsedWsdl?.soapVersion,
+          soapAction: soap.mode === 'manual' ? undefined : soap.getSelectedOperation()?.soapAction,
           // Manual-mode fields (issue #124): endpoint URL, body, SOAPAction /
           // version, operation name + namespace and the editor mode itself.
           // Before these were written, reopening a manual request showed an
@@ -261,6 +267,17 @@ function switchProtocolToTab(protocol: string, tabId: string): void {
   }
 }
 
+/**
+ * WS-Security was snapshotted (secrets stripped) but never restored, so a
+ * reopened SOAP tab always showed the default config — same "field blank
+ * after reopen" class as issue #124.
+ */
+function restoreWsSecurity(raw: unknown): void {
+  if (raw && typeof raw === 'object') {
+    useSoapStore.getState().setWsSecurity(raw as Partial<WsSecurityConfig>)
+  }
+}
+
 function applyProtocolMetadata(protocol: string, metadata: unknown): void {
   if (!metadata || typeof metadata !== 'object') return
   const meta = metadata as Record<string, unknown>
@@ -288,6 +305,7 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
       // synthetic WSDL is fabricated and the Manual form + raw body render.
       soap.loadFromEndpoint({ url: endpointUrl, body: { type: 'xml', content: rawXml } })
       soap.setMode('manual')
+      restoreWsSecurity(s.wsSecurity)
       const action = str(s.manualSoapAction)
       if (action !== undefined) soap.setManualSoapAction(action)
       const version = str(s.manualSoapVersion)
@@ -314,6 +332,7 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
       },
     })
     soap.setMode('wsdl')
+    restoreWsSecurity(s.wsSecurity)
     return
   }
 
