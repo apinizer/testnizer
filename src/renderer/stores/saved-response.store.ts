@@ -8,7 +8,6 @@ import type { ApiResponse, SavedResponse, SavedResponseOwnerType, Tab } from '..
 import { useTabsStore } from './tabs.store'
 import { useResponseStore } from './response.store'
 import { useRequestStore } from './request.store'
-import { useWorkspaceStore } from './workspace.store'
 
 export interface SavedResponseOwner {
   type: SavedResponseOwnerType
@@ -68,7 +67,7 @@ interface SavedResponseStore {
 
   load: (owner: SavedResponseOwner | null) => Promise<void>
   /** Persist the active tab's current response under `name`. */
-  saveCurrent: (name: string) => Promise<{ ok: boolean; error?: string }>
+  saveCurrent: (name: string) => Promise<{ ok: boolean; error?: string; bodyDropped?: boolean }>
   remove: (id: string) => Promise<boolean>
   rename: (id: string, name: string) => Promise<boolean>
   /** Show a saved example in the active tab's response pane. */
@@ -86,7 +85,9 @@ export const useSavedResponseStore = create<SavedResponseStore>((set, get) => ({
       set({ ownerKey: null, items: [], loading: false })
       return
     }
-    set({ ownerKey: key, loading: true })
+    // Clear immediately — otherwise the previous request's examples flash
+    // under the new tab's header until the fetch resolves.
+    set({ ownerKey: key, items: [], loading: true })
     try {
       const res = await window.api?.savedResponse?.list(owner.type, owner.id)
       // A slower load for a tab we already left must not clobber the new list.
@@ -105,9 +106,11 @@ export const useSavedResponseStore = create<SavedResponseStore>((set, get) => ({
     const response = useResponseStore.getState().response
     if (!response) return { ok: false, error: 'no-response' }
     const req = useRequestStore.getState()
+    const bodyDropped = Boolean(response.body && response.body.length > SAVED_RESPONSE_BODY_LIMIT)
     try {
+      // project_id is resolved in main from the owner row (a tab backed by
+      // another project's request must not be stamped with the active one).
       const res = await window.api?.savedResponse?.create({
-        project_id: useWorkspaceStore.getState().activeProjectId,
         owner_type: owner.type,
         owner_id: owner.id,
         name,
@@ -123,7 +126,7 @@ export const useSavedResponseStore = create<SavedResponseStore>((set, get) => ({
       } else {
         await get().load(owner)
       }
-      return { ok: true }
+      return { ok: true, bodyDropped }
     } catch (e) {
       return { ok: false, error: (e as Error).message }
     }

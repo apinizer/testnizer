@@ -38,7 +38,12 @@ export function registerSavedResponseHandlers(): void {
         if (typeof payload.response_json !== 'string' || !payload.response_json) {
           return { success: false, error: 'No response to save.' }
         }
-        return { success: true, data: repo.createSavedResponse(payload) }
+        if (!repo.ownerExists(payload.owner_type, payload.owner_id)) {
+          return { success: false, error: 'The request this response belongs to no longer exists.' }
+        }
+        // project_id comes from the owner row, not from the renderer.
+        const project_id = repo.resolveOwnerProjectId(payload.owner_type, payload.owner_id)
+        return { success: true, data: repo.createSavedResponse({ ...payload, project_id }) }
       } catch (e) {
         return { success: false, error: (e as Error).message }
       }

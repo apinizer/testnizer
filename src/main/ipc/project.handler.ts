@@ -268,8 +268,8 @@ function duplicateFolderDeep(rootFolderId: string): { newFolderId: string } {
       const insertSr = db.prepare(
         `INSERT INTO saved_requests
            (id, project_id, folder_id, name, protocol, method, url, params, headers, body, auth,
-            pre_script, post_script, assertions, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            pre_script, post_script, assertions, metadata, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       for (const sr of saved) {
         insertSr.run(
@@ -287,6 +287,8 @@ function duplicateFolderDeep(rootFolderId: string): { newFolderId: string } {
           sr.pre_script ?? null,
           sr.post_script ?? null,
           sr.assertions ?? null,
+          // Protocol metadata (SOAP/WS/SSE/gRPC/GraphQL/Socket.IO state) travels with the copy.
+          sr.metadata ?? null,
           sr.sort_order ?? 0,
           now,
           now,

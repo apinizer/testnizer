@@ -304,7 +304,7 @@ const SCHEMA_SQL = `
 
   CREATE TABLE saved_responses (
     id TEXT PRIMARY KEY,
-    project_id TEXT,
+    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
     owner_type TEXT NOT NULL,
     owner_id TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -315,6 +315,8 @@ const SCHEMA_SQL = `
     response_json TEXT NOT NULL,
     created_at INTEGER NOT NULL
   );
+
+
 
   CREATE TABLE settings (
     key TEXT PRIMARY KEY,
@@ -556,6 +558,44 @@ const SCHEMA_SQL = `
     response_order INTEGER NOT NULL DEFAULT 0,
     enabled INTEGER NOT NULL DEFAULT 1
   );
+
+  -- Examples die with their owner (issue #125 follow-up): the owner tables
+  -- carry no FK to saved_responses, so cascade via triggers. Bulk deletes
+  -- (folder delete, git re-import) fire them row by row too.
+  CREATE TRIGGER IF NOT EXISTS trg_saved_responses_endpoint_del
+    AFTER DELETE ON endpoints BEGIN
+      DELETE FROM saved_responses WHERE owner_type = 'endpoint' AND owner_id = OLD.id;
+    END;
+  CREATE TRIGGER IF NOT EXISTS trg_saved_responses_saved_request_del
+    AFTER DELETE ON saved_requests BEGIN
+      DELETE FROM saved_responses WHERE owner_type = 'saved_request' AND owner_id = OLD.id;
+    END;
+  CREATE TRIGGER IF NOT EXISTS trg_saved_responses_suite_item_del
+    AFTER DELETE ON test_suite_items BEGIN
+      DELETE FROM saved_responses WHERE owner_type = 'test_suite_item' AND owner_id = OLD.id;
+    END;
+  CREATE TRIGGER IF NOT EXISTS trg_saved_responses_project_del
+    AFTER DELETE ON projects BEGIN
+      DELETE FROM saved_responses WHERE project_id = OLD.id;
+    END;
+    -- FK cascades (suite → items, workspace → projects) do NOT fire row
+  -- triggers on the children, so catch them one level up, BEFORE the
+  -- children disappear.
+  CREATE TRIGGER IF NOT EXISTS trg_saved_responses_suite_del
+    BEFORE DELETE ON test_suites BEGIN
+      DELETE FROM saved_responses WHERE owner_type = 'test_suite_item'
+        AND owner_id IN (SELECT id FROM test_suite_items WHERE suite_id = OLD.id);
+    END;
+  CREATE TRIGGER IF NOT EXISTS trg_saved_responses_suite_folder_del
+    BEFORE DELETE ON test_suite_folders BEGIN
+      DELETE FROM saved_responses WHERE owner_type = 'test_suite_item'
+        AND owner_id IN (SELECT id FROM test_suite_items WHERE folder_id = OLD.id);
+    END;
+  CREATE TRIGGER IF NOT EXISTS trg_saved_responses_workspace_del
+    BEFORE DELETE ON workspaces BEGIN
+      DELETE FROM saved_responses
+        WHERE project_id IN (SELECT id FROM projects WHERE workspace_id = OLD.id);
+    END;
 `
 
 /** Insert a workspace and return its id. */

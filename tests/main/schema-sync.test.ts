@@ -325,6 +325,24 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
     db.exec(`ALTER TABLE users ADD COLUMN recovery_email TEXT`)
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS saved_responses (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      owner_type TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      protocol TEXT NOT NULL DEFAULT 'http',
+      method TEXT,
+      url TEXT,
+      status_code INTEGER,
+      response_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_saved_responses_owner ON saved_responses(owner_type, owner_id);
+    CREATE INDEX IF NOT EXISTS idx_saved_responses_project ON saved_responses(project_id);
+  `)
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS certificates (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,

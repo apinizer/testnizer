@@ -114,6 +114,8 @@ interface FolderExport {
   folders: Record<string, unknown>[]
   endpoints: Record<string, unknown>[]
   endpointCases: Record<string, unknown>[]
+  // Named response examples of the folder's endpoints / saved requests (issue #125).
+  savedResponses?: Record<string, unknown>[]
   // Ad-hoc saved requests live in their own table (`saved_requests`), separate
   // from the structured `endpoints`. The full project export already carried
   // them; a folder export that only collected `endpoints` silently dropped
@@ -591,6 +593,7 @@ function collectFolderTree(rootFolderId: string): {
   endpoints: Record<string, unknown>[]
   endpointCases: Record<string, unknown>[]
   savedRequests: Record<string, unknown>[]
+  savedResponses: Record<string, unknown>[]
 } {
   const db = getDb()
 
@@ -598,7 +601,7 @@ function collectFolderTree(rootFolderId: string): {
     | Record<string, unknown>
     | undefined
   if (!rootFolder) {
-    return { folders: [], endpoints: [], endpointCases: [], savedRequests: [] }
+    return { folders: [], endpoints: [], endpointCases: [], savedRequests: [], savedResponses: [] }
   }
 
   // Recursively gather all descendant folder IDs (BFS)
@@ -637,11 +640,24 @@ function collectFolderTree(rootFolderId: string): {
     .prepare(`SELECT * FROM saved_requests WHERE folder_id IN (${ph})`)
     .all(...folderIds) as Record<string, unknown>[]
 
-  return { folders, endpoints, endpointCases, savedRequests }
+  // Named response examples pinned to those rows (issue #125).
+  const ownerIds = [...endpointIds, ...savedRequests.map((r) => r.id as string)]
+  let savedResponses: Record<string, unknown>[] = []
+  if (ownerIds.length > 0) {
+    const oph = ownerIds.map(() => '?').join(',')
+    savedResponses = db
+      .prepare(
+        `SELECT * FROM saved_responses WHERE owner_type IN ('endpoint','saved_request') AND owner_id IN (${oph})`,
+      )
+      .all(...ownerIds) as Record<string, unknown>[]
+  }
+
+  return { folders, endpoints, endpointCases, savedRequests, savedResponses }
 }
 
 export function exportFolderData(folderId: string): FolderExport {
-  const { folders, endpoints, endpointCases, savedRequests } = collectFolderTree(folderId)
+  const { folders, endpoints, endpointCases, savedRequests, savedResponses } =
+    collectFolderTree(folderId)
   return {
     version: '1.0.0',
     exportedAt: Date.now(),
@@ -651,6 +667,7 @@ export function exportFolderData(folderId: string): FolderExport {
     endpoints,
     endpointCases,
     savedRequests,
+    savedResponses,
   }
 }
 
@@ -783,6 +800,37 @@ export function importFolderData(
         s.sort_order ?? 0,
         (s.created_at as number) || now,
         now,
+      )
+    }
+
+    // Named response examples — re-key onto the new endpoint / saved-request
+    // ids (issue #125); rows whose owner did not come along are dropped.
+    const insertSavedResponse = db.prepare(
+      `INSERT INTO saved_responses (${SAVED_RESPONSE_COLUMNS.join(', ')})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    for (const r of data.savedResponses || []) {
+      const ownerType = r.owner_type as string
+      const oldOwner = r.owner_id as string
+      const newOwner =
+        ownerType === 'endpoint'
+          ? endpointIdMap.get(oldOwner)
+          : ownerType === 'saved_request'
+            ? savedReqIdMap.get(oldOwner)
+            : undefined
+      if (!newOwner) continue
+      insertSavedResponse.run(
+        randomUUID(),
+        projectId,
+        ownerType,
+        newOwner,
+        r.name,
+        r.protocol || 'http',
+        r.method ?? null,
+        r.url ?? null,
+        r.status_code ?? null,
+        r.response_json,
+        (r.created_at as number) || now,
       )
     }
   })
@@ -1247,7 +1295,9 @@ export function importProjectAsNew(
   const savedReqIdMap = new Map<string, string>()
   const envIdMap = new Map<string, string>()
   const suiteIdMap = new Map<string, string>()
+  const suiteItemIdMap = new Map<string, string>()
 
+  for (const it of data.testSuiteItems || []) suiteItemIdMap.set(it.id as string, randomUUID())
   for (const f of data.folders) folderIdMap.set(f.id as string, randomUUID())
   for (const e of data.endpoints) endpointIdMap.set(e.id as string, randomUUID())
   for (const s of data.savedRequests) savedReqIdMap.set(s.id as string, randomUUID())
@@ -1388,37 +1438,6 @@ export function importProjectAsNew(
       )
     }
 
-    // Named response examples (issue #125) — re-key onto the new endpoint /
-    // saved-request ids; rows whose owner did not come along are dropped.
-    const insertSavedResponse = db.prepare(
-      `INSERT INTO saved_responses (${SAVED_RESPONSE_COLUMNS.join(', ')})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    for (const r of data.savedResponses || []) {
-      const ownerType = r.owner_type as string
-      const oldOwner = r.owner_id as string
-      const newOwner =
-        ownerType === 'endpoint'
-          ? endpointIdMap.get(oldOwner)
-          : ownerType === 'saved_request'
-            ? savedReqIdMap.get(oldOwner)
-            : undefined
-      if (!newOwner) continue
-      insertSavedResponse.run(
-        randomUUID(),
-        newProjectId,
-        ownerType,
-        newOwner,
-        r.name,
-        r.protocol || 'http',
-        r.method ?? null,
-        r.url ?? null,
-        r.status_code ?? null,
-        r.response_json,
-        (r.created_at as number) || now,
-      )
-    }
-
     // Environments
     const insertEnv = db.prepare(
       `INSERT INTO environments (id, workspace_id, name, is_active, created_at, updated_at, project_id)
@@ -1537,7 +1556,7 @@ export function importProjectAsNew(
       // affected build carries the truncated URL.
       const storedItemUrl = (it.url as string | null) ?? null
       insertSuiteItem.run(
-        randomUUID(),
+        suiteItemIdMap.get(it.id as string) ?? randomUUID(),
         newSuiteId,
         newFolderId,
         it.protocol || 'http',
@@ -1552,6 +1571,39 @@ export function importProjectAsNew(
         it.sort_order ?? 0,
         (it.created_at as number) || now,
         now,
+      )
+    }
+
+    // Named response examples (issue #125) — re-key onto the new endpoint /
+    // saved-request ids; rows whose owner did not come along are dropped.
+    const insertSavedResponse = db.prepare(
+      `INSERT INTO saved_responses (${SAVED_RESPONSE_COLUMNS.join(', ')})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    for (const r of data.savedResponses || []) {
+      const ownerType = r.owner_type as string
+      const oldOwner = r.owner_id as string
+      const newOwner =
+        ownerType === 'endpoint'
+          ? endpointIdMap.get(oldOwner)
+          : ownerType === 'saved_request'
+            ? savedReqIdMap.get(oldOwner)
+            : ownerType === 'test_suite_item'
+              ? suiteItemIdMap.get(oldOwner)
+              : undefined
+      if (!newOwner) continue
+      insertSavedResponse.run(
+        randomUUID(),
+        newProjectId,
+        ownerType,
+        newOwner,
+        r.name,
+        r.protocol || 'http',
+        r.method ?? null,
+        r.url ?? null,
+        r.status_code ?? null,
+        r.response_json,
+        (r.created_at as number) || now,
       )
     }
   })

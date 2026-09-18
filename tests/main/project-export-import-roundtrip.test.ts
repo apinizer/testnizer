@@ -241,7 +241,7 @@ function createSchema(db: Database.Database): void {
     );
     CREATE TABLE saved_responses (
       id TEXT PRIMARY KEY,
-      project_id TEXT,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
       owner_type TEXT NOT NULL,
       owner_id TEXT NOT NULL,
       name TEXT NOT NULL,

@@ -3,7 +3,13 @@
  * pinned to a request (endpoint / saved request / suite item).
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { setupHandlerHarness, makeElectronMock, createTestDb, seedProject, seedWorkspace } from './helpers'
+import {
+  setupHandlerHarness,
+  makeElectronMock,
+  createTestDb,
+  seedProject,
+  seedWorkspace,
+} from './helpers'
 
 const harness = setupHandlerHarness()
 vi.mock('electron', () => makeElectronMock())
@@ -13,7 +19,8 @@ vi.mock('../../../src/main/db/database', () => ({
   getDb: () => testDb,
 }))
 
-const { registerSavedResponseHandlers } = await import('../../../src/main/ipc/saved-response.handler')
+const { registerSavedResponseHandlers } =
+  await import('../../../src/main/ipc/saved-response.handler')
 
 let projectId: string
 
@@ -21,6 +28,30 @@ beforeEach(() => {
   harness.reset()
   testDb = createTestDb()
   projectId = seedProject(testDb, seedWorkspace(testDb))
+  const now = Date.now()
+  testDb
+    .prepare(
+      `INSERT INTO saved_requests (id, project_id, name, protocol, method, url, params, headers, assertions, sort_order, created_at, updated_at)
+       VALUES ('sr-1', ?, 'S', 'http', 'GET', 'http://x', '[]', '[]', '[]', 0, ?, ?)`,
+    )
+    .run(projectId, now, now)
+  testDb
+    .prepare(
+      `INSERT INTO endpoints (id, project_id, name, protocol, method, path, status, sort_order, created_at, updated_at)
+       VALUES ('ep-1', ?, 'E', 'http', 'GET', '/x', 'developing', 0, ?, ?)`,
+    )
+    .run(projectId, now, now)
+  testDb
+    .prepare(
+      `INSERT INTO test_suites (id, project_id, name, sort_order, created_at, updated_at) VALUES ('ts-1', ?, 'T', 0, ?, ?)`,
+    )
+    .run(projectId, now, now)
+  testDb
+    .prepare(
+      `INSERT INTO test_suite_items (id, suite_id, protocol, name, request_schema, sort_order, created_at, updated_at)
+       VALUES ('item-1', 'ts-1', 'http', 'I', '{}', 0, ?, ?)`,
+    )
+    .run(now, now)
   registerSavedResponseHandlers()
 })
 
@@ -29,7 +60,8 @@ const snapshot = JSON.stringify({ status: 200, statusText: 'OK', body: '{"ok":tr
 describe('savedResponse:create + list', () => {
   it('creates a named example and lists it for its owner only', async () => {
     const created = (await harness.invoke('savedResponse:create', {
-      project_id: projectId,
+      // project_id is deliberately WRONG here: main must resolve it from the owner row.
+      project_id: 'bogus-project',
       owner_type: 'saved_request',
       owner_id: 'sr-1',
       name: '200 success sample',
@@ -38,9 +70,10 @@ describe('savedResponse:create + list', () => {
       url: 'https://api.test/users',
       status_code: 200,
       response_json: snapshot,
-    })) as { success: boolean; data?: { id: string; name: string } }
+    })) as { success: boolean; data?: { id: string; name: string; project_id: string } }
     expect(created.success).toBe(true)
     expect(created.data?.name).toBe('200 success sample')
+    expect(created.data?.project_id).toBe(projectId)
 
     const list = (await harness.invoke('savedResponse:list', 'saved_request', 'sr-1')) as {
       success: boolean
@@ -71,6 +104,17 @@ describe('savedResponse:create + list', () => {
       data: Array<{ name: string }>
     }
     expect(list.data.map((r) => r.name)).toEqual(['second', 'first'])
+  })
+
+  it('rejects an owner row that no longer exists (stale tab) instead of creating an orphan', async () => {
+    const res = (await harness.invoke('savedResponse:create', {
+      owner_type: 'endpoint',
+      owner_id: 'deleted-ep',
+      name: 'x',
+      response_json: snapshot,
+    })) as { success: boolean; error?: string }
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/no longer exists/i)
   })
 
   it('rejects a missing owner or empty snapshot with a structured error', async () => {

@@ -1,10 +1,12 @@
-import { useEffect } from 'react'
-import { Bookmark, Trash2, ExternalLink } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Bookmark, Trash2, ExternalLink, Pencil } from 'lucide-react'
 import { useSavedResponseStore, savedResponseOwnerForTab } from '../../stores/saved-response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
 import StatusBadge from '../shared/StatusBadge'
 import EmptyState from '../shared/EmptyState'
+import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
+import type { SavedResponse } from '../../types'
 
 /**
  * "Saved" response sub-tab (issue #125): the named examples pinned to the
@@ -17,6 +19,11 @@ export default function SavedResponsesTab() {
   const load = useSavedResponseStore((s) => s.load)
   const open = useSavedResponseStore((s) => s.open)
   const remove = useSavedResponseStore((s) => s.remove)
+  const rename = useSavedResponseStore((s) => s.rename)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<SavedResponse | null>(null)
+  const renameRef = useRef<HTMLInputElement>(null)
   const activeTab = useTabsStore((s) => s.tabs.find((tb) => tb.id === s.activeTabId))
   const owner = savedResponseOwnerForTab(activeTab)
   const ownerKey = owner ? `${owner.type}:${owner.id}` : null
@@ -26,6 +33,25 @@ export default function SavedResponsesTab() {
     // Reload when the backing row changes (Save As on a scratch tab).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerKey])
+
+  useEffect(() => {
+    if (renamingId) setTimeout(() => renameRef.current?.select(), 10)
+  }, [renamingId])
+
+  function startRename(item: SavedResponse): void {
+    setRenameValue(item.name)
+    setRenamingId(item.id)
+  }
+
+  async function commitRename(): Promise<void> {
+    const id = renamingId
+    const value = renameValue.trim()
+    setRenamingId(null)
+    if (!id || !value) return
+    const current = items.find((i) => i.id === id)
+    if (!current || current.name === value) return
+    await rename(id, value)
+  }
 
   if (!owner) {
     return (
@@ -61,7 +87,29 @@ export default function SavedResponsesTab() {
         >
           {item.status_code != null && <StatusBadge status={item.status_code} pill />}
           <div className="min-w-0 flex-1">
-            <div className="truncate font-medium text-[var(--text)]">{item.name}</div>
+            {renamingId === item.id ? (
+              <input
+                ref={renameRef}
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={() => void commitRename()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void commitRename()
+                  if (e.key === 'Escape') setRenamingId(null)
+                }}
+                data-testid="saved-response-rename"
+                className="w-full rounded border border-[var(--accent)] bg-[var(--white)] px-1 text-[var(--text)] outline-none"
+              />
+            ) : (
+              <div
+                className="truncate font-medium text-[var(--text)]"
+                onDoubleClick={() => startRename(item)}
+                title={t('response.renameSavedResponseHint')}
+              >
+                {item.name}
+              </div>
+            )}
             <div className="truncate text-[var(--muted)]" style={{ fontSize: 11 }}>
               {item.method ? `${item.method} ` : ''}
               {item.url || ''}
@@ -81,7 +129,16 @@ export default function SavedResponsesTab() {
           </button>
           <button
             type="button"
-            onClick={() => void remove(item.id)}
+            onClick={() => startRename(item)}
+            title={t('response.renameSavedResponse')}
+            className="flex cursor-pointer items-center justify-center rounded p-1 text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+            style={{ background: 'transparent', border: 'none' }}
+          >
+            <Pencil size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setDeleteTarget(item)}
             title={t('response.deleteSavedResponse')}
             className="flex cursor-pointer items-center justify-center rounded p-1 text-[var(--muted)] transition-colors hover:text-[var(--red)]"
             style={{ background: 'transparent', border: 'none' }}
@@ -90,6 +147,16 @@ export default function SavedResponsesTab() {
           </button>
         </div>
       ))}
+      <DeleteConfirmDialog
+        open={deleteTarget !== null}
+        itemName={deleteTarget?.name ?? ''}
+        itemType={t('response.savedResponseItemType')}
+        onConfirm={() => {
+          if (deleteTarget) void remove(deleteTarget.id)
+          setDeleteTarget(null)
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   )
 }

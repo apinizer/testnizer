@@ -39,6 +39,49 @@ export const SAVED_RESPONSE_COLUMNS = [
 /** Response bodies above this are dropped, matching the history snapshot cap. */
 export const SAVED_RESPONSE_BODY_LIMIT = 500_000
 
+/**
+ * The project an owner row belongs to — resolved in MAIN, never trusted from
+ * the renderer: a tab backed by project A's request while project B is active
+ * would otherwise stamp the example onto B (wrong export, wrong cleanup).
+ * Returns null when the owner row no longer exists.
+ */
+export function resolveOwnerProjectId(
+  ownerType: SavedResponseOwnerType,
+  ownerId: string,
+): string | null {
+  const db = getDb()
+  if (ownerType === 'endpoint') {
+    const r = db.prepare('SELECT project_id FROM endpoints WHERE id = ?').get(ownerId) as
+      | { project_id: string | null }
+      | undefined
+    return r ? (r.project_id ?? null) : null
+  }
+  if (ownerType === 'saved_request') {
+    const r = db.prepare('SELECT project_id FROM saved_requests WHERE id = ?').get(ownerId) as
+      | { project_id: string | null }
+      | undefined
+    return r ? (r.project_id ?? null) : null
+  }
+  const r = db
+    .prepare(
+      `SELECT s.project_id AS project_id FROM test_suite_items i
+         JOIN test_suites s ON s.id = i.suite_id WHERE i.id = ?`,
+    )
+    .get(ownerId) as { project_id: string | null } | undefined
+  return r ? (r.project_id ?? null) : null
+}
+
+export function ownerExists(ownerType: SavedResponseOwnerType, ownerId: string): boolean {
+  const db = getDb()
+  const table =
+    ownerType === 'endpoint'
+      ? 'endpoints'
+      : ownerType === 'saved_request'
+        ? 'saved_requests'
+        : 'test_suite_items'
+  return Boolean(db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(ownerId))
+}
+
 export function listSavedResponses(
   ownerType: SavedResponseOwnerType,
   ownerId: string,

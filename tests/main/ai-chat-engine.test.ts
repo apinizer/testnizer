@@ -97,6 +97,17 @@ describe('buildHeaders', () => {
     expect(Object.keys(h).filter((k) => k.toLowerCase() === 'authorization')).toHaveLength(1)
   })
 
+  it('rejects an invalid header VALUE naming only the header, never echoing the value', () => {
+    expect(() => buildHeaders('openai', 'k', { Authorization: 'Bearer secret\r\nX: y' })).toThrow(
+      /Invalid custom header "Authorization"/,
+    )
+    try {
+      buildHeaders('openai', 'k', { Authorization: 'Bearer secret\r\nX: y' })
+    } catch (e) {
+      expect((e as Error).message).not.toContain('secret')
+    }
+  })
+
   it('ignores blank header names and lets custom Content-Type override', () => {
     const h = buildHeaders('openai', 'k', { '': 'x', 'content-type': 'application/vnd+json' })
     expect(h['']).toBeUndefined()

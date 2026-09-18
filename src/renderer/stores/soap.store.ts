@@ -18,6 +18,7 @@ import { makeId } from '../lib/utils'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for SOAP, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
+import { soapTransportHeaders } from '../../shared/soap-transport'
 
 /** SOAP metadata stored in endpoint request_schema.soap */
 interface SoapEndpointMeta {
@@ -413,23 +414,9 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
       op?.soapAction || manualSoapAction || '',
       activeVars,
     )
-    const headerPairs =
-      effectiveVersion === 'soap12'
-        ? [
-            {
-              key: 'Content-Type',
-              value: resolvedSoapAction
-                ? `application/soap+xml; charset=utf-8; action="${resolvedSoapAction}"`
-                : 'application/soap+xml; charset=utf-8',
-              enabled: true,
-            },
-          ]
-        : [
-            { key: 'Content-Type', value: 'text/xml; charset=utf-8', enabled: true },
-            // SOAP 1.1 requires the action quoted; an unquoted/empty value is
-            // what the server rejected in the report.
-            { key: 'SOAPAction', value: `"${resolvedSoapAction}"`, enabled: true },
-          ]
+    // Transport headers come from the SHARED helper so Send and the Runner
+    // agree (src/shared/soap-transport.ts).
+    const headerPairs = soapTransportHeaders(effectiveVersion, resolvedSoapAction)
     const resolvedHeaders = resolveKeyValuePairs(headerPairs, activeVars)
     const resolvedWsseUsername = resolveVariables(
       wsSecurity.usernameToken?.username || wsSecurity.username || '',

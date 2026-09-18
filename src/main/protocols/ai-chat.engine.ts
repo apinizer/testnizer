@@ -125,6 +125,16 @@ export function buildHeaders(
     for (const [rawKey, value] of Object.entries(extra)) {
       const name = rawKey.trim()
       if (!name) continue
+      // Validate up front so a pasted token with a stray newline fails with a
+      // message that names the header — fetch's own error would echo the
+      // VALUE (the credential) into the UI and the console log.
+      try {
+        new Headers({ [name]: value })
+      } catch {
+        throw new Error(
+          `Invalid custom header "${name}" (check for line breaks or illegal characters)`,
+        )
+      }
       for (const existing of Object.keys(headers)) {
         if (existing.toLowerCase() === name.toLowerCase()) delete headers[existing]
       }
