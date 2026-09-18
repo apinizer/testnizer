@@ -22,6 +22,7 @@ export interface TestServerPorts {
   grpc: number
   mcp: number
   llm: number
+  git: number
 }
 
 export const PORT_ENV_KEYS: Record<keyof TestServerPorts, string> = {
@@ -33,4 +34,5 @@ export const PORT_ENV_KEYS: Record<keyof TestServerPorts, string> = {
   grpc: 'E2E_GRPC_PORT',
   mcp: 'E2E_MCP_PORT',
   llm: 'E2E_LLM_PORT',
+  git: 'E2E_GIT_PORT',
 }

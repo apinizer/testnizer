@@ -25,6 +25,14 @@ import {
 import { snapshotEndpointForSuite, ensureUniqueSuiteName } from './test-suite.handler'
 import { getEndpointById } from '../db/endpoint.repo'
 import { SAVED_RESPONSE_COLUMNS } from '../db/saved-response.repo'
+import {
+  getProjectGitConfig,
+  gitAuth,
+  identityConfig,
+  getSettingsStore,
+  getLegacyCredentialStore,
+  legacyCredentialKey,
+} from '../lib/git-config'
 import { projectFileSlug } from '../lib/project-file'
 import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
 
@@ -1552,90 +1560,6 @@ export function importProjectAsNew(
   return { projectId: newProjectId }
 }
 
-// ─── Git helpers ─────────────────────────────────────────────────
-function getSecureStore(): Promise<{
-  get(key: string): unknown
-  set(key: string, value: unknown): void
-}> {
-  // NOTE: electron-store `encryptionKey` is obfuscation, not real security
-  // (the key sits in the binary). The actual sensitive credentials should
-  // be wrapped with safeStorage at write-time — `secure-storage.ts` handles
-  // that. After the rename, existing users will see an empty credentials
-  // store and be prompted to re-enter their git token; that's the migration.
-  return import('electron-store').then(({ default: Store }) => {
-    return new Store({
-      name: 'git-credentials',
-      encryptionKey: 'testnizer-secure-key-v1',
-    }) as unknown as { get(key: string): unknown; set(key: string, value: unknown): void }
-  })
-}
-
-function buildAuthUrl(repoUrl: string, username: string, token: string): string {
-  const urlObj = new URL(repoUrl)
-  urlObj.username = encodeURIComponent(username)
-  urlObj.password = encodeURIComponent(token)
-  return urlObj.toString()
-}
-
-function getSettingsStore(): Promise<{
-  get(key: string): unknown
-  set(key: string, value: unknown): void
-}> {
-  return import('electron-store').then(({ default: Store }) => {
-    return new Store({
-      name: 'settings',
-    }) as unknown as { get(key: string): unknown; set(key: string, value: unknown): void }
-  })
-}
-
-async function getProjectGitConfig(projectId: string): Promise<{
-  repoUrl: string
-  username: string
-  branch: string
-  token: string
-} | null> {
-  try {
-    const settingsStore = await getSettingsStore()
-    const gitConfig = settingsStore.get(`git`) as
-      | Record<
-          string,
-          {
-            repoUrl?: string
-            username?: string
-            branch?: string
-            token?: string
-          }
-        >
-      | undefined
-
-    const config = gitConfig?.[projectId]
-    if (!config?.repoUrl) return null
-
-    // Token may be in config directly, or in secure store (legacy).
-    // Values written since the safeStorage migration are decrypted here.
-    let token = decryptSecret(config.token || '') || ''
-    if (!token) {
-      try {
-        const secureStore = await getSecureStore()
-        const b64Key = `git.${Buffer.from(config.repoUrl).toString('base64').slice(0, 32)}`
-        const creds = secureStore.get(b64Key) as { token?: string } | undefined
-        token = decryptSecret(creds?.token || '') || ''
-      } catch {
-        /* ignore */
-      }
-    }
-
-    return {
-      repoUrl: config.repoUrl,
-      username: config.username || '',
-      branch: config.branch || 'main',
-      token,
-    }
-  } catch {
-    return null
-  }
-}
-
 // ─── Register all handlers ───────────────────────────────────────
 export function registerSaveHandlers(): void {
   // ─── Generic: write JSON to file via save dialog ───────────
@@ -2052,17 +1976,19 @@ export function registerSaveHandlers(): void {
         // `.json` that is not the name it computed — so the two paths took
         // turns deleting each other's committed copy.
         const projectName = projectFileSlug(data.project?.name as string | undefined)
-        const authUrl = buildAuthUrl(payload.repoUrl, payload.username, payload.token)
+        const auth = gitAuth(payload.repoUrl, payload.username, payload.token)
+        const gitOpts = { config: [...auth.config, ...(await identityConfig())] }
+        const gitEnv = { ...process.env, ...auth.env }
 
         const tmpDir = join(tmpdir(), `testnizer-git-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
-        const git = simpleGit()
+        const git = simpleGit(gitOpts).env(gitEnv)
 
         // Clone
         let isEmptyRepo = false
         try {
-          await git.clone(authUrl, tmpDir, [
+          await git.clone(auth.cleanUrl, tmpDir, [
             '--branch',
             payload.branch,
             '--single-branch',
@@ -2074,22 +2000,22 @@ export function registerSaveHandlers(): void {
           rmSync(tmpDir, { recursive: true, force: true })
           mkdirSync(tmpDir, { recursive: true })
           try {
-            await git.clone(authUrl, tmpDir, ['--depth', '1'])
-            const gitRepo = simpleGit(tmpDir)
+            await git.clone(auth.cleanUrl, tmpDir, ['--depth', '1'])
+            const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
             await gitRepo.checkoutLocalBranch(payload.branch)
           } catch {
             // Completely empty repo — init locally
             rmSync(tmpDir, { recursive: true, force: true })
             mkdirSync(tmpDir, { recursive: true })
-            const gitRepo = simpleGit(tmpDir)
+            const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
             await gitRepo.init()
-            await gitRepo.addRemote('origin', authUrl)
+            await gitRepo.addRemote('origin', auth.cleanUrl)
             await gitRepo.checkoutLocalBranch(payload.branch)
             isEmptyRepo = true
           }
         }
 
-        const gitRepo = simpleGit(tmpDir)
+        const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
 
         // Write project JSON
         const fileName = `${projectName}.json`
@@ -2113,13 +2039,20 @@ export function registerSaveHandlers(): void {
         await gitRepo.commit(payload.commitMessage || `Update ${projectName}`)
         await gitRepo.push('origin', payload.branch, isEmptyRepo ? ['--set-upstream'] : [])
 
-        // Save credentials securely (token is wrapped via OS keychain).
-        const store = await getSecureStore()
-        store.set(`git.${Buffer.from(payload.repoUrl).toString('base64').slice(0, 32)}`, {
+        // Persist the remote config where EVERY git path reads it
+        // (`settings.git.<projectId>`, token safeStorage-encrypted) so the
+        // toolbar Push/Pull work right after a manual "Save → Git". The old
+        // code wrote only the legacy `git-credentials` store, which carries
+        // the token but not the URL → "Git yapılandırması bulunamadı".
+        const settings = await getSettingsStore()
+        const allGit = (settings.get('git') as Record<string, unknown> | undefined) ?? {}
+        allGit[payload.projectId] = {
           repoUrl: payload.repoUrl,
           username: payload.username,
+          branch: payload.branch,
           token: encryptSecret(payload.token),
-        })
+        }
+        settings.set('git', allGit)
 
         addSaveHistory({
           project_id: payload.projectId,
@@ -2161,17 +2094,19 @@ export function registerSaveHandlers(): void {
         const data = exportProjectData(payload.projectId)
         // Shared helper — see the note in `save:git` (issue #78).
         const projectName = projectFileSlug(data.project?.name as string | undefined)
-        const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
+        const auth = gitAuth(config.repoUrl, config.username, config.token)
+        const gitOpts = { config: [...auth.config, ...(await identityConfig())] }
+        const gitEnv = { ...process.env, ...auth.env }
 
         const tmpDir = join(tmpdir(), `testnizer-push-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
-        const git = simpleGit()
+        const git = simpleGit(gitOpts).env(gitEnv)
 
         // Clone
         let isEmptyRepo = false
         try {
-          await git.clone(authUrl, tmpDir, [
+          await git.clone(auth.cleanUrl, tmpDir, [
             '--branch',
             config.branch,
             '--single-branch',
@@ -2182,22 +2117,22 @@ export function registerSaveHandlers(): void {
           rmSync(tmpDir, { recursive: true, force: true })
           mkdirSync(tmpDir, { recursive: true })
           try {
-            await git.clone(authUrl, tmpDir, ['--depth', '1'])
-            const gitRepo = simpleGit(tmpDir)
+            await git.clone(auth.cleanUrl, tmpDir, ['--depth', '1'])
+            const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
             await gitRepo.checkoutLocalBranch(config.branch)
           } catch {
             // Completely empty repo — init locally
             rmSync(tmpDir, { recursive: true, force: true })
             mkdirSync(tmpDir, { recursive: true })
-            const gitRepo = simpleGit(tmpDir)
+            const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
             await gitRepo.init()
-            await gitRepo.addRemote('origin', authUrl)
+            await gitRepo.addRemote('origin', auth.cleanUrl)
             await gitRepo.checkoutLocalBranch(config.branch)
             isEmptyRepo = true
           }
         }
 
-        const gitRepo = simpleGit(tmpDir)
+        const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
 
         // Write project JSON
         const fileName = `${projectName}.json`
@@ -2258,15 +2193,17 @@ export function registerSaveHandlers(): void {
 
         const { simpleGit } = await import('simple-git')
 
-        const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
+        const auth = gitAuth(config.repoUrl, config.username, config.token)
+        const gitOpts = { config: [...auth.config, ...(await identityConfig())] }
+        const gitEnv = { ...process.env, ...auth.env }
 
         const tmpDir = join(tmpdir(), `testnizer-pull-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
-        const git = simpleGit()
+        const git = simpleGit(gitOpts).env(gitEnv)
 
         try {
-          await git.clone(authUrl, tmpDir, [
+          await git.clone(auth.cleanUrl, tmpDir, [
             '--branch',
             config.branch,
             '--single-branch',
@@ -2278,7 +2215,7 @@ export function registerSaveHandlers(): void {
           rmSync(tmpDir, { recursive: true, force: true })
           mkdirSync(tmpDir, { recursive: true })
           try {
-            await git.clone(authUrl, tmpDir, ['--depth', '1'])
+            await git.clone(auth.cleanUrl, tmpDir, ['--depth', '1'])
           } catch {
             // Empty repo — nothing to pull
             rmSync(tmpDir, { recursive: true, force: true })
@@ -2345,9 +2282,8 @@ export function registerSaveHandlers(): void {
       },
     ) => {
       try {
-        const store = await getSecureStore()
-        const b64Key = `git.${Buffer.from(payload.repoUrl).toString('base64').slice(0, 32)}`
-        store.set(b64Key, {
+        const store = await getLegacyCredentialStore()
+        store.set(legacyCredentialKey(payload.repoUrl), {
           repoUrl: payload.repoUrl,
           username: payload.username,
           token: encryptSecret(payload.token),
@@ -2395,16 +2331,18 @@ export function registerSaveHandlers(): void {
       try {
         const { simpleGit } = await import('simple-git')
 
-        const authUrl = buildAuthUrl(payload.repoUrl, payload.username, payload.token)
+        const auth = gitAuth(payload.repoUrl, payload.username, payload.token)
+        const gitOpts = { config: [...auth.config, ...(await identityConfig())] }
+        const gitEnv = { ...process.env, ...auth.env }
 
         const tmpDir = join(tmpdir(), `testnizer-git-list-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
-        const git = simpleGit()
+        const git = simpleGit(gitOpts).env(gitEnv)
 
         let isEmpty = false
         try {
-          await git.clone(authUrl, tmpDir, [
+          await git.clone(auth.cleanUrl, tmpDir, [
             '--branch',
             payload.branch,
             '--single-branch',
@@ -2416,14 +2354,14 @@ export function registerSaveHandlers(): void {
           rmSync(tmpDir, { recursive: true, force: true })
           mkdirSync(tmpDir, { recursive: true })
           try {
-            await git.clone(authUrl, tmpDir, ['--depth', '1'])
+            await git.clone(auth.cleanUrl, tmpDir, ['--depth', '1'])
           } catch {
             // Completely empty repo — init locally and set remote
             rmSync(tmpDir, { recursive: true, force: true })
             mkdirSync(tmpDir, { recursive: true })
-            const gitRepo = simpleGit(tmpDir)
+            const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
             await gitRepo.init()
-            await gitRepo.addRemote('origin', authUrl)
+            await gitRepo.addRemote('origin', auth.cleanUrl)
             isEmpty = true
           }
         }
@@ -2471,7 +2409,7 @@ export function registerSaveHandlers(): void {
   // ─── Stored Git Credentials ────────────────────────────────
   ipcMain.handle('save:getGitCredentials', async () => {
     try {
-      const store = await getSecureStore()
+      const store = await getLegacyCredentialStore()
       const all = store.get('git') as Record<string, unknown> | undefined
       return { success: true, data: all || {} }
     } catch (e) {
@@ -2490,16 +2428,18 @@ export function registerSaveHandlers(): void {
         }
 
         const { simpleGit } = await import('simple-git')
-        const authUrl = buildAuthUrl(config.repoUrl, config.username, config.token)
+        const auth = gitAuth(config.repoUrl, config.username, config.token)
+        const gitOpts = { config: [...auth.config, ...(await identityConfig())] }
+        const gitEnv = { ...process.env, ...auth.env }
 
         const tmpDir = join(tmpdir(), `testnizer-diff-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
-        const git = simpleGit()
+        const git = simpleGit(gitOpts).env(gitEnv)
 
         let cloned = true
         try {
-          await git.clone(authUrl, tmpDir, [
+          await git.clone(auth.cleanUrl, tmpDir, [
             '--branch',
             config.branch,
             '--single-branch',

@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { randomUUID } from 'crypto'
 import * as projectRepo from '../db/project.repo'
 import { getDb } from '../db/database'
+import { getSettingsStore } from '../lib/git-config'
 
 export function registerProjectHandlers(): void {
   ipcMain.handle('project:list', async (_event, workspaceId: string) => {
@@ -74,6 +75,18 @@ export function registerProjectHandlers(): void {
   ipcMain.handle('project:delete', async (_event, id: string) => {
     try {
       const data = projectRepo.deleteProject(id)
+      // Drop the project's git remote config (encrypted PAT included) so
+      // settings.json does not accumulate credentials for dead projects.
+      try {
+        const settings = await getSettingsStore()
+        const allGit = settings.get('git') as Record<string, unknown> | undefined
+        if (allGit && id in allGit) {
+          delete allGit[id]
+          settings.set('git', allGit)
+        }
+      } catch {
+        /* settings store unavailable — not fatal for the delete */
+      }
       return { success: true, data }
     } catch (e) {
       return { success: false, error: (e as Error).message }
