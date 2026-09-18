@@ -493,6 +493,9 @@ export default function TreeNodeComponent({
   const renameInputRef = useRef<HTMLInputElement>(null)
 
   const canModify = node.type === 'folder' || node.type === 'endpoint' || node.type === 'request'
+  // The project root (`module`) can be renamed in place like a folder (issue
+  // #126) but must NOT become deletable / draggable — hence a separate flag.
+  const canRename = canModify || node.type === 'module'
   const isFolder = node.type === 'folder' || node.type === 'module'
 
   useEffect(() => {
@@ -635,7 +638,7 @@ export default function TreeNodeComponent({
           action: () => onFolderSettings(node),
         })
       }
-      if (onRename && canModify) {
+      if (onRename && canRename) {
         items.push({
           label: t('tree.rename'),
           icon: PencilIcon,

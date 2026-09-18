@@ -559,6 +559,21 @@ export default function TreeView() {
 
   const handleRename = useCallback(
     async (node: TreeNode, newName: string) => {
+      // Project root — the tree id is `project-<id>` (workspace.store
+      // buildTreeFromDB); route through renameProject so Home, the header
+      // project tab and the tree root all pick up the new display name
+      // (issue #126). Unlike the folder branches, a refused write is reported.
+      if (node.type === 'module') {
+        const projectId = node.id.startsWith('project-') ? node.id.slice('project-'.length) : null
+        if (!projectId) return
+        const ok = await useWorkspaceStore.getState().renameProject(projectId, newName)
+        if (!ok) {
+          toast.error(t('tree.projectRenameFailed'))
+          return
+        }
+        await refreshTree()
+        return
+      }
       try {
         if (node.type === 'folder') {
           await window.api?.folder?.update(node.id, { name: newName })
