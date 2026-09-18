@@ -263,6 +263,25 @@ function runMigrations(database: Database.Database): void {
       executed_at INTEGER NOT NULL
     );
 
+    -- Named response examples pinned to a request (issue #125). owner_type is
+    -- 'endpoint' | 'saved_request' | 'test_suite_item'; response_json is the
+    -- same shape as history.response_snapshot.
+    CREATE TABLE IF NOT EXISTS saved_responses (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      owner_type TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      protocol TEXT NOT NULL DEFAULT 'http',
+      method TEXT,
+      url TEXT,
+      status_code INTEGER,
+      response_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_saved_responses_owner ON saved_responses(owner_type, owner_id);
+    CREATE INDEX IF NOT EXISTS idx_saved_responses_project ON saved_responses(project_id);
+
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
