@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useSoapStore } from '../../stores/soap.store'
 
 const INPUT =
@@ -31,8 +30,12 @@ export default function SoapManualForm() {
   const setVersion = useSoapStore((s) => s.setManualSoapVersion)
   const soapAction = useSoapStore((s) => s.manualSoapAction)
   const setSoapAction = useSoapStore((s) => s.setManualSoapAction)
-  const [operationName, setOperationName] = useState('Echo')
-  const [operationNamespace, setOperationNamespace] = useState('http://example.com/echo')
+  // Operation name/namespace live in the store too so they persist with the
+  // request instead of resetting to the sample defaults on reopen (issue #124).
+  const operationName = useSoapStore((s) => s.manualOperationName)
+  const setOperationName = useSoapStore((s) => s.setManualOperationName)
+  const operationNamespace = useSoapStore((s) => s.manualOperationNamespace)
+  const setOperationNamespace = useSoapStore((s) => s.setManualOperationNamespace)
 
   function generateEnvelope(): string {
     const soapNs = version === 'soap12' ? SOAP12_NS : SOAP11_NS
@@ -60,6 +63,7 @@ export default function SoapManualForm() {
           type="text"
           value={endpointUrl}
           onChange={(e) => setEndpointUrl(e.target.value)}
+          data-testid="soap-manual-url"
           className={INPUT}
           placeholder="https://example.com/services/Echo"
         />

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Send } from 'lucide-react'
-import { useSoapStore } from '../../stores/soap.store'
+import { useSoapStore, type SoapMode } from '../../stores/soap.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { registerSoapTabActivity, openWsSecurityToolWith } from '../../lib/tools-bridge'
@@ -14,7 +14,6 @@ import ResponsePane from '../response/ResponsePane'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import MonacoWrapper from '../shared/MonacoWrapper'
 
-type SoapMode = 'wsdl' | 'manual'
 type SoapDetailTab = 'body' | 'auth' | 'headers'
 
 function RawXmlBodyEditor() {
@@ -35,7 +34,10 @@ export default function SoapEditor() {
   const isLoading = useResponseStore((s) => s.isLoading)
   const selectedOperation = useSoapStore((s) => s.selectedOperation)
   const activeTabId = useTabsStore((s) => s.activeTabId)
-  const [mode, setMode] = useState<SoapMode>('wsdl')
+  // Mode lives in the (per-tab) store so a saved manual request reopens on
+  // the Manual form instead of WSDL Import (issue #124).
+  const mode: SoapMode = useSoapStore((s) => s.mode)
+  const setMode = useSoapStore((s) => s.setMode)
   const [detailTab, setDetailTab] = useState<SoapDetailTab>('body')
 
   useEffect(() => {
@@ -147,7 +149,7 @@ export default function SoapEditor() {
           <div className="flex-1 overflow-hidden">
             {detailTab === 'body' && (
               <div className="h-full px-4 py-3">
-                {parsedWsdl ? <SoapBodyEditor /> : <RawXmlBodyEditor />}
+                {parsedWsdl && mode === 'wsdl' ? <SoapBodyEditor /> : <RawXmlBodyEditor />}
               </div>
             )}
             {detailTab === 'auth' && (
@@ -167,7 +169,7 @@ export default function SoapEditor() {
             <button
               type="button"
               onClick={() => (isLoading ? cancelSoap() : sendSoap())}
-              disabled={!isLoading && !!parsedWsdl && !selectedOperation}
+              disabled={!isLoading && mode === 'wsdl' && !!parsedWsdl && !selectedOperation}
               data-testid="soap-send"
               className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: isLoading ? '#cc2200' : 'var(--accent)', border: 'none' }}

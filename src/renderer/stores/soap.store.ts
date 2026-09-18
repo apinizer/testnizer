@@ -50,7 +50,16 @@ interface TabSoapState {
    *  (issue #17). Persisted per tab so they survive close/reopen. */
   manualSoapAction: string
   manualSoapVersion: 'soap11' | 'soap12'
+  /** WSDL Import vs Manual editor mode — used to be component-local in
+   *  SoapEditor, so every reopen landed on WSDL Import (issue #124). */
+  mode: SoapMode
+  /** Manual-form operation name/namespace feeding "Generate Envelope"; were
+   *  component-local and reset to the sample defaults on reopen (issue #124). */
+  manualOperationName: string
+  manualOperationNamespace: string
 }
+
+export type SoapMode = 'wsdl' | 'manual'
 
 interface SoapStore {
   wsdlUrl: string
@@ -76,6 +85,9 @@ interface SoapStore {
   /** Manual-mode SOAP Action + version (issue #17) */
   manualSoapAction: string
   manualSoapVersion: 'soap11' | 'soap12'
+  mode: SoapMode
+  manualOperationName: string
+  manualOperationNamespace: string
 
   /** Per-tab state cache */
   _tabStates: Map<string, TabSoapState>
@@ -93,6 +105,9 @@ interface SoapStore {
   setEndpointUrl: (url: string) => void
   setManualSoapAction: (action: string) => void
   setManualSoapVersion: (v: 'soap11' | 'soap12') => void
+  setMode: (mode: SoapMode) => void
+  setManualOperationName: (name: string) => void
+  setManualOperationNamespace: (ns: string) => void
   setWsSecurity: (config: Partial<WsSecurityConfig>) => void
   sendSoap: () => Promise<void>
   cancelSoap: () => Promise<void>
@@ -156,6 +171,9 @@ function extractSoapTabState(s: SoapStore): TabSoapState {
     endpointUrl: s.endpointUrl,
     manualSoapAction: s.manualSoapAction,
     manualSoapVersion: s.manualSoapVersion,
+    mode: s.mode,
+    manualOperationName: s.manualOperationName,
+    manualOperationNamespace: s.manualOperationNamespace,
   }
 }
 
@@ -173,6 +191,9 @@ function emptySoapTabState(): TabSoapState {
     endpointUrl: '',
     manualSoapAction: '',
     manualSoapVersion: 'soap11',
+    mode: 'wsdl',
+    manualOperationName: 'Echo',
+    manualOperationNamespace: 'http://example.com/echo',
   }
 }
 
@@ -184,6 +205,9 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
   // Backfill manual-mode fields for states persisted before they existed.
   manualSoapAction: persisted.current.manualSoapAction ?? '',
   manualSoapVersion: persisted.current.manualSoapVersion ?? 'soap11',
+  mode: persisted.current.mode ?? 'wsdl',
+  manualOperationName: persisted.current.manualOperationName ?? 'Echo',
+  manualOperationNamespace: persisted.current.manualOperationNamespace ?? 'http://example.com/echo',
   // Transient — never restored
   isLoading: false,
   parseError: null,
@@ -338,6 +362,16 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     set({ manualSoapVersion: v })
     markActiveTabDirty()
   },
+  // Mode is a view choice, not request data — no dirty flag.
+  setMode: (mode) => set({ mode }),
+  setManualOperationName: (manualOperationName) => {
+    set({ manualOperationName })
+    markActiveTabDirty()
+  },
+  setManualOperationNamespace: (manualOperationNamespace) => {
+    set({ manualOperationNamespace })
+    markActiveTabDirty()
+  },
 
   setWsSecurity: (config) => {
     set((state) => ({
@@ -356,9 +390,14 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     responseStore.clearResponse(activeTabId)
     if (activeTabId) tabsStore.markLoading(activeTabId, true)
 
-    const op = get().getSelectedOperation()
-    const port = get().getSelectedPort()
-    const endpointUrl = port?.endpointUrl || parsedWsdl?.endpointUrl || get().endpointUrl || ''
+    // In Manual mode the form's Endpoint URL is authoritative; a WSDL loaded
+    // earlier in the same tab must not hijack the target (issue #124).
+    const manualMode = get().mode === 'manual'
+    const op = manualMode ? undefined : get().getSelectedOperation()
+    const port = manualMode ? undefined : get().getSelectedPort()
+    const endpointUrl = manualMode
+      ? get().endpointUrl || port?.endpointUrl || parsedWsdl?.endpointUrl || ''
+      : port?.endpointUrl || parsedWsdl?.endpointUrl || get().endpointUrl || ''
 
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedUrl = resolveVariables(endpointUrl, activeVars)
