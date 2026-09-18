@@ -210,6 +210,15 @@ export default function TreeView() {
     if (!searchQuery.trim()) setFilterCollapsedIds((prev) => (prev.size > 0 ? new Set() : prev))
   }, [searchQuery])
 
+  // TreeView is never remounted on a project switch (LeftPanel renders it
+  // without a key), so component-local filter/draft state would leak from
+  // project A into project B's node ids (issue #123). Reset on switch.
+  const treeProjectId = useWorkspaceStore((s) => s.activeProjectId)
+  useEffect(() => {
+    setFilterCollapsedIds((prev) => (prev.size > 0 ? new Set() : prev))
+    setPendingFolder(null)
+  }, [treeProjectId])
+
   // Collapse-all / expand-all write `openNodeIds`, which the filtered view does
   // not read — so during a search both buttons did nothing. Mirror the command
   // into the filter session instead (issue #70, sibling of the chevron fix).

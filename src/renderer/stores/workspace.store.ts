@@ -51,6 +51,74 @@ function persistTabsByProject(): void {
   saveJson(TABS_BY_PROJECT_KEY, Object.fromEntries(tabsByProject))
 }
 
+/**
+ * Per-project APIs-tree state (issue #123): the sidebar search box and the
+ * expanded-folder set used to be global — a search typed in project A kept
+ * filtering project B after a header-tab switch, and `setActiveProject`
+ * always reset the expansion to defaults so the folder the user was on in B
+ * was lost. Each project now keeps its own snapshot, restored on switch.
+ *
+ * In-memory only on purpose: expansion is cheap to recompute, and persisting
+ * it would accumulate ids of deleted folders with no eviction path. A stale
+ * search query on relaunch would be a footgun for the same reason.
+ */
+export interface ProjectTreeSnapshot {
+  searchQuery: string
+  openNodeIds: string[]
+  activeNodeId: string | null
+}
+
+const treeStateByProject = new Map<string, ProjectTreeSnapshot>()
+
+/** Default expansion for a freshly opened project: root + first-level folders. */
+export function computeDefaultOpenIds(tree: TreeNode[]): Set<string> {
+  const openIds = new Set<string>()
+  for (const node of tree) {
+    openIds.add(node.id)
+    if (node.children) {
+      for (const child of node.children) {
+        if (child.type === 'folder') openIds.add(child.id)
+      }
+    }
+  }
+  return openIds
+}
+
+function snapshotProjectTree(projectId: string | null): void {
+  if (!projectId) return
+  const s = useWorkspaceStore.getState()
+  treeStateByProject.set(projectId, {
+    searchQuery: s.searchQuery,
+    openNodeIds: Array.from(s.openNodeIds),
+    activeNodeId: s.activeNodeId,
+  })
+}
+
+/**
+ * Tree state to apply for `projectId` given its freshly built tree: the
+ * remembered snapshot when there is one (root always re-added so a stale
+ * snapshot can never render an empty tree), else the defaults with the
+ * search box cleared — a project opened for the first time must not inherit
+ * the previous project's filter.
+ */
+export function restoreProjectTreeState(
+  projectId: string,
+  tree: TreeNode[],
+): Pick<WorkspaceStore, 'openNodeIds' | 'searchQuery' | 'activeNodeId'> {
+  const snap = treeStateByProject.get(projectId)
+  if (!snap) {
+    return { openNodeIds: computeDefaultOpenIds(tree), searchQuery: '', activeNodeId: null }
+  }
+  const openNodeIds = new Set(snap.openNodeIds)
+  for (const node of tree) openNodeIds.add(node.id)
+  return { openNodeIds, searchQuery: snap.searchQuery, activeNodeId: snap.activeNodeId }
+}
+
+/** Test seam — forget every remembered tree snapshot. */
+export function _resetProjectTreeSnapshots(): void {
+  treeStateByProject.clear()
+}
+
 function snapshotProjectTabs(projectId: string | null): void {
   if (!projectId) return
   const ts = useTabsStore.getState()
@@ -421,6 +489,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // header tabs + their cached tab sets (#1).
       tabsByProject.clear()
       persistTabsByProject()
+      treeStateByProject.clear()
       set({ openProjectIds: [] })
     }
     set({ activeWorkspaceId: id, activeProjectId: null })
@@ -433,6 +502,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // the tabs→localStorage subscription at the bottom of this file (it fires on
     // every tab change while a project is active), so no explicit stash is
     // needed here. Console + pending-conflict are scoped to the old project.
+    // Remember the leaving project's search + expansion (issue #123) before
+    // anything below mutates them.
+    snapshotProjectTree(prevId)
     if (prevId && prevId !== id) {
       useConsoleStore.getState().clear()
       useBranchStore.getState().clearPendingConflict()
@@ -471,20 +543,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     const tree = await buildTreeFromDB(id, projectName)
-    const openIds = new Set<string>()
-    // Auto-open the project root
-    for (const node of tree) {
-      openIds.add(node.id)
-      // Also open first-level folders
-      if (node.children) {
-        for (const child of node.children) {
-          if (child.type === 'folder') {
-            openIds.add(child.id)
-          }
-        }
-      }
-    }
-    set({ treeData: tree, openNodeIds: openIds })
+    // Per-project search + expansion (issue #123): restore what the user had
+    // in this project, or defaults (root + first-level folders, empty search).
+    set({ treeData: tree, ...restoreProjectTreeState(id, tree) })
   },
 
   setTreeData: (data) => set({ treeData: data }),
@@ -654,6 +715,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // The project is gone — drop its open header tab + cached tabs (#1).
       tabsByProject.delete(id)
       persistTabsByProject()
+      treeStateByProject.delete(id)
       set((s) => ({ openProjectIds: s.openProjectIds.filter((p) => p !== id) }))
       // If we just deleted the project we were viewing, drop all
       // project-scoped state (tabs / console / branch) so the UI stops
@@ -676,6 +738,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // below). Drop activeProjectId FIRST so the empty `replaceAllTabs` that
     // clears the view while Home (ProjectHome) is shown does NOT trip the
     // subscription into overwriting the project's stored tabs with an empty set.
+    snapshotProjectTree(get().activeProjectId)
     set({ activeProjectId: null })
     useTabsStore.getState().replaceAllTabs([], null)
   },
@@ -683,6 +746,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   closeProjectTab: (id) => {
     tabsByProject.delete(id)
     persistTabsByProject()
+    treeStateByProject.delete(id)
     const wasActive = get().activeProjectId === id
     set((s) => ({ openProjectIds: s.openProjectIds.filter((p) => p !== id) }))
     if (wasActive) {
