@@ -239,6 +239,19 @@ function createSchema(db: Database.Database): void {
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL
     );
+    CREATE TABLE saved_responses (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      owner_type TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      protocol TEXT NOT NULL DEFAULT 'http',
+      method TEXT,
+      url TEXT,
+      status_code INTEGER,
+      response_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
   `)
 }
 
@@ -286,6 +299,7 @@ function seedRichProject(): {
   mockEndpointId: string
   mockResponseId: string
   certificateId: string
+  savedResponseId: string
 } {
   const now = Date.now()
   const ids = {
@@ -304,6 +318,7 @@ function seedRichProject(): {
     mockEndpointId: randomUUID(),
     mockResponseId: randomUUID(),
     certificateId: randomUUID(),
+    savedResponseId: randomUUID(),
   }
 
   testDb
@@ -436,6 +451,15 @@ function seedRichProject(): {
     )
     .run(ids.certificateId, SOURCE_PID, now)
 
+  // Saved response example pinned to the saved request (issue #125)
+  testDb
+    .prepare(
+      `INSERT INTO saved_responses
+         (id, project_id, owner_type, owner_id, name, protocol, method, url, status_code, response_json, created_at)
+       VALUES (?, ?, 'saved_request', ?, '200 sample', 'http', 'GET', 'https://api.test/x', 200, '{"status":200,"statusText":"OK","body":"ok"}', ?)`,
+    )
+    .run(ids.savedResponseId, SOURCE_PID, ids.savedRequestId, now)
+
   return ids
 }
 
@@ -461,6 +485,7 @@ describe('exportProjectData — shape sanity', () => {
     expect(data.mockEndpoints?.length).toBe(1)
     expect(data.mockResponses?.length).toBe(1)
     expect(data.certificates?.length).toBe(1)
+    expect(data.savedResponses?.length).toBe(1)
   })
 })
 
@@ -695,6 +720,32 @@ describe('Project export → import round-trip (different target project)', () =
     expect(cert.crt_path).toBe('/tmp/c.crt')
     expect(cert.key_path).toBe('/tmp/c.key')
     expect(cert.enabled).toBe(1)
+  })
+
+  it('round-trips saved response examples with owner + snapshot intact (issue #125)', () => {
+    const ids = seedRichProject()
+    const data = exportProjectData(SOURCE_PID)
+    for (const r of data.savedResponses ?? []) r.project_id = TARGET_PID
+    importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
+
+    const row = testDb
+      .prepare(
+        'SELECT project_id, owner_type, owner_id, name, status_code, response_json FROM saved_responses WHERE id = ?',
+      )
+      .get(ids.savedResponseId) as {
+      project_id: string
+      owner_type: string
+      owner_id: string
+      name: string
+      status_code: number
+      response_json: string
+    }
+    expect(row.project_id).toBe(TARGET_PID)
+    expect(row.owner_type).toBe('saved_request')
+    expect(row.owner_id).toBe(ids.savedRequestId)
+    expect(row.name).toBe('200 sample')
+    expect(row.status_code).toBe(200)
+    expect(JSON.parse(row.response_json).status).toBe(200)
   })
 })
 
