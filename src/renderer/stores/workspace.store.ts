@@ -87,6 +87,10 @@ export function computeDefaultOpenIds(tree: TreeNode[]): Set<string> {
 function snapshotProjectTree(projectId: string | null): void {
   if (!projectId) return
   const s = useWorkspaceStore.getState()
+  // A project whose header tab was just closed (closeProjectTab filters
+  // openProjectIds before switching away) must not be re-snapshotted, or
+  // reopening it would restore the stale state instead of defaults.
+  if (!s.openProjectIds.includes(projectId)) return
   treeStateByProject.set(projectId, {
     searchQuery: s.searchQuery,
     openNodeIds: Array.from(s.openNodeIds),

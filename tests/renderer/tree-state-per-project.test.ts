@@ -119,6 +119,22 @@ describe('setActiveProject — per-project search + expansion (issue #123)', () 
     expect(s().openNodeIds.has('fa2')).toBe(true)
   })
 
+  it('closing the ACTIVE project tab forgets its snapshot too (no re-snapshot on the fallback switch)', async () => {
+    await s().setActiveProject('B')
+    await s().setActiveProject('A')
+    s().toggleNode('fa2')
+    s().setSearchQuery('stale-active')
+    // Closing the active tab falls back to B via setActiveProject — which must
+    // not re-insert A's snapshot on its way out.
+    s().closeProjectTab('A')
+    await Promise.resolve()
+    expect(s().activeProjectId).toBe('B')
+    await s().setActiveProject('A')
+    expect(s().searchQuery).toBe('')
+    expect(s().openNodeIds.has('fa2')).toBe(false)
+    expect(s().openNodeIds.has('fa1')).toBe(true)
+  })
+
   it('closing a project tab forgets its snapshot', async () => {
     await s().setActiveProject('A')
     s().setSearchQuery('stale')
