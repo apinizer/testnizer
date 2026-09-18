@@ -44,6 +44,8 @@ const {
   getProjectGitConfig,
   buildAuthUrl,
   gitAuth,
+  gitProcessEnv,
+  gitClientOptions,
   isGitAuthError,
   redactToken,
   legacyCredentialKey,
@@ -167,6 +169,40 @@ describe('gitAuth (per-process credential, clean remote URL)', () => {
     expect(a.cleanUrl).toBe('file:///tmp/bare.git')
     expect(a.config.some((c) => c.startsWith('http.extraHeader'))).toBe(false)
     expect(() => gitAuth('git@github.com:a/b.git', 'u', 't')).toThrow(GIT_SSH_URL_ERROR)
+  })
+})
+
+describe('gitProcessEnv / gitClientOptions', () => {
+  it('drops the variables simple-git refuses (GIT_EDITOR, PAGER, GIT_SSH_COMMAND, GIT_CONFIG_*) and keeps PATH', async () => {
+    const saved = { ...process.env }
+    process.env.GIT_EDITOR = 'vim'
+    process.env.PAGER = 'less'
+    process.env.GIT_SSH_COMMAND = 'ssh -i x'
+    process.env.GIT_CONFIG_COUNT = '1'
+    process.env.GIT_CONFIG_KEY_0 = 'x'
+    process.env.KEEP_ME = '1'
+    try {
+      const env = gitProcessEnv(gitAuth('https://h/r.git', 'u', 't'))
+      for (const k of [
+        'GIT_EDITOR',
+        'PAGER',
+        'GIT_SSH_COMMAND',
+        'GIT_CONFIG_COUNT',
+        'GIT_CONFIG_KEY_0',
+      ]) {
+        expect(k in env).toBe(false)
+      }
+      expect(env.KEEP_ME).toBe('1')
+      expect(env.PATH).toBe(process.env.PATH)
+      expect(env.GIT_TERMINAL_PROMPT).toBe('0')
+    } finally {
+      for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]
+      Object.assign(process.env, saved)
+    }
+    const opts = await gitClientOptions(gitAuth('https://h/r.git', 'u', 't'), '/repo')
+    expect(opts.baseDir).toBe('/repo')
+    expect(opts.unsafe).toEqual({ allowUnsafeCredentialHelper: true })
+    expect(opts.config).toContain('credential.helper=')
   })
 })
 

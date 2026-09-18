@@ -72,6 +72,7 @@ vi.mock('simple-git', () => {
   const makeInstance = (cfg: string[]) => {
     const instance = {
       env: () => instance,
+      raw: async () => '',
       getConfig: async () => ({
         key: 'user.name',
         value: 'Existing User',

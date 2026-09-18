@@ -85,9 +85,13 @@ export const useSavedResponseStore = create<SavedResponseStore>((set, get) => ({
       set({ ownerKey: null, items: [], loading: false })
       return
     }
-    // Clear immediately — otherwise the previous request's examples flash
-    // under the new tab's header until the fetch resolves.
-    set({ ownerKey: key, items: [], loading: true })
+    // Owner CHANGED: clear immediately so the previous request's examples
+    // never flash under the new tab's header. Same owner: keep the current
+    // list while refetching — clearing here made the "saved-only" panel
+    // unmount (count 0), remount when the fetch landed, and re-trigger a load
+    // from its own effect → an infinite mount/unmount loop.
+    if (get().ownerKey !== key) set({ ownerKey: key, items: [], loading: true })
+    else set({ loading: true })
     try {
       const res = await window.api?.savedResponse?.list(owner.type, owner.id)
       // A slower load for a tab we already left must not clobber the new list.

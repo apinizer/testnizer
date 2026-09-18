@@ -28,7 +28,8 @@ import { SAVED_RESPONSE_COLUMNS } from '../db/saved-response.repo'
 import {
   getProjectGitConfig,
   gitAuth,
-  identityConfig,
+  gitClientOptions,
+  gitProcessEnv,
   getSettingsStore,
   getLegacyCredentialStore,
   legacyCredentialKey,
@@ -2029,8 +2030,8 @@ export function registerSaveHandlers(): void {
         // turns deleting each other's committed copy.
         const projectName = projectFileSlug(data.project?.name as string | undefined)
         const auth = gitAuth(payload.repoUrl, payload.username, payload.token)
-        const gitOpts = { config: [...auth.config, ...(await identityConfig())] }
-        const gitEnv = { ...process.env, ...auth.env }
+        const gitOpts = await gitClientOptions(auth)
+        const gitEnv = gitProcessEnv(auth)
 
         const tmpDir = join(tmpdir(), `testnizer-git-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
@@ -2147,8 +2148,8 @@ export function registerSaveHandlers(): void {
         // Shared helper — see the note in `save:git` (issue #78).
         const projectName = projectFileSlug(data.project?.name as string | undefined)
         const auth = gitAuth(config.repoUrl, config.username, config.token)
-        const gitOpts = { config: [...auth.config, ...(await identityConfig())] }
-        const gitEnv = { ...process.env, ...auth.env }
+        const gitOpts = await gitClientOptions(auth)
+        const gitEnv = gitProcessEnv(auth)
 
         const tmpDir = join(tmpdir(), `testnizer-push-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
@@ -2246,8 +2247,8 @@ export function registerSaveHandlers(): void {
         const { simpleGit } = await import('simple-git')
 
         const auth = gitAuth(config.repoUrl, config.username, config.token)
-        const gitOpts = { config: [...auth.config, ...(await identityConfig())] }
-        const gitEnv = { ...process.env, ...auth.env }
+        const gitOpts = await gitClientOptions(auth)
+        const gitEnv = gitProcessEnv(auth)
 
         const tmpDir = join(tmpdir(), `testnizer-pull-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
@@ -2384,8 +2385,8 @@ export function registerSaveHandlers(): void {
         const { simpleGit } = await import('simple-git')
 
         const auth = gitAuth(payload.repoUrl, payload.username, payload.token)
-        const gitOpts = { config: [...auth.config, ...(await identityConfig())] }
-        const gitEnv = { ...process.env, ...auth.env }
+        const gitOpts = await gitClientOptions(auth)
+        const gitEnv = gitProcessEnv(auth)
 
         const tmpDir = join(tmpdir(), `testnizer-git-list-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
@@ -2481,8 +2482,8 @@ export function registerSaveHandlers(): void {
 
         const { simpleGit } = await import('simple-git')
         const auth = gitAuth(config.repoUrl, config.username, config.token)
-        const gitOpts = { config: [...auth.config, ...(await identityConfig())] }
-        const gitEnv = { ...process.env, ...auth.env }
+        const gitOpts = await gitClientOptions(auth)
+        const gitEnv = gitProcessEnv(auth)
 
         const tmpDir = join(tmpdir(), `testnizer-diff-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })

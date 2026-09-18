@@ -9,7 +9,8 @@ import { projectFileSlug } from '../lib/project-file'
 import {
   getProjectGitConfig,
   gitAuth,
-  identityConfig,
+  gitClientOptions,
+  gitProcessEnv,
   isGitAuthError,
   redactToken,
   GIT_TOKEN_MISSING_ERROR,
@@ -26,10 +27,22 @@ async function openRepo(
 ): Promise<SimpleGit> {
   const { simpleGit } = await import('simple-git')
   const auth = gitAuth(config.repoUrl, config.username, config.token)
-  return simpleGit({
-    baseDir: localPath,
-    config: [...auth.config, ...(await identityConfig())],
-  }).env({ ...process.env, ...auth.env })
+  return simpleGit(await gitClientOptions(auth, localPath)).env(gitProcessEnv(auth))
+}
+
+/**
+ * A fresh `git init` puts HEAD on the machine's init.defaultBranch (still
+ * `master` on many installs), but every later step commits to and pushes
+ * `config.branch` — so the first push to an EMPTY remote failed with
+ * "src refspec main does not match any". Point HEAD at the configured branch
+ * before the first commit (works with no commits yet, unlike checkout -b).
+ */
+async function pointHeadAt(git: SimpleGit, branch: string): Promise<void> {
+  try {
+    await git.raw(['symbolic-ref', 'HEAD', `refs/heads/${branch}`])
+  } catch {
+    /* non-fatal — push will report the real branch state */
+  }
 }
 
 function authFailure(e: unknown, token: string): Error {
@@ -52,7 +65,6 @@ async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
   const { simpleGit } = await import('simple-git')
   const { localPath, branch: defaultBranch } = config
   const auth = gitAuth(config.repoUrl, config.username, config.token)
-  const baseConfig = [...auth.config, ...(await identityConfig())]
 
   if (!existsSync(localPath)) {
     mkdirSync(localPath, { recursive: true })
@@ -76,7 +88,7 @@ async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
   }
 
   const dirContents = readDirSync(localPath)
-  const bare = simpleGit({ config: baseConfig }).env({ ...process.env, ...auth.env })
+  const bare = simpleGit(await gitClientOptions(auth)).env(gitProcessEnv(auth))
 
   if (dirContents.length === 0) {
     // Empty directory — clone into it.
@@ -93,6 +105,7 @@ async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
         // Genuinely empty remote — init locally; first push seeds it.
         const localGit = await openRepo(config)
         await localGit.init()
+        await pointHeadAt(localGit, defaultBranch)
         await localGit.addRemote('origin', auth.cleanUrl)
         return localGit
       }
@@ -102,6 +115,7 @@ async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
   // Non-empty directory (project files already exist) — init in place.
   const localGit = await openRepo(config)
   await localGit.init()
+  await pointHeadAt(localGit, defaultBranch)
   await localGit.addRemote('origin', auth.cleanUrl)
   try {
     await localGit.fetch('origin')
@@ -121,10 +135,17 @@ async function getCurrentBranch(
   fallback: string,
 ): Promise<string> {
   try {
-    return (await git.revparse(['--abbrev-ref', 'HEAD'])).trim()
+    const name = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim()
+    if (name && name !== 'HEAD') return name
   } catch {
-    return fallback
+    /* unborn HEAD (fresh init, or clone of an EMPTY remote) — handled below */
   }
+  // No commits yet: HEAD is an unborn ref named after init.defaultBranch
+  // (often `master`). Every later step commits to and pushes `fallback`, so
+  // point HEAD there now or the first push fails with "src refspec … does
+  // not match any" — the empty-remote first-push bug.
+  await pointHeadAt(git, fallback)
+  return fallback
 }
 
 // Finds the project's exported .json in `dir` and imports it into SQLite.

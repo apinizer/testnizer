@@ -25,7 +25,6 @@ import {
 } from '../../src/renderer/stores/saved-response.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useResponseStore } from '../../src/renderer/stores/response.store'
-import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
 import type { ApiResponse, Tab } from '../../src/renderer/types'
 
 const response: ApiResponse = {
@@ -44,10 +43,16 @@ beforeEach(() => {
   api.list.mockReset().mockResolvedValue({ success: true, data: [] })
   api.delete.mockReset().mockResolvedValue({ success: true, data: true })
   api.rename.mockReset().mockResolvedValue({ success: true, data: true })
-  useWorkspaceStore.setState({ activeProjectId: 'proj-1' })
   useTabsStore.setState({
     tabs: [
-      { id: 'tab-a', name: 'Users', protocol: 'http', savedRequestId: 'sr-1', method: 'POST', url: 'https://api.test/users' } as Tab,
+      {
+        id: 'tab-a',
+        name: 'Users',
+        protocol: 'http',
+        savedRequestId: 'sr-1',
+        method: 'POST',
+        url: 'https://api.test/users',
+      } as Tab,
       { id: 'tab-scratch', name: 'New Request', protocol: 'http', method: 'GET', url: '' } as Tab,
     ],
     activeTabId: 'tab-a',
@@ -58,9 +63,18 @@ beforeEach(() => {
 
 describe('savedResponseOwnerForTab', () => {
   it('maps the backing row, preferring endpoint > saved request > suite item', () => {
-    expect(savedResponseOwnerForTab({ endpointId: 'e' } as Tab)).toEqual({ type: 'endpoint', id: 'e' })
-    expect(savedResponseOwnerForTab({ savedRequestId: 's' } as Tab)).toEqual({ type: 'saved_request', id: 's' })
-    expect(savedResponseOwnerForTab({ testSuiteItemId: 'i' } as Tab)).toEqual({ type: 'test_suite_item', id: 'i' })
+    expect(savedResponseOwnerForTab({ endpointId: 'e' } as Tab)).toEqual({
+      type: 'endpoint',
+      id: 'e',
+    })
+    expect(savedResponseOwnerForTab({ savedRequestId: 's' } as Tab)).toEqual({
+      type: 'saved_request',
+      id: 's',
+    })
+    expect(savedResponseOwnerForTab({ testSuiteItemId: 'i' } as Tab)).toEqual({
+      type: 'test_suite_item',
+      id: 'i',
+    })
     expect(savedResponseOwnerForTab({} as Tab)).toBeNull()
     expect(savedResponseOwnerForTab(undefined)).toBeNull()
   })
@@ -80,7 +94,9 @@ describe('serializeResponseForSave / defaultSavedResponseName', () => {
 
   it('suggests "<status> <statusText>" as the default name', () => {
     expect(defaultSavedResponseName(response)).toBe('201 Created')
-    expect(defaultSavedResponseName({ ...response, status: undefined, error: 'boom' })).toBe('Error')
+    expect(defaultSavedResponseName({ ...response, status: undefined, error: 'boom' })).toBe(
+      'Error',
+    )
   })
 })
 
@@ -88,7 +104,14 @@ describe('saveCurrent', () => {
   it('persists the active tab response under its saved-request owner', async () => {
     api.create.mockResolvedValue({
       success: true,
-      data: { id: 'x1', name: 'ok sample', owner_type: 'saved_request', owner_id: 'sr-1', response_json: '{}', created_at: 1 },
+      data: {
+        id: 'x1',
+        name: 'ok sample',
+        owner_type: 'saved_request',
+        owner_id: 'sr-1',
+        response_json: '{}',
+        created_at: 1,
+      },
     })
     const result = await useSavedResponseStore.getState().saveCurrent('ok sample')
     expect(result.ok).toBe(true)
@@ -96,7 +119,8 @@ describe('saveCurrent', () => {
     const payload = api.create.mock.calls[0][0] as Record<string, unknown>
     expect(payload.owner_type).toBe('saved_request')
     expect(payload.owner_id).toBe('sr-1')
-    expect(payload.project_id).toBe('proj-1')
+    // project_id is resolved in main from the owner row — never sent.
+    expect('project_id' in payload).toBe(false)
     expect(payload.status_code).toBe(201)
     expect(payload.method).toBe('POST')
     expect(payload.url).toBe('https://api.test/users')
@@ -133,7 +157,12 @@ describe('load / open / remove', () => {
           method: 'GET',
           url: 'https://api.test/users/7',
           status_code: 404,
-          response_json: JSON.stringify({ status: 404, statusText: 'Not Found', body: '{"error":"nope"}', headers: {} }),
+          response_json: JSON.stringify({
+            status: 404,
+            statusText: 'Not Found',
+            body: '{"error":"nope"}',
+            headers: {},
+          }),
           created_at: 1,
         },
       ],
@@ -155,6 +184,29 @@ describe('load / open / remove', () => {
 
     expect(await useSavedResponseStore.getState().remove('x1')).toBe(true)
     expect(useSavedResponseStore.getState().items).toEqual([])
+  })
+
+  it('clears the previous owner list immediately when a new owner loads (no stale flash)', async () => {
+    useSavedResponseStore.setState({ ownerKey: 'endpoint:A', items: [{ id: 'old' } as never] })
+    let resolveB!: (v: unknown) => void
+    api.list.mockImplementationOnce(() => new Promise((r) => (resolveB = r)))
+    const p = useSavedResponseStore.getState().load({ type: 'endpoint', id: 'B' })
+    expect(useSavedResponseStore.getState().items).toEqual([])
+    resolveB({ success: true, data: [] })
+    await p
+  })
+
+  it('reports bodyDropped when the body exceeds the cap', async () => {
+    api.create.mockResolvedValue({
+      success: true,
+      data: { id: 'big', name: 'b', response_json: '{}', created_at: 1 },
+    })
+    useResponseStore
+      .getState()
+      .setResponse({ ...response, body: 'x'.repeat(SAVED_RESPONSE_BODY_LIMIT + 1) }, 'tab-a')
+    const result = await useSavedResponseStore.getState().saveCurrent('big')
+    expect(result.ok).toBe(true)
+    expect(result.bodyDropped).toBe(true)
   })
 
   it('ignores a stale list response after the owner changed', async () => {

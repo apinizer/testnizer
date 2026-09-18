@@ -90,3 +90,18 @@ export async function treeRename(page: Page, nodeLabel: string, newName: string)
   await input.fill(newName)
   await input.press('Enter')
 }
+
+/**
+ * Inline rename the PROJECT ROOT row (issue #126). `treeRename` filters by
+ * label and would pick a descendant whose name contains the project name; the
+ * root is always the first virtual row.
+ */
+export async function treeRenameRoot(page: Page, newName: string): Promise<void> {
+  const root = page.getByTestId('tree-node').first()
+  await root.click({ button: 'right' })
+  await clickContextMenuItem(page, /Rename/i)
+  const input = root.locator('input[type="text"]')
+  await input.waitFor({ state: 'visible', timeout: 5_000 })
+  await input.fill(newName)
+  await input.press('Enter')
+}

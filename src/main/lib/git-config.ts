@@ -191,6 +191,10 @@ export interface GitAuth {
 export function gitAuth(repoUrl: string, username: string, token: string): GitAuth {
   const trimmed = repoUrl.trim()
   if (isSshRemote(trimmed)) throw new Error(GIT_SSH_URL_ERROR)
+  // Disable the system credential helper for this process (empty value).
+  // simple-git flags credential.helper as unsafe; we opt in explicitly via
+  // `gitClientOptions().unsafe` because an EMPTY helper is the safe direction
+  // (no GCM / osxkeychain dialog can pop from inside Electron).
   const config: string[] = ['credential.helper=']
   let cleanUrl = trimmed
   if (/^https?:\/\//i.test(trimmed)) {
@@ -206,6 +210,61 @@ export function gitAuth(repoUrl: string, username: string, token: string): GitAu
     throw new Error(GIT_SSH_URL_ERROR)
   }
   return { cleanUrl, config, env: { GIT_TERMINAL_PROMPT: '0' } }
+}
+
+/**
+ * Environment variables simple-git refuses to forward (its argv-parser
+ * `parseEnv` blocklist): editors, pagers, askpass, ssh command, config path
+ * overrides. A developer shell that exports GIT_EDITOR=vim would otherwise
+ * make EVERY git call fail with "Use of GIT_EDITOR is not permitted".
+ */
+const BLOCKED_GIT_ENV = new Set([
+  'editor',
+  'pager',
+  'prefix',
+  'git_askpass',
+  'ssh_askpass',
+  'git_config',
+  'git_config_global',
+  'git_config_system',
+  'git_config_count',
+  'git_editor',
+  'git_sequence_editor',
+  'git_exec_path',
+  'git_external_diff',
+  'git_pager',
+  'git_proxy_command',
+  'git_template_dir',
+  'git_ssh',
+  'git_ssh_command',
+])
+
+/** process.env minus simple-git's blocklist, plus the per-call auth env. */
+export function gitProcessEnv(auth: GitAuth): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v === undefined) continue
+    const lower = k.toLowerCase()
+    if (BLOCKED_GIT_ENV.has(lower) || /^git_config_(key|value)_\d+$/.test(lower)) continue
+    out[k] = v
+  }
+  return { ...out, ...auth.env }
+}
+
+/** simple-git constructor options for a repo (or none for clone): auth `-c` config + identity. */
+export async function gitClientOptions(
+  auth: GitAuth,
+  baseDir?: string,
+): Promise<{
+  baseDir?: string
+  config: string[]
+  unsafe: { allowUnsafeCredentialHelper: boolean }
+}> {
+  return {
+    ...(baseDir ? { baseDir } : {}),
+    config: [...auth.config, ...(await identityConfig())],
+    unsafe: { allowUnsafeCredentialHelper: true },
+  }
 }
 
 /** True for the failure texts git/curl emit on 401/403 or a missing credential. */

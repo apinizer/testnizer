@@ -16,7 +16,6 @@ import type { SavedResponse } from '../../types'
 export default function SavedResponsesTab() {
   const { t } = useTranslation()
   const items = useSavedResponseStore((s) => s.items)
-  const load = useSavedResponseStore((s) => s.load)
   const open = useSavedResponseStore((s) => s.open)
   const remove = useSavedResponseStore((s) => s.remove)
   const rename = useSavedResponseStore((s) => s.rename)
@@ -26,13 +25,9 @@ export default function SavedResponsesTab() {
   const renameRef = useRef<HTMLInputElement>(null)
   const activeTab = useTabsStore((s) => s.tabs.find((tb) => tb.id === s.activeTabId))
   const owner = savedResponseOwnerForTab(activeTab)
-  const ownerKey = owner ? `${owner.type}:${owner.id}` : null
 
-  useEffect(() => {
-    void load(owner)
-    // Reload when the backing row changes (Save As on a scratch tab).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ownerKey])
+  // Loading is owned by ResponsePane (effect on the owner key) + the tabs
+  // subscription in the store; this component only renders the list.
 
   useEffect(() => {
     if (renamingId) setTimeout(() => renameRef.current?.select(), 10)
