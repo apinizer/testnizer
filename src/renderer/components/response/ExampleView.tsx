@@ -31,6 +31,10 @@ export default function ExampleView({ tabId, savedResponseId }: ExampleViewProps
   const { t } = useTranslation()
   const closeTab = useTabsStore((s) => s.closeTab)
   const [item, setItem] = useState<SavedResponse | null>(null)
+  // `actualRequest` from the response snapshot — the Sent view's fallback for
+  // rows saved before request_json existed. Captured here so render never
+  // reads the response store non-reactively.
+  const [sentFallback, setSentFallback] = useState<ApiResponse['actualRequest']>(undefined)
   const [missing, setMissing] = useState(false)
   const [mode, setMode] = useState<Mode>('sent')
 
@@ -46,13 +50,14 @@ export default function ExampleView({ tabId, savedResponseId }: ExampleViewProps
           setMissing(true)
           return
         }
-        setItem(res.data)
         let snap: Partial<ApiResponse> = {}
         try {
           snap = JSON.parse(res.data.response_json) as Partial<ApiResponse>
         } catch {
           snap = {}
         }
+        setSentFallback(snap.actualRequest)
+        setItem(res.data)
         useResponseStore.getState().setResponse(
           {
             requestId: `saved-${res.data.id}`,
@@ -83,7 +88,7 @@ export default function ExampleView({ tabId, savedResponseId }: ExampleViewProps
   const snapshot = useMemo(() => parseRequestSnapshot(item?.request_json), [item])
   // Rows saved before request_json existed still carry `actualRequest`
   // inside the response snapshot — enough for the Sent view.
-  const sent = snapshot?.sent ?? useResponseStore.getState().response?.actualRequest
+  const sent = snapshot?.sent ?? sentFallback
 
   if (missing) {
     return (

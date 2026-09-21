@@ -374,7 +374,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'response.renameSavedResponseHint': 'Double-click to rename',
     'response.savedResponseItemType': 'saved response',
     'response.savedResponseBodyDropped':
-      'Response saved without its body — bodies over 500 KB are not stored.',
+      'Example saved without a body — request or response bodies over 500 KB are not stored.',
     'response.code': 'Code',
     'response.sendingRequest': 'Sending request...',
     'response.requestFailed': 'Request Failed',
@@ -2629,7 +2629,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'response.renameSavedResponseHint': 'Yeniden adlandırmak için çift tıklayın',
     'response.savedResponseItemType': 'kayıtlı yanıt',
     'response.savedResponseBodyDropped':
-      'Yanıt gövdesiz kaydedildi — 500 KB üzerindeki gövdeler saklanmaz.',
+      'Örnek gövdesiz kaydedildi — 500 KB üzerindeki istek/yanıt gövdeleri saklanmaz.',
     'response.code': 'Kod',
     'response.sendingRequest': 'Istek gonderiliyor...',
     'response.requestFailed': 'Istek Basarisiz',

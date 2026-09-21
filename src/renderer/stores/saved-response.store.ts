@@ -180,7 +180,16 @@ export const useSavedResponseStore = create<SavedResponseStore>((set, get) => ({
     const response = useResponseStore.getState().response
     if (!response) return { ok: false, error: 'no-response' }
     const req = useRequestStore.getState()
-    const bodyDropped = Boolean(response.body && response.body.length > SAVED_RESPONSE_BODY_LIMIT)
+    // Either side over the cap is reported — the example is saved, but the
+    // user should know it is not the whole proof (spec #12).
+    const requestSnapshot = buildRequestSnapshot(req, response)
+    const bodyDropped =
+      Boolean(response.body && response.body.length > SAVED_RESPONSE_BODY_LIMIT) ||
+      Boolean(req.body?.content && req.body.content.length > SAVED_RESPONSE_BODY_LIMIT) ||
+      Boolean(
+        response.actualRequest?.body &&
+        response.actualRequest.body.length > SAVED_RESPONSE_BODY_LIMIT,
+      )
     try {
       // project_id is resolved in main from the owner row (a tab backed by
       // another project's request must not be stamped with the active one).
@@ -193,7 +202,7 @@ export const useSavedResponseStore = create<SavedResponseStore>((set, get) => ({
         url: response.actualRequest?.url || tab?.url || req.url || null,
         status_code: response.status ?? null,
         response_json: serializeResponseForSave(response),
-        request_json: JSON.stringify(buildRequestSnapshot(req, response)),
+        request_json: JSON.stringify(requestSnapshot),
       })
       if (!res?.success || !res.data) return { ok: false, error: res?.error || 'save-failed' }
       if (get().ownerKey === ownerKey(owner)) {

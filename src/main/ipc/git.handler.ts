@@ -158,7 +158,12 @@ async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
     return git
   }
 
-  // Non-empty directory (project files already exist) — init in place.
+  // Non-empty directory — `git clone` refuses it, so init in place and fetch.
+  // "Non-empty" includes a folder holding only `desktop.ini` / `.DS_Store`:
+  // the user picked an "empty" clone target and expects the remote to land
+  // here, so this branch must reach the same end state as the clone above.
+  // It used to fetch ONLY when the configured branch existed; a remote on
+  // `master` left an empty init behind and every later Pull said "pulled".
   const localGit = await openRepo(config)
   await localGit.init()
   await pointHeadAt(localGit, defaultBranch)
@@ -166,8 +171,20 @@ async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
   if (heads.has(defaultBranch)) {
     await localGit.fetch('origin', defaultBranch)
     await localGit.checkout(['-b', defaultBranch, `origin/${defaultBranch}`])
+  } else if (heads.size > 0) {
+    const remoteDefault = pickRemoteDefaultBranch(heads)
+    await localGit.fetch('origin', remoteDefault)
+    await localGit.checkout(['-b', remoteDefault, `origin/${remoteDefault}`])
+    await localGit.checkoutLocalBranch(defaultBranch)
   }
   return localGit
+}
+
+/** The branch a clone would land on: `main`, else `master`, else the first head. */
+function pickRemoteDefaultBranch(heads: Set<string>): string {
+  if (heads.has('main')) return 'main'
+  if (heads.has('master')) return 'master'
+  return [...heads][0]
 }
 
 async function getCurrentBranch(

@@ -238,6 +238,38 @@ describe('ensureGitRepo decides from `ls-remote`, never from a failed clone', ()
   })
 })
 
+describe('a NON-empty target folder (desktop.ini / .DS_Store) still lands the remote', () => {
+  it('remote has the configured branch → init + fetch + checkout, no clone', async () => {
+    writeFileSync(join(localPath, 'desktop.ini'), '[.ShellClassInfo]')
+    remote.heads = 'abc\trefs/heads/main\n'
+    const res = await pull()
+    expect(res.success).toBe(true)
+    expect(remote.calls).toContain('init')
+    expect(remote.calls).toContain('fetch origin main')
+    expect(remote.calls).toContain('checkout -b main origin/main')
+    expect(remote.calls.some((c) => c.startsWith('clone'))).toBe(false)
+  })
+
+  it('remote has history on `master` only → fetch master, START `main` on top (mirrors the clone path)', async () => {
+    writeFileSync(join(localPath, '.DS_Store'), '')
+    remote.heads = 'abc\trefs/heads/master\n'
+    const res = await pull()
+    expect(res.success).toBe(true)
+    expect(remote.calls).toContain('fetch origin master')
+    expect(remote.calls).toContain('checkout -b master origin/master')
+    expect(remote.calls).toContain('checkoutLocalBranch main')
+  })
+
+  it('genuinely empty remote → init only, nothing fetched', async () => {
+    writeFileSync(join(localPath, 'desktop.ini'), '')
+    remote.heads = ''
+    const res = await pull()
+    expect(res.success).toBe(true)
+    expect(remote.calls).toContain('init')
+    expect(remote.calls.some((c) => c.startsWith('fetch'))).toBe(false)
+  })
+})
+
 describe('an existing checkout in local_path', () => {
   beforeEach(() => mkdirSync(join(localPath, '.git')))
 

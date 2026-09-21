@@ -113,6 +113,7 @@ import TreeView from '../../src/renderer/components/sidebar/TreeView'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useBranchStore } from '../../src/renderer/stores/branch.store'
+import { collectRequestIds } from '../../src/renderer/lib/folder-request-selection'
 import type { TreeNode } from '../../src/renderer/types'
 
 function findNode(nodes: TreeNode[], id: string): TreeNode | undefined {
@@ -160,6 +161,16 @@ describe('buildTreeFromDB binds examples under their owner', () => {
     expect(findNode(tree, 'sr2')!.children).toBeUndefined()
     // The suite-item example is nowhere in the APIs tree.
     expect(findNode(tree, 'ex4')).toBeUndefined()
+  })
+
+  it('request walkers (Run folder / Create suite from folder) never pick up example children', async () => {
+    await useWorkspaceStore.getState().refreshTree()
+    const tree = useWorkspaceStore.getState().treeData
+    // Examples carry a method + path like requests, so a walker keyed on
+    // `!!node.method` would run them as requests. collectRequestIds is
+    // type-based; this pins that.
+    expect(collectRequestIds(findNode(tree, 'f1')!)).toEqual(['ep1', 'sr1'])
+    expect(collectRequestIds(findNode(tree, 'sr1')!)).toEqual(['sr1'])
   })
 })
 
