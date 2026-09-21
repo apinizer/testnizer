@@ -34,6 +34,9 @@ import {
   getSettingsStore,
   getLegacyCredentialStore,
   legacyCredentialKey,
+  isGitAuthError,
+  unreachableRemoteError,
+  redactToken,
 } from '../lib/git-config'
 import { projectFileSlug, pickProjectFile } from '../lib/project-file'
 import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
@@ -2440,29 +2443,36 @@ export function registerSaveHandlers(): void {
 
         const git = simpleGit(gitOpts).env(gitEnv)
 
-        let isEmpty = false
+        // Decide from `ls-remote --heads` BEFORE cloning — the same rule as
+        // ensureGitRepo. The old code treated ANY clone failure (wrong PAT,
+        // unreachable host, …) as "completely empty repo" and let the wizard
+        // continue as if the clone had worked (issue #130). Auth / network
+        // failures now surface here; only a remote with no heads is empty.
+        let heads: string
         try {
-          await git.clone(auth.cleanUrl, tmpDir, [
-            '--branch',
-            payload.branch,
-            '--single-branch',
-            '--depth',
-            '1',
-          ])
-        } catch {
-          // Branch not found — try cloning without branch (default branch)
+          heads = await git.listRemote(['--heads', auth.cleanUrl])
+        } catch (e) {
           rmSync(tmpDir, { recursive: true, force: true })
-          mkdirSync(tmpDir, { recursive: true })
+          if (isGitAuthError((e as Error).message)) throw e
+          throw new Error(unreachableRemoteError(redactToken((e as Error).message, payload.token)))
+        }
+        const branchSet = new Set(
+          heads
+            .split('\n')
+            .map((line) => line.split('\t')[1]?.trim())
+            .filter((ref): ref is string => !!ref && ref.startsWith('refs/heads/'))
+            .map((ref) => ref.slice('refs/heads/'.length)),
+        )
+        const isEmpty = branchSet.size === 0
+        if (!isEmpty) {
+          const cloneArgs = branchSet.has(payload.branch)
+            ? ['--branch', payload.branch, '--single-branch', '--depth', '1']
+            : ['--depth', '1']
           try {
-            await git.clone(auth.cleanUrl, tmpDir, ['--depth', '1'])
-          } catch {
-            // Completely empty repo — init locally and set remote
+            await git.clone(auth.cleanUrl, tmpDir, cloneArgs)
+          } catch (e) {
             rmSync(tmpDir, { recursive: true, force: true })
-            mkdirSync(tmpDir, { recursive: true })
-            const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
-            await gitRepo.init()
-            await gitRepo.addRemote('origin', auth.cleanUrl)
-            isEmpty = true
+            throw e
           }
         }
 
