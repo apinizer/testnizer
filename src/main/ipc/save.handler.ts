@@ -392,6 +392,43 @@ export function importProjectDataFromJson(jsonString: string, projectId: string)
 function importProjectData(data: ProjectExport, projectId: string): void {
   const db = getDb()
 
+  // Every project-scoped row in the export carries the SOURCE project's id
+  // (`project_id`) and workspace (`workspace_id`) — the ids of the machine
+  // that exported it. On the same machine those match the target and the
+  // upsert lands where the user expects. On ANOTHER machine (Clone from Git
+  // → Pull on machine B) the ids differ: the rows were written under a
+  // project that does not exist locally, `git:pull` reported success, and
+  // the tree stayed empty. Rebind ownership to the importing project here;
+  // row ids stay stable so later pulls keep upserting the same rows.
+  const sourceProjectId =
+    typeof data.project?.id === 'string' ? (data.project.id as string) : undefined
+  if (sourceProjectId && sourceProjectId !== projectId) {
+    // The export came from a project that STILL EXISTS on this machine (the
+    // user exported local project X and is importing the file into Y).
+    // Rebinding would move X's rows into Y — X's tree empties and deleting
+    // the "broken" duplicate cascades X's data away. Refuse instead; the
+    // fresh-id path (Import Project) is the right tool for that.
+    const sourceLocal = db
+      .prepare('SELECT name FROM projects WHERE id = ?')
+      .get(sourceProjectId) as { name: string } | undefined
+    if (sourceLocal) {
+      throw new Error(
+        `This project file belongs to "${sourceLocal.name}", which already exists here. Use Import Project to bring it in as a copy.`,
+      )
+    }
+  }
+  const targetWorkspaceId = (
+    db.prepare('SELECT workspace_id FROM projects WHERE id = ?').get(projectId) as
+      | { workspace_id?: string }
+      | undefined
+  )?.workspace_id
+  const rebind = (rows: Record<string, unknown>[] | undefined): Record<string, unknown>[] =>
+    (rows ?? []).map((row) => ({
+      ...row,
+      project_id: projectId,
+      ...(targetWorkspaceId && 'workspace_id' in row ? { workspace_id: targetWorkspaceId } : {}),
+    }))
+
   const upsert = (table: string, rows: Record<string, unknown>[], columns: string[]): void => {
     if (rows.length === 0) return
     const placeholders = columns.map(() => '?').join(',')
@@ -413,10 +450,10 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   }
 
   // Import folders
-  upsert('folders', data.folders, ['id', 'project_id', 'parent_id', 'name', 'sort_order'])
+  upsert('folders', rebind(data.folders), ['id', 'project_id', 'parent_id', 'name', 'sort_order'])
 
   // Import endpoints
-  upsert('endpoints', data.endpoints, [
+  upsert('endpoints', rebind(data.endpoints), [
     'id',
     'project_id',
     'folder_id',
@@ -450,7 +487,7 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   }
 
   // Import saved requests
-  upsert('saved_requests', data.savedRequests, [
+  upsert('saved_requests', rebind(data.savedRequests), [
     'id',
     'project_id',
     'folder_id',
@@ -475,7 +512,7 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   // without it an imported env keeps the source project's id (or NULL for
   // legacy exports) and becomes invisible to the project that imported it.
   if (data.environments?.length) {
-    upsert('environments', data.environments, [
+    upsert('environments', rebind(data.environments), [
       'id',
       'workspace_id',
       'project_id',
@@ -504,7 +541,7 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   // global was scoped to a project on the source side, it must land scoped to
   // the target project rather than leaking workspace-wide.
   if (data.globalVariables?.length) {
-    upsert('global_variables', data.globalVariables, [
+    upsert('global_variables', rebind(data.globalVariables), [
       'id',
       'workspace_id',
       'project_id',
@@ -519,7 +556,7 @@ function importProjectData(data: ProjectExport, projectId: string): void {
 
   // Import test suites
   if (data.testSuites?.length) {
-    upsert('test_suites', data.testSuites, [
+    upsert('test_suites', rebind(data.testSuites), [
       'id',
       'project_id',
       'name',
@@ -568,7 +605,7 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   // upsert parents before children. Missing arrays are skipped — pre-v1.2
   // export files don't carry these.
   if (data.mockServers?.length) {
-    upsert('mock_servers', data.mockServers, [...MOCK_SERVER_COLUMNS])
+    upsert('mock_servers', rebind(data.mockServers), [...MOCK_SERVER_COLUMNS])
   }
   if (data.mockEndpoints?.length) {
     upsert('mock_endpoints', data.mockEndpoints, [...MOCK_ENDPOINT_COLUMNS])
@@ -580,12 +617,12 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   // Named response examples (issue #125). Owner ids are stable in the
   // upsert model (same project, same row ids), so no remapping needed.
   if (data.savedResponses?.length) {
-    upsert('saved_responses', data.savedResponses, [...SAVED_RESPONSE_COLUMNS])
+    upsert('saved_responses', rebind(data.savedResponses), [...SAVED_RESPONSE_COLUMNS])
   }
 
   // Import client certificates (mTLS / SSL pinning configs).
   if (data.certificates?.length) {
-    upsert('certificates', data.certificates, [...CERTIFICATE_COLUMNS])
+    upsert('certificates', rebind(data.certificates), [...CERTIFICATE_COLUMNS])
   }
 }
 

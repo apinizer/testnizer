@@ -120,14 +120,14 @@ export default function Header() {
       const result = await window.api.git.push(activeProject.id)
 
       if (result?.success) {
-        setStatusMsg(`Push başarılı (${result.data?.branch || 'branch'})`)
+        setStatusMsg(`${t('toast.pushed')} (${result.data?.branch || 'branch'})`)
         setPushStatus('success')
         setTimeout(() => {
           setPushStatus('idle')
           setStatusMsg('')
         }, 3000)
       } else {
-        setStatusMsg(result?.error || 'Push hatası')
+        setStatusMsg(result?.error || t('toast.pushFailed'))
         setPushStatus('error')
         setTimeout(() => {
           setPushStatus('idle')
@@ -155,8 +155,21 @@ export default function Header() {
       const result = await window.api.git.pull(activeProject.id)
 
       if (result?.success) {
-        setStatusMsg(`Pull başarılı (${result.data?.branch || 'branch'})`)
-        setPullStatus('success')
+        const branch = result.data?.branch || 'branch'
+        // A pull that landed on disk but found no project .json is not a
+        // success from the user's seat — say so instead of "pulled".
+        if (result.data?.state === 'conflicted') {
+          // The merge stopped on conflicts: nothing was imported. Route the
+          // user to the branch dropdown's conflict flow instead of "pulled".
+          setStatusMsg(`${t('toast.pullConflicted')} (${branch})`)
+          setPullStatus('error')
+        } else if (result.data?.imported === false) {
+          setStatusMsg(`${t('toast.pullNoProjectFile')} (${branch})`)
+          setPullStatus('error')
+        } else {
+          setStatusMsg(`${t('toast.pulled')} (${branch})`)
+          setPullStatus('success')
+        }
 
         // git:pull already re-imported the pulled project file into the DB;
         // the old extra `save:gitPull` here cloned the remote a SECOND time
@@ -171,7 +184,7 @@ export default function Header() {
           setStatusMsg('')
         }, 3000)
       } else {
-        setStatusMsg(result?.error || 'Pull hatası')
+        setStatusMsg(result?.error || t('toast.pullFailed'))
         setPullStatus('error')
         setTimeout(() => {
           setPullStatus('idle')

@@ -1727,6 +1727,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'newProject.createFailed': 'The project could not be created',
     'newProject.importFailed': 'The project was created, but importing the file failed',
     'newProject.gitFailed': 'The project was created, but the git step failed',
+    'newProject.gitConnectionFailed': 'Could not connect to the Git repository',
     'tools.epoch.copyEpoch': 'Copy the current epoch',
     'tools.diff.copyLeft': 'Copy the left side',
     'tools.diff.copyRight': 'Copy the right side',
@@ -2179,6 +2180,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.pushFailed': 'Push failed',
     'toast.pulled': 'Pulled successfully',
     'toast.pullFailed': 'Pull failed',
+    'toast.pullNoProjectFile':
+      'Pull finished, but the repository holds no project file — nothing was imported',
+    'toast.pullConflicted': 'Pull stopped on merge conflicts — resolve them from the branch menu',
     'toast.mockSaved': 'Mock server saved',
     'toast.mockSaveFailed': 'Failed to save mock server',
 
@@ -3966,6 +3970,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'newProject.createFailed': 'Proje oluşturulamadı',
     'newProject.importFailed': 'Proje oluşturuldu, ancak dosya içe aktarılamadı',
     'newProject.gitFailed': 'Proje oluşturuldu, ancak git adımı başarısız oldu',
+    'newProject.gitConnectionFailed': 'Git deposuna bağlanılamadı',
     'tools.epoch.copyEpoch': 'Geçerli epoch’u kopyala',
     'tools.diff.copyLeft': 'Sol tarafı kopyala',
     'tools.diff.copyRight': 'Sağ tarafı kopyala',
@@ -4418,6 +4423,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.pushFailed': 'Gönderim başarısız',
     'toast.pulled': 'Çekim başarılı',
     'toast.pullFailed': 'Çekim başarısız',
+    'toast.pullNoProjectFile':
+      'Çekim tamamlandı ancak depoda proje dosyası yok — hiçbir şey içe aktarılmadı',
+    'toast.pullConflicted': 'Çekim birleştirme çakışmasında durdu — branch menüsünden çözün',
     'toast.mockSaved': 'Mock sunucu kaydedildi',
     'toast.mockSaveFailed': 'Mock sunucu kaydedilemedi',
 

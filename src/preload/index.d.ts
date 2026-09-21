@@ -1309,6 +1309,8 @@ interface GitMergeResult {
 
 interface GitPullOutcome {
   pulled: boolean
+  /** False when the checkout holds no project .json (nothing was imported). */
+  imported?: boolean
   state: 'clean' | 'conflicted'
   branch: string
   conflicts?: GitConflictInfo[]

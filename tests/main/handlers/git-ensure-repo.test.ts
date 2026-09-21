@@ -51,9 +51,10 @@ class FakeStore {
 }
 vi.mock('electron-store', () => ({ default: FakeStore }))
 
+const importSpy = vi.hoisted(() => vi.fn())
 vi.mock('../../../src/main/ipc/save.handler', () => ({
   exportProjectData: vi.fn(() => ({ project: { name: 'Acme APIs' }, folders: [], endpoints: [] })),
-  importProjectDataFromJson: vi.fn(),
+  importProjectDataFromJson: importSpy,
 }))
 
 /** Scripted remote + recorded git calls. */
@@ -156,6 +157,36 @@ beforeEach(() => {
 
 const push = () =>
   harness.invoke('git:push', projectId) as Promise<{ success: boolean; error?: string }>
+const pull = () =>
+  harness.invoke('git:pull', projectId) as Promise<{
+    success: boolean
+    error?: string
+    data?: { pulled: boolean; imported: boolean; branch: string }
+  }>
+
+describe('git:pull reports whether a project file was actually imported', () => {
+  beforeEach(() => {
+    importSpy.mockClear()
+    remote.heads = 'abc\trefs/heads/main\n'
+  })
+
+  it('clone landed but the checkout holds no project .json → success with imported:false', async () => {
+    const res = await pull()
+    expect(res.success).toBe(true)
+    expect(res.data?.pulled).toBe(true)
+    expect(res.data?.imported).toBe(false)
+    expect(importSpy).not.toHaveBeenCalled()
+  })
+
+  it('project .json present → imported into THIS project id (machine B clone)', async () => {
+    writeFileSync(join(localPath, 'acme-apis.json'), JSON.stringify({ version: '1', project: {} }))
+    const res = await pull()
+    expect(res.success).toBe(true)
+    expect(res.data?.imported).toBe(true)
+    expect(importSpy).toHaveBeenCalledTimes(1)
+    expect(importSpy.mock.calls[0][1]).toBe(projectId)
+  })
+})
 
 describe('ensureGitRepo decides from `ls-remote`, never from a failed clone', () => {
   it('empty remote → init locally, HEAD on the configured branch, no clone attempt', async () => {

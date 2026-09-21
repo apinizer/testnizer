@@ -280,6 +280,19 @@ beforeEach(() => {
     .run(TARGET_PID, WORKSPACE_ID, now, now)
 })
 
+/**
+ * Machine-B simulation: the export was taken, then the file travels to a
+ * machine where the source project does not exist. (When it DOES exist the
+ * importer refuses — see the first round-trip case.) saved_responses has an
+ * FK cascade on projects, so re-parent it first; the export already holds it.
+ */
+function forgetSourceProject(): void {
+  testDb
+    .prepare('UPDATE saved_responses SET project_id = NULL WHERE project_id = ?')
+    .run(SOURCE_PID)
+  testDb.prepare('DELETE FROM projects WHERE id = ?').run(SOURCE_PID)
+}
+
 // Build a representative source project with one row in every table the
 // project export claims to cover, then seed the DB. Returning the IDs lets
 // individual tests assert on specific rows.
@@ -346,7 +359,11 @@ function seedRichProject(): {
       ids.childFolderId,
       'Create User',
       'desc',
-      JSON.stringify({ url: '{{base}}/users', headers: [{ key: 'Content-Type', value: 'application/json' }], body: { type: 'json', content: '{"x":1}' } }),
+      JSON.stringify({
+        url: '{{base}}/users',
+        headers: [{ key: 'Content-Type', value: 'application/json' }],
+        body: { type: 'json', content: '{"x":1}' },
+      }),
       JSON.stringify([{ status: 200 }]),
       now,
       now,
@@ -492,6 +509,80 @@ describe('exportProjectData — shape sanity', () => {
 // ───────── Round-trip into a different project ─────────
 
 describe('Project export → import round-trip (different target project)', () => {
+  it('refuses to import a file whose source project still exists on this machine (would move its rows)', () => {
+    seedRichProject()
+    const data = exportProjectData(SOURCE_PID)
+    expect(() => importProjectDataFromJson(JSON.stringify(data), TARGET_PID)).toThrow(
+      /already exists here/,
+    )
+    // Nothing moved.
+    expect(
+      (
+        testDb
+          .prepare('SELECT COUNT(*) AS n FROM endpoints WHERE project_id = ?')
+          .get(SOURCE_PID) as {
+          n: number
+        }
+      ).n,
+    ).toBe(1)
+  })
+
+  it('rebinds every project-scoped row to the IMPORTING project without the caller re-pointing ids (Clone from Git on machine B)', () => {
+    const ids = seedRichProject()
+    const data = exportProjectData(SOURCE_PID)
+    // Simulate a foreign export: the bundle carries machine A's project +
+    // workspace ids. Machine B's `git:pull` calls this with ITS project id.
+    for (const env of data.environments ?? []) env.workspace_id = 'ws-machine-a'
+    for (const g of data.globalVariables ?? []) g.workspace_id = 'ws-machine-a'
+    forgetSourceProject()
+
+    importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
+
+    const count = (table: string): number =>
+      (
+        testDb
+          .prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE project_id = ?`)
+          .get(TARGET_PID) as {
+          n: number
+        }
+      ).n
+    expect(count('folders')).toBe(2)
+    expect(count('endpoints')).toBe(1)
+    expect(count('saved_requests')).toBe(1)
+    expect(count('environments')).toBe(1)
+    expect(count('global_variables')).toBe(1)
+    expect(count('test_suites')).toBe(1)
+    expect(count('mock_servers')).toBe(1)
+    expect(count('certificates')).toBe(1)
+    expect(count('saved_responses')).toBe(1)
+    // Nothing may stay parked under the (nonexistent here) source project.
+    expect(
+      (
+        testDb
+          .prepare('SELECT COUNT(*) AS n FROM endpoints WHERE project_id = ?')
+          .get(SOURCE_PID) as {
+          n: number
+        }
+      ).n,
+    ).toBe(0)
+    // Row ids are untouched so the next pull upserts the same rows.
+    expect(
+      (
+        testDb.prepare('SELECT project_id FROM endpoints WHERE id = ?').get(ids.endpointId) as {
+          project_id: string
+        }
+      ).project_id,
+    ).toBe(TARGET_PID)
+    // Workspace ownership follows the target project too.
+    expect(
+      (
+        testDb.prepare('SELECT workspace_id FROM environments WHERE id = ?').get(ids.envId) as {
+          workspace_id: string
+        }
+      ).workspace_id,
+    ).toBe(WORKSPACE_ID)
+  })
+
   it('upserts folders into the target project with parent_id preserved', () => {
     const ids = seedRichProject()
     const data = exportProjectData(SOURCE_PID)
@@ -507,6 +598,7 @@ describe('Project export → import round-trip (different target project)', () =
     for (const m of data.mockServers ?? []) m.project_id = TARGET_PID
     for (const c of data.certificates ?? []) c.project_id = TARGET_PID
 
+    forgetSourceProject()
     importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
 
     const folders = testDb
@@ -524,6 +616,7 @@ describe('Project export → import round-trip (different target project)', () =
     const data = exportProjectData(SOURCE_PID)
     for (const e of data.endpoints) e.project_id = TARGET_PID
     for (const f of data.folders) f.project_id = TARGET_PID
+    forgetSourceProject()
     importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
 
     const row = testDb
@@ -548,6 +641,7 @@ describe('Project export → import round-trip (different target project)', () =
     const data = exportProjectData(SOURCE_PID)
     for (const e of data.endpoints) e.project_id = TARGET_PID
     for (const f of data.folders) f.project_id = TARGET_PID
+    forgetSourceProject()
     importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
 
     const row = testDb
@@ -562,6 +656,7 @@ describe('Project export → import round-trip (different target project)', () =
     const ids = seedRichProject()
     const data = exportProjectData(SOURCE_PID)
     for (const env of data.environments ?? []) env.project_id = TARGET_PID
+    forgetSourceProject()
     importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
 
     const row = testDb
@@ -578,6 +673,7 @@ describe('Project export → import round-trip (different target project)', () =
   it('round-trips environment_variables (key, value, secret flag, initial_value)', () => {
     const ids = seedRichProject()
     const data = exportProjectData(SOURCE_PID)
+    forgetSourceProject()
     importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
 
     const row = testDb
@@ -604,12 +700,11 @@ describe('Project export → import round-trip (different target project)', () =
     const ids = seedRichProject()
     const data = exportProjectData(SOURCE_PID)
     for (const g of data.globalVariables ?? []) g.project_id = TARGET_PID
+    forgetSourceProject()
     importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
 
     const row = testDb
-      .prepare(
-        'SELECT key, value, project_id, secret FROM global_variables WHERE id = ?',
-      )
+      .prepare('SELECT key, value, project_id, secret FROM global_variables WHERE id = ?')
       .get(ids.globalVarId) as {
       key: string
       value: string
@@ -629,6 +724,7 @@ describe('Project export → import round-trip (different target project)', () =
     const ids = seedRichProject()
     const data = exportProjectData(SOURCE_PID)
     for (const s of data.testSuites ?? []) s.project_id = TARGET_PID
+    forgetSourceProject()
     importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
 
     const suite = testDb
@@ -670,6 +766,7 @@ describe('Project export → import round-trip (different target project)', () =
     const ids = seedRichProject()
     const data = exportProjectData(SOURCE_PID)
     for (const m of data.mockServers ?? []) m.project_id = TARGET_PID
+    forgetSourceProject()
     importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
 
     const server = testDb
@@ -704,6 +801,7 @@ describe('Project export → import round-trip (different target project)', () =
     const ids = seedRichProject()
     const data = exportProjectData(SOURCE_PID)
     for (const c of data.certificates ?? []) c.project_id = TARGET_PID
+    forgetSourceProject()
     importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
 
     const cert = testDb
@@ -726,6 +824,7 @@ describe('Project export → import round-trip (different target project)', () =
     const ids = seedRichProject()
     const data = exportProjectData(SOURCE_PID)
     for (const r of data.savedResponses ?? []) r.project_id = TARGET_PID
+    forgetSourceProject()
     importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
 
     const row = testDb
@@ -777,17 +876,13 @@ describe('Folder export → import round-trip', () => {
     // The original Root + Child + endpoint still exist (we didn't delete the
     // source) and a fresh subtree is grafted under DestParent.
     const newRoot = testDb
-      .prepare(
-        'SELECT id, parent_id, name FROM folders WHERE project_id = ? AND parent_id = ?',
-      )
+      .prepare('SELECT id, parent_id, name FROM folders WHERE project_id = ? AND parent_id = ?')
       .get(SOURCE_PID, destParent) as { id: string; parent_id: string; name: string } | undefined
     expect(newRoot).toBeDefined()
     expect(newRoot!.name).toBe('Root')
 
     const newChild = testDb
-      .prepare(
-        `SELECT id, name FROM folders WHERE project_id = ? AND parent_id = ?`,
-      )
+      .prepare(`SELECT id, name FROM folders WHERE project_id = ? AND parent_id = ?`)
       .get(SOURCE_PID, newRoot!.id) as { id: string; name: string } | undefined
     expect(newChild).toBeDefined()
     expect(newChild!.name).toBe('Child')

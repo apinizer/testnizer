@@ -294,7 +294,7 @@ export default function NewProjectModal() {
       }
 
       if (!listResult?.success) {
-        setCloneError(listResult?.error || 'Git bağlantısı başarısız.')
+        setCloneError(listResult?.error || t('newProject.gitConnectionFailed'))
         setCloning(false)
         return
       }
@@ -511,9 +511,15 @@ export default function NewProjectModal() {
                 // (A push here would instead upload the freshly-created empty
                 // project and risk clobbering the remote.)
                 const res = (await window.api.git.pull(projectId)) as
-                  | { success?: boolean; error?: string }
+                  | { success?: boolean; error?: string; data?: { imported?: boolean } }
                   | undefined
                 if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
+                // The clone landed but the checkout holds no project .json:
+                // the user picked "Clone from Git" expecting the remote's
+                // collection, so an empty tree is a warning, not silence.
+                if (res?.data?.imported === false) {
+                  throw new Error(t('toast.pullNoProjectFile'))
+                }
               } else {
                 // New project with a git remote — seed the remote with the
                 // project data.

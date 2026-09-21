@@ -663,15 +663,22 @@ export function registerGitHandlers(): void {
 
       // Pull landed on disk; let any reimport failure surface explicitly so
       // the user doesn't see "pull succeeded" while the DB is silently stale.
+      // `imported: false` means the checkout holds no project .json at all
+      // (empty remote, or a repo that never had a push) — the caller decides
+      // whether that is a warning (Clone from Git) or fine (fresh project).
+      let imported = false
       try {
-        reimportProjectFromDir(config.localPath, projectId)
+        imported = reimportProjectFromDir(config.localPath, projectId)
       } catch (e) {
         return {
           success: false,
           error: `Pull succeeded but importing the new state failed: ${(e as Error).message}`,
         }
       }
-      return { success: true, data: { pulled: true, state: 'clean', branch: currentBranch } }
+      return {
+        success: true,
+        data: { pulled: true, imported, state: 'clean', branch: currentBranch },
+      }
     } catch (e) {
       return { success: false, error: describeGitError(e, config?.token) }
     }
