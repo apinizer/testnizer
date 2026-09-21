@@ -184,3 +184,126 @@ describe('savedResponse:rename + delete', () => {
     expect(again.data).toBe(false)
   })
 })
+
+describe('listByProject / get / request_json (examples in the APIs tree)', () => {
+  it('listByProject returns every example of the project WITHOUT the JSON blobs', async () => {
+    await harness.invoke('savedResponse:create', {
+      owner_type: 'saved_request',
+      owner_id: 'sr-1',
+      name: '200 OK',
+      status_code: 200,
+      response_json: snapshot,
+      request_json: JSON.stringify({ configured: { method: 'GET', url: '{{base}}/x' } }),
+    })
+    await harness.invoke('savedResponse:create', {
+      owner_type: 'endpoint',
+      owner_id: 'ep-1',
+      name: '404',
+      status_code: 404,
+      response_json: snapshot,
+    })
+    const res = (await harness.invoke('savedResponse:listByProject', projectId)) as {
+      success: boolean
+      data: Array<Record<string, unknown>>
+    }
+    expect(res.success).toBe(true)
+    expect(res.data).toHaveLength(2)
+    expect(res.data.map((r) => r.owner_id).sort()).toEqual(['ep-1', 'sr-1'])
+    for (const row of res.data) {
+      expect(row).not.toHaveProperty('response_json')
+      expect(row).not.toHaveProperty('request_json')
+      expect(row).toHaveProperty('status_code')
+    }
+    const other = (await harness.invoke('savedResponse:listByProject', 'nope')) as {
+      data: unknown[]
+    }
+    expect(other.data).toEqual([])
+  })
+
+  it('get returns the full row, and a structured error once it is gone', async () => {
+    const created = (await harness.invoke('savedResponse:create', {
+      owner_type: 'saved_request',
+      owner_id: 'sr-1',
+      name: 'x',
+      response_json: snapshot,
+      request_json: JSON.stringify({ configured: { method: 'GET', url: 'u' } }),
+    })) as { data: { id: string } }
+    const got = (await harness.invoke('savedResponse:get', created.data.id)) as {
+      success: boolean
+      data: { response_json: string; request_json: string }
+    }
+    expect(got.success).toBe(true)
+    expect(got.data.response_json).toBe(snapshot)
+    expect(JSON.parse(got.data.request_json).configured.url).toBe('u')
+    await harness.invoke('savedResponse:delete', created.data.id)
+    const gone = (await harness.invoke('savedResponse:get', created.data.id)) as {
+      success: boolean
+      error?: string
+    }
+    expect(gone.success).toBe(false)
+    expect(gone.error).toMatch(/no longer exists/)
+  })
+
+  it('masks credential headers in the stored request snapshot (sent AND configured), in main', async () => {
+    const created = (await harness.invoke('savedResponse:create', {
+      owner_type: 'saved_request',
+      owner_id: 'sr-1',
+      name: 'auth',
+      response_json: snapshot,
+      request_json: JSON.stringify({
+        configured: {
+          method: 'GET',
+          url: '{{base}}',
+          headers: [
+            { id: '1', key: 'Authorization', value: 'Bearer {{token}}', enabled: true },
+            { id: '2', key: 'Accept', value: 'application/json', enabled: true },
+          ],
+        },
+        sent: {
+          method: 'GET',
+          url: 'https://api.test',
+          headers: {
+            authorization: 'Bearer real-secret',
+            Cookie: 'session=abc',
+            Accept: 'application/json',
+          },
+          body: '{}',
+        },
+      }),
+    })) as { data: { id: string; request_json: string } }
+    const stored = created.data.request_json
+    expect(stored).not.toContain('real-secret')
+    expect(stored).not.toContain('session=abc')
+    expect(stored).not.toContain('Bearer {{token}}')
+    const parsed = JSON.parse(stored) as {
+      configured: { headers: Array<{ key: string; value: string }> }
+      sent: { headers: Record<string, string> }
+    }
+    expect(parsed.sent.headers.Accept).toBe('application/json')
+    expect(parsed.sent.headers.authorization).toBe('••••••')
+    expect(parsed.configured.headers[1].value).toBe('application/json')
+    // Raw DB row is masked too — not just the echo.
+    const row = testDb
+      .prepare('SELECT request_json FROM saved_responses WHERE id = ?')
+      .get(created.data.id) as { request_json: string }
+    expect(row.request_json).not.toContain('real-secret')
+  })
+
+  it('stores NULL request_json when the renderer sends none or garbage', async () => {
+    const none = (await harness.invoke('savedResponse:create', {
+      owner_type: 'saved_request',
+      owner_id: 'sr-1',
+      name: 'a',
+      response_json: snapshot,
+    })) as { data: { request_json: string | null } }
+    expect(none.data.request_json).toBeNull()
+    const garbage = (await harness.invoke('savedResponse:create', {
+      owner_type: 'saved_request',
+      owner_id: 'sr-1',
+      name: 'b',
+      response_json: snapshot,
+      request_json: '{not json',
+    })) as { data: { request_json: string | null } }
+    expect(garbage.data.request_json).toBeNull()
+  })
+})

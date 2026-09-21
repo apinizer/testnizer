@@ -846,7 +846,7 @@ export function importFolderData(
     // ids (issue #125); rows whose owner did not come along are dropped.
     const insertSavedResponse = db.prepare(
       `INSERT INTO saved_responses (${SAVED_RESPONSE_COLUMNS.join(', ')})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (${SAVED_RESPONSE_COLUMNS.map(() => '?').join(', ')})`,
     )
     for (const r of data.savedResponses || []) {
       const ownerType = r.owner_type as string
@@ -870,6 +870,7 @@ export function importFolderData(
         r.status_code ?? null,
         r.response_json,
         (r.created_at as number) || now,
+        (r.request_json as string | null) ?? null,
       )
     }
   })
@@ -1617,7 +1618,7 @@ export function importProjectAsNew(
     // saved-request ids; rows whose owner did not come along are dropped.
     const insertSavedResponse = db.prepare(
       `INSERT INTO saved_responses (${SAVED_RESPONSE_COLUMNS.join(', ')})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (${SAVED_RESPONSE_COLUMNS.map(() => '?').join(', ')})`,
     )
     for (const r of data.savedResponses || []) {
       const ownerType = r.owner_type as string
@@ -1643,6 +1644,7 @@ export function importProjectAsNew(
         r.status_code ?? null,
         r.response_json,
         (r.created_at as number) || now,
+        (r.request_json as string | null) ?? null,
       )
     }
   })

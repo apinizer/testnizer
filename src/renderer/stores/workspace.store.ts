@@ -1,5 +1,14 @@
 import { create } from 'zustand'
-import type { Workspace, Project, TreeNode, Folder, Endpoint, SavedRequest, Tab } from '../types'
+import type {
+  Workspace,
+  Project,
+  TreeNode,
+  Folder,
+  Endpoint,
+  SavedRequest,
+  SavedResponseSummary,
+  Tab,
+} from '../types'
 import { useEnvironmentStore } from './environment.store'
 import { useBranchStore } from './branch.store'
 import { useTabsStore } from './tabs.store'
@@ -281,8 +290,10 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
     // Branch scope (#8): null on the default branch (shows shared content),
     // else the active branch name (shows shared + that branch's content).
     const branchScope = useBranchStore.getState().getActiveBranchScope()
-    // Three independent IPC calls — fan out in parallel.
-    const [foldersResult, endpointsResult, savedResult] = await Promise.all([
+    // Four independent IPC calls — fan out in parallel. Examples come as ONE
+    // per-project list (never one `savedResponse:list` per request row) and
+    // are bound under their owner rows below.
+    const [foldersResult, endpointsResult, savedResult, examplesResult] = await Promise.all([
       window.api?.folder?.list(projectId, branchScope) as Promise<{
         success: boolean
         data?: FolderRow[]
@@ -295,6 +306,13 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
         success: boolean
         data?: SavedRequestRow[]
       }>,
+      // Optional chaining on the method too: older preloads / test doubles
+      // without the channel simply yield a tree with no example children.
+      Promise.resolve(
+        window.api?.savedResponse?.listByProject?.(projectId) as
+          | Promise<{ success: boolean; data?: SavedResponseSummary[] }>
+          | undefined,
+      ),
     ])
     const folders: FolderRow[] =
       foldersResult?.success && foldersResult.data ? foldersResult.data : []
@@ -302,29 +320,63 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
       endpointsResult?.success && endpointsResult.data ? endpointsResult.data : []
     const savedRequests: SavedRequestRow[] =
       savedResult?.success && savedResult.data ? savedResult.data : []
+    const examples: SavedResponseSummary[] =
+      examplesResult?.success && examplesResult.data ? examplesResult.data : []
+    const examplesByOwner = new Map<string, TreeNode[]>()
+    for (const ex of examples) {
+      if (ex.owner_type !== 'endpoint' && ex.owner_type !== 'saved_request') continue
+      const key = `${ex.owner_type}:${ex.owner_id}`
+      const list = examplesByOwner.get(key) ?? []
+      list.push({
+        id: ex.id,
+        type: 'example',
+        label: ex.name,
+        method: ex.method || undefined,
+        path: ex.url || undefined,
+        statusCode: ex.status_code,
+        ownerType: ex.owner_type,
+        ownerId: ex.owner_id,
+      })
+      examplesByOwner.set(key, list)
+    }
+    /** Attach a request row's examples as its children (leaf when it has none). */
+    const withExamples = (node: TreeNode, ownerType: 'endpoint' | 'saved_request'): TreeNode => {
+      const children = examplesByOwner.get(`${ownerType}:${node.id}`)
+      return children && children.length > 0 ? { ...node, children } : node
+    }
 
     // Build folder map (id → TreeNode) with direct children (endpoints + saved requests)
     const folderMap = new Map<string, TreeNode>()
     for (const f of folders) {
       const folderEndpoints: TreeNode[] = endpoints
         .filter((e) => e.folder_id === f.id)
-        .map((e) => ({
-          id: e.id,
-          type: 'endpoint' as const,
-          label: e.name,
-          method: e.method || 'GET',
-          path: e.path,
-        }))
+        .map((e) =>
+          withExamples(
+            {
+              id: e.id,
+              type: 'endpoint' as const,
+              label: e.name,
+              method: e.method || 'GET',
+              path: e.path,
+            },
+            'endpoint',
+          ),
+        )
 
       const folderSaved: TreeNode[] = savedRequests
         .filter((r) => r.folder_id === f.id)
-        .map((r) => ({
-          id: r.id,
-          type: 'request' as const,
-          label: r.name,
-          method: r.method || 'GET',
-          path: r.url,
-        }))
+        .map((r) =>
+          withExamples(
+            {
+              id: r.id,
+              type: 'request' as const,
+              label: r.name,
+              method: r.method || 'GET',
+              path: r.url,
+            },
+            'saved_request',
+          ),
+        )
 
       folderMap.set(f.id, {
         id: f.id,
@@ -353,24 +405,34 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
     // Root-level endpoints (no folder)
     const rootEndpoints: TreeNode[] = endpoints
       .filter((e) => !e.folder_id)
-      .map((e) => ({
-        id: e.id,
-        type: 'endpoint' as const,
-        label: e.name,
-        method: e.method || 'GET',
-        path: e.path,
-      }))
+      .map((e) =>
+        withExamples(
+          {
+            id: e.id,
+            type: 'endpoint' as const,
+            label: e.name,
+            method: e.method || 'GET',
+            path: e.path,
+          },
+          'endpoint',
+        ),
+      )
 
     // Root-level saved requests (no folder)
     const rootSaved: TreeNode[] = savedRequests
       .filter((r) => !r.folder_id)
-      .map((r) => ({
-        id: r.id,
-        type: 'request' as const,
-        label: r.name,
-        method: r.method || 'GET',
-        path: r.url,
-      }))
+      .map((r) =>
+        withExamples(
+          {
+            id: r.id,
+            type: 'request' as const,
+            label: r.name,
+            method: r.method || 'GET',
+            path: r.url,
+          },
+          'saved_request',
+        ),
+      )
 
     // Build project root node
     const projectNode: TreeNode = {

@@ -15,6 +15,8 @@ export type Protocol =
   | 'socketio'
   | 'runner'
   | 'mockServer'
+  // Read-only view of a saved example (request + response) — issue #125 follow-up.
+  | 'example'
   | 'tools.jwt'
   | 'tools.jsonFormat'
   | 'tools.xmlFormat'
@@ -429,10 +431,16 @@ export interface Folder {
 
 export interface TreeNode {
   id: string
-  type: 'module' | 'folder' | 'endpoint' | 'schema' | 'component' | 'request'
+  /** `example` = a saved response example, always a child of an endpoint / request row. */
+  type: 'module' | 'folder' | 'endpoint' | 'schema' | 'component' | 'request' | 'example'
   label: string
   method?: HttpMethod | string
   path?: string
+  /** Example rows: the saved status code shown in place of the method badge. */
+  statusCode?: number | null
+  /** Example rows: which request row owns them (mirrors saved_responses.owner_*). */
+  ownerType?: SavedResponseOwnerType
+  ownerId?: string
   icon?: string
   count?: number
   countColor?: string
@@ -992,7 +1000,32 @@ export interface SavedResponse {
   status_code: number | null
   /** JSON-serialised Partial<ApiResponse> — same shape as history.response_snapshot. */
   response_json: string
+  /** JSON-serialised {@link SavedRequestSnapshot}; null on rows saved before it existed. */
+  request_json: string | null
   created_at: number
+}
+
+/** Tree-side projection of a saved example — no JSON blobs. */
+export type SavedResponseSummary = Omit<SavedResponse, 'response_json' | 'request_json'>
+
+/**
+ * What produced a saved example. `configured` is the editor template exactly
+ * as the user wrote it (`{{baseUrl}}`, `{{employee_body}}` intact); `sent` is
+ * the resolved wire request the engine reported (`actualRequest`) — variables
+ * and pre-request scripts already applied. Secrets in `sent.headers` are
+ * masked by main before the row is written.
+ */
+export interface SavedRequestSnapshot {
+  configured: {
+    method: string
+    url: string
+    params: KeyValuePair[]
+    headers: KeyValuePair[]
+    body: RequestBody
+    /** Auth TYPE only — never the credential itself. */
+    authType?: string
+  }
+  sent?: ActualRequestInfo
 }
 
 // ─── Import/Export ───────────────────────────────────────────
@@ -1067,6 +1100,8 @@ export interface Tab {
   testSuiteItemId?: string
   /** Folder/module ID — used by runner tab to scope endpoints */
   folderId?: string
+  /** Saved example ID — set on `protocol: 'example'` tabs (read-only request + response view). */
+  savedResponseId?: string
   /** Opaque key — changing this forces the runner tab to re-read sessionStorage */
   sessionKey?: string
   isDirty: boolean

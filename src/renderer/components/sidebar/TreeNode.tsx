@@ -2,6 +2,7 @@ import { useCallback, useState, useRef, useEffect, useLayoutEffect } from 'react
 import { createPortal } from 'react-dom'
 import type { TreeNode as TreeNodeType, Protocol } from '../../types'
 import MethodBadge from '../shared/MethodBadge'
+import StatusBadge from '../shared/StatusBadge'
 import { useTranslation } from '../../lib/i18n'
 import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
 import {
@@ -480,7 +481,11 @@ export default function TreeNodeComponent({
   const { t } = useTranslation()
   const isOpen = openIds.has(node.id)
   const hasChildren = node.children && node.children.length > 0
-  const isRequest = !!node.method
+  // Saved examples (issue #125 follow-up) sit UNDER a request row. They carry
+  // the owner's method for display, so "has a method" is no longer the
+  // request test — key on the type.
+  const isExample = node.type === 'example'
+  const isRequest = !!node.method && !isExample
   const isActive = activeId === node.id
   const indent = depth * 14
   const [hovered, setHovered] = useState(false)
@@ -492,7 +497,11 @@ export default function TreeNodeComponent({
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
 
-  const canModify = node.type === 'folder' || node.type === 'endpoint' || node.type === 'request'
+  const canModify =
+    node.type === 'folder' ||
+    node.type === 'endpoint' ||
+    node.type === 'request' ||
+    node.type === 'example'
   // The project root (`module`) can be renamed in place like a folder (issue
   // #126) but must NOT become deletable / draggable — hence a separate flag.
   const canRename = canModify || node.type === 'module'
@@ -509,9 +518,16 @@ export default function TreeNodeComponent({
 
   const handleClick = useCallback(() => {
     if (renaming) return
+    // Row click on a request opens the LIVE request even when it has example
+    // children — the chevron is the only expand/collapse target there, so
+    // clicking a request never surprises the user with a folded/unfolded
+    // list. Folders keep toggling on row click.
+    if (isRequest || isExample) {
+      onSelect(node)
+      return
+    }
     if (hasChildren) onToggle(node.id)
-    if (isRequest) onSelect(node)
-  }, [hasChildren, isRequest, node, onToggle, onSelect, renaming])
+  }, [hasChildren, isRequest, isExample, node, onToggle, onSelect, renaming])
 
   const openContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -660,21 +676,22 @@ export default function TreeNodeComponent({
       // a one-route mock server, using the request's own name as the
       // suite/mock name (per the v1.4.0 UX request — "tek bir api
       // olduğunda test suite ismini sistem otomatik atasın").
-      if (onCreateTestSuite) {
+      // Examples get Rename / Delete only (Duplicate / Try are follow-ups).
+      if (onCreateTestSuite && !isExample) {
         items.push({
           label: t('tree.createTestSuiteFromRequest'),
           icon: TestSuiteIcon,
           action: () => onCreateTestSuite(node),
         })
       }
-      if (onCreateMockServer) {
+      if (onCreateMockServer && !isExample) {
         items.push({
           label: t('tree.createMockServerFromRequest'),
           icon: MockServerIcon,
           action: () => onCreateMockServer(node),
         })
       }
-      if (onDuplicate) {
+      if (onDuplicate && !isExample) {
         items.push({
           label: t('tree.duplicate'),
           icon: CopyIcon,
@@ -703,7 +720,8 @@ export default function TreeNodeComponent({
 
   // Drag-drop wiring (UX 5). Only request/endpoint/folder nodes are draggable;
   // the project root and synthetic groups (schemas, components) are skipped.
-  const draggable = canModify && !renaming
+  // Examples are pinned to their owner: not draggable, not a drop target (v1).
+  const draggable = canModify && !renaming && !isExample
   const dropTargetType: 'folder' | 'endpoint' | 'request' | null = isFolder
     ? 'folder'
     : node.type === 'endpoint'
@@ -804,6 +822,7 @@ export default function TreeNodeComponent({
       )}
       <div
         data-testid="tree-node"
+        data-node-type={node.type}
         draggable={draggable}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
@@ -831,20 +850,36 @@ export default function TreeNodeComponent({
           fontStyle: node.italic ? 'italic' : 'normal',
         }}
       >
-        {/* Arrow for folders */}
+        {/* Arrow for folders — and for requests that own examples. Its own
+            click target so a request row can be expanded without opening it. */}
         {hasChildren && (
           <span
+            data-testid="tree-node-chevron"
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggle(node.id)
+            }}
             className="inline-block shrink-0 text-[0.57rem] text-[var(--hint)] transition-transform duration-150"
             style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
           >
             {'\u25B6'}
           </span>
         )}
-        {!hasChildren && !isRequest && <span className="inline-block w-2.5 shrink-0" />}
+        {!hasChildren && !isRequest && !isExample && (
+          <span className="inline-block w-2.5 shrink-0" />
+        )}
 
         {/* Icon */}
         {node.icon && node.icon !== 'folder' && <NodeIcon icon={node.icon} />}
         {isRequest && <MethodBadge method={node.method || 'GET'} small />}
+        {isExample &&
+          (node.statusCode != null ? (
+            <span className="shrink-0 text-[11px]" data-testid="tree-example-status">
+              <StatusBadge status={node.statusCode} />
+            </span>
+          ) : (
+            <span className="shrink-0 text-[11px] text-[var(--hint)]">—</span>
+          ))}
         {node.icon === 'folder' && <NodeIcon icon="folder" />}
 
         {/* Label or rename input */}

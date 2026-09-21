@@ -250,6 +250,7 @@ function createSchema(db: Database.Database): void {
       url TEXT,
       status_code INTEGER,
       response_json TEXT NOT NULL,
+      request_json TEXT,
       created_at INTEGER NOT NULL
     );
   `)

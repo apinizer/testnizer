@@ -796,6 +796,10 @@ function runMigrations(database: Database.Database): void {
     // iterations/delays, stop-on-error, run lifecycle scripts — one opaque
     // JSON blob owned by the renderer. NULL = never saved.
     `ALTER TABLE test_suites ADD COLUMN run_config TEXT`,
+    // Saved examples (issue #125 follow-up): the request that produced the
+    // response — the editor template AND the resolved wire form — so an
+    // example shows "what was sent" without re-sending. NULL on old rows.
+    `ALTER TABLE saved_responses ADD COLUMN request_json TEXT`,
     // Key Material Provider (#60) — keystore-backed client certificate rows.
     // Additive: existing installs get source='file' for every row, so the
     // classic crt/key/pfx path is untouched.

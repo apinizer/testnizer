@@ -91,6 +91,9 @@ export function useKeyboardShortcuts(): void {
             // (v1.3.1 M8). The predicate is shared with the dirty-dot logic
             // (`mark-dirty.ts`, issue #101) so Ctrl+S routing and the unsaved
             // indicator can never disagree about what counts as a request tab.
+            // A saved-example tab is read-only: nothing to save, and the
+            // project-export modal would be a non-sequitur here.
+            if (active?.protocol === 'example') return
             const isRequestTab = !!active && isRequestLikeTab(active)
             if (!isRequestTab) {
               ui.setShowSaveModal(true)

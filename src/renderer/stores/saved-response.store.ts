@@ -4,10 +4,18 @@
 // tab is backed by (endpoint / saved request / test-suite item).
 
 import { create } from 'zustand'
-import type { ApiResponse, SavedResponse, SavedResponseOwnerType, Tab } from '../types'
+import type {
+  ApiResponse,
+  SavedRequestSnapshot,
+  SavedResponse,
+  SavedResponseOwnerType,
+  Tab,
+} from '../types'
 import { useTabsStore } from './tabs.store'
 import { useResponseStore } from './response.store'
 import { useRequestStore } from './request.store'
+import { useWorkspaceStore } from './workspace.store'
+import { openExampleTab } from '../lib/open-example-tab'
 
 export interface SavedResponseOwner {
   type: SavedResponseOwnerType
@@ -48,6 +56,65 @@ export function serializeResponseForSave(response: ApiResponse): string {
   return JSON.stringify(snapshot)
 }
 
+/**
+ * The request side of an example: the editor template (`configured`) and the
+ * resolved wire request the engine reported (`sent`). `sent` is what the
+ * example view shows by default — after variables and pre-request scripts —
+ * so "{{employee_body}}" reads as the JSON that actually went out. Auth is
+ * reduced to its type; the credential never enters the snapshot. Bodies
+ * above the cap are dropped like the response body.
+ */
+export function buildRequestSnapshot(
+  req: Pick<
+    ReturnType<typeof useRequestStore.getState>,
+    'method' | 'url' | 'params' | 'headers' | 'body' | 'auth'
+  >,
+  response: Pick<ApiResponse, 'actualRequest'>,
+): SavedRequestSnapshot {
+  const cap = (text: string | undefined): string | undefined =>
+    text && text.length > SAVED_RESPONSE_BODY_LIMIT ? undefined : text
+  const configured: SavedRequestSnapshot['configured'] = {
+    method: req.method,
+    url: req.url,
+    params: req.params,
+    headers: req.headers,
+    body: { ...req.body, content: cap(req.body?.content) },
+    authType: req.auth?.type,
+  }
+  const sent = response.actualRequest
+    ? { ...response.actualRequest, body: cap(response.actualRequest.body) }
+    : undefined
+  return { configured, sent }
+}
+
+/** Parse a stored `request_json`; null when absent or malformed (pre-column rows). */
+export function parseRequestSnapshot(json: string | null | undefined): SavedRequestSnapshot | null {
+  if (!json) return null
+  try {
+    const parsed = JSON.parse(json) as Partial<SavedRequestSnapshot>
+    if (!parsed || typeof parsed !== 'object' || !parsed.configured) return null
+    return parsed as SavedRequestSnapshot
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The APIs tree lists examples under their owner row, so every write must
+ * rebuild it — and a fresh example should be visible right away, which means
+ * the owner row is expanded before the refresh (refreshTree keeps openNodeIds).
+ * Best-effort: the row is already persisted; a tree failure must not undo that.
+ */
+async function syncTree(expandOwnerId?: string): Promise<void> {
+  try {
+    const ws = useWorkspaceStore.getState()
+    if (expandOwnerId && !ws.openNodeIds.has(expandOwnerId)) ws.toggleNode(expandOwnerId)
+    await ws.refreshTree()
+  } catch {
+    /* tree catches up on the next reload */
+  }
+}
+
 /** Default label offered in the name prompt, e.g. "200 OK". */
 export function defaultSavedResponseName(response: ApiResponse): string {
   if (response.status)
@@ -70,7 +137,10 @@ interface SavedResponseStore {
   saveCurrent: (name: string) => Promise<{ ok: boolean; error?: string; bodyDropped?: boolean }>
   remove: (id: string) => Promise<boolean>
   rename: (id: string, name: string) => Promise<boolean>
-  /** Show a saved example in the active tab's response pane. */
+  /**
+   * Open a saved example in its own read-only tab (resolved request +
+   * response). Never touches the live request editor.
+   */
   open: (item: SavedResponse) => void
 }
 
@@ -123,6 +193,7 @@ export const useSavedResponseStore = create<SavedResponseStore>((set, get) => ({
         url: response.actualRequest?.url || tab?.url || req.url || null,
         status_code: response.status ?? null,
         response_json: serializeResponseForSave(response),
+        request_json: JSON.stringify(buildRequestSnapshot(req, response)),
       })
       if (!res?.success || !res.data) return { ok: false, error: res?.error || 'save-failed' }
       if (get().ownerKey === ownerKey(owner)) {
@@ -130,6 +201,8 @@ export const useSavedResponseStore = create<SavedResponseStore>((set, get) => ({
       } else {
         await get().load(owner)
       }
+      // Suite items live in the Tests panel, not the APIs tree.
+      if (owner.type !== 'test_suite_item') await syncTree(owner.id)
       return { ok: true, bodyDropped }
     } catch (e) {
       return { ok: false, error: (e as Error).message }
@@ -141,6 +214,11 @@ export const useSavedResponseStore = create<SavedResponseStore>((set, get) => ({
       const res = await window.api?.savedResponse?.delete(id)
       if (!res?.success) return false
       set({ items: get().items.filter((i) => i.id !== id) })
+      // A tab showing the deleted example has nothing left to show.
+      const tabs = useTabsStore.getState()
+      const openTab = tabs.tabs.find((t) => t.savedResponseId === id)
+      if (openTab) tabs.closeTab(openTab.id)
+      await syncTree()
       return true
     } catch {
       return false
@@ -152,6 +230,10 @@ export const useSavedResponseStore = create<SavedResponseStore>((set, get) => ({
       const res = await window.api?.savedResponse?.rename(id, name)
       if (!res?.success) return false
       set({ items: get().items.map((i) => (i.id === id ? { ...i, name: name.trim() } : i)) })
+      const tabs = useTabsStore.getState()
+      const openTab = tabs.tabs.find((t) => t.savedResponseId === id)
+      if (openTab) tabs.updateTab(openTab.id, { name: name.trim() })
+      await syncTree()
       return true
     } catch {
       return false
@@ -159,31 +241,9 @@ export const useSavedResponseStore = create<SavedResponseStore>((set, get) => ({
   },
 
   open: (item) => {
-    let snap: Partial<ApiResponse> = {}
-    try {
-      snap = JSON.parse(item.response_json) as Partial<ApiResponse>
-    } catch {
-      snap = {}
-    }
-    const activeTabId = useTabsStore.getState().activeTabId
-    useResponseStore.getState().setResponse(
-      {
-        requestId: `saved-${item.id}`,
-        protocol: (snap.protocol || item.protocol || 'http') as ApiResponse['protocol'],
-        status: snap.status ?? item.status_code ?? undefined,
-        statusText: snap.statusText,
-        headers: snap.headers,
-        body: snap.body,
-        bodyEncoding: snap.bodyEncoding,
-        bodySize: snap.bodySize,
-        timing: snap.timing || { total: 0 },
-        error: snap.error,
-        cookies: snap.cookies,
-        testResults: snap.testResults,
-        actualRequest: snap.actualRequest,
-      },
-      activeTabId,
-    )
+    const tabs = useTabsStore.getState()
+    const ownerTab = tabs.tabs.find((t) => t.id === tabs.activeTabId)
+    openExampleTab(item, ownerTab?.name)
   },
 }))
 
