@@ -62,6 +62,16 @@ describe('pm.environment', () => {
     expect(out.results[0].passed).toBe(true)
   })
 
+  it('pm.variables.set is captured in varUpdates (request-local), NOT in envUpdates', async () => {
+    const pm = makePm(makeResponse())
+    const out = await runScript(
+      `pm.variables.set('employee_body', '{"name":"Ada"}'); pm.environment.set('token', 't')`,
+      pm,
+    )
+    expect(out.varUpdates).toEqual({ employee_body: '{"name":"Ada"}' })
+    expect(out.envUpdates).toEqual({ token: 't' })
+  })
+
   it('set is captured in envUpdates returned by runScript', async () => {
     const pm = makePm(makeResponse())
     const out = await runScript(`pm.environment.set('token', 'abc-123')`, pm)
@@ -321,10 +331,15 @@ describe('pre-request scripts', () => {
   })
 
   it('pm.info exposes eventName and requestName', async () => {
-    const pm = makePm(makeResponse(), {}, {}, {
-      eventName: 'prerequest',
-      requestName: 'Login Request',
-    })
+    const pm = makePm(
+      makeResponse(),
+      {},
+      {},
+      {
+        eventName: 'prerequest',
+        requestName: 'Login Request',
+      },
+    )
     const out = await runScript(
       `pm.environment.set('en', pm.info.eventName); pm.environment.set('rn', pm.info.requestName)`,
       pm,
@@ -337,15 +352,20 @@ describe('pre-request scripts', () => {
 
 describe('pm.request.headers', () => {
   it('upsert is case-insensitive and surfaces in runScript().requestHeaders', async () => {
-    const pm = makePm(makeResponse(), {}, {}, {
-      eventName: 'prerequest',
-      requestName: 'pre',
-      request: {
-        method: 'POST',
-        url: 'https://api.test/login',
-        headers: { 'Content-Type': 'text/plain' },
+    const pm = makePm(
+      makeResponse(),
+      {},
+      {},
+      {
+        eventName: 'prerequest',
+        requestName: 'pre',
+        request: {
+          method: 'POST',
+          url: 'https://api.test/login',
+          headers: { 'Content-Type': 'text/plain' },
+        },
       },
-    })
+    )
     const script = `
       // overwrite an existing header (different case) + add a new one
       pm.request.headers.upsert({ key: 'content-type', value: 'application/json' })
@@ -359,15 +379,20 @@ describe('pm.request.headers', () => {
   })
 
   it('remove deletes a header and get/has reflect mutations mid-script', async () => {
-    const pm = makePm(makeResponse(), {}, {}, {
-      eventName: 'prerequest',
-      requestName: 'pre',
-      request: {
-        method: 'GET',
-        url: 'https://api.test',
-        headers: { Authorization: 'Bearer old', 'X-Drop': '1' },
+    const pm = makePm(
+      makeResponse(),
+      {},
+      {},
+      {
+        eventName: 'prerequest',
+        requestName: 'pre',
+        request: {
+          method: 'GET',
+          url: 'https://api.test',
+          headers: { Authorization: 'Bearer old', 'X-Drop': '1' },
+        },
       },
-    })
+    )
     const script = `
       pm.request.headers.remove('x-drop')
       pm.test('hdr-state', () => {
@@ -382,11 +407,16 @@ describe('pm.request.headers', () => {
   })
 
   it('pm.request.method and url reflect the caller-provided request', async () => {
-    const pm = makePm(makeResponse(), {}, {}, {
-      eventName: 'prerequest',
-      requestName: 'pre',
-      request: { method: 'PUT', url: 'https://api.test/item/9', headers: {} },
-    })
+    const pm = makePm(
+      makeResponse(),
+      {},
+      {},
+      {
+        eventName: 'prerequest',
+        requestName: 'pre',
+        request: { method: 'PUT', url: 'https://api.test/item/9', headers: {} },
+      },
+    )
     const out = await runScript(
       `pm.environment.set('m', pm.request.method); pm.environment.set('u', pm.request.url)`,
       pm,

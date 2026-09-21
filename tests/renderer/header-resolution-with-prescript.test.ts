@@ -66,7 +66,15 @@ beforeEach(() => {
         project_id: 'p1',
         name: 'E',
         is_active: true,
-        variables: [{ id: 'v1', key: 'token', value: 'secret-abc', initialValue: 'secret-abc', enabled: true }],
+        variables: [
+          {
+            id: 'v1',
+            key: 'token',
+            value: 'secret-abc',
+            initialValue: 'secret-abc',
+            enabled: true,
+          },
+        ],
       },
     ] as never,
     globalVariables: [],
@@ -87,6 +95,29 @@ beforeEach(() => {
     _tabStates: new Map(),
     _currentTabId: null,
     _inflightByTab: {},
+  })
+})
+
+describe('pm.variables.set in a pre-request script resolves on THIS send (Send ≡ Run)', () => {
+  it('a local variable set by the script fills {{var}} in headers / URL / body', async () => {
+    useRequestStore.setState({
+      preScript: `pm.variables.set('who', 'ada'); pm.variables.set('employee_body', JSON.stringify({ name: 'Ada' }))`,
+      url: 'https://example.test/post?who={{who}}',
+      headers: [{ id: 'h1', key: 'X-Who', value: '{{who}}', enabled: true }] as never,
+      body: { type: 'json', content: '{{employee_body}}' },
+    })
+
+    await useRequestStore.getState().sendRequest()
+
+    const payload = sent as unknown as { url: string; body?: { content?: string } }
+    expect(payload.url).toBe('https://example.test/post?who=ada')
+    expect(sentHeader('X-Who')).toBe('ada')
+    expect(payload.body?.content).toBe('{"name":"Ada"}')
+    // Request-local: nothing was persisted to the environment.
+    const env = useEnvironmentStore.getState().environments[0] as unknown as {
+      variables: Array<{ key: string }>
+    }
+    expect(env.variables.some((v) => v.key === 'who')).toBe(false)
   })
 })
 

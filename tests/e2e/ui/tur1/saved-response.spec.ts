@@ -73,9 +73,10 @@ uiTest.describe('Tur1 — Save response [issue #125]', () => {
         window.locator('[data-testid="endpoint-tab"][data-active="true"]'),
       ).toContainText('200 sample')
 
-      // Back on the owner tab: delete with confirm from the Saved tab.
+      // Back on the owner tab (no live response there → the saved-only panel
+      // lists the example directly): delete with confirm.
       await window.getByTestId('endpoint-tab').filter({ hasText: name }).first().click()
-      await window.getByTestId('res-tab-saved').click()
+      await expect(window.getByTestId('response-saved-only')).toBeVisible({ timeout: 10_000 })
       await window
         .getByTestId('saved-response-row')
         .getByTitle(/Delete saved response|Kayıtlı yanıtı sil/)
@@ -101,7 +102,6 @@ uiTest.describe('Tur1 — Save response [issue #125]', () => {
 
       await navigateSidebar(window, 'apis')
       await openHttpRequestTab(window)
-      await fillUrl(window, `${localHttpBin()}/post?who={{who}}`)
       await setHttpMethod(window, 'POST')
       // Body is a variable produced by the pre-request script — the classic
       // "what did we actually send?" case the example view exists for.
@@ -113,6 +113,9 @@ uiTest.describe('Tur1 — Save response [issue #125]', () => {
         'scripts-pre-editor',
         `pm.variables.set('who', 'ada'); pm.variables.set('employee_body', JSON.stringify({ name: 'Ada', role: 'eng' }));`,
       )
+      // URL last: once it holds `{{who}}` the variable-highlight overlay sits
+      // over the input and the Monaco helper's blur-click can't reach it.
+      await fillUrl(window, `${localHttpBin()}/post?who={{who}}`)
       await saveRequestToTree(window, name)
       await sendAndWaitResponse(window)
 
