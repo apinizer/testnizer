@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { saveActiveRequestInPlace } from '../../src/renderer/lib/save-active-request'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useRequestStore } from '../../src/renderer/stores/request.store'
+import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
 import type { Tab } from '../../src/renderer/types'
 
 beforeEach(() => {
@@ -43,7 +44,10 @@ describe('saveActiveRequestInPlace — endpoint tab (issue #41)', () => {
     expect(res.success).toBe(true)
     expect(res.notApplicable).toBeFalsy()
     expect(update).toHaveBeenCalledTimes(1)
-    const [id, payload] = update.mock.calls[0] as [string, { method: string; path: string; request_schema: string }]
+    const [id, payload] = update.mock.calls[0] as [
+      string,
+      { method: string; path: string; request_schema: string },
+    ]
     expect(id).toBe('ep-1')
     expect(payload.method).toBe('POST')
     expect(payload.path).toBe('https://api.test/v2')
@@ -62,5 +66,35 @@ describe('saveActiveRequestInPlace — endpoint tab (issue #41)', () => {
 
     const tab = useTabsStore.getState().tabs.find((t) => t.id === 'tab-ep')
     expect(tab?.isDirty).toBe(false)
+  })
+
+  it('refreshes the APIs tree after saving so the sidebar method badge follows (GET→POST via Ctrl+S)', async () => {
+    const update = vi.fn().mockResolvedValue({ success: true })
+    ;(globalThis as unknown as { window: { api: unknown } }).window = {
+      api: { endpoint: { update } },
+    }
+    const refreshTree = vi.fn().mockResolvedValue(undefined)
+    useWorkspaceStore.setState({ refreshTree })
+
+    const res = await saveActiveRequestInPlace()
+
+    expect(res.success).toBe(true)
+    // The Save button next to Send always refreshed the tree; Ctrl+S did not,
+    // so the tree kept showing the stale method until a project reload.
+    expect(refreshTree).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not refresh the tree when the save failed', async () => {
+    const update = vi.fn().mockResolvedValue({ success: false, error: 'nope' })
+    ;(globalThis as unknown as { window: { api: unknown } }).window = {
+      api: { endpoint: { update } },
+    }
+    const refreshTree = vi.fn().mockResolvedValue(undefined)
+    useWorkspaceStore.setState({ refreshTree })
+
+    const res = await saveActiveRequestInPlace()
+
+    expect(res.success).toBe(false)
+    expect(refreshTree).not.toHaveBeenCalled()
   })
 })
