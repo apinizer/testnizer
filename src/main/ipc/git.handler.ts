@@ -152,8 +152,11 @@ async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
     // The remote has history but not OUR branch (e.g. it was created with
     // `master`, Storage says `main`). Clone its default branch and start the
     // configured branch from there — the same thing Save → Git does, so both
-    // Push buttons land the project on the same branch.
-    await bare.clone(auth.cleanUrl, localPath)
+    // Push buttons land the project on the same branch. The branch is named
+    // explicitly: a remote whose HEAD points at a branch that no longer
+    // exists clones as an EMPTY tree with an unborn HEAD ("remote HEAD
+    // refers to nonexistent ref"), and the project file never lands.
+    await bare.clone(auth.cleanUrl, localPath, ['--branch', pickRemoteDefaultBranch(heads)])
     const git = await openRepo(config)
     await git.checkoutLocalBranch(defaultBranch)
     return git
@@ -340,7 +343,7 @@ async function syncWorkingTreeFromDb(
     .split('\n')
     .map((f) => f.trim())
     .filter((f) => f && f !== fileName && f !== 'package.json' && !f.includes('/'))
-  for (const f of tracked) {
+  for (const f of retiredProjectFiles(config.localPath, tracked, projectId)) {
     try {
       await git.rm([f])
     } catch {
@@ -348,8 +351,48 @@ async function syncWorkingTreeFromDb(
     }
   }
   await git.add([fileName])
-  const status = await git.status()
-  return { fileName, displayName, changed: status.staged.length > 0 }
+  return { fileName, displayName, changed: await hasStagedChanges(git) }
+}
+
+/**
+ * Which OTHER tracked `.json` files are this project under a previous name
+ * and should go when the renamed file is committed? Only:
+ *   - a file whose content carries OUR `project.id`, or
+ *   - the single other project export in the checkout (the file the machine
+ *     that renamed the project pulled under the old name — its `project.id`
+ *     is the other machine's, but there is nothing else it could be).
+ * Everything else stays: a second project sharing the repository, a
+ * `notes.json` the team keeps next to the export. Push used to `git rm`
+ * every other top-level `.json` it tracked, which destroyed those.
+ */
+function retiredProjectFiles(dir: string, others: string[], projectId: string): string[] {
+  const parsed = (f: string): Record<string, unknown> | null => {
+    try {
+      const v = JSON.parse(readFileSync(join(dir, f), 'utf-8')) as unknown
+      return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+    } catch {
+      return null
+    }
+  }
+  const docs = others.map((f) => ({ f, doc: parsed(f) }))
+  const ours = docs.filter(
+    ({ doc }) => (doc?.project as { id?: unknown } | undefined)?.id === projectId,
+  )
+  if (ours.length > 0) return ours.map((d) => d.f)
+  const exports = docs.filter(({ doc }) => doc?.project !== undefined)
+  return exports.length === 1 ? [exports[0].f] : []
+}
+
+/**
+ * Anything in the index that differs from HEAD? Decided from `git diff
+ * --cached` OUTPUT: simple-git's `status().staged` leaves renames out, so a
+ * project rename (old file `rm`ed, new file added → git reports `R`) looked
+ * like "nothing to commit" and Push shipped the previous commit while
+ * claiming success. Works on an unborn HEAD too (diff against the empty tree).
+ */
+async function hasStagedChanges(git: SimpleGit): Promise<boolean> {
+  const out = await git.raw(['diff', '--cached', '--name-only'])
+  return out.trim().length > 0
 }
 
 /**
@@ -358,8 +401,7 @@ async function syncWorkingTreeFromDb(
  */
 async function commitTracked(git: SimpleGit, message: string): Promise<boolean> {
   await git.raw(['add', '-u'])
-  const status = await git.status()
-  if (status.staged.length === 0) return false
+  if (!(await hasStagedChanges(git))) return false
   await git.commit(message)
   return true
 }
@@ -381,40 +423,65 @@ async function autoCommit(
 }
 
 /**
+ * simple-git only treats a command as failed when the exit code is non-zero
+ * AND stderr is non-empty. `rev-parse --verify --quiet` and
+ * `merge-base --is-ancestor` say nothing on failure, so their rejections
+ * never surface — every check built on "did it throw?" silently passes.
+ * The helpers below decide from OUTPUT only (ref lists, hashes).
+ */
+async function refNames(git: SimpleGit, prefix: string): Promise<Set<string>> {
+  const out = await git.raw(['for-each-ref', '--format=%(refname:short)', prefix])
+  return new Set(
+    out
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean),
+  )
+}
+
+/** True when `refs/heads/<name>` exists in this checkout. */
+async function hasLocalBranch(git: SimpleGit, name: string): Promise<boolean> {
+  return (await refNames(git, 'refs/heads')).has(name)
+}
+
+/** The remote-tracking branches of `origin`, without the `origin/` prefix. */
+async function originBranches(git: SimpleGit): Promise<Set<string>> {
+  const names = await refNames(git, 'refs/remotes/origin')
+  const out = new Set<string>()
+  for (const n of names) {
+    if (n.startsWith('origin/') && n !== 'origin/HEAD') out.add(n.slice('origin/'.length))
+  }
+  return out
+}
+
+/**
  * Bring every OTHER local branch up to its `origin/<name>` when that is a
  * pure fast-forward. Pull only merged the checked-out branch, so machine A
  * sitting on `feature` pulled `feature` while B's merge landed on
  * `origin/main`; A's local `main` stayed where it was and switching to it
- * showed the old tree. Non-fast-forward branches are left alone (they need
- * a real merge, which the user does by switching and pulling).
+ * showed the old tree. A branch that diverged is left alone (it needs a
+ * real merge, which the user does by switching and pulling): the local tip
+ * must BE the merge base, decided by comparing hashes, never exit codes.
  */
 async function fastForwardOtherBranches(git: SimpleGit, currentBranch: string): Promise<string[]> {
   const updated: string[] = []
-  let refs = ''
+  let locals: Set<string>
+  let remotes: Set<string>
   try {
-    refs = await git.raw(['for-each-ref', '--format=%(refname:short)', 'refs/heads'])
+    locals = await refNames(git, 'refs/heads')
+    remotes = await originBranches(git)
   } catch {
     return updated
   }
-  for (const line of refs.split('\n')) {
-    const name = line.trim()
-    if (!name || name === currentBranch) continue
+  for (const name of locals) {
+    if (name === currentBranch || !remotes.has(name)) continue
     const remoteRef = `origin/${name}`
     try {
-      await git.raw(['rev-parse', '--verify', '--quiet', `refs/remotes/${remoteRef}`])
-    } catch {
-      continue // no remote counterpart
-    }
-    try {
-      // Exit code 0 ⇔ local is an ancestor of the remote ⇔ fast-forwardable.
-      await git.raw(['merge-base', '--is-ancestor', name, remoteRef])
-    } catch {
-      continue // diverged — needs a merge
-    }
-    const before = (await git.raw(['rev-parse', name])).trim()
-    const after = (await git.raw(['rev-parse', remoteRef])).trim()
-    if (before === after) continue
-    try {
+      const local = (await git.revparse([name])).trim()
+      const remote = (await git.revparse([remoteRef])).trim()
+      if (!local || !remote || local === remote) continue
+      const base = (await git.raw(['merge-base', name, remoteRef])).trim()
+      if (base !== local) continue // diverged — needs a merge
       await git.raw(['branch', '-f', name, remoteRef])
       updated.push(name)
     } catch {
@@ -461,16 +528,6 @@ async function autoResolveProjectConflicts(
   }
   await git.commit(message)
   return true
-}
-
-/** True when `refs/heads/<name>` exists in this checkout. */
-async function hasLocalBranch(git: SimpleGit, name: string): Promise<boolean> {
-  try {
-    await git.raw(['rev-parse', '--verify', '--quiet', `refs/heads/${name}`])
-    return true
-  } catch {
-    return false
-  }
 }
 
 // ─── Register handlers ──────────────────────────────────────────
@@ -922,9 +979,20 @@ export function registerGitHandlers(): void {
       // the remote deleted. Missing file → nothing to diff against.
       const base = snapshotProjectFile(config.localPath, projectId)
 
-      let outcome = await runGitOpWithConflictHandling(asConflictAwareGit(git), () =>
-        git.pull('origin', currentBranch),
-      )
+      // A remote that does not have this branch yet (nobody pushed, or the
+      // repo only has `master` and ensureGitRepo just started `main` on top
+      // of it) has nothing to pull — `git pull origin main` would fail with
+      // "couldn't find remote ref main". Skip the pull; the checkout is
+      // still imported below (it may hold the clone's file).
+      const remoteHasBranch = (await git.listRemote(['--heads', 'origin', currentBranch]))
+        .split('\n')
+        .some((l) => l.trim().endsWith(`refs/heads/${currentBranch}`))
+
+      let outcome = remoteHasBranch
+        ? await runGitOpWithConflictHandling(asConflictAwareGit(git), () =>
+            git.pull('origin', currentBranch),
+          )
+        : { ok: true as const }
       if (
         'conflicts' in outcome &&
         (await autoResolveProjectConflicts(
@@ -977,7 +1045,13 @@ export function registerGitHandlers(): void {
       }
       return {
         success: true,
-        data: { pulled: true, imported, state: 'clean', branch: currentBranch, fastForwarded },
+        data: {
+          pulled: remoteHasBranch,
+          imported,
+          state: 'clean',
+          branch: currentBranch,
+          fastForwarded,
+        },
       }
     } catch (e) {
       return { success: false, error: describeGitError(e, config?.token) }

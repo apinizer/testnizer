@@ -223,5 +223,10 @@ export function mergeProjectFiles(base: string, ours: string, theirs: string): s
   if (!o || !t) return null
   const isProject = (d: Doc): boolean => d.project !== undefined || Array.isArray(d.endpoints)
   if (!isProject(o) || !isProject(t)) return null
+  // A section that is present but not an array is a damaged file — merging
+  // it by row would read as "everything deleted". Leave that to the user.
+  const wellFormed = (d: Doc): boolean =>
+    ROW_SECTIONS.every((k) => d[k] === undefined || Array.isArray(d[k]))
+  if (!wellFormed(o) || !wellFormed(t)) return null
   return JSON.stringify(mergeProjectDocs(parse(base), o, t), null, 2)
 }
