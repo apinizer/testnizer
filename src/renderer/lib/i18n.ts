@@ -1747,6 +1747,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'newProject.importFailed': 'The project was created, but importing the file failed',
     'newProject.gitFailed': 'The project was created, but the git step failed',
     'newProject.gitConnectionFailed': 'Could not connect to the Git repository',
+    'newProject.git.alreadyLinked':
+      'This repository is already linked to the project "{name}" on this computer. A repository can be linked to one local project at a time — open that project and use Pull, or delete it first. To keep a separate copy, use Import Project.',
     'tools.epoch.copyEpoch': 'Copy the current epoch',
     'tools.diff.copyLeft': 'Copy the left side',
     'tools.diff.copyRight': 'Copy the right side',
@@ -4009,6 +4011,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'newProject.importFailed': 'Proje oluşturuldu, ancak dosya içe aktarılamadı',
     'newProject.gitFailed': 'Proje oluşturuldu, ancak git adımı başarısız oldu',
     'newProject.gitConnectionFailed': 'Git deposuna bağlanılamadı',
+    'newProject.git.alreadyLinked':
+      'Bu depo bu bilgisayarda zaten "{name}" projesine bağlı. Bir depo aynı anda tek bir yerel projeye bağlanabilir — o projeyi açıp Pull yapın ya da önce onu silin. Ayrı bir kopya istiyorsanız Import Project kullanın.',
     'tools.epoch.copyEpoch': 'Geçerli epoch’u kopyala',
     'tools.diff.copyLeft': 'Sol tarafı kopyala',
     'tools.diff.copyRight': 'Sağ tarafı kopyala',

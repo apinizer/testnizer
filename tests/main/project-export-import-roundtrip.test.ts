@@ -44,6 +44,7 @@ function createSchema(db: Database.Database): void {
       id TEXT PRIMARY KEY,
       workspace_id TEXT NOT NULL,
       name TEXT NOT NULL,
+      display_name TEXT,
       description TEXT,
       type TEXT NOT NULL DEFAULT 'http',
       sort_order INTEGER NOT NULL DEFAULT 0,
@@ -514,7 +515,7 @@ describe('Project export → import round-trip (different target project)', () =
     seedRichProject()
     const data = exportProjectData(SOURCE_PID)
     expect(() => importProjectDataFromJson(JSON.stringify(data), TARGET_PID)).toThrow(
-      /already exists here/,
+      /already open on this computer/,
     )
     // Nothing moved.
     expect(

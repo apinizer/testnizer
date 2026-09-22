@@ -84,7 +84,7 @@ export function detectTestSuiteImportFormat(parsed: unknown): TestSuiteImportFor
 }
 
 // ─── Full Project Export Format ──────────────────────────────────
-interface ProjectExport {
+export interface ProjectExport {
   version: string
   exportedAt: number
   kind?: 'project'
@@ -386,13 +386,82 @@ export function exportProjectData(projectId: string): ProjectExport {
   }
 }
 
-// ─── Import (upsert) project data into DB ────────────────────────
-export function importProjectDataFromJson(jsonString: string, projectId: string): void {
-  const data = JSON.parse(jsonString) as ProjectExport
-  importProjectData(data, projectId)
+/**
+ * A repository (project file) can be bound to ONE local project at a time:
+ * rows keep their ids across machines, so importing the same file into a
+ * second local project would move the first project's rows. Shown when the
+ * user clones a repo that is already open here (same-machine test setups).
+ */
+export function projectAlreadyLinkedError(visibleName: string): string {
+  return `This repository's project file belongs to "${visibleName}", which is already open on this computer. A repository can be linked to one local project at a time: open "${visibleName}" and use Pull, or delete it first. To keep a separate copy use Import Project instead.`
 }
 
-function importProjectData(data: ProjectExport, projectId: string): void {
+/**
+ * Delete the rows selected by `whereSql` whose id is NOT in `keep`. Ids are
+ * diffed in JS rather than with a giant `NOT IN (...)` so a project with
+ * thousands of rows never trips SQLite's bound-parameter limit.
+ */
+function pruneRowsNotIn(
+  db: ReturnType<typeof getDb>,
+  table: string,
+  whereSql: string,
+  whereParams: unknown[],
+  keep: Set<string>,
+): void {
+  const local = db.prepare(`SELECT id FROM ${table} WHERE ${whereSql}`).all(...whereParams) as {
+    id: string
+  }[]
+  const del = db.prepare(`DELETE FROM ${table} WHERE id = ?`)
+  for (const row of local) {
+    if (!keep.has(row.id)) del.run(row.id)
+  }
+}
+
+// ─── Import (upsert) project data into DB ────────────────────────
+export interface ImportProjectOptions {
+  /**
+   * `merge` (default): upsert every row in the file, keep everything else.
+   * `replace`: the file is the project's whole state — after the upsert,
+   * every project-scoped row that the file no longer lists is deleted.
+   *
+   * Git re-imports after a branch switch / merge / conflict resolution use
+   * `replace` (the checkout IS the branch). With the additive default, a
+   * request deleted on machine B and pushed came back on machine A's next
+   * Pull (the upsert never removes anything) and A's next Push resurrected
+   * it on the remote. A section is only pruned when the file actually
+   * carries it as an array — older exports that predate a table (e.g.
+   * `savedResponses`) must not wipe it.
+   */
+  mode?: 'merge' | 'replace'
+  /**
+   * `merge` mode only: the project file as it was BEFORE the git operation.
+   * Rows that `base` lists but the new file no longer does were deleted on
+   * the remote and are removed here too. Rows the file never knew about —
+   * edits made locally since the last Push — stay untouched, which is why
+   * Pull uses this instead of `replace`: it must not discard unpushed work.
+   */
+  base?: ProjectExport | null
+}
+
+export function importProjectDataFromJson(
+  jsonString: string,
+  projectId: string,
+  options: ImportProjectOptions = {},
+): void {
+  const data = JSON.parse(jsonString) as ProjectExport
+  importProjectData(data, projectId, options)
+}
+
+/** `display_name` is what the Project Hub shows; `name` is the internal key. */
+function visibleProjectName(row: { name: string; display_name?: string | null }): string {
+  return (row.display_name && row.display_name.trim()) || row.name
+}
+
+function importProjectData(
+  data: ProjectExport,
+  projectId: string,
+  options: ImportProjectOptions = {},
+): void {
   const db = getDb()
 
   // Every project-scoped row in the export carries the SOURCE project's id
@@ -411,13 +480,15 @@ function importProjectData(data: ProjectExport, projectId: string): void {
     // Rebinding would move X's rows into Y — X's tree empties and deleting
     // the "broken" duplicate cascades X's data away. Refuse instead; the
     // fresh-id path (Import Project) is the right tool for that.
+    //
+    // The message names the project the way the Hub does (`display_name`);
+    // the internal `name` stays "My Project" after a rename, and testers
+    // rightly asked which "My Project" that was.
     const sourceLocal = db
-      .prepare('SELECT name FROM projects WHERE id = ?')
-      .get(sourceProjectId) as { name: string } | undefined
+      .prepare('SELECT name, display_name FROM projects WHERE id = ?')
+      .get(sourceProjectId) as { name: string; display_name?: string | null } | undefined
     if (sourceLocal) {
-      throw new Error(
-        `This project file belongs to "${sourceLocal.name}", which already exists here. Use Import Project to bring it in as a copy.`,
-      )
+      throw new Error(projectAlreadyLinkedError(visibleProjectName(sourceLocal)))
     }
   }
   const targetWorkspaceId = (
@@ -627,6 +698,114 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   if (data.certificates?.length) {
     upsert('certificates', rebind(data.certificates), [...CERTIFICATE_COLUMNS])
   }
+
+  if (options.mode === 'replace') {
+    pruneRowsMissingFromFile(db, data, projectId, null)
+  } else if (options.base) {
+    pruneRowsMissingFromFile(db, data, projectId, options.base)
+  }
+}
+
+/**
+ * Drop project-scoped rows the file no longer lists. Runs AFTER the upserts
+ * (parents exist for the children that stay) and only for sections the file
+ * carries as arrays. Parent tables cascade to their children; the explicit
+ * child passes handle rows removed under a parent that survives.
+ *
+ * `base === null` → `replace`: everything local that is not in the file goes.
+ * `base` given → only rows that were in `base` AND are not in the file go
+ * (deleted on the remote); rows local-only to this machine are kept.
+ */
+function pruneRowsMissingFromFile(
+  db: ReturnType<typeof getDb>,
+  data: ProjectExport,
+  projectId: string,
+  base: ProjectExport | null,
+): void {
+  const ids = (rows: unknown): Set<string> | null =>
+    Array.isArray(rows)
+      ? new Set(
+          rows
+            .map((r) => (r as { id?: unknown }).id)
+            .filter((id): id is string => typeof id === 'string'),
+        )
+      : null
+  // The rows to KEEP among those the scope selects. In replace mode that is
+  // exactly the file; with a base it is the file plus anything the base did
+  // not know about (i.e. only base-minus-file is removed).
+  const keepSet = (section: keyof ProjectExport): Set<string> | null => {
+    const inFile = ids(data[section])
+    if (!inFile) return null
+    if (!base) return inFile
+    const inBase = ids(base[section])
+    if (!inBase) return null // the old file never carried this section — nothing to diff
+    return { has: (id: string) => inFile.has(id) || !inBase.has(id) } as Set<string>
+  }
+  const byProject = (table: string, section: keyof ProjectExport): void => {
+    const keep = keepSet(section)
+    if (keep) pruneRowsNotIn(db, table, 'project_id = ?', [projectId], keep)
+  }
+  const byParent = (
+    table: string,
+    parentColumn: string,
+    parentSql: string,
+    section: keyof ProjectExport,
+  ): void => {
+    const keep = keepSet(section)
+    if (keep) pruneRowsNotIn(db, table, `${parentColumn} IN (${parentSql})`, [projectId], keep)
+  }
+
+  const tx = db.transaction(() => {
+    // Children first (a parent that survives may have lost some of them),
+    // then the parents (cascade removes whatever hangs under a dropped one).
+    byParent(
+      'endpoint_cases',
+      'endpoint_id',
+      'SELECT id FROM endpoints WHERE project_id = ?',
+      'endpointCases',
+    )
+    byParent(
+      'environment_variables',
+      'environment_id',
+      'SELECT id FROM environments WHERE project_id = ?',
+      'environmentVariables',
+    )
+    byParent(
+      'test_suite_items',
+      'suite_id',
+      'SELECT id FROM test_suites WHERE project_id = ?',
+      'testSuiteItems',
+    )
+    byParent(
+      'test_suite_folders',
+      'suite_id',
+      'SELECT id FROM test_suites WHERE project_id = ?',
+      'testSuiteFolders',
+    )
+    byParent(
+      'mock_responses',
+      'endpoint_id',
+      'SELECT id FROM mock_endpoints WHERE server_id IN (SELECT id FROM mock_servers WHERE project_id = ?)',
+      'mockResponses',
+    )
+    byParent(
+      'mock_endpoints',
+      'server_id',
+      'SELECT id FROM mock_servers WHERE project_id = ?',
+      'mockEndpoints',
+    )
+
+    byProject('saved_responses', 'savedResponses')
+    byProject('endpoints', 'endpoints')
+    byProject('saved_requests', 'savedRequests')
+    byProject('folders', 'folders')
+    byProject('environments', 'environments')
+    byProject('global_variables', 'globalVariables')
+    byProject('test_suites', 'testSuites')
+    byProject('mock_servers', 'mockServers')
+    byProject('certificates', 'certificates')
+  })
+  tx()
 }
 
 // ─── Folder Export / Import ──────────────────────────────────────

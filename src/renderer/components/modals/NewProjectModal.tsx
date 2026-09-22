@@ -308,11 +308,38 @@ export default function NewProjectModal() {
         // Read first project file
         const fileResult = (await window.api?.save?.gitReadFile(listResult.data.files[0].path)) as {
           success: boolean
-          data?: { project?: { name?: string }; version?: string }
+          data?: {
+            project?: { id?: string; name?: string; display_name?: string | null }
+            version?: string
+          }
+        }
+        // Cleanup tmp
+        await window.api?.save?.gitCleanup(listResult.data.tmpDir)
+
+        const fileProject = fileResult?.success ? fileResult.data?.project : undefined
+
+        // A repository can be bound to ONE local project (rows keep their
+        // ids across machines, so importing it into a second project would
+        // move the first one's rows). Detect that HERE, before a project is
+        // created — the old flow created the project, failed the pull, and
+        // left a half-set-up project behind with a message that named the
+        // internal `name` ("My Project") rather than the label in the Hub.
+        if (fileProject?.id) {
+          const local = (await window.api?.project?.get(fileProject.id)) as
+            | { success?: boolean; data?: { name?: string; display_name?: string | null } | null }
+            | undefined
+          if (local?.success && local.data) {
+            const visible = local.data.display_name?.trim() || local.data.name || ''
+            setCloneError(t('newProject.git.alreadyLinked').replace('{name}', visible))
+            setCloning(false)
+            return
+          }
         }
 
-        if (fileResult?.success && fileResult.data?.project?.name) {
-          const importedName = fileResult.data.project.name
+        // Pre-fill from the label the other machine SHOWED, not the
+        // internal key (a renamed seed project still carries "My Project").
+        const importedName = fileProject?.display_name?.trim() || fileProject?.name
+        if (importedName) {
           setDisplayName(importedName)
           setProjName(
             importedName
@@ -323,9 +350,6 @@ export default function NewProjectModal() {
               .replace(/^-|-$/g, ''),
           )
         }
-
-        // Cleanup tmp
-        await window.api?.save?.gitCleanup(listResult.data.tmpDir)
       }
 
       // Pre-fill git settings for step 3
@@ -352,8 +376,11 @@ export default function NewProjectModal() {
     if (result?.success && result.data) {
       setLocalFilePath(result.data.filePath)
       setLocalFileData(result.data.project as { project?: { name?: string; description?: string } })
-      // Pre-fill project name from imported file
-      const importedName = (result.data.project as { project?: { name?: string } })?.project?.name
+      // Pre-fill project name from imported file (the visible label first)
+      const fileProj = (
+        result.data.project as { project?: { name?: string; display_name?: string | null } }
+      )?.project
+      const importedName = fileProj?.display_name?.trim() || fileProj?.name
       if (importedName) {
         setDisplayName(importedName)
         setProjName(
@@ -398,8 +425,12 @@ export default function NewProjectModal() {
           if (result?.success && result.data) {
             setLocalFilePath(result.data.filePath)
             setLocalFileData(result.data.project as { project?: { name?: string } })
-            const importedName = (result.data.project as { project?: { name?: string } })?.project
-              ?.name
+            const fileProj = (
+              result.data.project as {
+                project?: { name?: string; display_name?: string | null }
+              }
+            )?.project
+            const importedName = fileProj?.display_name?.trim() || fileProj?.name
             if (importedName) {
               setDisplayName(importedName)
               setProjName(

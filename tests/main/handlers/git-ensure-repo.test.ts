@@ -266,7 +266,10 @@ describe('a NON-empty target folder (desktop.ini / .DS_Store) still lands the re
     const res = await pull()
     expect(res.success).toBe(true)
     expect(remote.calls).toContain('init')
-    expect(remote.calls.some((c) => c.startsWith('fetch'))).toBe(false)
+    // No branch-specific fetch (there is no branch to fetch). The post-pull
+    // `fetch --all --prune` that keeps the other local branches current is
+    // fine — on an empty remote it is a no-op.
+    expect(remote.calls.some((c) => /^fetch origin /.test(c))).toBe(false)
   })
 })
 
