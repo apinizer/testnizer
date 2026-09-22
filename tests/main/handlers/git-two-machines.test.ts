@@ -411,6 +411,13 @@ describe('Clone from Git (New Project → Clone) — the first Pull of a fresh p
     ).toBe(0)
     // The empty new project must NOT have been exported over the clone.
     expect(remoteNames('main')).toEqual(['A1'])
+    // C adopted the repository's project name, so its pushes go to the SAME
+    // file A writes — no second `banking-apis.json` for A to ignore.
+    addEndpoint(C, 'C1')
+    await push(C)
+    expect(git(root, '--git-dir', remote, 'ls-tree', '--name-only', 'main')).toBe('My-Project.json')
+    await pull(A)
+    expect(names(A)).toEqual(['A1', 'C1'])
   }, 30_000)
 
   it('the same machine (source project still open) is refused with the name the Hub shows', async () => {

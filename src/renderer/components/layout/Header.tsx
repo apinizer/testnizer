@@ -49,7 +49,7 @@ type OpStatus = 'idle' | 'loading' | 'success' | 'error'
 export default function Header() {
   const goHome = useWorkspaceStore((s) => s.goHome)
   const setShowSaveModal = useUIStore((s) => s.setShowSaveModal)
-  const refreshTree = useWorkspaceStore((s) => s.refreshTree)
+  const syncAfterGit = useWorkspaceStore((s) => s.syncAfterGit)
   const setActiveProject = useWorkspaceStore((s) => s.setActiveProject)
   const setGitLoading = useUIStore((s) => s.setGitLoading)
   const activeProject = useWorkspaceStore((s) => {
@@ -174,10 +174,8 @@ export default function Header() {
         // git:pull already re-imported the pulled project file into the DB;
         // the old extra `save:gitPull` here cloned the remote a SECOND time
         // into a temp dir and imported again (nondeterministic file pick).
-        // Refresh tree, tabs, and all stores
-        await refreshTree()
-        // Force full project reload to refresh all data
-        await setActiveProject(activeProject.id)
+        // Refresh project list (a rename may have arrived), tree, tabs, stores
+        await syncAfterGit(activeProject.id)
 
         setTimeout(() => {
           setPullStatus('idle')

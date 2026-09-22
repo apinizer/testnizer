@@ -70,9 +70,22 @@ function canonical(v: unknown): string {
   return JSON.stringify(v) ?? 'null'
 }
 
+/**
+ * Fields the importer rewrites to the local project on every machine. A row
+ * that differs only there was NOT edited — treating it as changed would let
+ * a mere re-export on one machine beat a genuine delete on the other.
+ */
+const MACHINE_LOCAL_FIELDS = new Set(['project_id', 'workspace_id'])
+
+function comparable(r: Row): Row {
+  const out: Row = {}
+  for (const [k, v] of Object.entries(r)) if (!MACHINE_LOCAL_FIELDS.has(k)) out[k] = v
+  return out
+}
+
 function same(a: Row | undefined, b: Row | undefined): boolean {
   if (!a || !b) return a === b
-  return canonical(a) === canonical(b)
+  return canonical(comparable(a)) === canonical(comparable(b))
 }
 
 function updatedAt(r: Row): number {

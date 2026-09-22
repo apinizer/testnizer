@@ -276,6 +276,17 @@ describe('branches', () => {
     expect((await fx.listBranches(B)).branches.map((b) => b.name)).toEqual(['main'])
   }, 30_000)
 
+  it('on the OTHER machine (file carries A’s project id) switching back and forth creates no header-only commits', async () => {
+    await fx.createBranch(B, 'feature', 'main')
+    await fx.switchTo(B, 'feature')
+    const head = fx.git(B.localPath, 'rev-parse', 'HEAD')
+    await fx.switchTo(B, 'main')
+    await fx.switchTo(B, 'feature')
+    expect((await fx.merge(B, 'main')).state).toBe('clean')
+    expect(fx.git(B.localPath, 'rev-parse', 'HEAD')).toBe(head)
+    expect(fx.git(B.localPath, 'status', '--porcelain')).toBe('')
+  }, 30_000)
+
   it('switching branches carries unpushed edits with the branch they were made on', async () => {
     await fx.createBranch(A, 'feature', 'main')
     await fx.switchTo(A, 'feature')
@@ -421,6 +432,47 @@ describe('project file naming', () => {
 
     expect((await fx.pull(B)).imported).toBe(true)
     expect(fx.names(B)).toEqual(['A1', 'A2'])
+
+    // The rename PROPAGATES: B's project now carries the new name, so B's
+    // next Push writes the same file instead of resurrecting the old one.
+    expect(
+      (B.db.prepare('SELECT name FROM projects WHERE id = ?').get(B.projectId) as { name: string })
+        .name,
+    ).toBe('Renamed APIs')
+    fx.addEndpoint(B, 'B1')
+    await fx.push(B)
+    expect(fx.git(root, '--git-dir', fx.remote, 'ls-tree', '--name-only', 'main')).toBe(
+      'Renamed-APIs.json',
+    )
+    expect(fx.remoteNames('main')).toEqual(['A1', 'A2', 'B1'])
+    await fx.pull(A)
+    expect(fx.names(A)).toEqual(['A1', 'A2', 'B1'])
+  }, 30_000)
+
+  it('display name and description travel with the file too; identity fields stay local', async () => {
+    const A = fx.machine('A', { name: 'My Project', displayName: 'Banking APIs' })
+    A.db
+      .prepare('UPDATE projects SET description = ? WHERE id = ?')
+      .run('Core banking', A.projectId)
+    fx.addEndpoint(A, 'A1')
+    await fx.push(A)
+
+    const B = fx.machine('B', { name: 'my-project', displayName: 'whatever I typed' })
+    await fx.pull(B)
+    const row = B.db
+      .prepare('SELECT name, display_name, description, local_path FROM projects WHERE id = ?')
+      .get(B.projectId) as {
+      name: string
+      display_name: string
+      description: string
+      local_path: string
+    }
+    expect(row).toMatchObject({
+      name: 'My Project',
+      display_name: 'Banking APIs',
+      description: 'Core banking',
+    })
+    expect(row.local_path).toBe(B.localPath)
   }, 30_000)
 })
 

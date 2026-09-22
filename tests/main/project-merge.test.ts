@@ -81,6 +81,17 @@ describe('mergeProjectDocs — rows, not lines', () => {
     expect(names(tie)).toEqual(['one (mine)'])
   })
 
+  it('a row that differs only in project_id / workspace_id counts as unchanged (a delete still wins)', () => {
+    const base = doc([ep('1', 'one'), ep('2', 'two')])
+    // We deleted 2; they merely re-exported from another machine (rebound ids).
+    const ours = doc([ep('1', 'one')])
+    const theirs = doc([
+      ep('1', 'one', { project_id: 'machine-b' }),
+      ep('2', 'two', { project_id: 'machine-b' }),
+    ])
+    expect(names(mergeProjectDocs(base, ours, theirs))).toEqual(['one'])
+  })
+
   it('ignores key order when deciding whether a row changed', () => {
     const base = doc([ep('1', 'one')])
     const reordered = {

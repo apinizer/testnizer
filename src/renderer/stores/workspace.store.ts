@@ -255,6 +255,8 @@ interface WorkspaceStore {
   goHome: () => void
   /** Reload tree data from DB for active project */
   refreshTree: () => Promise<void>
+  /** After a git pull / switch / merge / conflict resolution: the checkout may have renamed the project, so reload the project list before the tree. */
+  syncAfterGit: (projectId: string) => Promise<void>
 }
 
 interface FolderRow {
@@ -834,6 +836,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         useTabsStore.getState().replaceAllTabs([], null)
       }
     }
+  },
+
+  syncAfterGit: async (projectId) => {
+    // A git re-import adopts the repository's project name / display name
+    // (a rename made on the other machine). The tree root and the header
+    // read those from `projects`, so refresh that list FIRST or the old
+    // label survives until the next full reload.
+    const wsId = get().activeWorkspaceId
+    if (wsId) await get().fetchProjects(wsId)
+    await get().refreshTree()
+    await get().setActiveProject(projectId)
   },
 
   refreshTree: async () => {

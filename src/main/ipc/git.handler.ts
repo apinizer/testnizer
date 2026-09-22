@@ -231,7 +231,9 @@ function reimportProjectFromDir(
 ): boolean {
   const found = readProjectFileFromDir(dir, projectId)
   if (!found) return false
-  importProjectDataFromJson(found.content, projectId, how)
+  // The repository defines the project's name: a rename made on the other
+  // machine lands here, and both machines keep writing the same file.
+  importProjectDataFromJson(found.content, projectId, { ...how, adoptProjectHeader: true })
   return true
 }
 
@@ -287,9 +289,38 @@ function isEmptyExport(data: Record<string, unknown>): boolean {
 
 /** Same project content, ignoring the export timestamp. */
 function sameExport(a: string, b: Record<string, unknown>): boolean {
+  // Ignores the export timestamp and the per-machine parts of the `project`
+  // header (id, workspace, local_path, save_mode…): on machine B the file
+  // carries A's id, so comparing the whole header made every switch / merge
+  // commit a header-only "Auto-save". Name, display name and description DO
+  // count — they travel with the file.
+  // Rows are compared without `project_id` / `workspace_id` for the same
+  // reason: the importer rebinds them to the local project, so machine B's
+  // export of an unchanged collection differs from A's file in every row.
+  const normalise = (doc: Record<string, unknown>): string => {
+    const header = (doc.project ?? {}) as Record<string, unknown>
+    const out: Record<string, unknown> = {
+      ...doc,
+      exportedAt: 0,
+      project: {
+        name: header.name ?? null,
+        display_name: header.display_name ?? null,
+        description: header.description ?? null,
+      },
+    }
+    for (const [k, v] of Object.entries(out)) {
+      if (Array.isArray(v)) {
+        out[k] = v.map((row) => {
+          if (!row || typeof row !== 'object') return row
+          const { project_id: _p, workspace_id: _w, ...rest } = row as Record<string, unknown>
+          return rest
+        })
+      }
+    }
+    return JSON.stringify(out)
+  }
   try {
-    const parsed = JSON.parse(a) as Record<string, unknown>
-    return JSON.stringify({ ...parsed, exportedAt: 0 }) === JSON.stringify({ ...b, exportedAt: 0 })
+    return normalise(JSON.parse(a) as Record<string, unknown>) === normalise(b)
   } catch {
     return false
   }

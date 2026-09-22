@@ -441,6 +441,14 @@ export interface ImportProjectOptions {
    * Pull uses this instead of `replace`: it must not discard unpushed work.
    */
   base?: ProjectExport | null
+  /**
+   * Also copy the file's `project` header (name, display name, description)
+   * onto the importing project row. Git re-imports set this: the repository
+   * defines the project's identity, so a rename on machine A reaches B on
+   * its next Pull — and, because the tracked file is named after `name`,
+   * both machines keep writing the SAME file instead of one each.
+   */
+  adoptProjectHeader?: boolean
 }
 
 export function importProjectDataFromJson(
@@ -704,6 +712,46 @@ function importProjectData(
   } else if (options.base) {
     pruneRowsMissingFromFile(db, data, projectId, options.base)
   }
+
+  if (options.adoptProjectHeader) adoptProjectHeader(db, data, projectId)
+}
+
+/**
+ * Copy name / display_name / description from the file's `project` header
+ * onto the local project row. Identity fields (id, workspace, local_path,
+ * save_mode, icon) stay local. A file without a usable name changes nothing.
+ */
+function adoptProjectHeader(
+  db: ReturnType<typeof getDb>,
+  data: ProjectExport,
+  projectId: string,
+): void {
+  const header = data.project as
+    | { name?: unknown; display_name?: unknown; description?: unknown }
+    | undefined
+  const name = typeof header?.name === 'string' ? header.name.trim() : ''
+  if (!name) return
+  const displayName =
+    typeof header?.display_name === 'string' && header.display_name.trim()
+      ? header.display_name.trim()
+      : null
+  const description = typeof header?.description === 'string' ? header.description : null
+  const current = db
+    .prepare('SELECT name, display_name, description FROM projects WHERE id = ?')
+    .get(projectId) as
+    | { name: string; display_name: string | null; description: string | null }
+    | undefined
+  if (!current) return
+  if (
+    current.name === name &&
+    (current.display_name ?? null) === displayName &&
+    (current.description ?? null) === description
+  ) {
+    return
+  }
+  db.prepare(
+    'UPDATE projects SET name = ?, display_name = ?, description = ?, updated_at = ? WHERE id = ?',
+  ).run(name, displayName, description, Date.now(), projectId)
 }
 
 /**
