@@ -27,10 +27,29 @@ interface UpdaterStore {
    * flow never downloads unasked.
    */
   autoDownload: boolean
+  /**
+   * Version the user chose "Skip this version" for (persisted globally in
+   * settings as `updater.skippedVersion`). A background check that finds
+   * exactly this version neither downloads nor prompts; a manual check in
+   * the Update dialog still shows it, so the user can change their mind.
+   */
+  skippedVersion: string | null
+  /**
+   * The non-blocking "update ready" card (bottom-right) is showing. Set by
+   * useAutoUpdater when a BACKGROUND download finishes; cleared by any of
+   * its actions. The manual Update dialog never uses it.
+   */
+  readyPromptOpen: boolean
 
   check: () => void
   download: () => void
   install: () => void
+  /** Keep the downloaded update and apply it when the app quits (also the X button). */
+  installOnQuit: () => void
+  /** Do not install this version, now or on quit; stop offering it in the background. */
+  skipVersion: () => void
+  setReadyPromptOpen: (open: boolean) => void
+  setSkippedVersion: (version: string | null) => void
   reset: () => void
   setStatus: (status: UpdateStatus) => void
   setVersion: (version: string) => void
@@ -40,13 +59,15 @@ interface UpdaterStore {
   setAutoDownload: (enabled: boolean) => void
 }
 
-export const useUpdaterStore = create<UpdaterStore>((set) => ({
+export const useUpdaterStore = create<UpdaterStore>((set, get) => ({
   status: 'idle',
   version: null,
   releaseNotes: null,
   downloadPercent: 0,
   errorMessage: null,
   autoDownload: false,
+  skippedVersion: null,
+  readyPromptOpen: false,
 
   check: () => {
     set({ status: 'checking', errorMessage: null })
@@ -76,6 +97,16 @@ export const useUpdaterStore = create<UpdaterStore>((set) => ({
   },
 
   download: () => {
+    // Downloading a version is the user (or the background flow) wanting it:
+    // re-arm install-on-quit — "Skip this version" turned it OFF in main and
+    // nothing else turns it back on — and, if THIS is the skipped version
+    // (manual Download from the dialog), lift the skip.
+    const { version, skippedVersion } = get()
+    void window.api?.updater?.setInstallOnQuit?.(true)
+    if (skippedVersion && version && skippedVersion === version) {
+      set({ skippedVersion: null })
+      void window.api?.settings?.set?.('updater.skippedVersion', null)
+    }
     set({ status: 'downloading', downloadPercent: 0 })
     if (window.api?.updater?.download) {
       void window.api.updater
@@ -104,10 +135,26 @@ export const useUpdaterStore = create<UpdaterStore>((set) => ({
   },
 
   install: () => {
+    set({ readyPromptOpen: false })
     if (window.api?.updater?.install) {
       window.api.updater.install()
     }
   },
+
+  installOnQuit: () => {
+    set({ readyPromptOpen: false })
+    void window.api?.updater?.setInstallOnQuit?.(true)
+  },
+
+  skipVersion: () => {
+    const version = get().version
+    set({ readyPromptOpen: false, skippedVersion: version })
+    void window.api?.updater?.setInstallOnQuit?.(false)
+    void window.api?.settings?.set?.('updater.skippedVersion', version)
+  },
+
+  setReadyPromptOpen: (open) => set({ readyPromptOpen: open }),
+  setSkippedVersion: (version) => set({ skippedVersion: version }),
 
   reset: () =>
     set({
@@ -140,7 +187,7 @@ export function initUpdaterListeners(): (() => void) | undefined {
       case 'checking':
         store.setStatus('checking')
         break
-      case 'available':
+      case 'available': {
         store.setStatus('available')
         if (event.version) store.setVersion(event.version)
         if (event.releaseNotes) {
@@ -165,10 +212,19 @@ export function initUpdaterListeners(): (() => void) | undefined {
         // the update sat at "available" until the user opened Settings and
         // clicked Download. Guard on status so a redundant 'available' (e.g. a
         // re-check) doesn't restart an in-flight download.
-        if (store.autoDownload && store.status !== 'downloading' && store.status !== 'ready') {
+        // A version the user skipped is left alone in the background; the
+        // manual dialog (its own Download button) can still fetch it.
+        const skipped = !!event.version && store.skippedVersion === event.version
+        if (
+          store.autoDownload &&
+          !skipped &&
+          store.status !== 'downloading' &&
+          store.status !== 'ready'
+        ) {
           store.download()
         }
         break
+      }
       case 'not-available':
         store.setStatus('up-to-date')
         break

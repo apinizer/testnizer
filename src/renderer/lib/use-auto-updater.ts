@@ -32,9 +32,11 @@ function runCheck(): void {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return
   const s = useUpdaterStore.getState()
   // Once an update has been found (available/downloading/ready) there's nothing
-  // to gain from re-checking until the app restarts — and skipping it stops the
-  // periodic timer from re-opening a modal the user already dismissed.
-  if (s.status === 'available' || s.status === 'downloading' || s.status === 'ready') return
+  // to gain from re-checking until the app restarts — except when the found
+  // version is one the user skipped: a NEWER release later the same day must
+  // still be noticed, so a skipped 'available' keeps polling.
+  if (s.status === 'downloading' || s.status === 'ready') return
+  if (s.status === 'available' && !(s.version && s.skippedVersion === s.version)) return
   s.check()
 }
 
@@ -57,10 +59,25 @@ export function useAutoUpdater(activeProjectId: string | null): void {
       }
       if (cancelled) return
 
-      // Defaults match DEFAULT_SETTINGS in ProjectDetailModal: check on, download off.
+      // Defaults match DEFAULT_SETTINGS in ProjectDetailModal: check on,
+      // download on — the update fetches in the background and the user is
+      // only asked once it is ready (Cursor / Postman behaviour).
       const autoCheck = prefs.autoCheckUpdates ?? true
-      const autoDownload = prefs.autoDownloadUpdates ?? false
+      const autoDownload = prefs.autoDownloadUpdates ?? true
       useUpdaterStore.getState().setAutoDownload(autoDownload)
+
+      // "Skip this version" is global, not per project.
+      try {
+        const skipped = (await window.api?.settings?.get('updater.skippedVersion')) as
+          | { success: boolean; data?: unknown }
+          | undefined
+        if (skipped?.success && typeof skipped.data === 'string' && skipped.data) {
+          useUpdaterStore.getState().setSkippedVersion(skipped.data)
+        }
+      } catch {
+        /* no skipped version recorded */
+      }
+      if (cancelled) return
 
       if (!autoCheck) return
       initial = setTimeout(runCheck, INITIAL_CHECK_DELAY_MS)
@@ -74,17 +91,27 @@ export function useAutoUpdater(activeProjectId: string | null): void {
     }
   }, [activeProjectId])
 
-  // A background check/download is otherwise invisible — the UpdateModal only
-  // opens when the user opens it. Surface a background-found update by opening
-  // that same modal (reusing its download / restart actions) the first time the
-  // status reaches 'available' or 'ready', unless the user already has it open
-  // (the manual flow drives those states itself). Registered once.
+  // A background check/download stays invisible until the update is READY.
+  // Then the non-blocking "ready" card opens (UpdateReadyPrompt) — never the
+  // modal, which used to pop up the moment a version was merely *available*
+  // and got in the way of whatever the user was doing. When the user has
+  // the Update dialog open they are driving the flow themselves, so the
+  // dialog's own Restart / Later buttons apply instead. Registered once.
   useEffect(() => {
     return useUpdaterStore.subscribe((state, prev) => {
       if (state.status === prev.status) return
-      if (state.status !== 'available' && state.status !== 'ready') return
       const ui = useUIStore.getState()
-      if (!ui.showUpdateModal) ui.setShowUpdateModal(true)
+      // "Restart & install" from the card failed: the card is gone and the
+      // dialog is the only surface with the error text + manual-download
+      // link, so open it rather than fail silently.
+      if (prev.status === 'ready' && state.status === 'error' && !ui.showUpdateModal) {
+        ui.setShowUpdateModal(true)
+        return
+      }
+      if (state.status !== 'ready') return
+      if (ui.showUpdateModal) return
+      if (state.version && state.skippedVersion === state.version) return
+      state.setReadyPromptOpen(true)
     })
   }, [])
 }

@@ -705,6 +705,8 @@ const api = {
     check: (): Promise<unknown> => ipcRenderer.invoke('updater:check'),
     download: (): Promise<unknown> => ipcRenderer.invoke('updater:download'),
     install: (): Promise<unknown> => ipcRenderer.invoke('updater:install'),
+    setInstallOnQuit: (enabled: boolean): Promise<unknown> =>
+      ipcRenderer.invoke('updater:setInstallOnQuit', enabled),
     onEvent: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)

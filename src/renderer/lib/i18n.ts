@@ -901,6 +901,16 @@ const translations: Record<Locale, Record<string, string>> = {
       'Automatic install is not available for this macOS build. Download the new version manually and replace the app.',
     'update.releaseNotes': 'Release Notes',
     'update.version': 'Version',
+    'update.readyTitle': 'Testnizer v{version} is ready to install',
+    'update.readyBody':
+      'The update was downloaded in the background. Install it now, or keep working and it installs when you quit.',
+    'update.installNow': 'Restart & install',
+    'update.installOnQuit': 'Install on quit',
+    'update.skipVersion': 'Skip this version',
+    'update.details': 'Details',
+    'update.installOnQuitToast': 'The update will be installed when you quit Testnizer',
+    'update.skippedToast':
+      'v{version} skipped — you can still install it from Settings → Check for Updates',
 
     // Profile / password
     'profile.changePassword': 'Change Password',
@@ -3158,6 +3168,16 @@ const translations: Record<Locale, Record<string, string>> = {
       'Bu macOS sürümü için otomatik kurulum kullanılamıyor. Yeni sürümü manuel indirip uygulamayı değiştirin.',
     'update.releaseNotes': 'Sürüm Notları',
     'update.version': 'Sürüm',
+    'update.readyTitle': 'Testnizer v{version} yüklenmeye hazır',
+    'update.readyBody':
+      'Güncelleme arka planda indirildi. Şimdi yükleyin ya da çalışmaya devam edin; uygulamadan çıkınca yüklenir.',
+    'update.installNow': 'Yeniden başlat ve yükle',
+    'update.installOnQuit': 'Çıkışta yükle',
+    'update.skipVersion': 'Bu sürümü atla',
+    'update.details': 'Ayrıntılar',
+    'update.installOnQuitToast': "Güncelleme Testnizer'dan çıkınca yüklenecek",
+    'update.skippedToast':
+      'v{version} atlandı — Ayarlar → Güncellemeleri Kontrol Et ile yine de yükleyebilirsiniz',
 
     // Profile / password
     'profile.changePassword': 'Şifre Değiştir',

@@ -1240,6 +1240,8 @@ interface UpdaterApi {
   check(): Promise<IpcResult<null>>
   download(): Promise<IpcResult<null>>
   install(): Promise<IpcResult<null>>
+  /** true = install the downloaded update when the app quits; false = leave it (skip). */
+  setInstallOnQuit(enabled: boolean): Promise<IpcResult<boolean>>
   onEvent(callback: (event: UpdaterEventPayload) => void): () => void
 }
 

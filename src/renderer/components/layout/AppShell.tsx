@@ -11,6 +11,7 @@ import EnvironmentModal from '../modals/EnvironmentModal'
 import SettingsModal from '../modals/SettingsModal'
 import CodeGeneratorModal from '../modals/CodeGeneratorModal'
 import UpdateModal from '../modals/UpdateModal'
+import UpdateReadyPrompt from './UpdateReadyPrompt'
 import SaveModal from '../modals/SaveModal'
 import NewProjectModal from '../modals/NewProjectModal'
 import EndpointSaveModal from '../modals/EndpointSaveModal'
@@ -248,6 +249,7 @@ export default function AppShell() {
         <ProjectHome />
         <SettingsModal />
         <UpdateModal />
+        <UpdateReadyPrompt />
         <NewProjectModal />
         <ProfileModal />
         <CommandPalette open={showCommandPalette} onOpenChange={setShowCommandPalette} />
@@ -312,6 +314,7 @@ export default function AppShell() {
       <SettingsModal />
       <CodeGeneratorModal />
       <UpdateModal />
+      <UpdateReadyPrompt />
       <SaveModal />
       <NewProjectModal />
       <EndpointSaveModal />
