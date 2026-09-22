@@ -377,11 +377,18 @@ interface SavedResponseRow {
   url: string | null
   status_code: number | null
   response_json: string
+  /** JSON {configured, sent} request snapshot — null on rows saved before it existed. */
+  request_json: string | null
   created_at: number
 }
 
+type SavedResponseSummary = Omit<SavedResponseRow, 'response_json' | 'request_json'>
+
 interface SavedResponseApi {
   list(ownerType: SavedResponseOwnerType, ownerId: string): Promise<IpcResult<SavedResponseRow[]>>
+  /** Every example in a project, blobs excluded — the APIs tree binds these under their owners. */
+  listByProject(projectId: string): Promise<IpcResult<SavedResponseSummary[]>>
+  get(id: string): Promise<IpcResult<SavedResponseRow>>
   create(payload: {
     project_id?: string | null
     owner_type: SavedResponseOwnerType
@@ -392,6 +399,7 @@ interface SavedResponseApi {
     url?: string | null
     status_code?: number | null
     response_json: string
+    request_json?: string | null
   }): Promise<IpcResult<SavedResponseRow>>
   rename(id: string, name: string): Promise<IpcResult<boolean>>
   delete(id: string): Promise<IpcResult<boolean>>
@@ -1232,6 +1240,8 @@ interface UpdaterApi {
   check(): Promise<IpcResult<null>>
   download(): Promise<IpcResult<null>>
   install(): Promise<IpcResult<null>>
+  /** true = install the downloaded update when the app quits; false = leave it (skip). */
+  setInstallOnQuit(enabled: boolean): Promise<IpcResult<boolean>>
   onEvent(callback: (event: UpdaterEventPayload) => void): () => void
 }
 
@@ -1309,6 +1319,8 @@ interface GitMergeResult {
 
 interface GitPullOutcome {
   pulled: boolean
+  /** False when the checkout holds no project .json (nothing was imported). */
+  imported?: boolean
   state: 'clean' | 'conflicted'
   branch: string
   conflicts?: GitConflictInfo[]

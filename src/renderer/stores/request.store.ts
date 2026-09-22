@@ -489,7 +489,15 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         const level = log.level === 'error' ? 'error' : log.level === 'warn' ? 'warn' : 'log'
         preScriptLogs.push({ level, message: log.message, timestamp: log.timestamp })
       }
-      Object.assign(scriptOverrides, scriptResult.globalUpdates, scriptResult.envUpdates)
+      // Precedence mirrors pm.variables.get: local > env > global. Local
+      // (`pm.variables.set`) writes resolve in THIS send only — they are not
+      // handed to applyScriptUpdates below, so nothing is persisted.
+      Object.assign(
+        scriptOverrides,
+        scriptResult.globalUpdates,
+        scriptResult.envUpdates,
+        scriptResult.varUpdates,
+      )
       // Persist pre-request env/global writes back to the store (and DB) so they
       // survive to the NEXT send — Postman/Insomnia keep pre-request
       // pm.environment.set values, but here they previously lived only in the
@@ -788,7 +796,12 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           allTestResults.push(...scriptResult.results)
           allConsoleLogs.push(...scriptResult.consoleLogs)
           // Fold writes into the overlay so a later cascade script sees them.
-          Object.assign(scriptOverrides, scriptResult.globalUpdates, scriptResult.envUpdates)
+          Object.assign(
+            scriptOverrides,
+            scriptResult.globalUpdates,
+            scriptResult.envUpdates,
+            scriptResult.varUpdates,
+          )
 
           // Persist `pm.environment.set(...)` / `pm.globals.set(...)` writes
           // back to the env store. Without this, scripts that capture a token

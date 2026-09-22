@@ -2,10 +2,11 @@ import { ipcMain } from 'electron'
 import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync as readDirSync } from 'fs'
 import { join } from 'path'
 import { getDb } from '../db/database'
-import { exportProjectData, importProjectDataFromJson } from './save.handler'
+import { exportProjectData, importProjectDataFromJson, type ProjectExport } from './save.handler'
 import { asConflictAwareGit, runGitOpWithConflictHandling } from '../lib/git-conflict'
 import type { SimpleGit, BranchSummaryBranch } from 'simple-git'
 import { projectFileSlug, pickProjectFile } from '../lib/project-file'
+import { mergeProjectFiles } from '../lib/project-merge'
 import {
   getProjectGitConfig,
   gitAuth,
@@ -151,14 +152,22 @@ async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
     // The remote has history but not OUR branch (e.g. it was created with
     // `master`, Storage says `main`). Clone its default branch and start the
     // configured branch from there — the same thing Save → Git does, so both
-    // Push buttons land the project on the same branch.
-    await bare.clone(auth.cleanUrl, localPath)
+    // Push buttons land the project on the same branch. The branch is named
+    // explicitly: a remote whose HEAD points at a branch that no longer
+    // exists clones as an EMPTY tree with an unborn HEAD ("remote HEAD
+    // refers to nonexistent ref"), and the project file never lands.
+    await bare.clone(auth.cleanUrl, localPath, ['--branch', pickRemoteDefaultBranch(heads)])
     const git = await openRepo(config)
     await git.checkoutLocalBranch(defaultBranch)
     return git
   }
 
-  // Non-empty directory (project files already exist) — init in place.
+  // Non-empty directory — `git clone` refuses it, so init in place and fetch.
+  // "Non-empty" includes a folder holding only `desktop.ini` / `.DS_Store`:
+  // the user picked an "empty" clone target and expects the remote to land
+  // here, so this branch must reach the same end state as the clone above.
+  // It used to fetch ONLY when the configured branch existed; a remote on
+  // `master` left an empty init behind and every later Pull said "pulled".
   const localGit = await openRepo(config)
   await localGit.init()
   await pointHeadAt(localGit, defaultBranch)
@@ -166,8 +175,20 @@ async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
   if (heads.has(defaultBranch)) {
     await localGit.fetch('origin', defaultBranch)
     await localGit.checkout(['-b', defaultBranch, `origin/${defaultBranch}`])
+  } else if (heads.size > 0) {
+    const remoteDefault = pickRemoteDefaultBranch(heads)
+    await localGit.fetch('origin', remoteDefault)
+    await localGit.checkout(['-b', remoteDefault, `origin/${remoteDefault}`])
+    await localGit.checkoutLocalBranch(defaultBranch)
   }
   return localGit
+}
+
+/** The branch a clone would land on: `main`, else `master`, else the first head. */
+function pickRemoteDefaultBranch(heads: Set<string>): string {
+  if (heads.has('main')) return 'main'
+  if (heads.has('master')) return 'master'
+  return [...heads][0]
 }
 
 async function getCurrentBranch(
@@ -194,15 +215,49 @@ async function getCurrentBranch(
 // try/catch when failure isn't fatal; pull lets the error propagate so the
 // user knows the pull succeeded on disk but the DB sync didn't.
 // Returns false (not throwing) only when no .json file is found.
-function reimportProjectFromDir(dir: string, projectId: string): boolean {
+//
+// Two flavours, chosen by the caller:
+//  - `replace` (switch / merge / conflict resolution): the checkout IS the
+//    branch, so rows the file no longer lists are dropped from the DB.
+//  - `base` (pull): rows the PREVIOUS file had and the pulled one lacks were
+//    deleted on the remote and are dropped; rows the file never knew about
+//    (unpushed local work) stay. Additive upserts used to bring a request
+//    deleted on machine B back on A's next Pull, and A's next Push then
+//    resurrected it on the remote.
+function reimportProjectFromDir(
+  dir: string,
+  projectId: string,
+  how: { mode: 'replace' } | { mode: 'merge'; base: ProjectExport | null },
+): boolean {
+  const found = readProjectFileFromDir(dir, projectId)
+  if (!found) return false
+  // The repository defines the project's name: a rename made on the other
+  // machine lands here, and both machines keep writing the same file.
+  importProjectDataFromJson(found.content, projectId, { ...how, adoptProjectHeader: true })
+  return true
+}
+
+/** The checkout's project file for THIS project, or null when it has none. */
+function readProjectFileFromDir(
+  dir: string,
+  projectId: string,
+): { file: string; content: string } | null {
   const jsonFiles = readDirSync(dir).filter(
     (f: string) => f.endsWith('.json') && f !== 'package.json' && !f.startsWith('.'),
   )
-  if (jsonFiles.length === 0) return false
+  if (jsonFiles.length === 0) return null
   const file = pickProjectFile(jsonFiles, projectNameOf(projectId))
-  const jsonContent = readFileSync(join(dir, file), 'utf-8')
-  importProjectDataFromJson(jsonContent, projectId)
-  return true
+  return { file, content: readFileSync(join(dir, file), 'utf-8') }
+}
+
+/** Parsed project file, or null when absent / unparsable (no base to diff). */
+function snapshotProjectFile(dir: string, projectId: string): ProjectExport | null {
+  try {
+    const found = readProjectFileFromDir(dir, projectId)
+    return found ? (JSON.parse(found.content) as ProjectExport) : null
+  } catch {
+    return null
+  }
 }
 
 function projectNameOf(projectId: string): string | undefined {
@@ -210,6 +265,300 @@ function projectNameOf(projectId: string): string | undefined {
     | { name: string }
     | undefined
   return row?.name
+}
+
+/** Section keys whose emptiness means "this project holds nothing yet". */
+const EXPORT_SECTIONS = [
+  'folders',
+  'endpoints',
+  'savedRequests',
+  'environments',
+  'globalVariables',
+  'testSuites',
+  'mockServers',
+  'certificates',
+  'savedResponses',
+] as const
+
+function isEmptyExport(data: Record<string, unknown>): boolean {
+  return EXPORT_SECTIONS.every((k) => {
+    const v = data[k]
+    return !Array.isArray(v) || v.length === 0
+  })
+}
+
+/** Same project content, ignoring the export timestamp. */
+function sameExport(a: string, b: Record<string, unknown>): boolean {
+  // Ignores the export timestamp and the per-machine parts of the `project`
+  // header (id, workspace, local_path, save_mode…): on machine B the file
+  // carries A's id, so comparing the whole header made every switch / merge
+  // commit a header-only "Auto-save". Name, display name and description DO
+  // count — they travel with the file.
+  // Rows are compared without `project_id` / `workspace_id` for the same
+  // reason: the importer rebinds them to the local project, so machine B's
+  // export of an unchanged collection differs from A's file in every row.
+  const normalise = (doc: Record<string, unknown>): string => {
+    const header = (doc.project ?? {}) as Record<string, unknown>
+    const out: Record<string, unknown> = {
+      ...doc,
+      exportedAt: 0,
+      project: {
+        name: header.name ?? null,
+        display_name: header.display_name ?? null,
+        description: header.description ?? null,
+      },
+    }
+    for (const [k, v] of Object.entries(out)) {
+      if (Array.isArray(v)) {
+        out[k] = v.map((row) => {
+          if (!row || typeof row !== 'object') return row
+          const { project_id: _p, workspace_id: _w, ...rest } = row as Record<string, unknown>
+          return rest
+        })
+      }
+    }
+    return JSON.stringify(out)
+  }
+  try {
+    return normalise(JSON.parse(a) as Record<string, unknown>) === normalise(b)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Write the project's DB state into the checkout as `<slug>.json` and stage
+ * it (plus the removal of any tracked file an older name produced). This is
+ * the ONE place the working tree learns what the database holds.
+ *
+ * Push always did this; switch / merge / pull did not. Their "Auto-save
+ * before …" commits therefore recorded nothing (the tree only changes on
+ * Push), and — worse — after `git merge` the DB still held the pre-merge
+ * state, so the very next Push exported that stale state OVER the merged
+ * file and shipped it to the remote: the merge "disappeared" (tester report,
+ * two-machine flow). Every git operation now syncs DB → tree first, so what
+ * git merges is what the user sees.
+ *
+ * `skipIfEmpty`: a project with no content yet must not overwrite the file
+ * it is about to receive (Clone from Git: the fresh project's first Pull
+ * clones the repo, and exporting the empty project on top of that clone
+ * would commit an empty file, pull "already up to date" and import nothing).
+ *
+ * Only tracked `*.json` files are retired: `local_path` may be a folder the
+ * user picked (Downloads…), and `git add .` once committed the whole thing.
+ */
+async function syncWorkingTreeFromDb(
+  git: SimpleGit,
+  config: ProjectGitConfig,
+  projectId: string,
+  opts: { skipIfEmpty: boolean },
+): Promise<{ fileName: string; displayName: string; changed: boolean }> {
+  const data = exportProjectData(projectId) as unknown as Record<string, unknown>
+  const project = (data.project ?? {}) as Record<string, unknown>
+  const slug = projectFileSlug(project.name as string | undefined)
+  const displayName = ((project.display_name || project.name) as string) || 'project'
+  const fileName = `${slug}.json`
+  const target = join(config.localPath, fileName)
+
+  if (opts.skipIfEmpty && isEmptyExport(data)) {
+    return { fileName, displayName, changed: false }
+  }
+  if (existsSync(target) && sameExport(readFileSync(target, 'utf-8'), data)) {
+    // Byte-identical apart from `exportedAt` — rewriting would only churn
+    // the timestamp into a commit on every switch / pull.
+    return { fileName, displayName, changed: false }
+  }
+  writeFileSync(target, JSON.stringify(data, null, 2), 'utf-8')
+
+  const tracked = (await git.raw(['ls-files', '--', '*.json']))
+    .split('\n')
+    .map((f) => f.trim())
+    .filter((f) => f && f !== fileName && f !== 'package.json' && !f.includes('/'))
+  for (const f of retiredProjectFiles(config.localPath, tracked, projectId)) {
+    try {
+      await git.rm([f])
+    } catch {
+      /* already gone */
+    }
+  }
+  await git.add([fileName])
+  return { fileName, displayName, changed: await hasStagedChanges(git) }
+}
+
+/**
+ * Which OTHER tracked `.json` files are this project under a previous name
+ * and should go when the renamed file is committed? Only:
+ *   - a file whose content carries OUR `project.id`, or
+ *   - the single other project export in the checkout (the file the machine
+ *     that renamed the project pulled under the old name — its `project.id`
+ *     is the other machine's, but there is nothing else it could be).
+ * Everything else stays: a second project sharing the repository, a
+ * `notes.json` the team keeps next to the export. Push used to `git rm`
+ * every other top-level `.json` it tracked, which destroyed those.
+ */
+function retiredProjectFiles(dir: string, others: string[], projectId: string): string[] {
+  const parsed = (f: string): Record<string, unknown> | null => {
+    try {
+      const v = JSON.parse(readFileSync(join(dir, f), 'utf-8')) as unknown
+      return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+    } catch {
+      return null
+    }
+  }
+  const docs = others.map((f) => ({ f, doc: parsed(f) }))
+  const ours = docs.filter(
+    ({ doc }) => (doc?.project as { id?: unknown } | undefined)?.id === projectId,
+  )
+  if (ours.length > 0) return ours.map((d) => d.f)
+  const exports = docs.filter(({ doc }) => doc?.project !== undefined)
+  return exports.length === 1 ? [exports[0].f] : []
+}
+
+/**
+ * Anything in the index that differs from HEAD? Decided from `git diff
+ * --cached` OUTPUT: simple-git's `status().staged` leaves renames out, so a
+ * project rename (old file `rm`ed, new file added → git reports `R`) looked
+ * like "nothing to commit" and Push shipped the previous commit while
+ * claiming success. Works on an unborn HEAD too (diff against the empty tree).
+ */
+async function hasStagedChanges(git: SimpleGit): Promise<boolean> {
+  const out = await git.raw(['diff', '--cached', '--name-only'])
+  return out.trim().length > 0
+}
+
+/**
+ * Commit whatever is staged plus edits to TRACKED files. `add -u` never
+ * sweeps the folder's other files in (see `syncWorkingTreeFromDb`).
+ */
+async function commitTracked(git: SimpleGit, message: string): Promise<boolean> {
+  await git.raw(['add', '-u'])
+  if (!(await hasStagedChanges(git))) return false
+  await git.commit(message)
+  return true
+}
+
+/**
+ * Switch / merge: the DB holds this branch's edits, so record them on it
+ * before git replaces the tree. (Pull deliberately does NOT do this — see
+ * `git:pull` — so two machines appending to the same collection never turn
+ * into a text-level conflict over lines the user never wrote.)
+ */
+async function autoCommit(
+  git: SimpleGit,
+  config: ProjectGitConfig,
+  projectId: string,
+  message: string,
+): Promise<void> {
+  await syncWorkingTreeFromDb(git, config, projectId, { skipIfEmpty: true })
+  await commitTracked(git, message)
+}
+
+/**
+ * simple-git only treats a command as failed when the exit code is non-zero
+ * AND stderr is non-empty. `rev-parse --verify --quiet` and
+ * `merge-base --is-ancestor` say nothing on failure, so their rejections
+ * never surface — every check built on "did it throw?" silently passes.
+ * The helpers below decide from OUTPUT only (ref lists, hashes).
+ */
+async function refNames(git: SimpleGit, prefix: string): Promise<Set<string>> {
+  const out = await git.raw(['for-each-ref', '--format=%(refname:short)', prefix])
+  return new Set(
+    out
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean),
+  )
+}
+
+/** True when `refs/heads/<name>` exists in this checkout. */
+async function hasLocalBranch(git: SimpleGit, name: string): Promise<boolean> {
+  return (await refNames(git, 'refs/heads')).has(name)
+}
+
+/** The remote-tracking branches of `origin`, without the `origin/` prefix. */
+async function originBranches(git: SimpleGit): Promise<Set<string>> {
+  const names = await refNames(git, 'refs/remotes/origin')
+  const out = new Set<string>()
+  for (const n of names) {
+    if (n.startsWith('origin/') && n !== 'origin/HEAD') out.add(n.slice('origin/'.length))
+  }
+  return out
+}
+
+/**
+ * Bring every OTHER local branch up to its `origin/<name>` when that is a
+ * pure fast-forward. Pull only merged the checked-out branch, so machine A
+ * sitting on `feature` pulled `feature` while B's merge landed on
+ * `origin/main`; A's local `main` stayed where it was and switching to it
+ * showed the old tree. A branch that diverged is left alone (it needs a
+ * real merge, which the user does by switching and pulling): the local tip
+ * must BE the merge base, decided by comparing hashes, never exit codes.
+ */
+async function fastForwardOtherBranches(git: SimpleGit, currentBranch: string): Promise<string[]> {
+  const updated: string[] = []
+  let locals: Set<string>
+  let remotes: Set<string>
+  try {
+    locals = await refNames(git, 'refs/heads')
+    remotes = await originBranches(git)
+  } catch {
+    return updated
+  }
+  for (const name of locals) {
+    if (name === currentBranch || !remotes.has(name)) continue
+    const remoteRef = `origin/${name}`
+    try {
+      const local = (await git.revparse([name])).trim()
+      const remote = (await git.revparse([remoteRef])).trim()
+      if (!local || !remote || local === remote) continue
+      const base = (await git.raw(['merge-base', name, remoteRef])).trim()
+      if (base !== local) continue // diverged — needs a merge
+      await git.raw(['branch', '-f', name, remoteRef])
+      updated.push(name)
+    } catch {
+      /* non-fatal */
+    }
+  }
+  return updated
+}
+
+/**
+ * A merge / pull stopped on conflicts. When every conflicted path is a
+ * top-level project `.json`, merge the three index stages BY ROW (see
+ * `project-merge.ts`), stage the result and complete the merge. Two
+ * branches that each added a request used to conflict on the same lines,
+ * and "keep mine / keep theirs" threw one side's rows away. Anything else
+ * (a non-project file, an unparsable side, a file deleted on one side) is
+ * left for the user's conflict dialog — returns false, index untouched.
+ */
+async function autoResolveProjectConflicts(
+  git: SimpleGit,
+  dir: string,
+  message: string,
+): Promise<boolean> {
+  const status = await git.status()
+  if (status.conflicted.length === 0) return false
+  const merged: { file: string; content: string }[] = []
+  for (const file of status.conflicted) {
+    if (!file.endsWith('.json') || file.includes('/')) return false
+    const stage = async (n: 1 | 2 | 3): Promise<string> => {
+      try {
+        return await git.show([`:${n}:${file}`])
+      } catch {
+        return ''
+      }
+    }
+    const [base, ours, theirs] = await Promise.all([stage(1), stage(2), stage(3)])
+    const content = mergeProjectFiles(base, ours, theirs)
+    if (content === null) return false
+    merged.push({ file, content })
+  }
+  for (const m of merged) {
+    writeFileSync(join(dir, m.file), m.content, 'utf-8')
+    await git.add([m.file])
+  }
+  await git.commit(message)
+  return true
 }
 
 // ─── Register handlers ──────────────────────────────────────────
@@ -316,7 +665,10 @@ export function registerGitHandlers(): void {
 
         const git = await ensureGitRepo(config)
 
-        // If baseBranch specified, checkout it first
+        // If baseBranch specified, checkout it first. The UI always passes
+        // the CURRENT branch; a different base is reachable only over IPC,
+        // and the DB (current branch's content) is then committed onto the
+        // new branch by the auto-switch that follows.
         if (payload.baseBranch) {
           await git.checkout(payload.baseBranch)
         }
@@ -361,16 +713,9 @@ export function registerGitHandlers(): void {
 
         const git = await ensureGitRepo(config)
 
-        // Auto-commit any uncommitted changes before switching
-        const status = await git.status()
-        if (
-          status.modified.length > 0 ||
-          status.not_added.length > 0 ||
-          status.created.length > 0
-        ) {
-          await git.add('.')
-          await git.commit('Auto-save before branch switch')
-        }
+        // The DB holds the edits made on the branch we are leaving; record
+        // them on THAT branch before the checkout replaces the tree.
+        await autoCommit(git, config, payload.projectId, 'Auto-save before branch switch')
 
         // Try checkout — if it's a remote-only branch, create local tracking branch
         try {
@@ -379,15 +724,31 @@ export function registerGitHandlers(): void {
           await git.checkout(['-b', payload.branchName, `origin/${payload.branchName}`])
         }
 
+        // Best-effort: land the remote's newer commits when they are a pure
+        // fast-forward. A user who switches to `main` right after a teammate
+        // merged into it expects to see that merge, not the local `main`
+        // from their last pull. Diverged branches stay put (Pull merges).
+        let fastForwarded = false
+        if (config.token) {
+          try {
+            await git.fetch('origin', payload.branchName)
+            const before = (await git.revparse(['HEAD'])).trim()
+            await git.raw(['merge', '--ff-only', `origin/${payload.branchName}`])
+            fastForwarded = (await git.revparse(['HEAD'])).trim() !== before
+          } catch {
+            /* offline, no remote counterpart, or diverged — all fine here */
+          }
+        }
+
         // Best-effort: the branch switch itself succeeded, so a stale DB is
         // recoverable (Git Branches → Pull) and shouldn't fail the operation.
         try {
-          reimportProjectFromDir(config.localPath, payload.projectId)
+          reimportProjectFromDir(config.localPath, payload.projectId, { mode: 'replace' })
         } catch (e) {
           console.error('[git:switchBranch] reimport failed:', (e as Error).message)
         }
 
-        return { success: true, data: { branch: payload.branchName } }
+        return { success: true, data: { branch: payload.branchName, fastForwarded } }
       } catch (e) {
         return { success: false, error: (e as Error).message }
       }
@@ -412,30 +773,52 @@ export function registerGitHandlers(): void {
 
         const git = await ensureGitRepo(config)
 
-        // Auto-commit before merge
-        const status = await git.status()
-        if (
-          status.modified.length > 0 ||
-          status.not_added.length > 0 ||
-          status.created.length > 0
-        ) {
-          await git.add('.')
-          await git.commit('Auto-save before merge')
-        }
+        // What git merges must be what the user sees: sync DB → tree first.
+        await autoCommit(git, config, payload.projectId, 'Auto-save before merge')
 
         const currentBranch = await getCurrentBranch(git, config.branch)
 
         // Fetch latest
         try {
-          await git.fetch(['--all'])
+          await git.fetch(['--all', '--prune'])
         } catch {
           /* offline OK */
         }
 
-        const outcome = await runGitOpWithConflictHandling(asConflictAwareGit(git), () =>
-          git.merge([payload.sourceBranch]),
+        // A branch that exists only on the remote (cloud icon in the list)
+        // has no `refs/heads/<name>` — merge its tracking ref instead of
+        // failing with "not something we can merge".
+        const mergeRef = (await hasLocalBranch(git, payload.sourceBranch))
+          ? payload.sourceBranch
+          : `origin/${payload.sourceBranch}`
+
+        let outcome = await runGitOpWithConflictHandling(asConflictAwareGit(git), () =>
+          git.merge([mergeRef]),
         )
+        if (
+          'conflicts' in outcome &&
+          (await autoResolveProjectConflicts(
+            git,
+            config.localPath,
+            `Merge ${payload.sourceBranch} into ${currentBranch.trim()}`,
+          ))
+        ) {
+          outcome = { ok: true }
+        }
         if ('ok' in outcome) {
+          // The tree now holds the merged file; the DB still holds the
+          // pre-merge state. Without this import the next Push exported the
+          // stale DB over the merge result. A failure here is surfaced (not
+          // logged): the user is about to Push, and a silently stale DB is
+          // exactly the bug being fixed.
+          try {
+            reimportProjectFromDir(config.localPath, payload.projectId, { mode: 'replace' })
+          } catch (e) {
+            return {
+              success: false,
+              error: `Merge succeeded but importing the merged state failed: ${(e as Error).message}`,
+            }
+          }
           return {
             success: true,
             data: {
@@ -516,7 +899,7 @@ export function registerGitHandlers(): void {
           // reflects whichever side the user picked. Best-effort — the commit
           // itself is already in git, so the worst case is a stale DB.
           try {
-            reimportProjectFromDir(config.localPath, payload.projectId)
+            reimportProjectFromDir(config.localPath, payload.projectId, { mode: 'replace' })
           } catch (e) {
             console.error('[git:resolveConflict] reimport failed:', (e as Error).message)
           }
@@ -579,34 +962,13 @@ export function registerGitHandlers(): void {
       // Determine current branch — may fail if no commits yet
       const currentBranch = await getCurrentBranch(git, config.branch)
 
-      // Export project data and write to repo before pushing
-      const data = exportProjectData(projectId)
-      const slug = projectFileSlug(data.project?.name as string | undefined)
-      const displayName =
-        ((data.project?.display_name || data.project?.name) as string) || 'project'
-      const fileName = `${slug}.json`
-      writeFileSync(join(config.localPath, fileName), JSON.stringify(data, null, 2), 'utf-8')
-
-      // Retire the file an older name produced — but ONLY files git already
-      // tracks. `local_path` may be a folder the user picked (Downloads…);
-      // deleting every other .json there and `git add .` used to commit the
-      // whole directory to GitHub.
-      const tracked = (await git.raw(['ls-files', '--', '*.json']))
-        .split('\n')
-        .map((f) => f.trim())
-        .filter((f) => f && f !== fileName && f !== 'package.json' && !f.includes('/'))
-      for (const f of tracked) {
-        try {
-          await git.rm([f])
-        } catch {
-          /* already gone */
-        }
-      }
-
-      // Stage ONLY the project file and commit
-      await git.add([fileName])
-      const status = await git.status()
-      if (status.staged.length > 0) {
+      // Export project data into the checkout and commit it. Push is the one
+      // path that writes even an EMPTY project: seeding a new remote with
+      // the fresh project's file is exactly its job.
+      const { displayName, changed } = await syncWorkingTreeFromDb(git, config, projectId, {
+        skipIfEmpty: false,
+      })
+      if (changed) {
         await git.commit(`Update ${displayName} — ${new Date().toLocaleString()}`)
       }
 
@@ -635,17 +997,43 @@ export function registerGitHandlers(): void {
 
       const currentBranch = await getCurrentBranch(git, config.branch)
 
-      // Auto-commit edits to TRACKED files before pull (never sweep the
-      // directory's untracked files into the repo — see push).
-      const status = await git.status()
-      if (status.modified.length > 0 || status.deleted.length > 0) {
-        await git.raw(['add', '-u'])
-        await git.commit('Auto-save before pull')
-      }
+      // Pull does NOT export the DB first. Unpushed local rows are merged at
+      // ROW level by the import below (they simply survive the upsert); an
+      // export + commit here would turn two machines appending to the same
+      // collection into a text-level conflict the user has to "resolve" by
+      // throwing one side away. Only edits to already-tracked files (rare:
+      // something else touched the checkout) are committed so the pull can
+      // proceed.
+      await commitTracked(git, 'Auto-save before pull')
 
-      const outcome = await runGitOpWithConflictHandling(asConflictAwareGit(git), () =>
-        git.pull('origin', currentBranch),
-      )
+      // What the checkout held BEFORE the pull — the base for spotting rows
+      // the remote deleted. Missing file → nothing to diff against.
+      const base = snapshotProjectFile(config.localPath, projectId)
+
+      // A remote that does not have this branch yet (nobody pushed, or the
+      // repo only has `master` and ensureGitRepo just started `main` on top
+      // of it) has nothing to pull — `git pull origin main` would fail with
+      // "couldn't find remote ref main". Skip the pull; the checkout is
+      // still imported below (it may hold the clone's file).
+      const remoteHasBranch = (await git.listRemote(['--heads', 'origin', currentBranch]))
+        .split('\n')
+        .some((l) => l.trim().endsWith(`refs/heads/${currentBranch}`))
+
+      let outcome = remoteHasBranch
+        ? await runGitOpWithConflictHandling(asConflictAwareGit(git), () =>
+            git.pull('origin', currentBranch),
+          )
+        : { ok: true as const }
+      if (
+        'conflicts' in outcome &&
+        (await autoResolveProjectConflicts(
+          git,
+          config.localPath,
+          `Merge origin/${currentBranch} into ${currentBranch}`,
+        ))
+      ) {
+        outcome = { ok: true }
+      }
       if ('conflicts' in outcome) {
         return {
           success: true,
@@ -661,17 +1049,41 @@ export function registerGitHandlers(): void {
         return { success: false, error: outcome.error }
       }
 
+      // Pull is "sync this project", not "sync this branch": fetch everything
+      // and fast-forward the other local branches too, so `main` reflects a
+      // merge a teammate pushed while we sat on a feature branch.
+      let fastForwarded: string[] = []
+      try {
+        await git.fetch(['--all', '--prune'])
+        fastForwarded = await fastForwardOtherBranches(git, currentBranch)
+      } catch {
+        /* the branch we are on is already up to date — that is the pull */
+      }
+
       // Pull landed on disk; let any reimport failure surface explicitly so
       // the user doesn't see "pull succeeded" while the DB is silently stale.
+      // `imported: false` means the checkout holds no project .json at all
+      // (empty remote, or a repo that never had a push) — the caller decides
+      // whether that is a warning (Clone from Git) or fine (fresh project).
+      let imported = false
       try {
-        reimportProjectFromDir(config.localPath, projectId)
+        imported = reimportProjectFromDir(config.localPath, projectId, { mode: 'merge', base })
       } catch (e) {
         return {
           success: false,
           error: `Pull succeeded but importing the new state failed: ${(e as Error).message}`,
         }
       }
-      return { success: true, data: { pulled: true, state: 'clean', branch: currentBranch } }
+      return {
+        success: true,
+        data: {
+          pulled: remoteHasBranch,
+          imported,
+          state: 'clean',
+          branch: currentBranch,
+          fastForwarded,
+        },
+      }
     } catch (e) {
       return { success: false, error: describeGitError(e, config?.token) }
     }

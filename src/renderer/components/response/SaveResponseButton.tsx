@@ -41,7 +41,8 @@ export default function SaveResponseButton({ onSaved }: { onSaved?: () => void }
     return () => window.removeEventListener('mousedown', handler)
   }, [open])
 
-  if (!response) return null
+  // Nothing to pin from a read-only example tab — it IS a saved example.
+  if (!response || activeTab?.protocol === 'example') return null
 
   function start(): void {
     if (!owner) {

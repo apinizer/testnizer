@@ -21,7 +21,12 @@ export function isRequestLikeTab(
   tab: Pick<Tab, 'protocol' | 'endpointId' | 'savedRequestId' | 'testSuiteItemId'>,
 ): boolean {
   if (tab.endpointId || tab.savedRequestId || tab.testSuiteItemId) return true
-  return !isToolProtocol(tab.protocol) && tab.protocol !== 'runner' && tab.protocol !== 'mockServer'
+  return (
+    !isToolProtocol(tab.protocol) &&
+    tab.protocol !== 'runner' &&
+    tab.protocol !== 'mockServer' &&
+    tab.protocol !== 'example'
+  )
 }
 
 /**

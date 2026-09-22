@@ -350,12 +350,31 @@ const translations: Record<Locale, Record<string, string>> = {
     'response.savedResponsesHint':
       'Send a request and click "Save response" to keep the result for later review.',
     'response.openSavedResponse': 'Open',
+    // Saved example view (issue #125 follow-up)
+    'example.banner': 'Saved example — not a live response',
+    'example.savedAt': 'Saved {date}',
+    'example.request': 'Request',
+    'example.sent': 'Sent',
+    'example.original': 'Original',
+    'example.sentHint': 'What went over the wire — variables and pre-request scripts applied',
+    'example.originalHint': 'The editor template as written, {{variables}} intact',
+    'example.headers': 'Headers',
+    'example.params': 'Query params',
+    'example.body': 'Body',
+    'example.noBody': 'No body',
+    'example.bodyDropped': 'Body exceeded the size limit and was not saved',
+    'example.noRequestSnapshot':
+      'This example was saved before request snapshots existed — only the response is available.',
+    'example.noSentSnapshot': 'The engine did not report the wire request for this run.',
+    'example.deleted': 'This saved example no longer exists.',
+    'example.loading': 'Loading example…',
+    'example.closeTab': 'Close tab',
     'response.deleteSavedResponse': 'Delete saved response',
     'response.renameSavedResponse': 'Rename',
     'response.renameSavedResponseHint': 'Double-click to rename',
     'response.savedResponseItemType': 'saved response',
     'response.savedResponseBodyDropped':
-      'Response saved without its body — bodies over 500 KB are not stored.',
+      'Example saved without a body — request or response bodies over 500 KB are not stored.',
     'response.code': 'Code',
     'response.sendingRequest': 'Sending request...',
     'response.requestFailed': 'Request Failed',
@@ -882,6 +901,16 @@ const translations: Record<Locale, Record<string, string>> = {
       'Automatic install is not available for this macOS build. Download the new version manually and replace the app.',
     'update.releaseNotes': 'Release Notes',
     'update.version': 'Version',
+    'update.readyTitle': 'Testnizer v{version} is ready to install',
+    'update.readyBody':
+      'The update was downloaded in the background. Install it now, or keep working and it installs when you quit.',
+    'update.installNow': 'Restart & install',
+    'update.installOnQuit': 'Install on quit',
+    'update.skipVersion': 'Skip this version',
+    'update.details': 'Details',
+    'update.installOnQuitToast': 'The update will be installed when you quit Testnizer',
+    'update.skippedToast':
+      'v{version} skipped — you can still install it from Settings → Check for Updates',
 
     // Profile / password
     'profile.changePassword': 'Change Password',
@@ -1727,6 +1756,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'newProject.createFailed': 'The project could not be created',
     'newProject.importFailed': 'The project was created, but importing the file failed',
     'newProject.gitFailed': 'The project was created, but the git step failed',
+    'newProject.gitConnectionFailed': 'Could not connect to the Git repository',
+    'newProject.git.alreadyLinked':
+      'This repository is already linked to the project "{name}" on this computer. A repository can be linked to one local project at a time — open that project and use Pull, or delete it first. To keep a separate copy, use Import Project.',
     'tools.epoch.copyEpoch': 'Copy the current epoch',
     'tools.diff.copyLeft': 'Copy the left side',
     'tools.diff.copyRight': 'Copy the right side',
@@ -2179,6 +2211,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.pushFailed': 'Push failed',
     'toast.pulled': 'Pulled successfully',
     'toast.pullFailed': 'Pull failed',
+    'toast.pullNoProjectFile':
+      'Pull finished, but the repository holds no project file — nothing was imported',
+    'toast.pullConflicted': 'Pull stopped on merge conflicts — resolve them from the branch menu',
     'toast.mockSaved': 'Mock server saved',
     'toast.mockSaveFailed': 'Failed to save mock server',
 
@@ -2582,12 +2617,31 @@ const translations: Record<Locale, Record<string, string>> = {
     'response.savedResponsesHint':
       'Bir istek gönderip "Yanıtı kaydet"e tıklayarak sonucu daha sonra incelemek için saklayın.',
     'response.openSavedResponse': 'Aç',
+    // Kayıtlı örnek görünümü (issue #125 devamı)
+    'example.banner': 'Kayıtlı örnek — canlı yanıt değil',
+    'example.savedAt': '{date} tarihinde kaydedildi',
+    'example.request': 'İstek',
+    'example.sent': 'Gönderilen',
+    'example.original': 'Orijinal',
+    'example.sentHint': 'Ağa giden hali — değişkenler ve pre-request script uygulanmış',
+    'example.originalHint': 'Editörde yazıldığı şablon, {{değişkenler}} korunmuş',
+    'example.headers': 'Başlıklar',
+    'example.params': 'Sorgu parametreleri',
+    'example.body': 'Gövde',
+    'example.noBody': 'Gövde yok',
+    'example.bodyDropped': 'Gövde boyut sınırını aştığı için kaydedilmedi',
+    'example.noRequestSnapshot':
+      'Bu örnek istek anlık görüntüsü eklenmeden önce kaydedilmiş — yalnızca yanıt mevcut.',
+    'example.noSentSnapshot': 'Motor bu koşu için ağa giden isteği raporlamadı.',
+    'example.deleted': 'Bu kayıtlı örnek artık yok.',
+    'example.loading': 'Örnek yükleniyor…',
+    'example.closeTab': 'Sekmeyi kapat',
     'response.deleteSavedResponse': 'Kayıtlı yanıtı sil',
     'response.renameSavedResponse': 'Yeniden adlandır',
     'response.renameSavedResponseHint': 'Yeniden adlandırmak için çift tıklayın',
     'response.savedResponseItemType': 'kayıtlı yanıt',
     'response.savedResponseBodyDropped':
-      'Yanıt gövdesiz kaydedildi — 500 KB üzerindeki gövdeler saklanmaz.',
+      'Örnek gövdesiz kaydedildi — 500 KB üzerindeki istek/yanıt gövdeleri saklanmaz.',
     'response.code': 'Kod',
     'response.sendingRequest': 'Istek gonderiliyor...',
     'response.requestFailed': 'Istek Basarisiz',
@@ -3114,6 +3168,16 @@ const translations: Record<Locale, Record<string, string>> = {
       'Bu macOS sürümü için otomatik kurulum kullanılamıyor. Yeni sürümü manuel indirip uygulamayı değiştirin.',
     'update.releaseNotes': 'Sürüm Notları',
     'update.version': 'Sürüm',
+    'update.readyTitle': 'Testnizer v{version} yüklenmeye hazır',
+    'update.readyBody':
+      'Güncelleme arka planda indirildi. Şimdi yükleyin ya da çalışmaya devam edin; uygulamadan çıkınca yüklenir.',
+    'update.installNow': 'Yeniden başlat ve yükle',
+    'update.installOnQuit': 'Çıkışta yükle',
+    'update.skipVersion': 'Bu sürümü atla',
+    'update.details': 'Ayrıntılar',
+    'update.installOnQuitToast': "Güncelleme Testnizer'dan çıkınca yüklenecek",
+    'update.skippedToast':
+      'v{version} atlandı — Ayarlar → Güncellemeleri Kontrol Et ile yine de yükleyebilirsiniz',
 
     // Profile / password
     'profile.changePassword': 'Şifre Değiştir',
@@ -3966,6 +4030,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'newProject.createFailed': 'Proje oluşturulamadı',
     'newProject.importFailed': 'Proje oluşturuldu, ancak dosya içe aktarılamadı',
     'newProject.gitFailed': 'Proje oluşturuldu, ancak git adımı başarısız oldu',
+    'newProject.gitConnectionFailed': 'Git deposuna bağlanılamadı',
+    'newProject.git.alreadyLinked':
+      'Bu depo bu bilgisayarda zaten "{name}" projesine bağlı. Bir depo aynı anda tek bir yerel projeye bağlanabilir — o projeyi açıp Pull yapın ya da önce onu silin. Ayrı bir kopya istiyorsanız Import Project kullanın.',
     'tools.epoch.copyEpoch': 'Geçerli epoch’u kopyala',
     'tools.diff.copyLeft': 'Sol tarafı kopyala',
     'tools.diff.copyRight': 'Sağ tarafı kopyala',
@@ -4418,6 +4485,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.pushFailed': 'Gönderim başarısız',
     'toast.pulled': 'Çekim başarılı',
     'toast.pullFailed': 'Çekim başarısız',
+    'toast.pullNoProjectFile':
+      'Çekim tamamlandı ancak depoda proje dosyası yok — hiçbir şey içe aktarılmadı',
+    'toast.pullConflicted': 'Çekim birleştirme çakışmasında durdu — branch menüsünden çözün',
     'toast.mockSaved': 'Mock sunucu kaydedildi',
     'toast.mockSaveFailed': 'Mock sunucu kaydedilemedi',
 

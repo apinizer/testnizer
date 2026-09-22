@@ -34,6 +34,9 @@ import {
   getSettingsStore,
   getLegacyCredentialStore,
   legacyCredentialKey,
+  isGitAuthError,
+  unreachableRemoteError,
+  redactToken,
 } from '../lib/git-config'
 import { projectFileSlug, pickProjectFile } from '../lib/project-file'
 import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
@@ -81,7 +84,7 @@ export function detectTestSuiteImportFormat(parsed: unknown): TestSuiteImportFor
 }
 
 // ─── Full Project Export Format ──────────────────────────────────
-interface ProjectExport {
+export interface ProjectExport {
   version: string
   exportedAt: number
   kind?: 'project'
@@ -383,14 +386,130 @@ export function exportProjectData(projectId: string): ProjectExport {
   }
 }
 
-// ─── Import (upsert) project data into DB ────────────────────────
-export function importProjectDataFromJson(jsonString: string, projectId: string): void {
-  const data = JSON.parse(jsonString) as ProjectExport
-  importProjectData(data, projectId)
+/**
+ * A repository (project file) can be bound to ONE local project at a time:
+ * rows keep their ids across machines, so importing the same file into a
+ * second local project would move the first project's rows. Shown when the
+ * user clones a repo that is already open here (same-machine test setups).
+ */
+export function projectAlreadyLinkedError(visibleName: string): string {
+  return `This repository's project file belongs to "${visibleName}", which is already open on this computer. A repository can be linked to one local project at a time: open "${visibleName}" and use Pull, or delete it first. To keep a separate copy use Import Project instead.`
 }
 
-function importProjectData(data: ProjectExport, projectId: string): void {
+/**
+ * Delete the rows selected by `whereSql` whose id is NOT in `keep`. Ids are
+ * diffed in JS rather than with a giant `NOT IN (...)` so a project with
+ * thousands of rows never trips SQLite's bound-parameter limit.
+ */
+function pruneRowsNotIn(
+  db: ReturnType<typeof getDb>,
+  table: string,
+  whereSql: string,
+  whereParams: unknown[],
+  keep: Set<string>,
+): void {
+  const local = db.prepare(`SELECT id FROM ${table} WHERE ${whereSql}`).all(...whereParams) as {
+    id: string
+  }[]
+  const del = db.prepare(`DELETE FROM ${table} WHERE id = ?`)
+  for (const row of local) {
+    if (!keep.has(row.id)) del.run(row.id)
+  }
+}
+
+// ─── Import (upsert) project data into DB ────────────────────────
+export interface ImportProjectOptions {
+  /**
+   * `merge` (default): upsert every row in the file, keep everything else.
+   * `replace`: the file is the project's whole state — after the upsert,
+   * every project-scoped row that the file no longer lists is deleted.
+   *
+   * Git re-imports after a branch switch / merge / conflict resolution use
+   * `replace` (the checkout IS the branch). With the additive default, a
+   * request deleted on machine B and pushed came back on machine A's next
+   * Pull (the upsert never removes anything) and A's next Push resurrected
+   * it on the remote. A section is only pruned when the file actually
+   * carries it as an array — older exports that predate a table (e.g.
+   * `savedResponses`) must not wipe it.
+   */
+  mode?: 'merge' | 'replace'
+  /**
+   * `merge` mode only: the project file as it was BEFORE the git operation.
+   * Rows that `base` lists but the new file no longer does were deleted on
+   * the remote and are removed here too. Rows the file never knew about —
+   * edits made locally since the last Push — stay untouched, which is why
+   * Pull uses this instead of `replace`: it must not discard unpushed work.
+   */
+  base?: ProjectExport | null
+  /**
+   * Also copy the file's `project` header (name, display name, description)
+   * onto the importing project row. Git re-imports set this: the repository
+   * defines the project's identity, so a rename on machine A reaches B on
+   * its next Pull — and, because the tracked file is named after `name`,
+   * both machines keep writing the SAME file instead of one each.
+   */
+  adoptProjectHeader?: boolean
+}
+
+export function importProjectDataFromJson(
+  jsonString: string,
+  projectId: string,
+  options: ImportProjectOptions = {},
+): void {
+  const data = JSON.parse(jsonString) as ProjectExport
+  importProjectData(data, projectId, options)
+}
+
+/** `display_name` is what the Project Hub shows; `name` is the internal key. */
+function visibleProjectName(row: { name: string; display_name?: string | null }): string {
+  return (row.display_name && row.display_name.trim()) || row.name
+}
+
+function importProjectData(
+  data: ProjectExport,
+  projectId: string,
+  options: ImportProjectOptions = {},
+): void {
   const db = getDb()
+
+  // Every project-scoped row in the export carries the SOURCE project's id
+  // (`project_id`) and workspace (`workspace_id`) — the ids of the machine
+  // that exported it. On the same machine those match the target and the
+  // upsert lands where the user expects. On ANOTHER machine (Clone from Git
+  // → Pull on machine B) the ids differ: the rows were written under a
+  // project that does not exist locally, `git:pull` reported success, and
+  // the tree stayed empty. Rebind ownership to the importing project here;
+  // row ids stay stable so later pulls keep upserting the same rows.
+  const sourceProjectId =
+    typeof data.project?.id === 'string' ? (data.project.id as string) : undefined
+  if (sourceProjectId && sourceProjectId !== projectId) {
+    // The export came from a project that STILL EXISTS on this machine (the
+    // user exported local project X and is importing the file into Y).
+    // Rebinding would move X's rows into Y — X's tree empties and deleting
+    // the "broken" duplicate cascades X's data away. Refuse instead; the
+    // fresh-id path (Import Project) is the right tool for that.
+    //
+    // The message names the project the way the Hub does (`display_name`);
+    // the internal `name` stays "My Project" after a rename, and testers
+    // rightly asked which "My Project" that was.
+    const sourceLocal = db
+      .prepare('SELECT name, display_name FROM projects WHERE id = ?')
+      .get(sourceProjectId) as { name: string; display_name?: string | null } | undefined
+    if (sourceLocal) {
+      throw new Error(projectAlreadyLinkedError(visibleProjectName(sourceLocal)))
+    }
+  }
+  const targetWorkspaceId = (
+    db.prepare('SELECT workspace_id FROM projects WHERE id = ?').get(projectId) as
+      | { workspace_id?: string }
+      | undefined
+  )?.workspace_id
+  const rebind = (rows: Record<string, unknown>[] | undefined): Record<string, unknown>[] =>
+    (rows ?? []).map((row) => ({
+      ...row,
+      project_id: projectId,
+      ...(targetWorkspaceId && 'workspace_id' in row ? { workspace_id: targetWorkspaceId } : {}),
+    }))
 
   const upsert = (table: string, rows: Record<string, unknown>[], columns: string[]): void => {
     if (rows.length === 0) return
@@ -413,10 +532,10 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   }
 
   // Import folders
-  upsert('folders', data.folders, ['id', 'project_id', 'parent_id', 'name', 'sort_order'])
+  upsert('folders', rebind(data.folders), ['id', 'project_id', 'parent_id', 'name', 'sort_order'])
 
   // Import endpoints
-  upsert('endpoints', data.endpoints, [
+  upsert('endpoints', rebind(data.endpoints), [
     'id',
     'project_id',
     'folder_id',
@@ -450,7 +569,7 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   }
 
   // Import saved requests
-  upsert('saved_requests', data.savedRequests, [
+  upsert('saved_requests', rebind(data.savedRequests), [
     'id',
     'project_id',
     'folder_id',
@@ -475,7 +594,7 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   // without it an imported env keeps the source project's id (or NULL for
   // legacy exports) and becomes invisible to the project that imported it.
   if (data.environments?.length) {
-    upsert('environments', data.environments, [
+    upsert('environments', rebind(data.environments), [
       'id',
       'workspace_id',
       'project_id',
@@ -504,7 +623,7 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   // global was scoped to a project on the source side, it must land scoped to
   // the target project rather than leaking workspace-wide.
   if (data.globalVariables?.length) {
-    upsert('global_variables', data.globalVariables, [
+    upsert('global_variables', rebind(data.globalVariables), [
       'id',
       'workspace_id',
       'project_id',
@@ -519,7 +638,7 @@ function importProjectData(data: ProjectExport, projectId: string): void {
 
   // Import test suites
   if (data.testSuites?.length) {
-    upsert('test_suites', data.testSuites, [
+    upsert('test_suites', rebind(data.testSuites), [
       'id',
       'project_id',
       'name',
@@ -568,7 +687,7 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   // upsert parents before children. Missing arrays are skipped — pre-v1.2
   // export files don't carry these.
   if (data.mockServers?.length) {
-    upsert('mock_servers', data.mockServers, [...MOCK_SERVER_COLUMNS])
+    upsert('mock_servers', rebind(data.mockServers), [...MOCK_SERVER_COLUMNS])
   }
   if (data.mockEndpoints?.length) {
     upsert('mock_endpoints', data.mockEndpoints, [...MOCK_ENDPOINT_COLUMNS])
@@ -580,13 +699,161 @@ function importProjectData(data: ProjectExport, projectId: string): void {
   // Named response examples (issue #125). Owner ids are stable in the
   // upsert model (same project, same row ids), so no remapping needed.
   if (data.savedResponses?.length) {
-    upsert('saved_responses', data.savedResponses, [...SAVED_RESPONSE_COLUMNS])
+    upsert('saved_responses', rebind(data.savedResponses), [...SAVED_RESPONSE_COLUMNS])
   }
 
   // Import client certificates (mTLS / SSL pinning configs).
   if (data.certificates?.length) {
-    upsert('certificates', data.certificates, [...CERTIFICATE_COLUMNS])
+    upsert('certificates', rebind(data.certificates), [...CERTIFICATE_COLUMNS])
   }
+
+  if (options.mode === 'replace') {
+    pruneRowsMissingFromFile(db, data, projectId, null)
+  } else if (options.base) {
+    pruneRowsMissingFromFile(db, data, projectId, options.base)
+  }
+
+  if (options.adoptProjectHeader) adoptProjectHeader(db, data, projectId)
+}
+
+/**
+ * Copy name / display_name / description from the file's `project` header
+ * onto the local project row. Identity fields (id, workspace, local_path,
+ * save_mode, icon) stay local. A file without a usable name changes nothing.
+ */
+function adoptProjectHeader(
+  db: ReturnType<typeof getDb>,
+  data: ProjectExport,
+  projectId: string,
+): void {
+  const header = data.project as
+    | { name?: unknown; display_name?: unknown; description?: unknown }
+    | undefined
+  const name = typeof header?.name === 'string' ? header.name.trim() : ''
+  if (!name) return
+  const displayName =
+    typeof header?.display_name === 'string' && header.display_name.trim()
+      ? header.display_name.trim()
+      : null
+  const description = typeof header?.description === 'string' ? header.description : null
+  const current = db
+    .prepare('SELECT name, display_name, description FROM projects WHERE id = ?')
+    .get(projectId) as
+    | { name: string; display_name: string | null; description: string | null }
+    | undefined
+  if (!current) return
+  if (
+    current.name === name &&
+    (current.display_name ?? null) === displayName &&
+    (current.description ?? null) === description
+  ) {
+    return
+  }
+  db.prepare(
+    'UPDATE projects SET name = ?, display_name = ?, description = ?, updated_at = ? WHERE id = ?',
+  ).run(name, displayName, description, Date.now(), projectId)
+}
+
+/**
+ * Drop project-scoped rows the file no longer lists. Runs AFTER the upserts
+ * (parents exist for the children that stay) and only for sections the file
+ * carries as arrays. Parent tables cascade to their children; the explicit
+ * child passes handle rows removed under a parent that survives.
+ *
+ * `base === null` → `replace`: everything local that is not in the file goes.
+ * `base` given → only rows that were in `base` AND are not in the file go
+ * (deleted on the remote); rows local-only to this machine are kept.
+ */
+function pruneRowsMissingFromFile(
+  db: ReturnType<typeof getDb>,
+  data: ProjectExport,
+  projectId: string,
+  base: ProjectExport | null,
+): void {
+  const ids = (rows: unknown): Set<string> | null =>
+    Array.isArray(rows)
+      ? new Set(
+          rows
+            .map((r) => (r as { id?: unknown }).id)
+            .filter((id): id is string => typeof id === 'string'),
+        )
+      : null
+  // The rows to KEEP among those the scope selects. In replace mode that is
+  // exactly the file; with a base it is the file plus anything the base did
+  // not know about (i.e. only base-minus-file is removed).
+  const keepSet = (section: keyof ProjectExport): Set<string> | null => {
+    const inFile = ids(data[section])
+    if (!inFile) return null
+    if (!base) return inFile
+    const inBase = ids(base[section])
+    if (!inBase) return null // the old file never carried this section — nothing to diff
+    return { has: (id: string) => inFile.has(id) || !inBase.has(id) } as Set<string>
+  }
+  const byProject = (table: string, section: keyof ProjectExport): void => {
+    const keep = keepSet(section)
+    if (keep) pruneRowsNotIn(db, table, 'project_id = ?', [projectId], keep)
+  }
+  const byParent = (
+    table: string,
+    parentColumn: string,
+    parentSql: string,
+    section: keyof ProjectExport,
+  ): void => {
+    const keep = keepSet(section)
+    if (keep) pruneRowsNotIn(db, table, `${parentColumn} IN (${parentSql})`, [projectId], keep)
+  }
+
+  const tx = db.transaction(() => {
+    // Children first (a parent that survives may have lost some of them),
+    // then the parents (cascade removes whatever hangs under a dropped one).
+    byParent(
+      'endpoint_cases',
+      'endpoint_id',
+      'SELECT id FROM endpoints WHERE project_id = ?',
+      'endpointCases',
+    )
+    byParent(
+      'environment_variables',
+      'environment_id',
+      'SELECT id FROM environments WHERE project_id = ?',
+      'environmentVariables',
+    )
+    byParent(
+      'test_suite_items',
+      'suite_id',
+      'SELECT id FROM test_suites WHERE project_id = ?',
+      'testSuiteItems',
+    )
+    byParent(
+      'test_suite_folders',
+      'suite_id',
+      'SELECT id FROM test_suites WHERE project_id = ?',
+      'testSuiteFolders',
+    )
+    byParent(
+      'mock_responses',
+      'endpoint_id',
+      'SELECT id FROM mock_endpoints WHERE server_id IN (SELECT id FROM mock_servers WHERE project_id = ?)',
+      'mockResponses',
+    )
+    byParent(
+      'mock_endpoints',
+      'server_id',
+      'SELECT id FROM mock_servers WHERE project_id = ?',
+      'mockEndpoints',
+    )
+
+    byProject('saved_responses', 'savedResponses')
+    byProject('endpoints', 'endpoints')
+    byProject('saved_requests', 'savedRequests')
+    byProject('folders', 'folders')
+    byProject('environments', 'environments')
+    byProject('global_variables', 'globalVariables')
+    byProject('test_suites', 'testSuites')
+    byProject('mock_servers', 'mockServers')
+    byProject('certificates', 'certificates')
+  })
+  tx()
 }
 
 // ─── Folder Export / Import ──────────────────────────────────────
@@ -809,7 +1076,7 @@ export function importFolderData(
     // ids (issue #125); rows whose owner did not come along are dropped.
     const insertSavedResponse = db.prepare(
       `INSERT INTO saved_responses (${SAVED_RESPONSE_COLUMNS.join(', ')})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (${SAVED_RESPONSE_COLUMNS.map(() => '?').join(', ')})`,
     )
     for (const r of data.savedResponses || []) {
       const ownerType = r.owner_type as string
@@ -833,6 +1100,7 @@ export function importFolderData(
         r.status_code ?? null,
         r.response_json,
         (r.created_at as number) || now,
+        (r.request_json as string | null) ?? null,
       )
     }
   })
@@ -1580,7 +1848,7 @@ export function importProjectAsNew(
     // saved-request ids; rows whose owner did not come along are dropped.
     const insertSavedResponse = db.prepare(
       `INSERT INTO saved_responses (${SAVED_RESPONSE_COLUMNS.join(', ')})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (${SAVED_RESPONSE_COLUMNS.map(() => '?').join(', ')})`,
     )
     for (const r of data.savedResponses || []) {
       const ownerType = r.owner_type as string
@@ -1606,6 +1874,7 @@ export function importProjectAsNew(
         r.status_code ?? null,
         r.response_json,
         (r.created_at as number) || now,
+        (r.request_json as string | null) ?? null,
       )
     }
   })
@@ -2401,29 +2670,36 @@ export function registerSaveHandlers(): void {
 
         const git = simpleGit(gitOpts).env(gitEnv)
 
-        let isEmpty = false
+        // Decide from `ls-remote --heads` BEFORE cloning — the same rule as
+        // ensureGitRepo. The old code treated ANY clone failure (wrong PAT,
+        // unreachable host, …) as "completely empty repo" and let the wizard
+        // continue as if the clone had worked (issue #130). Auth / network
+        // failures now surface here; only a remote with no heads is empty.
+        let heads: string
         try {
-          await git.clone(auth.cleanUrl, tmpDir, [
-            '--branch',
-            payload.branch,
-            '--single-branch',
-            '--depth',
-            '1',
-          ])
-        } catch {
-          // Branch not found — try cloning without branch (default branch)
+          heads = await git.listRemote(['--heads', auth.cleanUrl])
+        } catch (e) {
           rmSync(tmpDir, { recursive: true, force: true })
-          mkdirSync(tmpDir, { recursive: true })
+          if (isGitAuthError((e as Error).message)) throw e
+          throw new Error(unreachableRemoteError(redactToken((e as Error).message, payload.token)))
+        }
+        const branchSet = new Set(
+          heads
+            .split('\n')
+            .map((line) => line.split('\t')[1]?.trim())
+            .filter((ref): ref is string => !!ref && ref.startsWith('refs/heads/'))
+            .map((ref) => ref.slice('refs/heads/'.length)),
+        )
+        const isEmpty = branchSet.size === 0
+        if (!isEmpty) {
+          const cloneArgs = branchSet.has(payload.branch)
+            ? ['--branch', payload.branch, '--single-branch', '--depth', '1']
+            : ['--depth', '1']
           try {
-            await git.clone(auth.cleanUrl, tmpDir, ['--depth', '1'])
-          } catch {
-            // Completely empty repo — init locally and set remote
+            await git.clone(auth.cleanUrl, tmpDir, cloneArgs)
+          } catch (e) {
             rmSync(tmpDir, { recursive: true, force: true })
-            mkdirSync(tmpDir, { recursive: true })
-            const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
-            await gitRepo.init()
-            await gitRepo.addRemote('origin', auth.cleanUrl)
-            isEmpty = true
+            throw e
           }
         }
 

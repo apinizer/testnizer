@@ -17,6 +17,7 @@ import { useSseStore } from '../stores/sse.store'
 import { useSocketIOStore } from '../stores/socketio.store'
 import { useGrpcStore } from '../stores/grpc.store'
 import { useGraphQLStore } from '../stores/graphql.store'
+import { useWorkspaceStore } from '../stores/workspace.store'
 import { stripWsSecuritySecrets } from './key-material'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
@@ -404,6 +405,23 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
 }
 
 /**
+ * The APIs tree renders from the `treeData` snapshot in workspace.store and
+ * is rebuilt only by `refreshTree()`. The Save button next to Send always
+ * called it; the Ctrl+S path did not, so a GET→POST edit saved fine in the
+ * DB while the sidebar kept showing GET until the project was reloaded.
+ * Every in-place save that touches an APIs row goes through here now.
+ * Best-effort: a tree refresh failure must not turn a persisted save into
+ * a reported failure.
+ */
+async function refreshApisTree(): Promise<void> {
+  try {
+    await useWorkspaceStore.getState().refreshTree()
+  } catch {
+    /* the row is saved; the tree catches up on the next reload */
+  }
+}
+
+/**
  * Persist the active tab's edits in place when the tab already maps to a
  * backing row (saved_request or test_suite_item). Returns
  * `{ notApplicable: true }` when the caller should fall back to the
@@ -449,6 +467,9 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
           method: effectiveMethod,
           url: effectiveUrl,
         })
+        // Suite items are not in the APIs tree; the Tests sidebar reloads
+        // expanded suites on this signal (same one the Save button sends).
+        window.dispatchEvent(new CustomEvent('tests:suite-item-changed'))
         return { success: true }
       }
       return { success: false, error: result?.error || 'Update failed' }
@@ -483,6 +504,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
           method: effectiveMethod,
           url: effectiveUrl,
         })
+        await refreshApisTree()
         return { success: true }
       }
       return { success: false, error: result?.error || 'Update failed' }
@@ -521,6 +543,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
           method: effectiveMethod,
           url: effectiveUrl,
         })
+        await refreshApisTree()
         return { success: true }
       }
       return { success: false, error: result?.error || 'Update failed' }

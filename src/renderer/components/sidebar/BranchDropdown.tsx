@@ -41,8 +41,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
   const pullBranch = useBranchStore((s) => s.pullBranch)
   const deleteBranch = useBranchStore((s) => s.deleteBranch)
   const setGitLoading = useUIStore((s) => s.setGitLoading)
-  const refreshTree = useWorkspaceStore((s) => s.refreshTree)
-  const setActiveProject = useWorkspaceStore((s) => s.setActiveProject)
+  const syncAfterGit = useWorkspaceStore((s) => s.syncAfterGit)
 
   // Load branches when project changes
   useEffect(() => {
@@ -86,8 +85,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
       try {
         setGitLoading(`Switching to ${name}...`)
         await switchBranch(activeProjectId, name)
-        await refreshTree()
-        await setActiveProject(activeProjectId)
+        await syncAfterGit(activeProjectId)
       } catch {
         /* a failed auto-switch is recoverable; the branch exists */
       } finally {
@@ -109,8 +107,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     if (ok) {
       toast.success(t('toast.branchSwitched').replace('{name}', branchName))
       // Full refresh after branch switch
-      await refreshTree()
-      await setActiveProject(activeProjectId)
+      await syncAfterGit(activeProjectId)
     } else {
       toast.error(t('toast.branchSwitchFailed'))
     }
@@ -130,8 +127,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
           .replace('{source}', sourceBranch)
           .replace('{target}', currentBranch),
       )
-      await refreshTree()
-      await setActiveProject(activeProjectId)
+      await syncAfterGit(activeProjectId)
     } else if ('error' in result) {
       // Real failure — surface to user. Conflicts surface via the modal
       // (driven off branch.store.pendingConflict), not a toast.
@@ -164,8 +160,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     if (result.success) {
       toast.success(t('toast.pulled'))
       // Full app refresh
-      await refreshTree()
-      await setActiveProject(activeProjectId)
+      await syncAfterGit(activeProjectId)
     } else if ('error' in result) {
       toast.error(result.error || t('toast.pullFailed'))
     }

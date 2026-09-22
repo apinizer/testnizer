@@ -233,6 +233,9 @@ const api = {
   savedResponse: {
     list: (ownerType: string, ownerId: string): Promise<unknown> =>
       ipcRenderer.invoke('savedResponse:list', ownerType, ownerId),
+    listByProject: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('savedResponse:listByProject', projectId),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('savedResponse:get', id),
     create: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('savedResponse:create', payload),
     rename: (id: string, name: string): Promise<unknown> =>
@@ -702,6 +705,8 @@ const api = {
     check: (): Promise<unknown> => ipcRenderer.invoke('updater:check'),
     download: (): Promise<unknown> => ipcRenderer.invoke('updater:download'),
     install: (): Promise<unknown> => ipcRenderer.invoke('updater:install'),
+    setInstallOnQuit: (enabled: boolean): Promise<unknown> =>
+      ipcRenderer.invoke('updater:setInstallOnQuit', enabled),
     onEvent: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)

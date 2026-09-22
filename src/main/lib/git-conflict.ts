@@ -110,6 +110,11 @@ export async function runGitOpWithConflictHandling(
 ): Promise<{ ok: true } | { conflicts: ConflictEntry[] } | { error: string }> {
   try {
     await op()
+    // simple-git only fails a command when the exit code is non-zero AND
+    // stderr is non-empty; a merge that stopped on conflicts can therefore
+    // resolve "successfully". Trust the index, not the promise.
+    const conflicts = await collectConflictInfo(git).catch(() => null)
+    if (conflicts && conflicts.length > 0) return { conflicts }
     return { ok: true }
   } catch (err) {
     const conflicts = await collectConflictInfo(git).catch(() => null)

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useBranchStore, type ConflictEntry, type ConflictStats } from '../../stores/branch.store'
+import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTranslation } from '../../lib/i18n'
 import Modal from '../shared/Modal'
 
@@ -27,6 +28,7 @@ export default function MergeConflictModal() {
   const conflict = useBranchStore((s) => s.pendingConflict)
   const resolveConflict = useBranchStore((s) => s.resolveConflict)
   const abortConflict = useBranchStore((s) => s.abortConflict)
+  const syncAfterGit = useWorkspaceStore((s) => s.syncAfterGit)
   const [activeFileIdx, setActiveFileIdx] = useState(0)
   const [busy, setBusy] = useState<BusyState>(null)
   const [error, setError] = useState<string | null>(null)
@@ -39,7 +41,8 @@ export default function MergeConflictModal() {
   if (!current) return null
 
   async function pick(side: 'ours' | 'theirs'): Promise<void> {
-    if (!current) return
+    if (!current || !conflict) return
+    const projectId = conflict.projectId
     setBusy({ kind: 'resolving', side })
     setError(null)
     const r = await resolveConflict(
@@ -54,7 +57,14 @@ export default function MergeConflictModal() {
       setError(r.error || t('mergeConflict.resolveFailed'))
       return
     }
-    if (!r.complete) setActiveFileIdx(0)
+    if (!r.complete) {
+      setActiveFileIdx(0)
+      return
+    }
+    // Every file resolved: the merge is committed and the checkout was
+    // re-imported (possibly under a new project name). Nothing refreshed
+    // the tree here before — the modal just closed over a stale view.
+    await syncAfterGit(projectId)
   }
 
   async function abort(): Promise<void> {

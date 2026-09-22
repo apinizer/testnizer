@@ -51,9 +51,10 @@ class FakeStore {
 }
 vi.mock('electron-store', () => ({ default: FakeStore }))
 
+const importSpy = vi.hoisted(() => vi.fn())
 vi.mock('../../../src/main/ipc/save.handler', () => ({
   exportProjectData: vi.fn(() => ({ project: { name: 'Acme APIs' }, folders: [], endpoints: [] })),
-  importProjectDataFromJson: vi.fn(),
+  importProjectDataFromJson: importSpy,
 }))
 
 /** Scripted remote + recorded git calls. */
@@ -156,6 +157,36 @@ beforeEach(() => {
 
 const push = () =>
   harness.invoke('git:push', projectId) as Promise<{ success: boolean; error?: string }>
+const pull = () =>
+  harness.invoke('git:pull', projectId) as Promise<{
+    success: boolean
+    error?: string
+    data?: { pulled: boolean; imported: boolean; branch: string }
+  }>
+
+describe('git:pull reports whether a project file was actually imported', () => {
+  beforeEach(() => {
+    importSpy.mockClear()
+    remote.heads = 'abc\trefs/heads/main\n'
+  })
+
+  it('clone landed but the checkout holds no project .json → success with imported:false', async () => {
+    const res = await pull()
+    expect(res.success).toBe(true)
+    expect(res.data?.pulled).toBe(true)
+    expect(res.data?.imported).toBe(false)
+    expect(importSpy).not.toHaveBeenCalled()
+  })
+
+  it('project .json present → imported into THIS project id (machine B clone)', async () => {
+    writeFileSync(join(localPath, 'acme-apis.json'), JSON.stringify({ version: '1', project: {} }))
+    const res = await pull()
+    expect(res.success).toBe(true)
+    expect(res.data?.imported).toBe(true)
+    expect(importSpy).toHaveBeenCalledTimes(1)
+    expect(importSpy.mock.calls[0][1]).toBe(projectId)
+  })
+})
 
 describe('ensureGitRepo decides from `ls-remote`, never from a failed clone', () => {
   it('empty remote → init locally, HEAD on the configured branch, no clone attempt', async () => {
@@ -178,7 +209,7 @@ describe('ensureGitRepo decides from `ls-remote`, never from a failed clone', ()
     remote.heads = 'abc\trefs/heads/master\n'
     const res = await push()
     expect(res.success).toBe(true)
-    expect(remote.calls).toContain(`clone ${REPO}`)
+    expect(remote.calls).toContain(`clone ${REPO} --branch master`)
     expect(remote.calls).toContain('checkoutLocalBranch main')
     expect(remote.calls).not.toContain('init')
   })
@@ -207,6 +238,41 @@ describe('ensureGitRepo decides from `ls-remote`, never from a failed clone', ()
   })
 })
 
+describe('a NON-empty target folder (desktop.ini / .DS_Store) still lands the remote', () => {
+  it('remote has the configured branch → init + fetch + checkout, no clone', async () => {
+    writeFileSync(join(localPath, 'desktop.ini'), '[.ShellClassInfo]')
+    remote.heads = 'abc\trefs/heads/main\n'
+    const res = await pull()
+    expect(res.success).toBe(true)
+    expect(remote.calls).toContain('init')
+    expect(remote.calls).toContain('fetch origin main')
+    expect(remote.calls).toContain('checkout -b main origin/main')
+    expect(remote.calls.some((c) => c.startsWith('clone'))).toBe(false)
+  })
+
+  it('remote has history on `master` only → fetch master, START `main` on top (mirrors the clone path)', async () => {
+    writeFileSync(join(localPath, '.DS_Store'), '')
+    remote.heads = 'abc\trefs/heads/master\n'
+    const res = await pull()
+    expect(res.success).toBe(true)
+    expect(remote.calls).toContain('fetch origin master')
+    expect(remote.calls).toContain('checkout -b master origin/master')
+    expect(remote.calls).toContain('checkoutLocalBranch main')
+  })
+
+  it('genuinely empty remote → init only, nothing fetched', async () => {
+    writeFileSync(join(localPath, 'desktop.ini'), '')
+    remote.heads = ''
+    const res = await pull()
+    expect(res.success).toBe(true)
+    expect(remote.calls).toContain('init')
+    // No branch-specific fetch (there is no branch to fetch). The post-pull
+    // `fetch --all --prune` that keeps the other local branches current is
+    // fine — on an empty remote it is a no-op.
+    expect(remote.calls.some((c) => /^fetch origin /.test(c))).toBe(false)
+  })
+})
+
 describe('an existing checkout in local_path', () => {
   beforeEach(() => mkdirSync(join(localPath, '.git')))
 
@@ -232,16 +298,46 @@ describe('git:push stages only the project file', () => {
     mkdirSync(join(localPath, '.git'))
     remote.originUrl = REPO
     writeFileSync(join(localPath, 'my-notes.json'), '{"untracked":true}')
-    remote.trackedJson = 'Old-Name.json\nAcme-APIs.json\n'
+    // The previous name's export — recognised by OUR project id inside it.
+    writeFileSync(
+      join(localPath, 'Old-Name.json'),
+      JSON.stringify({ version: 'testnizer-project/2.0', project: { id: projectId } }),
+    )
+    // A tracked JSON that is not a project export (a teammate's notes)
+    // and a tracked export of ANOTHER project sharing the repository:
+    // neither is ours, neither may be retired.
+    writeFileSync(join(localPath, 'team-notes.json'), '{"who":"team"}')
+    writeFileSync(
+      join(localPath, 'Other-Project.json'),
+      JSON.stringify({ version: 'testnizer-project/2.0', project: { id: 'someone-else' } }),
+    )
+    remote.trackedJson = 'Old-Name.json\nAcme-APIs.json\nteam-notes.json\nOther-Project.json\n'
     const res = await push()
     expect(res.success).toBe(true)
     expect(remote.calls).toContain('add Acme-APIs.json')
     expect(remote.calls).not.toContain('add .')
     expect(remote.calls).toContain('rm Old-Name.json')
     expect(remote.calls).not.toContain('rm my-notes.json')
+    expect(remote.calls).not.toContain('rm team-notes.json')
+    expect(remote.calls).not.toContain('rm Other-Project.json')
     expect(remote.calls).not.toContain('rm Acme-APIs.json')
     expect(existsSync(join(localPath, 'my-notes.json'))).toBe(true)
     expect(existsSync(join(localPath, 'Acme-APIs.json'))).toBe(true)
+  })
+
+  it('a lone other project export (pulled under the old name on another machine) is retired even though its project id differs', async () => {
+    mkdirSync(join(localPath, '.git'))
+    remote.originUrl = REPO
+    writeFileSync(
+      join(localPath, 'Old-Name.json'),
+      JSON.stringify({ version: 'testnizer-project/2.0', project: { id: 'machine-a-id' } }),
+    )
+    writeFileSync(join(localPath, 'team-notes.json'), '{"who":"team"}')
+    remote.trackedJson = 'Old-Name.json\nteam-notes.json\n'
+    const res = await push()
+    expect(res.success).toBe(true)
+    expect(remote.calls).toContain('rm Old-Name.json')
+    expect(remote.calls).not.toContain('rm team-notes.json')
   })
 
   it('a non-fast-forward rejection becomes a "pull first" message', async () => {

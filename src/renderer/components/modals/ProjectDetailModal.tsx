@@ -89,7 +89,7 @@ const DEFAULT_SETTINGS: ProjectSettings = {
   proxy: { mode: 'system' },
   // Update
   autoCheckUpdates: true,
-  autoDownloadUpdates: false,
+  autoDownloadUpdates: true,
 }
 
 export default function ProjectDetailModal() {

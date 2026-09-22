@@ -470,6 +470,8 @@ export interface PmApi {
   _testResults: PmTestResult[]
   _envUpdates: Map<string, string>
   _globalUpdates: Map<string, string>
+  /** `pm.variables.set` writes — request-local, never persisted (see ScriptRunResult.varUpdates). */
+  _varUpdates: Map<string, string>
   /** Promises returned from async `pm.test()` callbacks. Callers should
    *  `await Promise.allSettled(pm._pendingTests)` before reading
    *  `_testResults` so async failures aren't silently lost. */
@@ -1020,6 +1022,7 @@ export function createPmApi(
     _testResults: testResults,
     _envUpdates: envUpdates,
     _globalUpdates: globalUpdates,
+    _varUpdates: localVars,
     _pendingTests: pendingTests,
     _pendingSends: pendingSends,
     get _skipRequest(): boolean {
@@ -1215,6 +1218,14 @@ export interface ScriptRunResult {
   consoleLogs: ConsoleLog[]
   envUpdates: Record<string, string>
   globalUpdates: Record<string, string>
+  /**
+   * `pm.variables.set` writes. Request-local like Postman: the Send path folds
+   * them into THIS send's `{{var}}` resolution (URL, params, headers, body) but
+   * never persists them. Before this channel existed a pre-request
+   * `pm.variables.set('employee_body', …)` resolved on Run (the Runner has its
+   * own `varUpdates`) but shipped as the literal `{{employee_body}}` on Send.
+   */
+  varUpdates: Record<string, string>
   /** Set by pm.execution.skipRequest() — callers should abort the actual HTTP
    * send when this is true (pre-request only). */
   skipRequest: boolean
@@ -1403,11 +1414,17 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
     globalUpdates[key] = val
   })
 
+  const varUpdates: Record<string, string> = {}
+  pmApi._varUpdates?.forEach((val, key) => {
+    varUpdates[key] = val
+  })
+
   return {
     results,
     consoleLogs,
     envUpdates,
     globalUpdates,
+    varUpdates,
     skipRequest: pmApi._skipRequest,
     requestHeaders: pmApi._requestHeaders.toArray(),
     scriptError,

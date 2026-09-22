@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { formatUpdaterError } from './lib/updater-error'
 
 interface UpdateInfo {
@@ -21,6 +21,28 @@ type AutoUpdaterModule = {
     on(event: string, listener: (...args: unknown[]) => void): void
     autoDownload: boolean
     autoInstallOnAppQuit: boolean
+  }
+}
+
+/**
+ * The download finished in the background: bring the app forward so the
+ * "install now / on quit / skip" prompt is seen, the way Cursor and Postman
+ * surface a ready update. The prompt itself is non-modal, so this never
+ * blocks whatever the user was doing.
+ */
+function bringToFront(): void {
+  const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+  if (!win) return
+  try {
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    if (process.platform === 'darwin') {
+      app.dock?.bounce('informational')
+      app.focus({ steal: true })
+    }
+  } catch {
+    /* focus is best effort */
   }
 }
 
@@ -55,8 +77,11 @@ export async function initAutoUpdater(): Promise<void> {
     return
   }
 
-  // Do not auto-download; let the user decide
+  // The renderer drives the download (background by default, see
+  // use-auto-updater.ts); main never downloads on its own.
   autoUpdater.autoDownload = false
+  // A downloaded update installs when the app quits unless the user chose
+  // "Skip this version" — `updater:setInstallOnQuit` flips this.
   autoUpdater.autoInstallOnAppQuit = true
 
   // ─── Forward events to renderer ─────────────────────────────
@@ -105,6 +130,7 @@ export async function initAutoUpdater(): Promise<void> {
       console.warn('[updater] update-downloaded fired without downloadedFile')
     }
     sendToAllWindows('updater:event', { type: 'downloaded' })
+    bringToFront()
   })
 
   autoUpdater.on('error', (err: unknown) => {
@@ -129,6 +155,18 @@ export async function initAutoUpdater(): Promise<void> {
     try {
       await autoUpdater.downloadUpdate()
       return { success: true, data: null }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // "Install on quit" (true) vs "Skip this version" (false). Without this a
+  // skipped update that had already been downloaded still installed itself
+  // on the next quit — electron-updater does not know the user declined.
+  ipcMain.handle('updater:setInstallOnQuit', async (_event, enabled: unknown) => {
+    try {
+      autoUpdater.autoInstallOnAppQuit = enabled === true
+      return { success: true, data: autoUpdater.autoInstallOnAppQuit }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -192,6 +230,10 @@ function registerStubHandlers(): void {
     error: 'Auto-updater not configured',
   }))
   ipcMain.handle('updater:install', async () => ({
+    success: false,
+    error: 'Auto-updater not configured',
+  }))
+  ipcMain.handle('updater:setInstallOnQuit', async () => ({
     success: false,
     error: 'Auto-updater not configured',
   }))

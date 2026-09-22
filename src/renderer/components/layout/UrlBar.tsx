@@ -3,7 +3,7 @@ import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useUIStore } from '../../stores/ui.store'
 import { useTabsStore } from '../../stores/tabs.store'
-import { useWorkspaceStore } from '../../stores/workspace.store'
+import { saveActiveRequestInPlace } from '../../lib/save-active-request'
 import { useTranslation } from '../../lib/i18n'
 import MethodBadge from '../shared/MethodBadge'
 import VariableAutocompleteInput from '../shared/VariableAutocompleteInput'
@@ -15,13 +15,6 @@ const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 
 export default function UrlBar() {
   const method = useRequestStore((s) => s.method)
   const url = useRequestStore((s) => s.url)
-  const params = useRequestStore((s) => s.params)
-  const headers = useRequestStore((s) => s.headers)
-  const body = useRequestStore((s) => s.body)
-  const auth = useRequestStore((s) => s.auth)
-  const preScript = useRequestStore((s) => s.preScript)
-  const postScript = useRequestStore((s) => s.postScript)
-  const assertions = useRequestStore((s) => s.assertions)
   const setMethod = useRequestStore((s) => s.setMethod)
   const setUrl = useRequestStore((s) => s.setUrl)
   const sendRequest = useRequestStore((s) => s.sendRequest)
@@ -30,7 +23,6 @@ export default function UrlBar() {
   const setShowEndpointSaveModal = useUIStore((s) => s.setShowEndpointSaveModal)
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const pinTab = useTabsStore((s) => s.pinTab)
-  const refreshTree = useWorkspaceStore((s) => s.refreshTree)
   const { t } = useTranslation()
 
   /** Pin preview tab when user starts editing */
@@ -400,71 +392,16 @@ export default function UrlBar() {
             setShowEndpointSaveModal(true)
             return
           }
-          // Already saved — update in place
+          // Already saved — update in place. Same helper as Ctrl+S and
+          // "Save & Close": one snapshot (protocol metadata included), one
+          // tree refresh. The two paths used to be separate copies and
+          // drifted — the shortcut skipped the tree refresh, this button
+          // skipped SOAP/WS/gRPC metadata.
           setSaveLoading(true)
           setSaveError(null)
           try {
-            if (activeTab.testSuiteItemId) {
-              // Suite items live in their own table; the in-memory request
-              // shape is serialised back into the snapshot's request_schema
-              // and assertions columns so the next open round-trips cleanly.
-              // The tab's current name doubles as the item's display name —
-              // without persisting it, a tab rename never reaches the DB.
-              const r = (await window.api?.testSuiteItem?.update(activeTab.testSuiteItemId, {
-                name: activeTab.name,
-                method,
-                url,
-                request_schema: JSON.stringify({
-                  url,
-                  method,
-                  params,
-                  headers,
-                  body,
-                  auth,
-                  preScript,
-                  postScript,
-                }),
-                assertions: JSON.stringify(assertions),
-              })) as { success: boolean; error?: string }
-              if (r && r.success === false) throw new Error(r.error || 'Save failed')
-              // Tell the Tests sidebar to reload expanded suite contents so
-              // the row label catches up immediately.
-              window.dispatchEvent(new CustomEvent('tests:suite-item-changed'))
-            } else if (activeTab.savedRequestId) {
-              const r = (await window.api?.savedRequest?.update(activeTab.savedRequestId, {
-                method,
-                url,
-                params: JSON.stringify(params),
-                headers: JSON.stringify(headers),
-                body: JSON.stringify(body),
-                auth: JSON.stringify(auth),
-                pre_script: preScript,
-                post_script: postScript,
-                assertions: JSON.stringify(assertions),
-              })) as { success: boolean; error?: string }
-              if (r && r.success === false) throw new Error(r.error || 'Save failed')
-            } else if (activeTab.endpointId) {
-              const r = (await window.api?.endpoint?.update(activeTab.endpointId, {
-                method,
-                path: url,
-                request_schema: JSON.stringify({
-                  url,
-                  method,
-                  params,
-                  headers,
-                  body,
-                  auth,
-                  preScript,
-                  postScript,
-                  assertions,
-                }),
-              })) as { success: boolean; error?: string }
-              if (r && r.success === false) throw new Error(r.error || 'Save failed')
-            }
-            // Update tab
-            useTabsStore.getState().updateTab(activeTab.id, { method, url })
-            useTabsStore.getState().markDirty(activeTab.id, false)
-            await refreshTree()
+            const result = await saveActiveRequestInPlace()
+            if (!result.success) throw new Error(result.error || 'Save failed')
             setSaveOk(true)
             setTimeout(() => setSaveOk(false), 1500)
           } catch (e) {

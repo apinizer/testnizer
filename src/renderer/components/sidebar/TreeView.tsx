@@ -24,6 +24,8 @@ import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
 import { openFolderRunner } from '../../lib/open-runner-tab'
 import { openEndpointTab, focusOpenTabFor } from '../../lib/open-endpoint-tab'
+import { openExampleTab } from '../../lib/open-example-tab'
+import { useSavedResponseStore } from '../../stores/saved-response.store'
 import { restoreProtocolFromMetadata } from '../../lib/save-active-request'
 
 // Re-alias for flattenTree signature
@@ -103,6 +105,18 @@ function filterTree(nodes: TreeNode[], q: string): TreeNode[] {
     }
   }
   return out
+}
+
+/** Label of the node with `id`, searching the whole tree (owner name for example tabs). */
+function findNodeLabel(nodes: TreeNode[], id: string): string | undefined {
+  for (const node of nodes) {
+    if (node.id === id) return node.label
+    if (node.children) {
+      const found = findNodeLabel(node.children, id)
+      if (found !== undefined) return found
+    }
+  }
+  return undefined
 }
 
 /** Row id of the not-yet-created folder placeholder (issue #68). */
@@ -315,6 +329,17 @@ export default function TreeView() {
   const handleSelect = useCallback(
     async (node: TreeNode) => {
       setActiveNode(node.id)
+
+      // Saved example → its own read-only tab; the live request editor is
+      // untouched (issue #125 follow-up).
+      if (node.type === 'example') {
+        const ownerLabel = node.ownerId ? findNodeLabel(treeData, node.ownerId) : undefined
+        openExampleTab(
+          { id: node.id, name: node.label, method: node.method ?? null, url: node.path ?? null },
+          ownerLabel,
+        )
+        return
+      }
 
       // Only open tab for endpoints and saved requests
       if (node.type !== 'endpoint' && node.type !== 'request') return
@@ -535,6 +560,7 @@ export default function TreeView() {
     },
     [
       setActiveNode,
+      treeData,
       loadFromEndpoint,
       openPreviewTab,
       switchToTab,
@@ -563,7 +589,11 @@ export default function TreeView() {
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return
     try {
-      if (deleteTarget.type === 'request') {
+      if (deleteTarget.type === 'example') {
+        // The store closes an open example tab and refreshes the tree itself,
+        // and keeps the response pane's Saved tab in sync.
+        await useSavedResponseStore.getState().remove(deleteTarget.id)
+      } else if (deleteTarget.type === 'request') {
         await window.api?.savedRequest?.delete(deleteTarget.id)
       } else if (deleteTarget.type === 'endpoint') {
         await window.api?.endpoint?.delete(deleteTarget.id)
@@ -596,6 +626,11 @@ export default function TreeView() {
           return
         }
         await refreshTree()
+        return
+      }
+      if (node.type === 'example') {
+        const ok = await useSavedResponseStore.getState().rename(node.id, newName)
+        if (!ok) toast.error(t('toast.saveFailed'))
         return
       }
       try {

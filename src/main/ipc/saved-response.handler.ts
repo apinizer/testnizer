@@ -15,6 +15,25 @@ export function registerSavedResponseHandlers(): void {
     },
   )
 
+  // Tree binding: one call per project, blobs excluded (see repo).
+  ipcMain.handle('savedResponse:listByProject', async (_event, projectId: string) => {
+    try {
+      return { success: true, data: repo.listSavedResponsesByProject(projectId) }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('savedResponse:get', async (_event, id: string) => {
+    try {
+      const row = repo.getSavedResponse(id)
+      if (!row) return { success: false, error: 'This saved example no longer exists.' }
+      return { success: true, data: row }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
   ipcMain.handle(
     'savedResponse:create',
     async (
@@ -29,6 +48,7 @@ export function registerSavedResponseHandlers(): void {
         url?: string | null
         status_code?: number | null
         response_json: string
+        request_json?: string | null
       },
     ) => {
       try {

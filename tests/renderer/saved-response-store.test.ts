@@ -25,7 +25,10 @@ import {
 } from '../../src/renderer/stores/saved-response.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useResponseStore } from '../../src/renderer/stores/response.store'
-import type { ApiResponse, Tab } from '../../src/renderer/types'
+import { useRequestStore } from '../../src/renderer/stores/request.store'
+import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
+import { buildRequestSnapshot } from '../../src/renderer/stores/saved-response.store'
+import type { ApiResponse, SavedRequestSnapshot, Tab } from '../../src/renderer/types'
 
 const response: ApiResponse = {
   requestId: 'r1',
@@ -59,6 +62,10 @@ beforeEach(() => {
   })
   useResponseStore.getState().setResponse(response, 'tab-a')
   useSavedResponseStore.setState({ ownerKey: null, items: [], loading: false })
+  useWorkspaceStore.setState({
+    refreshTree: vi.fn().mockResolvedValue(undefined),
+    openNodeIds: new Set<string>(),
+  })
 })
 
 describe('savedResponseOwnerForTab', () => {
@@ -144,7 +151,7 @@ describe('saveCurrent', () => {
 })
 
 describe('load / open / remove', () => {
-  it('loads the owner list and opens an item into the ACTIVE tab response slice', async () => {
+  it('opens an item in its OWN example tab and leaves the live tab response alone', async () => {
     api.list.mockResolvedValue({
       success: true,
       data: [
@@ -173,17 +180,25 @@ describe('load / open / remove', () => {
     expect(items).toHaveLength(1)
 
     useSavedResponseStore.getState().open(items[0])
-    const shown = useResponseStore.getState().response
-    expect(shown?.status).toBe(404)
-    expect(shown?.body).toBe('{"error":"nope"}')
-    expect(shown?.requestId).toBe('saved-x1')
-    // Written into tab-a's slice, not a detached one.
-    useTabsStore.setState({ activeTabId: 'tab-scratch' })
+    const tabs = useTabsStore.getState()
+    const exampleTab = tabs.tabs.find((tb) => tb.savedResponseId === 'x1')
+    expect(exampleTab).toBeDefined()
+    expect(exampleTab?.protocol).toBe('example')
+    expect(exampleTab?.name).toBe('Users · sample')
+    expect(tabs.activeTabId).toBe(exampleTab?.id)
+    // The owner tab's live response (201) is untouched — the example never
+    // overwrites the editor it was saved from.
     useTabsStore.setState({ activeTabId: 'tab-a' })
-    expect(useResponseStore.getState().response?.status).toBe(404)
+    expect(useResponseStore.getState().response?.status).toBe(201)
+    // Reopening focuses the same tab instead of minting a second one.
+    useSavedResponseStore.getState().open(items[0])
+    expect(useTabsStore.getState().tabs.filter((tb) => tb.savedResponseId === 'x1')).toHaveLength(1)
 
+    // Delete closes that tab and refreshes the tree.
     expect(await useSavedResponseStore.getState().remove('x1')).toBe(true)
     expect(useSavedResponseStore.getState().items).toEqual([])
+    expect(useTabsStore.getState().tabs.some((tb) => tb.savedResponseId === 'x1')).toBe(false)
+    expect(useWorkspaceStore.getState().refreshTree).toHaveBeenCalled()
   })
 
   it('clears the previous owner list immediately when a new owner loads (no stale flash)', async () => {
@@ -219,5 +234,80 @@ describe('load / open / remove', () => {
     await pA
     expect(useSavedResponseStore.getState().ownerKey).toBe('endpoint:B')
     expect(useSavedResponseStore.getState().items).toEqual([])
+  })
+})
+
+describe('request snapshot (examples carry what was sent)', () => {
+  it('buildRequestSnapshot keeps the template in `configured` and the wire form in `sent`', () => {
+    const snap = buildRequestSnapshot(
+      {
+        method: 'POST',
+        url: '{{baseUrl}}/employee',
+        params: [],
+        headers: [{ id: 'h', key: 'Authorization', value: 'Bearer {{token}}', enabled: true }],
+        body: { type: 'json', content: '{{employee_body}}' },
+        auth: { type: 'bearer', bearer: { token: 'secret' } } as never,
+      },
+      {
+        actualRequest: {
+          method: 'POST',
+          url: 'https://api.test/employee',
+          headers: { Authorization: 'Bearer real' },
+          body: '{"name":"Ada"}',
+        },
+      },
+    )
+    expect(snap.configured.url).toBe('{{baseUrl}}/employee')
+    expect(snap.configured.body.content).toBe('{{employee_body}}')
+    expect(snap.configured.authType).toBe('bearer')
+    // The credential itself never enters the snapshot.
+    expect(JSON.stringify(snap.configured)).not.toContain('secret')
+    expect(snap.sent?.url).toBe('https://api.test/employee')
+    expect(snap.sent?.body).toBe('{"name":"Ada"}')
+  })
+
+  it('saveCurrent persists request_json and expands + refreshes the owner in the tree', async () => {
+    api.create.mockResolvedValue({
+      success: true,
+      data: {
+        id: 'n1',
+        name: '201 Created',
+        response_json: '{}',
+        request_json: '{}',
+        created_at: 1,
+      },
+    })
+    useRequestStore.setState({
+      ...useRequestStore.getState(),
+      url: '{{baseUrl}}/users',
+      method: 'POST',
+      body: { type: 'json', content: '{{employee_body}}' },
+    })
+    const result = await useSavedResponseStore.getState().saveCurrent('201 Created')
+    expect(result.ok).toBe(true)
+    const payload = api.create.mock.calls[0][0] as { request_json: string }
+    const snap = JSON.parse(payload.request_json) as SavedRequestSnapshot
+    expect(snap.configured.url).toBe('{{baseUrl}}/users')
+    expect(snap.configured.body.content).toBe('{{employee_body}}')
+    expect(snap.sent?.url).toBe('https://api.test/users')
+    // Tree: owner row expanded so the new child is visible, then rebuilt.
+    expect(useWorkspaceStore.getState().openNodeIds.has('sr-1')).toBe(true)
+    expect(useWorkspaceStore.getState().refreshTree).toHaveBeenCalledTimes(1)
+  })
+
+  it('rename syncs the open example tab title and refreshes the tree', async () => {
+    useSavedResponseStore.setState({
+      ownerKey: 'saved_request:sr-1',
+      items: [{ id: 'x9', name: 'old' } as never],
+    })
+    useTabsStore.getState().openTab({
+      id: 'example-x9',
+      name: 'Users · old',
+      protocol: 'example',
+      savedResponseId: 'x9',
+    })
+    expect(await useSavedResponseStore.getState().rename('x9', 'new name')).toBe(true)
+    expect(useTabsStore.getState().tabs.find((tb) => tb.id === 'example-x9')?.name).toBe('new name')
+    expect(useWorkspaceStore.getState().refreshTree).toHaveBeenCalledTimes(1)
   })
 })

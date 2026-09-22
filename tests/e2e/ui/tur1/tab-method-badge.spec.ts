@@ -12,6 +12,8 @@ import {
   openHttpRequestTab,
 } from '../../helpers/ui/bootstrap'
 import { fillUrl, saveRequestToTree, setHttpMethod } from '../../helpers/ui/request-flow'
+import { pressModShortcut } from '../../helpers/ui/keyboard'
+import { treeClearSearch, treeSearch } from '../../helpers/ui/tree'
 import { localHttpBin } from '../../helpers/test-servers'
 
 const activeTab = (page: import('@playwright/test').Page) =>
@@ -45,7 +47,38 @@ uiTest.describe('Tur1 — tab method badge [issue #122]', () => {
 
     // Save keeps the live method on the badge.
     await tabs.first().click()
-    await saveRequestToTree(window, `badge-${Date.now()}`)
+    const name = `badge-${Date.now()}`
+    await saveRequestToTree(window, name)
     await expect(activeTab(window)).toContainText('POST')
+  })
+
+  uiTest('Cmd/Ctrl+S on a saved request updates the TREE method badge', async ({ window }) => {
+    // User report: change GET→POST on a collection request, press Ctrl+S, the
+    // URL bar shows POST but the APIs tree still shows GET. The Save button
+    // next to Send refreshed the tree; the shortcut did not.
+    await dismissOverlays(window)
+    await ensureCanonicalProject(window)
+    await closeAllTabs(window)
+    await navigateSidebar(window, 'apis')
+
+    const name = `ctrls-${Date.now()}`
+    await openHttpRequestTab(window)
+    await fillUrl(window, `${localHttpBin()}/get`)
+    await saveRequestToTree(window, name)
+    try {
+      await treeSearch(window, name)
+      const node = window.getByTestId('tree-node').filter({ hasText: name }).first()
+      await expect(node).toContainText('GET')
+
+      await setHttpMethod(window, 'PUT')
+      await expect(activeTab(window)).toHaveAttribute('data-dirty', 'true')
+      await pressModShortcut(window, 's')
+      await expect(activeTab(window)).toHaveAttribute('data-dirty', 'false', { timeout: 10_000 })
+      await expect(window.getByTestId('endpoint-save-modal')).toHaveCount(0)
+      await expect(node).toContainText('PUT', { timeout: 10_000 })
+      await expect(activeTab(window)).toContainText('PUT')
+    } finally {
+      await treeClearSearch(window)
+    }
   })
 })

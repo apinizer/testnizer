@@ -11,6 +11,104 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.5.4
+
+**İki makinede ayakta kalan Git senkronu, gerçekten yere inen bir Clone from
+Git ve arka planda inip yalnızca hazır olunca soran güncellemeler.**
+
+- **Makineler arası Git senkronu:** RC test turu akışın tamamını iki
+  bilgisayarda sürdü — branch, merge, push, pull — ve sonucun birleşmediğini
+  gördü. Pull yalnızca aktif branch'i çekiyordu; siz bir feature branch'inde
+  otururken bir takım arkadaşının `main`'e gönderdiği merge yerel `main`'inize
+  hiç ulaşmıyordu. Üstelik `git merge` sonrasında veritabanı hâlâ merge
+  öncesi durumu tutuyor, bir sonraki Push bunu birleşmiş dosyanın *üstüne*
+  export edip gönderiyordu — doğru sırayla yapılsa bile merge uzak depodan
+  siliniyordu. Pull artık projeyi eşitliyor (her yerel branch uzak
+  karşılığına fast-forward oluyor), bir takım arkadaşının ilerlettiği branch'e
+  geçmek onu fast-forward ediyor, switch / merge önce veritabanını checkout'a
+  yazıp sonra sonucu geri okuyor. Proje dosyası bir belge değil satırlar
+  kümesidir; bu yüzden her biri bir istek ekleyen iki branch artık tek çözümü
+  bir tarafı çöpe atmak olan metin düzeyinde bir çakışmayla bitmiyor: çakışan
+  proje dosyaları **satır düzeyinde** birleştiriliyor (eklemeler korunur, tek
+  taraflı değişiklik alınır, iki taraflı değişiklikte yeni düzenleme kazanır,
+  değişiklik bayat silmeyi yener); yalnızca birleştiricinin okuyamadığı dosya
+  hâlâ mine / theirs diyaloğuna düşüyor. Silmeler nihayet yayılıyor — bir
+  makinede silinen istek diğerinin Pull'unda geri gelmiyor, Push'u onu
+  diriltmiyor. Proje adı değişikliği depoyla taşınıyor; artık iki makine aynı
+  dosyaya yazıyor (eskiden her biri kendi `<ad>.json`'ını yazıp yalnız onu
+  okuyordu). **Clone from Git** ikinci makinede uzak depodaki satırları yanlış
+  proje kimliğinin altına indiriyor, aynı makinede ise hiçbir ekranda
+  görünmeyen *iç* proje adını — "My Project" — basan bir mesajla reddediyordu.
+  Satırlar içe alan projeye bağlanıyor; "bir depo, bir yerel proje" kuralı
+  proje yaratılmadan *önce* kontrol ediliyor ve projeyi Hub'daki adıyla
+  anıyor. Yanlış bir PAT artık arkasında bozuk, boş bir depo bırakmıyor;
+  token hiçbir zaman URL'ye ya da `.git/config`'e girmiyor; Push "Invalid
+  username or token" yerine net bir mesajla başarısız oluyor.
+
+- **Gerçek bir uzak depoda bulunan Git uç durumları:** boş bir depoya ilk
+  Push, proje `main` derken `master` ile açılmış bir depo, kimse push
+  yapmadan önce Pull, varsayılan branch'i artık olmayan bir depo ve yalnızca
+  `desktop.ini` içeren bir checkout klasörü — hepsi temiz bir clone ile aynı
+  duruma varıyor. Push klasördeki diğer *bütün* izlenen `.json` dosyalarını
+  emekliye ayırıyordu — depoyu paylaşan ikinci bir proje, ekibin `notes.json`'ı
+  — artık yalnızca bu projenin kendi eski dosyasını kaldırıyor. Projeyi yeniden
+  adlandırmak Push'un hiçbir şey commit'lemeden başarı bildirmesine yol
+  açıyordu; artık commit'liyor.
+
+- **Güncellemeler arka planda iniyor:** güncelleme penceresi, daha hiçbir şey
+  inmeden, yeni bir sürüm yalnızca *mevcut* olur olmaz açılıyordu ve arka
+  plan indirmesi kapalıydı — her kontrol sizi bölüyor, üstelik yine bir tık
+  gerektiriyordu. Güncellemeler artık sessizce iniyor; biri hazır olduğunda
+  Testnizer öne geliyor ve köşedeki küçük bir kart soruyor: **Yeniden başlat
+  ve yükle**, **Çıkışta yükle** ya da **Bu sürümü atla**. Hiçbiri kalıcı
+  pencere değil; kartı kapatmak "çıkışta" demek. Atlanan bir sürüm arka
+  planda ne yeniden indiriliyor ne öneriliyor (Ayarlar → Güncellemeleri
+  Kontrol Et ile yine yüklenebilir) ve — asıl önemlisi — bir sonraki çıkışta
+  sizden habersiz kurulmuyor. Başarısız bir kurulum sessiz kalmak yerine hata
+  ve elle indirme bağlantısıyla pencereyi açıyor.
+
+- **Kaydedilen yanıtlar örneğe dönüşüyor:** "Save response" artık yanıtı
+  üreten isteği de saklıyor — hem `{{değişken}}`leri korunmuş editör şablonu
+  hem de tele giden çözümlenmiş istek, kimlik başlıkları maskeli — ve örneği
+  APIs ağacında isteğin altında listeliyor. Örnek kendi salt-okunur sekmesinde
+  açılıyor (Gönderilen / Orijinal geçişi, altında kaydedilen yanıt); yeniden
+  adlandırma ve silme ağaçtan da Saved sekmesinden de çalışıyor; örnekler
+  export, import ve Git ile taşınıyor.
+
+- **Düzenleme ve kaydetme:** Cmd/Ctrl+S APIs ağacını yeniliyor; metot
+  değişikliği isteğin rozetinde hiçbir şeyi yeniden açmadan görünüyor.
+  Send'in yanındaki Save düğmesi aynı yoldan geçiyor ve Ctrl+S'nin zaten
+  yaptığı gibi SOAP, WebSocket, gRPC ve GraphQL üstverisini koruyor. Elle
+  yazılmış bir SOAP isteği Save sonrasında boş URL, operasyon ve gövdeyle
+  açılmıyor (Send zaten kayıtlı değerleri kullanıyordu) ve Runner elle SOAP'ı
+  doğru `Content-Type` / `SOAPAction` ile gönderiyor. Proje kökü ağaçtan
+  yeniden adlandırılabiliyor. APIs panelinin arama kutusu ve klasör durumu
+  proje sekmeleri arasında paylaşılmıyor. Ön-istek script'indeki
+  `pm.variables.set` artık Send'de de Run'daki gibi çözülüyor.
+
+- **AI Chat:** kullanıcı tanımlı HTTP başlıkları destekleniyor ve
+  doğrulanıyor (geçersiz olanın adı söyleniyor, değeri asla gösterilmiyor);
+  Send düğmesi API anahtarı kullanmayan sağlayıcılar için anahtar dayatmıyor.
+
+**Testler:** süit 320 dosyada 3867 teste ulaştı. Git işi, **gerçek bir bare
+depo ve gerçek git** üzerinde, "makine" başına bir bellek-içi veritabanıyla ve
+hiç mock olmadan koşan iki süitle kapsanıyor — raporlayanın dokuz adımlık
+iki-cihaz akışı birebir, diğer merge sırası, Pull'suz branch değiştirme, silme
+yayılımı, push edilmemiş satırların Pull'da hayatta kalması, reddedilen push →
+Pull → Push, temiz makinede clone, aynı makinede ret, boş ve yalnız-`master`
+depolar, branch oluşturma / silme / yalnız-uzak branch'ler, satır
+birleştiricinin reddettiği çakışma (ours, theirs, abort), ad değişikliğinin
+yayılması, sihirbazın inceleme adımı ve Save penceresinin checkout ile depo
+paylaşan push / pull'u. Satır birleştiricinin kendi birim süiti var. Arka plan
+güncelleme akışı store'da, ana süreçteki çıkışta-yükle anahtarında ve derlenmiş
+uygulamaya güncelleme olaylarını enjekte edip pencere değil kartın — ve yalnız
+indirme bitince — göründüğünü doğrulayan bir e2e spec'iyle kapsanıyor.
+
+**Ertelenenler:** ana süreçteki git hata metinleri arayüz dilinden bağımsız
+Türkçe (ana süreçte i18n yok); Save penceresinin kendi Pull'u hâlâ ekleyici
+içe aktarıyor; çıkış anında kurulum yalnız birim testlerle sınanıyor, testlerde
+güncelleme sunucusu yok.
+
 ## v1.5.3
 
 **Parola sıfırlama artık Linux'ta da etki alanı hesaplarıyla çalışıyor — ve

@@ -12,6 +12,7 @@ import UrlBar from './UrlBar'
 import UrlPreview from './UrlPreview'
 import RequestEditor from '../request/RequestEditor'
 import ResponsePane from '../response/ResponsePane'
+import ExampleView from '../response/ExampleView'
 import SoapEditor from '../protocols/SoapEditor'
 import WebSocketEditor from '../protocols/WebSocketEditor'
 import GraphQLEditor from '../protocols/GraphQLEditor'
@@ -687,6 +688,22 @@ export function EndpointTabBar() {
                 <path d="M10 3v6.5L5.5 19a2 2 0 0 0 1.7 3h9.6a2 2 0 0 0 1.7-3L14 9.5V3" />
               </svg>
             )}
+            {tab.protocol === 'example' && (
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ flexShrink: 0 }}
+                aria-label="Saved example"
+              >
+                <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+              </svg>
+            )}
             {tab.method && (tab.protocol === 'http' || tab.protocol === 'soap') && (
               <MethodBadge method={tab.method} small />
             )}
@@ -1209,6 +1226,24 @@ export default function Workbench() {
         >
           <EndpointTabBar />
           <SocketIOEditor key={activeTab.id} />
+        </div>
+      )
+    }
+
+    if (protocol === 'example') {
+      // Read-only saved example (issue #125 follow-up) — its own tab so the
+      // owner request's live editor keeps its {{var}} template.
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <ExampleView
+            key={activeTab.id}
+            tabId={activeTab.id}
+            savedResponseId={activeTab.savedResponseId ?? ''}
+          />
         </div>
       )
     }
