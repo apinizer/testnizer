@@ -6,7 +6,7 @@ import { exportProjectData, importProjectDataFromJson, type ProjectExport } from
 import { asConflictAwareGit, runGitOpWithConflictHandling } from '../lib/git-conflict'
 import type { SimpleGit, BranchSummaryBranch } from 'simple-git'
 import { projectFileSlug, pickProjectFile } from '../lib/project-file'
-import { mergeProjectFiles } from '../lib/project-merge'
+import { canonical, mergeProjectFiles } from '../lib/project-merge'
 import {
   getProjectGitConfig,
   gitAuth,
@@ -287,7 +287,7 @@ function isEmptyExport(data: Record<string, unknown>): boolean {
   })
 }
 
-/** Same project content, ignoring the export timestamp. */
+/** Same project content, ignoring the export timestamp and row order. */
 function sameExport(a: string, b: Record<string, unknown>): boolean {
   // Ignores the export timestamp and the per-machine parts of the `project`
   // header (id, workspace, local_path, save_mode…): on machine B the file
@@ -297,6 +297,16 @@ function sameExport(a: string, b: Record<string, unknown>): boolean {
   // Rows are compared without `project_id` / `workspace_id` for the same
   // reason: the importer rebinds them to the local project, so machine B's
   // export of an unchanged collection differs from A's file in every row.
+  // Row ORDER is not content either (issue #135). `exportProjectData` lists
+  // rows in the local DB's insertion order; a re-import on B inserts the
+  // teammate's new rows after B's own, while the merged file lists them in
+  // merge order. Compared positionally, B's next switch committed a
+  // reorder-only "Auto-save" on the branch it left — local `main` diverged
+  // from `origin/main`, neither Pull's fast-forward of the other branches
+  // nor the switch's `--ff-only` could move it any more, and after the
+  // teammate's next merge B switched to a stale `main`. A collection is a set
+  // of rows (see `project-merge.ts`): each section compares as a sorted set
+  // of key-order-insensitive rows. A `sort_order` edit is still a change.
   const normalise = (doc: Record<string, unknown>): string => {
     const header = (doc.project ?? {}) as Record<string, unknown>
     const out: Record<string, unknown> = {
@@ -310,14 +320,16 @@ function sameExport(a: string, b: Record<string, unknown>): boolean {
     }
     for (const [k, v] of Object.entries(out)) {
       if (Array.isArray(v)) {
-        out[k] = v.map((row) => {
-          if (!row || typeof row !== 'object') return row
-          const { project_id: _p, workspace_id: _w, ...rest } = row as Record<string, unknown>
-          return rest
-        })
+        out[k] = v
+          .map((row) => {
+            if (!row || typeof row !== 'object') return canonical(row)
+            const { project_id: _p, workspace_id: _w, ...rest } = row as Record<string, unknown>
+            return canonical(rest)
+          })
+          .sort()
       }
     }
-    return JSON.stringify(out)
+    return canonical(out)
   }
   try {
     return normalise(JSON.parse(a) as Record<string, unknown>) === normalise(b)

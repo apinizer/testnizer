@@ -57,8 +57,8 @@ function byId(rows: Row[]): Map<string, Row> {
   return m
 }
 
-/** Key-order-insensitive structural equality. */
-function canonical(v: unknown): string {
+/** Key-order-insensitive structural serialisation (equal values → equal strings). */
+export function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`
   if (v && typeof v === 'object') {
     const o = v as Record<string, unknown>
