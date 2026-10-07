@@ -906,6 +906,45 @@ const api = {
       args: unknown,
       ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
     ): Promise<unknown> => ipcRenderer.invoke('mcp:callTool', connectionId, toolName, args, ctx),
+    // issue #139 — resources / prompts + live notification / frame / close events
+    listResources: (connectionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:listResources', connectionId),
+    readResource: (connectionId: string, uri: string): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:readResource', connectionId, uri),
+    listPrompts: (connectionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:listPrompts', connectionId),
+    getPrompt: (
+      connectionId: string,
+      name: string,
+      args: Record<string, string>,
+    ): Promise<unknown> => ipcRenderer.invoke('mcp:getPrompt', connectionId, name, args),
+    onNotification: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mcp:notification', handler)
+      return () => {
+        ipcRenderer.removeListener('mcp:notification', handler)
+      }
+    },
+    onFrame: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mcp:frame', handler)
+      return () => {
+        ipcRenderer.removeListener('mcp:frame', handler)
+      }
+    },
+    onConnectionClosed: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mcp:connectionClosed', handler)
+      return () => {
+        ipcRenderer.removeListener('mcp:connectionClosed', handler)
+      }
+    },
   },
 
   // ─── Socket.IO ──────────────────────────────────────────────

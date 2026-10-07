@@ -208,6 +208,8 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
           transport: mcp.transport,
           url: mcp.url,
           customHeaders: mcp.customHeaders,
+          // stdio server environment (issue #139) — `{{var}}` kept unresolved.
+          envVars: mcp.envVars,
         },
       },
     }
@@ -438,6 +440,7 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     const url = typeof m.url === 'string' && m.url ? m.url : useRequestStore.getState().url
     if (url) mcp.setUrl(url)
     if (Array.isArray(m.customHeaders)) mcp.setHeaders(m.customHeaders as KeyValuePair[])
+    if (Array.isArray(m.envVars)) mcp.setEnvVars(m.envVars as KeyValuePair[])
     return
   }
 }

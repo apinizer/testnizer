@@ -14,8 +14,10 @@
  *   - MST-149 (tool error handling): connects to the global HTTP MCP server,
  *     calls a tool that returns isError:true in its result — or uses the fail
  *     tool from the stdio stub.
- *   - MST-150 (P2) resources list/read: the global MCP server has no resources.
- *     This test just verifies the UI doesn't crash with a "resources" request.
+ *   - MST-150 (P2) resources list/read: the global MCP server exposes
+ *     `test://greeting`, `test://pixel.png` and the template `test://item/{id}`
+ *     (issue #139); prompts (`summarize`), notifications (`notify` tool) and
+ *     config paste/export have their own issue #139 journeys below.
  *
  * Needs hook:
  *   - MST-147: SSEServerTransport. Uses @modelcontextprotocol/sdk's SSEServerTransport.
@@ -55,14 +57,12 @@ async function getFreePort(): Promise<number> {
  *   GET  /sse       — SSE stream (client subscribes)
  *   POST /messages  — JSON-RPC messages from client
  */
-async function startMcpSseServer(port: number): Promise<{ url: string; close: () => Promise<void> }> {
+async function startMcpSseServer(
+  port: number,
+): Promise<{ url: string; close: () => Promise<void> }> {
   // Dynamic import to avoid top-level type issues and to keep this self-contained
-  const { McpServer: McpSdkServer } = await import(
-    '@modelcontextprotocol/sdk/server/mcp.js'
-  )
-  const { SSEServerTransport } = await import(
-    '@modelcontextprotocol/sdk/server/sse.js'
-  )
+  const { McpServer: McpSdkServer } = await import('@modelcontextprotocol/sdk/server/mcp.js')
+  const { SSEServerTransport } = await import('@modelcontextprotocol/sdk/server/sse.js')
   const { z } = await import('zod')
 
   const transports: Map<string, InstanceType<typeof SSEServerTransport>> = new Map()
@@ -123,7 +123,8 @@ async function startMcpSseServer(port: number): Promise<{ url: string; close: ()
 
   return {
     url: `http://127.0.0.1:${port}/sse`,
-    close: () => new Promise((resolve, reject) => httpServer.close((err) => (err ? reject(err) : resolve()))),
+    close: () =>
+      new Promise((resolve, reject) => httpServer.close((err) => (err ? reject(err) : resolve()))),
   }
 }
 
@@ -151,8 +152,7 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
       await openNewDropdownItem(window, /MCP/i)
 
       // Select SSE transport
-      const transportSelect = window.locator('select').first()
-      await transportSelect.selectOption('sse')
+      await window.getByTestId('mcp-transport').selectOption('sse')
 
       await window.getByTestId('mcp-url').fill(server.url)
       await window.getByTestId('mcp-connect').click()
@@ -177,8 +177,7 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
     await openNewDropdownItem(window, /MCP/i)
 
     // Select stdio transport
-    const transportSelect = window.locator('select').first()
-    await transportSelect.selectOption('stdio')
+    await window.getByTestId('mcp-transport').selectOption('stdio')
 
     // URL field doubles as command for stdio: `node <path>`
     const nodeCmd = `node ${STDIO_STUB}`
@@ -197,15 +196,16 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
     await expect(window.getByText(/pong/i).first()).toBeVisible({ timeout: 10_000 })
 
     await window.getByTestId('mcp-connect').click()
-    await expect(window.getByTestId('mcp-connect')).not.toHaveText(/Disconnect/i, { timeout: 8_000 })
+    await expect(window.getByTestId('mcp-connect')).not.toHaveText(/Disconnect/i, {
+      timeout: 8_000,
+    })
   })
 
   // ── MST-149: Tool error handling ──────────────────────────────────────────
   uiTest('MST-149 tool error response shown in result panel', async ({ window }) => {
     // Use the stdio stub which has a "fail" tool that returns isError:true
     await openNewDropdownItem(window, /MCP/i)
-    const transportSelect = window.locator('select').first()
-    await transportSelect.selectOption('stdio')
+    await window.getByTestId('mcp-transport').selectOption('stdio')
     await window.getByTestId('mcp-url').fill(`node ${STDIO_STUB}`)
     await window.getByTestId('mcp-connect').click()
     await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 20_000 })
@@ -215,38 +215,157 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
     await window.getByTestId('mcp-tool-fail').click()
     await window.getByTestId('mcp-invoke').click()
 
-    // The result should show the error content or the resultError panel
+    // isError results render with a red border + label (issue #139); a
+    // transport-level failure shows the call-error line instead.
     await expect(
-      window
-        .getByText(/intentionally failed|error|isError/i)
-        .first()
-        .or(window.locator('[style*="DELETE"]').first()),
+      window.getByTestId('mcp-result-error-label').or(window.getByTestId('mcp-result-call-error')),
     ).toBeVisible({ timeout: 10_000 })
+    await expect(window.getByText(/intentionally failed|error/i).first()).toBeVisible()
 
     await window.getByTestId('mcp-connect').click()
   })
 
-  // ── MST-150 (P2): Resources list / read ───────────────────────────────────
-  uiTest('MST-150 MCP connect + tools/list does not crash with no resources', async ({ window }) => {
+  // ── MST-150 (P2): Resources list / read (issue #139) ─────────────────────
+  // The global MCP server exposes `test://greeting` (text), `test://pixel.png`
+  // (binary) and the template `test://item/{id}`.
+  uiTest(
+    'MST-150 MCP resources: list, read text / binary, expand a template',
+    async ({ window }) => {
+      const { mcp } = getTestServerUrls()
+      await openNewDropdownItem(window, /MCP/i)
+      await window.getByTestId('mcp-transport').selectOption('http')
+      await window.getByTestId('mcp-url').fill(mcp)
+      await window.getByTestId('mcp-connect').click()
+      await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
+      await expect(window.getByTestId('mcp-tool-echo')).toBeVisible({ timeout: 10_000 })
+      await expect(window.getByTestId('mcp-protocol-version')).toBeVisible()
+
+      await window.getByTestId('mcp-cap-tab-resources').click()
+      await window.getByTestId('mcp-resource-test_greeting').click()
+      await window.getByTestId('mcp-read-resource').click()
+      await expect(window.getByText('Hello from Testnizer').first()).toBeVisible({
+        timeout: 10_000,
+      })
+
+      await window.getByTestId('mcp-resource-test_pixel_png').click()
+      await window.getByTestId('mcp-read-resource').click()
+      await expect(window.getByTestId('mcp-resource-binary')).toBeVisible({ timeout: 10_000 })
+
+      // Template: Read stays disabled-in-effect until {id} is replaced.
+      await window.getByTestId('mcp-template-test_item_id_').click()
+      await expect(window.getByTestId('mcp-resource-uri')).toHaveValue('test://item/{id}')
+      await window.getByTestId('mcp-resource-uri').fill('test://item/42')
+      await window.getByTestId('mcp-read-resource').click()
+      await expect(window.getByText(/"id": "42"/).first()).toBeVisible({ timeout: 10_000 })
+
+      // Search filters the list by URI.
+      await window.getByTestId('mcp-search').fill('pixel')
+      await expect(window.getByTestId('mcp-resource-test_greeting')).toHaveCount(0)
+      await expect(window.getByTestId('mcp-resource-test_pixel_png')).toBeVisible()
+
+      await window.getByTestId('mcp-connect').click()
+    },
+  )
+
+  // ── Issue #139: prompts ───────────────────────────────────────────────────
+  uiTest('issue #139 MCP prompt: required argument, Get, messages by role', async ({ window }) => {
     const { mcp } = getTestServerUrls()
     await openNewDropdownItem(window, /MCP/i)
-
-    // HTTP transport (default)
-    const transportSelect = window.locator('select').first()
-    await transportSelect.selectOption('http')
-
+    await window.getByTestId('mcp-transport').selectOption('http')
     await window.getByTestId('mcp-url').fill(mcp)
     await window.getByTestId('mcp-connect').click()
     await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
 
-    // Tools should be listed (echo, add from global mcp-server)
-    await expect(window.getByTestId('mcp-tool-echo')).toBeVisible({ timeout: 10_000 })
+    await window.getByTestId('mcp-cap-tab-prompts').click()
+    await window.getByTestId('mcp-prompt-summarize').click()
+    await window.getByTestId('mcp-get-prompt').click()
+    await expect(window.getByTestId('mcp-prompt-error')).toContainText('text')
 
-    // No resources section crash — verify the editor is still rendered
-    await expect(window.getByTestId('mcp-url')).toBeVisible()
+    await window.getByTestId('mcp-prompt-arg-text').fill('Testnizer issue 139')
+    await window.getByTestId('mcp-get-prompt').click()
+    const message = window.getByTestId('mcp-prompt-message').first()
+    await expect(message).toHaveAttribute('data-role', 'user', { timeout: 10_000 })
+    await expect(message).toContainText('Please summarize')
+    await expect(message).toContainText('Testnizer issue 139')
 
     await window.getByTestId('mcp-connect').click()
   })
+
+  // ── Issue #139: notifications + frames ────────────────────────────────────
+  // `notify` emits notifications/message, notifications/progress (the client
+  // always sends a progressToken) and tools/list_changed during its call.
+  uiTest(
+    'issue #139 MCP notifications and JSON-RPC frames are shown per tab',
+    async ({ window }) => {
+      const { mcp } = getTestServerUrls()
+      await openNewDropdownItem(window, /MCP/i)
+      await window.getByTestId('mcp-transport').selectOption('http')
+      await window.getByTestId('mcp-url').fill(mcp)
+      await window.getByTestId('mcp-connect').click()
+      await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
+
+      await window.getByTestId('mcp-tool-notify').click()
+      await window.getByTestId('mcp-invoke').click()
+      await expect(window.getByText(/notified \(/).first()).toBeVisible({ timeout: 10_000 })
+
+      await window.getByTestId('mcp-messages-toggle').click()
+      const notifications = window.getByTestId('mcp-notifications')
+      await expect(notifications).toContainText('notifications/message', { timeout: 10_000 })
+      await expect(notifications).toContainText('notify tool started')
+      await expect(notifications).toContainText('notifications/progress')
+
+      await window.getByTestId('mcp-messages-tab-frames').click()
+      const frames = window.getByTestId('mcp-frames')
+      await expect(frames).toContainText('initialize', { timeout: 10_000 })
+      await expect(frames).toContainText('tools/call')
+      await frames
+        .getByText(/^initialize/)
+        .first()
+        .click()
+      await expect(window.getByTestId('mcp-frames-detail')).toContainText('protocolVersion')
+
+      await window.getByTestId('mcp-connect').click()
+    },
+  )
+
+  // ── Issue #139: paste a host config ───────────────────────────────────────
+  uiTest(
+    'issue #139 MCP paste config imports a VS Code server into the tab',
+    async ({ window }) => {
+      const { mcp } = getTestServerUrls()
+      await openNewDropdownItem(window, /MCP/i)
+      await window.getByTestId('mcp-config-paste').click()
+      await window.getByTestId('mcp-config-text').fill(
+        JSON.stringify({
+          servers: {
+            local: { type: 'stdio', command: 'node', args: ['server.js'] },
+            e2e: { type: 'http', url: mcp, headers: { 'X-Testnizer-139': 'pasted' } },
+          },
+        }),
+      )
+      await window.getByTestId('mcp-config-server-1').check()
+      await window.getByTestId('mcp-config-apply').click()
+
+      await expect(window.getByTestId('mcp-transport')).toHaveValue('http')
+      await expect(window.getByTestId('mcp-url')).toHaveValue(mcp)
+      await expect(window.getByTestId('mcp-headers-count')).toHaveText('1')
+
+      await window.getByTestId('mcp-connect').click()
+      await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
+      await window.getByTestId('mcp-tool-echo_headers').click()
+      await window.getByTestId('mcp-invoke').click()
+      await expect(window.getByText(/pasted/).first()).toBeVisible({ timeout: 10_000 })
+
+      // Export round-trip: the VS Code view carries the same server.
+      await window.getByTestId('mcp-config-export').click()
+      await window.getByTestId('mcp-export-host-vscode').click()
+      await expect(window.getByTestId('mcp-export-code')).toContainText('"type": "http"')
+      await expect(window.getByTestId('mcp-export-code')).toContainText('X-Testnizer-139')
+      await window.keyboard.press('Escape')
+
+      await window.getByTestId('mcp-connect').click()
+    },
+  )
 
   // ── Issue #137: custom HTTP headers on connect ────────────────────────────
   // The global MCP server's `echo_headers` tool returns the headers of the
@@ -255,7 +374,7 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
   uiTest('issue #137 MCP custom header reaches the server', async ({ window }) => {
     const { mcp } = getTestServerUrls()
     await openNewDropdownItem(window, /MCP/i)
-    await window.locator('select').first().selectOption('http')
+    await window.getByTestId('mcp-transport').selectOption('http')
     await window.getByTestId('mcp-url').fill(mcp)
 
     const section = window.getByTestId('mcp-headers-section')
@@ -276,8 +395,10 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
 
     // stdio has no HTTP layer — the headers block is hidden for it.
     await window.getByTestId('mcp-connect').click()
-    await expect(window.getByTestId('mcp-connect')).not.toHaveText(/Disconnect/i, { timeout: 8_000 })
-    await window.locator('select').first().selectOption('stdio')
+    await expect(window.getByTestId('mcp-connect')).not.toHaveText(/Disconnect/i, {
+      timeout: 8_000,
+    })
+    await window.getByTestId('mcp-transport').selectOption('stdio')
     await expect(window.getByTestId('mcp-headers-toggle')).toHaveCount(0)
   })
 })

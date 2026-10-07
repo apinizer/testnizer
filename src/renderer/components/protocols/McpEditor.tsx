@@ -1,312 +1,81 @@
-import { Inbox } from 'lucide-react'
-import { useMcpStore, type McpTransport } from '../../stores/mcp.store'
-import EmptyState from '../shared/EmptyState'
-import McpHeadersSection from './McpHeadersSection'
-import { T } from '../../styles/tokens'
+import { useState } from 'react'
+import { useMcpStore } from '../../stores/mcp.store'
+import { useTranslation } from '../../lib/i18n'
+import McpConnectionBar from './mcp/McpConnectionBar'
+import McpHeadersSection from './mcp/McpHeadersSection'
+import McpStdioEnvSection from './mcp/McpStdioEnvSection'
+import McpCapabilityList from './mcp/McpCapabilityList'
+import McpToolPane from './mcp/McpToolPane'
+import McpResourcePane from './mcp/McpResourcePane'
+import McpPromptPane from './mcp/McpPromptPane'
+import McpMessagesPane from './mcp/McpMessagesPane'
+import { MCP_EXTRA_SECTIONS } from './mcp/sections'
 
-const TRANSPORT_OPTIONS: { value: McpTransport; label: string }[] = [
-  { value: 'http', label: 'Streamable HTTP' },
-  { value: 'sse', label: 'SSE (legacy)' },
-  { value: 'stdio', label: 'stdio (local)' },
-]
+const EXPLORER = 'explorer'
 
+/**
+ * MCP request editor (issues #137, #139) — a thin host. Connection bar,
+ * header / stdio-env blocks, then the capability list on the left and the
+ * matching pane on the right (Tools | Resources | Prompts), the messages
+ * pane at the bottom. Extra right-pane tabs come from `mcp/sections.ts`, so
+ * later phases plug in without editing this file.
+ */
 export default function McpEditor() {
-  const store = useMcpStore()
-  const isConnected = store.connectionState === 'connected'
-  const isConnecting = store.connectionState === 'connecting'
-
-  const selectedToolDef = store.tools.find((t) => t.name === store.selectedTool)
-  const hasSchema =
-    selectedToolDef?.inputSchema && Object.keys(selectedToolDef.inputSchema).length > 0
+  const { t } = useTranslation()
+  const capabilityTab = useMcpStore((s) => s.capabilityTab)
+  const [rightTab, setRightTab] = useState<string>(EXPLORER)
+  const extra = MCP_EXTRA_SECTIONS.find((s) => s.id === rightTab)
+  const ExtraComponent = extra?.component
 
   return (
     <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        background: 'var(--white)',
-        overflow: 'hidden',
-      }}
+      data-testid="mcp-editor"
+      className="flex h-full flex-col overflow-hidden bg-[var(--white)]"
     >
-      {/* ─ Connection bar ─ */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '10px 14px',
-          borderBottom: `1px solid ${T.border}`,
-          flexShrink: 0,
-          flexWrap: 'wrap',
-        }}
-      >
-        <select
-          value={store.transport}
-          onChange={(e) => store.setTransport(e.target.value as McpTransport)}
-          disabled={isConnected}
-          style={{
-            height: 32,
-            border: `1px solid ${T.border}`,
-            borderRadius: 6,
-            padding: '0 8px',
-            fontSize: 12,
-            background: 'var(--white)',
-            color: T.text,
-            cursor: isConnected ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {TRANSPORT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-
-        <input
-          type="text"
-          value={store.url}
-          onChange={(e) => store.setUrl(e.target.value)}
-          disabled={isConnected}
-          data-testid="mcp-url"
-          placeholder={
-            store.transport === 'stdio'
-              ? 'e.g. npx @modelcontextprotocol/server-everything'
-              : 'https://mcp.example.com/mcp'
-          }
-          style={{
-            flex: 1,
-            minWidth: 200,
-            height: 32,
-            border: `1px solid ${T.border}`,
-            borderRadius: 6,
-            padding: '0 10px',
-            fontSize: 13,
-            color: T.text,
-            background: isConnected ? 'var(--bg)' : 'var(--white)',
-          }}
-        />
-
-        <button
-          type="button"
-          onClick={isConnected || isConnecting ? () => store.disconnect() : () => store.connect()}
-          data-testid="mcp-connect"
-          style={{
-            height: 32,
-            padding: '0 16px',
-            borderRadius: 6,
-            border: 'none',
-            background: isConnected || isConnecting ? T.DELETE.color : T.accent,
-            color: '#fff',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          {isConnecting ? 'Cancel' : isConnected ? 'Disconnect' : 'Connect'}
-        </button>
-
-        {isConnected && store.serverName && (
-          <span style={{ fontSize: 12, color: T.muted }}>{store.serverName}</span>
-        )}
-        {store.connectionState === 'error' && store.errorMessage && (
-          <span style={{ fontSize: 12, color: T.DELETE.color }}>{store.errorMessage}</span>
-        )}
-      </div>
-
+      <McpConnectionBar />
       <McpHeadersSection />
-
-      {/* ─ Body ─ */}
-      <div style={{ flex: 1, display: 'flex', gap: 0, overflow: 'hidden' }}>
-        {/* Left: tool list */}
-        <div
-          style={{
-            width: 200,
-            borderRight: `1px solid ${T.border}`,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            flexShrink: 0,
-          }}
-        >
-          <div
-            style={{
-              padding: '8px 12px',
-              fontSize: 11,
-              fontWeight: 600,
-              color: T.muted,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              borderBottom: `1px solid ${T.border}`,
-            }}
-          >
-            Tools {store.tools.length > 0 && `(${store.tools.length})`}
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {!isConnected && (
-              <div style={{ padding: 16, fontSize: 12, color: T.ghost, textAlign: 'center' }}>
-                Connect to see tools
-              </div>
-            )}
-            {store.tools.map((tool) => (
-              <button
-                key={tool.name}
-                type="button"
-                data-testid={`mcp-tool-${tool.name}`}
-                onClick={() => store.setSelectedTool(tool.name)}
-                style={{
-                  width: '100%',
-                  textAlign: 'left',
-                  padding: '8px 12px',
-                  border: 'none',
-                  borderBottom: `1px solid ${T.border}`,
-                  background: store.selectedTool === tool.name ? T.accentBg : 'transparent',
-                  color: store.selectedTool === tool.name ? T.accentText : T.text,
-                  fontSize: 12,
-                  cursor: 'pointer',
-                }}
-              >
-                <div style={{ fontWeight: 600, marginBottom: 2 }}>{tool.name}</div>
-                {tool.description && (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: T.muted,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {tool.description}
-                  </div>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Right: arguments + result */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {!store.selectedTool ? (
+      <McpStdioEnvSection />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <McpCapabilityList />
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {MCP_EXTRA_SECTIONS.length > 0 && (
             <div
-              style={{
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 13,
-                color: T.ghost,
-              }}
+              role="tablist"
+              className="flex shrink-0 gap-1 border-b border-[var(--border)] px-2"
             >
-              {isConnected ? 'Select a tool from the list' : 'Connect to an MCP server'}
-            </div>
-          ) : (
-            <>
-              {/* Arguments pane */}
-              <div
-                style={{
-                  borderBottom: `1px solid ${T.border}`,
-                  padding: '10px 14px',
-                  flexShrink: 0,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: T.muted,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    marginBottom: 8,
-                  }}
-                >
-                  Arguments (JSON)
-                </div>
-                {hasSchema && (
-                  <div style={{ fontSize: 11, color: T.muted, marginBottom: 6 }}>
-                    <strong>Schema:</strong>{' '}
-                    {JSON.stringify(
-                      selectedToolDef?.inputSchema?.properties ?? selectedToolDef?.inputSchema,
-                    )}
-                  </div>
-                )}
-                <textarea
-                  value={store.toolArgs}
-                  onChange={(e) => store.setToolArgs(e.target.value)}
-                  rows={5}
-                  style={{
-                    width: '100%',
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    border: `1px solid ${T.border}`,
-                    borderRadius: 6,
-                    padding: 8,
-                    resize: 'vertical',
-                    color: T.text,
-                    background: 'var(--white)',
-                    boxSizing: 'border-box',
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => store.callTool()}
-                  disabled={store.isInvoking}
-                  data-testid="mcp-invoke"
-                  style={{
-                    marginTop: 8,
-                    height: 32,
-                    padding: '0 20px',
-                    borderRadius: 6,
-                    border: 'none',
-                    background: T.accent,
-                    color: '#fff',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: store.isInvoking ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {store.isInvoking ? 'Invoking…' : `Invoke ${store.selectedTool}`}
-                </button>
-              </div>
-
-              {/* Result pane */}
-              <div style={{ flex: 1, overflow: 'auto', padding: 14 }}>
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: T.muted,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    marginBottom: 8,
-                  }}
-                >
-                  Result
-                </div>
-                {store.resultError ? (
-                  <div style={{ color: T.DELETE.color, fontSize: 12 }}>{store.resultError}</div>
-                ) : store.result != null ? (
-                  <pre
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      color: T.text,
-                      margin: 0,
-                    }}
+              {[{ id: EXPLORER, label: t('mcp.section.explorer') }, ...MCP_EXTRA_SECTIONS].map(
+                (s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={rightTab === s.id}
+                    data-testid={`mcp-section-${s.id}`}
+                    onClick={() => setRightTab(s.id)}
+                    className={`cursor-pointer border-x-0 border-t-0 border-b-2 bg-transparent px-2.5 py-1.5 text-[12px] ${
+                      rightTab === s.id
+                        ? 'border-[var(--accent)] text-[var(--accent-text)]'
+                        : 'border-transparent text-[var(--muted)]'
+                    }`}
                   >
-                    {JSON.stringify(store.result, null, 2)}
-                  </pre>
-                ) : (
-                  <EmptyState icon={Inbox} title="No result yet" variant="compact" size="sm" />
-                )}
-              </div>
-            </>
+                    {s.id === EXPLORER ? s.label : t(s.label)}
+                  </button>
+                ),
+              )}
+            </div>
+          )}
+          {ExtraComponent ? (
+            <ExtraComponent />
+          ) : capabilityTab === 'resources' ? (
+            <McpResourcePane />
+          ) : capabilityTab === 'prompts' ? (
+            <McpPromptPane />
+          ) : (
+            <McpToolPane />
           )}
         </div>
       </div>
+      <McpMessagesPane />
     </div>
   )
 }
