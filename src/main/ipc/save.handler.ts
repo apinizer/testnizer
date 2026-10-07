@@ -25,6 +25,7 @@ import {
 import { snapshotEndpointForSuite, ensureUniqueSuiteName } from './test-suite.handler'
 import { getEndpointById } from '../db/endpoint.repo'
 import { SAVED_RESPONSE_COLUMNS } from '../db/saved-response.repo'
+import { MOCK_MCP_SERVER_COLUMNS } from '../db/mock-mcp.repo'
 import {
   getProjectGitConfig,
   gitAuth,
@@ -108,6 +109,8 @@ export interface ProjectExport {
   certificates?: Record<string, unknown>[]
   // Named response examples (issue #125) — git-tracked since v1.5.4.
   savedResponses?: Record<string, unknown>[]
+  // Mock MCP servers (issue #140) — one self-contained row each (JSON columns).
+  mockMcpServers?: Record<string, unknown>[]
 }
 
 // ─── Folder Export Format ────────────────────────────────────────
@@ -253,7 +256,8 @@ export function validateProjectExport(parsed: unknown): string | null {
     doc.endpoints.length === 0 &&
     doc.savedRequests.length === 0 &&
     (doc.testSuites?.length ?? 0) === 0 &&
-    (doc.mockServers?.length ?? 0) === 0
+    (doc.mockServers?.length ?? 0) === 0 &&
+    (doc.mockMcpServers?.length ?? 0) === 0
   ) {
     return 'Project file contains no folders, endpoints, suites or mocks. The original export may have failed; re-export the source project before importing.'
   }
@@ -363,6 +367,12 @@ export function exportProjectData(projectId: string): ProjectExport {
     .prepare('SELECT * FROM saved_responses WHERE project_id = ?')
     .all(projectId) as Record<string, unknown>[]
 
+  // Mock MCP servers (issue #140). Self-contained rows: tools / resources /
+  // prompts travel inside their JSON columns, no child tables.
+  const mockMcpServers = db
+    .prepare('SELECT * FROM mock_mcp_servers WHERE project_id = ?')
+    .all(projectId) as Record<string, unknown>[]
+
   return {
     version: 'testnizer-project/2.0',
     exportedAt: Date.now(),
@@ -383,6 +393,7 @@ export function exportProjectData(projectId: string): ProjectExport {
     mockResponses,
     certificates,
     savedResponses,
+    mockMcpServers,
   }
 }
 
@@ -707,6 +718,11 @@ function importProjectData(
     upsert('certificates', rebind(data.certificates), [...CERTIFICATE_COLUMNS])
   }
 
+  // Mock MCP servers (issue #140) — absent from pre-#140 files, skipped then.
+  if (data.mockMcpServers?.length) {
+    upsert('mock_mcp_servers', rebind(data.mockMcpServers), [...MOCK_MCP_SERVER_COLUMNS])
+  }
+
   if (options.mode === 'replace') {
     pruneRowsMissingFromFile(db, data, projectId, null)
   } else if (options.base) {
@@ -852,6 +868,7 @@ function pruneRowsMissingFromFile(
     byProject('test_suites', 'testSuites')
     byProject('mock_servers', 'mockServers')
     byProject('certificates', 'certificates')
+    byProject('mock_mcp_servers', 'mockMcpServers')
   })
   tx()
 }
@@ -1877,6 +1894,23 @@ export function importProjectAsNew(
         (r.request_json as string | null) ?? null,
       )
     }
+
+    // Mock MCP servers (issue #140) — self-contained rows, so a fresh id and
+    // the new project are the only rewrites.
+    const insertMockMcp = db.prepare(
+      `INSERT INTO mock_mcp_servers (${MOCK_MCP_SERVER_COLUMNS.join(', ')})
+       VALUES (${MOCK_MCP_SERVER_COLUMNS.map(() => '?').join(', ')})`,
+    )
+    for (const m of data.mockMcpServers || []) {
+      const row: Record<string, unknown> = {
+        ...m,
+        id: randomUUID(),
+        project_id: newProjectId,
+        created_at: (m.created_at as number) || now,
+        updated_at: now,
+      }
+      insertMockMcp.run(...MOCK_MCP_SERVER_COLUMNS.map((c) => row[c] ?? null))
+    }
   })
   tx()
 
@@ -1922,6 +1956,7 @@ export function registerSaveHandlers(): void {
         environments: data.environments.length,
         testSuites: data.testSuites?.length ?? 0,
         mockServers: data.mockServers?.length ?? 0,
+        mockMcpServers: data.mockMcpServers?.length ?? 0,
       }
       const projectName = safeFileName((data.project?.name as string) || 'project', 'project')
       const dateStr = new Date().toISOString().slice(0, 10)

@@ -12,6 +12,7 @@
  *   - test_suite + test_suite_folder + test_suite_item
  *   - mock_server + mock_endpoint + mock_response
  *   - certificate
+ *   - mock_mcp_server (issue #140)
  * round-trips byte-for-byte. Anything missing here means an export users
  * actually rely on is silently losing data.
  *
@@ -29,8 +30,13 @@ vi.mock('../../src/main/db/database', () => ({
   getDb: () => testDb,
 }))
 
-const { exportProjectData, importProjectDataFromJson, exportFolderData, importFolderData } =
-  await import('../../src/main/ipc/save.handler')
+const {
+  exportProjectData,
+  importProjectDataFromJson,
+  exportFolderData,
+  importFolderData,
+  validateProjectExport,
+} = await import('../../src/main/ipc/save.handler')
 
 function createSchema(db: Database.Database): void {
   db.exec(`
@@ -228,6 +234,29 @@ function createSchema(db: Database.Database): void {
       response_order INTEGER NOT NULL DEFAULT 0,
       enabled INTEGER NOT NULL DEFAULT 1
     );
+    CREATE TABLE mock_mcp_servers (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      host TEXT NOT NULL DEFAULT '127.0.0.1',
+      port INTEGER NOT NULL,
+      path TEXT NOT NULL DEFAULT '/mcp',
+      legacy_sse INTEGER NOT NULL DEFAULT 0,
+      auth_mode TEXT NOT NULL DEFAULT 'none',
+      bearer_token TEXT NOT NULL DEFAULT '',
+      latency_ms INTEGER NOT NULL DEFAULT 0,
+      error_mode TEXT NOT NULL DEFAULT '{"kind":"none"}',
+      protocol_pin TEXT,
+      tools_json TEXT NOT NULL DEFAULT '[]',
+      resources_json TEXT NOT NULL DEFAULT '[]',
+      prompts_json TEXT NOT NULL DEFAULT '[]',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+    CREATE INDEX idx_mock_mcp_servers_project ON mock_mcp_servers(project_id);
     CREATE TABLE certificates (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
@@ -315,6 +344,7 @@ function seedRichProject(): {
   mockResponseId: string
   certificateId: string
   savedResponseId: string
+  mockMcpServerId: string
 } {
   const now = Date.now()
   const ids = {
@@ -334,6 +364,7 @@ function seedRichProject(): {
     mockResponseId: randomUUID(),
     certificateId: randomUUID(),
     savedResponseId: randomUUID(),
+    mockMcpServerId: randomUUID(),
   }
 
   testDb
@@ -479,6 +510,33 @@ function seedRichProject(): {
     )
     .run(ids.savedResponseId, SOURCE_PID, ids.savedRequestId, now)
 
+  // Mock MCP server (issue #140) — one self-contained row, JSON columns.
+  testDb
+    .prepare(
+      `INSERT INTO mock_mcp_servers
+         (id, project_id, name, description, host, port, path, legacy_sse, auth_mode,
+          bearer_token, latency_ms, error_mode, protocol_pin, tools_json, resources_json,
+          prompts_json, enabled, created_at, updated_at)
+       VALUES (?, ?, 'MCP-1', 'desc', '127.0.0.1', 4100, '/mcp', 1, 'bearer',
+               'tok', 150, ?, '2025-06-18', ?, ?, ?, 1, ?, ?)`,
+    )
+    .run(
+      ids.mockMcpServerId,
+      SOURCE_PID,
+      JSON.stringify({ kind: 'isError', everyN: 3, message: 'flaky' }),
+      JSON.stringify([
+        {
+          name: 'echo',
+          inputSchema: { type: 'object', properties: { text: { type: 'string' } } },
+          response: { kind: 'template', body: '{{args.text}}' },
+        },
+      ]),
+      JSON.stringify([{ uri: 'docs://readme', name: 'Readme', text: 'hi' }]),
+      JSON.stringify([{ name: 'greet', messages: [{ role: 'user', text: 'hello' }] }]),
+      now,
+      now,
+    )
+
   return ids
 }
 
@@ -505,6 +563,7 @@ describe('exportProjectData — shape sanity', () => {
     expect(data.mockResponses?.length).toBe(1)
     expect(data.certificates?.length).toBe(1)
     expect(data.savedResponses?.length).toBe(1)
+    expect(data.mockMcpServers?.length).toBe(1)
   })
 })
 
@@ -557,6 +616,7 @@ describe('Project export → import round-trip (different target project)', () =
     expect(count('mock_servers')).toBe(1)
     expect(count('certificates')).toBe(1)
     expect(count('saved_responses')).toBe(1)
+    expect(count('mock_mcp_servers')).toBe(1)
     // Nothing may stay parked under the (nonexistent here) source project.
     expect(
       (
@@ -847,6 +907,59 @@ describe('Project export → import round-trip (different target project)', () =
     expect(row.name).toBe('200 sample')
     expect(row.status_code).toBe(200)
     expect(JSON.parse(row.response_json).status).toBe(200)
+  })
+})
+
+// ───────── Mock MCP servers (issue #140) ─────────
+
+describe('Mock MCP servers in the project file (issue #140)', () => {
+  const ROW_SQL = 'SELECT * FROM mock_mcp_servers WHERE id = ?'
+
+  it('round-trips every column, rebinding only project_id (machine B)', () => {
+    const ids = seedRichProject()
+    const before = testDb.prepare(ROW_SQL).get(ids.mockMcpServerId) as Record<string, unknown>
+    const data = exportProjectData(SOURCE_PID)
+    forgetSourceProject() // FK cascade drops the source row; the file still has it
+    expect(testDb.prepare(ROW_SQL).get(ids.mockMcpServerId)).toBeUndefined()
+
+    importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
+
+    const after = testDb.prepare(ROW_SQL).get(ids.mockMcpServerId) as Record<string, unknown>
+    expect(after).toEqual({ ...before, project_id: TARGET_PID })
+    expect(JSON.parse(after.tools_json as string)[0].name).toBe('echo')
+  })
+
+  it('replace-mode re-import prunes a server the file no longer lists; an older file without the section keeps it', () => {
+    const ids = seedRichProject()
+    const data = exportProjectData(SOURCE_PID)
+    forgetSourceProject()
+    importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
+
+    // A pre-#140 file has no `mockMcpServers` array → nothing to diff, row stays.
+    const legacy = { ...data } as Record<string, unknown>
+    delete legacy.mockMcpServers
+    importProjectDataFromJson(JSON.stringify(legacy), TARGET_PID, { mode: 'replace' })
+    expect(testDb.prepare(ROW_SQL).get(ids.mockMcpServerId)).toBeTruthy()
+
+    // The branch deleted it → the checkout's empty array removes it locally.
+    importProjectDataFromJson(JSON.stringify({ ...data, mockMcpServers: [] }), TARGET_PID, {
+      mode: 'replace',
+    })
+    expect(testDb.prepare(ROW_SQL).get(ids.mockMcpServerId)).toBeUndefined()
+  })
+
+  it('a project file holding only a mock MCP server is not "empty"', () => {
+    const doc = {
+      kind: 'project',
+      version: 'testnizer-project/2.0',
+      project: { id: 'p' },
+      folders: [],
+      endpoints: [],
+      savedRequests: [],
+      mockMcpServers: [{ id: 'm' }],
+    }
+    expect(validateProjectExport(doc)).toBeNull()
+    expect(validateProjectExport({ ...doc, mockMcpServers: [] })).toMatch(/contains no folders/)
   })
 })
 

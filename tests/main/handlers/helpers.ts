@@ -560,6 +560,31 @@ const SCHEMA_SQL = `
     enabled INTEGER NOT NULL DEFAULT 1
   );
 
+  -- Mock MCP servers (issue #140) — mirrors src/main/db/database.ts.
+  CREATE TABLE mock_mcp_servers (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    host TEXT NOT NULL DEFAULT '127.0.0.1',
+    port INTEGER NOT NULL,
+    path TEXT NOT NULL DEFAULT '/mcp',
+    legacy_sse INTEGER NOT NULL DEFAULT 0,
+    auth_mode TEXT NOT NULL DEFAULT 'none',
+    bearer_token TEXT NOT NULL DEFAULT '',
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    error_mode TEXT NOT NULL DEFAULT '{"kind":"none"}',
+    protocol_pin TEXT,
+    tools_json TEXT NOT NULL DEFAULT '[]',
+    resources_json TEXT NOT NULL DEFAULT '[]',
+    prompts_json TEXT NOT NULL DEFAULT '[]',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+  );
+  CREATE INDEX idx_mock_mcp_servers_project ON mock_mcp_servers(project_id);
+
   -- Examples die with their owner (issue #125 follow-up): the owner tables
   -- carry no FK to saved_responses, so cascade via triggers. Bulk deletes
   -- (folder delete, git re-import) fire them row by row too.

@@ -278,6 +278,7 @@ const EXPORT_SECTIONS = [
   'mockServers',
   'certificates',
   'savedResponses',
+  'mockMcpServers',
 ] as const
 
 function isEmptyExport(data: Record<string, unknown>): boolean {
