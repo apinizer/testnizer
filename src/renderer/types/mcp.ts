@@ -34,6 +34,19 @@ export type McpNotificationEvent = EventOf<McpBridge['onNotification']>
 export type McpFrameEvent = EventOf<McpBridge['onFrame']>
 export type McpConnectionClosedEvent = EventOf<McpBridge['onConnectionClosed']>
 export type McpCallContext = NonNullable<Parameters<McpBridge['callTool']>[3]>
+/** `mcp.connect` reply — `unauthorized` when the server answered HTTP 401 (issue #141). */
+export type McpConnectReply = Awaited<ReturnType<McpBridge['connect']>>
+
+// ─── OAuth 2.1 debugger (issue #141) ─────────────────────────────
+export type McpOAuthStartRequest = Parameters<McpBridge['oauthStart']>[0]
+export type McpOAuthStepEvent = EventOf<McpBridge['onOauthStep']>
+export type McpOAuthStep = McpOAuthStepEvent['step']
+export type McpOAuthStepId = McpOAuthStep['id']
+export type McpOAuthStepStatus = McpOAuthStep['status']
+export type McpOAuthHttpRequest = NonNullable<McpOAuthStep['request']>
+export type McpOAuthHttpResponse = NonNullable<McpOAuthStep['response']>
+export type McpOAuthDoneEvent = EventOf<McpBridge['onOauthDone']>
+export type McpOAuthSummary = NonNullable<McpOAuthDoneEvent['summary']>
 
 /** One block of a `tools/call` result (the bridge returns the raw CallToolResult as `unknown`). */
 export type McpContentBlock =

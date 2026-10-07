@@ -43,6 +43,18 @@ function consoleSafeHeaders(
   return out
 }
 
+/**
+ * True when a connect failure is an HTTP 401 (issue #141). Without an SDK
+ * `authProvider` the transports throw `StreamableHTTPError` / `SseError`
+ * carrying the status as a numeric `.code`; `UnauthorizedError` covers the
+ * SDK's own auth paths. Local on purpose — no extra engine import to mock.
+ */
+function isUnauthorized(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { code?: unknown; name?: unknown }
+  return e.code === 401 || e.name === 'UnauthorizedError'
+}
+
 // Track when each connection was opened so the disconnect log can carry the
 // connection lifetime — useful for spotting servers that drop early or
 // clients that linger.
@@ -171,6 +183,8 @@ export function registerMcpHandlers(): void {
         env?: Record<string, string>
         /** Custom HTTP headers for http / sse transports (issue #137). */
         headers?: Record<string, string>
+        /** OAuth 2.1 debugger session whose token authenticates the connection (issue #141). */
+        oauthSessionId?: string
         _pendingId?: string
       },
     ) => {
@@ -185,6 +199,9 @@ export function registerMcpHandlers(): void {
           env: options.env,
           headers: options.headers,
           pendingId: options._pendingId,
+          ...(typeof options.oauthSessionId === 'string' && options.oauthSessionId
+            ? { oauthSessionId: options.oauthSessionId }
+            : {}),
         })
         mcpContext.set(data.connectionId, { url: options.url, connectedAt: Date.now() })
         logRequestResponse({
@@ -202,6 +219,8 @@ export function registerMcpHandlers(): void {
             transport: options.transport,
             protocolVersion: data.protocolVersion ?? 'unknown',
             headerCount: loggedHeaders ? Object.keys(loggedHeaders).length : 0,
+            // Whether an OAuth session was used — never the token itself.
+            oauth: !!options.oauthSessionId,
             // stdio env values routinely carry API tokens — count only, never values.
             envCount: options.env ? Object.keys(options.env).length : 0,
           },
@@ -219,7 +238,10 @@ export function registerMcpHandlers(): void {
           requestHeaders: loggedHeaders,
           error: { message: err.message, stack: err.stack },
         })
-        return { success: false, error: err.message }
+        // `unauthorized` lets the renderer offer the OAuth 2.1 debugger (issue #141).
+        return isUnauthorized(e)
+          ? { success: false, error: err.message, unauthorized: true }
+          : { success: false, error: err.message }
       }
     },
   )

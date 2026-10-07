@@ -945,6 +945,31 @@ const api = {
         ipcRenderer.removeListener('mcp:connectionClosed', handler)
       }
     },
+    // issue #141 — OAuth 2.1 debugger (tokens stay in main; only redacted step records cross)
+    oauthStart: (options: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:oauth:start', options),
+    oauthCancel: (oauthSessionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:oauth:cancel', oauthSessionId),
+    oauthForget: (oauthSessionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:oauth:forget', oauthSessionId),
+    onOauthStep: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mcp:oauth:step', handler)
+      return () => {
+        ipcRenderer.removeListener('mcp:oauth:step', handler)
+      }
+    },
+    onOauthDone: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mcp:oauth:done', handler)
+      return () => {
+        ipcRenderer.removeListener('mcp:oauth:done', handler)
+      }
+    },
   },
 
   // ─── Socket.IO ──────────────────────────────────────────────

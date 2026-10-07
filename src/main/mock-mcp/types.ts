@@ -119,6 +119,13 @@ export interface MockMcpServerDef {
   errorMode: MockMcpErrorMode
   /** Advertised protocol version; initialize with any other version is rejected. */
   protocolPin: string | null
+  /**
+   * RFC 9728 `authorization_servers` advertised by the bearer-mode
+   * `/.well-known/oauth-protected-resource` document (default `[]`). Runtime
+   * only — not persisted; lets the OAuth 2.1 debugger (issue #141) be pointed
+   * at an external authorization server in tests.
+   */
+  authorizationServers?: string[]
   tools: MockMcpTool[]
   resources: MockMcpResource[]
   prompts: MockMcpPrompt[]

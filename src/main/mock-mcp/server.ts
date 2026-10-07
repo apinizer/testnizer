@@ -348,7 +348,7 @@ class MockMcpServerManager extends EventEmitter {
       this.sendJson(res, 200, {
         resource: `${origin}${base}`,
         resource_name: def.name,
-        authorization_servers: [],
+        authorization_servers: def.authorizationServers ?? [],
         bearer_methods_supported: ['header'],
       })
       return
