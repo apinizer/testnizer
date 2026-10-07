@@ -48,6 +48,21 @@ export type McpOAuthHttpResponse = NonNullable<McpOAuthStep['response']>
 export type McpOAuthDoneEvent = EventOf<McpBridge['onOauthDone']>
 export type McpOAuthSummary = NonNullable<McpOAuthDoneEvent['summary']>
 
+// ─── Security Scan (issue #142) ─────────────────────────────────
+export type McpSecurityScanRequest = Parameters<McpBridge['securityScan']>[0]
+export type McpSecurityProgressEvent = EventOf<McpBridge['onSecurityProgress']>
+export type McpSecurityFindingEvent = EventOf<McpBridge['onSecurityFinding']>
+export type McpSecurityDoneEvent = EventOf<McpBridge['onSecurityDone']>
+export type McpSecurityFinding = McpSecurityFindingEvent['finding']
+export type McpSecurityReport = NonNullable<McpSecurityDoneEvent['report']>
+export type McpSecurityCategory = McpSecurityReport['categories'][number]
+export type McpSecurityCategoryId = McpSecurityFinding['category']
+export type McpSecurityStatus = McpSecurityFinding['status']
+export type McpSecuritySeverity = McpSecurityFinding['severity']
+export type McpSecurityGrade = McpSecurityReport['grade']
+export type McpSecurityEvidence = NonNullable<McpSecurityFinding['evidence']>
+export type McpSecurityProgress = Omit<McpSecurityProgressEvent, 'scanId'>
+
 /** One block of a `tools/call` result (the bridge returns the raw CallToolResult as `unknown`). */
 export type McpContentBlock =
   | { type: 'text'; text: string }

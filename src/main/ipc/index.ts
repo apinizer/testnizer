@@ -32,6 +32,7 @@ import { registerDialogHandlers } from './dialog.handler'
 import { registerEulaHandlers } from './eula.handler'
 import { registerMcpHandlers } from './mcp.handler'
 import { registerMcpOAuthHandlers } from './mcp-oauth.handler'
+import { registerMcpSecurityHandlers } from './mcp-security.handler'
 import { registerSocketIOHandlers } from './socketio.handler'
 import { registerMockHandlers } from './mock.handler'
 import { registerMockMcpHandlers } from './mock-mcp.handler'
@@ -73,6 +74,7 @@ export function registerAllHandlers(): void {
   registerEulaHandlers()
   registerMcpHandlers()
   registerMcpOAuthHandlers()
+  registerMcpSecurityHandlers()
   registerSocketIOHandlers()
   registerMockHandlers()
   registerMockMcpHandlers()

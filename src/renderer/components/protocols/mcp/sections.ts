@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import McpOAuthSection from './McpOAuthSection'
+import McpSecuritySection from './McpSecuritySection'
 
 /**
  * Extension point of the MCP editor (issue #139). Each entry becomes an extra
@@ -18,4 +19,5 @@ export interface McpSection {
 
 export const MCP_EXTRA_SECTIONS: McpSection[] = [
   { id: 'oauth', label: 'mcp.oauth.tab', component: McpOAuthSection },
+  { id: 'security', label: 'mcp.security.tab', component: McpSecuritySection },
 ]

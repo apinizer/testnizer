@@ -19,6 +19,7 @@ import type {
   McpReadResourceResult,
   McpResource,
   McpResourceTemplate,
+  McpSecurityScanRequest,
   McpTool,
   McpTransport,
 } from '../types/mcp'
@@ -41,6 +42,12 @@ import {
 // Shared dirty-flag helper — an edit flips the active tab's unsaved dot so
 // Ctrl+S has something to persist (same as the SSE / WS stores, issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
+import {
+  claimSecurityOrphans,
+  securityEventHandlers,
+  securityIdle,
+  type McpSecurityTabState,
+} from './mcp-security.slice'
 
 export type { McpTransport, McpTool } from '../types/mcp'
 
@@ -49,8 +56,9 @@ type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 /** Right-pane section ids (`McpEditor` tabs; extra ids come from `mcp/sections.ts`). */
 export const MCP_EXPLORER_SECTION = 'explorer'
 export const MCP_OAUTH_SECTION = 'oauth'
+export const MCP_SECURITY_SECTION = 'security'
 
-export interface TabMcpState {
+export interface TabMcpState extends McpSecurityTabState {
   transport: McpTransport
   /** Server URL — for stdio, the command line (`npx -y @scope/server …`). */
   url: string
@@ -166,6 +174,11 @@ interface McpStore extends TabMcpState {
   forgetOAuth: () => Promise<void>
   /** Use the last flow's token for this tab and (re)connect with it. */
   connectWithOAuth: () => Promise<void>
+  /** Opt-in for the rate-limit probe (persisted per tab, not part of Ctrl+S). */
+  setSecurityRateLimitProbe: (v: boolean) => void
+  /** Run the MCP Security Scan against this tab's server (issue #142). */
+  startSecurityScan: () => Promise<void>
+  cancelSecurityScan: () => Promise<void>
   connect: () => Promise<void>
   disconnect: () => Promise<void>
   listTools: () => Promise<void>
@@ -199,6 +212,7 @@ type McpConfigKeys =
   | 'oauthRunning'
   | 'oauthError'
   | 'oauthNoAuthRequired'
+  | keyof McpSecurityTabState
 type ConnectionSlice = Omit<TabMcpState, McpConfigKeys>
 
 /** Everything tied to a live connection — reset on disconnect / close. */
@@ -273,6 +287,8 @@ function emptyState(): TabMcpState {
     oauthClientSecret: '',
     oauthScope: '',
     ...oauthIdle(),
+    securityRateLimitProbe: false,
+    ...securityIdle(),
     ...disconnectedPatch(),
   }
 }
@@ -327,6 +343,13 @@ function extractState(s: TabMcpState): TabMcpState {
     oauthRunning: s.oauthRunning,
     oauthError: s.oauthError,
     oauthNoAuthRequired: s.oauthNoAuthRequired,
+    securityScanId: s.securityScanId,
+    securityRunning: s.securityRunning,
+    securityProgress: s.securityProgress,
+    securityFindings: s.securityFindings,
+    securityReport: s.securityReport,
+    securityError: s.securityError,
+    securityRateLimitProbe: s.securityRateLimitProbe,
   }
 }
 
@@ -346,6 +369,8 @@ function persistable(s: TabMcpState): TabMcpState {
     // Write-only secret and the token session never reach localStorage.
     oauthClientSecret: '',
     ...oauthIdle(),
+    // Scan results are transient; only the rate-limit opt-in survives.
+    ...securityIdle(),
   }
 }
 
@@ -561,6 +586,22 @@ function forgetOAuthSessions(ids: Array<string | null | undefined>): void {
   }
 }
 
+// ─── Security Scan events (issue #142) — routed by scan id ──────────────────
+
+function findSecurityTab(scanId: string): { tabId: string | null } | undefined {
+  const s = useMcpStore.getState()
+  if (s.securityScanId === scanId) return { tabId: s._currentTabId }
+  for (const [tabId, st] of s._tabStates) {
+    if (tabId !== s._currentTabId && st.securityScanId === scanId) return { tabId }
+  }
+  return undefined
+}
+
+const securityEvents = securityEventHandlers<TabMcpState>({
+  findTab: findSecurityTab,
+  patchTab: (tabId, patch) => patchTab(tabId, patch),
+})
+
 let subscribedApi: McpBridge | null = null
 let unsubscribers: Array<() => void> = []
 
@@ -586,6 +627,11 @@ export function ensureMcpEventSubscriptions(): void {
   if (api.onConnectionClosed) unsubscribers.push(api.onConnectionClosed(handleConnectionClosed))
   if (api.onOauthStep) unsubscribers.push(api.onOauthStep(handleOAuthStep))
   if (api.onOauthDone) unsubscribers.push(api.onOauthDone(handleOAuthDone))
+  if (api.onSecurityProgress) {
+    unsubscribers.push(api.onSecurityProgress(securityEvents.onProgress))
+  }
+  if (api.onSecurityFinding) unsubscribers.push(api.onSecurityFinding(securityEvents.onFinding))
+  if (api.onSecurityDone) unsubscribers.push(api.onSecurityDone(securityEvents.onDone))
 }
 
 // ─── Capability loaders (routed by connectionId) ────────────────────────────
@@ -829,6 +875,69 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       await get().disconnect()
     }
     await get().connect()
+  },
+
+  // Not part of the Ctrl+S snapshot — no dirty flag.
+  setSecurityRateLimitProbe: (securityRateLimitProbe) => set({ securityRateLimitProbe }),
+
+  startSecurityScan: async () => {
+    const st = get()
+    if (st.securityRunning) return
+    if (st.transport === 'stdio') {
+      set({
+        securityError: 'The security scan applies to the Streamable HTTP and SSE transports only',
+      })
+      return
+    }
+    if (!st.url.trim()) return
+    ensureMcpEventSubscriptions()
+    const api = getMcpApi()
+    if (!api?.securityScan) {
+      set({ securityError: 'The security scan is not available' })
+      return
+    }
+    const ownerTabId = st._currentTabId
+    const vars = activeVars()
+    const request: McpSecurityScanRequest = {
+      url: resolveVariables(st.url, vars).trim(),
+      transport: st.transport === 'sse' ? 'sse' : 'http',
+      options: { rateLimitProbe: st.securityRateLimitProbe },
+    }
+    // The tab's current headers and OAuth token session — main strips the
+    // credentials for the unauthenticated probes; the token never comes here.
+    const headers = kvRowsToRecord(st.customHeaders, vars)
+    if (Object.keys(headers).length > 0) request.headers = headers
+    if (st.oauthSessionId) request.oauthSessionId = st.oauthSessionId
+    set({ ...securityIdle(), securityRunning: true })
+    let res: Awaited<ReturnType<McpBridge['securityScan']>>
+    try {
+      res = await api.securityScan(request)
+    } catch (e) {
+      res = { success: false, error: errText(e, 'Security scan failed to start') }
+    }
+    if (res.success && res.data) {
+      const scanId = res.data.scanId
+      patchTab(ownerTabId, (s) => ({
+        securityScanId: scanId,
+        ...claimSecurityOrphans(scanId, s.securityFindings),
+      }))
+    } else {
+      patchTab(ownerTabId, {
+        securityRunning: false,
+        securityError: res.error ?? 'Security scan failed to start',
+      })
+    }
+  },
+
+  cancelSecurityScan: async () => {
+    const { securityScanId, securityRunning } = get()
+    const api = getMcpApi()
+    if (!securityRunning || !securityScanId || !api?.securityCancel) return
+    try {
+      await api.securityCancel(securityScanId)
+    } catch {
+      /* the scan already finished */
+    }
   },
 
   connect: async () => {
@@ -1091,8 +1200,13 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     // Close the tab's connection whether it is the live slice or a cached one.
     const tab = s._currentTabId === tabId ? extractState(s) : s._tabStates.get(tabId)
     const cid = tab?.connectionId
-    // The tab's OAuth tokens die with it.
+    // The tab's OAuth tokens die with it, and so does a running scan.
     if (tab) forgetOAuthSessions([tab.oauthFlowId, tab.oauthSessionId])
+    if (tab?.securityRunning && tab.securityScanId) {
+      getMcpApi()
+        ?.securityCancel?.(tab.securityScanId)
+        .catch(() => {})
+    }
     if (cid) {
       getMcpApi()
         ?.disconnect(cid)
