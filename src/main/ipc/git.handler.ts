@@ -958,7 +958,11 @@ export function registerGitHandlers(): void {
   })
 
   // ─── Push current branch ──────────────────────────────────
-  ipcMain.handle('git:push', async (_event, projectId: string) => {
+  // `opts.commitMessage` is what the user typed in the Push dialog (issue
+  // #136); blank / missing → the automatic "Update <name> — <date>". The
+  // Clone wizard's first push passes no opts and keeps the automatic message.
+  type GitPushOpts = { commitMessage?: unknown }
+  ipcMain.handle('git:push', async (_event, projectId: string, opts?: GitPushOpts) => {
     let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
     try {
       config = await getProjectGitConfig(projectId)
@@ -981,13 +985,16 @@ export function registerGitHandlers(): void {
         skipIfEmpty: false,
       })
       if (changed) {
-        await git.commit(`Update ${displayName} — ${new Date().toLocaleString()}`)
+        const typed = typeof opts?.commitMessage === 'string' ? opts.commitMessage.trim() : ''
+        await git.commit(typed || `Update ${displayName} — ${new Date().toLocaleString()}`)
       }
 
       // Push current branch
       await git.push('origin', currentBranch, ['--set-upstream'])
 
-      return { success: true, data: { branch: currentBranch, pushed: true } }
+      // `committed: false` = nothing new since the last commit; the push
+      // still ran (it may carry earlier unpushed commits).
+      return { success: true, data: { branch: currentBranch, pushed: true, committed: changed } }
     } catch (e) {
       return { success: false, error: describeGitError(e, config?.token) }
     }

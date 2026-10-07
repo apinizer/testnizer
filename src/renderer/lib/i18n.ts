@@ -2209,6 +2209,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.branchDeleteFailed': 'Delete failed',
     'toast.pushed': 'Pushed successfully',
     'toast.pushFailed': 'Push failed',
+    'toast.pushedNoChanges': 'Pushed — nothing new to commit',
+    'push.modalTitle': 'Commit & Push',
+    'push.modalDescription':
+      'Project changes are committed with this message, then pushed to the remote.',
+    'push.messageLabel': 'Commit message',
+    'push.messagePlaceholder': 'Describe your changes',
+    'push.messageRequired': 'Commit message cannot be empty',
+    'push.confirm': 'Commit & push',
     'toast.pulled': 'Pulled successfully',
     'toast.pullFailed': 'Pull failed',
     'toast.pullNoProjectFile':
@@ -4483,6 +4491,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.branchDeleteFailed': 'Silme başarısız',
     'toast.pushed': 'Gönderim başarılı',
     'toast.pushFailed': 'Gönderim başarısız',
+    'toast.pushedNoChanges': 'Gönderildi — commit edilecek yeni değişiklik yok',
+    'push.modalTitle': 'Commit ve Gönder',
+    'push.modalDescription':
+      'Proje değişiklikleri bu mesajla commit edilir, ardından uzak depoya gönderilir.',
+    'push.messageLabel': 'Commit mesajı',
+    'push.messagePlaceholder': 'Değişikliklerinizi açıklayın',
+    'push.messageRequired': 'Commit mesajı boş olamaz',
+    'push.confirm': 'Commit ve gönder',
     'toast.pulled': 'Çekim başarılı',
     'toast.pullFailed': 'Çekim başarısız',
     'toast.pullNoProjectFile':

@@ -545,3 +545,43 @@ describe('the other two git surfaces share the remote with the checkout', () => 
     expect(fx.names(B)).toEqual(['A1'])
   }, 30_000)
 })
+
+describe('Push commit message (issue #136)', () => {
+  type PushOutcome = { branch: string; pushed: boolean; committed: boolean }
+
+  it('the typed message becomes the commit; a push with nothing new commits nothing and keeps HEAD', async () => {
+    const A = fx.machine('A')
+    fx.addEndpoint(A, 'A1')
+    const first = await fx.ok<PushOutcome>('git:push', fx.on(A).projectId, {
+      commitMessage: '  feat: add login endpoint  ',
+    })
+    expect(first).toEqual({ branch: 'main', pushed: true, committed: true })
+    expect(fx.git(A.localPath, 'log', '-1', '--format=%s')).toBe('feat: add login endpoint')
+    // …and that commit is what reached the remote.
+    expect(fx.git(root, '--git-dir', fx.remote, 'log', '-1', '--format=%s', 'main')).toBe(
+      'feat: add login endpoint',
+    )
+
+    const head = fx.git(A.localPath, 'rev-parse', 'HEAD')
+    const second = await fx.ok<PushOutcome>('git:push', A.projectId, {
+      commitMessage: 'chore: nothing changed',
+    })
+    expect(second).toEqual({ branch: 'main', pushed: true, committed: false })
+    expect(fx.git(A.localPath, 'rev-parse', 'HEAD')).toBe(head)
+    expect(fx.git(A.localPath, 'log', '-1', '--format=%s')).toBe('feat: add login endpoint')
+  }, 20_000)
+
+  it('a blank message (or none at all) falls back to the default "Update <name> — <date>"', async () => {
+    const A = fx.machine('A')
+    fx.addEndpoint(A, 'A1')
+    const blank = await fx.ok<PushOutcome>('git:push', fx.on(A).projectId, { commitMessage: '   ' })
+    expect(blank.committed).toBe(true)
+    expect(fx.git(A.localPath, 'log', '-1', '--format=%s')).toMatch(/^Update Shared APIs — /)
+
+    fx.addEndpoint(A, 'A2')
+    const none = await fx.ok<PushOutcome>('git:push', A.projectId)
+    expect(none.committed).toBe(true)
+    expect(fx.git(A.localPath, 'log', '-1', '--format=%s')).toMatch(/^Update Shared APIs — /)
+    expect(fx.remoteNames('main')).toEqual(['A1', 'A2'])
+  }, 20_000)
+})

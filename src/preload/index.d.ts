@@ -1331,6 +1331,8 @@ interface GitPullOutcome {
 interface GitPushOutcome {
   branch: string
   pushed: boolean
+  /** False when the DB held nothing new to commit — the push still ran. */
+  committed: boolean
 }
 
 interface GitStatusResult {
@@ -1383,7 +1385,8 @@ interface GitApi {
     branchName: string
   }): Promise<IpcResult<{ branch: string }>>
   merge(payload: { projectId: string; sourceBranch: string }): Promise<IpcResult<GitMergeResult>>
-  push(projectId: string): Promise<IpcResult<GitPushOutcome>>
+  /** `commitMessage` blank / omitted → automatic "Update <name> — <date>". */
+  push(projectId: string, opts?: { commitMessage?: string }): Promise<IpcResult<GitPushOutcome>>
   pull(projectId: string): Promise<IpcResult<GitPullOutcome>>
   status(projectId: string): Promise<IpcResult<GitStatusResult>>
   deleteBranch(payload: {

@@ -15,19 +15,27 @@ import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
+import PushCommitModal from '../modals/PushCommitModal'
+import { suggestedCommitMessage } from '../../lib/push-commit-message'
 
 export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [merging, setMerging] = useState(false)
   const [newName, setNewName] = useState('')
   const [busy, setBusy] = useState(false)
   const [deleteBranchTarget, setDeleteBranchTarget] = useState<string | null>(null)
+  // Commit message being edited in the Push dialog; null = dialog closed.
+  const [pushDraft, setPushDraft] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
+  const activeProjectName = useWorkspaceStore((s) => {
+    const p = s.projects.find((x) => x.id === s.activeProjectId)
+    return p ? p.display_name || p.name : ''
+  })
   const branches = useBranchStore((s) => s.branches)
   const currentBranch = useBranchStore((s) => s.currentBranch)
   const hasGit = useBranchStore((s) => s.hasGit)
@@ -138,13 +146,21 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     setBusy(false)
   }
 
-  async function handlePush() {
+  // Push asks for the commit message first (issue #136); `runPush` does it.
+  function handlePush() {
+    if (!activeProjectId) return
+    setOpen(false)
+    setPushDraft(suggestedCommitMessage(activeProjectName || 'project', locale))
+  }
+
+  async function runPush(commitMessage: string) {
+    setPushDraft(null)
     if (!activeProjectId) return
     setBusy(true)
     setGitLoading('Pushing to remote...')
-    const result = await pushBranch(activeProjectId)
+    const result = await pushBranch(activeProjectId, commitMessage)
     if (result.success) {
-      toast.success(t('toast.pushed'))
+      toast.success(t(result.committed === false ? 'toast.pushedNoChanges' : 'toast.pushed'))
     } else {
       toast.error(result.error || t('toast.pushFailed'))
     }
@@ -537,6 +553,12 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
         itemType="branch"
         onConfirm={confirmDeleteBranch}
         onCancel={() => setDeleteBranchTarget(null)}
+      />
+      <PushCommitModal
+        open={pushDraft !== null}
+        defaultMessage={pushDraft ?? ''}
+        onConfirm={runPush}
+        onCancel={() => setPushDraft(null)}
       />
     </div>
   )
