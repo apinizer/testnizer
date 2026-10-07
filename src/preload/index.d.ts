@@ -1166,6 +1166,8 @@ interface AiChatApi {
 interface McpConnectOptions {
   transport: 'http' | 'sse' | 'stdio'
   url: string
+  /** Custom HTTP headers for the http / sse handshake (issue #137); ignored for stdio. */
+  headers?: Record<string, string>
   _pendingId?: string
 }
 

@@ -5,8 +5,29 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setupHandlerHarness, makeElectronMock, createTestDb } from './helpers'
 
+/** Everything sent on the `console:log` IPC channel. */
+let consoleEntries: unknown[] = []
+
 const harness = setupHandlerHarness()
-vi.mock('electron', () => makeElectronMock())
+vi.mock('electron', () => ({
+  ...makeElectronMock(),
+  BrowserWindow: {
+    getFocusedWindow: () => null,
+    // One live window, so `emitConsoleEntry` has somewhere to send.
+    getAllWindows: () => [
+      {
+        isDestroyed: () => false,
+        webContents: {
+          send: (channel: string, entry: unknown) => {
+            if (channel === 'console:log') consoleEntries.push(entry)
+          },
+        },
+      },
+    ],
+    fromWebContents: () => null,
+    fromId: () => null,
+  },
+}))
 
 let testDb: ReturnType<typeof createTestDb>
 vi.mock('../../../src/main/db/database', () => ({
@@ -30,11 +51,14 @@ vi.mock('../../../src/main/protocols/mcp.engine', () => ({
 }))
 
 const { registerMcpHandlers } = await import('../../../src/main/ipc/mcp.handler')
+const { mcpConnect } = await import('../../../src/main/protocols/mcp.engine')
 
 beforeEach(() => {
   harness.reset()
   testDb = createTestDb()
   shouldFailConnect = false
+  consoleEntries = []
+  vi.mocked(mcpConnect).mockClear()
   registerMcpHandlers()
 })
 
@@ -94,5 +118,58 @@ describe('mcp:listTools + callTool', () => {
     }
     expect(res.success).toBe(true)
     expect(res.data?.canceled).toBe(true)
+  })
+})
+
+describe('mcp:connect custom headers (issue #137)', () => {
+  const TOKEN = 'Bearer super-secret-137'
+  const HEADERS = {
+    Authorization: TOKEN,
+    'X-Gateway-Token': 'gw-secret-137',
+    'X-Gateway-Project': 'project1',
+  }
+
+  it('forwards options.headers to mcpConnect', async () => {
+    await harness.invoke('mcp:connect', {
+      transport: 'http',
+      url: 'http://127.0.0.1:8091/apigateway/project1/mcp-jira/',
+      headers: HEADERS,
+    })
+    expect(vi.mocked(mcpConnect)).toHaveBeenCalledWith(
+      expect.objectContaining({ transport: 'http', headers: HEADERS }),
+    )
+  })
+
+  it('console log never carries raw credential values (success path)', async () => {
+    await harness.invoke('mcp:connect', {
+      transport: 'http',
+      url: 'http://gw.local/mcp',
+      headers: HEADERS,
+    })
+    expect(consoleEntries.length).toBeGreaterThan(0)
+    const wire = JSON.stringify(consoleEntries)
+    expect(wire).not.toContain('super-secret-137')
+    expect(wire).not.toContain('gw-secret-137')
+    const entry = consoleEntries[0] as {
+      details?: { requestHeaders?: Record<string, string>; meta?: Record<string, unknown> }
+    }
+    // Names stay visible for debugging; credential values are masked.
+    expect(Object.keys(entry.details?.requestHeaders ?? {})).toEqual(Object.keys(HEADERS))
+    expect(entry.details?.requestHeaders?.Authorization).toBe('••••••')
+    expect(entry.details?.requestHeaders?.['X-Gateway-Token']).toBe('••••••')
+    expect(entry.details?.requestHeaders?.['X-Gateway-Project']).toBe('project1')
+    expect(entry.details?.meta?.headerCount).toBe(3)
+  })
+
+  it('console log never carries raw credential values (error path)', async () => {
+    shouldFailConnect = true
+    const res = (await harness.invoke('mcp:connect', {
+      transport: 'sse',
+      url: 'http://gw.local/sse',
+      headers: HEADERS,
+    })) as { success: boolean }
+    expect(res.success).toBe(false)
+    expect(consoleEntries.length).toBeGreaterThan(0)
+    expect(JSON.stringify(consoleEntries)).not.toContain('super-secret-137')
   })
 })

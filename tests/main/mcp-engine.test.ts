@@ -49,11 +49,15 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
 }))
 
 vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
-  StreamableHTTPClientTransport: vi.fn().mockImplementation((url: URL) => ({ _url: url.toString() })),
+  StreamableHTTPClientTransport: vi
+    .fn()
+    .mockImplementation((url: URL, opts?: unknown) => ({ _url: url.toString(), _opts: opts })),
 }))
 
 vi.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
-  SSEClientTransport: vi.fn().mockImplementation((url: URL) => ({ _url: url.toString() })),
+  SSEClientTransport: vi
+    .fn()
+    .mockImplementation((url: URL, opts?: unknown) => ({ _url: url.toString(), _opts: opts })),
 }))
 
 vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
@@ -68,6 +72,9 @@ import {
   mcpGetConnection,
   mcpDisconnectAll,
 } from '../../src/main/protocols/mcp.engine'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
 // ─── Reset between tests ──────────────────────────────────────
 beforeEach(() => {
@@ -223,5 +230,45 @@ describe('mcp.engine — callTool', () => {
     mockClient.callTool.mockRejectedValueOnce(new Error('Tool not found: unknown'))
     const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
     await expect(mcpCallTool(info.connectionId, 'unknown', {})).rejects.toThrow('Tool not found')
+  })
+})
+
+// ─── custom headers (issue #137) ──────────────────────────────
+describe('mcp.engine — custom connect headers (issue #137)', () => {
+  const HEADERS = { Authorization: 'Bearer t-137', 'X-Gateway-Project': 'project1' }
+
+  it('http: headers go to StreamableHTTPClientTransport via requestInit.headers', async () => {
+    await mcpConnect({ transport: 'http', url: 'http://gw.local/mcp', headers: HEADERS })
+    const ctor = vi.mocked(StreamableHTTPClientTransport)
+    expect(ctor).toHaveBeenCalledTimes(1)
+    const [url, opts] = ctor.mock.calls[0]
+    expect(url.toString()).toBe('http://gw.local/mcp')
+    expect(opts).toEqual({ requestInit: { headers: HEADERS } })
+  })
+
+  it('sse: headers go to SSEClientTransport via requestInit.headers (SDK 1.29 applies them to the GET stream too)', async () => {
+    await mcpConnect({ transport: 'sse', url: 'http://gw.local/sse', headers: HEADERS })
+    const ctor = vi.mocked(SSEClientTransport)
+    expect(ctor).toHaveBeenCalledTimes(1)
+    const [, opts] = ctor.mock.calls[0]
+    expect(opts).toEqual({ requestInit: { headers: HEADERS } })
+  })
+
+  it('no headers / empty map → transport built without options (unchanged default)', async () => {
+    await mcpConnect({ transport: 'http', url: 'http://gw.local/mcp' })
+    await mcpConnect({ transport: 'sse', url: 'http://gw.local/sse', headers: {} })
+    expect(vi.mocked(StreamableHTTPClientTransport).mock.calls[0][1]).toBeUndefined()
+    expect(vi.mocked(SSEClientTransport).mock.calls[0][1]).toBeUndefined()
+  })
+
+  it('stdio ignores headers', async () => {
+    await mcpConnect({ transport: 'stdio', url: 'node server.js', headers: HEADERS })
+    const ctor = vi.mocked(StdioClientTransport)
+    expect(ctor).toHaveBeenCalledTimes(1)
+    const params = ctor.mock.calls[0][0] as unknown as Record<string, unknown>
+    expect(params).not.toHaveProperty('requestInit')
+    expect(JSON.stringify(params)).not.toContain('Bearer t-137')
+    expect(StreamableHTTPClientTransport).not.toHaveBeenCalled()
+    expect(SSEClientTransport).not.toHaveBeenCalled()
   })
 })

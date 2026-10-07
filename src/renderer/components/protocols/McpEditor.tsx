@@ -1,6 +1,7 @@
 import { Inbox } from 'lucide-react'
 import { useMcpStore, type McpTransport } from '../../stores/mcp.store'
 import EmptyState from '../shared/EmptyState'
+import McpHeadersSection from './McpHeadersSection'
 import { T } from '../../styles/tokens'
 
 const TRANSPORT_OPTIONS: { value: McpTransport; label: string }[] = [
@@ -113,6 +114,8 @@ export default function McpEditor() {
           <span style={{ fontSize: 12, color: T.DELETE.color }}>{store.errorMessage}</span>
         )}
       </div>
+
+      <McpHeadersSection />
 
       {/* ─ Body ─ */}
       <div style={{ flex: 1, display: 'flex', gap: 0, overflow: 'hidden' }}>

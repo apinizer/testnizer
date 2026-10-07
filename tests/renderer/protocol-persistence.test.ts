@@ -8,6 +8,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { snapshotProtocol, restoreProtocolFromMetadata } from '../../src/renderer/lib/save-active-request'
 import { useGraphQLStore } from '../../src/renderer/stores/graphql.store'
 import { useWebSocketStore } from '../../src/renderer/stores/websocket.store'
+import { useMcpStore } from '../../src/renderer/stores/mcp.store'
+import { useRequestStore } from '../../src/renderer/stores/request.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import type { Tab } from '../../src/renderer/types'
 
@@ -111,5 +113,79 @@ describe('MST-120 — restore survives the post-restore switchToTab race', () =>
     // Restore must not flip the tab dirty — reopening a saved request is clean.
     const reopened = useTabsStore.getState().tabs.find((t) => t.id === REOPENED_TAB)
     expect(reopened?.isDirty).toBe(false)
+  })
+})
+
+/**
+ * Issue #137 — MCP had no snapshot/restore branch at all: Ctrl+S wrote only
+ * the (never-edited) request-store URL, so reopening an MCP request showed a
+ * blank server URL and default transport — and the new custom headers would
+ * have been lost the same way. Pins the write branch, the read branch, and
+ * the MST-120 pre-switch (`switchProtocolToTab` must know about 'mcp').
+ */
+describe('MCP snapshot / restore (issue #137)', () => {
+  const SAVED_URL = 'http://127.0.0.1:8091/apigateway/project1/mcp-jira/'
+  const HEADERS = [
+    { id: 'h1', key: 'Authorization', value: 'Bearer {{token}}', enabled: true },
+    { id: 'h2', key: 'X-Gateway-Project', value: 'project1', enabled: false },
+  ]
+  const REOPENED_TAB = 'tab-reopened-mcp'
+
+  function snapshotSavedMcpTab(): ReturnType<typeof snapshotProtocol> {
+    useMcpStore.getState().switchToTab('tab-source-mcp')
+    useMcpStore.setState({ transport: 'sse', url: SAVED_URL, customHeaders: HEADERS })
+    return snapshotProtocol({ id: 'tab-source-mcp', protocol: 'mcp', name: 'MCP' } as Tab)
+  }
+
+  it('snapshotProtocol writes transport / url / customHeaders and the MCP url as effectiveUrl', () => {
+    const snap = snapshotSavedMcpTab()
+    expect(snap.effectiveUrl).toBe(SAVED_URL)
+    expect(snap.effectiveMethod).toBe('GET')
+    expect(snap.protocolMeta).toEqual({
+      mcp: { transport: 'sse', url: SAVED_URL, customHeaders: HEADERS },
+    })
+  })
+
+  it('restore survives the post-restore switchToTab race and leaves the tab clean', () => {
+    const { protocolMeta } = snapshotSavedMcpTab()
+
+    // Close + reopen on a brand-new tab id the store has no cache for.
+    useMcpStore.getState().switchToTab('tab-some-other')
+    expect(useMcpStore.getState().url).not.toBe(SAVED_URL)
+    useTabsStore.setState({
+      tabs: [
+        {
+          id: REOPENED_TAB,
+          name: 'MCP',
+          protocol: 'mcp',
+          savedRequestId: 'sr-mcp',
+          isDirty: false,
+          isLoading: false,
+        } as Tab,
+      ],
+      activeTabId: REOPENED_TAB,
+    })
+
+    restoreProtocolFromMetadata('mcp', protocolMeta)
+    // Workbench effect re-runs switchToTab for the active tab afterwards.
+    useMcpStore.getState().switchToTab(REOPENED_TAB)
+
+    const m = useMcpStore.getState()
+    expect(m.transport).toBe('sse')
+    expect(m.url).toBe(SAVED_URL)
+    expect(m.customHeaders.map((h) => [h.key, h.value, h.enabled])).toEqual([
+      ['Authorization', 'Bearer {{token}}', true],
+      ['X-Gateway-Project', 'project1', false],
+    ])
+    const reopened = useTabsStore.getState().tabs.find((t) => t.id === REOPENED_TAB)
+    expect(reopened?.isDirty).toBe(false)
+  })
+
+  it('falls back to the row url (request store) when the meta carries none', () => {
+    useTabsStore.setState({ tabs: [], activeTabId: null })
+    useMcpStore.setState({ url: '', transport: 'http', customHeaders: [] })
+    useRequestStore.setState({ url: 'http://row-url.test/mcp' })
+    restoreProtocolFromMetadata('mcp', { mcp: { transport: 'http' } })
+    expect(useMcpStore.getState().url).toBe('http://row-url.test/mcp')
   })
 })
