@@ -1,7 +1,8 @@
 /**
  * Sidebar panel that lists all mock servers in the active project.
  * Mirrors the visual style of ToolsPanel: header + search + list.
- * Clicking a row opens a tab with `protocol = mockServer`.
+ * Clicking a row opens a tab with `protocol = mockServer`. Mock MCP servers
+ * (issue #140) are listed below in their own group (`MockMcpServersSection`).
  */
 
 import { useEffect, useMemo, useState } from 'react'
@@ -11,6 +12,7 @@ import { useTabsStore } from '../../stores/tabs.store'
 import { useMockStore } from '../../stores/mock.store'
 import { useTranslation } from '../../lib/i18n'
 import { T } from '../../styles/tokens'
+import MockMcpServersSection from '../mock-mcp/MockMcpServersSection'
 
 export default function MockServersPanel() {
   const { t } = useTranslation()
@@ -220,8 +222,24 @@ export default function MockServersPanel() {
         />
       </div>
 
-      {/* List */}
+      {/* List — HTTP mock servers, then Mock MCP servers (issue #140) */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div
+          data-testid="mock-http-section-title"
+          style={{
+            height: 30,
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 12px',
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase',
+            color: T.muted,
+          }}
+        >
+          {t('mockMcp.httpSectionTitle')}
+        </div>
         {filtered.length === 0 ? (
           <div style={{ padding: 20, textAlign: 'center', color: T.muted, fontSize: 12 }}>
             {servers.length === 0 ? t('mock.noServersYet') : t('mock.noMatches')}
@@ -323,6 +341,7 @@ export default function MockServersPanel() {
             )
           })
         )}
+        <MockMcpServersSection query={query} />
       </div>
     </div>
   )

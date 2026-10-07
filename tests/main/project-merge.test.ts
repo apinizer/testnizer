@@ -148,6 +148,44 @@ describe('mergeProjectDocs — rows, not lines', () => {
   })
 })
 
+describe('mergeProjectDocs — Mock MCP servers (issue #140)', () => {
+  const mcp = (id: string, name: string, extra: Row = {}): Row => ({
+    id,
+    project_id: 'p',
+    name,
+    port: 3100,
+    tools_json: '[]',
+    updated_at: 1000,
+    ...extra,
+  })
+
+  it('keeps a mock MCP server added on "theirs" (the auto-merge used to drop it)', () => {
+    const base = doc([ep('1', 'one')], { mockMcpServers: [mcp('m1', 'shared')] })
+    const ours = doc([ep('1', 'one'), ep('2', 'mine')], { mockMcpServers: [mcp('m1', 'shared')] })
+    const theirs = doc([ep('1', 'one')], {
+      mockMcpServers: [mcp('m1', 'shared'), mcp('m2', 'teammate mock')],
+    })
+    const out = mergeProjectDocs(base, ours, theirs)
+    expect(names(out, 'mockMcpServers')).toEqual(['shared', 'teammate mock'])
+    expect(names(out)).toEqual(['one', 'mine'])
+  })
+
+  it('merges mock MCP rows like any other section: newer edit wins, untouched delete applies', () => {
+    const base = doc([], { mockMcpServers: [mcp('m1', 'a'), mcp('m2', 'b')] })
+    const ours = doc([], { mockMcpServers: [mcp('m1', 'a (mine)', { updated_at: 1500 })] })
+    const theirs = doc([], {
+      mockMcpServers: [mcp('m1', 'a (yours)', { updated_at: 3000 }), mcp('m2', 'b')],
+    })
+    // m1 changed on both sides → newer wins; m2 deleted on ours, untouched on theirs → dropped.
+    expect(names(mergeProjectDocs(base, ours, theirs), 'mockMcpServers')).toEqual(['a (yours)'])
+  })
+
+  it('a file without mockMcpServers on either side stays without it', () => {
+    const out = mergeProjectDocs(null, doc([ep('1', 'one')]), doc([ep('1', 'one')]))
+    expect('mockMcpServers' in out).toBe(false)
+  })
+})
+
 describe('mergeProjectFiles — text wrapper', () => {
   it('returns merged JSON text for two parsable project files', () => {
     const base = JSON.stringify(doc([ep('1', 'one')]))

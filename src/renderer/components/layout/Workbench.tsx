@@ -50,6 +50,7 @@ import TlsInspectorTool from '../tools/TlsInspectorTool'
 import JwkTool from '../tools/JwkTool'
 import SamlTool from '../tools/SamlTool'
 import MockServerEditor from '../mock/MockServerEditor'
+import MockMcpServerEditor from '../mock-mcp/MockMcpServerEditor'
 import RightPanel from './RightPanel'
 import EdgeResizeHandle from './EdgeResizeHandle'
 import { useTabsStore } from '../../stores/tabs.store'
@@ -1202,6 +1203,19 @@ export default function Workbench() {
         >
           <EndpointTabBar />
           <MockServerEditor key={id} serverId={id} />
+        </div>
+      )
+    }
+
+    if (protocol === 'mockMcpServer') {
+      const id = activeTab.mockMcpServerId ?? ''
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <MockMcpServerEditor key={id} serverId={id} />
         </div>
       )
     }

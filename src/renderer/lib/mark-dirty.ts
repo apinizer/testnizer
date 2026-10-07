@@ -10,7 +10,7 @@ import type { Tab } from '../types'
  * whose protocol is a regular request protocol (http, soap, websocket,
  * graphql, grpc, sse, ai, mcp, socketio — those save via the "Save As"
  * EndpointSaveModal). False for Tools tabs, the Runner tab and the Mock
- * Server editor: they carry no request to be dirty against (the mock editor
+ * Server / Mock MCP Server editors: they carry no request to be dirty against (the mock editor
  * has its own save flow).
  *
  * Shared with the Ctrl+S handler in `keyboard-shortcuts.ts` — keep ONE
@@ -25,6 +25,7 @@ export function isRequestLikeTab(
     !isToolProtocol(tab.protocol) &&
     tab.protocol !== 'runner' &&
     tab.protocol !== 'mockServer' &&
+    tab.protocol !== 'mockMcpServer' &&
     tab.protocol !== 'example'
   )
 }

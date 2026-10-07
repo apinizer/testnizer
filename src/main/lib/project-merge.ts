@@ -44,6 +44,11 @@ const ROW_SECTIONS = [
   'mockResponses',
   'certificates',
   'savedResponses',
+  // Mock MCP servers (issue #140): standalone rows (tools / resources /
+  // prompts live in JSON columns), so no FK repair is needed. Without this
+  // entry `{ ...ours }` kept only OUR array and a teammate's servers were
+  // silently dropped by the auto-merge.
+  'mockMcpServers',
 ] as const
 
 function rowsOf(doc: Doc | null, section: string): Row[] {
