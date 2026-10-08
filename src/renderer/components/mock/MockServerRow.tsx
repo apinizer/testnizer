@@ -49,7 +49,11 @@ function RowIconButton({
 
 export function MockKindBadge({ kind }: { kind: MockRowKind }) {
   return (
-    <span className="w-[34px] shrink-0 rounded border border-[var(--accent)] px-1 text-center text-[9px] font-bold leading-[14px] text-[var(--accent-text)]">
+    <span
+      className="inline-flex min-w-[42px] shrink-0 items-center justify-center whitespace-nowrap rounded border border-[var(--accent)] px-1 font-bold text-[var(--accent-text)]"
+      // font-size set inline: globals.css `* { font-size: inherit }` is unlayered and beats text-* utilities
+      style={{ fontSize: 9, lineHeight: '14px' }}
+    >
       {kind === 'http' ? 'HTTP' : 'MCP'}
     </span>
   )
