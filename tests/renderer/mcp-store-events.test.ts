@@ -493,3 +493,45 @@ describe('env rows — dirty flag, disconnect, config import, persistence', () =
     expect(useMcpStore.getState()._tabStates.get('tab-a')?.frames).toHaveLength(1)
   })
 })
+
+describe('closing a tab while its connect is in flight', () => {
+  it('cancels the handshake, closes the late connection and leaves no ghost tab', async () => {
+    const { mcp, resolveNextConnect } = installApi({ deferConnect: true })
+    useMcpStore.getState().switchToTab('tab-a')
+    useMcpStore.setState({ url: 'http://slow.test/mcp' })
+    const done = useMcpStore.getState().connect()
+    await Promise.resolve()
+    const pendingId = useMcpStore.getState()._pendingConnectId
+    expect(pendingId).toBeTruthy()
+
+    // Ctrl+W on the live tab; the Workbench then activates the next tab.
+    useMcpStore.getState().removeTabState('tab-a')
+    expect(mcp.cancelConnect).toHaveBeenCalledWith(pendingId)
+    useMcpStore.getState().switchToTab('tab-b')
+    expect(useMcpStore.getState()._tabStates.has('tab-a')).toBe(false)
+
+    resolveNextConnect()
+    await done
+    // The engine finished anyway: its connection belongs to nobody → closed.
+    expect(mcp.disconnect).toHaveBeenCalledWith('conn-1')
+    expect(useMcpStore.getState()._tabStates.has('tab-a')).toBe(false)
+    expect(useMcpStore.getState().connectionId).toBeNull()
+    expect(mcp.listTools).not.toHaveBeenCalled()
+  })
+
+  it('a connect that resolves before the next tab is activated is closed too', async () => {
+    const { mcp, resolveNextConnect } = installApi({ deferConnect: true })
+    useMcpStore.getState().switchToTab('tab-a')
+    useMcpStore.setState({ url: 'http://slow.test/mcp' })
+    const done = useMcpStore.getState().connect()
+    await Promise.resolve()
+    useMcpStore.getState().removeTabState('tab-a')
+    resolveNextConnect()
+    await done
+    expect(mcp.disconnect).toHaveBeenCalledWith('conn-1')
+    expect(useMcpStore.getState().connectionId).toBeNull()
+    expect(useMcpStore.getState().connectionState).toBe('disconnected')
+    useMcpStore.getState().switchToTab('tab-b')
+    expect(useMcpStore.getState()._tabStates.has('tab-a')).toBe(false)
+  })
+})

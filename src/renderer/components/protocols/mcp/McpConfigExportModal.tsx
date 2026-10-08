@@ -5,6 +5,7 @@ import { useEnvironmentStore } from '../../../stores/environment.store'
 import { useTranslation } from '../../../lib/i18n'
 import { resolveVariables } from '../../../lib/variable-resolver'
 import { kvRowsToRecord } from '../../../lib/mcp-store-helpers'
+import { applyMcpAuth, resolveMcpAuth } from '../../../stores/mcp-auth.slice'
 import {
   formatMcpConfig,
   MCP_CONFIG_HOSTS,
@@ -18,8 +19,9 @@ import { GhostButton } from './ui'
 
 /**
  * Render the current tab as a Claude Desktop / VS Code / Cursor config.
- * `{{var}}` placeholders are resolved from the active environment — the
- * output is meant to work as pasted, so it may contain secrets.
+ * `{{var}}` placeholders are resolved from the active environment and the
+ * Authorization tab (Basic / Bearer / API key) is folded into the headers or
+ * URL — the output is meant to work as pasted, so it may contain secrets.
  */
 export default function McpConfigExportModal({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation()
@@ -28,15 +30,22 @@ export default function McpConfigExportModal({ onClose }: { onClose: () => void 
   const url = useMcpStore((s) => s.url)
   const customHeaders = useMcpStore((s) => s.customHeaders)
   const envVars = useMcpStore((s) => s.envVars)
+  const auth = useMcpStore((s) => s.auth)
   const serverName = useMcpStore((s) => s.serverName)
   const tabName = useTabsStore((s) => s.tabs.find((tab) => tab.id === s.activeTabId)?.name)
 
   const vars = useEnvironmentStore.getState().getActiveVariables()
+  const resolvedUrl = resolveVariables(url, vars)
+  // stdio has no HTTP layer: neither custom headers nor the Authorization tab.
+  const remote =
+    transport === 'stdio'
+      ? null
+      : applyMcpAuth(resolvedUrl, kvRowsToRecord(customHeaders, vars), resolveMcpAuth(auth, vars))
   const server = serverFromTabFields({
     name: slugifyServerName(serverName ?? tabName),
     transport,
-    url: resolveVariables(url, vars),
-    headers: transport === 'stdio' ? undefined : kvRowsToRecord(customHeaders, vars),
+    url: remote?.url ?? resolvedUrl,
+    headers: remote?.headers,
     env: transport === 'stdio' ? kvRowsToRecord(envVars, vars) : undefined,
   })
   const text = formatMcpConfig(server, host)
@@ -87,6 +96,11 @@ export default function McpConfigExportModal({ onClose }: { onClose: () => void 
       >
         {text}
       </pre>
+      {remote?.applied && (
+        <p className="m-0 text-[11px] text-[var(--muted)]" data-testid="mcp-export-auth-note">
+          {t('mcp.config.authNote')}
+        </p>
+      )}
       <p className="m-0 text-[11px] text-[var(--muted)]">{t('mcp.config.secretsNote')}</p>
     </McpModalFrame>
   )

@@ -1,5 +1,5 @@
-import { ExternalLink, Play, Save, Square, Undo2 } from 'lucide-react'
-import { useMockMcpStore, stoppedState } from '../../stores/mock-mcp.store'
+import { BellRing, ExternalLink, Play, Save, Square, Undo2 } from 'lucide-react'
+import { useMockMcpStore, stoppedState, getMockMcpApi } from '../../stores/mock-mcp.store'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 import type { MockMcpServer } from '../../types/mock-mcp'
@@ -7,7 +7,7 @@ import { connectUrl, sseConnectUrl } from './mock-mcp-draft'
 import { openMockInMcpTab } from './mock-mcp-tabs'
 import { GhostButton, PrimaryButton } from './ui'
 import { CopyButton, StatusDot } from './ui-display'
-import { STATUS_KEYS } from './mock-mcp-format'
+import { ERA_KEYS, STATUS_KEYS, sortEras } from './mock-mcp-format'
 
 function UrlLine({ label, url, testId }: { label: string; url: string; testId: string }) {
   const { t } = useTranslation()
@@ -52,6 +52,14 @@ export default function MockMcpEditorHeader({
     if (err) toast.error(err)
   }
 
+  /** Announce `tools/list_changed` now (2026-07-28 listeners + legacy SSE sessions). */
+  const notifyTools = async (): Promise<void> => {
+    const res = await getMockMcpApi()?.server.notify(server.id, 'tools')
+    if (res?.success && res.data) toast.success(t('mockMcp.eras.notified'))
+    else toast.error(res?.error ?? t('mockMcp.notRunningHint'))
+  }
+  const eras = running ? sortEras(live.eras ?? []) : []
+
   const openInMcp = (): void => {
     if (!running) toast.info(t('mockMcp.notRunningHint'))
     openMockInMcpTab({
@@ -95,6 +103,14 @@ export default function MockMcpEditorHeader({
             testId="mock-mcp-sse-url"
           />
         )}
+        {eras.length > 0 && (
+          <div data-testid="mock-mcp-eras" className="text-[11px] text-[var(--muted)]">
+            {t('mockMcp.eras.label')}: {eras.map((e) => t(ERA_KEYS[e])).join(' + ')}
+            {eras.includes('legacy') && live.legacyNotifications === false && (
+              <span className="text-[var(--hint)]"> · {t('mockMcp.eras.legacyNoNotify')}</span>
+            )}
+          </div>
+        )}
         {live.status === 'error' && live.errorMessage && (
           <div className="text-[11px] text-[var(--red)]">{live.errorMessage}</div>
         )}
@@ -109,6 +125,16 @@ export default function MockMcpEditorHeader({
           {running ? <Square size={12} /> : <Play size={12} />}
           {running ? t('mock.stop') : t('mock.start')}
         </GhostButton>
+        {running && (
+          <GhostButton
+            data-testid="mock-mcp-notify"
+            onClick={() => void notifyTools()}
+            title={t('mockMcp.eras.notifyHint')}
+          >
+            <BellRing size={12} />
+            {t('mockMcp.eras.notify')}
+          </GhostButton>
+        )}
         <GhostButton data-testid="mock-mcp-open-in-mcp" onClick={openInMcp}>
           <ExternalLink size={12} />
           {t('mockMcp.openInMcp')}

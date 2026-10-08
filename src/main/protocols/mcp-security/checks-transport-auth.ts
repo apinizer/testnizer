@@ -21,6 +21,7 @@ import {
   memo,
   pass,
   problem,
+  serverInfoFromResult,
   skipped,
   type CheckDef,
   type CheckOutcome,
@@ -166,6 +167,14 @@ const downgrade: CheckDef = {
     if (ctx.url.protocol !== 'https:') {
       return skipped('Not applicable — the server URL is already plain HTTP.')
     }
+    // `https://host:8443` → `http://host:8443` would probe the TLS listener
+    // (and always read "refused"); the plain-HTTP port of a custom HTTPS port
+    // is unknowable. Default port 443 → probe port 80.
+    if (ctx.url.port !== '') {
+      return skipped(
+        `Not tested — the server uses an explicit HTTPS port (${ctx.url.port}), so the plain-HTTP port cannot be inferred; probing http:// on the same port would only reach the TLS listener.`,
+      )
+    }
     const plain = new URL(ctx.url.href)
     plain.protocol = 'http:'
     // Never send credentials over plain HTTP: anonymous headers only.
@@ -239,11 +248,13 @@ const unauthInitialize: CheckDef = {
     }
     const status = u.http.status
     const evidence = ev(u.http)
+    // The probe is `server/discover` on Streamable HTTP, `initialize` when that is not 2026-07-28.
+    const handshake = u.era === 'modern' ? 'server/discover' : 'initialize'
     if (status === 401 || status === 403) {
-      return pass(`An initialize without credentials is rejected with HTTP ${status}.`, evidence)
+      return pass(`An unauthenticated handshake is rejected with HTTP ${status}.`, evidence)
     }
     if (isOk(status)) {
-      const serverInfo = isRecord(u.result?.serverInfo) ? u.result?.serverInfo : undefined
+      const serverInfo = serverInfoFromResult(u.result)
       const name = typeof serverInfo?.name === 'string' ? serverInfo.name : ''
       if (!u.result) {
         return info(
@@ -253,14 +264,14 @@ const unauthInitialize: CheckDef = {
       }
       if (ctx.loopback) {
         return info(
-          `The server opens sessions without credentials${name ? ` (serverInfo.name "${name}")` : ''} — normal for a local development server on a loopback address.`,
+          `The server completes ${handshake} without credentials${name ? ` (serverInfo.name "${name}")` : ''} — normal for a local development server on a loopback address.`,
           evidence,
         )
       }
       return problem(
         'warn',
         'medium',
-        `The server completed initialize without any credentials${name ? ` (serverInfo.name "${name}")` : ''}: anyone who can reach it can list and call its tools.`,
+        `The server completed ${handshake} without any credentials${name ? ` (serverInfo.name "${name}")` : ''}: anyone who can reach it can list and call its tools.`,
         'Require OAuth 2.1 bearer tokens (MCP authorization spec) or put the endpoint behind an authenticating gateway — unless it is intentionally public and its tools are harmless.',
         evidence,
       )

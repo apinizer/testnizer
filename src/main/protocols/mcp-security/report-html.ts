@@ -19,7 +19,7 @@ import type {
 } from './types'
 
 export const DISCLAIMER =
-  'Scan only servers you are authorized to test. This report reflects automated, heuristic checks of one MCP server at the time shown; it is not a penetration test or a certification.'
+  'Scan only servers you are authorized to test. Active probes (a ~30-request rate-limit burst, and calls without arguments to argument-free tools annotated read-only, or unannotated tools whose name does not look like a write, to test requestState tampering) run only when explicitly enabled. This report reflects automated, heuristic checks of one MCP server at the time shown; it is not a penetration test or a certification.'
 
 const esc = (value: unknown): string =>
   String(value ?? '')
@@ -70,6 +70,24 @@ function evidenceHtml(e: McpSecurityEvidence | undefined): string {
   if (e.error) parts.push(`Error: ${e.error}`)
   if (parts.length === 0) return ''
   return `<pre style="margin:6px 0 0;padding:8px;background:#fafafa;border:1px solid #e8e8ed;border-radius:6px;white-space:pre-wrap;word-break:break-all;font-size:12px">${esc(parts.join('\n\n'))}</pre>`
+}
+
+/**
+ * Protocol era line (issue #152): `2026-07-28 (modern) · supported versions …`
+ * or `2025 (legacy, initialize)`. Read defensively — the report comes from the
+ * renderer.
+ */
+function eraHtml(info: McpSecurityReport['serverInfo']): string {
+  const era = info?.era
+  if (era !== 'modern' && era !== 'legacy') return ''
+  const versions = Array.isArray(info?.supportedVersions)
+    ? info.supportedVersions.filter((v): v is string => typeof v === 'string')
+    : []
+  const text =
+    era === 'modern'
+      ? `2026-07-28 (modern, server/discover)${versions.length ? ` · supported versions ${versions.join(', ')}` : ''}`
+      : '2025 (legacy, initialize)'
+  return `<p data-era="${era}" style="margin:2px 0 0;font-size:13px;color:#555">Protocol era: ${esc(text)}</p>`
 }
 
 function refsHtml(refs: string[] | undefined): string {
@@ -137,7 +155,7 @@ export function buildMcpSecurityHtmlReport(raw: unknown): string {
     .join('')
 
   const server = report.serverInfo
-    ? `<p style="margin:4px 0 0;font-size:13px;color:#555">Server: ${esc(report.serverInfo.name)} ${esc(report.serverInfo.version)} · protocol ${esc(report.serverInfo.protocolVersion)}</p>`
+    ? `<p style="margin:4px 0 0;font-size:13px;color:#555">Server: ${esc(report.serverInfo.name)} ${esc(report.serverInfo.version)} · protocol ${esc(report.serverInfo.protocolVersion)}</p>${eraHtml(report.serverInfo)}`
     : ''
   const flags = [
     report.cancelled ? 'Cancelled — unrun checks are reported as skipped.' : '',

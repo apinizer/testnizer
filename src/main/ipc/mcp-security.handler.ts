@@ -89,6 +89,7 @@ function sanitizeRequest(raw: unknown): ScanRequest {
       : {}),
     options: {
       rateLimitProbe: opts.rateLimitProbe === true,
+      toolInvocationProbe: opts.toolInvocationProbe === true,
       ...(timeout !== undefined
         ? { timeoutMs: Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, Math.trunc(timeout))) }
         : {}),
@@ -134,11 +135,12 @@ export function registerMcpSecurityHandlers(): void {
         protocol: 'mcp',
         category: 'event',
         url: redactUrl(req.url),
-        message: `MCP security scan started (${req.transport}${req.options.rateLimitProbe ? ', rate-limit probe on' : ''})`,
+        message: `MCP security scan started (${req.transport}${req.options.rateLimitProbe ? ', rate-limit probe on' : ''}${req.options.toolInvocationProbe ? ', tool-invocation probe on' : ''})`,
         meta: {
           scanId,
           transport: req.transport,
           rateLimitProbe: req.options.rateLimitProbe,
+          toolInvocationProbe: req.options.toolInvocationProbe === true,
           headerCount: Object.keys(req.headers ?? {}).length,
           oauth: !!req.oauthSessionId,
           // The type only — never a username, password, token or key.

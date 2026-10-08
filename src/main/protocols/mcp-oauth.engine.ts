@@ -17,13 +17,18 @@
  *                               `iss` validated.
  *   7. [token-exchange]         authorization_code grant.
  *
- * The protocol work is the SDK's (`@modelcontextprotocol/sdk/client/auth.js`):
- * `extractWWWAuthenticateParams`, `discoverOAuthProtectedResourceMetadata`,
+ * The protocol work is the SDK's (`@modelcontextprotocol/client` 2.x, issue
+ * #152): `extractWWWAuthenticateParams`, `discoverOAuthProtectedResourceMetadata`,
  * `discoverAuthorizationServerMetadata`, `registerClient`,
  * `startAuthorization`, `exchangeAuthorization`, `refreshAuthorization`,
  * `selectClientAuthMethod`. Every one of them takes a `fetchFn`; ours records
  * the exchange (redacted) onto the running step, applies a hard timeout and
- * the flow's cancel signal.
+ * the flow's cancel signal. SDK 2.x behaviour worth knowing here:
+ *   - AS metadata issuer validation is skipped (`skipIssuerValidation`) so a
+ *     mismatch stays a step-3 WARNING as before, not a hard failure;
+ *   - the token endpoint must be https (or loopback) — `InsecureTokenEndpointError`;
+ *   - token-endpoint errors are one `OAuthError` class with the RFC 6749
+ *     `error` string in `.code` (v1 had a class per code) — see `errorMessage`.
  *
  * Secrets discipline (CLAUDE.md "Anahtar materyali — TEK KAPI" spirit): the
  * access / refresh token, the client secret, the PKCE verifier and the
@@ -40,27 +45,24 @@ import http from 'node:http'
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 import {
+  LATEST_PROTOCOL_VERSION,
+  checkResourceAllowed,
   discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
   exchangeAuthorization,
   extractWWWAuthenticateParams,
   refreshAuthorization,
   registerClient,
+  resourceUrlFromServerUrl,
   selectClientAuthMethod,
   startAuthorization,
-} from '@modelcontextprotocol/sdk/client/auth.js'
-import {
-  checkResourceAllowed,
-  resourceUrlFromServerUrl,
-} from '@modelcontextprotocol/sdk/shared/auth-utils.js'
-import type {
-  AuthorizationServerMetadata,
-  OAuthClientInformationMixed,
-  OAuthProtectedResourceMetadata,
-  OAuthTokens,
-} from '@modelcontextprotocol/sdk/shared/auth.js'
-import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
-import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js'
+  type AuthorizationServerMetadata,
+  type FetchLike,
+  type OAuthClientInformationMixed,
+  type OAuthProtectedResourceMetadata,
+  type OAuthTokens,
+} from '@modelcontextprotocol/client'
+import { isCredentialHeaderName } from '../lib/credential-headers'
 
 // ─── Public shapes ──────────────────────────────────────────
 
@@ -183,9 +185,6 @@ const CALLBACK_PATH = '/callback'
 /** Body keys whose values are credentials (token / DCR / form bodies). */
 const SECRET_KEY =
   /^(access_token|refresh_token|id_token|client_secret|registration_access_token|code|code_verifier|password|assertion|client_assertion|device_code)$/i
-/** Header names whose values are credentials. `WWW-Authenticate` is the challenge — kept. */
-export const SECRET_HEADER =
-  /^(authorization|proxy-authorization|cookie|set-cookie)$|token|secret|api[-_]?key|password|passwd/i
 
 // ─── State ──────────────────────────────────────────────────
 
@@ -198,10 +197,17 @@ interface TokenSession {
   authorizationServerUrl: string
   metadata?: AuthorizationServerMetadata
   clientInformation: OAuthClientInformationMixed
+  /** RFC 8707 resource the token was issued for — the bearer goes to its origin only. */
   resource?: URL
+  /** Origin of the MCP server URL the flow ran against (fallback when `resource` is absent). */
+  serverOrigin: string
   /** Single-flight refresh shared by concurrent 401s. */
   refreshing?: Promise<boolean>
-  /** A refresh already failed — later 401s are surfaced, not retried. */
+  /**
+   * The authorization server definitively refused the refresh (`invalid_grant`
+   * / `invalid_client` / `unauthorized_client`) — later 401s are surfaced, not
+   * retried. A transient failure (network, 5xx, timeout) leaves it unset.
+   */
   refreshFailed?: boolean
 }
 
@@ -234,7 +240,7 @@ class FlowCancelled extends Error {
 export function redactHeaders(headers: Headers): Record<string, string> {
   const out: Record<string, string> = {}
   headers.forEach((value, name) => {
-    if (name.toLowerCase() === 'www-authenticate' || !SECRET_HEADER.test(name)) {
+    if (!isCredentialHeaderName(name)) {
       out[name] = value
       return
     }
@@ -245,12 +251,22 @@ export function redactHeaders(headers: Headers): Record<string, string> {
   return out
 }
 
+/**
+ * A JSON value to mask by its key. A numeric `code` is a JSON-RPC / HTTP error
+ * code (the Security Scan's evidence), never an OAuth authorization code —
+ * those are strings — so it stays visible.
+ */
+function isSecretJsonValue(key: string, value: unknown): boolean {
+  if (value === undefined || value === null || !SECRET_KEY.test(key)) return false
+  return !(typeof value === 'number' && key.toLowerCase() === 'code')
+}
+
 function redactJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactJson)
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = SECRET_KEY.test(k) && v !== undefined && v !== null ? REDACTED : redactJson(v)
+      out[k] = isSecretJsonValue(k, v) ? REDACTED : redactJson(v)
     }
     return out
   }
@@ -325,6 +341,18 @@ export function scrub<T>(record: T, secrets: Set<string>): T {
 
 export function errorMessage(err: unknown): string {
   if (err instanceof Error) {
+    // SDK 2.x `OAuthError`: the message is the AS's `error_description`
+    // (or the bare code) and the RFC 6749 `error` string sits in `.code` —
+    // show both, like the v1 per-code classes' names did.
+    const oauthCode = (err as Error & { code?: unknown }).code
+    if (
+      err.name === 'OAuthError' &&
+      typeof oauthCode === 'string' &&
+      oauthCode &&
+      !err.message.includes(oauthCode)
+    ) {
+      return `${oauthCode}: ${err.message}`
+    }
     const cause = (err as Error & { cause?: unknown }).cause
     if (cause && typeof cause === 'object') {
       const c = cause as { code?: unknown; message?: unknown }
@@ -739,7 +767,13 @@ async function authServerMetadataStep(
   authorizationServerUrl: string,
   fetchFn: FetchLike,
 ): Promise<AuthorizationServerMetadata> {
-  const doc = await discoverAuthorizationServerMetadata(authorizationServerUrl, { fetchFn })
+  // `skipIssuerValidation`: SDK 2.x would THROW on an issuer mismatch; the
+  // debugger reports it as a warning below (v1 behaviour) and lets the user
+  // see whether the rest of the flow works.
+  const doc = await discoverAuthorizationServerMetadata(authorizationServerUrl, {
+    fetchFn,
+    skipIssuerValidation: true,
+  })
   if (!doc) {
     throw new Error(
       `No authorization server metadata for ${authorizationServerUrl} — tried ${attemptedUrls(step)}`,
@@ -965,6 +999,9 @@ async function runFlow(flow: Flow, opts: McpOAuthStartOptions): Promise<McpOAuth
         metadata,
         clientInformation,
         authorizationCode: callback.code,
+        // Step 6 already compared it with the issuer (RFC 9207); SDK 2.x
+        // re-checks it here, so pass what the callback carried.
+        ...(callback.iss ? { iss: callback.iss } : {}),
         codeVerifier,
         redirectUri,
         resource,
@@ -999,6 +1036,7 @@ async function runFlow(flow: Flow, opts: McpOAuthStartOptions): Promise<McpOAuth
       metadata,
       clientInformation,
       resource,
+      serverOrigin: serverUrl.origin,
     })
     return {
       oauthSessionId: flow.id,
@@ -1104,10 +1142,37 @@ export function mcpOAuthCancelAll(): void {
   for (const flow of flows.values()) flow.abort.abort()
 }
 
+/** RFC 6749 §5.2 errors after which the same refresh can never succeed. */
+const DEFINITIVE_REFRESH_ERRORS = new Set([
+  'invalid_grant',
+  'invalid_client',
+  'unauthorized_client',
+])
+
+/**
+ * True when the token endpoint answered 400 / 401 with a definitive OAuth
+ * error. Duck-typed: the SDK's `OAuthError` is brand-checked and carries the
+ * RFC error string in `.code`; an unparsable / 5xx body arrives as
+ * `server_error`, a network failure or timeout as a plain error.
+ */
+function isDefinitiveRefreshFailure(err: unknown, status: number | undefined): boolean {
+  if (status !== 400 && status !== 401) return false
+  if (!(err instanceof Error) || err.name !== 'OAuthError') return false
+  const code = (err as Error & { code?: unknown }).code
+  return typeof code === 'string' && DEFINITIVE_REFRESH_ERRORS.has(code)
+}
+
 async function refreshSession(session: TokenSession, timeoutMs: number): Promise<boolean> {
   if (!session.refreshToken || session.refreshFailed) return false
   if (!session.refreshing) {
     const refreshToken = session.refreshToken
+    let tokenStatus: number | undefined
+    const base = timeoutFetch(timeoutMs)
+    const fetchFn: FetchLike = async (url, init) => {
+      const res = await base(url, init)
+      tokenStatus = res.status
+      return res
+    }
     session.refreshing = (async () => {
       try {
         const t = await refreshAuthorization(session.authorizationServerUrl, {
@@ -1115,7 +1180,7 @@ async function refreshSession(session: TokenSession, timeoutMs: number): Promise
           clientInformation: session.clientInformation,
           refreshToken,
           resource: session.resource,
-          fetchFn: timeoutFetch(timeoutMs),
+          fetchFn,
         })
         session.accessToken = t.access_token
         session.tokenType = t.token_type
@@ -1123,8 +1188,10 @@ async function refreshSession(session: TokenSession, timeoutMs: number): Promise
         session.expiresAt =
           typeof t.expires_in === 'number' ? Date.now() + t.expires_in * 1000 : undefined
         return true
-      } catch {
-        session.refreshFailed = true
+      } catch (err) {
+        // Only a definitive refusal is final; a transient failure is retried
+        // on the next 401.
+        if (isDefinitiveRefreshFailure(err, tokenStatus)) session.refreshFailed = true
         return false
       } finally {
         session.refreshing = undefined
@@ -1134,12 +1201,24 @@ async function refreshSession(session: TokenSession, timeoutMs: number): Promise
   return session.refreshing
 }
 
+/** True when `url` is on the origin the session's token was issued for. */
+function isTokenAudience(session: TokenSession, url: string | URL): boolean {
+  const origin = session.resource?.origin ?? session.serverOrigin
+  try {
+    return new URL(String(url)).origin === origin
+  } catch {
+    return false
+  }
+}
+
 /**
  * The `fetch` for an MCP transport authenticated by an OAuth session. Sets
- * `Authorization: Bearer <token>` on every request — after the user's headers,
- * so the token wins — and on a 401 refreshes the token once (single-flight)
- * and retries that request once. A forgotten / unknown session injects
- * nothing, so the server's 401 surfaces as it would without OAuth.
+ * `Authorization: Bearer <token>` on every request to the token's resource
+ * origin — after the user's headers, so the token wins — and on a 401
+ * refreshes the token once (single-flight) and retries that request once. A
+ * request to any other origin (a legacy SSE `endpoint` elsewhere, a redirect
+ * target) and a forgotten / unknown session inject nothing, so the server's
+ * 401 surfaces as it would without OAuth.
  */
 export function createMcpOAuthFetch(
   oauthSessionId: string,
@@ -1147,7 +1226,7 @@ export function createMcpOAuthFetch(
 ): FetchLike {
   return async (url, init) => {
     const session = tokenSessions.get(oauthSessionId)
-    if (!session) return baseFetch(url, init)
+    if (!session || !isTokenAudience(session, url)) return baseFetch(url, init)
     const send = (token: string): Promise<Response> => {
       const headers = new Headers(init?.headers)
       headers.set('Authorization', `Bearer ${token}`)

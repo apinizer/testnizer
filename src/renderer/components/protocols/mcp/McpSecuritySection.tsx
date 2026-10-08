@@ -98,7 +98,7 @@ export default function McpSecuritySection() {
           disabled={running}
           data-testid="mcp-security-ratelimit-optin"
         />
-        {t('mcp.security.rateLimitOptIn')}
+        {t('mcp.security.activeProbesOptIn')}
       </label>
       <div className="flex items-center gap-2">
         <PrimaryButton

@@ -29,7 +29,16 @@ function Row({
       }`}
     >
       <span className="text-[var(--muted)]">{logTime(entry.ts)}</span>
-      <span className="truncate text-[var(--text)]">{entry.method}</span>
+      <span
+        data-era={entry.era}
+        title={[entry.era, entry.mcpMethod && `Mcp-Method: ${entry.mcpMethod}`]
+          .filter(Boolean)
+          .join(' · ')}
+        className="truncate text-[var(--text)]"
+      >
+        {entry.method}
+        {entry.inputRequired && <span className="text-[var(--accent-text)]"> input_required</span>}
+      </span>
       <span className="truncate text-[var(--text)]">{entry.toolName ?? ''}</span>
       <span className="text-right text-[var(--muted)]">{entry.durationMs} ms</span>
       <span className={outcome === 'ok' ? 'text-[var(--green)]' : 'text-[var(--red)]'}>

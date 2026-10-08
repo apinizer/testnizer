@@ -133,7 +133,7 @@ describe('mcp:security:scan', () => {
       transport: 'sse',
       headers: { Authorization: RAW_TOKEN, 'X-API-Key': API_KEY, Bad: 42 },
       oauthSessionId: 'mcp-oauth-7',
-      options: { rateLimitProbe: true, timeoutMs: 999_999 },
+      options: { rateLimitProbe: true, toolInvocationProbe: true, timeoutMs: 999_999 },
       junk: 'ignored',
     })) as { success: boolean; data: { scanId: string } }
     expect(res.success).toBe(true)
@@ -146,7 +146,7 @@ describe('mcp:security:scan', () => {
       transport: 'sse',
       headers: { Authorization: RAW_TOKEN, 'X-API-Key': API_KEY },
       oauthSessionId: 'mcp-oauth-7',
-      options: { rateLimitProbe: true, timeoutMs: 60_000 },
+      options: { rateLimitProbe: true, toolInvocationProbe: true, timeoutMs: 60_000 },
       scanId: res.data.scanId,
     })
     expect(lastInput?.headers).not.toHaveProperty('Bad')
@@ -157,7 +157,7 @@ describe('mcp:security:scan', () => {
     await harness.invoke('mcp:security:scan', { url: 'http://127.0.0.1:1/mcp', options: {} })
     await tick()
     expect(lastInput?.transport).toBe('http')
-    expect(lastInput?.options).toEqual({ rateLimitProbe: false })
+    expect(lastInput?.options).toEqual({ rateLimitProbe: false, toolInvocationProbe: false })
     expect(lastInput?.oauthSessionId).toBeUndefined()
   })
 
@@ -281,6 +281,9 @@ describe('mcp:security:exportHtml', () => {
     expect(html).toContain('85/100')
     for (const f of r.categories.flatMap((c) => c.findings)) expect(html).toContain(f.title)
     expect(html).toContain('Scan only servers you are authorized to test.')
+    expect(html).toContain(
+      'Active probes (a ~30-request rate-limit burst, and calls without arguments to argument-free tools annotated read-only, or unannotated tools whose name does not look like a write',
+    )
     expect(html).toContain('2026-10-07T12:00:00.000Z')
     expect(html).not.toContain('raw-secret-token-142')
     expect(html).not.toContain(API_KEY)

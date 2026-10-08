@@ -1,13 +1,13 @@
 import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { MessageSquareMore, Plus } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
 import type {
   MockMcpDraftUpdater,
   MockMcpServerDraft,
   MockMcpToolDraft,
 } from '../../types/mock-mcp'
-import { blankToolDraft } from './mock-mcp-draft'
-import { uniqueName } from './mock-mcp-presets'
+import { blankToolDraft, toolToDraft } from './mock-mcp-draft'
+import { elicitationExampleTool, uniqueName } from './mock-mcp-presets'
 import MockMcpToolForm from './MockMcpToolForm'
 import { GhostButton } from './ui'
 import { ListItem } from './ui-display'
@@ -36,6 +36,18 @@ export default function MockMcpToolsTab({
     setSelected(draft.tools.length)
   }
 
+  /** "Ask name (elicitation)" — the 2026-07-28 multi-round-trip example (issue #152). */
+  const addElicitationExample = (): void => {
+    const example = elicitationExampleTool()
+    const name = uniqueName(
+      example.name,
+      draft.tools.map((x) => x.name),
+      '_',
+    )
+    change((d) => ({ ...d, tools: [...d.tools, toolToDraft({ ...example, name })] }))
+    setSelected(draft.tools.length)
+  }
+
   const update = (key: string, fn: (tl: MockMcpToolDraft) => MockMcpToolDraft): void =>
     change((d) => ({ ...d, tools: d.tools.map((x) => (x.key === key ? fn(x) : x)) }))
 
@@ -45,7 +57,7 @@ export default function MockMcpToolsTab({
   return (
     <div data-testid="mock-mcp-tools" className="flex min-h-0 flex-1">
       <div className="flex w-[220px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--white)]">
-        <div className="flex items-center gap-2 border-b border-[var(--border)] p-2">
+        <div className="flex flex-col gap-1.5 border-b border-[var(--border)] p-2">
           <GhostButton
             data-testid="mock-mcp-tool-add"
             onClick={add}
@@ -53,6 +65,15 @@ export default function MockMcpToolsTab({
           >
             <Plus size={12} />
             {t('mockMcp.tools.add')}
+          </GhostButton>
+          <GhostButton
+            data-testid="mock-mcp-tool-add-elicit"
+            onClick={addElicitationExample}
+            title={t('mockMcp.elicit.presetHint')}
+            className="w-full justify-center"
+          >
+            <MessageSquareMore size={12} />
+            {t('mockMcp.elicit.preset')}
           </GhostButton>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -67,6 +88,11 @@ export default function MockMcpToolsTab({
               onClick={() => setSelected(i)}
             >
               <span className="truncate font-mono">{x.name || t('mockMcp.unnamed')}</span>
+              {x.elicit && (
+                <span className="ml-auto shrink-0 text-[10px] text-[var(--accent-text)]">
+                  {t('mockMcp.elicit.badge')}
+                </span>
+              )}
               {x.error && x.error.kind !== 'none' && (
                 <span className="ml-auto shrink-0 text-[10px] text-[var(--red)]">
                   {x.error.kind}

@@ -1,13 +1,15 @@
 /**
  * Issue #137 — custom MCP connect headers must reach the server ON THE WIRE.
  *
- * Unlike `mcp-engine.test.ts` (SDK mocked), this suite runs the REAL
- * `@modelcontextprotocol/sdk` client against real local servers. It pins the
- * SDK behaviour the engine relies on: `requestInit.headers` is applied to the
- * SSE transport's GET EventSource stream as well as its POSTs, and to every
- * Streamable HTTP request. Older SDKs applied `requestInit` to POST only — if
- * an SDK upgrade regresses that, the GET-stream assertion here fails instead
- * of a gateway rejecting the handshake in the field.
+ * Unlike `mcp-engine.test.ts` (SDK mocked), this suite runs the REAL SDK 2.x
+ * client (`@modelcontextprotocol/client`) against real local servers. It pins
+ * the SDK behaviour the engine relies on: `requestInit.headers` is applied to
+ * the SSE transport's GET EventSource stream as well as its POSTs, and to
+ * every Streamable HTTP request — on both protocol eras (issue #152), incl.
+ * the `server/discover` probe. Older SDKs applied `requestInit` to POST only —
+ * if an SDK upgrade regresses that, the GET-stream assertion here fails
+ * instead of a gateway rejecting the handshake in the field. (The legacy SSE
+ * server below is the v1 SDK's — that transport has no v2 server.)
  */
 import http from 'node:http'
 import net from 'node:net'
@@ -109,19 +111,48 @@ describe('mcp.engine — custom headers on the wire (issue #137)', () => {
     }
   })
 
-  it('http (Streamable HTTP): custom headers reach the server on tools/call', async () => {
-    const port = await freePort()
-    const srv = await startMcpServer(port)
-    cleanups.push(srv.close)
+  it.each(['legacy', 'auto'] as const)(
+    'http (Streamable HTTP, protocol %s): custom headers reach the server on tools/call',
+    async (protocol) => {
+      const port = await freePort()
+      const srv = await startMcpServer(port)
+      cleanups.push(srv.close)
 
-    const info = await mcpConnect({ transport: 'http', url: srv.url, headers: CUSTOM })
-    cleanups.push(() => mcpDisconnect(info.connectionId))
-    const result = (await mcpCallTool(info.connectionId, 'echo_headers', {})) as {
-      content: Array<{ type: string; text: string }>
-    }
-    const seen = JSON.parse(result.content[0].text) as Record<string, string>
-    expect(seen.authorization).toBe('Bearer wire-token-137')
-    expect(seen['x-gateway-project']).toBe('project1')
+      const info = await mcpConnect({ transport: 'http', url: srv.url, headers: CUSTOM, protocol })
+      expect(info.era).toBe(protocol === 'auto' ? 'modern' : 'legacy')
+      cleanups.push(() => mcpDisconnect(info.connectionId))
+      const result = (await mcpCallTool(info.connectionId, 'echo_headers', {})) as {
+        content: Array<{ type: string; text: string }>
+      }
+      const seen = JSON.parse(result.content[0].text) as Record<string, string>
+      expect(seen.authorization).toBe('Bearer wire-token-137')
+      expect(seen['x-gateway-project']).toBe('project1')
+    },
+  )
+
+  it('http: the server/discover probe carries the custom headers too (a gateway sees them first)', async () => {
+    const port = await freePort()
+    const seen: http.IncomingHttpHeaders[] = []
+    const gate = http.createServer((req, res) => {
+      seen.push(req.headers)
+      // A gateway that rejects everything: the probe is the only request.
+      res.writeHead(503)
+      res.end()
+    })
+    await new Promise<void>((resolve) => gate.listen(port, '127.0.0.1', () => resolve()))
+    cleanups.push(
+      () =>
+        new Promise<void>((resolve) => {
+          gate.closeAllConnections()
+          gate.close(() => resolve())
+        }),
+    )
+    await expect(
+      mcpConnect({ transport: 'http', url: `http://127.0.0.1:${port}/mcp`, headers: CUSTOM }),
+    ).rejects.toMatchObject({ status: 503 })
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen[0].authorization).toBe('Bearer wire-token-137')
+    expect(seen[0]['x-gateway-project']).toBe('project1')
   })
 
   it('http: without custom headers nothing extra is sent', async () => {

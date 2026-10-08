@@ -160,8 +160,37 @@ describe('MCP snapshot / restore (issue #137)', () => {
         customHeaders: HEADERS,
         envVars: ENV_VARS,
         auth: { type: 'none' },
+        protocol: 'auto',
       },
     })
+  })
+
+  // Issue #152 — the protocol era choice is part of the saved request.
+  it('round-trips the protocol choice; rows saved before issue #152 restore as Auto', () => {
+    useMcpStore.getState().switchToTab('tab-source-proto')
+    useMcpStore.setState({ transport: 'http', url: SAVED_URL, protocol: '2025-06-18' })
+    const { protocolMeta } = snapshotProtocol({
+      id: 'tab-source-proto',
+      protocol: 'mcp',
+      name: 'MCP',
+    } as Tab)
+    expect((protocolMeta as { mcp: Record<string, unknown> }).mcp.protocol).toBe('2025-06-18')
+
+    useTabsStore.setState({
+      tabs: [{ id: 'tab-reopen-proto', name: 'MCP', protocol: 'mcp', isDirty: false } as Tab],
+      activeTabId: 'tab-reopen-proto',
+    })
+    restoreProtocolFromMetadata('mcp', protocolMeta)
+    useMcpStore.getState().switchToTab('tab-reopen-proto')
+    expect(useMcpStore.getState().protocol).toBe('2025-06-18')
+
+    useTabsStore.setState({
+      tabs: [{ id: 'tab-reopen-old', name: 'MCP', protocol: 'mcp', isDirty: false } as Tab],
+      activeTabId: 'tab-reopen-old',
+    })
+    restoreProtocolFromMetadata('mcp', { mcp: { transport: 'http', url: SAVED_URL } })
+    useMcpStore.getState().switchToTab('tab-reopen-old')
+    expect(useMcpStore.getState().protocol).toBe('auto')
   })
 
   // MCP Auth — the Authorization tab is part of the saved request, with

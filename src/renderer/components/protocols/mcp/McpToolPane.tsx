@@ -3,6 +3,7 @@ import { useMcpStore } from '../../../stores/mcp.store'
 import { useTranslation } from '../../../lib/i18n'
 import EmptyState from '../../shared/EmptyState'
 import McpResultView from './McpResultView'
+import McpInputRequiredCard from './McpInputRequiredCard'
 import { CenterHint, ErrorLine, JsonPre, PrimaryButton, SectionLabel } from './ui'
 
 const HINT_BADGES: {
@@ -26,6 +27,10 @@ export default function McpToolPane() {
   const isInvoking = useMcpStore((s) => s.isInvoking)
   const result = useMcpStore((s) => s.result)
   const resultError = useMcpStore((s) => s.resultError)
+  const pendingInput = useMcpStore((s) => s.pendingInput)
+  // Every MCP tab renders this same pane; the tab id in the card's key keeps
+  // tab A's typed answers out of tab B paused at the same round.
+  const tabId = useMcpStore((s) => s._currentTabId)
   const isConnected = useMcpStore((s) => s.connectionState === 'connected')
 
   if (!selectedTool) {
@@ -101,6 +106,11 @@ export default function McpToolPane() {
         <SectionLabel>{t('mcp.result.title')}</SectionLabel>
         {resultError ? (
           <ErrorLine testId="mcp-result-call-error">{resultError}</ErrorLine>
+        ) : pendingInput ? (
+          <McpInputRequiredCard
+            key={`${tabId ?? ''}:${pendingInput.round}:${pendingInput.requestState ?? ''}`}
+            pending={pendingInput}
+          />
         ) : result != null ? (
           <McpResultView result={result} />
         ) : (

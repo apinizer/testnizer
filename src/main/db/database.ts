@@ -788,6 +788,7 @@ function runMigrations(database: Database.Database): void {
       tools_json TEXT NOT NULL DEFAULT '[]',
       resources_json TEXT NOT NULL DEFAULT '[]',
       prompts_json TEXT NOT NULL DEFAULT '[]',
+      options_json TEXT,
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
@@ -828,6 +829,10 @@ function runMigrations(database: Database.Database): void {
     // response — the editor template AND the resolved wire form — so an
     // example shows "what was sent" without re-sending. NULL on old rows.
     `ALTER TABLE saved_responses ADD COLUMN request_json TEXT`,
+    // Mock MCP protocol-era knobs (issue #152): `{ legacyMode, cacheTtlMs }`.
+    // Nullable on purpose — the project-file importer writes NULL for a key an
+    // older export lacks, and NULL reads back as the defaults.
+    `ALTER TABLE mock_mcp_servers ADD COLUMN options_json TEXT`,
     // Key Material Provider (#60) — keystore-backed client certificate rows.
     // Additive: existing installs get source='file' for every row, so the
     // classic crt/key/pfx path is untouched.

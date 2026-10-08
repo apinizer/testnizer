@@ -16,6 +16,7 @@ import type {
   MockMcpTool,
   MockMcpToolDraft,
 } from '../../types/mock-mcp'
+import { draftToElicit, elicitToDraft, emptyEnumField } from './mock-mcp-elicit'
 
 let keySeq = 0
 export function newDraftKey(): string {
@@ -24,8 +25,13 @@ export function newDraftKey(): string {
 }
 
 export function toolToDraft(tool: MockMcpTool): MockMcpToolDraft {
-  const { inputSchema, ...rest } = tool
-  return { ...rest, key: newDraftKey(), schemaText: JSON.stringify(inputSchema, null, 2) }
+  const { inputSchema, elicit, ...rest } = tool
+  return {
+    ...rest,
+    key: newDraftKey(),
+    schemaText: JSON.stringify(inputSchema, null, 2),
+    ...(elicit ? { elicit: elicitToDraft(elicit) } : {}),
+  }
 }
 
 export function blankToolDraft(name: string): MockMcpToolDraft {
@@ -46,6 +52,9 @@ export function serverToDraft(s: MockMcpServer): MockMcpServerDraft {
     path: s.path,
     legacySse: s.legacySse,
     protocolPin: s.protocolPin,
+    // Rows written before issue #152 may lack the options — backend defaults.
+    legacyMode: s.legacyMode ?? 'stateless',
+    cacheTtlMs: s.cacheTtlMs ?? 0,
     authMode: s.authMode,
     bearerToken: s.bearerToken,
     latencyMs: s.latencyMs,
@@ -118,6 +127,8 @@ export function draftToTool(d: MockMcpToolDraft, schema: Record<string, unknown>
       description: opt(d.description),
       delayMs: d.delayMs !== undefined && d.delayMs > 0 ? d.delayMs : undefined,
       error: d.error ? cleanErrorMode(d.error) : undefined,
+      // Without this an elicitation opened in the editor was dropped on Save.
+      elicit: d.elicit ? draftToElicit(d.elicit) : undefined,
     },
   )
 }
@@ -184,6 +195,12 @@ export function draftToPatch(draft: MockMcpServerDraft): PatchResult {
             : 'mockMcp.validation.schemaType'
       return { problem: { key, tool: d.name || '?', detail: parsed.detail ?? '' } }
     }
+    const emptyEnum = d.elicit ? emptyEnumField(d.elicit) : null
+    if (emptyEnum) {
+      return {
+        problem: { key: 'mockMcp.validation.elicitEnum', tool: d.name || '?', detail: emptyEnum },
+      }
+    }
     tools.push(draftToTool(d, parsed.schema))
   }
   return {
@@ -195,6 +212,8 @@ export function draftToPatch(draft: MockMcpServerDraft): PatchResult {
       path: draft.path.trim(),
       legacySse: draft.legacySse,
       protocolPin: draft.protocolPin || null,
+      legacyMode: draft.legacyMode,
+      cacheTtlMs: draft.cacheTtlMs,
       authMode: draft.authMode,
       bearerToken: draft.bearerToken,
       latencyMs: draft.latencyMs,

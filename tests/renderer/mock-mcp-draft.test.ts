@@ -26,6 +26,8 @@ describe('draftToPatch', () => {
       path: '/mcp',
       legacySse: false,
       protocolPin: null,
+      legacyMode: 'stateless',
+      cacheTtlMs: 0,
       authMode: 'none',
       bearerToken: '',
       latencyMs: 0,

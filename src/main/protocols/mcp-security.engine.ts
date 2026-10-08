@@ -4,9 +4,13 @@
  * authorized to test. Inspired by mcpplaygroundonline.com's scanner.
  *
  * Phases:
- *   1. foundation (sequential) — unauthenticated `initialize` probe, the
+ *   1. foundation (sequential) — the unauthenticated probe, the
  *      authenticated session (the tab's headers + OAuth token), and the
- *      advertised inventory (tools/list ×2, prompts, resources);
+ *      advertised inventory (tools/list ×2, prompts, resources). On
+ *      Streamable HTTP both handshakes try `server/discover` first: a
+ *      2026-07-28 descriptor makes the scan "modern" (stateless requests with
+ *      the `_meta` envelope + `Mcp-Method` headers), anything else falls back
+ *      to the 2025 `initialize` (issue #152);
  *   2. every check except rate limiting, at most 5 at a time (and at most 5
  *      HTTP requests in flight — `ScanHttp`), each request with a hard
  *      timeout (15 s default);
@@ -20,9 +24,10 @@
  * `createMcpOAuthFetch`) is scrubbed from each finding and the report before
  * they leave this module.
  *
- * Out of scope for this slice: the 2026-07-28 stateless checks
- * (`requestState` tampering, cache-scope leaks — SDK 1.29 speaks ≤ 2025-11-25)
- * and LLM-assisted analysis.
+ * The 2026-07-28 checks (`server/discover`, `Mcp-Method` validation, cache
+ * hints / scope, `requestState` tampering, the legacy fallback) live in
+ * `mcp-security/checks-modern.ts` and are `skipped` on a 2025-era session.
+ * Out of scope: LLM-assisted analysis.
  *
  * Electron-free (like `mcp.engine.ts`); every dependency is injectable.
  */
@@ -40,6 +45,7 @@ import {
   isLoopbackHost,
   openSession,
   probeUnauthenticated,
+  serverInfoFromResult,
   skipped,
   type CheckDef,
   type CheckOutcome,
@@ -48,8 +54,13 @@ import {
 import { TRANSPORT_AUTH_CHECKS } from './mcp-security/checks-transport-auth'
 import { CORS_CHECKS, HEADER_CHECKS, PROTOCOL_CHECKS } from './mcp-security/checks-protocol'
 import { DISCLOSURE_CHECKS, INJECTION_CHECKS, rateLimitChecks } from './mcp-security/checks-content'
+import {
+  MODERN_AUTH_CHECKS,
+  MODERN_DISCLOSURE_CHECKS,
+  MODERN_PROTOCOL_CHECKS,
+} from './mcp-security/checks-modern'
 import { gradeOf, scoreOf, summarize } from './mcp-security/grading'
-import { ScanHttp, withoutCredentials } from './mcp-security/wire'
+import { ScanHttp, isCredentialHeader, withoutCredentials } from './mcp-security/wire'
 import { applyMcpAuth, type McpAuthOptions } from './mcp-auth'
 import type {
   McpSecurityCategory,
@@ -75,6 +86,25 @@ export {
 
 export const DEFAULT_SCAN_TIMEOUT_MS = 15_000
 export const SCAN_CONCURRENCY = 5
+/**
+ * Custom header rows that are protocol plumbing, not credentials — exempt
+ * from the value scrub (scrubbing `application/json` would blank every body
+ * preview and Content-Type in the report).
+ */
+const STRUCTURAL_HEADERS: ReadonlySet<string> = new Set([
+  'accept',
+  'accept-encoding',
+  'accept-language',
+  'cache-control',
+  'connection',
+  'content-type',
+  'host',
+  'mcp-protocol-version',
+  'origin',
+  'pragma',
+  'referer',
+  'user-agent',
+])
 
 export const CATEGORY_TITLES: Readonly<Record<McpSecurityCategoryId, string>> = {
   transport: 'Transport security',
@@ -120,9 +150,12 @@ export interface McpSecurityScanInput {
 export function checksFor(options: McpSecurityScanOptions): CheckDef[] {
   return [
     ...TRANSPORT_AUTH_CHECKS,
+    ...MODERN_AUTH_CHECKS,
     ...PROTOCOL_CHECKS,
+    ...MODERN_PROTOCOL_CHECKS,
     ...INJECTION_CHECKS,
     ...DISCLOSURE_CHECKS,
+    ...MODERN_DISCLOSURE_CHECKS,
     ...CORS_CHECKS,
     ...HEADER_CHECKS,
     ...rateLimitChecks(options.rateLimitProbe),
@@ -155,18 +188,25 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v)
 }
 
-function serverInfoOf(
-  result: Record<string, unknown> | undefined,
-): McpSecurityServerInfo | undefined {
+function serverInfoOf(session: ScanContext['session']): McpSecurityServerInfo | undefined {
+  const result = session.result
   if (!result) return undefined
-  const info = isRecord(result.serverInfo) ? result.serverInfo : {}
+  const info = serverInfoFromResult(result) ?? {}
+  const protocolVersion =
+    typeof result.protocolVersion === 'string'
+      ? result.protocolVersion
+      : (session.session?.protocolVersion ?? '')
   return {
     name: typeof info.name === 'string' ? info.name : '',
     version: typeof info.version === 'string' ? info.version : '',
-    protocolVersion: typeof result.protocolVersion === 'string' ? result.protocolVersion : '',
+    protocolVersion,
     capabilities: isRecord(result.capabilities)
       ? (JSON.parse(JSON.stringify(result.capabilities)) as Record<string, unknown>)
       : {},
+    ...(session.era ? { era: session.era } : {}),
+    ...(session.supportedVersions?.length
+      ? { supportedVersions: [...session.supportedVersions] }
+      : {}),
   }
 }
 
@@ -192,6 +232,12 @@ export async function runMcpSecurityScan(input: McpSecurityScanInput): Promise<M
   })
   http.noteSecretsOf(headers)
   http.noteUrlSecrets(url.href)
+  // Every custom header row the user typed is scrubbed by value, whatever it
+  // is called — a gateway key under a name no rule knows must not reach the
+  // evidence, the streamed findings or the exported report.
+  for (const [name, value] of Object.entries(userHeaders)) {
+    if (!STRUCTURAL_HEADERS.has(name.toLowerCase())) http.noteSecret(value)
+  }
   // The name rules above miss an API key called e.g. `X-Gw` — note every value
   // the Authorization tab supplied, in the forms it can take on the wire.
   for (const name of authHeaderNames) http.noteSecret(headers[name])
@@ -211,6 +257,12 @@ export async function runMcpSecurityScan(input: McpSecurityScanInput): Promise<M
     headers,
     anonHeaders,
     http,
+    toolInvocationProbe: input.options.toolInvocationProbe === true,
+    authenticated:
+      authHeaderNames.size > 0 ||
+      authUrl.href !== url.href ||
+      !!input.oauthSessionId ||
+      Object.keys(headers).some(isCredentialHeader),
     inspectTls: input.deps?.inspectTls ?? defaultInspectTls,
     session: { ok: false, reason: 'network', error: 'not started' },
     memo: new Map(),
@@ -306,7 +358,7 @@ export async function runMcpSecurityScan(input: McpSecurityScanInput): Promise<M
   }).filter((c) => c.findings.length > 0)
   const all = categories.flatMap((c) => c.findings)
   const score = unreachable ? 0 : scoreOf(all)
-  const serverInfo = serverInfoOf(ctx.session.result)
+  const serverInfo = serverInfoOf(ctx.session)
   const report: McpSecurityReport = {
     id: input.scanId ?? `mcp-scan-${randomUUID()}`,
     startedAt,

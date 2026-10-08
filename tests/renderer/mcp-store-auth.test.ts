@@ -13,6 +13,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useMcpStore } from '../../src/renderer/stores/mcp.store'
 import {
+  applyMcpAuth,
   availableConfigTabs,
   effectiveConfigTab,
   normalizeMcpAuth,
@@ -298,5 +299,87 @@ describe('mcp-auth.slice helpers', () => {
     expect(effectiveConfigTab('headers', 'stdio')).toBe('auth')
     expect(effectiveConfigTab('env', 'http')).toBe('auth')
     expect(effectiveConfigTab('env', 'stdio')).toBe('env')
+  })
+})
+
+describe('applyMcpAuth — the config export (parity with main)', () => {
+  const URL_ = 'https://r.test/mcp'
+
+  it('bearer → Authorization header; a custom prefix is kept', () => {
+    expect(applyMcpAuth(URL_, {}, { type: 'bearer', bearer: { token: 'tok' } })).toEqual({
+      url: URL_,
+      headers: { Authorization: 'Bearer tok' },
+      applied: true,
+    })
+    expect(
+      applyMcpAuth(URL_, {}, { type: 'bearer', bearer: { token: 'tok', prefix: 'Token' } }).headers,
+    ).toEqual({ Authorization: 'Token tok' })
+  })
+
+  it('basic → base64(user:pass), UTF-8 safe, a `:` in the username stripped', () => {
+    const r = applyMcpAuth(
+      URL_,
+      {},
+      {
+        type: 'basic',
+        basic: { username: 'al:ice', password: 'şifre' },
+      },
+    )
+    // Same bytes main's Buffer.from(…, 'utf8').toString('base64') produces.
+    const expected = Buffer.from('alice:şifre', 'utf8').toString('base64')
+    expect(r.headers).toEqual({ Authorization: `Basic ${expected}` })
+  })
+
+  it('api-key in header uses its own name; in query it joins the URL', () => {
+    expect(
+      applyMcpAuth(
+        URL_,
+        {},
+        { type: 'api-key', apiKey: { key: 'X-Key', value: 'k', in: 'header' } },
+      ),
+    ).toEqual({ url: URL_, headers: { 'X-Key': 'k' }, applied: true })
+    expect(
+      applyMcpAuth(
+        `${URL_}?a=1`,
+        {},
+        {
+          type: 'api-key',
+          apiKey: { key: 'key', value: 'v 1', in: 'query' },
+        },
+      ),
+    ).toEqual({ url: `${URL_}?a=1&key=v+1`, headers: {}, applied: true })
+  })
+
+  it('a custom header of the same name (any case) and an existing query param win', () => {
+    expect(
+      applyMcpAuth(URL_, { authorization: 'Custom x' }, { type: 'bearer', bearer: { token: 't' } }),
+    ).toEqual({ url: URL_, headers: { authorization: 'Custom x' }, applied: false })
+    expect(
+      applyMcpAuth(
+        `${URL_}?key=mine`,
+        {},
+        {
+          type: 'api-key',
+          apiKey: { key: 'key', value: 'v', in: 'query' },
+        },
+      ).url,
+    ).toBe(`${URL_}?key=mine`)
+  })
+
+  it('nothing for no auth, and an unparsable URL is exported untouched', () => {
+    expect(applyMcpAuth(URL_, { A: '1' }, undefined)).toEqual({
+      url: URL_,
+      headers: { A: '1' },
+      applied: false,
+    })
+    const r = applyMcpAuth(
+      '{{base}}/mcp',
+      {},
+      {
+        type: 'api-key',
+        apiKey: { key: 'key', value: 'v', in: 'query' },
+      },
+    )
+    expect(r).toEqual({ url: '{{base}}/mcp', headers: {}, applied: false })
   })
 })

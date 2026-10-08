@@ -19,6 +19,7 @@ import { useGrpcStore } from '../stores/grpc.store'
 import { useGraphQLStore } from '../stores/graphql.store'
 import { useMcpStore, type McpTransport } from '../stores/mcp.store'
 import { normalizeMcpAuth } from '../stores/mcp-auth.slice'
+import { normalizeMcpProtocol } from './mcp-protocol'
 import { useWorkspaceStore } from '../stores/workspace.store'
 import { stripWsSecuritySecrets } from './key-material'
 import type { WsSecurityConfig } from '../types'
@@ -214,6 +215,8 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
           // Authorization tab (MCP Auth) — `{{var}}` kept unresolved. The
           // OAuth 2.1 debugger's secret / token session are never saved.
           auth: mcp.auth,
+          // Protocol era negotiation (issue #152): auto / legacy / a pin.
+          protocol: mcp.protocol,
         },
       },
     }
@@ -447,6 +450,8 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     if (Array.isArray(m.envVars)) mcp.setEnvVars(m.envVars as KeyValuePair[])
     // Rows saved before the Authorization tab carry no `auth` → No Auth.
     mcp.setAuth(normalizeMcpAuth(m.auth))
+    // Rows saved before issue #152 carry no `protocol` → Auto.
+    mcp.setProtocol(normalizeMcpProtocol(m.protocol))
     return
   }
 }

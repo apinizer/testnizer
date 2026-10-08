@@ -1,55 +1,54 @@
 /**
- * Builds one SDK `Server` (low-level) per MCP session from a mock definition.
+ * Builds one v2 SDK `Server` (low-level) from a mock definition — the factory
+ * behind `createMcpHandler` (one instance per HTTP request, either era) and
+ * behind each legacy HTTP+SSE session (issue #140, v2 migration issue #152).
  *
- * Why the low-level `Server` and not `McpServer.registerTool`: on SDK 1.29
- * `registerTool` only accepts zod schemas, so a user's JSON Schema would have
- * to be converted to zod and back — lossy for anything beyond the common
- * subset ($ref, oneOf/anyOf, formats, nested constraints), which is exactly
- * what a "complex schema" mock exists to exercise. Here `tools/list` returns
- * the authored `inputSchema` verbatim and `tools/call` validates arguments
- * against that same schema with ajv, mirroring McpServer's "Input validation
- * error" isError result.
+ * Why the low-level `Server` and not `McpServer.registerTool(fromJsonSchema(…))`:
+ *   - `McpServer`'s `tools/call` wraps EVERY error a tool handler throws into an
+ *     `isError` result (server/dist/mcp-*.cjs `setToolRequestHandlers` → catch →
+ *     `createToolError`), which would make error mode `jsonrpc` (a real
+ *     JSON-RPC error with the configured code) impossible;
+ *   - `tools/list` there re-emits the schema as `{ type: 'object', ...schema }`
+ *     (`standardSchemaToJsonSchema`), i.e. not byte-for-byte.
+ * Here `tools/list` returns the authored `inputSchema` verbatim and
+ * `tools/call` validates arguments with the same ajv engine
+ * (`args-validator.ts`), mirroring McpServer's "Input validation error"
+ * isError result. The SDK still applies its own seams to these handlers:
+ * result validation, `cacheHints` on list results, the `input_required`
+ * checks and `requestState` verification (elicitation.ts).
  *
- * Handlers read the definition through `hooks.getDef()` at call time, so a
- * hot-reloaded definition reaches live sessions without reconnecting.
+ * Handlers read the definition through `hooks.getDef()` at call time; with
+ * one instance per request a hot reload reaches the very next request.
  */
 
 import { randomUUID } from 'node:crypto'
-import { Server } from '@modelcontextprotocol/sdk/server/index.js'
-import { UriTemplate } from '@modelcontextprotocol/sdk/shared/uriTemplate.js'
 import {
-  CallToolRequestSchema,
-  ErrorCode,
-  GetPromptRequestSchema,
-  InitializeRequestSchema,
-  LATEST_PROTOCOL_VERSION,
-  ListPromptsRequestSchema,
-  ListResourceTemplatesRequestSchema,
-  ListResourcesRequestSchema,
-  ListToolsRequestSchema,
-  McpError,
-  ReadResourceRequestSchema,
-  SUPPORTED_PROTOCOL_VERSIONS,
+  ProtocolError,
+  ProtocolErrorCode,
+  ResourceNotFoundError,
+  Server,
+  UriTemplate,
+  type CacheHint,
   type CallToolResult,
-  type InitializeResult,
   type ReadResourceResult,
-} from '@modelcontextprotocol/sdk/types.js'
+  type ServerContext,
+} from '@modelcontextprotocol/server'
 import { renderTemplate, type TemplateContext } from '../mock/template'
-import { validateArgs } from './args-validator'
-import type { MockMcpErrorMode, MockMcpServerDef, MockMcpTool } from './types'
+import { mockJsonSchemaValidator, validateArgs } from './args-validator'
+import { resolveElicitation, type ElicitationCodec } from './elicitation'
+import type { MockMcpEra, MockMcpErrorMode, MockMcpServerDef, MockMcpTool } from './types'
 
-/** JSON-RPC error code MCP uses for an unknown resource URI. */
-export const RESOURCE_NOT_FOUND = -32002
-
-export interface SessionHooks {
+export interface ServerHooks {
   /** Live definition (hot reload). */
   getDef(): MockMcpServerDef
-  /** Effective protocol pin for this session (`?rev=` beats the server's pin). */
-  pin: string | null
+  /** The protocol era this instance serves. */
+  era: MockMcpEra
   /** Count one call against `key`; true when the error applies to this call. */
   rollError(key: string, everyN: number | undefined): boolean
   /** Env vars for template rendering, or undefined (no project scope). */
   loadEnv(): Record<string, string> | undefined
+  /** Per-server `requestState` codec for elicitation. */
+  codec: ElicitationCodec
 }
 
 /** The error mode a call to `tool` runs under (tool override beats server). */
@@ -79,7 +78,7 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   })
 }
 
-/** Never settles until the request is cancelled or its session closes. */
+/** Never settles until the request is cancelled or its exchange closes. */
 function hang(signal: AbortSignal): Promise<never> {
   return new Promise((_resolve, reject) => {
     if (signal.aborted) reject(new Error('aborted'))
@@ -87,14 +86,12 @@ function hang(signal: AbortSignal): Promise<never> {
   })
 }
 
-function flattenHeaders(
-  h: Record<string, string | string[] | undefined> | undefined,
-): Record<string, string> {
+/** Request headers of the HTTP exchange (lower-cased), for `{{request.headers.x}}`. */
+function headersOf(ctx: ServerContext): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(h ?? {})) {
-    if (Array.isArray(v)) out[k.toLowerCase()] = v.join(', ')
-    else if (v !== undefined) out[k.toLowerCase()] = String(v)
-  }
+  ctx.http?.req?.headers.forEach((value, key) => {
+    out[key.toLowerCase()] = value
+  })
   return out
 }
 
@@ -142,6 +139,15 @@ function toolResult(
 ): CallToolResult {
   const { kind, body, isError } = tool.response
   const flag = isError ? { isError: true } : {}
+  // After an elicitation round, an authored `responseTemplate` replaces the body.
+  if (input.extra?.input !== undefined && tool.elicit?.responseTemplate !== undefined) {
+    return {
+      content: [
+        { type: 'text', text: render(tool.elicit.responseTemplate, { ...input, args }, envVars) },
+      ],
+      ...flag,
+    }
+  }
   if (kind === 'json') {
     let parsed: unknown
     try {
@@ -167,47 +173,45 @@ function toolResult(
   return { content: [{ type: 'text', text }], ...flag }
 }
 
-function unsupportedVersion(requested: string, pin: string): McpError {
-  const supported = (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(pin) ? [pin] : []
-  const message = supported.length
-    ? `Unsupported protocol version: ${requested} (supported versions: ${supported.join(', ')})`
-    : `Unsupported protocol version: ${requested} (this mock is pinned to ${pin}, which the bundled MCP SDK does not implement)`
-  return new McpError(ErrorCode.InvalidParams, message, { supported, requested })
+/**
+ * `ttlMs` / `cacheScope` for the cacheable list results (2026-07-28 only).
+ * Tolerates a definition built without the field (callers predating #152):
+ * the SDK throws a RangeError for an invalid hint.
+ */
+function listCacheHints(ttlMs: number | undefined): Record<string, CacheHint> {
+  const safe = typeof ttlMs === 'number' && Number.isSafeInteger(ttlMs) && ttlMs > 0 ? ttlMs : 0
+  const hint: CacheHint = { ttlMs: safe, cacheScope: 'private' }
+  return {
+    'tools/list': hint,
+    'prompts/list': hint,
+    'resources/list': hint,
+    'resources/templates/list': hint,
+  }
 }
 
-export function createMockMcpSdkServer(hooks: SessionHooks): Server {
+export function createMockMcpSdkServer(hooks: ServerHooks): Server {
   const initial = hooks.getDef()
-  const serverInfo = { name: initial.name || 'Testnizer Mock MCP', version: '1.0.0' }
-  const capabilities = {
-    tools: { listChanged: true },
-    resources: { listChanged: true },
-    prompts: { listChanged: true },
-  }
-  const server = new Server(serverInfo, {
-    capabilities,
-    ...(initial.description.trim() ? { instructions: initial.description } : {}),
-  })
-
-  // ── initialize: protocol pin ─────────────────────────────────
-  // Replaces the SDK's own handler only to add the pin check; the result
-  // mirrors Server#_oninitialize (negotiate within SUPPORTED_PROTOCOL_VERSIONS).
-  server.setRequestHandler(InitializeRequestSchema, (request): InitializeResult => {
-    const requested = request.params.protocolVersion
-    if (hooks.pin && requested !== hooks.pin) throw unsupportedVersion(requested, hooks.pin)
-    const protocolVersion = (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(requested)
-      ? requested
-      : LATEST_PROTOCOL_VERSION
-    const description = hooks.getDef().description.trim()
-    return {
-      protocolVersion,
-      capabilities,
-      serverInfo,
+  const description = initial.description.trim()
+  const server = new Server(
+    { name: initial.name || 'Testnizer Mock MCP', version: '1.0.0' },
+    {
+      capabilities: {
+        tools: { listChanged: true },
+        resources: { listChanged: true },
+        prompts: { listChanged: true },
+      },
       ...(description ? { instructions: description } : {}),
-    }
-  })
+      cacheHints: listCacheHints(initial.cacheTtlMs),
+      jsonSchemaValidator: mockJsonSchemaValidator,
+      requestState: { verify: hooks.codec.verify },
+      // Never push server→client requests on a stateless legacy POST; the
+      // elicitation scenario answers 2025-era calls with a note instead.
+      inputRequired: { legacyShim: false },
+    },
+  )
 
   // ── tools ────────────────────────────────────────────────────
-  server.setRequestHandler(ListToolsRequestSchema, () => ({
+  server.setRequestHandler('tools/list', () => ({
     tools: hooks.getDef().tools.map((t) => ({
       name: t.name,
       ...(t.title ? { title: t.title } : {}),
@@ -216,11 +220,11 @@ export function createMockMcpSdkServer(hooks: SessionHooks): Server {
     })),
   }))
 
-  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+  server.setRequestHandler('tools/call', async (request, ctx) => {
     const def = hooks.getDef()
     const name = request.params.name
     const tool = def.tools.find((t) => t.name === name)
-    if (!tool) throw new McpError(ErrorCode.InvalidParams, `Tool ${name} not found`)
+    if (!tool) throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Tool ${name} not found`)
     const args = (request.params.arguments ?? {}) as Record<string, unknown>
 
     const valid = validateArgs(tool.inputSchema, args)
@@ -236,14 +240,15 @@ export function createMockMcpSdkServer(hooks: SessionHooks): Server {
       }
     }
 
-    if (tool.delayMs && tool.delayMs > 0) await sleep(tool.delayMs, extra.signal)
+    const signal = ctx.mcpReq.signal
+    if (tool.delayMs && tool.delayMs > 0) await sleep(tool.delayMs, signal)
 
     // `http` is decided at the HTTP layer (it never reaches a handler).
     const { mode, counterKey } = effectiveErrorMode(def, tool)
     if (mode.kind !== 'none' && mode.kind !== 'http' && hooks.rollError(counterKey, mode.everyN)) {
       if (mode.kind === 'jsonrpc') {
-        throw new McpError(
-          mode.code ?? ErrorCode.InternalError,
+        throw new ProtocolError(
+          mode.code ?? ProtocolErrorCode.InternalError,
           mode.message || 'Mock JSON-RPC error',
         )
       }
@@ -253,20 +258,27 @@ export function createMockMcpSdkServer(hooks: SessionHooks): Server {
           isError: true,
         }
       }
-      return hang(extra.signal) // timeout
+      return hang(signal) // timeout
     }
 
-    const headers = flattenHeaders(extra.requestInfo?.headers)
-    return toolResult(
+    const extra: Record<string, unknown> = { tool: name }
+    if (tool.elicit) {
+      const outcome = await resolveElicitation(name, tool.elicit, hooks.era, ctx, hooks.codec)
+      if (outcome.kind === 'answer') return outcome.result
+      extra.input = outcome.input
+    }
+
+    const result = toolResult(
       tool,
       args,
-      { method: 'tools/call', path: def.path, headers, extra: { tool: name } },
+      { method: 'tools/call', path: def.path, headers: headersOf(ctx), extra },
       hooks.loadEnv(),
     )
+    return server.projectCallToolResult(result, undefined)
   })
 
   // ── resources ────────────────────────────────────────────────
-  server.setRequestHandler(ListResourcesRequestSchema, () => ({
+  server.setRequestHandler('resources/list', () => ({
     resources: hooks
       .getDef()
       .resources.filter((r) => !!r.uri)
@@ -279,7 +291,7 @@ export function createMockMcpSdkServer(hooks: SessionHooks): Server {
       })),
   }))
 
-  server.setRequestHandler(ListResourceTemplatesRequestSchema, () => ({
+  server.setRequestHandler('resources/templates/list', () => ({
     resourceTemplates: hooks
       .getDef()
       .resources.filter((r) => !!r.uriTemplate)
@@ -292,7 +304,7 @@ export function createMockMcpSdkServer(hooks: SessionHooks): Server {
       })),
   }))
 
-  server.setRequestHandler(ReadResourceRequestSchema, (request, extra): ReadResourceResult => {
+  server.setRequestHandler('resources/read', (request, ctx): ReadResourceResult => {
     const def = hooks.getDef()
     const uri = request.params.uri
     const content = (
@@ -310,7 +322,7 @@ export function createMockMcpSdkServer(hooks: SessionHooks): Server {
             {
               method: 'resources/read',
               path: def.path,
-              headers: flattenHeaders(extra.requestInfo?.headers),
+              headers: headersOf(ctx),
               params,
               extra: { uri },
             },
@@ -336,11 +348,12 @@ export function createMockMcpSdkServer(hooks: SessionHooks): Server {
         return content(r, params)
       }
     }
-    throw new McpError(RESOURCE_NOT_FOUND, `Resource ${uri} not found`, { uri })
+    // v2 answers a resources/read miss with -32602 on every revision (spec).
+    throw new ResourceNotFoundError(uri, `Resource ${uri} not found`)
   })
 
   // ── prompts ──────────────────────────────────────────────────
-  server.setRequestHandler(ListPromptsRequestSchema, () => ({
+  server.setRequestHandler('prompts/list', () => ({
     prompts: hooks.getDef().prompts.map((p) => ({
       name: p.name,
       ...(p.title ? { title: p.title } : {}),
@@ -349,23 +362,24 @@ export function createMockMcpSdkServer(hooks: SessionHooks): Server {
     })),
   }))
 
-  server.setRequestHandler(GetPromptRequestSchema, (request, extra) => {
+  server.setRequestHandler('prompts/get', (request, ctx) => {
     const def = hooks.getDef()
     const name = request.params.name
     const prompt = def.prompts.find((p) => p.name === name)
-    if (!prompt) throw new McpError(ErrorCode.InvalidParams, `Prompt ${name} not found`)
+    if (!prompt)
+      throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Prompt ${name} not found`)
     const args = request.params.arguments ?? {}
     const missing = (prompt.arguments ?? []).filter(
       (a) => a.required && (args[a.name] === undefined || args[a.name] === ''),
     )
     if (missing.length) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidParams,
         `Invalid arguments for prompt ${name}: missing required argument${missing.length > 1 ? 's' : ''} ${missing.map((a) => a.name).join(', ')}`,
       )
     }
     const envVars = hooks.loadEnv()
-    const headers = flattenHeaders(extra.requestInfo?.headers)
+    const headers = headersOf(ctx)
     return {
       ...(prompt.description ? { description: prompt.description } : {}),
       messages: prompt.messages.map((m) => ({

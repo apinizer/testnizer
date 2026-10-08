@@ -59,6 +59,18 @@ export default function McpSecuritySummary({ report }: { report: McpSecurityRepo
               {report.serverInfo.protocolVersion}
             </span>
           )}
+          {report.serverInfo?.era && (
+            <span
+              data-testid="mcp-security-era"
+              data-era={report.serverInfo.era}
+              className="truncate text-[11px] text-[var(--muted)]"
+            >
+              {t('mcp.security.era')}:{' '}
+              {report.serverInfo.era === 'modern'
+                ? t('mcp.security.eraModern')
+                : t('mcp.security.eraLegacy')}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2.5 text-[12px]">
           {COUNTS.map(([key, cls]) => (

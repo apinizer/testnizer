@@ -51,6 +51,11 @@ export function parseIntStrict(raw: string): number | null {
 export interface NumberDraft {
   /** Current text of the input — may be empty or mid-edit. */
   draft: string
+  /**
+   * Commit the pending text now (what blur / Enter do) — for a host that
+   * saves on a key chord while the field still has focus.
+   */
+  commit: () => void
   /** Props to spread on an `<input type="number">`. */
   inputProps: {
     value: string
@@ -107,6 +112,7 @@ export function useNumberDraft({
 
   return {
     draft,
+    commit,
     inputProps: {
       value: draft,
       onChange: (e) => {

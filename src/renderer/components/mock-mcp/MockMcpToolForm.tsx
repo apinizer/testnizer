@@ -9,6 +9,7 @@ import {
 import { parseSchemaText } from './mock-mcp-draft'
 import MockMcpErrorModeFields from './MockMcpErrorModeFields'
 import MockMcpTemplateHint from './MockMcpTemplateHint'
+import MockMcpElicitSection from './MockMcpElicitSection'
 import {
   Checkbox,
   Field,
@@ -167,6 +168,18 @@ export default function MockMcpToolForm({
           testIdPrefix="mock-mcp-tool-error"
           value={tool.error}
           onChange={(error) => set({ error })}
+        />
+
+        <MockMcpElicitSection
+          value={tool.elicit}
+          onChange={(elicit) =>
+            onChange((x) => {
+              const next = { ...x }
+              if (elicit) next.elicit = elicit
+              else delete next.elicit
+              return next
+            })
+          }
         />
       </div>
     </div>

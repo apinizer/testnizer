@@ -21,6 +21,8 @@ import {
   findUrls,
   findVerboseError,
   isSecretLikeName,
+  VERBOSE_ERROR_MAX_CHARS,
+  VERBOSE_ERROR_RULES,
   isVerboseVersion,
   makeVisible,
   shadowKey,
@@ -285,6 +287,67 @@ describe('disclosure heuristics', () => {
     '',
   ])('%j leaks nothing', (text) => {
     expect(findVerboseError(text)).toEqual([])
+  })
+
+  it('still recognises real Node and .NET stack traces after the linear rewrite', () => {
+    const node = [
+      'TypeError: Cannot read properties of undefined (reading "x")',
+      '    at Object.<anonymous> (/srv/app/server.js:12:5)',
+      '    at Module._compile (node:internal/modules/cjs/loader:1256:14)',
+      '    at async Promise.all (index 0)',
+    ].join('\n')
+    expect(findVerboseError(node)).toEqual(expect.arrayContaining(['js-stack']))
+    expect(findVerboseError('Error\r\n\tat file:///opt/x.mjs:1:2')).toContain('js-stack')
+    const dotnet =
+      'Unhandled exception.\n   at Acme.Api.Controllers.ToolsController.Call(String name) in C:\\src\\Api\\ToolsController.cs:line 42'
+    expect(findVerboseError(dotnet)).toContain('dotnet-stack')
+    // A clock time on an "at" line is not a stack frame of either kind.
+    expect(findVerboseError('meeting\nat noon')).toEqual([])
+  })
+
+  // Server-controlled bodies are scanned synchronously in the main process:
+  // every rule must stay linear on adversarial input (the old js-stack rule
+  // took ~730 ms on 30 KB of `"\n at " + "a"…` and minutes on 400 KB).
+  it.each([
+    ['"\\n at " + a…', () => '\n at ' + 'a'.repeat(1_000_000)],
+    ['"\\n at " + spaces', () => '\n at ' + ' '.repeat(1_000_000)],
+    ['"\\n at (" + a…', () => '\n at (' + 'a'.repeat(1_000_000)],
+    ['"\\n at " + "a:1:"…', () => '\n at ' + 'a:1:'.repeat(250_000)],
+    ['"\\n at a:" + digits', () => '\n at a:' + '1'.repeat(1_000_000)],
+    ['newlines', () => '\n'.repeat(1_000_000)],
+    ['"\\n\\t"…', () => '\n\t'.repeat(500_000)],
+    ['"at a("…', () => 'at a('.repeat(200_000)],
+    ['"at a() in "…', () => 'at a() in '.repeat(100_000)],
+    ['"at a."…', () => 'at a.'.repeat(200_000)],
+    ['"/home/"…', () => '/home/'.repeat(170_000)],
+    ['"File \\""…', () => 'File "'.repeat(170_000)],
+  ])('1 MB of %s is classified in < 50 ms', (_label, make) => {
+    const text = make()
+    const started = performance.now()
+    findVerboseError(text)
+    expect(performance.now() - started).toBeLessThan(50)
+  })
+
+  it('the js-stack rule itself is linear — 1 MB of each adversarial shape, uncapped, < 50 ms', () => {
+    const rule = VERBOSE_ERROR_RULES.find((r) => r.id === 'js-stack')?.re
+    if (!rule) throw new Error('no js-stack rule')
+    for (const text of [
+      '\n at ' + 'a'.repeat(1_000_000),
+      '\n at ' + ' '.repeat(1_000_000),
+      '\n at (' + 'a'.repeat(1_000_000),
+      '\n'.repeat(1_000_000),
+      '\n at '.repeat(200_000),
+    ]) {
+      const started = performance.now()
+      rule.test(text)
+      expect(performance.now() - started).toBeLessThan(50)
+    }
+  })
+
+  it(`looks at the first ${VERBOSE_ERROR_MAX_CHARS} characters only`, () => {
+    const trace = '\n    at parse (/srv/app/x.js:1:2)'
+    expect(findVerboseError('x'.repeat(1000) + trace)).toContain('js-stack')
+    expect(findVerboseError('x'.repeat(VERBOSE_ERROR_MAX_CHARS) + trace)).toEqual([])
   })
 
   it.each([

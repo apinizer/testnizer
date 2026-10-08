@@ -5,6 +5,7 @@ import {
   mcpCancelConnect,
   mcpListTools,
   mcpCallTool,
+  mcpRespondInput,
   mcpListResources,
   mcpReadResource,
   mcpListPrompts,
@@ -18,20 +19,17 @@ import { parseMcpAuth } from '../protocols/mcp-auth'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
 import { maskSensitiveHeaders, MASKED_VALUE } from '../db/saved-response.repo'
-
-/**
- * Gateway credentials rarely use the standard names (`X-Gateway-Token`,
- * `X-Client-Secret`, …) — the whole point of issue #137 — so on top of the
- * shared list below, any name that looks credential-bearing is masked too.
- */
-const CREDENTIAL_NAME = /auth|token|secret|key|password|passwd|cookie|session|signature/i
+// Gateway credentials rarely use the standard names (`X-Gateway-Token`,
+// `X-Client-Secret`, … — the whole point of issue #137): one broad name rule,
+// shared with the OAuth debugger and the Security Scan evidence.
+import { isCredentialHeaderName } from '../lib/credential-headers'
 
 /**
  * Console-safe view of the user's custom connect headers (issue #137): values
  * of credential-bearing names (Authorization, Cookie, X-API-Key, … — the same
- * list saved examples use, plus `CREDENTIAL_NAME`) are masked, so a Bearer
- * token typed into the MCP headers table never lands in the console log in
- * clear text.
+ * list saved examples use, plus `isCredentialHeaderName`) are masked, so a
+ * Bearer token typed into the MCP headers table never lands in the console log
+ * in clear text.
  */
 function consoleSafeHeaders(
   headers: Record<string, string> | undefined,
@@ -40,21 +38,32 @@ function consoleSafeHeaders(
   if (!masked || Object.keys(masked).length === 0) return undefined
   const out: Record<string, string> = {}
   for (const [k, v] of Object.entries(masked)) {
-    out[k] = CREDENTIAL_NAME.test(k) && v ? MASKED_VALUE : String(v ?? '')
+    out[k] = isCredentialHeaderName(k) && v ? MASKED_VALUE : String(v ?? '')
   }
   return out
 }
 
 /**
- * True when a connect failure is an HTTP 401 (issue #141). Without an SDK
- * `authProvider` the transports throw `StreamableHTTPError` / `SseError`
- * carrying the status as a numeric `.code`; `UnauthorizedError` covers the
- * SDK's own auth paths. Local on purpose — no extra engine import to mock.
+ * True when a connect failure is an HTTP 401 (issue #141). SDK 2.x (issue
+ * #152): Streamable HTTP and the `'auto'` negotiation probe throw
+ * `SdkHttpError` with the status in `.status` (its `.code` is now a string
+ * `SdkErrorCode`); the legacy SSE transport's `SseError` still carries the
+ * EventSource status as a numeric `.code`; `UnauthorizedError` covers the
+ * SDK's own auth paths. Duck-typed and local on purpose — the handler tests
+ * mock the engine wholesale, and SDK error classes are brand-checked.
  */
 function isUnauthorized(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
-  const e = err as { code?: unknown; name?: unknown }
-  return e.code === 401 || e.name === 'UnauthorizedError'
+  const e = err as { code?: unknown; status?: unknown; name?: unknown }
+  return e.status === 401 || e.code === 401 || e.name === 'UnauthorizedError'
+}
+
+/** `mcp:connect` `protocol` option: `auto` / `legacy` / a `YYYY-MM-DD` revision; anything else → default. */
+function parseProtocolOption(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const value = raw.trim()
+  if (value === 'auto' || value === 'legacy' || /^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  return undefined
 }
 
 // Track when each connection was opened so the disconnect log can carry the
@@ -78,6 +87,8 @@ function broadcast(channel: string, payload: unknown): void {
  *   - `mcp:notification` `{ connectionId, ts, method, params? }` — every server notification
  *   - `mcp:frame`        `{ connectionId, ts, direction, message, truncated? }` — every JSON-RPC frame
  *   - `mcp:connectionClosed` `{ connectionId, reason? }` — transport closed / died
+ *   - `mcp:subscriptionState` `{ connectionId, state, honoredFilter?, reason? }` —
+ *     the 2026-07-28 `subscriptions/listen` stream opened / ended (issue #152)
  * Transport errors are console-logged only. Handshake events are released one
  * macrotask after `mcp:connect` resolves (see `flushBuffered` in the engine),
  * so the renderer always knows the connectionId before its first frame.
@@ -89,6 +100,9 @@ function handleEngineEvent(event: McpEngineEvent): void {
       return
     case 'frame':
       broadcast('mcp:frame', event.payload)
+      return
+    case 'subscriptionState':
+      broadcast('mcp:subscriptionState', event.payload)
       return
     case 'connectionClosed': {
       const { connectionId, reason } = event.payload
@@ -169,6 +183,107 @@ async function loggedCall<T>(
   }
 }
 
+interface ToolCallContext {
+  workspaceId?: string
+  projectId?: string
+  endpointId?: string
+}
+
+/**
+ * Shared envelope + console log + history row for `mcp:callTool` and
+ * `mcp:respondInput`. An `input_required` result (issue #152) is a success
+ * like any other — the renderer reads `__mcp.kind`.
+ */
+async function loggedToolCall(
+  method: 'CALL_TOOL' | 'RESPOND_INPUT',
+  connectionId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  ctxOpts: ToolCallContext | undefined,
+  run: () => Promise<unknown>,
+  extraMeta?: Record<string, string | number | boolean>,
+): Promise<{ success: true; data: unknown } | { success: false; error: string }> {
+  const started = Date.now()
+  const argsBody = JSON.stringify(args)
+  const ctx = mcpContext.get(connectionId)
+  const targetUrl = ctx ? `${ctx.url}/${toolName}` : `${connectionId}/${toolName}`
+  try {
+    const data = await run()
+    const responseBody = JSON.stringify(data) ?? ''
+    const durationMs = Date.now() - started
+    const inputRequired =
+      !!data &&
+      typeof data === 'object' &&
+      (data as { __mcp?: { kind?: unknown } }).__mcp?.kind === 'input_required'
+    logRequestResponse({
+      protocol: 'mcp',
+      method,
+      url: targetUrl,
+      status: 0,
+      statusText: inputRequired ? 'INPUT_REQUIRED' : 'OK',
+      durationMs,
+      sizeBytes: Buffer.byteLength(responseBody, 'utf-8'),
+      requestBody: argsBody,
+      responseBody,
+      ...(extraMeta || inputRequired
+        ? { meta: { ...(extraMeta ?? {}), ...(inputRequired ? { inputRequired: true } : {}) } }
+        : {}),
+    })
+    try {
+      historyRepo.addHistory({
+        workspace_id: ctxOpts?.workspaceId,
+        project_id: ctxOpts?.projectId,
+        endpoint_id: ctxOpts?.endpointId,
+        protocol: 'mcp',
+        method,
+        url: targetUrl,
+        status_code: 0,
+        duration_ms: durationMs,
+        request_snapshot: JSON.stringify({
+          connectionId,
+          toolName,
+          args,
+          transport: 'unknown',
+        }),
+        response_snapshot: responseBody.length <= 500_000 ? responseBody : undefined,
+      })
+    } catch {
+      // history failure is never fatal
+    }
+    return { success: true, data }
+  } catch (e) {
+    const err = e as Error
+    const durationMs = Date.now() - started
+    logRequestResponse({
+      protocol: 'mcp',
+      method,
+      url: targetUrl,
+      status: -1,
+      statusText: err.message,
+      durationMs,
+      requestBody: argsBody,
+      error: { message: err.message, stack: err.stack },
+    })
+    try {
+      historyRepo.addHistory({
+        workspace_id: ctxOpts?.workspaceId,
+        project_id: ctxOpts?.projectId,
+        endpoint_id: ctxOpts?.endpointId,
+        protocol: 'mcp',
+        method,
+        url: targetUrl,
+        status_code: -1,
+        duration_ms: durationMs,
+        request_snapshot: JSON.stringify({ connectionId, toolName, args }),
+        response_snapshot: JSON.stringify({ error: err.message }),
+      })
+    } catch {
+      /* ignore */
+    }
+    return { success: false, error: err.message }
+  }
+}
+
 export function registerMcpHandlers(): void {
   setMcpEventSink(handleEngineEvent)
 
@@ -189,12 +304,15 @@ export function registerMcpHandlers(): void {
         auth?: unknown
         /** OAuth 2.1 debugger session whose token authenticates the connection (issue #141). */
         oauthSessionId?: string
+        /** Protocol era negotiation: `auto` (default) / `legacy` / a pinned revision (issue #152). */
+        protocol?: unknown
         _pendingId?: string
       },
     ) => {
       const started = Date.now()
       const loggedHeaders = consoleSafeHeaders(options.headers)
       const auth = options.transport === 'stdio' ? undefined : parseMcpAuth(options.auth)
+      const protocol = parseProtocolOption(options.protocol)
       try {
         const data = await mcpConnect({
           transport: options.transport,
@@ -208,6 +326,7 @@ export function registerMcpHandlers(): void {
           ...(typeof options.oauthSessionId === 'string' && options.oauthSessionId
             ? { oauthSessionId: options.oauthSessionId }
             : {}),
+          ...(protocol ? { protocol } : {}),
         })
         mcpContext.set(data.connectionId, { url: options.url, connectedAt: Date.now() })
         logRequestResponse({
@@ -224,6 +343,9 @@ export function registerMcpHandlers(): void {
             serverVersion: data.serverVersion ?? 'unknown',
             transport: options.transport,
             protocolVersion: data.protocolVersion ?? 'unknown',
+            // issue #152: the era actually negotiated, and what was asked for.
+            era: data.era ?? 'unknown',
+            protocolRequested: protocol ?? 'auto',
             headerCount: loggedHeaders ? Object.keys(loggedHeaders).length : 0,
             // Whether an OAuth session was used — never the token itself.
             oauth: !!options.oauthSessionId,
@@ -388,80 +510,53 @@ export function registerMcpHandlers(): void {
       connectionId: string,
       toolName: string,
       args: Record<string, unknown>,
-      ctxOpts?: { workspaceId?: string; projectId?: string; endpointId?: string },
-    ) => {
-      const started = Date.now()
-      const argsBody = JSON.stringify(args)
-      const ctx = mcpContext.get(connectionId)
-      const targetUrl = ctx ? `${ctx.url}/${toolName}` : `${connectionId}/${toolName}`
-      try {
-        const data = await mcpCallTool(connectionId, toolName, args)
-        const responseBody = JSON.stringify(data)
-        const durationMs = Date.now() - started
-        logRequestResponse({
-          protocol: 'mcp',
-          method: 'CALL_TOOL',
-          url: targetUrl,
-          status: 0,
-          statusText: 'OK',
-          durationMs,
-          sizeBytes: Buffer.byteLength(responseBody, 'utf-8'),
-          requestBody: argsBody,
-          responseBody,
-        })
-        try {
-          historyRepo.addHistory({
-            workspace_id: ctxOpts?.workspaceId,
-            project_id: ctxOpts?.projectId,
-            endpoint_id: ctxOpts?.endpointId,
-            protocol: 'mcp',
-            method: 'CALL_TOOL',
-            url: targetUrl,
-            status_code: 0,
-            duration_ms: durationMs,
-            request_snapshot: JSON.stringify({
-              connectionId,
-              toolName,
-              args,
-              transport: ctx ? 'unknown' : 'unknown',
-            }),
-            response_snapshot: responseBody.length <= 500_000 ? responseBody : undefined,
-          })
-        } catch {
-          // history failure is never fatal
-        }
-        return { success: true, data }
-      } catch (e) {
-        const err = e as Error
-        const durationMs = Date.now() - started
-        logRequestResponse({
-          protocol: 'mcp',
-          method: 'CALL_TOOL',
-          url: targetUrl,
-          status: -1,
-          statusText: err.message,
-          durationMs,
-          requestBody: argsBody,
-          error: { message: err.message, stack: err.stack },
-        })
-        try {
-          historyRepo.addHistory({
-            workspace_id: ctxOpts?.workspaceId,
-            project_id: ctxOpts?.projectId,
-            endpoint_id: ctxOpts?.endpointId,
-            protocol: 'mcp',
-            method: 'CALL_TOOL',
-            url: targetUrl,
-            status_code: -1,
-            duration_ms: durationMs,
-            request_snapshot: JSON.stringify({ connectionId, toolName, args }),
-            response_snapshot: JSON.stringify({ error: err.message }),
-          })
-        } catch {
-          /* ignore */
-        }
-        return { success: false, error: err.message }
-      }
-    },
+      ctxOpts?: ToolCallContext,
+    ) =>
+      loggedToolCall('CALL_TOOL', connectionId, toolName, args, ctxOpts, () =>
+        mcpCallTool(connectionId, toolName, args),
+      ),
+  )
+
+  /**
+   * Answer an `input_required` tools/call result (2026-07-28 multi-round-trip,
+   * issue #152): the same call again with `inputResponses` + the echoed
+   * `requestState`. Same envelope as `mcp:callTool` — the result may be
+   * complete or another `input_required` round (`__mcp.kind`).
+   */
+  ipcMain.handle(
+    'mcp:respondInput',
+    async (
+      _event,
+      connectionId: string,
+      toolName: string,
+      args: Record<string, unknown>,
+      requestState: unknown,
+      inputResponses: unknown,
+      ctxOpts?: ToolCallContext,
+    ) =>
+      loggedToolCall(
+        'RESPOND_INPUT',
+        connectionId,
+        toolName,
+        args,
+        ctxOpts,
+        () =>
+          mcpRespondInput(
+            connectionId,
+            toolName,
+            args ?? {},
+            typeof requestState === 'string' ? requestState : undefined,
+            inputResponses && typeof inputResponses === 'object' && !Array.isArray(inputResponses)
+              ? (inputResponses as Record<string, unknown>)
+              : undefined,
+          ),
+        // The responses are user input (form values) — log the keys only.
+        {
+          inputResponseKeys:
+            inputResponses && typeof inputResponses === 'object'
+              ? Object.keys(inputResponses).join(',')
+              : '',
+        },
+      ),
   )
 }

@@ -78,6 +78,14 @@ export interface McpSecurityServerInfo {
   version: string
   protocolVersion: string
   capabilities: Record<string, unknown>
+  /**
+   * Protocol era the scan's session ran on (issue #152): `modern` = the
+   * stateless 2026-07-28 protocol (`server/discover`), `legacy` = the 2025
+   * `initialize` handshake.
+   */
+  era?: 'legacy' | 'modern'
+  /** `supportedVersions` of the server's `server/discover` descriptor (modern era). */
+  supportedVersions?: string[]
 }
 
 export interface McpSecurityReport {
@@ -111,6 +119,14 @@ export interface McpSecurityProgress {
 export interface McpSecurityScanOptions {
   /** Opt-in: ~30 rapid requests over the authenticated session. */
   rateLimitProbe: boolean
+  /**
+   * Opt-in (issue #152): call up to `MAX_ELICIT_PROBES` argument-free tools
+   * annotated read-only, or unannotated tools whose name does not look like a
+   * write, to find one that answers `input_required`, then retry it with a
+   * tampered `requestState` (`auth.request_state_tampering`). The UI drives it
+   * with the same "active probes" checkbox as `rateLimitProbe`. Absent = off.
+   */
+  toolInvocationProbe?: boolean
   /** Per-HTTP-request timeout (default 15 s). */
   timeoutMs?: number
 }

@@ -1,9 +1,12 @@
 /**
  * Integration tests for `src/main/protocols/mcp.engine.ts`.
  *
- * Strategy: mock `@modelcontextprotocol/sdk` Client + transport modules so we
+ * Strategy: mock the SDK 2.x `Client` + transport classes
+ * (`@modelcontextprotocol/client`, `@modelcontextprotocol/client/stdio`) so we
  * can exercise the engine's connection-management, tool listing, tool calling,
  * and error-propagation logic without opening any real network connection.
+ * Everything else in the client package (`createMiddleware`,
+ * `isInputRequiredResult`, error classes) stays real.
  *
  * Coverage:
  *   - mcpConnect resolves with McpConnectionInfo (http, sse, stdio)
@@ -59,7 +62,12 @@ async function simulateHandshake(transport: FakeTransport): Promise<void> {
 }
 
 const mockClient = {
+  ctor: vi.fn<(info: unknown, options: unknown) => void>(),
   connect: vi.fn<(t: FakeTransport) => Promise<void>>(),
+  getNegotiatedProtocolVersion: vi.fn<() => string | undefined>(),
+  getProtocolEra: vi.fn<() => 'legacy' | 'modern' | undefined>(),
+  getDiscoverResult: vi.fn<() => Record<string, unknown> | undefined>(),
+  listen: vi.fn(),
   getServerVersion: vi
     .fn<() => { name: string; version: string }>()
     .mockReturnValue({ name: 'MockServer', version: '2.0.0' }),
@@ -92,6 +100,10 @@ function makeClientInstance(): Record<string, unknown> {
       transport?.onclose?.()
     },
     getServerVersion: () => mockClient.getServerVersion(),
+    getNegotiatedProtocolVersion: () => mockClient.getNegotiatedProtocolVersion(),
+    getProtocolEra: () => mockClient.getProtocolEra(),
+    getDiscoverResult: () => mockClient.getDiscoverResult(),
+    listen: (...a: unknown[]) => mockClient.listen(...a),
     getServerCapabilities: () => mockClient.getServerCapabilities(),
     getInstructions: () => mockClient.getInstructions(),
     listTools: (...a: unknown[]) => mockClient.listTools(...a),
@@ -104,10 +116,6 @@ function makeClientInstance(): Record<string, unknown> {
   }
 }
 
-vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
-  Client: vi.fn().mockImplementation(() => makeClientInstance()),
-}))
-
 function fakeTransport(extra: Partial<FakeTransport>): FakeTransport {
   return {
     send: vi.fn(async () => {}),
@@ -116,15 +124,17 @@ function fakeTransport(extra: Partial<FakeTransport>): FakeTransport {
   }
 }
 
-vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
+vi.mock('@modelcontextprotocol/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@modelcontextprotocol/client')>()),
+  Client: vi.fn().mockImplementation((info: unknown, options: unknown) => {
+    mockClient.ctor(info, options)
+    return makeClientInstance()
+  }),
   StreamableHTTPClientTransport: vi
     .fn()
     .mockImplementation((url: URL, opts?: unknown) =>
       fakeTransport({ _url: url.toString(), _opts: opts }),
     ),
-}))
-
-vi.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
   SSEClientTransport: vi
     .fn()
     .mockImplementation((url: URL, opts?: unknown) =>
@@ -132,8 +142,10 @@ vi.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
     ),
 }))
 
-vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
-  StdioClientTransport: vi.fn().mockImplementation((opts: unknown) => fakeTransport({ _opts: opts })),
+vi.mock('@modelcontextprotocol/client/stdio', () => ({
+  StdioClientTransport: vi
+    .fn()
+    .mockImplementation((opts: unknown) => fakeTransport({ _opts: opts })),
   getDefaultEnvironment: vi.fn(() => ({ PATH: '/usr/bin:/bin', HOME: '/home/tester' })),
 }))
 
@@ -170,17 +182,42 @@ import {
   mcpGetPrompt,
   mcpGetConnection,
   mcpDisconnectAll,
+  mcpCancelConnect,
+  mcpRespondInput,
   setMcpEventSink,
   applyMcpAuth,
+  decorateMcpError,
+  resolveNegotiation,
   type McpEngineEvent,
 } from '../../src/main/protocols/mcp.engine'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import {
+  CLIENT_CAPABILITIES_META_KEY,
+  ProtocolError,
+  SdkError,
+  SdkErrorCode,
+  SdkHttpError,
+  SSEClientTransport,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client'
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 
 /** Engine events captured through the sink. */
 let events: McpEngineEvent[] = []
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 5))
+
+/**
+ * The options an http / sse transport was built with. Since issue #152 every
+ * http / sse transport gets the frame-tap `fetch` and `redirectPolicy:
+ * 'follow'`; `rest` is what remains (requestInit, …).
+ */
+function httpOpts(
+  ctor: typeof StreamableHTTPClientTransport | typeof SSEClientTransport,
+  call = 0,
+): { fetch: unknown; redirectPolicy: unknown; rest: Record<string, unknown> } {
+  const raw = (vi.mocked(ctor).mock.calls[call][1] ?? {}) as Record<string, unknown>
+  const { fetch, redirectPolicy, ...rest } = raw
+  return { fetch, redirectPolicy, rest }
+}
 
 /** The fake transport handed to the most recent `client.connect()`. */
 function lastTransport(): FakeTransport {
@@ -199,6 +236,10 @@ beforeEach(async () => {
   setMcpEventSink((e) => events.push(e))
   mockClient.connect.mockImplementation(simulateHandshake)
   mockClient.getServerVersion.mockReturnValue({ name: 'MockServer', version: '2.0.0' })
+  mockClient.getNegotiatedProtocolVersion.mockReturnValue('2025-03-26')
+  mockClient.getProtocolEra.mockReturnValue('legacy')
+  mockClient.getDiscoverResult.mockReturnValue(undefined)
+  mockClient.listen.mockReset()
   mockClient.getServerCapabilities.mockReturnValue(DEFAULT_CAPS)
   mockClient.getInstructions.mockReturnValue(undefined)
   mockClient.listTools.mockResolvedValue({
@@ -251,7 +292,9 @@ describe('mcp.engine — connect', () => {
   })
 
   it('server name is undefined when getServerVersion returns undefined', async () => {
-    mockClient.getServerVersion.mockReturnValue(undefined as unknown as { name: string; version: string })
+    mockClient.getServerVersion.mockReturnValue(
+      undefined as unknown as { name: string; version: string },
+    )
     const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
     expect(info.serverName).toBeUndefined()
     expect(info.serverVersion).toBeUndefined()
@@ -264,7 +307,10 @@ describe('mcp.engine — connect', () => {
   })
 
   it('rejects when client.connect() throws', async () => {
-    mockClient.connect.mockRejectedValueOnce(new Error('Connection refused'))
+    // http 'auto' retries the legacy handshake once (see the retry block) — both fail here.
+    mockClient.connect
+      .mockRejectedValueOnce(new Error('Connection refused'))
+      .mockRejectedValueOnce(new Error('Connection refused'))
     await expect(mcpConnect({ transport: 'http', url: 'http://bad.local/mcp' })).rejects.toThrow(
       'Connection refused',
     )
@@ -370,24 +416,30 @@ describe('mcp.engine — custom connect headers (issue #137)', () => {
     await mcpConnect({ transport: 'http', url: 'http://gw.local/mcp', headers: HEADERS })
     const ctor = vi.mocked(StreamableHTTPClientTransport)
     expect(ctor).toHaveBeenCalledTimes(1)
-    const [url, opts] = ctor.mock.calls[0]
+    const [url] = ctor.mock.calls[0]
     expect(url.toString()).toBe('http://gw.local/mcp')
-    expect(opts).toEqual({ requestInit: { headers: HEADERS } })
+    const opts = httpOpts(StreamableHTTPClientTransport)
+    expect(opts.rest).toEqual({ requestInit: { headers: HEADERS } })
+    expect(typeof opts.fetch).toBe('function')
+    expect(opts.redirectPolicy).toBe('follow')
   })
 
-  it('sse: headers go to SSEClientTransport via requestInit.headers (SDK 1.29 applies them to the GET stream too)', async () => {
+  it('sse: headers go to SSEClientTransport via requestInit.headers (SDK 2.x applies them to the GET stream too)', async () => {
     await mcpConnect({ transport: 'sse', url: 'http://gw.local/sse', headers: HEADERS })
     const ctor = vi.mocked(SSEClientTransport)
     expect(ctor).toHaveBeenCalledTimes(1)
-    const [, opts] = ctor.mock.calls[0]
-    expect(opts).toEqual({ requestInit: { headers: HEADERS } })
+    expect(httpOpts(SSEClientTransport).rest).toEqual({ requestInit: { headers: HEADERS } })
   })
 
-  it('no headers / empty map → transport built without options (unchanged default)', async () => {
+  it('no headers / empty map → no requestInit (only the frame-tap fetch + redirect policy)', async () => {
     await mcpConnect({ transport: 'http', url: 'http://gw.local/mcp' })
     await mcpConnect({ transport: 'sse', url: 'http://gw.local/sse', headers: {} })
-    expect(vi.mocked(StreamableHTTPClientTransport).mock.calls[0][1]).toBeUndefined()
-    expect(vi.mocked(SSEClientTransport).mock.calls[0][1]).toBeUndefined()
+    for (const ctor of [StreamableHTTPClientTransport, SSEClientTransport] as const) {
+      const opts = httpOpts(ctor)
+      expect(opts.rest).toEqual({})
+      expect(typeof opts.fetch).toBe('function')
+      expect(opts.redirectPolicy).toBe('follow')
+    }
   })
 
   it('stdio ignores headers', async () => {
@@ -402,34 +454,18 @@ describe('mcp.engine — custom connect headers (issue #137)', () => {
   })
 })
 
-
 // ─── connect result (issue #139) ──────────────────────────────
 describe('mcp.engine — connect result carries protocolVersion / capabilities / instructions (issue #139)', () => {
-  it('sse: protocolVersion comes from the initialize result frame (the SDK keeps none)', async () => {
-    const info = await mcpConnect({ transport: 'sse', url: 'http://mock.local/sse' })
-    expect(info.protocolVersion).toBe('2025-03-26')
-  })
-
-  it('stdio: protocolVersion comes from the initialize result frame', async () => {
-    const info = await mcpConnect({ transport: 'stdio', url: 'node server.js' })
-    expect(info.protocolVersion).toBe('2025-03-26')
-  })
-
-  it('http: the transport protocolVersion getter wins when set', async () => {
-    vi.mocked(StreamableHTTPClientTransport).mockImplementationOnce(
-      (url: URL) =>
-        fakeTransport({
-          _url: url.toString(),
-          protocolVersion: '2025-06-18',
-        }) as unknown as StreamableHTTPClientTransport,
-    )
-    const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
-    expect(info.protocolVersion).toBe('2025-06-18')
-  })
-
-  it('http: falls back to the initialize frame when the getter is empty', async () => {
-    const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
-    expect(info.protocolVersion).toBe('2025-03-26')
+  it('protocolVersion is the SDK 2.x negotiated version, on every transport', async () => {
+    for (const transport of ['http', 'sse', 'stdio'] as const) {
+      mockClient.getNegotiatedProtocolVersion.mockReturnValueOnce(`v-${transport}`)
+      const info = await mcpConnect({
+        transport,
+        url: transport === 'stdio' ? 'node s.js' : 'http://x/mcp',
+      })
+      expect(info.protocolVersion).toBe(`v-${transport}`)
+      expect(info.era).toBe('legacy')
+    }
   })
 
   it('capabilities are plain JSON from getServerCapabilities(); instructions passed through', async () => {
@@ -443,6 +479,7 @@ describe('mcp.engine — connect result carries protocolVersion / capabilities /
   it('omits protocolVersion / capabilities / instructions when the server gave none', async () => {
     mockClient.connect.mockImplementationOnce(async () => {})
     mockClient.getServerCapabilities.mockReturnValue(undefined)
+    mockClient.getNegotiatedProtocolVersion.mockReturnValue(undefined)
     const info = await mcpConnect({ transport: 'sse', url: 'http://mock.local/sse' })
     expect(info).not.toHaveProperty('protocolVersion')
     expect(info).not.toHaveProperty('capabilities')
@@ -474,7 +511,7 @@ describe('mcp.engine — stdio env is merged over the SDK default env (issue #13
 
   it('http / sse ignore env', async () => {
     await mcpConnect({ transport: 'http', url: 'http://gw.local/mcp', env: { A: '1' } })
-    expect(vi.mocked(StreamableHTTPClientTransport).mock.calls[0][1]).toBeUndefined()
+    expect(httpOpts(StreamableHTTPClientTransport).rest).toEqual({})
     expect(StdioClientTransport).not.toHaveBeenCalled()
   })
 })
@@ -494,7 +531,12 @@ describe('mcp.engine — stdio command with explicit args is used verbatim', () 
   })
 
   it('explicit empty args still means "already tokenised"', async () => {
-    await mcpConnect({ transport: 'stdio', url: '', command: 'C:\\Program Files\\srv.exe', args: [] })
+    await mcpConnect({
+      transport: 'stdio',
+      url: '',
+      command: 'C:\\Program Files\\srv.exe',
+      args: [],
+    })
     const params = vi.mocked(StdioClientTransport).mock.calls[0][0]
     expect(params.command).toBe('C:\\Program Files\\srv.exe')
     expect(params.args).toEqual([])
@@ -520,18 +562,30 @@ describe('mcp.engine — oauthSessionId wires an authenticating fetch into http 
       headers: { 'X-A': '1' },
       oauthSessionId: 'mcp-oauth-x',
     })
-    await mcpConnect({ transport: 'sse', url: 'http://gw.local/sse', oauthSessionId: 'mcp-oauth-x' })
-    const httpOpts = vi.mocked(StreamableHTTPClientTransport).mock.calls[0][1] as Record<string, unknown>
-    expect(httpOpts.requestInit).toEqual({ headers: { 'X-A': '1' } })
-    expect(typeof httpOpts.fetch).toBe('function')
-    const sseOpts = vi.mocked(SSEClientTransport).mock.calls[0][1] as Record<string, unknown>
-    expect(sseOpts).not.toHaveProperty('requestInit')
-    expect(typeof sseOpts.fetch).toBe('function')
+    await mcpConnect({
+      transport: 'sse',
+      url: 'http://gw.local/sse',
+      oauthSessionId: 'mcp-oauth-x',
+    })
+    const http = httpOpts(StreamableHTTPClientTransport)
+    expect(http.rest).toEqual({ requestInit: { headers: { 'X-A': '1' } } })
+    expect(typeof http.fetch).toBe('function')
+    const sse = httpOpts(SSEClientTransport)
+    expect(sse.rest).toEqual({})
+    expect(typeof sse.fetch).toBe('function')
+    // The transport fetch (frame tap) runs the session's OAuth fetch underneath.
+    await (http.fetch as (u: string, i?: RequestInit) => Promise<Response>)('http://gw.local/mcp')
+    expect(new Headers(oauthBaseFetch.mock.calls[0][1]?.headers).get('authorization')).toBe(
+      'Bearer token-of-mcp-oauth-x',
+    )
   })
 
   it('stdio ignores oauthSessionId', async () => {
     await mcpConnect({ transport: 'stdio', url: 'node s.js', oauthSessionId: 'mcp-oauth-x' })
-    const params = vi.mocked(StdioClientTransport).mock.calls[0][0] as unknown as Record<string, unknown>
+    const params = vi.mocked(StdioClientTransport).mock.calls[0][0] as unknown as Record<
+      string,
+      unknown
+    >
     expect(params).not.toHaveProperty('fetch')
   })
 })
@@ -583,14 +637,15 @@ describe('mcp.engine — callTool asks for progress (issue #139)', () => {
   it('passes onprogress + resetTimeoutOnProgress so the SDK attaches a progressToken', async () => {
     const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
     await mcpCallTool(info.connectionId, 'echo', {})
-    const [, schema, opts] = mockClient.callTool.mock.calls[0] as [
+    // SDK 2.x: callTool(params, options) — the v1 result-schema slot is gone.
+    const [, opts] = mockClient.callTool.mock.calls[0] as [
       unknown,
-      unknown,
-      { onprogress?: unknown; resetTimeoutOnProgress?: boolean },
+      { onprogress?: unknown; resetTimeoutOnProgress?: boolean; allowInputRequired?: boolean },
     ]
-    expect(schema).toBeUndefined()
     expect(typeof opts.onprogress).toBe('function')
     expect(opts.resetTimeoutOnProgress).toBe(true)
+    // Legacy era: no multi-round-trip opt-in.
+    expect(opts.allowInputRequired).toBeUndefined()
   })
 })
 
@@ -615,7 +670,9 @@ describe('mcp.engine — listResources / readResource (issue #139)', () => {
       .mockResolvedValueOnce({ resources: [{ uri: 'test://b', name: 'b' }] })
     mockClient.listResourceTemplates
       .mockResolvedValueOnce({
-        resourceTemplates: [{ uriTemplate: 'test://item/{id}', name: 'item', mimeType: 'application/json' }],
+        resourceTemplates: [
+          { uriTemplate: 'test://item/{id}', name: 'item', mimeType: 'application/json' },
+        ],
         nextCursor: 't2',
       })
       .mockResolvedValueOnce({
@@ -624,14 +681,26 @@ describe('mcp.engine — listResources / readResource (issue #139)', () => {
     const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
     const res = await mcpListResources(info.connectionId)
     expect(res.resources).toEqual([
-      { uri: 'test://a', name: 'a', title: 'A', description: 'first', mimeType: 'text/plain', size: 12 },
+      {
+        uri: 'test://a',
+        name: 'a',
+        title: 'A',
+        description: 'first',
+        mimeType: 'text/plain',
+        size: 12,
+      },
       { uri: 'test://b', name: 'b' },
     ])
     expect(res.templates).toEqual([
       { uriTemplate: 'test://item/{id}', name: 'item', mimeType: 'application/json' },
       { uriTemplate: 'test://user/{name}', name: 'user', title: 'User' },
     ])
-    expect(mockClient.listResources.mock.calls.map((c) => c[0])).toEqual([undefined, { cursor: 'r2' }])
+    expect(mockClient.listResources.mock.calls.map((c) => c[0])).toEqual([
+      undefined,
+      { cursor: 'r2' },
+    ])
+    // A testing tool always asks the server (SDK 2.x response cache bypassed for reads).
+    expect(mockClient.listResources.mock.calls[0][1]).toEqual({ cacheMode: 'refresh' })
     expect(mockClient.listResourceTemplates.mock.calls.map((c) => c[0])).toEqual([
       undefined,
       { cursor: 't2' },
@@ -711,7 +780,10 @@ describe('mcp.engine — listResources / readResource (issue #139)', () => {
     })
     const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
     const res = await mcpReadResource(info.connectionId, 'test://greeting')
-    expect(mockClient.readResource).toHaveBeenCalledWith({ uri: 'test://greeting' })
+    expect(mockClient.readResource).toHaveBeenCalledWith(
+      { uri: 'test://greeting' },
+      { cacheMode: 'refresh' },
+    )
     expect(res).toEqual({
       contents: [
         { uri: 'test://greeting', mimeType: 'text/plain', text: 'hi' },
@@ -803,12 +875,16 @@ describe('mcp.engine — frame / notification / connectionClosed events (issue #
     events.flatMap((e) => (e.type === 'frame' ? [e.payload] : []))
 
   it('captures the initialize round-trip as frames, released only after connect resolves', async () => {
-    const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    // stdio: the transport's own onmessage is the inbound tap (http / sse read
+    // the wire through the fetch middleware — see the frame-tap block below).
+    const info = await mcpConnect({ transport: 'stdio', url: 'node s.js' })
     // Buffered: the IPC reply carrying connectionId must reach the renderer first.
     expect(events).toEqual([])
     await tick()
     const f = frames()
-    expect(f.map((x) => [x.direction, (x.message as { method?: string }).method ?? 'result'])).toEqual([
+    expect(
+      f.map((x) => [x.direction, (x.message as { method?: string }).method ?? 'result']),
+    ).toEqual([
       ['out', 'initialize'],
       ['in', 'result'],
       ['out', 'notifications/initialized'],
@@ -822,15 +898,17 @@ describe('mcp.engine — frame / notification / connectionClosed events (issue #
       await t.send?.({ jsonrpc: '2.0', id: 0, method: 'initialize' })
       throw new Error('boom')
     })
-    await expect(mcpConnect({ transport: 'http', url: 'http://x/mcp' })).rejects.toThrow('boom')
+    await expect(
+      mcpConnect({ transport: 'http', url: 'http://x/mcp', protocol: 'legacy' }),
+    ).rejects.toThrow('boom')
     await tick()
     expect(events).toEqual([])
   })
 
   it('every inbound JSON-RPC notification becomes a notification event, per connection', async () => {
-    const a = await mcpConnect({ transport: 'http', url: 'http://a/mcp' })
+    const a = await mcpConnect({ transport: 'stdio', url: 'node a.js' })
     const ta = lastTransport()
-    const b = await mcpConnect({ transport: 'sse', url: 'http://b/sse' })
+    const b = await mcpConnect({ transport: 'stdio', url: 'node b.js' })
     const tb = lastTransport()
     await tick()
     events = []
@@ -844,7 +922,11 @@ describe('mcp.engine — frame / notification / connectionClosed events (issue #
     ta.onmessage?.({ jsonrpc: '2.0', id: 9, result: {} })
     const notes = events.flatMap((e) => (e.type === 'notification' ? [e.payload] : []))
     expect(notes).toEqual([
-      { connectionId: a.connectionId, ts: expect.any(Number), method: 'notifications/tools/list_changed' },
+      {
+        connectionId: a.connectionId,
+        ts: expect.any(Number),
+        method: 'notifications/tools/list_changed',
+      },
       {
         connectionId: b.connectionId,
         ts: expect.any(Number),
@@ -871,7 +953,7 @@ describe('mcp.engine — frame / notification / connectionClosed events (issue #
   })
 
   it('frames over ~1 MB are summarised, not shipped whole', async () => {
-    await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    await mcpConnect({ transport: 'stdio', url: 'node s.js' })
     await tick()
     events = []
     const blob = 'A'.repeat(1_200_000)
@@ -980,7 +1062,7 @@ describe('mcp.engine — frame / notification / connectionClosed events (issue #
     setMcpEventSink(() => {
       throw new Error('renderer gone')
     })
-    const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    const info = await mcpConnect({ transport: 'stdio', url: 'node s.js' })
     await tick()
     expect(() =>
       lastTransport().onmessage?.({ jsonrpc: '2.0', method: 'notifications/message' }),
@@ -1148,8 +1230,7 @@ describe('mcp.engine — mcpConnect applies the Authorization tab', () => {
       headers: { 'X-Gateway-Project': 'p1' },
       auth: { type: 'basic', basic: { username: 'u', password: 'p' } },
     })
-    const opts = vi.mocked(StreamableHTTPClientTransport).mock.calls[0][1]
-    expect(opts).toEqual({
+    expect(httpOpts(StreamableHTTPClientTransport).rest).toEqual({
       requestInit: {
         headers: {
           'X-Gateway-Project': 'p1',
@@ -1166,8 +1247,7 @@ describe('mcp.engine — mcpConnect applies the Authorization tab', () => {
       headers: { Authorization: 'Bearer custom', 'X-Gateway-Project': 'p1' },
       auth: { type: 'basic', basic: { username: 'u', password: 'p' } },
     })
-    const opts = vi.mocked(StreamableHTTPClientTransport).mock.calls[0][1]
-    expect(opts).toEqual({
+    expect(httpOpts(StreamableHTTPClientTransport).rest).toEqual({
       requestInit: { headers: { Authorization: 'Bearer custom', 'X-Gateway-Project': 'p1' } },
     })
   })
@@ -1178,8 +1258,9 @@ describe('mcp.engine — mcpConnect applies the Authorization tab', () => {
       url: 'http://gw.local/sse',
       auth: { type: 'bearer', bearer: { token: 't-sse' } },
     })
-    const opts = vi.mocked(SSEClientTransport).mock.calls[0][1]
-    expect(opts).toEqual({ requestInit: { headers: { Authorization: 'Bearer t-sse' } } })
+    expect(httpOpts(SSEClientTransport).rest).toEqual({
+      requestInit: { headers: { Authorization: 'Bearer t-sse' } },
+    })
   })
 
   it('api-key in query: the transport URL carries the key, the connection info does not', async () => {
@@ -1188,9 +1269,9 @@ describe('mcp.engine — mcpConnect applies the Authorization tab', () => {
       url: 'http://gw.local/mcp?tenant=a',
       auth: { type: 'api-key', apiKey: { key: 'api_key', value: 'K-SECRET', in: 'query' } },
     })
-    const [wireUrl, opts] = vi.mocked(StreamableHTTPClientTransport).mock.calls[0]
+    const [wireUrl] = vi.mocked(StreamableHTTPClientTransport).mock.calls[0]
     expect(wireUrl.toString()).toBe('http://gw.local/mcp?tenant=a&api_key=K-SECRET')
-    expect(opts).toBeUndefined()
+    expect(httpOpts(StreamableHTTPClientTransport).rest).toEqual({})
     expect(info.url).toBe('http://gw.local/mcp?tenant=a')
     expect(JSON.stringify(mcpGetConnection(info.connectionId))).not.toContain('K-SECRET')
   })
@@ -1206,11 +1287,11 @@ describe('mcp.engine — mcpConnect applies the Authorization tab', () => {
     )
   })
 
-  it('none / oauth2 auth change nothing (no options when there are no headers)', async () => {
+  it('none / oauth2 auth change nothing (no requestInit when there are no headers)', async () => {
     await mcpConnect({ transport: 'http', url: 'http://gw.local/mcp', auth: { type: 'none' } })
     await mcpConnect({ transport: 'sse', url: 'http://gw.local/sse', auth: { type: 'oauth2' } })
-    expect(vi.mocked(StreamableHTTPClientTransport).mock.calls[0][1]).toBeUndefined()
-    expect(vi.mocked(SSEClientTransport).mock.calls[0][1]).toBeUndefined()
+    expect(httpOpts(StreamableHTTPClientTransport).rest).toEqual({})
+    expect(httpOpts(SSEClientTransport).rest).toEqual({})
   })
 
   it('stdio ignores auth', async () => {
@@ -1237,6 +1318,7 @@ describe('mcp.engine — mcpConnect applies the Authorization tab', () => {
     })
     const opts = vi.mocked(StreamableHTTPClientTransport).mock.calls[0][1] as unknown as {
       requestInit: { headers: Record<string, string> }
+      // The frame-tap fetch, wrapping the OAuth session's fetch.
       fetch: (url: string, init?: RequestInit) => Promise<Response>
     }
     // auth < custom: what the SDK merges into every request.
@@ -1246,5 +1328,537 @@ describe('mcp.engine — mcpConnect applies the Authorization tab', () => {
     const sent = new Headers(oauthBaseFetch.mock.calls[0][1]?.headers)
     expect(sent.get('authorization')).toBe('Bearer token-of-S1')
     expect(sent.get('x-other')).toBe('1')
+  })
+})
+
+// ─── SDK 2.x: version negotiation (issue #152) ────────────────
+describe('mcp.engine — protocol option → versionNegotiation (issue #152)', () => {
+  it('resolveNegotiation maps auto / legacy / modern pin / legacy pin', () => {
+    // http: a bounded probe — a silent 2025 server falls back in seconds (legacy retry).
+    const httpAuto = { versionNegotiation: { mode: 'auto', probe: { timeoutMs: 15_000 } } }
+    expect(resolveNegotiation(undefined, 'http')).toEqual(httpAuto)
+    expect(resolveNegotiation('auto', 'http')).toEqual(httpAuto)
+    // stdio probes on a disposable sibling; a silent legacy server must not cost 60 s.
+    expect(resolveNegotiation('auto', 'stdio')).toEqual({
+      versionNegotiation: { mode: 'auto', probe: { timeoutMs: 10_000 } },
+    })
+    // Legacy HTTP+SSE predates 2026-07-28: auto stays on initialize.
+    expect(resolveNegotiation('auto', 'sse')).toEqual({ versionNegotiation: { mode: 'legacy' } })
+    expect(resolveNegotiation('legacy', 'http')).toEqual({ versionNegotiation: { mode: 'legacy' } })
+    expect(resolveNegotiation('2026-07-28', 'http')).toEqual({
+      versionNegotiation: { mode: { pin: '2026-07-28' } },
+    })
+    // The SDK refuses to pin a 2025 revision — that is initialize offering exactly it.
+    expect(resolveNegotiation('2025-06-18', 'http')).toEqual({
+      versionNegotiation: { mode: 'legacy' },
+      supportedProtocolVersions: ['2025-06-18'],
+    })
+    expect(() => resolveNegotiation('latest', 'http')).toThrow(
+      /Unknown MCP protocol option "latest"/,
+    )
+  })
+
+  it('the Client is built with the negotiation, manual MRTR and the page cap', async () => {
+    await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp', protocol: '2025-06-18' })
+    const [info, options] = mockClient.ctor.mock.calls[0] as [unknown, Record<string, unknown>]
+    expect(info).toEqual({ name: 'Testnizer', version: '1.0.0' })
+    expect(options).toEqual({
+      versionNegotiation: { mode: 'auto', probe: { timeoutMs: 15_000 } },
+      inputRequired: { autoFulfill: false },
+      listMaxPages: 50,
+    })
+    expect(mockClient.ctor.mock.calls[1][1]).toMatchObject({
+      versionNegotiation: { mode: 'legacy' },
+      supportedProtocolVersions: ['2025-06-18'],
+    })
+  })
+
+  it('an unknown protocol option rejects the connect before any transport is built', async () => {
+    await expect(
+      mcpConnect({ transport: 'http', url: 'http://mock.local/mcp', protocol: 'nope' }),
+    ).rejects.toThrow(/Unknown MCP protocol option/)
+    expect(StreamableHTTPClientTransport).not.toHaveBeenCalled()
+  })
+})
+
+// ─── http 'auto': legacy retry when the probe itself fails (issue #152) ─
+describe("mcp.engine — http 'auto' retries the plain 2025 handshake once (issue #152)", () => {
+  const gatewayDenied = (): Error =>
+    Object.assign(new Error('Version negotiation failed: the server denied access (HTTP 403)'), {
+      name: 'SdkHttpError',
+      code: 'CLIENT_HTTP_FORBIDDEN',
+      status: 403,
+    })
+
+  it('a probe failure (403 / 5xx / timeout) → fresh legacy client + transport, connect succeeds', async () => {
+    mockClient.connect.mockRejectedValueOnce(gatewayDenied())
+    const info = await mcpConnect({ transport: 'http', url: 'http://gw.local/mcp' })
+    expect(info.era).toBe('legacy')
+    expect(mockClient.ctor).toHaveBeenCalledTimes(2)
+    expect(mockClient.ctor.mock.calls[1][1]).toMatchObject({
+      versionNegotiation: { mode: 'legacy' },
+    })
+    expect(StreamableHTTPClientTransport).toHaveBeenCalledTimes(2)
+    // The first (abandoned) transport no longer drives the connection's lifecycle.
+    const first = mockClient.connect.mock.calls[0][0]
+    await tick()
+    events = []
+    first.onclose?.()
+    first.onerror?.(new Error('late noise'))
+    expect(events).toEqual([])
+    expect(mcpGetConnection(info.connectionId)).toBeDefined()
+  })
+
+  it('when the legacy retry fails too, its error is the one reported', async () => {
+    mockClient.connect
+      .mockRejectedValueOnce(gatewayDenied())
+      .mockRejectedValueOnce(new Error('Error POSTing to endpoint: legacy says no'))
+    await expect(mcpConnect({ transport: 'http', url: 'http://gw.local/mcp' })).rejects.toThrow(
+      'legacy says no',
+    )
+  })
+
+  it('no retry on a 401, a pinned version, legacy mode, sse or stdio', async () => {
+    const unauthorized = Object.assign(new Error('requires authorization (HTTP 401)'), {
+      name: 'SdkHttpError',
+      status: 401,
+    })
+    mockClient.connect.mockRejectedValueOnce(unauthorized)
+    await expect(mcpConnect({ transport: 'http', url: 'http://x/mcp' })).rejects.toMatchObject({
+      status: 401,
+    })
+    for (const opts of [
+      { transport: 'http' as const, url: 'http://x/mcp', protocol: '2026-07-28' },
+      { transport: 'http' as const, url: 'http://x/mcp', protocol: 'legacy' },
+      { transport: 'sse' as const, url: 'http://x/sse' },
+      { transport: 'stdio' as const, url: 'node s.js' },
+    ]) {
+      mockClient.connect.mockRejectedValueOnce(new Error('boom'))
+      await expect(mcpConnect(opts)).rejects.toThrow('boom')
+    }
+    expect(mockClient.ctor).toHaveBeenCalledTimes(5)
+  })
+
+  it('a user cancel during the probe is final — no legacy retry', async () => {
+    let release: () => void = () => {}
+    mockClient.connect.mockImplementationOnce(
+      (t: FakeTransport) =>
+        new Promise<void>((_resolve, reject) => {
+          release = () => reject(new Error('closed during probe'))
+          t.close = vi.fn(async () => release())
+        }),
+    )
+    const pending = mcpConnect({ transport: 'http', url: 'http://x/mcp', pendingId: 'p-1' })
+    await tick()
+    await expect(mcpCancelConnect('p-1')).resolves.toBe(true)
+    await expect(pending).rejects.toThrow('closed during probe')
+    expect(mockClient.ctor).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ─── SDK 2.x: modern era connect + subscriptions/listen (issue #152) ─
+describe('mcp.engine — modern era: era / discover / listen (issue #152)', () => {
+  const DISCOVER = {
+    supportedVersions: ['2026-07-28'],
+    capabilities: DEFAULT_CAPS,
+    _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'MockServer', version: '2.0.0' } },
+  }
+
+  function fakeSubscription(honoredFilter: Record<string, unknown>): {
+    sub: {
+      honoredFilter: Record<string, unknown>
+      close: ReturnType<typeof vi.fn>
+      closed: Promise<string>
+    }
+    end: (reason: string) => void
+  } {
+    let end: (reason: string) => void = () => {}
+    const closed = new Promise<string>((resolve) => {
+      end = resolve
+    })
+    const sub = {
+      honoredFilter,
+      close: vi.fn(async () => end('local')),
+      closed,
+    }
+    return { sub, end }
+  }
+
+  beforeEach(() => {
+    mockClient.getProtocolEra.mockReturnValue('modern')
+    mockClient.getNegotiatedProtocolVersion.mockReturnValue('2026-07-28')
+    mockClient.getDiscoverResult.mockReturnValue(DISCOVER)
+  })
+
+  it('connect result carries era, protocolVersion and the discover result', async () => {
+    const { sub } = fakeSubscription({ toolsListChanged: true })
+    mockClient.listen.mockResolvedValue(sub)
+    const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    expect(info.era).toBe('modern')
+    expect(info.protocolVersion).toBe('2026-07-28')
+    expect(info.discover).toEqual(DISCOVER)
+    expect(info.discover).not.toBe(DISCOVER)
+  })
+
+  it('opens subscriptions/listen for the advertised listChanged capabilities; honoredFilter on the result + an open event', async () => {
+    const { sub } = fakeSubscription({ toolsListChanged: true })
+    mockClient.listen.mockResolvedValue(sub)
+    const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    // DEFAULT_CAPS: only tools advertise listChanged.
+    expect(mockClient.listen).toHaveBeenCalledWith({ toolsListChanged: true }, { timeout: 10_000 })
+    expect(info.subscription).toEqual({
+      requested: { toolsListChanged: true },
+      honoredFilter: { toolsListChanged: true },
+    })
+    await tick()
+    expect(events.filter((e) => e.type === 'subscriptionState')).toEqual([
+      {
+        type: 'subscriptionState',
+        payload: {
+          connectionId: info.connectionId,
+          state: 'open',
+          honoredFilter: { toolsListChanged: true },
+        },
+      },
+    ])
+  })
+
+  it('no listChanged capability → no listen; legacy era → never listens', async () => {
+    mockClient.getServerCapabilities.mockReturnValue({ tools: {} })
+    const a = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    expect(a.subscription).toBeUndefined()
+    mockClient.getServerCapabilities.mockReturnValue(DEFAULT_CAPS)
+    mockClient.getProtocolEra.mockReturnValue('legacy')
+    const b = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    expect(b.subscription).toBeUndefined()
+    expect(mockClient.listen).not.toHaveBeenCalled()
+  })
+
+  it('a listen failure is reported on the result; the connection still works', async () => {
+    mockClient.listen.mockRejectedValue(new Error('subscriptions/listen ack timed out'))
+    const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    expect(info.subscription).toEqual({
+      requested: { toolsListChanged: true },
+      error: 'subscriptions/listen ack timed out',
+    })
+    await expect(mcpListTools(info.connectionId)).resolves.toHaveLength(2)
+  })
+
+  it('a server-ended subscription emits a closed event; disconnect closes it first and stays quiet', async () => {
+    const first = fakeSubscription({ toolsListChanged: true })
+    mockClient.listen.mockResolvedValueOnce(first.sub)
+    const a = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    await tick()
+    first.end('remote')
+    await tick()
+    expect(events.filter((e) => e.type === 'subscriptionState').map((e) => e.payload)).toEqual([
+      expect.objectContaining({ state: 'open' }),
+      { connectionId: a.connectionId, state: 'closed', reason: 'remote' },
+    ])
+
+    const second = fakeSubscription({ toolsListChanged: true })
+    mockClient.listen.mockResolvedValueOnce(second.sub)
+    const b = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    await tick()
+    events = []
+    await mcpDisconnect(b.connectionId)
+    expect(second.sub.close).toHaveBeenCalledTimes(1)
+    expect(second.sub.close.mock.invocationCallOrder[0]).toBeLessThan(
+      mockClient.close.mock.invocationCallOrder[0],
+    )
+    await tick()
+    expect(events.filter((e) => e.type === 'subscriptionState')).toEqual([])
+  })
+})
+
+// ─── SDK 2.x: multi-round-trip tools/call (issue #152) ────────
+describe('mcp.engine — 2026-07-28 input_required / respondInput (issue #152)', () => {
+  const INPUT_REQUIRED = {
+    resultType: 'input_required',
+    inputRequests: {
+      count: {
+        method: 'elicitation/create',
+        params: { mode: 'form', message: 'How many?', requestedSchema: { type: 'object' } },
+      },
+    },
+    requestState: 'v1.sealed-state',
+  }
+
+  beforeEach(() => {
+    mockClient.getProtocolEra.mockReturnValue('modern')
+    mockClient.getNegotiatedProtocolVersion.mockReturnValue('2026-07-28')
+    mockClient.getServerCapabilities.mockReturnValue({ tools: {} })
+  })
+
+  it('modern callTool opts into manual MRTR and declares form elicitation on that request only', async () => {
+    const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    await mcpCallTool(info.connectionId, 'echo', { text: 'x' })
+    const [params, opts] = mockClient.callTool.mock.calls[0] as [
+      Record<string, unknown>,
+      Record<string, unknown>,
+    ]
+    expect(params).toEqual({
+      name: 'echo',
+      arguments: { text: 'x' },
+      _meta: { [CLIENT_CAPABILITIES_META_KEY]: { elicitation: { form: {} } } },
+    })
+    expect(opts).toMatchObject({ allowInputRequired: true, resetTimeoutOnProgress: true })
+    expect(opts).not.toHaveProperty('toolDefinition')
+    // The Client itself declares nothing (a 2025 server would elicit with no handler).
+    expect(mockClient.ctor.mock.calls[0][1]).not.toHaveProperty('capabilities')
+  })
+
+  it('a complete result is returned exactly as the SDK gave it', async () => {
+    const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    const res = await mcpCallTool(info.connectionId, 'echo', {})
+    expect(res).toEqual({ content: [{ type: 'text', text: 'echo-result' }] })
+    expect(res).not.toHaveProperty('__mcp')
+  })
+
+  it('an input_required result keeps its raw shape and gains the __mcp marker', async () => {
+    mockClient.callTool.mockResolvedValueOnce(INPUT_REQUIRED)
+    const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    const res = await mcpCallTool(info.connectionId, 'ask_count', {})
+    expect(res).toEqual({
+      ...INPUT_REQUIRED,
+      __mcp: {
+        kind: 'input_required',
+        inputRequests: INPUT_REQUIRED.inputRequests,
+        requestState: 'v1.sealed-state',
+      },
+    })
+  })
+
+  it('a listed tool with an outputSchema is called with its definition minus that schema', async () => {
+    mockClient.listTools.mockResolvedValueOnce({
+      tools: [
+        {
+          name: 'typed',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object', properties: { n: { type: 'number' } } },
+        },
+      ],
+    })
+    const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    await mcpListTools(info.connectionId)
+    await mcpCallTool(info.connectionId, 'typed', {})
+    const opts = mockClient.callTool.mock.calls[0][1] as {
+      toolDefinition?: Record<string, unknown>
+    }
+    expect(opts.toolDefinition).toEqual({ name: 'typed', inputSchema: { type: 'object' } })
+  })
+
+  it('respondInput re-sends name + args with inputResponses / requestState as TOP-LEVEL params', async () => {
+    const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    await mcpRespondInput(info.connectionId, 'ask_count', { label: 'apples' }, 'v1.sealed-state', {
+      count: { action: 'accept', content: { count: 3 } },
+    })
+    expect(mockClient.callTool.mock.calls[0][0]).toEqual({
+      name: 'ask_count',
+      arguments: { label: 'apples' },
+      inputResponses: { count: { action: 'accept', content: { count: 3 } } },
+      requestState: 'v1.sealed-state',
+      _meta: { [CLIENT_CAPABILITIES_META_KEY]: { elicitation: { form: {} } } },
+    })
+  })
+
+  it('respondInput refuses a legacy connection and an empty answer', async () => {
+    const modern = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    await expect(mcpRespondInput(modern.connectionId, 't', {}, undefined, {})).rejects.toThrow(
+      /Nothing to send/,
+    )
+    mockClient.getProtocolEra.mockReturnValue('legacy')
+    mockClient.getNegotiatedProtocolVersion.mockReturnValue('2025-11-25')
+    const legacy = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    await expect(
+      mcpRespondInput(legacy.connectionId, 't', {}, 's', { a: { action: 'decline' } }),
+    ).rejects.toThrow(/need a 2026-07-28 connection \(this one negotiated 2025-11-25\)/)
+    expect(mockClient.callTool).not.toHaveBeenCalled()
+  })
+})
+
+// ─── SDK 2.x: HTTP frame tap = fetch middleware (issue #152) ──
+describe('mcp.engine — http / sse inbound frames come from the wire (fetch middleware)', () => {
+  const enc = (s: string): Uint8Array => new TextEncoder().encode(s)
+
+  /** Connect over http with an OAuth stand-in so the tap wraps `oauthBaseFetch`; return the transport fetch. */
+  async function tapFetch(
+    transport: 'http' | 'sse' = 'http',
+  ): Promise<{ connectionId: string; fetch: (u: string, i?: RequestInit) => Promise<Response> }> {
+    const info = await mcpConnect({ transport, url: 'http://mock.local/mcp', oauthSessionId: 'S' })
+    const ctor = transport === 'http' ? StreamableHTTPClientTransport : SSEClientTransport
+    const opts = vi.mocked(ctor).mock.calls.at(-1)?.[1] as unknown as {
+      fetch: (u: string, i?: RequestInit) => Promise<Response>
+    }
+    await tick()
+    events = []
+    return { connectionId: info.connectionId, fetch: opts.fetch }
+  }
+
+  const frames = (): Array<Extract<McpEngineEvent, { type: 'frame' }>['payload']> =>
+    events.flatMap((e) => (e.type === 'frame' ? [e.payload] : []))
+
+  it('a JSON response body becomes inbound frames (batches member by member); the SDK still reads the original', async () => {
+    const { connectionId, fetch } = await tapFetch()
+    oauthBaseFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          { jsonrpc: '2.0', id: 1, result: { ok: true } },
+          { jsonrpc: '2.0', method: 'notifications/message', params: { level: 'info' } },
+        ]),
+        { headers: { 'content-type': 'application/json; charset=utf-8' } },
+      ),
+    )
+    const res = await fetch('http://mock.local/mcp', { method: 'POST', body: '{}' })
+    expect(await res.json()).toHaveLength(2)
+    await tick()
+    expect(frames().map((f) => [f.direction, f.message])).toEqual([
+      ['in', { jsonrpc: '2.0', id: 1, result: { ok: true } }],
+      ['in', { jsonrpc: '2.0', method: 'notifications/message', params: { level: 'info' } }],
+    ])
+    expect(events.filter((e) => e.type === 'notification').map((e) => e.payload)).toEqual([
+      {
+        connectionId,
+        ts: expect.any(Number),
+        method: 'notifications/message',
+        params: { level: 'info' },
+      },
+    ])
+  })
+
+  it('an SSE response is parsed event by event across chunk boundaries (CRLF, multi-line data, comments, other events)', async () => {
+    const { fetch } = await tapFetch()
+    const chunks = [
+      ': keep-alive\r\n\r\n',
+      'id: 1\r\ndata: {"jsonrpc":"2.0","method":"notifications/progress",\r',
+      '\ndata: "params":{"progress":1}}\r\n\r\n',
+      'event: ping\ndata: {"jsonrpc":"2.0","method":"ignored"}\n\n',
+      'data: {"jsonrpc":"2.0","id":7,"result":{}}\n',
+      '\n',
+    ]
+    oauthBaseFetch.mockResolvedValueOnce(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (const c of chunks) controller.enqueue(enc(c))
+            controller.close()
+          },
+        }),
+        { headers: { 'content-type': 'text/event-stream' } },
+      ),
+    )
+    const res = await fetch('http://mock.local/mcp', { method: 'POST', body: '{}' })
+    // The SDK's copy is intact.
+    expect(await res.text()).toBe(chunks.join(''))
+    await tick()
+    expect(frames().map((f) => f.message)).toEqual([
+      { jsonrpc: '2.0', method: 'notifications/progress', params: { progress: 1 } },
+      { jsonrpc: '2.0', id: 7, result: {} },
+    ])
+  })
+
+  it('a POST error body (the 2025 server answering the server/discover probe) is a frame; a GET 405 body is not', async () => {
+    const { fetch } = await tapFetch()
+    const errorBody = { jsonrpc: '2.0', error: { code: -32000, message: 'Bad Request' }, id: null }
+    oauthBaseFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(errorBody), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+    await fetch('http://mock.local/mcp', { method: 'POST', body: '{}' })
+    oauthBaseFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ ...errorBody, error: { code: -32000, message: 'Method not allowed.' } }),
+        {
+          status: 405,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    )
+    await fetch('http://mock.local/mcp', { method: 'GET' })
+    await tick()
+    expect(frames().map((f) => f.message)).toEqual([errorBody])
+  })
+
+  it('legacy sse: the inbound tap is the fetch too (no onmessage pre-set on http / sse)', async () => {
+    await tapFetch('sse')
+    expect(lastTransport().onmessage).toBeUndefined()
+    await mcpConnect({ transport: 'stdio', url: 'node s.js' })
+    expect(typeof lastTransport().onmessage).toBe('function')
+  })
+
+  it('transport errors during the handshake (the probe 4xx) are not reported; after it they are', async () => {
+    mockClient.connect.mockImplementationOnce(async (t: FakeTransport) => {
+      t.onerror?.(new Error('Error POSTing to endpoint: Bad Request'))
+      await simulateHandshake(t)
+    })
+    await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    await tick()
+    expect(events.filter((e) => e.type === 'transportError')).toEqual([])
+    lastTransport().onerror?.(new Error('later failure'))
+    expect(events.filter((e) => e.type === 'transportError')).toHaveLength(1)
+  })
+})
+
+// ─── SDK 2.x error messages (issue #152) ──────────────────────
+describe('mcp.engine — decorateMcpError', () => {
+  it('ProtocolError reads "MCP error <code>: …" (v1 wording), once', () => {
+    const err = new ProtocolError(-32601, 'Method not found')
+    expect((decorateMcpError(err) as Error).message).toBe('MCP error -32601: Method not found')
+    expect((decorateMcpError(err) as Error).message).toBe('MCP error -32601: Method not found')
+    expect(decorateMcpError(err)).toBe(err)
+  })
+
+  it('SdkHttpError names the status and spells out a JSON-RPC error body', () => {
+    const text = JSON.stringify({
+      jsonrpc: '2.0',
+      error: {
+        code: -32022,
+        message: 'Unsupported protocol version: 2025-11-25',
+        data: { supported: ['2026-07-28'], requested: '2025-11-25' },
+      },
+      id: 0,
+    })
+    const rpc = new SdkHttpError(
+      SdkErrorCode.ClientHttpNotImplemented,
+      `Error POSTing to endpoint: ${text}`,
+      {
+        status: 400,
+        statusText: 'Bad Request',
+        text,
+      },
+    )
+    expect((decorateMcpError(rpc) as Error).message).toBe(
+      'HTTP 400: MCP error -32022: Unsupported protocol version: 2025-11-25 (server supports 2026-07-28)',
+    )
+    expect((rpc as SdkHttpError).status).toBe(400)
+    const plain = new SdkHttpError(
+      SdkErrorCode.ClientHttpNotImplemented,
+      'Error POSTing to endpoint: oops',
+      {
+        status: 500,
+        statusText: 'Internal',
+        text: 'oops',
+      },
+    )
+    expect((decorateMcpError(plain) as Error).message).toBe(
+      'Error POSTing to endpoint: oops (HTTP 500)',
+    )
+  })
+
+  it('other errors are untouched', () => {
+    const e = new SdkError(SdkErrorCode.EraNegotiationFailed, 'Version negotiation failed: x')
+    expect((decorateMcpError(e) as Error).message).toBe('Version negotiation failed: x')
+    expect(decorateMcpError('str')).toBe('str')
+  })
+
+  it('engine calls throw decorated errors', async () => {
+    mockClient.callTool.mockRejectedValueOnce(new ProtocolError(-32602, 'bad args'))
+    const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
+    await expect(mcpCallTool(info.connectionId, 'x', {})).rejects.toThrow(
+      'MCP error -32602: bad args',
+    )
   })
 })

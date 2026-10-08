@@ -87,6 +87,10 @@ describe('McpSecuritySection', () => {
     )
     const optin = screen.getByTestId('mcp-security-ratelimit-optin')
     expect(optin).not.toBeChecked()
+    // Issue #152: one "active probes" opt-in — the rate-limit burst and the tool calls.
+    expect(optin.closest('label')).toHaveTextContent(
+      'Include active probes (rate-limit burst ~30 requests + calling argument-free tools annotated read-only, or unannotated tools whose name does not look like a write — never destructive ones — to test requestState tampering) — authorized servers only',
+    )
     fireEvent.click(optin)
     expect(useMcpStore.getState().securityRateLimitProbe).toBe(true)
     fireEvent.click(screen.getByTestId('mcp-security-scan'))
@@ -154,6 +158,29 @@ describe('McpSecuritySection', () => {
     )
     // An info row has no severity chip.
     expect(screen.getByTestId('mcp-security-finding-transport.https')).not.toHaveTextContent('high')
+  })
+
+  // Issue #152 — the summary names the protocol era the scan ran on.
+  it('shows the protocol era line only when the report carries one', () => {
+    useMcpStore.setState({ url: 'http://srv.test/mcp', securityReport: REPORT })
+    const view = render(<McpSecuritySection />)
+    expect(screen.queryByTestId('mcp-security-era')).toBeNull()
+    view.unmount()
+    useMcpStore.setState({
+      securityReport: {
+        ...REPORT,
+        serverInfo: {
+          ...REPORT.serverInfo!,
+          protocolVersion: '2026-07-28',
+          era: 'modern',
+          supportedVersions: ['2026-07-28'],
+        },
+      },
+    })
+    render(<McpSecuritySection />)
+    const era = screen.getByTestId('mcp-security-era')
+    expect(era).toHaveAttribute('data-era', 'modern')
+    expect(era).toHaveTextContent('Era: 2026-07-28 (modern)')
   })
 
   it('"Save HTML report…" renders through main and writes with the save-file bridge', async () => {

@@ -1,53 +1,58 @@
 /**
- * Mock MCP server runtime (issue #140): a pool of Node `http.Server`s, one per
- * running mock, each speaking MCP through the SDK's own server transports.
+ * Mock MCP server runtime (issue #140; v2 SDK, both protocol eras — issue
+ * #152): a pool of Node `http.Server`s, one per running mock.
  *
  * Routes (per server, `<path>` defaults to `/mcp`):
- *   POST/GET/DELETE <path>          Streamable HTTP. An `initialize` without a
- *                                   session id opens a stateful session (the
- *                                   SDK assigns `Mcp-Session-Id`); a POST with
- *                                   neither a session id nor `initialize` is
- *                                   served statelessly by a throw-away
- *                                   server + transport.
- *   GET  <path>/sse                 Legacy HTTP+SSE (when `legacySse`).
+ *   POST/GET/DELETE <path>          Streamable HTTP, served by the v2 SDK's
+ *                                   `createMcpHandler` (handler.ts): 2026-07-28
+ *                                   stateless requests AND 2025-era clients
+ *                                   (stateless legacy fallback — no sessions,
+ *                                   GET/DELETE → 405), or modern-only with
+ *                                   `legacyMode: 'reject'` / a 2026-07-28 pin.
+ *   GET  <path>/sse                 Legacy HTTP+SSE (when `legacySse`, legacy-sse.ts;
+ *                                   never under `legacyMode: 'reject'`).
  *   POST <path>/messages?sessionId  Legacy HTTP+SSE client→server messages.
  *   GET  /.well-known/oauth-protected-resource[<path>]
  *                                   RFC 9728 metadata (bearer mode only).
  *
- * Scenario knobs live on the definition and are read per request, so a hot
- * reload applies without dropping sessions: bearer auth (401 +
- * `WWW-Authenticate: Bearer resource_metadata=…`), latency before every
- * JSON-RPC request is dispatched, error injection on `tools/call`
- * (`http` here at the HTTP layer, the rest in `sdk-server.ts`), and the
- * protocol pin (`?rev=` on the URL overrides it per session).
+ * Layers in front of the SDK, applied to both eras and read per request (a
+ * hot reload applies at once): Host-header validation (only when bound to a
+ * loopback address — DNS-rebinding protection that cannot break a LAN /
+ * 0.0.0.0 binding; Origin validation is not composed: the endpoint has no
+ * CORS and requires `application/json`, so browsers cannot reach it
+ * cross-origin anyway), bearer auth (401 + `WWW-Authenticate: Bearer
+ * resource_metadata=…`), error mode `http` (bare status for a POST carrying
+ * `tools/call`), and latency before the request is dispatched. The other
+ * error modes, the tools / resources / prompts and elicitation live in
+ * `sdk-server.ts`; protocol pins (`?rev=` overrides the server's) in
+ * handler.ts / legacy-sse.ts.
  *
- * Every JSON-RPC request is logged (ring buffer, 500) by wrapping the session
- * transport's `onmessage` / `send`, which pairs requests with responses by id
- * whichever transport carried them.
+ * Every JSON-RPC request is logged (ring buffer, 500) with its era.
  */
 
 import http from 'node:http'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import type { AddressInfo } from 'node:net'
-import type { Server as SdkServer } from '@modelcontextprotocol/sdk/server/index.js'
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
-import {
-  isInitializeRequest,
-  isJSONRPCErrorResponse,
-  isJSONRPCNotification,
-  isJSONRPCRequest,
-  isJSONRPCResultResponse,
-  type JSONRPCMessage,
-  type MessageExtraInfo,
-} from '@modelcontextprotocol/sdk/types.js'
+import { localhostHostValidation } from '@modelcontextprotocol/node'
+import type { Server } from '@modelcontextprotocol/server'
 import { loadEnvVars } from '../lib/env-vars'
-import { subPath } from './config'
+import {
+  DEFAULT_LEGACY_MODE,
+  servedEras,
+  servesLegacySse,
+  subPath,
+  validateMockMcpConfig,
+} from './config'
+import { createElicitationCodec, type ElicitationCodec } from './elicitation'
+import { McpEndpoint, type LogDraft } from './handler'
+import { callsOf, classifyEra, firstRequest, safeStringify, truncate } from './jsonrpc'
+import { LegacySseSessions } from './legacy-sse'
 import { createMockMcpSdkServer, effectiveErrorMode } from './sdk-server'
 import type {
+  MockMcpEra,
   MockMcpLogEntry,
+  MockMcpNotifyKind,
   MockMcpServerDef,
   MockMcpServerState,
   MockMcpServerStatus,
@@ -55,15 +60,10 @@ import type {
 } from './types'
 
 const MAX_LOG_BUFFER = 500
-const MAX_LOG_TEXT = 8 * 1024
-const REQUEST_BODY_LIMIT_BYTES = 5 * 1024 * 1024
+const REQUEST_BODY_LIMIT_BYTES = 4 * 1024 * 1024 // the SDK's own default bound
 const WELL_KNOWN_PRM = '/.well-known/oauth-protected-resource'
-
-interface Session {
-  kind: MockMcpTransportKind
-  transport: StreamableHTTPServerTransport | SSEServerTransport
-  sdk: SdkServer
-}
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
+const NOTIFY_KINDS: readonly MockMcpNotifyKind[] = ['tools', 'resources', 'prompts']
 
 interface RunningServer {
   def: MockMcpServerDef
@@ -71,38 +71,21 @@ interface RunningServer {
   status: MockMcpServerStatus
   errorMessage: string | null
   boundPort: number | null
-  /** Stateful Streamable HTTP + legacy SSE sessions, by session id. */
-  sessions: Map<string, Session>
-  /** Stateless per-request sessions (closed when their response ends). */
-  transient: Set<Session>
+  /** `<path>`: both eras through `createMcpHandler`. */
+  endpoint: McpEndpoint
+  /** `<path>/sse` + `<path>/messages` sessions. */
+  sse: LegacySseSessions
+  /** HMAC codec for elicitation `requestState` (one random key per run). */
+  codec: ElicitationCodec
   logBuffer: MockMcpLogEntry[]
   /** everyN counters: `*` for the server-level mode, `tool:<name>` per override. */
   counters: Map<string, number>
   stopped: boolean
 }
 
-interface PendingRequest {
-  ts: number
-  method: string
-  toolName?: string
-  request: string
-}
-
 export type MockMcpStartResult =
   | { ok: true; state: MockMcpServerState }
   | { ok: false; error: string }
-
-function truncate(text: string): string {
-  return text.length > MAX_LOG_TEXT ? `${text.slice(0, MAX_LOG_TEXT)}… (truncated)` : text
-}
-
-function safeStringify(v: unknown): string {
-  try {
-    return JSON.stringify(v) ?? ''
-  } catch {
-    return String(v)
-  }
-}
 
 function tokensEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a)
@@ -128,33 +111,23 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   })
 }
 
-function messagesOf(body: unknown): unknown[] {
-  return Array.isArray(body) ? body : [body]
-}
-
-function isInitBody(body: unknown): boolean {
-  return messagesOf(body).some((m) => isInitializeRequest(m))
-}
-
-/** First JSON-RPC request in the body, for HTTP-level log lines. */
-function firstRequest(body: unknown): { method: string; toolName?: string } | null {
-  for (const m of messagesOf(body)) {
-    if (isJSONRPCRequest(m)) {
-      const toolName =
-        m.method === 'tools/call' && typeof m.params?.name === 'string' ? m.params.name : undefined
-      return { method: m.method, ...(toolName ? { toolName } : {}) }
-    }
-  }
-  return null
-}
-
 function displayHost(host: string): string {
   if (host === '0.0.0.0' || host === '::') return '127.0.0.1'
   return host.includes(':') ? `[${host}]` : host
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** JSON key order is irrelevant here; any edit to the family counts as a change. */
+function changedFamilies(prev: MockMcpServerDef, next: MockMcpServerDef): MockMcpNotifyKind[] {
+  return NOTIFY_KINDS.filter((k) => JSON.stringify(prev[k]) !== JSON.stringify(next[k]))
+}
+
 class MockMcpServerManager extends EventEmitter {
   private servers = new Map<string, RunningServer>()
+  private readonly hostGuard = localhostHostValidation()
 
   // ─── Lifecycle ─────────────────────────────────────────────────
 
@@ -168,6 +141,8 @@ class MockMcpServerManager extends EventEmitter {
         url: null,
         sseUrl: null,
         errorMessage: null,
+        eras: [],
+        legacyNotifications: false,
       }
     }
     const running = s.status === 'running' && s.boundPort !== null
@@ -177,8 +152,10 @@ class MockMcpServerManager extends EventEmitter {
       status: s.status,
       port: s.boundPort,
       url: origin ? `${origin}${s.def.path}` : null,
-      sseUrl: origin && s.def.legacySse ? `${origin}${subPath(s.def.path, '/sse')}` : null,
+      sseUrl: origin && servesLegacySse(s.def) ? `${origin}${subPath(s.def.path, '/sse')}` : null,
       errorMessage: s.errorMessage,
+      eras: running ? servedEras(s.def.legacyMode, s.def.protocolPin) : [],
+      legacyNotifications: false,
     }
   }
 
@@ -190,10 +167,21 @@ class MockMcpServerManager extends EventEmitter {
     return Array.from(this.servers.keys()).map((id) => this.state(id))
   }
 
-  async start(def: MockMcpServerDef): Promise<MockMcpStartResult> {
-    if (def.authMode === 'bearer' && !def.bearerToken.trim()) {
+  async start(input: MockMcpServerDef): Promise<MockMcpStartResult> {
+    // Rows arriving through an import / git pull never passed the editor's
+    // save-time validation, so the definition is checked here too. Only
+    // missing 2026-07-28 knobs get their defaults — a wrong value still fails.
+    const def: MockMcpServerDef = {
+      ...input,
+      bearerToken: (input.bearerToken ?? '').trim(),
+      legacyMode: input.legacyMode ?? DEFAULT_LEGACY_MODE,
+      cacheTtlMs: input.cacheTtlMs ?? 0,
+    }
+    if (def.authMode === 'bearer' && !def.bearerToken) {
       return { ok: false, error: 'Bearer auth is enabled but no token is set' }
     }
+    const problem = validateMockMcpConfig(def)
+    if (problem) return { ok: false, error: problem }
     for (const [otherId, s] of this.servers) {
       if (
         otherId !== def.id &&
@@ -209,18 +197,7 @@ class MockMcpServerManager extends EventEmitter {
     }
     if (this.servers.has(def.id)) await this.stop(def.id)
 
-    const running: RunningServer = {
-      def,
-      http: http.createServer(),
-      status: 'starting',
-      errorMessage: null,
-      boundPort: null,
-      sessions: new Map(),
-      transient: new Set(),
-      logBuffer: [],
-      counters: new Map(),
-      stopped: false,
-    }
+    const running = this.createRunning(def)
     running.http.on('request', (req, res) => {
       this.handleRequest(running, req, res).catch((e) => {
         if (!res.headersSent) {
@@ -242,36 +219,72 @@ class MockMcpServerManager extends EventEmitter {
     this.emitStatus(def.id)
 
     return new Promise((resolve) => {
+      // Any start failure drops the entry — never a phantom "starting" server.
+      const fail = (message: string): void => {
+        running.status = 'error'
+        running.errorMessage = message
+        running.stopped = true
+        void running.endpoint.close().catch(() => {})
+        this.servers.delete(def.id)
+        this.emit('status', { ...this.state(def.id), status: 'error', errorMessage: message })
+        resolve({ ok: false, error: message })
+      }
       running.http.once('error', (err: NodeJS.ErrnoException) => {
-        const message =
+        fail(
           err.code === 'EADDRINUSE'
             ? `Port ${def.port} is already in use on ${def.host}. Stop whatever is listening there (another mock server or app) or pick a different port.`
             : err.code === 'EACCES'
               ? `Permission denied binding ${def.host}:${def.port}. Ports below 1024 usually need elevated rights — pick a higher port.`
-              : err.message
-        running.status = 'error'
-        running.errorMessage = message
-        this.servers.delete(def.id)
-        this.emit('status', { ...this.state(def.id), status: 'error', errorMessage: message })
-        resolve({ ok: false, error: message })
+              : err.message,
+        )
       })
-      running.http.listen(def.port, def.host, () => {
-        running.status = 'running'
-        running.boundPort = (running.http.address() as AddressInfo).port
-        this.emitStatus(def.id)
-        resolve({ ok: true, state: this.state(def.id) })
-      })
+      try {
+        running.http.listen(def.port, def.host, () => {
+          running.status = 'running'
+          running.boundPort = (running.http.address() as AddressInfo).port
+          this.emitStatus(def.id)
+          resolve({ ok: true, state: this.state(def.id) })
+        })
+      } catch (err) {
+        // `listen` throws synchronously on a bad port / host argument.
+        fail(err instanceof Error ? err.message : String(err))
+      }
     })
+  }
+
+  private createRunning(def: MockMcpServerDef): RunningServer {
+    // The closures run per request, after `s` is initialised.
+    const log = (entry: LogDraft): void => this.pushLog(s, entry)
+    const s: RunningServer = {
+      def,
+      http: http.createServer(),
+      status: 'starting',
+      errorMessage: null,
+      boundPort: null,
+      endpoint: new McpEndpoint({
+        getDef: () => s.def,
+        buildServer: (era) => this.buildServer(s, era),
+        log,
+      }),
+      sse: new LegacySseSessions({
+        getDef: () => s.def,
+        buildServer: () => this.buildServer(s, 'legacy'),
+        log,
+        isLive: () => !s.stopped,
+      }),
+      codec: createElicitationCodec(),
+      logBuffer: [],
+      counters: new Map(),
+      stopped: false,
+    }
+    return s
   }
 
   async stop(serverId: string): Promise<void> {
     const s = this.servers.get(serverId)
     if (!s) return
     s.stopped = true
-    const sessions = [...s.sessions.values(), ...s.transient]
-    s.sessions.clear()
-    s.transient.clear()
-    await Promise.all(sessions.map((sess) => this.closeSession(sess)))
+    await Promise.all([s.endpoint.close().catch(() => {}), s.sse.closeAll()])
     await new Promise<void>((resolve) => {
       s.http.close(() => resolve())
       // SSE streams and keep-alive sockets would hold close() open forever.
@@ -292,8 +305,9 @@ class MockMcpServerManager extends EventEmitter {
   /**
    * Apply an edited definition. Binding-relevant changes (host, port, path,
    * legacy SSE) restart the server; everything else is read per request, so
-   * live sessions see it at once (and get a best-effort list_changed). A new
-   * protocol pin applies to sessions initialised after the edit.
+   * the next request sees it. Changed tool / resource / prompt lists are
+   * announced to 2026-07-28 `subscriptions/listen` streams and legacy SSE
+   * sessions (stateless 2025 clients on `<path>` cannot be reached).
    */
   async update(def: MockMcpServerDef): Promise<MockMcpStartResult> {
     const cur = this.servers.get(def.id)
@@ -306,13 +320,19 @@ class MockMcpServerManager extends EventEmitter {
     ) {
       return this.start(def)
     }
+    const changed = changedFamilies(cur.def, def)
     cur.def = def
-    for (const sess of cur.sessions.values()) {
-      void sess.sdk.sendToolListChanged().catch(() => {})
-      void sess.sdk.sendResourceListChanged().catch(() => {})
-      void sess.sdk.sendPromptListChanged().catch(() => {})
-    }
+    for (const kind of changed) this.announce(cur, kind)
+    this.emitStatus(def.id)
     return { ok: true, state: this.state(def.id) }
+  }
+
+  /** Send a `list_changed` for `kind` now; false when the server is not running. */
+  notify(serverId: string, kind: MockMcpNotifyKind): boolean {
+    const s = this.servers.get(serverId)
+    if (!s || s.status !== 'running') return false
+    this.announce(s, kind)
+    return true
   }
 
   getLogs(serverId: string): MockMcpLogEntry[] {
@@ -325,6 +345,28 @@ class MockMcpServerManager extends EventEmitter {
     this.emit('logs', { serverId, logs: [] })
   }
 
+  private announce(s: RunningServer, kind: MockMcpNotifyKind): void {
+    s.endpoint.notify(kind)
+    s.sse.notify(kind)
+  }
+
+  private buildServer(s: RunningServer, era: MockMcpEra): Server {
+    return createMockMcpSdkServer({
+      getDef: () => s.def,
+      era,
+      codec: s.codec,
+      rollError: (key, everyN) => this.roll(s, key, everyN),
+      loadEnv: () => {
+        if (!s.def.projectId) return undefined
+        try {
+          return loadEnvVars({ projectId: s.def.projectId, workspaceId: s.def.workspaceId })
+        } catch {
+          return undefined
+        }
+      },
+    })
+  }
+
   // ─── HTTP routing ──────────────────────────────────────────────
 
   private async handleRequest(
@@ -332,6 +374,7 @@ class MockMcpServerManager extends EventEmitter {
     req: http.IncomingMessage,
     res: http.ServerResponse,
   ): Promise<void> {
+    const ts = Date.now()
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
     let pathname = url.pathname
     while (pathname.length > 1 && pathname.endsWith('/')) pathname = pathname.slice(0, -1)
@@ -361,6 +404,23 @@ class MockMcpServerManager extends EventEmitter {
       this.sendJson(res, 404, { error: 'not_found', path: pathname })
       return
     }
+    // Legacy HTTP+SSE is a 2025-only transport: `legacyMode: 'reject'` (the
+    // UI's "modern only") does not mount it, whatever `legacySse` says.
+    if (!isMcp && !servesLegacySse(def)) {
+      this.sendJson(res, 404, {
+        error: 'not_found',
+        path: pathname,
+        message:
+          'Legacy HTTP+SSE is not served: legacy mode "reject" refuses 2025-era clients (protocol 2026-07-28 only).',
+      })
+      return
+    }
+
+    // DNS-rebinding guard: only meaningful (and only safe) on a loopback bind.
+    if (LOOPBACK_HOSTS.has(def.host) && !this.hostGuard(req, res)) {
+      this.pushLog(s, this.httpLine(ts, `HTTP ${method}`, 403, 'Host header rejected', ''))
+      return
+    }
 
     // Body first (POST only): HTTP-level answers below still get a log line
     // naming the JSON-RPC method they rejected.
@@ -370,7 +430,7 @@ class MockMcpServerManager extends EventEmitter {
       try {
         raw = await readBody(req)
       } catch (e) {
-        this.rejectHttp(s, res, 413, { error: (e as Error).message }, `HTTP ${method}`, '')
+        this.rejectHttp(s, res, ts, 413, { error: (e as Error).message }, `HTTP ${method}`, '')
         return
       }
       try {
@@ -379,6 +439,7 @@ class MockMcpServerManager extends EventEmitter {
         this.rejectHttp(
           s,
           res,
+          ts,
           400,
           { jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' }, id: null },
           `HTTP ${method}`,
@@ -387,14 +448,23 @@ class MockMcpServerManager extends EventEmitter {
         return
       }
     }
+    const inbound = isMcp
+      ? classifyEra(method, req.headers, body)
+      : { era: 'legacy' as const, modernRoute: false }
     const rpc = firstRequest(body)
     const logMethod = rpc?.method ?? `HTTP ${method}`
-    const transportKind: MockMcpTransportKind = isMcp ? 'streamable-http' : 'sse'
+    const transport: MockMcpTransportKind = !isMcp
+      ? 'sse'
+      : inbound.era === 'modern'
+        ? 'streamable-http'
+        : 'stateless'
+    const requestText = body === undefined ? '' : safeStringify(body)
+    const tag = { toolName: rpc?.toolName, transport, era: inbound.era }
 
     if (def.authMode === 'bearer') {
       const header = req.headers.authorization ?? ''
       const m = /^Bearer\s+(.+)$/i.exec(header)
-      if (!m || !tokensEqual(m[1].trim(), def.bearerToken)) {
+      if (!m || !tokensEqual(m[1].trim(), def.bearerToken.trim())) {
         const metadata = `${this.origin(s, req)}${WELL_KNOWN_PRM}`
         const challenge = m
           ? `Bearer error="invalid_token", error_description="The access token is invalid", resource_metadata="${metadata}"`
@@ -403,15 +473,15 @@ class MockMcpServerManager extends EventEmitter {
         this.rejectHttp(
           s,
           res,
+          ts,
           401,
           {
             error: m ? 'invalid_token' : 'unauthorized',
             error_description: m ? 'The access token is invalid' : 'Bearer token required',
           },
           logMethod,
-          body === undefined ? '' : safeStringify(body),
-          rpc?.toolName,
-          transportKind,
+          requestText,
+          tag,
         )
         return
       }
@@ -423,277 +493,50 @@ class MockMcpServerManager extends EventEmitter {
         this.rejectHttp(
           s,
           res,
+          ts,
           httpFail.status,
           { error: `Mock HTTP error ${httpFail.status}`, message: httpFail.message },
           logMethod,
-          safeStringify(body),
-          rpc?.toolName,
-          transportKind,
+          requestText,
+          tag,
         )
         return
       }
     }
 
-    if (isMcp) await this.handleStreamable(s, req, res, url, method, body)
-    else if (isSse && method === 'GET') await this.openSseSession(s, res, url)
-    else if (isMessages && method === 'POST') await this.handleSseMessage(s, req, res, url, body)
-    else this.sendJson(res, 405, { error: 'method_not_allowed' })
-  }
-
-  private async handleStreamable(
-    s: RunningServer,
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    url: URL,
-    method: string,
-    body: unknown,
-  ): Promise<void> {
-    const sessionHeader = req.headers['mcp-session-id']
-    const sessionId = Array.isArray(sessionHeader) ? sessionHeader[0] : sessionHeader
-
-    if (sessionId) {
-      const sess = s.sessions.get(sessionId)
-      if (!sess || sess.kind !== 'streamable-http') {
+    const pin = url.searchParams.get('rev') || def.protocolPin
+    if (isMcp) {
+      if (def.latencyMs > 0 && callsOf(body).length > 0) {
+        await sleep(def.latencyMs)
+        if (s.stopped || res.destroyed) return
+      }
+      const mcpMethod = req.headers['mcp-method']
+      await s.endpoint.serve(req, res, {
+        body,
+        inbound,
+        pin,
+        ts,
+        ...(typeof mcpMethod === 'string' ? { mcpMethod } : {}),
+      })
+    } else if (isSse && method === 'GET') {
+      await s.sse.open(res, pin)
+    } else if (isMessages && method === 'POST') {
+      const sid = url.searchParams.get('sessionId') ?? ''
+      if (!(await s.sse.message(sid, req, res, body))) {
         this.rejectHttp(
           s,
           res,
+          ts,
           404,
-          { jsonrpc: '2.0', error: { code: -32001, message: 'Session not found' }, id: null },
-          firstRequest(body)?.method ?? `HTTP ${method}`,
-          body === undefined ? '' : safeStringify(body),
+          { error: 'Session not found' },
+          logMethod,
+          requestText,
+          tag,
         )
-        return
       }
-      await (sess.transport as StreamableHTTPServerTransport).handleRequest(req, res, body)
-      return
+    } else {
+      this.sendJson(res, 405, { error: 'method_not_allowed' })
     }
-
-    if (method === 'GET') {
-      // No standalone server→client stream without a session.
-      this.sendJson(res, 405, { error: 'method_not_allowed' }, { Allow: 'POST' })
-      return
-    }
-    if (method !== 'POST') {
-      this.sendJson(res, 400, {
-        jsonrpc: '2.0',
-        error: { code: -32000, message: 'Bad Request: Mcp-Session-Id header is required' },
-        id: null,
-      })
-      return
-    }
-    if (body === undefined) {
-      this.sendJson(res, 400, {
-        jsonrpc: '2.0',
-        error: { code: -32600, message: 'Invalid Request: empty body' },
-        id: null,
-      })
-      return
-    }
-
-    const pin = url.searchParams.get('rev') || s.def.protocolPin
-    if (isInitBody(body)) {
-      // Stateful: the SDK assigns the session id while handling initialize.
-      let session: Session | null = null
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (sid) => {
-          if (session && !s.stopped) s.sessions.set(sid, session)
-        },
-      })
-      const sdk = this.createSdk(s, pin)
-      session = { kind: 'streamable-http', transport, sdk }
-      await sdk.connect(transport)
-      this.instrument(s, session)
-      await transport.handleRequest(req, res, body)
-      return
-    }
-
-    // Stateless: no session id and not an initialize — serve this one POST
-    // with a throw-away server + transport.
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
-    const sdk = this.createSdk(s, pin)
-    const session: Session = { kind: 'stateless', transport, sdk }
-    s.transient.add(session)
-    res.on('close', () => {
-      s.transient.delete(session)
-      void this.closeSession(session)
-    })
-    await sdk.connect(transport)
-    this.instrument(s, session)
-    await transport.handleRequest(req, res, body)
-  }
-
-  private async openSseSession(
-    s: RunningServer,
-    res: http.ServerResponse,
-    url: URL,
-  ): Promise<void> {
-    const transport = new SSEServerTransport(subPath(s.def.path, '/messages'), res)
-    const sdk = this.createSdk(s, url.searchParams.get('rev') || s.def.protocolPin)
-    const session: Session = { kind: 'sse', transport, sdk }
-    s.sessions.set(transport.sessionId, session)
-    await sdk.connect(transport) // start(): writes the `endpoint` event
-    this.instrument(s, session)
-  }
-
-  private async handleSseMessage(
-    s: RunningServer,
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    url: URL,
-    body: unknown,
-  ): Promise<void> {
-    const sid = url.searchParams.get('sessionId') ?? ''
-    const sess = s.sessions.get(sid)
-    if (!sess || sess.kind !== 'sse') {
-      this.rejectHttp(
-        s,
-        res,
-        404,
-        { error: 'Session not found' },
-        firstRequest(body)?.method ?? 'HTTP POST',
-        body === undefined ? '' : safeStringify(body),
-        undefined,
-        'sse',
-      )
-      return
-    }
-    await (sess.transport as SSEServerTransport).handlePostMessage(req, res, body)
-  }
-
-  // ─── Sessions ──────────────────────────────────────────────────
-
-  private createSdk(s: RunningServer, pin: string | null): SdkServer {
-    return createMockMcpSdkServer({
-      getDef: () => s.def,
-      pin: pin || null,
-      rollError: (key, everyN) => this.roll(s, key, everyN),
-      loadEnv: () => {
-        if (!s.def.projectId) return undefined
-        try {
-          return loadEnvVars({ projectId: s.def.projectId, workspaceId: s.def.workspaceId })
-        } catch {
-          return undefined
-        }
-      },
-    })
-  }
-
-  private async closeSession(sess: Session): Promise<void> {
-    try {
-      await sess.transport.close()
-    } catch {
-      /* already closed */
-    }
-    try {
-      await sess.sdk.close()
-    } catch {
-      /* already closed */
-    }
-  }
-
-  /**
-   * Wrap the transport the SDK server is connected to: delay dispatch by the
-   * server latency, and pair each JSON-RPC request with its response for the
-   * log. Must run AFTER `sdk.connect()` (which installs the handlers we wrap).
-   */
-  private instrument(s: RunningServer, session: Session): void {
-    const t = session.transport as Transport
-    const dispatch = t.onmessage
-    const sendRaw = t.send.bind(t)
-    const closeRaw = t.onclose
-    const pending = new Map<string | number, PendingRequest>()
-
-    const finish = (
-      id: string | number,
-      out: { ok: boolean; errorCode?: number; response: string },
-    ): void => {
-      const p = pending.get(id)
-      if (!p) return
-      pending.delete(id)
-      this.pushLog(s, {
-        id: randomUUID(),
-        serverId: s.def.id,
-        ts: p.ts,
-        method: p.method,
-        ...(p.toolName ? { toolName: p.toolName } : {}),
-        durationMs: Date.now() - p.ts,
-        ok: out.ok,
-        ...(out.errorCode !== undefined ? { errorCode: out.errorCode } : {}),
-        ...(t.sessionId ? { sessionId: t.sessionId } : {}),
-        transport: session.kind,
-        request: p.request,
-        response: truncate(out.response),
-      })
-    }
-
-    t.onmessage = <T extends JSONRPCMessage>(message: T, extra?: MessageExtraInfo): void => {
-      if (isJSONRPCRequest(message)) {
-        const toolName =
-          message.method === 'tools/call' && typeof message.params?.name === 'string'
-            ? message.params.name
-            : undefined
-        pending.set(message.id, {
-          ts: Date.now(),
-          method: message.method,
-          ...(toolName ? { toolName } : {}),
-          request: truncate(safeStringify(message)),
-        })
-        const latency = s.def.latencyMs
-        if (latency > 0) {
-          setTimeout(() => {
-            if (!s.stopped) dispatch?.(message, extra)
-          }, latency)
-          return
-        }
-      } else if (
-        isJSONRPCNotification(message) &&
-        message.method === 'notifications/cancelled' &&
-        message.params &&
-        (typeof message.params.requestId === 'string' ||
-          typeof message.params.requestId === 'number')
-      ) {
-        finish(message.params.requestId, {
-          ok: false,
-          response: `(no response — cancelled by the client${
-            typeof message.params.reason === 'string' ? `: ${message.params.reason}` : ''
-          })`,
-        })
-      }
-      dispatch?.(message, extra)
-    }
-
-    t.send = async (message, options): Promise<void> => {
-      let initFailed = false
-      if (isJSONRPCResultResponse(message)) {
-        finish(message.id, { ok: true, response: safeStringify(message) })
-      } else if (isJSONRPCErrorResponse(message) && message.id !== undefined) {
-        initFailed = pending.get(message.id)?.method === 'initialize'
-        finish(message.id, {
-          ok: false,
-          errorCode: message.error.code,
-          response: safeStringify(message),
-        })
-      }
-      await sendRaw(message, options)
-      // A rejected initialize (protocol pin) leaves a session nobody can use.
-      if (initFailed && session.kind !== 'stateless') {
-        setTimeout(() => void this.dropSession(s, session), 0)
-      }
-    }
-
-    t.onclose = (): void => {
-      closeRaw?.()
-      for (const id of [...pending.keys()]) {
-        finish(id, { ok: false, response: '(no response — session closed)' })
-      }
-      for (const [sid, sess] of s.sessions) if (sess === session) s.sessions.delete(sid)
-    }
-  }
-
-  private async dropSession(s: RunningServer, session: Session): Promise<void> {
-    for (const [sid, sess] of s.sessions) if (sess === session) s.sessions.delete(sid)
-    await this.closeSession(session)
   }
 
   // ─── Scenarios ─────────────────────────────────────────────────
@@ -709,13 +552,14 @@ class MockMcpServerManager extends EventEmitter {
     s: RunningServer,
     body: unknown,
   ): { status: number; message: string } | null {
-    for (const m of messagesOf(body)) {
-      if (!isJSONRPCRequest(m) || m.method !== 'tools/call') continue
-      const name = typeof m.params?.name === 'string' ? m.params.name : ''
+    for (const c of callsOf(body)) {
+      if (c.method !== 'tools/call') continue
+      const name = c.toolName ?? ''
       const tool = s.def.tools.find((t) => t.name === name)
       const { mode, counterKey } = effectiveErrorMode(s.def, tool)
-      if (mode.kind !== 'http') return null
-      if (!this.roll(s, counterKey, mode.everyN)) return null
+      // Per call: a later tools/call in a batch may carry its own http mode.
+      if (mode.kind !== 'http') continue
+      if (!this.roll(s, counterKey, mode.everyN)) continue
       return {
         status: mode.httpStatus ?? 500,
         message: mode.message || `Injected HTTP error for tools/call ${name}`,
@@ -745,34 +589,44 @@ class MockMcpServerManager extends EventEmitter {
     }
   }
 
+  private httpLine(
+    ts: number,
+    method: string,
+    status: number,
+    response: string,
+    request: string,
+    tag: { toolName?: string; transport?: MockMcpTransportKind; era?: MockMcpEra } = {},
+  ): LogDraft {
+    return {
+      ts,
+      method,
+      ...(tag.toolName ? { toolName: tag.toolName } : {}),
+      durationMs: Date.now() - ts,
+      ok: false,
+      httpStatus: status,
+      ...(tag.transport ? { transport: tag.transport } : {}),
+      ...(tag.era ? { era: tag.era } : {}),
+      request: truncate(request),
+      response: truncate(response),
+    }
+  }
+
   private rejectHttp(
     s: RunningServer,
     res: http.ServerResponse,
+    ts: number,
     status: number,
     payload: unknown,
     method: string,
     request: string,
-    toolName?: string,
-    transport?: MockMcpTransportKind,
+    tag: { toolName?: string; transport?: MockMcpTransportKind; era?: MockMcpEra } = {},
   ): void {
-    const ts = Date.now()
     this.sendJson(res, status, payload)
-    this.pushLog(s, {
-      id: randomUUID(),
-      serverId: s.def.id,
-      ts,
-      method,
-      ...(toolName ? { toolName } : {}),
-      durationMs: 0,
-      ok: false,
-      httpStatus: status,
-      ...(transport ? { transport } : {}),
-      request: truncate(request),
-      response: truncate(safeStringify(payload)),
-    })
+    this.pushLog(s, this.httpLine(ts, method, status, safeStringify(payload), request, tag))
   }
 
-  private pushLog(s: RunningServer, entry: MockMcpLogEntry): void {
+  private pushLog(s: RunningServer, draft: LogDraft): void {
+    const entry: MockMcpLogEntry = { id: randomUUID(), serverId: s.def.id, ...draft }
     s.logBuffer.push(entry)
     if (s.logBuffer.length > MAX_LOG_BUFFER) s.logBuffer.shift()
     this.emit('log', entry)

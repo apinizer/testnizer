@@ -101,6 +101,26 @@ describe('IPC actions', () => {
     expect(s.stateByServer.a.status).toBe('running')
   })
 
+  it('loadServers: a slower answer for the previous project never replaces the newer one', async () => {
+    stub = installBridge([sampleServer({ id: 'a' }), sampleServer({ id: 'c', projectId: 'p-2' })])
+    let resolveFirst: (v: {
+      success: true
+      data: ReturnType<typeof sampleServer>[]
+    }) => void = () => undefined
+    vi.mocked(stub.bridge.server.list).mockImplementationOnce(
+      () => new Promise((resolve) => (resolveFirst = resolve)),
+    )
+    const first = useMockMcpStore.getState().loadServers('p-1')
+    await useMockMcpStore.getState().loadServers('p-2')
+    resolveFirst({ success: true, data: [sampleServer({ id: 'a' })] })
+    await first
+    const s = useMockMcpStore.getState()
+    expect(s.projectId).toBe('p-2')
+    expect(s.servers.map((x) => x.id)).toEqual(['c'])
+    // The stale answer does not hydrate live state either.
+    expect(stub.bridge.server.status).not.toHaveBeenCalledWith('a')
+  })
+
   it('startServer / stopServer call the bridge for that id and store the returned state', async () => {
     expect(await useMockMcpStore.getState().startServer('b')).toBeNull()
     expect(stub.bridge.server.start).toHaveBeenCalledWith('b')

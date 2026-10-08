@@ -240,6 +240,52 @@ describe('McpConfigMenu — paste config', () => {
   })
 })
 
+describe('config export — Authorization tab', () => {
+  const exported = () =>
+    JSON.parse(screen.getByTestId('mcp-export-code').textContent ?? '').servers['mcp-server']
+
+  it('a Bearer token is exported as the Authorization header', () => {
+    useMcpStore.setState({
+      transport: 'http',
+      url: 'https://r.test/mcp',
+      auth: { type: 'bearer', bearer: { token: 'tok' } },
+    })
+    render(<McpConfigMenu disabled={false} />)
+    fireEvent.click(screen.getByTestId('mcp-config-export'))
+    fireEvent.click(screen.getByTestId('mcp-export-host-vscode'))
+    expect(exported().headers).toEqual({ Authorization: 'Bearer tok' })
+    expect(screen.getByTestId('mcp-export-auth-note')).toBeInTheDocument()
+  })
+
+  it('a custom Authorization header row wins over the Authorization tab', () => {
+    useMcpStore.setState({
+      transport: 'http',
+      url: 'https://r.test/mcp',
+      customHeaders: [{ id: 'h1', key: 'Authorization', value: 'Custom row', enabled: true }],
+      auth: { type: 'bearer', bearer: { token: 'tok' } },
+    })
+    render(<McpConfigMenu disabled={false} />)
+    fireEvent.click(screen.getByTestId('mcp-config-export'))
+    fireEvent.click(screen.getByTestId('mcp-export-host-vscode'))
+    expect(exported().headers).toEqual({ Authorization: 'Custom row' })
+    expect(screen.queryByTestId('mcp-export-auth-note')).toBeNull()
+  })
+
+  it('an API key in query lands in the exported URL; No Auth adds nothing', () => {
+    useMcpStore.setState({
+      transport: 'http',
+      url: 'https://r.test/mcp',
+      auth: { type: 'api-key', apiKey: { key: 'key', value: 'k1', in: 'query' } },
+    })
+    render(<McpConfigMenu disabled={false} />)
+    fireEvent.click(screen.getByTestId('mcp-config-export'))
+    fireEvent.click(screen.getByTestId('mcp-export-host-vscode'))
+    expect(exported()).toEqual({ type: 'http', url: 'https://r.test/mcp?key=k1' })
+    act(() => useMcpStore.setState({ auth: { type: 'none' } }))
+    expect(exported()).toEqual({ type: 'http', url: 'https://r.test/mcp' })
+  })
+})
+
 describe('McpMessagesPane / McpEditor', () => {
   it('frames list shows direction + label and a JSON detail on click', () => {
     useMcpStore.setState({

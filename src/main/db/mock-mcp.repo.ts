@@ -3,6 +3,11 @@
  * resources, prompts and the error mode live in JSON columns so the schema
  * mirrors (database.ts, test helpers, export round-trip test) stay small.
  *
+ * `options_json` (issue #152) holds the protocol-era knobs (`legacyMode`,
+ * `cacheTtlMs`) as one nullable JSON object — nullable so a project file
+ * exported before the column existed still imports (missing keys arrive as
+ * NULL) and reads back as the defaults.
+ *
  * Patch semantics follow mock.repo: `undefined` = keep, and for the nullable
  * fields (`protocolPin`) `null` = clear. Every write is validated with the
  * same rules the live server relies on, so a bad config fails at save time
@@ -13,17 +18,20 @@ import { randomUUID } from 'crypto'
 import { getDb } from './database'
 import {
   DEFAULT_ERROR_MODE,
+  DEFAULT_LEGACY_MODE,
   defaultTools,
   normalizeErrorMode,
   normalizePath,
   normalizePrompts,
   normalizeResources,
+  normalizeServerOptions,
   normalizeTools,
   validateMockMcpConfig,
 } from '../mock-mcp/config'
 import type {
   MockMcpAuthMode,
   MockMcpErrorMode,
+  MockMcpLegacyMode,
   MockMcpPrompt,
   MockMcpResource,
   MockMcpServerConfig,
@@ -47,6 +55,8 @@ export interface MockMcpServerRow {
   tools_json: string
   resources_json: string
   prompts_json: string
+  /** `{ legacyMode, cacheTtlMs }`; NULL = defaults. */
+  options_json: string | null
   enabled: number
   created_at: number
   updated_at: number
@@ -70,6 +80,7 @@ export const MOCK_MCP_SERVER_COLUMNS = [
   'tools_json',
   'resources_json',
   'prompts_json',
+  'options_json',
   'enabled',
   'created_at',
   'updated_at',
@@ -88,6 +99,8 @@ export interface CreateMockMcpServerInput {
   latencyMs?: number
   errorMode?: MockMcpErrorMode
   protocolPin?: string | null
+  legacyMode?: MockMcpLegacyMode
+  cacheTtlMs?: number
   /** Omitted → one `echo` tool, so a new server answers something right away. */
   tools?: MockMcpTool[]
   resources?: MockMcpResource[]
@@ -117,10 +130,13 @@ export function mockMcpRowToConfig(r: MockMcpServerRow): MockMcpServerConfig {
     path: normalizePath(r.path),
     legacySse: !!r.legacy_sse,
     authMode: r.auth_mode === 'bearer' ? 'bearer' : 'none',
-    bearerToken: r.bearer_token ?? '',
+    // Trimmed: a token pasted with a trailing newline never matched the
+    // (trimmed) `Authorization` value — rows from import / git included.
+    bearerToken: (r.bearer_token ?? '').trim(),
     latencyMs: Math.max(0, r.latency_ms ?? 0),
     errorMode: normalizeErrorMode(safeJson(r.error_mode)),
     protocolPin: r.protocol_pin || null,
+    ...normalizeServerOptions(safeJson(r.options_json)),
     tools: normalizeTools(safeJson(r.tools_json)),
     resources: normalizeResources(safeJson(r.resources_json)),
     prompts: normalizePrompts(safeJson(r.prompts_json)),
@@ -148,6 +164,7 @@ function configToRow(c: MockMcpServerConfig): MockMcpServerRow {
     tools_json: JSON.stringify(c.tools),
     resources_json: JSON.stringify(c.resources),
     prompts_json: JSON.stringify(c.prompts),
+    options_json: JSON.stringify({ legacyMode: c.legacyMode, cacheTtlMs: c.cacheTtlMs }),
     enabled: c.enabled ? 1 : 0,
     created_at: c.createdAt,
     updated_at: c.updatedAt,
@@ -177,10 +194,13 @@ export function createMockMcpServer(input: CreateMockMcpServerInput): MockMcpSer
     path: normalizePath(input.path),
     legacySse: !!input.legacySse,
     authMode: input.authMode ?? 'none',
-    bearerToken: input.bearerToken ?? '',
+    bearerToken: (input.bearerToken ?? '').trim(),
     latencyMs: input.latencyMs ?? 0,
     errorMode: input.errorMode ? normalizeErrorMode(input.errorMode) : { ...DEFAULT_ERROR_MODE },
     protocolPin: input.protocolPin || null,
+    // Not normalised: an unknown mode / bad TTL must fail validation, not be coerced.
+    legacyMode: input.legacyMode ?? DEFAULT_LEGACY_MODE,
+    cacheTtlMs: input.cacheTtlMs ?? 0,
     tools: input.tools === undefined ? defaultTools() : normalizeTools(input.tools),
     resources: normalizeResources(input.resources ?? []),
     prompts: normalizePrompts(input.prompts ?? []),
@@ -225,10 +245,12 @@ export function updateMockMcpServer(
     path: p.path !== undefined ? normalizePath(p.path) : cur.path,
     legacySse: p.legacySse ?? cur.legacySse,
     authMode: p.authMode ?? cur.authMode,
-    bearerToken: p.bearerToken ?? cur.bearerToken,
+    bearerToken: p.bearerToken !== undefined ? p.bearerToken.trim() : cur.bearerToken,
     latencyMs: p.latencyMs ?? cur.latencyMs,
     errorMode: p.errorMode !== undefined ? normalizeErrorMode(p.errorMode) : cur.errorMode,
     protocolPin: p.protocolPin !== undefined ? p.protocolPin || null : cur.protocolPin,
+    legacyMode: p.legacyMode ?? cur.legacyMode,
+    cacheTtlMs: p.cacheTtlMs ?? cur.cacheTtlMs,
     tools: p.tools !== undefined ? normalizeTools(p.tools) : cur.tools,
     resources: p.resources !== undefined ? normalizeResources(p.resources) : cur.resources,
     prompts: p.prompts !== undefined ? normalizePrompts(p.prompts) : cur.prompts,

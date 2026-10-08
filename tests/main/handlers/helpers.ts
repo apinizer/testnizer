@@ -578,6 +578,7 @@ const SCHEMA_SQL = `
     tools_json TEXT NOT NULL DEFAULT '[]',
     resources_json TEXT NOT NULL DEFAULT '[]',
     prompts_json TEXT NOT NULL DEFAULT '[]',
+    options_json TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,

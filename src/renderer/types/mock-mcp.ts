@@ -38,9 +38,10 @@ export type MockMcpAuthMode = MockMcpServer['authMode']
 /**
  * Protocol revisions the bundled MCP SDK implements — the only pins the
  * backend accepts (`PINNABLE_PROTOCOL_VERSIONS` in `src/main/mock-mcp/config.ts`
- * = the SDK's `SUPPORTED_PROTOCOL_VERSIONS`). The renderer cannot import the
- * SDK, so the list is mirrored; a pin outside it fails at save time with a
- * readable message anyway.
+ * = the SDK's legacy `SUPPORTED_PROTOCOL_VERSIONS` + the 2026-07-28 modern
+ * revision, issue #152). The renderer cannot import the SDK, so the list is
+ * mirrored (a drift-guard test compares them); a pin outside it fails at save
+ * time with a readable message anyway.
  */
 export const MOCK_MCP_PROTOCOL_VERSIONS = [
   '2025-11-25',
@@ -48,7 +49,17 @@ export const MOCK_MCP_PROTOCOL_VERSIONS = [
   '2025-03-26',
   '2024-11-05',
   '2024-10-07',
+  '2026-07-28',
 ] as const
+
+/** The first "modern era" revision (stateless, `server/discover`). */
+export const MOCK_MCP_MODERN_VERSION = '2026-07-28'
+
+export type MockMcpLegacyMode = MockMcpServer['legacyMode']
+export type MockMcpEra = NonNullable<MockMcpServerState['eras']>[number]
+export type MockMcpElicit = NonNullable<MockMcpTool['elicit']>
+
+export const MOCK_MCP_LEGACY_MODES: readonly MockMcpLegacyMode[] = ['stateless', 'reject']
 
 export const MOCK_MCP_ERROR_KINDS: readonly MockMcpErrorKind[] = [
   'none',
@@ -62,11 +73,45 @@ export const MOCK_MCP_RESPONSE_KINDS: readonly MockMcpResponseKind[] = ['text', 
 
 export type MockMcpEditorTab = 'general' | 'scenarios' | 'tools' | 'resources' | 'prompts' | 'logs'
 
+/** Field types the elicitation editor offers (`enum` = a string with `enum` values). */
+export type MockMcpElicitFieldType = 'string' | 'number' | 'integer' | 'boolean' | 'enum'
+
+export const MOCK_MCP_ELICIT_FIELD_TYPES: readonly MockMcpElicitFieldType[] = [
+  'string',
+  'number',
+  'integer',
+  'boolean',
+  'enum',
+]
+
+/** One row of the elicitation fields table — a property of the restricted schema. */
+export interface MockMcpElicitFieldRow {
+  /** Stable React key. */
+  id: string
+  name: string
+  type: MockMcpElicitFieldType
+  /** `enum` values, comma separated as typed. */
+  enumText: string
+  required: boolean
+  /** The property's other keywords (title, minLength, …) — kept across a round trip. */
+  extra: Record<string, unknown>
+}
+
+/** The elicitation section of a tool as the editor holds it (issue #152). */
+export interface MockMcpElicitDraft {
+  key: string
+  message: string
+  responseTemplate: string
+  fields: MockMcpElicitFieldRow[]
+}
+
 /** A tool as the editor holds it: the input schema is raw JSON text until Save. */
-export interface MockMcpToolDraft extends Omit<MockMcpTool, 'inputSchema'> {
+export interface MockMcpToolDraft extends Omit<MockMcpTool, 'inputSchema' | 'elicit'> {
   /** Stable React key — never sent to the backend. */
   key: string
   schemaText: string
+  /** Present = the tool asks the client for input first (2026-07-28 elicitation). */
+  elicit?: MockMcpElicitDraft
 }
 
 /** The editable part of a server, held locally by the editor until Save. */
@@ -78,6 +123,10 @@ export interface MockMcpServerDraft {
   path: string
   legacySse: boolean
   protocolPin: string | null
+  /** How 2025-era clients are served next to 2026-07-28 (issue #152). */
+  legacyMode: MockMcpLegacyMode
+  /** `ttlMs` on 2026-07-28 list results; 0 = always stale. */
+  cacheTtlMs: number
   authMode: MockMcpAuthMode
   bearerToken: string
   latencyMs: number

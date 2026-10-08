@@ -26,6 +26,8 @@ export function sampleServer(over: Partial<MockMcpServer> = {}): MockMcpServer {
     latencyMs: 0,
     errorMode: { kind: 'none' },
     protocolPin: null,
+    legacyMode: 'stateless',
+    cacheTtlMs: 0,
     tools: [
       {
         name: 'echo',
@@ -107,6 +109,7 @@ export function installBridge(servers: MockMcpServer[] = [sampleServer()]): Brid
       start: vi.fn((id: string) => ok(runningState(id))),
       stop: vi.fn((id: string) => ok(stopped(id))),
       status: vi.fn((id: string) => ok(stopped(id))),
+      notify: vi.fn(() => ok(true)),
     },
     logs: {
       get: vi.fn(() => ok([] as MockMcpLogEntry[])),
