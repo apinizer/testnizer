@@ -25,7 +25,11 @@ export interface McpSecurityTabState {
   securityFindings: McpSecurityFinding[]
   securityReport: McpSecurityReport | null
   securityError: string | null
-  /** Opt-in rate-limit probe. The ONLY persisted security field (default false). */
+  /**
+   * Opt-in "active probes" (name kept for persisted tabs): the rate-limit burst
+   * AND the tool calls of `auth.request_state_tampering` (issue #152). The ONLY
+   * persisted security field (default false).
+   */
   securityRateLimitProbe: boolean
 }
 

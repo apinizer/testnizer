@@ -3,6 +3,14 @@
  * the sequential foundation phase that fills it: the unauthenticated probe,
  * the authenticated session, and the advertised inventory (tools ×2,
  * prompts, resources, resource templates).
+ *
+ * Era detection (issue #152): on Streamable HTTP both the probe and the
+ * session first POST `server/discover` (2026-07-28). A modern descriptor
+ * (`supportedVersions` naming 2026-07-28) makes the scan modern — every
+ * later request carries the `_meta` envelope and the `Mcp-Method` / `Mcp-Name`
+ * headers (`ModernSession`); anything else falls back to the 2025
+ * `initialize` handshake exactly as before. Legacy HTTP+SSE predates
+ * 2026-07-28 and is never probed.
  */
 
 import type { TlsInspectOptions, TlsInspectResult } from '../tls-inspect.engine'
@@ -16,6 +24,9 @@ import type {
 import {
   CLIENT_INFO,
   LegacySseSession,
+  META_SERVER_INFO,
+  MODERN_PROTOCOL_VERSION,
+  ModernSession,
   StreamableSession,
   type HttpResult,
   type RpcOutcome,
@@ -30,7 +41,10 @@ export interface ToolLite {
   description?: string
   inputSchema?: unknown
   outputSchema?: unknown
+  annotations?: Record<string, unknown>
 }
+
+export type ScanEra = 'legacy' | 'modern'
 
 export interface NamedLite {
   name: string
@@ -49,14 +63,18 @@ export interface Inventory {
   toolsError?: string
   prompts: NamedLite[]
   resources: NamedLite[]
+  /** First-page outcome per list method (`tools/list`, …) — cache-hint checks read them. */
+  listOutcomes: Record<string, RpcOutcome>
   /** A list was cut at the page / item cap. */
   capped: boolean
 }
 
 export interface UnauthProbe {
   http: HttpResult
-  /** JSON-RPC `initialize` result when the server answered one without credentials. */
+  /** JSON-RPC `initialize` / `server/discover` result when the server answered without credentials. */
   result?: Record<string, unknown>
+  /** Which handshake answered (`modern` = `server/discover`). */
+  era?: ScanEra
 }
 
 export interface SessionInfo {
@@ -64,9 +82,17 @@ export interface SessionInfo {
   /** Why there is no session. */
   reason?: 'unauthorized' | 'network' | 'http' | 'rpc'
   error?: string
+  /** The handshake that produced (or failed to produce) the session. */
   init?: RpcOutcome
   session?: RpcSession
+  /** `initialize` result (legacy) or `server/discover` result (modern). */
   result?: Record<string, unknown>
+  /** Negotiated era; absent when no session was established. */
+  era?: ScanEra
+  /** The authenticated `server/discover` attempt (http transport only) — modern or not. */
+  discover?: RpcOutcome
+  /** `supportedVersions` of a modern descriptor. */
+  supportedVersions?: string[]
 }
 
 export interface CheckOutcome {
@@ -100,6 +126,10 @@ export interface ScanContext {
   /** The user's headers minus every credential header — unauthenticated probes. */
   anonHeaders: Record<string, string>
   http: ScanHttp
+  /** The authenticated requests carry credentials (a credential header, the Authorization tab, OAuth). */
+  authenticated: boolean
+  /** Opt-in: checks may call tools (`options.toolInvocationProbe`). */
+  toolInvocationProbe: boolean
   inspectTls: (opts: TlsInspectOptions) => Promise<TlsInspectResult>
   unauth?: UnauthProbe
   session: SessionInfo
@@ -190,8 +220,50 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v)
 }
 
-/** Unauthenticated `initialize` (GET event-stream for legacy SSE), session closed again. */
+/** A `server/discover` result that names the 2026-07-28 revision. */
+export function isModernDescriptor(result: Record<string, unknown> | undefined): boolean {
+  return (
+    !!result &&
+    Array.isArray(result.supportedVersions) &&
+    result.supportedVersions.includes(MODERN_PROTOCOL_VERSION)
+  )
+}
+
+/**
+ * `serverInfo` of a handshake result: `initialize` carries it at the top,
+ * a 2026-07-28 result in `_meta['io.modelcontextprotocol/serverInfo']`.
+ */
+export function serverInfoFromResult(
+  result: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!result) return undefined
+  if (isRecord(result.serverInfo)) return result.serverInfo
+  const meta = isRecord(result._meta) ? result._meta : undefined
+  return meta && isRecord(meta[META_SERVER_INFO]) ? meta[META_SERVER_INFO] : undefined
+}
+
+/** The unauthenticated `server/discover` (2026-07-28) — undefined result unless a modern descriptor came back. */
+async function probeModernUnauthenticated(ctx: ScanContext): Promise<UnauthProbe> {
+  const session = new ModernSession(ctx.http, ctx.url.href, ctx.anonHeaders, false)
+  const out = await session.initialize()
+  return {
+    http: out.http,
+    ...(isModernDescriptor(out.result) ? { result: out.result, era: 'modern' as const } : {}),
+  }
+}
+
+/**
+ * Unauthenticated handshake: `server/discover` first on Streamable HTTP — a
+ * modern descriptor or a 401 / 403 is the verdict — else `initialize` (GET
+ * event-stream for legacy SSE), any session it opened closed again.
+ */
 export async function probeUnauthenticated(ctx: ScanContext): Promise<UnauthProbe> {
+  if (ctx.transport === 'http') {
+    const modern = await probeModernUnauthenticated(ctx)
+    const status = modern.http.status
+    // No HTTP response at all: the host is unreachable — an initialize would only time out too.
+    if (modern.result || status === undefined || status === 401 || status === 403) return modern
+  }
   if (ctx.transport === 'sse') {
     const session = new LegacySseSession(ctx.http, ctx.url.href, ctx.anonHeaders, false)
     const out = await session.initialize()
@@ -233,16 +305,56 @@ export async function probeUnauthenticated(ctx: ScanContext): Promise<UnauthProb
       .catch(() => {})
   }
   const result = isRecord(http.json) && isRecord(http.json.result) ? http.json.result : undefined
-  return { http, ...(result ? { result } : {}) }
+  return { http, ...(result ? { result, era: 'legacy' as const } : {}) }
 }
 
+/**
+ * The authenticated session: on Streamable HTTP a modern `server/discover`
+ * descriptor makes it a stateless 2026-07-28 session; otherwise (or on legacy
+ * SSE) the 2025 `initialize` handshake as before.
+ */
 export async function openSession(ctx: ScanContext): Promise<SessionInfo> {
+  let discover: RpcOutcome | undefined
+  if (ctx.transport === 'http') {
+    const modern = new ModernSession(ctx.http, ctx.authUrl.href, ctx.headers, true)
+    discover = await modern.initialize()
+    if (discover.http.status === undefined) {
+      // Unreachable: do not spend a second timeout on initialize.
+      return {
+        ok: false,
+        reason: 'network',
+        error: discover.error ?? 'No response',
+        init: discover,
+        discover,
+      }
+    }
+    if (isModernDescriptor(discover.result)) {
+      return {
+        ok: true,
+        init: discover,
+        session: modern,
+        result: discover.result,
+        era: 'modern',
+        discover,
+        supportedVersions: modern.supportedVersions,
+      }
+    }
+  }
   const session: RpcSession =
     ctx.transport === 'sse'
       ? new LegacySseSession(ctx.http, ctx.authUrl.href, ctx.headers, true)
       : new StreamableSession(ctx.http, ctx.authUrl.href, ctx.headers, true)
   const init = await session.initialize()
-  if (init.result) return { ok: true, init, session, result: init.result }
+  if (init.result) {
+    return {
+      ok: true,
+      init,
+      session,
+      result: init.result,
+      era: 'legacy',
+      ...(discover ? { discover } : {}),
+    }
+  }
   await session.close()
   const status = init.http.status
   const reason: SessionInfo['reason'] =
@@ -256,7 +368,7 @@ export async function openSession(ctx: ScanContext): Promise<SessionInfo> {
   const error = init.rpcError
     ? `JSON-RPC error ${init.rpcError.code}: ${init.rpcError.message}`
     : (init.error ?? `HTTP ${status}`)
-  return { ok: false, reason, error, init }
+  return { ok: false, reason, error, init, ...(discover ? { discover } : {}) }
 }
 
 const MAX_PAGES = 20
@@ -303,6 +415,7 @@ function toTool(raw: Record<string, unknown>): ToolLite {
     ...(str(raw.description) !== undefined ? { description: str(raw.description) } : {}),
     ...(raw.inputSchema !== undefined ? { inputSchema: raw.inputSchema } : {}),
     ...(raw.outputSchema !== undefined ? { outputSchema: raw.outputSchema } : {}),
+    ...(isRecord(raw.annotations) ? { annotations: raw.annotations } : {}),
   }
 }
 
@@ -328,7 +441,13 @@ function toNamed(raw: Record<string, unknown>, extraKeys: string[]): NamedLite {
 /** tools/list twice + prompts/list + resources/list (+ templates), per advertised capability. */
 export async function collectInventory(ctx: ScanContext): Promise<Inventory> {
   const session = ctx.session.session
-  const inv: Inventory = { tools: [], prompts: [], resources: [], capped: false }
+  const inv: Inventory = {
+    tools: [],
+    prompts: [],
+    resources: [],
+    listOutcomes: {},
+    capped: false,
+  }
   if (!session || !ctx.session.result) return inv
   const caps = isRecord(ctx.session.result.capabilities) ? ctx.session.result.capabilities : {}
   // A server that advertises nothing may still answer tools/list — ask anyway.
@@ -336,6 +455,7 @@ export async function collectInventory(ctx: ScanContext): Promise<Inventory> {
   if (askTools) {
     const first = await listAll(session, 'tools/list', 'tools')
     inv.toolsOutcome = first.first
+    if (first.first) inv.listOutcomes['tools/list'] = first.first
     inv.tools = first.items.map(toTool)
     inv.capped ||= first.capped
     if (first.error) inv.toolsError = first.error
@@ -346,12 +466,15 @@ export async function collectInventory(ctx: ScanContext): Promise<Inventory> {
   }
   if ('prompts' in caps && !ctx.http.signal.aborted) {
     const prompts = await listAll(session, 'prompts/list', 'prompts')
+    if (prompts.first) inv.listOutcomes['prompts/list'] = prompts.first
     inv.prompts = prompts.items.map((p) => toNamed(p, []))
     inv.capped ||= prompts.capped
   }
   if ('resources' in caps && !ctx.http.signal.aborted) {
     const resources = await listAll(session, 'resources/list', 'resources')
     const templates = await listAll(session, 'resources/templates/list', 'resourceTemplates')
+    if (resources.first) inv.listOutcomes['resources/list'] = resources.first
+    if (templates.first) inv.listOutcomes['resources/templates/list'] = templates.first
     inv.resources = [
       ...resources.items.map((r) => toNamed(r, ['uri'])),
       ...templates.items.map((r) => toNamed(r, ['uriTemplate'])),

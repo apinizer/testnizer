@@ -1460,6 +1460,11 @@ interface McpSecurityScanRequest {
   options: {
     /** Opt-in: ~30 rapid requests over the authenticated session. */
     rateLimitProbe: boolean
+    /**
+     * Opt-in (issue #152): call read-only tools without arguments to find an
+     * `input_required` one and test `requestState` tampering. Absent = off.
+     */
+    toolInvocationProbe?: boolean
     /** Per-request timeout, clamped to 1–60 s (default 15 s). */
     timeoutMs?: number
   }
@@ -1506,6 +1511,10 @@ interface McpSecurityReport {
     version: string
     protocolVersion: string
     capabilities: Record<string, unknown>
+    /** Protocol era of the scan's session (issue #152): `modern` = 2026-07-28, `legacy` = 2025. */
+    era?: 'legacy' | 'modern'
+    /** `server/discover` `supportedVersions` (modern era). */
+    supportedVersions?: string[]
   }
   truncated?: boolean
   cancelled?: boolean

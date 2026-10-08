@@ -7,6 +7,7 @@ import type {
   McpConfigTab,
   McpConnectRequest,
   McpConnectionClosedEvent,
+  McpElicitAnswer,
   McpFrame,
   McpFrameEvent,
   McpGetPromptResult,
@@ -18,10 +19,12 @@ import type {
   McpOAuthStepEvent,
   McpOAuthSummary,
   McpPrompt,
+  McpProtocolChoice,
   McpReadResourceResult,
   McpResource,
   McpResourceTemplate,
   McpSecurityScanRequest,
+  McpSubscriptionStateEvent,
   McpTool,
   McpTransport,
 } from '../types/mcp'
@@ -51,6 +54,15 @@ import {
   type McpSecurityTabState,
 } from './mcp-security.slice'
 import { defaultMcpAuth, resolveMcpAuth } from './mcp-auth.slice'
+import {
+  eraDefaults,
+  eraFromConnect,
+  eraIdle,
+  subscriptionEventPatch,
+  toolLegPatch,
+  type McpEraTabState,
+} from './mcp-era.slice'
+import { normalizeMcpProtocol } from '../lib/mcp-protocol'
 
 export type { McpTransport, McpTool } from '../types/mcp'
 
@@ -60,7 +72,7 @@ type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 export const MCP_EXPLORER_SECTION = 'explorer'
 export const MCP_SECURITY_SECTION = 'security'
 
-export interface TabMcpState extends McpSecurityTabState {
+export interface TabMcpState extends McpSecurityTabState, McpEraTabState {
   transport: McpTransport
   /** Server URL — for stdio, the command line (`npx -y @scope/server …`). */
   url: string
@@ -152,6 +164,8 @@ interface McpStore extends TabMcpState {
   _currentTabId: string | null
 
   setTransport: (t: McpTransport) => void
+  /** Protocol era negotiation for the next Connect (issue #152). Marks the tab dirty. */
+  setProtocol: (protocol: McpProtocolChoice) => void
   setUrl: (url: string) => void
   addHeader: () => void
   updateHeader: (id: string, updates: Partial<KeyValuePair>) => void
@@ -193,7 +207,7 @@ interface McpStore extends TabMcpState {
   forgetOAuth: () => Promise<void>
   /** Use the last flow's token for this tab and (re)connect with it. */
   connectWithOAuth: () => Promise<void>
-  /** Opt-in for the rate-limit probe (persisted per tab, not part of Ctrl+S). */
+  /** Opt-in for the active probes — rate-limit burst + tool calls (persisted per tab, not Ctrl+S). */
   setSecurityRateLimitProbe: (v: boolean) => void
   /** Run the MCP Security Scan against this tab's server (issue #142). */
   startSecurityScan: () => Promise<void>
@@ -204,6 +218,14 @@ interface McpStore extends TabMcpState {
   listResources: () => Promise<void>
   listPrompts: () => Promise<void>
   callTool: () => Promise<void>
+  /**
+   * Answer the pending `input_required` round (2026-07-28 MRTR): the same
+   * tool + arguments again with `inputResponses` keyed like `inputRequests`
+   * and the `requestState` echoed. May open the next round.
+   */
+  respondInput: (responses: Record<string, McpElicitAnswer>) => Promise<void>
+  /** Drop the pending input card without answering. */
+  dismissInput: () => void
   readResource: () => Promise<void>
   getPrompt: () => Promise<void>
   switchToTab: (tabId: string) => void
@@ -213,6 +235,7 @@ interface McpStore extends TabMcpState {
 /** Configuration + per-tab UI state — survives disconnect. */
 type McpConfigKeys =
   | 'transport'
+  | 'protocol'
   | 'url'
   | 'customHeaders'
   | 'envVars'
@@ -269,6 +292,7 @@ function disconnectedPatch(): ConnectionSlice {
     isGettingPrompt: false,
     _pendingConnectId: undefined,
     unauthorized: false,
+    ...eraIdle(),
   }
 }
 
@@ -315,6 +339,7 @@ function emptyState(): TabMcpState {
     securityRateLimitProbe: false,
     ...securityIdle(),
     ...disconnectedPatch(),
+    ...eraDefaults(),
   }
 }
 
@@ -378,6 +403,11 @@ function extractState(s: TabMcpState): TabMcpState {
     securityReport: s.securityReport,
     securityError: s.securityError,
     securityRateLimitProbe: s.securityRateLimitProbe,
+    protocol: s.protocol,
+    era: s.era,
+    discover: s.discover,
+    subscription: s.subscription,
+    pendingInput: s.pendingInput,
   }
 }
 
@@ -521,6 +551,15 @@ function handleFrame(evt: McpFrameEvent): void {
   if (!routed) stashOrphan(evt.connectionId, { f: entry })
 }
 
+/** 2026-07-28 `subscriptions/listen` opened / ended — shown in the Messages pane header. */
+function handleSubscriptionState(evt: McpSubscriptionStateEvent): void {
+  if (!evt || typeof evt.connectionId !== 'string') return
+  if (evt.state !== 'open' && evt.state !== 'closed') return
+  // The `open` ack also rides the connect result, so an event that beats the
+  // connect reply (no owner yet) loses nothing.
+  patchConnection(evt.connectionId, subscriptionEventPatch(evt))
+}
+
 function handleConnectionClosed(evt: McpConnectionClosedEvent): void {
   if (!evt || typeof evt.connectionId !== 'string') return
   orphanLogs.delete(evt.connectionId)
@@ -653,6 +692,9 @@ export function ensureMcpEventSubscriptions(): void {
   if (api.onNotification) unsubscribers.push(api.onNotification(handleNotification))
   if (api.onFrame) unsubscribers.push(api.onFrame(handleFrame))
   if (api.onConnectionClosed) unsubscribers.push(api.onConnectionClosed(handleConnectionClosed))
+  if (api.onSubscriptionState) {
+    unsubscribers.push(api.onSubscriptionState(handleSubscriptionState))
+  }
   if (api.onOauthStep) unsubscribers.push(api.onOauthStep(handleOAuthStep))
   if (api.onOauthDone) unsubscribers.push(api.onOauthDone(handleOAuthDone))
   if (api.onSecurityProgress) {
@@ -728,6 +770,15 @@ function activeVars(): Record<string, string> {
   return useEnvironmentStore.getState().getActiveVariables()
 }
 
+/** Workspace / project of a tools/call — main resolves `{{var}}` in mock templates with it. */
+function callContext(): { workspaceId?: string; projectId?: string } {
+  const ws = useWorkspaceStore.getState()
+  return {
+    workspaceId: ws.activeWorkspaceId || undefined,
+    projectId: ws.activeProjectId || undefined,
+  }
+}
+
 const errText = (e: unknown, fallback: string): string =>
   e instanceof Error ? e.message : typeof e === 'string' ? e : fallback
 
@@ -746,6 +797,10 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   },
   setUrl: (url) => {
     set({ url })
+    markActiveTabDirty()
+  },
+  setProtocol: (protocol) => {
+    set({ protocol: normalizeMcpProtocol(protocol) })
     markActiveTabDirty()
   },
   addHeader: () => {
@@ -811,7 +866,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     const tool = selectedTool ? get().tools.find((t) => t.name === selectedTool) : undefined
     const example = tool?.inputSchema ? generateExampleArgs(tool.inputSchema) : {}
     const toolArgs = JSON.stringify(example, null, 2)
-    set({ selectedTool, toolArgs, result: null, resultError: null })
+    set({ selectedTool, toolArgs, result: null, resultError: null, pendingInput: null })
   },
   setToolArgs: (toolArgs) => set({ toolArgs }),
   selectResource: (key) => {
@@ -954,7 +1009,12 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     const request: McpSecurityScanRequest = {
       url: resolveVariables(st.url, vars).trim(),
       transport: st.transport === 'sse' ? 'sse' : 'http',
-      options: { rateLimitProbe: st.securityRateLimitProbe },
+      // One "active probes" opt-in drives both: the rate-limit burst and the
+      // tool calls of `auth.request_state_tampering` (issue #152).
+      options: {
+        rateLimitProbe: st.securityRateLimitProbe,
+        toolInvocationProbe: st.securityRateLimitProbe,
+      },
     }
     // The tab's current headers and OAuth token session — main strips the
     // credentials for the unauthenticated probes; the token never comes here.
@@ -1001,6 +1061,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     const {
       transport,
       url,
+      protocol,
       customHeaders,
       envVars,
       auth,
@@ -1033,6 +1094,9 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     const vars = activeVars()
     const resolvedUrl = resolveVariables(url, vars)
     const request: McpConnectRequest = { transport, url: resolvedUrl, _pendingId: pendingConnectId }
+    // Era negotiation (issue #152) on every transport — the engine treats
+    // `auto` as `legacy` on the pre-2026 HTTP+SSE transport itself.
+    request.protocol = normalizeMcpProtocol(protocol)
     if (transport === 'stdio') {
       // The URL field holds the command line; split it here (quote-aware) so
       // an argument containing a space survives — the engine only splits the
@@ -1084,6 +1148,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
         _pendingConnectId: undefined,
         notifications: orphans.notifications,
         frames: orphans.frames,
+        ...eraFromConnect(d),
       })
       await loadCapabilities(d.connectionId, d.capabilities)
     } else {
@@ -1163,25 +1228,52 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       set({ resultError: 'Invalid JSON in arguments', result: null })
       return
     }
-    set({ isInvoking: true, result: null, resultError: null })
-    const ws = useWorkspaceStore.getState()
+    set({ isInvoking: true, result: null, resultError: null, pendingInput: null })
     let res: Awaited<ReturnType<McpBridge['callTool']>>
     try {
-      res = await api.callTool(connectionId, selectedTool, args, {
-        workspaceId: ws.activeWorkspaceId || undefined,
-        projectId: ws.activeProjectId || undefined,
-      })
+      res = await api.callTool(connectionId, selectedTool, args, callContext())
+    } catch (e) {
+      res = { success: false, error: errText(e, 'Tool call failed') }
+    }
+    // A 2026-07-28 `input_required` answer opens the input card (MRTR).
+    patchConnection(connectionId, (s) =>
+      s.selectedTool !== selectedTool
+        ? { isInvoking: false }
+        : toolLegPatch(res, { toolName: selectedTool, args, round: 1 }),
+    )
+  },
+
+  respondInput: async (responses) => {
+    const { connectionId, pendingInput } = get()
+    if (!connectionId || !pendingInput) return
+    const api = getMcpApi()
+    if (!api?.respondInput) {
+      set({ resultError: 'Input responses are not available', pendingInput: null })
+      return
+    }
+    const { toolName, args, requestState, round } = pendingInput
+    set({ isInvoking: true, resultError: null })
+    let res: Awaited<ReturnType<McpBridge['respondInput']>>
+    try {
+      res = await api.respondInput(
+        connectionId,
+        toolName,
+        args,
+        requestState,
+        responses,
+        callContext(),
+      )
     } catch (e) {
       res = { success: false, error: errText(e, 'Tool call failed') }
     }
     patchConnection(connectionId, (s) =>
-      s.selectedTool !== selectedTool
+      s.selectedTool !== toolName
         ? { isInvoking: false }
-        : res.success
-          ? { result: res.data, resultError: null, isInvoking: false }
-          : { result: null, resultError: res.error ?? 'Tool call failed', isInvoking: false },
+        : toolLegPatch(res, { toolName, args, round: round + 1 }),
     )
   },
+
+  dismissInput: () => set({ pendingInput: null }),
 
   readResource: async () => {
     const { connectionId, resourceUriDraft, selectedResourceUri } = get()

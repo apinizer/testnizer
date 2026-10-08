@@ -18,6 +18,10 @@
  *     `test://greeting`, `test://pixel.png` and the template `test://item/{id}`
  *     (issue #139); prompts (`summarize`), notifications (`notify` tool) and
  *     config paste/export have their own issue #139 journeys below.
+ *   - Issue #152 (protocol 2026-07-28): the global server is the v2 SDK one
+ *     (both eras on /mcp). Auto negotiates `server/discover`, Legacy forces
+ *     `initialize`, `ask_count` drives the multi-round-trip input card, and a
+ *     Mock MCP server with "Legacy clients: Reject" serves 2026-07-28 only.
  *
  * Needs hook:
  *   - MST-147: SSEServerTransport. Uses @modelcontextprotocol/sdk's SSEServerTransport.
@@ -314,19 +318,167 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
       await expect(notifications).toContainText('notify tool started')
       await expect(notifications).toContainText('notifications/progress')
 
+      // Auto (the default) negotiates 2026-07-28 with the v2 server: the
+      // handshake is `server/discover`, not `initialize` (issue #152).
       await window.getByTestId('mcp-messages-tab-frames').click()
       const frames = window.getByTestId('mcp-frames')
-      await expect(frames).toContainText('initialize', { timeout: 10_000 })
+      await expect(frames).toContainText('server/discover', { timeout: 10_000 })
       await expect(frames).toContainText('tools/call')
+      await expect(frames.getByText(/^initialize/)).toHaveCount(0)
+      await frames
+        .getByText(/^server\/discover/)
+        .first()
+        .click()
+      await expect(window.getByTestId('mcp-frames-detail')).toContainText('2026-07-28')
+
+      await window.getByTestId('mcp-connect').click()
+    },
+  )
+
+  // ── Issue #152: protocol era selector ─────────────────────────────────────
+  uiTest(
+    'issue #152 MCP protocol: Auto speaks 2026-07-28, Legacy forces the 2025 initialize',
+    async ({ window }) => {
+      const { mcp } = getTestServerUrls()
+      await openNewDropdownItem(window, /MCP/i)
+      await window.getByTestId('mcp-transport').selectOption('http')
+      await window.getByTestId('mcp-url').fill(mcp)
+      await expect(window.getByTestId('mcp-protocol')).toHaveValue('auto')
+
+      // Auto → modern era, server/discover in the frames, listen stream open.
+      await window.getByTestId('mcp-connect').click()
+      await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
+      const badge = window.getByTestId('mcp-protocol-version')
+      await expect(badge).toHaveText('MCP 2026-07-28')
+      await expect(badge).toHaveAttribute('data-era', 'modern')
+      await expect(window.getByTestId('mcp-protocol')).toBeDisabled()
+      await expect(window.getByTestId('mcp-subscription')).toContainText('tools', {
+        timeout: 10_000,
+      })
+      await window.getByTestId('mcp-messages-toggle').click()
+      await window.getByTestId('mcp-messages-tab-frames').click()
+      await expect(window.getByTestId('mcp-frames')).toContainText('server/discover', {
+        timeout: 10_000,
+      })
+      await window.getByTestId('mcp-connect').click()
+      await expect(window.getByTestId('mcp-connect')).not.toHaveText(/Disconnect/i, {
+        timeout: 8_000,
+      })
+
+      // Legacy → the plain 2025 handshake, no probe.
+      await window.getByTestId('mcp-protocol').selectOption('legacy')
+      await window.getByTestId('mcp-connect').click()
+      await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
+      await expect(badge).toHaveText(/^MCP 2025-\d\d-\d\d \(legacy\)$/)
+      await expect(badge).toHaveAttribute('data-era', 'legacy')
+      const frames = window.getByTestId('mcp-frames')
+      await expect(frames).toContainText('initialize', { timeout: 10_000 })
+      await expect(frames).not.toContainText('server/discover')
       await frames
         .getByText(/^initialize/)
         .first()
         .click()
       await expect(window.getByTestId('mcp-frames-detail')).toContainText('protocolVersion')
+      // No listen stream on the legacy era.
+      await expect(window.getByTestId('mcp-subscription')).toHaveCount(0)
 
       await window.getByTestId('mcp-connect').click()
     },
   )
+
+  // ── Issue #152: multi-round-trip tools/call (MRTR) ────────────────────────
+  // `ask_count` answers `input_required` with one elicitation (`count`, a
+  // number); the card's Submit retries with the answer + the echoed state.
+  uiTest('issue #152 MCP input-required card: ask_count round trip', async ({ window }) => {
+    const { mcp } = getTestServerUrls()
+    await openNewDropdownItem(window, /MCP/i)
+    await window.getByTestId('mcp-transport').selectOption('http')
+    await window.getByTestId('mcp-url').fill(mcp)
+    await window.getByTestId('mcp-connect').click()
+    await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
+
+    await window.getByTestId('mcp-tool-ask_count').click()
+    await window.getByTestId('mcp-tool-args').fill('{"label":"apples"}')
+    await window.getByTestId('mcp-invoke').click()
+    const card = window.getByTestId('mcp-input-required')
+    await expect(card).toBeVisible({ timeout: 10_000 })
+    await expect(card).toContainText('How many apples?')
+    await expect(card).toHaveAttribute('data-round', '1')
+
+    // Submitting the empty required field is caught locally.
+    await window.getByTestId('mcp-input-submit').click()
+    await expect(window.getByTestId('mcp-input-problem')).toContainText('count')
+
+    await window.getByTestId('mcp-input-field-count-count').fill('3')
+    await window.getByTestId('mcp-input-submit').click()
+    await expect(card).toBeHidden({ timeout: 10_000 })
+    await expect(window.getByTestId('mcp-result')).toContainText('3 apples', { timeout: 10_000 })
+
+    // The retry carried inputResponses + requestState on the wire.
+    await window.getByTestId('mcp-messages-toggle').click()
+    await window.getByTestId('mcp-messages-tab-frames').click()
+    const frames = window.getByTestId('mcp-frames')
+    await frames
+      .getByText(/^tools\/call/)
+      .last()
+      .click()
+    const detail = window.getByTestId('mcp-frames-detail')
+    await expect(detail).toContainText('inputResponses')
+    await expect(detail).toContainText('requestState')
+
+    // Decline ends the flow with the server's own answer.
+    await window.getByTestId('mcp-invoke').click()
+    await expect(card).toBeVisible({ timeout: 10_000 })
+    await window.getByTestId('mcp-input-decline').click()
+    await expect(card).toBeHidden({ timeout: 10_000 })
+    await expect(
+      window.getByTestId('mcp-result').or(window.getByTestId('mcp-result-call-error')),
+    ).toBeVisible({ timeout: 10_000 })
+
+    await window.getByTestId('mcp-connect').click()
+  })
+
+  // ── Issue #152: Mock MCP "Legacy clients: Reject" ─────────────────────────
+  uiTest('issue #152 Mock MCP legacy mode Reject serves 2026-07-28 only', async ({ window }) => {
+    const port = await getFreePort()
+    await navigateSidebar(window, 'mocks')
+    await window.getByTestId('mock-group-add-mcp').click()
+    await expect(window.getByTestId('mock-new-type-mcp')).toHaveAttribute('aria-checked', 'true')
+    await window.getByTestId('mock-new-name').fill(`Modern only ${port}`)
+    await window.getByTestId('mock-new-port').fill(String(port))
+    await window.getByTestId('mock-new-create').click()
+    await expect(window.getByTestId('mock-mcp-editor')).toBeVisible({ timeout: 10_000 })
+
+    await expect(window.getByTestId('mock-mcp-legacy-mode')).toHaveValue('stateless')
+    await window.getByTestId('mock-mcp-legacy-mode').selectOption('reject')
+    await window.getByTestId('mock-mcp-cache-ttl').fill('60000')
+    await window.getByTestId('mock-mcp-cache-ttl').press('Tab')
+    await expect(window.getByText(/-32022/).first()).toBeVisible()
+    await window.getByTestId('mock-mcp-save').click()
+    await expect(window.getByTestId('mock-mcp-save')).toBeDisabled({ timeout: 10_000 })
+
+    await window.getByTestId('mock-mcp-start').click()
+    const eras = window.getByTestId('mock-mcp-eras')
+    await expect(eras).toContainText('2026-07-28', { timeout: 10_000 })
+    await expect(eras).not.toContainText('2025')
+
+    // A pinned 2025 client is refused (-32022); Auto connects on 2026-07-28.
+    await window.getByTestId('mock-mcp-open-in-mcp').click()
+    await expect(window.getByTestId('mcp-url')).toHaveValue(new RegExp(`:${port}/mcp$`))
+    await window.getByTestId('mcp-protocol').selectOption('2025-11-25')
+    await window.getByTestId('mcp-connect').click()
+    await expect(window.getByTestId('mcp-error')).toContainText('-32022', { timeout: 15_000 })
+    await window.getByTestId('mcp-protocol').selectOption('auto')
+    await window.getByTestId('mcp-connect').click()
+    await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
+    await expect(window.getByTestId('mcp-protocol-version')).toHaveText('MCP 2026-07-28')
+    await window.getByTestId('mcp-connect').click()
+
+    await navigateSidebar(window, 'mocks')
+    await window.getByText(`Modern only ${port}`).first().click()
+    await window.getByTestId('mock-mcp-stop').click()
+    await expect(window.getByTestId('mock-mcp-start')).toBeVisible({ timeout: 10_000 })
+  })
 
   // ── Issue #139: paste a host config ───────────────────────────────────────
   uiTest(

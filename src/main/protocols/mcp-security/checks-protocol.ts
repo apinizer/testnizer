@@ -11,6 +11,7 @@ import {
   noSessionReason,
   pass,
   problem,
+  serverInfoFromResult,
   skipped,
   type CheckDef,
   type CheckOutcome,
@@ -18,7 +19,7 @@ import {
   type ToolLite,
 } from './context'
 import { REFS } from './refs'
-import type { HttpResult } from './wire'
+import { MODERN_PROTOCOL_VERSION, modernEnvelope, type HttpResult } from './wire'
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v)
@@ -33,10 +34,15 @@ function needsSession(ctx: ScanContext): CheckOutcome | null {
 
 // ─── protocol ───────────────────────────────────────────────
 
+/**
+ * The handshake result: `initialize` (2025) or — on a 2026-07-28 session —
+ * the `server/discover` descriptor (`supportedVersions`, `capabilities`,
+ * serverInfo in `_meta`). The id predates issue #152 and stays stable.
+ */
 const initializeShape: CheckDef = {
   id: 'protocol.initialize_shape',
   category: 'protocol',
-  title: 'initialize result',
+  title: 'Handshake result (initialize / server/discover)',
   refs: [REFS.mcpLifecycle],
   run: (ctx) => {
     const s = ctx.session
@@ -53,18 +59,33 @@ const initializeShape: CheckDef = {
       )
     }
     const r = s.result ?? {}
+    const modern = s.era === 'modern'
     const problems: string[] = []
-    const version = r.protocolVersion
-    if (typeof version !== 'string') problems.push('`protocolVersion` is missing.')
-    else if (!SUPPORTED_PROTOCOL_VERSIONS.includes(version)) {
-      problems.push(
-        `protocolVersion "${version}" is not one this client supports (${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}).`,
-      )
+    let version: string
+    if (modern) {
+      const versions = Array.isArray(r.supportedVersions) ? r.supportedVersions : []
+      if (versions.length === 0 || !versions.every((v) => typeof v === 'string')) {
+        problems.push('`supportedVersions` is not a non-empty list of version strings.')
+      }
+      version = versions.join(', ')
+    } else {
+      const v = r.protocolVersion
+      version = typeof v === 'string' ? v : ''
+      if (typeof v !== 'string') problems.push('`protocolVersion` is missing.')
+      else if (!SUPPORTED_PROTOCOL_VERSIONS.includes(v)) {
+        problems.push(
+          `protocolVersion "${v}" is not one this client supports (${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}).`,
+        )
+      }
     }
     if (!isRecord(r.capabilities)) problems.push('`capabilities` is not an object.')
-    const serverInfo = isRecord(r.serverInfo) ? r.serverInfo : undefined
+    const serverInfo = serverInfoFromResult(r)
     if (typeof serverInfo?.name !== 'string' || !serverInfo.name) {
-      problems.push('`serverInfo.name` is missing.')
+      problems.push(
+        modern
+          ? '`_meta["io.modelcontextprotocol/serverInfo"].name` is missing.'
+          : '`serverInfo.name` is missing.',
+      )
     }
     const evidence = ev(s.init?.http)
     if (problems.length > 0) {
@@ -72,13 +93,15 @@ const initializeShape: CheckDef = {
         'fail',
         'medium',
         problems.join(' '),
-        'Return a spec-shaped initialize result so clients can negotiate features safely.',
+        modern
+          ? 'Return a spec-shaped server/discover result (supportedVersions, capabilities, serverInfo) so clients can negotiate safely.'
+          : 'Return a spec-shaped initialize result so clients can negotiate features safely.',
         evidence,
       )
     }
     const caps = Object.keys(r.capabilities as Record<string, unknown>)
     return pass(
-      `protocolVersion ${String(version)}; serverInfo ${String(serverInfo?.name)} ${String(serverInfo?.version ?? '')}; capabilities: ${caps.join(', ') || '(none)'}.`,
+      `${modern ? 'server/discover — supportedVersions' : 'protocolVersion'} ${version}; serverInfo ${String(serverInfo?.name)} ${String(serverInfo?.version ?? '')}; capabilities: ${caps.join(', ') || '(none)'}.`,
       evidence,
     )
   },
@@ -234,6 +257,7 @@ const batchRejected: CheckDef = {
     if (blocked) return blocked
     const session = ctx.session.session
     if (!session) return skipped(noSessionReason(ctx))
+    if (session.era === 'modern') return modernBatch(ctx)
     const version = session.protocolVersion
     if (version && version < BATCH_REMOVED_IN) {
       return skipped(
@@ -268,6 +292,52 @@ const batchRejected: CheckDef = {
     }
     return info(`A JSON-RPC batch got HTTP ${http.status}.`, evidence)
   },
+}
+
+/**
+ * 2026-07-28 has no JSON-RPC batching at all: a JSON array must be rejected
+ * (HTTP 4xx / a JSON-RPC error). Processing it is a conformance gap with the
+ * same weight as on a 2025-06-18+ session.
+ */
+async function modernBatch(ctx: ScanContext): Promise<CheckOutcome> {
+  const session = ctx.session.session
+  if (!session) return skipped(noSessionReason(ctx))
+  const member = (id: string): Record<string, unknown> => ({
+    jsonrpc: '2.0',
+    id,
+    method: 'tools/list',
+    params: { _meta: modernEnvelope() },
+  })
+  const http = await session.postRaw(
+    JSON.stringify([member('tz-scan-batch-1'), member('tz-scan-batch-2')]),
+  )
+  if (!http || http.status === undefined) {
+    return skipped(`No response to the batch (${http?.error ?? 'no session'}).`)
+  }
+  const evidence = ev(http)
+  const message = Array.isArray(http.json) ? http.json[0] : http.json
+  if (http.status >= 400 && http.status < 500) {
+    return pass(
+      `A JSON-RPC batch is rejected with HTTP ${http.status} — ${MODERN_PROTOCOL_VERSION} has no batching.`,
+      evidence,
+    )
+  }
+  if (isRecord(message) && isRecord(message.error)) {
+    return pass(
+      `A JSON-RPC batch is rejected with a JSON-RPC error (${MODERN_PROTOCOL_VERSION} has no batching).`,
+      evidence,
+    )
+  }
+  if (isRecord(message) && 'result' in message) {
+    return problem(
+      'warn',
+      'low',
+      `The server processed a JSON-RPC batch on protocol ${MODERN_PROTOCOL_VERSION}, which has no batching at all.`,
+      'Reject JSON arrays with HTTP 400 / JSON-RPC -32600 on 2026-07-28 requests.',
+      evidence,
+    )
+  }
+  return info(`A JSON-RPC batch got HTTP ${http.status}.`, evidence)
 }
 
 // ─── cors ───────────────────────────────────────────────────

@@ -145,7 +145,8 @@ describe('startSecurityScan', () => {
       transport: 'sse',
       headers: { Authorization: 'Bearer abc' },
       oauthSessionId: 'mcp-oauth-9',
-      options: { rateLimitProbe: true },
+      // One "active probes" opt-in drives both probes (issue #152).
+      options: { rateLimitProbe: true, toolInvocationProbe: true },
     })
     const s = useMcpStore.getState()
     expect(s.securityScanId).toBe('scan-1')

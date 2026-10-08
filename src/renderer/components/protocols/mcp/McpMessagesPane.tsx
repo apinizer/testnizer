@@ -8,7 +8,8 @@ import {
   formatLogTime,
   truncatedFrameInfo,
 } from '../../../lib/mcp-store-helpers'
-import type { McpFrame } from '../../../types/mcp'
+import type { McpFrame, McpSubscriptionView } from '../../../types/mcp'
+import { describeSubscriptionFilter } from '../../../lib/mcp-protocol'
 import McpLogView from './McpLogView'
 
 type SubTab = 'notifications' | 'frames'
@@ -33,6 +34,32 @@ function frameDetail(f: McpFrame, note: string): unknown {
 }
 
 /**
+ * 2026-07-28 `subscriptions/listen` state (issue #152): what the server agreed
+ * to deliver, or why the stream is not (or no longer) open.
+ */
+function SubscriptionBadge({ sub }: { sub: McpSubscriptionView }) {
+  const { t } = useTranslation()
+  const text =
+    sub.state === 'open'
+      ? `${t('mcp.subscription.open')}: ${describeSubscriptionFilter(sub.honoredFilter) || t('mcp.subscription.nothing')}`
+      : sub.state === 'error'
+        ? t('mcp.subscription.failed')
+        : `${t('mcp.subscription.closed')}${sub.reason ? ` (${sub.reason})` : ''}`
+  return (
+    <span
+      data-testid="mcp-subscription"
+      data-state={sub.state}
+      title={sub.state === 'error' ? sub.reason : t('mcp.subscription.hint')}
+      className={`ml-auto truncate text-[11px] ${
+        sub.state === 'open' ? 'text-[var(--green)]' : 'text-[var(--orange)]'
+      }`}
+    >
+      {text}
+    </span>
+  )
+}
+
+/**
  * Collapsible bottom pane of the MCP editor (issue #139): server
  * notifications and the raw JSON-RPC frames of this tab's connection.
  */
@@ -44,6 +71,7 @@ export default function McpMessagesPane() {
   const frames = useMcpStore((s) => s.frames)
   const clearNotifications = useMcpStore((s) => s.clearNotifications)
   const clearFrames = useMcpStore((s) => s.clearFrames)
+  const subscription = useMcpStore((s) => s.subscription)
 
   const subTabs: { id: SubTab; label: string; count: number }[] = [
     { id: 'notifications', label: t('mcp.messages.notifications'), count: notifications.length },
@@ -84,6 +112,7 @@ export default function McpMessagesPane() {
             {st.label} <span className="text-[11px]">({st.count})</span>
           </button>
         ))}
+        {subscription && <SubscriptionBadge sub={subscription} />}
       </div>
       {open && tab === 'notifications' && (
         <McpLogView

@@ -12,7 +12,9 @@ import {
   uniqueName,
 } from '../../src/renderer/components/mock-mcp/mock-mcp-presets'
 import {
+  normalizeCacheTtl,
   normalizeErrorMode,
+  normalizeLegacyMode,
   normalizePath,
   normalizePrompts,
   normalizeResources,
@@ -36,6 +38,8 @@ describe('Mock MCP presets', () => {
       latencyMs: input.latencyMs ?? 0,
       errorMode: normalizeErrorMode(input.errorMode ?? { kind: 'none' }),
       protocolPin: input.protocolPin ?? null,
+      legacyMode: normalizeLegacyMode(input.legacyMode),
+      cacheTtlMs: normalizeCacheTtl(input.cacheTtlMs),
       tools: normalizeTools(input.tools),
       resources: normalizeResources(input.resources ?? []),
       prompts: normalizePrompts(input.prompts ?? []),
@@ -43,6 +47,9 @@ describe('Mock MCP presets', () => {
     expect(problem).toBeNull()
     expect(input.projectId).toBe('p-1')
     expect(input.tools?.length ?? 0).toBeGreaterThan(0)
+    // issue #152: the era posture is explicit, not left to the backend default.
+    expect(input.legacyMode).toBe('stateless')
+    expect(input.cacheTtlMs).toBe(0)
   })
 
   it('every preset tool advertises an object input schema and a valid JSON body', () => {

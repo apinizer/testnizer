@@ -2,17 +2,22 @@
  * Issue #142 — MCP Security Scan engine, REAL round trips (no SDK mocks).
  *
  * Targets: the app's own Mock MCP server (default / bearer / legacy SSE /
- * latency), and a deliberately BAD fixture server written here with plain
- * `node:http` (wildcard CORS + credentials, X-Powered-By, text/html JSON-RPC,
- * stack traces on malformed JSON, poisoned and shadowing tool names, an
- * optional 429 after N pings).
+ * latency / `legacyMode: 'reject'`), the e2e MCP servers (v2 SDK serving
+ * 2026-07-28 + 2025, v2 with `legacy: 'reject'`, the stateful v1 one), a
+ * deliberately BAD fixture server written here with plain `node:http`
+ * (wildcard CORS + credentials, X-Powered-By, text/html JSON-RPC, stack
+ * traces on malformed JSON, poisoned and shadowing tool names, an optional
+ * 429 after N pings), and a LAX 2026-07-28 fixture for the negative branches
+ * of the modern-era checks (issue #152).
  */
 import http from 'node:http'
-import type { AddressInfo } from 'node:net'
+import net, { type AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mockMcpServerManager } from '../../src/main/mock-mcp/server'
+import { exampleElicitationTool } from '../../src/main/mock-mcp/config'
 import type { MockMcpServerDef } from '../../src/main/mock-mcp/types'
 import {
+  buildMcpSecurityHtmlReport,
   gradeOf,
   runMcpSecurityScan,
   scoreOf,
@@ -20,6 +25,14 @@ import {
   type McpSecurityReport,
   type McpSecurityScanInput,
 } from '../../src/main/protocols/mcp-security.engine'
+import {
+  elicitProbeCandidates,
+  MAX_ELICIT_PROBES,
+  tamperRequestState,
+} from '../../src/main/protocols/mcp-security/checks-modern'
+import { encodeMcpHeaderValue } from '../../src/main/protocols/mcp-security/wire'
+import { startMcpServer } from '../e2e/servers/mcp-server'
+import { startMcpServerV1 } from '../e2e/servers/mcp-server-v1'
 
 const BEARER = 'tok-142-bearer-0123456789abcdef'
 const API_KEY = 'xak-142-apikey-fedcba9876543210'
@@ -40,6 +53,8 @@ function baseDef(over: Partial<MockMcpServerDef> = {}): MockMcpServerDef {
     latencyMs: 0,
     errorMode: { kind: 'none' },
     protocolPin: null,
+    legacyMode: 'stateless',
+    cacheTtlMs: 0,
     tools: [
       {
         name: 'echo',
@@ -238,15 +253,21 @@ describe('default Mock MCP server (http, loopback, no auth)', () => {
       'protocol.tools_list_deterministic',
       'protocol.schemas_wellformed',
       'protocol.unknown_method',
+      // The v2 mock serves 2026-07-28 (issue #152): no batching there at all.
+      'protocol.batch_rejected',
+      'protocol.discover_present',
+      'protocol.mcp_method_header_validated',
+      'protocol.cacheable_results',
     ]) {
       expect(find(report, id).status, id).toBe('pass')
     }
-    // SDK 1.29's StreamableHTTPServerTransport still processes JSON arrays on a
-    // 2025-11-25 session — exactly what the check is for (low warn, not a pass).
-    expect(find(report, 'protocol.batch_rejected')).toMatchObject({
-      status: 'warn',
-      severity: 'low',
-    })
+    expect(find(report, 'protocol.legacy_fallback').detail).toMatch(/^Serves both eras/)
+    // Active probes are opt-in: the tool-calling check did not run.
+    const tamper = find(report, 'auth.request_state_tampering')
+    expect(tamper.status).toBe('skipped')
+    expect(tamper.detail).toMatch(/^Not run — this check calls tools/)
+    // No credentials → nothing per-user to leak through a shared cache.
+    expect(find(report, 'disclosure.cache_scope_public_with_auth').status).toBe('skipped')
     for (const id of [
       'injection.instruction_override',
       'injection.hidden_unicode',
@@ -263,7 +284,12 @@ describe('default Mock MCP server (http, loopback, no auth)', () => {
     expect(report.score).toBe(scoreOf(all(report)))
     expect(report.grade).toBe(gradeOf(report.score))
     expect(report.grade).toBe('A')
-    expect(report.serverInfo).toMatchObject({ name: 'Scan Target', protocolVersion: '2025-11-25' })
+    expect(report.serverInfo).toMatchObject({
+      name: 'Scan Target',
+      protocolVersion: '2026-07-28',
+      era: 'modern',
+      supportedVersions: ['2026-07-28'],
+    })
     expect(report.target).toMatchObject({
       host: new URL(url).host,
       scheme: 'http',
@@ -292,6 +318,15 @@ describe('default Mock MCP server (http, loopback, no auth)', () => {
     expect(find(report, 'protocol.tools_list_deterministic').status).toBe('pass')
     expect(find(report, 'protocol.batch_rejected').status).toBe('skipped')
     expect(find(report, 'headers.content_type_json').detail).toContain('text/event-stream')
+    // Legacy SSE predates 2026-07-28: never probed with server/discover.
+    expect(report.serverInfo?.era).toBe('legacy')
+    for (const id of [
+      'protocol.discover_present',
+      'protocol.mcp_method_header_validated',
+      'auth.request_state_tampering',
+    ]) {
+      expect(find(report, id).detail, id).toMatch(/legacy HTTP\+SSE predates/)
+    }
   })
 
   it('an unreachable target is graded F with an error, not from skipped checks', async () => {
@@ -661,5 +696,384 @@ describe('Authorization tab (MCP Auth) on the authenticated requests', () => {
     })
     expect(find(report, 'protocol.initialize_shape').status).toBe('pass')
     expect(JSON.stringify(report)).not.toContain(BEARER)
+  })
+})
+
+// ─── (g) protocol 2026-07-28 (issue #152) ───────────────────
+
+async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer()
+    srv.listen(0, '127.0.0.1', () => {
+      const port = (srv.address() as AddressInfo).port
+      srv.close(() => resolve(port))
+    })
+    srv.on('error', reject)
+  })
+}
+
+async function e2eServer(opts?: Parameters<typeof startMcpServer>[1]): Promise<string> {
+  const srv = await startMcpServer(await freePort(), opts)
+  cleanups.push(srv.close)
+  return srv.url
+}
+
+/** Scan options with the opt-in tool-invocation probe on (issue #152). */
+const TOOL_PROBE: Partial<McpSecurityScanInput> = {
+  options: { rateLimitProbe: false, toolInvocationProbe: true, timeoutMs: 5000 },
+}
+
+const MODERN_IDS = [
+  'protocol.mcp_method_header_validated',
+  'protocol.cacheable_results',
+  'protocol.legacy_fallback',
+  'disclosure.cache_scope_public_with_auth',
+  'auth.request_state_tampering',
+]
+
+describe('protocol eras (issue #152)', () => {
+  it('v2 SDK server (both eras): modern session, every 2026-07-28 check passes, ask_count is probed', async () => {
+    const report = await scan(await e2eServer(), TOOL_PROBE)
+    expect(report.serverInfo).toMatchObject({
+      name: 'testnizer-e2e-mcp',
+      protocolVersion: '2026-07-28',
+      era: 'modern',
+      supportedVersions: ['2026-07-28'],
+    })
+    for (const id of [
+      'protocol.initialize_shape',
+      'protocol.discover_present',
+      'protocol.mcp_method_header_validated',
+      'protocol.cacheable_results',
+      'protocol.batch_rejected',
+      'protocol.unknown_method',
+    ]) {
+      expect(find(report, id).status, `${id}: ${find(report, id).detail}`).toBe('pass')
+    }
+    const header = find(report, 'protocol.mcp_method_header_validated')
+    expect(header.detail).toContain('-32020')
+    expect(header.evidence?.request?.headers['mcp-method']).toBe('prompts/list')
+    const tamper = find(report, 'auth.request_state_tampering')
+    expect(tamper.status).toBe('pass')
+    expect(tamper.detail).toMatch(/"ask_count".*-32602/)
+    expect(find(report, 'protocol.legacy_fallback')).toMatchObject({ status: 'info' })
+    expect(find(report, 'protocol.legacy_fallback').detail).toMatch(/^Serves both eras/)
+    // Every authenticated request carried the 2026-07-28 envelope headers.
+    expect(find(report, 'protocol.initialize_shape').evidence?.request?.headers).toMatchObject({
+      'mcp-method': 'server/discover',
+      'mcp-protocol-version': '2026-07-28',
+    })
+  })
+
+  it('v2 SDK server with legacy: reject → "modern only"; the unauthenticated probe is server/discover', async () => {
+    const report = await scan(await e2eServer({ legacy: 'reject' }))
+    expect(report.serverInfo?.era).toBe('modern')
+    const fallback = find(report, 'protocol.legacy_fallback')
+    expect(fallback.status).toBe('info')
+    expect(fallback.detail).toMatch(/^Modern only: .*-32022/)
+    const unauth = find(report, 'auth.unauth_initialize')
+    expect(unauth.status).toBe('info')
+    expect(unauth.detail).toContain('completes server/discover without credentials')
+  })
+
+  it('v1 SDK server (2025 only): legacy session, discover reported as info, the 2026-07-28 checks skipped', async () => {
+    const srv = await startMcpServerV1(await freePort())
+    cleanups.push(srv.close)
+    const report = await scan(srv.url)
+    expect(report.serverInfo).toMatchObject({ protocolVersion: '2025-11-25', era: 'legacy' })
+    expect(report.serverInfo?.supportedVersions).toBeUndefined()
+    const discover = find(report, 'protocol.discover_present')
+    expect(discover.status).toBe('info')
+    expect(discover.detail).toMatch(/a 2025-era server/)
+    for (const id of MODERN_IDS) {
+      const f = find(report, id)
+      expect(f.status, id).toBe('skipped')
+      expect(f.detail, id).toMatch(/2025-era protocol/)
+    }
+    // Legacy keeps the batching warning (2025-11-25 removed batching; v1 still processes it).
+    expect(find(report, 'protocol.batch_rejected')).toMatchObject({
+      status: 'warn',
+      severity: 'low',
+    })
+    expect(find(report, 'protocol.initialize_shape').status).toBe('pass')
+  })
+
+  it('Mock MCP with legacyMode: reject + bearer + an elicitation tool', async () => {
+    const { url } = await startMock({
+      authMode: 'bearer',
+      bearerToken: BEARER,
+      legacyMode: 'reject',
+      cacheTtlMs: 5000,
+      tools: [exampleElicitationTool()],
+    })
+    const report = await scan(url, {
+      ...TOOL_PROBE,
+      headers: { Authorization: `Bearer ${BEARER}` },
+    })
+    expect(report.serverInfo).toMatchObject({ name: 'Scan Target', era: 'modern' })
+    expect(find(report, 'auth.unauth_initialize')).toMatchObject({ status: 'pass' })
+    expect(find(report, 'auth.www_authenticate').status).toBe('pass')
+    expect(find(report, 'protocol.legacy_fallback').detail).toMatch(/^Modern only/)
+    expect(find(report, 'protocol.cacheable_results').detail).toContain(
+      'tools/list: ttlMs 5000, private',
+    )
+    // Authenticated + private scope → no shared-cache disclosure.
+    expect(find(report, 'disclosure.cache_scope_public_with_auth').status).toBe('pass')
+    const tamper = find(report, 'auth.request_state_tampering')
+    expect(tamper.status).toBe('pass')
+    expect(tamper.detail).toMatch(/"ask_name".*-32602/)
+    expect(JSON.stringify(report)).not.toContain(BEARER)
+  })
+
+  it('the HTML report carries the era line', async () => {
+    const report = await scan(await e2eServer())
+    const html = buildMcpSecurityHtmlReport(report)
+    expect(html).toContain('data-era="modern"')
+    expect(html).toContain(
+      'Protocol era: 2026-07-28 (modern, server/discover) · supported versions 2026-07-28',
+    )
+    const legacy = buildMcpSecurityHtmlReport({
+      ...report,
+      serverInfo: { ...report.serverInfo!, era: 'legacy', supportedVersions: undefined },
+    })
+    expect(legacy).toContain('Protocol era: 2025 (legacy, initialize)')
+  })
+})
+
+// ─── (h) a lax 2026-07-28 server — the negative branches ────
+
+interface LaxFlags {
+  acceptWrongMcpMethod?: boolean
+  omitCacheHints?: boolean
+  cacheScopePublic?: boolean
+  acceptAnyRequestState?: boolean
+  requireBearer?: string
+}
+
+const GENUINE_STATE = 'v1.genuine-request-state'
+
+/** A minimal hand-rolled 2026-07-28 server whose weaknesses are switched on by flags. */
+async function startLaxModern(flags: LaxFlags): Promise<string> {
+  const server = http.createServer((req, res) => {
+    let raw = ''
+    req.on('data', (c: Buffer) => (raw += c.toString('utf8')))
+    req.on('end', () => {
+      const send = (status: number, body: unknown): void => {
+        res.writeHead(status, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(body))
+      }
+      if (req.method !== 'POST') return send(405, {})
+      if (flags.requireBearer && req.headers.authorization !== `Bearer ${flags.requireBearer}`) {
+        res.writeHead(401, { 'WWW-Authenticate': 'Bearer' })
+        return res.end()
+      }
+      let msg: Record<string, unknown>
+      try {
+        msg = JSON.parse(raw)
+      } catch {
+        return send(400, {
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32700, message: 'Parse error' },
+        })
+      }
+      if (Array.isArray(msg)) {
+        return send(400, {
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32600, message: 'No batching' },
+        })
+      }
+      const id = msg.id
+      const method = String(msg.method)
+      const params = (msg.params ?? {}) as Record<string, unknown>
+      const ok = (result: Record<string, unknown>): void =>
+        send(200, { jsonrpc: '2.0', id, result })
+      const err = (status: number, code: number, message: string): void =>
+        send(status, { jsonrpc: '2.0', id, error: { code, message } })
+      if (method === 'initialize') return err(400, -32022, 'Unsupported protocol version')
+      if (!flags.acceptWrongMcpMethod && req.headers['mcp-method'] !== method) {
+        return err(400, -32020, 'Header mismatch')
+      }
+      const cache = flags.omitCacheHints
+        ? {}
+        : { ttlMs: 1000, cacheScope: flags.cacheScopePublic ? 'public' : 'private' }
+      const meta = {
+        _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'lax', version: '1.0.0' } },
+      }
+      if (method === 'server/discover') {
+        return ok({
+          supportedVersions: ['2026-07-28'],
+          capabilities: { tools: {} },
+          ...cache,
+          ...meta,
+        })
+      }
+      if (method === 'tools/list') {
+        return ok({ tools: [{ name: 'ask', inputSchema: { type: 'object' } }], ...cache, ...meta })
+      }
+      if (method === 'tools/call') {
+        const state = params.requestState
+        if (state === undefined) {
+          return ok({
+            resultType: 'input_required',
+            inputRequests: {
+              q: {
+                method: 'elicitation/create',
+                params: {
+                  message: 'Q?',
+                  requestedSchema: { type: 'object', properties: { q: { type: 'integer' } } },
+                },
+              },
+            },
+            requestState: GENUINE_STATE,
+          })
+        }
+        if (state === GENUINE_STATE || flags.acceptAnyRequestState) {
+          return ok({ resultType: 'complete', content: [{ type: 'text', text: 'done' }] })
+        }
+        return err(200, -32602, 'Invalid or expired requestState')
+      }
+      return err(404, -32601, 'Method not found')
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  cleanups.push(
+    () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve())
+        server.closeAllConnections()
+      }),
+  )
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`
+}
+
+describe('tool-invocation probe is opt-in (issue #152)', () => {
+  async function elicitingMock(): Promise<{ url: string; id: string }> {
+    return startMock({ tools: [exampleElicitationTool()] })
+  }
+  const toolCalls = (id: string): number =>
+    mockMcpServerManager.getLogs(id).filter((l) => l.method === 'tools/call').length
+
+  it('off (default): the check is skipped with the opt-in note and no tool is ever called', async () => {
+    const { url, id } = await elicitingMock()
+    const report = await scan(url)
+    const f = find(report, 'auth.request_state_tampering')
+    expect(f.status).toBe('skipped')
+    expect(f.detail).toMatch(/^Not run — this check calls tools .* opt-in active probes/)
+    expect(toolCalls(id)).toBe(0)
+  })
+
+  it('on: ask_name is called, its tampered requestState refused (pass)', async () => {
+    const { url, id } = await elicitingMock()
+    const report = await scan(url, TOOL_PROBE)
+    const f = find(report, 'auth.request_state_tampering')
+    expect(f.status).toBe('pass')
+    expect(f.detail).toMatch(/"ask_name".*-32602/)
+    // First call (input_required) + the tampered retry.
+    expect(toolCalls(id)).toBe(2)
+  })
+})
+
+describe('2026-07-28 checks against a lax server', () => {
+  it('baseline: a well-behaved hand-rolled 2026-07-28 server passes all of them', async () => {
+    const url = await startLaxModern({ requireBearer: BEARER })
+    const report = await scan(url, {
+      ...TOOL_PROBE,
+      headers: { Authorization: `Bearer ${BEARER}` },
+    })
+    for (const id of [
+      'protocol.mcp_method_header_validated',
+      'protocol.cacheable_results',
+      'disclosure.cache_scope_public_with_auth',
+      'auth.request_state_tampering',
+    ]) {
+      expect(find(report, id).status, `${id}: ${find(report, id).detail}`).toBe('pass')
+    }
+  })
+
+  it.each([
+    {
+      flags: { acceptWrongMcpMethod: true },
+      id: 'protocol.mcp_method_header_validated',
+      status: 'fail',
+      severity: 'medium',
+      detail: /does not check the routing headers/,
+    },
+    {
+      flags: { omitCacheHints: true },
+      id: 'protocol.cacheable_results',
+      status: 'warn',
+      severity: 'low',
+      detail: /tools\/list carries no ttlMs \/ cacheScope/,
+    },
+    {
+      flags: { cacheScopePublic: true },
+      id: 'disclosure.cache_scope_public_with_auth',
+      status: 'warn',
+      severity: 'medium',
+      detail: /cacheScope "public"/,
+    },
+    {
+      flags: { acceptAnyRequestState: true },
+      id: 'auth.request_state_tampering',
+      status: 'fail',
+      severity: 'high',
+      detail: /completed a retry carrying a tampered requestState/,
+    },
+  ] as const)('$id → $status / $severity', async ({ flags, id, status, severity, detail }) => {
+    const url = await startLaxModern({ ...flags, requireBearer: BEARER })
+    const report = await scan(url, {
+      ...TOOL_PROBE,
+      headers: { Authorization: `Bearer ${BEARER}` },
+    })
+    const f = find(report, id)
+    expect(f).toMatchObject({ status, severity })
+    expect(f.detail).toMatch(detail)
+    expect(f.recommendation).toBeTruthy()
+    expect(report.score).toBe(scoreOf(all(report)))
+  })
+
+  it('a public cache scope without credentials is not a disclosure (skipped)', async () => {
+    const report = await scan(await startLaxModern({ cacheScopePublic: true }))
+    expect(find(report, 'disclosure.cache_scope_public_with_auth').status).toBe('skipped')
+  })
+})
+
+describe('2026-07-28 scan helpers', () => {
+  it('elicitation probes: read-only first, never destructive or with required arguments, capped', () => {
+    const tool = (name: string, extra: Record<string, unknown> = {}) => ({
+      name,
+      inputSchema: { type: 'object' },
+      ...extra,
+    })
+    const picked = elicitProbeCandidates([
+      tool('ask'),
+      tool('needs_arg', { inputSchema: { type: 'object', required: ['x'] } }),
+      tool('wipe_all'),
+      tool('marked', { annotations: { destructiveHint: true } }),
+      tool('reader', { annotations: { readOnlyHint: true } }),
+    ]).map((t) => t.name)
+    expect(picked).toEqual(['reader', 'ask'])
+    const many = Array.from({ length: 20 }, (_, i) => tool(`t${i}`))
+    expect(elicitProbeCandidates(many)).toHaveLength(MAX_ELICIT_PROBES)
+  })
+
+  it('tamperRequestState flips the tail but keeps the shape', () => {
+    const state = 'v1.eyJwIjp7fX0.signature1234'
+    const forged = tamperRequestState(state)
+    expect(forged).not.toBe(state)
+    expect(forged).toHaveLength(state.length)
+    expect(forged.slice(0, -4)).toBe(state.slice(0, -4))
+    expect(tamperRequestState('AAAA')).toBe('BBBB')
+  })
+
+  it('Mcp-Name values: plain ASCII passes through, anything else is Base64-wrapped', () => {
+    expect(encodeMcpHeaderValue('ask_count')).toBe('ask_count')
+    expect(encodeMcpHeaderValue('naïve')).toBe(
+      `=?base64?${Buffer.from('naïve').toString('base64')}?=`,
+    )
+    expect(encodeMcpHeaderValue(' padded')).toMatch(/^=\?base64\?/)
+    expect(encodeMcpHeaderValue('')).toMatch(/^=\?base64\?/)
   })
 })

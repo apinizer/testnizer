@@ -27,6 +27,7 @@ import {
   noSessionReason,
   pass,
   problem,
+  serverInfoFromResult,
   skipped,
   type CheckDef,
   type CheckOutcome,
@@ -399,7 +400,7 @@ const serverInfoVerbosity: CheckDef = {
   run: (ctx) => {
     if (!ctx.session.ok) return skipped(noSessionReason(ctx))
     const r = ctx.session.result ?? {}
-    const serverInfo = isRecord(r.serverInfo) ? r.serverInfo : {}
+    const serverInfo = serverInfoFromResult(r) ?? {}
     const version = typeof serverInfo.version === 'string' ? serverInfo.version : ''
     const notes: string[] = []
     if (version && isVerboseVersion(version)) {
@@ -441,12 +442,15 @@ function runRateProbe(ctx: ScanContext): Promise<RateProbe> {
     const session = ctx.session.ok ? ctx.session.session : undefined
     if (!session) return probe
     const withTools = !!ctx.inventory?.toolsOutcome?.result
+    // 2026-07-28 has no `ping` (Method not found) — probe with real reads there.
+    const modern = session.era === 'modern'
+    const fallback = modern ? 'server/discover' : 'ping'
     let next = 0
     let stop = false
     const worker = async (): Promise<void> => {
       while (!stop && next < RATE_PROBE_REQUESTS && !ctx.http.signal.aborted) {
         const i = next++
-        const method = withTools && i % 2 === 1 ? 'tools/list' : 'ping'
+        const method = withTools && (modern || i % 2 === 1) ? 'tools/list' : fallback
         probe.methods.add(method)
         const out = await session.request(method)
         probe.sent++

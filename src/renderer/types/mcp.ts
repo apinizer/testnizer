@@ -33,9 +33,58 @@ export type McpPromptMessage = McpGetPromptResult['messages'][number]
 export type McpNotificationEvent = EventOf<McpBridge['onNotification']>
 export type McpFrameEvent = EventOf<McpBridge['onFrame']>
 export type McpConnectionClosedEvent = EventOf<McpBridge['onConnectionClosed']>
+export type McpSubscriptionStateEvent = EventOf<McpBridge['onSubscriptionState']>
 export type McpCallContext = NonNullable<Parameters<McpBridge['callTool']>[3]>
 /** `mcp.connect` reply — `unauthorized` when the server answered HTTP 401 (issue #141). */
 export type McpConnectReply = Awaited<ReturnType<McpBridge['connect']>>
+
+// ─── Protocol eras (issue #152) ─────────────────────────────────
+/** `protocol` connect option: `auto` · `legacy` · a revision like `2026-07-28` / `2025-06-18`. */
+export type McpProtocolChoice = NonNullable<McpConnectRequest['protocol']>
+export type McpProtocolEra = NonNullable<McpConnectResult['era']>
+export type McpSubscriptionInfo = NonNullable<McpConnectResult['subscription']>
+export type McpSubscriptionFilter = NonNullable<McpSubscriptionInfo['honoredFilter']>
+
+/** The connection's `subscriptions/listen` stream as the tab shows it. */
+export interface McpSubscriptionView {
+  state: 'open' | 'closed' | 'error'
+  honoredFilter?: McpSubscriptionFilter
+  /** `error`: why it could not be opened; `closed`: `graceful` / `remote`. */
+  reason?: string
+}
+
+/**
+ * `__mcp` marker on a `tools/call` / `respondInput` result that asks for
+ * client input (2026-07-28 multi-round-trip) — mirrors `McpInputRequired` in
+ * the preload contract, which the bridge leaves as `unknown`.
+ */
+export interface McpInputRequiredMarker {
+  kind: 'input_required'
+  /** Embedded requests keyed by server ids: `{ method: 'elicitation/create', params }` etc. */
+  inputRequests: Record<string, unknown>
+  /** Opaque — echoed verbatim by `respondInput`. */
+  requestState?: string
+}
+
+/**
+ * A bare `ElicitResult` (core `ElicitResultSchema`): what `respondInput`
+ * sends per `inputRequests` key — never wrapped in `{ method, result }`.
+ */
+export type McpElicitAnswer =
+  | { action: 'accept'; content: Record<string, string | number | boolean | string[]> }
+  | { action: 'decline' }
+  | { action: 'cancel' }
+
+/** A `tools/call` paused on `input_required`, waiting for the user's answers. */
+export interface McpPendingInput {
+  toolName: string
+  /** The exact arguments of the first round — every retry repeats them. */
+  args: Record<string, unknown>
+  requestState?: string
+  inputRequests: Record<string, unknown>
+  /** 1 for the first `input_required`, +1 per further round. */
+  round: number
+}
 
 // ─── Authorization tab (MCP Auth) ───────────────────────────────
 /** Wire shape of `mcp.connect`'s `auth` (values already `{{var}}`-resolved). */

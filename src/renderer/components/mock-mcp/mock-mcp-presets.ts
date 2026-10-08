@@ -67,6 +67,30 @@ function echoTool(): MockMcpTool {
 
 const NO_ARGS = { type: 'object', properties: {} }
 
+/**
+ * "Ask name (elicitation)" tool preset (issue #152) — a copy of the backend's
+ * `exampleElicitationTool()` (`src/main/mock-mcp/config.ts`; the renderer
+ * cannot import main). On 2026-07-28 the first call answers `input_required`
+ * asking for a name; the retry greets with it. A test keeps the two equal.
+ */
+export function elicitationExampleTool(): MockMcpTool {
+  return {
+    name: 'ask_name',
+    description: 'Asks the user for their name (2026-07-28 elicitation), then greets them.',
+    inputSchema: { type: 'object', properties: {} },
+    response: { kind: 'template', body: 'Hello, {{input.name}}!' },
+    elicit: {
+      key: 'name',
+      message: 'What is your name?',
+      schema: {
+        type: 'object',
+        properties: { name: { type: 'string', title: 'Name', minLength: 1 } },
+        required: ['name'],
+      },
+    },
+  }
+}
+
 function errorTools(): MockMcpTool[] {
   const msg = { type: 'object', properties: { note: { type: 'string' } } }
   return [
@@ -253,6 +277,10 @@ export function buildPresetInput(
     projectId: ctx.projectId,
     name: uniqueName(MOCK_MCP_PRESET_NAMES[id], ctx.takenNames),
     port: suggestPort(ctx.takenPorts, MCP_MOCK_PORT_START),
+    // Explicit protocol-era posture (issue #152): 2025 clients are served
+    // statelessly next to 2026-07-28, list results carry no cache lifetime.
+    legacyMode: 'stateless',
+    cacheTtlMs: 0,
     ...presetBody(id),
   }
 }

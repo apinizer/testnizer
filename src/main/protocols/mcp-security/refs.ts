@@ -1,5 +1,7 @@
 /** Spec / RFC references cited by the MCP Security Scan findings (issue #142). */
 const MCP = 'https://modelcontextprotocol.io/specification/2025-11-25'
+/** The stateless 2026-07-28 revision (issue #152). */
+const MCP_2026 = 'https://modelcontextprotocol.io/specification/2026-07-28'
 
 export const REFS = {
   mcpAuth: `${MCP}/basic/authorization`,
@@ -11,6 +13,9 @@ export const REFS = {
   mcpTools: `${MCP}/server/tools`,
   mcpToolsSecurity: `${MCP}/server/tools#security-considerations`,
   mcpChangelog0618: 'https://modelcontextprotocol.io/specification/2025-06-18/changelog',
+  mcp2026Lifecycle: `${MCP_2026}/basic/lifecycle`,
+  mcp2026Transports: `${MCP_2026}/basic/transports`,
+  mcp2026Changelog: `${MCP_2026}/changelog`,
   jsonRpc: 'https://www.jsonrpc.org/specification#error_object',
   jsonSchema: 'https://json-schema.org/specification',
   rfc6750Challenge: 'https://www.rfc-editor.org/rfc/rfc6750#section-3',

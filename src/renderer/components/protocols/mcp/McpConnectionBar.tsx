@@ -3,7 +3,9 @@ import { useMcpStore } from '../../../stores/mcp.store'
 import type { McpTransport } from '../../../types/mcp'
 import { useTranslation } from '../../../lib/i18n'
 import { describeCapabilities } from '../../../lib/mcp-store-helpers'
+import { describeDiscover, eraBadgeText } from '../../../lib/mcp-protocol'
 import McpConfigMenu from './McpConfigMenu'
+import McpProtocolSelect from './McpProtocolSelect'
 
 /** Transport, URL / command, Connect, config menu and the connected server's identity. */
 export default function McpConnectionBar() {
@@ -19,6 +21,8 @@ export default function McpConnectionBar() {
   const protocolVersion = useMcpStore((s) => s.protocolVersion)
   const capabilities = useMcpStore((s) => s.capabilities)
   const instructions = useMcpStore((s) => s.instructions)
+  const era = useMcpStore((s) => s.era)
+  const discover = useMcpStore((s) => s.discover)
   const connect = useMcpStore((s) => s.connect)
   const disconnect = useMcpStore((s) => s.disconnect)
   const unauthorized = useMcpStore((s) => s.unauthorized)
@@ -28,7 +32,11 @@ export default function McpConnectionBar() {
   const isConnecting = state === 'connecting'
   const busy = isConnected || isConnecting
   const capsText = describeCapabilities(capabilities)
+  const supported = describeDiscover(discover)
   const tooltip = [
+    era &&
+      `${t('mcp.era.title')}: ${era === 'modern' ? t('mcp.era.modern') : t('mcp.era.legacyLong')}`,
+    supported.length > 0 && `${t('mcp.era.supportedVersions')}: ${supported.join(', ')}`,
     capsText && `${t('mcp.server.capabilities')}: ${capsText}`,
     instructions && `${t('mcp.server.instructions')}: ${instructions}`,
   ]
@@ -56,6 +64,7 @@ export default function McpConnectionBar() {
           </option>
         ))}
       </select>
+      <McpProtocolSelect disabled={busy} />
       <input
         type="text"
         value={url}
@@ -97,10 +106,15 @@ export default function McpConnectionBar() {
           {protocolVersion && (
             <span
               data-testid="mcp-protocol-version"
+              data-era={era ?? undefined}
               title={tooltip || undefined}
-              className="shrink-0 cursor-help rounded border border-[var(--border)] bg-[var(--surface)] px-1.5 font-mono text-[11px] text-[var(--text)]"
+              className={`shrink-0 cursor-help rounded border bg-[var(--surface)] px-1.5 font-mono text-[11px] ${
+                era === 'modern'
+                  ? 'border-[var(--accent)] text-[var(--accent-text)]'
+                  : 'border-[var(--border)] text-[var(--text)]'
+              }`}
             >
-              MCP {protocolVersion}
+              {eraBadgeText(protocolVersion, era, t('mcp.era.legacy'))}
             </span>
           )}
         </span>

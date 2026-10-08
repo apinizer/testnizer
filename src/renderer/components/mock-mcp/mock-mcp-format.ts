@@ -2,7 +2,7 @@
  * Small display helpers for the Mock MCP UI (issue #140). Kept out of the
  * component files so those export components only (fast refresh).
  */
-import type { MockMcpLogEntry, MockMcpServerStatus } from '../../types/mock-mcp'
+import type { MockMcpEra, MockMcpLogEntry, MockMcpServerStatus } from '../../types/mock-mcp'
 
 /** i18n keys per live status — literal so the key-coverage test sees them. */
 export const STATUS_KEYS: Record<MockMcpServerStatus, string> = {
@@ -24,4 +24,15 @@ export function logOutcome(e: MockMcpLogEntry): string {
   if (e.httpStatus !== undefined && e.httpStatus >= 400) return `HTTP ${e.httpStatus}`
   if (!e.ok) return e.errorCode !== undefined ? String(e.errorCode) : 'error'
   return 'ok'
+}
+
+/** i18n keys per protocol era a running server answers (issue #152). */
+export const ERA_KEYS: Record<MockMcpEra, string> = {
+  modern: 'mockMcp.eras.modern',
+  legacy: 'mockMcp.eras.legacy',
+}
+
+/** Modern first, then legacy — stable order whatever the backend sends. */
+export function sortEras(eras: readonly MockMcpEra[]): MockMcpEra[] {
+  return [...eras].sort((a, b) => (a === b ? 0 : a === 'modern' ? -1 : 1))
 }
