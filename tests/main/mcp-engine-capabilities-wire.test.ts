@@ -1,25 +1,28 @@
 /**
  * Issue #139 — Postman-parity MCP client surface, ON THE WIRE.
  *
- * Runs the REAL `@modelcontextprotocol/sdk` client (through the engine)
- * against real servers: the e2e Streamable HTTP server
- * (`tests/e2e/servers/mcp-server.ts` — tools + resources + a resource
+ * Runs the REAL SDK 2.x client (`@modelcontextprotocol/client`, through the
+ * engine) against real servers: the e2e Streamable HTTP server
+ * (`tests/e2e/servers/mcp-server.ts`, v2 SDK — tools + resources + a resource
  * template + a prompt + a `notify` tool emitting logging / progress /
- * tools/list_changed), a tools-only legacy SSE server, and inline stdio stubs.
+ * tools/list_changed) in BOTH protocol eras (issue #152), a tools-only legacy
+ * SSE server (v1 SDK server — the legacy transport), and inline stdio stubs.
  *
  * Pins the SDK behaviour the engine relies on:
- *   - `Protocol.connect` chains a pre-set `transport.onmessage`, so the frame
- *     tap sees the `initialize` round-trip;
+ *   - the http fetch-middleware tap sees the handshake on both eras
+ *     (`initialize`, or the `server/discover` probe whose reply the SDK's
+ *     probe window keeps from `onmessage`);
+ *   - `Protocol.connect` chains a pre-set `transport.onmessage` (stdio tap);
  *   - `notifications/progress` (pre-registered by the SDK's Protocol, so it
  *     would shadow `fallbackNotificationHandler`) still reaches the renderer;
- *   - protocolVersion is recoverable for sse / stdio, which expose none.
+ *   - on 2026-07-28, list_changed arrives on the `subscriptions/listen` stream.
  */
 import http from 'node:http'
 import net from 'node:net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
-import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js'
+import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/client'
 import { startMcpServer } from '../e2e/servers/mcp-server'
 import {
   mcpConnect,
@@ -145,6 +148,10 @@ function notificationsFor(connectionId: string): McpNotificationEvent[] {
   )
 }
 
+function isObj(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
 async function waitFor(pred: () => boolean, timeoutMs = 3000): Promise<void> {
   const started = Date.now()
   while (!pred()) {
@@ -153,165 +160,241 @@ async function waitFor(pred: () => boolean, timeoutMs = 3000): Promise<void> {
   }
 }
 
-async function connectHttp(): Promise<{
+type Era = 'legacy' | 'modern'
+
+/**
+ * Issue #152: the e2e server (v2 SDK, `legacy: 'stateless'`) serves both
+ * eras from one URL. `'legacy'` → 2025 `initialize`; `'auto'` → the client
+ * probes `server/discover` and lands on 2026-07-28.
+ */
+const ERAS: Array<{ era: Era; protocol: 'legacy' | 'auto' }> = [
+  { era: 'legacy', protocol: 'legacy' },
+  { era: 'modern', protocol: 'auto' },
+]
+
+async function connectHttp(protocol: 'legacy' | 'auto'): Promise<{
   connectionId: string
   info: Awaited<ReturnType<typeof mcpConnect>>
 }> {
   const srv = await startMcpServer(await freePort())
   cleanups.push(srv.close)
-  const info = await mcpConnect({ transport: 'http', url: srv.url })
+  const info = await mcpConnect({ transport: 'http', url: srv.url, protocol })
   cleanups.push(() => mcpDisconnect(info.connectionId))
   return { connectionId: info.connectionId, info }
 }
 
-describe('mcp.engine — Streamable HTTP capabilities on the wire (issue #139)', () => {
-  it('connect reports the negotiated protocolVersion, capabilities and instructions', async () => {
-    const { info } = await connectHttp()
-    expect(info.protocolVersion).toBe(LATEST_PROTOCOL_VERSION)
-    expect(info.capabilities).toMatchObject({
-      tools: expect.any(Object),
-      resources: expect.any(Object),
-      prompts: expect.any(Object),
-      logging: expect.any(Object),
+describe.each(ERAS)(
+  'mcp.engine — Streamable HTTP on the wire, $era era (issue #139, #152)',
+  ({ era, protocol }) => {
+    it('connect reports era, negotiated protocolVersion, capabilities and instructions', async () => {
+      const { info } = await connectHttp(protocol)
+      expect(info.era).toBe(era)
+      expect(info.protocolVersion).toBe(era === 'modern' ? '2026-07-28' : LATEST_PROTOCOL_VERSION)
+      expect(info.capabilities).toMatchObject({
+        tools: expect.any(Object),
+        resources: expect.any(Object),
+        prompts: expect.any(Object),
+        logging: expect.any(Object),
+      })
+      expect(info.instructions).toMatch(/Testnizer e2e MCP server/)
+      expect(info.serverName).toBe('testnizer-e2e-mcp')
+      if (era === 'modern') {
+        expect(info.discover).toMatchObject({
+          supportedVersions: expect.arrayContaining(['2026-07-28']),
+        })
+        expect(info.subscription?.honoredFilter).toMatchObject({ toolsListChanged: true })
+      } else {
+        expect(info).not.toHaveProperty('discover')
+        expect(info).not.toHaveProperty('subscription')
+      }
     })
-    expect(info.instructions).toMatch(/Testnizer e2e MCP server/)
-  })
 
-  it('lists and reads resources, including a templated one and a binary blob', async () => {
-    const { connectionId } = await connectHttp()
-    const list = await mcpListResources(connectionId)
-    expect(list.resources).toEqual(
-      expect.arrayContaining([
+    it('lists and reads resources, including a templated one and a binary blob', async () => {
+      const { connectionId } = await connectHttp(protocol)
+      const list = await mcpListResources(connectionId)
+      expect(list.resources).toEqual(
+        expect.arrayContaining([
+          {
+            uri: 'test://greeting',
+            name: 'greeting',
+            title: 'Greeting',
+            description: 'A static text resource',
+            mimeType: 'text/plain',
+          },
+          expect.objectContaining({ uri: 'test://pixel.png', mimeType: 'image/png' }),
+        ]),
+      )
+      expect(list.templates).toEqual([
         {
-          uri: 'test://greeting',
-          name: 'greeting',
-          title: 'Greeting',
-          description: 'A static text resource',
-          mimeType: 'text/plain',
+          uriTemplate: 'test://item/{id}',
+          name: 'item',
+          title: 'Item by id',
+          description: 'Templated resource',
+          mimeType: 'application/json',
         },
-        expect.objectContaining({ uri: 'test://pixel.png', mimeType: 'image/png' }),
-      ]),
-    )
-    expect(list.templates).toEqual([
-      {
-        uriTemplate: 'test://item/{id}',
-        name: 'item',
-        title: 'Item by id',
-        description: 'Templated resource',
-        mimeType: 'application/json',
-      },
-    ])
+      ])
 
-    const greeting = await mcpReadResource(connectionId, 'test://greeting')
-    expect(greeting).toEqual({
-      contents: [{ uri: 'test://greeting', mimeType: 'text/plain', text: 'Hello from Testnizer' }],
+      const greeting = await mcpReadResource(connectionId, 'test://greeting')
+      expect(greeting).toEqual({
+        contents: [
+          { uri: 'test://greeting', mimeType: 'text/plain', text: 'Hello from Testnizer' },
+        ],
+      })
+      const item = await mcpReadResource(connectionId, 'test://item/42')
+      expect(JSON.parse(item.contents[0].text ?? '')).toEqual({ id: '42' })
+      const pixel = await mcpReadResource(connectionId, 'test://pixel.png')
+      expect(pixel.contents[0].blob).toMatch(/^iVBORw0KGgo/)
+      expect(pixel.contents[0].text).toBeUndefined()
     })
-    const item = await mcpReadResource(connectionId, 'test://item/42')
-    expect(JSON.parse(item.contents[0].text ?? '')).toEqual({ id: '42' })
-    const pixel = await mcpReadResource(connectionId, 'test://pixel.png')
-    expect(pixel.contents[0].blob).toMatch(/^iVBORw0KGgo/)
-    expect(pixel.contents[0].text).toBeUndefined()
-  })
 
-  it('lists prompts with their arguments and renders one', async () => {
-    const { connectionId } = await connectHttp()
-    const prompts = await mcpListPrompts(connectionId)
-    expect(prompts).toEqual([
-      {
-        name: 'summarize',
-        title: 'Summarize',
-        description: 'Summarize the given text',
-        arguments: [{ name: 'text', description: 'Text to summarize', required: true }],
-      },
-    ])
-    const rendered = await mcpGetPrompt(connectionId, 'summarize', { text: 'hello world' })
-    expect(rendered).toEqual({
-      description: 'Summarize prompt',
-      messages: [
-        { role: 'user', content: { type: 'text', text: 'Please summarize:\n\nhello world' } },
-      ],
+    it('lists prompts with their arguments and renders one', async () => {
+      const { connectionId } = await connectHttp(protocol)
+      const prompts = await mcpListPrompts(connectionId)
+      expect(prompts).toEqual([
+        {
+          name: 'summarize',
+          title: 'Summarize',
+          description: 'Summarize the given text',
+          arguments: [{ name: 'text', description: 'Text to summarize', required: true }],
+        },
+      ])
+      const rendered = await mcpGetPrompt(connectionId, 'summarize', { text: 'hello world' })
+      expect(rendered).toEqual({
+        description: 'Summarize prompt',
+        messages: [
+          { role: 'user', content: { type: 'text', text: 'Please summarize:\n\nhello world' } },
+        ],
+      })
     })
-  })
 
-  it('listTools passes title / annotations through', async () => {
-    const { connectionId } = await connectHttp()
-    const tools = await mcpListTools(connectionId)
-    const notify = tools.find((t) => t.name === 'notify')
-    expect(notify).toMatchObject({ title: 'Notify', annotations: { readOnlyHint: true } })
-    expect(tools.map((t) => t.name)).toEqual(
-      expect.arrayContaining(['echo', 'add', 'echo_headers', 'notify']),
-    )
-  })
-
-  it('server notifications (logging, progress, tools/list_changed) arrive tagged with their connectionId', async () => {
-    const { connectionId } = await connectHttp()
-    const result = (await mcpCallTool(connectionId, 'notify', { steps: 2 })) as {
-      content: Array<{ text: string }>
-    }
-    // The tool saw a progressToken → the engine asked for progress.
-    expect(result.content[0].text).toBe('notified (2 steps, progress on)')
-
-    const notes = notificationsFor(connectionId)
-    const methods = notes.map((n) => n.method)
-    expect(methods).toEqual([
-      'notifications/message',
-      'notifications/progress',
-      'notifications/progress',
-      'notifications/tools/list_changed',
-    ])
-    expect(notes[0].params).toMatchObject({
-      level: 'info',
-      logger: 'e2e',
-      data: 'notify tool started',
+    it('listTools passes title / annotations through', async () => {
+      const { connectionId } = await connectHttp(protocol)
+      const tools = await mcpListTools(connectionId)
+      const notify = tools.find((t) => t.name === 'notify')
+      expect(notify).toMatchObject({ title: 'Notify', annotations: { readOnlyHint: true } })
+      expect(tools.map((t) => t.name)).toEqual(
+        expect.arrayContaining(['echo', 'add', 'echo_headers', 'notify', 'ask_count']),
+      )
     })
-    expect(notes[2].params).toMatchObject({ progress: 2, total: 2, message: 'step 2/2' })
-    expect(notes.every((n) => typeof n.ts === 'number')).toBe(true)
-  })
 
-  it('two live connections never cross-tag their events (issue #76 class)', async () => {
-    const a = await connectHttp()
-    const b = await connectHttp()
-    await mcpCallTool(a.connectionId, 'notify', { steps: 1 })
-    expect(notificationsFor(a.connectionId).length).toBe(3)
-    expect(notificationsFor(b.connectionId)).toEqual([])
-  })
+    it('server notifications (logging, progress, tools/list_changed) arrive tagged with their connectionId', async () => {
+      const { connectionId } = await connectHttp(protocol)
+      const result = (await mcpCallTool(connectionId, 'notify', { steps: 2 })) as {
+        content: Array<{ text: string }>
+      }
+      // The tool saw a progressToken → the engine asked for progress.
+      expect(result.content[0].text).toBe('notified (2 steps, progress on)')
 
-  it('frames include the initialize request + result and tools/list → result', async () => {
-    const { connectionId } = await connectHttp()
-    await mcpListTools(connectionId)
-    await waitFor(() => framesFor(connectionId).length >= 5)
-    const frames = framesFor(connectionId)
-    const msgs = frames.map((f) => ({ dir: f.direction, m: f.message as Record<string, unknown> }))
-
-    const initReq = msgs.find((x) => x.dir === 'out' && x.m.method === 'initialize')
-    expect(initReq).toBeDefined()
-    const initRes = msgs.find((x) => x.dir === 'in' && x.m.id === initReq!.m.id)
-    expect(initRes?.m.result).toMatchObject({
-      protocolVersion: LATEST_PROTOCOL_VERSION,
-      serverInfo: { name: 'testnizer-e2e-mcp' },
+      // Modern: list_changed travels on the subscriptions/listen stream (after
+      // its ack), not on the call's own stream — so it may land after the result.
+      await waitFor(() =>
+        notificationsFor(connectionId).some((n) => n.method === 'notifications/tools/list_changed'),
+      )
+      const notes = notificationsFor(connectionId).filter(
+        (n) => n.method !== 'notifications/subscriptions/acknowledged',
+      )
+      expect(notes.map((n) => n.method)).toEqual([
+        'notifications/message',
+        'notifications/progress',
+        'notifications/progress',
+        'notifications/tools/list_changed',
+      ])
+      expect(notes[0].params).toMatchObject({
+        level: 'info',
+        logger: 'e2e',
+        data: 'notify tool started',
+      })
+      expect(notes[2].params).toMatchObject({ progress: 2, total: 2, message: 'step 2/2' })
+      expect(notes.every((n) => typeof n.ts === 'number')).toBe(true)
+      if (era === 'modern') {
+        expect(notes[3].params).toMatchObject({
+          _meta: { 'io.modelcontextprotocol/subscriptionId': expect.any(String) },
+        })
+        expect(notificationsFor(connectionId)[0].method).toBe(
+          'notifications/subscriptions/acknowledged',
+        )
+      }
     })
-    expect(msgs.some((x) => x.dir === 'out' && x.m.method === 'notifications/initialized')).toBe(
-      true,
-    )
 
-    const listReq = msgs.find((x) => x.dir === 'out' && x.m.method === 'tools/list')
-    expect(listReq).toBeDefined()
-    const listRes = msgs.find((x) => x.dir === 'in' && x.m.id === listReq!.m.id)
-    expect(listRes?.m.result).toMatchObject({ tools: expect.any(Array) })
+    it('two live connections never cross-tag their events (issue #76 class)', async () => {
+      const a = await connectHttp(protocol)
+      const b = await connectHttp(protocol)
+      await mcpCallTool(a.connectionId, 'notify', { steps: 1 })
+      await waitFor(() =>
+        notificationsFor(a.connectionId).some(
+          (n) => n.method === 'notifications/tools/list_changed',
+        ),
+      )
+      const own = (id: string): McpNotificationEvent[] =>
+        notificationsFor(id).filter((n) => n.method !== 'notifications/subscriptions/acknowledged')
+      expect(own(a.connectionId).length).toBe(3)
+      expect(own(b.connectionId)).toEqual([])
+    })
 
-    // Order: the initialize request precedes its result, which precedes tools/list.
-    expect(msgs.indexOf(initReq!)).toBeLessThan(msgs.indexOf(initRes!))
-    expect(msgs.indexOf(initRes!)).toBeLessThan(msgs.indexOf(listReq!))
-  })
+    it('frames include the handshake (initialize, or server/discover + listen) and tools/list → result', async () => {
+      const { connectionId } = await connectHttp(protocol)
+      await mcpListTools(connectionId)
+      await waitFor(() =>
+        framesFor(connectionId).some(
+          (f) =>
+            f.direction === 'in' &&
+            isObj(f.message) &&
+            isObj(f.message.result) &&
+            'tools' in f.message.result,
+        ),
+      )
+      const frames = framesFor(connectionId)
+      const msgs = frames.map((f) => ({
+        dir: f.direction,
+        m: f.message as Record<string, unknown>,
+      }))
 
-  it('user disconnect → connectionClosed without a reason', async () => {
-    const { connectionId } = await connectHttp()
-    await mcpDisconnect(connectionId)
-    await waitFor(() => events.some((e) => e.type === 'connectionClosed'))
-    const closed = events.filter((e) => e.type === 'connectionClosed')
-    expect(closed).toEqual([{ type: 'connectionClosed', payload: { connectionId } }])
-  })
-})
+      const handshakeMethod = era === 'modern' ? 'server/discover' : 'initialize'
+      const hsReq = msgs.find((x) => x.dir === 'out' && x.m.method === handshakeMethod)
+      expect(hsReq).toBeDefined()
+      const hsRes = msgs.find((x) => x.dir === 'in' && x.m.id === hsReq!.m.id)
+      if (era === 'modern') {
+        expect(hsRes?.m.result).toMatchObject({
+          supportedVersions: expect.arrayContaining(['2026-07-28']),
+        })
+        expect(msgs.some((x) => x.dir === 'out' && x.m.method === 'initialize')).toBe(false)
+        expect(msgs.some((x) => x.dir === 'out' && x.m.method === 'subscriptions/listen')).toBe(
+          true,
+        )
+      } else {
+        expect(hsRes?.m.result).toMatchObject({
+          protocolVersion: LATEST_PROTOCOL_VERSION,
+          serverInfo: { name: 'testnizer-e2e-mcp' },
+        })
+        expect(
+          msgs.some((x) => x.dir === 'out' && x.m.method === 'notifications/initialized'),
+        ).toBe(true)
+        expect(msgs.some((x) => x.dir === 'out' && x.m.method === 'server/discover')).toBe(false)
+      }
+
+      const listReq = msgs.find((x) => x.dir === 'out' && x.m.method === 'tools/list')
+      expect(listReq).toBeDefined()
+      const listRes = msgs.find((x) => x.dir === 'in' && x.m.id === listReq!.m.id)
+      expect(listRes?.m.result).toMatchObject({ tools: expect.any(Array) })
+
+      // Order: the handshake request precedes its result, which precedes tools/list.
+      expect(msgs.indexOf(hsReq!)).toBeLessThan(msgs.indexOf(hsRes!))
+      expect(msgs.indexOf(hsRes!)).toBeLessThan(msgs.indexOf(listReq!))
+    })
+
+    it('user disconnect → connectionClosed without a reason', async () => {
+      const { connectionId } = await connectHttp(protocol)
+      await mcpDisconnect(connectionId)
+      await waitFor(() => events.some((e) => e.type === 'connectionClosed'))
+      const closed = events.filter((e) => e.type === 'connectionClosed')
+      expect(closed).toEqual([{ type: 'connectionClosed', payload: { connectionId } }])
+      // A local close of the listen stream is not reported as a subscription end.
+      expect(
+        events.filter((e) => e.type === 'subscriptionState' && e.payload.state === 'closed'),
+      ).toEqual([])
+    })
+  },
+)
 
 describe('mcp.engine — legacy SSE without resources / prompts (issue #139)', () => {
   it('missing capabilities → empty lists, not errors; protocolVersion recovered from the initialize frame', async () => {

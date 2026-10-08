@@ -7,12 +7,16 @@
  * throwing at request time.
  */
 
-import { SUPPORTED_PROTOCOL_VERSIONS } from '@modelcontextprotocol/sdk/types.js'
+import { SUPPORTED_PROTOCOL_VERSIONS } from '@modelcontextprotocol/server'
 import { compileSchema } from './args-validator'
 import type {
+  JsonSchemaObject,
   MockMcpAuthMode,
+  MockMcpElicit,
+  MockMcpEra,
   MockMcpErrorKind,
   MockMcpErrorMode,
+  MockMcpLegacyMode,
   MockMcpPrompt,
   MockMcpResource,
   MockMcpServerDef,
@@ -21,12 +25,63 @@ import type {
 
 export const DEFAULT_MCP_PATH = '/mcp'
 export const DEFAULT_ERROR_MODE: MockMcpErrorMode = { kind: 'none' }
+export const DEFAULT_LEGACY_MODE: MockMcpLegacyMode = 'stateless'
+/** The stateless protocol revision the v2 SDK serves through `createMcpHandler`. */
+export const MODERN_PROTOCOL_VERSION = '2026-07-28'
+/** 2024/2025 revisions the v2 SDK negotiates through `initialize`. */
+export const LEGACY_PROTOCOL_VERSIONS: readonly string[] = SUPPORTED_PROTOCOL_VERSIONS
 /** Protocol revisions the bundled SDK implements — the only valid pins. */
-export const PINNABLE_PROTOCOL_VERSIONS: readonly string[] = SUPPORTED_PROTOCOL_VERSIONS
+export const PINNABLE_PROTOCOL_VERSIONS: readonly string[] = [
+  ...LEGACY_PROTOCOL_VERSIONS,
+  MODERN_PROTOCOL_VERSION,
+]
+/** Upper bound of `cacheTtlMs` — the v2 client caps cached entries at one day too. */
+export const MAX_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 const ERROR_KINDS: readonly MockMcpErrorKind[] = ['none', 'jsonrpc', 'isError', 'timeout', 'http']
 const AUTH_MODES: readonly MockMcpAuthMode[] = ['none', 'bearer']
+const LEGACY_MODES: readonly MockMcpLegacyMode[] = ['stateless', 'reject']
 const MAX_LATENCY_MS = 10 * 60 * 1000
+/** Property types the restricted elicitation schema allows (MCP `PrimitiveSchemaDefinition`). */
+const ELICIT_PROPERTY_TYPES = ['string', 'number', 'integer', 'boolean']
+
+/** True for a 2026-07-28-or-later revision (served without `initialize`). */
+export function isModernVersion(version: string | null | undefined): boolean {
+  return !!version && version >= MODERN_PROTOCOL_VERSION
+}
+
+/**
+ * The eras `<path>` answers for an effective pin (`?rev=` or the server's):
+ * a legacy pin serves only that 2025 version, a modern pin or
+ * `legacyMode: 'reject'` serves only 2026-07-28.
+ */
+export function servedEras(legacyMode: MockMcpLegacyMode, pin: string | null): MockMcpEra[] {
+  if (pin) return isModernVersion(pin) ? ['modern'] : ['legacy']
+  return legacyMode === 'reject' ? ['modern'] : ['legacy', 'modern']
+}
+
+/**
+ * Preset for the elicitation (MRTR) scenario: asks the client for a name on
+ * 2026-07-28 and greets with it. Offered by the editor; not part of
+ * {@link defaultTools}.
+ */
+export function exampleElicitationTool(): MockMcpTool {
+  return {
+    name: 'ask_name',
+    description: 'Asks the user for their name (2026-07-28 elicitation), then greets them.',
+    inputSchema: { type: 'object', properties: {} },
+    response: { kind: 'template', body: 'Hello, {{input.name}}!' },
+    elicit: {
+      key: 'name',
+      message: 'What is your name?',
+      schema: {
+        type: 'object',
+        properties: { name: { type: 'string', title: 'Name', minLength: 1 } },
+        required: ['name'],
+      },
+    },
+  }
+}
 
 /** A fresh server is useful immediately: one echo tool, like the public echo mock. */
 export function defaultTools(): MockMcpTool[] {
@@ -73,6 +128,40 @@ export function normalizeErrorMode(v: unknown): MockMcpErrorMode {
   return out
 }
 
+export function normalizeLegacyMode(v: unknown): MockMcpLegacyMode {
+  return LEGACY_MODES.includes(v as MockMcpLegacyMode)
+    ? (v as MockMcpLegacyMode)
+    : DEFAULT_LEGACY_MODE
+}
+
+export function normalizeCacheTtl(v: unknown): number {
+  const n = num(v)
+  return n === undefined ? 0 : Math.max(0, Math.trunc(n))
+}
+
+/** Parses the `options_json` column (`null` / garbage → defaults). */
+export function normalizeServerOptions(v: unknown): {
+  legacyMode: MockMcpLegacyMode
+  cacheTtlMs: number
+} {
+  const r = isRecord(v) ? v : {}
+  return {
+    legacyMode: normalizeLegacyMode(r.legacyMode),
+    cacheTtlMs: normalizeCacheTtl(r.cacheTtlMs),
+  }
+}
+
+function normalizeElicit(v: Record<string, unknown>): MockMcpElicit {
+  const out: MockMcpElicit = {
+    key: str(v.key) ?? '',
+    message: str(v.message) ?? '',
+    schema: isRecord(v.schema) ? v.schema : { type: 'object', properties: {} },
+  }
+  const responseTemplate = str(v.responseTemplate)
+  if (responseTemplate !== undefined) out.responseTemplate = responseTemplate
+  return out
+}
+
 export function normalizeTools(v: unknown): MockMcpTool[] {
   if (!Array.isArray(v)) return []
   return v.filter(isRecord).map((t) => {
@@ -92,6 +181,7 @@ export function normalizeTools(v: unknown): MockMcpTool[] {
     const delayMs = num(t.delayMs)
     if (delayMs !== undefined) tool.delayMs = Math.max(0, Math.trunc(delayMs))
     if (isRecord(t.error)) tool.error = normalizeErrorMode(t.error)
+    if (isRecord(t.elicit)) tool.elicit = normalizeElicit(t.elicit)
     return tool
   })
 }
@@ -168,6 +258,8 @@ type ValidatableConfig = Pick<
   | 'latencyMs'
   | 'errorMode'
   | 'protocolPin'
+  | 'legacyMode'
+  | 'cacheTtlMs'
   | 'tools'
   | 'resources'
   | 'prompts'
@@ -184,6 +276,31 @@ function errorModeProblem(mode: MockMcpErrorMode, where: string): string | null 
   ) {
     return `${where}: httpStatus must be between 400 and 599`
   }
+  return null
+}
+
+/** The restricted elicitation schema: an object of primitive / enum properties. */
+function elicitProblem(e: MockMcpElicit, where: string): string | null {
+  if (!e.key.trim()) return `${where}: elicitation needs a key`
+  if (!e.message.trim()) return `${where}: elicitation needs a message`
+  const schema: JsonSchemaObject = e.schema
+  if (schema.type !== 'object' || !isRecord(schema.properties)) {
+    return `${where}: elicitation schema must be { "type": "object", "properties": { … } }`
+  }
+  for (const [name, prop] of Object.entries(schema.properties)) {
+    if (!isRecord(prop) || !ELICIT_PROPERTY_TYPES.includes(prop.type as string)) {
+      return `${where}: elicitation field "${name}" must be a string, number, integer or boolean (enums are strings)`
+    }
+  }
+  if (
+    schema.required !== undefined &&
+    (!Array.isArray(schema.required) || !schema.required.every((r) => typeof r === 'string'))
+  ) {
+    return `${where}: elicitation "required" must be a list of field names`
+  }
+  const compiled = compileSchema(schema)
+  if (!compiled.ok)
+    return `${where}: elicitation schema is not a valid JSON Schema — ${compiled.error}`
   return null
 }
 
@@ -204,6 +321,19 @@ export function validateMockMcpConfig(cfg: ValidatableConfig): string | null {
   if (modeProblem) return modeProblem
   if (cfg.protocolPin && !PINNABLE_PROTOCOL_VERSIONS.includes(cfg.protocolPin)) {
     return `Protocol pin "${cfg.protocolPin}" is not a version this mock implements (supported: ${PINNABLE_PROTOCOL_VERSIONS.join(', ')})`
+  }
+  if (!LEGACY_MODES.includes(cfg.legacyMode)) {
+    return `Unknown legacy mode "${cfg.legacyMode}" (use stateless or reject)`
+  }
+  if (cfg.protocolPin && !isModernVersion(cfg.protocolPin) && cfg.legacyMode === 'reject') {
+    return `Protocol pin "${cfg.protocolPin}" is a 2025-era version, but legacy mode "reject" refuses 2025-era clients`
+  }
+  if (
+    !Number.isInteger(cfg.cacheTtlMs) ||
+    cfg.cacheTtlMs < 0 ||
+    cfg.cacheTtlMs > MAX_CACHE_TTL_MS
+  ) {
+    return `Cache TTL must be a whole number of milliseconds between 0 and ${MAX_CACHE_TTL_MS}`
   }
 
   const toolNames = new Set<string>()
@@ -226,6 +356,10 @@ export function validateMockMcpConfig(cfg: ValidatableConfig): string | null {
     }
     if (t.error) {
       const p = errorModeProblem(t.error, `Tool "${t.name}" error override`)
+      if (p) return p
+    }
+    if (t.elicit) {
+      const p = elicitProblem(t.elicit, `Tool "${t.name}"`)
       if (p) return p
     }
   }

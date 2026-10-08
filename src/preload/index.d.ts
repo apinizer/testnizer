@@ -1199,8 +1199,21 @@ interface McpConnectOptions {
    * sees the token. Ignored for stdio.
    */
   oauthSessionId?: string
+  /**
+   * Protocol era negotiation (issue #152). `'auto'` (default) probes with
+   * `server/discover` and falls back to the 2025 `initialize` handshake;
+   * `'legacy'` skips the probe; `'2026-07-28'` (or a later revision) pins the
+   * modern era — a 2025-era server then fails with a readable "Version
+   * negotiation failed …" error; a 2025-era revision (`'2025-06-18'`, …)
+   * makes `initialize` offer exactly that version. Legacy SSE treats `'auto'`
+   * as `'legacy'`.
+   */
+  protocol?: 'auto' | 'legacy' | (string & {})
   _pendingId?: string
 }
+
+/** `subscriptions/listen` filter (2026-07-28): `toolsListChanged`, `promptsListChanged`, `resourcesListChanged`, … */
+type McpSubscriptionFilter = Record<string, unknown>
 
 interface McpConnectResult {
   connectionId: string
@@ -1208,11 +1221,51 @@ interface McpConnectResult {
   url: string
   serverName?: string
   serverVersion?: string
-  /** Negotiated protocol version from the `initialize` result. */
+  /** Negotiated protocol version (`initialize` result, or the `server/discover` revision on the modern era). */
   protocolVersion?: string
   /** Server capabilities as plain JSON (`tools`, `resources`, `prompts`, `logging`, …). */
   capabilities?: Record<string, unknown>
   instructions?: string
+  /** Negotiated protocol era (issue #152): `legacy` = 2025 `initialize`, `modern` = 2026-07-28+. */
+  era?: 'legacy' | 'modern'
+  /** The `server/discover` result (modern era only). */
+  discover?: Record<string, unknown>
+  /**
+   * The `subscriptions/listen` stream opened after a modern-era connect when
+   * the server advertises `listChanged` capabilities. `error` when it could
+   * not be opened (the connection still works).
+   */
+  subscription?: {
+    requested: McpSubscriptionFilter
+    honoredFilter?: McpSubscriptionFilter
+    error?: string
+  }
+}
+
+/**
+ * `__mcp` marker on a `tools/call` / `respondInput` result that asks for
+ * client input (2026-07-28 multi-round-trip). The rest of that result object
+ * is the raw `{ resultType: 'input_required', inputRequests?, requestState? }`;
+ * a complete result carries no `__mcp` and is a plain CallToolResult.
+ */
+interface McpInputRequired {
+  kind: 'input_required'
+  /** Embedded requests keyed by server ids: `{ method: 'elicitation/create', params: {...} }` etc. */
+  inputRequests: Record<
+    string,
+    { method?: string; params?: Record<string, unknown> } & Record<string, unknown>
+  >
+  /** Opaque — pass back verbatim to `respondInput`. */
+  requestState?: string
+}
+
+/** `mcp:subscriptionState` — the 2026-07-28 listen stream opened / ended (issue #152). */
+interface McpSubscriptionStateEvent {
+  connectionId: string
+  state: 'open' | 'closed'
+  honoredFilter?: McpSubscriptionFilter
+  /** `graceful` (server ended it) / `remote` (stream dropped); only on `closed`. */
+  reason?: string
 }
 
 interface McpToolDto {
@@ -1495,6 +1548,21 @@ interface McpApi {
     args: unknown,
     ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
   ): Promise<IpcResult<unknown>>
+  /**
+   * Answer an `input_required` result (`result.__mcp`, 2026-07-28): the same
+   * tool + args again with `inputResponses` — BARE results keyed by the
+   * `inputRequests` ids, e.g. `{ count: { action: 'accept', content: { count: 3 } } }`
+   * for an `elicitation/create` — and the `requestState` echoed verbatim. The
+   * result may be complete or another `input_required` round.
+   */
+  respondInput(
+    connectionId: string,
+    toolName: string,
+    args: unknown,
+    requestState: string | undefined,
+    inputResponses: Record<string, unknown>,
+    ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
+  ): Promise<IpcResult<unknown>>
   /** Empty lists when the server lacks the `resources` capability. */
   listResources(
     connectionId: string,
@@ -1513,6 +1581,7 @@ interface McpApi {
   onNotification(callback: (event: McpNotificationEvent) => void): () => void
   onFrame(callback: (event: McpFrameEvent) => void): () => void
   onConnectionClosed(callback: (event: McpConnectionClosedEvent) => void): () => void
+  onSubscriptionState(callback: (event: McpSubscriptionStateEvent) => void): () => void
   oauthStart(options: McpOAuthStartOptions): Promise<IpcResult<{ oauthSessionId: string }>>
   oauthCancel(oauthSessionId: string): Promise<IpcResult<{ cancelled: boolean }>>
   oauthForget(oauthSessionId: string): Promise<IpcResult<{ forgotten: boolean }>>
@@ -2108,6 +2177,19 @@ interface MockMcpErrorModeDto {
   everyN?: number
 }
 
+/**
+ * 2026-07-28 multi-round-trip elicitation (issue #152): the first call answers
+ * `input_required` asking `message` with `schema` (object of string / number /
+ * integer / boolean / enum fields); the retry's accepted content is
+ * `{{input.<field>}}` in the response template. 2025-era calls get a note.
+ */
+interface MockMcpElicitDto {
+  key: string
+  message: string
+  schema: Record<string, unknown>
+  responseTemplate?: string
+}
+
 interface MockMcpToolDto {
   name: string
   title?: string
@@ -2116,7 +2198,13 @@ interface MockMcpToolDto {
   response: { kind: 'text' | 'json' | 'template'; body: string; isError?: boolean }
   delayMs?: number
   error?: MockMcpErrorModeDto
+  elicit?: MockMcpElicitDto
 }
+
+/** `stateless`: 2025 clients served without sessions; `reject`: modern-only (-32022). */
+type MockMcpLegacyModeDto = 'stateless' | 'reject'
+type MockMcpEraDto = 'legacy' | 'modern'
+type MockMcpNotifyKindDto = 'tools' | 'resources' | 'prompts'
 
 interface MockMcpResourceDto {
   uri?: string
@@ -2150,7 +2238,11 @@ interface MockMcpServerDto {
   bearerToken: string
   latencyMs: number
   errorMode: MockMcpErrorModeDto
+  /** A 2025 version or `2026-07-28`; `?rev=` on the URL overrides it per request. */
   protocolPin: string | null
+  legacyMode: MockMcpLegacyModeDto
+  /** `ttlMs` on 2026-07-28 list results (`cacheScope: 'private'`); 0 = always stale. */
+  cacheTtlMs: number
   tools: MockMcpToolDto[]
   resources: MockMcpResourceDto[]
   prompts: MockMcpPromptDto[]
@@ -2172,6 +2264,8 @@ interface MockMcpServerCreateInput {
   latencyMs?: number
   errorMode?: MockMcpErrorModeDto
   protocolPin?: string | null
+  legacyMode?: MockMcpLegacyModeDto
+  cacheTtlMs?: number
   /** Omitted → one `echo` tool. */
   tools?: MockMcpToolDto[]
   resources?: MockMcpResourceDto[]
@@ -2188,6 +2282,14 @@ interface MockMcpServerStateDto {
   url: string | null
   sseUrl: string | null
   errorMessage: string | null
+  /** Eras `url` answers right now (pin / legacyMode applied); `[]` when stopped. */
+  eras?: MockMcpEraDto[]
+  /**
+   * Always false: 2025 clients on `url` are served statelessly (GET/DELETE → 405)
+   * and never receive list_changed; 2026-07-28 clients and SSE sessions do.
+   * Optional only so renderer-built placeholder states stay valid.
+   */
+  legacyNotifications?: false
 }
 
 interface MockMcpLogEntryDto {
@@ -2201,7 +2303,13 @@ interface MockMcpLogEntryDto {
   errorCode?: number
   httpStatus?: number
   sessionId?: string
+  /** `streamable-http` = 2026-07-28 on `url`, `stateless` = 2025 on `url`, `sse` = legacy SSE. */
   transport?: 'streamable-http' | 'stateless' | 'sse'
+  era?: MockMcpEraDto
+  /** The request's `Mcp-Method` header (2026-07-28 clients). */
+  mcpMethod?: string
+  /** The call answered `input_required` (elicitation round). */
+  inputRequired?: boolean
   request: string
   response: string
 }
@@ -2215,6 +2323,8 @@ interface MockMcpServerSubApi {
   start(id: string): Promise<IpcResult<MockMcpServerStateDto>>
   stop(id: string): Promise<IpcResult<MockMcpServerStateDto>>
   status(id: string): Promise<IpcResult<MockMcpServerStateDto>>
+  /** Announce a list change now; `data` false when the server is not running. */
+  notify(id: string, kind: MockMcpNotifyKindDto): Promise<IpcResult<boolean>>
 }
 
 interface MockMcpApi {

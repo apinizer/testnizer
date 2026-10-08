@@ -1,16 +1,57 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
+/**
+ * MCP client engine (issue #139, #152) on the v2 TypeScript SDK
+ * (`@modelcontextprotocol/client` 2.x). One `Client` class serves every
+ * protocol era and every transport:
+ *
+ *   - Streamable HTTP  `StreamableHTTPClientTransport` (`@modelcontextprotocol/client`)
+ *   - legacy HTTP+SSE  `SSEClientTransport` (`@modelcontextprotocol/client`, deprecated
+ *                      upstream but still shipped in 2.x — so no v1 object ever
+ *                      reaches the v2 Client)
+ *   - stdio            `StdioClientTransport` (`@modelcontextprotocol/client/stdio`)
+ *
+ * Protocol eras (issue #152): `versionNegotiation` picks between the 2025-era
+ * `initialize` handshake ("legacy") and the 2026-07-28 `server/discover`
+ * handshake ("modern"); the default `'auto'` probes and falls back, so every
+ * 2024–2025 server keeps working.
+ *
+ * Electron-free on purpose: the IPC handler installs the event sink, so the
+ * real-SDK wire tests run this module under plain Node.
+ */
 import {
-  StdioClientTransport,
-  getDefaultEnvironment,
-} from '@modelcontextprotocol/sdk/client/stdio.js'
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
-import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
+  CLIENT_CAPABILITIES_META_KEY,
+  Client,
+  SSEClientTransport,
+  StreamableHTTPClientTransport,
+  createMiddleware,
+  isInputRequiredResult,
+  type CallToolRequestOptions,
+  type FetchLike,
+  type JSONRPCMessage,
+  type McpSubscription,
+  type SubscriptionFilter,
+  type Tool,
+  type Transport,
+  type VersionNegotiationOptions,
+} from '@modelcontextprotocol/client'
+import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/client/stdio'
 import { createMcpOAuthFetch } from './mcp-oauth.engine'
 import { applyMcpAuth, type McpAuthOptions } from './mcp-auth'
 
 export type McpTransport = 'http' | 'sse' | 'stdio'
+
+/** The 2026-07-28 protocol revision — the first "modern era" version. */
+export const MCP_MODERN_PROTOCOL_VERSION = '2026-07-28'
+
+/**
+ * Version negotiation requested on `mcp:connect` (issue #152):
+ *  - `'auto'` (default) — probe with `server/discover`, fall back to `initialize`;
+ *  - `'legacy'`         — the plain 2025 `initialize` handshake, no probe;
+ *  - a modern revision (`'2026-07-28'`, …) — pinned modern era, no fallback;
+ *  - a legacy revision (`'2025-06-18'`, …) — `initialize` offering exactly that version.
+ */
+export type McpProtocolOption = 'auto' | 'legacy' | string
+
+export type McpProtocolEra = 'legacy' | 'modern'
 
 // ─── Result shapes (issue #139 — Postman-parity MCP client surface) ─────────
 
@@ -80,18 +121,49 @@ export interface McpGetPromptResult {
   messages: McpPromptMessage[]
 }
 
+/** `subscriptions/listen` filter (2026-07-28) as plain JSON. */
+export type McpSubscriptionFilter = Record<string, unknown>
+
+/** The connection's `subscriptions/listen` stream (modern era only). */
+export interface McpSubscriptionInfo {
+  /** The filter Testnizer asked for (from the server's `listChanged` capabilities). */
+  requested: McpSubscriptionFilter
+  /** The subset the server agreed to deliver (`notifications/subscriptions/acknowledged`). */
+  honoredFilter?: McpSubscriptionFilter
+  /** Why the stream could not be opened — the connection itself is still usable. */
+  error?: string
+}
+
 export interface McpConnectionInfo {
   connectionId: string
   transport: McpTransport
   url: string
   serverName?: string
   serverVersion?: string
-  /** Negotiated MCP protocol version (from the `initialize` result). */
+  /**
+   * Negotiated MCP protocol version: the `initialize` result's on the legacy
+   * era, the mutually supported `server/discover` revision on the modern era.
+   */
   protocolVersion?: string
   /** `client.getServerCapabilities()` as plain JSON. */
   capabilities?: Record<string, unknown>
-  /** Server-supplied usage instructions from the `initialize` result. */
+  /** Server-supplied usage instructions (`initialize` / `server/discover` result). */
   instructions?: string
+  /** Protocol era the connection negotiated (issue #152). */
+  era?: McpProtocolEra
+  /** The `server/discover` result (modern era only), as plain JSON. */
+  discover?: Record<string, unknown>
+  /** `subscriptions/listen` state (modern era with `listChanged` capabilities only). */
+  subscription?: McpSubscriptionInfo
+}
+
+/** `__mcp` marker on a `tools/call` result that asks for client input (2026-07-28 MRTR). */
+export interface McpInputRequiredMarker {
+  kind: 'input_required'
+  /** Embedded requests keyed by server-assigned ids (`elicitation/create`, `sampling/createMessage`, `roots/list`). */
+  inputRequests: Record<string, unknown>
+  /** Opaque server state — echo it back verbatim through `mcpRespondInput`. */
+  requestState?: string
 }
 
 // ─── Events (main → renderer; the IPC handler owns the actual broadcast) ────
@@ -123,10 +195,20 @@ export interface McpConnectionClosedEvent {
   reason?: string
 }
 
+/** `subscriptions/listen` lifecycle (issue #152): `open` after the ack, `closed` when the server / link ended it. */
+export interface McpSubscriptionStateEvent {
+  connectionId: string
+  state: 'open' | 'closed'
+  honoredFilter?: McpSubscriptionFilter
+  /** `'graceful'` (server ended it) or `'remote'` (stream dropped) — only on `closed`. */
+  reason?: string
+}
+
 export type McpEngineEvent =
   | { type: 'notification'; payload: McpNotificationEvent }
   | { type: 'frame'; payload: McpFrameEvent }
   | { type: 'connectionClosed'; payload: McpConnectionClosedEvent }
+  | { type: 'subscriptionState'; payload: McpSubscriptionStateEvent }
   /** Transport-level error (not forwarded to the renderer; the handler logs it). */
   | { type: 'transportError'; payload: { connectionId: string; message: string } }
 
@@ -146,7 +228,7 @@ export function setMcpEventSink(sink: McpEventSink | null): void {
 
 // ─── Connection state ───────────────────────────────────────
 
-/** Pagination guard for every list call (issue #139). */
+/** Pagination guard for every list call (issue #139); also the SDK's `listMaxPages`. */
 const MAX_PAGES = 50
 const MAX_ITEMS = 2000
 /** Frames bigger than this (serialised chars) are summarised, not shipped whole. */
@@ -154,6 +236,24 @@ const MAX_FRAME_CHARS = 1_000_000
 const FRAME_PREVIEW_CHARS = 2048
 /** JSON-RPC "Method not found". */
 const METHOD_NOT_FOUND = -32601
+/**
+ * `server/discover` probe budget on stdio. A legacy stdio server that never
+ * answers an unknown pre-`initialize` request is only recognised as legacy
+ * when the probe times out — without this the SDK waits the full 60 s
+ * request timeout before falling back.
+ */
+const STDIO_PROBE_TIMEOUT_MS = 10_000
+/**
+ * `server/discover` probe budget on Streamable HTTP `'auto'`. The SDK treats
+ * an HTTP probe timeout as an outage (no fallback) and would wait the full
+ * 60 s; a 2025 server that silently ignores unknown requests then falls back
+ * (see `mcpConnect`'s legacy retry) within this bound instead.
+ */
+const HTTP_PROBE_TIMEOUT_MS = 15_000
+/** How long `mcpConnect` waits for `notifications/subscriptions/acknowledged`. */
+const LISTEN_ACK_TIMEOUT_MS = 10_000
+/** Upper bound for the `notifications/cancelled` a subscription close sends on disconnect. */
+const SUBSCRIPTION_CLOSE_TIMEOUT_MS = 2_000
 
 /** Per-connection wire bookkeeping; exists from before `client.connect()`. */
 interface WireState {
@@ -168,18 +268,28 @@ interface WireState {
    */
   buffering: boolean
   buffer: McpEngineEvent[]
+  /** The handshake failed — late frames of the dead transport are dropped. */
+  discarded: boolean
+  /**
+   * True while `client.connect()` runs. The `'auto'` probe makes a 2025-era
+   * HTTP server answer `server/discover` with an HTTP 4xx, which the SDK
+   * reports through `onerror` before it falls back; those are not transport
+   * errors worth logging (a real handshake failure rejects `connect()`).
+   */
+  handshaking: boolean
   closedByClient: boolean
   closeEmitted: boolean
   /** Last transport error; cleared whenever an inbound frame proves the link alive. */
   lastError?: string
-  initializeId?: string | number
-  negotiatedProtocolVersion?: string
 }
 
 interface Connection {
   client: Client
   info: McpConnectionInfo
   state: WireState
+  /** Raw tool definitions from the last `tools/list` (MRTR `toolDefinition`, see `runToolCall`). */
+  tools: Map<string, Tool>
+  subscription?: McpSubscription
 }
 
 const connections = new Map<string, Connection>()
@@ -196,6 +306,7 @@ function makeId(): string {
 }
 
 function emit(state: WireState, event: McpEngineEvent): void {
+  if (state.discarded) return
   if (state.buffering) {
     state.buffer.push(event)
     return
@@ -227,7 +338,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function frameMessage(message: JSONRPCMessage): { message: unknown; truncated?: boolean } {
+function frameMessage(message: unknown): { message: unknown; truncated?: boolean } {
   let serialised: string
   try {
     serialised = JSON.stringify(message)
@@ -235,7 +346,7 @@ function frameMessage(message: JSONRPCMessage): { message: unknown; truncated?: 
     return { message }
   }
   if (serialised.length <= MAX_FRAME_CHARS) return { message }
-  const m = message as Record<string, unknown>
+  const m = isObject(message) ? message : {}
   return {
     truncated: true,
     message: {
@@ -250,28 +361,16 @@ function frameMessage(message: JSONRPCMessage): { message: unknown; truncated?: 
   }
 }
 
-function recordFrame(state: WireState, direction: 'in' | 'out', message: JSONRPCMessage): void {
-  const ts = Date.now()
-  const m = message as Record<string, unknown>
-  const hasId = 'id' in m && m.id !== undefined && m.id !== null
-  const method = typeof m.method === 'string' ? m.method : undefined
-
-  // The Client does not keep the negotiated protocol version (SDK 1.29
-  // client/index.js:298-317 stores only capabilities / serverInfo /
-  // instructions), and only Streamable HTTP exposes it afterwards — so the
-  // `initialize` round-trip seen here is the source for sse / stdio.
-  if (direction === 'out' && method === 'initialize' && hasId) {
-    state.initializeId = m.id as string | number
-  } else if (
-    direction === 'in' &&
-    hasId &&
-    state.initializeId !== undefined &&
-    m.id === state.initializeId &&
-    isObject(m.result) &&
-    typeof m.result.protocolVersion === 'string'
-  ) {
-    state.negotiatedProtocolVersion = m.result.protocolVersion
+function recordFrame(state: WireState, direction: 'in' | 'out', message: unknown): void {
+  // A batch is recorded member by member, exactly like the server sees it.
+  if (Array.isArray(message)) {
+    for (const item of message) recordFrame(state, direction, item)
+    return
   }
+  if (!isObject(message)) return
+  const ts = Date.now()
+  const hasId = 'id' in message && message.id !== undefined && message.id !== null
+  const method = typeof message.method === 'string' ? message.method : undefined
   if (direction === 'in') state.lastError = undefined
 
   emit(state, {
@@ -279,11 +378,12 @@ function recordFrame(state: WireState, direction: 'in' | 'out', message: JSONRPC
     payload: { connectionId: state.connectionId, ts, direction, ...frameMessage(message) },
   })
   // Every inbound JSON-RPC notification (method, no id). Derived from the
-  // frame tap rather than `client.fallbackNotificationHandler`: the SDK's
-  // Protocol constructor pre-registers `notifications/cancelled` and
-  // `notifications/progress` (shared/protocol.js:31-36), which shadow the
-  // fallback, and replacing the progress handler would break the SDK's own
-  // progress / timeout bookkeeping (`_onprogress` is private).
+  // frame tap rather than `setNotificationHandler` / the fallback handler:
+  // the SDK's Protocol pre-registers `notifications/cancelled` /
+  // `notifications/progress` (which would shadow a fallback, and replacing
+  // the progress handler breaks the SDK's progress / timeout bookkeeping),
+  // and on the 2026-07-28 era the `subscriptions/listen` stream's change
+  // notifications ride the same wire, so this one tap covers both eras.
   if (direction === 'in' && method && !hasId) {
     emit(state, {
       type: 'notification',
@@ -291,10 +391,139 @@ function recordFrame(state: WireState, direction: 'in' | 'out', message: JSONRPC
         connectionId: state.connectionId,
         ts,
         method,
-        ...('params' in m ? { params: m.params } : {}),
+        ...('params' in message ? { params: message.params } : {}),
       },
     })
   }
+}
+
+/** Parse a JSON body (single message or batch) and record it as inbound frames. */
+function recordJsonBody(state: WireState, text: string): void {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return
+  }
+  const items = Array.isArray(parsed) ? parsed : [parsed]
+  for (const item of items) {
+    if (isObject(item) && item.jsonrpc === '2.0') recordFrame(state, 'in', item)
+  }
+}
+
+/**
+ * Minimal `text/event-stream` reader (WHATWG SSE parsing rules for the
+ * fields MCP uses): `data:` lines of one event are joined with `\n`, only
+ * default / `message` events carry JSON-RPC, `:` lines are comments. Reads
+ * the stream to its end even when a payload fails to parse — the tap reads a
+ * `Response.clone()`, and an unread tee branch would buffer the SDK's side.
+ */
+async function readEventStream(
+  body: ReadableStream<Uint8Array>,
+  onMessage: (data: string) => void,
+): Promise<void> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let data: string[] = []
+  let event = ''
+  const dispatch = (): void => {
+    if (data.length > 0 && (event === '' || event === 'message')) {
+      try {
+        onMessage(data.join('\n'))
+      } catch {
+        /* a bad payload never stops the read */
+      }
+    }
+    data = []
+    event = ''
+  }
+  const processLine = (line: string): void => {
+    if (line === '') return dispatch()
+    if (line.startsWith(':')) return
+    const colon = line.indexOf(':')
+    const field = colon === -1 ? line : line.slice(0, colon)
+    let value = colon === -1 ? '' : line.slice(colon + 1)
+    if (value.startsWith(' ')) value = value.slice(1)
+    if (field === 'data') data.push(value)
+    else if (field === 'event') event = value
+  }
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      for (;;) {
+        const match = /\r\n|\r|\n/.exec(buffer)
+        if (!match) break
+        // A lone `\r` at the end of the chunk may be the first half of `\r\n`.
+        if (match[0] === '\r' && match.index === buffer.length - 1) break
+        processLine(buffer.slice(0, match.index))
+        buffer = buffer.slice(match.index + match[0].length)
+      }
+    }
+    buffer += decoder.decode()
+    if (buffer) processLine(buffer.replace(/\r$/, ''))
+    dispatch()
+  } catch {
+    // Aborted / dropped stream: the SDK reports it on its own branch.
+  } finally {
+    try {
+      reader.releaseLock()
+    } catch {
+      /* already released */
+    }
+  }
+}
+
+/**
+ * Record the JSON-RPC messages carried by an HTTP response without disturbing
+ * the SDK's copy. An error status is recorded only for a POST — that body
+ * answers a message we sent (e.g. the 2025 server's `400` JSON-RPC error to
+ * the `server/discover` probe); a stateless server's `405` to the optional
+ * GET stream is not a reply to anything.
+ */
+function tapResponse(state: WireState, res: Response, method: string): void {
+  if (!res.body) return
+  if (!res.ok && method !== 'POST') return
+  const mediaType = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
+  if (mediaType !== 'application/json' && mediaType !== 'text/event-stream') return
+  let copy: Response
+  try {
+    copy = res.clone()
+  } catch {
+    return
+  }
+  if (mediaType === 'application/json') {
+    void copy
+      .text()
+      .then((text) => recordJsonBody(state, text))
+      .catch(() => {})
+    return
+  }
+  if (copy.body) {
+    void readEventStream(copy.body, (payload) => recordJsonBody(state, payload))
+  }
+}
+
+/**
+ * HTTP frame tap (Streamable HTTP + legacy SSE), as a fetch middleware on the
+ * transport's `fetch`. Inbound frames are read from the WIRE: JSON bodies,
+ * SSE response streams event by event (the standalone GET stream, per-request
+ * POST streams, the 2026-07-28 `subscriptions/listen` stream), and JSON-RPC
+ * error bodies of 4xx answers. This is the only place the `server/discover`
+ * probe's reply is visible — the SDK's probe window takes over
+ * `transport.onmessage` and does not forward the reply. Outbound frames come
+ * from the `send` wrap in `tapTransport` (exact message, sync ordering).
+ * Composed OUTSIDE the OAuth fetch, so a 401 → refresh → retry shows as one
+ * exchange.
+ */
+function frameTapFetch(state: WireState, base: FetchLike): FetchLike {
+  return createMiddleware(async (next, input, init) => {
+    const res = await next(input, init)
+    tapResponse(state, res, (init?.method ?? 'GET').toUpperCase())
+    return res
+  })(base)
 }
 
 /**
@@ -304,8 +533,8 @@ function recordFrame(state: WireState, direction: 'in' | 'out', message: JSONRPC
  *    type), after which it is CLOSED and never reconnects; network drops
  *    arrive code-less and are retried by eventsource itself.
  *  - Streamable HTTP: the standalone GET stream gave up reconnecting
- *    (streamableHttp.js:147). Per-request POST failures also surface as
- *    `onerror` there (:417, :457) — those are NOT terminal.
+ *    (`_scheduleReconnection`). Per-request POST failures also surface as
+ *    `onerror` there — those are NOT terminal.
  */
 function isTerminalTransportError(kind: McpTransport, err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
@@ -343,8 +572,8 @@ function handleError(state: WireState, err: unknown): void {
   if (state.closedByClient) return
   const message = err instanceof Error ? err.message : String(err)
   // Consecutive identical errors (e.g. an SSE reconnect loop against a dead
-  // server) are reported once.
-  if (message !== state.lastError) {
+  // server) are reported once; handshake-time errors are the probe's.
+  if (message !== state.lastError && !state.handshaking) {
     emit(state, {
       type: 'transportError',
       payload: { connectionId: state.connectionId, message },
@@ -362,31 +591,195 @@ function handleError(state: WireState, err: unknown): void {
 }
 
 /**
- * Wire the frame tap BEFORE `client.connect()`. `Protocol.connect`
- * (shared/protocol.js:224-245) chains any `onmessage` / `onclose` /
- * `onerror` already on the transport instead of dropping them, so the
- * `initialize` request + result are captured too. `send` is wrapped as an
- * own property, shadowing the prototype method Protocol calls.
+ * Wire the frame tap BEFORE `client.connect()`. `Protocol.connect` chains
+ * any `onmessage` / `onclose` / `onerror` already on the transport instead of
+ * dropping them, and the SDK's negotiation probe window saves and restores
+ * them (forwarding close / error meanwhile), so the handshake is covered.
+ * `send` is wrapped as an own property, shadowing the prototype method the
+ * SDK calls — including the probe's `server/discover`. On http / sse the
+ * inbound side is the fetch middleware (`frameTapFetch`); on stdio it is
+ * `onmessage`.
  */
-function tapTransport(transport: Transport, state: WireState): void {
+function tapTransport(
+  transport: Transport,
+  state: WireState,
+  tapInbound: boolean,
+  /** False for a transport an earlier connect attempt gave up on (see `mcpConnect`). */
+  isCurrent: () => boolean = () => true,
+): void {
   if (typeof transport.send === 'function') {
     const originalSend = transport.send.bind(transport)
     transport.send = (message, options) => {
-      // Recorded before the send: on Streamable HTTP a JSON response is
-      // delivered through onmessage while send() is still pending.
+      // Recorded before the send: a response can be delivered while send()
+      // is still pending.
       recordFrame(state, 'out', message)
       return originalSend(message, options)
     }
   }
-  transport.onmessage = (message: JSONRPCMessage) => recordFrame(state, 'in', message)
-  transport.onclose = () => handleClose(state)
-  transport.onerror = (err: Error) => handleError(state, err)
+  if (tapInbound) {
+    transport.onmessage = (message: JSONRPCMessage) => recordFrame(state, 'in', message)
+  }
+  transport.onclose = () => {
+    if (isCurrent()) handleClose(state)
+  }
+  transport.onerror = (err: Error) => {
+    if (isCurrent()) handleError(state, err)
+  }
+}
+
+// ─── Errors ─────────────────────────────────────────────────
+
+/** `MCP error <code>: <message>` (+ the server's supported versions for -32022) of a JSON-RPC error body. */
+function jsonRpcErrorText(body: unknown): string | undefined {
+  if (typeof body !== 'string' || !body.trim().startsWith('{')) return undefined
+  try {
+    const parsed: unknown = JSON.parse(body)
+    if (!isObject(parsed) || !isObject(parsed.error)) return undefined
+    const { code, message, data } = parsed.error
+    if (typeof code !== 'number') return undefined
+    const supported =
+      isObject(data) && Array.isArray(data.supported)
+        ? ` (server supports ${data.supported.join(', ')})`
+        : ''
+    return `MCP error ${code}: ${typeof message === 'string' ? message : ''}${supported}`
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Make SDK v2 errors read like the v1 ones users (and logs) know:
+ *  - `ProtocolError` (a JSON-RPC error from the server) carries the bare
+ *    server message → `MCP error <code>: <message>`;
+ *  - `SdkHttpError` keeps the HTTP status in `.status` (v1: `.code`) → the
+ *    message names the status, and a JSON-RPC error body (e.g. a
+ *    2026-07-28-only server's `-32022 Unsupported protocol version`) is
+ *    spelled out instead of dumped raw.
+ * The error object itself (class, `.code`, `.status`, `.data`) is kept.
+ */
+export function decorateMcpError(err: unknown): unknown {
+  if (!(err instanceof Error)) return err
+  const e = err as Error & { code?: unknown; status?: unknown; data?: unknown }
+  try {
+    if (e.name === 'ProtocolError' && typeof e.code === 'number') {
+      if (!e.message.startsWith('MCP error')) e.message = `MCP error ${e.code}: ${e.message}`
+    } else if (e.name === 'SdkHttpError' && typeof e.status === 'number') {
+      const rpc = jsonRpcErrorText(isObject(e.data) ? e.data.text : undefined)
+      if (rpc) e.message = `HTTP ${e.status}: ${rpc}`
+      else if (!e.message.includes(String(e.status))) e.message = `${e.message} (HTTP ${e.status})`
+    }
+  } catch {
+    /* read-only message — leave it */
+  }
+  return err
+}
+
+async function sdkCall<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run()
+  } catch (err) {
+    throw decorateMcpError(err)
+  }
 }
 
 // ─── Authorization tab (MCP Auth) ───────────────────────────
 // Pure helpers live in `mcp-auth.ts` (shared with the Security Scan);
 // re-exported so callers / tests keep importing them from the engine.
 export { applyMcpAuth, type McpAuthOptions } from './mcp-auth'
+
+// ─── Version negotiation ────────────────────────────────────
+
+const PROTOCOL_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+export function isModernProtocolVersion(version: string): boolean {
+  return PROTOCOL_DATE.test(version) && version >= MCP_MODERN_PROTOCOL_VERSION
+}
+
+interface NegotiationPlan {
+  versionNegotiation: VersionNegotiationOptions
+  /** Legacy pin: the only version `initialize` offers / accepts. */
+  supportedProtocolVersions?: string[]
+}
+
+/**
+ * Map the `protocol` connect option onto the SDK's `versionNegotiation`.
+ *  - `'auto'` → `{ mode: 'auto' }`, except on legacy HTTP+SSE: that transport
+ *    predates 2026-07-28, and a non-SDK SSE server rejecting the probe POST
+ *    fails the connect instead of falling back — so it stays on `initialize`.
+ *  - a modern revision → `{ mode: { pin } }`.
+ *  - a legacy revision → `{ mode: 'legacy' }` + `supportedProtocolVersions: [v]`
+ *    (the SDK refuses to `pin` a pre-2026 version).
+ */
+export function resolveNegotiation(
+  protocol: McpProtocolOption | undefined,
+  transport: McpTransport,
+): NegotiationPlan {
+  const value = (protocol ?? 'auto').trim() || 'auto'
+  if (value === 'legacy') return { versionNegotiation: { mode: 'legacy' } }
+  if (value === 'auto') {
+    if (transport === 'sse') return { versionNegotiation: { mode: 'legacy' } }
+    return {
+      versionNegotiation: {
+        mode: 'auto',
+        probe: {
+          timeoutMs: transport === 'stdio' ? STDIO_PROBE_TIMEOUT_MS : HTTP_PROBE_TIMEOUT_MS,
+        },
+      },
+    }
+  }
+  if (!PROTOCOL_DATE.test(value)) {
+    throw new Error(
+      `Unknown MCP protocol option "${value}" — use auto, legacy or a protocol version like ${MCP_MODERN_PROTOCOL_VERSION}`,
+    )
+  }
+  if (isModernProtocolVersion(value)) {
+    return {
+      versionNegotiation: {
+        mode: { pin: value },
+        ...(transport === 'stdio' ? { probe: { timeoutMs: STDIO_PROBE_TIMEOUT_MS } } : {}),
+      },
+    }
+  }
+  return { versionNegotiation: { mode: 'legacy' }, supportedProtocolVersions: [value] }
+}
+
+/** HTTP 401 in any SDK 2.x / v1-transport shape (`SdkHttpError.status`, `SseError.code`, `UnauthorizedError`). */
+function isUnauthorizedError(err: unknown): boolean {
+  if (!isObject(err)) return false
+  return err.status === 401 || err.code === 401 || err.name === 'UnauthorizedError'
+}
+
+function newClient(plan: NegotiationPlan): Client {
+  return new Client(
+    { name: 'Testnizer', version: '1.0.0' },
+    {
+      versionNegotiation: plan.versionNegotiation,
+      ...(plan.supportedProtocolVersions
+        ? { supportedProtocolVersions: plan.supportedProtocolVersions }
+        : {}),
+      // Manual multi-round-trip mode: an `input_required` tools/call result
+      // is handed to the renderer (see `runToolCall`); Testnizer registers no
+      // elicitation / sampling handlers to auto-fulfil it with.
+      inputRequired: { autoFulfill: false },
+      listMaxPages: MAX_PAGES,
+    },
+  )
+}
+
+/** The `subscriptions/listen` filter a server's `listChanged` capabilities call for. */
+function listenFilterFor(capabilities: Record<string, unknown> | undefined): SubscriptionFilter {
+  const caps = capabilities ?? {}
+  const flag = (key: string): boolean => isObject(caps[key]) && caps[key].listChanged === true
+  return {
+    ...(flag('tools') ? { toolsListChanged: true } : {}),
+    ...(flag('prompts') ? { promptsListChanged: true } : {}),
+    ...(flag('resources') ? { resourcesListChanged: true } : {}),
+  }
+}
+
+function plainJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
 
 // ─── Connect / disconnect ───────────────────────────────────
 
@@ -425,77 +818,11 @@ export async function mcpConnect(options: {
    * never sees the token. Ignored for `stdio`.
    */
   oauthSessionId?: string
+  /** Protocol era negotiation (issue #152). Default `'auto'`. */
+  protocol?: McpProtocolOption
 }): Promise<McpConnectionInfo> {
   const connectionId = makeId()
-  const client = new Client({ name: 'Testnizer', version: '1.0.0' })
-
-  let transport: StreamableHTTPClientTransport | SSEClientTransport | StdioClientTransport
-
-  // @modelcontextprotocol/sdk@1.29.0: both HTTP transports merge
-  // `requestInit.headers` in `_commonHeaders()` (dist/cjs/client/sse.js:54-69,
-  // streamableHttp.js:62-81), which feeds EVERY wire request — the SSE GET
-  // EventSource stream (sse.js:77 inside its `fetch` wrapper), the SSE POSTs
-  // (sse.js:168), and Streamable HTTP GET/POST/DELETE (streamableHttp.js:87,
-  // :300, :440). So no `eventSourceInit.fetch` wrapper is needed on this SDK
-  // version (older SDKs applied requestInit to POST only). User headers are
-  // spread last there, so they override the SDK's own Authorization /
-  // session headers on a name clash — intended: the user's row wins.
-  // Authorization tab under the custom headers (http / sse only): a custom
-  // row of the same name wins (issue #48 parity). The api-key query variant
-  // changes the wire URL; `info.url` below keeps the original so the key
-  // never reaches the console log or the connect result.
-  const effective =
-    options.transport === 'stdio'
-      ? { url: options.url, headers: options.headers ?? {} }
-      : applyMcpAuth(options.url, options.headers, options.auth)
-  const headers = Object.keys(effective.headers).length > 0 ? effective.headers : undefined
-  // OAuth (issue #141): a custom `fetch` rather than the SDK's `authProvider`.
-  // With an authProvider the SDK spreads `requestInit.headers` AFTER the
-  // token (`_commonHeaders`), so a user `Authorization` row would beat it,
-  // and a 401 re-runs the whole `auth()` orchestrator (browser redirect
-  // mid-connect). The fetch reaches every wire request of both transports
-  // (streamableHttp `_fetch`; sse `eventSourceInit.fetch ?? _fetch`).
-  const oauthFetch =
-    options.oauthSessionId && options.transport !== 'stdio'
-      ? createMcpOAuthFetch(options.oauthSessionId)
-      : undefined
-  const httpOpts =
-    headers || oauthFetch
-      ? {
-          ...(headers ? { requestInit: { headers } } : {}),
-          ...(oauthFetch ? { fetch: oauthFetch } : {}),
-        }
-      : undefined
-
-  if (options.transport === 'http') {
-    transport = new StreamableHTTPClientTransport(new URL(effective.url), httpOpts)
-  } else if (options.transport === 'sse') {
-    // Legacy SSE: the POST endpoint comes from the server's `endpoint` event,
-    // so an api-key query param rides the GET stream only.
-    transport = new SSEClientTransport(new URL(effective.url), httpOpts)
-  } else {
-    // stdio. With explicit `args` the caller already tokenised the command
-    // line (the renderer's quote-aware `parseCommandLine`), so `command` is
-    // the executable VERBATIM — a path with spaces must not be split again.
-    // Without `args`, `command` (or the url field) is a whole command line,
-    // split on whitespace as before.
-    const verbatim = !!options.command && options.args !== undefined
-    const cmd = options.command || options.url
-    const parts = verbatim ? [cmd] : cmd.split(/\s+/)
-    // SDK 1.29's start() already spreads getDefaultEnvironment() under the
-    // given env (stdio.js:72-75); older SDKs used `env ?? default`, where a
-    // user env REPLACED the inherited PATH/HOME and broke `npx`. Merge here
-    // explicitly so neither an SDK bump nor a user env row can do that.
-    const env =
-      options.env && Object.keys(options.env).length > 0
-        ? { ...getDefaultEnvironment(), ...options.env }
-        : undefined
-    transport = new StdioClientTransport({
-      command: parts[0],
-      args: [...parts.slice(1), ...(options.args ?? [])],
-      env,
-    })
-  }
+  const plan = resolveNegotiation(options.protocol, options.transport)
 
   const state: WireState = {
     connectionId,
@@ -503,62 +830,207 @@ export async function mcpConnect(options: {
     established: false,
     buffering: true,
     buffer: [],
+    discarded: false,
+    handshaking: true,
     closedByClient: false,
     closeEmitted: false,
   }
-  tapTransport(transport, state)
 
+  /** A fresh transport for one connect attempt (a transport cannot be restarted). */
+  const buildTransport = (): Transport => {
+    if (options.transport === 'stdio') {
+      // With explicit `args` the caller already tokenised the command line
+      // (the renderer's quote-aware `parseCommandLine`), so `command` is the
+      // executable VERBATIM — a path with spaces must not be split again.
+      // Without `args`, `command` (or the url field) is a whole command
+      // line, split on whitespace as before.
+      const verbatim = !!options.command && options.args !== undefined
+      const cmd = options.command || options.url
+      const parts = verbatim ? [cmd] : cmd.split(/\s+/)
+      // The SDK's start() spreads getDefaultEnvironment() under the given
+      // env; merge here explicitly anyway so neither an SDK change nor a user
+      // env row can drop the inherited PATH / HOME (which breaks `npx`).
+      const env =
+        options.env && Object.keys(options.env).length > 0
+          ? { ...getDefaultEnvironment(), ...options.env }
+          : undefined
+      return new StdioClientTransport({
+        command: parts[0],
+        args: [...parts.slice(1), ...(options.args ?? [])],
+        env,
+      })
+    }
+    // Authorization tab under the custom headers: a custom row of the same
+    // name wins (issue #48 parity). The api-key query variant changes the
+    // wire URL; `info.url` below keeps the original so the key never reaches
+    // the console log or the connect result.
+    const effective = applyMcpAuth(options.url, options.headers, options.auth)
+    const headers = Object.keys(effective.headers).length > 0 ? effective.headers : undefined
+    // SDK 2.x: both transports build every request's headers from
+    // `requestInit.headers` in `_commonHeaders()` — Streamable HTTP POST /
+    // GET / DELETE and the legacy SSE GET EventSource stream + POSTs — then
+    // set their own `mcp-session-id` / `mcp-protocol-version` over them.
+    // OAuth (issue #141): a custom `fetch` rather than the SDK's
+    // `authProvider` — with an authProvider a 401 re-runs the SDK's whole
+    // `auth()` orchestrator (browser redirect mid-connect). The OAuth fetch
+    // sets its token AFTER the SDK built the headers, so the token wins.
+    const oauthFetch = options.oauthSessionId
+      ? createMcpOAuthFetch(options.oauthSessionId)
+      : undefined
+    const base: FetchLike = oauthFetch ?? ((url, init) => fetch(url, init))
+    const httpOpts = {
+      ...(headers ? { requestInit: { headers } } : {}),
+      fetch: frameTapFetch(state, base),
+      // v1 parity: SDK 2.x refuses cross-origin redirects by default; v1
+      // (and every other Testnizer protocol) leaves them to fetch.
+      redirectPolicy: 'follow' as const,
+    }
+    // Legacy SSE: the POST endpoint comes from the server's `endpoint`
+    // event, so an api-key query param rides the GET stream only.
+    return options.transport === 'http'
+      ? new StreamableHTTPClientTransport(new URL(effective.url), httpOpts)
+      : new SSEClientTransport(new URL(effective.url), httpOpts)
+  }
+
+  let current: Transport | undefined
+  let cancelled = false
   // Register before the connect() promise so a fast cancel still finds the
-  // entry. Teardown calls transport.close() — this is what causes
-  // `client.connect()` to reject for HTTP / SSE / stdio transports.
+  // entry. Teardown closes the CURRENT attempt's transport — this is what
+  // makes `client.connect()` reject (also mid-probe).
   if (options.pendingId) {
     pendingConnects.set(options.pendingId, async () => {
+      cancelled = true
       try {
-        await transport.close()
+        await current?.close()
       } catch {
         // Best-effort: socket may already be torn down.
       }
     })
   }
 
-  try {
+  const attempt = async (attemptPlan: NegotiationPlan): Promise<Client> => {
+    const client = newClient(attemptPlan)
+    const transport = buildTransport()
+    current = transport
+    tapTransport(transport, state, options.transport === 'stdio', () => current === transport)
     await client.connect(transport)
-  } catch (err) {
-    if (options.pendingId) pendingConnects.delete(options.pendingId)
-    state.buffer = []
-    throw err
+    return client
   }
 
+  const fail = (err: unknown): never => {
+    if (options.pendingId) pendingConnects.delete(options.pendingId)
+    state.discarded = true
+    state.buffer = []
+    throw decorateMcpError(err)
+  }
+
+  let client: Client
+  try {
+    client = await attempt(plan)
+  } catch (err) {
+    // Streamable HTTP `'auto'`: the SDK falls back to `initialize` only on
+    // definitive legacy signals. A 2025 server behind a gateway / WAF that
+    // answers the unknown `server/discover` POST with 403 or 5xx, or one that
+    // never answers it, makes the probe a hard error — although the plain
+    // 2025 handshake (what SDK 1.x always did) would work. Retry exactly
+    // that, once, on a fresh client + transport; its error, if any, is the
+    // one a 2025 client would have shown. A 401 is final (the renderer offers
+    // OAuth on it), and so is a user cancel.
+    const retryLegacy =
+      options.transport === 'http' &&
+      plan.versionNegotiation.mode === 'auto' &&
+      !cancelled &&
+      !isUnauthorizedError(err)
+    if (!retryLegacy) return fail(err)
+    try {
+      client = await attempt({ versionNegotiation: { mode: 'legacy' } })
+    } catch (legacyErr) {
+      return fail(legacyErr)
+    }
+  }
   if (options.pendingId) pendingConnects.delete(options.pendingId)
 
+  const era = client.getProtocolEra()
   const serverInfo = client.getServerVersion()
   const capabilities = client.getServerCapabilities()
+  const capabilitiesJson = capabilities
+    ? plainJson(capabilities as unknown as Record<string, unknown>)
+    : undefined
   const instructions = client.getInstructions()
-  const transportVersion =
-    options.transport === 'http'
-      ? (transport as StreamableHTTPClientTransport).protocolVersion
-      : undefined
-  const protocolVersion = transportVersion ?? state.negotiatedProtocolVersion
-  const info: McpConnectionInfo = {
-    connectionId,
-    transport: options.transport,
-    url: options.url,
-    serverName: serverInfo?.name,
-    serverVersion: serverInfo?.version,
-    ...(protocolVersion ? { protocolVersion } : {}),
-    ...(capabilities
-      ? { capabilities: JSON.parse(JSON.stringify(capabilities)) as Record<string, unknown> }
-      : {}),
-    ...(typeof instructions === 'string' && instructions ? { instructions } : {}),
+  const protocolVersion = client.getNegotiatedProtocolVersion()
+  const discover = client.getDiscoverResult()
+
+  const conn: Connection = {
+    client,
+    state,
+    tools: new Map(),
+    info: {
+      connectionId,
+      transport: options.transport,
+      url: options.url,
+      serverName: serverInfo?.name,
+      serverVersion: serverInfo?.version,
+      ...(protocolVersion ? { protocolVersion } : {}),
+      ...(capabilitiesJson ? { capabilities: capabilitiesJson } : {}),
+      ...(typeof instructions === 'string' && instructions ? { instructions } : {}),
+      ...(era ? { era } : {}),
+      ...(discover ? { discover: plainJson(discover as unknown as Record<string, unknown>) } : {}),
+    },
   }
 
-  connections.set(connectionId, { client, info, state })
+  // 2026-07-28: list-change notifications are only delivered on an explicit
+  // `subscriptions/listen` stream (2025-era servers push them unsolicited).
+  if (era === 'modern') {
+    const requested = listenFilterFor(capabilitiesJson)
+    if (Object.keys(requested).length > 0) {
+      conn.info.subscription = await openSubscription(conn, requested)
+    }
+  }
+
+  connections.set(connectionId, conn)
   state.established = true
+  state.handshaking = false
+  // An error the handshake survived (the probe's 4xx) is not this connection's.
+  state.lastError = undefined
   // One macrotask later: the IPC reply carrying `connectionId` is posted from
   // the microtask chain that resolves this promise, so it reaches the
   // renderer before the buffered handshake frames do.
   setTimeout(() => flushBuffered(state), 0)
-  return info
+  return conn.info
+}
+
+/**
+ * Open the modern-era `subscriptions/listen` stream. Change notifications on
+ * it reach the renderer through the frame tap (like every notification), so
+ * no `setNotificationHandler` is registered. A failure is reported on the
+ * connect result — the connection itself stays usable.
+ */
+async function openSubscription(
+  conn: Connection,
+  requested: SubscriptionFilter,
+): Promise<McpSubscriptionInfo> {
+  const { state } = conn
+  try {
+    const sub = await conn.client.listen(requested, { timeout: LISTEN_ACK_TIMEOUT_MS })
+    conn.subscription = sub
+    const honoredFilter = plainJson(sub.honoredFilter as unknown as McpSubscriptionFilter)
+    emit(state, {
+      type: 'subscriptionState',
+      payload: { connectionId: state.connectionId, state: 'open', honoredFilter },
+    })
+    void sub.closed.then((reason) => {
+      if (conn.subscription === sub) conn.subscription = undefined
+      if (reason === 'local' || state.closedByClient) return
+      emit(state, {
+        type: 'subscriptionState',
+        payload: { connectionId: state.connectionId, state: 'closed', reason },
+      })
+    })
+    return { requested: plainJson(requested as unknown as McpSubscriptionFilter), honoredFilter }
+  } catch (err) {
+    const message = (decorateMcpError(err) as Error)?.message ?? String(err)
+    return { requested: plainJson(requested as unknown as McpSubscriptionFilter), error: message }
+  }
 }
 
 /**
@@ -579,6 +1051,16 @@ export async function mcpDisconnect(connectionId: string): Promise<void> {
   if (!conn) return
   conn.state.closedByClient = true
   connections.delete(connectionId)
+  const sub = conn.subscription
+  conn.subscription = undefined
+  if (sub) {
+    // close() aborts the listen stream AND sends notifications/cancelled;
+    // bounded so a hung server cannot stall the disconnect.
+    await Promise.race([
+      sub.close().catch(() => {}),
+      new Promise<void>((resolve) => setTimeout(resolve, SUBSCRIPTION_CLOSE_TIMEOUT_MS)),
+    ])
+  }
   try {
     await conn.client.close()
   } catch {
@@ -594,6 +1076,11 @@ function requireConnection(connectionId: string): Connection {
 
 // ─── Lists (paginated) ──────────────────────────────────────
 
+/**
+ * SDK 2.x walks every page itself when a list call has no `cursor` (capped by
+ * `listMaxPages` = MAX_PAGES), so on a real server this loop runs once; it
+ * still guards per-page answers (a `nextCursor` on the first result).
+ */
 async function collectPages<T>(
   fetchPage: (cursor: string | undefined) => Promise<{ items: T[]; nextCursor?: string }>,
 ): Promise<T[]> {
@@ -628,28 +1115,38 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return isObject(value) ? value : undefined
 }
 
+/**
+ * A testing tool always asks the server: `'refresh'` skips the SDK's
+ * response cache (SEP-2549 `ttlMs` hints) yet still writes it, which keeps
+ * `callTool`'s output-schema / `Mcp-Param-*` index current.
+ */
+const FRESH = { cacheMode: 'refresh' as const }
+
 export async function mcpListTools(connectionId: string): Promise<McpTool[]> {
-  const { client } = requireConnection(connectionId)
-  // Note: the SDK caches tool output-schema validators per listTools() page
-  // (cacheToolMetadata clears first), so on a multi-page server only the last
-  // page's tools get client-side structuredContent validation. Previously
-  // only the first page was listed at all.
-  return collectPages(async (cursor) => {
-    const res = await client.listTools(cursor ? { cursor } : undefined)
-    return {
-      nextCursor: res.nextCursor,
-      items: res.tools.map((t) =>
-        compact<McpTool>({
-          name: t.name,
-          title: t.title,
-          description: t.description,
-          inputSchema: (t.inputSchema as Record<string, unknown>) ?? {},
-          outputSchema: asRecord(t.outputSchema),
-          annotations: asRecord(t.annotations),
-        }),
-      ),
-    }
-  })
+  const conn = requireConnection(connectionId)
+  const { client } = conn
+  const raw: Tool[] = []
+  const tools = await sdkCall(() =>
+    collectPages(async (cursor) => {
+      const res = await client.listTools(cursor ? { cursor } : undefined, FRESH)
+      raw.push(...res.tools)
+      return {
+        nextCursor: res.nextCursor,
+        items: res.tools.map((t) =>
+          compact<McpTool>({
+            name: t.name,
+            title: t.title,
+            description: t.description,
+            inputSchema: (t.inputSchema as Record<string, unknown>) ?? {},
+            outputSchema: asRecord(t.outputSchema),
+            annotations: asRecord(t.annotations),
+          }),
+        ),
+      }
+    }),
+  )
+  conn.tools = new Map(raw.map((t) => [t.name, t]))
+  return tools
 }
 
 /**
@@ -665,7 +1162,7 @@ export async function mcpListResources(connectionId: string): Promise<McpResourc
   let resources: McpResource[] = []
   try {
     resources = await collectPages(async (cursor) => {
-      const res = await client.listResources(cursor ? { cursor } : undefined)
+      const res = await client.listResources(cursor ? { cursor } : undefined, FRESH)
       return {
         nextCursor: res.nextCursor,
         items: res.resources.map((r) =>
@@ -681,13 +1178,13 @@ export async function mcpListResources(connectionId: string): Promise<McpResourc
       }
     })
   } catch (err) {
-    if (!isMethodNotFound(err)) throw err
+    if (!isMethodNotFound(err)) throw decorateMcpError(err)
   }
 
   let templates: McpResourceTemplate[] = []
   try {
     templates = await collectPages(async (cursor) => {
-      const res = await client.listResourceTemplates(cursor ? { cursor } : undefined)
+      const res = await client.listResourceTemplates(cursor ? { cursor } : undefined, FRESH)
       return {
         nextCursor: res.nextCursor,
         items: res.resourceTemplates.map((t) =>
@@ -702,7 +1199,7 @@ export async function mcpListResources(connectionId: string): Promise<McpResourc
       }
     })
   } catch (err) {
-    if (!isMethodNotFound(err)) throw err
+    if (!isMethodNotFound(err)) throw decorateMcpError(err)
   }
 
   return { resources, templates }
@@ -713,7 +1210,7 @@ export async function mcpReadResource(
   uri: string,
 ): Promise<McpReadResourceResult> {
   const { client } = requireConnection(connectionId)
-  const res = await client.readResource({ uri })
+  const res = await sdkCall(() => client.readResource({ uri }, FRESH))
   return {
     contents: res.contents.map((c) => {
       const item = c as Record<string, unknown>
@@ -733,7 +1230,7 @@ export async function mcpListPrompts(connectionId: string): Promise<McpPrompt[]>
   if (!client.getServerCapabilities()?.prompts) return []
   try {
     return await collectPages(async (cursor) => {
-      const res = await client.listPrompts(cursor ? { cursor } : undefined)
+      const res = await client.listPrompts(cursor ? { cursor } : undefined, FRESH)
       return {
         nextCursor: res.nextCursor,
         items: res.prompts.map((p) =>
@@ -754,7 +1251,7 @@ export async function mcpListPrompts(connectionId: string): Promise<McpPrompt[]>
     })
   } catch (err) {
     if (isMethodNotFound(err)) return []
-    throw err
+    throw decorateMcpError(err)
   }
 }
 
@@ -771,11 +1268,84 @@ export async function mcpGetPrompt(
     if (v === undefined || v === null) continue
     promptArgs[k] = String(v)
   }
-  const res = await client.getPrompt({ name, arguments: promptArgs })
+  const res = await sdkCall(() => client.getPrompt({ name, arguments: promptArgs }))
   return compact<McpGetPromptResult>({
     description: res.description,
     messages: res.messages.map((m) => ({ role: m.role, content: m.content })),
   })
+}
+
+// ─── tools/call (+ 2026-07-28 multi-round-trip) ─────────────
+
+interface ToolCallParams {
+  name: string
+  arguments: Record<string, unknown>
+  /** MRTR retry channel — top-level params, per the SDK's retry builder. */
+  inputResponses?: Record<string, unknown>
+  requestState?: string
+  _meta?: Record<string, unknown>
+}
+
+/**
+ * One `tools/call` leg. On the modern era the call runs in the SDK's manual
+ * multi-round-trip mode (`allowInputRequired`): an `input_required` answer
+ * comes back as the neutral `{ resultType: 'input_required', inputRequests?,
+ * requestState? }` shape, marked with `__mcp` for the renderer. A complete
+ * result is returned exactly as before.
+ *
+ * `callTool` validates `structuredContent` against the tool's cached
+ * `outputSchema` AFTER the call, and would reject a legitimate
+ * `input_required` (it has no structured content). On the modern era a tool
+ * with an `outputSchema` is therefore called with its listed definition minus
+ * that schema (`toolDefinition` — which still drives SEP-2243 `Mcp-Param-*`
+ * header mirroring); its output is not validated client-side.
+ */
+async function runToolCall(conn: Connection, request: ToolCallParams): Promise<unknown> {
+  let params = request
+  const modern = conn.client.getProtocolEra() === 'modern'
+  // `onprogress` makes the SDK attach `_meta.progressToken`, which is what
+  // allows a server to emit `notifications/progress` for this call at all
+  // (they reach the renderer through the frame tap as `mcp:notification`).
+  // Progress also resets the SDK's 60 s request timeout.
+  const options: CallToolRequestOptions = {
+    onprogress: () => {},
+    resetTimeoutOnProgress: true,
+  }
+  if (modern) {
+    options.allowInputRequired = true
+    // The per-request envelope carries the client capabilities on
+    // 2026-07-28, and a server only embeds an elicitation in `input_required`
+    // for a client that declares it. Testnizer fulfils form elicitations by
+    // asking the user (`mcpRespondInput`), so it declares form elicitation on
+    // its modern tools/call requests — not on the Client itself, where a
+    // 2025-era server would send `elicitation/create` requests no handler
+    // answers. (User `_meta` keys win over the SDK's auto-attached envelope.)
+    params = {
+      ...params,
+      _meta: {
+        ...(params._meta ?? {}),
+        [CLIENT_CAPABILITIES_META_KEY]: { elicitation: { form: {} } },
+      },
+    }
+    const listed = conn.tools.get(params.name)
+    if (listed && listed.outputSchema !== undefined) {
+      const definition: Tool = { ...listed }
+      delete definition.outputSchema
+      options.toolDefinition = definition
+    }
+  }
+  const result: unknown = await sdkCall(() =>
+    conn.client.callTool(params as Parameters<Client['callTool']>[0], options),
+  )
+  if (isInputRequiredResult(result)) {
+    const marker: McpInputRequiredMarker = {
+      kind: 'input_required',
+      inputRequests: plainJson((result.inputRequests ?? {}) as Record<string, unknown>),
+      ...(typeof result.requestState === 'string' ? { requestState: result.requestState } : {}),
+    }
+    return { ...result, __mcp: marker }
+  }
+  return result
 }
 
 export async function mcpCallTool(
@@ -783,17 +1353,41 @@ export async function mcpCallTool(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<unknown> {
-  const { client } = requireConnection(connectionId)
-  // `onprogress` makes the SDK attach `_meta.progressToken`, which is what
-  // allows a server to emit `notifications/progress` for this call at all
-  // (they reach the renderer through the frame tap as `mcp:notification`).
-  // Progress also resets the SDK's 60 s request timeout, so long-running
-  // tools that report progress are not cut off.
-  const result = await client.callTool({ name: toolName, arguments: args }, undefined, {
-    onprogress: () => {},
-    resetTimeoutOnProgress: true,
+  return runToolCall(requireConnection(connectionId), { name: toolName, arguments: args })
+}
+
+/**
+ * Answer an `input_required` `tools/call` result (2026-07-28 MRTR): re-issue
+ * the call with the same name / arguments plus `inputResponses` (bare result
+ * objects keyed by the server's `inputRequests` ids — e.g.
+ * `{ count: { action: 'accept', content: { count: 3 } } }`) and the opaque
+ * `requestState` echoed verbatim. Both ride TOP-LEVEL params, exactly as the
+ * SDK's own auto-fulfilment driver sends them. May return another
+ * `input_required` round.
+ */
+export async function mcpRespondInput(
+  connectionId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  requestState: string | undefined,
+  inputResponses: Record<string, unknown> | undefined,
+): Promise<unknown> {
+  const conn = requireConnection(connectionId)
+  if (conn.client.getProtocolEra() !== 'modern') {
+    throw new Error(
+      `Input responses need a ${MCP_MODERN_PROTOCOL_VERSION} connection (this one negotiated ${conn.info.protocolVersion ?? 'a 2025-era version'})`,
+    )
+  }
+  const hasResponses = !!inputResponses && Object.keys(inputResponses).length > 0
+  if (!hasResponses && requestState === undefined) {
+    throw new Error('Nothing to send: give inputResponses and/or the requestState to echo')
+  }
+  return runToolCall(conn, {
+    name: toolName,
+    arguments: args,
+    ...(hasResponses ? { inputResponses } : {}),
+    ...(requestState !== undefined ? { requestState } : {}),
   })
-  return result
 }
 
 export function mcpGetConnection(connectionId: string): McpConnectionInfo | undefined {

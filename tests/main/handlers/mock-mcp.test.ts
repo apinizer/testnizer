@@ -42,12 +42,16 @@ interface ServerView {
   tools: { name: string }[]
   errorMode: { kind: string }
   protocolPin: string | null
+  legacyMode: string
+  cacheTtlMs: number
   enabled: boolean
 }
 interface StateView {
   status: string
   port: number | null
   url: string | null
+  eras?: string[]
+  legacyNotifications?: boolean
 }
 
 let projectId: string
@@ -89,9 +93,21 @@ describe('mockMcp:server CRUD', () => {
       authMode: 'none',
       errorMode: { kind: 'none' },
       protocolPin: null,
+      legacyMode: 'stateless',
+      cacheTtlMs: 0,
       enabled: true,
     })
     expect(created.tools.map((t) => t.name)).toEqual(['echo'])
+    // Stored in the nullable options_json column (issue #152).
+    expect(
+      (
+        testDb
+          .prepare('SELECT options_json FROM mock_mcp_servers WHERE id = ?')
+          .get(created.id) as {
+          options_json: string
+        }
+      ).options_json,
+    ).toBe('{"legacyMode":"stateless","cacheTtlMs":0}')
 
     const list = await invoke<ServerView[]>('mockMcp:server:list', projectId)
     expect(list).toMatchObject({ success: true })
@@ -122,11 +138,74 @@ describe('mockMcp:server CRUD', () => {
     })
   })
 
+  it('stores the 2026-07-28 knobs: modern pin, legacy mode, cache TTL and an elicitation tool (issue #152)', async () => {
+    const { exampleElicitationTool } = await import('../../../src/main/mock-mcp/config')
+    const created = await create({
+      protocolPin: '2026-07-28',
+      legacyMode: 'reject',
+      cacheTtlMs: 30_000,
+      tools: [exampleElicitationTool()],
+    })
+    expect(created).toMatchObject({
+      protocolPin: '2026-07-28',
+      legacyMode: 'reject',
+      cacheTtlMs: 30_000,
+    })
+    expect(created.tools).toEqual([exampleElicitationTool()])
+    expect((await invoke<ServerView>('mockMcp:server:get', created.id)).data).toEqual(created)
+
+    const upd = await invoke<ServerView>('mockMcp:server:update', created.id, {
+      legacyMode: 'stateless',
+    })
+    expect(upd.data).toMatchObject({ legacyMode: 'stateless', cacheTtlMs: 30_000 })
+
+    // A row written before the column existed (NULL) reads back as the defaults.
+    testDb.prepare('UPDATE mock_mcp_servers SET options_json = NULL WHERE id = ?').run(created.id)
+    expect((await invoke<ServerView>('mockMcp:server:get', created.id)).data).toMatchObject({
+      legacyMode: 'stateless',
+      cacheTtlMs: 0,
+    })
+  })
+
   it('returns readable validation errors instead of writing bad rows', async () => {
     const cases: [Record<string, unknown>, RegExp][] = [
       [{ name: '' }, /Name is required/],
       [{ port: 70000 }, /Port must be/],
-      [{ protocolPin: '2026-07-28' }, /not a version this mock implements/],
+      [{ protocolPin: '2027-01-01' }, /not a version this mock implements/],
+      [{ legacyMode: 'sometimes' }, /Unknown legacy mode "sometimes"/],
+      [{ protocolPin: '2025-06-18', legacyMode: 'reject' }, /refuses 2025-era clients/],
+      [{ cacheTtlMs: -1 }, /Cache TTL must be/],
+      [{ cacheTtlMs: 1.5 }, /Cache TTL must be/],
+      [
+        {
+          tools: [
+            {
+              name: 'ask',
+              inputSchema: { type: 'object' },
+              response: { kind: 'text', body: '' },
+              elicit: {
+                key: 'k',
+                message: 'm',
+                schema: { type: 'object', properties: { nested: { type: 'object' } } },
+              },
+            },
+          ],
+        },
+        /elicitation field "nested" must be a string, number, integer or boolean/,
+      ],
+      [
+        {
+          tools: [
+            {
+              name: 'ask',
+              inputSchema: { type: 'object' },
+              response: { kind: 'text', body: '' },
+              elicit: { key: '', message: 'm', schema: { type: 'object', properties: {} } },
+            },
+          ],
+        },
+        /elicitation needs a key/,
+      ],
       [
         {
           tools: [
@@ -181,8 +260,10 @@ describe('mockMcp:server lifecycle', () => {
     expect(started.data?.status).toBe('running')
     expect(started.data?.port).toBeGreaterThan(0)
     expect(started.data?.url).toBe(`http://127.0.0.1:${started.data?.port}/mcp`)
+    expect(started.data).toMatchObject({ eras: ['legacy', 'modern'], legacyNotifications: false })
 
-    // It is a real listener: GET without a session is 405 per Streamable HTTP.
+    // It is a real listener: a 2025-era GET (notification stream) is 405 — the
+    // v2 SDK serves 2025 clients statelessly.
     expect((await fetch(started.data?.url as string)).status).toBe(405)
 
     const status = await invoke<StateView>('mockMcp:server:status', created.id)
@@ -251,6 +332,27 @@ describe('mockMcp:server lifecycle', () => {
   })
 })
 
+describe('mockMcp:server:notify', () => {
+  it('announces a list change on a running server, false when stopped, rejects unknown kinds', async () => {
+    const created = await create()
+    expect(await invoke('mockMcp:server:notify', created.id, 'tools')).toEqual({
+      success: true,
+      data: false,
+    })
+    await invoke('mockMcp:server:start', created.id)
+    for (const kind of ['tools', 'resources', 'prompts']) {
+      expect(await invoke('mockMcp:server:notify', created.id, kind)).toEqual({
+        success: true,
+        data: true,
+      })
+    }
+    expect(await invoke('mockMcp:server:notify', created.id, 'everything')).toEqual({
+      success: false,
+      error: 'Unknown notification kind "everything"',
+    })
+  })
+})
+
 describe('mockMcp:logs', () => {
   it('get returns the running server log, clear empties it', async () => {
     const created = await create()
@@ -276,7 +378,14 @@ describe('mockMcp:logs', () => {
       'mockMcp:logs:get',
       created.id,
     )
-    expect(logs.data?.[0]).toMatchObject({ method: 'tools/call', toolName: 'echo', ok: true })
+    expect(logs.data?.[0]).toMatchObject({
+      method: 'tools/call',
+      toolName: 'echo',
+      ok: true,
+      // No initialize, no envelope: a 2025-era request served statelessly.
+      era: 'legacy',
+      transport: 'stateless',
+    })
 
     expect(await invoke('mockMcp:logs:clear', created.id)).toEqual({ success: true, data: true })
     expect((await invoke<unknown[]>('mockMcp:logs:get', created.id)).data).toEqual([])

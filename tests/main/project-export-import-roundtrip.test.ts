@@ -251,6 +251,7 @@ function createSchema(db: Database.Database): void {
       tools_json TEXT NOT NULL DEFAULT '[]',
       resources_json TEXT NOT NULL DEFAULT '[]',
       prompts_json TEXT NOT NULL DEFAULT '[]',
+      options_json TEXT,
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
@@ -516,9 +517,9 @@ function seedRichProject(): {
       `INSERT INTO mock_mcp_servers
          (id, project_id, name, description, host, port, path, legacy_sse, auth_mode,
           bearer_token, latency_ms, error_mode, protocol_pin, tools_json, resources_json,
-          prompts_json, enabled, created_at, updated_at)
+          prompts_json, options_json, enabled, created_at, updated_at)
        VALUES (?, ?, 'MCP-1', 'desc', '127.0.0.1', 4100, '/mcp', 1, 'bearer',
-               'tok', 150, ?, '2025-06-18', ?, ?, ?, 1, ?, ?)`,
+               'tok', 150, ?, '2025-06-18', ?, ?, ?, ?, 1, ?, ?)`,
     )
     .run(
       ids.mockMcpServerId,
@@ -530,9 +531,21 @@ function seedRichProject(): {
           inputSchema: { type: 'object', properties: { text: { type: 'string' } } },
           response: { kind: 'template', body: '{{args.text}}' },
         },
+        {
+          name: 'ask_name',
+          inputSchema: { type: 'object' },
+          response: { kind: 'template', body: 'Hello, {{input.name}}!' },
+          elicit: {
+            key: 'name',
+            message: 'Name?',
+            schema: { type: 'object', properties: { name: { type: 'string' } } },
+          },
+        },
       ]),
       JSON.stringify([{ uri: 'docs://readme', name: 'Readme', text: 'hi' }]),
       JSON.stringify([{ name: 'greet', messages: [{ role: 'user', text: 'hello' }] }]),
+      // Protocol-era knobs (issue #152).
+      JSON.stringify({ legacyMode: 'reject', cacheTtlMs: 30000 }),
       now,
       now,
     )
@@ -927,6 +940,24 @@ describe('Mock MCP servers in the project file (issue #140)', () => {
     const after = testDb.prepare(ROW_SQL).get(ids.mockMcpServerId) as Record<string, unknown>
     expect(after).toEqual({ ...before, project_id: TARGET_PID })
     expect(JSON.parse(after.tools_json as string)[0].name).toBe('echo')
+    expect(JSON.parse(after.tools_json as string)[1].elicit.key).toBe('name')
+    expect(JSON.parse(after.options_json as string)).toEqual({
+      legacyMode: 'reject',
+      cacheTtlMs: 30000,
+    })
+  })
+
+  it('a file exported before options_json (issue #152) imports with the column NULL', () => {
+    const ids = seedRichProject()
+    const data = exportProjectData(SOURCE_PID)
+    forgetSourceProject()
+    const old = JSON.parse(JSON.stringify(data)) as { mockMcpServers: Record<string, unknown>[] }
+    for (const m of old.mockMcpServers) delete m.options_json
+
+    importProjectDataFromJson(JSON.stringify(old), TARGET_PID)
+    const after = testDb.prepare(ROW_SQL).get(ids.mockMcpServerId) as Record<string, unknown>
+    expect(after.options_json).toBeNull()
+    expect(after.project_id).toBe(TARGET_PID)
   })
 
   it('replace-mode re-import prunes a server the file no longer lists; an older file without the section keeps it', () => {

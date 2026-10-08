@@ -38,21 +38,27 @@ vi.mock('../../../src/main/db/database', () => ({
 }))
 
 let shouldFailConnect = false
-/** Make the mocked connect fail like the SDK transports do on HTTP 401 (issue #141). */
-let failWith401 = false
+/**
+ * Make the mocked connect fail like SDK 2.x does on HTTP 401 (issue #141,
+ * #152): `SdkHttpError` with the status in `.status` and a STRING `.code`
+ * (Streamable HTTP / the negotiation probe), or the legacy SSE transport's
+ * `SseError` with the EventSource status as a numeric `.code`.
+ */
+let failWith401: false | 'sdkHttpError' | 'sseError' = false
 let shouldFailCapabilityCalls = false
 /** The sink `registerMcpHandlers()` installs on the engine (issue #139). */
 let installedSink: ((event: unknown) => void) | null = null
 vi.mock('../../../src/main/protocols/mcp.engine', () => ({
   mcpConnect: vi.fn(async () => {
     if (shouldFailConnect) throw new Error('mcp fail')
-    if (failWith401) {
+    if (failWith401 === 'sdkHttpError') {
       throw Object.assign(
-        new Error('Streamable HTTP error: Error POSTing to endpoint: {"error":"unauthorized"}'),
-        {
-          code: 401,
-        },
+        new Error('Version negotiation failed: the server requires authorization (HTTP 401)'),
+        { name: 'SdkHttpError', code: 'CLIENT_HTTP_AUTHENTICATION', status: 401 },
       )
+    }
+    if (failWith401 === 'sseError') {
+      throw Object.assign(new Error('SSE error: Non-200 status code (401)'), { code: 401 })
     }
     return {
       connectionId: 'mcp-1',
@@ -66,6 +72,7 @@ vi.mock('../../../src/main/protocols/mcp.engine', () => ({
   mcpCancelConnect: vi.fn(async () => true),
   mcpListTools: vi.fn(async () => [{ name: 'toolA' }, { name: 'toolB' }]),
   mcpCallTool: vi.fn(async () => ({ ok: true })),
+  mcpRespondInput: vi.fn(async () => ({ content: [{ type: 'text', text: '3 apples' }] })),
   mcpListResources: vi.fn(async () => {
     if (shouldFailCapabilityCalls) throw new Error('resources boom')
     return {
@@ -156,16 +163,19 @@ describe('mcp:connect OAuth (issue #141)', () => {
     expect(vi.mocked(mcpConnect).mock.calls[0][0]).not.toHaveProperty('oauthSessionId')
   })
 
-  it('flags a 401 connect failure with unauthorized: true', async () => {
-    failWith401 = true
-    const res = (await harness.invoke('mcp:connect', {
-      transport: 'http',
-      url: 'http://example/mcp',
-    })) as { success: boolean; error?: string; unauthorized?: boolean }
-    expect(res.success).toBe(false)
-    expect(res.unauthorized).toBe(true)
-    expect(res.error).toMatch(/401|unauthorized/i)
-  })
+  it.each(['sdkHttpError', 'sseError'] as const)(
+    'flags a 401 connect failure (%s) with unauthorized: true',
+    async (kind) => {
+      failWith401 = kind
+      const res = (await harness.invoke('mcp:connect', {
+        transport: kind === 'sseError' ? 'sse' : 'http',
+        url: 'http://example/mcp',
+      })) as { success: boolean; error?: string; unauthorized?: boolean }
+      expect(res.success).toBe(false)
+      expect(res.unauthorized).toBe(true)
+      expect(res.error).toMatch(/401|unauthorized/i)
+    },
+  )
 
   it('other failures carry no unauthorized flag', async () => {
     shouldFailConnect = true
@@ -175,6 +185,96 @@ describe('mcp:connect OAuth (issue #141)', () => {
     })) as { success: boolean; unauthorized?: boolean }
     expect(res.success).toBe(false)
     expect(res).not.toHaveProperty('unauthorized')
+  })
+})
+
+describe('mcp:connect protocol option (issue #152)', () => {
+  it('forwards auto / legacy / a YYYY-MM-DD revision; drops anything else', async () => {
+    for (const protocol of ['auto', 'legacy', '2026-07-28', ' 2025-06-18 ']) {
+      await harness.invoke('mcp:connect', { transport: 'http', url: 'http://x/mcp', protocol })
+    }
+    await harness.invoke('mcp:connect', { transport: 'http', url: 'http://x/mcp', protocol: 'v2' })
+    await harness.invoke('mcp:connect', { transport: 'http', url: 'http://x/mcp', protocol: 7 })
+    const sent = vi
+      .mocked(mcpConnect)
+      .mock.calls.map((c) => (c[0] as { protocol?: string }).protocol)
+    expect(sent).toEqual(['auto', 'legacy', '2026-07-28', '2025-06-18', undefined, undefined])
+  })
+
+  it('the CONNECT log names the negotiated era and what was requested', async () => {
+    vi.mocked(mcpConnect).mockResolvedValueOnce({
+      connectionId: 'mcp-9',
+      transport: 'http',
+      url: 'http://x/mcp',
+      protocolVersion: '2026-07-28',
+      era: 'modern',
+    })
+    await harness.invoke('mcp:connect', {
+      transport: 'http',
+      url: 'http://x/mcp',
+      protocol: 'auto',
+    })
+    const log = JSON.stringify(consoleEntries)
+    expect(log).toContain('"era":"modern"')
+    expect(log).toContain('"protocolRequested":"auto"')
+  })
+})
+
+describe('mcp:respondInput (issue #152)', () => {
+  it('forwards (connectionId, tool, args, requestState, inputResponses) and wraps the result', async () => {
+    const res = (await harness.invoke(
+      'mcp:respondInput',
+      'mcp-1',
+      'ask_count',
+      { label: 'apples' },
+      'v1.state',
+      { count: { action: 'accept', content: { count: 3 } } },
+    )) as { success: boolean; data?: unknown }
+    expect(res).toEqual({
+      success: true,
+      data: { content: [{ type: 'text', text: '3 apples' }] },
+    })
+    expect(vi.mocked(engine.mcpRespondInput)).toHaveBeenCalledWith(
+      'mcp-1',
+      'ask_count',
+      { label: 'apples' },
+      'v1.state',
+      { count: { action: 'accept', content: { count: 3 } } },
+    )
+    // The responses are user input — the console log names their keys only.
+    const log = JSON.stringify(consoleEntries)
+    expect(log).toContain('RESPOND_INPUT')
+    expect(log).toContain('"inputResponseKeys":"count"')
+  })
+
+  it('malformed requestState / inputResponses are not forwarded; engine errors become the envelope', async () => {
+    vi.mocked(engine.mcpRespondInput).mockRejectedValueOnce(new Error('Nothing to send'))
+    const res = (await harness.invoke('mcp:respondInput', 'mcp-1', 't', {}, 42, ['x'])) as {
+      success: boolean
+      error?: string
+    }
+    expect(vi.mocked(engine.mcpRespondInput).mock.calls.at(-1)).toEqual([
+      'mcp-1',
+      't',
+      {},
+      undefined,
+      undefined,
+    ])
+    expect(res).toEqual({ success: false, error: 'Nothing to send' })
+  })
+
+  it('an input_required tools/call result is a success, logged as INPUT_REQUIRED', async () => {
+    vi.mocked(engine.mcpCallTool).mockResolvedValueOnce({
+      resultType: 'input_required',
+      __mcp: { kind: 'input_required', inputRequests: {}, requestState: 's' },
+    })
+    const res = (await harness.invoke('mcp:callTool', 'mcp-1', 'ask_count', {})) as {
+      success: boolean
+    }
+    expect(res.success).toBe(true)
+    const log = JSON.stringify(consoleEntries)
+    expect(log).toContain('INPUT_REQUIRED')
+    expect(log).toContain('"inputRequired":true')
   })
 })
 
@@ -465,6 +565,12 @@ describe('mcp engine events → renderer broadcast (issue #139)', () => {
     ])
     // An abnormal close is also console-logged.
     expect(JSON.stringify(consoleEntries)).toContain('Server process exited')
+  })
+
+  it('subscriptionState goes to every window on mcp:subscriptionState (issue #152)', () => {
+    const payload = { connectionId: 'mcp-1', state: 'closed', reason: 'remote' }
+    installedSink?.({ type: 'subscriptionState', payload })
+    expect(sentEvents).toEqual([{ channel: 'mcp:subscriptionState', payload }])
   })
 
   it('transportError is console-only, never broadcast as an MCP event', () => {

@@ -8,9 +8,19 @@
  * default dialect, but the common subset (type/properties/required/enum/…)
  * behaves identically under draft-07. `format` is not enforced (no
  * ajv-formats) — a mock should not be stricter than the servers it imitates.
+ *
+ * `mockJsonSchemaValidator` exposes the same engine through the v2 SDK's
+ * `jsonSchemaValidator` provider interface, so the SDK-side checks (the
+ * server's elicitation-response validation, `fromJsonSchema` for
+ * `acceptedContent`) judge input exactly like `tools/call` does.
  */
 
-import Ajv, { type ValidateFunction } from 'ajv'
+import type {
+  JsonSchemaType,
+  JsonSchemaValidator,
+  jsonSchemaValidator,
+} from '@modelcontextprotocol/server'
+import Ajv, { type ErrorObject, type ValidateFunction } from 'ajv'
 import Ajv2019 from 'ajv/dist/2019'
 import Ajv2020 from 'ajv/dist/2020'
 import type { JsonSchemaObject } from './types'
@@ -57,8 +67,25 @@ export function validateArgs(
   const compiled = compileSchema(schema)
   if (!compiled.ok) return { ok: true }
   if (compiled.validate(args)) return { ok: true }
-  const message = (compiled.validate.errors ?? [])
+  return { ok: false, message: formatErrors(compiled.validate.errors) }
+}
+
+function formatErrors(errors: ErrorObject[] | null | undefined): string {
+  const message = (errors ?? [])
     .map((e) => `${e.instancePath || '(root)'} ${e.message ?? 'is invalid'}`.trim())
     .join('; ')
-  return { ok: false, message: message || 'arguments do not match the input schema' }
+  return message || 'value does not match the schema'
+}
+
+/** The ajv engine above as a v2 SDK validator provider (strict: a bad schema fails). */
+export const mockJsonSchemaValidator: jsonSchemaValidator = {
+  getValidator<T>(schema: JsonSchemaType): JsonSchemaValidator<T> {
+    const compiled = compileSchema(schema as JsonSchemaObject)
+    return (input: unknown) => {
+      if (!compiled.ok) return { valid: false, data: undefined, errorMessage: compiled.error }
+      if (compiled.validate(input))
+        return { valid: true, data: input as T, errorMessage: undefined }
+      return { valid: false, data: undefined, errorMessage: formatErrors(compiled.validate.errors) }
+    }
+  },
 }

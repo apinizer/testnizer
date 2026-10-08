@@ -906,6 +906,24 @@ const api = {
       args: unknown,
       ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
     ): Promise<unknown> => ipcRenderer.invoke('mcp:callTool', connectionId, toolName, args, ctx),
+    // issue #152 — answer an `input_required` tools/call result (2026-07-28 MRTR)
+    respondInput: (
+      connectionId: string,
+      toolName: string,
+      args: unknown,
+      requestState: string | undefined,
+      inputResponses: Record<string, unknown>,
+      ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
+    ): Promise<unknown> =>
+      ipcRenderer.invoke(
+        'mcp:respondInput',
+        connectionId,
+        toolName,
+        args,
+        requestState,
+        inputResponses,
+        ctx,
+      ),
     // issue #139 — resources / prompts + live notification / frame / close events
     listResources: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('mcp:listResources', connectionId),
@@ -943,6 +961,16 @@ const api = {
       ipcRenderer.on('mcp:connectionClosed', handler)
       return () => {
         ipcRenderer.removeListener('mcp:connectionClosed', handler)
+      }
+    },
+    // issue #152 — 2026-07-28 `subscriptions/listen` stream opened / ended
+    onSubscriptionState: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mcp:subscriptionState', handler)
+      return () => {
+        ipcRenderer.removeListener('mcp:subscriptionState', handler)
       }
     },
     // issue #141 — OAuth 2.1 debugger (tokens stay in main; only redacted step records cross)
@@ -1099,6 +1127,8 @@ const api = {
       start: (id: string): Promise<unknown> => ipcRenderer.invoke('mockMcp:server:start', id),
       stop: (id: string): Promise<unknown> => ipcRenderer.invoke('mockMcp:server:stop', id),
       status: (id: string): Promise<unknown> => ipcRenderer.invoke('mockMcp:server:status', id),
+      notify: (id: string, kind: string): Promise<unknown> =>
+        ipcRenderer.invoke('mockMcp:server:notify', id, kind),
     },
     logs: {
       get: (serverId: string): Promise<unknown> => ipcRenderer.invoke('mockMcp:logs:get', serverId),

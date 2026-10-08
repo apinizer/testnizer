@@ -5,6 +5,8 @@
  * Channels:
  *   mockMcp:server:list|get|create|update|delete   — CRUD (`mock_mcp_servers`)
  *   mockMcp:server:start|stop|status               — live server lifecycle
+ *   mockMcp:server:notify(id, kind)                — announce a tools / resources /
+ *                                                    prompts list change now (issue #152)
  *   mockMcp:logs:get|clear                         — JSON-RPC request log
  * Events (main → renderer): `mockMcp:log` (MockMcpLogEntry), `mockMcp:status`
  * (MockMcpServerState).
@@ -22,7 +24,9 @@ import {
   type UpdateMockMcpServerInput,
 } from '../db/mock-mcp.repo'
 import { mockMcpServerManager } from '../mock-mcp/server'
-import type { MockMcpServerConfig, MockMcpServerDef } from '../mock-mcp/types'
+import type { MockMcpNotifyKind, MockMcpServerConfig, MockMcpServerDef } from '../mock-mcp/types'
+
+const NOTIFY_KINDS: readonly MockMcpNotifyKind[] = ['tools', 'resources', 'prompts']
 
 type Result<T> = { success: true; data: T } | { success: false; error: string }
 
@@ -134,6 +138,17 @@ export function registerMockMcpHandlers(): void {
   ipcMain.handle('mockMcp:server:status', async (_e, id: string) => {
     try {
       return ok(mockMcpServerManager.state(id))
+    } catch (e) {
+      return fail(e)
+    }
+  })
+
+  // Sends `notifications/<kind>/list_changed` to 2026-07-28 `subscriptions/listen`
+  // streams and legacy SSE sessions; `data` is false when the server is not running.
+  ipcMain.handle('mockMcp:server:notify', async (_e, id: string, kind: MockMcpNotifyKind) => {
+    try {
+      if (!NOTIFY_KINDS.includes(kind)) return fail(`Unknown notification kind "${String(kind)}"`)
+      return ok(mockMcpServerManager.notify(id, kind))
     } catch (e) {
       return fail(e)
     }

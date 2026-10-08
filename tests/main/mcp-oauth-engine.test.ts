@@ -278,7 +278,13 @@ describe('MCP OAuth 2.1 debugger — happy path (DCR)', () => {
     const url = await startMcp({ authorizationServers: [fakeAs.origin] })
 
     // Baseline: without a token the bearer-protected mock refuses.
-    await expect(mcpConnect({ transport: 'http', url })).rejects.toMatchObject({ code: 401 })
+    // SDK 2.x (issue #152): the `'auto'` negotiation probe meets the 401 first
+    // and throws `SdkHttpError` with the status in `.status` (`.code` is now
+    // the string SdkErrorCode).
+    await expect(mcpConnect({ transport: 'http', url })).rejects.toMatchObject({
+      status: 401,
+      code: 'CLIENT_HTTP_AUTHENTICATION',
+    })
 
     const run = await runFlow({
       url,
@@ -382,7 +388,7 @@ describe('MCP OAuth 2.1 debugger — happy path (DCR)', () => {
     expect(mcpOAuthHasToken(run.id)).toBe(false)
     await expect(
       mcpConnect({ transport: 'http', url, oauthSessionId: run.id }),
-    ).rejects.toMatchObject({ code: 401 })
+    ).rejects.toMatchObject({ status: 401 })
   })
 })
 

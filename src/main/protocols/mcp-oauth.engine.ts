@@ -17,13 +17,18 @@
  *                               `iss` validated.
  *   7. [token-exchange]         authorization_code grant.
  *
- * The protocol work is the SDK's (`@modelcontextprotocol/sdk/client/auth.js`):
- * `extractWWWAuthenticateParams`, `discoverOAuthProtectedResourceMetadata`,
+ * The protocol work is the SDK's (`@modelcontextprotocol/client` 2.x, issue
+ * #152): `extractWWWAuthenticateParams`, `discoverOAuthProtectedResourceMetadata`,
  * `discoverAuthorizationServerMetadata`, `registerClient`,
  * `startAuthorization`, `exchangeAuthorization`, `refreshAuthorization`,
  * `selectClientAuthMethod`. Every one of them takes a `fetchFn`; ours records
  * the exchange (redacted) onto the running step, applies a hard timeout and
- * the flow's cancel signal.
+ * the flow's cancel signal. SDK 2.x behaviour worth knowing here:
+ *   - AS metadata issuer validation is skipped (`skipIssuerValidation`) so a
+ *     mismatch stays a step-3 WARNING as before, not a hard failure;
+ *   - the token endpoint must be https (or loopback) — `InsecureTokenEndpointError`;
+ *   - token-endpoint errors are one `OAuthError` class with the RFC 6749
+ *     `error` string in `.code` (v1 had a class per code) — see `errorMessage`.
  *
  * Secrets discipline (CLAUDE.md "Anahtar materyali — TEK KAPI" spirit): the
  * access / refresh token, the client secret, the PKCE verifier and the
@@ -40,27 +45,23 @@ import http from 'node:http'
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 import {
+  LATEST_PROTOCOL_VERSION,
+  checkResourceAllowed,
   discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
   exchangeAuthorization,
   extractWWWAuthenticateParams,
   refreshAuthorization,
   registerClient,
+  resourceUrlFromServerUrl,
   selectClientAuthMethod,
   startAuthorization,
-} from '@modelcontextprotocol/sdk/client/auth.js'
-import {
-  checkResourceAllowed,
-  resourceUrlFromServerUrl,
-} from '@modelcontextprotocol/sdk/shared/auth-utils.js'
-import type {
-  AuthorizationServerMetadata,
-  OAuthClientInformationMixed,
-  OAuthProtectedResourceMetadata,
-  OAuthTokens,
-} from '@modelcontextprotocol/sdk/shared/auth.js'
-import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
-import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js'
+  type AuthorizationServerMetadata,
+  type FetchLike,
+  type OAuthClientInformationMixed,
+  type OAuthProtectedResourceMetadata,
+  type OAuthTokens,
+} from '@modelcontextprotocol/client'
 
 // ─── Public shapes ──────────────────────────────────────────
 
@@ -325,6 +326,18 @@ export function scrub<T>(record: T, secrets: Set<string>): T {
 
 export function errorMessage(err: unknown): string {
   if (err instanceof Error) {
+    // SDK 2.x `OAuthError`: the message is the AS's `error_description`
+    // (or the bare code) and the RFC 6749 `error` string sits in `.code` —
+    // show both, like the v1 per-code classes' names did.
+    const oauthCode = (err as Error & { code?: unknown }).code
+    if (
+      err.name === 'OAuthError' &&
+      typeof oauthCode === 'string' &&
+      oauthCode &&
+      !err.message.includes(oauthCode)
+    ) {
+      return `${oauthCode}: ${err.message}`
+    }
     const cause = (err as Error & { cause?: unknown }).cause
     if (cause && typeof cause === 'object') {
       const c = cause as { code?: unknown; message?: unknown }
@@ -739,7 +752,13 @@ async function authServerMetadataStep(
   authorizationServerUrl: string,
   fetchFn: FetchLike,
 ): Promise<AuthorizationServerMetadata> {
-  const doc = await discoverAuthorizationServerMetadata(authorizationServerUrl, { fetchFn })
+  // `skipIssuerValidation`: SDK 2.x would THROW on an issuer mismatch; the
+  // debugger reports it as a warning below (v1 behaviour) and lets the user
+  // see whether the rest of the flow works.
+  const doc = await discoverAuthorizationServerMetadata(authorizationServerUrl, {
+    fetchFn,
+    skipIssuerValidation: true,
+  })
   if (!doc) {
     throw new Error(
       `No authorization server metadata for ${authorizationServerUrl} — tried ${attemptedUrls(step)}`,
@@ -965,6 +984,9 @@ async function runFlow(flow: Flow, opts: McpOAuthStartOptions): Promise<McpOAuth
         metadata,
         clientInformation,
         authorizationCode: callback.code,
+        // Step 6 already compared it with the issuer (RFC 9207); SDK 2.x
+        // re-checks it here, so pass what the callback carried.
+        ...(callback.iss ? { iss: callback.iss } : {}),
         codeVerifier,
         redirectUri,
         resource,
