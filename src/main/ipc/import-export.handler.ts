@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import { getDb } from '../db/database'
 import { parseWsdl, parseWsdlFromContent, type WsdlParseResult } from '../protocols/soap.engine'
 import { loadProto, type GrpcServiceDescription } from '../protocols/grpc.engine'
+import { ensureDefaultExtension, saveFileFiltersFor } from '../lib/save-file-filters'
 
 interface ImportResult {
   success: boolean
@@ -268,20 +269,19 @@ export function registerImportExportHandlers(): void {
 
   ipcMain.handle('export:saveFile', async (_event, content: string, defaultName: string) => {
     try {
+      // Filters follow the suggested name — a fixed JSON-first list made the
+      // macOS dialog rewrite `report.html` to `report.json` (issue #142).
       const result = await dialog.showSaveDialog({
         defaultPath: defaultName,
-        filters: [
-          { name: 'JSON', extensions: ['json'] },
-          { name: 'YAML', extensions: ['yaml', 'yml'] },
-          { name: 'All Files', extensions: ['*'] },
-        ],
+        filters: saveFileFiltersFor(defaultName),
       })
       if (result.canceled || !result.filePath) {
         return { success: true, data: null }
       }
+      const filePath = ensureDefaultExtension(result.filePath, defaultName)
       const { writeFileSync } = await import('fs')
-      writeFileSync(result.filePath, content, 'utf-8')
-      return { success: true, data: result.filePath }
+      writeFileSync(filePath, content, 'utf-8')
+      return { success: true, data: filePath }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
