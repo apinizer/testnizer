@@ -79,12 +79,14 @@ uiTest.describe('Protocol editors (deep + local servers)', () => {
     await expect(window.getByTestId('mcp-cap-tab-tools')).toContainText('Tools')
     await expect(window.getByTestId('mcp-tool-echo')).toBeVisible({ timeout: 15_000 })
     await window.getByTestId('mcp-tool-echo').click()
+    // Selecting a tool pre-fills the arguments from its input schema
+    // (`{"text": ""}`), which makes echo return an empty block — give it a
+    // real payload so the assertion proves the round trip, not just a node.
+    await window.getByTestId('mcp-tool-args').fill('{"text":"hello-e2e"}')
     await window.getByTestId('mcp-invoke').click()
     // The result pane renders content blocks (not raw JSON).
     await expect(
       window.getByTestId('mcp-result').getByTestId('mcp-block-text').first(),
-    ).toBeVisible({
-      timeout: 10_000,
-    })
+    ).toContainText('hello-e2e', { timeout: 10_000 })
   })
 })
