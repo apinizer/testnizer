@@ -6,6 +6,8 @@ import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
 import BranchDropdown from '../sidebar/BranchDropdown'
 import UserMenu from './UserMenu'
+import PushCommitModal from '../modals/PushCommitModal'
+import { suggestedCommitMessage } from '../../lib/push-commit-message'
 import { T } from '../../styles/tokens'
 
 // SVG icons for git operations
@@ -64,12 +66,14 @@ export default function Header() {
   const openProjects = openProjectIds
     .map((id) => projects.find((p) => p.id === id))
     .filter((p): p is NonNullable<typeof p> => !!p)
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
 
   const [saveStatus, setSaveStatus] = useState<OpStatus>('idle')
   const [pushStatus, setPushStatus] = useState<OpStatus>('idle')
   const [pullStatus, setPullStatus] = useState<OpStatus>('idle')
   const [statusMsg, setStatusMsg] = useState('')
+  // Commit message being edited in the Push dialog; null = dialog closed.
+  const [pushDraft, setPushDraft] = useState<string | null>(null)
 
   const isGitProject =
     activeProject && (activeProject.save_mode === 'git' || activeProject.save_mode === 'both')
@@ -106,21 +110,29 @@ export default function Header() {
       }
       return
     }
-    // git-only mode: use push
+    // git-only mode: use push (through the commit-message dialog)
     handlePush()
   }
 
   // ─── Git push (uses real git — pushes current branch) ────
-  async function handlePush() {
+  // Push asks for the commit message first (issue #136); `runPush` does it.
+  function handlePush() {
+    if (!activeProject) return
+    setPushDraft(suggestedCommitMessage(activeProject.display_name || activeProject.name, locale))
+  }
+
+  async function runPush(commitMessage: string) {
+    setPushDraft(null)
     if (!activeProject) return
     setPushStatus('loading')
     setStatusMsg('')
     setGitLoading('Pushing to remote...')
     try {
-      const result = await window.api.git.push(activeProject.id)
+      const result = await window.api.git.push(activeProject.id, { commitMessage })
 
       if (result?.success) {
-        setStatusMsg(`${t('toast.pushed')} (${result.data?.branch || 'branch'})`)
+        const done = result.data?.committed === false ? 'toast.pushedNoChanges' : 'toast.pushed'
+        setStatusMsg(`${t(done)} (${result.data?.branch || 'branch'})`)
         setPushStatus('success')
         setTimeout(() => {
           setPushStatus('idle')
@@ -463,6 +475,13 @@ export default function Header() {
         {/* Session / user menu (issue #3) */}
         <UserMenu />
       </div>
+
+      <PushCommitModal
+        open={pushDraft !== null}
+        defaultMessage={pushDraft ?? ''}
+        onConfirm={runPush}
+        onCancel={() => setPushDraft(null)}
+      />
     </header>
   )
 }

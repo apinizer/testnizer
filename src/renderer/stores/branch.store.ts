@@ -64,7 +64,11 @@ interface BranchStore {
   createBranch: (projectId: string, name: string, baseBranch?: string) => Promise<boolean>
   switchBranch: (projectId: string, branchName: string) => Promise<boolean>
   mergeBranch: (projectId: string, sourceBranch: string) => Promise<Resolution>
-  pushBranch: (projectId: string) => Promise<{ success: boolean; error?: string }>
+  /** `committed` false → nothing new to commit; the push still ran (issue #136). */
+  pushBranch: (
+    projectId: string,
+    commitMessage?: string,
+  ) => Promise<{ success: boolean; error?: string; committed?: boolean }>
   pullBranch: (projectId: string) => Promise<Resolution>
   deleteBranch: (
     projectId: string,
@@ -269,11 +273,11 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
     }
   },
 
-  pushBranch: async (projectId) => {
+  pushBranch: async (projectId, commitMessage) => {
     try {
-      const result = await api().git.push(projectId)
+      const result = await api().git.push(projectId, { commitMessage })
       if (result?.success) {
-        return { success: true }
+        return { success: true, committed: result.data?.committed !== false }
       }
       return { success: false, error: result?.error || 'Push failed' }
     } catch (e) {

@@ -17,6 +17,7 @@ import { useSseStore } from '../stores/sse.store'
 import { useSocketIOStore } from '../stores/socketio.store'
 import { useGrpcStore } from '../stores/grpc.store'
 import { useGraphQLStore } from '../stores/graphql.store'
+import { useMcpStore, type McpTransport } from '../stores/mcp.store'
 import { useWorkspaceStore } from '../stores/workspace.store'
 import { stripWsSecuritySecrets } from './key-material'
 import type { WsSecurityConfig } from '../types'
@@ -192,6 +193,25 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
       },
     }
   }
+  if (protocol === 'mcp') {
+    // MCP had no branch, so Ctrl+S wrote the (never-edited) request-store URL
+    // and nothing else — reopening an MCP request showed a blank server URL,
+    // the default transport and, since issue #137, no custom headers.
+    // 'GET' matches the method TreeView stamps on a new MCP row.
+    const mcp = useMcpStore.getState()
+    return {
+      effectiveUrl: mcp.url || url,
+      effectiveMethod: 'GET',
+      effectiveBody: { type: 'none' },
+      protocolMeta: {
+        mcp: {
+          transport: mcp.transport,
+          url: mcp.url,
+          customHeaders: mcp.customHeaders,
+        },
+      },
+    }
+  }
   return { effectiveUrl: url, effectiveMethod: method, effectiveBody: body, protocolMeta }
 }
 
@@ -262,6 +282,9 @@ function switchProtocolToTab(protocol: string, tabId: string): void {
       break
     case 'graphql':
       useGraphQLStore.getState().switchToTab(tabId)
+      break
+    case 'mcp':
+      useMcpStore.getState().switchToTab(tabId)
       break
     default:
       break
@@ -400,6 +423,21 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     if (typeof g.query === 'string') gql.setQuery(g.query)
     if (typeof g.variables === 'string') gql.setVariables(g.variables)
     if (Array.isArray(g.headers)) gql.setHeaders(g.headers as KeyValuePair[])
+    return
+  }
+
+  if (protocol === 'mcp' && meta.mcp && typeof meta.mcp === 'object') {
+    const m = meta.mcp as Record<string, unknown>
+    const mcp = useMcpStore.getState()
+    if (m.transport === 'http' || m.transport === 'sse' || m.transport === 'stdio') {
+      mcp.setTransport(m.transport as McpTransport)
+    }
+    // The row's url column is always written from the MCP store
+    // (effectiveUrl), and callers hydrate the request store first — fall
+    // back to it when the meta carries no url.
+    const url = typeof m.url === 'string' && m.url ? m.url : useRequestStore.getState().url
+    if (url) mcp.setUrl(url)
+    if (Array.isArray(m.customHeaders)) mcp.setHeaders(m.customHeaders as KeyValuePair[])
     return
   }
 }

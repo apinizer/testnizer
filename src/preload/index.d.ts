@@ -1166,6 +1166,8 @@ interface AiChatApi {
 interface McpConnectOptions {
   transport: 'http' | 'sse' | 'stdio'
   url: string
+  /** Custom HTTP headers for the http / sse handshake (issue #137); ignored for stdio. */
+  headers?: Record<string, string>
   _pendingId?: string
 }
 
@@ -1329,6 +1331,8 @@ interface GitPullOutcome {
 interface GitPushOutcome {
   branch: string
   pushed: boolean
+  /** False when the DB held nothing new to commit — the push still ran. */
+  committed: boolean
 }
 
 interface GitStatusResult {
@@ -1381,7 +1385,8 @@ interface GitApi {
     branchName: string
   }): Promise<IpcResult<{ branch: string }>>
   merge(payload: { projectId: string; sourceBranch: string }): Promise<IpcResult<GitMergeResult>>
-  push(projectId: string): Promise<IpcResult<GitPushOutcome>>
+  /** `commitMessage` blank / omitted → automatic "Update <name> — <date>". */
+  push(projectId: string, opts?: { commitMessage?: string }): Promise<IpcResult<GitPushOutcome>>
   pull(projectId: string): Promise<IpcResult<GitPullOutcome>>
   status(projectId: string): Promise<IpcResult<GitStatusResult>>
   deleteBranch(payload: {

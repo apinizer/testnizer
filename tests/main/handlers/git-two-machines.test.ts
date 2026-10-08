@@ -447,3 +447,234 @@ describe('Clone from Git (New Project → Clone) — the first Pull of a fresh p
     expect(names(A)).toEqual(['A1'])
   }, 30_000)
 })
+
+/**
+ * Issue #135 — "After remote merge and push, teammate's pull does not show
+ * merged collection content (Git OK, UI/DB stale)". The first describe above
+ * covers B merging A's branch; here the roles are the reported ones and the
+ * merge source is a branch A has NEVER checked out (only `origin/feature/b`
+ * exists on A — the "cloud icon" path of `git:merge`).
+ */
+describe('issue #135 — teammate pulls a merge made on the other machine', () => {
+  /** What the editor's Save does to an existing request: new name + path, newer stamp. */
+  function editEndpoint(m: Machine, id: string, name: string): void {
+    m.db
+      .prepare('UPDATE endpoints SET name = ?, path = ?, updated_at = ? WHERE id = ?')
+      .run(name, `/${name.toLowerCase()}`, Date.now() + 1000, id)
+  }
+
+  const rev = (m: Machine, ref: string): string => git(m.localPath, 'rev-parse', ref)
+  const remoteRev = (branch: string): string => git(root, '--git-dir', remote, 'rev-parse', branch)
+
+  /** B's checkout is on `main`, at exactly the remote's `main`, nothing uncommitted. */
+  function expectBAtRemoteMain(B: Machine): void {
+    expect(git(B.localPath, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main')
+    expect(rev(B, 'origin/main')).toBe(remoteRev('main'))
+    expect(rev(B, 'HEAD')).toBe(remoteRev('main'))
+    expect(git(B.localPath, 'status', '--porcelain')).toBe('')
+  }
+
+  /**
+   * Steps 1–4 of the report: shared baseline on main, B pushes `feature/b`,
+   * A pushes `feature/a`, B pulls on `feature/b`. Returns with A on
+   * `feature/a` and B on `feature/b`.
+   */
+  async function branchesPushed(opts: { bEditsX1?: boolean } = {}) {
+    const A = machine('A')
+    const B = machine('B')
+
+    // 1. Same baseline on both machines.
+    const x1 = addEndpoint(A, 'X1')
+    addEndpoint(A, 'X2')
+    await push(A)
+    await pull(A)
+    expect((await pull(B)).imported).toBe(true)
+    expect(names(B)).toEqual(['X1', 'X2'])
+
+    // 2. B: feature/b (the UI switches to a new branch right away), edit, Push.
+    await createBranch(B, 'feature/b', 'main')
+    await switchTo(B, 'feature/b')
+    addEndpoint(B, 'B1')
+    if (opts.bEditsX1) editEndpoint(B, x1, 'X1-edited-on-B')
+    expect((await push(B)).branch).toBe('feature/b')
+
+    // 3. A: feature/a, different edits, Push.
+    await createBranch(A, 'feature/a', 'main')
+    await switchTo(A, 'feature/a')
+    addEndpoint(A, 'A1')
+    addEndpoint(A, 'A2')
+    expect((await push(A)).branch).toBe('feature/a')
+
+    // 4. B: Pull on feature/b — fine, nothing new for it.
+    const pulledB = await pull(B)
+    expect(pulledB.branch).toBe('feature/b')
+    expect(pulledB.state).toBe('clean')
+    expect(names(B)).toEqual(opts.bEditsX1 ? ['B1', 'X1-edited-on-B', 'X2'] : ['B1', 'X1', 'X2'])
+
+    return { A, B }
+  }
+
+  /** Steps 5–7: A switches to main, merges (never-checked-out) branches, Pushes. */
+  async function aMergesAndPushes(A: Machine, sources: string[]): Promise<void> {
+    await switchTo(A, 'main')
+    expect(names(A)).toEqual(['X1', 'X2'])
+    const listed = await listBranches(A)
+    expect(listed.branches.find((b) => b.name === 'feature/b')).toMatchObject({ isRemote: true })
+    for (const source of sources) {
+      expect((await merge(A, source)).state).toBe('clean')
+    }
+    expect((await push(A)).branch).toBe('main')
+  }
+
+  it('(a) B switches to main, then Pulls → B holds the merged main', async () => {
+    const { A, B } = await branchesPushed()
+    await aMergesAndPushes(A, ['feature/b'])
+    const union = ['B1', 'X1', 'X2']
+    expect(remoteNames('main')).toEqual(union)
+
+    const sw = await switchTo(B, 'main')
+    expect.soft(sw.fastForwarded, 'switch fast-forwards main to origin/main').toBe(true)
+    expect.soft(names(B), 'DB right after the switch').toEqual(union)
+
+    const pulled = await pull(B)
+    expect(pulled.branch).toBe('main')
+    expect(pulled.state).toBe('clean')
+    expect(names(B)).toEqual(union)
+    expect(names(B)).toEqual(remoteNames('main'))
+    expectBAtRemoteMain(B)
+  }, 30_000)
+
+  it('(b) B Pulls on feature/b first (main fast-forwards behind the scenes), then switches → merged main', async () => {
+    const { A, B } = await branchesPushed()
+    await aMergesAndPushes(A, ['feature/b'])
+    const union = ['B1', 'X1', 'X2']
+    expect(remoteNames('main')).toEqual(union)
+
+    const pulled = await pull(B)
+    expect(pulled.branch).toBe('feature/b')
+    expect
+      .soft(pulled.fastForwarded, 'Pull on feature/b fast-forwards local main')
+      .toContain('main')
+    expect
+      .soft(rev(B, 'main'), 'local main = origin/main before the switch')
+      .toBe(rev(B, 'origin/main'))
+    // Still on feature/b: its own content, untouched by the main update.
+    expect(names(B)).toEqual(['B1', 'X1', 'X2'])
+
+    await switchTo(B, 'main')
+    expect(names(B)).toEqual(union)
+    expect(names(B)).toEqual(remoteNames('main'))
+    expectBAtRemoteMain(B)
+  }, 30_000)
+
+  it('(c) B modified an existing request on feature/b, A added rows on feature/a, A merges both → B sees the edit AND A’s rows (both orders)', async () => {
+    const { A, B } = await branchesPushed({ bEditsX1: true })
+    // feature/a fast-forwards main; feature/b then conflicts on the endpoints
+    // array and is merged by row on the MERGE path.
+    await aMergesAndPushes(A, ['feature/a', 'feature/b'])
+    const union = ['A1', 'A2', 'B1', 'X1-edited-on-B', 'X2']
+    expect(names(A)).toEqual(union)
+    expect(remoteNames('main')).toEqual(union)
+
+    // Order 2 first: B Pulls on feature/b, then switches to main.
+    const pulled = await pull(B)
+    expect(pulled.branch).toBe('feature/b')
+    expect
+      .soft(pulled.fastForwarded, 'Pull on feature/b fast-forwards local main')
+      .toContain('main')
+    await switchTo(B, 'main')
+    expect(names(B)).toEqual(union)
+    expect(names(B)).toEqual(remoteNames('main'))
+    expectBAtRemoteMain(B)
+
+    // Order 1 on the same state: back to feature/b and to main again, Pull —
+    // nothing may revert to the one-sided view.
+    await switchTo(B, 'feature/b')
+    expect(names(B)).toEqual(['B1', 'X1-edited-on-B', 'X2'])
+    await switchTo(B, 'main')
+    const pulledMain = await pull(B)
+    expect(pulledMain.state).toBe('clean')
+    expect(names(B)).toEqual(union)
+    expect(names(B)).toEqual(remoteNames('main'))
+    // Navigating away and back must not mint an "Auto-save" commit on main:
+    // a local-only commit there makes main diverge from origin/main, and the
+    // NEXT teammate merge no longer fast-forwards on switch / Pull elsewhere.
+    expectBAtRemoteMain(B)
+  }, 30_000)
+
+  it('(d) A’s local main was behind origin/main when A merged → Push is rejected, Pull merges by row, Push lands the union; B sees it', async () => {
+    const { A, B } = await branchesPushed()
+
+    // A is on main (up to date at this point)…
+    await switchTo(A, 'main')
+    expect(names(A)).toEqual(['X1', 'X2'])
+
+    // …then B pushes a request straight to main and returns to feature/b.
+    await switchTo(B, 'main')
+    addEndpoint(B, 'M1')
+    expect((await push(B)).branch).toBe('main')
+    await switchTo(B, 'feature/b')
+    expect(remoteNames('main')).toEqual(['M1', 'X1', 'X2'])
+
+    // A never pulled: local main is behind origin/main. Merge feature/b.
+    expect(rev(A, 'main')).not.toBe(remoteRev('main'))
+    expect((await merge(A, 'feature/b')).state).toBe('clean')
+    expect(names(A)).toEqual(['B1', 'X1', 'X2'])
+
+    // Non-fast-forward: git refuses, the user is told to Pull. M1 must not be lost.
+    const rejected = await call<unknown>('git:push', on(A).projectId)
+    expect(rejected.success).toBe(false)
+    expect(rejected.error).toBe(GIT_PUSH_REJECTED_ERROR)
+    expect(remoteNames('main')).toEqual(['M1', 'X1', 'X2'])
+
+    const pulledA = await pull(A)
+    expect(pulledA.state).toBe('clean')
+    expect(names(A)).toEqual(['B1', 'M1', 'X1', 'X2'])
+    await push(A)
+    const union = ['B1', 'M1', 'X1', 'X2']
+    expect(remoteNames('main')).toEqual(union)
+
+    // B: Pull on feature/b, then switch to main.
+    const pulledB = await pull(B)
+    expect(pulledB.branch).toBe('feature/b')
+    expect
+      .soft(pulledB.fastForwarded, 'Pull on feature/b fast-forwards local main')
+      .toContain('main')
+    await switchTo(B, 'main')
+    expect(names(B)).toEqual(union)
+    expect(names(B)).toEqual(remoteNames('main'))
+    expectBAtRemoteMain(B)
+  }, 30_000)
+
+  it('(e) the NEXT round: B left main after seeing the merge; A pushes again; B Pulls on feature/b and switches → still current (no local-only commit blocks the fast-forward)', async () => {
+    const { A, B } = await branchesPushed({ bEditsX1: true })
+    await aMergesAndPushes(A, ['feature/a', 'feature/b'])
+    const union = ['A1', 'A2', 'B1', 'X1-edited-on-B', 'X2']
+
+    // Round 1 on B: Pull on feature/b, look at main, go back to work.
+    await pull(B)
+    await switchTo(B, 'main')
+    expect(names(B)).toEqual(union)
+    await switchTo(B, 'feature/b')
+    // B changed nothing on main — leaving it must not commit there. The
+    // merged file lists rows in merge order, B's DB in its own insertion
+    // order; that difference is not an edit.
+    expect.soft(rev(B, 'main'), 'local main untouched by leaving it').toBe(remoteRev('main'))
+
+    // Round 2: A adds to main and pushes.
+    addEndpoint(A, 'A3')
+    expect((await push(A)).branch).toBe('main')
+    const union2 = ['A1', 'A2', 'A3', 'B1', 'X1-edited-on-B', 'X2']
+    expect(remoteNames('main')).toEqual(union2)
+
+    // B: the #135 order 2 again.
+    const pulled = await pull(B)
+    expect(pulled.branch).toBe('feature/b')
+    expect
+      .soft(pulled.fastForwarded, 'Pull on feature/b fast-forwards local main')
+      .toContain('main')
+    await switchTo(B, 'main')
+    expect(names(B)).toEqual(union2)
+    expectBAtRemoteMain(B)
+  }, 30_000)
+})

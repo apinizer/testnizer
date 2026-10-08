@@ -247,4 +247,37 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
 
     await window.getByTestId('mcp-connect').click()
   })
+
+  // ── Issue #137: custom HTTP headers on connect ────────────────────────────
+  // The global MCP server's `echo_headers` tool returns the headers of the
+  // request that carried the tools/call, so a custom header row typed into
+  // the MCP tab must come back in the result.
+  uiTest('issue #137 MCP custom header reaches the server', async ({ window }) => {
+    const { mcp } = getTestServerUrls()
+    await openNewDropdownItem(window, /MCP/i)
+    await window.locator('select').first().selectOption('http')
+    await window.getByTestId('mcp-url').fill(mcp)
+
+    const section = window.getByTestId('mcp-headers-section')
+    await window.getByTestId('mcp-headers-toggle').click()
+    await section.getByRole('button', { name: /\+ Add Header/i }).click()
+    const rows = section.locator('[data-testid^="kv-row-"]')
+    const row = rows.nth((await rows.count()) - 1)
+    await row.getByTestId('kv-key').fill('X-Testnizer-137')
+    await row.getByTestId('kv-value').locator('input').fill('mcp-header-ok')
+    await expect(window.getByTestId('mcp-headers-count')).toHaveText('1')
+
+    await window.getByTestId('mcp-connect').click()
+    await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
+    await expect(window.getByTestId('mcp-tool-echo_headers')).toBeVisible({ timeout: 10_000 })
+    await window.getByTestId('mcp-tool-echo_headers').click()
+    await window.getByTestId('mcp-invoke').click()
+    await expect(window.getByText(/mcp-header-ok/).first()).toBeVisible({ timeout: 10_000 })
+
+    // stdio has no HTTP layer — the headers block is hidden for it.
+    await window.getByTestId('mcp-connect').click()
+    await expect(window.getByTestId('mcp-connect')).not.toHaveText(/Disconnect/i, { timeout: 8_000 })
+    await window.locator('select').first().selectOption('stdio')
+    await expect(window.getByTestId('mcp-headers-toggle')).toHaveCount(0)
+  })
 })

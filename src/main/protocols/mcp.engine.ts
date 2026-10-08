@@ -44,6 +44,12 @@ export async function mcpConnect(options: {
   args?: string[]
   env?: Record<string, string>
   /**
+   * Custom HTTP headers for the `http` / `sse` handshake and every request
+   * after it — e.g. `Authorization: Bearer …` or API-gateway `X-…` headers
+   * (issue #137). Ignored for `stdio` (no HTTP involved).
+   */
+  headers?: Record<string, string>
+  /**
    * Renderer-supplied id so `mcpCancelConnect(id)` can abort the handshake
    * before `client.connect()` resolves. Cleared once the connection opens
    * or fails.
@@ -55,10 +61,23 @@ export async function mcpConnect(options: {
 
   let transport: StreamableHTTPClientTransport | SSEClientTransport | StdioClientTransport
 
+  // @modelcontextprotocol/sdk@1.29.0: both HTTP transports merge
+  // `requestInit.headers` in `_commonHeaders()` (dist/cjs/client/sse.js:54-69,
+  // streamableHttp.js:62-81), which feeds EVERY wire request — the SSE GET
+  // EventSource stream (sse.js:77 inside its `fetch` wrapper), the SSE POSTs
+  // (sse.js:168), and Streamable HTTP GET/POST/DELETE (streamableHttp.js:87,
+  // :300, :440). So no `eventSourceInit.fetch` wrapper is needed on this SDK
+  // version (older SDKs applied requestInit to POST only). User headers are
+  // spread last there, so they override the SDK's own Authorization /
+  // session headers on a name clash — intended: the user's row wins.
+  const headers =
+    options.headers && Object.keys(options.headers).length > 0 ? options.headers : undefined
+  const httpOpts = headers ? { requestInit: { headers } } : undefined
+
   if (options.transport === 'http') {
-    transport = new StreamableHTTPClientTransport(new URL(options.url))
+    transport = new StreamableHTTPClientTransport(new URL(options.url), httpOpts)
   } else if (options.transport === 'sse') {
-    transport = new SSEClientTransport(new URL(options.url))
+    transport = new SSEClientTransport(new URL(options.url), httpOpts)
   } else {
     // stdio — command is the executable, url field used as command when command not provided
     const cmd = options.command || options.url

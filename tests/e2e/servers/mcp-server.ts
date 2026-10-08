@@ -36,6 +36,20 @@ function createMcpServer(): McpSdkServer {
     }),
   )
 
+  // Issue #137: returns the HTTP headers of the request that carried this
+  // tools/call, so a test can prove a custom MCP connect header reached the
+  // server (the client sends its custom headers on every request).
+  server.registerTool(
+    'echo_headers',
+    {
+      description: 'Return the HTTP request headers seen by the server',
+      inputSchema: {},
+    },
+    async (_args, extra) => ({
+      content: [{ type: 'text', text: JSON.stringify(extra.requestInfo?.headers ?? {}) }],
+    }),
+  )
+
   return server
 }
 

@@ -1,9 +1,17 @@
 import { create } from 'zustand'
+import type { KeyValuePair } from '../types'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
-import { resolveVariables } from '../lib/variable-resolver'
+import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { makeId } from '../lib/utils'
+// Shared dirty-flag helper — an edit flips the active tab's unsaved dot so
+// Ctrl+S has something to persist (same as the SSE / WS stores, issue #8).
+import { markActiveTabDirty } from '../lib/mark-dirty'
+
+function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
+  return { id: makeId(), key, value, enabled }
+}
 
 export type McpTransport = 'http' | 'sse' | 'stdio'
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
@@ -21,6 +29,12 @@ function getMcpApi() {
 interface TabMcpState {
   transport: McpTransport
   url: string
+  /**
+   * Custom HTTP headers sent on the http / sse handshake and every request
+   * after it (issue #137) — e.g. `Authorization: Bearer …` or API-gateway
+   * `X-…` headers. Ignored for stdio. `{{var}}` resolves at Connect time.
+   */
+  customHeaders: KeyValuePair[]
   connectionId: string | null
   connectionState: ConnectionState
   serverName: string | null
@@ -41,6 +55,11 @@ interface McpStore extends TabMcpState {
 
   setTransport: (t: McpTransport) => void
   setUrl: (url: string) => void
+  addHeader: () => void
+  updateHeader: (id: string, updates: Partial<KeyValuePair>) => void
+  removeHeader: (id: string) => void
+  /** Replace the header list outright. Used by snapshot/restore paths. */
+  setHeaders: (headers: KeyValuePair[]) => void
   setSelectedTool: (name: string | null) => void
   setToolArgs: (args: string) => void
   connect: () => Promise<void>
@@ -55,6 +74,7 @@ function emptyState(): TabMcpState {
   return {
     transport: 'http',
     url: '',
+    customHeaders: [defaultKv()],
     connectionId: null,
     connectionState: 'disconnected',
     serverName: null,
@@ -89,6 +109,7 @@ function extractState(s: McpStore): TabMcpState {
   return {
     transport: s.transport,
     url: s.url,
+    customHeaders: s.customHeaders,
     connectionId: s.connectionId,
     connectionState: s.connectionState,
     serverName: s.serverName,
@@ -119,8 +140,32 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   resultError: null,
   isInvoking: false,
 
-  setTransport: (transport) => set({ transport }),
-  setUrl: (url) => set({ url }),
+  setTransport: (transport) => {
+    set({ transport })
+    markActiveTabDirty()
+  },
+  setUrl: (url) => {
+    set({ url })
+    markActiveTabDirty()
+  },
+  addHeader: () => {
+    set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] }))
+    markActiveTabDirty()
+  },
+  updateHeader: (id, updates) => {
+    set((state) => ({
+      customHeaders: state.customHeaders.map((h) => (h.id === id ? { ...h, ...updates } : h)),
+    }))
+    markActiveTabDirty()
+  },
+  removeHeader: (id) => {
+    set((state) => ({ customHeaders: state.customHeaders.filter((h) => h.id !== id) }))
+    markActiveTabDirty()
+  },
+  setHeaders: (customHeaders) => {
+    set({ customHeaders })
+    markActiveTabDirty()
+  },
   setSelectedTool: (selectedTool) => {
     const tool = selectedTool ? get().tools.find((t) => t.name === selectedTool) : undefined
     const example = tool?.inputSchema ? generateExampleArgs(tool.inputSchema) : {}
@@ -130,7 +175,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   setToolArgs: (toolArgs) => set({ toolArgs }),
 
   connect: async () => {
-    const { transport, url } = get()
+    const { transport, url, customHeaders } = get()
     if (!url.trim()) return
     const pendingConnectId = makeId()
     set({
@@ -152,9 +197,24 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     // SSE endpoints via environments.
     const vars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedUrl = resolveVariables(url, vars)
+    // Custom headers (issue #137): enabled rows with a key, `{{var}}`
+    // resolved in both key and value — same rule as the SSE / WS editors.
+    // stdio has no HTTP layer, so nothing is sent for it.
+    const headers: Record<string, string> = {}
+    if (transport !== 'stdio') {
+      const rows = resolveKeyValuePairs(
+        customHeaders.filter((h) => h.enabled && h.key.trim()),
+        vars,
+      )
+      for (const row of rows) {
+        const key = row.key.trim()
+        if (key) headers[key] = row.value
+      }
+    }
     const res = await api.connect({
       transport,
       url: resolvedUrl,
+      ...(Object.keys(headers).length > 0 ? { headers } : {}),
       _pendingId: pendingConnectId,
     })
     if (res.success && res.data) {
@@ -192,7 +252,13 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       }
       if (connectionId) await api.disconnect(connectionId)
     }
-    set({ ...emptyState(), transport: get().transport, url: get().url })
+    // Keep the tab's configuration — only the live connection is torn down.
+    set({
+      ...emptyState(),
+      transport: get().transport,
+      url: get().url,
+      customHeaders: get().customHeaders,
+    })
   },
 
   listTools: async () => {

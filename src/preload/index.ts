@@ -743,7 +743,8 @@ const api = {
     switchBranch: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('git:switchBranch', payload),
     merge: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('git:merge', payload),
-    push: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:push', projectId),
+    push: (projectId: string, opts?: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('git:push', projectId, opts),
     pull: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:pull', projectId),
     status: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:status', projectId),
     deleteBranch: (payload: unknown): Promise<unknown> =>
