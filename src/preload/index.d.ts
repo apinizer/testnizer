@@ -2060,6 +2060,8 @@ interface MockEndpointCreatePayload {
   priority?: number
   enabled?: boolean
   sortOrder?: number
+  /** Overrides the server-level auth for this endpoint (the backend's `CreateMockEndpointInput` takes it). */
+  authOverride?: MockEndpoint['authOverride']
 }
 
 interface MockEndpointSubApi {

@@ -1,6 +1,7 @@
 /**
  * "MCP servers" group of the Mocks panel (issue #140): lists the active
- * project's Mock MCP servers beside the HTTP mocks, with a preset "New" menu.
+ * project's Mock MCP servers beside the HTTP mocks, in the shared row. New
+ * servers come from the panel's "New mock server" dialog (`onAdd`).
  * Opening a row opens its `mockMcpServer` tab in the Workbench.
  */
 import { useEffect, useMemo, useState } from 'react'
@@ -10,20 +11,24 @@ import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import type { MockMcpServer } from '../../types/mock-mcp'
-import MockMcpNewMenu from './MockMcpNewMenu'
+import MockGroupHeader from '../mock/MockGroupHeader'
 import MockMcpServerRow from './MockMcpServerRow'
-import { buildPresetInput, type MockMcpPresetId } from './mock-mcp-presets'
 import { closeMockMcpServerTab, openMockMcpServerTab } from './mock-mcp-tabs'
 
 const EMPTY: readonly MockMcpServer[] = []
 
-export default function MockMcpServersSection({ query }: { query: string }) {
+export default function MockMcpServersSection({
+  query,
+  onAdd,
+}: {
+  query: string
+  onAdd?: () => void
+}) {
   const { t } = useTranslation()
   const projectId = useWorkspaceStore((s) => s.activeProjectId)
   const allServers = useMockMcpStore((s) => s.servers)
   const loadedFor = useMockMcpStore((s) => s.projectId)
   const loadServers = useMockMcpStore((s) => s.loadServers)
-  const createServer = useMockMcpStore((s) => s.createServer)
   const deleteServer = useMockMcpStore((s) => s.deleteServer)
   const [deleteTarget, setDeleteTarget] = useState<MockMcpServer | null>(null)
 
@@ -37,24 +42,6 @@ export default function MockMcpServersSection({ query }: { query: string }) {
     const q = query.trim().toLowerCase()
     return q ? servers.filter((s) => s.name.toLowerCase().includes(q)) : servers
   }, [servers, query])
-
-  async function handleCreate(preset: MockMcpPresetId): Promise<void> {
-    if (!projectId) {
-      toast.error(t('mock.noActiveProject'))
-      return
-    }
-    const input = buildPresetInput(preset, {
-      projectId,
-      takenNames: servers.map((s) => s.name),
-      takenPorts: servers.map((s) => s.port),
-    })
-    const r = await createServer(input)
-    if (!r.server) {
-      toast.error(`${t('mockMcp.createFailed')}: ${r.error}`)
-      return
-    }
-    openMockMcpServerTab(r.server)
-  }
 
   async function confirmDelete(): Promise<void> {
     const target = deleteTarget
@@ -70,12 +57,15 @@ export default function MockMcpServersSection({ query }: { query: string }) {
 
   return (
     <section data-testid="mock-mcp-section" className="border-t border-[var(--border)]">
-      <div className="flex h-9 items-center gap-2 px-3">
-        <span className="flex-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-          {t('mockMcp.sectionTitle')}
-        </span>
-        <MockMcpNewMenu onCreate={(p) => void handleCreate(p)} disabled={!projectId} />
-      </div>
+      <MockGroupHeader
+        title={t('mockMcp.sectionTitle')}
+        count={servers.length}
+        addLabel={t('mockMcp.new')}
+        onAdd={onAdd}
+        disabled={!projectId}
+        testId="mock-mcp-section-title"
+        addTestId="mock-group-add-mcp"
+      />
       {filtered.length === 0 ? (
         <div className="px-4 pb-4 pt-1 text-center text-[12px] text-[var(--muted)]">
           {servers.length === 0 ? t('mockMcp.empty') : t('mock.noMatches')}

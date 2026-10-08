@@ -2707,6 +2707,35 @@ const translations: Record<Locale, Record<string, string>> = {
     'mcp.auth.precedence': '(a custom header with the same name takes precedence)',
     'mcp.auth.sseQuery':
       'Legacy SSE: the query parameter rides the event stream only — the message endpoint the server announces does not carry it.',
+    // ── Mock servers: unified create (issue #140) ──
+    'mockNew.title': 'New mock server',
+    'mockNew.subtitle':
+      'Pick a type and a starting point. Everything can be changed later in the editor.',
+    'mockNew.close': 'Close',
+    'mockNew.type': 'Server type',
+    'mockNew.typeHttpHint': 'REST-style HTTP endpoints with rule-based responses',
+    'mockNew.typeMcpHint': 'A Model Context Protocol server with tools, resources and prompts',
+    'mockNew.template': 'Start from',
+    'mockNew.name': 'Name',
+    'mockNew.port': 'Port',
+    'mockNew.portTaken': 'Another mock server in this project already uses port {port}.',
+    'mockNew.addHttp': 'New HTTP mock server',
+    'mockNew.httpEmpty': 'No HTTP mock servers yet',
+    'mockNew.httpItemType': 'HTTP mock server',
+    'mockHttp.preset.blank': 'Blank',
+    'mockHttp.preset.blankHint': 'No endpoints — start from scratch',
+    'mockHttp.preset.rest': 'REST example',
+    'mockHttp.preset.restHint':
+      'GET/POST /users, GET/DELETE /users/:id — ids 1–3 exist, any other id gets 404',
+    'mockHttp.preset.echo': 'Echo',
+    'mockHttp.preset.echoHint':
+      'ANY /echo answers with the method, path, query, headers and body it received',
+    'mockHttp.preset.auth': 'Auth required',
+    'mockHttp.preset.authHint':
+      'Needs a generated bearer token (shown in the server settings), else HTTP 401; GET /public stays open',
+    'mockHttp.preset.faults': 'Faults',
+    'mockHttp.preset.faultsHint':
+      'GET /slow answers after 1500 ms; failure injection fails ~1 in 3 requests with HTTP 500',
   },
 
   tr: {
@@ -5424,6 +5453,36 @@ const translations: Record<Locale, Record<string, string>> = {
     'mcp.auth.precedence': '(aynı adlı bir özel başlık varsa o önceliklidir)',
     'mcp.auth.sseQuery':
       'Eski SSE: sorgu parametresi yalnızca olay akışına eklenir; sunucunun bildirdiği mesaj uç noktası onu taşımaz.',
+    // ── Mock servers: unified create (issue #140) ──
+    'mockNew.title': 'Yeni mock sunucu',
+    'mockNew.subtitle':
+      'Bir tür ve başlangıç noktası seçin. Her şey daha sonra düzenleyicide değiştirilebilir.',
+    'mockNew.close': 'Kapat',
+    'mockNew.type': 'Sunucu türü',
+    'mockNew.typeHttpHint': 'Kural tabanlı yanıtlar veren REST tarzı HTTP uç noktaları',
+    'mockNew.typeMcpHint':
+      'Araçlar, kaynaklar ve istemler sunan bir Model Context Protocol sunucusu',
+    'mockNew.template': 'Başlangıç noktası',
+    'mockNew.name': 'Ad',
+    'mockNew.port': 'Port',
+    'mockNew.portTaken': 'Bu projedeki başka bir mock sunucu {port} portunu zaten kullanıyor.',
+    'mockNew.addHttp': 'Yeni HTTP mock sunucusu',
+    'mockNew.httpEmpty': 'Henüz HTTP mock sunucusu yok',
+    'mockNew.httpItemType': 'HTTP mock sunucusu',
+    'mockHttp.preset.blank': 'Boş',
+    'mockHttp.preset.blankHint': 'Uç nokta yok — sıfırdan başlayın',
+    'mockHttp.preset.rest': 'REST örneği',
+    'mockHttp.preset.restHint':
+      'GET/POST /users, GET/DELETE /users/:id — 1–3 numaralı kimlikler var, diğer kimlikler 404 alır',
+    'mockHttp.preset.echo': 'Echo',
+    'mockHttp.preset.echoHint':
+      'ANY /echo aldığı metodu, yolu, sorguyu, başlıkları ve gövdeyi geri döndürür',
+    'mockHttp.preset.auth': 'Kimlik doğrulama gerekli',
+    'mockHttp.preset.authHint':
+      'Oluşturulan bearer belirtecini ister (sunucu ayarlarında görünür), yoksa HTTP 401; GET /public açık kalır',
+    'mockHttp.preset.faults': 'Gecikme ve hatalar',
+    'mockHttp.preset.faultsHint':
+      'GET /slow 1500 ms sonra yanıt verir; hata enjeksiyonu isteklerin ~3’te 1’ini HTTP 500 ile düşürür',
   },
 }
 

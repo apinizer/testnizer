@@ -17,13 +17,21 @@ export function randomMockPort(): number {
   return band + Math.floor(Math.random() * 1000)
 }
 
-/** Create a mock server from the Mocks panel and open its editor. */
+/**
+ * Create an EMPTY HTTP mock server from the Mocks panel and open its editor.
+ * Goes through the unified "New mock server" dialog (issue #140) with the
+ * Blank preset — callers add their own endpoints / responses afterwards.
+ */
 export async function createMockServer(page: Page, name: string, port: number): Promise<void> {
   await navigateSidebar(page, 'mocks')
-  await page.getByTitle(/New mock server|Yeni mock sunucu/i).click()
-  await page.getByPlaceholder(/Server name|Sunucu adı/i).fill(name)
-  await page.getByPlaceholder('3001').fill(String(port))
-  await page.getByRole('button', { name: /^Create$|^Oluştur$/i }).click()
+  await page.getByTestId('mock-new').click()
+  await expect(page.getByTestId('mock-new-dialog')).toBeVisible({ timeout: 10_000 })
+  await page.getByTestId('mock-new-type-http').click()
+  await page.getByTestId('mock-new-preset-blank').click()
+  await page.getByTestId('mock-new-name').fill(name)
+  await page.getByTestId('mock-new-port').fill(String(port))
+  await page.getByTestId('mock-new-create').click()
+  await expect(page.getByTestId('mock-new-dialog')).toBeHidden({ timeout: 10_000 })
   await expect(page.getByText(name).first()).toBeVisible({ timeout: 10_000 })
   await page.getByText(name).first().click()
   await expect(page.getByTestId('workbench')).toBeVisible({ timeout: 10_000 })
