@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { useMcpStore } from '../../stores/mcp.store'
+import { useMcpStore, MCP_EXPLORER_SECTION } from '../../stores/mcp.store'
 import { useTranslation } from '../../lib/i18n'
 import McpConnectionBar from './mcp/McpConnectionBar'
 import McpHeadersSection from './mcp/McpHeadersSection'
@@ -11,7 +10,7 @@ import McpPromptPane from './mcp/McpPromptPane'
 import McpMessagesPane from './mcp/McpMessagesPane'
 import { MCP_EXTRA_SECTIONS } from './mcp/sections'
 
-const EXPLORER = 'explorer'
+const EXPLORER = MCP_EXPLORER_SECTION
 
 /**
  * MCP request editor (issues #137, #139) — a thin host. Connection bar,
@@ -23,7 +22,9 @@ const EXPLORER = 'explorer'
 export default function McpEditor() {
   const { t } = useTranslation()
   const capabilityTab = useMcpStore((s) => s.capabilityTab)
-  const [rightTab, setRightTab] = useState<string>(EXPLORER)
+  // Per tab, in the store — a 401 on Connect opens the OAuth section (issue #141).
+  const rightTab = useMcpStore((s) => s.section)
+  const setRightTab = useMcpStore((s) => s.setSection)
   const extra = MCP_EXTRA_SECTIONS.find((s) => s.id === rightTab)
   const ExtraComponent = extra?.component
 

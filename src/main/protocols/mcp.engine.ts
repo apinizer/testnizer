@@ -7,6 +7,7 @@ import {
 } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
+import { createMcpOAuthFetch } from './mcp-oauth.engine'
 
 export type McpTransport = 'http' | 'sse' | 'stdio'
 
@@ -406,6 +407,13 @@ export async function mcpConnect(options: {
    * or fails.
    */
   pendingId?: string
+  /**
+   * OAuth 2.1 session from the debugger (issue #141). Its access token is put
+   * on every http / sse request by `createMcpOAuthFetch` — after the user's
+   * headers, so the token wins — and refreshed once on a 401. The renderer
+   * never sees the token. Ignored for `stdio`.
+   */
+  oauthSessionId?: string
 }): Promise<McpConnectionInfo> {
   const connectionId = makeId()
   const client = new Client({ name: 'Testnizer', version: '1.0.0' })
@@ -423,16 +431,37 @@ export async function mcpConnect(options: {
   // session headers on a name clash — intended: the user's row wins.
   const headers =
     options.headers && Object.keys(options.headers).length > 0 ? options.headers : undefined
-  const httpOpts = headers ? { requestInit: { headers } } : undefined
+  // OAuth (issue #141): a custom `fetch` rather than the SDK's `authProvider`.
+  // With an authProvider the SDK spreads `requestInit.headers` AFTER the
+  // token (`_commonHeaders`), so a user `Authorization` row would beat it,
+  // and a 401 re-runs the whole `auth()` orchestrator (browser redirect
+  // mid-connect). The fetch reaches every wire request of both transports
+  // (streamableHttp `_fetch`; sse `eventSourceInit.fetch ?? _fetch`).
+  const oauthFetch =
+    options.oauthSessionId && options.transport !== 'stdio'
+      ? createMcpOAuthFetch(options.oauthSessionId)
+      : undefined
+  const httpOpts =
+    headers || oauthFetch
+      ? {
+          ...(headers ? { requestInit: { headers } } : {}),
+          ...(oauthFetch ? { fetch: oauthFetch } : {}),
+        }
+      : undefined
 
   if (options.transport === 'http') {
     transport = new StreamableHTTPClientTransport(new URL(options.url), httpOpts)
   } else if (options.transport === 'sse') {
     transport = new SSEClientTransport(new URL(options.url), httpOpts)
   } else {
-    // stdio — command is the executable, url field used as command when command not provided
+    // stdio. With explicit `args` the caller already tokenised the command
+    // line (the renderer's quote-aware `parseCommandLine`), so `command` is
+    // the executable VERBATIM — a path with spaces must not be split again.
+    // Without `args`, `command` (or the url field) is a whole command line,
+    // split on whitespace as before.
+    const verbatim = !!options.command && options.args !== undefined
     const cmd = options.command || options.url
-    const parts = cmd.split(/\s+/)
+    const parts = verbatim ? [cmd] : cmd.split(/\s+/)
     // SDK 1.29's start() already spreads getDefaultEnvironment() under the
     // given env (stdio.js:72-75); older SDKs used `env ?? default`, where a
     // user env REPLACED the inherited PATH/HOME and broke `npx`. Merge here

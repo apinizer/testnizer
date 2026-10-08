@@ -456,6 +456,63 @@ describe('mcp.engine — stdio env is merged over the SDK default env (issue #13
   })
 })
 
+// ─── stdio command tokenisation (issue #141 follow-up) ────────
+describe('mcp.engine — stdio command with explicit args is used verbatim', () => {
+  it('explicit args → command is the executable as-is (a path with spaces is not split)', async () => {
+    await mcpConnect({
+      transport: 'stdio',
+      url: '"/Applications/My Server/bin/server" --port 9000',
+      command: '/Applications/My Server/bin/server',
+      args: ['--port', '9000'],
+    })
+    const params = vi.mocked(StdioClientTransport).mock.calls[0][0]
+    expect(params.command).toBe('/Applications/My Server/bin/server')
+    expect(params.args).toEqual(['--port', '9000'])
+  })
+
+  it('explicit empty args still means "already tokenised"', async () => {
+    await mcpConnect({ transport: 'stdio', url: '', command: 'C:\\Program Files\\srv.exe', args: [] })
+    const params = vi.mocked(StdioClientTransport).mock.calls[0][0]
+    expect(params.command).toBe('C:\\Program Files\\srv.exe')
+    expect(params.args).toEqual([])
+  })
+
+  it('no args → the command line is still split on whitespace (backwards compatible)', async () => {
+    await mcpConnect({ transport: 'stdio', url: '', command: 'node server.js --verbose' })
+    await mcpConnect({ transport: 'stdio', url: 'npx -y @scope/server' })
+    const calls = vi.mocked(StdioClientTransport).mock.calls
+    expect(calls[0][0].command).toBe('node')
+    expect(calls[0][0].args).toEqual(['server.js', '--verbose'])
+    expect(calls[1][0].command).toBe('npx')
+    expect(calls[1][0].args).toEqual(['-y', '@scope/server'])
+  })
+})
+
+// ─── OAuth session (issue #141) ───────────────────────────────
+describe('mcp.engine — oauthSessionId wires an authenticating fetch into http / sse', () => {
+  it('http / sse get a `fetch` option; headers still ride requestInit', async () => {
+    await mcpConnect({
+      transport: 'http',
+      url: 'http://gw.local/mcp',
+      headers: { 'X-A': '1' },
+      oauthSessionId: 'mcp-oauth-x',
+    })
+    await mcpConnect({ transport: 'sse', url: 'http://gw.local/sse', oauthSessionId: 'mcp-oauth-x' })
+    const httpOpts = vi.mocked(StreamableHTTPClientTransport).mock.calls[0][1] as Record<string, unknown>
+    expect(httpOpts.requestInit).toEqual({ headers: { 'X-A': '1' } })
+    expect(typeof httpOpts.fetch).toBe('function')
+    const sseOpts = vi.mocked(SSEClientTransport).mock.calls[0][1] as Record<string, unknown>
+    expect(sseOpts).not.toHaveProperty('requestInit')
+    expect(typeof sseOpts.fetch).toBe('function')
+  })
+
+  it('stdio ignores oauthSessionId', async () => {
+    await mcpConnect({ transport: 'stdio', url: 'node s.js', oauthSessionId: 'mcp-oauth-x' })
+    const params = vi.mocked(StdioClientTransport).mock.calls[0][0] as unknown as Record<string, unknown>
+    expect(params).not.toHaveProperty('fetch')
+  })
+})
+
 // ─── listTools pass-through (issue #139) ──────────────────────
 describe('mcp.engine — listTools (issue #139 fields + pagination)', () => {
   it('passes through title / outputSchema / annotations', async () => {

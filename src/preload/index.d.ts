@@ -1174,6 +1174,12 @@ interface McpConnectOptions {
   env?: Record<string, string>
   /** Custom HTTP headers for the http / sse handshake (issue #137); ignored for stdio. */
   headers?: Record<string, string>
+  /**
+   * OAuth 2.1 debugger session (issue #141): main injects its access token as
+   * `Authorization: Bearer …` (overriding a header row) — the renderer never
+   * sees the token. Ignored for stdio.
+   */
+  oauthSessionId?: string
   _pendingId?: string
 }
 
@@ -1261,8 +1267,101 @@ interface McpConnectionClosedEvent {
   reason?: string
 }
 
+// ─── MCP OAuth 2.1 debugger (issue #141) ─────────────────────────
+// Mirrors src/main/protocols/mcp-oauth.engine.ts (the web tsconfig cannot import main).
+
+interface McpOAuthStartOptions {
+  url: string
+  /** Probe style — POST `initialize` (http, default) or GET event-stream (legacy sse). */
+  transport?: 'http' | 'sse'
+  /** The tab's custom headers; the probe drops any `Authorization`. */
+  headers?: Record<string, string>
+  /** Pre-registered client — skips Dynamic Client Registration. */
+  clientId?: string
+  /** Write-only: used by main for the token request, never echoed back. */
+  clientSecret?: string
+  scope?: string
+  /** Fixed loopback port for a pre-registered redirect URI (default: ephemeral). */
+  callbackPort?: number
+}
+
+type McpOAuthStepId =
+  | 'probe'
+  | 'resource-metadata'
+  | 'auth-server-metadata'
+  | 'client-registration'
+  | 'authorization-request'
+  | 'authorization-callback'
+  | 'token-exchange'
+
+interface McpOAuthHttpRequest {
+  method: string
+  url: string
+  headers: Record<string, string>
+  body?: string
+}
+
+interface McpOAuthHttpResponse {
+  status: number
+  headers: Record<string, string>
+  body?: string
+}
+
+/** One step record — redacted in main (no token, secret, verifier or code). */
+interface McpOAuthStep {
+  id: McpOAuthStepId
+  /** 1-based position in the flow. */
+  index: number
+  title: string
+  status: 'pending' | 'running' | 'passed' | 'failed' | 'skipped'
+  request?: McpOAuthHttpRequest
+  response?: McpOAuthHttpResponse
+  /** Every HTTP exchange of the step (discovery tries several URLs), oldest first. */
+  attempts?: Array<{
+    request: McpOAuthHttpRequest
+    response?: McpOAuthHttpResponse
+    error?: string
+  }>
+  note?: string
+  error?: string
+  durationMs?: number
+}
+
+interface McpOAuthSummary {
+  tokenType: string
+  /** Epoch ms; absent when the authorization server gave no `expires_in`. */
+  expiresAt?: number
+  scope?: string
+  issuer: string
+  clientId: string
+  hasRefreshToken: boolean
+  clientAuthMethod: string
+  resource?: string
+}
+
+/** `mcp:oauth:step` */
+interface McpOAuthStepEvent {
+  oauthSessionId: string
+  step: McpOAuthStep
+}
+
+/** `mcp:oauth:done` */
+interface McpOAuthDoneEvent {
+  oauthSessionId: string
+  ok: boolean
+  summary?: McpOAuthSummary
+  /** The unauthenticated probe got a 2xx — nothing to authorize. */
+  noAuthRequired?: boolean
+  cancelled?: boolean
+  error?: string
+  failedStep?: McpOAuthStepId
+}
+
 interface McpApi {
-  connect(options: McpConnectOptions): Promise<IpcResult<McpConnectResult>>
+  /** `unauthorized` is set when the server answered HTTP 401 (issue #141). */
+  connect(
+    options: McpConnectOptions,
+  ): Promise<IpcResult<McpConnectResult> & { unauthorized?: boolean }>
   cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
   disconnect(connectionId: string): Promise<IpcResult<boolean>>
   listTools(connectionId: string): Promise<IpcResult<McpToolDto[]>>
@@ -1290,6 +1389,11 @@ interface McpApi {
   onNotification(callback: (event: McpNotificationEvent) => void): () => void
   onFrame(callback: (event: McpFrameEvent) => void): () => void
   onConnectionClosed(callback: (event: McpConnectionClosedEvent) => void): () => void
+  oauthStart(options: McpOAuthStartOptions): Promise<IpcResult<{ oauthSessionId: string }>>
+  oauthCancel(oauthSessionId: string): Promise<IpcResult<{ cancelled: boolean }>>
+  oauthForget(oauthSessionId: string): Promise<IpcResult<{ forgotten: boolean }>>
+  onOauthStep(callback: (event: McpOAuthStepEvent) => void): () => void
+  onOauthDone(callback: (event: McpOAuthDoneEvent) => void): () => void
 }
 
 // ─── Socket.IO ───────────────────────────────────────────────────

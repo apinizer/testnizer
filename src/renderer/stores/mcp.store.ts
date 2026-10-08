@@ -10,6 +10,11 @@ import type {
   McpGetPromptResult,
   McpNotification,
   McpNotificationEvent,
+  McpOAuthDoneEvent,
+  McpOAuthStartRequest,
+  McpOAuthStep,
+  McpOAuthStepEvent,
+  McpOAuthSummary,
   McpPrompt,
   McpReadResourceResult,
   McpResource,
@@ -40,6 +45,10 @@ import { markActiveTabDirty } from '../lib/mark-dirty'
 export type { McpTransport, McpTool } from '../types/mcp'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
+
+/** Right-pane section ids (`McpEditor` tabs; extra ids come from `mcp/sections.ts`). */
+export const MCP_EXPLORER_SECTION = 'explorer'
+export const MCP_OAUTH_SECTION = 'oauth'
 
 export interface TabMcpState {
   transport: McpTransport
@@ -90,6 +99,32 @@ export interface TabMcpState {
   frames: McpFrame[]
   /** Renderer-supplied id so a stalled handshake can be cancelled. */
   _pendingConnectId?: string
+  /** The last connect failed with HTTP 401 — the OAuth section offers itself (issue #141). */
+  unauthorized: boolean
+  /** Right-pane section: `MCP_EXPLORER_SECTION` or an `MCP_EXTRA_SECTIONS` id. Not persisted. */
+  section: string
+  // ── OAuth 2.1 debugger (issue #141) ──
+  oauthClientId: string
+  /**
+   * Write-only: handed to main for the token request and never persisted —
+   * `persistable()` blanks it (CLAUDE.md "Anahtar materyali" discipline).
+   */
+  oauthClientSecret: string
+  oauthScope: string
+  /** Flow running / last run on this tab — routes `mcp:oauth:*` events here. Not persisted. */
+  oauthFlowId: string | null
+  /**
+   * Token session `connect()` authenticates with (set by "Connect with token").
+   * Tokens live in main and die with the process, so this is never persisted
+   * and never part of the Ctrl+S snapshot.
+   */
+  oauthSessionId: string | null
+  oauthSteps: McpOAuthStep[]
+  oauthSummary: McpOAuthSummary | null
+  oauthRunning: boolean
+  oauthError: string | null
+  /** The probe got a 2xx — the server needs no authorization. */
+  oauthNoAuthRequired: boolean
 }
 
 interface McpStore extends TabMcpState {
@@ -120,6 +155,17 @@ interface McpStore extends TabMcpState {
   setPromptArg: (name: string, value: string) => void
   clearNotifications: () => void
   clearFrames: () => void
+  setSection: (section: string) => void
+  setOAuthClientId: (v: string) => void
+  setOAuthClientSecret: (v: string) => void
+  setOAuthScope: (v: string) => void
+  /** Run the OAuth 2.1 debugger flow against this tab's server (issue #141). */
+  startOAuth: () => Promise<void>
+  cancelOAuth: () => Promise<void>
+  /** Drop this tab's tokens in main and clear the flow state. */
+  forgetOAuth: () => Promise<void>
+  /** Use the last flow's token for this tab and (re)connect with it. */
+  connectWithOAuth: () => Promise<void>
   connect: () => Promise<void>
   disconnect: () => Promise<void>
   listTools: () => Promise<void>
@@ -142,6 +188,17 @@ type McpConfigKeys =
   | 'search'
   | 'notifications'
   | 'frames'
+  | 'section'
+  | 'oauthClientId'
+  | 'oauthClientSecret'
+  | 'oauthScope'
+  | 'oauthFlowId'
+  | 'oauthSessionId'
+  | 'oauthSteps'
+  | 'oauthSummary'
+  | 'oauthRunning'
+  | 'oauthError'
+  | 'oauthNoAuthRequired'
 type ConnectionSlice = Omit<TabMcpState, McpConfigKeys>
 
 /** Everything tied to a live connection — reset on disconnect / close. */
@@ -175,6 +232,29 @@ function disconnectedPatch(): ConnectionSlice {
     promptError: null,
     isGettingPrompt: false,
     _pendingConnectId: undefined,
+    unauthorized: false,
+  }
+}
+
+/** OAuth flow / token state — transient: tokens live in main and die with the process. */
+function oauthIdle(): Pick<
+  TabMcpState,
+  | 'oauthFlowId'
+  | 'oauthSessionId'
+  | 'oauthSteps'
+  | 'oauthSummary'
+  | 'oauthRunning'
+  | 'oauthError'
+  | 'oauthNoAuthRequired'
+> {
+  return {
+    oauthFlowId: null,
+    oauthSessionId: null,
+    oauthSteps: [],
+    oauthSummary: null,
+    oauthRunning: false,
+    oauthError: null,
+    oauthNoAuthRequired: false,
   }
 }
 
@@ -188,6 +268,11 @@ function emptyState(): TabMcpState {
     search: '',
     notifications: [],
     frames: [],
+    section: MCP_EXPLORER_SECTION,
+    oauthClientId: '',
+    oauthClientSecret: '',
+    oauthScope: '',
+    ...oauthIdle(),
     ...disconnectedPatch(),
   }
 }
@@ -230,6 +315,18 @@ function extractState(s: TabMcpState): TabMcpState {
     notifications: s.notifications,
     frames: s.frames,
     _pendingConnectId: s._pendingConnectId,
+    unauthorized: s.unauthorized,
+    section: s.section,
+    oauthClientId: s.oauthClientId,
+    oauthClientSecret: s.oauthClientSecret,
+    oauthScope: s.oauthScope,
+    oauthFlowId: s.oauthFlowId,
+    oauthSessionId: s.oauthSessionId,
+    oauthSteps: s.oauthSteps,
+    oauthSummary: s.oauthSummary,
+    oauthRunning: s.oauthRunning,
+    oauthError: s.oauthError,
+    oauthNoAuthRequired: s.oauthNoAuthRequired,
   }
 }
 
@@ -240,7 +337,16 @@ function extractState(s: TabMcpState): TabMcpState {
  * would point at a connection that no longer exists.
  */
 function persistable(s: TabMcpState): TabMcpState {
-  return { ...s, ...disconnectedPatch(), notifications: [], frames: [] }
+  return {
+    ...s,
+    ...disconnectedPatch(),
+    notifications: [],
+    frames: [],
+    section: MCP_EXPLORER_SECTION,
+    // Write-only secret and the token session never reach localStorage.
+    oauthClientSecret: '',
+    ...oauthIdle(),
+  }
 }
 
 const STORAGE_KEY = 'testnizer-mcp'
@@ -372,6 +478,89 @@ function handleConnectionClosed(evt: McpConnectionClosedEvent): void {
   })
 }
 
+// ─── OAuth 2.1 debugger events (issue #141) — routed by flow id ─────────────
+
+function findOAuthTab(flowId: string): { tabId: string | null } | undefined {
+  const s = useMcpStore.getState()
+  if (s.oauthFlowId === flowId) return { tabId: s._currentTabId }
+  for (const [tabId, st] of s._tabStates) {
+    if (tabId !== s._currentTabId && st.oauthFlowId === flowId) return { tabId }
+  }
+  return undefined
+}
+
+function patchOAuthFlow(flowId: string, patch: Patch): boolean {
+  const owner = findOAuthTab(flowId)
+  if (!owner) return false
+  patchTab(owner.tabId, patch)
+  return true
+}
+
+function upsertStep(steps: McpOAuthStep[], step: McpOAuthStep): McpOAuthStep[] {
+  const next = steps.filter((s) => s.id !== step.id)
+  next.push(step)
+  return next.sort((a, b) => a.index - b.index)
+}
+
+function oauthDonePatch(evt: McpOAuthDoneEvent): Partial<TabMcpState> {
+  return {
+    oauthRunning: false,
+    oauthSummary: evt.ok && evt.summary ? evt.summary : null,
+    oauthError: evt.ok ? null : (evt.error ?? 'OAuth flow failed'),
+    oauthNoAuthRequired: !!evt.noAuthRequired,
+  }
+}
+
+// Steps can race the `oauthStart` reply that names the flow — park them here.
+const OAUTH_ORPHAN_LIMIT = 8
+const oauthOrphans = new Map<string, { steps: McpOAuthStep[]; done?: McpOAuthDoneEvent }>()
+
+function oauthOrphan(flowId: string): { steps: McpOAuthStep[]; done?: McpOAuthDoneEvent } {
+  let bucket = oauthOrphans.get(flowId)
+  if (!bucket) {
+    bucket = { steps: [] }
+    oauthOrphans.set(flowId, bucket)
+    if (oauthOrphans.size > OAUTH_ORPHAN_LIMIT) {
+      const oldest = oauthOrphans.keys().next().value
+      if (oldest !== undefined) oauthOrphans.delete(oldest)
+    }
+  }
+  return bucket
+}
+
+function handleOAuthStep(evt: McpOAuthStepEvent): void {
+  if (
+    !evt ||
+    typeof evt.oauthSessionId !== 'string' ||
+    !evt.step ||
+    typeof evt.step.id !== 'string'
+  ) {
+    return
+  }
+  const routed = patchOAuthFlow(evt.oauthSessionId, (s) => ({
+    oauthSteps: upsertStep(s.oauthSteps, evt.step),
+  }))
+  if (!routed) {
+    const bucket = oauthOrphan(evt.oauthSessionId)
+    bucket.steps = upsertStep(bucket.steps, evt.step)
+  }
+}
+
+function handleOAuthDone(evt: McpOAuthDoneEvent): void {
+  if (!evt || typeof evt.oauthSessionId !== 'string') return
+  if (!patchOAuthFlow(evt.oauthSessionId, oauthDonePatch(evt))) {
+    oauthOrphan(evt.oauthSessionId).done = evt
+  }
+}
+
+function forgetOAuthSessions(ids: Array<string | null | undefined>): void {
+  const api = getMcpApi()
+  if (!api?.oauthForget) return
+  for (const id of new Set(ids.filter((v): v is string => !!v))) {
+    api.oauthForget(id).catch(() => {})
+  }
+}
+
 let subscribedApi: McpBridge | null = null
 let unsubscribers: Array<() => void> = []
 
@@ -395,6 +584,8 @@ export function ensureMcpEventSubscriptions(): void {
   if (api.onNotification) unsubscribers.push(api.onNotification(handleNotification))
   if (api.onFrame) unsubscribers.push(api.onFrame(handleFrame))
   if (api.onConnectionClosed) unsubscribers.push(api.onConnectionClosed(handleConnectionClosed))
+  if (api.onOauthStep) unsubscribers.push(api.onOauthStep(handleOAuthStep))
+  if (api.onOauthDone) unsubscribers.push(api.onOauthDone(handleOAuthDone))
 }
 
 // ─── Capability loaders (routed by connectionId) ────────────────────────────
@@ -545,15 +736,117 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   setPromptArg: (name, value) => set((s) => ({ promptArgs: { ...s.promptArgs, [name]: value } })),
   clearNotifications: () => set({ notifications: [] }),
   clearFrames: () => set({ frames: [] }),
+  setSection: (section) => set({ section }),
+  // OAuth fields are not part of the Ctrl+S snapshot — no dirty flag.
+  setOAuthClientId: (oauthClientId) => set({ oauthClientId }),
+  setOAuthClientSecret: (oauthClientSecret) => set({ oauthClientSecret }),
+  setOAuthScope: (oauthScope) => set({ oauthScope }),
+
+  startOAuth: async () => {
+    const st = get()
+    if (st.oauthRunning) return
+    if (st.transport === 'stdio') {
+      set({ oauthError: 'OAuth applies to the Streamable HTTP and SSE transports only' })
+      return
+    }
+    if (!st.url.trim()) return
+    ensureMcpEventSubscriptions()
+    const api = getMcpApi()
+    if (!api?.oauthStart) {
+      set({ oauthError: 'OAuth is not available' })
+      return
+    }
+    const ownerTabId = st._currentTabId
+    // A previous flow's token that is not the one Connect uses goes now.
+    if (st.oauthFlowId !== st.oauthSessionId) forgetOAuthSessions([st.oauthFlowId])
+    const vars = activeVars()
+    const request: McpOAuthStartRequest = {
+      url: resolveVariables(st.url, vars).trim(),
+      transport: st.transport === 'sse' ? 'sse' : 'http',
+    }
+    const headers = kvRowsToRecord(st.customHeaders, vars)
+    if (Object.keys(headers).length > 0) request.headers = headers
+    const clientId = resolveVariables(st.oauthClientId.trim(), vars)
+    if (clientId) request.clientId = clientId
+    const secret = resolveVariables(st.oauthClientSecret, vars)
+    if (secret) request.clientSecret = secret
+    const scope = resolveVariables(st.oauthScope.trim(), vars)
+    if (scope) request.scope = scope
+    set({
+      oauthRunning: true,
+      oauthFlowId: null,
+      oauthSteps: [],
+      oauthSummary: null,
+      oauthError: null,
+      oauthNoAuthRequired: false,
+    })
+    let res: Awaited<ReturnType<McpBridge['oauthStart']>>
+    try {
+      res = await api.oauthStart(request)
+    } catch (e) {
+      res = { success: false, error: errText(e, 'OAuth flow failed to start') }
+    }
+    if (res.success && res.data) {
+      const flowId = res.data.oauthSessionId
+      const orphan = oauthOrphans.get(flowId)
+      oauthOrphans.delete(flowId)
+      patchTab(ownerTabId, (s) => ({
+        oauthFlowId: flowId,
+        oauthSteps: (orphan?.steps ?? []).reduce(upsertStep, s.oauthSteps),
+        ...(orphan?.done ? oauthDonePatch(orphan.done) : {}),
+      }))
+    } else {
+      patchTab(ownerTabId, {
+        oauthRunning: false,
+        oauthError: res.error ?? 'OAuth flow failed to start',
+      })
+    }
+  },
+
+  cancelOAuth: async () => {
+    const { oauthFlowId, oauthRunning } = get()
+    const api = getMcpApi()
+    if (!oauthRunning || !oauthFlowId || !api?.oauthCancel) return
+    try {
+      await api.oauthCancel(oauthFlowId)
+    } catch {
+      /* the flow already finished */
+    }
+  },
+
+  forgetOAuth: async () => {
+    const { oauthFlowId, oauthSessionId } = get()
+    set(oauthIdle())
+    forgetOAuthSessions([oauthFlowId, oauthSessionId])
+  },
+
+  connectWithOAuth: async () => {
+    const { oauthFlowId, oauthSummary, oauthSessionId, connectionState } = get()
+    if (!oauthFlowId || !oauthSummary) return
+    if (oauthSessionId !== oauthFlowId) forgetOAuthSessions([oauthSessionId])
+    set({ oauthSessionId: oauthFlowId })
+    if (connectionState === 'connected' || connectionState === 'connecting') {
+      await get().disconnect()
+    }
+    await get().connect()
+  },
 
   connect: async () => {
-    const { transport, url, customHeaders, envVars, _currentTabId: ownerTabId } = get()
+    const {
+      transport,
+      url,
+      customHeaders,
+      envVars,
+      oauthSessionId,
+      _currentTabId: ownerTabId,
+    } = get()
     if (!url.trim()) return
     ensureMcpEventSubscriptions()
     const pendingConnectId = makeId()
     set({
       connectionState: 'connecting',
       errorMessage: null,
+      unauthorized: false,
       _pendingConnectId: pendingConnectId,
       notifications: [],
       frames: [],
@@ -589,6 +882,8 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       // resolved in both key and value. stdio has no HTTP layer.
       const headers = kvRowsToRecord(customHeaders, vars)
       if (Object.keys(headers).length > 0) request.headers = headers
+      // OAuth 2.1 (issue #141): main injects the session's token; we only name it.
+      if (oauthSessionId) request.oauthSessionId = oauthSessionId
     }
     let res: Awaited<ReturnType<McpBridge['connect']>>
     try {
@@ -620,10 +915,14 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       })
       await loadCapabilities(d.connectionId, d.capabilities)
     } else {
+      // A 401 opens the OAuth 2.1 section, like Postman does (issue #141).
+      const unauthorized = !!res.unauthorized
       patchTab(ownerTabId, {
         connectionState: 'error',
         errorMessage: res.error ?? 'Connection failed',
         _pendingConnectId: undefined,
+        unauthorized,
+        ...(unauthorized ? { section: MCP_OAUTH_SECTION } : {}),
       })
     }
     // Console logging is handled by the main-process handler so every
@@ -790,7 +1089,10 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   removeTabState: (tabId) => {
     const s = get()
     // Close the tab's connection whether it is the live slice or a cached one.
-    const cid = s._currentTabId === tabId ? s.connectionId : s._tabStates.get(tabId)?.connectionId
+    const tab = s._currentTabId === tabId ? extractState(s) : s._tabStates.get(tabId)
+    const cid = tab?.connectionId
+    // The tab's OAuth tokens die with it.
+    if (tab) forgetOAuthSessions([tab.oauthFlowId, tab.oauthSessionId])
     if (cid) {
       getMcpApi()
         ?.disconnect(cid)

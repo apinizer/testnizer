@@ -38,12 +38,22 @@ vi.mock('../../../src/main/db/database', () => ({
 }))
 
 let shouldFailConnect = false
+/** Make the mocked connect fail like the SDK transports do on HTTP 401 (issue #141). */
+let failWith401 = false
 let shouldFailCapabilityCalls = false
 /** The sink `registerMcpHandlers()` installs on the engine (issue #139). */
 let installedSink: ((event: unknown) => void) | null = null
 vi.mock('../../../src/main/protocols/mcp.engine', () => ({
   mcpConnect: vi.fn(async () => {
     if (shouldFailConnect) throw new Error('mcp fail')
+    if (failWith401) {
+      throw Object.assign(
+        new Error('Streamable HTTP error: Error POSTing to endpoint: {"error":"unauthorized"}'),
+        {
+          code: 401,
+        },
+      )
+    }
     return {
       connectionId: 'mcp-1',
       serverName: 'mock',
@@ -88,6 +98,7 @@ beforeEach(() => {
   harness.reset()
   testDb = createTestDb()
   shouldFailConnect = false
+  failWith401 = false
   shouldFailCapabilityCalls = false
   consoleEntries = []
   sentEvents = []
@@ -123,6 +134,47 @@ describe('mcp:connect + disconnect', () => {
     })
     const res = (await harness.invoke('mcp:disconnect', 'mcp-1')) as { success: boolean }
     expect(res.success).toBe(true)
+  })
+})
+
+describe('mcp:connect OAuth (issue #141)', () => {
+  it('forwards oauthSessionId to the engine and logs only whether OAuth was used', async () => {
+    await harness.invoke('mcp:connect', {
+      transport: 'http',
+      url: 'http://example/mcp',
+      oauthSessionId: 'mcp-oauth-abc',
+    })
+    expect(vi.mocked(mcpConnect).mock.calls[0][0]).toMatchObject({
+      oauthSessionId: 'mcp-oauth-abc',
+    })
+    const connectLog = JSON.stringify(consoleEntries)
+    expect(connectLog).toContain('"oauth":true')
+  })
+
+  it('omits oauthSessionId when the renderer sent none', async () => {
+    await harness.invoke('mcp:connect', { transport: 'http', url: 'http://example/mcp' })
+    expect(vi.mocked(mcpConnect).mock.calls[0][0]).not.toHaveProperty('oauthSessionId')
+  })
+
+  it('flags a 401 connect failure with unauthorized: true', async () => {
+    failWith401 = true
+    const res = (await harness.invoke('mcp:connect', {
+      transport: 'http',
+      url: 'http://example/mcp',
+    })) as { success: boolean; error?: string; unauthorized?: boolean }
+    expect(res.success).toBe(false)
+    expect(res.unauthorized).toBe(true)
+    expect(res.error).toMatch(/401|unauthorized/i)
+  })
+
+  it('other failures carry no unauthorized flag', async () => {
+    shouldFailConnect = true
+    const res = (await harness.invoke('mcp:connect', {
+      transport: 'http',
+      url: 'http://example/mcp',
+    })) as { success: boolean; unauthorized?: boolean }
+    expect(res.success).toBe(false)
+    expect(res).not.toHaveProperty('unauthorized')
   })
 })
 
