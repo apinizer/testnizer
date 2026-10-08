@@ -411,7 +411,11 @@ describe('Mock MCP server in bearer mode', () => {
     expect(report.error).toBeUndefined()
   })
 
-  it('follows authorization_servers to a metadata document without PKCE S256', async () => {
+  /**
+   * A loopback (plain-HTTP) authorization server publishing RFC 8414 metadata
+   * with the given PKCE methods; its endpoints are http://127.0.0.1 URLs.
+   */
+  async function startMetadataAs(codeChallengeMethods: string[]): Promise<string> {
     const as = http.createServer((req, res) => {
       const origin = `http://${req.headers.host}`
       if (req.url === '/.well-known/oauth-authorization-server') {
@@ -422,7 +426,7 @@ describe('Mock MCP server in bearer mode', () => {
             authorization_endpoint: `${origin}/authorize`,
             token_endpoint: `${origin}/token`,
             response_types_supported: ['code'],
-            code_challenge_methods_supported: ['plain'],
+            code_challenge_methods_supported: codeChallengeMethods,
           }),
         )
         return
@@ -438,7 +442,11 @@ describe('Mock MCP server in bearer mode', () => {
           as.closeAllConnections()
         }),
     )
-    const asUrl = `http://127.0.0.1:${(as.address() as AddressInfo).port}`
+    return `http://127.0.0.1:${(as.address() as AddressInfo).port}`
+  }
+
+  it('follows authorization_servers to a metadata document without PKCE S256', async () => {
+    const asUrl = await startMetadataAs(['plain'])
     const { url } = await startMock({
       authMode: 'bearer',
       bearerToken: BEARER,
@@ -449,6 +457,23 @@ describe('Mock MCP server in bearer mode', () => {
     const meta = find(report, 'auth.as_metadata')
     expect(meta).toMatchObject({ status: 'fail', severity: 'high' })
     expect(meta.detail).toMatch(/S256/)
+  })
+
+  it('passes loopback plain-HTTP endpoints without claiming they are HTTPS', async () => {
+    const asUrl = await startMetadataAs(['S256'])
+    const { url } = await startMock({
+      authMode: 'bearer',
+      bearerToken: BEARER,
+      authorizationServers: [asUrl],
+    })
+    const report = await scan(url, { headers: { Authorization: `Bearer ${BEARER}` } })
+    const meta = find(report, 'auth.as_metadata')
+    expect(meta.status).toBe('pass')
+    expect(meta.detail).toContain('PKCE S256 advertised')
+    expect(meta.detail).toContain(
+      'authorization_endpoint and token_endpoint are plain-HTTP loopback URLs (allowed for local development)',
+    )
+    expect(meta.detail).not.toMatch(/are HTTPS/)
   })
 })
 

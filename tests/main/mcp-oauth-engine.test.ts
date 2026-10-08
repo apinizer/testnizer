@@ -338,6 +338,17 @@ describe('MCP OAuth 2.1 debugger — happy path (DCR)', () => {
     expect(tokenReq.get('grant_type')).toBe('authorization_code')
     expect(tokenReq.get('resource')).toBe(url)
     expect(tokenReq.get('client_id')).toBe('dcr-client-1')
+    // ...and its recorded form body shows the redaction placeholder verbatim,
+    // not URL-encoded (`code=%E2%80%A2…`); non-secret fields stay wire-encoded.
+    const shownBody = run.final[6].request?.body ?? ''
+    expect(shownBody).toMatch(/(^|&)code=••••(&|$)/)
+    expect(shownBody).toMatch(/(^|&)code_verifier=••••(&|$)/)
+    expect(shownBody).toContain('grant_type=authorization_code')
+    expect(shownBody).not.toContain('%E2%80%A2')
+    // Step 6's recorded callback URL shows the same placeholder verbatim.
+    const callbackUrl = run.final[5].request?.url ?? ''
+    expect(callbackUrl).toMatch(/[?&]code=••••(&|$)/)
+    expect(callbackUrl).not.toContain('%E2%80%A2')
 
     // Summary carries metadata only.
     expect(run.done.summary).toMatchObject({

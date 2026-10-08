@@ -3,7 +3,7 @@ import { useTranslation } from '../../lib/i18n'
 import type { MockMcpAuthMode, MockMcpDraftUpdater, MockMcpServerDraft } from '../../types/mock-mcp'
 import { generateBearerToken } from './mock-mcp-draft'
 import MockMcpErrorModeFields from './MockMcpErrorModeFields'
-import { Field, GhostButton, INPUT_CLS, IntInput, SectionLabel } from './ui'
+import { Field, GhostButton, INPUT_CLS, IntInput, SectionLabel, SELECT_CLS } from './ui'
 
 /** Scenarios: bearer auth, latency and server-wide error injection. All hot-reload. */
 export default function MockMcpScenariosTab({
@@ -34,7 +34,7 @@ export default function MockMcpScenariosTab({
                   : draft.bearerToken
               set({ authMode, bearerToken })
             }}
-            className={INPUT_CLS}
+            className={SELECT_CLS}
           >
             <option value="none">{t('mockMcp.scenarios.authNone')}</option>
             <option value="bearer">{t('mockMcp.scenarios.authBearer')}</option>

@@ -8,6 +8,15 @@ import { useNumberDraft, parseIntStrict, clampInt } from '../../lib/number-draft
 export const INPUT_CLS =
   'h-7 w-full rounded-md border border-[var(--border2)] bg-[var(--input-bg)] px-2 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]'
 
+/**
+ * `<select>` needs its own height: the unlayered `select` rule in globals.css
+ * (padding 5px 10px, base font size) beats Tailwind utilities, so at `h-7`
+ * only 16px is left for the text and it is clipped. `h-8` matches the other
+ * selects in the app (e.g. the MCP transport picker).
+ */
+export const SELECT_CLS =
+  'h-8 w-full cursor-pointer rounded-md border border-[var(--border2)] bg-[var(--input-bg)] px-2 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]'
+
 export function SectionLabel({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
     <div className="mb-2 flex items-center gap-2">

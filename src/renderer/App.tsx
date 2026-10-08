@@ -39,13 +39,11 @@ function App(): React.JSX.Element {
           Testnizer" menu works on the login / welcome screen too. */}
       <AboutModal />
       {/* Toaster mounted at top level so toasts can layer above any modal.
-          Modals use zIndex up to ~9999; we set 10001 to stay above. */}
-      <Toaster
-        richColors
-        position="bottom-right"
-        closeButton
-        toastOptions={{ style: { zIndex: 10001 } }}
-      />
+          Sonner's own container rule already sits at z-index 999999999,
+          above every modal (~9999). Never set zIndex via toastOptions.style:
+          it overrides sonner's per-toast `--z-index` stacking, so an older
+          toast fading out would paint over a newer one. */}
+      <Toaster richColors position="bottom-right" closeButton />
     </EulaConsentGate>
   )
 }

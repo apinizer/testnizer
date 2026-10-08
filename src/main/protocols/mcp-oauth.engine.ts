@@ -257,10 +257,15 @@ function redactJson(value: unknown): unknown {
   return value
 }
 
+/** `••••` as URLSearchParams serialises it (`%E2%80%A2…`). */
+const ENCODED_REDACTED = encodeURIComponent(REDACTED)
+
 function redactForm(params: URLSearchParams): string {
   const out = new URLSearchParams()
   params.forEach((v, k) => out.append(k, SECRET_KEY.test(k) ? REDACTED : v))
-  return out.toString()
+  // Show the placeholder as-is (`code=••••`), not percent-encoded; every
+  // other value keeps its wire encoding.
+  return out.toString().split(ENCODED_REDACTED).join(REDACTED)
 }
 
 function truncate(text: string): string {
@@ -298,7 +303,8 @@ function redactedUrl(url: URL): string {
   for (const key of [...copy.searchParams.keys()]) {
     if (SECRET_KEY.test(key)) copy.searchParams.set(key, REDACTED)
   }
-  return copy.href
+  // Same as redactForm: show `code=••••`, not the percent-encoded placeholder.
+  return copy.href.split(ENCODED_REDACTED).join(REDACTED)
 }
 
 /** Value-based scrub of a record about to leave the module (defence in depth). */

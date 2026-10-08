@@ -463,13 +463,18 @@ const asMetadata: CheckDef = {
           : 'code_challenge_methods_supported is absent — MCP clients must refuse to proceed without advertised PKCE S256.',
       })
     }
+    // Endpoints that pass only because they are plain-HTTP loopback URLs —
+    // the pass text must say so instead of claiming HTTPS.
+    const loopbackHttp: string[] = []
     for (const [key, value] of [
       ['authorization_endpoint', meta.authorization_endpoint],
       ['token_endpoint', meta.token_endpoint],
     ] as const) {
       try {
         const u = new URL(value)
-        if (u.protocol !== 'https:' && !isLoopbackHost(u.hostname)) {
+        if (u.protocol !== 'https:' && isLoopbackHost(u.hostname)) {
+          loopbackHttp.push(key)
+        } else if (u.protocol !== 'https:') {
           problems.push({ status: 'fail', severity: 'high', text: `${key} ${value} is not HTTPS.` })
         }
       } catch {
@@ -487,9 +492,15 @@ const asMetadata: CheckDef = {
         text: `issuer ${meta.issuer} differs from the authorization server URL ${as} (RFC 8414 §3.3).`,
       })
     }
+    const endpoints =
+      loopbackHttp.length === 0
+        ? 'authorization_endpoint and token_endpoint are HTTPS'
+        : loopbackHttp.length === 2
+          ? 'authorization_endpoint and token_endpoint are plain-HTTP loopback URLs (allowed for local development)'
+          : `${loopbackHttp[0]} is a plain-HTTP loopback URL (allowed for local development), the other endpoint is HTTPS`
     return combine(
       problems,
-      `issuer=${meta.issuer}; PKCE S256 advertised; authorization_endpoint and token_endpoint are HTTPS.`,
+      `issuer=${meta.issuer}; PKCE S256 advertised; ${endpoints}.`,
       'Advertise `code_challenge_methods_supported: ["S256"]` and serve every endpoint over HTTPS.',
       evidence,
     )
