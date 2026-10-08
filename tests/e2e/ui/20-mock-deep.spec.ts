@@ -9,10 +9,25 @@ uiTest.describe('Mock servers (deep)', () => {
   })
 
   uiTest('create mock server', async ({ window }) => {
+    // Unified "New mock server" dialog (issue #140): header "+" → HTTP · Blank.
     await window.getByRole('button', { name: 'New mock server' }).click()
-    await window.getByPlaceholder(/Server name|Sunucu adı/i).fill('E2E Mock')
-    await window.getByRole('button', { name: /^Create$|^Oluştur$/i }).click()
+    await expect(window.getByTestId('mock-new-dialog')).toBeVisible({ timeout: 10_000 })
+    await expect(window.getByTestId('mock-new-type-http')).toHaveAttribute('aria-checked', 'true')
+    await window.getByTestId('mock-new-name').fill('E2E Mock')
+    await window.getByTestId('mock-new-create').click()
+    await expect(window.getByTestId('mock-new-dialog')).toBeHidden({ timeout: 10_000 })
     await expect(window.getByText('E2E Mock').first()).toBeVisible({ timeout: 10_000 })
+  })
+
+  uiTest('group "+" preselects the type; a preset fills the name', async ({ window }) => {
+    await window.getByTestId('mock-group-add-mcp').click()
+    await expect(window.getByTestId('mock-new-type-mcp')).toHaveAttribute('aria-checked', 'true')
+    await expect(window.getByTestId('mock-new-preset-echo')).toHaveAttribute('aria-checked', 'true')
+    await window.getByTestId('mock-new-type-http').click()
+    await window.getByTestId('mock-new-preset-rest').click()
+    await expect(window.getByTestId('mock-new-name')).toHaveValue(/^Users API/)
+    await window.keyboard.press('Escape')
+    await expect(window.getByTestId('mock-new-dialog')).toBeHidden({ timeout: 10_000 })
   })
 
   uiTest('mock server editor tabs', async ({ window }) => {

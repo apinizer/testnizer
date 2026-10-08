@@ -5,7 +5,7 @@ import type {
   MockMcpPromptArgument,
   MockMcpPromptMessage,
 } from '../../types/mock-mcp'
-import { Field, GhostButton, INPUT_CLS, SectionLabel } from './ui'
+import { Field, GhostButton, INPUT_CLS, SectionLabel, SELECT_CLS } from './ui'
 
 const ICON_BTN =
   'flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-transparent text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--red)]'
@@ -138,7 +138,7 @@ export default function MockMcpPromptForm({
               onChange={(e) =>
                 setMsg(i, { role: e.target.value === 'assistant' ? 'assistant' : 'user' })
               }
-              className={INPUT_CLS}
+              className={SELECT_CLS}
             >
               <option value="user">user</option>
               <option value="assistant">assistant</option>

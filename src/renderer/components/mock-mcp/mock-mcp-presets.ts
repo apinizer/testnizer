@@ -10,6 +10,10 @@
  */
 import type { MockMcpServerCreateInput, MockMcpTool } from '../../types/mock-mcp'
 import { generateBearerToken } from './mock-mcp-draft'
+import { MCP_MOCK_PORT_START, suggestPort, uniqueName } from '../mock/mock-create-helpers'
+
+// Re-exported: the Tools / Prompts tabs and the preset tests import them from here.
+export { suggestPort, uniqueName }
 
 export type MockMcpPresetId = 'echo' | 'auth' | 'errors' | 'schemas' | 'slow'
 
@@ -39,7 +43,7 @@ export const MOCK_MCP_PRESET_HINT_KEYS: Record<MockMcpPresetId, string> = {
 }
 
 /** Default server names (English on purpose: they become data, like the public mocks). */
-const PRESET_NAMES: Record<MockMcpPresetId, string> = {
+export const MOCK_MCP_PRESET_NAMES: Record<MockMcpPresetId, string> = {
   echo: 'Echo MCP',
   auth: 'Auth MCP',
   errors: 'Error MCP',
@@ -241,31 +245,14 @@ function presetBody(id: MockMcpPresetId): PresetBody {
   }
 }
 
-/** A name not already taken in the list: "Echo MCP", "Echo MCP 2", … */
-export function uniqueName(base: string, taken: readonly string[], sep = ' '): string {
-  const set = new Set(taken)
-  if (!set.has(base)) return base
-  let n = 2
-  while (set.has(`${base}${sep}${n}`)) n += 1
-  return `${base}${sep}${n}`
-}
-
-/** First free port from 3100 upward among the project's mock MCP servers. */
-export function suggestPort(taken: readonly number[]): number {
-  const set = new Set(taken)
-  let port = 3100
-  while (set.has(port) && port < 65535) port += 1
-  return port
-}
-
 export function buildPresetInput(
   id: MockMcpPresetId,
   ctx: { projectId: string; takenNames: readonly string[]; takenPorts: readonly number[] },
 ): MockMcpServerCreateInput {
   return {
     projectId: ctx.projectId,
-    name: uniqueName(PRESET_NAMES[id], ctx.takenNames),
-    port: suggestPort(ctx.takenPorts),
+    name: uniqueName(MOCK_MCP_PRESET_NAMES[id], ctx.takenNames),
+    port: suggestPort(ctx.takenPorts, MCP_MOCK_PORT_START),
     ...presetBody(id),
   }
 }

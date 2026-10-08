@@ -4,7 +4,7 @@ import {
   type MockMcpErrorKind,
   type MockMcpErrorMode,
 } from '../../types/mock-mcp'
-import { Field, INPUT_CLS, OptionalIntInput } from './ui'
+import { Field, INPUT_CLS, OptionalIntInput, SELECT_CLS } from './ui'
 
 const KIND_LABEL_KEYS: Record<MockMcpErrorKind, string> = {
   none: 'mockMcp.error.kind.none',
@@ -56,7 +56,7 @@ export default function MockMcpErrorModeFields({
             if (next === INHERIT) onChange(undefined)
             else set({ kind: next as MockMcpErrorKind })
           }}
-          className={INPUT_CLS}
+          className={SELECT_CLS}
         >
           {allowInherit && <option value={INHERIT}>{t('mockMcp.error.inherit')}</option>}
           {MOCK_MCP_ERROR_KINDS.map((k) => (

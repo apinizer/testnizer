@@ -970,6 +970,40 @@ const api = {
         ipcRenderer.removeListener('mcp:oauth:done', handler)
       }
     },
+    // issue #142 — Security Scan (findings / report redacted in main)
+    securityScan: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:security:scan', request),
+    securityCancel: (scanId: string): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:security:cancel', scanId),
+    securityExportHtml: (report: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:security:exportHtml', report),
+    onSecurityProgress: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mcp:security:progress', handler)
+      return () => {
+        ipcRenderer.removeListener('mcp:security:progress', handler)
+      }
+    },
+    onSecurityFinding: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mcp:security:finding', handler)
+      return () => {
+        ipcRenderer.removeListener('mcp:security:finding', handler)
+      }
+    },
+    onSecurityDone: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mcp:security:done', handler)
+      return () => {
+        ipcRenderer.removeListener('mcp:security:done', handler)
+      }
+    },
   },
 
   // ─── Socket.IO ──────────────────────────────────────────────

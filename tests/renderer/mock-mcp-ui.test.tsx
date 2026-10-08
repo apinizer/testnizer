@@ -1,7 +1,8 @@
 /**
- * Mock MCP UI (issue #140): the Mocks-panel section (list, start / stop, New
- * preset) and the editor (tabs, General / Scenarios form → `update` payload,
- * Open in MCP tab) against an in-memory `window.api.mockMcp` bridge.
+ * Mock MCP UI (issue #140): the Mocks-panel section (list, start / stop, the
+ * group "+" that opens the shared New mock server dialog) and the editor
+ * (tabs, General / Scenarios form → `update` payload, Open in MCP tab)
+ * against an in-memory `window.api.mockMcp` bridge.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, act, within, cleanup } from '@testing-library/react'
@@ -73,19 +74,17 @@ describe('Mocks panel — MCP section', () => {
     expect(screen.queryByTestId('mock-mcp-row-a')).toBeNull()
   })
 
-  it('New → preset creates the server for the active project and opens its tab', async () => {
-    render(<MockMcpServersSection query="" />)
+  it('the group "+" asks the panel to open the shared New mock server dialog', async () => {
+    // Creation itself lives in the unified dialog (new-mock-server-modal.test.tsx);
+    // the old inline "+ New" preset menu is gone.
+    const onAdd = vi.fn()
+    render(<MockMcpServersSection query="" onAdd={onAdd} />)
     await screen.findByTestId('mock-mcp-row-a')
-    fireEvent.click(screen.getByTestId('mock-mcp-new'))
-    fireEvent.click(screen.getByTestId('mock-mcp-preset-slow'))
-    await waitFor(() => expect(stub.bridge.server.create).toHaveBeenCalledTimes(1))
-    const input = vi.mocked(stub.bridge.server.create).mock.calls[0][0]
-    expect(input).toMatchObject({ projectId: 'p-1', name: 'Slow MCP', latencyMs: 1500 })
-    expect(input.port).toBe(3102) // 3100 / 3101 are taken
-    const tabs = useTabsStore.getState().tabs
-    expect(tabs).toHaveLength(1)
-    expect(tabs[0]).toMatchObject({ protocol: 'mockMcpServer', name: 'Slow MCP' })
-    expect(tabs[0].mockMcpServerId).toBeTruthy()
+    expect(screen.getByTestId('mock-mcp-section-title-count')).toHaveTextContent('2')
+    fireEvent.click(screen.getByTestId('mock-group-add-mcp'))
+    expect(onAdd).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('mock-mcp-new')).toBeNull()
+    expect(stub.bridge.server.create).not.toHaveBeenCalled()
   })
 
   it('clicking a row opens (and re-focuses, never duplicates) its editor tab', async () => {
@@ -214,7 +213,7 @@ describe('Mock MCP editor', () => {
     expect(screen.getByTestId('mock-mcp-save')).toBeEnabled()
   })
 
-  it('Open in MCP tab → new MCP tab with transport http, the live URL and the bearer header', async () => {
+  it('Open in MCP tab → new MCP tab with transport http, the live URL and Bearer on the Authorization tab', async () => {
     stub = installBridge([sampleServer({ id: 'a', authMode: 'bearer', bearerToken: 'tok123' })])
     vi.mocked(stub.bridge.server.status).mockResolvedValue({
       success: true,
@@ -230,11 +229,12 @@ describe('Mock MCP editor', () => {
     expect(mcp._currentTabId).toBe(activeTabId)
     expect(mcp.transport).toBe('http')
     expect(mcp.url).toBe('http://127.0.0.1:4555/mcp')
-    expect(mcp.customHeaders[0]).toMatchObject({
-      key: 'Authorization',
-      value: 'Bearer tok123',
-      enabled: true,
-    })
+    // MCP Auth: the token goes to the Authorization tab, which is selected —
+    // no raw `Authorization` header row any more.
+    expect(mcp.auth).toEqual({ type: 'bearer', bearer: { token: 'tok123' } })
+    expect(mcp.configTab).toBe('auth')
+    expect(mcp.configCollapsed).toBe(false)
+    expect(mcp.customHeaders.some((h) => h.key === 'Authorization')).toBe(false)
     expect(mcpTab?.isDirty).toBe(false)
   })
 })

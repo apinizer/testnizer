@@ -372,12 +372,25 @@ textarea::placeholder {
   opacity: 1;
 }
 
+/* No vertical padding, on purpose. This rule is unlayered, so it beats every
+   Tailwind utility on a <select> (`py-*`, `px-*`, `text-*` are dead there; of
+   the `h-*` utilities only `h-8` and up take effect, smaller ones are floored
+   to 2rem by the min-height below). Chromium centres a select's text only while its line box
+   fits the content box; when it does not, the text is pinned to the top and
+   the bottom is clipped. With the old `padding: 5px 10px`, an `h-8` select
+   (2rem = 2 x --font-size-base, i.e. 26px at the default 13px — the root font
+   size follows Project Settings) left 26 - 2 - 10 = 14px for a 19.5px line
+   box, so "Streamable HTTP" / "Any (negotiate)" lost their lower half.
+   Padding 0 + min-height 2rem: the select's own flex centring places the text,
+   fixed heights >= 2rem always fit (2fs - 2 >= 1.5fs for any fs >= 4), and
+   auto-height selects get the app's standard control height (= `h-8`). */
 select {
   background: var(--white);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 7px;
-  padding: 5px 10px;
+  padding: 0 26px 0 10px;
+  min-height: 2rem;
   font-size: var(--font-size-base);
   outline: none;
   cursor: pointer;
@@ -385,7 +398,6 @@ select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 8px center;
-  padding-right: 26px;
 }
 select:hover {
   border-color: var(--border2);

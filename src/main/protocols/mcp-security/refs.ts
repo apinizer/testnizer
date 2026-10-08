@@ -1,0 +1,32 @@
+/** Spec / RFC references cited by the MCP Security Scan findings (issue #142). */
+const MCP = 'https://modelcontextprotocol.io/specification/2025-11-25'
+
+export const REFS = {
+  mcpAuth: `${MCP}/basic/authorization`,
+  mcpAuthComms: `${MCP}/basic/authorization#communication-security`,
+  mcpAuthTokens: `${MCP}/basic/authorization#token-requirements`,
+  mcpSecurity: `${MCP}/basic/security_best_practices`,
+  mcpTransports: `${MCP}/basic/transports`,
+  mcpLifecycle: `${MCP}/basic/lifecycle`,
+  mcpTools: `${MCP}/server/tools`,
+  mcpToolsSecurity: `${MCP}/server/tools#security-considerations`,
+  mcpChangelog0618: 'https://modelcontextprotocol.io/specification/2025-06-18/changelog',
+  jsonRpc: 'https://www.jsonrpc.org/specification#error_object',
+  jsonSchema: 'https://json-schema.org/specification',
+  rfc6750Challenge: 'https://www.rfc-editor.org/rfc/rfc6750#section-3',
+  rfc6750Query: 'https://www.rfc-editor.org/rfc/rfc6750#section-2.3',
+  rfc6585: 'https://www.rfc-editor.org/rfc/rfc6585#section-4',
+  rfc6797: 'https://www.rfc-editor.org/rfc/rfc6797',
+  rfc7636: 'https://www.rfc-editor.org/rfc/rfc7636',
+  rfc8414: 'https://www.rfc-editor.org/rfc/rfc8414',
+  rfc8446: 'https://www.rfc-editor.org/rfc/rfc8446',
+  rfc9111NoStore: 'https://www.rfc-editor.org/rfc/rfc9111#section-5.2.2.5',
+  rfc9728: 'https://www.rfc-editor.org/rfc/rfc9728',
+  rfc9728Header: 'https://www.rfc-editor.org/rfc/rfc9728#section-5.1',
+  rateLimitHeaders: 'https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/',
+  fetchCors: 'https://fetch.spec.whatwg.org/#http-cors-protocol',
+  owaspHeaders: 'https://owasp.org/www-project-secure-headers/',
+  owaspErrors: 'https://owasp.org/www-community/Improper_Error_Handling',
+  uts39: 'https://www.unicode.org/reports/tr39/',
+  uts36: 'https://www.unicode.org/reports/tr36/',
+} as const

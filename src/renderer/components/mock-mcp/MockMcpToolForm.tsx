@@ -9,7 +9,15 @@ import {
 import { parseSchemaText } from './mock-mcp-draft'
 import MockMcpErrorModeFields from './MockMcpErrorModeFields'
 import MockMcpTemplateHint from './MockMcpTemplateHint'
-import { Checkbox, Field, GhostButton, INPUT_CLS, OptionalIntInput, SectionLabel } from './ui'
+import {
+  Checkbox,
+  Field,
+  GhostButton,
+  INPUT_CLS,
+  OptionalIntInput,
+  SectionLabel,
+  SELECT_CLS,
+} from './ui'
 
 const KIND_KEYS: Record<MockMcpResponseKind, string> = {
   text: 'mockMcp.tools.kindText',
@@ -109,7 +117,7 @@ export default function MockMcpToolForm({
               data-testid="mock-mcp-tool-response-kind"
               value={tool.response.kind}
               onChange={(e) => setResponse({ kind: e.target.value as MockMcpResponseKind })}
-              className={INPUT_CLS}
+              className={SELECT_CLS}
             >
               {MOCK_MCP_RESPONSE_KINDS.map((k) => (
                 <option key={k} value={k}>

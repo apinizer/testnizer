@@ -1,8 +1,10 @@
 import { create } from 'zustand'
 import type { KeyValuePair } from '../types'
 import type {
+  McpAuthConfig,
   McpBridge,
   McpCapabilityTab,
+  McpConfigTab,
   McpConnectRequest,
   McpConnectionClosedEvent,
   McpFrame,
@@ -19,6 +21,7 @@ import type {
   McpReadResourceResult,
   McpResource,
   McpResourceTemplate,
+  McpSecurityScanRequest,
   McpTool,
   McpTransport,
 } from '../types/mcp'
@@ -41,6 +44,13 @@ import {
 // Shared dirty-flag helper — an edit flips the active tab's unsaved dot so
 // Ctrl+S has something to persist (same as the SSE / WS stores, issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
+import {
+  claimSecurityOrphans,
+  securityEventHandlers,
+  securityIdle,
+  type McpSecurityTabState,
+} from './mcp-security.slice'
+import { defaultMcpAuth, resolveMcpAuth } from './mcp-auth.slice'
 
 export type { McpTransport, McpTool } from '../types/mcp'
 
@@ -48,9 +58,9 @@ type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
 /** Right-pane section ids (`McpEditor` tabs; extra ids come from `mcp/sections.ts`). */
 export const MCP_EXPLORER_SECTION = 'explorer'
-export const MCP_OAUTH_SECTION = 'oauth'
+export const MCP_SECURITY_SECTION = 'security'
 
-export interface TabMcpState {
+export interface TabMcpState extends McpSecurityTabState {
   transport: McpTransport
   /** Server URL — for stdio, the command line (`npx -y @scope/server …`). */
   url: string
@@ -62,6 +72,16 @@ export interface TabMcpState {
   customHeaders: KeyValuePair[]
   /** Extra environment for a stdio server process (issue #139). `{{var}}` resolves at Connect. */
   envVars: KeyValuePair[]
+  /**
+   * Authorization tab (MCP Auth): No Auth / Basic / Bearer / API Key /
+   * OAuth 2.1. Persisted and part of the Ctrl+S snapshot like the headers;
+   * `{{var}}` resolves at Connect. Ignored for stdio.
+   */
+  auth: McpAuthConfig
+  /** Active tab of the config strip under the connection bar. Persisted, not saved. */
+  configTab: McpConfigTab
+  /** The config strip's panel is folded away. Persisted, not saved. */
+  configCollapsed: boolean
   connectionId: string | null
   connectionState: ConnectionState
   serverName: string | null
@@ -99,7 +119,7 @@ export interface TabMcpState {
   frames: McpFrame[]
   /** Renderer-supplied id so a stalled handshake can be cancelled. */
   _pendingConnectId?: string
-  /** The last connect failed with HTTP 401 — the OAuth section offers itself (issue #141). */
+  /** The last connect failed with HTTP 401 — the Authorization tab offers OAuth 2.1 (issue #141). */
   unauthorized: boolean
   /** Right-pane section: `MCP_EXPLORER_SECTION` or an `MCP_EXTRA_SECTIONS` id. Not persisted. */
   section: string
@@ -143,6 +163,13 @@ interface McpStore extends TabMcpState {
   removeEnvVar: (id: string) => void
   /** Replace the stdio env list outright. Used by snapshot/restore paths. */
   setEnvVars: (envVars: KeyValuePair[]) => void
+  /** Replace the Authorization config (type + fields). Marks the tab dirty. */
+  setAuth: (auth: McpAuthConfig) => void
+  /** Select a config tab (and unfold the panel). Not part of Ctrl+S. */
+  setConfigTab: (tab: McpConfigTab) => void
+  setConfigCollapsed: (collapsed: boolean) => void
+  /** "Authorize…" after a 401: Authorization tab, type OAuth 2.1, panel unfolded. */
+  openOAuthAuthorization: () => void
   /** Fill transport / url (command) / env / headers from a pasted host config. */
   applyServerConfig: (server: ParsedMcpServer) => void
   setCapabilityTab: (tab: McpCapabilityTab) => void
@@ -166,6 +193,11 @@ interface McpStore extends TabMcpState {
   forgetOAuth: () => Promise<void>
   /** Use the last flow's token for this tab and (re)connect with it. */
   connectWithOAuth: () => Promise<void>
+  /** Opt-in for the rate-limit probe (persisted per tab, not part of Ctrl+S). */
+  setSecurityRateLimitProbe: (v: boolean) => void
+  /** Run the MCP Security Scan against this tab's server (issue #142). */
+  startSecurityScan: () => Promise<void>
+  cancelSecurityScan: () => Promise<void>
   connect: () => Promise<void>
   disconnect: () => Promise<void>
   listTools: () => Promise<void>
@@ -184,6 +216,9 @@ type McpConfigKeys =
   | 'url'
   | 'customHeaders'
   | 'envVars'
+  | 'auth'
+  | 'configTab'
+  | 'configCollapsed'
   | 'capabilityTab'
   | 'search'
   | 'notifications'
@@ -199,6 +234,7 @@ type McpConfigKeys =
   | 'oauthRunning'
   | 'oauthError'
   | 'oauthNoAuthRequired'
+  | keyof McpSecurityTabState
 type ConnectionSlice = Omit<TabMcpState, McpConfigKeys>
 
 /** Everything tied to a live connection — reset on disconnect / close. */
@@ -264,6 +300,9 @@ function emptyState(): TabMcpState {
     url: '',
     customHeaders: [blankRow()],
     envVars: [blankRow()],
+    auth: defaultMcpAuth(),
+    configTab: 'auth',
+    configCollapsed: false,
     capabilityTab: 'tools',
     search: '',
     notifications: [],
@@ -273,6 +312,8 @@ function emptyState(): TabMcpState {
     oauthClientSecret: '',
     oauthScope: '',
     ...oauthIdle(),
+    securityRateLimitProbe: false,
+    ...securityIdle(),
     ...disconnectedPatch(),
   }
 }
@@ -283,6 +324,9 @@ function extractState(s: TabMcpState): TabMcpState {
     url: s.url,
     customHeaders: s.customHeaders,
     envVars: s.envVars,
+    auth: s.auth,
+    configTab: s.configTab,
+    configCollapsed: s.configCollapsed,
     connectionId: s.connectionId,
     connectionState: s.connectionState,
     serverName: s.serverName,
@@ -327,6 +371,13 @@ function extractState(s: TabMcpState): TabMcpState {
     oauthRunning: s.oauthRunning,
     oauthError: s.oauthError,
     oauthNoAuthRequired: s.oauthNoAuthRequired,
+    securityScanId: s.securityScanId,
+    securityRunning: s.securityRunning,
+    securityProgress: s.securityProgress,
+    securityFindings: s.securityFindings,
+    securityReport: s.securityReport,
+    securityError: s.securityError,
+    securityRateLimitProbe: s.securityRateLimitProbe,
   }
 }
 
@@ -346,6 +397,8 @@ function persistable(s: TabMcpState): TabMcpState {
     // Write-only secret and the token session never reach localStorage.
     oauthClientSecret: '',
     ...oauthIdle(),
+    // Scan results are transient; only the rate-limit opt-in survives.
+    ...securityIdle(),
   }
 }
 
@@ -561,6 +614,22 @@ function forgetOAuthSessions(ids: Array<string | null | undefined>): void {
   }
 }
 
+// ─── Security Scan events (issue #142) — routed by scan id ──────────────────
+
+function findSecurityTab(scanId: string): { tabId: string | null } | undefined {
+  const s = useMcpStore.getState()
+  if (s.securityScanId === scanId) return { tabId: s._currentTabId }
+  for (const [tabId, st] of s._tabStates) {
+    if (tabId !== s._currentTabId && st.securityScanId === scanId) return { tabId }
+  }
+  return undefined
+}
+
+const securityEvents = securityEventHandlers<TabMcpState>({
+  findTab: findSecurityTab,
+  patchTab: (tabId, patch) => patchTab(tabId, patch),
+})
+
 let subscribedApi: McpBridge | null = null
 let unsubscribers: Array<() => void> = []
 
@@ -586,6 +655,11 @@ export function ensureMcpEventSubscriptions(): void {
   if (api.onConnectionClosed) unsubscribers.push(api.onConnectionClosed(handleConnectionClosed))
   if (api.onOauthStep) unsubscribers.push(api.onOauthStep(handleOAuthStep))
   if (api.onOauthDone) unsubscribers.push(api.onOauthDone(handleOAuthDone))
+  if (api.onSecurityProgress) {
+    unsubscribers.push(api.onSecurityProgress(securityEvents.onProgress))
+  }
+  if (api.onSecurityFinding) unsubscribers.push(api.onSecurityFinding(securityEvents.onFinding))
+  if (api.onSecurityDone) unsubscribers.push(api.onSecurityDone(securityEvents.onDone))
 }
 
 // ─── Capability loaders (routed by connectionId) ────────────────────────────
@@ -639,6 +713,15 @@ function loadCapabilities(
     has('resources') ? loadResources(cid) : null,
     has('prompts') ? loadPrompts(cid) : null,
   ])
+}
+
+/**
+ * The OAuth token session Connect / Scan name — only while the Authorization
+ * tab is set to OAuth 2.1, so switching to Bearer (say) really stops sending
+ * the debugger's token instead of having it silently override the new type.
+ */
+function oauthSessionFor(st: Pick<TabMcpState, 'auth' | 'oauthSessionId'>): string | null {
+  return st.auth.type === 'oauth2' ? st.oauthSessionId : null
 }
 
 function activeVars(): Record<string, string> {
@@ -700,6 +783,18 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   setEnvVars: (envVars) => {
     set({ envVars })
     markActiveTabDirty()
+  },
+  setAuth: (auth) => {
+    set({ auth })
+    markActiveTabDirty()
+  },
+  // Layout only — not part of the Ctrl+S snapshot, so no dirty flag.
+  setConfigTab: (configTab) => set({ configTab, configCollapsed: false }),
+  setConfigCollapsed: (configCollapsed) => set({ configCollapsed }),
+  openOAuthAuthorization: () => {
+    const { auth } = get()
+    set({ configTab: 'auth', configCollapsed: false })
+    if (auth.type !== 'oauth2') get().setAuth({ ...auth, type: 'oauth2' })
   },
   applyServerConfig: (server) => {
     set({
@@ -821,14 +916,85 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   },
 
   connectWithOAuth: async () => {
-    const { oauthFlowId, oauthSummary, oauthSessionId, connectionState } = get()
+    const { oauthFlowId, oauthSummary, oauthSessionId, connectionState, auth } = get()
     if (!oauthFlowId || !oauthSummary) return
     if (oauthSessionId !== oauthFlowId) forgetOAuthSessions([oauthSessionId])
-    set({ oauthSessionId: oauthFlowId })
+    // The token only rides a connection whose Authorization type is OAuth 2.1.
+    set({
+      oauthSessionId: oauthFlowId,
+      ...(auth.type !== 'oauth2' ? { auth: { ...auth, type: 'oauth2' as const } } : {}),
+    })
     if (connectionState === 'connected' || connectionState === 'connecting') {
       await get().disconnect()
     }
     await get().connect()
+  },
+
+  // Not part of the Ctrl+S snapshot — no dirty flag.
+  setSecurityRateLimitProbe: (securityRateLimitProbe) => set({ securityRateLimitProbe }),
+
+  startSecurityScan: async () => {
+    const st = get()
+    if (st.securityRunning) return
+    if (st.transport === 'stdio') {
+      set({
+        securityError: 'The security scan applies to the Streamable HTTP and SSE transports only',
+      })
+      return
+    }
+    if (!st.url.trim()) return
+    ensureMcpEventSubscriptions()
+    const api = getMcpApi()
+    if (!api?.securityScan) {
+      set({ securityError: 'The security scan is not available' })
+      return
+    }
+    const ownerTabId = st._currentTabId
+    const vars = activeVars()
+    const request: McpSecurityScanRequest = {
+      url: resolveVariables(st.url, vars).trim(),
+      transport: st.transport === 'sse' ? 'sse' : 'http',
+      options: { rateLimitProbe: st.securityRateLimitProbe },
+    }
+    // The tab's current headers and OAuth token session — main strips the
+    // credentials for the unauthenticated probes; the token never comes here.
+    const headers = kvRowsToRecord(st.customHeaders, vars)
+    if (Object.keys(headers).length > 0) request.headers = headers
+    // The Authorization tab, resolved exactly as Connect sends it (MCP Auth).
+    const scanAuth = resolveMcpAuth(st.auth, vars)
+    if (scanAuth) request.auth = scanAuth
+    const scanSession = oauthSessionFor(st)
+    if (scanSession) request.oauthSessionId = scanSession
+    set({ ...securityIdle(), securityRunning: true })
+    let res: Awaited<ReturnType<McpBridge['securityScan']>>
+    try {
+      res = await api.securityScan(request)
+    } catch (e) {
+      res = { success: false, error: errText(e, 'Security scan failed to start') }
+    }
+    if (res.success && res.data) {
+      const scanId = res.data.scanId
+      patchTab(ownerTabId, (s) => ({
+        securityScanId: scanId,
+        ...claimSecurityOrphans(scanId, s.securityFindings),
+      }))
+    } else {
+      patchTab(ownerTabId, {
+        securityRunning: false,
+        securityError: res.error ?? 'Security scan failed to start',
+      })
+    }
+  },
+
+  cancelSecurityScan: async () => {
+    const { securityScanId, securityRunning } = get()
+    const api = getMcpApi()
+    if (!securityRunning || !securityScanId || !api?.securityCancel) return
+    try {
+      await api.securityCancel(securityScanId)
+    } catch {
+      /* the scan already finished */
+    }
   },
 
   connect: async () => {
@@ -837,6 +1003,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       url,
       customHeaders,
       envVars,
+      auth,
       oauthSessionId,
       _currentTabId: ownerTabId,
     } = get()
@@ -882,8 +1049,13 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       // resolved in both key and value. stdio has no HTTP layer.
       const headers = kvRowsToRecord(customHeaders, vars)
       if (Object.keys(headers).length > 0) request.headers = headers
+      // Authorization tab: `{{var}}` resolved here; main builds the header /
+      // query param — a same-named custom header row wins (issue #48 parity).
+      const resolvedAuth = resolveMcpAuth(auth, vars)
+      if (resolvedAuth) request.auth = resolvedAuth
       // OAuth 2.1 (issue #141): main injects the session's token; we only name it.
-      if (oauthSessionId) request.oauthSessionId = oauthSessionId
+      const session = oauthSessionFor({ auth, oauthSessionId })
+      if (session) request.oauthSessionId = session
     }
     let res: Awaited<ReturnType<McpBridge['connect']>>
     try {
@@ -915,15 +1087,24 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       })
       await loadCapabilities(d.connectionId, d.capabilities)
     } else {
-      // A 401 opens the OAuth 2.1 section, like Postman does (issue #141).
+      // A 401 opens the Authorization tab on OAuth 2.1, like Postman does
+      // (issue #141). Only a tab with No Auth is switched to OAuth 2.1: a
+      // configured Basic / Bearer / API key stays selected (the 401 is more
+      // likely a wrong credential), and "Authorize…" switches explicitly.
       const unauthorized = !!res.unauthorized
-      patchTab(ownerTabId, {
+      patchTab(ownerTabId, (s) => ({
         connectionState: 'error',
         errorMessage: res.error ?? 'Connection failed',
         _pendingConnectId: undefined,
         unauthorized,
-        ...(unauthorized ? { section: MCP_OAUTH_SECTION } : {}),
-      })
+        ...(unauthorized
+          ? {
+              configTab: 'auth' as const,
+              configCollapsed: false,
+              ...(s.auth.type === 'none' ? { auth: { ...s.auth, type: 'oauth2' as const } } : {}),
+            }
+          : {}),
+      }))
     }
     // Console logging is handled by the main-process handler so every
     // protocol routes through the same `console:log` channel — see
@@ -1091,8 +1272,13 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     // Close the tab's connection whether it is the live slice or a cached one.
     const tab = s._currentTabId === tabId ? extractState(s) : s._tabStates.get(tabId)
     const cid = tab?.connectionId
-    // The tab's OAuth tokens die with it.
+    // The tab's OAuth tokens die with it, and so does a running scan.
     if (tab) forgetOAuthSessions([tab.oauthFlowId, tab.oauthSessionId])
+    if (tab?.securityRunning && tab.securityScanId) {
+      getMcpApi()
+        ?.securityCancel?.(tab.securityScanId)
+        .catch(() => {})
+    }
     if (cid) {
       getMcpApi()
         ?.disconnect(cid)

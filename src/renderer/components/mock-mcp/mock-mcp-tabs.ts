@@ -5,8 +5,8 @@
  * store's singleton-id guard) the server's editor tab.
  *
  * `openMockInMcpTab` — "Open in MCP tab": a new MCP request tab
- * prefilled with transport http + the server URL (+ the bearer header when the
- * mock requires one), ready to Connect.
+ * prefilled with transport http + the server URL (+ Bearer Token on the
+ * Authorization tab, shown, when the mock requires one), ready to Connect.
  *
  * Ordering matters: `openTab` only flips `activeTabId`; the MCP store's live
  * slice still belongs to the PREVIOUS tab until the stores are activated. The
@@ -17,8 +17,7 @@
 import { useTabsStore } from '../../stores/tabs.store'
 import { useMcpStore } from '../../stores/mcp.store'
 import { activateTabStores } from '../../lib/activate-tab'
-import { makeId, makeTabId } from '../../lib/utils'
-import type { KeyValuePair } from '../../types'
+import { makeTabId } from '../../lib/utils'
 import type { MockMcpServer } from '../../types/mock-mcp'
 
 export function mockMcpTabId(serverId: string): string {
@@ -55,11 +54,10 @@ export function openMockInMcpTab(opts: {
   mcp.setTransport('http')
   mcp.setUrl(opts.url)
   if (opts.bearerToken) {
-    const rows: KeyValuePair[] = [
-      { id: makeId(), key: 'Authorization', value: `Bearer ${opts.bearerToken}`, enabled: true },
-      { id: makeId(), key: '', value: '', enabled: true },
-    ]
-    mcp.setHeaders(rows)
+    // The Authorization tab (MCP Auth), not a raw header row — and selected,
+    // so the user sees where the credential went.
+    mcp.setAuth({ type: 'bearer', bearer: { token: opts.bearerToken } })
+    mcp.setConfigTab('auth')
   }
   // A prefilled scratch tab holds nothing the user typed — no dirty dot.
   useTabsStore.getState().markDirty(id, false)

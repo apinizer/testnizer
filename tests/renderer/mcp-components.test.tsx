@@ -7,12 +7,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import React from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import McpResultView from '../../src/renderer/components/protocols/mcp/McpResultView'
 import McpCapabilityList from '../../src/renderer/components/protocols/mcp/McpCapabilityList'
 import McpConfigMenu from '../../src/renderer/components/protocols/mcp/McpConfigMenu'
 import McpMessagesPane from '../../src/renderer/components/protocols/mcp/McpMessagesPane'
 import McpEditor from '../../src/renderer/components/protocols/McpEditor'
+import McpConfigTabs from '../../src/renderer/components/protocols/mcp/McpConfigTabs'
+import McpAuthSection from '../../src/renderer/components/protocols/mcp/McpAuthSection'
 import { useMcpStore } from '../../src/renderer/stores/mcp.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 
@@ -328,5 +330,153 @@ describe('McpMessagesPane / McpEditor', () => {
     fireEvent.change(screen.getByTestId('mcp-transport'), { target: { value: 'stdio' } })
     expect(screen.getByTestId('mcp-env-toggle')).toBeInTheDocument()
     expect(screen.queryByTestId('mcp-headers-toggle')).toBeNull()
+  })
+})
+
+describe('McpConfigTabs — Postman-style config strip (MCP Auth)', () => {
+  it('http / sse: Authorization + Headers; stdio: Authorization + Environment', () => {
+    render(<McpConfigTabs />)
+    expect(screen.getByTestId('mcp-config-tab-auth')).toHaveTextContent('Authorization')
+    expect(screen.getByTestId('mcp-config-tab-headers')).toHaveTextContent('Headers')
+    expect(screen.queryByTestId('mcp-config-tab-env')).toBeNull()
+    // Default: Authorization selected and unfolded, No Auth.
+    expect(screen.getByTestId('mcp-config-tab-auth')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByTestId('mcp-auth-none')).toHaveTextContent(
+      'This request does not use any authorization.',
+    )
+
+    act(() => useMcpStore.getState().setTransport('stdio'))
+    expect(screen.queryByTestId('mcp-config-tab-headers')).toBeNull()
+    expect(screen.getByTestId('mcp-config-tab-env')).toBeInTheDocument()
+  })
+
+  it('a tab click shows its panel; the legacy toggle ids sit on the tab labels', () => {
+    render(<McpConfigTabs />)
+    fireEvent.click(screen.getByTestId('mcp-headers-toggle'))
+    expect(useMcpStore.getState().configTab).toBe('headers')
+    expect(screen.getByTestId('mcp-config-panel-headers')).toBeInTheDocument()
+    expect(screen.getByTestId('mcp-headers-section')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /\+ Add Header/i })).toBeInTheDocument()
+    // Clicking the active tab again keeps it open — only the chevron folds.
+    fireEvent.click(screen.getByTestId('mcp-config-tab-headers'))
+    expect(screen.getByTestId('mcp-headers-section')).toBeInTheDocument()
+  })
+
+  it('the chevron folds / unfolds the panel; a tab click unfolds it too', () => {
+    render(<McpConfigTabs />)
+    const chevron = screen.getByTestId('mcp-config-collapse')
+    expect(chevron).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(chevron)
+    expect(useMcpStore.getState().configCollapsed).toBe(true)
+    expect(screen.queryByTestId('mcp-config-panel-auth')).toBeNull()
+    expect(screen.getByTestId('mcp-config-collapse')).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(screen.getByTestId('mcp-config-tab-auth'))
+    expect(screen.getByTestId('mcp-config-panel-auth')).toBeInTheDocument()
+    expect(useMcpStore.getState().configCollapsed).toBe(false)
+  })
+
+  it('count badges show enabled rows with a key; the auth tab gets a dot once a type is set', () => {
+    useMcpStore.setState({
+      customHeaders: [
+        { id: 'a', key: 'X-A', value: '1', enabled: true },
+        { id: 'b', key: 'X-B', value: '2', enabled: false },
+        { id: 'c', key: '', value: '3', enabled: true },
+      ],
+    })
+    render(<McpConfigTabs />)
+    expect(screen.getByTestId('mcp-headers-count')).toHaveTextContent('1')
+    expect(screen.queryByTestId('mcp-config-auth-dot')).toBeNull()
+    act(() => useMcpStore.getState().setAuth({ type: 'bearer', bearer: { token: 't' } }))
+    expect(screen.getByTestId('mcp-config-auth-dot')).toBeInTheDocument()
+  })
+
+  it('a stored Headers tab falls back to Authorization on stdio without rewriting the store', () => {
+    useMcpStore.setState({ configTab: 'headers', transport: 'stdio' })
+    render(<McpConfigTabs />)
+    expect(screen.getByTestId('mcp-config-panel-auth')).toBeInTheDocument()
+    expect(useMcpStore.getState().configTab).toBe('headers')
+  })
+})
+
+describe('McpAuthSection — each type renders its fields and writes the store', () => {
+  const pick = (type: string): void => {
+    fireEvent.change(screen.getByTestId('mcp-auth-type'), { target: { value: type } })
+  }
+
+  it('offers No Auth, Basic, Bearer, API Key and OAuth 2.1', () => {
+    render(<McpAuthSection />)
+    const options = within(screen.getByTestId('mcp-auth-type'))
+      .getAllByRole('option')
+      .map((o) => o.textContent)
+    expect(options).toEqual(['No Auth', 'Basic Auth', 'Bearer Token', 'API Key', 'OAuth 2.1'])
+  })
+
+  it('basic: username + masked password with a show toggle', () => {
+    render(<McpAuthSection />)
+    pick('basic')
+    fireEvent.change(screen.getByTestId('mcp-auth-basic-username'), {
+      target: { value: '{{user}}' },
+    })
+    const pass = screen.getByTestId('mcp-auth-basic-password')
+    expect(pass).toHaveAttribute('type', 'password')
+    fireEvent.change(pass, { target: { value: 's3cret' } })
+    fireEvent.click(screen.getByTestId('mcp-auth-basic-password-toggle'))
+    expect(screen.getByTestId('mcp-auth-basic-password')).toHaveAttribute('type', 'text')
+    expect(useMcpStore.getState().auth).toEqual({
+      type: 'basic',
+      basic: { username: '{{user}}', password: 's3cret' },
+    })
+    expect(screen.getByTestId('mcp-auth-preview')).toHaveTextContent('Authorization: Basic')
+    expect(screen.getByTestId('mcp-auth-preview')).not.toHaveTextContent('s3cret')
+  })
+
+  it('bearer: token + optional prefix; the preview names the prefix, never the token', () => {
+    render(<McpAuthSection />)
+    pick('bearer')
+    fireEvent.change(screen.getByTestId('mcp-auth-bearer-token'), { target: { value: 'tok-1' } })
+    fireEvent.change(screen.getByTestId('mcp-auth-bearer-prefix'), { target: { value: 'Token' } })
+    expect(useMcpStore.getState().auth).toEqual({
+      type: 'bearer',
+      bearer: { token: 'tok-1', prefix: 'Token' },
+    })
+    const preview = screen.getByTestId('mcp-auth-preview')
+    expect(preview).toHaveTextContent('Authorization: Token <token>')
+    expect(preview).not.toHaveTextContent('tok-1')
+  })
+
+  it('api key: key, value and Header / Query placement', () => {
+    render(<McpAuthSection />)
+    pick('api-key')
+    fireEvent.change(screen.getByTestId('mcp-auth-apikey-key'), { target: { value: 'api_key' } })
+    fireEvent.change(screen.getByTestId('mcp-auth-apikey-value'), { target: { value: 'k-1' } })
+    fireEvent.change(screen.getByTestId('mcp-auth-apikey-in'), { target: { value: 'query' } })
+    expect(useMcpStore.getState().auth).toEqual({
+      type: 'api-key',
+      apiKey: { key: 'api_key', value: 'k-1', in: 'query' },
+    })
+    expect(screen.getByTestId('mcp-auth-preview')).toHaveTextContent('?api_key=<value>')
+  })
+
+  it('switching type keeps what was typed for the other types', () => {
+    render(<McpAuthSection />)
+    pick('bearer')
+    fireEvent.change(screen.getByTestId('mcp-auth-bearer-token'), { target: { value: 'keep' } })
+    pick('basic')
+    pick('bearer')
+    expect(screen.getByTestId('mcp-auth-bearer-token')).toHaveValue('keep')
+  })
+
+  it('every type has its one-line description; stdio shows a note instead of fields', () => {
+    render(<McpAuthSection />)
+    expect(screen.getByTestId('mcp-auth-none')).toHaveTextContent(
+      'This request does not use any authorization.',
+    )
+    expect(screen.queryByTestId('mcp-auth-description')).toBeNull()
+    pick('bearer')
+    expect(screen.getByTestId('mcp-auth-description')).toHaveTextContent(/Authorization header/)
+    act(() => useMcpStore.getState().setTransport('stdio'))
+    expect(screen.getByTestId('mcp-auth-stdio-note')).toHaveTextContent(/stdio/)
+    expect(screen.queryByTestId('mcp-auth-preview')).toBeNull()
+    expect(screen.queryByTestId('mcp-auth-bearer-token')).toBeNull()
   })
 })

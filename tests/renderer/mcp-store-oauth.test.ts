@@ -1,12 +1,12 @@
 /**
  * Issue #141 — MCP store, OAuth 2.1 debugger slice: start request shape,
  * step / done routing by flow id (owner tab, never "the active tab"), steps
- * that race the start reply, Connect with token, the 401 → OAuth section
- * hand-off, forget, and that neither the client secret nor any token session
+ * that race the start reply, Connect with token, the 401 → Authorization /
+ * OAuth 2.1 hand-off, forget, and that neither the client secret nor any token session
  * reaches localStorage.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useMcpStore, MCP_OAUTH_SECTION } from '../../src/renderer/stores/mcp.store'
+import { useMcpStore } from '../../src/renderer/stores/mcp.store'
 import { useEnvironmentStore } from '../../src/renderer/stores/environment.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import type { Environment } from '../../src/renderer/types'
@@ -200,15 +200,32 @@ describe('connect with the OAuth token', () => {
     expect(st.oauthSummary).toBeNull()
   })
 
-  it('a 401 on connect flags unauthorized and opens the OAuth section', async () => {
+  it('a 401 on connect flags unauthorized and opens Authorization on OAuth 2.1', async () => {
     installApi({ connect401: true })
-    useMcpStore.setState({ url: 'http://srv.test/mcp' })
-    expect(useMcpStore.getState().section).toBe('explorer')
+    useMcpStore.setState({ url: 'http://srv.test/mcp', configTab: 'headers' })
+    expect(useMcpStore.getState().auth.type).toBe('none')
     await useMcpStore.getState().connect()
     const st = useMcpStore.getState()
     expect(st.connectionState).toBe('error')
     expect(st.unauthorized).toBe(true)
-    expect(st.section).toBe(MCP_OAUTH_SECTION)
+    expect(st.configTab).toBe('auth')
+    expect(st.auth.type).toBe('oauth2')
+    // The right pane stays where it was — the debugger is no longer there.
+    expect(st.section).toBe('explorer')
+  })
+
+  it('Connect with token switches a non-OAuth tab to OAuth 2.1 so the token is used', async () => {
+    const { mcp, handlers } = installApi()
+    useMcpStore.setState({ url: 'http://srv.test/mcp' })
+    useMcpStore.getState().setAuth({ type: 'bearer', bearer: { token: 'other' } })
+    await useMcpStore.getState().startOAuth()
+    const flowId = useMcpStore.getState().oauthFlowId as string
+    handlers.done?.({ oauthSessionId: flowId, ok: true, summary: SUMMARY })
+    await useMcpStore.getState().connectWithOAuth()
+    expect(useMcpStore.getState().auth.type).toBe('oauth2')
+    const req = mcp.connect.mock.calls.at(-1)?.[0]
+    expect(req).toMatchObject({ oauthSessionId: flowId })
+    expect(req).not.toHaveProperty('auth')
   })
 
   it('closing the tab forgets its token sessions', async () => {

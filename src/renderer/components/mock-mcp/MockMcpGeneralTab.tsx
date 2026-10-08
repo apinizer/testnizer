@@ -4,7 +4,7 @@ import {
   type MockMcpDraftUpdater,
   type MockMcpServerDraft,
 } from '../../types/mock-mcp'
-import { Checkbox, Field, INPUT_CLS, IntInput, SectionLabel } from './ui'
+import { Checkbox, Field, INPUT_CLS, IntInput, SectionLabel, SELECT_CLS } from './ui'
 
 /** General: identity + where the server listens + protocol pin. */
 export default function MockMcpGeneralTab({
@@ -83,7 +83,7 @@ export default function MockMcpGeneralTab({
             data-testid="mock-mcp-protocol-pin"
             value={draft.protocolPin ?? ''}
             onChange={(e) => set({ protocolPin: e.target.value || null })}
-            className={INPUT_CLS}
+            className={SELECT_CLS}
           >
             <option value="">{t('mockMcp.general.protocolAny')}</option>
             {MOCK_MCP_PROTOCOL_VERSIONS.map((v) => (

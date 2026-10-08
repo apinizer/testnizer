@@ -177,14 +177,14 @@ const STEP_DEFS: ReadonlyArray<{ id: McpOAuthStepId; title: string }> = [
 const DEFAULT_CALLBACK_TIMEOUT_MS = 180_000
 const DEFAULT_HTTP_TIMEOUT_MS = 15_000
 const BODY_PREVIEW_CHARS = 8 * 1024
-const REDACTED = '••••'
+export const REDACTED = '••••'
 const CALLBACK_PATH = '/callback'
 
 /** Body keys whose values are credentials (token / DCR / form bodies). */
 const SECRET_KEY =
   /^(access_token|refresh_token|id_token|client_secret|registration_access_token|code|code_verifier|password|assertion|client_assertion|device_code)$/i
 /** Header names whose values are credentials. `WWW-Authenticate` is the challenge — kept. */
-const SECRET_HEADER =
+export const SECRET_HEADER =
   /^(authorization|proxy-authorization|cookie|set-cookie)$|token|secret|api[-_]?key|password|passwd/i
 
 // ─── State ──────────────────────────────────────────────────
@@ -227,8 +227,11 @@ class FlowCancelled extends Error {
 }
 
 // ─── Redaction ──────────────────────────────────────────────
+// Exported for the MCP Security Scan (issue #142, `mcp-security.engine.ts`),
+// which records its evidence with exactly these rules — one redaction policy
+// for every MCP diagnostic that shows HTTP exchanges.
 
-function redactHeaders(headers: Headers): Record<string, string> {
+export function redactHeaders(headers: Headers): Record<string, string> {
   const out: Record<string, string> = {}
   headers.forEach((value, name) => {
     if (name.toLowerCase() === 'www-authenticate' || !SECRET_HEADER.test(name)) {
@@ -254,10 +257,15 @@ function redactJson(value: unknown): unknown {
   return value
 }
 
+/** `••••` as URLSearchParams serialises it (`%E2%80%A2…`). */
+const ENCODED_REDACTED = encodeURIComponent(REDACTED)
+
 function redactForm(params: URLSearchParams): string {
   const out = new URLSearchParams()
   params.forEach((v, k) => out.append(k, SECRET_KEY.test(k) ? REDACTED : v))
-  return out.toString()
+  // Show the placeholder as-is (`code=••••`), not percent-encoded; every
+  // other value keeps its wire encoding.
+  return out.toString().split(ENCODED_REDACTED).join(REDACTED)
 }
 
 function truncate(text: string): string {
@@ -266,7 +274,7 @@ function truncate(text: string): string {
     : text
 }
 
-function redactBodyText(text: string, contentType: string): string {
+export function redactBodyText(text: string, contentType: string): string {
   if (!text) return text
   const trimmed = text.trim()
   if (contentType.includes('json') || trimmed.startsWith('{') || trimmed.startsWith('[')) {
@@ -295,11 +303,12 @@ function redactedUrl(url: URL): string {
   for (const key of [...copy.searchParams.keys()]) {
     if (SECRET_KEY.test(key)) copy.searchParams.set(key, REDACTED)
   }
-  return copy.href
+  // Same as redactForm: show `code=••••`, not the percent-encoded placeholder.
+  return copy.href.split(ENCODED_REDACTED).join(REDACTED)
 }
 
 /** Value-based scrub of a record about to leave the module (defence in depth). */
-function scrub<T>(record: T, secrets: Set<string>): T {
+export function scrub<T>(record: T, secrets: Set<string>): T {
   let json = JSON.stringify(record)
   for (const secret of secrets) {
     if (!secret || secret.length < 6) continue
@@ -314,7 +323,7 @@ function scrub<T>(record: T, secrets: Set<string>): T {
 
 // ─── HTTP plumbing ──────────────────────────────────────────
 
-function errorMessage(err: unknown): string {
+export function errorMessage(err: unknown): string {
   if (err instanceof Error) {
     const cause = (err as Error & { cause?: unknown }).cause
     if (cause && typeof cause === 'object') {
@@ -328,7 +337,7 @@ function errorMessage(err: unknown): string {
   return String(err)
 }
 
-function anySignal(signals: Array<AbortSignal | null | undefined>): AbortSignal {
+export function anySignal(signals: Array<AbortSignal | null | undefined>): AbortSignal {
   const live = signals.filter((s): s is AbortSignal => !!s)
   return AbortSignal.any(live)
 }

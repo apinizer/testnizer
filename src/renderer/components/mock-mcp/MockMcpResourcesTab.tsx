@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
 import type { MockMcpDraftUpdater, MockMcpResource, MockMcpServerDraft } from '../../types/mock-mcp'
-import { Field, GhostButton, INPUT_CLS, SectionLabel } from './ui'
+import { Field, GhostButton, INPUT_CLS, SectionLabel, SELECT_CLS } from './ui'
 import { ListItem } from './ui-display'
 
 function ResourceForm({
@@ -45,7 +45,7 @@ function ResourceForm({
                   : { uri: current, uriTemplate: undefined },
               )
             }}
-            className={INPUT_CLS}
+            className={SELECT_CLS}
           >
             <option value="static">{t('mockMcp.resources.static')}</option>
             <option value="template">{t('mockMcp.resources.template')}</option>

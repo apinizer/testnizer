@@ -1163,6 +1163,23 @@ interface AiChatApi {
 
 // ─── MCP ─────────────────────────────────────────────────────────
 
+/**
+ * Authorization tab of an MCP request (MCP Auth): applied by main on the
+ * http / sse handshake and every request after it. The renderer resolves
+ * `{{var}}` in every field before sending. Precedence in main (HTTP parity,
+ * issue #48): a custom header of the same name beats this auth, and the
+ * OAuth session token beats both. Ignored for stdio. Same shape as the HTTP
+ * `AuthConfig` for `basic` / `bearer` / `apiKey`.
+ */
+interface McpConnectAuth {
+  type: 'none' | 'basic' | 'bearer' | 'api-key' | 'oauth2'
+  basic?: { username: string; password: string }
+  /** `prefix` defaults to `Bearer`. */
+  bearer?: { token: string; prefix?: string }
+  /** `in: 'query'` appends `key=value` to the server URL (http / sse). */
+  apiKey?: { key: string; value: string; in: 'header' | 'query' }
+}
+
 interface McpConnectOptions {
   transport: 'http' | 'sse' | 'stdio'
   url: string
@@ -1174,6 +1191,8 @@ interface McpConnectOptions {
   env?: Record<string, string>
   /** Custom HTTP headers for the http / sse handshake (issue #137); ignored for stdio. */
   headers?: Record<string, string>
+  /** Authorization tab (basic / bearer / API key), `{{var}}`-resolved; ignored for stdio. */
+  auth?: McpConnectAuth
   /**
    * OAuth 2.1 debugger session (issue #141): main injects its access token as
    * `Authorization: Bearer …` (overriding a header row) — the renderer never
@@ -1357,6 +1376,111 @@ interface McpOAuthDoneEvent {
   failedStep?: McpOAuthStepId
 }
 
+// ─── MCP Security Scan (issue #142) ──────────────────────────────
+// Mirrors src/main/protocols/mcp-security/types.ts (the web tsconfig cannot import main).
+
+type McpSecuritySeverity = 'info' | 'low' | 'medium' | 'high' | 'critical'
+type McpSecurityStatus = 'pass' | 'warn' | 'fail' | 'info' | 'skipped'
+type McpSecurityGrade = 'A' | 'B' | 'C' | 'D' | 'F'
+type McpSecurityCategoryId =
+  | 'transport'
+  | 'auth'
+  | 'protocol'
+  | 'injection'
+  | 'disclosure'
+  | 'cors'
+  | 'headers'
+  | 'ratelimit'
+
+interface McpSecurityScanRequest {
+  url: string
+  transport: 'http' | 'sse'
+  /** The tab's headers — credentials are stripped for the unauthenticated probes. */
+  headers?: Record<string, string>
+  /**
+   * The tab's Authorization tab, `{{var}}`-resolved (same as `mcp.connect`):
+   * applied to the authenticated requests only; values scrubbed from findings.
+   */
+  auth?: McpConnectAuth
+  /** OAuth 2.1 token session (issue #141); the token never reaches the renderer. */
+  oauthSessionId?: string
+  options: {
+    /** Opt-in: ~30 rapid requests over the authenticated session. */
+    rateLimitProbe: boolean
+    /** Per-request timeout, clamped to 1–60 s (default 15 s). */
+    timeoutMs?: number
+  }
+}
+
+/** Evidence of one exchange — credential headers redacted (`Bearer ••••`). */
+interface McpSecurityEvidence {
+  request?: { method: string; url: string; headers: Record<string, string> }
+  response?: { status: number; headers: Record<string, string>; bodyPreview?: string }
+  error?: string
+  /** What a content heuristic matched. */
+  matches?: string[]
+}
+
+interface McpSecurityFinding {
+  /** Stable check id, e.g. `transport.https`. */
+  id: string
+  category: McpSecurityCategoryId
+  title: string
+  severity: McpSecuritySeverity
+  status: McpSecurityStatus
+  detail: string
+  evidence?: McpSecurityEvidence
+  recommendation?: string
+  refs?: string[]
+}
+
+interface McpSecurityReport {
+  id: string
+  startedAt: number
+  finishedAt: number
+  target: { url: string; transport: 'http' | 'sse'; host: string; scheme: string }
+  grade: McpSecurityGrade
+  score: number
+  categories: Array<{
+    id: McpSecurityCategoryId
+    title: string
+    score: number
+    findings: McpSecurityFinding[]
+  }>
+  summary: { pass: number; warn: number; fail: number; info: number; skipped: number }
+  serverInfo?: {
+    name: string
+    version: string
+    protocolVersion: string
+    capabilities: Record<string, unknown>
+  }
+  truncated?: boolean
+  cancelled?: boolean
+  /** The target never answered — grade forced to F. */
+  error?: string
+}
+
+/** `mcp:security:progress` */
+interface McpSecurityProgressEvent {
+  scanId: string
+  done: number
+  total: number
+  current: string
+}
+
+/** `mcp:security:finding` */
+interface McpSecurityFindingEvent {
+  scanId: string
+  finding: McpSecurityFinding
+}
+
+/** `mcp:security:done` — `report` on completion / cancel, `error` when the scan could not run. */
+interface McpSecurityDoneEvent {
+  scanId: string
+  report?: McpSecurityReport
+  error?: string
+}
+
 interface McpApi {
   /** `unauthorized` is set when the server answered HTTP 401 (issue #141). */
   connect(
@@ -1394,6 +1518,12 @@ interface McpApi {
   oauthForget(oauthSessionId: string): Promise<IpcResult<{ forgotten: boolean }>>
   onOauthStep(callback: (event: McpOAuthStepEvent) => void): () => void
   onOauthDone(callback: (event: McpOAuthDoneEvent) => void): () => void
+  securityScan(request: McpSecurityScanRequest): Promise<IpcResult<{ scanId: string }>>
+  securityCancel(scanId: string): Promise<IpcResult<{ cancelled: boolean }>>
+  securityExportHtml(report: McpSecurityReport): Promise<IpcResult<{ html: string }>>
+  onSecurityProgress(callback: (event: McpSecurityProgressEvent) => void): () => void
+  onSecurityFinding(callback: (event: McpSecurityFindingEvent) => void): () => void
+  onSecurityDone(callback: (event: McpSecurityDoneEvent) => void): () => void
 }
 
 // ─── Socket.IO ───────────────────────────────────────────────────
@@ -1930,6 +2060,8 @@ interface MockEndpointCreatePayload {
   priority?: number
   enabled?: boolean
   sortOrder?: number
+  /** Overrides the server-level auth for this endpoint (the backend's `CreateMockEndpointInput` takes it). */
+  authOverride?: MockEndpoint['authOverride']
 }
 
 interface MockEndpointSubApi {

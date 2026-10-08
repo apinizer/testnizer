@@ -21,12 +21,14 @@ function Field({ label, ...input }: { label: string } & InputHTMLAttributes<HTML
 }
 
 /**
- * "OAuth 2.1" tab of the MCP editor (issue #141) — Postman's OAuth debugger:
- * runs the MCP authorization handshake in main step by step and shows each
- * request / response, so the user sees exactly where it breaks. The client
- * secret is write-only (never persisted); tokens never reach the renderer.
+ * OAuth 2.1 debugger of the MCP editor (issue #141) — Postman's OAuth
+ * debugger: runs the MCP authorization handshake in main step by step and
+ * shows each request / response, so the user sees exactly where it breaks.
+ * The client secret is write-only (never persisted); tokens never reach the
+ * renderer. Rendered inline by the Authorization panel when its type is
+ * OAuth 2.1 (`embedded`: no own padding / scroll — the panel scrolls).
  */
-export default function McpOAuthSection() {
+export default function McpOAuthSection({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation()
   const transport = useMcpStore((s) => s.transport)
   const url = useMcpStore((s) => s.url)
@@ -46,6 +48,10 @@ export default function McpOAuthSection() {
   const startOAuth = useMcpStore((s) => s.startOAuth)
   const cancelOAuth = useMcpStore((s) => s.cancelOAuth)
 
+  const frame = embedded
+    ? 'flex min-w-0 flex-col gap-3'
+    : 'flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3.5'
+
   if (transport === 'stdio') {
     return (
       <div data-testid="mcp-oauth-tab" className="flex min-h-0 flex-1 flex-col">
@@ -57,10 +63,7 @@ export default function McpOAuthSection() {
   const started = running || steps.length > 0
 
   return (
-    <div
-      data-testid="mcp-oauth-tab"
-      className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3.5"
-    >
+    <div data-testid="mcp-oauth-tab" className={frame}>
       <p className="m-0 text-[12px] text-[var(--muted)]">{t('mcp.oauth.intro')}</p>
       {unauthorized && (
         <div
