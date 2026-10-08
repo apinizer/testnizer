@@ -41,6 +41,22 @@ function engineFor(schema: JsonSchemaObject): Ajv {
   return draft07
 }
 
+/**
+ * A private engine of the same dialect. Ajv registers every schema carrying
+ * an `$id` (at any depth) under that id, so compiling an EDITED schema with
+ * the same `$id` on a shared instance throws "schema with key or id … already
+ * exists" — the second save would be refused until a restart. Such schemas
+ * get their own instance (the content-keyed cache still compiles each
+ * variant once); `$id` stays in place, so `$ref`s resolve against it as
+ * authored.
+ */
+function isolatedEngineFor(schema: JsonSchemaObject): Ajv {
+  const declared = typeof schema.$schema === 'string' ? schema.$schema : ''
+  if (declared.includes('2020-12')) return new Ajv2020(OPTS)
+  if (declared.includes('2019-09')) return new Ajv2019(OPTS)
+  return new Ajv(OPTS)
+}
+
 export type CompileResult = { ok: true; validate: ValidateFunction } | { ok: false; error: string }
 
 export function compileSchema(schema: JsonSchemaObject): CompileResult {
@@ -48,7 +64,8 @@ export function compileSchema(schema: JsonSchemaObject): CompileResult {
   const hit = cache.get(key)
   if (hit) return { ok: true, validate: hit }
   try {
-    const validate = engineFor(schema).compile(schema)
+    const engine = key.includes('"$id"') ? isolatedEngineFor(schema) : engineFor(schema)
+    const validate = engine.compile(schema)
     cache.set(key, validate)
     return { ok: true, validate }
   } catch (e) {

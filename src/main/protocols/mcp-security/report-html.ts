@@ -19,7 +19,7 @@ import type {
 } from './types'
 
 export const DISCLAIMER =
-  'Scan only servers you are authorized to test. Active probes (a ~30-request rate-limit burst and calls to read-only tools without arguments to test requestState tampering) run only when explicitly enabled. This report reflects automated, heuristic checks of one MCP server at the time shown; it is not a penetration test or a certification.'
+  'Scan only servers you are authorized to test. Active probes (a ~30-request rate-limit burst, and calls without arguments to argument-free tools annotated read-only, or unannotated tools whose name does not look like a write, to test requestState tampering) run only when explicitly enabled. This report reflects automated, heuristic checks of one MCP server at the time shown; it is not a penetration test or a certification.'
 
 const esc = (value: unknown): string =>
   String(value ?? '')

@@ -28,6 +28,9 @@ export default function McpToolPane() {
   const result = useMcpStore((s) => s.result)
   const resultError = useMcpStore((s) => s.resultError)
   const pendingInput = useMcpStore((s) => s.pendingInput)
+  // Every MCP tab renders this same pane; the tab id in the card's key keeps
+  // tab A's typed answers out of tab B paused at the same round.
+  const tabId = useMcpStore((s) => s._currentTabId)
   const isConnected = useMcpStore((s) => s.connectionState === 'connected')
 
   if (!selectedTool) {
@@ -105,7 +108,7 @@ export default function McpToolPane() {
           <ErrorLine testId="mcp-result-call-error">{resultError}</ErrorLine>
         ) : pendingInput ? (
           <McpInputRequiredCard
-            key={`${pendingInput.round}:${pendingInput.requestState ?? ''}`}
+            key={`${tabId ?? ''}:${pendingInput.round}:${pendingInput.requestState ?? ''}`}
             pending={pendingInput}
           />
         ) : result != null ? (

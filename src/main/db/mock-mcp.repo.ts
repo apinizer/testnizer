@@ -130,7 +130,9 @@ export function mockMcpRowToConfig(r: MockMcpServerRow): MockMcpServerConfig {
     path: normalizePath(r.path),
     legacySse: !!r.legacy_sse,
     authMode: r.auth_mode === 'bearer' ? 'bearer' : 'none',
-    bearerToken: r.bearer_token ?? '',
+    // Trimmed: a token pasted with a trailing newline never matched the
+    // (trimmed) `Authorization` value — rows from import / git included.
+    bearerToken: (r.bearer_token ?? '').trim(),
     latencyMs: Math.max(0, r.latency_ms ?? 0),
     errorMode: normalizeErrorMode(safeJson(r.error_mode)),
     protocolPin: r.protocol_pin || null,
@@ -192,7 +194,7 @@ export function createMockMcpServer(input: CreateMockMcpServerInput): MockMcpSer
     path: normalizePath(input.path),
     legacySse: !!input.legacySse,
     authMode: input.authMode ?? 'none',
-    bearerToken: input.bearerToken ?? '',
+    bearerToken: (input.bearerToken ?? '').trim(),
     latencyMs: input.latencyMs ?? 0,
     errorMode: input.errorMode ? normalizeErrorMode(input.errorMode) : { ...DEFAULT_ERROR_MODE },
     protocolPin: input.protocolPin || null,
@@ -243,7 +245,7 @@ export function updateMockMcpServer(
     path: p.path !== undefined ? normalizePath(p.path) : cur.path,
     legacySse: p.legacySse ?? cur.legacySse,
     authMode: p.authMode ?? cur.authMode,
-    bearerToken: p.bearerToken ?? cur.bearerToken,
+    bearerToken: p.bearerToken !== undefined ? p.bearerToken.trim() : cur.bearerToken,
     latencyMs: p.latencyMs ?? cur.latencyMs,
     errorMode: p.errorMode !== undefined ? normalizeErrorMode(p.errorMode) : cur.errorMode,
     protocolPin: p.protocolPin !== undefined ? p.protocolPin || null : cur.protocolPin,

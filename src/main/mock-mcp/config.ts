@@ -243,6 +243,11 @@ export function normalizePath(p: string | undefined | null): string {
   return out
 }
 
+/** True when `<path>/sse` + `<path>/messages` are served (legacy SSE on, 2025 clients not refused). */
+export function servesLegacySse(def: Pick<MockMcpServerDef, 'legacySse' | 'legacyMode'>): boolean {
+  return def.legacySse && def.legacyMode !== 'reject'
+}
+
 /** Join `<base><suffix>` without a double slash when the base is the root. */
 export function subPath(base: string, suffix: string): string {
   return base === '/' ? suffix : `${base}${suffix}`
@@ -254,6 +259,7 @@ type ValidatableConfig = Pick<
   | 'host'
   | 'port'
   | 'path'
+  | 'legacySse'
   | 'authMode'
   | 'latencyMs'
   | 'errorMode'
@@ -327,6 +333,9 @@ export function validateMockMcpConfig(cfg: ValidatableConfig): string | null {
   }
   if (cfg.protocolPin && !isModernVersion(cfg.protocolPin) && cfg.legacyMode === 'reject') {
     return `Protocol pin "${cfg.protocolPin}" is a 2025-era version, but legacy mode "reject" refuses 2025-era clients`
+  }
+  if (cfg.legacySse && cfg.legacyMode === 'reject') {
+    return 'Legacy HTTP+SSE serves 2025-era clients only, but legacy mode "reject" refuses them — turn off legacy SSE or set legacy mode to "stateless"'
   }
   if (
     !Number.isInteger(cfg.cacheTtlMs) ||

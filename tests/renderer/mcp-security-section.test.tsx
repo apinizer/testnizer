@@ -89,7 +89,7 @@ describe('McpSecuritySection', () => {
     expect(optin).not.toBeChecked()
     // Issue #152: one "active probes" opt-in — the rate-limit burst and the tool calls.
     expect(optin.closest('label')).toHaveTextContent(
-      'Include active probes (rate-limit burst ~30 requests + calling read-only tools without arguments to test requestState tampering) — authorized servers only',
+      'Include active probes (rate-limit burst ~30 requests + calling argument-free tools annotated read-only, or unannotated tools whose name does not look like a write — never destructive ones — to test requestState tampering) — authorized servers only',
     )
     fireEvent.click(optin)
     expect(useMcpStore.getState().securityRateLimitProbe).toBe(true)

@@ -213,6 +213,63 @@ describe('Mock MCP editor', () => {
     expect(screen.getByTestId('mock-mcp-save')).toBeEnabled()
   })
 
+  it('Ctrl+S inside the Delay field saves the number still being typed', async () => {
+    await renderEditor()
+    fireEvent.click(screen.getByTestId('mock-mcp-tab-tools'))
+    const delay = screen.getByTestId('mock-mcp-tool-delay')
+    delay.focus()
+    fireEvent.change(delay, { target: { value: '250' } })
+    // No blur / Enter: the field still holds the text uncommitted.
+    fireEvent.keyDown(delay, { key: 's', ctrlKey: true })
+    await waitFor(() => expect(stub.bridge.server.update).toHaveBeenCalledTimes(1))
+    const patch = vi.mocked(stub.bridge.server.update).mock.calls[0][1]
+    expect(patch.tools?.[0]).toMatchObject({ name: 'echo', delayMs: 250 })
+    await waitFor(() => expect(useMockMcpStore.getState().drafts.a).toBeUndefined())
+  })
+
+  it('Ctrl+S inside an out-of-range Port field saves what the field then shows', async () => {
+    await renderEditor()
+    const port = screen.getByTestId('mock-mcp-port') as HTMLInputElement
+    port.focus()
+    fireEvent.change(port, { target: { value: '99999' } })
+    fireEvent.keyDown(port, { key: 's', metaKey: true })
+    await waitFor(() => expect(stub.bridge.server.update).toHaveBeenCalledTimes(1))
+    // Clamped like blur / Enter clamp it — never the stale old port.
+    expect(vi.mocked(stub.bridge.server.update).mock.calls[0][1]).toMatchObject({ port: 65535 })
+    expect(port.value).toBe('65535')
+  })
+
+  it('a double Ctrl+S sends ONE update', async () => {
+    await renderEditor()
+    fireEvent.change(screen.getByTestId('mock-mcp-name'), { target: { value: 'Once' } })
+    const editor = screen.getByTestId('mock-mcp-editor')
+    fireEvent.keyDown(editor, { key: 's', ctrlKey: true })
+    fireEvent.keyDown(editor, { key: 's', ctrlKey: true })
+    await waitFor(() => expect(useMockMcpStore.getState().drafts.a).toBeUndefined())
+    expect(stub.bridge.server.update).toHaveBeenCalledTimes(1)
+  })
+
+  it('an unsaved draft marks the editor tab dirty; Save and Discard clear it', async () => {
+    useTabsStore.getState().openTab({
+      id: 'mockmcp-a',
+      name: 'Alpha',
+      protocol: 'mockMcpServer',
+      mockMcpServerId: 'a',
+    })
+    const isDirty = () => useTabsStore.getState().tabs.find((x) => x.id === 'mockmcp-a')?.isDirty
+    await renderEditor()
+    expect(isDirty()).toBeFalsy()
+    fireEvent.change(screen.getByTestId('mock-mcp-name'), { target: { value: 'Edited' } })
+    expect(isDirty()).toBe(true)
+    fireEvent.click(screen.getByTestId('mock-mcp-save'))
+    await waitFor(() => expect(isDirty()).toBe(false))
+
+    fireEvent.change(screen.getByTestId('mock-mcp-name'), { target: { value: 'Again' } })
+    expect(isDirty()).toBe(true)
+    fireEvent.click(screen.getByTestId('mock-mcp-discard'))
+    expect(isDirty()).toBe(false)
+  })
+
   it('Open in MCP tab → new MCP tab with transport http, the live URL and Bearer on the Authorization tab', async () => {
     stub = installBridge([sampleServer({ id: 'a', authMode: 'bearer', bearerToken: 'tok123' })])
     vi.mocked(stub.bridge.server.status).mockResolvedValue({

@@ -915,3 +915,108 @@ describe('Mock MCP server — logs and lifecycle', () => {
     await expect(fetch(url, { method: 'POST', body: '{}' })).rejects.toThrow()
   })
 })
+
+// ─── Review hardening ────────────────────────────────────────────
+
+describe('Mock MCP server — start validation and request-time guards', () => {
+  it('start validates the definition: a fractional port is a readable error, never a phantom entry', async () => {
+    const def = baseDef({ port: 80.5 })
+    const r = await mockMcpServerManager.start(def)
+    expect(r).toEqual({ ok: false, error: 'Port must be a whole number between 0 and 65535' })
+    expect(mockMcpServerManager.status(def.id)).toBe('stopped')
+    expect(mockMcpServerManager.list().map((s) => s.serverId)).not.toContain(def.id)
+
+    // A row that skipped the editor (import / git pull) with a broken tool.
+    const imported = baseDef({
+      tools: [{ name: 'x', inputSchema: { type: 'string' }, response: { kind: 'text', body: '' } }],
+    })
+    const bad = await mockMcpServerManager.start(imported)
+    expect(bad.ok).toBe(false)
+    expect(!bad.ok && bad.error).toMatch(/Tool "x": inputSchema must be/)
+    expect(mockMcpServerManager.status(imported.id)).toBe('stopped')
+  })
+
+  it("start refuses legacy SSE together with legacyMode 'reject'", async () => {
+    const def = baseDef({ legacySse: true, legacyMode: 'reject' })
+    const r = await mockMcpServerManager.start(def)
+    if (r.ok) started.push(def.id)
+    expect(r.ok).toBe(false)
+    expect(!r.ok && r.error).toMatch(/Legacy HTTP\+SSE serves 2025-era clients only/)
+  })
+
+  it("legacyMode 'reject' hot-reloaded onto a running SSE server unmounts <path>/sse and /messages", async () => {
+    const { def, state } = await start({ legacySse: true })
+    const sseUrl = state.sseUrl as string
+    expect(sseUrl).toBeTruthy()
+    const updated = await mockMcpServerManager.update({ ...def, legacyMode: 'reject' })
+
+    const res = await fetch(sseUrl, { headers: { accept: 'text/event-stream' } })
+    expect(res.status).toBe(404)
+    expect(await res.json()).toMatchObject({
+      error: 'not_found',
+      message: expect.stringMatching(/legacy mode "reject"/),
+    })
+    const msg = await fetch(`http://127.0.0.1:${state.port}/mcp/messages?sessionId=x`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    })
+    expect(msg.status).toBe(404)
+    expect(updated.ok && updated.state.sseUrl).toBeNull()
+  })
+
+  it('a bearer token stored with surrounding whitespace still matches (start and hot reload)', async () => {
+    const init = (token: string): RequestInit => ({
+      method: 'POST',
+      headers: { ...JSON_HEADERS, authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'raw', version: '0' },
+        },
+      }),
+    })
+    const { def, url } = await start({ authMode: 'bearer', bearerToken: '  tkn-ws-123\n' })
+    const res = await fetch(url, init('tkn-ws-123'))
+    expect(res.status).toBe(200)
+    await res.body?.cancel()
+
+    await mockMcpServerManager.update({ ...def, bearerToken: '\ttkn-ws-456 ' })
+    const reloaded = await fetch(url, init('tkn-ws-456'))
+    expect(reloaded.status).toBe(200)
+    await reloaded.body?.cancel()
+  })
+
+  it('error mode http: a later tools/call in a batch with its own http mode is still injected', async () => {
+    const { def, url } = await start({
+      tools: baseDef().tools.map((t) =>
+        t.name === 'plain'
+          ? { ...t, error: { kind: 'http' as const, httpStatus: 503, message: 'plain is down' } }
+          : t,
+      ),
+    })
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify([
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'echo', arguments: { text: 'hi' } },
+        },
+        { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'plain', arguments: {} } },
+      ]),
+    })
+    expect(res.status).toBe(503)
+    expect(await res.json()).toMatchObject({ message: 'plain is down' })
+    expect(logsOf(def.id).find((l) => l.httpStatus === 503)).toMatchObject({
+      method: 'tools/call',
+      ok: false,
+    })
+  })
+})

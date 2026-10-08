@@ -1361,9 +1361,22 @@ export const useMcpStore = create<McpStore>((set, get) => ({
 
   removeTabState: (tabId) => {
     const s = get()
+    const isLive = s._currentTabId === tabId
     // Close the tab's connection whether it is the live slice or a cached one.
-    const tab = s._currentTabId === tabId ? extractState(s) : s._tabStates.get(tabId)
+    const tab = isLive ? extractState(s) : s._tabStates.get(tabId)
     const cid = tab?.connectionId
+    if (isLive) {
+      // Tear the live slice down FIRST, like disconnect(): a connect() still in
+      // flight then sees its pending id gone and closes its late result instead
+      // of attaching it to a tab that no longer exists. `_currentTabId: null`
+      // keeps the next switchToTab from caching the dead tab back.
+      set({ ...disconnectedPatch(), ...securityIdle(), ...oauthIdle(), _currentTabId: null })
+      if (tab?.connectionState === 'connecting' && tab._pendingConnectId) {
+        getMcpApi()
+          ?.cancelConnect(tab._pendingConnectId)
+          .catch(() => {})
+      }
+    }
     // The tab's OAuth tokens die with it, and so does a running scan.
     if (tab) forgetOAuthSessions([tab.oauthFlowId, tab.oauthSessionId])
     if (tab?.securityRunning && tab.securityScanId) {

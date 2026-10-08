@@ -174,6 +174,7 @@ describe('mockMcp:server CRUD', () => {
       [{ protocolPin: '2027-01-01' }, /not a version this mock implements/],
       [{ legacyMode: 'sometimes' }, /Unknown legacy mode "sometimes"/],
       [{ protocolPin: '2025-06-18', legacyMode: 'reject' }, /refuses 2025-era clients/],
+      [{ legacySse: true, legacyMode: 'reject' }, /Legacy HTTP\+SSE serves 2025-era clients only/],
       [{ cacheTtlMs: -1 }, /Cache TTL must be/],
       [{ cacheTtlMs: 1.5 }, /Cache TTL must be/],
       [
@@ -241,6 +242,24 @@ describe('mockMcp:server CRUD', () => {
     }
     expect((await invoke('mockMcp:server:create', {})).success).toBe(false)
     expect((await invoke<ServerView[]>('mockMcp:server:list', projectId)).data).toEqual([])
+  })
+
+  it('trims the bearer token on create, update and read (a pasted token keeps working)', async () => {
+    type WithToken = ServerView & { bearerToken: string }
+    const created = await invoke<WithToken>('mockMcp:server:create', {
+      projectId,
+      name: 'b',
+      port: 0,
+      authMode: 'bearer',
+      bearerToken: '  tok-a \n',
+    })
+    expect(created.data?.bearerToken).toBe('tok-a')
+    const id = created.data?.id as string
+    const upd = await invoke<WithToken>('mockMcp:server:update', id, { bearerToken: '\ttok-b ' })
+    expect(upd.data?.bearerToken).toBe('tok-b')
+    // A row written elsewhere (import / git pull) with whitespace reads back trimmed.
+    testDb.prepare('UPDATE mock_mcp_servers SET bearer_token = ? WHERE id = ?').run(' tok-c\n', id)
+    expect((await invoke<WithToken>('mockMcp:server:get', id)).data?.bearerToken).toBe('tok-c')
   })
 
   it('rows die with their project (FK cascade)', async () => {

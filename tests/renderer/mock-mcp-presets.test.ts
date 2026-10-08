@@ -34,6 +34,7 @@ describe('Mock MCP presets', () => {
       host: input.host ?? '127.0.0.1',
       port: input.port,
       path: normalizePath(input.path),
+      legacySse: input.legacySse ?? false,
       authMode: input.authMode ?? 'none',
       latencyMs: input.latencyMs ?? 0,
       errorMode: normalizeErrorMode(input.errorMode ?? { kind: 'none' }),

@@ -43,6 +43,8 @@ interface AsOptions {
   /** First token issued by the code grant (default GOOD_TOKEN). */
   firstToken?: string
   withRefresh?: boolean
+  /** Answers for the next refresh_token grants, in order (a string body is sent as text/plain). */
+  refreshFailures?: Array<{ status: number; body: unknown }>
 }
 
 interface FakeAs {
@@ -123,6 +125,15 @@ async function startFakeAs(opts: AsOptions = {}): Promise<FakeAs> {
           ...(req.headers.authorization ? { authorization: req.headers.authorization } : {}),
         })
         if (params.get('grant_type') === 'refresh_token') {
+          const failure = opts.refreshFailures?.shift()
+          if (failure) {
+            const text = typeof failure.body === 'string'
+            res.writeHead(failure.status, {
+              'Content-Type': text ? 'text/plain' : 'application/json',
+            })
+            res.end(text ? (failure.body as string) : JSON.stringify(failure.body))
+            return
+          }
           if (params.get('refresh_token') !== REFRESH_TOKEN) {
             json(400, { error: 'invalid_grant' })
             return
@@ -524,7 +535,99 @@ describe('MCP OAuth 2.1 debugger — legacy SSE transport', () => {
   })
 })
 
+/** A 2025-era initialize POST (the mock answers it statelessly). */
+function initializeInit(): RequestInit {
+  return {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'oauth-test', version: '1.0.0' },
+      },
+    }),
+  }
+}
+
+describe('MCP OAuth 2.1 debugger — refresh failures', () => {
+  const refreshCount = (as: FakeAs): number =>
+    as.tokenRequests.filter((r) => r.params.get('grant_type') === 'refresh_token').length
+
+  it('a transient refresh failure (5xx) is retried on the next 401', async () => {
+    fakeAs = await startFakeAs({
+      firstToken: STALE_TOKEN,
+      withRefresh: true,
+      refreshFailures: [{ status: 503, body: 'Service Unavailable' }],
+    })
+    const url = await startMcp({ authorizationServers: [fakeAs.origin] })
+    const run = await runFlow({ url })
+    startedIds.push(run.id)
+    expect(run.done.ok).toBe(true)
+    const f = createMcpOAuthFetch(run.id)
+
+    const first = await f(url, initializeInit())
+    expect(first.status).toBe(401)
+    await first.body?.cancel()
+    expect(refreshCount(fakeAs)).toBe(1)
+
+    const second = await f(url, initializeInit())
+    expect(second.status).toBe(200)
+    await second.body?.cancel()
+    expect(refreshCount(fakeAs)).toBe(2)
+  })
+
+  it('invalid_grant is final: later 401s surface without another refresh', async () => {
+    fakeAs = await startFakeAs({
+      firstToken: STALE_TOKEN,
+      withRefresh: true,
+      refreshFailures: [{ status: 400, body: { error: 'invalid_grant' } }],
+    })
+    const url = await startMcp({ authorizationServers: [fakeAs.origin] })
+    const run = await runFlow({ url })
+    startedIds.push(run.id)
+    const f = createMcpOAuthFetch(run.id)
+
+    for (let i = 0; i < 2; i++) {
+      const res = await f(url, initializeInit())
+      expect(res.status).toBe(401)
+      await res.body?.cancel()
+    }
+    expect(refreshCount(fakeAs)).toBe(1)
+  })
+})
+
 describe('createMcpOAuthFetch', () => {
+  it("injects the bearer only on the token's resource origin", async () => {
+    fakeAs = await startFakeAs()
+    const url = await startMcp({ authorizationServers: [fakeAs.origin] })
+    const run = await runFlow({ url })
+    startedIds.push(run.id)
+    expect(run.done.ok).toBe(true)
+
+    const seen: Array<[string, string | null]> = []
+    const base = async (u: string | URL, init?: RequestInit): Promise<Response> => {
+      seen.push([String(u), new Headers(init?.headers).get('authorization')])
+      return new Response('{}', { status: 200 })
+    }
+    const f = createMcpOAuthFetch(run.id, base)
+    const mcp = new URL(url)
+    const sameOrigin = `${mcp.origin}/mcp/messages?sessionId=s1`
+    const otherPort = `${fakeAs.origin}/collect`
+    const otherHost = `http://localhost:${mcp.port}/mcp`
+    await f(sameOrigin, {})
+    await f(otherPort, { headers: { 'X-Trace': '1' } })
+    await f(otherHost, {})
+    expect(seen).toEqual([
+      [sameOrigin, `Bearer ${GOOD_TOKEN}`],
+      [otherPort, null],
+      [otherHost, null],
+    ])
+  })
+
   it('passes requests through untouched for an unknown session', async () => {
     const seen: Array<string | null> = []
     const base = async (_url: string | URL, init?: RequestInit): Promise<Response> => {

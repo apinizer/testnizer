@@ -281,7 +281,9 @@ describe('mcp:security:exportHtml', () => {
     expect(html).toContain('85/100')
     for (const f of r.categories.flatMap((c) => c.findings)) expect(html).toContain(f.title)
     expect(html).toContain('Scan only servers you are authorized to test.')
-    expect(html).toContain('Active probes (a ~30-request rate-limit burst and calls to read-only')
+    expect(html).toContain(
+      'Active probes (a ~30-request rate-limit burst, and calls without arguments to argument-free tools annotated read-only, or unannotated tools whose name does not look like a write',
+    )
     expect(html).toContain('2026-10-07T12:00:00.000Z')
     expect(html).not.toContain('raw-secret-token-142')
     expect(html).not.toContain(API_KEY)

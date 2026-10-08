@@ -9,7 +9,8 @@
  *                                   (stateless legacy fallback — no sessions,
  *                                   GET/DELETE → 405), or modern-only with
  *                                   `legacyMode: 'reject'` / a 2026-07-28 pin.
- *   GET  <path>/sse                 Legacy HTTP+SSE (when `legacySse`, legacy-sse.ts).
+ *   GET  <path>/sse                 Legacy HTTP+SSE (when `legacySse`, legacy-sse.ts;
+ *                                   never under `legacyMode: 'reject'`).
  *   POST <path>/messages?sessionId  Legacy HTTP+SSE client→server messages.
  *   GET  /.well-known/oauth-protected-resource[<path>]
  *                                   RFC 9728 metadata (bearer mode only).
@@ -36,7 +37,13 @@ import type { AddressInfo } from 'node:net'
 import { localhostHostValidation } from '@modelcontextprotocol/node'
 import type { Server } from '@modelcontextprotocol/server'
 import { loadEnvVars } from '../lib/env-vars'
-import { servedEras, subPath } from './config'
+import {
+  DEFAULT_LEGACY_MODE,
+  servedEras,
+  servesLegacySse,
+  subPath,
+  validateMockMcpConfig,
+} from './config'
 import { createElicitationCodec, type ElicitationCodec } from './elicitation'
 import { McpEndpoint, type LogDraft } from './handler'
 import { callsOf, classifyEra, firstRequest, safeStringify, truncate } from './jsonrpc'
@@ -145,7 +152,7 @@ class MockMcpServerManager extends EventEmitter {
       status: s.status,
       port: s.boundPort,
       url: origin ? `${origin}${s.def.path}` : null,
-      sseUrl: origin && s.def.legacySse ? `${origin}${subPath(s.def.path, '/sse')}` : null,
+      sseUrl: origin && servesLegacySse(s.def) ? `${origin}${subPath(s.def.path, '/sse')}` : null,
       errorMessage: s.errorMessage,
       eras: running ? servedEras(s.def.legacyMode, s.def.protocolPin) : [],
       legacyNotifications: false,
@@ -160,10 +167,21 @@ class MockMcpServerManager extends EventEmitter {
     return Array.from(this.servers.keys()).map((id) => this.state(id))
   }
 
-  async start(def: MockMcpServerDef): Promise<MockMcpStartResult> {
-    if (def.authMode === 'bearer' && !def.bearerToken.trim()) {
+  async start(input: MockMcpServerDef): Promise<MockMcpStartResult> {
+    // Rows arriving through an import / git pull never passed the editor's
+    // save-time validation, so the definition is checked here too. Only
+    // missing 2026-07-28 knobs get their defaults — a wrong value still fails.
+    const def: MockMcpServerDef = {
+      ...input,
+      bearerToken: (input.bearerToken ?? '').trim(),
+      legacyMode: input.legacyMode ?? DEFAULT_LEGACY_MODE,
+      cacheTtlMs: input.cacheTtlMs ?? 0,
+    }
+    if (def.authMode === 'bearer' && !def.bearerToken) {
       return { ok: false, error: 'Bearer auth is enabled but no token is set' }
     }
+    const problem = validateMockMcpConfig(def)
+    if (problem) return { ok: false, error: problem }
     for (const [otherId, s] of this.servers) {
       if (
         otherId !== def.id &&
@@ -201,13 +219,8 @@ class MockMcpServerManager extends EventEmitter {
     this.emitStatus(def.id)
 
     return new Promise((resolve) => {
-      running.http.once('error', (err: NodeJS.ErrnoException) => {
-        const message =
-          err.code === 'EADDRINUSE'
-            ? `Port ${def.port} is already in use on ${def.host}. Stop whatever is listening there (another mock server or app) or pick a different port.`
-            : err.code === 'EACCES'
-              ? `Permission denied binding ${def.host}:${def.port}. Ports below 1024 usually need elevated rights — pick a higher port.`
-              : err.message
+      // Any start failure drops the entry — never a phantom "starting" server.
+      const fail = (message: string): void => {
         running.status = 'error'
         running.errorMessage = message
         running.stopped = true
@@ -215,13 +228,27 @@ class MockMcpServerManager extends EventEmitter {
         this.servers.delete(def.id)
         this.emit('status', { ...this.state(def.id), status: 'error', errorMessage: message })
         resolve({ ok: false, error: message })
+      }
+      running.http.once('error', (err: NodeJS.ErrnoException) => {
+        fail(
+          err.code === 'EADDRINUSE'
+            ? `Port ${def.port} is already in use on ${def.host}. Stop whatever is listening there (another mock server or app) or pick a different port.`
+            : err.code === 'EACCES'
+              ? `Permission denied binding ${def.host}:${def.port}. Ports below 1024 usually need elevated rights — pick a higher port.`
+              : err.message,
+        )
       })
-      running.http.listen(def.port, def.host, () => {
-        running.status = 'running'
-        running.boundPort = (running.http.address() as AddressInfo).port
-        this.emitStatus(def.id)
-        resolve({ ok: true, state: this.state(def.id) })
-      })
+      try {
+        running.http.listen(def.port, def.host, () => {
+          running.status = 'running'
+          running.boundPort = (running.http.address() as AddressInfo).port
+          this.emitStatus(def.id)
+          resolve({ ok: true, state: this.state(def.id) })
+        })
+      } catch (err) {
+        // `listen` throws synchronously on a bad port / host argument.
+        fail(err instanceof Error ? err.message : String(err))
+      }
     })
   }
 
@@ -377,6 +404,17 @@ class MockMcpServerManager extends EventEmitter {
       this.sendJson(res, 404, { error: 'not_found', path: pathname })
       return
     }
+    // Legacy HTTP+SSE is a 2025-only transport: `legacyMode: 'reject'` (the
+    // UI's "modern only") does not mount it, whatever `legacySse` says.
+    if (!isMcp && !servesLegacySse(def)) {
+      this.sendJson(res, 404, {
+        error: 'not_found',
+        path: pathname,
+        message:
+          'Legacy HTTP+SSE is not served: legacy mode "reject" refuses 2025-era clients (protocol 2026-07-28 only).',
+      })
+      return
+    }
 
     // DNS-rebinding guard: only meaningful (and only safe) on a loopback bind.
     if (LOOPBACK_HOSTS.has(def.host) && !this.hostGuard(req, res)) {
@@ -426,7 +464,7 @@ class MockMcpServerManager extends EventEmitter {
     if (def.authMode === 'bearer') {
       const header = req.headers.authorization ?? ''
       const m = /^Bearer\s+(.+)$/i.exec(header)
-      if (!m || !tokensEqual(m[1].trim(), def.bearerToken)) {
+      if (!m || !tokensEqual(m[1].trim(), def.bearerToken.trim())) {
         const metadata = `${this.origin(s, req)}${WELL_KNOWN_PRM}`
         const challenge = m
           ? `Bearer error="invalid_token", error_description="The access token is invalid", resource_metadata="${metadata}"`
@@ -519,8 +557,9 @@ class MockMcpServerManager extends EventEmitter {
       const name = c.toolName ?? ''
       const tool = s.def.tools.find((t) => t.name === name)
       const { mode, counterKey } = effectiveErrorMode(s.def, tool)
-      if (mode.kind !== 'http') return null
-      if (!this.roll(s, counterKey, mode.everyN)) return null
+      // Per call: a later tools/call in a batch may carry its own http mode.
+      if (mode.kind !== 'http') continue
+      if (!this.roll(s, counterKey, mode.everyN)) continue
       return {
         status: mode.httpStatus ?? 500,
         message: mode.message || `Injected HTTP error for tools/call ${name}`,

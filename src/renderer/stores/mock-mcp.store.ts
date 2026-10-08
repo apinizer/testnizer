@@ -78,6 +78,13 @@ function omit<T>(obj: Record<string, T>, key: string): Record<string, T> {
   return rest
 }
 
+/**
+ * Bumped by every `loadServers` call: only the LATEST list may land. Switching
+ * project A → B quickly used to let A's slower answer arrive last and replace
+ * B's servers (and `projectId`) — the section then showed nothing.
+ */
+let loadSeq = 0
+
 export const useMockMcpStore = create<MockMcpStoreState>((set, get) => ({
   servers: [],
   projectId: null,
@@ -89,7 +96,9 @@ export const useMockMcpStore = create<MockMcpStoreState>((set, get) => ({
     ensureMockMcpEventSubscriptions()
     const api = getMockMcpApi()
     if (!api) return
+    const seq = ++loadSeq
     const r = await api.server.list(projectId)
+    if (seq !== loadSeq) return // a newer load superseded this one
     if (!r.success || !r.data) return
     const servers = r.data
     set({ servers, projectId })

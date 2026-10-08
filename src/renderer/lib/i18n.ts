@@ -2309,6 +2309,8 @@ const translations: Record<Locale, Record<string, string>> = {
       "Claude Desktop's config file only runs local (stdio) servers, so this remote server is wrapped with the mcp-remote bridge (npx). Header values are passed through env.",
     'mcp.config.secretsNote':
       '{{variables}} are resolved from the active environment — the output may contain secrets.',
+    'mcp.config.authNote':
+      'The Authorization tab is included as a header (an API key in query as a URL parameter) — the credential is in the output.',
     'mcp.tab.tools': 'Tools',
     'mcp.tab.resources': 'Resources',
     'mcp.tab.prompts': 'Prompts',
@@ -2771,7 +2773,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mcp.security.eraModern': '2026-07-28 (modern)',
     'mcp.security.eraLegacy': '2025 (legacy)',
     'mcp.security.activeProbesOptIn':
-      'Include active probes (rate-limit burst ~30 requests + calling read-only tools without arguments to test requestState tampering) — authorized servers only',
+      'Include active probes (rate-limit burst ~30 requests + calling argument-free tools annotated read-only, or unannotated tools whose name does not look like a write — never destructive ones — to test requestState tampering) — authorized servers only',
     'mockMcp.general.modernOnly': '(modern only)',
     'mockMcp.general.legacyMode': 'Legacy clients',
     'mockMcp.general.legacyStateless': 'Serve statelessly (default)',
@@ -5126,6 +5128,8 @@ const translations: Record<Locale, Record<string, string>> = {
       'Claude Desktop yapılandırma dosyası yalnızca yerel (stdio) sunucuları çalıştırır; bu yüzden uzak sunucu mcp-remote köprüsüyle (npx) sarmalanır. Başlık değerleri env üzerinden aktarılır.',
     'mcp.config.secretsNote':
       '{{değişkenler}} aktif ortamdan çözülür — çıktı gizli bilgiler içerebilir.',
+    'mcp.config.authNote':
+      'Yetkilendirme sekmesi başlık olarak eklendi (sorgudaki API anahtarı URL parametresi olarak) — kimlik bilgisi çıktıda yer alır.',
     'mcp.tab.tools': 'Araçlar',
     'mcp.tab.resources': 'Kaynaklar',
     'mcp.tab.prompts': 'İstemler',
@@ -5594,7 +5598,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mcp.security.eraModern': '2026-07-28 (modern)',
     'mcp.security.eraLegacy': '2025 (eski)',
     'mcp.security.activeProbesOptIn':
-      'Etkin yoklamaları dahil et (~30 isteklik hız sınırı yüklemesi + requestState kurcalamasını sınamak için salt okunur araçları argümansız çağırma) — yalnızca yetkili sunucular',
+      'Etkin yoklamaları dahil et (~30 isteklik hız sınırı yüklemesi + requestState kurcalamasını sınamak için argüman almayan araçları çağırma: salt okunur işaretli olanlar ya da işaretsiz olup adı yazma işlemine benzemeyenler — yıkıcı olanlar asla) — yalnızca yetkili sunucular',
     'mockMcp.general.modernOnly': '(yalnız modern)',
     'mockMcp.general.legacyMode': 'Eski istemciler',
     'mockMcp.general.legacyStateless': 'Durumsuz sun (varsayılan)',

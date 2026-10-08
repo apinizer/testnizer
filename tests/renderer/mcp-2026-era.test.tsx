@@ -379,6 +379,28 @@ describe('components', () => {
     expect(screen.getByTestId('mcp-result')).toHaveTextContent('3 apples')
   })
 
+  it('two tabs paused at the same round never share typed answers', async () => {
+    installApi()
+    // Tab B pauses first (round 1, requestState v1.state-1) and goes to the cache.
+    await connectTab('tab-b')
+    useMcpStore.getState().setSelectedTool('ask_count')
+    await useMcpStore.getState().callTool()
+    await connectTab('tab-a')
+    useMcpStore.getState().setSelectedTool('ask_count')
+    render(<McpToolPane />)
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('mcp-invoke'))
+    })
+    fireEvent.change(screen.getByTestId('mcp-input-field-count-count'), {
+      target: { value: '7' },
+    })
+    // Straight to B: same round, same requestState — the pane stays mounted.
+    act(() => useMcpStore.getState().switchToTab('tab-b'))
+    expect(useMcpStore.getState().pendingInput).toMatchObject({ round: 1 })
+    const field = screen.getByTestId('mcp-input-field-count-count') as HTMLInputElement
+    expect(field.value).toBe('')
+  })
+
   it('Cancel sends a bare cancel for every request', async () => {
     const { mcp } = installApi()
     await connectTab('tab-a')

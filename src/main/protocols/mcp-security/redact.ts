@@ -1,6 +1,6 @@
+import { isCredentialHeaderName } from '../../lib/credential-headers'
 import { REDACTED } from '../mcp-oauth.engine'
 import type { McpSecurityReport } from './types'
-import { isCredentialHeader } from './wire'
 
 /**
  * Re-redact every evidence header map by name — defence in depth for a
@@ -12,7 +12,7 @@ export function redactReport<T extends Pick<McpSecurityReport, 'categories'>>(re
   const fix = (headers: Record<string, string> | undefined): void => {
     if (!headers || typeof headers !== 'object') return
     for (const [name, value] of Object.entries(headers)) {
-      if (!isCredentialHeader(name) || String(value).includes(REDACTED)) continue
+      if (!isCredentialHeaderName(name) || String(value).includes(REDACTED)) continue
       const scheme = /^(\w+)\s+\S/.exec(String(value))?.[1]
       headers[name] = scheme ? `${scheme} ${REDACTED}` : REDACTED
     }

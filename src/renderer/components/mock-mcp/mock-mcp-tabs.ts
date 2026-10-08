@@ -14,6 +14,7 @@
  * URL would land in the tab the user just left. The Workbench effect that
  * activates the same id again afterwards is idempotent.
  */
+import { useEffect } from 'react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useMcpStore } from '../../stores/mcp.store'
 import { activateTabStores } from '../../lib/activate-tab'
@@ -32,6 +33,20 @@ export function openMockMcpServerTab(server: Pick<MockMcpServer, 'id' | 'name'>)
     mockMcpServerId: server.id,
     isPreview: false,
   })
+}
+
+/**
+ * Mirror the editor's unsaved draft onto its Workbench tab, so the tab strip
+ * shows the unsaved dot and closing the tab asks first. `markActiveTabDirty`
+ * cannot do this: the Mock MCP editor is not a request-like tab.
+ */
+export function useMockMcpTabDirty(serverId: string, dirty: boolean): void {
+  useEffect(() => {
+    const tabs = useTabsStore.getState()
+    const id = mockMcpTabId(serverId)
+    const tab = tabs.tabs.find((x) => x.id === id)
+    if (tab && !!tab.isDirty !== dirty) tabs.markDirty(id, dirty)
+  }, [serverId, dirty])
 }
 
 /** Close the server's editor tab, if open (after a delete). */

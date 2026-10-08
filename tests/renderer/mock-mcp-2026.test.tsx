@@ -74,6 +74,7 @@ describe('elicitation draft ⇄ DTO', () => {
       host: '127.0.0.1',
       port: 0,
       path: '/mcp',
+      legacySse: false,
       authMode: 'none',
       latencyMs: 0,
       errorMode: { kind: 'none' },
@@ -152,6 +153,38 @@ describe('Mock MCP editor — 2026-07-28 knobs', () => {
     fireEvent.blur(ttl)
     const patch = await savedPatch()
     expect(patch).toMatchObject({ legacyMode: 'reject', cacheTtlMs: 60000 })
+  })
+
+  it('Legacy SSE + Legacy clients = Reject: the backend refusal is shown and the draft kept', async () => {
+    // The exact text main's validator returns for this combination.
+    const refusal = validateMockMcpConfig({
+      name: 'x',
+      host: '127.0.0.1',
+      port: 0,
+      path: '/mcp',
+      legacySse: true,
+      authMode: 'none',
+      latencyMs: 0,
+      errorMode: { kind: 'none' },
+      protocolPin: null,
+      legacyMode: 'reject',
+      cacheTtlMs: 0,
+      tools: [],
+      resources: [],
+      prompts: [],
+    })
+    expect(refusal).toMatch(/Legacy HTTP\+SSE/)
+    vi.mocked(stub.bridge.server.update).mockResolvedValueOnce({ success: false, error: refusal })
+    await renderEditor()
+    fireEvent.click(screen.getByTestId('mock-mcp-legacy-sse'))
+    fireEvent.change(screen.getByTestId('mock-mcp-legacy-mode'), { target: { value: 'reject' } })
+    const patch = await savedPatch()
+    expect(patch).toMatchObject({ legacySse: true, legacyMode: 'reject' })
+    expect(await screen.findByTestId('mock-mcp-save-error')).toHaveTextContent(refusal as string)
+    expect(useMockMcpStore.getState().drafts.a).toMatchObject({
+      legacySse: true,
+      legacyMode: 'reject',
+    })
   })
 
   it('Tools: the "Ask name" preset and an edited Elicitation section are saved as `elicit`', async () => {

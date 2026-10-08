@@ -20,9 +20,9 @@
 
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js'
+import { isCredentialHeaderName } from '../../lib/credential-headers'
 import {
   REDACTED,
-  SECRET_HEADER,
   anySignal,
   createMcpOAuthFetch,
   errorMessage,
@@ -43,6 +43,8 @@ const PREVIEW_CHARS = 4096
 const CLEANUP_TIMEOUT_MS = 5_000
 /** Raw SSE text kept for a preview while looking for a response id. */
 const SSE_KEEP_CHARS = 64 * 1024
+/** Most of a non-event-stream answer to the legacy SSE GET that is read. */
+const NON_SSE_BODY_BYTES = 64 * 1024
 /** Query parameters whose values are credentials in an evidence URL. */
 const SECRET_QUERY = /token|secret|key|password|passwd|signature|^sig$|^code$/i
 
@@ -80,9 +82,12 @@ export function redactUrl(raw: string): string {
   }
 }
 
-/** Credential header names (Authorization, Cookie, X-API-Key, …). */
+/**
+ * Credential header names (Authorization, Cookie, X-API-Key,
+ * Ocp-Apim-Subscription-Key, …) — the shared rule of `lib/credential-headers`.
+ */
 export function isCredentialHeader(name: string): boolean {
-  return name.toLowerCase() !== 'www-authenticate' && SECRET_HEADER.test(name)
+  return isCredentialHeaderName(name)
 }
 
 export function withoutCredentials(headers: Record<string, string>): Record<string, string> {
@@ -617,7 +622,7 @@ export class LegacySseSession implements RpcSession {
     if (!res) return result
     const contentType = res.headers.get('content-type') ?? ''
     if (!res.ok || !contentType.includes('text/event-stream') || !res.body) {
-      result.text = await res.text().catch(() => '')
+      result.text = await this.readBounded(res)
       result.json = tryJson(result.text)
       if (opened.exchange.response) {
         opened.exchange.response.bodyPreview = previewOf(redactBodyText(result.text, contentType))
@@ -627,6 +632,59 @@ export class LegacySseSession implements RpcSession {
     if (opened.exchange.response) opened.exchange.response.bodyPreview = '(event stream)'
     void this.pump(res.body)
     return result
+  }
+
+  /**
+   * The body of a GET that did not open an event stream (an error page, a
+   * JSON 401, …): at most `NON_SSE_BODY_BYTES`, and no longer than the scan
+   * timeout — `openStream`'s connect budget ends with the headers, so a server
+   * that keeps a 200 open would otherwise hold the scan at "Connecting".
+   */
+  private async readBounded(res: Response): Promise<string> {
+    if (!res.body) return ''
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    let bytes = 0
+    const timer = setTimeout(
+      () => this.abort.abort(new Error(`No complete response within ${this.http.timeoutMs} ms`)),
+      this.http.timeoutMs,
+    )
+    try {
+      while (bytes < NON_SSE_BODY_BYTES) {
+        const { value, done } = await reader.read()
+        if (done) break
+        bytes += value.byteLength
+        text += decoder.decode(value, { stream: true })
+      }
+    } catch {
+      /* aborted / reset — keep what arrived */
+    } finally {
+      clearTimeout(timer)
+      await reader.cancel().catch(() => {})
+    }
+    return text
+  }
+
+  /**
+   * The `endpoint` event, resolved against the stream URL — refused unless it
+   * stays on the stream's origin (the SDK's SSEClientTransport rule): every
+   * authenticated POST (custom headers, API key, OAuth bearer) goes there.
+   */
+  private resolveEndpoint(data: string): { href: string } | { error: string } {
+    let endpoint: URL
+    try {
+      endpoint = new URL(data, this.url)
+    } catch {
+      return { error: `The \`endpoint\` event is not a URL: ${data.slice(0, 200)}` }
+    }
+    const origin = new URL(this.url).origin
+    if (endpoint.origin !== origin) {
+      return {
+        error: `The \`endpoint\` event's origin ${endpoint.origin} does not match the server origin ${origin} — refusing to send JSON-RPC (and credentials) there.`,
+      }
+    }
+    return { href: endpoint.href }
   }
 
   private async pump(body: ReadableStream<Uint8Array>): Promise<void> {
@@ -641,7 +699,14 @@ export class LegacySseSession implements RpcSession {
         buffer = parsed.rest
         for (const ev of parsed.events) {
           if (ev.event === 'endpoint') {
-            this.endpoint = new URL(ev.data.trim(), this.url).href
+            const resolved = this.resolveEndpoint(ev.data.trim())
+            if ('error' in resolved) {
+              // Fail the session: no endpoint, the stream closed (finally).
+              this.streamError = resolved.error
+              this.abort.abort()
+              return
+            }
+            this.endpoint = resolved.href
             this.endpointWaiter?.(this.endpoint)
           } else {
             const msg = tryJson(ev.data)
@@ -680,7 +745,8 @@ export class LegacySseSession implements RpcSession {
     if (stream.status === undefined || stream.status < 200 || stream.status >= 300) {
       return outcomeOf(stream, stream.json)
     }
-    if (!this.endpoint) {
+    // A stream that already failed (refused endpoint, ended) sends nothing more.
+    if (!this.endpoint && !this.streamError) {
       await this.waitFor<string>((resolve) => {
         this.endpointWaiter = resolve
       })

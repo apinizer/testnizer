@@ -14,7 +14,8 @@ import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 import type { MockMcpDraftUpdater, MockMcpEditorTab } from '../../types/mock-mcp'
 import { draftToPatch, serverToDraft } from './mock-mcp-draft'
-import { mockMcpTabId } from './mock-mcp-tabs'
+import { mockMcpTabId, useMockMcpTabDirty } from './mock-mcp-tabs'
+import { isSaveChord } from './mock-mcp-format'
 import MockMcpEditorHeader from './MockMcpEditorHeader'
 import MockMcpGeneralTab from './MockMcpGeneralTab'
 import MockMcpScenariosTab from './MockMcpScenariosTab'
@@ -74,6 +75,9 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const triedLoad = useRef(false)
+  // Synchronous in-flight guard: `saving` state is stale inside a second
+  // Ctrl+S dispatched before the re-render, which sent two updates.
+  const savingRef = useRef(false)
 
   // A tab restored at launch: the Mocks panel may not have loaded the list yet.
   useEffect(() => {
@@ -86,6 +90,7 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
   const baseDraft = useMemo(() => (server ? serverToDraft(server) : null), [server])
   const draft = stored ?? baseDraft
   const dirty = stored !== undefined
+  useMockMcpTabDirty(serverId, dirty)
 
   const change = useCallback<MockMcpDraftUpdater>(
     (fn) => {
@@ -104,9 +109,16 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
       setSaveError(t(p.key).replace('{tool}', p.tool).replace('{detail}', p.detail))
       return
     }
+    if (savingRef.current) return
+    savingRef.current = true
     setSaving(true)
-    const err = await updateServer(serverId, built.patch)
-    setSaving(false)
+    let err: string | null
+    try {
+      err = await updateServer(serverId, built.patch)
+    } finally {
+      savingRef.current = false
+      setSaving(false)
+    }
     if (err) {
       setSaveError(err)
       return
@@ -146,7 +158,7 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
       data-testid="mock-mcp-editor"
       className="flex h-full w-full flex-col overflow-hidden bg-[var(--bg)]"
       onKeyDown={(e) => {
-        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 's') {
+        if (isSaveChord(e)) {
           e.preventDefault()
           e.stopPropagation()
           void save()

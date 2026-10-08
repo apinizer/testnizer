@@ -273,25 +273,50 @@ const cacheScopePublic: CheckDef = {
 
 // ─── auth ───────────────────────────────────────────────────
 
-/** Tools probed for an `input_required` answer — no required arguments, not destructive. */
+/** Tools probed for an `input_required` answer (see {@link elicitProbeCandidates}). */
 export const MAX_ELICIT_PROBES = 8
-const DESTRUCTIVE_NAME =
-  /(delete|drop|remove|destroy|reset|purge|wipe|truncate|kill|shutdown|revoke)/i
+
+/**
+ * Name words of a tool that writes. Prefix-matched per word (`deleteAll`,
+ * `execute_sql`, `sendEmail`) — the short, ambiguous verbs only as a whole
+ * word with an inflection (`set`/`sets`, never `settings`; `post`/`posting`,
+ * never `postgres`). Over-matching only means a tool is not probed.
+ */
+const WRITE_VERB_PREFIX =
+  /^(?:send|create|delete|remove|update|write|deploy|exec|transfer|publish|notify|insert|drop|kill|restart|reset|upload|purge|revoke|submit|destroy|wipe|truncate|shutdown|modif)/
+const WRITE_VERB_WORD = /^(?:set|put|post|run|pay|buy|sell|order|grant|email)(?:s|es|ed|d|ing)?$/
+
+function nameWords(name: string): string[] {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+}
+
+/** True when a tool name reads like a write (`create_order`, `sendEmail`, `wipe_all`, …). */
+export function looksLikeWrite(name: string): boolean {
+  return nameWords(name).some((w) => WRITE_VERB_PREFIX.test(w) || WRITE_VERB_WORD.test(w))
+}
 
 function hasRequiredArgs(tool: ToolLite): boolean {
   const schema = isRecord(tool.inputSchema) ? tool.inputSchema : {}
   return Array.isArray(schema.required) && schema.required.length > 0
 }
 
-/** Read-only tools first; never one marked (or named) destructive. */
+/**
+ * Tools the opt-in probe may call with empty arguments: argument-free tools
+ * annotated read-only (first), or unannotated tools whose name does not look
+ * like a write. Never a tool annotated `readOnlyHint: false` or
+ * `destructiveHint: true`.
+ */
 export function elicitProbeCandidates(tools: readonly ToolLite[]): ToolLite[] {
-  const safe = tools.filter(
-    (t) =>
-      t.name &&
-      !hasRequiredArgs(t) &&
-      t.annotations?.destructiveHint !== true &&
-      !DESTRUCTIVE_NAME.test(t.name),
-  )
+  const safe = tools.filter((t) => {
+    if (!t.name || hasRequiredArgs(t)) return false
+    const a = t.annotations
+    if (a?.destructiveHint === true || a?.readOnlyHint === false) return false
+    return a?.readOnlyHint === true || !looksLikeWrite(t.name)
+  })
   const readOnly = safe.filter((t) => t.annotations?.readOnlyHint === true)
   const rest = safe.filter((t) => t.annotations?.readOnlyHint !== true)
   return [...readOnly, ...rest].slice(0, MAX_ELICIT_PROBES)
@@ -326,7 +351,7 @@ function plausibleAnswer(request: unknown): Record<string, unknown> {
 const ELICIT_CAPABILITIES = { elicitation: { form: {} } }
 
 export const TOOL_PROBE_OFF =
-  'Not run — this check calls tools (read-only / argument-free ones only) and is part of the opt-in active probes. Enable them only for servers you are authorized to test.'
+  'Not run — this check calls tools (argument-free tools annotated read-only, or unannotated tools whose name does not look like a write — never one marked destructive) and is part of the opt-in active probes. Enable them only for servers you are authorized to test.'
 
 const requestStateTampering: CheckDef = {
   id: 'auth.request_state_tampering',
@@ -398,7 +423,7 @@ const requestStateTampering: CheckDef = {
     }
     return skipped(
       probed.length === 0
-        ? 'No tool qualifies for a probe call (each has required arguments or is marked / named destructive) — requestState integrity not tested.'
+        ? 'No tool qualifies for a probe call (each has required arguments, is marked destructive / not read-only, or is unannotated with a name that looks like a write) — requestState integrity not tested.'
         : `No probed tool answered input_required (called with empty arguments: ${probed.join(', ')}).`,
     )
   },

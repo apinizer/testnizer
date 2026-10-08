@@ -167,6 +167,14 @@ const downgrade: CheckDef = {
     if (ctx.url.protocol !== 'https:') {
       return skipped('Not applicable — the server URL is already plain HTTP.')
     }
+    // `https://host:8443` → `http://host:8443` would probe the TLS listener
+    // (and always read "refused"); the plain-HTTP port of a custom HTTPS port
+    // is unknowable. Default port 443 → probe port 80.
+    if (ctx.url.port !== '') {
+      return skipped(
+        `Not tested — the server uses an explicit HTTPS port (${ctx.url.port}), so the plain-HTTP port cannot be inferred; probing http:// on the same port would only reach the TLS listener.`,
+      )
+    }
     const plain = new URL(ctx.url.href)
     plain.protocol = 'http:'
     // Never send credentials over plain HTTP: anonymous headers only.

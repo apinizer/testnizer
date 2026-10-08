@@ -86,6 +86,25 @@ export {
 
 export const DEFAULT_SCAN_TIMEOUT_MS = 15_000
 export const SCAN_CONCURRENCY = 5
+/**
+ * Custom header rows that are protocol plumbing, not credentials — exempt
+ * from the value scrub (scrubbing `application/json` would blank every body
+ * preview and Content-Type in the report).
+ */
+const STRUCTURAL_HEADERS: ReadonlySet<string> = new Set([
+  'accept',
+  'accept-encoding',
+  'accept-language',
+  'cache-control',
+  'connection',
+  'content-type',
+  'host',
+  'mcp-protocol-version',
+  'origin',
+  'pragma',
+  'referer',
+  'user-agent',
+])
 
 export const CATEGORY_TITLES: Readonly<Record<McpSecurityCategoryId, string>> = {
   transport: 'Transport security',
@@ -213,6 +232,12 @@ export async function runMcpSecurityScan(input: McpSecurityScanInput): Promise<M
   })
   http.noteSecretsOf(headers)
   http.noteUrlSecrets(url.href)
+  // Every custom header row the user typed is scrubbed by value, whatever it
+  // is called — a gateway key under a name no rule knows must not reach the
+  // evidence, the streamed findings or the exported report.
+  for (const [name, value] of Object.entries(userHeaders)) {
+    if (!STRUCTURAL_HEADERS.has(name.toLowerCase())) http.noteSecret(value)
+  }
   // The name rules above miss an API key called e.g. `X-Gw` — note every value
   // the Authorization tab supplied, in the forms it can take on the wire.
   for (const name of authHeaderNames) http.noteSecret(headers[name])

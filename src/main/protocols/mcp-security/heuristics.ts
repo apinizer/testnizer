@@ -333,16 +333,30 @@ export function findSecretLikeFields(schema: unknown, prefix = '', depth = 0): s
 
 // ─── disclosure helpers ─────────────────────────────────────
 
-/** Stack traces, file system paths and framework internals in an error body. */
+/**
+ * Stack traces, file system paths and framework internals in an error body.
+ *
+ * These run synchronously in the main process on server-controlled text, so
+ * every rule must stay linear: no two adjacent quantifiers that can match the
+ * same characters, and line-local scans (`[^\n]`) — the first `js-stack`
+ * (`\n\s*at\s+[^\n]*\(?[^\s()]+:\d+:\d+`) took minutes on 400 KB of
+ * `"\n at " + "a"…`, and the old `.NET` rule (`\(.*\)\s+in\s+.+:line`) was
+ * cubic on a repeated `at a() in `.
+ */
 export const VERBOSE_ERROR_RULES: ReadonlyArray<{ id: string; re: RegExp }> = [
-  { id: 'js-stack', re: /\n\s*at\s+[^\n]*\(?[^\s()]+:\d+:\d+\)?/ },
+  // `    at fn (/srv/app/x.js:89:19)` / `    at /srv/app/x.js:89:19` on its own line.
+  { id: 'js-stack', re: /\n[ \t]*at[ \t][^\n]*?[^\s()]:\d+:\d+/ },
   { id: 'node_modules', re: /node_modules[\\/]/ },
   { id: 'python-traceback', re: /Traceback \(most recent call last\)|File "[^"]+", line \d+/ },
   {
     id: 'java-stack',
     re: /\bat\s+(?:[a-z_$][\w$]*\.)+[A-Z][\w$]*\.[\w$<>]+\([\w$]*\.(?:java|kt|scala):\d+\)|\b(?:java|javax|jakarta)\.[a-z]+\.[A-Z]\w*(?:Exception|Error)\b|\borg\.springframework\./,
   },
-  { id: 'dotnet-stack', re: /\bat\s+[\w.]+\(.*\)\s+in\s+.+:line\s+\d+|System\.\w+Exception/ },
+  // `   at Ns.Type.Method(String s) in C:\src\File.cs:line 42`
+  {
+    id: 'dotnet-stack',
+    re: /\bat[ \t]+[\w.]+\([^()\n]*\)[ \t]+in[ \t][^\n]{0,300}?:line[ \t]\d+|System\.\w+Exception/,
+  },
   { id: 'php-stack', re: /\.php(?::|\s+on\s+line\s+)\d+|PHP (?:Fatal|Warning|Notice)/ },
   {
     id: 'fs-path',
@@ -350,8 +364,13 @@ export const VERBOSE_ERROR_RULES: ReadonlyArray<{ id: string; re: RegExp }> = [
   },
 ]
 
+/** Most of a server-controlled body the rules look at — a leak shows in the first lines. */
+export const VERBOSE_ERROR_MAX_CHARS = 256 * 1024
+
 export function findVerboseError(text: string): string[] {
-  return VERBOSE_ERROR_RULES.filter((r) => r.re.test(text)).map((r) => r.id)
+  // Bounded input too, so no future rule can block the main process for long.
+  const head = text.length > VERBOSE_ERROR_MAX_CHARS ? text.slice(0, VERBOSE_ERROR_MAX_CHARS) : text
+  return VERBOSE_ERROR_RULES.filter((r) => r.re.test(head)).map((r) => r.id)
 }
 
 /** `serverInfo.version` looking like a build stamp: semver plus a commit hash / build id. */

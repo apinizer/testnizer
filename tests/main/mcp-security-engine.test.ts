@@ -645,15 +645,54 @@ describe('credential redaction', () => {
     const text = JSON.stringify(report) + JSON.stringify(streamed)
     expect(text).not.toContain(BEARER)
     expect(text).not.toContain(API_KEY)
-    // Redacted by name, scheme kept; non-credential headers stay visible.
+    // Redacted by name, scheme kept; every other custom header row is
+    // scrubbed by value (a credential under a name no rule knows).
     const init = find(report, 'protocol.initialize_shape')
     expect(init.evidence?.request?.headers.authorization).toBe('Bearer ••••')
     expect(init.evidence?.request?.headers['x-api-key']).toBe('••••')
-    expect(init.evidence?.request?.headers['x-trace']).toBe('visible-142')
+    expect(init.evidence?.request?.headers['x-trace']).toBe('••••')
+    expect(text).not.toContain('visible-142')
     // The unauthenticated probe never carried the credentials at all.
     const probe = find(report, 'auth.unauth_initialize')
     expect(probe.evidence?.request?.headers.authorization).toBeUndefined()
     expect(probe.evidence?.request?.headers['x-api-key']).toBeUndefined()
+  })
+
+  it('gateway-style key headers and every custom header value are masked in findings and the HTML report', async () => {
+    const SUB_KEY = 'apim-sub-key-0123456789abcdef'
+    const TENANT = 'tenant-0123456789'
+    const ACCEPT = 'application/json, text/event-stream'
+    const { url } = await startMock()
+    const streamed: McpSecurityFinding[] = []
+    const report = await scan(url, {
+      headers: { 'Ocp-Apim-Subscription-Key': SUB_KEY, 'X-Tenant': TENANT, Accept: ACCEPT },
+      onFinding: (f) => streamed.push(f),
+    })
+    const text = JSON.stringify(report) + JSON.stringify(streamed)
+    expect(text).not.toContain(SUB_KEY)
+    expect(text).not.toContain(TENANT)
+    const init = find(report, 'protocol.initialize_shape')
+    expect(init.evidence?.request?.headers['ocp-apim-subscription-key']).toBe('••••')
+    expect(init.evidence?.request?.headers['x-tenant']).toBe('••••')
+    // Structural rows (Accept, Content-Type, …) are not credentials — still readable.
+    expect(init.evidence?.request?.headers.accept).toBe(ACCEPT)
+    // A key header is a credential: it never rides the unauthenticated probe.
+    const probe = find(report, 'auth.unauth_initialize')
+    expect(probe.evidence?.request?.headers['ocp-apim-subscription-key']).toBeUndefined()
+
+    // The export re-redacts evidence headers by the same name rule, even when
+    // handed (e.g. a tampered renderer copy) unredacted values.
+    const tampered = JSON.parse(JSON.stringify(report)) as McpSecurityReport
+    tampered.categories[0].findings[0].evidence = {
+      request: {
+        method: 'POST',
+        url,
+        headers: { 'X-Gateway-Key': SUB_KEY, 'X-Access-Key': SUB_KEY, 'X-Visible': 'shown-142' },
+      },
+    }
+    const html = buildMcpSecurityHtmlReport(tampered)
+    expect(html).not.toContain(SUB_KEY)
+    expect(html).toContain('shown-142')
   })
 })
 
@@ -683,7 +722,8 @@ describe('Authorization tab (MCP Auth) on the authenticated requests', () => {
     expect(JSON.stringify(report)).not.toContain(API_KEY)
     const init = find(report, 'protocol.initialize_shape')
     expect(init.evidence?.request?.headers['x-gw']).toBe('••••')
-    expect(init.evidence?.request?.headers['x-trace']).toBe('visible-auth')
+    // Custom header rows are scrubbed by value too, whatever their name.
+    expect(init.evidence?.request?.headers['x-trace']).toBe('••••')
     const probe = find(report, 'auth.unauth_initialize')
     expect(probe.evidence?.request?.headers['x-gw']).toBeUndefined()
   })
@@ -1057,6 +1097,43 @@ describe('2026-07-28 scan helpers', () => {
     expect(picked).toEqual(['reader', 'ask'])
     const many = Array.from({ length: 20 }, (_, i) => tool(`t${i}`))
     expect(elicitProbeCandidates(many)).toHaveLength(MAX_ELICIT_PROBES)
+  })
+
+  it('elicitation probes: argument-free read-only tools, or unannotated tools not named like a write', () => {
+    const tool = (name: string, annotations?: Record<string, unknown>) => ({
+      name,
+      inputSchema: { type: 'object' },
+      ...(annotations ? { annotations } : {}),
+    })
+    const picked = elicitProbeCandidates([
+      // Unannotated, named like a write → never called.
+      tool('send_email'),
+      tool('createOrder'),
+      tool('deleteAll'),
+      tool('executeSql'),
+      tool('run'),
+      tool('set_flag'),
+      tool('upload_file'),
+      tool('transfer_funds'),
+      // Annotations that say "writes" → never, whatever the name.
+      tool('lookup', { readOnlyHint: false }),
+      tool('peek', { readOnlyHint: true, destructiveHint: true }),
+      // Eligible: annotated read-only (first), then unannotated harmless names.
+      tool('ask_name'),
+      tool('get_settings'),
+      tool('list_postgres_dbs'),
+      tool('compute_output'),
+      tool('notify', { readOnlyHint: true }),
+      tool('describe', { title: 'Describe' }),
+    ]).map((t) => t.name)
+    expect(picked).toEqual([
+      'notify',
+      'ask_name',
+      'get_settings',
+      'list_postgres_dbs',
+      'compute_output',
+      'describe',
+    ])
   })
 
   it('tamperRequestState flips the tail but keeps the shape', () => {

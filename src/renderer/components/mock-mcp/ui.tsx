@@ -4,6 +4,7 @@
  */
 import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { useNumberDraft, parseIntStrict, clampInt } from '../../lib/number-draft'
+import { isSaveChord } from './mock-mcp-format'
 
 export const INPUT_CLS =
   'h-7 w-full rounded-md border border-[var(--border2)] bg-[var(--input-bg)] px-2 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]'
@@ -114,7 +115,7 @@ export function Checkbox({
   )
 }
 
-/** Required integer: typing is free, clamping happens on blur / Enter. */
+/** Required integer: typing is free, clamping happens on blur / Enter / Ctrl+S. */
 export function IntInput({
   value,
   min,
@@ -136,6 +137,10 @@ export function IntInput({
       min={min}
       max={max}
       {...draft.inputProps}
+      onKeyDown={(e) => {
+        if (isSaveChord(e)) draft.commit()
+        else draft.inputProps.onKeyDown(e)
+      }}
       className={INPUT_CLS}
     />
   )
@@ -183,7 +188,7 @@ export function OptionalIntInput({
       onChange={(e) => setEditing(e.target.value)}
       onBlur={(e) => commit(e.target.value)}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') commit(e.currentTarget.value)
+        if (e.key === 'Enter' || isSaveChord(e)) commit(e.currentTarget.value)
       }}
       className={INPUT_CLS}
     />

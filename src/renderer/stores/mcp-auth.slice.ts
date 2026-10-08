@@ -95,6 +95,80 @@ export function resolveMcpAuth(
   }
 }
 
+/** UTF-8 safe base64 — renderer code must not lean on the `Buffer` polyfill. */
+function base64Utf8(text: string): string {
+  return btoa(Array.from(new TextEncoder().encode(text), (b) => String.fromCharCode(b)).join(''))
+}
+
+/** Add `name` unless a header of that name is already set (case-insensitive). */
+function setUnlessPresent(headers: Record<string, string>, name: string, value: string): boolean {
+  const lower = name.toLowerCase()
+  if (Object.keys(headers).some((k) => k.toLowerCase() === lower)) return false
+  headers[name] = value
+  return true
+}
+
+/**
+ * The renderer twin of main's `applyMcpAuth` (src/main/protocols/mcp-auth.ts),
+ * for the config EXPORT: the Authorization tab becomes a header — or, for an
+ * API key `in: 'query'`, a URL parameter — of the exported server, so a pasted
+ * config authenticates the way Connect does. Same precedence: a custom header
+ * with the same name (case-insensitive) wins, and so does a query parameter
+ * already in the URL. `auth` is `resolveMcpAuth`'s output (nothing for none /
+ * oauth2 / empty). `applied` says whether a credential went into the output.
+ * Keep in step with main's version.
+ */
+export function applyMcpAuth(
+  url: string,
+  headers: Record<string, string>,
+  auth: McpConnectAuth | undefined,
+): { url: string; headers: Record<string, string>; applied: boolean } {
+  const out = { ...headers }
+  let applied = false
+  switch (auth?.type) {
+    case 'basic': {
+      // RFC 7617 §2: the first `:` separates user from password.
+      const username = (auth.basic?.username ?? '').replace(/:/g, '')
+      const password = auth.basic?.password ?? ''
+      if (username || password) {
+        const value = `Basic ${base64Utf8(`${username}:${password}`)}`
+        applied = setUnlessPresent(out, 'Authorization', value)
+      }
+      break
+    }
+    case 'bearer': {
+      const token = (auth.bearer?.token ?? '').trim()
+      if (token) {
+        const prefix = (auth.bearer?.prefix ?? '').trim() || 'Bearer'
+        applied = setUnlessPresent(out, 'Authorization', `${prefix} ${token}`)
+      }
+      break
+    }
+    case 'api-key': {
+      const key = (auth.apiKey?.key ?? '').trim()
+      if (!key) break
+      const value = auth.apiKey?.value ?? ''
+      if (auth.apiKey?.in !== 'query') {
+        applied = setUnlessPresent(out, key, value)
+        break
+      }
+      try {
+        const u = new URL(url.trim())
+        if (u.searchParams.has(key)) break
+        u.searchParams.set(key, value)
+        return { url: u.toString(), headers: out, applied: true }
+      } catch {
+        // Not a URL yet (empty, or an unresolved {{var}}): the modal renders
+        // live while the user types, so export the URL untouched.
+      }
+      break
+    }
+    default:
+      break
+  }
+  return { url, headers: out, applied }
+}
+
 /** Tabs of the config strip for a transport: stdio has no HTTP headers, http / sse no env. */
 export function availableConfigTabs(transport: McpTransport): McpConfigTab[] {
   return transport === 'stdio' ? ['auth', 'env'] : ['auth', 'headers']

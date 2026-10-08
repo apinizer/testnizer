@@ -120,8 +120,9 @@ export interface McpSecurityScanOptions {
   /** Opt-in: ~30 rapid requests over the authenticated session. */
   rateLimitProbe: boolean
   /**
-   * Opt-in (issue #152): call up to `MAX_ELICIT_PROBES` read-only / argument-free
-   * tools to find one that answers `input_required`, then retry it with a
+   * Opt-in (issue #152): call up to `MAX_ELICIT_PROBES` argument-free tools
+   * annotated read-only, or unannotated tools whose name does not look like a
+   * write, to find one that answers `input_required`, then retry it with a
    * tampered `requestState` (`auth.request_state_tampering`). The UI drives it
    * with the same "active probes" checkbox as `rateLimitProbe`. Absent = off.
    */

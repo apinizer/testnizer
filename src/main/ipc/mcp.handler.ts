@@ -19,20 +19,17 @@ import { parseMcpAuth } from '../protocols/mcp-auth'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
 import { maskSensitiveHeaders, MASKED_VALUE } from '../db/saved-response.repo'
-
-/**
- * Gateway credentials rarely use the standard names (`X-Gateway-Token`,
- * `X-Client-Secret`, …) — the whole point of issue #137 — so on top of the
- * shared list below, any name that looks credential-bearing is masked too.
- */
-const CREDENTIAL_NAME = /auth|token|secret|key|password|passwd|cookie|session|signature/i
+// Gateway credentials rarely use the standard names (`X-Gateway-Token`,
+// `X-Client-Secret`, … — the whole point of issue #137): one broad name rule,
+// shared with the OAuth debugger and the Security Scan evidence.
+import { isCredentialHeaderName } from '../lib/credential-headers'
 
 /**
  * Console-safe view of the user's custom connect headers (issue #137): values
  * of credential-bearing names (Authorization, Cookie, X-API-Key, … — the same
- * list saved examples use, plus `CREDENTIAL_NAME`) are masked, so a Bearer
- * token typed into the MCP headers table never lands in the console log in
- * clear text.
+ * list saved examples use, plus `isCredentialHeaderName`) are masked, so a
+ * Bearer token typed into the MCP headers table never lands in the console log
+ * in clear text.
  */
 function consoleSafeHeaders(
   headers: Record<string, string> | undefined,
@@ -41,7 +38,7 @@ function consoleSafeHeaders(
   if (!masked || Object.keys(masked).length === 0) return undefined
   const out: Record<string, string> = {}
   for (const [k, v] of Object.entries(masked)) {
-    out[k] = CREDENTIAL_NAME.test(k) && v ? MASKED_VALUE : String(v ?? '')
+    out[k] = isCredentialHeaderName(k) && v ? MASKED_VALUE : String(v ?? '')
   }
   return out
 }

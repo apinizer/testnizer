@@ -12,6 +12,20 @@ export const STATUS_KEYS: Record<MockMcpServerStatus, string> = {
   stopped: 'mockMcp.status.stopped',
 }
 
+/**
+ * The editor's save chord (Ctrl/Cmd+S). A numeric field commits its pending
+ * text on it BEFORE the keydown bubbles to the editor's save handler —
+ * otherwise Ctrl+S saves the draft without the number still being typed.
+ */
+export function isSaveChord(e: {
+  key: string
+  ctrlKey: boolean
+  metaKey: boolean
+  shiftKey: boolean
+}): boolean {
+  return (e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 's'
+}
+
 /** `HH:MM:SS.mmm` local time of a log entry. */
 export function logTime(ts: number): string {
   const d = new Date(ts)
