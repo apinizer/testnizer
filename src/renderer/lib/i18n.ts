@@ -2669,6 +2669,44 @@ const translations: Record<Locale, Record<string, string>> = {
     'mcp.security.check.ratelimit.rate_limited': 'Rate limiting',
     'mcp.security.check.ratelimit.requests_sent': 'Rate-limit probe volume',
     'mcp.security.check.ratelimit.probe': 'Rate-limit probe',
+    // ── MCP Auth (issue #139) ──
+    'mcp.config.auth': 'Authorization',
+    'mcp.config.headers': 'Headers',
+    'mcp.config.env': 'Environment',
+    'mcp.config.collapse': 'Hide request settings',
+    'mcp.config.expand': 'Show request settings',
+    'mcp.auth.type': 'Auth Type',
+    'mcp.auth.type.none': 'No Auth',
+    'mcp.auth.type.basic': 'Basic Auth',
+    'mcp.auth.type.bearer': 'Bearer Token',
+    'mcp.auth.type.apiKey': 'API Key',
+    'mcp.auth.type.oauth2': 'OAuth 2.1',
+    'mcp.auth.desc.none': 'This request does not use any authorization.',
+    'mcp.auth.desc.basic':
+      'The Authorization header is built from the username and password when you connect.',
+    'mcp.auth.desc.bearer':
+      'The token is sent as an Authorization header on the handshake and every request after it.',
+    'mcp.auth.desc.apiKey':
+      'The key and value are added to the request headers or to the query string when you connect.',
+    'mcp.auth.desc.oauth2':
+      'Run the MCP OAuth 2.1 flow, then connect with its token. The token stays in the main process.',
+    'mcp.auth.stdio':
+      'stdio servers have no HTTP layer, so no authorization is sent. Pass credentials as Environment variables instead.',
+    'mcp.auth.username': 'Username',
+    'mcp.auth.password': 'Password',
+    'mcp.auth.showPassword': 'Show password',
+    'mcp.auth.hidePassword': 'Hide password',
+    'mcp.auth.token': 'Token',
+    'mcp.auth.prefix': 'Prefix',
+    'mcp.auth.key': 'Key',
+    'mcp.auth.value': 'Value',
+    'mcp.auth.addTo': 'Add to',
+    'mcp.auth.addTo.header': 'Header',
+    'mcp.auth.addTo.query': 'Query Params',
+    'mcp.auth.sentAs': 'Sent as',
+    'mcp.auth.precedence': '(a custom header with the same name takes precedence)',
+    'mcp.auth.sseQuery':
+      'Legacy SSE: the query parameter rides the event stream only — the message endpoint the server announces does not carry it.',
   },
 
   tr: {
@@ -5348,6 +5386,44 @@ const translations: Record<Locale, Record<string, string>> = {
     'mcp.security.check.ratelimit.rate_limited': 'Hız sınırlama',
     'mcp.security.check.ratelimit.requests_sent': 'Hız sınırı yoklama hacmi',
     'mcp.security.check.ratelimit.probe': 'Hız sınırı yoklaması',
+    // ── MCP Auth (issue #139) ──
+    'mcp.config.auth': 'Yetkilendirme',
+    'mcp.config.headers': 'Başlıklar',
+    'mcp.config.env': 'Ortam',
+    'mcp.config.collapse': 'İstek ayarlarını gizle',
+    'mcp.config.expand': 'İstek ayarlarını göster',
+    'mcp.auth.type': 'Yetkilendirme Türü',
+    'mcp.auth.type.none': 'Yetkilendirme Yok',
+    'mcp.auth.type.basic': 'Basic Auth',
+    'mcp.auth.type.bearer': 'Bearer Token',
+    'mcp.auth.type.apiKey': 'API Anahtarı',
+    'mcp.auth.type.oauth2': 'OAuth 2.1',
+    'mcp.auth.desc.none': 'Bu istek herhangi bir yetkilendirme kullanmıyor.',
+    'mcp.auth.desc.basic':
+      'Authorization başlığı, bağlanırken kullanıcı adı ve paroladan oluşturulur.',
+    'mcp.auth.desc.bearer':
+      'Belirteç, el sıkışmada ve sonraki her istekte Authorization başlığı olarak gönderilir.',
+    'mcp.auth.desc.apiKey':
+      'Anahtar ve değer, bağlanırken istek başlıklarına ya da sorgu dizesine eklenir.',
+    'mcp.auth.desc.oauth2':
+      'MCP OAuth 2.1 akışını çalıştırın, ardından elde edilen belirteçle bağlanın. Belirteç ana süreçte kalır.',
+    'mcp.auth.stdio':
+      'stdio sunucularının HTTP katmanı olmadığından yetkilendirme gönderilmez. Kimlik bilgilerini bunun yerine Ortam değişkenleriyle iletin.',
+    'mcp.auth.username': 'Kullanıcı adı',
+    'mcp.auth.password': 'Parola',
+    'mcp.auth.showPassword': 'Parolayı göster',
+    'mcp.auth.hidePassword': 'Parolayı gizle',
+    'mcp.auth.token': 'Belirteç',
+    'mcp.auth.prefix': 'Ön ek',
+    'mcp.auth.key': 'Anahtar',
+    'mcp.auth.value': 'Değer',
+    'mcp.auth.addTo': 'Eklenecek yer',
+    'mcp.auth.addTo.header': 'Başlık',
+    'mcp.auth.addTo.query': 'Sorgu Parametreleri',
+    'mcp.auth.sentAs': 'Gönderim biçimi',
+    'mcp.auth.precedence': '(aynı adlı bir özel başlık varsa o önceliklidir)',
+    'mcp.auth.sseQuery':
+      'Eski SSE: sorgu parametresi yalnızca olay akışına eklenir; sunucunun bildirdiği mesaj uç noktası onu taşımaz.',
   },
 }
 

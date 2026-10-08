@@ -1163,6 +1163,23 @@ interface AiChatApi {
 
 // ─── MCP ─────────────────────────────────────────────────────────
 
+/**
+ * Authorization tab of an MCP request (MCP Auth): applied by main on the
+ * http / sse handshake and every request after it. The renderer resolves
+ * `{{var}}` in every field before sending. Precedence in main (HTTP parity,
+ * issue #48): a custom header of the same name beats this auth, and the
+ * OAuth session token beats both. Ignored for stdio. Same shape as the HTTP
+ * `AuthConfig` for `basic` / `bearer` / `apiKey`.
+ */
+interface McpConnectAuth {
+  type: 'none' | 'basic' | 'bearer' | 'api-key' | 'oauth2'
+  basic?: { username: string; password: string }
+  /** `prefix` defaults to `Bearer`. */
+  bearer?: { token: string; prefix?: string }
+  /** `in: 'query'` appends `key=value` to the server URL (http / sse). */
+  apiKey?: { key: string; value: string; in: 'header' | 'query' }
+}
+
 interface McpConnectOptions {
   transport: 'http' | 'sse' | 'stdio'
   url: string
@@ -1174,6 +1191,8 @@ interface McpConnectOptions {
   env?: Record<string, string>
   /** Custom HTTP headers for the http / sse handshake (issue #137); ignored for stdio. */
   headers?: Record<string, string>
+  /** Authorization tab (basic / bearer / API key), `{{var}}`-resolved; ignored for stdio. */
+  auth?: McpConnectAuth
   /**
    * OAuth 2.1 debugger session (issue #141): main injects its access token as
    * `Authorization: Bearer …` (overriding a header row) — the renderer never
@@ -1378,6 +1397,11 @@ interface McpSecurityScanRequest {
   transport: 'http' | 'sse'
   /** The tab's headers — credentials are stripped for the unauthenticated probes. */
   headers?: Record<string, string>
+  /**
+   * The tab's Authorization tab, `{{var}}`-resolved (same as `mcp.connect`):
+   * applied to the authenticated requests only; values scrubbed from findings.
+   */
+  auth?: McpConnectAuth
   /** OAuth 2.1 token session (issue #141); the token never reaches the renderer. */
   oauthSessionId?: string
   options: {

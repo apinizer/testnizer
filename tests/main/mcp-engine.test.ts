@@ -137,6 +137,28 @@ vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
   getDefaultEnvironment: vi.fn(() => ({ PATH: '/usr/bin:/bin', HOME: '/home/tester' })),
 }))
 
+/**
+ * Faithful stand-in for `createMcpOAuthFetch` (the real wrapper runs against
+ * live servers in `mcp-oauth-engine.test.ts`): the session's token is SET on
+ * top of whatever headers the SDK built from `requestInit`, then the request
+ * goes to `oauthBaseFetch`. Lets the precedence test below see the token win
+ * without running an OAuth flow.
+ */
+const { oauthBaseFetch } = vi.hoisted(() => ({
+  oauthBaseFetch: vi.fn(
+    async (_url: string | URL, _init?: RequestInit): Promise<Response> => new Response('{}'),
+  ),
+}))
+vi.mock('../../src/main/protocols/mcp-oauth.engine', () => ({
+  createMcpOAuthFetch:
+    (oauthSessionId: string) =>
+    async (url: string | URL, init?: RequestInit): Promise<Response> => {
+      const headers = new Headers(init?.headers)
+      headers.set('Authorization', `Bearer token-of-${oauthSessionId}`)
+      return oauthBaseFetch(url, { ...init, headers })
+    },
+}))
+
 import {
   mcpConnect,
   mcpDisconnect,
@@ -149,6 +171,7 @@ import {
   mcpGetConnection,
   mcpDisconnectAll,
   setMcpEventSink,
+  applyMcpAuth,
   type McpEngineEvent,
 } from '../../src/main/protocols/mcp.engine'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -963,5 +986,265 @@ describe('mcp.engine — frame / notification / connectionClosed events (issue #
       lastTransport().onmessage?.({ jsonrpc: '2.0', method: 'notifications/message' }),
     ).not.toThrow()
     expect(mcpGetConnection(info.connectionId)).toBeDefined()
+  })
+})
+
+// ─── Authorization tab (MCP Auth) ─────────────────────────────
+describe('mcp.engine — applyMcpAuth (Authorization tab)', () => {
+  const URL_ = 'http://gw.local/mcp'
+
+  it('basic → Authorization: Basic base64(user:pass)', () => {
+    const { url, headers } = applyMcpAuth(URL_, undefined, {
+      type: 'basic',
+      basic: { username: 'alice', password: 's3cret' },
+    })
+    expect(url).toBe(URL_)
+    expect(headers).toEqual({
+      Authorization: `Basic ${Buffer.from('alice:s3cret', 'utf8').toString('base64')}`,
+    })
+  })
+
+  it('basic strips ":" from the username (RFC 7617, same as the HTTP engine) and adds nothing when both fields are empty', () => {
+    const { headers } = applyMcpAuth(URL_, undefined, {
+      type: 'basic',
+      basic: { username: 'a:b', password: 'p' },
+    })
+    expect(headers.Authorization).toBe(`Basic ${Buffer.from('ab:p').toString('base64')}`)
+    expect(
+      applyMcpAuth(URL_, undefined, { type: 'basic', basic: { username: '', password: '' } })
+        .headers,
+    ).toEqual({})
+  })
+
+  it('bearer → "Bearer <token>" by default, custom prefix when set, nothing for an empty token', () => {
+    expect(
+      applyMcpAuth(URL_, undefined, { type: 'bearer', bearer: { token: 'tok-1' } }).headers,
+    ).toEqual({ Authorization: 'Bearer tok-1' })
+    expect(
+      applyMcpAuth(URL_, undefined, { type: 'bearer', bearer: { token: 'tok-1', prefix: 'Token' } })
+        .headers,
+    ).toEqual({ Authorization: 'Token tok-1' })
+    expect(
+      applyMcpAuth(URL_, undefined, { type: 'bearer', bearer: { token: '  ' } }).headers,
+    ).toEqual({})
+  })
+
+  it('api-key in header → <key>: <value>; an empty key adds nothing', () => {
+    expect(
+      applyMcpAuth(
+        URL_,
+        { 'X-A': '1' },
+        {
+          type: 'api-key',
+          apiKey: { key: 'X-API-Key', value: 'k-1', in: 'header' },
+        },
+      ),
+    ).toEqual({ url: URL_, headers: { 'X-A': '1', 'X-API-Key': 'k-1' } })
+    expect(
+      applyMcpAuth(URL_, undefined, {
+        type: 'api-key',
+        apiKey: { key: ' ', value: 'v', in: 'header' },
+      }),
+    ).toEqual({ url: URL_, headers: {} })
+  })
+
+  it('api-key in query appends to a URL that already has a query string (and leaves headers alone)', () => {
+    const { url, headers } = applyMcpAuth(
+      'http://gw.local/mcp?tenant=a',
+      { 'X-A': '1' },
+      {
+        type: 'api-key',
+        apiKey: { key: 'api_key', value: 'k 1&x', in: 'query' },
+      },
+    )
+    const parsed = new URL(url)
+    expect(parsed.origin + parsed.pathname).toBe('http://gw.local/mcp')
+    expect([...parsed.searchParams.entries()]).toEqual([
+      ['tenant', 'a'],
+      ['api_key', 'k 1&x'],
+    ])
+    expect(url.startsWith('http://gw.local/mcp?tenant=a&api_key=')).toBe(true)
+    expect(headers).toEqual({ 'X-A': '1' })
+  })
+
+  it('api-key in query on a URL without a query string', () => {
+    const { url } = applyMcpAuth(URL_, undefined, {
+      type: 'api-key',
+      apiKey: { key: 'key', value: 'v', in: 'query' },
+    })
+    expect(url).toBe('http://gw.local/mcp?key=v')
+  })
+
+  it('precedence (HTTP parity, issue #48): a same-named custom header wins, whatever its case', () => {
+    const custom = { authorization: 'Bearer custom', 'X-Other': '1', 'x-api-key': 'old' }
+    const bearer = applyMcpAuth(URL_, custom, { type: 'bearer', bearer: { token: 'auth-token' } })
+    expect(bearer.headers).toEqual(custom)
+    const basic = applyMcpAuth(URL_, custom, {
+      type: 'basic',
+      basic: { username: 'u', password: 'p' },
+    })
+    expect(basic.headers).toEqual(custom)
+    const apiKey = applyMcpAuth(URL_, custom, {
+      type: 'api-key',
+      apiKey: { key: 'X-API-Key', value: 'new', in: 'header' },
+    })
+    expect(apiKey.headers).toEqual(custom)
+    // Auth fills what the user did not set.
+    expect(
+      applyMcpAuth(URL_, { 'X-Other': '1' }, { type: 'bearer', bearer: { token: 'auth-token' } })
+        .headers,
+    ).toEqual({ 'X-Other': '1', Authorization: 'Bearer auth-token' })
+    // The caller's record is never mutated.
+    expect(custom).toEqual({ authorization: 'Bearer custom', 'X-Other': '1', 'x-api-key': 'old' })
+  })
+
+  it('api-key in query: a parameter of the same name already in the URL wins', () => {
+    const { url } = applyMcpAuth('http://gw.local/mcp?api_key=mine', undefined, {
+      type: 'api-key',
+      apiKey: { key: 'api_key', value: 'auth', in: 'query' },
+    })
+    expect(url).toBe('http://gw.local/mcp?api_key=mine')
+  })
+
+  it('a custom header that wins is never checked for line breaks by the auth path', () => {
+    expect(
+      applyMcpAuth(
+        URL_,
+        { Authorization: 'Bearer mine' },
+        {
+          type: 'bearer',
+          bearer: { token: 'abc\nSECRET-LINE' },
+        },
+      ).headers,
+    ).toEqual({ Authorization: 'Bearer mine' })
+  })
+
+  it('none / oauth2 / no auth leave url and headers as they are', () => {
+    for (const auth of [undefined, { type: 'none' as const }, { type: 'oauth2' as const }]) {
+      expect(applyMcpAuth(URL_, { 'X-A': '1' }, auth)).toEqual({
+        url: URL_,
+        headers: { 'X-A': '1' },
+      })
+    }
+  })
+
+  it('a credential with a line break is refused without echoing it', () => {
+    expect(() =>
+      applyMcpAuth(URL_, undefined, { type: 'bearer', bearer: { token: 'abc\nSECRET-LINE' } }),
+    ).toThrow(/line break/)
+    try {
+      applyMcpAuth(URL_, undefined, { type: 'bearer', bearer: { token: 'abc\nSECRET-LINE' } })
+    } catch (e) {
+      expect((e as Error).message).not.toContain('SECRET-LINE')
+    }
+  })
+})
+
+describe('mcp.engine — mcpConnect applies the Authorization tab', () => {
+  it('http: the auth header joins the custom headers in requestInit.headers', async () => {
+    await mcpConnect({
+      transport: 'http',
+      url: 'http://gw.local/mcp',
+      headers: { 'X-Gateway-Project': 'p1' },
+      auth: { type: 'basic', basic: { username: 'u', password: 'p' } },
+    })
+    const opts = vi.mocked(StreamableHTTPClientTransport).mock.calls[0][1]
+    expect(opts).toEqual({
+      requestInit: {
+        headers: {
+          'X-Gateway-Project': 'p1',
+          Authorization: `Basic ${Buffer.from('u:p').toString('base64')}`,
+        },
+      },
+    })
+  })
+
+  it('http: a custom Authorization row beats the Authorization tab (issue #48 parity)', async () => {
+    await mcpConnect({
+      transport: 'http',
+      url: 'http://gw.local/mcp',
+      headers: { Authorization: 'Bearer custom', 'X-Gateway-Project': 'p1' },
+      auth: { type: 'basic', basic: { username: 'u', password: 'p' } },
+    })
+    const opts = vi.mocked(StreamableHTTPClientTransport).mock.calls[0][1]
+    expect(opts).toEqual({
+      requestInit: { headers: { Authorization: 'Bearer custom', 'X-Gateway-Project': 'p1' } },
+    })
+  })
+
+  it('sse: a bearer token alone builds requestInit.headers', async () => {
+    await mcpConnect({
+      transport: 'sse',
+      url: 'http://gw.local/sse',
+      auth: { type: 'bearer', bearer: { token: 't-sse' } },
+    })
+    const opts = vi.mocked(SSEClientTransport).mock.calls[0][1]
+    expect(opts).toEqual({ requestInit: { headers: { Authorization: 'Bearer t-sse' } } })
+  })
+
+  it('api-key in query: the transport URL carries the key, the connection info does not', async () => {
+    const info = await mcpConnect({
+      transport: 'http',
+      url: 'http://gw.local/mcp?tenant=a',
+      auth: { type: 'api-key', apiKey: { key: 'api_key', value: 'K-SECRET', in: 'query' } },
+    })
+    const [wireUrl, opts] = vi.mocked(StreamableHTTPClientTransport).mock.calls[0]
+    expect(wireUrl.toString()).toBe('http://gw.local/mcp?tenant=a&api_key=K-SECRET')
+    expect(opts).toBeUndefined()
+    expect(info.url).toBe('http://gw.local/mcp?tenant=a')
+    expect(JSON.stringify(mcpGetConnection(info.connectionId))).not.toContain('K-SECRET')
+  })
+
+  it('api-key in query on legacy SSE goes onto the SSE stream URL', async () => {
+    await mcpConnect({
+      transport: 'sse',
+      url: 'http://gw.local/sse',
+      auth: { type: 'api-key', apiKey: { key: 'k', value: 'v', in: 'query' } },
+    })
+    expect(vi.mocked(SSEClientTransport).mock.calls[0][0].toString()).toBe(
+      'http://gw.local/sse?k=v',
+    )
+  })
+
+  it('none / oauth2 auth change nothing (no options when there are no headers)', async () => {
+    await mcpConnect({ transport: 'http', url: 'http://gw.local/mcp', auth: { type: 'none' } })
+    await mcpConnect({ transport: 'sse', url: 'http://gw.local/sse', auth: { type: 'oauth2' } })
+    expect(vi.mocked(StreamableHTTPClientTransport).mock.calls[0][1]).toBeUndefined()
+    expect(vi.mocked(SSEClientTransport).mock.calls[0][1]).toBeUndefined()
+  })
+
+  it('stdio ignores auth', async () => {
+    await mcpConnect({
+      transport: 'stdio',
+      url: 'node server.js',
+      auth: { type: 'bearer', bearer: { token: 'stdio-token' } },
+    })
+    const params = vi.mocked(StdioClientTransport).mock.calls[0][0] as unknown as Record<
+      string,
+      unknown
+    >
+    expect(JSON.stringify(params)).not.toContain('stdio-token')
+    expect(StreamableHTTPClientTransport).not.toHaveBeenCalled()
+  })
+
+  it('precedence end to end: auth < custom header < OAuth session token', async () => {
+    await mcpConnect({
+      transport: 'http',
+      url: 'http://gw.local/mcp',
+      headers: { Authorization: 'Bearer custom', 'X-Other': '1' },
+      auth: { type: 'bearer', bearer: { token: 'auth-token' } },
+      oauthSessionId: 'S1',
+    })
+    const opts = vi.mocked(StreamableHTTPClientTransport).mock.calls[0][1] as unknown as {
+      requestInit: { headers: Record<string, string> }
+      fetch: (url: string, init?: RequestInit) => Promise<Response>
+    }
+    // auth < custom: what the SDK merges into every request.
+    expect(opts.requestInit.headers).toEqual({ 'X-Other': '1', Authorization: 'Bearer custom' })
+    // custom < OAuth: the session's fetch sets its token over those headers.
+    await opts.fetch('http://gw.local/mcp', { headers: opts.requestInit.headers })
+    const sent = new Headers(oauthBaseFetch.mock.calls[0][1]?.headers)
+    expect(sent.get('authorization')).toBe('Bearer token-of-S1')
+    expect(sent.get('x-other')).toBe('1')
   })
 })

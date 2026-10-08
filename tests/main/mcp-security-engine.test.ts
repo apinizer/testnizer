@@ -621,3 +621,45 @@ describe('credential redaction', () => {
     expect(probe.evidence?.request?.headers['x-api-key']).toBeUndefined()
   })
 })
+
+describe('Authorization tab (MCP Auth) on the authenticated requests', () => {
+  it('a Bearer auth authenticates the session, never rides the unauthenticated probe, and is scrubbed', async () => {
+    const { url } = await startMock({ authMode: 'bearer', bearerToken: BEARER })
+    const streamed: McpSecurityFinding[] = []
+    const report = await scan(url, {
+      auth: { type: 'bearer', bearer: { token: BEARER } },
+      onFinding: (f) => streamed.push(f),
+    })
+    // Same outcome as sending the token as a header row.
+    expect(find(report, 'protocol.initialize_shape').status).toBe('pass')
+    const probe = find(report, 'auth.unauth_initialize')
+    expect(probe.status).toBe('pass')
+    expect(probe.evidence?.request?.headers.authorization).toBeUndefined()
+    const text = JSON.stringify(report) + JSON.stringify(streamed)
+    expect(text).not.toContain(BEARER)
+  })
+
+  it('an API key under a name the credential rules miss is kept off the probes and scrubbed', async () => {
+    const { url } = await startMock()
+    const report = await scan(url, {
+      headers: { 'X-Trace': 'visible-auth' },
+      auth: { type: 'api-key', apiKey: { key: 'X-Gw', value: API_KEY, in: 'header' } },
+    })
+    expect(JSON.stringify(report)).not.toContain(API_KEY)
+    const init = find(report, 'protocol.initialize_shape')
+    expect(init.evidence?.request?.headers['x-gw']).toBe('••••')
+    expect(init.evidence?.request?.headers['x-trace']).toBe('visible-auth')
+    const probe = find(report, 'auth.unauth_initialize')
+    expect(probe.evidence?.request?.headers['x-gw']).toBeUndefined()
+  })
+
+  it('a custom header row of the same name wins over the Authorization tab, as on Connect', async () => {
+    const { url } = await startMock({ authMode: 'bearer', bearerToken: BEARER })
+    const report = await scan(url, {
+      headers: { Authorization: `Bearer ${BEARER}` },
+      auth: { type: 'bearer', bearer: { token: 'wrong-token-from-auth-tab' } },
+    })
+    expect(find(report, 'protocol.initialize_shape').status).toBe('pass')
+    expect(JSON.stringify(report)).not.toContain(BEARER)
+  })
+})

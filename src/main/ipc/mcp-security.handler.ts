@@ -11,6 +11,7 @@ import { redactReport } from '../protocols/mcp-security/redact'
 import { buildMcpSecurityHtmlReport } from '../protocols/mcp-security/report-html'
 import { redactUrl } from '../protocols/mcp-security/wire'
 import { logEvent } from '../lib/console-logger'
+import { parseMcpAuth } from '../protocols/mcp-auth'
 
 /**
  * MCP Security Scan IPC (issue #142).
@@ -46,7 +47,7 @@ function broadcast(channel: string, payload: unknown): void {
 
 type ScanRequest = Pick<
   McpSecurityScanInput,
-  'url' | 'transport' | 'headers' | 'oauthSessionId' | 'options'
+  'url' | 'transport' | 'headers' | 'auth' | 'oauthSessionId' | 'options'
 >
 
 /** Defensive copy of the renderer's request — only known, well-typed fields pass. */
@@ -76,10 +77,13 @@ function sanitizeRequest(raw: unknown): ScanRequest {
     typeof opts.timeoutMs === 'number' && Number.isFinite(opts.timeoutMs)
       ? opts.timeoutMs
       : undefined
+  // Authorization tab (MCP Auth) — same validator as `mcp:connect`.
+  const auth = parseMcpAuth(o.auth)
   return {
     url,
     transport: o.transport === 'sse' ? 'sse' : 'http',
     headers,
+    ...(auth ? { auth } : {}),
     ...(typeof o.oauthSessionId === 'string' && o.oauthSessionId
       ? { oauthSessionId: o.oauthSessionId }
       : {}),
@@ -137,6 +141,8 @@ export function registerMcpSecurityHandlers(): void {
           rateLimitProbe: req.options.rateLimitProbe,
           headerCount: Object.keys(req.headers ?? {}).length,
           oauth: !!req.oauthSessionId,
+          // The type only — never a username, password, token or key.
+          authType: req.auth?.type ?? 'none',
         },
       })
       // One macrotask later, so the IPC reply naming the scan reaches the

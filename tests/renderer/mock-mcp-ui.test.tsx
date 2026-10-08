@@ -214,7 +214,7 @@ describe('Mock MCP editor', () => {
     expect(screen.getByTestId('mock-mcp-save')).toBeEnabled()
   })
 
-  it('Open in MCP tab → new MCP tab with transport http, the live URL and the bearer header', async () => {
+  it('Open in MCP tab → new MCP tab with transport http, the live URL and Bearer on the Authorization tab', async () => {
     stub = installBridge([sampleServer({ id: 'a', authMode: 'bearer', bearerToken: 'tok123' })])
     vi.mocked(stub.bridge.server.status).mockResolvedValue({
       success: true,
@@ -230,11 +230,12 @@ describe('Mock MCP editor', () => {
     expect(mcp._currentTabId).toBe(activeTabId)
     expect(mcp.transport).toBe('http')
     expect(mcp.url).toBe('http://127.0.0.1:4555/mcp')
-    expect(mcp.customHeaders[0]).toMatchObject({
-      key: 'Authorization',
-      value: 'Bearer tok123',
-      enabled: true,
-    })
+    // MCP Auth: the token goes to the Authorization tab, which is selected —
+    // no raw `Authorization` header row any more.
+    expect(mcp.auth).toEqual({ type: 'bearer', bearer: { token: 'tok123' } })
+    expect(mcp.configTab).toBe('auth')
+    expect(mcp.configCollapsed).toBe(false)
+    expect(mcp.customHeaders.some((h) => h.key === 'Authorization')).toBe(false)
     expect(mcpTab?.isDirty).toBe(false)
   })
 })

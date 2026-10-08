@@ -90,6 +90,11 @@ export interface ScanContext {
   transport: McpSecurityTransport
   /** 127.0.0.0/8, ::1, localhost, *.localhost. */
   loopback: boolean
+  /**
+   * URL of the authenticated requests: `url` plus the Authorization tab's
+   * API-key query parameter when it has one (MCP Auth). Probes use `url`.
+   */
+  authUrl: URL
   /** The user's headers (credentials included) — authenticated requests. */
   headers: Record<string, string>
   /** The user's headers minus every credential header — unauthenticated probes. */
@@ -234,8 +239,8 @@ export async function probeUnauthenticated(ctx: ScanContext): Promise<UnauthProb
 export async function openSession(ctx: ScanContext): Promise<SessionInfo> {
   const session: RpcSession =
     ctx.transport === 'sse'
-      ? new LegacySseSession(ctx.http, ctx.url.href, ctx.headers, true)
-      : new StreamableSession(ctx.http, ctx.url.href, ctx.headers, true)
+      ? new LegacySseSession(ctx.http, ctx.authUrl.href, ctx.headers, true)
+      : new StreamableSession(ctx.http, ctx.authUrl.href, ctx.headers, true)
   const init = await session.initialize()
   if (init.result) return { ok: true, init, session, result: init.result }
   await session.close()

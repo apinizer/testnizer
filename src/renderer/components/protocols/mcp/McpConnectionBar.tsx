@@ -1,5 +1,5 @@
 import { KeyRound, Plug, Unplug, X } from 'lucide-react'
-import { useMcpStore, MCP_OAUTH_SECTION } from '../../../stores/mcp.store'
+import { useMcpStore } from '../../../stores/mcp.store'
 import type { McpTransport } from '../../../types/mcp'
 import { useTranslation } from '../../../lib/i18n'
 import { describeCapabilities } from '../../../lib/mcp-store-helpers'
@@ -22,7 +22,7 @@ export default function McpConnectionBar() {
   const connect = useMcpStore((s) => s.connect)
   const disconnect = useMcpStore((s) => s.disconnect)
   const unauthorized = useMcpStore((s) => s.unauthorized)
-  const setSection = useMcpStore((s) => s.setSection)
+  const openOAuthAuthorization = useMcpStore((s) => s.openOAuthAuthorization)
 
   const isConnected = state === 'connected'
   const isConnecting = state === 'connecting'
@@ -113,7 +113,7 @@ export default function McpConnectionBar() {
       {state === 'error' && unauthorized && (
         <button
           type="button"
-          onClick={() => setSection(MCP_OAUTH_SECTION)}
+          onClick={openOAuthAuthorization}
           data-testid="mcp-oauth-open"
           className="flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] bg-transparent px-2 text-[12px] text-[var(--accent-text)] hover:bg-[var(--surface)]"
         >

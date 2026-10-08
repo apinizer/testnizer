@@ -260,6 +260,78 @@ describe('mcp:connect custom headers (issue #137)', () => {
   })
 })
 
+describe('mcp:connect Authorization tab (MCP Auth)', () => {
+  const PASSWORD = 'pw-super-secret-auth'
+  const TOKEN = 'tok-super-secret-auth'
+  const API_KEY = 'key-super-secret-auth'
+
+  it('forwards auth to mcpConnect unchanged', async () => {
+    const auth = { type: 'basic', basic: { username: 'alice', password: PASSWORD } }
+    await harness.invoke('mcp:connect', { transport: 'http', url: 'http://gw.local/mcp', auth })
+    expect(vi.mocked(mcpConnect).mock.calls[0][0]).toMatchObject({ auth })
+  })
+
+  it('omits auth when the renderer sent none, a malformed value, or stdio', async () => {
+    await harness.invoke('mcp:connect', { transport: 'http', url: 'http://gw.local/mcp' })
+    await harness.invoke('mcp:connect', {
+      transport: 'http',
+      url: 'http://gw.local/mcp',
+      auth: { type: 'kerberos' },
+    })
+    await harness.invoke('mcp:connect', {
+      transport: 'sse',
+      url: 'http://gw.local/sse',
+      auth: 'Bearer nope',
+    })
+    await harness.invoke('mcp:connect', {
+      transport: 'stdio',
+      url: 'node server.js',
+      auth: { type: 'bearer', bearer: { token: TOKEN } },
+    })
+    for (const call of vi.mocked(mcpConnect).mock.calls) {
+      expect(call[0]).not.toHaveProperty('auth')
+    }
+  })
+
+  it('console log names the auth type only — never a password, token or key (success path)', async () => {
+    for (const auth of [
+      { type: 'basic', basic: { username: 'alice', password: PASSWORD } },
+      { type: 'bearer', bearer: { token: TOKEN, prefix: 'Bearer' } },
+      { type: 'api-key', apiKey: { key: 'X-API-Key', value: API_KEY, in: 'query' } },
+    ]) {
+      await harness.invoke('mcp:connect', { transport: 'http', url: 'http://gw.local/mcp', auth })
+    }
+    const wire = JSON.stringify(consoleEntries)
+    expect(wire).not.toContain(PASSWORD)
+    expect(wire).not.toContain(TOKEN)
+    expect(wire).not.toContain(API_KEY)
+    const metas = (consoleEntries as Array<{ details?: { meta?: Record<string, unknown> } }>).map(
+      (e) => e.details?.meta,
+    )
+    expect(metas.map((m) => m?.authType)).toEqual(['basic', 'bearer', 'api-key'])
+    expect(metas[2]?.authIn).toBe('query')
+    expect(metas[0]).not.toHaveProperty('authIn')
+  })
+
+  it('console log carries no credential on the error path either', async () => {
+    shouldFailConnect = true
+    const res = (await harness.invoke('mcp:connect', {
+      transport: 'sse',
+      url: 'http://gw.local/sse',
+      auth: { type: 'bearer', bearer: { token: TOKEN } },
+    })) as { success: boolean }
+    expect(res.success).toBe(false)
+    expect(consoleEntries.length).toBeGreaterThan(0)
+    expect(JSON.stringify(consoleEntries)).not.toContain(TOKEN)
+  })
+
+  it('a connect without auth logs authType none', async () => {
+    await harness.invoke('mcp:connect', { transport: 'http', url: 'http://gw.local/mcp' })
+    const entry = consoleEntries[0] as { details?: { meta?: Record<string, unknown> } }
+    expect(entry.details?.meta?.authType).toBe('none')
+  })
+})
+
 describe('mcp:connect stdio env (issue #139)', () => {
   it('forwards options.env to mcpConnect', async () => {
     await harness.invoke('mcp:connect', {

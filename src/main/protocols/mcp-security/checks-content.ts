@@ -311,7 +311,7 @@ const errorVerbosity: CheckDef = {
       http = await ctx.session.session.postRaw(MALFORMED_JSON)
     } else if (ctx.transport === 'http') {
       http = await ctx.http.send(
-        ctx.url.href,
+        ctx.authUrl.href,
         {
           method: 'POST',
           headers: {

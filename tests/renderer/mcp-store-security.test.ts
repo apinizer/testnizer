@@ -134,6 +134,8 @@ describe('startSecurityScan', () => {
         { id: 'h1', key: 'Authorization', value: 'Bearer {{tok}}', enabled: true },
         { id: 'h2', key: 'X-Off', value: '1', enabled: false },
       ],
+      // The token session counts only while the Authorization tab is OAuth 2.1 (MCP Auth).
+      auth: { type: 'oauth2' },
       oauthSessionId: 'mcp-oauth-9',
     })
     useMcpStore.getState().setSecurityRateLimitProbe(true)
@@ -148,6 +150,36 @@ describe('startSecurityScan', () => {
     const s = useMcpStore.getState()
     expect(s.securityScanId).toBe('scan-1')
     expect(s.securityRunning).toBe(true)
+  })
+
+  it('sends the Authorization tab resolved exactly as Connect does (MCP Auth)', async () => {
+    const { mcp } = installApi()
+    setActiveEnv({ tok: 'abc-123' })
+    useMcpStore.getState().switchToTab('tab-a')
+    useMcpStore.setState({
+      url: 'http://srv.test/mcp',
+      auth: { type: 'bearer', bearer: { token: '{{tok}}' } },
+    })
+    await useMcpStore.getState().startSecurityScan()
+    expect(mcp.securityScan.mock.calls[0][0]).toMatchObject({
+      auth: { type: 'bearer', bearer: { token: 'abc-123' } },
+    })
+    // No Auth sends no `auth` key at all.
+    useMcpStore.setState({ auth: { type: 'none' }, securityRunning: false })
+    await useMcpStore.getState().startSecurityScan()
+    expect(mcp.securityScan.mock.calls[1][0]).not.toHaveProperty('auth')
+  })
+
+  it('does not name the OAuth session when the Authorization tab is not OAuth 2.1', async () => {
+    const { mcp } = installApi()
+    useMcpStore.getState().switchToTab('tab-a')
+    useMcpStore.setState({
+      url: 'http://srv.test/mcp',
+      auth: { type: 'bearer', bearer: { token: 't' } },
+      oauthSessionId: 'mcp-oauth-9',
+    })
+    await useMcpStore.getState().startSecurityScan()
+    expect(mcp.securityScan.mock.calls[0][0]).not.toHaveProperty('oauthSessionId')
   })
 
   it('routes progress / findings / done to the owner tab, not the active one', async () => {

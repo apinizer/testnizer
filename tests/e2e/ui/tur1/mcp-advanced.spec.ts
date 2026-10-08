@@ -377,8 +377,14 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
     await window.getByTestId('mcp-transport').selectOption('http')
     await window.getByTestId('mcp-url').fill(mcp)
 
+    // Headers is a tab of the config strip under the connection bar (MCP Auth);
+    // the legacy toggle id sits on the tab's label.
     const section = window.getByTestId('mcp-headers-section')
     await window.getByTestId('mcp-headers-toggle').click()
+    await expect(window.getByTestId('mcp-config-tab-headers')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
     await section.getByRole('button', { name: /\+ Add Header/i }).click()
     const rows = section.locator('[data-testid^="kv-row-"]')
     const row = rows.nth((await rows.count()) - 1)
@@ -393,12 +399,87 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
     await window.getByTestId('mcp-invoke').click()
     await expect(window.getByText(/mcp-header-ok/).first()).toBeVisible({ timeout: 10_000 })
 
-    // stdio has no HTTP layer — the headers block is hidden for it.
+    // stdio has no HTTP layer — the Headers tab is hidden for it and the
+    // Environment tab takes its place.
     await window.getByTestId('mcp-connect').click()
     await expect(window.getByTestId('mcp-connect')).not.toHaveText(/Disconnect/i, {
       timeout: 8_000,
     })
     await window.getByTestId('mcp-transport').selectOption('stdio')
     await expect(window.getByTestId('mcp-headers-toggle')).toHaveCount(0)
+    await expect(window.getByTestId('mcp-config-tab-headers')).toHaveCount(0)
+    await expect(window.getByTestId('mcp-config-tab-env')).toBeVisible()
   })
+
+  // ── MCP Auth: Authorization tab ───────────────────────────────────────────
+  // Bearer token and an API key header typed into the Authorization tab must
+  // reach the server (`echo_headers` returns the headers of the tools/call),
+  // and — HTTP parity, issue #48 — a custom Authorization header row of the
+  // same name beats the Authorization tab.
+  uiTest(
+    'MCP Authorization tab — Bearer token and API key reach the server',
+    async ({ window }) => {
+      const { mcp } = getTestServerUrls()
+      await openNewDropdownItem(window, /MCP/i)
+      await window.getByTestId('mcp-transport').selectOption('http')
+      await window.getByTestId('mcp-url').fill(mcp)
+
+      await window.getByTestId('mcp-config-tab-auth').click()
+      await window.getByTestId('mcp-auth-type').selectOption('bearer')
+      await window.getByTestId('mcp-auth-bearer-token').fill('mcp-auth-bearer-ok')
+      await expect(window.getByTestId('mcp-config-auth-dot')).toBeVisible()
+
+      await window.getByTestId('mcp-connect').click()
+      await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
+      await window.getByTestId('mcp-tool-echo_headers').click()
+      await window.getByTestId('mcp-invoke').click()
+      // Scoped to the result: the auth inputs render their value as text too.
+      const result = window.getByTestId('mcp-result')
+      await expect(result).toContainText('Bearer mcp-auth-bearer-ok', { timeout: 10_000 })
+
+      // A custom Authorization row wins over the Authorization tab.
+      await window.getByTestId('mcp-connect').click()
+      await expect(window.getByTestId('mcp-connect')).not.toHaveText(/Disconnect/i, {
+        timeout: 8_000,
+      })
+      const section = window.getByTestId('mcp-headers-section')
+      await window.getByTestId('mcp-config-tab-headers').click()
+      await section.getByRole('button', { name: /\+ Add Header/i }).click()
+      const rows = section.locator('[data-testid^="kv-row-"]')
+      const row = rows.nth((await rows.count()) - 1)
+      await row.getByTestId('kv-key').fill('Authorization')
+      await row.getByTestId('kv-value').locator('input').fill('Bearer custom-row-wins')
+      await window.getByTestId('mcp-connect').click()
+      await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
+      await window.getByTestId('mcp-tool-echo_headers').click()
+      await window.getByTestId('mcp-invoke').click()
+      await expect(result).toContainText('Bearer custom-row-wins', { timeout: 10_000 })
+      await expect(result).not.toContainText('mcp-auth-bearer-ok')
+
+      // API key in a header.
+      await window.getByTestId('mcp-connect').click()
+      await expect(window.getByTestId('mcp-connect')).not.toHaveText(/Disconnect/i, {
+        timeout: 8_000,
+      })
+      await window.getByTestId('mcp-config-tab-auth').click()
+      await window.getByTestId('mcp-auth-type').selectOption('api-key')
+      await window.getByTestId('mcp-auth-apikey-key').fill('X-Testnizer-Key')
+      await window.getByTestId('mcp-auth-apikey-value').fill('mcp-auth-apikey-ok')
+      await window.getByTestId('mcp-connect').click()
+      await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
+      await window.getByTestId('mcp-tool-echo_headers').click()
+      await window.getByTestId('mcp-invoke').click()
+      await expect(window.getByTestId('mcp-result')).toContainText('mcp-auth-apikey-ok', {
+        timeout: 10_000,
+      })
+
+      // Folding the config strip keeps the tab choice.
+      await window.getByTestId('mcp-config-collapse').click()
+      await expect(window.getByTestId('mcp-config-panel-auth')).toHaveCount(0)
+      await window.getByTestId('mcp-config-collapse').click()
+      await expect(window.getByTestId('mcp-auth-type')).toHaveValue('api-key')
+
+      await window.getByTestId('mcp-connect').click()
+    },
+  )
 })

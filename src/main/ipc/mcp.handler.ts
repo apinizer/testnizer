@@ -13,6 +13,8 @@ import {
   type McpEngineEvent,
   type McpTransport,
 } from '../protocols/mcp.engine'
+// Pure module, not the engine: the handler tests mock `mcp.engine` wholesale.
+import { parseMcpAuth } from '../protocols/mcp-auth'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
 import { maskSensitiveHeaders, MASKED_VALUE } from '../db/saved-response.repo'
@@ -183,6 +185,8 @@ export function registerMcpHandlers(): void {
         env?: Record<string, string>
         /** Custom HTTP headers for http / sse transports (issue #137). */
         headers?: Record<string, string>
+        /** Authorization tab (basic / bearer / API key), `{{var}}`-resolved. */
+        auth?: unknown
         /** OAuth 2.1 debugger session whose token authenticates the connection (issue #141). */
         oauthSessionId?: string
         _pendingId?: string
@@ -190,6 +194,7 @@ export function registerMcpHandlers(): void {
     ) => {
       const started = Date.now()
       const loggedHeaders = consoleSafeHeaders(options.headers)
+      const auth = options.transport === 'stdio' ? undefined : parseMcpAuth(options.auth)
       try {
         const data = await mcpConnect({
           transport: options.transport,
@@ -198,6 +203,7 @@ export function registerMcpHandlers(): void {
           args: options.args,
           env: options.env,
           headers: options.headers,
+          ...(auth ? { auth } : {}),
           pendingId: options._pendingId,
           ...(typeof options.oauthSessionId === 'string' && options.oauthSessionId
             ? { oauthSessionId: options.oauthSessionId }
@@ -221,6 +227,11 @@ export function registerMcpHandlers(): void {
             headerCount: loggedHeaders ? Object.keys(loggedHeaders).length : 0,
             // Whether an OAuth session was used — never the token itself.
             oauth: !!options.oauthSessionId,
+            // Authorization tab: the type (and api-key placement) only — never
+            // a username, password, token or key value. The logged url is the
+            // renderer's, so an api-key query param is not in it either.
+            authType: auth?.type ?? 'none',
+            ...(auth?.type === 'api-key' ? { authIn: auth.apiKey?.in ?? 'header' } : {}),
             // stdio env values routinely carry API tokens — count only, never values.
             envCount: options.env ? Object.keys(options.env).length : 0,
           },

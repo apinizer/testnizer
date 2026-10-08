@@ -193,7 +193,8 @@ export class ScanHttp {
     }
   }
 
-  private noteSecret(value: string): void {
+  /** Register one credential value to scrub (a header the name rules miss — MCP Auth's API key). */
+  noteSecret(value: string): void {
     const v = value.trim()
     if (!v) return
     this.secrets.add(v)

@@ -8,6 +8,7 @@ import {
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 import { createMcpOAuthFetch } from './mcp-oauth.engine'
+import { applyMcpAuth, type McpAuthOptions } from './mcp-auth'
 
 export type McpTransport = 'http' | 'sse' | 'stdio'
 
@@ -382,6 +383,11 @@ function tapTransport(transport: Transport, state: WireState): void {
   transport.onerror = (err: Error) => handleError(state, err)
 }
 
+// ─── Authorization tab (MCP Auth) ───────────────────────────
+// Pure helpers live in `mcp-auth.ts` (shared with the Security Scan);
+// re-exported so callers / tests keep importing them from the engine.
+export { applyMcpAuth, type McpAuthOptions } from './mcp-auth'
+
 // ─── Connect / disconnect ───────────────────────────────────
 
 export async function mcpConnect(options: {
@@ -401,6 +407,11 @@ export async function mcpConnect(options: {
    * (issue #137). Ignored for `stdio` (no HTTP involved).
    */
   headers?: Record<string, string>
+  /**
+   * Authorization tab (basic / bearer / API key), filling only the headers
+   * `headers` does not set (`applyMcpAuth`). Ignored for `stdio`.
+   */
+  auth?: McpAuthOptions
   /**
    * Renderer-supplied id so `mcpCancelConnect(id)` can abort the handshake
    * before `client.connect()` resolves. Cleared once the connection opens
@@ -429,8 +440,15 @@ export async function mcpConnect(options: {
   // version (older SDKs applied requestInit to POST only). User headers are
   // spread last there, so they override the SDK's own Authorization /
   // session headers on a name clash — intended: the user's row wins.
-  const headers =
-    options.headers && Object.keys(options.headers).length > 0 ? options.headers : undefined
+  // Authorization tab under the custom headers (http / sse only): a custom
+  // row of the same name wins (issue #48 parity). The api-key query variant
+  // changes the wire URL; `info.url` below keeps the original so the key
+  // never reaches the console log or the connect result.
+  const effective =
+    options.transport === 'stdio'
+      ? { url: options.url, headers: options.headers ?? {} }
+      : applyMcpAuth(options.url, options.headers, options.auth)
+  const headers = Object.keys(effective.headers).length > 0 ? effective.headers : undefined
   // OAuth (issue #141): a custom `fetch` rather than the SDK's `authProvider`.
   // With an authProvider the SDK spreads `requestInit.headers` AFTER the
   // token (`_commonHeaders`), so a user `Authorization` row would beat it,
@@ -450,9 +468,11 @@ export async function mcpConnect(options: {
       : undefined
 
   if (options.transport === 'http') {
-    transport = new StreamableHTTPClientTransport(new URL(options.url), httpOpts)
+    transport = new StreamableHTTPClientTransport(new URL(effective.url), httpOpts)
   } else if (options.transport === 'sse') {
-    transport = new SSEClientTransport(new URL(options.url), httpOpts)
+    // Legacy SSE: the POST endpoint comes from the server's `endpoint` event,
+    // so an api-key query param rides the GET stream only.
+    transport = new SSEClientTransport(new URL(effective.url), httpOpts)
   } else {
     // stdio. With explicit `args` the caller already tokenised the command
     // line (the renderer's quote-aware `parseCommandLine`), so `command` is

@@ -1,8 +1,7 @@
 import { useMcpStore, MCP_EXPLORER_SECTION } from '../../stores/mcp.store'
 import { useTranslation } from '../../lib/i18n'
 import McpConnectionBar from './mcp/McpConnectionBar'
-import McpHeadersSection from './mcp/McpHeadersSection'
-import McpStdioEnvSection from './mcp/McpStdioEnvSection'
+import McpConfigTabs from './mcp/McpConfigTabs'
 import McpCapabilityList from './mcp/McpCapabilityList'
 import McpToolPane from './mcp/McpToolPane'
 import McpResourcePane from './mcp/McpResourcePane'
@@ -13,16 +12,17 @@ import { MCP_EXTRA_SECTIONS } from './mcp/sections'
 const EXPLORER = MCP_EXPLORER_SECTION
 
 /**
- * MCP request editor (issues #137, #139) — a thin host. Connection bar,
- * header / stdio-env blocks, then the capability list on the left and the
- * matching pane on the right (Tools | Resources | Prompts), the messages
- * pane at the bottom. Extra right-pane tabs come from `mcp/sections.ts`, so
- * later phases plug in without editing this file.
+ * MCP request editor (issues #137, #139) — a thin host. Connection bar, the
+ * Postman-style config strip (Authorization · Headers · Environment), then
+ * the capability list on the left and the matching pane on the right
+ * (Tools | Resources | Prompts), the messages pane at the bottom. Extra
+ * right-pane tabs come from `mcp/sections.ts`, so later phases plug in
+ * without editing this file.
  */
 export default function McpEditor() {
   const { t } = useTranslation()
   const capabilityTab = useMcpStore((s) => s.capabilityTab)
-  // Per tab, in the store — a 401 on Connect opens the OAuth section (issue #141).
+  // Per tab, in the store (Explorer | Security).
   const rightTab = useMcpStore((s) => s.section)
   const setRightTab = useMcpStore((s) => s.setSection)
   const extra = MCP_EXTRA_SECTIONS.find((s) => s.id === rightTab)
@@ -34,8 +34,7 @@ export default function McpEditor() {
       className="flex h-full flex-col overflow-hidden bg-[var(--white)]"
     >
       <McpConnectionBar />
-      <McpHeadersSection />
-      <McpStdioEnvSection />
+      <McpConfigTabs />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <McpCapabilityList />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">

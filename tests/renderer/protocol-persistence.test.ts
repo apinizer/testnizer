@@ -149,13 +149,60 @@ describe('MCP snapshot / restore (issue #137)', () => {
     return snapshotProtocol({ id: 'tab-source-mcp', protocol: 'mcp', name: 'MCP' } as Tab)
   }
 
-  it('snapshotProtocol writes transport / url / customHeaders / envVars and the MCP url as effectiveUrl', () => {
+  it('snapshotProtocol writes transport / url / customHeaders / envVars / auth and the MCP url as effectiveUrl', () => {
     const snap = snapshotSavedMcpTab()
     expect(snap.effectiveUrl).toBe(SAVED_URL)
     expect(snap.effectiveMethod).toBe('GET')
     expect(snap.protocolMeta).toEqual({
-      mcp: { transport: 'sse', url: SAVED_URL, customHeaders: HEADERS, envVars: ENV_VARS },
+      mcp: {
+        transport: 'sse',
+        url: SAVED_URL,
+        customHeaders: HEADERS,
+        envVars: ENV_VARS,
+        auth: { type: 'none' },
+      },
     })
+  })
+
+  // MCP Auth — the Authorization tab is part of the saved request, with
+  // `{{var}}` kept unresolved; the config-tab layout is not.
+  it('round-trips the Authorization tab through save → reopen and leaves the tab clean', () => {
+    const AUTH = {
+      type: 'api-key' as const,
+      apiKey: { key: 'X-API-Key', value: '{{apiKey}}', in: 'query' as const },
+      bearer: { token: 'kept-for-later' },
+    }
+    useMcpStore.getState().switchToTab('tab-source-auth')
+    useMcpStore.setState({ transport: 'http', url: SAVED_URL, auth: AUTH, configTab: 'headers' })
+    const { protocolMeta } = snapshotProtocol({
+      id: 'tab-source-auth',
+      protocol: 'mcp',
+      name: 'MCP',
+    } as Tab)
+    expect((protocolMeta as { mcp: Record<string, unknown> }).mcp).not.toHaveProperty('configTab')
+
+    useTabsStore.setState({
+      tabs: [{ id: 'tab-reopen-auth', name: 'MCP', protocol: 'mcp', isDirty: false } as Tab],
+      activeTabId: 'tab-reopen-auth',
+    })
+    restoreProtocolFromMetadata('mcp', protocolMeta)
+    useMcpStore.getState().switchToTab('tab-reopen-auth')
+
+    const m = useMcpStore.getState()
+    expect(m.auth).toEqual(AUTH)
+    expect(m.configTab).toBe('auth')
+    expect(useTabsStore.getState().tabs[0].isDirty).toBe(false)
+  })
+
+  it('a row saved before the Authorization tab restores as No Auth', () => {
+    useTabsStore.setState({
+      tabs: [{ id: 'tab-legacy-auth', name: 'MCP', protocol: 'mcp', isDirty: false } as Tab],
+      activeTabId: 'tab-legacy-auth',
+    })
+    useMcpStore.getState().switchToTab('tab-legacy-auth')
+    useMcpStore.setState({ auth: { type: 'bearer', bearer: { token: 'stale' } } })
+    restoreProtocolFromMetadata('mcp', { mcp: { transport: 'http', url: SAVED_URL } })
+    expect(useMcpStore.getState().auth).toEqual({ type: 'none' })
   })
 
   // Issue #139 — the stdio server environment is part of the saved request.

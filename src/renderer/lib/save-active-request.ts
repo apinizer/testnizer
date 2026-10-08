@@ -18,6 +18,7 @@ import { useSocketIOStore } from '../stores/socketio.store'
 import { useGrpcStore } from '../stores/grpc.store'
 import { useGraphQLStore } from '../stores/graphql.store'
 import { useMcpStore, type McpTransport } from '../stores/mcp.store'
+import { normalizeMcpAuth } from '../stores/mcp-auth.slice'
 import { useWorkspaceStore } from '../stores/workspace.store'
 import { stripWsSecuritySecrets } from './key-material'
 import type { WsSecurityConfig } from '../types'
@@ -210,6 +211,9 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
           customHeaders: mcp.customHeaders,
           // stdio server environment (issue #139) — `{{var}}` kept unresolved.
           envVars: mcp.envVars,
+          // Authorization tab (MCP Auth) — `{{var}}` kept unresolved. The
+          // OAuth 2.1 debugger's secret / token session are never saved.
+          auth: mcp.auth,
         },
       },
     }
@@ -441,6 +445,8 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     if (url) mcp.setUrl(url)
     if (Array.isArray(m.customHeaders)) mcp.setHeaders(m.customHeaders as KeyValuePair[])
     if (Array.isArray(m.envVars)) mcp.setEnvVars(m.envVars as KeyValuePair[])
+    // Rows saved before the Authorization tab carry no `auth` → No Auth.
+    mcp.setAuth(normalizeMcpAuth(m.auth))
     return
   }
 }

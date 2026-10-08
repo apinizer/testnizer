@@ -50,6 +50,7 @@ import { CORS_CHECKS, HEADER_CHECKS, PROTOCOL_CHECKS } from './mcp-security/chec
 import { DISCLOSURE_CHECKS, INJECTION_CHECKS, rateLimitChecks } from './mcp-security/checks-content'
 import { gradeOf, scoreOf, summarize } from './mcp-security/grading'
 import { ScanHttp, withoutCredentials } from './mcp-security/wire'
+import { applyMcpAuth, type McpAuthOptions } from './mcp-auth'
 import type {
   McpSecurityCategory,
   McpSecurityCategoryId,
@@ -93,6 +94,12 @@ export interface McpSecurityScanInput {
   transport: McpSecurityTransport
   /** The tab's headers — sent on authenticated requests; credentials stripped for the probes. */
   headers?: Record<string, string>
+  /**
+   * The tab's Authorization tab (MCP Auth), `{{var}}`-resolved — applied to
+   * the authenticated requests exactly as Connect applies it (custom headers
+   * win); never sent on the unauthenticated probes; its values are scrubbed.
+   */
+  auth?: McpAuthOptions
   /** OAuth 2.1 session (issue #141) whose token authenticates the scan's session. */
   oauthSessionId?: string
   options: McpSecurityScanOptions
@@ -168,7 +175,14 @@ export async function runMcpSecurityScan(input: McpSecurityScanInput): Promise<M
   const now = input.deps?.now ?? Date.now
   const startedAt = now()
   const signal = input.signal ?? new AbortController().signal
-  const headers = { ...(input.headers ?? {}) }
+  const userHeaders = { ...(input.headers ?? {}) }
+  // Authorization tab, same rule as Connect (`applyMcpAuth`): fills only what
+  // the user's rows do not set; an API key in the query moves to `authUrl`.
+  const authed = applyMcpAuth(url.href, userHeaders, input.auth)
+  const headers = authed.headers
+  const authUrl = new URL(authed.url)
+  /** Header names the Authorization tab added — whatever they are called. */
+  const authHeaderNames = new Set(Object.keys(headers).filter((k) => !(k in userHeaders)))
   const http = new ScanHttp({
     fetchFn: input.deps?.fetch ?? ((u, init) => fetch(u, init)),
     signal,
@@ -178,13 +192,24 @@ export async function runMcpSecurityScan(input: McpSecurityScanInput): Promise<M
   })
   http.noteSecretsOf(headers)
   http.noteUrlSecrets(url.href)
+  // The name rules above miss an API key called e.g. `X-Gw` — note every value
+  // the Authorization tab supplied, in the forms it can take on the wire.
+  for (const name of authHeaderNames) http.noteSecret(headers[name])
+  if (authUrl.href !== url.href && input.auth?.apiKey) {
+    const value = input.auth.apiKey.value
+    http.noteSecret(value)
+    http.noteSecret(new URLSearchParams({ v: value }).toString().slice(2))
+  }
+  const anonHeaders = withoutCredentials(headers)
+  for (const name of authHeaderNames) delete anonHeaders[name]
 
   const ctx: ScanContext = {
     url,
     transport: input.transport,
     loopback: isLoopbackHost(url.hostname),
+    authUrl,
     headers,
-    anonHeaders: withoutCredentials(headers),
+    anonHeaders,
     http,
     inspectTls: input.deps?.inspectTls ?? defaultInspectTls,
     session: { ok: false, reason: 'network', error: 'not started' },

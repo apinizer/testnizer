@@ -1,8 +1,9 @@
 /**
- * Issue #141 — the "OAuth 2.1" section of the MCP editor: registered as an
- * extra right-pane tab, the form (write-only secret), the seven-step list
- * with expandable request / response, the summary card actions, and the
- * 401 → "Authorize…" hand-off from the connection bar.
+ * Issue #141 — the OAuth 2.1 debugger of the MCP editor: rendered inline by
+ * the Authorization config tab when its type is OAuth 2.1 (MCP Auth — it is
+ * no longer an extra right-pane tab), the form (write-only secret), the
+ * seven-step list with expandable request / response, the summary card
+ * actions, and the 401 → "Authorize…" hand-off from the connection bar.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import React from 'react'
@@ -72,12 +73,17 @@ const STEPS: McpOAuthStep[] = [
 ]
 
 describe('registration', () => {
-  it('the OAuth section is an extra MCP editor tab', () => {
-    expect(MCP_EXTRA_SECTIONS.map((s) => s.id)).toContain('oauth')
+  it('the debugger lives in the Authorization tab (type OAuth 2.1), not in the right pane', () => {
+    expect(MCP_EXTRA_SECTIONS.map((s) => s.id)).not.toContain('oauth')
     render(<McpEditor />)
-    fireEvent.click(screen.getByTestId('mcp-section-oauth'))
-    expect(screen.getByTestId('mcp-oauth-tab')).toBeInTheDocument()
-    expect(useMcpStore.getState().section).toBe('oauth')
+    expect(screen.queryByTestId('mcp-section-oauth')).toBeNull()
+    expect(screen.queryByTestId('mcp-oauth-tab')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('mcp-config-tab-auth'))
+    fireEvent.change(screen.getByTestId('mcp-auth-type'), { target: { value: 'oauth2' } })
+    const panel = screen.getByTestId('mcp-config-panel-auth')
+    expect(within(panel).getByTestId('mcp-oauth-tab')).toBeInTheDocument()
+    expect(useMcpStore.getState().auth.type).toBe('oauth2')
   })
 })
 
@@ -166,16 +172,44 @@ describe('McpOAuthSection', () => {
 })
 
 describe('401 hand-off', () => {
-  it('a 401 connect error offers Authorize…, which opens the OAuth section', () => {
+  it('a 401 connect error offers Authorize…, which lands on Authorization / OAuth 2.1', () => {
     useMcpStore.setState({
       url: 'http://srv.test/mcp',
       connectionState: 'error',
       errorMessage: 'Streamable HTTP error: HTTP 401',
       unauthorized: true,
+      auth: { type: 'bearer', bearer: { token: 'stale' } },
+      configTab: 'headers',
+      configCollapsed: true,
     })
     render(<McpEditor />)
+    expect(screen.queryByTestId('mcp-oauth-tab')).toBeNull()
     fireEvent.click(screen.getByTestId('mcp-oauth-open'))
+    expect(screen.getByTestId('mcp-config-tab-auth')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByTestId('mcp-auth-type')).toHaveValue('oauth2')
     expect(screen.getByTestId('mcp-oauth-tab')).toBeInTheDocument()
     expect(screen.getByTestId('mcp-oauth-unauthorized')).toBeInTheDocument()
+    // The bearer fields survive the type switch.
+    expect(useMcpStore.getState().auth.bearer).toEqual({ token: 'stale' })
+  })
+
+  it('a 401 on Connect itself opens the Authorization tab on OAuth 2.1 (No Auth tab)', async () => {
+    ;(window as unknown as { api: unknown }).api = {
+      mcp: {
+        connect: vi.fn(async () => ({
+          success: false,
+          error: 'Streamable HTTP error: HTTP 401',
+          unauthorized: true,
+        })),
+        cancelConnect: vi.fn(async () => ({ success: true, data: { canceled: true } })),
+        disconnect: vi.fn(async () => ({ success: true, data: true })),
+      },
+    }
+    useMcpStore.setState({ url: 'http://srv.test/mcp', configCollapsed: true })
+    render(<McpEditor />)
+    fireEvent.click(screen.getByTestId('mcp-connect'))
+    expect(await screen.findByTestId('mcp-oauth-unauthorized')).toBeInTheDocument()
+    expect(screen.getByTestId('mcp-config-panel-auth')).toBeInTheDocument()
+    expect(screen.getByTestId('mcp-auth-type')).toHaveValue('oauth2')
   })
 })

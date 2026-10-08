@@ -1,8 +1,10 @@
 import { create } from 'zustand'
 import type { KeyValuePair } from '../types'
 import type {
+  McpAuthConfig,
   McpBridge,
   McpCapabilityTab,
+  McpConfigTab,
   McpConnectRequest,
   McpConnectionClosedEvent,
   McpFrame,
@@ -48,6 +50,7 @@ import {
   securityIdle,
   type McpSecurityTabState,
 } from './mcp-security.slice'
+import { defaultMcpAuth, resolveMcpAuth } from './mcp-auth.slice'
 
 export type { McpTransport, McpTool } from '../types/mcp'
 
@@ -55,7 +58,6 @@ type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
 /** Right-pane section ids (`McpEditor` tabs; extra ids come from `mcp/sections.ts`). */
 export const MCP_EXPLORER_SECTION = 'explorer'
-export const MCP_OAUTH_SECTION = 'oauth'
 export const MCP_SECURITY_SECTION = 'security'
 
 export interface TabMcpState extends McpSecurityTabState {
@@ -70,6 +72,16 @@ export interface TabMcpState extends McpSecurityTabState {
   customHeaders: KeyValuePair[]
   /** Extra environment for a stdio server process (issue #139). `{{var}}` resolves at Connect. */
   envVars: KeyValuePair[]
+  /**
+   * Authorization tab (MCP Auth): No Auth / Basic / Bearer / API Key /
+   * OAuth 2.1. Persisted and part of the Ctrl+S snapshot like the headers;
+   * `{{var}}` resolves at Connect. Ignored for stdio.
+   */
+  auth: McpAuthConfig
+  /** Active tab of the config strip under the connection bar. Persisted, not saved. */
+  configTab: McpConfigTab
+  /** The config strip's panel is folded away. Persisted, not saved. */
+  configCollapsed: boolean
   connectionId: string | null
   connectionState: ConnectionState
   serverName: string | null
@@ -107,7 +119,7 @@ export interface TabMcpState extends McpSecurityTabState {
   frames: McpFrame[]
   /** Renderer-supplied id so a stalled handshake can be cancelled. */
   _pendingConnectId?: string
-  /** The last connect failed with HTTP 401 — the OAuth section offers itself (issue #141). */
+  /** The last connect failed with HTTP 401 — the Authorization tab offers OAuth 2.1 (issue #141). */
   unauthorized: boolean
   /** Right-pane section: `MCP_EXPLORER_SECTION` or an `MCP_EXTRA_SECTIONS` id. Not persisted. */
   section: string
@@ -151,6 +163,13 @@ interface McpStore extends TabMcpState {
   removeEnvVar: (id: string) => void
   /** Replace the stdio env list outright. Used by snapshot/restore paths. */
   setEnvVars: (envVars: KeyValuePair[]) => void
+  /** Replace the Authorization config (type + fields). Marks the tab dirty. */
+  setAuth: (auth: McpAuthConfig) => void
+  /** Select a config tab (and unfold the panel). Not part of Ctrl+S. */
+  setConfigTab: (tab: McpConfigTab) => void
+  setConfigCollapsed: (collapsed: boolean) => void
+  /** "Authorize…" after a 401: Authorization tab, type OAuth 2.1, panel unfolded. */
+  openOAuthAuthorization: () => void
   /** Fill transport / url (command) / env / headers from a pasted host config. */
   applyServerConfig: (server: ParsedMcpServer) => void
   setCapabilityTab: (tab: McpCapabilityTab) => void
@@ -197,6 +216,9 @@ type McpConfigKeys =
   | 'url'
   | 'customHeaders'
   | 'envVars'
+  | 'auth'
+  | 'configTab'
+  | 'configCollapsed'
   | 'capabilityTab'
   | 'search'
   | 'notifications'
@@ -278,6 +300,9 @@ function emptyState(): TabMcpState {
     url: '',
     customHeaders: [blankRow()],
     envVars: [blankRow()],
+    auth: defaultMcpAuth(),
+    configTab: 'auth',
+    configCollapsed: false,
     capabilityTab: 'tools',
     search: '',
     notifications: [],
@@ -299,6 +324,9 @@ function extractState(s: TabMcpState): TabMcpState {
     url: s.url,
     customHeaders: s.customHeaders,
     envVars: s.envVars,
+    auth: s.auth,
+    configTab: s.configTab,
+    configCollapsed: s.configCollapsed,
     connectionId: s.connectionId,
     connectionState: s.connectionState,
     serverName: s.serverName,
@@ -687,6 +715,15 @@ function loadCapabilities(
   ])
 }
 
+/**
+ * The OAuth token session Connect / Scan name — only while the Authorization
+ * tab is set to OAuth 2.1, so switching to Bearer (say) really stops sending
+ * the debugger's token instead of having it silently override the new type.
+ */
+function oauthSessionFor(st: Pick<TabMcpState, 'auth' | 'oauthSessionId'>): string | null {
+  return st.auth.type === 'oauth2' ? st.oauthSessionId : null
+}
+
 function activeVars(): Record<string, string> {
   return useEnvironmentStore.getState().getActiveVariables()
 }
@@ -746,6 +783,18 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   setEnvVars: (envVars) => {
     set({ envVars })
     markActiveTabDirty()
+  },
+  setAuth: (auth) => {
+    set({ auth })
+    markActiveTabDirty()
+  },
+  // Layout only — not part of the Ctrl+S snapshot, so no dirty flag.
+  setConfigTab: (configTab) => set({ configTab, configCollapsed: false }),
+  setConfigCollapsed: (configCollapsed) => set({ configCollapsed }),
+  openOAuthAuthorization: () => {
+    const { auth } = get()
+    set({ configTab: 'auth', configCollapsed: false })
+    if (auth.type !== 'oauth2') get().setAuth({ ...auth, type: 'oauth2' })
   },
   applyServerConfig: (server) => {
     set({
@@ -867,10 +916,14 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   },
 
   connectWithOAuth: async () => {
-    const { oauthFlowId, oauthSummary, oauthSessionId, connectionState } = get()
+    const { oauthFlowId, oauthSummary, oauthSessionId, connectionState, auth } = get()
     if (!oauthFlowId || !oauthSummary) return
     if (oauthSessionId !== oauthFlowId) forgetOAuthSessions([oauthSessionId])
-    set({ oauthSessionId: oauthFlowId })
+    // The token only rides a connection whose Authorization type is OAuth 2.1.
+    set({
+      oauthSessionId: oauthFlowId,
+      ...(auth.type !== 'oauth2' ? { auth: { ...auth, type: 'oauth2' as const } } : {}),
+    })
     if (connectionState === 'connected' || connectionState === 'connecting') {
       await get().disconnect()
     }
@@ -907,7 +960,11 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     // credentials for the unauthenticated probes; the token never comes here.
     const headers = kvRowsToRecord(st.customHeaders, vars)
     if (Object.keys(headers).length > 0) request.headers = headers
-    if (st.oauthSessionId) request.oauthSessionId = st.oauthSessionId
+    // The Authorization tab, resolved exactly as Connect sends it (MCP Auth).
+    const scanAuth = resolveMcpAuth(st.auth, vars)
+    if (scanAuth) request.auth = scanAuth
+    const scanSession = oauthSessionFor(st)
+    if (scanSession) request.oauthSessionId = scanSession
     set({ ...securityIdle(), securityRunning: true })
     let res: Awaited<ReturnType<McpBridge['securityScan']>>
     try {
@@ -946,6 +1003,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       url,
       customHeaders,
       envVars,
+      auth,
       oauthSessionId,
       _currentTabId: ownerTabId,
     } = get()
@@ -991,8 +1049,13 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       // resolved in both key and value. stdio has no HTTP layer.
       const headers = kvRowsToRecord(customHeaders, vars)
       if (Object.keys(headers).length > 0) request.headers = headers
+      // Authorization tab: `{{var}}` resolved here; main builds the header /
+      // query param — a same-named custom header row wins (issue #48 parity).
+      const resolvedAuth = resolveMcpAuth(auth, vars)
+      if (resolvedAuth) request.auth = resolvedAuth
       // OAuth 2.1 (issue #141): main injects the session's token; we only name it.
-      if (oauthSessionId) request.oauthSessionId = oauthSessionId
+      const session = oauthSessionFor({ auth, oauthSessionId })
+      if (session) request.oauthSessionId = session
     }
     let res: Awaited<ReturnType<McpBridge['connect']>>
     try {
@@ -1024,15 +1087,24 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       })
       await loadCapabilities(d.connectionId, d.capabilities)
     } else {
-      // A 401 opens the OAuth 2.1 section, like Postman does (issue #141).
+      // A 401 opens the Authorization tab on OAuth 2.1, like Postman does
+      // (issue #141). Only a tab with No Auth is switched to OAuth 2.1: a
+      // configured Basic / Bearer / API key stays selected (the 401 is more
+      // likely a wrong credential), and "Authorize…" switches explicitly.
       const unauthorized = !!res.unauthorized
-      patchTab(ownerTabId, {
+      patchTab(ownerTabId, (s) => ({
         connectionState: 'error',
         errorMessage: res.error ?? 'Connection failed',
         _pendingConnectId: undefined,
         unauthorized,
-        ...(unauthorized ? { section: MCP_OAUTH_SECTION } : {}),
-      })
+        ...(unauthorized
+          ? {
+              configTab: 'auth' as const,
+              configCollapsed: false,
+              ...(s.auth.type === 'none' ? { auth: { ...s.auth, type: 'oauth2' as const } } : {}),
+            }
+          : {}),
+      }))
     }
     // Console logging is handled by the main-process handler so every
     // protocol routes through the same `console:log` channel — see

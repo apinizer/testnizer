@@ -37,6 +37,20 @@ export type McpCallContext = NonNullable<Parameters<McpBridge['callTool']>[3]>
 /** `mcp.connect` reply — `unauthorized` when the server answered HTTP 401 (issue #141). */
 export type McpConnectReply = Awaited<ReturnType<McpBridge['connect']>>
 
+// ─── Authorization tab (MCP Auth) ───────────────────────────────
+/** Wire shape of `mcp.connect`'s `auth` (values already `{{var}}`-resolved). */
+export type McpConnectAuth = NonNullable<McpConnectRequest['auth']>
+export type McpAuthType = McpConnectAuth['type']
+/**
+ * Per-tab Authorization config — the wire shape with `{{var}}` kept
+ * unresolved. `basic` / `bearer` / `apiKey` mirror the HTTP `AuthConfig`.
+ * `oauth2` carries no fields here: the debugger's state lives in the store
+ * and its token never leaves main.
+ */
+export type McpAuthConfig = McpConnectAuth
+/** Config tab strip under the connection bar. */
+export type McpConfigTab = 'auth' | 'headers' | 'env'
+
 // ─── OAuth 2.1 debugger (issue #141) ─────────────────────────────
 export type McpOAuthStartRequest = Parameters<McpBridge['oauthStart']>[0]
 export type McpOAuthStepEvent = EventOf<McpBridge['onOauthStep']>
