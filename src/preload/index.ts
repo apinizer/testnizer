@@ -1025,6 +1025,38 @@ const api = {
       return () => ipcRenderer.removeListener('mock:status', handler)
     },
   },
+
+  // ─── Mock MCP Server (issue #140) ───────────────────────────
+  mockMcp: {
+    server: {
+      list: (projectId: string): Promise<unknown> =>
+        ipcRenderer.invoke('mockMcp:server:list', projectId),
+      get: (id: string): Promise<unknown> => ipcRenderer.invoke('mockMcp:server:get', id),
+      create: (input: unknown): Promise<unknown> =>
+        ipcRenderer.invoke('mockMcp:server:create', input),
+      update: (id: string, patch: unknown): Promise<unknown> =>
+        ipcRenderer.invoke('mockMcp:server:update', id, patch),
+      delete: (id: string): Promise<unknown> => ipcRenderer.invoke('mockMcp:server:delete', id),
+      start: (id: string): Promise<unknown> => ipcRenderer.invoke('mockMcp:server:start', id),
+      stop: (id: string): Promise<unknown> => ipcRenderer.invoke('mockMcp:server:stop', id),
+      status: (id: string): Promise<unknown> => ipcRenderer.invoke('mockMcp:server:status', id),
+    },
+    logs: {
+      get: (serverId: string): Promise<unknown> => ipcRenderer.invoke('mockMcp:logs:get', serverId),
+      clear: (serverId: string): Promise<unknown> =>
+        ipcRenderer.invoke('mockMcp:logs:clear', serverId),
+    },
+    onLog: (callback: (entry: unknown) => void): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, data: unknown): void => callback(data)
+      ipcRenderer.on('mockMcp:log', handler)
+      return () => ipcRenderer.removeListener('mockMcp:log', handler)
+    },
+    onStatus: (callback: (state: unknown) => void): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, data: unknown): void => callback(data)
+      ipcRenderer.on('mockMcp:status', handler)
+      return () => ipcRenderer.removeListener('mockMcp:status', handler)
+    },
+  },
 }
 
 if (process.contextIsolated) {

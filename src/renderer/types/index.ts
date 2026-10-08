@@ -15,6 +15,8 @@ export type Protocol =
   | 'socketio'
   | 'runner'
   | 'mockServer'
+  // Mock MCP Server editor (issue #140) — tab carries `mockMcpServerId`.
+  | 'mockMcpServer'
   // Read-only view of a saved example (request + response) — issue #125 follow-up.
   | 'example'
   | 'tools.jwt'
@@ -1091,6 +1093,8 @@ export interface Tab {
   savedRequestId?: string
   /** Mock server ID — used by mockServer tab to identify which server is open */
   mockServerId?: string
+  /** Mock MCP server ID — set on `protocol: 'mockMcpServer'` tabs (issue #140). */
+  mockMcpServerId?: string
   /**
    * Test suite item ID — when set, the tab represents an inline request
    * inside a test suite. Save / load routes to `testSuiteItem.*` IPCs

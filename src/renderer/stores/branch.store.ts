@@ -18,6 +18,8 @@ export interface ConflictStats {
   testSuites: number
   mockServers: number
   mockEndpoints: number
+  /** Mock MCP servers (issue #140); absent from older main builds. */
+  mockMcpServers?: number
   environments: number
   certificates: number
   parsable: boolean

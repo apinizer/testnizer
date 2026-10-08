@@ -269,6 +269,7 @@ function SideCard({
     { label: t('mergeConflict.testSuites'), value: stats.testSuites },
     { label: t('mergeConflict.mockServers'), value: stats.mockServers },
     { label: t('mergeConflict.mockEndpoints'), value: stats.mockEndpoints },
+    { label: t('mergeConflict.mockMcpServers'), value: stats.mockMcpServers ?? 0 },
     { label: t('mergeConflict.certificates'), value: stats.certificates },
   ]
   const visibleRows = rows.filter((r) => r.value > 0)

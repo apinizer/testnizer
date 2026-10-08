@@ -1859,6 +1859,138 @@ interface MockApi {
   onStatus(callback: (info: MockServerStatusEvent) => void): () => void
 }
 
+// ─── Mock MCP Server (issue #140) ────────────────────────────────
+// Mirrors src/main/mock-mcp/types.ts (the web tsconfig cannot import main).
+
+type MockMcpErrorKindDto = 'none' | 'jsonrpc' | 'isError' | 'timeout' | 'http'
+
+interface MockMcpErrorModeDto {
+  kind: MockMcpErrorKindDto
+  code?: number
+  message?: string
+  httpStatus?: number
+  everyN?: number
+}
+
+interface MockMcpToolDto {
+  name: string
+  title?: string
+  description?: string
+  inputSchema: Record<string, unknown>
+  response: { kind: 'text' | 'json' | 'template'; body: string; isError?: boolean }
+  delayMs?: number
+  error?: MockMcpErrorModeDto
+}
+
+interface MockMcpResourceDto {
+  uri?: string
+  uriTemplate?: string
+  name: string
+  title?: string
+  description?: string
+  mimeType?: string
+  text?: string
+  blob?: string
+}
+
+interface MockMcpPromptDto {
+  name: string
+  title?: string
+  description?: string
+  arguments?: { name: string; description?: string; required?: boolean }[]
+  messages: { role: 'user' | 'assistant'; text: string }[]
+}
+
+interface MockMcpServerDto {
+  id: string
+  projectId: string
+  name: string
+  description: string
+  host: string
+  port: number
+  path: string
+  legacySse: boolean
+  authMode: 'none' | 'bearer'
+  bearerToken: string
+  latencyMs: number
+  errorMode: MockMcpErrorModeDto
+  protocolPin: string | null
+  tools: MockMcpToolDto[]
+  resources: MockMcpResourceDto[]
+  prompts: MockMcpPromptDto[]
+  enabled: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+interface MockMcpServerCreateInput {
+  projectId: string
+  name: string
+  description?: string
+  host?: string
+  port: number
+  path?: string
+  legacySse?: boolean
+  authMode?: 'none' | 'bearer'
+  bearerToken?: string
+  latencyMs?: number
+  errorMode?: MockMcpErrorModeDto
+  protocolPin?: string | null
+  /** Omitted → one `echo` tool. */
+  tools?: MockMcpToolDto[]
+  resources?: MockMcpResourceDto[]
+  prompts?: MockMcpPromptDto[]
+  enabled?: boolean
+}
+
+type MockMcpServerPatch = Partial<Omit<MockMcpServerCreateInput, 'projectId'>>
+
+interface MockMcpServerStateDto {
+  serverId: string
+  status: 'stopped' | 'starting' | 'running' | 'error'
+  port: number | null
+  url: string | null
+  sseUrl: string | null
+  errorMessage: string | null
+}
+
+interface MockMcpLogEntryDto {
+  id: string
+  serverId: string
+  ts: number
+  method: string
+  toolName?: string
+  durationMs: number
+  ok: boolean
+  errorCode?: number
+  httpStatus?: number
+  sessionId?: string
+  transport?: 'streamable-http' | 'stateless' | 'sse'
+  request: string
+  response: string
+}
+
+interface MockMcpServerSubApi {
+  list(projectId: string): Promise<IpcResult<MockMcpServerDto[]>>
+  get(id: string): Promise<IpcResult<MockMcpServerDto | null>>
+  create(input: MockMcpServerCreateInput): Promise<IpcResult<MockMcpServerDto>>
+  update(id: string, patch: MockMcpServerPatch): Promise<IpcResult<MockMcpServerDto>>
+  delete(id: string): Promise<IpcResult<boolean>>
+  start(id: string): Promise<IpcResult<MockMcpServerStateDto>>
+  stop(id: string): Promise<IpcResult<MockMcpServerStateDto>>
+  status(id: string): Promise<IpcResult<MockMcpServerStateDto>>
+}
+
+interface MockMcpApi {
+  server: MockMcpServerSubApi
+  logs: {
+    get(serverId: string): Promise<IpcResult<MockMcpLogEntryDto[]>>
+    clear(serverId: string): Promise<IpcResult<boolean>>
+  }
+  onLog(callback: (entry: MockMcpLogEntryDto) => void): () => void
+  onStatus(callback: (state: MockMcpServerStateDto) => void): () => void
+}
+
 // ─── Dialog ──────────────────────────────────────────────────────
 
 interface DialogFileResult {
@@ -2592,6 +2724,7 @@ interface ApiBridge {
   testSuiteFolder: TestSuiteFolderApi
   tree: TreeApi
   mock: MockApi
+  mockMcp: MockMcpApi
   dialog: DialogApi
   contextMenu: ContextMenuApi
 }

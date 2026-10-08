@@ -33,6 +33,7 @@ import { registerEulaHandlers } from './eula.handler'
 import { registerMcpHandlers } from './mcp.handler'
 import { registerSocketIOHandlers } from './socketio.handler'
 import { registerMockHandlers } from './mock.handler'
+import { registerMockMcpHandlers } from './mock-mcp.handler'
 import { registerTlsHandlers } from './tls.handler'
 import { registerDiagnosticsHandlers } from '../diagnostics'
 
@@ -72,6 +73,7 @@ export function registerAllHandlers(): void {
   registerMcpHandlers()
   registerSocketIOHandlers()
   registerMockHandlers()
+  registerMockMcpHandlers()
   registerTlsHandlers()
   registerDiagnosticsHandlers()
 

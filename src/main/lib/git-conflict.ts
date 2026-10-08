@@ -12,6 +12,7 @@ export interface ConflictStats {
   testSuites: number
   mockServers: number
   mockEndpoints: number
+  mockMcpServers: number
   environments: number
   certificates: number
   parsable: boolean
@@ -38,6 +39,7 @@ export function summarizeProjectJson(content: string): ConflictStats {
     testSuites: 0,
     mockServers: 0,
     mockEndpoints: 0,
+    mockMcpServers: 0,
     environments: 0,
     certificates: 0,
     parsable: false,
@@ -52,6 +54,7 @@ export function summarizeProjectJson(content: string): ConflictStats {
       testSuites: Array.isArray(data.testSuites) ? data.testSuites.length : 0,
       mockServers: Array.isArray(data.mockServers) ? data.mockServers.length : 0,
       mockEndpoints: Array.isArray(data.mockEndpoints) ? data.mockEndpoints.length : 0,
+      mockMcpServers: Array.isArray(data.mockMcpServers) ? data.mockMcpServers.length : 0,
       environments: Array.isArray(data.environments) ? data.environments.length : 0,
       certificates: Array.isArray(data.certificates) ? data.certificates.length : 0,
       parsable: true,
