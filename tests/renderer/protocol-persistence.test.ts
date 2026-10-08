@@ -5,7 +5,10 @@
  * them. This pins the GraphQL round-trip and the generic mechanism.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
-import { snapshotProtocol, restoreProtocolFromMetadata } from '../../src/renderer/lib/save-active-request'
+import {
+  snapshotProtocol,
+  restoreProtocolFromMetadata,
+} from '../../src/renderer/lib/save-active-request'
 import { useGraphQLStore } from '../../src/renderer/stores/graphql.store'
 import { useWebSocketStore } from '../../src/renderer/stores/websocket.store'
 import { useMcpStore } from '../../src/renderer/stores/mcp.store'
@@ -129,21 +132,64 @@ describe('MCP snapshot / restore (issue #137)', () => {
     { id: 'h1', key: 'Authorization', value: 'Bearer {{token}}', enabled: true },
     { id: 'h2', key: 'X-Gateway-Project', value: 'project1', enabled: false },
   ]
+  const ENV_VARS = [
+    { id: 'e1', key: 'API_KEY', value: '{{apiKey}}', enabled: true },
+    { id: 'e2', key: 'DEBUG', value: '1', enabled: false },
+  ]
   const REOPENED_TAB = 'tab-reopened-mcp'
 
   function snapshotSavedMcpTab(): ReturnType<typeof snapshotProtocol> {
     useMcpStore.getState().switchToTab('tab-source-mcp')
-    useMcpStore.setState({ transport: 'sse', url: SAVED_URL, customHeaders: HEADERS })
+    useMcpStore.setState({
+      transport: 'sse',
+      url: SAVED_URL,
+      customHeaders: HEADERS,
+      envVars: ENV_VARS,
+    })
     return snapshotProtocol({ id: 'tab-source-mcp', protocol: 'mcp', name: 'MCP' } as Tab)
   }
 
-  it('snapshotProtocol writes transport / url / customHeaders and the MCP url as effectiveUrl', () => {
+  it('snapshotProtocol writes transport / url / customHeaders / envVars and the MCP url as effectiveUrl', () => {
     const snap = snapshotSavedMcpTab()
     expect(snap.effectiveUrl).toBe(SAVED_URL)
     expect(snap.effectiveMethod).toBe('GET')
     expect(snap.protocolMeta).toEqual({
-      mcp: { transport: 'sse', url: SAVED_URL, customHeaders: HEADERS },
+      mcp: { transport: 'sse', url: SAVED_URL, customHeaders: HEADERS, envVars: ENV_VARS },
     })
+  })
+
+  // Issue #139 — the stdio server environment is part of the saved request.
+  it('round-trips a stdio command line and its envVars through save → reopen', () => {
+    useMcpStore.getState().switchToTab('tab-source-stdio')
+    useMcpStore.setState({
+      transport: 'stdio',
+      url: 'npx -y @modelcontextprotocol/server-everything',
+      customHeaders: [],
+      envVars: ENV_VARS,
+    })
+    const { protocolMeta } = snapshotProtocol({
+      id: 'tab-source-stdio',
+      protocol: 'mcp',
+      name: 'MCP',
+    } as Tab)
+
+    useMcpStore.getState().switchToTab('tab-other-stdio')
+    expect(useMcpStore.getState().envVars.map((r) => r.key)).toEqual([''])
+    useTabsStore.setState({
+      tabs: [{ id: 'tab-reopen-stdio', name: 'MCP', protocol: 'mcp', isDirty: false } as Tab],
+      activeTabId: 'tab-reopen-stdio',
+    })
+    restoreProtocolFromMetadata('mcp', protocolMeta)
+    useMcpStore.getState().switchToTab('tab-reopen-stdio')
+
+    const m = useMcpStore.getState()
+    expect(m.transport).toBe('stdio')
+    expect(m.url).toBe('npx -y @modelcontextprotocol/server-everything')
+    expect(m.envVars.map((r) => [r.key, r.value, r.enabled])).toEqual([
+      ['API_KEY', '{{apiKey}}', true],
+      ['DEBUG', '1', false],
+    ])
+    expect(useTabsStore.getState().tabs[0].isDirty).toBe(false)
   })
 
   it('restore survives the post-restore switchToTab race and leaves the tab clean', () => {

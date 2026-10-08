@@ -1,10 +1,16 @@
-import { ipcMain } from 'electron'
+import { ipcMain, BrowserWindow } from 'electron'
 import {
   mcpConnect,
   mcpDisconnect,
   mcpCancelConnect,
   mcpListTools,
   mcpCallTool,
+  mcpListResources,
+  mcpReadResource,
+  mcpListPrompts,
+  mcpGetPrompt,
+  setMcpEventSink,
+  type McpEngineEvent,
   type McpTransport,
 } from '../protocols/mcp.engine'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
@@ -42,7 +48,116 @@ function consoleSafeHeaders(
 // clients that linger.
 const mcpContext = new Map<string, { url: string; connectedAt: number }>()
 
+/** Push an MCP event to every live window (issue #139 — per-connection, never "the active tab"). */
+function broadcast(channel: string, payload: unknown): void {
+  try {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(channel, payload)
+    }
+  } catch {
+    // best-effort: a window mid-teardown must not break the transport
+  }
+}
+
+/**
+ * Engine → renderer bridge (issue #139). Channels:
+ *   - `mcp:notification` `{ connectionId, ts, method, params? }` — every server notification
+ *   - `mcp:frame`        `{ connectionId, ts, direction, message, truncated? }` — every JSON-RPC frame
+ *   - `mcp:connectionClosed` `{ connectionId, reason? }` — transport closed / died
+ * Transport errors are console-logged only. Handshake events are released one
+ * macrotask after `mcp:connect` resolves (see `flushBuffered` in the engine),
+ * so the renderer always knows the connectionId before its first frame.
+ */
+function handleEngineEvent(event: McpEngineEvent): void {
+  switch (event.type) {
+    case 'notification':
+      broadcast('mcp:notification', event.payload)
+      return
+    case 'frame':
+      broadcast('mcp:frame', event.payload)
+      return
+    case 'connectionClosed': {
+      const { connectionId, reason } = event.payload
+      broadcast('mcp:connectionClosed', event.payload)
+      const ctx = mcpContext.get(connectionId)
+      if (reason) {
+        logEvent({
+          protocol: 'mcp',
+          category: 'connection',
+          level: 'error',
+          message: `MCP connection closed (${connectionId}): ${reason}`,
+          url: ctx?.url,
+          durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
+          error: { message: reason },
+        })
+      }
+      mcpContext.delete(connectionId)
+      return
+    }
+    case 'transportError': {
+      const ctx = mcpContext.get(event.payload.connectionId)
+      logEvent({
+        protocol: 'mcp',
+        category: 'connection',
+        level: 'warning',
+        message: `MCP transport error (${event.payload.connectionId}): ${event.payload.message}`,
+        url: ctx?.url,
+      })
+      return
+    }
+  }
+}
+
+/**
+ * Shared envelope + console logging for the read-only MCP calls added in
+ * issue #139 (resources / prompts). Mirrors the `mcp:listTools` shape.
+ */
+async function loggedCall<T>(
+  method: string,
+  url: string,
+  run: () => Promise<T>,
+  summarize: (data: T) => {
+    responseBody: string
+    meta?: Record<string, string | number | boolean>
+  },
+  requestBody?: string,
+): Promise<{ success: true; data: T } | { success: false; error: string }> {
+  const started = Date.now()
+  try {
+    const data = await run()
+    const { responseBody, meta } = summarize(data)
+    logRequestResponse({
+      protocol: 'mcp',
+      method,
+      url,
+      status: 0,
+      statusText: 'OK',
+      durationMs: Date.now() - started,
+      sizeBytes: Buffer.byteLength(responseBody, 'utf-8'),
+      requestBody,
+      responseBody,
+      meta,
+    })
+    return { success: true, data }
+  } catch (e) {
+    const err = e as Error
+    logRequestResponse({
+      protocol: 'mcp',
+      method,
+      url,
+      status: -1,
+      statusText: err.message,
+      durationMs: Date.now() - started,
+      requestBody,
+      error: { message: err.message, stack: err.stack },
+    })
+    return { success: false, error: err.message }
+  }
+}
+
 export function registerMcpHandlers(): void {
+  setMcpEventSink(handleEngineEvent)
+
   ipcMain.handle(
     'mcp:connect',
     async (
@@ -52,6 +167,8 @@ export function registerMcpHandlers(): void {
         url: string
         command?: string
         args?: string[]
+        /** Extra env for the stdio server process, merged over the safe default env (issue #139). */
+        env?: Record<string, string>
         /** Custom HTTP headers for http / sse transports (issue #137). */
         headers?: Record<string, string>
         _pendingId?: string
@@ -65,6 +182,7 @@ export function registerMcpHandlers(): void {
           url: options.url,
           command: options.command,
           args: options.args,
+          env: options.env,
           headers: options.headers,
           pendingId: options._pendingId,
         })
@@ -82,7 +200,10 @@ export function registerMcpHandlers(): void {
             serverName: data.serverName ?? 'unknown',
             serverVersion: data.serverVersion ?? 'unknown',
             transport: options.transport,
+            protocolVersion: data.protocolVersion ?? 'unknown',
             headerCount: loggedHeaders ? Object.keys(loggedHeaders).length : 0,
+            // stdio env values routinely carry API tokens — count only, never values.
+            envCount: options.env ? Object.keys(options.env).length : 0,
           },
         })
         return { success: true, data }
@@ -170,6 +291,62 @@ export function registerMcpHandlers(): void {
       return { success: false, error: err.message }
     }
   })
+
+  ipcMain.handle('mcp:listResources', async (_event, connectionId: string) =>
+    loggedCall(
+      'LIST_RESOURCES',
+      mcpContext.get(connectionId)?.url ?? connectionId,
+      () => mcpListResources(connectionId),
+      (data) => ({
+        responseBody: JSON.stringify({
+          resources: data.resources.map((r) => r.uri),
+          templates: data.templates.map((t) => t.uriTemplate),
+        }),
+        meta: { resources: data.resources.length, templates: data.templates.length },
+      }),
+    ),
+  )
+
+  ipcMain.handle('mcp:readResource', async (_event, connectionId: string, uri: string) =>
+    loggedCall(
+      'READ_RESOURCE',
+      uri,
+      () => mcpReadResource(connectionId, uri),
+      (data) => ({
+        responseBody: JSON.stringify(data),
+        meta: { contents: data.contents.length },
+      }),
+    ),
+  )
+
+  ipcMain.handle('mcp:listPrompts', async (_event, connectionId: string) =>
+    loggedCall(
+      'LIST_PROMPTS',
+      mcpContext.get(connectionId)?.url ?? connectionId,
+      () => mcpListPrompts(connectionId),
+      (data) => ({
+        responseBody: JSON.stringify(data.map((p) => p.name)),
+        meta: { count: data.length },
+      }),
+    ),
+  )
+
+  ipcMain.handle(
+    'mcp:getPrompt',
+    async (_event, connectionId: string, name: string, args?: Record<string, string>) => {
+      const ctx = mcpContext.get(connectionId)
+      return loggedCall(
+        'GET_PROMPT',
+        ctx ? `${ctx.url}/${name}` : `${connectionId}/${name}`,
+        () => mcpGetPrompt(connectionId, name, args ?? {}),
+        (data) => ({
+          responseBody: JSON.stringify(data),
+          meta: { messages: data.messages.length },
+        }),
+        JSON.stringify(args ?? {}),
+      )
+    },
+  )
 
   ipcMain.handle(
     'mcp:callTool',

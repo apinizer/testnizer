@@ -1166,21 +1166,103 @@ interface AiChatApi {
 interface McpConnectOptions {
   transport: 'http' | 'sse' | 'stdio'
   url: string
+  /** stdio: executable (falls back to `url` split on whitespace). */
+  command?: string
+  /** stdio: extra argv appended after the command's own tokens. */
+  args?: string[]
+  /** stdio: extra env, merged over the SDK's safe default env (PATH, HOME, …) — issue #139. */
+  env?: Record<string, string>
   /** Custom HTTP headers for the http / sse handshake (issue #137); ignored for stdio. */
   headers?: Record<string, string>
   _pendingId?: string
 }
 
+interface McpConnectResult {
+  connectionId: string
+  transport: 'http' | 'sse' | 'stdio'
+  url: string
+  serverName?: string
+  serverVersion?: string
+  /** Negotiated protocol version from the `initialize` result. */
+  protocolVersion?: string
+  /** Server capabilities as plain JSON (`tools`, `resources`, `prompts`, `logging`, …). */
+  capabilities?: Record<string, unknown>
+  instructions?: string
+}
+
 interface McpToolDto {
   name: string
+  title?: string
   description?: string
   inputSchema: Record<string, unknown>
+  outputSchema?: Record<string, unknown>
+  annotations?: Record<string, unknown>
+}
+
+interface McpResource {
+  uri: string
+  name: string
+  title?: string
+  description?: string
+  mimeType?: string
+  size?: number
+}
+
+interface McpResourceTemplate {
+  uriTemplate: string
+  name: string
+  title?: string
+  description?: string
+  mimeType?: string
+}
+
+interface McpResourceContents {
+  uri: string
+  mimeType?: string
+  text?: string
+  /** base64, as the SDK returns it */
+  blob?: string
+}
+
+interface McpPrompt {
+  name: string
+  title?: string
+  description?: string
+  arguments?: Array<{ name: string; description?: string; required?: boolean }>
+}
+
+interface McpGetPromptResult {
+  description?: string
+  messages: Array<{ role: 'user' | 'assistant'; content: unknown }>
+}
+
+/** `mcp:notification` — every server notification, per connection. */
+interface McpNotificationEvent {
+  connectionId: string
+  ts: number
+  method: string
+  params?: unknown
+}
+
+/** `mcp:frame` — every JSON-RPC frame in both directions (incl. the `initialize` round-trip). */
+interface McpFrameEvent {
+  connectionId: string
+  ts: number
+  direction: 'in' | 'out'
+  /** JSONRPCMessage — or `{ jsonrpc, id?, method?, _truncated: { chars, preview } }` when `truncated`. */
+  message: unknown
+  /** Set when the frame exceeded ~1 MB serialised and `message` is a summary. */
+  truncated?: boolean
+}
+
+/** `mcp:connectionClosed` — `reason` absent for a user disconnect, set when the transport died. */
+interface McpConnectionClosedEvent {
+  connectionId: string
+  reason?: string
 }
 
 interface McpApi {
-  connect(
-    options: McpConnectOptions,
-  ): Promise<IpcResult<{ connectionId: string; serverName?: string }>>
+  connect(options: McpConnectOptions): Promise<IpcResult<McpConnectResult>>
   cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
   disconnect(connectionId: string): Promise<IpcResult<boolean>>
   listTools(connectionId: string): Promise<IpcResult<McpToolDto[]>>
@@ -1190,6 +1272,24 @@ interface McpApi {
     args: unknown,
     ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
   ): Promise<IpcResult<unknown>>
+  /** Empty lists when the server lacks the `resources` capability. */
+  listResources(
+    connectionId: string,
+  ): Promise<IpcResult<{ resources: McpResource[]; templates: McpResourceTemplate[] }>>
+  readResource(
+    connectionId: string,
+    uri: string,
+  ): Promise<IpcResult<{ contents: McpResourceContents[] }>>
+  /** Empty list when the server lacks the `prompts` capability. */
+  listPrompts(connectionId: string): Promise<IpcResult<McpPrompt[]>>
+  getPrompt(
+    connectionId: string,
+    name: string,
+    args: Record<string, string>,
+  ): Promise<IpcResult<McpGetPromptResult>>
+  onNotification(callback: (event: McpNotificationEvent) => void): () => void
+  onFrame(callback: (event: McpFrameEvent) => void): () => void
+  onConnectionClosed(callback: (event: McpConnectionClosedEvent) => void): () => void
 }
 
 // ─── Socket.IO ───────────────────────────────────────────────────

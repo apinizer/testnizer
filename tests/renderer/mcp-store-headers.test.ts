@@ -57,6 +57,7 @@ function setActiveEnv(vars: Record<string, string>): void {
       key,
       value,
       enabled: true,
+      secret: false,
     })),
     created_at: 0,
     updated_at: 0,

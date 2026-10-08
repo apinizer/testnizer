@@ -7,6 +7,8 @@ import { setupHandlerHarness, makeElectronMock, createTestDb } from './helpers'
 
 /** Everything sent on the `console:log` IPC channel. */
 let consoleEntries: unknown[] = []
+/** Every non-console `webContents.send` (the MCP event channels, issue #139). */
+let sentEvents: Array<{ channel: string; payload: unknown }> = []
 
 const harness = setupHandlerHarness()
 vi.mock('electron', () => ({
@@ -20,6 +22,7 @@ vi.mock('electron', () => ({
         webContents: {
           send: (channel: string, entry: unknown) => {
             if (channel === 'console:log') consoleEntries.push(entry)
+            else sentEvents.push({ channel, payload: entry })
           },
         },
       },
@@ -35,6 +38,9 @@ vi.mock('../../../src/main/db/database', () => ({
 }))
 
 let shouldFailConnect = false
+let shouldFailCapabilityCalls = false
+/** The sink `registerMcpHandlers()` installs on the engine (issue #139). */
+let installedSink: ((event: unknown) => void) | null = null
 vi.mock('../../../src/main/protocols/mcp.engine', () => ({
   mcpConnect: vi.fn(async () => {
     if (shouldFailConnect) throw new Error('mcp fail')
@@ -42,22 +48,50 @@ vi.mock('../../../src/main/protocols/mcp.engine', () => ({
       connectionId: 'mcp-1',
       serverName: 'mock',
       serverVersion: '1.0',
+      protocolVersion: '2025-06-18',
+      capabilities: { tools: {}, resources: {}, prompts: {} },
     }
   }),
   mcpDisconnect: vi.fn(async () => {}),
   mcpCancelConnect: vi.fn(async () => true),
   mcpListTools: vi.fn(async () => [{ name: 'toolA' }, { name: 'toolB' }]),
   mcpCallTool: vi.fn(async () => ({ ok: true })),
+  mcpListResources: vi.fn(async () => {
+    if (shouldFailCapabilityCalls) throw new Error('resources boom')
+    return {
+      resources: [{ uri: 'test://greeting', name: 'greeting' }],
+      templates: [{ uriTemplate: 'test://item/{id}', name: 'item' }],
+    }
+  }),
+  mcpReadResource: vi.fn(async (_id: string, uri: string) => {
+    if (shouldFailCapabilityCalls) throw new Error('read boom')
+    return { contents: [{ uri, mimeType: 'text/plain', text: 'hi' }] }
+  }),
+  mcpListPrompts: vi.fn(async () => {
+    if (shouldFailCapabilityCalls) throw new Error('prompts boom')
+    return [{ name: 'summarize', arguments: [{ name: 'text', required: true }] }]
+  }),
+  mcpGetPrompt: vi.fn(async (_id: string, name: string) => {
+    if (shouldFailCapabilityCalls) throw new Error('prompt boom')
+    return { description: name, messages: [{ role: 'user', content: { type: 'text', text: 'x' } }] }
+  }),
+  setMcpEventSink: vi.fn((sink: ((event: unknown) => void) | null) => {
+    installedSink = sink
+  }),
 }))
 
 const { registerMcpHandlers } = await import('../../../src/main/ipc/mcp.handler')
-const { mcpConnect } = await import('../../../src/main/protocols/mcp.engine')
+const engine = await import('../../../src/main/protocols/mcp.engine')
+const { mcpConnect } = engine
 
 beforeEach(() => {
   harness.reset()
   testDb = createTestDb()
   shouldFailConnect = false
+  shouldFailCapabilityCalls = false
   consoleEntries = []
+  sentEvents = []
+  installedSink = null
   vi.mocked(mcpConnect).mockClear()
   registerMcpHandlers()
 })
@@ -171,5 +205,150 @@ describe('mcp:connect custom headers (issue #137)', () => {
     expect(res.success).toBe(false)
     expect(consoleEntries.length).toBeGreaterThan(0)
     expect(JSON.stringify(consoleEntries)).not.toContain('super-secret-137')
+  })
+})
+
+describe('mcp:connect stdio env (issue #139)', () => {
+  it('forwards options.env to mcpConnect', async () => {
+    await harness.invoke('mcp:connect', {
+      transport: 'stdio',
+      url: 'npx -y @scope/server',
+      env: { GITHUB_TOKEN: 'ghp_secret139' },
+    })
+    expect(vi.mocked(mcpConnect)).toHaveBeenCalledWith(
+      expect.objectContaining({ transport: 'stdio', env: { GITHUB_TOKEN: 'ghp_secret139' } }),
+    )
+  })
+
+  it('console log carries the env count, never env values', async () => {
+    await harness.invoke('mcp:connect', {
+      transport: 'stdio',
+      url: 'npx -y @scope/server',
+      env: { GITHUB_TOKEN: 'ghp_secret139', REGION: 'eu' },
+    })
+    const wire = JSON.stringify(consoleEntries)
+    expect(wire).not.toContain('ghp_secret139')
+    const entry = consoleEntries[0] as { details?: { meta?: Record<string, unknown> } }
+    expect(entry.details?.meta?.envCount).toBe(2)
+    expect(entry.details?.meta?.protocolVersion).toBe('2025-06-18')
+  })
+
+  it('connect envelope passes protocolVersion / capabilities through', async () => {
+    const res = (await harness.invoke('mcp:connect', {
+      transport: 'http',
+      url: 'http://example/mcp',
+    })) as { success: boolean; data?: { protocolVersion?: string; capabilities?: unknown } }
+    expect(res.data?.protocolVersion).toBe('2025-06-18')
+    expect(res.data?.capabilities).toEqual({ tools: {}, resources: {}, prompts: {} })
+  })
+})
+
+describe('mcp resources / prompts channels (issue #139)', () => {
+  it('mcp:listResources → { resources, templates }', async () => {
+    const res = (await harness.invoke('mcp:listResources', 'mcp-1')) as {
+      success: boolean
+      data?: { resources: unknown[]; templates: unknown[] }
+    }
+    expect(res.success).toBe(true)
+    expect(res.data?.resources).toEqual([{ uri: 'test://greeting', name: 'greeting' }])
+    expect(res.data?.templates).toEqual([{ uriTemplate: 'test://item/{id}', name: 'item' }])
+    expect(vi.mocked(engine.mcpListResources)).toHaveBeenCalledWith('mcp-1')
+  })
+
+  it('mcp:readResource forwards (connectionId, uri)', async () => {
+    const res = (await harness.invoke('mcp:readResource', 'mcp-1', 'test://greeting')) as {
+      success: boolean
+      data?: { contents: Array<{ uri: string; text?: string }> }
+    }
+    expect(res.success).toBe(true)
+    expect(res.data?.contents[0]).toEqual({
+      uri: 'test://greeting',
+      mimeType: 'text/plain',
+      text: 'hi',
+    })
+    expect(vi.mocked(engine.mcpReadResource)).toHaveBeenCalledWith('mcp-1', 'test://greeting')
+  })
+
+  it('mcp:listPrompts → McpPrompt[]', async () => {
+    const res = (await harness.invoke('mcp:listPrompts', 'mcp-1')) as {
+      success: boolean
+      data?: Array<{ name: string }>
+    }
+    expect(res.success).toBe(true)
+    expect(res.data?.map((p) => p.name)).toEqual(['summarize'])
+  })
+
+  it('mcp:getPrompt forwards (connectionId, name, args)', async () => {
+    const res = (await harness.invoke('mcp:getPrompt', 'mcp-1', 'summarize', {
+      text: 'hello',
+    })) as {
+      success: boolean
+      data?: { messages: unknown[] }
+    }
+    expect(res.success).toBe(true)
+    expect(res.data?.messages).toHaveLength(1)
+    expect(vi.mocked(engine.mcpGetPrompt)).toHaveBeenCalledWith('mcp-1', 'summarize', {
+      text: 'hello',
+    })
+  })
+
+  it('mcp:getPrompt with no args sends {}', async () => {
+    await harness.invoke('mcp:getPrompt', 'mcp-1', 'summarize')
+    expect(vi.mocked(engine.mcpGetPrompt)).toHaveBeenCalledWith('mcp-1', 'summarize', {})
+  })
+
+  it.each([
+    ['mcp:listResources', ['mcp-1'], /resources boom/],
+    ['mcp:readResource', ['mcp-1', 'test://x'], /read boom/],
+    ['mcp:listPrompts', ['mcp-1'], /prompts boom/],
+    ['mcp:getPrompt', ['mcp-1', 'p', {}], /prompt boom/],
+  ])('%s → error envelope + console error entry', async (channel, args, msg) => {
+    shouldFailCapabilityCalls = true
+    const res = (await harness.invoke(channel, ...args)) as { success: boolean; error?: string }
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(msg)
+    expect(consoleEntries.length).toBeGreaterThan(0)
+  })
+})
+
+describe('mcp engine events → renderer broadcast (issue #139)', () => {
+  it('registerMcpHandlers installs an engine sink', () => {
+    expect(vi.mocked(engine.setMcpEventSink)).toHaveBeenCalled()
+    expect(installedSink).toBeTypeOf('function')
+  })
+
+  it('notification / frame / connectionClosed go to every window on their own channels', () => {
+    const notification = {
+      connectionId: 'mcp-1',
+      ts: 1,
+      method: 'notifications/message',
+      params: { level: 'info' },
+    }
+    const frame = {
+      connectionId: 'mcp-1',
+      ts: 2,
+      direction: 'in',
+      message: { jsonrpc: '2.0', id: 1, result: {} },
+    }
+    const closed = { connectionId: 'mcp-1', reason: 'Server process exited' }
+    installedSink?.({ type: 'notification', payload: notification })
+    installedSink?.({ type: 'frame', payload: frame })
+    installedSink?.({ type: 'connectionClosed', payload: closed })
+    expect(sentEvents).toEqual([
+      { channel: 'mcp:notification', payload: notification },
+      { channel: 'mcp:frame', payload: frame },
+      { channel: 'mcp:connectionClosed', payload: closed },
+    ])
+    // An abnormal close is also console-logged.
+    expect(JSON.stringify(consoleEntries)).toContain('Server process exited')
+  })
+
+  it('transportError is console-only, never broadcast as an MCP event', () => {
+    installedSink?.({
+      type: 'transportError',
+      payload: { connectionId: 'mcp-1', message: 'HTTP 500' },
+    })
+    expect(sentEvents).toEqual([])
+    expect(JSON.stringify(consoleEntries)).toContain('HTTP 500')
   })
 })

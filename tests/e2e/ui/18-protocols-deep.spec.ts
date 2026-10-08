@@ -76,9 +76,15 @@ uiTest.describe('Protocol editors (deep + local servers)', () => {
     await window.getByTestId('mcp-url').fill(mcp)
     await window.getByTestId('mcp-connect').click()
     await expect(window.getByTestId('mcp-connect')).toHaveText('Disconnect', { timeout: 15_000 })
-    await expect(window.getByText(/Tools \(2\)/)).toBeVisible({ timeout: 15_000 })
+    await expect(window.getByTestId('mcp-cap-tab-tools')).toContainText('Tools')
+    await expect(window.getByTestId('mcp-tool-echo')).toBeVisible({ timeout: 15_000 })
     await window.getByTestId('mcp-tool-echo').click()
     await window.getByTestId('mcp-invoke').click()
-    await expect(window.getByText(/"type":\s*"text"/i).first()).toBeVisible({ timeout: 10_000 })
+    // The result pane renders content blocks (not raw JSON).
+    await expect(
+      window.getByTestId('mcp-result').getByTestId('mcp-block-text').first(),
+    ).toBeVisible({
+      timeout: 10_000,
+    })
   })
 })
