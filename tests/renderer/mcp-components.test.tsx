@@ -22,6 +22,8 @@ const PNG_1PX =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
 
 beforeEach(() => {
+  // The Messages pane remembers open/closed per user (issue #172) — start closed.
+  window.localStorage.clear()
   useTabsStore.setState({ tabs: [], activeTabId: null })
   useMcpStore.setState({ _tabStates: new Map(), _currentTabId: null })
   useMcpStore.getState().switchToTab('tab-ui')

@@ -25,6 +25,7 @@ import {
   createMiddleware,
   isInputRequiredResult,
   type CallToolRequestOptions,
+  type ElicitResult,
   type FetchLike,
   type JSONRPCMessage,
   type McpSubscription,
@@ -205,11 +206,48 @@ export interface McpSubscriptionStateEvent {
   reason?: string
 }
 
+/**
+ * A 2025-era server's `elicitation/create` request (issue #168), routed to the
+ * owning connection. Form mode only — Testnizer declares no URL mode.
+ */
+export interface McpElicitationEvent {
+  connectionId: string
+  /** Engine-assigned; pass back to `mcpRespondElicitation`. */
+  elicitationId: string
+  serverName?: string
+  message: string
+  requestedSchema: Record<string, unknown>
+  mode: 'form'
+}
+
+/** The user's answer to an `McpElicitationEvent` (a bare `ElicitResult`). */
+export interface McpElicitationResult {
+  action: 'accept' | 'decline' | 'cancel'
+  /** Only for `accept`: the form values. */
+  content?: Record<string, unknown>
+}
+
+/** `notifications/testnizer/redirect_credentials_dropped` params (issue #169) — names only. */
+export interface McpRedirectCredentialDrop {
+  /** Origin that answered with the redirect. */
+  from: string
+  /** Origin the request was redirected to. */
+  to: string
+  /** Names of the credential headers NOT sent to `to` (never their values). */
+  headers: string[]
+}
+
+/** Method of the synthetic notification that reports a redirect credential drop (issue #169). */
+export const REDIRECT_CREDENTIALS_DROPPED_METHOD =
+  'notifications/testnizer/redirect_credentials_dropped'
+
 export type McpEngineEvent =
   | { type: 'notification'; payload: McpNotificationEvent }
   | { type: 'frame'; payload: McpFrameEvent }
   | { type: 'connectionClosed'; payload: McpConnectionClosedEvent }
   | { type: 'subscriptionState'; payload: McpSubscriptionStateEvent }
+  /** A 2025-era server asks the user for input (`elicitation/create`, issue #168). */
+  | { type: 'elicitation'; payload: McpElicitationEvent }
   /** Transport-level error (not forwarded to the renderer; the handler logs it). */
   | { type: 'transportError'; payload: { connectionId: string; message: string } }
 
@@ -288,6 +326,24 @@ interface WireState {
   transportClosed: boolean
   /** Last transport error; cleared whenever an inbound frame proves the link alive. */
   lastError?: string
+  /**
+   * Credential headers a cross-origin redirect kept from each target origin
+   * (issue #169): origin → the user's header names. Read by `mcpConnect`'s
+   * failure path to explain a 401 / 403.
+   */
+  credentialDrops: Map<string, Set<string>>
+  /** `from→to|names` keys already reported, so one drop is one notification. */
+  reportedDrops: Set<string>
+  /** `transport.send` promises still running — flushed before a disconnect closes the transport. */
+  outbound: Set<Promise<void>>
+  /**
+   * In-flight POSTs that carry a JSON-RPC request, keyed by
+   * `JSON.stringify(id)` (issue #163): aborted when that request is
+   * cancelled, dropped once its response frame arrived.
+   */
+  postsById: Map<string, AbortController>
+  /** Until when a stream error caused by our own POST abort is expected (not logged). */
+  postAbortQuietUntil: number
 }
 
 interface Connection {
@@ -382,6 +438,9 @@ function recordFrame(state: WireState, direction: 'in' | 'out', message: unknown
   const hasId = 'id' in message && message.id !== undefined && message.id !== null
   const method = typeof message.method === 'string' ? message.method : undefined
   if (direction === 'in') state.lastError = undefined
+  if (direction === 'in' && hasId && !method && state.postsById.size > 0) {
+    state.postsById.delete(JSON.stringify(message.id))
+  }
 
   emit(state, {
     type: 'frame',
@@ -536,6 +595,61 @@ function frameTapFetch(state: WireState, base: FetchLike): FetchLike {
   })(base)
 }
 
+/** `JSON.stringify(id)` of a single JSON-RPC request body, or undefined (notification, batch, not JSON). */
+function requestIdKey(body: unknown): string | undefined {
+  if (typeof body !== 'string' || !body.includes('"id"')) return undefined
+  try {
+    const msg: unknown = JSON.parse(body)
+    if (!isObject(msg) || typeof msg.method !== 'string') return undefined
+    return typeof msg.id === 'number' || typeof msg.id === 'string'
+      ? JSON.stringify(msg.id)
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Gives every POST that carries a JSON-RPC request its own AbortController
+ * (issue #163). On a 2025-era connection the SDK cancels a request only with
+ * `notifications/cancelled`; a server then never answers it, so its POST
+ * response stream would stay open until the session closes — one idle HTTP
+ * connection per cancelled call. `abortCancelledPost` aborts that POST once
+ * the cancellation went out. (On 2026-07-28 the SDK closes the stream itself
+ * through the request's own signal, which is kept.)
+ */
+function abortablePostFetch(state: WireState, next: FetchLike): FetchLike {
+  return async (input, init) => {
+    const key =
+      (init?.method ?? 'GET').toUpperCase() === 'POST' ? requestIdKey(init?.body) : undefined
+    if (key === undefined) return next(input, init)
+    const controller = new AbortController()
+    state.postsById.set(key, controller)
+    const signal = init?.signal
+      ? AbortSignal.any([init.signal, controller.signal])
+      : controller.signal
+    try {
+      return await next(input, { ...init, signal })
+    } catch (err) {
+      if (state.postsById.get(key) === controller) state.postsById.delete(key)
+      throw err
+    }
+  }
+}
+
+/** Abort reason of `abortCancelledPost` — how its expected stream error is recognised. */
+const POST_ABORT_REASON = 'MCP request stream closed after cancellation'
+
+/** Abort the POST still streaming the answer to request `key` (it was cancelled). */
+function abortCancelledPost(state: WireState, key: string): void {
+  const controller = state.postsById.get(key)
+  if (!controller) return
+  state.postsById.delete(key)
+  // The SDK reports the aborted stream through `onerror` — expected noise.
+  state.postAbortQuietUntil = Date.now() + 2_000
+  controller.abort(POST_ABORT_REASON)
+}
+
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
 /** Fetch spec's redirect limit. */
 const MAX_REDIRECTS = 20
@@ -561,7 +675,7 @@ const REQUEST_BODY_HEADERS = [
  * default port (`http://h` → `https://h`), which is no new party (the SDK's
  * own `isWithinOrigin` rule).
  */
-function isSameParty(from: URL, to: URL): boolean {
+export function isSameParty(from: URL, to: URL): boolean {
   if (from.origin === to.origin) return true
   return (
     from.protocol === 'http:' &&
@@ -586,7 +700,15 @@ function isSameParty(from: URL, to: URL): boolean {
  * never puts the bearer on a request to another origin. A caller asking for
  * `'manual'` / `'error'` itself gets `base` untouched.
  */
-export function fetchFollowingRedirects(base: FetchLike): FetchLike {
+export function fetchFollowingRedirects(
+  base: FetchLike,
+  /**
+   * Called once per cross-origin hop that dropped credential headers (issue
+   * #169) — header NAMES as the Headers object spells them (lower case),
+   * never values.
+   */
+  onCredentialsDropped?: (drop: McpRedirectCredentialDrop) => void,
+): FetchLike {
   return async (input, init) => {
     if (init?.redirect === 'manual' || init?.redirect === 'error') return base(input, init)
     const headers = new Headers(init?.headers)
@@ -623,6 +745,13 @@ export function fetchFollowingRedirects(base: FetchLike): FetchLike {
           }
         })
         for (const name of credentials) headers.delete(name)
+        if (credentials.length > 0 && onCredentialsDropped) {
+          try {
+            onCredentialsDropped({ from: current.origin, to: target.origin, headers: credentials })
+          } catch {
+            // Reporting never breaks the request.
+          }
+        }
       }
       current = target
     }
@@ -658,6 +787,7 @@ function handleClose(state: WireState): void {
   state.transportClosed = true
   const conn = connections.get(state.connectionId)
   if (conn && conn.state === state) connections.delete(state.connectionId)
+  if (state.established) releaseConnectionWork(state.connectionId)
   if (!state.established || state.closeEmitted) return
   state.closeEmitted = true
   emit(state, {
@@ -675,6 +805,7 @@ function handleError(state: WireState, err: unknown): void {
   // Our own close() aborts streams; those errors are expected noise.
   if (state.closedByClient) return
   const message = err instanceof Error ? err.message : String(err)
+  if (Date.now() < state.postAbortQuietUntil && message.includes(POST_ABORT_REASON)) return
   // Consecutive identical errors (e.g. an SSE reconnect loop against a dead
   // server) are reported once; handshake-time errors are the probe's.
   if (message !== state.lastError && !state.handshaking) {
@@ -717,7 +848,22 @@ function tapTransport(
       // Recorded before the send: a response can be delivered while send()
       // is still pending.
       recordFrame(state, 'out', message)
-      return originalSend(message, options)
+      const sending = originalSend(message, options)
+      state.outbound.add(sending)
+      // Issue #163: once the server was told, close the cancelled request's
+      // own POST response stream (see `abortablePostFetch`).
+      const sent: unknown = message
+      if (
+        isObject(sent) &&
+        sent.method === 'notifications/cancelled' &&
+        isObject(sent.params) &&
+        sent.params.requestId !== undefined
+      ) {
+        const key = JSON.stringify(sent.params.requestId)
+        void sending.finally(() => abortCancelledPost(state, key)).catch(() => {})
+      }
+      void sending.finally(() => state.outbound.delete(sending)).catch(() => {})
+      return sending
     }
   }
   if (tapInbound) {
@@ -729,6 +875,267 @@ function tapTransport(
   transport.onerror = (err: Error) => {
     if (isCurrent()) handleError(state, err)
   }
+}
+
+// ─── Redirect credential drops (issue #169) ─────────────────
+
+/**
+ * Record a cross-origin redirect that kept credential headers back
+ * (`fetchFollowingRedirects`) and report it ONCE per from → to / header set
+ * as a synthetic `notifications/testnizer/redirect_credentials_dropped`
+ * notification on the connection's own stream — so it shows up in Messages →
+ * Notifications like any server notification. Header names only.
+ */
+function noteCredentialDrop(state: WireState, drop: McpRedirectCredentialDrop): void {
+  let names = state.credentialDrops.get(drop.to)
+  if (!names) {
+    names = new Set()
+    state.credentialDrops.set(drop.to, names)
+  }
+  for (const name of drop.headers) names.add(name)
+  const key = `${drop.from}→${drop.to}|${[...drop.headers].sort().join(',')}`
+  if (state.reportedDrops.has(key)) return
+  state.reportedDrops.add(key)
+  emit(state, {
+    type: 'notification',
+    payload: {
+      connectionId: state.connectionId,
+      ts: Date.now(),
+      method: REDIRECT_CREDENTIALS_DROPPED_METHOD,
+      params: { from: drop.from, to: drop.to, headers: [...drop.headers] },
+    },
+  })
+}
+
+/** HTTP 401 / 403 in any SDK 2.x / v1-transport shape (`.status`, SSE `.code`, `UnauthorizedError`). */
+function isAuthRejection(err: unknown): boolean {
+  if (!isObject(err)) return false
+  return (
+    err.status === 401 ||
+    err.status === 403 ||
+    err.code === 401 ||
+    err.code === 403 ||
+    err.name === 'UnauthorizedError'
+  )
+}
+
+/** "Credential headers X, Y were not sent to <origin> after a cross-origin redirect." per target origin. */
+function credentialDropHint(state: WireState): string {
+  return [...state.credentialDrops]
+    .map(
+      ([origin, names]) =>
+        `Credential headers ${[...names].join(', ')} were not sent to ${origin} after a cross-origin redirect.`,
+    )
+    .join(' ')
+}
+
+// ─── Cancellable calls (issue #163) ─────────────────────────
+
+/** Error message (and IPC `error`) of a call the user cancelled. */
+export const MCP_CALL_CANCELLED_MESSAGE = 'MCP call cancelled by user'
+
+/** Thrown by a call `mcpCancelCall` aborted; the handler maps `cancelled` onto the IPC reply. */
+export class McpCallCancelledError extends Error {
+  readonly cancelled = true as const
+  constructor() {
+    super(MCP_CALL_CANCELLED_MESSAGE)
+    this.name = 'McpCallCancelledError'
+  }
+}
+
+/** Per-call options of the cancellable calls (tools/call, resources/read, prompts/get). */
+export interface McpCallOptions {
+  /** Renderer-chosen id `mcpCancelCall(connectionId, callId)` aborts this call by. */
+  callId?: string
+}
+
+/** In-flight cancellable calls: connectionId → callId → controller. */
+const inflightCalls = new Map<string, Map<string, AbortController>>()
+
+/**
+ * Run one SDK call under an AbortController registered as `callId` (when
+ * given). Registration is synchronous — before the first `await` — so a
+ * cancel arriving right after the call starts still finds it. The SDK turns
+ * the abort into the per-transport cancellation (`notifications/cancelled`,
+ * or closing a 2026-07-28 request's own response stream) and rejects; that
+ * rejection becomes `McpCallCancelledError`. The entry is removed when the
+ * call settles.
+ */
+async function runCancellable<T>(
+  connectionId: string,
+  callId: string | undefined,
+  run: (signal: AbortSignal | undefined) => Promise<T>,
+): Promise<T> {
+  if (!callId) return run(undefined)
+  let calls = inflightCalls.get(connectionId)
+  if (!calls) {
+    calls = new Map()
+    inflightCalls.set(connectionId, calls)
+  }
+  if (calls.has(callId)) throw new Error(`An MCP call with id "${callId}" is already running`)
+  const controller = new AbortController()
+  calls.set(callId, controller)
+  try {
+    return await run(controller.signal)
+  } catch (err) {
+    if (controller.signal.aborted) throw new McpCallCancelledError()
+    throw err
+  } finally {
+    const current = inflightCalls.get(connectionId)
+    if (current?.get(callId) === controller) {
+      current.delete(callId)
+      if (current.size === 0) inflightCalls.delete(connectionId)
+    }
+  }
+}
+
+/**
+ * Cancel the running call `callId` of `connectionId` (issue #163). Returns
+ * false when no such call is running (finished, unknown, already cancelled).
+ * The connection stays open and usable.
+ */
+export function mcpCancelCall(connectionId: string, callId: string): boolean {
+  const controller = inflightCalls.get(connectionId)?.get(callId)
+  if (!controller || controller.signal.aborted) return false
+  // The reason is what the server reads in `notifications/cancelled`.
+  controller.abort(MCP_CALL_CANCELLED_MESSAGE)
+  return true
+}
+
+// ─── Elicitation for 2025-era servers (issue #168) ──────────
+
+const DEFAULT_ELICITATION_TIMEOUT_MS = 10 * 60_000
+let elicitationTimeoutMs = DEFAULT_ELICITATION_TIMEOUT_MS
+
+/** Test seam: shorten the pending-elicitation timeout; `null` restores the 10-minute default. */
+export function setMcpElicitationTimeoutMs(ms: number | null): void {
+  elicitationTimeoutMs = ms ?? DEFAULT_ELICITATION_TIMEOUT_MS
+}
+
+interface PendingElicitation {
+  finish: (result: ElicitResult) => void
+}
+
+/** Open `elicitation/create` requests: connectionId → elicitationId → pending answer. */
+const pendingElicitations = new Map<string, Map<string, PendingElicitation>>()
+let nextElicitationId = 1
+
+/** Answer every open elicitation of a connection with `cancel`. Returns how many there were. */
+function cancelPendingElicitations(connectionId: string): number {
+  const pending = pendingElicitations.get(connectionId)
+  if (!pending) return 0
+  pendingElicitations.delete(connectionId)
+  const open = [...pending.values()]
+  for (const p of open) p.finish({ action: 'cancel' })
+  return open.length
+}
+
+/** The connection is gone: forget its calls (they reject on their own) and cancel its elicitations. */
+function releaseConnectionWork(connectionId: string): void {
+  inflightCalls.delete(connectionId)
+  cancelPendingElicitations(connectionId)
+}
+
+interface ElicitParams {
+  mode?: string
+  message: string
+  requestedSchema?: unknown
+}
+
+/**
+ * A 2025-era server's `elicitation/create` (the SDK already validated it and
+ * rejected modes the Client did not declare): emit it to the owning
+ * connection and wait for `mcpRespondElicitation` — or answer `cancel` when
+ * the server withdraws it, the connection closes, or nobody answers within
+ * `elicitationTimeoutMs`. URL mode is never declared, so the decline branch
+ * only covers an SDK that stops enforcing that.
+ */
+function handleElicitation(
+  client: Client,
+  state: WireState,
+  params: ElicitParams,
+  signal: AbortSignal | undefined,
+): Promise<ElicitResult> {
+  if (params.mode === 'url') {
+    console.warn(
+      `[mcp] ${state.connectionId}: declined a URL-mode elicitation — Testnizer answers form-mode elicitations only`,
+    )
+    return Promise.resolve({ action: 'decline' })
+  }
+  const connectionId = state.connectionId
+  const elicitationId = `elicit-${nextElicitationId++}-${Date.now()}`
+  return new Promise<ElicitResult>((resolve) => {
+    let map = pendingElicitations.get(connectionId)
+    if (!map) {
+      map = new Map()
+      pendingElicitations.set(connectionId, map)
+    }
+    const own = map
+    let done = false
+    const finish = (result: ElicitResult): void => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      own.delete(elicitationId)
+      if (own.size === 0 && pendingElicitations.get(connectionId) === own) {
+        pendingElicitations.delete(connectionId)
+      }
+      resolve(result)
+    }
+    const onAbort = (): void => finish({ action: 'cancel' })
+    const timer = setTimeout(onAbort, elicitationTimeoutMs)
+    timer.unref?.()
+    own.set(elicitationId, { finish })
+    if (signal?.aborted || state.closedByClient || state.transportClosed) return onAbort()
+    signal?.addEventListener('abort', onAbort, { once: true })
+    const serverName = client.getServerVersion()?.name
+    emit(state, {
+      type: 'elicitation',
+      payload: {
+        connectionId,
+        elicitationId,
+        ...(serverName ? { serverName } : {}),
+        message: params.message,
+        requestedSchema: isObject(params.requestedSchema) ? plainJson(params.requestedSchema) : {},
+        mode: 'form',
+      },
+    })
+  })
+}
+
+/**
+ * Deliver the user's answer to an `McpElicitationEvent` (issue #168). Throws
+ * when the elicitation is no longer open (answered, timed out, withdrawn, or
+ * the connection closed) or the answer is malformed.
+ */
+export function mcpRespondElicitation(
+  connectionId: string,
+  elicitationId: string,
+  result: McpElicitationResult,
+): void {
+  const pending = pendingElicitations.get(connectionId)?.get(elicitationId)
+  if (!pending) {
+    throw new Error(
+      `No pending elicitation ${elicitationId} on this connection (already answered, timed out, or the connection closed)`,
+    )
+  }
+  const action: unknown = isObject(result) ? result.action : undefined
+  if (action === 'accept') {
+    if (!isObject(result.content)) {
+      throw new Error('An accepted elicitation needs a content object')
+    }
+    pending.finish({
+      action,
+      content: plainJson(result.content) as NonNullable<ElicitResult['content']>,
+    })
+    return
+  }
+  if (action === 'decline' || action === 'cancel') {
+    pending.finish({ action })
+    return
+  }
+  throw new Error(`Invalid elicitation action: ${String(action)}`)
 }
 
 // ─── Errors ─────────────────────────────────────────────────
@@ -853,21 +1260,49 @@ function isUnauthorizedError(err: unknown): boolean {
   return err.status === 401 || err.code === 401 || err.name === 'UnauthorizedError'
 }
 
-function newClient(plan: NegotiationPlan): Client {
-  return new Client(
+/**
+ * The SDK Client, with the 2026-07-28 per-request envelope kept exactly as it
+ * was before issue #168: the Client now declares form elicitation (so a
+ * 2025-era server may send `elicitation/create`), but on the modern era only
+ * `tools/call` advertises it — `runToolCall` puts it in that request's own
+ * `_meta` — because that is the one request whose `input_required` answer
+ * Testnizer can fulfil (`mcpRespondInput`).
+ */
+class TestnizerClient extends Client {
+  protected override _outboundMetaEnvelope(): Readonly<Record<string, unknown>> | undefined {
+    const envelope = super._outboundMetaEnvelope()
+    const caps = envelope?.[CLIENT_CAPABILITIES_META_KEY]
+    if (!envelope || !isObject(caps) || !('elicitation' in caps)) return envelope
+    const withoutElicitation: Record<string, unknown> = { ...caps }
+    delete withoutElicitation.elicitation
+    return { ...envelope, [CLIENT_CAPABILITIES_META_KEY]: withoutElicitation }
+  }
+}
+
+function newClient(plan: NegotiationPlan, state: WireState): Client {
+  const client = new TestnizerClient(
     { name: 'Testnizer', version: '1.0.0' },
     {
+      // Form elicitation for 2025-era servers (issue #168): declared at
+      // `initialize`, answered by asking the user (`handleElicitation`). The
+      // 'auto' → legacy fallback runs on this same Client, so it is declared
+      // for every connect; the modern era drops inbound requests anyway.
+      capabilities: { elicitation: { form: {} } },
       versionNegotiation: plan.versionNegotiation,
       ...(plan.supportedProtocolVersions
         ? { supportedProtocolVersions: plan.supportedProtocolVersions }
         : {}),
       // Manual multi-round-trip mode: an `input_required` tools/call result
-      // is handed to the renderer (see `runToolCall`); Testnizer registers no
-      // elicitation / sampling handlers to auto-fulfil it with.
+      // is handed to the renderer (see `runToolCall`), never auto-fulfilled
+      // through the elicitation handler below.
       inputRequired: { autoFulfill: false },
       listMaxPages: MAX_PAGES,
     },
   )
+  client.setRequestHandler('elicitation/create', (request, ctx) =>
+    handleElicitation(client, state, request.params as ElicitParams, ctx.mcpReq.signal),
+  )
+  return client
 }
 
 /** The `subscriptions/listen` filter a server's `listChanged` capabilities call for. */
@@ -940,6 +1375,11 @@ export async function mcpConnect(options: {
     closedByClient: false,
     closeEmitted: false,
     transportClosed: false,
+    credentialDrops: new Map(),
+    reportedDrops: new Set(),
+    outbound: new Set(),
+    postsById: new Map(),
+    postAbortQuietUntil: 0,
   }
 
   /** A fresh transport for one connect attempt (a transport cannot be restarted). */
@@ -984,12 +1424,22 @@ export async function mcpConnect(options: {
       ? createMcpOAuthFetch(options.oauthSessionId)
       : undefined
     const base: FetchLike = oauthFetch ?? ((url, init) => fetch(url, init))
+    // The user's spelling of each header name, for the drop report (issue #169).
+    const spelled = new Map(Object.keys(effective.headers).map((k) => [k.toLowerCase(), k]))
+    const onCredentialsDropped = (drop: McpRedirectCredentialDrop): void =>
+      noteCredentialDrop(state, {
+        ...drop,
+        headers: drop.headers.map((name) => spelled.get(name) ?? name),
+      })
     const httpOpts = {
       ...(headers ? { requestInit: { headers } } : {}),
       // Frame tap outermost (sees the final answer only), then the redirect
       // follower, then the OAuth fetch — called per hop, so its audience
       // gate decides the bearer for each hop's own origin.
-      fetch: frameTapFetch(state, fetchFollowingRedirects(base)),
+      fetch: frameTapFetch(
+        state,
+        abortablePostFetch(state, fetchFollowingRedirects(base, onCredentialsDropped)),
+      ),
       // v1 parity: SDK 2.x refuses cross-origin redirects by default; v1
       // followed them. `'follow'` hands every request to our `fetch`
       // untouched, and `fetchFollowingRedirects` follows them — dropping
@@ -1021,7 +1471,7 @@ export async function mcpConnect(options: {
   }
 
   const attempt = async (attemptPlan: NegotiationPlan): Promise<Client> => {
-    const client = newClient(attemptPlan)
+    const client = newClient(attemptPlan, state)
     const transport = buildTransport()
     current = transport
     // A close of an attempt the auto → legacy retry gave up on is not this one's.
@@ -1035,7 +1485,22 @@ export async function mcpConnect(options: {
     if (options.pendingId) pendingConnects.delete(options.pendingId)
     state.discarded = true
     state.buffer = []
-    throw decorateMcpError(err)
+    const decorated = decorateMcpError(err)
+    // Issue #169: a 401 / 403 after a cross-origin redirect dropped the
+    // user's credential headers is explained by that drop — say so. The
+    // error object is kept (`.status` drives the handler's `unauthorized`).
+    if (
+      decorated instanceof Error &&
+      state.credentialDrops.size > 0 &&
+      isAuthRejection(decorated)
+    ) {
+      try {
+        decorated.message = `${decorated.message} ${credentialDropHint(state)}`
+      } catch {
+        /* read-only message — leave it */
+      }
+    }
+    throw decorated
   }
 
   let client: Client
@@ -1185,6 +1650,11 @@ export async function mcpDisconnect(connectionId: string): Promise<void> {
   if (!conn) return
   conn.state.closedByClient = true
   connections.delete(connectionId)
+  // Pending elicitations are answered `cancel` (issue #168) — and those
+  // answers are given a moment to reach the server before the transport
+  // closes under them.
+  if (cancelPendingElicitations(connectionId) > 0) await flushOutbound(conn.state)
+  inflightCalls.delete(connectionId)
   const sub = conn.subscription
   conn.subscription = undefined
   if (sub) {
@@ -1200,6 +1670,16 @@ export async function mcpDisconnect(connectionId: string): Promise<void> {
   } catch {
     /* ignore */
   }
+}
+
+/** Let the SDK hand queued responses to the transport, then wait (bounded) for those sends. */
+async function flushOutbound(state: WireState): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  if (state.outbound.size === 0) return
+  await Promise.race([
+    Promise.allSettled([...state.outbound]),
+    new Promise<void>((resolve) => setTimeout(resolve, SUBSCRIPTION_CLOSE_TIMEOUT_MS)),
+  ])
 }
 
 function requireConnection(connectionId: string): Connection {
@@ -1342,9 +1822,12 @@ export async function mcpListResources(connectionId: string): Promise<McpResourc
 export async function mcpReadResource(
   connectionId: string,
   uri: string,
+  opts: McpCallOptions = {},
 ): Promise<McpReadResourceResult> {
   const { client } = requireConnection(connectionId)
-  const res = await sdkCall(() => client.readResource({ uri }, FRESH))
+  const res = await runCancellable(connectionId, opts.callId, (signal) =>
+    sdkCall(() => client.readResource({ uri }, { ...FRESH, ...(signal ? { signal } : {}) })),
+  )
   return {
     contents: res.contents.map((c) => {
       const item = c as Record<string, unknown>
@@ -1393,6 +1876,7 @@ export async function mcpGetPrompt(
   connectionId: string,
   name: string,
   args: Record<string, string> = {},
+  opts: McpCallOptions = {},
 ): Promise<McpGetPromptResult> {
   const { client } = requireConnection(connectionId)
   // prompts/get arguments are string-valued per spec; coerce defensively and
@@ -1402,7 +1886,10 @@ export async function mcpGetPrompt(
     if (v === undefined || v === null) continue
     promptArgs[k] = String(v)
   }
-  const res = await sdkCall(() => client.getPrompt({ name, arguments: promptArgs }))
+  const params = { name, arguments: promptArgs }
+  const res = await runCancellable(connectionId, opts.callId, (signal) =>
+    sdkCall(() => (signal ? client.getPrompt(params, { signal }) : client.getPrompt(params))),
+  )
   return compact<McpGetPromptResult>({
     description: res.description,
     messages: res.messages.map((m) => ({ role: m.role, content: m.content })),
@@ -1434,7 +1921,11 @@ interface ToolCallParams {
  * that schema (`toolDefinition` — which still drives SEP-2243 `Mcp-Param-*`
  * header mirroring); its output is not validated client-side.
  */
-async function runToolCall(conn: Connection, request: ToolCallParams): Promise<unknown> {
+async function runToolCall(
+  conn: Connection,
+  request: ToolCallParams,
+  signal?: AbortSignal,
+): Promise<unknown> {
   let params = request
   const modern = conn.client.getProtocolEra() === 'modern'
   // `onprogress` makes the SDK attach `_meta.progressToken`, which is what
@@ -1444,6 +1935,8 @@ async function runToolCall(conn: Connection, request: ToolCallParams): Promise<u
   const options: CallToolRequestOptions = {
     onprogress: () => {},
     resetTimeoutOnProgress: true,
+    // Issue #163: `mcpCancelCall` — the MRTR retry legs get their own signal.
+    ...(signal ? { signal } : {}),
   }
   if (modern) {
     options.allowInputRequired = true
@@ -1486,8 +1979,12 @@ export async function mcpCallTool(
   connectionId: string,
   toolName: string,
   args: Record<string, unknown>,
+  opts: McpCallOptions = {},
 ): Promise<unknown> {
-  return runToolCall(requireConnection(connectionId), { name: toolName, arguments: args })
+  const conn = requireConnection(connectionId)
+  return runCancellable(connectionId, opts.callId, (signal) =>
+    runToolCall(conn, { name: toolName, arguments: args }, signal),
+  )
 }
 
 /**
@@ -1505,6 +2002,7 @@ export async function mcpRespondInput(
   args: Record<string, unknown>,
   requestState: string | undefined,
   inputResponses: Record<string, unknown> | undefined,
+  opts: McpCallOptions = {},
 ): Promise<unknown> {
   const conn = requireConnection(connectionId)
   if (conn.client.getProtocolEra() !== 'modern') {
@@ -1516,12 +2014,18 @@ export async function mcpRespondInput(
   if (!hasResponses && requestState === undefined) {
     throw new Error('Nothing to send: give inputResponses and/or the requestState to echo')
   }
-  return runToolCall(conn, {
-    name: toolName,
-    arguments: args,
-    ...(hasResponses ? { inputResponses } : {}),
-    ...(requestState !== undefined ? { requestState } : {}),
-  })
+  return runCancellable(connectionId, opts.callId, (signal) =>
+    runToolCall(
+      conn,
+      {
+        name: toolName,
+        arguments: args,
+        ...(hasResponses ? { inputResponses } : {}),
+        ...(requestState !== undefined ? { requestState } : {}),
+      },
+      signal,
+    ),
+  )
 }
 
 /** Ids of the registered (open) connections — diagnostics and tests. */

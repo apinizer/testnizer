@@ -62,6 +62,7 @@ import NewRequestWelcome from './NewRequestWelcome'
 import PageWelcome from './PageWelcome'
 import AddEndpointsView from '../runner/AddEndpointsView'
 import MethodBadge from '../shared/MethodBadge'
+import ProtocolChip from '../shared/ProtocolChip'
 import { ErrorBoundary } from '../shared/ErrorBoundary'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import EnvironmentSelector from '../shared/EnvironmentSelector'
@@ -730,6 +731,8 @@ export function EndpointTabBar() {
             {tab.method && (tab.protocol === 'http' || tab.protocol === 'soap') && (
               <MethodBadge method={tab.method} small />
             )}
+            {/* MCP / WS / SSE / SIO / GQL / gRPC: protocol chip, same as the tree (issue #173). */}
+            <ProtocolChip protocol={tab.protocol} />
             {renamingTabId === tab.id ? (
               <input
                 ref={renameInputRef}

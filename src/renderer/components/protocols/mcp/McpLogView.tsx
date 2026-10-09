@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from 'react'
-import { Trash2 } from 'lucide-react'
+import { Copy, Download, Trash2 } from 'lucide-react'
 import { useTranslation } from '../../../lib/i18n'
+import { useCopy } from '../../../lib/use-copy'
+import { toast } from '../../../lib/toast'
 import McpVirtualRows from './McpVirtualRows'
 import { JsonPre } from './ui'
 
@@ -17,11 +19,31 @@ interface Props<T extends LogEntry> {
   detail: (item: T) => unknown
   onClear: () => void
   emptyText: string
+  /** File name stem for Export, e.g. `mcp-frames` → `mcp-frames-20261010-142233.json`. */
+  exportName: string
+  /** Auto-scroll state, owned by the pane (issue #172). */
+  follow: boolean
+  onFollowChange: (follow: boolean) => void
+}
+
+const TOOL_BTN =
+  'flex cursor-pointer items-center gap-1 rounded border-none bg-transparent px-1.5 py-0.5 text-[11px] text-[var(--muted)] hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-50'
+
+/** `yyyymmdd-hhmmss`, local time — safe in a file name on every OS. */
+function stamp(d = new Date()): string {
+  const p = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+}
+
+function asText(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
 }
 
 /**
  * Filterable list + JSON detail split, shared by the Notifications and
- * Frames tabs of the MCP messages pane. Clicking a row shows its JSON.
+ * Frames tabs of the MCP messages pane. Clicking a row shows its JSON; Copy
+ * puts that JSON on the clipboard, Export saves the visible (filtered)
+ * entries exactly as held — the main process already masked them.
  */
 export default function McpLogView<T extends LogEntry>({
   items,
@@ -31,13 +53,29 @@ export default function McpLogView<T extends LogEntry>({
   detail,
   onClear,
   emptyText,
+  exportName,
+  follow,
+  onFollowChange,
 }: Props<T>) {
   const { t } = useTranslation()
+  const { copied, copy } = useCopy()
   const [filter, setFilter] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const q = filter.trim().toLowerCase()
   const visible = q ? items.filter((it) => searchText(it).includes(q)) : items
   const selected = items.find((it) => it.id === selectedId)
+
+  const exportVisible = async (): Promise<void> => {
+    const save = window.api?.importExport?.saveFile
+    if (!save) {
+      toast.error(t('mcp.messages.exportFailed'))
+      return
+    }
+    const res = await save(JSON.stringify(visible, null, 2), `${exportName}-${stamp()}.json`)
+    if (!res.success) toast.error(`${t('mcp.messages.exportFailed')}: ${res.error ?? ''}`)
+    else if (res.data) toast.success(t('mcp.messages.exported').replace('{path}', res.data))
+    // `data: null` = the user cancelled the dialog — nothing to say.
+  }
 
   return (
     <div data-testid={testId} className="flex min-h-0 flex-1 flex-col">
@@ -51,6 +89,29 @@ export default function McpLogView<T extends LogEntry>({
           className="h-6 min-w-0 flex-1 rounded border border-[var(--border)] bg-[var(--input-bg)] px-2 text-[12px] text-[var(--text)] outline-none placeholder:text-[var(--placeholder)]"
         />
         <span className="text-[11px] text-[var(--muted)]">{visible.length}</span>
+        {selected && (
+          <button
+            type="button"
+            onClick={() => void copy(asText(detail(selected)))}
+            data-testid={`${testId}-copy`}
+            title={t('mcp.messages.copyHint')}
+            className={`${TOOL_BTN} ${copied ? 'text-[var(--green)]' : ''}`}
+          >
+            <Copy size={12} />
+            {t('mcp.messages.copy')}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => void exportVisible()}
+          disabled={visible.length === 0}
+          data-testid={`${testId}-export`}
+          title={t('mcp.messages.exportHint')}
+          className={TOOL_BTN}
+        >
+          <Download size={12} />
+          {t('mcp.messages.export')}
+        </button>
         <button
           type="button"
           onClick={() => {
@@ -58,7 +119,7 @@ export default function McpLogView<T extends LogEntry>({
             setSelectedId(null)
           }}
           data-testid={`${testId}-clear`}
-          className="flex cursor-pointer items-center gap-1 rounded border-none bg-transparent px-1.5 py-0.5 text-[11px] text-[var(--muted)] hover:bg-[var(--surface)]"
+          className={TOOL_BTN}
         >
           <Trash2 size={12} />
           {t('mcp.messages.clear')}
@@ -74,6 +135,9 @@ export default function McpLogView<T extends LogEntry>({
             items={visible}
             rowHeight={26}
             getKey={(it) => it.id}
+            testId={`${testId}-rows`}
+            follow={follow}
+            onFollowChange={onFollowChange}
             renderRow={(it) => (
               <button
                 type="button"

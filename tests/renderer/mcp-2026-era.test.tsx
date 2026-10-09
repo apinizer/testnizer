@@ -339,7 +339,8 @@ describe('components', () => {
       await useMcpStore.getState().connect()
     })
     const badge = screen.getByTestId('mcp-protocol-version')
-    expect(badge).toHaveTextContent('MCP 2025-11-25 (legacy)')
+    // Issue #167: a 2025 server is "MCP 2025-11-25", never "(legacy)".
+    expect(badge.textContent).toBe('MCP 2025-11-25')
     expect(badge).toHaveAttribute('data-era', 'legacy')
     expect(select).toBeDisabled()
   })

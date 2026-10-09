@@ -2,7 +2,6 @@
 // Global keyboard shortcuts for the application
 
 import { useEffect } from 'react'
-import { useRequestStore } from '../stores/request.store'
 import { useTabsStore } from '../stores/tabs.store'
 import { useUIStore } from '../stores/ui.store'
 import { useWorkspaceStore } from '../stores/workspace.store'
@@ -10,6 +9,7 @@ import { isMac } from './platform'
 import { makeTabId } from './utils'
 import { isRequestLikeTab } from './mark-dirty'
 import { saveActiveRequestInPlace } from './save-active-request'
+import { runActiveRequest } from './run-active-request'
 import { toast } from './toast'
 
 interface ShortcutHandler {
@@ -67,7 +67,9 @@ export function useKeyboardShortcuts(): void {
           ctrl: true,
           description: 'Send request',
           action: () => {
-            useRequestStore.getState().sendRequest()
+            // Dispatches by the active tab's protocol — an MCP tab runs its
+            // tool / resource / prompt, never an HTTP send (issue #165).
+            void runActiveRequest()
           },
         },
         {

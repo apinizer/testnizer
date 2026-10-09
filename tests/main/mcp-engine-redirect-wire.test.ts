@@ -13,7 +13,7 @@
  */
 import http from 'node:http'
 import net from 'node:net'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
 import { startMcpServer } from '../e2e/servers/mcp-server'
@@ -22,6 +22,9 @@ import {
   mcpCallTool,
   mcpConnect,
   mcpDisconnect,
+  setMcpEventSink,
+  type McpEngineEvent,
+  type McpNotificationEvent,
 } from '../../src/main/protocols/mcp.engine'
 
 const HEADERS = {
@@ -357,5 +360,125 @@ describe('fetchFollowingRedirects (issue #154)', () => {
     const net = fakeNet({ 'http://a.test/mcp': () => new Response(null, { status: 302 }) })
     const res = await fetchFollowingRedirects(net.fetch)('http://a.test/mcp')
     expect(res.status).toBe(302)
+  })
+})
+
+/**
+ * Issue #169 — the credential drop of issue #154 is made VISIBLE: a
+ * `notifications/testnizer/redirect_credentials_dropped` notification (names
+ * only, never values) on the connection's notification stream, and a 401 /
+ * 403 connect error that says which headers stayed behind.
+ */
+describe('visible credential drop on a cross-origin redirect (issue #169)', () => {
+  const DROPPED = 'notifications/testnizer/redirect_credentials_dropped'
+  let events: McpEngineEvent[] = []
+  beforeEach(() => {
+    events = []
+    setMcpEventSink((e) => events.push(e))
+  })
+  afterEach(() => setMcpEventSink(null))
+
+  const dropNotifications = (connectionId: string): McpNotificationEvent[] =>
+    events.flatMap((e) =>
+      e.type === 'notification' &&
+      e.payload.connectionId === connectionId &&
+      e.payload.method === DROPPED
+        ? [e.payload]
+        : [],
+    )
+
+  it('connect + calls through a cross-origin 307 emit ONE notification naming the dropped headers', async () => {
+    const target = await startMcpServer(await freePort())
+    cleanups.push(target.close)
+    const targetOrigin = new URL(target.url).origin
+    const origin = await redirector(targetOrigin)
+
+    const info = await mcpConnect({
+      transport: 'http',
+      url: `${origin}/mcp`,
+      headers: HEADERS,
+      protocol: 'legacy',
+    })
+    cleanups.push(() => mcpDisconnect(info.connectionId))
+    await echoHeaders(info.connectionId)
+    await echoHeaders(info.connectionId)
+    await new Promise((r) => setTimeout(r, 20))
+
+    const drops = dropNotifications(info.connectionId)
+    expect(drops).toHaveLength(1)
+    const params = drops[0].params as { from: string; to: string; headers: string[] }
+    expect(params.from).toBe(origin)
+    expect(params.to).toBe(targetOrigin)
+    // The user's spelling, names only.
+    expect([...params.headers].sort()).toEqual(['Authorization', 'X-API-Key'])
+    const serialised = JSON.stringify(events)
+    expect(serialised).not.toContain('gw-key-154')
+    expect(serialised).not.toContain('user-token-154')
+  })
+
+  it.each(['legacy', 'auto'] as const)(
+    'protocol %s: a 401 after the drop names the headers that were not sent',
+    async (protocol) => {
+      const target = await startMcpServer(await freePort(), { bearerToken: 'tok-169' })
+      cleanups.push(target.close)
+      const targetOrigin = new URL(target.url).origin
+      const origin = await redirector(targetOrigin)
+
+      const err = (await mcpConnect({
+        transport: 'http',
+        url: `${origin}/mcp`,
+        headers: { Authorization: 'Bearer tok-169', 'X-Trace': 't' },
+        protocol,
+      }).catch((e: unknown) => e)) as Error & { status?: number }
+      expect(err).toBeInstanceOf(Error)
+      expect(err.status).toBe(401)
+      expect(err.message).toContain(
+        `Credential headers Authorization were not sent to ${targetOrigin} after a cross-origin redirect.`,
+      )
+      expect(err.message).not.toContain('tok-169')
+    },
+  )
+
+  it('a 403 gets the same hint; an error without a drop does not', async () => {
+    const forbidding = await listen(
+      http.createServer((req, res) => {
+        req.resume()
+        res.writeHead(403, { 'Content-Type': 'text/plain' })
+        res.end('forbidden')
+      }),
+    )
+    const targetOrigin = `http://127.0.0.1:${forbidding}`
+    const origin = await redirector(targetOrigin)
+    const err = (await mcpConnect({
+      transport: 'http',
+      url: `${origin}/mcp`,
+      headers: { 'X-API-Key': 'k-169', Cookie: 'c=1' },
+      protocol: 'legacy',
+    }).catch((e: unknown) => e)) as Error
+    expect(err.message).toMatch(
+      new RegExp(
+        `Credential headers (Cookie, X-API-Key|X-API-Key, Cookie) were not sent to ${targetOrigin.replace(/\./g, '\\.')} after a cross-origin redirect\\.`,
+      ),
+    )
+
+    const direct = (await mcpConnect({
+      transport: 'http',
+      url: `${targetOrigin}/mcp`,
+      headers: { 'X-API-Key': 'k-169' },
+      protocol: 'legacy',
+    }).catch((e: unknown) => e)) as Error
+    expect(direct.message).not.toContain('cross-origin redirect')
+  })
+
+  it('fetchFollowingRedirects reports the drop (names only) to its callback', async () => {
+    const drops: unknown[] = []
+    const fetchFn = async (url: string | URL): Promise<Response> =>
+      String(url) === 'http://a.test/mcp'
+        ? new Response(null, { status: 307, headers: { Location: 'http://b.test/mcp' } })
+        : new Response('{}', { status: 200 })
+    await fetchFollowingRedirects(fetchFn, (d) => drops.push(d))('http://a.test/mcp', {
+      headers: { 'X-API-Key': 'k', 'X-Trace': 't' },
+    })
+    expect(drops).toEqual([{ from: 'http://a.test', to: 'http://b.test', headers: ['x-api-key'] }])
   })
 })

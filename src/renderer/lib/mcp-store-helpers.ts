@@ -50,7 +50,9 @@ export function generateExampleArgs(schema: Record<string, unknown>): Record<str
   const result: Record<string, unknown> = {}
   for (const [key, def] of Object.entries(props)) {
     const type = def.type as string | undefined
-    if (def.enum && Array.isArray(def.enum)) result[key] = def.enum[0]
+    // The schema's own `default` is the best example (issue #162).
+    if (def.default !== undefined) result[key] = def.default
+    else if (def.enum && Array.isArray(def.enum)) result[key] = def.enum[0]
     else if (type === 'string') result[key] = ''
     else if (type === 'integer' || type === 'number') result[key] = 0
     else if (type === 'boolean') result[key] = false

@@ -4,7 +4,12 @@ import { useTranslation } from '../../../lib/i18n'
 import EmptyState from '../../shared/EmptyState'
 import McpContentBlockView from './McpContentBlockView'
 import McpDescription from './McpDescription'
-import { CenterHint, ErrorLine, PrimaryButton, SectionLabel } from './ui'
+import McpRunButton from './McpRunButton'
+import McpCallHeader from './McpCallHeader'
+import McpCallNotes from './McpCallNotes'
+import McpCopyAsMenu from './McpCopyAsMenu'
+import { prettyJson } from './call-ui'
+import { CenterHint, ErrorLine, SectionLabel } from './ui'
 
 /** Right pane for the Prompts tab: argument inputs from `arguments[]`, Get, messages by role. */
 export default function McpPromptPane() {
@@ -16,7 +21,7 @@ export default function McpPromptPane() {
   const getPrompt = useMcpStore((s) => s.getPrompt)
   const result = useMcpStore((s) => s.promptResult)
   const error = useMcpStore((s) => s.promptError)
-  const isGetting = useMcpStore((s) => s.isGettingPrompt)
+  const meta = useMcpStore((s) => s.promptMeta)
   const isConnected = useMcpStore((s) => s.connectionState === 'connected')
 
   if (!selected) {
@@ -60,23 +65,31 @@ export default function McpPromptPane() {
           ))}
           <div
             data-testid="mcp-prompt-actions"
-            className="sticky bottom-0 bg-[var(--white)] pb-2.5 pt-2"
+            className="sticky bottom-0 flex items-center gap-2 bg-[var(--white)] pb-2.5 pt-2"
           >
-            <PrimaryButton
-              onClick={() => void getPrompt()}
-              disabled={isGetting || !isConnected}
-              data-testid="mcp-get-prompt"
-            >
-              <MessageSquare size={13} />
-              {isGetting ? t('mcp.prompt.getting') : t('mcp.prompt.get')}
-            </PrimaryButton>
+            <McpRunButton
+              kind="prompt"
+              testId="mcp-get-prompt"
+              icon={<MessageSquare size={13} />}
+              label={t('mcp.prompt.get')}
+              disabled={!isConnected}
+              onRun={() => void getPrompt()}
+            />
+            <McpCopyAsMenu capability="prompts" />
           </div>
         </div>
       </div>
       <div className="min-h-[5rem] flex-1 overflow-auto p-3.5">
-        <SectionLabel>{t('mcp.prompt.messages')}</SectionLabel>
+        <SectionLabel right={<McpCallHeader meta={meta} copyText={() => prettyJson(result)} />}>
+          {t('mcp.prompt.messages')}
+        </SectionLabel>
+        <McpCallNotes />
         {error ? (
           <ErrorLine testId="mcp-prompt-error">{error}</ErrorLine>
+        ) : meta?.status === 'cancelled' ? (
+          <div data-testid="mcp-call-cancelled" className="text-[12px] text-[var(--muted)]">
+            {t('mcp.call.cancelledBody')}
+          </div>
         ) : result ? (
           <div className="flex flex-col gap-2" data-testid="mcp-prompt-result">
             {result.description && (

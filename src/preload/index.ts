@@ -900,11 +900,12 @@ const api = {
       ipcRenderer.invoke('mcp:disconnect', connectionId),
     listTools: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('mcp:listTools', connectionId),
+    // issue #163: `ctx.callId` makes the call cancellable through `cancelCall`
     callTool: (
       connectionId: string,
       toolName: string,
       args: unknown,
-      ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
+      ctx?: { workspaceId?: string; projectId?: string; endpointId?: string; callId?: string },
     ): Promise<unknown> => ipcRenderer.invoke('mcp:callTool', connectionId, toolName, args, ctx),
     // issue #152 — answer an `input_required` tools/call result (2026-07-28 MRTR)
     respondInput: (
@@ -913,7 +914,7 @@ const api = {
       args: unknown,
       requestState: string | undefined,
       inputResponses: Record<string, unknown>,
-      ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
+      ctx?: { workspaceId?: string; projectId?: string; endpointId?: string; callId?: string },
     ): Promise<unknown> =>
       ipcRenderer.invoke(
         'mcp:respondInput',
@@ -927,15 +928,38 @@ const api = {
     // issue #139 — resources / prompts + live notification / frame / close events
     listResources: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('mcp:listResources', connectionId),
-    readResource: (connectionId: string, uri: string): Promise<unknown> =>
-      ipcRenderer.invoke('mcp:readResource', connectionId, uri),
+    readResource: (
+      connectionId: string,
+      uri: string,
+      opts?: { callId?: string; workspaceId?: string; projectId?: string; endpointId?: string },
+    ): Promise<unknown> => ipcRenderer.invoke('mcp:readResource', connectionId, uri, opts),
     listPrompts: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('mcp:listPrompts', connectionId),
     getPrompt: (
       connectionId: string,
       name: string,
       args: Record<string, string>,
-    ): Promise<unknown> => ipcRenderer.invoke('mcp:getPrompt', connectionId, name, args),
+      opts?: { callId?: string; workspaceId?: string; projectId?: string; endpointId?: string },
+    ): Promise<unknown> => ipcRenderer.invoke('mcp:getPrompt', connectionId, name, args, opts),
+    // issue #163 — abort the running call registered under `callId`
+    cancelCall: (connectionId: string, callId: string): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:cancelCall', connectionId, callId),
+    // issue #168 — 2025-era `elicitation/create`: event + answer
+    onElicitation: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mcp:elicitation', handler)
+      return () => {
+        ipcRenderer.removeListener('mcp:elicitation', handler)
+      }
+    },
+    respondElicitation: (
+      connectionId: string,
+      elicitationId: string,
+      result: unknown,
+    ): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:respondElicitation', connectionId, elicitationId, result),
     onNotification: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)

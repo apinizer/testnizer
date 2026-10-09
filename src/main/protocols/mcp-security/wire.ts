@@ -21,6 +21,9 @@
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js'
 import { isCredentialHeaderName } from '../../lib/credential-headers'
+// The engine's redirect rule (issues #154 / #169): a cross-origin hop drops
+// every credential header, not only the Authorization / Cookie native fetch strips.
+import { fetchFollowingRedirects } from '../mcp.engine'
 import {
   REDACTED,
   anySignal,
@@ -184,7 +187,18 @@ export class ScanHttp {
   private active = 0
   private readonly waiting: Array<() => void> = []
 
-  constructor(private readonly opts: ScanHttpOptions) {}
+  /**
+   * `opts.fetchFn` behind the engine's redirect follower: the scan's own
+   * requests carry the user's headers too, and native fetch would replay a
+   * gateway key (`X-API-Key`, …) to whatever origin a redirect names. A
+   * caller asking for `redirect: 'manual'` (the downgrade / cross-origin
+   * redirect probes) still gets the raw 3xx.
+   */
+  private readonly fetchFn: FetchLike
+
+  constructor(private readonly opts: ScanHttpOptions) {
+    this.fetchFn = fetchFollowingRedirects(opts.fetchFn)
+  }
 
   get signal(): AbortSignal {
     return this.opts.signal
@@ -252,7 +266,7 @@ export class ScanHttp {
       calls.push(call)
       this.exchanges.push(call.exchange)
       try {
-        call.res = await this.opts.fetchFn(url, init)
+        call.res = await this.fetchFn(url, init)
         call.exchange.response = {
           status: call.res.status,
           headers: redactHeaders(call.res.headers),

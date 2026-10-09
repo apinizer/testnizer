@@ -66,7 +66,12 @@ export default function MockMcpElicitSection({
         onChange={(on) => onChange(on ? blankElicitDraft() : undefined)}
         label={t('mockMcp.elicit.enable')}
       />
-      <div className="text-[11px] text-[var(--hint)]">{t('mockMcp.elicit.hint')}</div>
+      <div
+        title={t('mockMcp.elicit.hintTooltip')}
+        className="cursor-help text-[11px] text-[var(--hint)]"
+      >
+        {t('mockMcp.elicit.hint')}
+      </div>
       {value && (
         <>
           <div className="grid grid-cols-[160px_1fr] gap-3">

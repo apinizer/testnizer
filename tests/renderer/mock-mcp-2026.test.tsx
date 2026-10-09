@@ -155,7 +155,11 @@ describe('Mock MCP editor — 2026-07-28 knobs', () => {
     expect([...pin.options].map((o) => o.value)).toContain('2026-07-28')
     expect(screen.getByTestId('mock-mcp-legacy-mode')).toHaveValue('stateless')
     fireEvent.change(screen.getByTestId('mock-mcp-legacy-mode'), { target: { value: 'reject' } })
-    expect(screen.getByText(/-32022/)).toBeInTheDocument()
+    // Issue #167: plain words on screen, the error code only in the tooltip.
+    const hint = screen.getByTestId('mock-mcp-legacy-hint')
+    expect(hint).toHaveTextContent('Only MCP 2026-07-28 clients can connect')
+    expect(hint).not.toHaveTextContent('-32022')
+    expect(hint.getAttribute('title')).toMatch(/-32022/)
     const ttl = screen.getByTestId('mock-mcp-cache-ttl')
     fireEvent.focus(ttl)
     fireEvent.change(ttl, { target: { value: '60000' } })
@@ -248,8 +252,8 @@ describe('Mock MCP editor — 2026-07-28 knobs', () => {
     })
     await renderEditor()
     const eras = await screen.findByTestId('mock-mcp-eras')
-    expect(eras).toHaveTextContent('2026-07-28 + 2025 (stateless)')
-    expect(eras).toHaveTextContent('2025 clients get no list_changed')
+    expect(eras).toHaveTextContent('Serves: MCP 2026-07-28 + MCP 2025')
+    expect(eras).toHaveTextContent("MCP 2025 clients aren't told when lists change")
     await act(async () => {
       fireEvent.click(screen.getByTestId('mock-mcp-notify'))
     })

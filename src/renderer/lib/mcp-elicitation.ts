@@ -96,11 +96,15 @@ function enumOptions(prop: Record<string, unknown>): ElicitField['options'] | un
 }
 
 /** The submitted value of an enum option (its typed original). */
-function optionValue(o: NonNullable<ElicitField['options']>[number]): EnumPrimitive {
+export function optionValue(o: NonNullable<ElicitField['options']>[number]): EnumPrimitive {
   return o.raw !== undefined ? o.raw : o.value
 }
 
-function toField(name: string, raw: unknown, required: boolean): ElicitField {
+/**
+ * One restricted-primitive JSON Schema property → a form field. Shared with
+ * the tool-arguments form (`mcp-args-form.ts`, issue #162).
+ */
+export function toField(name: string, raw: unknown, required: boolean): ElicitField {
   const prop = isRecord(raw) ? raw : {}
   const base: ElicitField = {
     name,
@@ -222,7 +226,7 @@ export type ContentResult =
  * Plain decimals only (issue #154): `Number()` also takes `0x10`, `1e3`,
  * `0b11`, `.5` or `+5`, which a user typing a number never means.
  */
-const DECIMAL_RE = /^-?\d+(\.\d+)?$/
+export const DECIMAL_RE = /^-?\d+(\.\d+)?$/
 const INTEGER_RE = /^-?\d+$/
 
 /** The first violated bound of a field, or null. */

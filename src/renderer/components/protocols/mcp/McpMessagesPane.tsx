@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowDownLeft, ArrowDownToLine, ArrowUpRight, ChevronDown, ChevronUp } from 'lucide-react'
 import { useMcpStore } from '../../../stores/mcp.store'
 import { useTranslation } from '../../../lib/i18n'
 import {
@@ -10,6 +10,7 @@ import {
 } from '../../../lib/mcp-store-helpers'
 import type { McpFrame, McpSubscriptionView } from '../../../types/mcp'
 import { describeSubscriptionFilter } from '../../../lib/mcp-protocol'
+import { useMessagesPaneLayout } from './use-messages-pane-layout'
 import McpLogView from './McpLogView'
 
 type SubTab = 'notifications' | 'frames'
@@ -65,7 +66,10 @@ function SubscriptionBadge({ sub }: { sub: McpSubscriptionView }) {
  */
 export default function McpMessagesPane() {
   const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
+  const { open, height, setOpen, startResize } = useMessagesPaneLayout()
+  // Follow new entries; scrolling up pauses it, the toggle (or scrolling back
+  // to the bottom) resumes it. Session-only — on by default (issue #172).
+  const [follow, setFollow] = useState(true)
   const [tab, setTab] = useState<SubTab>('notifications')
   const notifications = useMcpStore((s) => s.notifications)
   const frames = useMcpStore((s) => s.frames)
@@ -80,8 +84,21 @@ export default function McpMessagesPane() {
 
   return (
     <div
-      className={`flex shrink-0 flex-col border-t border-[var(--border)] ${open ? 'h-[240px]' : ''}`}
+      data-testid="mcp-messages-pane"
+      className="relative flex shrink-0 flex-col border-t border-[var(--border)]"
+      style={open ? { height } : undefined}
     >
+      {open && (
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label={t('mcp.messages.resize')}
+          title={t('mcp.messages.resize')}
+          data-testid="mcp-messages-resize"
+          onMouseDown={startResize}
+          className="absolute inset-x-0 -top-0.5 z-10 h-1.5 cursor-row-resize hover:bg-[var(--accent)]"
+        />
+      )}
       <div className="flex shrink-0 items-center gap-1 bg-[var(--surface)] px-2">
         <button
           type="button"
@@ -113,6 +130,23 @@ export default function McpMessagesPane() {
           </button>
         ))}
         {subscription && <SubscriptionBadge sub={subscription} />}
+        <button
+          type="button"
+          onClick={() => setFollow((v) => !v)}
+          aria-pressed={follow}
+          data-testid="mcp-messages-autoscroll"
+          title={t('mcp.messages.autoScrollHint')}
+          className={`flex shrink-0 cursor-pointer items-center gap-1 rounded border-none px-1.5 py-1 text-[11px] ${
+            subscription ? '' : 'ml-auto'
+          } ${
+            follow
+              ? 'bg-[var(--accent-light)] text-[var(--accent-text)]'
+              : 'bg-transparent text-[var(--muted)] hover:text-[var(--text)]'
+          }`}
+        >
+          <ArrowDownToLine size={12} />
+          {t('mcp.messages.autoScroll')}
+        </button>
       </div>
       {open && tab === 'notifications' && (
         <McpLogView
@@ -122,6 +156,9 @@ export default function McpMessagesPane() {
           detail={(n) => ({ method: n.method, params: n.params })}
           onClear={clearNotifications}
           emptyText={t('mcp.messages.noNotifications')}
+          exportName="mcp-notifications"
+          follow={follow}
+          onFollowChange={setFollow}
           renderRow={(n) => (
             <>
               <span className="shrink-0 font-mono text-[11px] text-[var(--muted)]">
@@ -143,6 +180,9 @@ export default function McpMessagesPane() {
           detail={(f) => frameDetail(f, t('mcp.messages.truncatedNote'))}
           onClear={clearFrames}
           emptyText={t('mcp.messages.noFrames')}
+          exportName="mcp-frames"
+          follow={follow}
+          onFollowChange={setFollow}
           renderRow={(f) => {
             const { kind, label } = describeFrame(f.message)
             return (

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useTranslation } from '../../../lib/i18n'
 import { testIdSlug } from '../../../lib/mcp-store-helpers'
 import type { ElicitField } from '../../../lib/mcp-elicitation'
@@ -6,37 +7,55 @@ const INPUT_CLS =
   'h-8 w-full rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-2 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]'
 
 /** HTML input type for a string field's `format`. */
-function inputType(field: ElicitField): string {
-  if (field.kind === 'number' || field.kind === 'integer') return 'number'
+function inputType(field: ElicitField, allowTemplates: boolean): string {
+  // `type=number` would sanitize a `{{var}}` away — the args form keeps text.
+  if (field.kind === 'number' || field.kind === 'integer') return allowTemplates ? 'text' : 'number'
   if (field.format === 'email') return 'email'
   if (field.format === 'uri') return 'url'
   if (field.format === 'date') return 'date'
   return 'text'
 }
 
-/** One elicitation field (string / number / integer / boolean / enum) of the input card. */
+/**
+ * One elicitation field (string / number / integer / boolean / enum) of the
+ * input card — also a leaf of the tool-arguments form (issue #162), which
+ * passes its own `testId`, `allowTemplates` (numbers as text, so `{{var}}`
+ * fits) and a `placeholder` for the schema default.
+ */
 export default function McpElicitField({
   requestKey,
   field,
   value,
   onChange,
   invalid,
+  testId: testIdProp,
+  allowTemplates = false,
+  placeholder,
+  label: labelProp,
 }: {
   requestKey: string
   field: ElicitField
   value: string | boolean | undefined
   onChange: (value: string | boolean) => void
   invalid: boolean
+  testId?: string
+  allowTemplates?: boolean
+  placeholder?: string
+  /** Replaces the title / name label (array rows show none). */
+  label?: ReactNode
 }) {
   const { t } = useTranslation()
-  const testId = `mcp-input-field-${testIdSlug(requestKey)}-${testIdSlug(field.name)}`
-  const label = (
-    <span className="flex items-center gap-1 text-[11px] font-medium text-[var(--muted)]">
-      {field.title || field.name}
-      {field.required && <span className="text-[var(--red)]">*</span>}
-      {field.title && <span className="font-mono text-[10px]">{field.name}</span>}
-    </span>
-  )
+  const testId = testIdProp ?? `mcp-input-field-${testIdSlug(requestKey)}-${testIdSlug(field.name)}`
+  const label =
+    labelProp !== undefined ? (
+      labelProp
+    ) : (
+      <span className="flex items-center gap-1 text-[11px] font-medium text-[var(--muted)]">
+        {field.title || field.name}
+        {field.required && <span className="text-[var(--red)]">*</span>}
+        {field.title && <span className="font-mono text-[10px]">{field.name}</span>}
+      </span>
+    )
   const hint = field.description ? (
     <span className="text-[11px] text-[var(--hint)]">{field.description}</span>
   ) : null
@@ -83,12 +102,26 @@ export default function McpElicitField({
         </select>
       ) : (
         <input
-          type={inputType(field)}
+          type={inputType(field, allowTemplates)}
+          inputMode={
+            allowTemplates && (field.kind === 'number' || field.kind === 'integer')
+              ? 'decimal'
+              : undefined
+          }
+          placeholder={placeholder}
           data-testid={testId}
           value={typeof value === 'string' ? value : ''}
-          min={field.minimum}
-          max={field.maximum}
-          step={field.kind === 'integer' ? 1 : field.kind === 'number' ? 'any' : undefined}
+          min={allowTemplates ? undefined : field.minimum}
+          max={allowTemplates ? undefined : field.maximum}
+          step={
+            allowTemplates
+              ? undefined
+              : field.kind === 'integer'
+                ? 1
+                : field.kind === 'number'
+                  ? 'any'
+                  : undefined
+          }
           minLength={field.minLength}
           maxLength={field.maxLength}
           onChange={(e) => onChange(e.target.value)}

@@ -312,7 +312,8 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
       await window.getByTestId('mcp-invoke').click()
       await expect(window.getByText(/notified \(/).first()).toBeVisible({ timeout: 10_000 })
 
-      await window.getByTestId('mcp-messages-toggle').click()
+      // Tabs always open the pane; the toggle would CLOSE it if an earlier test left it open (#172 remembers it).
+      await window.getByTestId('mcp-messages-tab-notifications').click()
       const notifications = window.getByTestId('mcp-notifications')
       await expect(notifications).toContainText('notifications/message', { timeout: 10_000 })
       await expect(notifications).toContainText('notify tool started')
@@ -355,7 +356,6 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
       await expect(window.getByTestId('mcp-subscription')).toContainText('tools', {
         timeout: 10_000,
       })
-      await window.getByTestId('mcp-messages-toggle').click()
       await window.getByTestId('mcp-messages-tab-frames').click()
       await expect(window.getByTestId('mcp-frames')).toContainText('server/discover', {
         timeout: 10_000,
@@ -369,7 +369,7 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
       await window.getByTestId('mcp-protocol').selectOption('legacy')
       await window.getByTestId('mcp-connect').click()
       await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
-      await expect(badge).toHaveText(/^MCP 2025-\d\d-\d\d \(legacy\)$/)
+      await expect(badge).toHaveText(/^MCP 2025-\d\d-\d\d$/)
       await expect(badge).toHaveAttribute('data-era', 'legacy')
       const frames = window.getByTestId('mcp-frames')
       await expect(frames).toContainText('initialize', { timeout: 10_000 })
@@ -415,7 +415,6 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
     await expect(window.getByTestId('mcp-result')).toContainText('3 apples', { timeout: 10_000 })
 
     // The retry carried inputResponses + requestState on the wire.
-    await window.getByTestId('mcp-messages-toggle').click()
     await window.getByTestId('mcp-messages-tab-frames').click()
     const frames = window.getByTestId('mcp-frames')
     await frames
@@ -453,7 +452,8 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
     await window.getByTestId('mock-mcp-legacy-mode').selectOption('reject')
     await window.getByTestId('mock-mcp-cache-ttl').fill('60000')
     await window.getByTestId('mock-mcp-cache-ttl').press('Tab')
-    await expect(window.getByText(/-32022/).first()).toBeVisible()
+    // #167: the spec code moved into the hint tooltip; the visible text is plain language.
+    await expect(window.getByTestId('mock-mcp-legacy-hint')).toHaveAttribute('title', /-32022/)
     await window.getByTestId('mock-mcp-save').click()
     await expect(window.getByTestId('mock-mcp-save')).toBeDisabled({ timeout: 10_000 })
 

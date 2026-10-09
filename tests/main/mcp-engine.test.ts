@@ -80,6 +80,8 @@ const mockClient = {
   readResource: vi.fn(),
   listPrompts: vi.fn(),
   getPrompt: vi.fn(),
+  /** Issue #168: the engine registers its `elicitation/create` handler on every Client. */
+  setRequestHandler: vi.fn(),
   close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
 }
 
@@ -113,6 +115,7 @@ function makeClientInstance(): Record<string, unknown> {
     readResource: (...a: unknown[]) => mockClient.readResource(...a),
     listPrompts: (...a: unknown[]) => mockClient.listPrompts(...a),
     getPrompt: (...a: unknown[]) => mockClient.getPrompt(...a),
+    setRequestHandler: (...a: unknown[]) => mockClient.setRequestHandler(...a),
   }
 }
 
@@ -1358,12 +1361,14 @@ describe('mcp.engine — protocol option → versionNegotiation (issue #152)', (
     )
   })
 
-  it('the Client is built with the negotiation, manual MRTR and the page cap', async () => {
+  it('the Client is built with the negotiation, manual MRTR, the page cap and form elicitation', async () => {
     await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
     await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp', protocol: '2025-06-18' })
     const [info, options] = mockClient.ctor.mock.calls[0] as [unknown, Record<string, unknown>]
     expect(info).toEqual({ name: 'Testnizer', version: '1.0.0' })
     expect(options).toEqual({
+      // Issue #168: declared for 2025-era `elicitation/create`.
+      capabilities: { elicitation: { form: {} } },
       versionNegotiation: { mode: 'auto', probe: { timeoutMs: 15_000 } },
       inputRequired: { autoFulfill: false },
       listMaxPages: 50,
@@ -1372,6 +1377,10 @@ describe('mcp.engine — protocol option → versionNegotiation (issue #152)', (
       versionNegotiation: { mode: 'legacy' },
       supportedProtocolVersions: ['2025-06-18'],
     })
+    expect(mockClient.setRequestHandler).toHaveBeenCalledWith(
+      'elicitation/create',
+      expect.any(Function),
+    )
   })
 
   it('an unknown protocol option rejects the connect before any transport is built', async () => {
@@ -1605,8 +1614,13 @@ describe('mcp.engine — 2026-07-28 input_required / respondInput (issue #152)',
     })
     expect(opts).toMatchObject({ allowInputRequired: true, resetTimeoutOnProgress: true })
     expect(opts).not.toHaveProperty('toolDefinition')
-    // The Client itself declares nothing (a 2025 server would elicit with no handler).
-    expect(mockClient.ctor.mock.calls[0][1]).not.toHaveProperty('capabilities')
+    // Issue #168: the Client declares form elicitation too (2025-era servers
+    // send `elicitation/create`, answered through `mcpRespondElicitation`);
+    // the modern per-request envelope still carries it on tools/call only —
+    // proven on the wire in mcp-engine-elicitation-wire.test.ts.
+    expect(mockClient.ctor.mock.calls[0][1]).toMatchObject({
+      capabilities: { elicitation: { form: {} } },
+    })
   })
 
   it('a complete result is returned exactly as the SDK gave it', async () => {

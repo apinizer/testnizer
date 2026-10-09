@@ -161,6 +161,16 @@ describe('MCP snapshot / restore (issue #137)', () => {
         envVars: ENV_VARS,
         auth: { type: 'none' },
         protocol: 'auto',
+        // Issue #159 — the call rides along (nothing selected on this tab).
+        call: {
+          capabilityTab: 'tools',
+          selectedTool: null,
+          toolArgs: '{}',
+          selectedResourceUri: null,
+          resourceUriDraft: '',
+          selectedPrompt: null,
+          promptArgs: {},
+        },
       },
     })
   })

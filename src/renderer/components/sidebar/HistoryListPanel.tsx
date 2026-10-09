@@ -7,6 +7,9 @@ import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
 import { useUIStore } from '../../stores/ui.store'
+import { restoreMcpCall, useMcpStore } from '../../stores/mcp.store'
+import { normalizeMcpProtocol } from '../../lib/mcp-protocol'
+import { mcpHistoryRestore, mcpHistorySearchText } from '../protocols/mcp/history-restore'
 import MethodBadge from '../shared/MethodBadge'
 import EmptyState from '../shared/EmptyState'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
@@ -59,7 +62,11 @@ export default function HistoryListPanel() {
     if (!searchTerm.trim()) return entries
     const q = searchTerm.toLowerCase()
     return entries.filter(
-      (e) => e.url.toLowerCase().includes(q) || (e.method || '').toLowerCase().includes(q),
+      (e) =>
+        e.url.toLowerCase().includes(q) ||
+        (e.method || '').toLowerCase().includes(q) ||
+        // MCP rows: the tool / prompt name and resource URI too (issue #166).
+        (e.protocol === 'mcp' && mcpHistorySearchText(e).toLowerCase().includes(q)),
     )
   }, [entries, searchTerm])
 
@@ -76,18 +83,38 @@ export default function HistoryListPanel() {
     // matching tree.)
     setActiveSidebarPage('apis')
 
+    // MCP rows carry the server + the call in their own shape (issue #166).
+    const mcpRow = protocol === 'mcp' ? mcpHistoryRestore(entry) : null
+
     openPreviewTab({
       id: tabId,
-      name: `${entry.method || 'GET'} ${shortUrl(entry.url)}`,
+      name: mcpRow
+        ? `${entry.method || 'CALL_TOOL'} ${mcpRow.name || shortUrl(mcpRow.url)}`
+        : `${entry.method || 'GET'} ${shortUrl(entry.url)}`,
       protocol,
       method: entry.method,
-      url: entry.url,
+      url: mcpRow ? mcpRow.url : entry.url,
     })
 
     // openPreviewTab is synchronous — read the resolved active tab id back
     // out of the store so per-tab state caches key off the right id (a
     // matching existing preview reuses its original id, not `tabId`).
     const realTabId = useTabsStore.getState().activeTabId || tabId
+
+    if (mcpRow) {
+      // Open the MCP tab on the server with the call selected; the user then
+      // presses Connect and Run. Switch the (tab-scoped) MCP store to the new
+      // tab FIRST so the restore lands on it, not on the previous tab.
+      clearResponse()
+      useMcpStore.getState().switchToTab(realTabId)
+      useMcpStore.setState({
+        transport: mcpRow.transport,
+        url: mcpRow.url,
+        protocol: normalizeMcpProtocol(mcpRow.protocol),
+      })
+      restoreMcpCall(mcpRow.call)
+      return
+    }
 
     if (protocol === 'soap') {
       soapSwitchToTab(realTabId)

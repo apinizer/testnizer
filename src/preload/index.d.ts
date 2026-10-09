@@ -1333,6 +1333,57 @@ interface McpFrameEvent {
   truncated?: boolean
 }
 
+/**
+ * `timing` on every `callTool` / `respondInput` / `readResource` / `getPrompt`
+ * reply, success or failure (issue #164): wall time in main and the byte size
+ * of the response JSON (0 on failure).
+ */
+interface McpCallTiming {
+  durationMs: number
+  sizeBytes: number
+}
+
+/**
+ * Reply of a cancellable MCP call (issues #163 / #164). A call aborted by
+ * `cancelCall` resolves `{ success: false, error: 'MCP call cancelled by user',
+ * cancelled: true, timing }`.
+ */
+type McpCallReply<T> = IpcResult<T> & { timing: McpCallTiming; cancelled?: boolean }
+
+/**
+ * Per-call context: History scope (issue #166 — rows land in the project's
+ * History only with `projectId`) and the renderer-chosen `callId` that
+ * `cancelCall` aborts the call by (issue #163).
+ */
+interface McpCallContextDto {
+  workspaceId?: string
+  projectId?: string
+  endpointId?: string
+  callId?: string
+}
+
+/** `mcp:elicitation` — a 2025-era server's `elicitation/create` (issue #168), form mode only. */
+interface McpElicitationEvent {
+  connectionId: string
+  /** Pass back to `respondElicitation`. */
+  elicitationId: string
+  serverName?: string
+  message: string
+  /** The server's flat JSON Schema for the form. */
+  requestedSchema: Record<string, unknown>
+  mode: 'form'
+}
+
+/**
+ * Answer to an `McpElicitationEvent`. Unanswered elicitations are answered
+ * `cancel` by main after 10 minutes and on disconnect.
+ */
+interface McpElicitationResult {
+  action: 'accept' | 'decline' | 'cancel'
+  /** Only with `accept`: the form values. */
+  content?: Record<string, unknown>
+}
+
 /** `mcp:connectionClosed` — `reason` absent for a user disconnect, set when the transport died. */
 interface McpConnectionClosedEvent {
   connectionId: string
@@ -1555,8 +1606,8 @@ interface McpApi {
     connectionId: string,
     toolName: string,
     args: unknown,
-    ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
-  ): Promise<IpcResult<unknown>>
+    ctx?: McpCallContextDto,
+  ): Promise<McpCallReply<unknown>>
   /**
    * Answer an `input_required` result (`result.__mcp`, 2026-07-28): the same
    * tool + args again with `inputResponses` — BARE results keyed by the
@@ -1570,8 +1621,8 @@ interface McpApi {
     args: unknown,
     requestState: string | undefined,
     inputResponses: Record<string, unknown>,
-    ctx?: { workspaceId?: string; projectId?: string; endpointId?: string },
-  ): Promise<IpcResult<unknown>>
+    ctx?: McpCallContextDto,
+  ): Promise<McpCallReply<unknown>>
   /** Empty lists when the server lacks the `resources` capability. */
   listResources(
     connectionId: string,
@@ -1579,14 +1630,26 @@ interface McpApi {
   readResource(
     connectionId: string,
     uri: string,
-  ): Promise<IpcResult<{ contents: McpResourceContents[] }>>
+    opts?: McpCallContextDto,
+  ): Promise<McpCallReply<{ contents: McpResourceContents[] }>>
   /** Empty list when the server lacks the `prompts` capability. */
   listPrompts(connectionId: string): Promise<IpcResult<McpPrompt[]>>
   getPrompt(
     connectionId: string,
     name: string,
     args: Record<string, string>,
-  ): Promise<IpcResult<McpGetPromptResult>>
+    opts?: McpCallContextDto,
+  ): Promise<McpCallReply<McpGetPromptResult>>
+  /** Abort the running call registered under `callId` (issue #163); `cancelled: false` when none is running. */
+  cancelCall(connectionId: string, callId: string): Promise<IpcResult<{ cancelled: boolean }>>
+  /** A 2025-era server asks the user for input (issue #168). */
+  onElicitation(callback: (event: McpElicitationEvent) => void): () => void
+  /** Answer an `McpElicitationEvent`; an error when it is no longer pending. */
+  respondElicitation(
+    connectionId: string,
+    elicitationId: string,
+    result: McpElicitationResult,
+  ): Promise<IpcResult<undefined>>
   onNotification(callback: (event: McpNotificationEvent) => void): () => void
   onFrame(callback: (event: McpFrameEvent) => void): () => void
   onConnectionClosed(callback: (event: McpConnectionClosedEvent) => void): () => void

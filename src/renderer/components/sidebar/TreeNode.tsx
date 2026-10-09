@@ -2,6 +2,8 @@ import { useCallback, useState, useRef, useEffect, useLayoutEffect } from 'react
 import { createPortal } from 'react-dom'
 import type { TreeNode as TreeNodeType, Protocol } from '../../types'
 import MethodBadge from '../shared/MethodBadge'
+import ProtocolChip from '../shared/ProtocolChip'
+import { protocolChipLabel } from '../../lib/protocol-chip'
 import StatusBadge from '../shared/StatusBadge'
 import { useTranslation } from '../../lib/i18n'
 import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
@@ -871,7 +873,13 @@ export default function TreeNodeComponent({
 
         {/* Icon */}
         {node.icon && node.icon !== 'folder' && <NodeIcon icon={node.icon} />}
-        {isRequest && <MethodBadge method={node.method || 'GET'} small />}
+        {isRequest &&
+          (protocolChipLabel(node.protocol) ? (
+            // Non-HTTP rows carry a placeholder method — show the protocol (issue #173).
+            <ProtocolChip protocol={node.protocol} />
+          ) : (
+            <MethodBadge method={node.method || 'GET'} small />
+          ))}
         {isExample &&
           (node.statusCode != null ? (
             <span className="shrink-0 text-[11px]" data-testid="tree-example-status">

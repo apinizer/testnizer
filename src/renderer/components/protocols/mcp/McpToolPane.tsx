@@ -5,7 +5,13 @@ import EmptyState from '../../shared/EmptyState'
 import McpResultView from './McpResultView'
 import McpInputRequiredCard from './McpInputRequiredCard'
 import McpDescription from './McpDescription'
-import { CenterHint, ErrorLine, JsonPre, PrimaryButton, SectionLabel } from './ui'
+import McpArgsEditor from './McpArgsEditor'
+import McpRunButton from './McpRunButton'
+import McpCallHeader from './McpCallHeader'
+import McpCallNotes from './McpCallNotes'
+import McpCopyAsMenu from './McpCopyAsMenu'
+import { toolResultCopyText } from './call-ui'
+import { CenterHint, ErrorLine, JsonPre, SectionLabel } from './ui'
 
 const HINT_BADGES: {
   key: 'readOnlyHint' | 'destructiveHint' | 'idempotentHint' | 'openWorldHint'
@@ -17,15 +23,22 @@ const HINT_BADGES: {
   { key: 'openWorldHint', tone: 'bg-[var(--mb-put-bg)] text-[var(--mb-put-fg)]' },
 ]
 
+function CancelledLine() {
+  const { t } = useTranslation()
+  return (
+    <div data-testid="mcp-call-cancelled" className="text-[12px] text-[var(--muted)]">
+      {t('mcp.call.cancelledBody')}
+    </div>
+  )
+}
+
 /** Right pane for the Tools tab: JSON arguments, Invoke, rendered result. */
 export default function McpToolPane() {
   const { t } = useTranslation()
   const selectedTool = useMcpStore((s) => s.selectedTool)
   const tools = useMcpStore((s) => s.tools)
-  const toolArgs = useMcpStore((s) => s.toolArgs)
-  const setToolArgs = useMcpStore((s) => s.setToolArgs)
   const callTool = useMcpStore((s) => s.callTool)
-  const isInvoking = useMcpStore((s) => s.isInvoking)
+  const toolMeta = useMcpStore((s) => s.toolMeta)
   const result = useMcpStore((s) => s.result)
   const resultError = useMcpStore((s) => s.resultError)
   const pendingInput = useMcpStore((s) => s.pendingInput)
@@ -64,7 +77,12 @@ export default function McpToolPane() {
               <span className="font-mono text-[11px] text-[var(--muted)]">{selectedTool}</span>
             )}
             {HINT_BADGES.filter((b) => def?.annotations?.[b.key] === true).map((b) => (
-              <span key={b.key} className={`rounded px-1.5 text-[10px] font-medium ${b.tone}`}>
+              <span
+                key={b.key}
+                data-testid={`mcp-tool-hint-${b.key}`}
+                title={t(`mcp.tool.${b.key}`)}
+                className={`rounded px-1.5 text-[10px] font-medium ${b.tone}`}
+              >
                 {hintLabels[b.key]}
               </span>
             ))}
@@ -90,36 +108,36 @@ export default function McpToolPane() {
               </div>
             </details>
           )}
-          <SectionLabel>{t('mcp.tool.arguments')}</SectionLabel>
-          <textarea
-            value={toolArgs}
-            onChange={(e) => setToolArgs(e.target.value)}
-            rows={5}
-            data-testid="mcp-tool-args"
-            spellCheck={false}
-            className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--input-bg)] p-2 font-mono text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
-          />
+          <McpArgsEditor />
           {/* Opaque so scrolled content never shows through. The column has no bottom
               padding: this bar's pb is the header's last pixels, so nothing shows below it. */}
           <div
             data-testid="mcp-tool-actions"
-            className="sticky bottom-0 bg-[var(--white)] pb-2.5 pt-2"
+            className="sticky bottom-0 flex items-center gap-2 bg-[var(--white)] pb-2.5 pt-2"
           >
-            <PrimaryButton
-              onClick={() => void callTool()}
-              disabled={isInvoking || !isConnected}
-              data-testid="mcp-invoke"
-            >
-              <Play size={13} />
-              {isInvoking ? t('mcp.tool.invoking') : `${t('mcp.tool.invoke')} ${selectedTool}`}
-            </PrimaryButton>
+            <McpRunButton
+              kind="tool"
+              testId="mcp-invoke"
+              icon={<Play size={13} />}
+              label={`${t('mcp.tool.invoke')} ${selectedTool}`}
+              disabled={!isConnected}
+              onRun={() => void callTool()}
+            />
+            <McpCopyAsMenu capability="tools" />
           </div>
         </div>
       </div>
       <div className="min-h-[5rem] flex-1 overflow-auto p-3.5">
-        <SectionLabel>{t('mcp.result.title')}</SectionLabel>
+        <SectionLabel
+          right={<McpCallHeader meta={toolMeta} copyText={() => toolResultCopyText(result)} />}
+        >
+          {t('mcp.result.title')}
+        </SectionLabel>
+        <McpCallNotes />
         {resultError ? (
           <ErrorLine testId="mcp-result-call-error">{resultError}</ErrorLine>
+        ) : toolMeta?.status === 'cancelled' ? (
+          <CancelledLine />
         ) : pendingInput ? (
           <McpInputRequiredCard
             key={`${tabId ?? ''}:${pendingInput.round}:${pendingInput.requestState ?? ''}`}

@@ -132,12 +132,26 @@ export default function MockMcpGeneralTab({
             />
           </Field>
         </div>
-        <div className="text-[11px] text-[var(--hint)]">
+        {/* Plain words on screen; the spec detail (error code, headers) in the tooltip (issue #167). */}
+        <div
+          data-testid="mock-mcp-legacy-hint"
+          title={
+            draft.legacyMode === 'reject'
+              ? t('mockMcp.general.legacyRejectTooltip')
+              : t('mockMcp.general.legacyStatelessTooltip')
+          }
+          className="cursor-help text-[11px] text-[var(--hint)]"
+        >
           {draft.legacyMode === 'reject'
             ? t('mockMcp.general.legacyRejectHint')
             : t('mockMcp.general.legacyStatelessHint')}
         </div>
-        <div className="text-[11px] text-[var(--hint)]">{t('mockMcp.general.cacheTtlHint')}</div>
+        <div
+          title={t('mockMcp.general.cacheTtlTooltip')}
+          className="cursor-help text-[11px] text-[var(--hint)]"
+        >
+          {t('mockMcp.general.cacheTtlHint')}
+        </div>
       </div>
     </div>
   )
