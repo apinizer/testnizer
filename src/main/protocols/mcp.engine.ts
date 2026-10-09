@@ -35,6 +35,7 @@ import {
 } from '@modelcontextprotocol/client'
 import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/client/stdio'
 import { createMcpOAuthFetch } from './mcp-oauth.engine'
+import { isCredentialHeaderName } from '../lib/credential-headers'
 import { applyMcpAuth, type McpAuthOptions } from './mcp-auth'
 
 export type McpTransport = 'http' | 'sse' | 'stdio'
@@ -279,6 +280,12 @@ interface WireState {
   handshaking: boolean
   closedByClient: boolean
   closeEmitted: boolean
+  /**
+   * The current transport reported `onclose`. Read by `mcpConnect` after the
+   * subscription step: a close there means the "connected" result would
+   * describe a dead connection (issue #154).
+   */
+  transportClosed: boolean
   /** Last transport error; cleared whenever an inbound frame proves the link alive. */
   lastError?: string
 }
@@ -296,7 +303,10 @@ const connections = new Map<string, Connection>()
 /**
  * In-flight MCP handshakes keyed by the renderer-supplied pendingId. The
  * value is a teardown closure that closes the transport so the in-flight
- * `client.connect()` rejects. Removed once the connection opens or fails.
+ * `client.connect()` rejects. Kept through the modern-era
+ * `subscriptions/listen` step (up to `LISTEN_ACK_TIMEOUT_MS`), which is part
+ * of the handshake (issue #154); removed once the connection is registered or
+ * the attempt fails.
  */
 const pendingConnects = new Map<string, () => Promise<void>>()
 let nextId = 1
@@ -526,6 +536,99 @@ function frameTapFetch(state: WireState, base: FetchLike): FetchLike {
   })(base)
 }
 
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+/** Fetch spec's redirect limit. */
+const MAX_REDIRECTS = 20
+/**
+ * Headers `isCredentialHeaderName` matches that a cross-origin hop still
+ * KEEPS. `mcp-session-id` is protocol state issued by the redirect target
+ * itself (its `initialize` was redirected there too), not a user secret —
+ * stripping it breaks every stateful 2025 server behind a redirecting
+ * gateway. (`mcp-protocol-version` / `last-event-id` are not matched by the
+ * credential rule, so they need no entry.)
+ */
+const REDIRECT_KEEP_HEADERS = new Set(['mcp-session-id'])
+/** Request-body headers dropped when a redirect turns the request into a GET (fetch spec). */
+const REQUEST_BODY_HEADERS = [
+  'content-encoding',
+  'content-language',
+  'content-location',
+  'content-type',
+]
+
+/**
+ * Same origin — or the https upgrade of the same host with both on the
+ * default port (`http://h` → `https://h`), which is no new party (the SDK's
+ * own `isWithinOrigin` rule).
+ */
+function isSameParty(from: URL, to: URL): boolean {
+  if (from.origin === to.origin) return true
+  return (
+    from.protocol === 'http:' &&
+    to.protocol === 'https:' &&
+    from.hostname === to.hostname &&
+    !from.port &&
+    !to.port
+  )
+}
+
+/**
+ * Follows redirects ITSELF (issue #154) instead of leaving them to fetch.
+ * Native fetch strips only `Authorization` / `Cookie` on a cross-origin hop —
+ * a gateway key (`X-API-Key`, `Ocp-Apim-Subscription-Key`, …) from the user's
+ * custom headers would be replayed to the new origin. Here every hop is sent
+ * with `redirect: 'manual'`; a same-origin hop keeps every header, and on a
+ * hop to another origin every header `isCredentialHeaderName` matches is
+ * dropped for the rest of the chain (except `REDIRECT_KEEP_HEADERS`:
+ * `mcp-session-id`). 307 / 308 keep method and body; 303, and 301 / 302 after a
+ * POST, continue as a body-less GET (fetch spec). `base` runs once PER HOP
+ * with that hop's URL, so the OAuth fetch's audience gate (`isTokenAudience`)
+ * never puts the bearer on a request to another origin. A caller asking for
+ * `'manual'` / `'error'` itself gets `base` untouched.
+ */
+export function fetchFollowingRedirects(base: FetchLike): FetchLike {
+  return async (input, init) => {
+    if (init?.redirect === 'manual' || init?.redirect === 'error') return base(input, init)
+    const headers = new Headers(init?.headers)
+    let method = (init?.method ?? 'GET').toUpperCase()
+    let body = init?.body
+    let current = new URL(String(input))
+    for (let hops = 0; ; hops++) {
+      const res = await base(current, { ...init, method, body, headers, redirect: 'manual' })
+      const location = REDIRECT_STATUSES.has(res.status) ? res.headers.get('location') : null
+      if (!location) return res
+      let target: URL
+      try {
+        target = new URL(location, current)
+      } catch {
+        return res
+      }
+      await res.body?.cancel().catch(() => {})
+      if (hops >= MAX_REDIRECTS)
+        throw new TypeError(`Too many redirects (more than ${MAX_REDIRECTS})`)
+      const toGet =
+        res.status === 303
+          ? method !== 'GET' && method !== 'HEAD'
+          : (res.status === 301 || res.status === 302) && method === 'POST'
+      if (toGet) {
+        method = 'GET'
+        body = undefined
+        for (const name of REQUEST_BODY_HEADERS) headers.delete(name)
+      }
+      if (!isSameParty(current, target)) {
+        const credentials: string[] = []
+        headers.forEach((_value, name) => {
+          if (isCredentialHeaderName(name) && !REDIRECT_KEEP_HEADERS.has(name)) {
+            credentials.push(name)
+          }
+        })
+        for (const name of credentials) headers.delete(name)
+      }
+      current = target
+    }
+  }
+}
+
 /**
  * A transport error the connection cannot recover from:
  *  - legacy SSE: `SseError` carrying an HTTP status — eventsource@3 only
@@ -552,6 +655,7 @@ function defaultCloseReason(kind: McpTransport): string {
 }
 
 function handleClose(state: WireState): void {
+  state.transportClosed = true
   const conn = connections.get(state.connectionId)
   if (conn && conn.state === state) connections.delete(state.connectionId)
   if (!state.established || state.closeEmitted) return
@@ -806,9 +910,10 @@ export async function mcpConnect(options: {
    */
   auth?: McpAuthOptions
   /**
-   * Renderer-supplied id so `mcpCancelConnect(id)` can abort the handshake
-   * before `client.connect()` resolves. Cleared once the connection opens
-   * or fails.
+   * Renderer-supplied id so `mcpCancelConnect(id)` can abort the handshake —
+   * including the modern-era `subscriptions/listen` step after
+   * `client.connect()` resolved (issue #154). Cleared once the connection is
+   * registered or the attempt fails.
    */
   pendingId?: string
   /**
@@ -834,6 +939,7 @@ export async function mcpConnect(options: {
     handshaking: true,
     closedByClient: false,
     closeEmitted: false,
+    transportClosed: false,
   }
 
   /** A fresh transport for one connect attempt (a transport cannot be restarted). */
@@ -880,9 +986,15 @@ export async function mcpConnect(options: {
     const base: FetchLike = oauthFetch ?? ((url, init) => fetch(url, init))
     const httpOpts = {
       ...(headers ? { requestInit: { headers } } : {}),
-      fetch: frameTapFetch(state, base),
+      // Frame tap outermost (sees the final answer only), then the redirect
+      // follower, then the OAuth fetch — called per hop, so its audience
+      // gate decides the bearer for each hop's own origin.
+      fetch: frameTapFetch(state, fetchFollowingRedirects(base)),
       // v1 parity: SDK 2.x refuses cross-origin redirects by default; v1
-      // (and every other Testnizer protocol) leaves them to fetch.
+      // followed them. `'follow'` hands every request to our `fetch`
+      // untouched, and `fetchFollowingRedirects` follows them — dropping
+      // credential headers (`isCredentialHeaderName`) on a cross-origin hop,
+      // which native fetch does only for Authorization / Cookie (issue #154).
       redirectPolicy: 'follow' as const,
     }
     // Legacy SSE: the POST endpoint comes from the server's `endpoint`
@@ -912,6 +1024,8 @@ export async function mcpConnect(options: {
     const client = newClient(attemptPlan)
     const transport = buildTransport()
     current = transport
+    // A close of an attempt the auto → legacy retry gave up on is not this one's.
+    state.transportClosed = false
     tapTransport(transport, state, options.transport === 'stdio', () => current === transport)
     await client.connect(transport)
     return client
@@ -948,8 +1062,6 @@ export async function mcpConnect(options: {
       return fail(legacyErr)
     }
   }
-  if (options.pendingId) pendingConnects.delete(options.pendingId)
-
   const era = client.getProtocolEra()
   const serverInfo = client.getServerVersion()
   const capabilities = client.getServerCapabilities()
@@ -986,6 +1098,25 @@ export async function mcpConnect(options: {
       conn.info.subscription = await openSubscription(conn, requested)
     }
   }
+
+  // The listen step is still the handshake (issue #154): a Cancel or a
+  // transport close in that window must not come back as "connected" —
+  // `openSubscription` turns the failed listen into a subscription error, so
+  // check here, before the connection is registered.
+  if (cancelled || state.transportClosed) {
+    const reason = cancelled
+      ? new Error('MCP handshake cancelled by user')
+      : new Error(
+          `Connection closed during the handshake${state.lastError ? `: ${state.lastError}` : ''}`,
+        )
+    state.closedByClient = true
+    const sub = conn.subscription
+    conn.subscription = undefined
+    await sub?.close().catch(() => {})
+    await client.close().catch(() => {})
+    return fail(reason)
+  }
+  if (options.pendingId) pendingConnects.delete(options.pendingId)
 
   connections.set(connectionId, conn)
   state.established = true
@@ -1036,7 +1167,10 @@ async function openSubscription(
 /**
  * Abort an in-flight `mcpConnect()`. Returns true when a pending handshake
  * was found and the underlying transport torn down. The original `mcpConnect`
- * promise will reject through the existing error path.
+ * promise rejects — through the transport-close error while `client.connect()`
+ * runs, or with "MCP handshake cancelled by user" during the
+ * `subscriptions/listen` step (issue #154) — and never registers the
+ * connection.
  */
 export async function mcpCancelConnect(pendingId: string): Promise<boolean> {
   const teardown = pendingConnects.get(pendingId)
@@ -1388,6 +1522,11 @@ export async function mcpRespondInput(
     ...(hasResponses ? { inputResponses } : {}),
     ...(requestState !== undefined ? { requestState } : {}),
   })
+}
+
+/** Ids of the registered (open) connections — diagnostics and tests. */
+export function mcpConnectionIds(): string[] {
+  return [...connections.keys()]
 }
 
 export function mcpGetConnection(connectionId: string): McpConnectionInfo | undefined {

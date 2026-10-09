@@ -7,6 +7,7 @@ import {
   buildInputResponses,
   initialValues,
   parseInputRequests,
+  type ContentProblemReason,
   type ElicitValues,
   type InputRequestView,
 } from '../../../lib/mcp-elicitation'
@@ -14,11 +15,15 @@ import type { McpElicitAnswer, McpPendingInput } from '../../../types/mcp'
 import McpElicitField from './McpElicitField'
 import { ErrorLine, GhostButton, JsonPre, PrimaryButton } from './ui'
 
-const PROBLEM_KEYS = {
+const PROBLEM_KEYS: Record<ContentProblemReason, string> = {
   required: 'mcp.input.problemRequired',
   number: 'mcp.input.problemNumber',
   integer: 'mcp.input.problemInteger',
-} as const
+  minimum: 'mcp.input.problemMinimum',
+  maximum: 'mcp.input.problemMaximum',
+  minLength: 'mcp.input.problemMinLength',
+  maxLength: 'mcp.input.problemMaxLength',
+}
 
 function UnsupportedRequest({
   view,
@@ -61,7 +66,10 @@ export default function McpInputRequiredCard({ pending }: { pending: McpPendingI
     const built = buildInputResponses(views, action, values)
     if (built.problem) {
       const p = built.problem
-      setProblem({ ...p, text: t(PROBLEM_KEYS[p.reason]).replace('{field}', p.field) })
+      const text = t(PROBLEM_KEYS[p.reason])
+        .replace('{field}', p.field)
+        .replace('{limit}', p.limit !== undefined ? String(p.limit) : '')
+      setProblem({ key: p.key, field: p.field, text })
       return
     }
     setProblem(null)
@@ -113,6 +121,10 @@ export default function McpInputRequiredCard({ pending }: { pending: McpPendingI
         </section>
       ))}
       {problem && <ErrorLine testId="mcp-input-problem">{problem.text}</ErrorLine>}
+      {/* A failed answer (issue #154): the card and the typed answers stay for a retry. */}
+      {pending.error && !isInvoking && (
+        <ErrorLine testId="mcp-input-error">{pending.error}</ErrorLine>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <PrimaryButton
           onClick={() => send('accept')}

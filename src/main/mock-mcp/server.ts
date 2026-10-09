@@ -39,6 +39,7 @@ import type { Server } from '@modelcontextprotocol/server'
 import { loadEnvVars } from '../lib/env-vars'
 import {
   DEFAULT_LEGACY_MODE,
+  isExposedWithoutAuth,
   servedEras,
   servesLegacySse,
   subPath,
@@ -125,6 +126,45 @@ function changedFamilies(prev: MockMcpServerDef, next: MockMcpServerDef): MockMc
   return NOTIFY_KINDS.filter((k) => JSON.stringify(prev[k]) !== JSON.stringify(next[k]))
 }
 
+/**
+ * Start-time normalisation: only missing 2026-07-28 knobs get their defaults
+ * and the token is trimmed — a wrong value is kept so validation still fails.
+ */
+function normalizeDef(input: MockMcpServerDef): MockMcpServerDef {
+  return {
+    ...input,
+    bearerToken: (input.bearerToken ?? '').trim(),
+    legacyMode: input.legacyMode ?? DEFAULT_LEGACY_MODE,
+    cacheTtlMs: input.cacheTtlMs ?? 0,
+  }
+}
+
+/** Normalise + validate a definition the way `start()` requires it. */
+function checkDef(
+  input: MockMcpServerDef,
+): { ok: true; def: MockMcpServerDef } | { ok: false; error: string } {
+  const def = normalizeDef(input)
+  if (def.authMode === 'bearer' && !def.bearerToken) {
+    return { ok: false, error: 'Bearer auth is enabled but no token is set' }
+  }
+  const problem = validateMockMcpConfig(def)
+  return problem ? { ok: false, error: problem } : { ok: true, def }
+}
+
+function exposureWarning(def: MockMcpServerDef, port: number): LogDraft {
+  const message =
+    `Warning: listening on ${def.host}:${port} with authentication "none" — any machine ` +
+    'that can reach this address can call the tools. Bind to 127.0.0.1 or enable bearer auth.'
+  return {
+    ts: Date.now(),
+    method: 'warning',
+    durationMs: 0,
+    ok: false,
+    request: '',
+    response: message,
+  }
+}
+
 class MockMcpServerManager extends EventEmitter {
   private servers = new Map<string, RunningServer>()
   private readonly hostGuard = localhostHostValidation()
@@ -169,19 +209,10 @@ class MockMcpServerManager extends EventEmitter {
 
   async start(input: MockMcpServerDef): Promise<MockMcpStartResult> {
     // Rows arriving through an import / git pull never passed the editor's
-    // save-time validation, so the definition is checked here too. Only
-    // missing 2026-07-28 knobs get their defaults — a wrong value still fails.
-    const def: MockMcpServerDef = {
-      ...input,
-      bearerToken: (input.bearerToken ?? '').trim(),
-      legacyMode: input.legacyMode ?? DEFAULT_LEGACY_MODE,
-      cacheTtlMs: input.cacheTtlMs ?? 0,
-    }
-    if (def.authMode === 'bearer' && !def.bearerToken) {
-      return { ok: false, error: 'Bearer auth is enabled but no token is set' }
-    }
-    const problem = validateMockMcpConfig(def)
-    if (problem) return { ok: false, error: problem }
+    // save-time validation, so the definition is checked here too.
+    const checked = checkDef(input)
+    if (!checked.ok) return checked
+    const def = checked.def
     for (const [otherId, s] of this.servers) {
       if (
         otherId !== def.id &&
@@ -242,6 +273,11 @@ class MockMcpServerManager extends EventEmitter {
         running.http.listen(def.port, def.host, () => {
           running.status = 'running'
           running.boundPort = (running.http.address() as AddressInfo).port
+          if (isExposedWithoutAuth(def)) {
+            // Reachable from other machines with no auth at all: say so in
+            // the server's own log (the UI shows its own warning too).
+            this.pushLog(running, exposureWarning(def, running.boundPort))
+          }
           this.emitStatus(def.id)
           resolve({ ok: true, state: this.state(def.id) })
         })
@@ -325,6 +361,37 @@ class MockMcpServerManager extends EventEmitter {
     for (const kind of changed) this.announce(cur, kind)
     this.emitStatus(def.id)
     return { ok: true, state: this.state(def.id) }
+  }
+
+  /**
+   * Bring a running server in line with its STORED row after something other
+   * than the editor changed the DB — a project delete, a git re-import that
+   * pruned or rewrote the row (issue #154). `def === null` → the row is gone:
+   * stop. A changed row is validated first (an imported row never passed the
+   * editor's save-time checks): invalid → stop and report the reason through
+   * a `status` event, valid → `update()` (restart on a binding change, hot
+   * swap + `list_changed` otherwise). An identical row is left alone.
+   */
+  async syncWithStored(serverId: string, def: MockMcpServerDef | null): Promise<void> {
+    const cur = this.servers.get(serverId)
+    if (!cur) return
+    if (!def) {
+      await this.stop(serverId)
+      return
+    }
+    const checked = checkDef(def)
+    if (!checked.ok) {
+      await this.stop(serverId)
+      this.emit('status', { ...this.state(serverId), status: 'error', errorMessage: checked.error })
+      return
+    }
+    if (JSON.stringify(normalizeDef(cur.def)) === JSON.stringify(checked.def)) return
+    const r = await this.update(checked.def)
+    if (!r.ok && this.servers.has(serverId)) {
+      // e.g. the new port is held by another mock — never keep serving the stale config.
+      await this.stop(serverId)
+      this.emit('status', { ...this.state(serverId), status: 'error', errorMessage: r.error })
+    }
   }
 
   /** Send a `list_changed` for `kind` now; false when the server is not running. */

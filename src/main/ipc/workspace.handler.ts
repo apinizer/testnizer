@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import * as workspaceRepo from '../db/workspace.repo'
+import { syncRunningMocksWithDb } from './mock-runtime-sync'
 
 export function registerWorkspaceHandlers(): void {
   ipcMain.handle('workspace:list', async () => {
@@ -62,6 +63,9 @@ export function registerWorkspaceHandlers(): void {
   ipcMain.handle('workspace:delete', async (_event, id: string) => {
     try {
       const data = workspaceRepo.deleteWorkspace(id)
+      // The FK cascade (workspace → projects → mock rows) just removed the
+      // rows of any mock server still listening; stop it (issue #154).
+      await syncRunningMocksWithDb()
       return { success: true, data }
     } catch (e) {
       return { success: false, error: (e as Error).message }

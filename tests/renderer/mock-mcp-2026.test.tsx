@@ -98,7 +98,9 @@ describe('elicitation draft ⇄ DTO', () => {
     expect(patch.patch?.tools?.[0].elicit).toEqual(tool.elicit)
   })
 
-  it('enum / number / boolean rows build the restricted schema; titled oneOf reads as enum', () => {
+  // Issue #154: an edited titled oneOf stays oneOf (it used to flatten to a
+  // plain enum and lose the titles); new values are titled with themselves.
+  it('enum / number / boolean rows build the restricted schema; titled oneOf stays oneOf', () => {
     const d = elicitToDraft({
       key: 'k',
       message: 'm',
@@ -117,7 +119,14 @@ describe('elicitation draft ⇄ DTO', () => {
     expect(rowsToElicitSchema(d.fields)).toEqual({
       type: 'object',
       properties: {
-        tier: { type: 'string', enum: ['free', 'pro', 'enterprise'] },
+        tier: {
+          type: 'string',
+          oneOf: [
+            { const: 'free', title: 'free' },
+            { const: 'pro', title: 'Pro' },
+            { const: 'enterprise', title: 'enterprise' },
+          ],
+        },
         qty: { type: 'integer' },
         ok: { type: 'boolean' },
       },

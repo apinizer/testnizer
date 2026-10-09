@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Tab, ToolProtocol } from '../types'
 import { loadJson, saveJson } from '../lib/persist-helpers'
+import { useMockMcpStore } from './mock-mcp.store'
 
 interface TabsStore {
   tabs: Tab[]
@@ -38,8 +39,24 @@ interface PersistedTabs {
   activeTabId: string | null
 }
 
+/**
+ * A Mock MCP editor tab is dirty only while its server has a draft. Drafts
+ * live in memory (`mock-mcp.store`) and are never persisted, but the dirty
+ * flag travels with the tab — restored as-is it showed the unsaved dot with
+ * nothing to save (issue #154). Applied wherever tabs are restored: at launch
+ * (no drafts yet → clean) and on a per-project tab snapshot swap.
+ */
+function withRestoredDirty(tab: Tab): Tab {
+  if (tab.protocol !== 'mockMcpServer' || !tab.isDirty) return tab
+  const id = tab.mockMcpServerId
+  const hasDraft = !!id && useMockMcpStore.getState().drafts[id] !== undefined
+  return hasDraft ? tab : { ...tab, isDirty: false }
+}
+
 const persisted = loadJson<PersistedTabs>(STORAGE_KEY)
-const initialTabs: Tab[] = (persisted?.tabs ?? []).map((t) => ({ ...t, isLoading: false }))
+const initialTabs: Tab[] = (persisted?.tabs ?? []).map((t) =>
+  withRestoredDirty({ ...t, isLoading: false }),
+)
 const initialActiveTabId = persisted?.activeTabId ?? null
 
 /**
@@ -234,7 +251,7 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
   // separate tab set per open project (#1): switching projects snapshots the
   // current tabs and restores the target project's, instead of wiping them.
   replaceAllTabs: (tabs, activeTabId) =>
-    set({ tabs: tabs.map((t) => ({ ...t, isLoading: false })), activeTabId }),
+    set({ tabs: tabs.map((t) => withRestoredDirty({ ...t, isLoading: false })), activeTabId }),
 
   moveTab: (tabId, beforeTabId) =>
     set((state) => {

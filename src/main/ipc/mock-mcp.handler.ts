@@ -59,6 +59,29 @@ export function buildMockMcpDef(cfg: MockMcpServerConfig): MockMcpServerDef {
   return { ...def, projectId: cfg.projectId, ...(workspaceId ? { workspaceId } : {}) }
 }
 
+/**
+ * Re-sync every RUNNING Mock MCP server with its stored row (issue #154).
+ * Called after anything other than the editor rewrites `mock_mcp_servers` —
+ * project delete (FK cascade), git re-import (`replace` / pull prune) and
+ * project-file imports that upsert rows. A vanished row stops the server; a
+ * changed row is validated and hot-reloaded (or the server stops with the
+ * reason). Status events go out exactly as for a manual stop / start.
+ */
+export async function reconcileRunningMockMcpServers(): Promise<void> {
+  for (const { serverId } of mockMcpServerManager.list()) {
+    let def: MockMcpServerDef | null = null
+    try {
+      const cfg = getMockMcpServer(serverId)
+      def = cfg ? buildMockMcpDef(cfg) : null
+    } catch (e) {
+      // An unreadable row is as good as gone: never keep serving a config
+      // the DB no longer backs.
+      console.error('[mockMcp] reconcile: reading row failed:', (e as Error).message)
+    }
+    await mockMcpServerManager.syncWithStored(serverId, def)
+  }
+}
+
 let eventsWired = false
 
 export function registerMockMcpHandlers(): void {

@@ -971,7 +971,14 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   },
 
   connectWithOAuth: async () => {
-    const { oauthFlowId, oauthSummary, oauthSessionId, connectionState, auth } = get()
+    const {
+      oauthFlowId,
+      oauthSummary,
+      oauthSessionId,
+      connectionState,
+      auth,
+      _currentTabId: ownerTabId,
+    } = get()
     if (!oauthFlowId || !oauthSummary) return
     if (oauthSessionId !== oauthFlowId) forgetOAuthSessions([oauthSessionId])
     // The token only rides a connection whose Authorization type is OAuth 2.1.
@@ -981,6 +988,11 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     })
     if (connectionState === 'connected' || connectionState === 'connecting') {
       await get().disconnect()
+      // `connect()` works on the LIVE slice: if the user switched tabs while
+      // the old connection closed, connecting now would connect the tab they
+      // moved to (issue #154, #76 class). The owner keeps its token session
+      // and connects on its next Connect.
+      if (get()._currentTabId !== ownerTabId) return
     }
     await get().connect()
   },
@@ -1248,11 +1260,14 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     if (!connectionId || !pendingInput) return
     const api = getMcpApi()
     if (!api?.respondInput) {
-      set({ resultError: 'Input responses are not available', pendingInput: null })
+      set({ pendingInput: { ...pendingInput, error: 'Input responses are not available' } })
       return
     }
     const { toolName, args, requestState, round } = pendingInput
-    set({ isInvoking: true, resultError: null })
+    // Same round, same card (its key is round + requestState): only the
+    // previous attempt's error goes.
+    const { error: _previous, ...retry } = pendingInput
+    set({ isInvoking: true, resultError: null, pendingInput: retry })
     let res: Awaited<ReturnType<McpBridge['respondInput']>>
     try {
       res = await api.respondInput(
@@ -1266,11 +1281,20 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     } catch (e) {
       res = { success: false, error: errText(e, 'Tool call failed') }
     }
-    patchConnection(connectionId, (s) =>
-      s.selectedTool !== toolName
-        ? { isInvoking: false }
-        : toolLegPatch(res, { toolName, args, round: round + 1 }),
-    )
+    patchConnection(connectionId, (s) => {
+      if (s.selectedTool !== toolName) return { isInvoking: false }
+      // A failed answer keeps the card and the typed answers for a retry
+      // (issue #154) — `toolLegPatch` would close it.
+      if (!res.success) {
+        return {
+          isInvoking: false,
+          pendingInput: s.pendingInput
+            ? { ...s.pendingInput, error: res.error ?? 'Tool call failed' }
+            : null,
+        }
+      }
+      return toolLegPatch(res, { toolName, args, round: round + 1 })
+    })
   },
 
   dismissInput: () => set({ pendingInput: null }),

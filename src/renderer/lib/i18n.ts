@@ -2433,6 +2433,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockMcp.scenarios.authBearer': 'Bearer token',
     'mockMcp.scenarios.token': 'Token',
     'mockMcp.scenarios.generate': 'Generate',
+    'mockMcp.scenarios.tokenNote':
+      'Saved in the project file — Push shares it with the repository.',
+    'mockMcp.exposedWarning':
+      'Reachable from other machines without authentication — set a bearer token or bind to 127.0.0.1.',
     'mockMcp.scenarios.authHint':
       'Clients must send "Authorization: Bearer <token>"; any other request is answered with HTTP 401.',
     'mockMcp.scenarios.latency': 'Latency',
@@ -2770,6 +2774,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'mcp.input.problemRequired': '"{field}" is required',
     'mcp.input.problemNumber': '"{field}" must be a number',
     'mcp.input.problemInteger': '"{field}" must be a whole number',
+    'mcp.input.problemMinimum': '"{field}" must be at least {limit}',
+    'mcp.input.problemMaximum': '"{field}" must be at most {limit}',
+    'mcp.input.problemMinLength': '"{field}" must be at least {limit} characters',
+    'mcp.input.problemMaxLength': '"{field}" must be at most {limit} characters',
     'mcp.deprecated2026': '(deprecated in 2026-07-28)',
     'mcp.security.era': 'Era',
     'mcp.security.eraModern': '2026-07-28 (modern)',
@@ -2789,6 +2797,8 @@ const translations: Record<Locale, Record<string, string>> = {
       'ttlMs advertised on 2026-07-28 list results (cacheScope private); 0 = always stale.',
     'mockMcp.validation.elicitEnum':
       'Tool "{tool}": the elicitation field "{detail}" is an enum without values',
+    'mockMcp.validation.elicitDuplicate':
+      'Tool "{tool}": the elicitation field "{detail}" is defined more than once',
     'mockMcp.elicit.title': 'Elicitation (2026-07-28)',
     'mockMcp.elicit.enable': 'Ask the client for input before answering',
     'mockMcp.elicit.hint':
@@ -2801,6 +2811,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockMcp.elicit.required': 'Required',
     'mockMcp.elicit.removeField': 'Remove field',
     'mockMcp.elicit.addField': 'Add field',
+    'mockMcp.elicit.unsupported': 'Unsupported — kept as-is',
+    'mockMcp.elicit.duplicate': 'Field "{name}" is defined more than once',
     'mockMcp.elicit.responseTemplate': 'Response template (after the answer)',
     'mockMcp.elicit.templateHint':
       '{{input.<field>}} is the accepted answer; leave empty to render the response body above with it.',
@@ -5254,6 +5266,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockMcp.scenarios.authBearer': 'Bearer token',
     'mockMcp.scenarios.token': 'Token',
     'mockMcp.scenarios.generate': 'Üret',
+    'mockMcp.scenarios.tokenNote': 'Proje dosyasına kaydedilir — Push ile depoyla paylaşılır.',
+    'mockMcp.exposedWarning':
+      "Kimlik doğrulama olmadan başka makinelerden erişilebilir — bir bearer token belirleyin ya da 127.0.0.1'e bağlayın.",
     'mockMcp.scenarios.authHint':
       'İstemciler "Authorization: Bearer <token>" göndermelidir; diğer tüm istekler HTTP 401 ile yanıtlanır.',
     'mockMcp.scenarios.latency': 'Gecikme',
@@ -5597,6 +5612,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'mcp.input.problemRequired': '"{field}" zorunludur',
     'mcp.input.problemNumber': '"{field}" bir sayı olmalı',
     'mcp.input.problemInteger': '"{field}" bir tam sayı olmalı',
+    'mcp.input.problemMinimum': '"{field}" en az {limit} olmalı',
+    'mcp.input.problemMaximum': '"{field}" en fazla {limit} olmalı',
+    'mcp.input.problemMinLength': '"{field}" en az {limit} karakter olmalı',
+    'mcp.input.problemMaxLength': '"{field}" en fazla {limit} karakter olmalı',
     'mcp.deprecated2026': '(2026-07-28 sürümünde kullanımdan kaldırıldı)',
     'mcp.security.era': 'Dönem',
     'mcp.security.eraModern': '2026-07-28 (modern)',
@@ -5616,6 +5635,8 @@ const translations: Record<Locale, Record<string, string>> = {
       '2026-07-28 liste sonuçlarında bildirilen ttlMs (cacheScope private); 0 = her zaman bayat.',
     'mockMcp.validation.elicitEnum':
       'Araç "{tool}": girdi isteme alanı "{detail}" değersiz bir enum',
+    'mockMcp.validation.elicitDuplicate':
+      'Araç "{tool}": girdi isteme alanı "{detail}" birden fazla kez tanımlı',
     'mockMcp.elicit.title': 'Girdi isteme (2026-07-28)',
     'mockMcp.elicit.enable': 'Yanıtlamadan önce istemciden girdi iste',
     'mockMcp.elicit.hint':
@@ -5628,6 +5649,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockMcp.elicit.required': 'Zorunlu',
     'mockMcp.elicit.removeField': 'Alanı kaldır',
     'mockMcp.elicit.addField': 'Alan ekle',
+    'mockMcp.elicit.unsupported': 'Desteklenmiyor — olduğu gibi korunur',
+    'mockMcp.elicit.duplicate': '"{name}" alanı birden fazla kez tanımlı',
     'mockMcp.elicit.responseTemplate': 'Yanıt şablonu (cevaptan sonra)',
     'mockMcp.elicit.templateHint':
       '{{input.<alan>}} kabul edilen cevaptır; boş bırakılırsa yukarıdaki yanıt gövdesi onunla işlenir.',

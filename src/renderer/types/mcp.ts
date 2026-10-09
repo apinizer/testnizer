@@ -84,6 +84,11 @@ export interface McpPendingInput {
   inputRequests: Record<string, unknown>
   /** 1 for the first `input_required`, +1 per further round. */
   round: number
+  /**
+   * The last answer for this round failed (IPC error / throw). The card stays
+   * — with the typed answers — and shows this inline (issue #154).
+   */
+  error?: string
 }
 
 // ─── Authorization tab (MCP Auth) ───────────────────────────────

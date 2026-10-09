@@ -224,16 +224,18 @@ async function getCurrentBranch(
 //    (unpushed local work) stay. Additive upserts used to bring a request
 //    deleted on machine B back on A's next Pull, and A's next Push then
 //    resurrected it on the remote.
-function reimportProjectFromDir(
+async function reimportProjectFromDir(
   dir: string,
   projectId: string,
   how: { mode: 'replace' } | { mode: 'merge'; base: ProjectExport | null },
-): boolean {
+): Promise<boolean> {
   const found = readProjectFileFromDir(dir, projectId)
   if (!found) return false
   // The repository defines the project's name: a rename made on the other
   // machine lands here, and both machines keep writing the same file.
-  importProjectDataFromJson(found.content, projectId, { ...how, adoptProjectHeader: true })
+  // Awaited: running mock servers whose rows the import pruned / rewrote are
+  // stopped / reloaded before the git operation reports back (issue #154).
+  await importProjectDataFromJson(found.content, projectId, { ...how, adoptProjectHeader: true })
   return true
 }
 
@@ -289,7 +291,7 @@ function isEmptyExport(data: Record<string, unknown>): boolean {
 }
 
 /** Same project content, ignoring the export timestamp and row order. */
-function sameExport(a: string, b: Record<string, unknown>): boolean {
+export function sameExport(a: string, b: Record<string, unknown>): boolean {
   // Ignores the export timestamp and the per-machine parts of the `project`
   // header (id, workspace, local_path, save_mode…): on machine B the file
   // carries A's id, so comparing the whole header made every switch / merge
@@ -332,8 +334,14 @@ function sameExport(a: string, b: Record<string, unknown>): boolean {
     }
     return canonical(out)
   }
+  // Both sides go through the SAME JSON round trip: `a` is the parsed file,
+  // `b` the live export object. Without it an `undefined` field (dropped by
+  // JSON, `null` in `canonical`) or a `Date` / `Buffer` (an ISO string /
+  // `{type,data}` once written) compared unequal to its own file and every
+  // switch committed a no-op "Auto-save" (issue #154).
   try {
-    return normalise(JSON.parse(a) as Record<string, unknown>) === normalise(b)
+    const live = JSON.parse(JSON.stringify(b)) as Record<string, unknown>
+    return normalise(JSON.parse(a) as Record<string, unknown>) === normalise(live)
   } catch {
     return false
   }
@@ -378,8 +386,17 @@ async function syncWorkingTreeFromDb(
   }
   if (existsSync(target) && sameExport(readFileSync(target, 'utf-8'), data)) {
     // Byte-identical apart from `exportedAt` — rewriting would only churn
-    // the timestamp into a commit on every switch / pull.
-    return { fileName, displayName, changed: false }
+    // the timestamp into a commit on every switch / pull. But "same content
+    // on disk" is not "committed": the file may be untracked (exported there
+    // before git was configured) or staged by an earlier Push whose commit
+    // never happened. That used to return `changed:false` without `git add`,
+    // so Push reported `committed:false` and the remote never got the file
+    // (issue #154). Decided from `status --porcelain` OUTPUT — empty means
+    // tracked and identical to HEAD (see the simple-git "silent" gotcha).
+    const pending = await git.raw(['status', '--porcelain', '--', fileName])
+    if (!pending.trim()) return { fileName, displayName, changed: false }
+    await git.add([fileName])
+    return { fileName, displayName, changed: await hasStagedChanges(git) }
   }
   writeFileSync(target, JSON.stringify(data, null, 2), 'utf-8')
 
@@ -756,7 +773,7 @@ export function registerGitHandlers(): void {
         // Best-effort: the branch switch itself succeeded, so a stale DB is
         // recoverable (Git Branches → Pull) and shouldn't fail the operation.
         try {
-          reimportProjectFromDir(config.localPath, payload.projectId, { mode: 'replace' })
+          await reimportProjectFromDir(config.localPath, payload.projectId, { mode: 'replace' })
         } catch (e) {
           console.error('[git:switchBranch] reimport failed:', (e as Error).message)
         }
@@ -825,7 +842,7 @@ export function registerGitHandlers(): void {
           // logged): the user is about to Push, and a silently stale DB is
           // exactly the bug being fixed.
           try {
-            reimportProjectFromDir(config.localPath, payload.projectId, { mode: 'replace' })
+            await reimportProjectFromDir(config.localPath, payload.projectId, { mode: 'replace' })
           } catch (e) {
             return {
               success: false,
@@ -912,7 +929,7 @@ export function registerGitHandlers(): void {
           // reflects whichever side the user picked. Best-effort — the commit
           // itself is already in git, so the worst case is a stale DB.
           try {
-            reimportProjectFromDir(config.localPath, payload.projectId, { mode: 'replace' })
+            await reimportProjectFromDir(config.localPath, payload.projectId, { mode: 'replace' })
           } catch (e) {
             console.error('[git:resolveConflict] reimport failed:', (e as Error).message)
           }
@@ -1087,7 +1104,10 @@ export function registerGitHandlers(): void {
       // whether that is a warning (Clone from Git) or fine (fresh project).
       let imported = false
       try {
-        imported = reimportProjectFromDir(config.localPath, projectId, { mode: 'merge', base })
+        imported = await reimportProjectFromDir(config.localPath, projectId, {
+          mode: 'merge',
+          base,
+        })
       } catch (e) {
         return {
           success: false,

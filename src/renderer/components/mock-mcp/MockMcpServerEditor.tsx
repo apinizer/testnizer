@@ -4,17 +4,19 @@
  *
  * Edits go into a draft held by the store (it survives tab switches, which
  * unmount this component); Save sends ONE `update` and the backend
- * hot-reloads a running server. Ctrl/Cmd+S inside the editor saves too.
+ * hot-reloads a running server. Ctrl/Cmd+S inside the editor saves too; both
+ * go through `saveMockMcpDraft`, the same path the Workbench's unsaved-changes
+ * dialog uses (issue #154).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMockMcpStore } from '../../stores/mock-mcp.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
-import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 import type { MockMcpDraftUpdater, MockMcpEditorTab } from '../../types/mock-mcp'
-import { draftToPatch, serverToDraft } from './mock-mcp-draft'
-import { mockMcpTabId, useMockMcpTabDirty } from './mock-mcp-tabs'
+import { serverToDraft } from './mock-mcp-draft'
+import { useMockMcpTabDirty } from './mock-mcp-tabs'
+import { isMockMcpSaving, saveMockMcpDraft, type MockMcpSaveResult } from './mock-mcp-save'
 import { isSaveChord } from './mock-mcp-format'
 import MockMcpEditorHeader from './MockMcpEditorHeader'
 import MockMcpGeneralTab from './MockMcpGeneralTab'
@@ -68,16 +70,12 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
   const stored = useMockMcpStore((s) => s.drafts[serverId])
   const setDraft = useMockMcpStore((s) => s.setDraft)
   const discardDraft = useMockMcpStore((s) => s.discardDraft)
-  const updateServer = useMockMcpStore((s) => s.updateServer)
   const loadServers = useMockMcpStore((s) => s.loadServers)
   const projectId = useWorkspaceStore((s) => s.activeProjectId)
   const [tab, setTab] = useState<MockMcpEditorTab>('general')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const triedLoad = useRef(false)
-  // Synchronous in-flight guard: `saving` state is stale inside a second
-  // Ctrl+S dispatched before the re-render, which sent two updates.
-  const savingRef = useRef(false)
 
   // A tab restored at launch: the Mocks panel may not have loaded the list yet.
   useEffect(() => {
@@ -101,40 +99,21 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
   )
 
   const save = useCallback(async (): Promise<void> => {
-    const snapshot = useMockMcpStore.getState().drafts[serverId]
-    if (!snapshot) return
-    const built = draftToPatch(snapshot)
-    if (!built.patch) {
-      const p = built.problem
-      setSaveError(t(p.key).replace('{tool}', p.tool).replace('{detail}', p.detail))
-      return
-    }
-    if (savingRef.current) return
-    savingRef.current = true
+    if (!useMockMcpStore.getState().drafts[serverId] || isMockMcpSaving(serverId)) return
     setSaving(true)
-    let err: string | null
+    let result: MockMcpSaveResult
     try {
-      err = await updateServer(serverId, built.patch)
+      result = await saveMockMcpDraft(serverId)
     } finally {
-      savingRef.current = false
       setSaving(false)
     }
-    if (err) {
-      setSaveError(err)
+    if (!result.ok) {
+      if (result.error) setSaveError(result.error)
       return
     }
     setSaveError(null)
-    // Keep edits typed while the save was in flight.
-    if (useMockMcpStore.getState().drafts[serverId] === snapshot) discardDraft(serverId)
-    // A rename shows up in the Workbench tab strip too.
-    const tabs = useTabsStore.getState()
-    const tabId = mockMcpTabId(serverId)
-    const name = built.patch.name
-    if (name && tabs.tabs.some((x) => x.id === tabId && x.name !== name)) {
-      tabs.updateTab(tabId, { name })
-    }
-    toast.success(t('mockMcp.saved'))
-  }, [serverId, t, updateServer, discardDraft])
+    if (result.saved) toast.success(t('mockMcp.saved'))
+  }, [serverId, t])
 
   if (!server || !draft) {
     return (

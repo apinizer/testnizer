@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import * as projectRepo from '../db/project.repo'
 import { getDb } from '../db/database'
 import { getSettingsStore } from '../lib/git-config'
+import { syncRunningMocksWithDb } from './mock-runtime-sync'
 
 export function registerProjectHandlers(): void {
   ipcMain.handle('project:list', async (_event, workspaceId: string) => {
@@ -75,6 +76,9 @@ export function registerProjectHandlers(): void {
   ipcMain.handle('project:delete', async (_event, id: string) => {
     try {
       const data = projectRepo.deleteProject(id)
+      // The FK cascade just removed the project's mock rows; stop any mock
+      // server still listening off them (issue #154).
+      await syncRunningMocksWithDb()
       // Drop the project's git remote config (encrypted PAT included) so
       // settings.json does not accumulate credentials for dead projects.
       try {
