@@ -6,7 +6,7 @@
  * `initialize` handshake (stateless: no session id, GET/DELETE → 405).
  * `legacy: 'reject'` makes it modern-only.
  *
- * Tools: echo, add, echo_headers, notify, ask_count (MRTR). Resources:
+ * Tools: echo, add, echo_headers, notify, ask_count (MRTR), long_description. Resources:
  * test://greeting, test://pixel.png, test://item/{id}. Prompt: summarize.
  * The pre-#152 stateful v1 server lives on in `mcp-server-v1.ts`.
  */
@@ -44,6 +44,17 @@ export interface McpServerOptions {
 const PIXEL_PNG_B64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
+/**
+ * Issue #155: a ~3000-char tool description (deterministic: one sentence
+ * repeated, marker first) so the Tools pane's header block overflows a short
+ * window. Plain prose on purpose: no URLs or imperative phrasing, so security
+ * heuristics see nothing beyond "oversized description".
+ */
+const LONG_DESCRIPTION = (
+  'LONGDESC-E2E ' +
+  'This tool exists only to exercise the layout of a very long description in the tools pane. '.repeat(40)
+).slice(0, 3000)
+
 /** `ask_count` state between rounds; HMAC-sealed by the codec (spec: MRTR integrity MUST). */
 interface AskCountState {
   step: 'awaiting-count'
@@ -73,6 +84,19 @@ function createMcpServer(era: 'legacy' | 'modern', handler: () => McpHttpHandler
     'echo',
     {
       description: 'Echo input',
+      inputSchema: z.object({ text: z.string().optional() }),
+    },
+    async ({ text }) => ({
+      content: [{ type: 'text', text: String(text ?? 'ok') }],
+    }),
+  )
+
+  // Issue #155: same behaviour as `echo`, but with a ~3000-char description so
+  // the e2e can prove the Invoke button stays reachable.
+  server.registerTool(
+    'long_description',
+    {
+      description: LONG_DESCRIPTION,
       inputSchema: z.object({ text: z.string().optional() }),
     },
     async ({ text }) => ({

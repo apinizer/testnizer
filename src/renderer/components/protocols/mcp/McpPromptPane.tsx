@@ -3,6 +3,7 @@ import { useMcpStore } from '../../../stores/mcp.store'
 import { useTranslation } from '../../../lib/i18n'
 import EmptyState from '../../shared/EmptyState'
 import McpContentBlockView from './McpContentBlockView'
+import McpDescription from './McpDescription'
 import { CenterHint, ErrorLine, PrimaryButton, SectionLabel } from './ui'
 
 /** Right pane for the Prompts tab: argument inputs from `arguments[]`, Get, messages by role. */
@@ -26,43 +27,53 @@ export default function McpPromptPane() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 flex-col gap-2 border-b border-[var(--border)] px-3.5 py-2.5">
-        <span className="font-semibold text-[var(--text)]">{def?.title || selected}</span>
-        {def?.description && (
-          <p className="m-0 text-[12px] text-[var(--muted)]">{def.description}</p>
-        )}
-        {args.length > 0 && <SectionLabel>{t('mcp.prompt.arguments')}</SectionLabel>}
-        {args.map((a) => (
-          <label key={a.name} className="flex items-center gap-2 text-[12px]">
-            <span
-              className="w-32 shrink-0 truncate font-mono text-[var(--text)]"
-              title={a.description}
-            >
-              {a.name}
-              {a.required && <span className="text-[var(--red)]"> *</span>}
-            </span>
-            <input
-              type="text"
-              value={promptArgs[a.name] ?? ''}
-              onChange={(e) => setPromptArg(a.name, e.target.value)}
-              placeholder={a.description}
-              data-testid={`mcp-prompt-arg-${a.name}`}
-              className="h-7 min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-2 text-[12px] text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]"
-            />
-          </label>
-        ))}
-        <div>
-          <PrimaryButton
-            onClick={() => void getPrompt()}
-            disabled={isGetting || !isConnected}
-            data-testid="mcp-get-prompt"
+      {/* Issue #155: same layout as McpToolPane — a scrolling header whose action row
+          (Get) is sticky at the bottom; floored result. */}
+      <div
+        data-testid="mcp-prompt-header"
+        className="min-h-0 shrink overflow-y-auto border-b border-[var(--border)]"
+      >
+        <div className="flex flex-col gap-2 px-3.5 pt-2.5">
+          <span className="font-semibold text-[var(--text)]">{def?.title || selected}</span>
+          {def?.description && (
+            <McpDescription text={def.description} testId="mcp-prompt-description" />
+          )}
+          {args.length > 0 && <SectionLabel>{t('mcp.prompt.arguments')}</SectionLabel>}
+          {args.map((a) => (
+            <label key={a.name} className="flex items-center gap-2 text-[12px]">
+              <span
+                className="w-32 shrink-0 truncate font-mono text-[var(--text)]"
+                title={a.description}
+              >
+                {a.name}
+                {a.required && <span className="text-[var(--red)]"> *</span>}
+              </span>
+              <input
+                type="text"
+                value={promptArgs[a.name] ?? ''}
+                onChange={(e) => setPromptArg(a.name, e.target.value)}
+                placeholder={a.description}
+                data-testid={`mcp-prompt-arg-${a.name}`}
+                className="h-7 min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-2 text-[12px] text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]"
+              />
+            </label>
+          ))}
+          <div
+            data-testid="mcp-prompt-actions"
+            className="sticky bottom-0 bg-[var(--white)] pb-2.5 pt-2"
           >
-            <MessageSquare size={13} />
-            {isGetting ? t('mcp.prompt.getting') : t('mcp.prompt.get')}
-          </PrimaryButton>
+            <PrimaryButton
+              onClick={() => void getPrompt()}
+              disabled={isGetting || !isConnected}
+              data-testid="mcp-get-prompt"
+            >
+              <MessageSquare size={13} />
+              {isGetting ? t('mcp.prompt.getting') : t('mcp.prompt.get')}
+            </PrimaryButton>
+          </div>
         </div>
       </div>
-      <div className="flex-1 overflow-auto p-3.5">
+      <div className="min-h-[5rem] flex-1 overflow-auto p-3.5">
         <SectionLabel>{t('mcp.prompt.messages')}</SectionLabel>
         {error ? (
           <ErrorLine testId="mcp-prompt-error">{error}</ErrorLine>

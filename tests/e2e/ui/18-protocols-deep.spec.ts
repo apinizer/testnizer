@@ -89,4 +89,59 @@ uiTest.describe('Protocol editors (deep + local servers)', () => {
       window.getByTestId('mcp-result').getByTestId('mcp-block-text').first(),
     ).toContainText('hello-e2e', { timeout: 10_000 })
   })
+
+  uiTest(
+    'MCP issue #155 — long tool description keeps Invoke reachable',
+    async ({ app, window }) => {
+      const { mcp } = getTestServerUrls()
+      // Shrink the real window (the Electron-native way; `setViewportSize` is a
+      // device emulation that does not resize the BrowserWindow) so the header
+      // block with a ~3000-char description cannot fit.
+      const original = await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0]
+        const [width, height] = w.getContentSize()
+        w.setContentSize(1200, 640)
+        return { width, height }
+      })
+      try {
+        await openNewDropdownItem(window, /MCP/i)
+        await window.getByTestId('mcp-url').fill(mcp)
+        await window.getByTestId('mcp-connect').click()
+        await expect(window.getByTestId('mcp-connect')).toHaveText('Disconnect', {
+          timeout: 15_000,
+        })
+        await expect(window.getByTestId('mcp-tool-long_description')).toBeVisible({
+          timeout: 15_000,
+        })
+        await window.getByTestId('mcp-tool-long_description').click()
+
+        const invoke = window.getByTestId('mcp-invoke')
+        // No click / scroll first: Playwright auto-scrolls on click, so only a
+        // plain viewport check can tell a clipped Invoke from a reachable one.
+        await expect(invoke).toBeInViewport()
+
+        const description = window.getByTestId('mcp-tool-description')
+        await expect(description).toBeVisible()
+        await expect(description).toContainText('LONGDESC-E2E')
+
+        const toggle = window.getByTestId('mcp-description-toggle')
+        await toggle.click()
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+        // Expanded, the header block scrolls instead of pushing Invoke away.
+        await invoke.scrollIntoViewIfNeeded()
+        await expect(invoke).toBeInViewport()
+
+        await window.getByTestId('mcp-tool-args').fill('{"text":"long-e2e"}')
+        await invoke.click()
+        await expect(
+          window.getByTestId('mcp-result').getByTestId('mcp-block-text').first(),
+        ).toContainText('long-e2e', { timeout: 10_000 })
+      } finally {
+        await app.evaluate(({ BrowserWindow }, size) => {
+          BrowserWindow.getAllWindows()[0]?.setContentSize(size.width, size.height)
+        }, original)
+      }
+    },
+  )
 })
