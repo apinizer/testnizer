@@ -50,10 +50,22 @@ const engineSpy = vi.hoisted(() => ({
 }))
 vi.mock('../../../src/main/protocols/ai-chat.engine', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/main/protocols/ai-chat.engine')>()),
-  // Async generator that yields the configured chunks; records its options.
-  streamChatCompletion: async function* (opts: Record<string, unknown>) {
+  // The handler drives `streamChatRound` (issue #180): yield the configured
+  // chunks as round events, then the end summary; records its options.
+  streamChatRound: async function* (opts: Record<string, unknown>) {
     engineSpy.calls.push(opts)
-    for (const c of engineSpy.chunks) yield c
+    for (const c of engineSpy.chunks) {
+      if (c.delta) yield { type: 'text' as const, delta: c.delta }
+      if (c.truncated) yield { type: 'truncated' as const }
+    }
+    yield {
+      type: 'end' as const,
+      toolCalls: [],
+      usage: null,
+      stopReason: null,
+      firstContentAt: null,
+      status: 200,
+    }
   },
 }))
 
@@ -228,7 +240,7 @@ describe('aichat:send — generation settings + truncation (issue #189)', () => 
     const chunks = wire.sent.filter((e) => e.channel === 'aichat:chunk')
     expect(chunks.map((c) => c.payload.delta)).toEqual(['part'])
     const done = wire.sent.find((e) => e.channel === 'aichat:done')
-    expect(done?.payload).toEqual({ messageId: res.data.messageId, truncated: true })
+    expect(done?.payload).toMatchObject({ messageId: res.data.messageId, truncated: true })
   })
 
   it('console log shows the temperature actually sent (none → no key) and the real max_tokens', async () => {

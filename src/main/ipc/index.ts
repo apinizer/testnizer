@@ -4,6 +4,7 @@ import { registerProjectHandlers } from './project.handler'
 import { registerEndpointHandlers } from './endpoint.handler'
 import { registerEnvironmentHandlers } from './environment.handler'
 import { registerHistoryHandlers } from './history.handler'
+import { registerConsoleHandlers } from './console.handler'
 import { registerSavedResponseHandlers } from './saved-response.handler'
 import { registerSettingsHandlers } from './settings.handler'
 import { registerImportExportHandlers } from './import-export.handler'
@@ -47,6 +48,7 @@ export function registerAllHandlers(): void {
   registerEndpointHandlers()
   registerEnvironmentHandlers()
   registerHistoryHandlers()
+  registerConsoleHandlers()
   registerSavedResponseHandlers()
   registerSettingsHandlers()
   registerImportExportHandlers()

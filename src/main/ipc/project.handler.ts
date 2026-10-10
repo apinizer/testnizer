@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { randomUUID } from 'crypto'
 import * as projectRepo from '../db/project.repo'
+import * as aiConversationRepo from '../db/ai-conversation.repo'
 import { getDb } from '../db/database'
 import { getSettingsStore } from '../lib/git-config'
 import { syncRunningMocksWithDb } from './mock-runtime-sync'
@@ -156,7 +157,11 @@ export function registerProjectHandlers(): void {
 
   ipcMain.handle('folder:delete', async (_event, id: string) => {
     try {
+      // Requests inside go with the folder — and their AI Chat conversations
+      // (issue #199; collected first, the rows are gone after the delete).
+      const owners = aiConversationRepo.apiFolderOwnerIds(id)
       const data = projectRepo.deleteFolder(id)
+      if (data) aiConversationRepo.removeByOwners(owners)
       return { success: true, data }
     } catch (e) {
       return { success: false, error: (e as Error).message }

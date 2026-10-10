@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import ConsoleTab from '../response/ConsoleTab'
 import { lockDragStyles } from '../../lib/drag-lock'
+import { useTranslation } from '../../lib/i18n'
 
 /**
  * Postman-style bottom Console panel.
@@ -15,6 +16,7 @@ import { lockDragStyles } from '../../lib/drag-lock'
  * clamped to 120–720.
  */
 export default function ConsolePanel() {
+  const { t } = useTranslation()
   const show = useUIStore((s) => s.showConsolePanel)
   const setShow = useUIStore((s) => s.setShowConsolePanel)
   const maximized = useUIStore((s) => s.consolePanelMaximized)
@@ -104,7 +106,7 @@ export default function ConsolePanel() {
       <button
         type="button"
         onClick={() => setShow(false)}
-        title="Hide console"
+        title={t('console.hide')}
         className="cursor-pointer"
         style={{
           position: 'absolute',

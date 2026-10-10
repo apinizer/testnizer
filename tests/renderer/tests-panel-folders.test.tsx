@@ -149,6 +149,7 @@ const h = vi.hoisted(() => {
 
 import TestsPanel from '../../src/renderer/components/sidebar/TestsPanel'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
+import { toast } from '../../src/renderer/lib/toast'
 
 const callsTo = (channel: string): unknown[] =>
   h.state.calls.filter((c) => c.channel === channel).map((c) => c.payload)
@@ -263,5 +264,49 @@ describe('TestsPanel — folder management (issue #56)', () => {
 
     await waitFor(() => expect(callsTo('testSuiteFolder:delete')).toHaveLength(1))
     expect(callsTo('testSuiteFolder:delete')[0]).toMatchObject({ id: 'folder-1' })
+  })
+})
+
+// Issue #197 — Postman / Insomnia carry HTTP requests only. The suite export
+// returns the items it left out (MCP, WebSocket, …) and the panel names them
+// in a warning instead of dropping them silently.
+describe('TestsPanel — suite export reports items left out (issue #197)', () => {
+  it('warns with the skipped item names after a Postman export', async () => {
+    const warn = vi.spyOn(toast, 'warning').mockImplementation(() => {})
+    const original = h.stub.save.exportTestSuite
+    h.stub.save.exportTestSuite = () =>
+      Promise.resolve({
+        success: true,
+        data: {
+          path: '/tmp/suite.json',
+          skipped: [{ name: 'Tools list', protocol: 'mcp', reason: 'unsupported-protocol' }],
+        },
+      }) as unknown as ReturnType<typeof original>
+    try {
+      await renderWithSuite()
+      openSuiteMenu()
+      fireEvent.click(await screen.findByText('Export as Postman v2.1'))
+      await waitFor(() =>
+        expect(warn).toHaveBeenCalledWith(
+          '1 item(s) left out of the Postman v2.1 export: Tools list (MCP)',
+        ),
+      )
+    } finally {
+      h.stub.save.exportTestSuite = original
+      warn.mockRestore()
+    }
+  })
+
+  it('stays quiet when nothing was left out', async () => {
+    const warn = vi.spyOn(toast, 'warning').mockImplementation(() => {})
+    try {
+      await renderWithSuite()
+      openSuiteMenu()
+      fireEvent.click(await screen.findByText('Export as Postman v2.1'))
+      await waitFor(() => expect(screen.queryByText('Export as Postman v2.1')).toBeNull())
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
   })
 })

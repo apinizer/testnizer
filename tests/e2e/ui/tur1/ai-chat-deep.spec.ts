@@ -4,11 +4,11 @@
  * MST-154 P1 — Stream cancel + error handling
  * MST-153 P1 — Plain chat completion contract + generation settings
  *
- * NOTE on MST-153: AI Chat has NO tool calling — it never sends a `tools`
- * array and has no tool-call loop. (This test used to be titled "tool-call
- * loop" while only asserting a text reply.) It now checks what AI Chat really
- * does against the inline OpenAI-compatible stub (startToolCallServer, which
- * would answer with tool_calls only if a request carried tools): the request
+ * NOTE on MST-153: AI Chat offers tools only from MCP servers enabled in its
+ * Tools tab (issue #180; covered by ai-chat-tools.spec.ts). With NO server
+ * enabled — the case here — it must never send a `tools` array. The test runs
+ * against the inline OpenAI-compatible stub (startToolCallServer, which would
+ * answer with tool_calls only if a request carried tools): the request
  * carries no `tools`, the reply renders, and — issue #189 — temperature /
  * max tokens from the Settings section reach the request body and a
  * `finish_reason: 'length'` stop shows the "Answer truncated" note.
@@ -372,7 +372,7 @@ uiTest.describe('Tur1 — AI Chat deep [MST-151, 152, 153, 154]', () => {
       await expect(
         window.getByText(/Tool-call stub final reply/i).first(),
       ).toBeVisible({ timeout: 20_000 })
-      // AI Chat never offers tools, so the stub never enters its tool_calls branch.
+      // No MCP server enabled → no tools offered, so the stub never enters its tool_calls branch.
       expect(tcServer.bodies.length).toBeGreaterThan(0)
       expect(tcServer.bodies.at(-1)?.tools).toBeUndefined()
       // No generation settings set → none sent (provider defaults).

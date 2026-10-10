@@ -590,6 +590,21 @@ const SCHEMA_SQL = `
   );
   CREATE INDEX idx_mock_mcp_servers_project ON mock_mcp_servers(project_id);
 
+  -- AI Chat conversations (issue #199) — mirror of database.ts (local only).
+  CREATE TABLE ai_conversations (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+    owner_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    messages_json TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX idx_ai_conversations_owner ON ai_conversations(owner_id);
+  CREATE INDEX idx_ai_conversations_project ON ai_conversations(project_id);
+  -- No owner-delete triggers (they must survive git reimports); explicit
+  -- deletes clean up in the IPC handlers, the project FK cascades the rest.
+
   -- Examples die with their owner (issue #125 follow-up): the owner tables
   -- carry no FK to saved_responses, so cascade via triggers. Bulk deletes
   -- (folder delete, git re-import) fire them row by row too.

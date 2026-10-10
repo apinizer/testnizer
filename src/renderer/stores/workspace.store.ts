@@ -61,6 +61,18 @@ function persistTabsByProject(): void {
 }
 
 /**
+ * Every tab id stashed for another project (issue #199): the AI Chat startup
+ * prune must not treat another project's open unsaved tab as a crash leftover.
+ */
+export function stashedProjectTabIds(): string[] {
+  const ids: string[] = []
+  for (const snap of tabsByProject.values()) {
+    for (const t of snap?.tabs ?? []) if (t && typeof t.id === 'string') ids.push(t.id)
+  }
+  return ids
+}
+
+/**
  * Per-project APIs-tree state (issue #123): the sidebar search box and the
  * expanded-folder set used to be global — a search typed in project A kept
  * filtering project B after a header-tab switch, and `setActiveProject`

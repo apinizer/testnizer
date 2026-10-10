@@ -92,7 +92,7 @@ export default function WsConnectionBar() {
       </div>
 
       {/* Error message */}
-      {connectionState === 'error' && errorMessage && (
+      {(connectionState === 'error' || connectionState === 'connected') && errorMessage && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-600">
           {errorMessage}
         </div>

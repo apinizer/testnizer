@@ -6,8 +6,10 @@ import { STANDARD_HTTP_HEADERS } from '../../lib/http-headers'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import SseConnectionBar from './SseConnectionBar'
 import SseEventLog from './SseEventLog'
+import { useTranslation } from '../../lib/i18n'
 
 export default function SseEditor() {
+  const { t } = useTranslation()
   const [headersExpanded, setHeadersExpanded] = useState(false)
   const [lastEventIdExpanded, setLastEventIdExpanded] = useState(false)
   const [bodyExpanded, setBodyExpanded] = useState(false)
@@ -165,7 +167,7 @@ export default function SseEditor() {
                 onUpdate={updateHeader}
                 onRemove={removeHeader}
                 onAdd={addHeader}
-                addLabel="+ Add Header"
+                addLabel={t('kv.addHeader')}
                 keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
               />
             </div>

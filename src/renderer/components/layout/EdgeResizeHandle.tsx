@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { useUIStore } from '../../stores/ui.store'
 import { lockDragStyles } from '../../lib/drag-lock'
+import { useTranslation } from '../../lib/i18n'
 
 interface Props {
   /**
@@ -27,6 +28,7 @@ const BOUNDS = {
  * panel's `overflow: hidden` and never overlaps the tree's scrollbar.
  */
 export default function EdgeResizeHandle({ target }: Props) {
+  const { t } = useTranslation()
   const collapsed = useUIStore((s) => (target === 'right' ? s.rightPanelCollapsed : false))
   const width = useUIStore((s) => (target === 'left' ? s.leftPanelWidth : s.rightPanelWidth))
   const setLeft = useUIStore((s) => s.setLeftPanelWidth)
@@ -68,7 +70,7 @@ export default function EdgeResizeHandle({ target }: Props) {
       onMouseDown={startDrag}
       role="separator"
       aria-orientation="vertical"
-      title="Drag to resize"
+      title={t('shell.dragToResize')}
       className="shrink-0 transition-colors hover:bg-[var(--accent)]"
       style={{ width: 5, cursor: 'col-resize', background: 'transparent', zIndex: 5 }}
     />

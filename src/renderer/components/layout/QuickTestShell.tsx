@@ -3,6 +3,7 @@ import Workbench from './Workbench'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useAuthStore } from '../../stores/auth.store'
 import { LogOut } from 'lucide-react'
+import { useTranslation } from '../../lib/i18n'
 
 /**
  * Guest-mode shell. Previously this rendered an HTTP-only editor with no way
@@ -11,6 +12,7 @@ import { LogOut } from 'lucide-react'
  * authenticated app has — minus project/workspace concerns.
  */
 export default function QuickTestShell() {
+  const { t } = useTranslation()
   const logout = useAuthStore((s) => s.logout)
 
   // Seed an empty HTTP tab so Workbench renders NewRequestWelcome (the
@@ -58,9 +60,11 @@ export default function QuickTestShell() {
           >
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
           </svg>
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Quick Test</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
+            {t('login.quickTest')}
+          </span>
           <span style={{ fontSize: 13, color: 'var(--hint)', marginLeft: 4 }}>
-            — Send requests without unlocking projects
+            {t('quickTest.subtitle')}
           </span>
         </div>
 
@@ -76,7 +80,7 @@ export default function QuickTestShell() {
           }}
         >
           <LogOut size={13} />
-          Back to Login
+          {t('quickTest.backToLogin')}
         </button>
       </div>
 

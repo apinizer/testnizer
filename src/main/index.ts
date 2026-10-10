@@ -10,7 +10,8 @@ import {
 } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { initDatabase, closeDatabase, type InitDatabaseResult } from './db/database'
+import { initDatabase, closeDatabase, getDb, type InitDatabaseResult } from './db/database'
+import { runHistoryMaskMigration } from './db/history-mask-migration'
 import { registerAllHandlers } from './ipc'
 import { initAutoUpdater } from './updater'
 import { initLogging } from './diagnostics'
@@ -322,6 +323,21 @@ app.whenReady().then(() => {
   })()
 
   const mainWindow = createWindow()
+
+  // Issue #195: mask History / Runner rows written before masking existed —
+  // once (settings marker), in byte-capped batches that yield. Started only
+  // once the window is up (ready-to-show, or a fallback timer), so nothing of
+  // it runs before the first paint.
+  void runHistoryMaskMigration(getDb(), {
+    startAfter: () =>
+      new Promise<void>((resolve) => {
+        const fallback = setTimeout(resolve, 5000)
+        mainWindow.once('ready-to-show', () => {
+          clearTimeout(fallback)
+          setTimeout(resolve, 1000)
+        })
+      }),
+  }).catch(() => undefined)
 
   // If the DB was corrupt and we recovered, tell the user — but only AFTER the
   // window exists, never before (a pre-window modal would look like a crash).

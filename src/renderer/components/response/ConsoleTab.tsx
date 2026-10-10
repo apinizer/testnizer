@@ -20,6 +20,7 @@ import {
 } from '../../stores/console.store'
 import { useUIStore } from '../../stores/ui.store'
 import EmptyState from '../shared/EmptyState'
+import ConsoleSecretsToggle from './ConsoleSecretsToggle'
 
 /**
  * Postman-style Console panel.
@@ -172,6 +173,8 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
         </span>
 
         <div className="flex-1" />
+
+        <ConsoleSecretsToggle />
 
         <button
           type="button"

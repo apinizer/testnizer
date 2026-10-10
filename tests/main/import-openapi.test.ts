@@ -121,6 +121,27 @@ function freshDb(): Database.Database {
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
       FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET NULL
     );
+    -- Issue #197: collection exports read Ctrl+S-saved requests too.
+    CREATE TABLE saved_requests (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      folder_id TEXT,
+      name TEXT NOT NULL,
+      protocol TEXT NOT NULL DEFAULT 'http',
+      method TEXT,
+      url TEXT NOT NULL,
+      params TEXT NOT NULL DEFAULT '[]',
+      headers TEXT NOT NULL DEFAULT '[]',
+      body TEXT,
+      auth TEXT,
+      pre_script TEXT,
+      post_script TEXT,
+      assertions TEXT NOT NULL DEFAULT '[]',
+      metadata TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `)
   return d
 }

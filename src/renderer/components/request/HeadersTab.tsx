@@ -1,8 +1,10 @@
 import { useRequestStore } from '../../stores/request.store'
 import KeyValueTable from '../shared/KeyValueTable'
 import { STANDARD_HTTP_HEADERS } from '../../lib/http-headers'
+import { useTranslation } from '../../lib/i18n'
 
 export default function HeadersTab() {
+  const { t } = useTranslation()
   const headers = useRequestStore((s) => s.headers)
   const updateHeader = useRequestStore((s) => s.updateHeader)
   const removeHeader = useRequestStore((s) => s.removeHeader)
@@ -17,7 +19,7 @@ export default function HeadersTab() {
         onRemove={removeHeader}
         onAdd={addHeader}
         onReplaceAll={setHeaders}
-        addLabel="+ Add Header"
+        addLabel={t('kv.addHeader')}
         enableAutocomplete
         keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
         flush

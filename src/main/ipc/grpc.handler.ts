@@ -16,6 +16,7 @@ import {
 } from '../protocols/grpc.engine'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
+import type { HistoryConfigured } from '../../shared/history-snapshot'
 import { createPendingRegistry } from '../lib/pending-cancellables'
 
 const pendingUnaryRequests = createPendingRegistry()
@@ -36,6 +37,11 @@ interface GrpcExecutePayload {
   _endpointId?: string
   /** Renderer-generated id so `grpc:cancelUnary(id)` can abort this call. */
   _requestId?: string
+  /**
+   * The editor state (`{{var}}` kept) for the History row's `configured` —
+   * what reopening the row restores (issues #182, #195).
+   */
+  _configured?: HistoryConfigured
 }
 
 interface GrpcServerStreamPayload {
@@ -175,6 +181,7 @@ export function registerGrpcHandlers(): void {
             metadata: payload.metadata,
             requestBody: payload.requestBody,
             useTls: payload.useTls,
+            ...(payload._configured ? { configured: payload._configured } : {}),
           }),
           response_snapshot: JSON.stringify({
             grpcStatus: response.grpcStatus,

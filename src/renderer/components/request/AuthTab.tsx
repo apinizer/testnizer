@@ -7,6 +7,7 @@ import { useEnvironmentStore } from '../../stores/environment.store'
 import { resolveVariables } from '../../lib/variable-resolver'
 import { toast } from '../../lib/toast'
 import SoapSecuritySection from '../protocols/SoapSecuritySection'
+import { useTranslation } from '../../lib/i18n'
 import type { AuthType } from '../../types'
 
 const AUTH_TYPE_TEST_IDS: Partial<Record<AuthType, string>> = {
@@ -20,16 +21,18 @@ const AUTH_TYPE_TEST_IDS: Partial<Record<AuthType, string>> = {
   wsse: 'wsse',
 }
 
-const AUTH_OPTIONS: { value: AuthType; label: string; soapOnly?: boolean }[] = [
-  { value: 'inherit', label: 'Inherit from parent' },
-  { value: 'none', label: 'No Auth' },
-  { value: 'bearer', label: 'Bearer Token' },
-  { value: 'basic', label: 'Basic Auth' },
-  { value: 'api-key', label: 'API Key' },
-  { value: 'oauth2', label: 'OAuth 2.0' },
-  { value: 'digest', label: 'Digest Auth' },
-  { value: 'ntlm', label: 'NTLM' },
-  { value: 'wsse', label: 'WS-Security', soapOnly: true },
+// `labelKey` → i18n (issue #193). The project auth pane already owns most of
+// these strings, so the request tab reuses its keys where the English matches.
+const AUTH_OPTIONS: { value: AuthType; labelKey: string; soapOnly?: boolean }[] = [
+  { value: 'inherit', labelKey: 'authPane.inherit' },
+  { value: 'none', labelKey: 'auth.noAuth' },
+  { value: 'bearer', labelKey: 'auth.bearerToken' },
+  { value: 'basic', labelKey: 'auth.basicAuth' },
+  { value: 'api-key', labelKey: 'auth.apiKey' },
+  { value: 'oauth2', labelKey: 'auth.oauth2' },
+  { value: 'digest', labelKey: 'authTab.digestAuth' },
+  { value: 'ntlm', labelKey: 'auth.ntlm' },
+  { value: 'wsse', labelKey: 'authTab.wsSecurity', soapOnly: true },
 ]
 
 /* Shared field styles */
@@ -51,6 +54,7 @@ function PasswordInput({
   dataTestId?: string
   toggleTestId?: string
 }) {
+  const { t } = useTranslation()
   const [show, setShow] = useState(false)
   return (
     <div className="relative">
@@ -60,7 +64,7 @@ function PasswordInput({
         onChange={(e) => onChange(e.target.value)}
         className={INPUT}
         style={{ color: 'var(--text)', paddingRight: 36 }}
-        placeholder={placeholder || 'Password'}
+        placeholder={placeholder || t('authPane.password')}
         data-testid={dataTestId}
       />
       <button
@@ -77,6 +81,7 @@ function PasswordInput({
 }
 
 export default function AuthTab() {
+  const { t } = useTranslation()
   const auth = useRequestStore((s) => s.auth)
   const setAuth = useRequestStore((s) => s.setAuth)
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
@@ -107,9 +112,9 @@ export default function AuthTab() {
       })) as { success: boolean; data?: { accessToken: string }; error?: string } | undefined
       if (res?.success && res.data?.accessToken) {
         setAuth({ ...auth, oauth2: { ...auth.oauth2!, token: res.data.accessToken } })
-        toast.success('Access token fetched')
+        toast.success(t('authTab.tokenFetched'))
       } else {
-        toast.error(res?.error || 'Token request failed')
+        toast.error(res?.error || t('authTab.tokenFailed'))
       }
     } catch (e) {
       toast.error((e as Error).message)
@@ -162,7 +167,7 @@ export default function AuthTab() {
                 }
               }}
             >
-              {opt.label}
+              {t(opt.labelKey)}
             </button>
           )
         })}
@@ -171,16 +176,14 @@ export default function AuthTab() {
       {/* ── No Auth ── */}
       {auth.type === 'none' && (
         <div className="py-8 text-center" style={{ color: 'var(--hint)' }}>
-          This request does not use any authorization.
+          {t('authTab.noAuthHelp')}
         </div>
       )}
 
       {/* ── Inherit from parent ── */}
       {auth.type === 'inherit' && (
         <div className="py-8 text-center" style={{ color: 'var(--hint)' }}>
-          This request inherits authorization from its folder, or the project if no folder sets one.
-          Configure it on the folder (right-click → Settings) or in Project Settings →
-          Authorization.
+          {t('authTab.inheritHelp')}
         </div>
       )}
 
@@ -188,7 +191,7 @@ export default function AuthTab() {
       {auth.type === 'bearer' && (
         <div className={CARD}>
           <div className={LABEL} style={{ color: 'var(--text)' }}>
-            Token
+            {t('authPane.token')}
           </div>
           <div className="flex gap-2">
             <input
@@ -213,7 +216,7 @@ export default function AuthTab() {
             </button>
           </div>
           <div className="mt-3" style={{ color: 'var(--hint)' }}>
-            Sent as:{' '}
+            {t('authTab.sentAs')}{' '}
             <code
               className="rounded px-1.5 py-0.5"
               style={{ background: 'var(--fill-4)', color: 'var(--text)' }}
@@ -229,7 +232,7 @@ export default function AuthTab() {
         <div className={CARD}>
           <div className="mb-3">
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Username
+              {t('authPane.username')}
             </div>
             <input
               value={auth.basic?.username || ''}
@@ -241,13 +244,13 @@ export default function AuthTab() {
               }
               className={INPUT}
               style={{ color: 'var(--text)' }}
-              placeholder="Username"
+              placeholder={t('authPane.username')}
               data-testid="auth-basic-user"
             />
           </div>
           <div>
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Password
+              {t('authPane.password')}
             </div>
             <PasswordInput
               value={auth.basic?.password || ''}
@@ -259,7 +262,7 @@ export default function AuthTab() {
             />
           </div>
           <div className="mt-3" style={{ color: 'var(--hint)' }}>
-            The authorization header will be auto-generated from the username and password.
+            {t('authTab.basicHelp')}
           </div>
         </div>
       )}
@@ -269,7 +272,7 @@ export default function AuthTab() {
         <div className={CARD}>
           <div className="mb-3">
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Key
+              {t('authPane.key')}
             </div>
             <input
               value={auth.apiKey?.key || ''}
@@ -291,7 +294,7 @@ export default function AuthTab() {
           </div>
           <div className="mb-3">
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Value
+              {t('authPane.value')}
             </div>
             <input
               value={auth.apiKey?.value || ''}
@@ -313,7 +316,7 @@ export default function AuthTab() {
           </div>
           <div>
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Add to
+              {t('authPane.addTo')}
             </div>
             <div className="flex gap-2">
               {(['header', 'query'] as const).map((loc) => {
@@ -343,7 +346,7 @@ export default function AuthTab() {
                       border: 'none',
                     }}
                   >
-                    {loc === 'header' ? 'Header' : 'Query Params'}
+                    {loc === 'header' ? t('authTab.inHeader') : t('authTab.inQuery')}
                   </button>
                 )
               })}
@@ -357,7 +360,7 @@ export default function AuthTab() {
         <div className={CARD}>
           <div className="mb-4">
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Grant Type
+              {t('authTab.grantType')}
             </div>
             <select
               value={auth.oauth2?.grantType || 'authorization_code'}
@@ -392,7 +395,7 @@ export default function AuthTab() {
             auth.oauth2?.grantType === 'implicit') && (
             <div className="mb-3">
               <div className={LABEL} style={{ color: 'var(--text)' }}>
-                Auth URL
+                {t('authTab.authUrl')}
               </div>
               <input
                 value={auth.oauth2?.authUrl || ''}
@@ -410,7 +413,7 @@ export default function AuthTab() {
           {auth.oauth2?.grantType !== 'implicit' && (
             <div className="mb-3">
               <div className={LABEL} style={{ color: 'var(--text)' }}>
-                Access Token URL
+                {t('authTab.tokenUrl')}
               </div>
               <input
                 value={auth.oauth2?.tokenUrl || ''}
@@ -426,7 +429,7 @@ export default function AuthTab() {
 
           <div className="mb-3">
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Client ID
+              {t('authTab.clientId')}
             </div>
             <input
               value={auth.oauth2?.clientId || ''}
@@ -443,7 +446,7 @@ export default function AuthTab() {
           {auth.oauth2?.grantType !== 'implicit' && (
             <div className="mb-3">
               <div className={LABEL} style={{ color: 'var(--text)' }}>
-                Client Secret
+                {t('authTab.clientSecret')}
               </div>
               <PasswordInput
                 value={auth.oauth2?.clientSecret || ''}
@@ -458,7 +461,7 @@ export default function AuthTab() {
             <>
               <div className="mb-3">
                 <div className={LABEL} style={{ color: 'var(--text)' }}>
-                  Username
+                  {t('authPane.username')}
                 </div>
                 <input
                   value={auth.oauth2?.username || ''}
@@ -470,12 +473,12 @@ export default function AuthTab() {
                   }
                   className={INPUT}
                   style={{ color: 'var(--text)' }}
-                  placeholder="Resource owner username"
+                  placeholder={t('authTab.ownerUsername')}
                 />
               </div>
               <div className="mb-3">
                 <div className={LABEL} style={{ color: 'var(--text)' }}>
-                  Password
+                  {t('authPane.password')}
                 </div>
                 <PasswordInput
                   value={auth.oauth2?.password || ''}
@@ -485,7 +488,7 @@ export default function AuthTab() {
                       oauth2: { ...auth.oauth2!, password: v },
                     })
                   }
-                  placeholder="Resource owner password"
+                  placeholder={t('authTab.ownerPassword')}
                 />
               </div>
             </>
@@ -493,7 +496,7 @@ export default function AuthTab() {
 
           <div className="mb-3">
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Scope
+              {t('authTab.scope')}
             </div>
             <input
               value={auth.oauth2?.scope || ''}
@@ -502,7 +505,7 @@ export default function AuthTab() {
               }
               className={INPUT}
               style={{ color: 'var(--text)' }}
-              placeholder="read write (space separated)"
+              placeholder={t('authTab.scopePlaceholder')}
             />
           </div>
 
@@ -515,7 +518,7 @@ export default function AuthTab() {
               className="mb-2 font-semibold uppercase tracking-wide"
               style={{ color: 'var(--muted)' }}
             >
-              Current Token
+              {t('authTab.currentToken')}
             </div>
             <input
               value={auth.oauth2?.token || ''}
@@ -524,7 +527,7 @@ export default function AuthTab() {
               }
               className={`font-mono ${INPUT}`}
               style={{ color: 'var(--text)' }}
-              placeholder="Paste token here or use Get New Access Token"
+              placeholder={t('authTab.tokenPlaceholder')}
             />
             <button
               type="button"
@@ -538,13 +541,12 @@ export default function AuthTab() {
                 opacity: fetchingToken || !auth.oauth2?.tokenUrl ? 0.6 : 1,
               }}
             >
-              {fetchingToken ? 'Fetching…' : 'Get New Access Token'}
+              {fetchingToken ? t('authTab.fetching') : t('authTab.getNewToken')}
             </button>
             {(auth.oauth2?.grantType === 'authorization_code' ||
               auth.oauth2?.grantType === 'implicit') && (
               <p className="mt-2 text-[11px]" style={{ color: 'var(--hint)' }}>
-                Browser-redirect grants aren&apos;t automated yet — paste a token above, or use
-                Client Credentials / Password grant for fully automatic tokens.
+                {t('authTab.browserGrantHelp')}
               </p>
             )}
           </div>
@@ -556,7 +558,7 @@ export default function AuthTab() {
         <div className={CARD}>
           <div className="mb-3">
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Username
+              {t('authPane.username')}
             </div>
             <input
               value={auth.digest?.username || ''}
@@ -568,13 +570,13 @@ export default function AuthTab() {
               }
               className={INPUT}
               style={{ color: 'var(--text)' }}
-              placeholder="Username"
+              placeholder={t('authPane.username')}
               data-testid="auth-digest-user"
             />
           </div>
           <div>
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Password
+              {t('authPane.password')}
             </div>
             <PasswordInput
               value={auth.digest?.password || ''}
@@ -585,8 +587,7 @@ export default function AuthTab() {
             />
           </div>
           <div className="mt-3" style={{ color: 'var(--hint)' }}>
-            Digest authentication uses a challenge-response mechanism. The client sends the request,
-            the server responds with a nonce, and the client resends with the digest.
+            {t('authTab.digestHelp')}
           </div>
         </div>
       )}
@@ -596,7 +597,7 @@ export default function AuthTab() {
         <div className={CARD}>
           <div className="mb-3">
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Username
+              {t('authPane.username')}
             </div>
             <input
               value={auth.ntlm?.username || ''}
@@ -612,12 +613,12 @@ export default function AuthTab() {
               }
               className={INPUT}
               style={{ color: 'var(--text)' }}
-              placeholder="Username"
+              placeholder={t('authPane.username')}
             />
           </div>
           <div className="mb-3">
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Password
+              {t('authPane.password')}
             </div>
             <PasswordInput
               value={auth.ntlm?.password || ''}
@@ -631,7 +632,7 @@ export default function AuthTab() {
           </div>
           <div className="mb-3">
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Domain
+              {t('authTab.domain')}
             </div>
             <input
               value={auth.ntlm?.domain || ''}
@@ -648,12 +649,12 @@ export default function AuthTab() {
               }
               className={INPUT}
               style={{ color: 'var(--text)' }}
-              placeholder="DOMAIN (optional)"
+              placeholder={t('authTab.domainPlaceholder')}
             />
           </div>
           <div>
             <div className={LABEL} style={{ color: 'var(--text)' }}>
-              Workstation
+              {t('authTab.workstation')}
             </div>
             <input
               value={auth.ntlm?.workstation || ''}
@@ -670,12 +671,11 @@ export default function AuthTab() {
               }
               className={INPUT}
               style={{ color: 'var(--text)' }}
-              placeholder="Workstation (optional)"
+              placeholder={t('authTab.workstationPlaceholder')}
             />
           </div>
           <div className="mt-3" style={{ color: 'var(--hint)' }}>
-            NTLM authentication is used primarily in Windows environments. Domain and workstation
-            are optional.
+            {t('authTab.ntlmHelp')}
           </div>
         </div>
       )}

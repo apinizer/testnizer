@@ -453,6 +453,16 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
       response_order INTEGER NOT NULL DEFAULT 0,
       enabled INTEGER NOT NULL DEFAULT 1
     );
+
+    CREATE TABLE IF NOT EXISTS ai_conversations (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      owner_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      messages_json TEXT NOT NULL DEFAULT '[]',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `)
 
   // Idempotent alters from production

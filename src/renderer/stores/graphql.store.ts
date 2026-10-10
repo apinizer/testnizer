@@ -7,6 +7,7 @@ import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { makeId } from '../lib/utils'
+import { graphqlMaskedSendError } from '../lib/masked-send-guard'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for GraphQL, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
@@ -262,6 +263,24 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     const tabsStore = useTabsStore.getState()
     const activeTabId = tabsStore.activeTabId
 
+    // Issue #195: a History mask left in a credential field is never sent.
+    const masked = graphqlMaskedSendError({
+      url,
+      variables,
+      headers: headers.filter((h) => h.enabled),
+    })
+    if (masked) {
+      const errResp: ApiResponse = {
+        requestId: makeId(),
+        protocol: 'graphql',
+        error: masked,
+        timing: { total: 0 },
+      }
+      set({ response: errResp })
+      responseStore.setResponse(errResp, activeTabId)
+      return
+    }
+
     // Owner tab — async response routes back to this tab even if user
     // switches away while the request is in flight.
     const ownerTabId = get()._currentTabId
@@ -316,6 +335,9 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
         _requestId: requestId,
         _workspaceId: ws.activeWorkspaceId || undefined,
         _projectId: ws.activeProjectId || undefined,
+        // Editor state with `{{var}}` kept — the History row reopens from it
+        // (issues #182, #195). Same shape `snapshotProtocol` saves.
+        _configured: { url, meta: { graphql: { url, query, variables, headers } } },
       })
 
       if (result?.success && result.data) {

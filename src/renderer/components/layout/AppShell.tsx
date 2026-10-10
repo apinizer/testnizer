@@ -32,6 +32,7 @@ import { useKeyboardShortcuts } from '../../lib/keyboard-shortcuts'
 import { makeTabId } from '../../lib/utils'
 import { toast } from '../../lib/toast'
 import { closeTabSafely } from '../../lib/cleanup-tab-state'
+import { useTranslation } from '../../lib/i18n'
 
 function GitLoadingOverlay() {
   const gitLoading = useUIStore((s) => s.gitLoading)
@@ -63,6 +64,7 @@ function GitLoadingOverlay() {
 }
 
 export default function AppShell() {
+  const { t } = useTranslation()
   const isLeftPanelCollapsed = useUIStore((s) => s.isLeftPanelCollapsed)
   const activeSidebarPage = useUIStore((s) => s.activeSidebarPage)
   const showConsolePanel = useUIStore((s) => s.showConsolePanel)
@@ -221,7 +223,7 @@ export default function AppShell() {
           className="flex h-screen w-screen items-center justify-center"
           style={{ background: 'var(--bg)', color: 'var(--muted)' }}
         >
-          <div>Loading...</div>
+          <div>{t('shell.loading')}</div>
         </div>
       )
     }
@@ -233,7 +235,7 @@ export default function AppShell() {
         className="flex h-screen w-screen items-center justify-center"
         style={{ background: 'var(--bg)', color: 'var(--muted)' }}
       >
-        <div>Loading...</div>
+        <div>{t('shell.loading')}</div>
       </div>
     )
   }

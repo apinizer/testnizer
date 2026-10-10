@@ -7,9 +7,11 @@ import RunnerVariables from '../runner/RunnerVariables'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import { generateCode, CODE_LANGUAGES } from '../../lib/code-generator'
 import type { CodeLanguage } from '../../types'
+import { useTranslation } from '../../lib/i18n'
 
 /** Generate Code pane — displayed inside the right panel as a tab */
 function GenerateCodePane() {
+  const { t } = useTranslation()
   const [activeLang, setActiveLang] = useState<CodeLanguage>('curl')
   const [copied, setCopied] = useState(false)
 
@@ -85,12 +87,12 @@ function GenerateCodePane() {
         <button
           type="button"
           onClick={handleCopy}
-          title="Copy"
+          title={t('rightPanel.copy')}
           className="flex shrink-0 cursor-pointer items-center gap-1 rounded border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
           style={{ fontSize: 13 }}
         >
           {copied ? <Check size={12} className="text-[var(--green)]" /> : <Copy size={12} />}
-          <span>{copied ? 'Copied' : 'Copy'}</span>
+          <span>{copied ? t('rightPanel.copied') : t('rightPanel.copy')}</span>
         </button>
       </div>
 
@@ -104,9 +106,9 @@ function GenerateCodePane() {
             color: 'var(--orange, #b35a00)',
             fontSize: 12,
           }}
-          title="Define these variables in the active environment so the snippet uses real values"
+          title={t('rightPanel.unresolvedHint')}
         >
-          Unresolved: {unresolvedVars.map((v) => `{{${v}}}`).join(', ')}
+          {t('rightPanel.unresolved')} {unresolvedVars.map((v) => `{{${v}}}`).join(', ')}
         </div>
       )}
 
@@ -127,12 +129,13 @@ function GenerateCodePane() {
 interface RightPanelTabIcon {
   id: 'variables' | 'code'
   icon: React.ReactNode
-  label: string
+  /** i18n key (issue #193). */
+  labelKey: string
 }
 
 const TABS: RightPanelTabIcon[] = [
-  { id: 'variables', icon: <Variable size={14} />, label: 'Variables' },
-  { id: 'code', icon: <Code2 size={14} />, label: 'Code' },
+  { id: 'variables', icon: <Variable size={14} />, labelKey: 'rightPanel.variables' },
+  { id: 'code', icon: <Code2 size={14} />, labelKey: 'rightPanel.code' },
 ]
 
 /**
@@ -141,6 +144,7 @@ const TABS: RightPanelTabIcon[] = [
  * Collapsible via a thin icon rail. Used inside the Workbench.
  */
 export default function RightPanel() {
+  const { t } = useTranslation()
   const collapsed = useUIStore((s) => s.rightPanelCollapsed)
   const activeTab = useUIStore((s) => s.rightPanelTab)
   const setTab = useUIStore((s) => s.setRightPanelTab)
@@ -161,7 +165,7 @@ export default function RightPanel() {
             onClick={() => {
               setTab(tab.id)
             }}
-            title={tab.label}
+            title={t(tab.labelKey)}
             className="flex cursor-pointer items-center justify-center rounded p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--accent)]"
             style={{ background: 'transparent', border: 'none' }}
           >
@@ -189,7 +193,7 @@ export default function RightPanel() {
               key={tab.id}
               type="button"
               onClick={() => setTab(tab.id)}
-              title={tab.label}
+              title={t(tab.labelKey)}
               className="flex cursor-pointer items-center gap-1.5 px-2.5 transition-colors"
               style={{
                 height: 33,
@@ -203,7 +207,7 @@ export default function RightPanel() {
               }}
             >
               {tab.icon}
-              <span>{tab.label}</span>
+              <span>{t(tab.labelKey)}</span>
             </button>
           )
         })}
@@ -214,7 +218,7 @@ export default function RightPanel() {
         <button
           type="button"
           onClick={toggleCollapsed}
-          title="Collapse panel"
+          title={t('rightPanel.collapse')}
           className="flex cursor-pointer items-center justify-center rounded p-1 text-[var(--muted)] transition-colors hover:text-[var(--text)]"
           style={{ background: 'transparent', border: 'none' }}
         >

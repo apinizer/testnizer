@@ -9,8 +9,9 @@ import { isReachable } from '../helpers/public-endpoints'
  *
  * Sets a Bearer `{{tok}}` on a folder, drops an endpoint inside it whose own
  * auth is `inherit`, and runs it: the echo server's /bearer route reflects the
- * received token, so a 200 + echoed `SECRET123` proves the folder credential
- * was inherited AND the `{{tok}}` variable resolved. A sibling endpoint with an
+ * received token, so a 200 + a script test seeing the echoed `SECRET123` proves
+ * the folder credential was inherited AND the `{{tok}}` variable resolved (the
+ * Run result itself masks the token since issue #195). A sibling endpoint with an
  * explicit `none` proves the override path (401).
  */
 
@@ -21,6 +22,7 @@ interface RunResult {
       status: number | null
       error?: string
       responseBody?: string
+      assertions?: Array<{ name: string; passed: boolean }>
     }>
   }
   error?: string
@@ -94,6 +96,10 @@ test('folder Bearer is inherited by an inherit-auth request; explicit none overr
           url: `${BASE}/bearer`,
           method: 'GET',
           auth: { type: 'inherit' },
+          // Run results are masked since issue #195 (the echoed token is an
+          // auth secret), so the resolution proof is a test on the RAW response.
+          postScript:
+            "pm.test('token resolved', () => pm.expect(pm.response.json().token).to.eql('SECRET123'))",
         }),
       }),
     ).id
@@ -134,7 +140,10 @@ test('folder Bearer is inherited by an inherit-auth request; explicit none overr
   const inh = out.inheritRun.data!.results[0]
   expect(inh.error).toBeFalsy()
   expect(inh.status).toBe(200)
-  expect(JSON.parse(inh.responseBody ?? '{}').token).toBe('SECRET123')
+  // The script test saw the raw echoed token = the resolved {{tok}}…
+  expect(inh.assertions?.find((a) => a.name === 'token resolved')?.passed).toBe(true)
+  // …and the stored / displayed result never carries it (issue #195).
+  expect(inh.responseBody ?? '').not.toContain('SECRET123')
 
   // Explicit none overrides the inherited bearer → no Authorization → 401.
   expect(out.overrideRun.success).toBe(true)

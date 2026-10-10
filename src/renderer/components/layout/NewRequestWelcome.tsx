@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 import { useTabsStore } from '../../stores/tabs.store'
+import { useResponseStore } from '../../stores/response.store'
 import { useHistoryStore } from '../../stores/history.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTranslation } from '../../lib/i18n'
@@ -19,6 +20,8 @@ import { makeTabId } from '../../lib/utils'
 import RequestBadge from '../shared/RequestBadge'
 import { mcpHistoryRestore, mcpHistoryRowLabel } from '../protocols/mcp/history-restore'
 import { openMcpHistoryRestore } from '../protocols/mcp/history-open'
+import { openHistoryEntryInTab } from '../../lib/history-open'
+import { historyTabUrl } from '../../lib/history-restore'
 import type { HistoryEntry } from '../../types'
 
 /** What a recent row reads as: MCP rows by their call (tool / prompt / URI), the rest by URL. */
@@ -91,8 +94,15 @@ export default function NewRequestWelcome() {
       name: `${entry.method || 'GET'} ${entry.url.split('?')[0].slice(0, 50)}`,
       protocol,
       method: entry.method,
-      url: entry.url,
+      url: historyTabUrl(entry),
     })
+    // The same restore the History sidebar does (issue #182) — WebSocket,
+    // gRPC and GraphQL rows used to open blank here too. SOAP keeps the
+    // tab-only open it always had.
+    if (protocol !== 'soap') {
+      useResponseStore.getState().clearResponse(useTabsStore.getState().activeTabId || tabId)
+      openHistoryEntryInTab(entry, useTabsStore.getState().activeTabId || tabId)
+    }
   }
 
   function createHttpEndpoint() {
@@ -248,7 +258,7 @@ export default function NewRequestWelcome() {
               style={{ color: 'var(--muted)', fontWeight: 600 }}
             >
               <Clock size={14} aria-hidden="true" />
-              <span>Recent endpoints</span>
+              <span>{t('welcome.recentEndpoints')}</span>
             </div>
             <div className="flex flex-col gap-1.5">
               {recent.map((entry) => (

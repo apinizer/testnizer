@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X, Check, ToggleLeft, ToggleRight, Pencil } from 'lucide-react'
 import type { TestAssertion } from '../../types'
 import { useNumberDraft } from '../../lib/number-draft'
+import { useTranslation } from '../../lib/i18n'
 
 const TYPE_STYLES: Record<string, { color: string; bg: string }> = {
   status_equals: { color: 'var(--green)', bg: 'var(--green-bg)' },
@@ -24,6 +25,7 @@ interface AssertionRowProps {
 }
 
 export default function AssertionRow({ assertion, onUpdate, onRemove }: AssertionRowProps) {
+  const { t } = useTranslation()
   const [editingName, setEditingName] = useState(false)
   const [nameValue, setNameValue] = useState(assertion.name)
   const display = TYPE_STYLES[assertion.type] || { color: 'var(--muted)', bg: 'var(--surface)' }
@@ -83,7 +85,7 @@ export default function AssertionRow({ assertion, onUpdate, onRemove }: Assertio
           }}
           className="cursor-pointer bg-transparent p-0 text-[var(--hint)] hover:text-[var(--accent)]"
           style={{ border: 'none' }}
-          title="Edit assertion name"
+          title={t('assertion.editName')}
         >
           <Pencil size={12} />
         </button>
@@ -94,7 +96,7 @@ export default function AssertionRow({ assertion, onUpdate, onRemove }: Assertio
           data-testid="assertion-enable"
           className="cursor-pointer bg-transparent p-0"
           style={{ border: 'none', color: assertion.enabled ? 'var(--accent)' : 'var(--hint)' }}
-          title={assertion.enabled ? 'Disable' : 'Enable'}
+          title={assertion.enabled ? t('assertion.disable') : t('assertion.enable')}
         >
           {assertion.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
         </button>
@@ -105,7 +107,7 @@ export default function AssertionRow({ assertion, onUpdate, onRemove }: Assertio
           data-testid="assertion-remove"
           className="cursor-pointer bg-transparent p-0 text-[var(--hint)] hover:text-[var(--red)]"
           style={{ border: 'none' }}
-          title="Remove assertion"
+          title={t('assertion.remove')}
         >
           <X size={12} />
         </button>
@@ -127,6 +129,7 @@ function AssertionFields({
   onUpdate: (updates: Partial<TestAssertion>) => void
   display: { color: string; bg: string }
 }) {
+  const { t } = useTranslation()
   const inputCls =
     'rounded border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-[var(--text)] outline-none focus:border-[var(--accent)]'
 
@@ -134,7 +137,7 @@ function AssertionFields({
     case 'status_equals':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[var(--muted)]">Expected status:</span>
+          <span className="text-[var(--muted)]">{t('assertion.expectedStatus')}</span>
           <DraftNumber
             value={Number(assertion.expected ?? 200)}
             min={100}
@@ -151,7 +154,7 @@ function AssertionFields({
     case 'status_in_range':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[var(--muted)]">Range:</span>
+          <span className="text-[var(--muted)]">{t('assertion.range')}</span>
           <DraftNumber
             value={assertion.rangeMin ?? 200}
             min={100}
@@ -159,7 +162,7 @@ function AssertionFields({
             onChange={(rangeMin) => onUpdate({ rangeMin })}
             className={`${inputCls} w-20`}
           />
-          <span className="text-[var(--muted)]">to</span>
+          <span className="text-[var(--muted)]">{t('assertion.rangeTo')}</span>
           <DraftNumber
             value={assertion.rangeMax ?? 299}
             min={100}
@@ -176,12 +179,12 @@ function AssertionFields({
     case 'body_contains':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[var(--muted)]">Contains:</span>
+          <span className="text-[var(--muted)]">{t('assertion.contains')}</span>
           <input
             type="text"
             value={String(assertion.expected ?? '')}
             onChange={(e) => onUpdate({ expected: e.target.value })}
-            placeholder="Search string..."
+            placeholder={t('assertion.searchPlaceholder')}
             className={`${inputCls} flex-1`}
           />
         </div>
@@ -190,7 +193,7 @@ function AssertionFields({
     case 'body_equals_json':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[var(--muted)]">Expected JSON:</span>
+          <span className="text-[var(--muted)]">{t('assertion.expectedJson')}</span>
           <input
             type="text"
             value={String(assertion.expected ?? '{}')}
@@ -215,12 +218,12 @@ function AssertionFields({
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-16 text-[var(--muted)]">Expected:</span>
+            <span className="w-16 text-[var(--muted)]">{t('assertion.expected')}</span>
             <input
               type="text"
               value={String(assertion.expected ?? '')}
               onChange={(e) => onUpdate({ expected: e.target.value })}
-              placeholder="Expected value"
+              placeholder={t('assertion.expectedPlaceholder')}
               className={`${inputCls} flex-1`}
             />
           </div>
@@ -241,12 +244,12 @@ function AssertionFields({
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-16 text-[var(--muted)]">Expected:</span>
+            <span className="w-16 text-[var(--muted)]">{t('assertion.expected')}</span>
             <input
               type="text"
               value={String(assertion.expected ?? '')}
               onChange={(e) => onUpdate({ expected: e.target.value })}
-              placeholder="Expected value"
+              placeholder={t('assertion.expectedPlaceholder')}
               className={`${inputCls} flex-1`}
             />
           </div>
@@ -256,7 +259,7 @@ function AssertionFields({
     case 'header_exists':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[var(--muted)]">Header name:</span>
+          <span className="text-[var(--muted)]">{t('assertion.headerName')}</span>
           <input
             type="text"
             value={assertion.headerName ?? ''}
@@ -272,7 +275,7 @@ function AssertionFields({
       return (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
-            <span className="w-20 text-[var(--muted)]">Header name:</span>
+            <span className="w-20 text-[var(--muted)]">{t('assertion.headerName')}</span>
             <input
               type="text"
               value={assertion.headerName ?? ''}
@@ -283,7 +286,7 @@ function AssertionFields({
           </div>
           <div className="flex items-center gap-2">
             <span className="w-20 text-[var(--muted)]">
-              {assertion.type === 'header_equals' ? 'Equals:' : 'Contains:'}
+              {assertion.type === 'header_equals' ? t('assertion.equals') : t('assertion.contains')}
             </span>
             <input
               type="text"
@@ -299,7 +302,7 @@ function AssertionFields({
     case 'response_time_under':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[var(--muted)]">Max time:</span>
+          <span className="text-[var(--muted)]">{t('assertion.maxTime')}</span>
           <DraftNumber
             value={Number(assertion.expected ?? 2000)}
             min={1}
@@ -317,7 +320,7 @@ function AssertionFields({
     case 'response_size_under':
       return (
         <div className="flex items-center gap-2">
-          <span className="text-[var(--muted)]">Max size:</span>
+          <span className="text-[var(--muted)]">{t('assertion.maxSize')}</span>
           <DraftNumber
             value={Number(assertion.expected ?? 10240)}
             min={1}
@@ -325,7 +328,7 @@ function AssertionFields({
             onChange={(expected) => onUpdate({ expected })}
             className={`${inputCls} w-24`}
           />
-          <span className="text-[var(--muted)]">bytes</span>
+          <span className="text-[var(--muted)]">{t('assertion.bytes')}</span>
           <BadgePill color={display.color} bg={display.bg}>
             {assertion.expected ?? 10240} B
           </BadgePill>
@@ -336,7 +339,7 @@ function AssertionFields({
       return (
         <div className="flex items-center gap-2">
           <Check size={12} className="text-[var(--green)]" />
-          <span className="text-[var(--muted)]">Configured</span>
+          <span className="text-[var(--muted)]">{t('assertion.configured')}</span>
         </div>
       )
   }

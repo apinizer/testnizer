@@ -796,6 +796,28 @@ function runMigrations(database: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_mock_mcp_servers_project ON mock_mcp_servers(project_id);
+
+    -- AI Chat conversations (issue #199). LOCAL ONLY: never part of a project
+    -- export, git checkout or Duplicate — exportProjectData selects tables by
+    -- name and this one is not among them. No owner FK / trigger: they survive
+    -- git reimports; explicit request deletes clean up in the IPC handlers.
+    -- owner_id = the saved request's id
+    -- (endpoint / saved_request / test_suite_item) or 'tab:<tabId>' for an
+    -- unsaved tab (rehomed on its first Save). messages_json = AiTurn[]
+    -- (src/shared/ai-chat-types.ts), tool results capped on write. Mirrors:
+    -- tests/main/handlers/helpers.ts + tests/main/schema-sync.test.ts.
+    CREATE TABLE IF NOT EXISTS ai_conversations (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      owner_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      messages_json TEXT NOT NULL DEFAULT '[]',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_conversations_owner ON ai_conversations(owner_id);
+    CREATE INDEX IF NOT EXISTS idx_ai_conversations_project ON ai_conversations(project_id);
   `)
 
   // Idempotent column additions for existing installs. Each ALTER is wrapped
@@ -890,6 +912,16 @@ function runMigrations(database: Database.Database): void {
         DELETE FROM saved_responses WHERE owner_type = 'test_suite_item'
           AND owner_id IN (SELECT id FROM test_suite_items WHERE folder_id = OLD.id);
       END;
+    -- AI Chat conversations (issue #199) have NO owner-delete triggers: a git
+    -- branch switch deletes and re-inserts request rows (replace-mode
+    -- reimport), and conversations are local data that must survive it. Only
+    -- an explicit user delete (the IPC delete paths) removes them; the project
+    -- FK cascades the rest. Builds that shipped the triggers drop them here.
+    DROP TRIGGER IF EXISTS trg_ai_conversations_endpoint_del;
+    DROP TRIGGER IF EXISTS trg_ai_conversations_saved_request_del;
+    DROP TRIGGER IF EXISTS trg_ai_conversations_suite_item_del;
+    DROP TRIGGER IF EXISTS trg_ai_conversations_suite_del;
+    DROP TRIGGER IF EXISTS trg_ai_conversations_suite_folder_del;
     CREATE TRIGGER IF NOT EXISTS trg_saved_responses_workspace_del
       BEFORE DELETE ON workspaces BEGIN
         DELETE FROM saved_responses

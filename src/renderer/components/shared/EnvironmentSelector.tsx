@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Check, ChevronDown, Eye, Layers, Globe } from 'lucide-react'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useUIStore } from '../../stores/ui.store'
+import { useTranslation } from '../../lib/i18n'
 
 /**
  * Postman-style environment selector.
@@ -16,6 +17,7 @@ import { useUIStore } from '../../stores/ui.store'
  * panels regardless of stacking context.
  */
 export default function EnvironmentSelector() {
+  const { t } = useTranslation()
   const environments = useEnvironmentStore((s) => s.environments)
   const activeEnvId = useEnvironmentStore((s) => s.activeEnvironmentId)
   const setActiveEnvironment = useEnvironmentStore((s) => s.setActiveEnvironment)
@@ -75,10 +77,10 @@ export default function EnvironmentSelector() {
           height: 24,
           maxWidth: 220,
         }}
-        title="Environment"
+        title={t('envSelector.title')}
       >
         <Layers size={12} style={{ color: activeEnv ? 'var(--accent)' : 'var(--muted)' }} />
-        <span className="truncate">{activeEnv?.name || 'No environment'}</span>
+        <span className="truncate">{activeEnv?.name || t('envSelector.none')}</span>
         <ChevronDown size={11} style={{ color: 'var(--muted)' }} />
       </button>
 
@@ -86,7 +88,7 @@ export default function EnvironmentSelector() {
       <button
         type="button"
         onClick={() => setShowEnvironmentModal(true)}
-        title="Environment quick look"
+        title={t('envSelector.quickLook')}
         className="cursor-pointer"
         style={{
           background: 'transparent',
@@ -145,7 +147,7 @@ export default function EnvironmentSelector() {
               }}
             >
               <Globe size={12} style={{ color: 'var(--muted)' }} />
-              <span className="flex-1">No environment</span>
+              <span className="flex-1">{t('envSelector.none')}</span>
               {activeEnvId === null && <Check size={12} style={{ color: 'var(--accent)' }} />}
             </button>
 
@@ -213,7 +215,7 @@ export default function EnvironmentSelector() {
                 ;(e.currentTarget as HTMLElement).style.background = 'transparent'
               }}
             >
-              Manage Environments
+              {t('envSelector.manage')}
             </button>
           </div>,
           document.body,

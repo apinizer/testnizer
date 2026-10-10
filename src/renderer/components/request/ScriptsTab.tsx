@@ -46,8 +46,8 @@ export default function ScriptsTab() {
   const setPostScript = useRequestStore((s) => s.setPostScript)
 
   const sections: { key: ScriptSection; label: string }[] = [
-    { key: 'pre-request', label: 'Pre-request' },
-    { key: 'post-response', label: 'Post-response' },
+    { key: 'pre-request', label: t('scripts.preRequest') },
+    { key: 'post-response', label: t('scripts.postResponse') },
   ]
 
   // Always-visible Insert example button. The previous version only showed
@@ -114,9 +114,9 @@ export default function ScriptsTab() {
             color: 'var(--accent-text)',
             fontSize: 12,
           }}
-          title="Append an example snippet to the editor"
+          title={t('scripts.insertExampleTitle')}
         >
-          + Insert example
+          {t('scripts.insertExample')}
         </button>
 
         <button

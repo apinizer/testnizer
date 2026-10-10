@@ -19,9 +19,10 @@ import { safeFileName } from '../lib/filename-safe'
 import {
   importPostman,
   importInsomnia,
-  exportSuiteAsPostman,
-  exportSuiteAsInsomnia,
+  buildPostmanSuiteExport,
+  buildInsomniaSuiteExport,
 } from './import-export.handler'
+import type { ExportSkippedItem } from '../../shared/collection-export'
 import { snapshotEndpointForSuite, ensureUniqueSuiteName } from './test-suite.handler'
 import { getEndpointById } from '../db/endpoint.repo'
 import { SAVED_RESPONSE_COLUMNS } from '../db/saved-response.repo'
@@ -50,7 +51,9 @@ import {
   redactToken,
 } from '../lib/git-config'
 import { projectFileSlug, pickProjectFile } from '../lib/project-file'
+import { remapAiToolServerRefs, type ToolServerIdMap } from '../lib/ai-tool-server-remap'
 import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
+import { invalidateSecretInventory } from '../lib/secret-inventory-cache'
 
 // ─── Multi-format detection for test suite import ────────────────
 export type TestSuiteImportFormat = 'testnizer' | 'postman' | 'insomnia' | 'unknown'
@@ -1851,6 +1854,10 @@ export function importProjectAsNew(
   for (const s of data.savedRequests) savedReqIdMap.set(s.id as string, randomUUID())
   for (const env of data.environments) envIdMap.set(env.id as string, randomUUID())
   for (const s of data.testSuites || []) suiteIdMap.set(s.id as string, randomUUID())
+  // AI Chat Tools: references to the project's saved MCP requests follow the
+  // copy's new row ids; unmapped ones are dropped + marked missing (issue #180).
+  const toolServerIds: ToolServerIdMap = (kind, oldId) =>
+    kind === 'endpoint' ? endpointIdMap.get(oldId) : savedReqIdMap.get(oldId)
 
   const proj = data.project || {}
   const desiredName = overrides?.name || (proj.name as string) || 'Imported Project'
@@ -1933,7 +1940,7 @@ export function importProjectAsNew(
         e.method ?? null,
         e.path,
         e.status || 'developing',
-        e.request_schema ?? null,
+        remapAiToolServerRefs(e.request_schema as string | null, toolServerIds) ?? null,
         e.response_schemas ?? null,
         e.sort_order ?? 0,
         (e.created_at as number) || now,
@@ -1990,7 +1997,7 @@ export function importProjectAsNew(
         s.pre_script ?? null,
         s.post_script ?? null,
         s.assertions ?? null,
-        s.metadata ?? null,
+        remapAiToolServerRefs(s.metadata as string | null, toolServerIds) ?? null,
         s.sort_order ?? 0,
         (s.created_at as number) || now,
         now,
@@ -2015,7 +2022,9 @@ export function importProjectAsNew(
       )
     }
 
-    // Environment variables
+    // Environment variables (the Console mask's cached secret inventory is
+    // dropped first — this import may add variables marked secret).
+    invalidateSecretInventory()
     const insertEnvVar = db.prepare(
       `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -2130,7 +2139,7 @@ export function importProjectAsNew(
         it.name ?? 'Imported request',
         it.method ?? null,
         repairedSuiteItemUrl(storedItemUrl, it.request_schema as string | null) ?? storedItemUrl,
-        (it.request_schema as string) ?? '{}',
+        remapAiToolServerRefs(it.request_schema as string | null, toolServerIds) ?? '{}',
         (it.assertions as string) ?? null,
         // source_endpoint_id pointed at the source project's row — that id
         // doesn't exist in the new project, so drop the advisory link.
@@ -2361,11 +2370,14 @@ export function registerSaveHandlers(): void {
         const date = new Date().toISOString().slice(0, 10)
         let content: string
         let suffix: string
+        // Items the collection format cannot carry (MCP, WebSocket, gRPC, AI …)
+        // — returned so the Tests panel names them (issue #197).
+        let skipped: ExportSkippedItem[] = []
         if (fmt === 'postman') {
-          content = exportSuiteAsPostman(suiteId)
+          ;({ content, skipped } = buildPostmanSuiteExport(suiteId))
           suffix = 'postman'
         } else if (fmt === 'insomnia') {
-          content = exportSuiteAsInsomnia(suiteId)
+          ;({ content, skipped } = buildInsomniaSuiteExport(suiteId))
           suffix = 'insomnia'
         } else {
           content = JSON.stringify(exportTestSuiteData(suiteId), null, 2)
@@ -2374,7 +2386,7 @@ export function registerSaveHandlers(): void {
         const defaultName = `suite-${suiteName}-${suffix}-${date}.json`
         const res = await writeJsonViaSaveDialog(content, defaultName)
         if (!res.success) return { success: false, error: res.error }
-        return { success: true, data: { path: res.path } }
+        return { success: true, data: { path: res.path, skipped } }
       } catch (e) {
         return { success: false, error: (e as Error).message }
       }

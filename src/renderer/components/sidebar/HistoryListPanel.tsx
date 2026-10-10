@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Search, Trash2, Clock, History as HistoryIcon } from 'lucide-react'
 import { useHistoryStore } from '../../stores/history.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
-import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
@@ -13,17 +12,13 @@ import {
   mcpHistorySearchText,
 } from '../protocols/mcp/history-restore'
 import { openMcpHistoryRestore } from '../protocols/mcp/history-open'
+import { openHistoryEntryInTab } from '../../lib/history-open'
+import { historyTabUrl, unmaskHistoryValue } from '../../lib/history-restore'
+import { useHistoryHiddenStore } from '../../stores/history-hidden.store'
 import RequestBadge from '../shared/RequestBadge'
 import EmptyState from '../shared/EmptyState'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
-import type {
-  HistoryEntry,
-  KeyValuePair,
-  RequestBody,
-  AuthConfig,
-  HttpMethod,
-  ApiResponse,
-} from '../../types'
+import type { HistoryEntry, ApiResponse } from '../../types'
 
 /**
  * Postman-style request history list for the left panel — individual requests
@@ -42,8 +37,6 @@ export default function HistoryListPanel() {
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
   const openPreviewTab = useTabsStore((s) => s.openPreviewTab)
-  const switchToTab = useRequestStore((s) => s.switchToTab)
-  const loadFromEndpoint = useRequestStore((s) => s.loadFromEndpoint)
   const setResponse = useResponseStore((s) => s.setResponse)
   const clearResponse = useResponseStore((s) => s.clearResponse)
   const soapSwitchToTab = useSoapStore((s) => s.switchToTab)
@@ -76,7 +69,13 @@ export default function HistoryListPanel() {
   const groups = useMemo(() => groupByDate(filtered), [filtered])
 
   function handleOpenInTab(entry: HistoryEntry) {
-    const snap = (entry.request_snapshot || {}) as Record<string, unknown>
+    // SOAP reads the snapshot directly: values main masked (issue #195) come
+    // back EMPTY so a re-send never puts the mask on the wire.
+    const soapHidden: string[] = []
+    const snap = unmaskHistoryValue(entry.request_snapshot || {}, '', soapHidden) as Record<
+      string,
+      unknown
+    >
     const tabId = `tab-hist-${entry.id}`
     const protocol = entry.protocol || 'http'
 
@@ -96,7 +95,7 @@ export default function HistoryListPanel() {
         : `${entry.method || 'GET'} ${shortUrl(entry.url)}`,
       protocol,
       method: entry.method,
-      url: mcpRow ? mcpRow.url : entry.url,
+      url: mcpRow ? mcpRow.url : historyTabUrl(entry),
     })
 
     // openPreviewTab is synchronous — read the resolved active tab id back
@@ -112,6 +111,7 @@ export default function HistoryListPanel() {
     }
 
     if (protocol === 'soap') {
+      useHistoryHiddenStore.getState().setHidden(realTabId, soapHidden)
       soapSwitchToTab(realTabId)
       clearResponse()
       // SOAP snapshots store wsdl/operation/etc. fields at the top level
@@ -161,16 +161,11 @@ export default function HistoryListPanel() {
           },
         })
     } else {
-      switchToTab(realTabId)
       clearResponse()
-      loadFromEndpoint({
-        method: (entry.method || 'GET') as HttpMethod,
-        url: entry.url,
-        params: (snap.params as KeyValuePair[] | undefined) || [],
-        headers: (snap.headers as KeyValuePair[] | undefined) || [],
-        body: snap.body as RequestBody | undefined,
-        auth: snap.auth as AuthConfig | undefined,
-      })
+      // HTTP, WebSocket, gRPC, GraphQL (issue #182): one restore, shared with
+      // the welcome page's recent list. Rows carrying the `{{var}}` template
+      // reopen from it, so re-sending keeps working auth (issue #195).
+      openHistoryEntryInTab(entry, realTabId)
     }
 
     if (entry.response_snapshot) {

@@ -5,7 +5,18 @@ import { getDb } from '../db/database'
 import { parseWsdl, parseWsdlFromContent, type WsdlParseResult } from '../protocols/soap.engine'
 import { loadProto, type GrpcServiceDescription } from '../protocols/grpc.engine'
 import { ensureDefaultExtension, saveFileFiltersFor } from '../lib/save-file-filters'
-import { readRequestSettings } from '../../shared/request-settings'
+import { readRequestSettings, readRequestSettingsJson } from '../../shared/request-settings'
+import {
+  soapTransportFromMeta,
+  withSoapTransportHeaders,
+  type SoapTransportMeta,
+} from '../../shared/soap-transport'
+import {
+  exportProtocolOf,
+  isCollectionExportable,
+  type CollectionExportResult,
+  type ExportSkippedItem,
+} from '../../shared/collection-export'
 import {
   isSecretFlag,
   localSecretsByKey,
@@ -265,10 +276,12 @@ export function registerImportExportHandlers(): void {
     },
   )
 
+  // `data` stays the file text (callers JSON.parse it); `skipped` lists the
+  // items the format could not carry (issue #197) so the UI can name them.
   ipcMain.handle('export:openApi', async (_event, projectId: string) => {
     try {
-      const data = exportProjectAsOpenApi(projectId)
-      return { success: true, data }
+      const { content, skipped } = buildOpenApiProjectExport(projectId)
+      return { success: true, data: content, skipped }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -321,8 +334,8 @@ export function registerImportExportHandlers(): void {
   // ─── Postman Export ─────────────────────────────────────────
   ipcMain.handle('export:postman', async (_event, projectId: string) => {
     try {
-      const data = exportAsPostman(projectId)
-      return { success: true, data }
+      const { content, skipped } = buildPostmanProjectExport(projectId)
+      return { success: true, data: content, skipped }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -428,8 +441,8 @@ export function registerImportExportHandlers(): void {
   // ─── Insomnia Export ────────────────────────────────────────
   ipcMain.handle('export:insomnia', async (_event, projectId: string) => {
     try {
-      const data = exportAsInsomnia(projectId)
-      return { success: true, data }
+      const { content, skipped } = buildInsomniaProjectExport(projectId)
+      return { success: true, data: content, skipped }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -1035,7 +1048,97 @@ function authToOpenApiScheme(
   }
 }
 
-function exportProjectAsOpenApi(projectId: string): string {
+/**
+ * OpenAPI 3.0.3 document of a project — endpoints AND Ctrl+S-saved requests
+ * (issue #197). Rows OpenAPI cannot describe (non-HTTP protocols) and rows
+ * whose path + method an earlier row already took are returned as `skipped`.
+ */
+/**
+ * Split a stored request URL into an OpenAPI path key and the query pairs its
+ * query string carries (issue #197).
+ *
+ * - `https://api.x.com/users/{id}?a=1` → `/users/{id}` + `[a=1]`
+ * - `{{baseUrl}}/users/{{id}}` → `/users/{id}` (the leading host variable is
+ *   the server, not part of the path; `{{x}}` path segments are app variables
+ *   and become OpenAPI `{x}` templates so a path parameter `x` is emitted —
+ *   a raw `{{id}}` used to yield a parameter named `{id`)
+ * - `/users?a=1` → `/users` + `[a=1]`
+ *
+ * An OpenAPI path key cannot carry a query string, so it is always removed
+ * from the key and returned separately for `in: query` parameters.
+ */
+export function openApiPathAndQuery(rawUrl: string): {
+  path: string
+  query: Array<{ key: string; value: string }>
+} {
+  const raw = (rawUrl ?? '').trim()
+  const noFragment = raw.split('#', 1)[0]
+  const qIdx = noFragment.indexOf('?')
+  const base = qIdx >= 0 ? noFragment.slice(0, qIdx) : noFragment
+  const queryString = qIdx >= 0 ? noFragment.slice(qIdx + 1) : ''
+
+  const query: Array<{ key: string; value: string }> = []
+  if (queryString) {
+    for (const pair of queryString.split('&')) {
+      if (!pair) continue
+      const eq = pair.indexOf('=')
+      const rawKey = eq >= 0 ? pair.slice(0, eq) : pair
+      const rawValue = eq >= 0 ? pair.slice(eq + 1) : ''
+      const key = safeDecodeQueryComponent(rawKey)
+      if (!key) continue
+      query.push({ key, value: safeDecodeQueryComponent(rawValue) })
+    }
+  }
+
+  return { path: toOpenApiTemplates(openApiPathOf(base)), query }
+}
+
+function safeDecodeQueryComponent(s: string): string {
+  try {
+    return decodeURIComponent(s.replace(/\+/g, ' '))
+  } catch {
+    return s
+  }
+}
+
+/** `{{ name }}` → `{name}` — app variables in a path key become OpenAPI templates. */
+function toOpenApiTemplates(path: string): string {
+  return path.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_m, name: string) => `{${name}}`)
+}
+
+/** The path part of a stored URL (query string already removed). */
+function openApiPathOf(base: string): string {
+  if (!base) return '/'
+  if (base.startsWith('/')) return base
+  // `{{baseUrl}}/users` — the form Ctrl+S-saved requests (issue #197) and
+  // requests built in the app store: the host is the variable, the rest is
+  // the OpenAPI path.
+  const templated = base.match(/^\{\{[^{}]+\}\}(\/.*)?/)
+  if (templated) return templated[1] || '/'
+  // Full URL. Swap `{{envVar}}` and `{pathParam}` for plain-text placeholders
+  // so `new URL()` neither chokes on nor percent-encodes the braces, then
+  // restore them in the pathname (a host variable is dropped with the host).
+  const vars: string[] = []
+  const safe = base
+    .replace(/\{\{[^{}]+\}\}/g, (match) => {
+      vars.push(match)
+      return `__TNZ_VAR_${vars.length - 1}__`
+    })
+    .replace(/\{([^{}]+)\}/g, (match) => {
+      vars.push(match)
+      return `__TNZ_VAR_${vars.length - 1}__`
+    })
+  try {
+    const u = new URL(safe)
+    const tail = u.pathname || '/'
+    return tail.replace(/__TNZ_VAR_(\d+)__/g, (_m, i: string) => vars[Number(i)] ?? '')
+  } catch {
+    // Other templated URL or a bare path without a leading slash — as-is.
+    return base
+  }
+}
+
+export function buildOpenApiProjectExport(projectId: string): CollectionExportResult {
   const db = getDb()
 
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
@@ -1049,17 +1152,7 @@ function exportProjectAsOpenApi(projectId: string): string {
     throw new Error('Project not found')
   }
 
-  const endpoints = db
-    .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
-    .all(projectId) as Array<{
-    folder_id: string | null
-    method: string | null
-    path: string
-    name: string
-    description: string | null
-    request_schema: string | null
-    response_schemas: string | null
-  }>
+  const { rows: endpoints, skipped } = partitionExportable(loadProjectExportRows(db, projectId))
 
   // Build folder lookup so operations can carry a `tags: [folderName]` entry
   // that mirrors what the importer does in reverse.
@@ -1095,43 +1188,23 @@ function exportProjectAsOpenApi(projectId: string): string {
   // single `components.securitySchemes` block at the end.
   const securitySchemes: Record<string, OpenApiSecurityScheme> = {}
 
-  // Strip the server prefix off the stored URL so the path keys are valid
-  // OpenAPI paths (e.g. /pets/{id}) rather than full URLs.
-  function stripServer(rawPath: string): string {
-    if (!rawPath) return '/'
-    if (rawPath.startsWith('/')) return rawPath
-    // Substitute *both* `{{envVar}}` and `{pathParam}` with placeholders so
-    // `new URL()` doesn't choke on the braces and so the curly braces don't
-    // get percent-encoded inside the resulting pathname.
-    const ENV_PH = '__ENV_PLACEHOLDER__'
-    const PATH_PH_OPEN = '__PATH_OPEN__'
-    const PATH_PH_CLOSE = '__PATH_CLOSE__'
-    const pathParams: string[] = []
-    const safe = rawPath
-      .replace(/\{\{[^}]+\}\}/g, ENV_PH)
-      .replace(/\{([^}]+)\}/g, (_match, name: string) => {
-        pathParams.push(name)
-        return `${PATH_PH_OPEN}${name}${PATH_PH_CLOSE}`
-      })
-    try {
-      const u = new URL(safe)
-      const tail = `${u.pathname}${u.search}` || '/'
-      // Decode our path-param placeholders back into `{name}` form.
-      return tail
-        .replace(new RegExp(PATH_PH_OPEN, 'g'), '{')
-        .replace(new RegExp(PATH_PH_CLOSE, 'g'), '}')
-    } catch {
-      // Templated URL or path-only — return as-is so the caller can decide.
-      return rawPath
-    }
-  }
-
   for (const ep of endpoints) {
-    const path = stripServer(ep.path || '/')
+    const { path, query: urlQuery } = openApiPathAndQuery(ep.path || '/')
     if (!paths[path]) {
       paths[path] = {}
     }
     const method = (ep.method || 'GET').toLowerCase()
+    // OpenAPI keys an operation by path + method. A second row on the same
+    // slot (an endpoint and a saved request both `GET /users`) used to
+    // overwrite the first silently — report it instead (issue #197).
+    if (paths[path][method] !== undefined) {
+      skipped.push({
+        name: ep.name,
+        protocol: exportProtocolOf(ep.protocol),
+        reason: 'duplicate-operation',
+      })
+      continue
+    }
     let parsedResponses: unknown = { '200': { description: 'OK' } }
     if (ep.response_schemas) {
       try {
@@ -1150,65 +1223,86 @@ function exportProjectAsOpenApi(projectId: string): string {
     // Tags from the round-trip metadata, falling back to the parent folder
     // name. This keeps imported docs round-trippable even after the user
     // moves an endpoint between folders.
-    let openApiMeta: OpenApiRoundtripMeta | undefined
-    let storedAuth: UiRequestSchema['auth'] | undefined
+    let schema: UiRequestSchema = {}
     if (ep.request_schema) {
-      let schema: UiRequestSchema = {}
       try {
         schema = JSON.parse(ep.request_schema) as UiRequestSchema
       } catch {
         // Skip schema-derived fields for this endpoint; basic operation
-        // (summary/responses) still emits.
+        // (summary/responses/path parameters) still emits.
       }
-      openApiMeta = schema.openApi
-      storedAuth = schema.auth
-      const params: Array<Record<string, unknown>> = []
-      const paramMeta = openApiMeta?.parameters ?? {}
+    }
+    const openApiMeta: OpenApiRoundtripMeta | undefined = schema.openApi
+    const storedAuth: UiRequestSchema['auth'] | undefined = schema.auth
+    const params: Array<Record<string, unknown>> = []
+    const paramMeta = openApiMeta?.parameters ?? {}
 
-      // Path templating from `{vars}` in URL — these are always required by
-      // definition. Honour stored type info if present.
-      const pathVarRe = /\{([^}]+)\}/g
-      let m: RegExpExecArray | null
-      while ((m = pathVarRe.exec(path)) !== null) {
-        const meta = paramMeta[`path:${m[1]}`]
-        params.push({
-          name: m[1],
-          in: 'path',
-          required: true,
-          schema: { type: meta?.type ?? 'string' },
-        })
-      }
+    // Path templating from `{vars}` in the path key — always required by
+    // definition. `{{id}}` segments were already turned into `{id}` by
+    // `openApiPathAndQuery` (issue #197). Honour stored type info if present.
+    const pathVarRe = /\{([^}]+)\}/g
+    const seenPathVars = new Set<string>()
+    let m: RegExpExecArray | null
+    while ((m = pathVarRe.exec(path)) !== null) {
+      if (seenPathVars.has(m[1])) continue
+      seenPathVars.add(m[1])
+      const meta = paramMeta[`path:${m[1]}`]
+      params.push({
+        name: m[1],
+        in: 'path',
+        required: true,
+        schema: { type: meta?.type ?? 'string' },
+      })
+    }
 
-      // Query params
-      for (const p of schema.params ?? []) {
-        if (p.enabled === false) continue
-        const meta = paramMeta[`query:${p.key}`]
-        params.push({
-          name: p.key,
-          in: 'query',
-          description: p.description,
-          required: meta?.required ?? false,
-          schema: { type: meta?.type ?? 'string', default: p.value },
-        })
-      }
+    // Query params — the `params` rows first, then anything only the URL's
+    // query string carries (a row whose URL has `?a=1` but no params row must
+    // not lose it now that the path key drops the query, issue #197). A key
+    // listed in `params` — even a disabled one — is not re-emitted from the URL.
+    const paramRowKeys = new Set<string>()
+    for (const p of schema.params ?? []) {
+      if (typeof p.key === 'string') paramRowKeys.add(p.key)
+      if (p.enabled === false) continue
+      const meta = paramMeta[`query:${p.key}`]
+      params.push({
+        name: p.key,
+        in: 'query',
+        description: p.description,
+        required: meta?.required ?? false,
+        schema: { type: meta?.type ?? 'string', default: p.value },
+      })
+    }
+    const seenUrlQuery = new Set<string>()
+    for (const q of urlQuery) {
+      if (paramRowKeys.has(q.key) || seenUrlQuery.has(q.key)) continue
+      seenUrlQuery.add(q.key)
+      const meta = paramMeta[`query:${q.key}`]
+      params.push({
+        name: q.key,
+        in: 'query',
+        required: meta?.required ?? false,
+        schema: { type: meta?.type ?? 'string', default: q.value },
+      })
+    }
 
-      // Headers
-      for (const h of schema.headers ?? []) {
-        if (h.enabled === false) continue
-        // Skip headers OpenAPI doesn't want (Content-Type covered by requestBody)
-        if (h.key.toLowerCase() === 'content-type') continue
-        const meta = paramMeta[`header:${h.key}`]
-        params.push({
-          name: h.key,
-          in: 'header',
-          description: h.description,
-          required: meta?.required ?? false,
-          schema: { type: meta?.type ?? 'string', default: h.value },
-        })
-      }
+    // Headers
+    for (const h of schema.headers ?? []) {
+      if (h.enabled === false) continue
+      // Skip headers OpenAPI doesn't want (Content-Type covered by requestBody)
+      if (h.key.toLowerCase() === 'content-type') continue
+      const meta = paramMeta[`header:${h.key}`]
+      params.push({
+        name: h.key,
+        in: 'header',
+        description: h.description,
+        required: meta?.required ?? false,
+        schema: { type: meta?.type ?? 'string', default: h.value },
+      })
+    }
 
-      if (params.length > 0) operation.parameters = params
+    if (params.length > 0) operation.parameters = params
 
+    if (ep.request_schema) {
       // Body → requestBody.content
       const body = schema.body
       if (body && body.type && body.type !== 'none') {
@@ -1355,7 +1449,7 @@ function exportProjectAsOpenApi(projectId: string): string {
     doc.components = { securitySchemes }
   }
 
-  return JSON.stringify(doc, null, 2)
+  return { content: JSON.stringify(doc, null, 2), skipped }
 }
 
 // ─── Postman Types ──────────────────────────────────────────
@@ -2485,7 +2579,7 @@ interface UiRequestSchema {
   timeoutSeconds?: number
   /**
    * OpenAPI round-trip metadata. Populated by `importOpenApi`; consumed by
-   * `exportProjectAsOpenApi` to preserve tags / operationId / security /
+   * `buildOpenApiProjectExport` to preserve tags / operationId / security /
    * parameter `required` flags / xml body content. Optional — older rows
    * exported just fine without it (with sensible fallbacks).
    */
@@ -2698,8 +2792,193 @@ interface ExportEndpointRow {
    *  x-apinizer export reads whichever the source uses. */
   assertions?: string | null
   /** Source protocol (http/soap/grpc/…) — drives the derived x-apinizer
-   *  apiType/testType. Optional: the Insomnia export path leaves it undefined. */
+   *  apiType/testType and which rows a collection format can carry
+   *  (`isCollectionExportable`). Missing = plain HTTP. */
   protocol?: string | null
+  /** OpenAPI export only — the endpoint's stored response schemas. */
+  response_schemas?: string | null
+}
+
+/** A `saved_requests` row (Ctrl+S) as the collection exports read it. */
+interface SavedRequestExportRow {
+  id: string
+  folder_id: string | null
+  name: string
+  protocol: string | null
+  method: string | null
+  url: string
+  params: string | null
+  headers: string | null
+  body: string | null
+  auth: string | null
+  pre_script: string | null
+  post_script: string | null
+  assertions: string | null
+  metadata: string | null
+  sort_order: number
+}
+
+function parseJsonColumn<T>(raw: string | null | undefined, fallback: T): T {
+  if (!raw) return fallback
+  try {
+    const v = JSON.parse(raw) as T | null
+    return v ?? fallback
+  } catch {
+    return fallback
+  }
+}
+
+/**
+ * A saved GraphQL request keeps the query as `{type:'graphql', content}` and
+ * its variables in `metadata.graphql.variables`. The collection writers detect
+ * GraphQL from a JSON body carrying `{query, variables}` (the shape imports
+ * store), so the saved body is rewritten into that shape — otherwise the query
+ * would be dropped as an unknown body type.
+ */
+function graphqlBodyForExport(
+  body: UiRequestSchema['body'],
+  metadata: Record<string, unknown> | null,
+): UiRequestSchema['body'] {
+  if (!body || body.type !== 'graphql') return body
+  const gql = metadata?.graphql as { variables?: unknown } | undefined
+  let variables: unknown = {}
+  if (typeof gql?.variables === 'string' && gql.variables.trim()) {
+    variables = parseJsonColumn<unknown>(gql.variables, {})
+  } else if (gql?.variables && typeof gql.variables === 'object') {
+    variables = gql.variables
+  }
+  return { type: 'json', content: JSON.stringify({ query: body.content ?? '', variables }) }
+}
+
+/**
+ * Headers a saved request sends that live only in its protocol metadata
+ * (Ctrl+S keeps the protocol editor's state there, not in the `headers`
+ * column): the GraphQL editor's headers, the SSE custom headers, and SOAP's
+ * transport headers (Content-Type + SOAPAction, from the version / action the
+ * Runner also derives — `soap-transport.ts`). Without these an exported
+ * GraphQL / SSE request lost its Authorization header and a SOAP request its
+ * SOAPAction. A header already in the column wins (case-insensitive).
+ */
+function protocolHeadersForExport(
+  protocol: string | null,
+  headers: UiKeyValuePair[],
+  metadata: Record<string, unknown> | null,
+): UiKeyValuePair[] {
+  const p = exportProtocolOf(protocol)
+  if (p === 'soap') {
+    const transport = soapTransportFromMeta(metadata?.soap as SoapTransportMeta | undefined)
+    if (!transport) return headers
+    return withSoapTransportHeaders(
+      headers.map((h) => ({ ...h, enabled: h.enabled !== false })),
+      transport.version,
+      transport.action,
+    )
+  }
+  const block =
+    p === 'graphql'
+      ? (metadata?.graphql as { headers?: unknown } | undefined)?.headers
+      : p === 'sse'
+        ? (metadata?.sse as { customHeaders?: unknown } | undefined)?.customHeaders
+        : undefined
+  if (!Array.isArray(block)) return headers
+  const have = new Set(headers.map((h) => h.key.trim().toLowerCase()))
+  const extra = (block as UiKeyValuePair[]).filter(
+    (h) =>
+      h &&
+      typeof h.key === 'string' &&
+      h.key.trim() !== '' &&
+      !have.has(h.key.trim().toLowerCase()),
+  )
+  return [...headers, ...extra]
+}
+
+/**
+ * Adapt a saved request (issue #197) into the endpoint row the collection
+ * writers consume. `saved_requests` has no `request_schema`: its columns are
+ * folded into the same schema an endpoint stores (url, params, headers, body,
+ * auth, scripts, assertions), and the per-request settings riding in
+ * `metadata` (issue #185 — timeout) are lifted to the top level where endpoint
+ * rows keep them. Mirrors the Runner's `savedRequestToEndpoint`.
+ */
+function savedRequestToExportRow(row: SavedRequestExportRow): ExportEndpointRow & {
+  sort_order: number
+} {
+  const metadata = parseJsonColumn<Record<string, unknown> | null>(row.metadata, null)
+  const body = parseJsonColumn<UiRequestSchema['body'] | null>(row.body, null) ?? undefined
+  const auth = parseJsonColumn<UiRequestSchema['auth'] | null>(row.auth, null) ?? undefined
+  const schema: UiRequestSchema = {
+    url: row.url,
+    method: row.method ?? 'GET',
+    params: parseJsonColumn<UiKeyValuePair[]>(row.params, []),
+    headers: protocolHeadersForExport(
+      row.protocol,
+      parseJsonColumn<UiKeyValuePair[]>(row.headers, []),
+      metadata,
+    ),
+    body: graphqlBodyForExport(body, metadata),
+    auth,
+    preScript: row.pre_script ?? undefined,
+    postScript: row.post_script ?? undefined,
+    assertions: parseJsonColumn<TestAssertionLike[]>(row.assertions, []),
+    ...readRequestSettingsJson(row.metadata),
+  }
+  return {
+    id: row.id,
+    folder_id: row.folder_id,
+    method: row.method,
+    path: row.url,
+    name: row.name,
+    description: null,
+    request_schema: JSON.stringify(schema),
+    protocol: row.protocol,
+    sort_order: row.sort_order,
+  }
+}
+
+/**
+ * Every request of a project in tree order: imported / created endpoints AND
+ * the requests saved with Ctrl+S (`saved_requests`). Exports read only
+ * `endpoints` before issue #197, so saved requests vanished from every
+ * collection file. Both tables share one `sort_order` space per folder (see
+ * the reorder handler in endpoint.handler.ts), so the merged list is sorted by
+ * it — a stable sort keeps endpoints first on a tie.
+ */
+function loadProjectExportRows(
+  db: ReturnType<typeof getDb>,
+  projectId: string,
+): ExportEndpointRow[] {
+  const endpoints = db
+    .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as Array<ExportEndpointRow & { sort_order: number }>
+  const saved = db
+    .prepare('SELECT * FROM saved_requests WHERE project_id = ? ORDER BY sort_order ASC')
+    .all(projectId) as SavedRequestExportRow[]
+  return [...endpoints, ...saved.map(savedRequestToExportRow)].sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
+  )
+}
+
+/**
+ * Split rows into what a collection format can carry and what it cannot
+ * (`isCollectionExportable`). The left-out rows are reported, never dropped
+ * silently (issue #197).
+ */
+function partitionExportable(rows: ExportEndpointRow[]): {
+  rows: ExportEndpointRow[]
+  skipped: ExportSkippedItem[]
+} {
+  const kept: ExportEndpointRow[] = []
+  const skipped: ExportSkippedItem[] = []
+  for (const row of rows) {
+    if (isCollectionExportable(row.protocol)) kept.push(row)
+    else
+      skipped.push({
+        name: row.name,
+        protocol: exportProtocolOf(row.protocol),
+        reason: 'unsupported-protocol',
+      })
+  }
+  return { rows: kept, skipped }
 }
 
 type PostmanScriptEvent = {
@@ -2903,7 +3182,11 @@ function buildPostmanCollection(
   return collection
 }
 
-export function exportAsPostman(projectId: string): string {
+/**
+ * Postman v2.1 collection of a project — endpoints AND Ctrl+S-saved requests
+ * in their folders (issue #197). Rows Postman cannot carry are `skipped`.
+ */
+export function buildPostmanProjectExport(projectId: string): CollectionExportResult {
   const db = getDb()
 
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
@@ -2916,9 +3199,7 @@ export function exportAsPostman(projectId: string): string {
   const folders = db
     .prepare('SELECT id, parent_id, name FROM folders WHERE project_id = ? ORDER BY sort_order ASC')
     .all(projectId) as ExportFolderRow[]
-  const endpoints = db
-    .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
-    .all(projectId) as ExportEndpointRow[]
+  const { rows: endpoints, skipped } = partitionExportable(loadProjectExportRows(db, projectId))
 
   const collection = buildPostmanCollection(
     project.name,
@@ -2927,7 +3208,12 @@ export function exportAsPostman(projectId: string): string {
     endpoints,
     collectPostmanVariables(db, projectId),
   )
-  return JSON.stringify(collection, null, 2)
+  return { content: JSON.stringify(collection, null, 2), skipped }
+}
+
+/** The Postman v2.1 collection text of a project (see `buildPostmanProjectExport`). */
+export function exportAsPostman(projectId: string): string {
+  return buildPostmanProjectExport(projectId).content
 }
 
 /**
@@ -2936,7 +3222,7 @@ export function exportAsPostman(projectId: string): string {
  * cascade auth / pre / post scripts — both round-trip into the collection so the
  * suite runs in Postman the way it does here.
  */
-export function exportSuiteAsPostman(suiteId: string): string {
+export function buildPostmanSuiteExport(suiteId: string): CollectionExportResult {
   const db = getDb()
 
   const suite = db.prepare('SELECT * FROM test_suites WHERE id = ?').get(suiteId) as
@@ -2975,15 +3261,21 @@ export function exportSuiteAsPostman(suiteId: string): string {
     assertions: it.assertions,
     protocol: it.protocol,
   }))
+  const { rows, skipped } = partitionExportable(endpoints)
 
   const collection = buildPostmanCollection(
     suite.name,
     suite.description ?? null,
     folders,
-    endpoints,
+    rows,
     collectPostmanVariables(db, suite.project_id),
   )
-  return JSON.stringify(collection, null, 2)
+  return { content: JSON.stringify(collection, null, 2), skipped }
+}
+
+/** The Postman v2.1 collection text of a test suite (see `buildPostmanSuiteExport`). */
+export function exportSuiteAsPostman(suiteId: string): string {
+  return buildPostmanSuiteExport(suiteId).content
 }
 
 // ─── cURL Types ─────────────────────────────────────────────
@@ -4719,9 +5011,16 @@ function buildInsomniaResources(
         schema = {}
       }
     }
-    const url = schema.url ?? ep.path
+    const rawUrl = schema.url ?? ep.path
     const method = (ep.method ?? 'GET').toUpperCase()
     const parentId = ep.folder_id ? `fld_${ep.folder_id}` : workspaceId
+    // The editor URL carries the query string AND `params` lists it — Insomnia
+    // appends `parameters` to the URL when sending, so keeping both sends every
+    // query parameter twice. With params present, they are the source.
+    const url =
+      (schema.params ?? []).length > 0 && rawUrl.includes('?')
+        ? rawUrl.slice(0, rawUrl.indexOf('?'))
+        : rawUrl
 
     const headers = (schema.headers ?? []).map((h) => ({
       name: h.key,
@@ -4750,6 +5049,10 @@ function buildInsomniaResources(
     }
     if (body) resource.body = body
     if (authentication) resource.authentication = authentication
+    // Scripts — the v4 importer reads these same two fields back.
+    if (schema.preScript && schema.preScript.trim()) resource.preRequestScript = schema.preScript
+    if (schema.postScript && schema.postScript.trim())
+      resource.afterResponseScript = schema.postScript
 
     resources.push(resource)
   }
@@ -4767,7 +5070,11 @@ function wrapInsomniaExport(resources: InsomniaResource[]): InsomniaExport {
   }
 }
 
-export function exportAsInsomnia(projectId: string): string {
+/**
+ * Insomnia v4 export of a project — endpoints AND Ctrl+S-saved requests in
+ * their folders (issue #197). Rows Insomnia cannot carry are `skipped`.
+ */
+export function buildInsomniaProjectExport(projectId: string): CollectionExportResult {
   const db = getDb()
 
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
@@ -4778,9 +5085,7 @@ export function exportAsInsomnia(projectId: string): string {
   const folders = db
     .prepare('SELECT id, parent_id, name FROM folders WHERE project_id = ? ORDER BY sort_order ASC')
     .all(projectId) as ExportFolderRow[]
-  const endpoints = db
-    .prepare('SELECT * FROM endpoints WHERE project_id = ? ORDER BY sort_order ASC')
-    .all(projectId) as ExportEndpointRow[]
+  const { rows: endpoints, skipped } = partitionExportable(loadProjectExportRows(db, projectId))
 
   const resources = buildInsomniaResources(
     `wrk_${project.id}`,
@@ -4789,7 +5094,12 @@ export function exportAsInsomnia(projectId: string): string {
     folders,
     endpoints,
   )
-  return JSON.stringify(wrapInsomniaExport(resources), null, 2)
+  return { content: JSON.stringify(wrapInsomniaExport(resources), null, 2), skipped }
+}
+
+/** The Insomnia v4 export text of a project (see `buildInsomniaProjectExport`). */
+export function exportAsInsomnia(projectId: string): string {
+  return buildInsomniaProjectExport(projectId).content
 }
 
 /**
@@ -4797,7 +5107,7 @@ export function exportAsInsomnia(projectId: string): string {
  * full request snapshot inline, so each becomes a `request` resource under the
  * folder tree rebuilt from `test_suite_folders`.
  */
-export function exportSuiteAsInsomnia(suiteId: string): string {
+export function buildInsomniaSuiteExport(suiteId: string): CollectionExportResult {
   const db = getDb()
 
   const suite = db.prepare('SELECT * FROM test_suites WHERE id = ?').get(suiteId) as
@@ -4819,16 +5129,20 @@ export function exportSuiteAsInsomnia(suiteId: string): string {
     url: string | null
     name: string
     request_schema: string | null
+    protocol: string | null
   }>
-  const endpoints: ExportEndpointRow[] = items.map((it) => ({
-    id: it.id,
-    folder_id: it.folder_id,
-    method: it.method,
-    path: it.url ?? '',
-    name: it.name,
-    description: null,
-    request_schema: it.request_schema,
-  }))
+  const { rows: endpoints, skipped } = partitionExportable(
+    items.map((it) => ({
+      id: it.id,
+      folder_id: it.folder_id,
+      method: it.method,
+      path: it.url ?? '',
+      name: it.name,
+      description: null,
+      request_schema: it.request_schema,
+      protocol: it.protocol,
+    })),
+  )
 
   const resources = buildInsomniaResources(
     `wrk_${suite.id}`,
@@ -4837,7 +5151,12 @@ export function exportSuiteAsInsomnia(suiteId: string): string {
     folders,
     endpoints,
   )
-  return JSON.stringify(wrapInsomniaExport(resources), null, 2)
+  return { content: JSON.stringify(wrapInsomniaExport(resources), null, 2), skipped }
+}
+
+/** The Insomnia v4 export text of a test suite (see `buildInsomniaSuiteExport`). */
+export function exportSuiteAsInsomnia(suiteId: string): string {
+  return buildInsomniaSuiteExport(suiteId).content
 }
 
 /** Map Insomnia authentication onto the renderer's AuthConfig shape. */

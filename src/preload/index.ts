@@ -829,6 +829,15 @@ const api = {
         ipcRenderer.removeListener('console:log', handler)
       }
     },
+    /**
+     * Per-session "Show secrets" (issue #196): main stops masking NEW entries.
+     * Held in main's memory only — never persisted.
+     */
+    setShowSecrets: (on: boolean): Promise<unknown> =>
+      ipcRenderer.invoke('console:setShowSecrets', on),
+    getShowSecrets: (): Promise<unknown> => ipcRenderer.invoke('console:getShowSecrets'),
+    /** Mask a renderer-built entry (Send script logs) with main's helper. */
+    maskEntry: (entry: unknown): Promise<unknown> => ipcRenderer.invoke('console:maskEntry', entry),
   },
 
   // ─── SSE ────────────────────────────────────────────────────
@@ -892,6 +901,41 @@ const api = {
       return () => {
         ipcRenderer.removeListener('aichat:cancelled', handler)
       }
+    },
+    // Tool-call / notice parts + per-call metrics (issues #180, #198).
+    onEvent: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('aichat:event', handler)
+      return () => {
+        ipcRenderer.removeListener('aichat:event', handler)
+      }
+    },
+    approveTool: (messageId: string, callId: string, decision: string): Promise<unknown> =>
+      ipcRenderer.invoke('aichat:approveTool', messageId, callId, decision),
+    resolveStdioTrust: (messageId: string, serverId: string, decision: string): Promise<unknown> =>
+      ipcRenderer.invoke('aichat:resolveStdioTrust', messageId, serverId, decision),
+    listServerTools: (server: unknown, opts: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('aichat:listServerTools', server, opts),
+    trustServerTools: (trustToken: string): Promise<unknown> =>
+      ipcRenderer.invoke('aichat:trustServerTools', trustToken),
+    // Conversations (issue #199) — local database only.
+    conversations: {
+      list: (ownerId: string): Promise<unknown> => ipcRenderer.invoke('aichat:conv:list', ownerId),
+      create: (input: unknown): Promise<unknown> => ipcRenderer.invoke('aichat:conv:create', input),
+      load: (id: string): Promise<unknown> => ipcRenderer.invoke('aichat:conv:load', id),
+      rename: (id: string, name: string): Promise<unknown> =>
+        ipcRenderer.invoke('aichat:conv:rename', id, name),
+      remove: (id: string): Promise<unknown> => ipcRenderer.invoke('aichat:conv:delete', id),
+      append: (id: string, turns: unknown): Promise<unknown> =>
+        ipcRenderer.invoke('aichat:conv:append', id, turns),
+      rehome: (fromOwnerId: string, toOwnerId: string): Promise<unknown> =>
+        ipcRenderer.invoke('aichat:conv:rehome', fromOwnerId, toOwnerId),
+      dropTab: (ownerId: string): Promise<unknown> =>
+        ipcRenderer.invoke('aichat:conv:dropTab', ownerId),
+      pruneTabs: (liveTabIds: string[]): Promise<unknown> =>
+        ipcRenderer.invoke('aichat:conv:pruneTabs', liveTabIds),
     },
   },
 

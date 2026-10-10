@@ -82,7 +82,8 @@ ability to retrieve it.
 | Secrets (passwords, tokens, certificates) | OS keychain via Electron `safeStorage` (macOS Keychain, Windows DPAPI, libsecret on Linux) |
 | Logs (if any) | `<userData>/logs/` |
 | AI Chat provider API keys | `<userData>/settings.json`, one key per provider, encrypted via `safeStorage`. If `safeStorage` encryption is unavailable on your system, the key is kept in memory only for the current session and is not written to disk. |
-| AI Chat tab state and saved AI Chat requests | Local application storage and the database. Saved requests contain the provider, model, endpoint URL, system prompt, custom headers with literal credential values removed, and generation settings; they never contain the API key. The conversation in an open AI Chat tab is kept in local application storage so that it survives a restart. |
+| AI Chat tab state and saved AI Chat requests | Local application storage and the database. Saved requests contain the provider, model, endpoint URL, system prompt, custom headers with literal credential values removed, and generation settings; they never contain the API key, and never "Run tools without asking". |
+| AI Chat conversations | The local database only. Each AI Chat request keeps a list of conversations — prompts, responses, MCP tool-call arguments, tool results (each capped at 32,000 characters) and per-message metrics (status, timings, token counts) — so they survive a restart. They are deleted with their request or project, and they are never written to project files, git checkouts, exports or duplicated projects. |
 
 `<userData>` resolves to:
 
@@ -204,9 +205,10 @@ endpoint**, authenticated with the API key **you** supplied in the
 provider's settings. **Testnizer does not proxy or relay this content, and
 we never receive it.** Nothing leaves your machine except the request to the
 provider you selected. On your own device, the prompts and responses are
-shown in the in-app Console log (held in memory, not sent anywhere), and the
-conversation of an open AI Chat tab is kept in local application storage
-(Section 3). It is a direct connection between
+shown in the in-app Console log (held in memory, not sent anywhere), and AI
+Chat conversations — including tool-call arguments and tool results — are
+stored in the local database (Section 3), never in project files or git. It
+is a direct connection between
 your device and the provider you selected — exactly the same as if you
 called that provider's API yourself with `curl`.
 
@@ -224,6 +226,14 @@ called that provider's API yourself with `curl`.
 - You can run AI Chat **fully offline** by selecting the **Custom**
   provider and entering the URL of a locally-hosted, OpenAI-compatible
   endpoint. In that case no outbound network traffic leaves your machine.
+- **MCP servers as tools:** if you enable MCP servers in an AI Chat
+  request's Tools tab, the arguments the model chooses for a tool call are
+  sent to that MCP server and the tool's result is sent back to the AI
+  provider as part of the conversation. Every tool call asks for your
+  approval unless you turn on "Run tools without asking" for that tab (a
+  per-tab setting on this computer, never saved with the request). A local
+  (stdio) server is started only after you explicitly trust its command on
+  this computer.
 - Your API keys are stored locally, encrypted via `safeStorage` (the OS
   keychain; Section 3), one key per provider. They are never written to
   saved requests or exported project files, and are sent only to the

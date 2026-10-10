@@ -4,8 +4,10 @@ import { useGraphQLStore } from '../../stores/graphql.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
 import { STANDARD_HTTP_HEADERS } from '../../lib/http-headers'
+import { useTranslation } from '../../lib/i18n'
 
 export default function GraphQLQueryPane() {
+  const { t } = useTranslation()
   const url = useGraphQLStore((s) => s.url)
   const setUrl = useGraphQLStore((s) => s.setUrl)
   const query = useGraphQLStore((s) => s.query)
@@ -164,7 +166,7 @@ export default function GraphQLQueryPane() {
                 onUpdate={updateHeader}
                 onRemove={removeHeader}
                 onAdd={addHeader}
-                addLabel="+ Add Header"
+                addLabel={t('kv.addHeader')}
                 keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
               />
             </div>

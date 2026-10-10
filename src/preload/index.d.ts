@@ -447,6 +447,8 @@ interface RequestApi {
     _protocol?: string
     _requestId?: string
     _tabId?: string
+    /** The request as configured (`{{var}}` kept) for History re-send (issue #195). */
+    _configured?: HistoryConfigured
   }): Promise<IpcResult<ApiResponse>>
   cancel(requestId: string): Promise<IpcResult<boolean>>
 }
@@ -498,9 +500,36 @@ interface ConsoleApi {
    * process. Returns a teardown function.
    */
   onLog(callback: (entry: ConsoleLogEntryDto) => void): () => void
+  /**
+   * Per-session "Show secrets" (issue #196). Off by default; while on, main
+   * stops masking NEW entries. Held in main's memory only — never persisted.
+   */
+  setShowSecrets(on: boolean): Promise<IpcResult<boolean>>
+  getShowSecrets(): Promise<IpcResult<boolean>>
+  /**
+   * Mask an entry the renderer built (Send-path script logs) with main's
+   * helper — returned unmasked while "Show secrets" is on (issue #196).
+   */
+  maskEntry(entry: unknown): Promise<IpcResult<unknown>>
 }
 
 // ─── Import / Export ─────────────────────────────────────────────
+
+// Collection exports return the file text in `data` and, beside it, the items
+// the format could not carry (issue #197) — see src/shared/collection-export.ts.
+import type { ExportSkippedItem } from '../shared/collection-export'
+import type { HistoryConfigured } from '../shared/history-snapshot'
+import type {
+  AiApprovalDecision,
+  AiChatStreamEvent,
+  AiConversation,
+  AiConversationSummary,
+  AiStdioEnvEntry,
+  AiStdioTrustDecision,
+  AiTurn,
+  AiTurnMetrics,
+} from '../shared/ai-chat-types'
+type CollectionExportIpcResult = IpcResult<string> & { skipped?: ExportSkippedItem[] }
 
 interface ImportExportApi {
   openFile(): Promise<IpcResult<{ filePath: string; content: string } | null>>
@@ -511,7 +540,7 @@ interface ImportExportApi {
     folderId?: string | null
     sourceUrl?: string
   }): Promise<IpcResult<ImportResult>>
-  exportOpenApi(projectId: string): Promise<IpcResult<string>>
+  exportOpenApi(projectId: string): Promise<CollectionExportIpcResult>
   saveFile(content: string, defaultName: string): Promise<IpcResult<string | null>>
   importPostman(payload: {
     projectId: string
@@ -522,7 +551,7 @@ interface ImportExportApi {
     projectId: string
     content: string
   }): Promise<IpcResult<ImportResult>>
-  exportPostman(projectId: string): Promise<IpcResult<string>>
+  exportPostman(projectId: string): Promise<CollectionExportIpcResult>
   importHar(payload: {
     projectId: string
     content: string
@@ -537,7 +566,7 @@ interface ImportExportApi {
     projectId: string
     content: string
   }): Promise<IpcResult<ImportResult>>
-  exportInsomnia(projectId: string): Promise<IpcResult<string>>
+  exportInsomnia(projectId: string): Promise<CollectionExportIpcResult>
   importCurl(payload: {
     projectId: string
     curlCommand: string
@@ -635,6 +664,8 @@ interface WsConnectOptions {
   _projectId?: string
   _endpointId?: string
   _pendingId?: string
+  /** Editor state (`{{var}}` kept) for History reopen (issues #182, #195). */
+  _configured?: HistoryConfigured
 }
 
 interface WsConnectionInfo {
@@ -1003,6 +1034,8 @@ interface GrpcExecutePayload {
   _projectId?: string
   _endpointId?: string
   _requestId?: string
+  /** Editor state (`{{var}}` kept) for History reopen (issues #182, #195). */
+  _configured?: HistoryConfigured
 }
 
 interface GrpcResponse {
@@ -1087,6 +1120,8 @@ interface SseConnectPayload {
   _projectId?: string
   _endpointId?: string
   _pendingId?: string
+  /** Editor state (`{{var}}` kept) for History reopen (issues #182, #195). */
+  _configured?: HistoryConfigured
 }
 
 interface SseConnectionInfo {
@@ -1138,7 +1173,14 @@ interface AiChatSendPayload {
   url?: string
   apiKey?: string
   model: string
-  messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>
+  /** Older shape: the whole transcript, flat. */
+  messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>
+  /** Newer shape (issue #180): system prompt, earlier turns (replayed as text), this prompt. */
+  system?: string
+  history?: AiTurn[]
+  prompt?: string
+  /** MCP servers offered as tools (issue #180) — absent when none is enabled. */
+  tools?: AiChatToolsPayload
   /** User-defined HTTP headers (issue #120). */
   headers?: Record<string, string>
   temperature?: number
@@ -1154,6 +1196,49 @@ interface AiChatDoneEvent {
   messageId: string
   /** The provider stopped at the token limit — the answer is cut off (issue #189). */
   truncated?: boolean
+  /** Per-turn metrics (issue #198) — also on error / cancelled when a call was made. */
+  metrics?: AiTurnMetrics
+}
+
+/** One enabled MCP server, resolved by the renderer (issue #180). */
+interface AiChatToolServerPayload {
+  id: string
+  name: string
+  connect: {
+    transport: 'http' | 'sse' | 'stdio'
+    url: string
+    protocol: string
+    command?: string
+    args?: string[]
+    env?: Record<string, string>
+    headers?: Record<string, string>
+    auth?: unknown
+  }
+  disabledTools: string[]
+  oauth?: boolean
+  timeoutMs?: number
+}
+
+interface AiChatToolsPayload {
+  projectId?: string
+  servers: AiChatToolServerPayload[]
+  autoApprove: boolean
+  allowedTools: string[]
+}
+
+interface AiChatServerToolsResult {
+  tools?: Array<{ name: string; description?: string }>
+  /**
+   * stdio server not trusted on this computer — nothing was spawned. The card
+   * shows `commandLine` + `env`; its "Trust and connect" redeems `trustToken`
+   * (`trustServerTools`), which trusts exactly this subject (issue #180).
+   */
+  untrusted?: {
+    commandLine: string
+    envNames: string[]
+    env?: AiStdioEnvEntry[]
+    trustToken?: string
+  }
 }
 
 /** Provider API key read back from main's encrypted store (issue #188). */
@@ -1171,6 +1256,7 @@ interface AiChatKeyWrite {
 interface AiChatErrorEvent {
   messageId: string
   error: string
+  metrics?: AiTurnMetrics
 }
 
 interface AiChatApi {
@@ -1182,6 +1268,49 @@ interface AiChatApi {
   onDone(callback: (event: AiChatDoneEvent) => void): () => void
   onError(callback: (event: AiChatErrorEvent) => void): () => void
   onCancelled(callback: (event: AiChatDoneEvent) => void): () => void
+  /** Tool-call / notice parts and per-call metrics (issues #180, #198). */
+  onEvent(callback: (event: AiChatStreamEvent) => void): () => void
+  approveTool(
+    messageId: string,
+    callId: string,
+    decision: AiApprovalDecision,
+  ): Promise<IpcResult<{ applied: boolean }>>
+  resolveStdioTrust(
+    messageId: string,
+    serverId: string,
+    decision: AiStdioTrustDecision,
+  ): Promise<IpcResult<{ applied: boolean }>>
+  listServerTools(
+    server: AiChatToolServerPayload,
+    opts: { projectId?: string },
+  ): Promise<IpcResult<AiChatServerToolsResult>>
+  /**
+   * The Tools-tab trust card's "Trust and connect": redeems the one-time token
+   * `listServerTools` issued for the server the card showed — main trusts and
+   * connects THAT subject, never a config rebuilt at click time (issue #180).
+   */
+  trustServerTools(trustToken: string): Promise<IpcResult<AiChatServerToolsResult>>
+  /** Conversations (issue #199) — local database only. */
+  conversations: {
+    list(ownerId: string): Promise<IpcResult<AiConversationSummary[]>>
+    create(input: {
+      projectId?: string | null
+      ownerId: string
+      name?: string
+      turns?: AiTurn[]
+    }): Promise<IpcResult<AiConversation>>
+    load(id: string): Promise<IpcResult<AiConversation>>
+    rename(id: string, name: string): Promise<IpcResult<boolean>>
+    remove(id: string): Promise<IpcResult<boolean>>
+    append(
+      id: string,
+      turns: AiTurn[],
+    ): Promise<IpcResult<{ id: string; updatedAt: number; turnCount: number }>>
+    rehome(fromOwnerId: string, toOwnerId: string): Promise<IpcResult<number>>
+    dropTab(ownerId: string): Promise<IpcResult<number>>
+    /** Startup: delete `tab:` conversations of tabs that were not restored (crash leftovers). */
+    pruneTabs(liveTabIds: string[]): Promise<IpcResult<number>>
+  }
 }
 
 // ─── MCP ─────────────────────────────────────────────────────────
@@ -1724,6 +1853,8 @@ interface SocketIOConnectOptions {
   _projectId?: string
   _endpointId?: string
   _pendingId?: string
+  /** Editor state (`{{var}}` kept) for History reopen (issues #182, #195). */
+  _configured?: HistoryConfigured
 }
 
 interface SocketIOEventPayload {
@@ -2030,7 +2161,7 @@ interface SaveApi {
   exportTestSuite(
     suiteId: string,
     format?: 'testnizer' | 'postman' | 'insomnia',
-  ): Promise<IpcResult<{ path: string }>>
+  ): Promise<IpcResult<{ path: string; skipped?: ExportSkippedItem[] }>>
   importProject(payload: {
     workspaceId: string
     name?: string

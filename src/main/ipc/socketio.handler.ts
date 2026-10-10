@@ -11,6 +11,7 @@ import {
 } from '../protocols/socketio.engine'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
+import type { HistoryConfigured } from '../../shared/history-snapshot'
 
 function getWindow(): BrowserWindow | null {
   return BrowserWindow.getAllWindows()[0] ?? null
@@ -44,6 +45,8 @@ export function registerSocketIOHandlers(): void {
         _projectId?: string
         _endpointId?: string
         _pendingId?: string
+        /** Editor state (`{{var}}` kept) for History reopen (issues #182, #195). */
+        _configured?: HistoryConfigured
       },
     ) => {
       const started = Date.now()
@@ -93,7 +96,9 @@ export function registerSocketIOHandlers(): void {
               namespace: options.namespace,
               hasAuth: !!options.auth,
               extraHeaders: options.extraHeaders,
+              ...(options._configured ? { configured: options._configured } : {}),
             }),
+            extra_secrets: Object.values(options.auth ?? {}),
             response_snapshot: JSON.stringify({
               connectionId: data.connectionId,
               connectedAt,
@@ -129,7 +134,9 @@ export function registerSocketIOHandlers(): void {
             request_snapshot: JSON.stringify({
               url: options.url,
               namespace: options.namespace,
+              ...(options._configured ? { configured: options._configured } : {}),
             }),
+            extra_secrets: Object.values(options.auth ?? {}),
             response_snapshot: JSON.stringify({ error: err.message }),
           })
         } catch {

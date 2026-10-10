@@ -340,7 +340,7 @@ export default function UrlBar() {
                 <line x1="22" y1="2" x2="11" y2="13" />
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
-              Send
+              {t('urlBar.send')}
             </div>
             <div
               onClick={() => {
@@ -376,7 +376,7 @@ export default function UrlBar() {
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
-              Send and Download
+              {t('urlBar.sendAndDownload')}
             </div>
           </div>
         )}

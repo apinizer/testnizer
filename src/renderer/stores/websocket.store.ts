@@ -5,6 +5,7 @@ import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { makeId } from '../lib/utils'
+import { wsMaskedSendError } from '../lib/masked-send-guard'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for WebSocket, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
@@ -126,6 +127,15 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
   connect: async () => {
     const { url, customHeaders } = get()
     if (!url.trim()) return
+    // Issue #195: a History mask left in a credential field is never sent.
+    const maskedConnect = wsMaskedSendError({
+      url,
+      customHeaders: customHeaders.filter((h) => h.enabled),
+    })
+    if (maskedConnect) {
+      set({ connectionState: 'error', errorMessage: maskedConnect })
+      return
+    }
 
     const pendingConnectId = makeId()
     set({
@@ -246,6 +256,19 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
         _workspaceId: wsStore.activeWorkspaceId || undefined,
         _projectId: wsStore.activeProjectId || undefined,
         _pendingId: pendingConnectId,
+        // Editor state with `{{var}}` kept — the History row reopens from it
+        // (issues #182, #195). Same shape `snapshotProtocol` saves.
+        _configured: {
+          url,
+          meta: {
+            websocket: {
+              url,
+              customHeaders,
+              composerContent: get().composerContent,
+              composerMode: get().composerMode,
+            },
+          },
+        },
       })
 
       if (result?.success && result.data) {
@@ -330,6 +353,13 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
   sendMessage: async () => {
     const { connectionId, composerContent, composerMode, connectionState } = get()
     if (connectionState !== 'connected' || !connectionId || !composerContent.trim()) return
+    // Issue #195: a History mask left in a credential field is never sent.
+    const maskedMessage = wsMaskedSendError({ composerContent })
+    if (maskedMessage) {
+      set({ errorMessage: maskedMessage })
+      return
+    }
+    set({ errorMessage: null })
 
     let contentType: 'text' | 'json' = 'text'
     if (composerMode === 'json') {

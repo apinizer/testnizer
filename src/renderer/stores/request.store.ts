@@ -13,7 +13,7 @@ import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
-import { useConsoleStore } from './console.store'
+import { addMaskedEntry, useConsoleStore } from './console.store'
 import {
   resolveVariables,
   resolveKeyValuePairs,
@@ -23,6 +23,7 @@ import {
 import { runAssertions, runScript, createPmApi, resolveAssertionVars } from '../lib/test-runner'
 import { resolveInheritance } from '../lib/auth-inheritance'
 import { makeId } from '../lib/utils'
+import { httpMaskedSendError } from '../lib/masked-send-guard'
 import { resolveHttpTimeout } from '../../shared/request-settings'
 // Shared dirty-flag helper, also used by the protocol stores so the blue dot
 // is consistent across request types (issue #8). Aliased to keep the existing
@@ -417,6 +418,17 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     const wsStore = useWorkspaceStore.getState()
     const activeTabId = tabsStore.activeTabId
 
+    // Issue #195: never put a History mask (`••••••`) on the wire as if it
+    // were the credential — refuse, naming the field.
+    const masked = httpMaskedSendError({ url, params, headers, body, auth })
+    if (masked) {
+      responseStore.setResponse(
+        { requestId: makeId(), protocol: 'http', timing: { total: 0 }, error: masked },
+        activeTabId,
+      )
+      return
+    }
+
     // Resolve inherited auth (request → folder(s) → project) and the cascade
     // pre/test scripts that run around this request. Mirrors the Collection
     // Runner so Send and Run behave identically. `effectiveAuth` replaces the
@@ -536,7 +548,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     if (preScriptError) {
       const errMsg = `Pre-request script error: ${preScriptError}`
       const reqName = tabsStore.tabs.find((tt) => tt.id === activeTabId)?.name ?? ''
-      useConsoleStore.getState().addEntry({
+      // Carries script output → masked through main (issue #196).
+      addMaskedEntry({
         protocol: 'http',
         level: 'error',
         category: 'system',
@@ -572,7 +585,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       const skipMsg = 'Request skipped by pm.execution.skipRequest() in pre-request script'
       preScriptLogs.push({ level: 'warn', message: skipMsg, timestamp: Date.now() })
       const reqName = tabsStore.tabs.find((tt) => tt.id === activeTabId)?.name ?? ''
-      useConsoleStore.getState().addEntry({
+      addMaskedEntry({
         protocol: 'http',
         level: 'warning',
         category: 'system',
@@ -747,6 +760,18 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         _projectId: wsStore.activeProjectId || undefined,
         _tabId: activeTabId || undefined,
         _requestId: requestId,
+        // The request as configured — `{{var}}` kept, inherited auth folded in
+        // (a History tab has no endpoint to inherit from) — so reopening /
+        // re-sending a History row resolves the variables again instead of
+        // replaying masked values (issue #195). Main masks literal credentials.
+        _configured: {
+          method,
+          url,
+          params,
+          headers,
+          body,
+          auth: effectiveAuth ?? auth,
+        },
       })
 
       // Convert resolved headers to Record<string,string> for console/history

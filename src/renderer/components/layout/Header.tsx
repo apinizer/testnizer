@@ -305,7 +305,7 @@ export default function Header() {
                 e.stopPropagation()
                 closeProjectTab(proj.id)
               }}
-              title="Close project tab"
+              title={t('header.closeProjectTab')}
             >
               ×
             </span>
@@ -446,7 +446,7 @@ export default function Header() {
             fontSize: 13,
             transition: 'all 0.2s',
           }}
-          title="Save Project (Cmd+S)"
+          title={t('header.saveProjectHint')}
           onMouseEnter={(e) => {
             if (saveStatus === 'idle') {
               ;(e.currentTarget as HTMLElement).style.color = T.accent

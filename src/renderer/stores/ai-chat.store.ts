@@ -25,6 +25,30 @@ import {
   stripCredentialHeaders,
 } from '../lib/ai-chat-config'
 import type { KeyValuePair } from '../types'
+import type {
+  AiAssistantTurn,
+  AiCallMetrics,
+  AiConversationSummary,
+  AiNoticePart,
+  AiToolCallPart,
+  AiToolResultPart,
+  AiTurn,
+  AiTurnMetrics,
+} from '../../shared/ai-chat-types'
+import { applyTextDelta, sumTurnMetrics, upsertPart } from '../../shared/ai-chat-turns'
+import {
+  readToolServers,
+  savedToolServersOf,
+  type AiToolCatalogEntry,
+  type AiToolServerConfig,
+} from '../lib/ai-chat-tools-config'
+import { buildToolServers } from '../lib/ai-tool-servers'
+import {
+  activeProjectIdForAi,
+  dropTabConversations,
+  persistFinishedTurn,
+  pruneOrphanTabConversations,
+} from './ai-chat-conversations'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
@@ -95,14 +119,13 @@ export const AI_PROVIDERS: AiProviderInfo[] = [
   { id: 'custom', label: 'Custom', color: '#8A8FA3', letter: '⚙' },
 ]
 
-export interface AiChatMessage {
-  id: string
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  timestamp: number
-  /** The provider stopped at the token limit — the answer is cut off (issue #189). */
-  truncated?: boolean
-}
+/**
+ * One turn of the conversation — the shared model (`src/shared/ai-chat-types.ts`,
+ * issues #180 / #198 / #199): a user turn is text; an assistant turn carries
+ * ordered parts (text, tool calls, tool results, notices), metrics, and
+ * `content` = its text joined (kept in sync by the shared reducers).
+ */
+export type AiChatMessage = AiTurn
 
 export interface AiModelOption {
   value: string
@@ -287,6 +310,20 @@ interface TabAiChatState {
   pendingResponseId: string | null
   pendingMessageId: string | null
   errorMessage: string | null
+  /** MCP servers offered as tools (issue #180) — saved with the request, no literal secrets. */
+  toolServers: AiToolServerConfig[]
+  /** Last "Load tools" result per server id (UI state). */
+  toolCatalog: Record<string, AiToolCatalogEntry>
+  /** "Run tools without asking" — per tab on this machine, NEVER saved with the request. */
+  autoApproveTools: boolean
+  /** "Allow this tool for this conversation" grants (`aiToolAllowKey`) — memory only. */
+  allowedTools: string[]
+  /** The conversation shown (issue #199); null = a new one, created on the first answer. */
+  conversationId: string | null
+  conversationName: string | null
+  conversations: AiConversationSummary[]
+  /** The list / current conversation were read from the database for this tab. */
+  conversationLoaded: boolean
 }
 
 /**
@@ -320,9 +357,11 @@ interface AiChatStore extends TabAiChatState {
 
   /** Internal — used by the IPC subscription. */
   _onChunk: (messageId: string, delta: string) => void
-  _onDone: (messageId: string, truncated?: boolean) => void
-  _onError: (messageId: string, error: string) => void
-  _onCancelled: (messageId: string) => void
+  _onPart: (messageId: string, part: AiToolCallPart | AiToolResultPart | AiNoticePart) => void
+  _onCall: (messageId: string, metrics: AiCallMetrics) => void
+  _onDone: (messageId: string, truncated?: boolean, metrics?: AiTurnMetrics) => void
+  _onError: (messageId: string, error: string, metrics?: AiTurnMetrics) => void
+  _onCancelled: (messageId: string, metrics?: AiTurnMetrics) => void
 
   /** Switch active tab — saves current state and loads target tab state. */
   switchToTab: (tabId: string) => void
@@ -345,6 +384,14 @@ function emptyTabState(): TabAiChatState {
     pendingResponseId: null,
     pendingMessageId: null,
     errorMessage: null,
+    toolServers: [],
+    toolCatalog: {},
+    autoApproveTools: false,
+    allowedTools: [],
+    conversationId: null,
+    conversationName: null,
+    conversations: [],
+    conversationLoaded: false,
   }
 }
 
@@ -363,7 +410,56 @@ function extractState(s: AiChatStore): TabAiChatState {
     pendingResponseId: s.pendingResponseId,
     pendingMessageId: s.pendingMessageId,
     errorMessage: s.errorMessage,
+    toolServers: s.toolServers ?? [],
+    toolCatalog: s.toolCatalog ?? {},
+    autoApproveTools: s.autoApproveTools === true,
+    allowedTools: s.allowedTools ?? [],
+    conversationId: s.conversationId ?? null,
+    conversationName: s.conversationName ?? null,
+    conversations: s.conversations ?? [],
+    conversationLoaded: s.conversationLoaded === true,
   }
+}
+
+/** Key of the live tab in `_tabStates` (`switchToTab` uses the same). */
+export function liveTabKey(s: { _currentTabId: string | null }): string {
+  return s._currentTabId === null ? '__null__' : s._currentTabId
+}
+
+/**
+ * Patch the state of tab `tabKey`, whether it is the live tab or a cached one
+ * — for writes that land after an `await` (the user may have switched tabs).
+ */
+export function patchAiTab(
+  tabKey: string,
+  patch: (st: TabAiChatState) => Partial<TabAiChatState>,
+): void {
+  const state = useAiChatStore.getState()
+  if (liveTabKey(state) === tabKey) {
+    useAiChatStore.setState(patch(extractState(state)))
+    return
+  }
+  const cached = state._tabStates.get(tabKey)
+  if (!cached) return
+  const map = new Map(state._tabStates)
+  map.set(tabKey, { ...cached, ...patch(cached) })
+  useAiChatStore.setState({ _tabStates: map })
+}
+
+/** Read a tab's state (live or cached). */
+export function readAiTab(tabKey: string): TabAiChatState | undefined {
+  const state = useAiChatStore.getState()
+  if (liveTabKey(state) === tabKey) return extractState(state)
+  return state._tabStates.get(tabKey)
+}
+
+/** Apply `fn` to the assistant turn `turnId` of a tab state. */
+function mapTurn(
+  st: TabAiChatState,
+  turnId: string | null,
+  fn: (t: AiAssistantTurn) => AiAssistantTurn,
+): AiChatMessage[] {
+  return st.messages.map((m) => (m.id === turnId && m.role === 'assistant' ? fn(m) : m))
 }
 
 /**
@@ -388,7 +484,32 @@ function findTabByPendingId(
 }
 
 const STORAGE_KEY = 'testnizer-ai-chat'
-const persisted = loadTabbedState<TabAiChatState>(STORAGE_KEY, emptyTabState)
+
+/**
+ * Session-only fields reset when a snapshot is read back (issue #180): an
+ * older release wrote "Run tools without asking" and the Load-tools catalog
+ * (a `loading: true` spinner stuck forever) into the snapshot. Messages are
+ * NOT blanked here — `ensureAiConversationsLoaded` stores an older snapshot's
+ * turns as a conversation on first open.
+ */
+function freshFromSnapshot(st: TabAiChatState): TabAiChatState {
+  return {
+    ...st,
+    autoApproveTools: false,
+    toolCatalog: {},
+    allowedTools: [],
+    streaming: false,
+    pendingResponseId: null,
+    pendingMessageId: null,
+  }
+}
+
+const persisted = (() => {
+  const loaded = loadTabbedState<TabAiChatState>(STORAGE_KEY, emptyTabState)
+  const tabStates = new Map<string, TabAiChatState>()
+  for (const [id, st] of loaded._tabStates) tabStates.set(id, freshFromSnapshot(st))
+  return { ...loaded, current: freshFromSnapshot(loaded.current), _tabStates: tabStates }
+})()
 
 export const useAiChatStore = create<AiChatStore>((set, get) => ({
   ...persisted.current,
@@ -485,6 +606,7 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     if (!trimmed) return
     const state = get()
     if (state.streaming) return
+    const tabKey = liveTabKey(state)
 
     // The API key is optional (issue #121): auth may come from a custom
     // header, a gateway, or not be needed at all. main emits no credential
@@ -501,43 +623,82 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     // The key field takes {{var}} like every other field (issue #188).
     const resolvedKey = state.apiKey ? resolveVariables(state.apiKey, envVars) : ''
 
+    const prior = state.messages
     const userMsg: AiChatMessage = {
       id: makeId(),
       role: 'user',
       content: resolvedContent,
+      // The typed text names the conversation — never the resolved one, which
+      // may carry a `{{secret}}` value (issue #199).
+      ...(resolvedContent !== trimmed ? { template: trimmed } : {}),
       timestamp: Date.now(),
     }
-    const assistantMsg: AiChatMessage = {
+    const assistantMsg: AiAssistantTurn = {
       id: makeId(),
       role: 'assistant',
       content: '',
+      parts: [],
       timestamp: Date.now(),
     }
 
     set({
-      messages: [...state.messages, userMsg, assistantMsg],
+      messages: [...prior, userMsg, assistantMsg],
       streaming: true,
       errorMessage: null,
       pendingResponseId: assistantMsg.id,
     })
 
-    // Build the chat history for the provider — include the resolved system
-    // prompt at the top so multi-turn context is honoured.
-    const history: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = []
-    if (resolvedSystem) history.push({ role: 'system', content: resolvedSystem })
-    for (const m of get().messages) {
-      if (m.id === assistantMsg.id) continue // current empty placeholder
-      history.push({ role: m.role, content: m.content })
-    }
+    const fail = (error: string): void =>
+      patchAiTab(tabKey, () => ({
+        streaming: false,
+        pendingResponseId: null,
+        pendingMessageId: null,
+        errorMessage: error,
+      }))
 
     try {
+      // MCP servers as tools (issue #180): only the enabled ones; a server
+      // that cannot be prepared shows a notice on this turn.
+      let tools: Parameters<Window['api']['aiChat']['send']>[0]['tools']
+      const enabled = (state.toolServers ?? []).filter((sv) => sv.enabled)
+      if (enabled.length > 0) {
+        const built = await buildToolServers(enabled, envVars)
+        for (const p of built.problems) {
+          const notice: AiNoticePart = {
+            type: 'notice',
+            id: `server-error:${p.serverId}`,
+            kind: 'server-error',
+            serverId: p.serverId,
+            server: p.server,
+            message: p.message,
+          }
+          patchAiTab(tabKey, (st) => ({
+            messages: mapTurn(st, assistantMsg.id, (t) => upsertPart(t, notice)),
+          }))
+        }
+        if (built.servers.length > 0) {
+          const projectId = activeProjectIdForAi()
+          tools = {
+            ...(projectId ? { projectId } : {}),
+            servers: built.servers,
+            autoApprove: state.autoApproveTools === true,
+            allowedTools: state.allowedTools ?? [],
+          }
+        }
+      }
+
       const result = (await window.api.aiChat.send({
         provider: state.provider,
         url: resolvedUrl || undefined,
         apiKey: resolvedKey,
         headers: Object.keys(headerMap).length > 0 ? headerMap : undefined,
         model: state.model,
-        messages: history,
+        // Earlier turns go as they are; main replays them as text
+        // (`historyAsText`) — tool calls of earlier prompts are not resent.
+        ...(resolvedSystem ? { system: resolvedSystem } : {}),
+        history: prior,
+        prompt: resolvedContent,
+        ...(tools ? { tools } : {}),
         // Generation settings (issue #189) — left out when unset so the
         // provider (or the engine's Anthropic default) decides.
         ...(isValidTemperature(state.temperature) ? { temperature: state.temperature } : {}),
@@ -545,22 +706,13 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
       })) as { success: boolean; data?: { messageId: string }; error?: string }
 
       if (!result?.success || !result.data?.messageId) {
-        set({
-          streaming: false,
-          pendingResponseId: null,
-          pendingMessageId: null,
-          errorMessage: result?.error ?? 'Failed to start chat',
-        })
+        fail(result?.error ?? 'Failed to start chat')
         return
       }
-      set({ pendingMessageId: result.data.messageId })
+      const messageId = result.data.messageId
+      patchAiTab(tabKey, () => ({ pendingMessageId: messageId }))
     } catch (e) {
-      set({
-        streaming: false,
-        pendingResponseId: null,
-        pendingMessageId: null,
-        errorMessage: (e as Error).message,
-      })
+      fail((e as Error).message)
     }
   },
 
@@ -575,92 +727,61 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
   },
 
   clearConversation: () => {
+    // Postman's "new conversation": the current one stays in the list.
     if (get().streaming) return
-    set({ messages: [], errorMessage: null })
+    set({
+      messages: [],
+      errorMessage: null,
+      conversationId: null,
+      conversationName: null,
+      allowedTools: [],
+    })
   },
 
   _onChunk: (messageId, delta) => {
-    const state = get()
-    const found = findTabByPendingId(state, messageId)
+    const found = findTabByPendingId(get(), messageId)
     if (!found) return
-    const updatedMessages = found.snapshot.messages.map((m) =>
-      m.id === found.snapshot.pendingResponseId ? { ...m, content: m.content + delta } : m,
-    )
-    if (found.isLive) {
-      set({ messages: updatedMessages })
-    } else if (found.tabKey !== undefined) {
-      const map = new Map(state._tabStates)
-      map.set(found.tabKey, { ...found.snapshot, messages: updatedMessages })
-      set({ _tabStates: map })
-    }
+    patchFound(found, (st) => ({
+      messages: mapTurn(st, st.pendingResponseId, (t) => applyTextDelta(t, delta)),
+    }))
   },
 
-  _onDone: (messageId, truncated) => {
-    const state = get()
-    const found = findTabByPendingId(state, messageId)
+  _onPart: (messageId, part) => {
+    const found = findTabByPendingId(get(), messageId)
     if (!found) return
-    // Flag the cut-off answer BEFORE pendingResponseId is cleared (issue #189).
-    const messages = truncated
-      ? found.snapshot.messages.map((m) =>
-          m.id === found.snapshot.pendingResponseId ? { ...m, truncated: true } : m,
-        )
-      : found.snapshot.messages
-    if (found.isLive) {
-      set({ messages, streaming: false, pendingResponseId: null, pendingMessageId: null })
-    } else if (found.tabKey !== undefined) {
-      const map = new Map(state._tabStates)
-      map.set(found.tabKey, {
-        ...found.snapshot,
-        messages,
-        streaming: false,
-        pendingResponseId: null,
-        pendingMessageId: null,
-      })
-      set({ _tabStates: map })
-    }
+    patchFound(found, (st) => ({
+      messages: mapTurn(st, st.pendingResponseId, (t) => upsertPart(t, part)),
+    }))
   },
 
-  _onError: (messageId, error) => {
-    const state = get()
-    const found = findTabByPendingId(state, messageId)
+  _onCall: (messageId, metrics) => {
+    const found = findTabByPendingId(get(), messageId)
     if (!found) return
-    if (found.isLive) {
-      set({
-        streaming: false,
-        pendingResponseId: null,
-        pendingMessageId: null,
-        errorMessage: error,
-      })
-    } else if (found.tabKey !== undefined) {
-      const map = new Map(state._tabStates)
-      map.set(found.tabKey, {
-        ...found.snapshot,
-        streaming: false,
-        pendingResponseId: null,
-        pendingMessageId: null,
-        errorMessage: error,
-      })
-      set({ _tabStates: map })
-    }
+    patchFound(found, (st) => ({
+      messages: mapTurn(st, st.pendingResponseId, (t) => ({
+        ...t,
+        metrics: sumTurnMetrics([...(t.metrics?.calls ?? []), metrics]),
+      })),
+    }))
   },
 
-  _onCancelled: (messageId) => {
-    const state = get()
-    const found = findTabByPendingId(state, messageId)
-    if (!found) return
+  _onDone: (messageId, truncated, metrics) => {
+    finishTurn(messageId, (t) => ({
+      ...t,
+      ...(truncated ? { truncated: true } : {}),
+      ...(metrics ? { metrics } : {}),
+    }))
+  },
+
+  _onError: (messageId, error, metrics) => {
+    finishTurn(messageId, (t) => ({ ...t, error, ...(metrics ? { metrics } : {}) }), {
+      errorMessage: error,
+    })
+  },
+
+  _onCancelled: (messageId, metrics) => {
     // Keep whatever was streamed so far; just stop streaming state.
-    if (found.isLive) {
-      set({ streaming: false, pendingResponseId: null, pendingMessageId: null })
-    } else if (found.tabKey !== undefined) {
-      const map = new Map(state._tabStates)
-      map.set(found.tabKey, {
-        ...found.snapshot,
-        streaming: false,
-        pendingResponseId: null,
-        pendingMessageId: null,
-      })
-      set({ _tabStates: map })
-    }
+    finishTurn(messageId, (t) => ({ ...t, ...(metrics ? { metrics } : {}) }))
   },
 
   switchToTab: (tabId) => {
@@ -683,19 +804,98 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
   },
 
   removeTabState: (tabId) => {
-    const tabStates = new Map(get()._tabStates)
+    const state = get()
+    // Tab close stops its Send (LLM stream + running tool call + pending
+    // questions, issue #180) — the answer has nowhere to go any more.
+    const pending =
+      state._tabStates.get(tabId)?.pendingMessageId ??
+      (state._currentTabId === tabId ? state.pendingMessageId : null)
+    if (pending) void window.api?.aiChat?.cancel?.(pending)?.catch?.(() => {})
+    // An unsaved AI tab's conversations go with it (a saved request keeps its own).
+    if (state._tabStates.has(tabId) || state._currentTabId === tabId) dropTabConversations(tabId)
+    const tabStates = new Map(state._tabStates)
     tabStates.delete(tabId)
     set({ _tabStates: tabStates })
   },
 }))
 
+type FoundTab = NonNullable<ReturnType<typeof findTabByPendingId>>
+
+/** Write a patch into the tab `findTabByPendingId` found (live or cached). */
+function patchFound(found: FoundTab, fn: (st: TabAiChatState) => Partial<TabAiChatState>): void {
+  const state = useAiChatStore.getState()
+  if (found.isLive) {
+    useAiChatStore.setState(fn(extractState(state)))
+  } else if (found.tabKey !== undefined) {
+    const current = state._tabStates.get(found.tabKey) ?? found.snapshot
+    const map = new Map(state._tabStates)
+    map.set(found.tabKey, { ...current, ...fn(current) })
+    useAiChatStore.setState({ _tabStates: map })
+  }
+}
+
+/**
+ * End the pending turn of `messageId` (done / error / cancelled): apply the
+ * last change to the assistant turn, leave streaming state, then store the
+ * user + assistant turns in the tab's conversation (issue #199).
+ */
+function finishTurn(
+  messageId: string,
+  fn: (t: AiAssistantTurn) => AiAssistantTurn,
+  extra: Partial<TabAiChatState> = {},
+): void {
+  const state = useAiChatStore.getState()
+  const found = findTabByPendingId(state, messageId)
+  if (!found) return
+  const turnId = found.snapshot.pendingResponseId
+  const tabKey = found.isLive ? liveTabKey(state) : (found.tabKey as string)
+  patchFound(found, (st) => ({
+    messages: mapTurn(st, turnId, fn),
+    streaming: false,
+    pendingResponseId: null,
+    pendingMessageId: null,
+    ...extra,
+  }))
+  const after = readAiTab(tabKey)
+  if (!after || !turnId) return
+  const idx = after.messages.findIndex((m) => m.id === turnId)
+  const assistant = after.messages[idx]
+  const user = after.messages[idx - 1]
+  if (assistant?.role === 'assistant' && user?.role === 'user') {
+    persistFinishedTurn(tabKey, user, assistant)
+  }
+}
+
 /**
  * What the localStorage snapshot may hold (issue #188): no API key and no
  * credential headers. Both stay usable in memory for the session — switching
- * tabs keeps them — and the key is also in main's encrypted store.
+ * tabs keeps them — and the key is also in main's encrypted store. The
+ * conversation is NOT in the snapshot (issue #199): it lives in the local
+ * database and is read back by id — one copy, not two. "Run tools without
+ * asking" and the Load-tools catalog are session-only too (issue #180): the
+ * approval bypass must not survive a restart, and a catalog written while
+ * loading would come back as a spinner that never stops.
  */
 export function sanitizeAiTabState(st: TabAiChatState): TabAiChatState {
-  return { ...st, apiKey: '', customHeaders: stripCredentialHeaders(st.customHeaders) }
+  return {
+    ...st,
+    apiKey: '',
+    customHeaders: stripCredentialHeaders(st.customHeaders),
+    toolServers: savedToolServersOf(st.toolServers ?? []),
+    toolCatalog: {},
+    autoApproveTools: false,
+    messages: [],
+    allowedTools: [],
+    // Names are re-read from the database (scrubbed by main) on the next
+    // open — the snapshot never holds one (issue #199: a name can carry a
+    // prompt's text).
+    conversationName: null,
+    conversations: [],
+    conversationLoaded: false,
+    streaming: false,
+    pendingResponseId: null,
+    pendingMessageId: null,
+  }
 }
 
 function tabMapOf(s: AiChatStore): {
@@ -868,6 +1068,8 @@ export interface SavedAiConfig {
   customHeaders: KeyValuePair[]
   temperature: number | null
   maxTokens: number | null
+  /** MCP servers as tools (issue #180) — no literal secrets, never "Run tools without asking". */
+  toolServers: AiToolServerConfig[]
 }
 
 export function savedAiConfigOf(s: TabAiChatState): SavedAiConfig {
@@ -879,6 +1081,7 @@ export function savedAiConfigOf(s: TabAiChatState): SavedAiConfig {
     customHeaders: stripCredentialHeaders(s.customHeaders),
     temperature: isValidTemperature(s.temperature) ? s.temperature : null,
     maxTokens: isValidMaxTokens(s.maxTokens) ? s.maxTokens : null,
+    toolServers: savedToolServersOf(s.toolServers ?? []),
   }
 }
 
@@ -920,6 +1123,7 @@ export function restoreAiConfig(raw: unknown): void {
   patch.customHeaders = headers.length > 0 ? headers : [defaultKv()]
   patch.temperature = isValidTemperature(c.temperature) ? c.temperature : null
   patch.maxTokens = isValidMaxTokens(c.maxTokens) ? c.maxTokens : null
+  patch.toolServers = readToolServers(c.toolServers)
   useAiChatStore.setState(patch)
   syncLiveKey({ clear: true })
 }
@@ -938,24 +1142,35 @@ if (typeof window !== 'undefined') {
 // every listener, so re-mounting the editor is cheap.
 
 if (typeof window !== 'undefined' && window.api?.aiChat) {
+  // Crash leftovers: conversations of unsaved tabs that were not restored.
+  // Deferred: this module and ai-chat-conversations import each other — run
+  // once both have finished loading (and the tab stores have restored).
+  setTimeout(() => pruneOrphanTabConversations(), 0)
   window.api.aiChat.onChunk((event) => {
     const e = event as { messageId: string; delta: string }
     if (!e?.messageId) return
     useAiChatStore.getState()._onChunk(e.messageId, e.delta)
   })
   window.api.aiChat.onDone((event) => {
-    const e = event as { messageId: string; truncated?: boolean }
+    const e = event as { messageId: string; truncated?: boolean; metrics?: AiTurnMetrics }
     if (!e?.messageId) return
-    useAiChatStore.getState()._onDone(e.messageId, e.truncated === true)
+    useAiChatStore.getState()._onDone(e.messageId, e.truncated === true, e.metrics)
   })
   window.api.aiChat.onError((event) => {
-    const e = event as { messageId: string; error: string }
+    const e = event as { messageId: string; error: string; metrics?: AiTurnMetrics }
     if (!e?.messageId) return
-    useAiChatStore.getState()._onError(e.messageId, e.error)
+    useAiChatStore.getState()._onError(e.messageId, e.error, e.metrics)
   })
   window.api.aiChat.onCancelled((event) => {
-    const e = event as { messageId: string }
+    const e = event as { messageId: string; metrics?: AiTurnMetrics }
     if (!e?.messageId) return
-    useAiChatStore.getState()._onCancelled(e.messageId)
+    useAiChatStore.getState()._onCancelled(e.messageId, e.metrics)
+  })
+  // Tool calls / results / notices and per-call metrics (issues #180, #198).
+  window.api.aiChat.onEvent?.((event) => {
+    if (!event?.messageId) return
+    if (event.kind === 'part') useAiChatStore.getState()._onPart(event.messageId, event.part)
+    else if (event.kind === 'call')
+      useAiChatStore.getState()._onCall(event.messageId, event.metrics)
   })
 }

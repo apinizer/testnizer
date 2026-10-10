@@ -16,6 +16,8 @@ import { decryptSecret } from '../lib/secure-storage'
 import { logRequestResponse } from '../lib/console-logger'
 import { getCipherPreset, normaliseTlsVersion } from '../lib/tls-presets'
 import { resolveKeyMaterial } from '../lib/keystore-bridge'
+import { authSecretValues } from '../lib/sensitive-scrub'
+import type { HistoryConfigured } from '../../shared/history-snapshot'
 import type { CertificateRow } from '../db/certificate.repo'
 
 /**
@@ -294,6 +296,12 @@ export function registerRequestHandlers(): void {
         _protocol?: string
         _requestId?: string
         _tabId?: string
+        /**
+         * The request as the editor holds it — `{{var}}` kept (issue #195).
+         * Stored as the History row's `configured` so reopening / re-sending a
+         * row resolves the variables again; never sent to the engine.
+         */
+        _configured?: HistoryConfigured
         /** Renderer-side TLS payload — resolved into engine-shaped `tls` here. */
         tls?: TlsPayload | HttpRequestOptions['tls']
       },
@@ -349,6 +357,18 @@ export function registerRequestHandlers(): void {
             ? options._protocol
             : 'http'
 
+        // The template rides along for History only — the engine never sees it.
+        const configured = options._configured
+        if (configured !== undefined) {
+          const { _configured: _omit, ...rest } = options
+          void _omit
+          options = rest
+        }
+        // The resolved auth's secrets (bearer token, basic password, API key
+        // value, …) — scrubbed from the Console entry and the History row
+        // wherever they appear, on top of the variables marked secret.
+        const requestSecrets = authSecretValues(options.auth)
+
         const result = await executeHttpRequest(options)
 
         // … and the response (or error). Use the actualRequest that was
@@ -367,6 +387,7 @@ export function registerRequestHandlers(): void {
           responseBody: result.body,
           error: result.error ? { message: result.error } : undefined,
           tabId: options._tabId,
+          secrets: requestSecrets,
         })
 
         // Auto-save to history
@@ -388,6 +409,8 @@ export function registerRequestHandlers(): void {
             url: sanitizedUrl,
             status_code: result.status,
             duration_ms: result.timing?.total ? Math.round(result.timing.total) : undefined,
+            // Flat fields = what was sent (masked in `addHistory`);
+            // `configured` = the `{{var}}` template re-send uses (issue #195).
             request_snapshot: JSON.stringify({
               method: options.method,
               url: sanitizedUrl,
@@ -395,7 +418,9 @@ export function registerRequestHandlers(): void {
               headers: options.headers,
               body: options.body,
               auth: options.auth,
+              ...(configured !== undefined ? { configured } : {}),
             }),
+            extra_secrets: requestSecrets,
             response_snapshot: JSON.stringify({
               status: result.status,
               statusText: result.statusText,
@@ -430,6 +455,7 @@ export function registerRequestHandlers(): void {
             url: options.url,
             error: { message: (e as Error).message },
             tabId: options._tabId,
+            secrets: authSecretValues(options.auth),
           })
         } catch {
           /* logger must never break the request */
