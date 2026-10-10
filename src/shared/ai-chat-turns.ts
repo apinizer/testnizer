@@ -61,12 +61,15 @@ export function upsertPart(turn: AiAssistantTurn, part: AiAssistantPart): AiAssi
 
 /** Totals over a turn's calls. Token totals only when EVERY call reported usage. */
 export function sumTurnMetrics(calls: readonly AiCallMetrics[]): AiTurnMetrics {
-  const usageReported = calls.length > 0 && calls.every((c) => c.usageReported)
+  // Issue #198: the totals are the sum of the calls that reported usage; a
+  // call that did not report makes them "partial", not "not reported".
+  const reporting = calls.filter((c) => c.usageReported)
+  const usageReported = reporting.length > 0
+  const usagePartial = usageReported && reporting.length < calls.length
   const sum = (pick: (c: AiCallMetrics) => number | undefined): number | undefined => {
-    if (!usageReported) return undefined
     let any = false
     let total = 0
-    for (const c of calls) {
+    for (const c of reporting) {
       const v = pick(c)
       if (typeof v === 'number') {
         any = true
@@ -84,6 +87,7 @@ export function sumTurnMetrics(calls: readonly AiCallMetrics[]): AiTurnMetrics {
     durationMs: calls.reduce((n, c) => n + c.durationMs, 0),
     usageReported,
   }
+  if (usagePartial) out.usagePartial = true
   if (inputTokens !== undefined) out.inputTokens = inputTokens
   if (outputTokens !== undefined) out.outputTokens = outputTokens
   if (inputTokens !== undefined || outputTokens !== undefined) {
@@ -230,7 +234,15 @@ export function sanitizeTurns(raw: unknown): AiTurn[] {
     const id = str(t.id)
     const timestamp = num(t.timestamp) ?? Date.now()
     if (t.role === 'user') {
-      out.push({ id, role: 'user', content: str(t.content), timestamp })
+      const content = str(t.content)
+      const template = typeof t.template === 'string' ? t.template : undefined
+      out.push({
+        id,
+        role: 'user',
+        content,
+        ...(template !== undefined && template !== content ? { template } : {}),
+        timestamp,
+      })
       continue
     }
     if (t.role !== 'assistant') continue

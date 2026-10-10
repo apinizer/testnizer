@@ -65,6 +65,7 @@ import {
   ensureAiConversationsLoaded,
   flushAiConversationWrites,
   rehomeAiConversations,
+  renameAiConversation,
 } from '../../src/renderer/stores/ai-chat-conversations'
 import { answerToolApproval } from '../../src/renderer/stores/ai-chat-tools'
 import { useEnvironmentStore } from '../../src/renderer/stores/environment.store'
@@ -268,8 +269,14 @@ describe('stream events → turn → conversation (#180, #198, #199)', () => {
     if (turn?.role !== 'assistant') throw new Error('no assistant turn')
     expect(turn.parts?.map((p) => p.type)).toEqual(['tool_call', 'tool_result', 'text'])
     expect(turn.content).toBe('It is sunny.')
-    expect(turn.metrics).toMatchObject({ durationMs: 500, ttfbMs: 50, usageReported: false })
-    expect(turn.metrics?.totalTokens).toBeUndefined()
+    // Issue #198: one call reported, one did not → the reported sum, partial.
+    expect(turn.metrics).toMatchObject({
+      durationMs: 500,
+      ttfbMs: 50,
+      usageReported: true,
+      usagePartial: true,
+      totalTokens: 14,
+    })
 
     await flushAiConversationWrites()
     expect(api.conv.create).toHaveBeenCalledTimes(1)
@@ -307,6 +314,69 @@ describe('stream events → turn → conversation (#180, #198, #199)', () => {
     expect((api.conv.create.mock.calls[0] as unknown as [Record<string, unknown>])[0].ownerId).toBe(
       'sr-9',
     )
+  })
+})
+
+describe('issue #199 — the conversation name never holds a secret value', () => {
+  const SECRET = 'sk-live-SECRET-9d41c7'
+  const stored = (): string => localStorage.getItem('testnizer-ai-chat') ?? ''
+
+  it('the default name is the prompt as typed; DB name and snapshot never get the value', async () => {
+    useEnvironmentStore.setState({
+      ...useEnvironmentStore.getState(),
+      getActiveVariables: () => ({ secretVar: SECRET }),
+    } as never)
+    await useAiChatStore.getState().sendPrompt('echo {{secretVar}}')
+    // The model still gets the resolved prompt.
+    expect(lastPayload().prompt).toBe(`echo ${SECRET}`)
+    useAiChatStore.getState()._onChunk('m1', 'ok')
+    useAiChatStore.getState()._onDone('m1')
+    await flushAiConversationWrites()
+
+    const created = (
+      api.conv.create.mock.calls[0] as unknown as [{ name: string; turns: unknown[] }]
+    )[0]
+    expect(created.name).toBe('echo {{secretVar}}')
+    expect(created.turns[0]).toMatchObject({
+      content: `echo ${SECRET}`,
+      template: 'echo {{secretVar}}',
+    })
+    expect(useAiChatStore.getState().conversationName).toBe('echo {{secretVar}}')
+
+    // localStorage `testnizer-ai-chat` (conversationName, conversations[].name)
+    useAiChatStore.setState({
+      conversations: [
+        { id: 'conv-1', name: 'echo {{secretVar}}', turnCount: 2, createdAt: 1, updatedAt: 1 },
+      ],
+    })
+    expect(stored()).not.toBe('')
+    expect(stored()).not.toContain(SECRET)
+  })
+
+  it('the snapshot never carries a name, even one that leaked before', () => {
+    reset({
+      conversationId: 'conv-1',
+      conversationName: `echo ${SECRET}`,
+      conversations: [
+        { id: 'conv-1', name: `echo ${SECRET}`, turnCount: 2, createdAt: 1, updatedAt: 1 },
+      ],
+    })
+    const snap = sanitizeAiTabState({ ...useAiChatStore.getState() })
+    expect(JSON.stringify(snap)).not.toContain(SECRET)
+    // The id stays: the name comes back from the database (scrubbed by main).
+    expect(snap.conversationId).toBe('conv-1')
+    expect(stored()).not.toContain(SECRET)
+  })
+
+  it('a rename shows the name main stored, not the typed one', async () => {
+    reset({ conversationId: 'conv-1', conversationName: 'old' })
+    api.conv.list.mockResolvedValueOnce({
+      success: true,
+      data: [{ id: 'conv-1', name: 'renamed ••••••', turnCount: 2, createdAt: 1, updatedAt: 2 }],
+    } as never)
+    await renameAiConversation('conv-1', `renamed ${SECRET}`)
+    expect(useAiChatStore.getState().conversationName).toBe('renamed ••••••')
+    expect(stored()).not.toContain(SECRET)
   })
 })
 

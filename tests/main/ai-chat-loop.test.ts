@@ -29,6 +29,7 @@ import {
   type AiToolCallPart,
 } from '../../src/shared/ai-chat-types'
 import type { McpTool } from '../../src/main/protocols/mcp.engine'
+import { sumTurnMetrics } from '../../src/shared/ai-chat-turns'
 
 type Script = Array<{
   text?: string
@@ -457,7 +458,7 @@ describe('runAiTurn — untrusted stdio', () => {
 })
 
 describe('runAiTurn — metrics (#198)', () => {
-  it('sums every call of the turn; usage missing on one call → totals not reported', async () => {
+  it('sums every call of the turn; usage missing on one call → sum of the reported calls, partial', async () => {
     const h = harness({
       script: [
         { calls: [{ id: 'c1', name: 'Weather__get', args: '{}' }] },
@@ -476,8 +477,62 @@ describe('runAiTurn — metrics (#198)', () => {
     })
     expect(m?.calls[1]).toMatchObject({ usageReported: false })
     expect(m?.calls[1].inputTokens).toBeUndefined()
-    expect(m?.usageReported).toBe(false)
-    expect(m?.totalTokens).toBeUndefined()
+    // Issue #198: the reported call's usage is shown, flagged partial — not
+    // "not reported" for the whole message.
+    expect(m?.usageReported).toBe(true)
+    expect(m?.usagePartial).toBe(true)
+    expect(m).toMatchObject({ inputTokens: 10, outputTokens: 5, totalTokens: 15 })
+  })
+
+  it('sumTurnMetrics: none reported → not reported; all reported → not partial', () => {
+    const none = sumTurnMetrics([
+      { status: 200, ttfbMs: 1, durationMs: 2, usageReported: false },
+      { status: 200, ttfbMs: 1, durationMs: 2, usageReported: false },
+    ])
+    expect(none.usageReported).toBe(false)
+    expect(none.usagePartial).toBeUndefined()
+    expect(none.totalTokens).toBeUndefined()
+    const all = sumTurnMetrics([
+      {
+        status: 200,
+        ttfbMs: 1,
+        durationMs: 2,
+        usageReported: true,
+        inputTokens: 3,
+        outputTokens: 1,
+      },
+      {
+        status: 200,
+        ttfbMs: 1,
+        durationMs: 2,
+        usageReported: true,
+        inputTokens: 4,
+        outputTokens: 2,
+      },
+    ])
+    expect(all).toMatchObject({ usageReported: true, totalTokens: 10 })
+    expect(all.usagePartial).toBeUndefined()
+    const partial = sumTurnMetrics([
+      { status: 200, ttfbMs: 1, durationMs: 2, usageReported: false },
+      {
+        status: 200,
+        ttfbMs: 1,
+        durationMs: 2,
+        usageReported: true,
+        inputTokens: 4,
+        outputTokens: 2,
+        cachedTokens: 1,
+      },
+      { status: 200, ttfbMs: 1, durationMs: 2, usageReported: false },
+    ])
+    expect(partial).toMatchObject({
+      usageReported: true,
+      usagePartial: true,
+      inputTokens: 4,
+      outputTokens: 2,
+      totalTokens: 6,
+      cachedTokens: 1,
+    })
   })
 
   it('all calls reported → totals', async () => {

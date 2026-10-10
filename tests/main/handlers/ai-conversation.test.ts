@@ -104,6 +104,86 @@ beforeEach(() => {
   registerTestSuiteHandlers()
 })
 
+const SECRET = 'sk-live-SECRET-9d41c7'
+
+function seedSecretVar(): void {
+  const now = Date.now()
+  const envId = crypto.randomUUID()
+  testDb
+    .prepare(
+      `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, 'Dev', 1, ?, ?)`,
+    )
+    .run(envId, wsId, projectId, now, now)
+  testDb
+    .prepare(
+      `INSERT INTO environment_variables (id, environment_id, key, value, enabled, secret, initial_value)
+       VALUES (?, ?, 'secretVar', ?, 1, 1, ?)`,
+    )
+    .run(crypto.randomUUID(), envId, SECRET, SECRET)
+}
+
+describe('issue #199 — a conversation name never holds a secret value', () => {
+  it('create and rename scrub the name; the stored row and every read are masked', async () => {
+    seedSecretVar()
+    const owner = seedEndpoint()
+    const created = await call<{ id: string; name: string }>('aichat:conv:create', {
+      projectId,
+      ownerId: owner,
+      // What an older renderer sent: the RESOLVED prompt.
+      name: `echo ${SECRET}`,
+      turns: [
+        {
+          id: 'u',
+          role: 'user',
+          content: `echo ${SECRET}`,
+          template: 'echo {{secretVar}}',
+          timestamp: 1,
+        },
+      ],
+    })
+    expect(created.success).toBe(true)
+    expect(created.data.name).not.toContain(SECRET)
+    expect(created.data.name).toContain('echo ')
+    const id = created.data.id
+    const row = () =>
+      testDb.prepare('SELECT name, messages_json FROM ai_conversations WHERE id = ?').get(id) as {
+        name: string
+        messages_json: string
+      }
+    expect(row().name).not.toContain(SECRET)
+    expect(row().messages_json).not.toContain(SECRET)
+    // The typed prompt is kept with the turn (`{{var}}` is not a secret).
+    expect(row().messages_json).toContain('echo {{secretVar}}')
+
+    await call('aichat:conv:rename', id, `renamed ${SECRET}`)
+    expect(row().name).not.toContain(SECRET)
+    expect(row().name).toContain('renamed ')
+  })
+
+  it('a row written before the scrub is masked on list and load', async () => {
+    const owner = seedEndpoint()
+    const { data } = await call<{ id: string }>('aichat:conv:create', {
+      projectId,
+      ownerId: owner,
+      name: `leak ${SECRET}`,
+    })
+    // Not secret yet when the row was written → stored as it was.
+    expect(
+      (
+        testDb.prepare('SELECT name FROM ai_conversations WHERE id = ?').get(data.id) as {
+          name: string
+        }
+      ).name,
+    ).toContain(SECRET)
+    seedSecretVar()
+    const list = await call<Array<{ name: string }>>('aichat:conv:list', owner)
+    expect(list.data[0].name).not.toContain(SECRET)
+    const loaded = await call<{ name: string }>('aichat:conv:load', data.id)
+    expect(loaded.data.name).not.toContain(SECRET)
+  })
+})
+
 describe('CRUD', () => {
   it('create → append → list → load → rename → delete', async () => {
     const owner = seedEndpoint()

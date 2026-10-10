@@ -389,13 +389,15 @@ export function registerAiChatHandlers(): void {
           const elapsed = Date.now() - started
           const metrics = scrubTurnMetrics(result.turn.metrics, scrub)
           const totalBytes = Buffer.byteLength(fullText, 'utf-8')
-          // Token counts only when every call reported them — never a 0 for "unknown".
-          const usageMeta: Record<string, number> = {}
+          // Token counts only when a call reported them — never a 0 for
+          // "unknown". Some calls silent → the reported sum, flagged partial (#198).
+          const usageMeta: Record<string, number | boolean> = {}
           if (metrics?.usageReported) {
             for (const k of ['inputTokens', 'outputTokens', 'totalTokens'] as const) {
               const v = metrics[k]
               if (typeof v === 'number') usageMeta[k] = v
             }
+            if (metrics.usagePartial) usageMeta.usagePartial = true
           }
           if (result.outcome === 'cancelled') {
             emit(win.id, 'aichat:cancelled', { messageId, ...(metrics ? { metrics } : {}) })

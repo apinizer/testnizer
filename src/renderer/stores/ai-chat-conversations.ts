@@ -125,7 +125,11 @@ async function createWith(tabKey: string, ownerId: string, turns: AiTurn[]): Pro
   const created = await api()?.create({
     projectId: activeProjectIdForAi() ?? null,
     ownerId,
-    name: conversationNameFrom(firstUser?.content ?? ''),
+    // The prompt as typed (`{{var}}` kept): the resolved one may carry a
+    // secret value (issue #199). main scrubs the name again on write.
+    name: conversationNameFrom(
+      firstUser?.role === 'user' ? (firstUser.template ?? firstUser.content) : '',
+    ),
     turns,
   })
   if (created?.success && created.data) {
@@ -205,10 +209,14 @@ export async function renameAiConversation(id: string, name: string): Promise<vo
   const ownerId = ownerOfTabKey(tabKey)
   const res = await api()?.rename(id, name)
   if (!res?.success || !ownerId) return
-  if (readAiTab(tabKey)?.conversationId === id) {
-    patchAiTab(tabKey, () => ({ conversationName: name.replace(/\s+/g, ' ').trim() || null }))
-  }
   await refreshList(tabKey, ownerId)
+  if (readAiTab(tabKey)?.conversationId === id) {
+    // Show the name main stored (scrubbed), not the typed one (issue #199).
+    const stored = readAiTab(tabKey)?.conversations.find((c) => c.id === id)?.name
+    patchAiTab(tabKey, () => ({
+      conversationName: stored ?? (name.replace(/\s+/g, ' ').trim() || null),
+    }))
+  }
 }
 
 export async function deleteAiConversation(id: string): Promise<void> {

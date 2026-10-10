@@ -29,6 +29,17 @@ export function isPinnedToBottom(
 export const formatMs = (v: number | null | undefined): string =>
   v == null ? '—' : v < 1000 ? `${Math.round(v)} ms` : `${(v / 1000).toFixed(2)} s`
 
+/**
+ * Which calls the token totals cover when only some reported usage
+ * (issue #198): "Partial — usage reported by calls #1, #3 of 3". Null when
+ * the totals are complete or nothing was reported.
+ */
+export function partialUsageNote(m: AiTurnMetrics, t: (k: string) => string): string | null {
+  if (!m.usagePartial) return null
+  const which = m.calls.flatMap((c, i) => (c.usageReported ? [`#${i + 1}`] : []))
+  return `${t('aiChat.metrics.partialHint')} ${which.join(', ')} ${t('aiChat.metrics.of')} ${m.calls.length}`
+}
+
 /** Hover text: the token breakdown and, for a tool loop, each LLM call. */
 export function metricsTooltip(m: AiTurnMetrics, t: (k: string) => string): string {
   const lines: string[] = []
@@ -45,6 +56,8 @@ export function metricsTooltip(m: AiTurnMetrics, t: (k: string) => string): stri
     return parts.join(' · ')
   }
   lines.push(tok(m))
+  const partial = partialUsageNote(m, t)
+  if (partial) lines.push(partial)
   if (m.calls.length > 1) {
     m.calls.forEach((c, i) => {
       lines.push(

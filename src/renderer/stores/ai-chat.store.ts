@@ -628,6 +628,9 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
       id: makeId(),
       role: 'user',
       content: resolvedContent,
+      // The typed text names the conversation — never the resolved one, which
+      // may carry a `{{secret}}` value (issue #199).
+      ...(resolvedContent !== trimmed ? { template: trimmed } : {}),
       timestamp: Date.now(),
     }
     const assistantMsg: AiAssistantTurn = {
@@ -883,6 +886,11 @@ export function sanitizeAiTabState(st: TabAiChatState): TabAiChatState {
     autoApproveTools: false,
     messages: [],
     allowedTools: [],
+    // Names are re-read from the database (scrubbed by main) on the next
+    // open — the snapshot never holds one (issue #199: a name can carry a
+    // prompt's text).
+    conversationName: null,
+    conversations: [],
     conversationLoaded: false,
     streaming: false,
     pendingResponseId: null,

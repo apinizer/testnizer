@@ -118,8 +118,17 @@ export interface AiTurnMetrics {
   ttfbMs: number | null
   /** Sum of the calls' durations (tool execution and approval waits excluded). */
   durationMs: number
-  /** Every call reported usage — only then are the token totals set. */
+  /**
+   * At least one call reported usage — only then are the token totals set,
+   * summed over the calls that reported (issue #198). No call reported →
+   * "not reported", never 0.
+   */
   usageReported: boolean
+  /**
+   * Some calls reported usage and some did not: the totals cover only the
+   * reporting calls and the UI marks them "partial". Absent otherwise.
+   */
+  usagePartial?: boolean
   inputTokens?: number
   outputTokens?: number
   totalTokens?: number
@@ -130,7 +139,14 @@ export interface AiTurnMetrics {
 export interface AiUserTurn {
   id: string
   role: 'user'
+  /** The prompt as sent — `{{var}}` resolved. */
   content: string
+  /**
+   * The prompt as typed, `{{var}}` kept — set only when it differs from
+   * `content`. Names a conversation, so a `{{secret}}` prompt never puts the
+   * secret value into the name (issue #199).
+   */
+  template?: string
   timestamp: number
 }
 

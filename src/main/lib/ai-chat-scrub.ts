@@ -101,7 +101,11 @@ function scrubPart(p: AiAssistantPart, scrub: Scrubber): AiAssistantPart {
  */
 export function scrubTurnsForStorage(turns: readonly AiTurn[], scrub: Scrubber): AiTurn[] {
   return turns.map((t): AiTurn => {
-    if (t.role === 'user') return { ...t, content: scrubAiText(t.content, scrub) }
+    if (t.role === 'user') {
+      const user = { ...t, content: scrubAiText(t.content, scrub) }
+      if (t.template !== undefined) user.template = scrubAiText(t.template, scrub)
+      return user
+    }
     const out: AiAssistantTurn = { ...t, content: scrubAiText(t.content, scrub) }
     if (t.parts) out.parts = t.parts.map((p) => scrubPart(p, scrub))
     if (t.error) out.error = scrubAiText(t.error, scrub)

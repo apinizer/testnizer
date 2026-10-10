@@ -12,8 +12,10 @@ import {
   AI_CONVERSATION_TRIM_TO_BYTES,
   aiScrubberFor,
   capConversation,
+  scrubAiText,
   scrubTurnsForStorage,
 } from '../lib/ai-chat-scrub'
+import type { Scrubber } from '../lib/sensitive-scrub'
 
 /**
  * AI Chat conversations (issue #199) — local database only. Never part of a
@@ -37,9 +39,23 @@ interface Row {
 
 const MAX_NAME = 200
 
-function cleanName(name: unknown, fallback = 'New conversation'): string {
+/**
+ * A name as it is written: one line, capped, and scrubbed (issue #199) — a
+ * default name is the first prompt, and a prompt or a typed rename can carry
+ * a secret value. Scrubbed before the cap so a cut never leaves half a secret.
+ */
+function cleanName(name: unknown, scrub: Scrubber, fallback = 'New conversation'): string {
   const n = typeof name === 'string' ? name.replace(/\s+/g, ' ').trim() : ''
-  return (n || fallback).slice(0, MAX_NAME)
+  return (scrubAiText(n, scrub) || fallback).slice(0, MAX_NAME)
+}
+
+/**
+ * A name as it is read — scrubbed again with today's secrets: a row written
+ * before the write-side scrub (or before a variable was marked secret) must
+ * not show the value in the conversation bar.
+ */
+function shownName(name: string, scrub: Scrubber): string {
+  return scrubAiText(name, scrub)
 }
 
 function parseTurns(json: string): AiTurn[] {
@@ -55,7 +71,7 @@ function decode(row: Row): AiConversation {
     id: row.id,
     projectId: row.project_id,
     ownerId: row.owner_id,
-    name: row.name,
+    name: shownName(row.name, aiScrubberFor()),
     turns: parseTurns(row.messages_json),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -77,9 +93,10 @@ export function listByOwner(ownerId: string): AiConversationSummary[] {
     .all(ownerId) as Array<
     Pick<Row, 'id' | 'name' | 'created_at' | 'updated_at'> & { turn_count: number }
   >
+  const scrub = aiScrubberFor()
   return rows.map((r) => ({
     id: r.id,
-    name: r.name,
+    name: shownName(r.name, scrub),
     turnCount: r.turn_count,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -140,17 +157,18 @@ export function create(input: {
   const fits = Buffer.byteLength(JSON.stringify(all), 'utf-8') <= AI_CONVERSATION_MAX_BYTES
   const turns = fits ? all : capConversation(all, AI_CONVERSATION_TRIM_TO_BYTES).turns
   const projectId = projectIdFor(input.ownerId, input.projectId)
+  const name = cleanName(input.name, aiScrubberFor())
   getDb()
     .prepare(
       `INSERT INTO ai_conversations (id, project_id, owner_id, name, messages_json, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, projectId, input.ownerId, cleanName(input.name), JSON.stringify(turns), now, now)
+    .run(id, projectId, input.ownerId, name, JSON.stringify(turns), now, now)
   return {
     id,
     projectId,
     ownerId: input.ownerId,
-    name: cleanName(input.name),
+    name,
     turns,
     createdAt: now,
     updatedAt: now,
@@ -160,7 +178,7 @@ export function create(input: {
 export function rename(id: string, name: string): boolean {
   const res = getDb()
     .prepare('UPDATE ai_conversations SET name = ?, updated_at = ? WHERE id = ?')
-    .run(cleanName(name), Date.now(), id)
+    .run(cleanName(name, aiScrubberFor()), Date.now(), id)
   return res.changes > 0
 }
 

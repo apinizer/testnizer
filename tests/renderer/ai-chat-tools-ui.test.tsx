@@ -55,6 +55,7 @@ vi.hoisted(() => {
 })
 
 import AiChatEditor from '../../src/renderer/components/protocols/AiChatEditor'
+import { sumTurnMetrics } from '../../src/shared/ai-chat-turns'
 import { useAiChatStore } from '../../src/renderer/stores/ai-chat.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
@@ -260,6 +261,68 @@ describe('metrics row (#198)', () => {
     })
     render(<AiChatEditor />)
     expect(screen.getByTestId('ai-metrics-tokens').textContent).toBe('token: bildirilmedi')
+  })
+})
+
+describe('partial usage (#198)', () => {
+  const partial = () =>
+    sumTurnMetrics([
+      {
+        status: 200,
+        ttfbMs: 100,
+        durationMs: 400,
+        usageReported: true,
+        inputTokens: 10,
+        outputTokens: 5,
+      },
+      { status: 200, ttfbMs: 80, durationMs: 300, usageReported: false },
+      {
+        status: 200,
+        ttfbMs: 70,
+        durationMs: 200,
+        usageReported: true,
+        inputTokens: 20,
+        outputTokens: 3,
+      },
+    ])
+
+  it('some calls reported → their sum with a visible "partial" marker; hover lists which', () => {
+    seed({ messages: [{ ...liveTurn([{ type: 'text', text: 'hi' }]), metrics: partial() }] })
+    render(<AiChatEditor />)
+    const tokens = screen.getByTestId('ai-metrics-tokens')
+    expect(tokens.textContent).toBe('38 tokens')
+    const marker = screen.getByTestId('ai-metrics-partial')
+    expect(marker.textContent).toBe('partial')
+    const hover = marker.getAttribute('title') ?? ''
+    expect(hover).toContain('Partial — usage reported by calls #1, #3 of 3')
+    expect(tokens.getAttribute('title')).toContain('#1, #3')
+    expect(screen.getByTestId('ai-metrics').textContent).not.toContain('not reported ·')
+  })
+
+  it('no call reported → "not reported", no partial marker', () => {
+    seed({
+      messages: [
+        {
+          ...liveTurn([{ type: 'text', text: 'hi' }]),
+          metrics: sumTurnMetrics([
+            { status: 200, ttfbMs: 1, durationMs: 1, usageReported: false },
+            { status: 200, ttfbMs: 1, durationMs: 1, usageReported: false },
+          ]),
+        },
+      ],
+    })
+    render(<AiChatEditor />)
+    expect(screen.getByTestId('ai-metrics-tokens').textContent).toBe('tokens: not reported')
+    expect(screen.queryByTestId('ai-metrics-partial')).toBeNull()
+  })
+
+  it('Turkish: "kısmi"', () => {
+    act(() => useUIStore.setState({ locale: 'tr' }))
+    seed({ messages: [{ ...liveTurn([{ type: 'text', text: 'x' }]), metrics: partial() }] })
+    render(<AiChatEditor />)
+    expect(screen.getByTestId('ai-metrics-tokens').textContent).toBe('38 token')
+    expect(screen.getByTestId('ai-metrics-partial').textContent).toBe('kısmi')
+    expect(screen.getByTestId('ai-metrics-partial').getAttribute('title')).toContain('#1, #3')
   })
 })
 

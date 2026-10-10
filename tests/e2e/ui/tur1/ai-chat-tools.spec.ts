@@ -58,9 +58,11 @@ uiTest.describe('Tur1 — AI Chat MCP tools [issue #180]', () => {
       await call.getByRole('button').first().click()
       await expect(call.getByTestId('ai-tool-result')).toHaveText('from-llm')
 
-      // Per-message metrics: status + a tokens cell (the 2nd call reported none → "not reported").
+      // Per-message metrics: status + tokens. The 1st call reported 11+7, the
+      // 2nd none → the reported sum with a "partial" marker (issue #198).
       await expect(window.getByTestId('ai-metrics-status').last()).toHaveText('200')
-      await expect(window.getByTestId('ai-metrics-tokens').last()).toBeVisible()
+      await expect(window.getByTestId('ai-metrics-tokens').last()).toHaveText(/^18 /)
+      await expect(window.getByTestId('ai-metrics-partial').last()).toHaveAttribute('title', /#1 /)
     },
   )
 
