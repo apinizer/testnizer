@@ -53,7 +53,7 @@ function fail(error: unknown): Result<never> {
   return { success: false, error: error instanceof Error ? error.message : String(error) }
 }
 
-function buildServerDef(serverId: string): MockServerDef | null {
+export function buildServerDef(serverId: string): MockServerDef | null {
   const snap = getMockServerSnapshot(serverId)
   if (!snap) return null
 
@@ -371,6 +371,33 @@ export function registerMockHandlers(): void {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────
+
+/**
+ * Re-sync every RUNNING HTTP mock with its stored rows (issue #154) after a
+ * project delete or a project import pruned / rewrote `mock_servers`,
+ * `mock_endpoints` or `mock_responses`. A vanished server row stops it
+ * (`stop()` emits the usual `mock:status`); otherwise the definition is
+ * rebuilt from the DB and hot-reloaded, so a pruned endpoint stops answering.
+ */
+export async function reconcileRunningMockServers(): Promise<void> {
+  for (const { id } of mockServerManager.list()) {
+    let def: MockServerDef | null = null
+    try {
+      def = buildServerDef(id)
+    } catch (e) {
+      console.error('[mock] reconcile: reading rows failed:', (e as Error).message)
+    }
+    if (!def) {
+      await mockServerManager.stop(id)
+      continue
+    }
+    const r = await mockServerManager.update(def)
+    // A host/port change whose restart was refused up front (port held by
+    // another mock) leaves the old listener up — never keep serving the
+    // stale config.
+    if (!r.ok && mockServerManager.status(id) === 'running') await mockServerManager.stop(id)
+  }
+}
 
 async function reloadIfRunning(serverId: string): Promise<void> {
   if (mockServerManager.status(serverId) !== 'running') return

@@ -3,6 +3,7 @@ import { useTranslation } from '../../lib/i18n'
 import type { MockMcpAuthMode, MockMcpDraftUpdater, MockMcpServerDraft } from '../../types/mock-mcp'
 import { generateBearerToken } from './mock-mcp-draft'
 import MockMcpErrorModeFields from './MockMcpErrorModeFields'
+import MockMcpExposedWarning from './MockMcpExposedWarning'
 import { Field, GhostButton, INPUT_CLS, IntInput, SectionLabel, SELECT_CLS } from './ui'
 
 /** Scenarios: bearer auth, latency and server-wide error injection. All hot-reload. */
@@ -40,6 +41,7 @@ export default function MockMcpScenariosTab({
             <option value="bearer">{t('mockMcp.scenarios.authBearer')}</option>
           </select>
         </Field>
+        <MockMcpExposedWarning draft={draft} />
         {draft.authMode === 'bearer' && (
           <>
             <Field label={t('mockMcp.scenarios.token')}>
@@ -59,6 +61,10 @@ export default function MockMcpScenariosTab({
                 </GhostButton>
               </div>
             </Field>
+            {/* Decision (issue #154): the token is project data, like every other mock setting. */}
+            <div data-testid="mock-mcp-token-note" className="text-[11px] text-[var(--muted)]">
+              {t('mockMcp.scenarios.tokenNote')}
+            </div>
             <div className="text-[11px] text-[var(--hint)]">{t('mockMcp.scenarios.authHint')}</div>
           </>
         )}

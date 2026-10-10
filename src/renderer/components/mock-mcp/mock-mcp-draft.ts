@@ -16,7 +16,12 @@ import type {
   MockMcpTool,
   MockMcpToolDraft,
 } from '../../types/mock-mcp'
-import { draftToElicit, elicitToDraft, emptyEnumField } from './mock-mcp-elicit'
+import {
+  draftToElicit,
+  duplicateElicitField,
+  elicitToDraft,
+  emptyEnumField,
+} from './mock-mcp-elicit'
 
 let keySeq = 0
 export function newDraftKey(): string {
@@ -199,6 +204,17 @@ export function draftToPatch(draft: MockMcpServerDraft): PatchResult {
     if (emptyEnum) {
       return {
         problem: { key: 'mockMcp.validation.elicitEnum', tool: d.name || '?', detail: emptyEnum },
+      }
+    }
+    // Two rows with one name would silently collapse into one property.
+    const duplicate = d.elicit ? duplicateElicitField(d.elicit) : null
+    if (duplicate) {
+      return {
+        problem: {
+          key: 'mockMcp.validation.elicitDuplicate',
+          tool: d.name || '?',
+          detail: duplicate,
+        },
       }
     }
     tools.push(draftToTool(d, parsed.schema))

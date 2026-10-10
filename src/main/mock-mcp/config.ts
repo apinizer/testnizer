@@ -23,6 +23,8 @@ import type {
   MockMcpTool,
 } from './types'
 
+export { isExposedWithoutAuth, isLoopbackHost } from '../../shared/mock-mcp-exposure'
+
 export const DEFAULT_MCP_PATH = '/mcp'
 export const DEFAULT_ERROR_MODE: MockMcpErrorMode = { kind: 'none' }
 export const DEFAULT_LEGACY_MODE: MockMcpLegacyMode = 'stateless'

@@ -73,8 +73,18 @@ export const MOCK_MCP_RESPONSE_KINDS: readonly MockMcpResponseKind[] = ['text', 
 
 export type MockMcpEditorTab = 'general' | 'scenarios' | 'tools' | 'resources' | 'prompts' | 'logs'
 
-/** Field types the elicitation editor offers (`enum` = a string with `enum` values). */
-export type MockMcpElicitFieldType = 'string' | 'number' | 'integer' | 'boolean' | 'enum'
+/**
+ * Field types of an elicitation row (`enum` = a string with `enum` values).
+ * `unsupported` = a property the editor cannot edit (array, non-string enum,
+ * no type, …): it is kept verbatim in `raw` and never offered in the picker.
+ */
+export type MockMcpElicitFieldType =
+  | 'string'
+  | 'number'
+  | 'integer'
+  | 'boolean'
+  | 'enum'
+  | 'unsupported'
 
 export const MOCK_MCP_ELICIT_FIELD_TYPES: readonly MockMcpElicitFieldType[] = [
   'string',
@@ -95,6 +105,19 @@ export interface MockMcpElicitFieldRow {
   required: boolean
   /** The property's other keywords (title, minLength, …) — kept across a round trip. */
   extra: Record<string, unknown>
+  /**
+   * How an `enum` row is written back (issue #154): plain `enum` (default),
+   * `enum` + legacy `enumNames`, or titled `oneOf: [{ const, title }]`.
+   */
+  enumStyle?: 'enumNames' | 'oneOf'
+  /**
+   * Per-value metadata of an `enumNames` / `oneOf` row, keyed by the value:
+   * `{ title }` for an enumName, the `oneOf` entry minus `const` otherwise.
+   * Looked up by value, so editing the values never leaves a label stale.
+   */
+  enumEntries?: Record<string, Record<string, unknown>>
+  /** `unsupported` rows: the property schema exactly as loaded. */
+  raw?: Record<string, unknown>
 }
 
 /** The elicitation section of a tool as the editor holds it (issue #152). */

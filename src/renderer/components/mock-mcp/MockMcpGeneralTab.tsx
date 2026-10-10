@@ -8,6 +8,7 @@ import {
   type MockMcpServerDraft,
 } from '../../types/mock-mcp'
 import { Checkbox, Field, INPUT_CLS, IntInput, SectionLabel, SELECT_CLS } from './ui'
+import MockMcpExposedWarning from './MockMcpExposedWarning'
 
 const LEGACY_MODE_KEYS: Record<MockMcpLegacyMode, string> = {
   stateless: 'mockMcp.general.legacyStateless',
@@ -80,6 +81,7 @@ export default function MockMcpGeneralTab({
           </Field>
         </div>
         <div className="text-[11px] text-[var(--hint)]">{t('mockMcp.general.portHint')}</div>
+        <MockMcpExposedWarning draft={draft} />
         <Checkbox
           testId="mock-mcp-legacy-sse"
           checked={draft.legacySse}

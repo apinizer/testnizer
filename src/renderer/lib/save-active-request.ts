@@ -202,7 +202,10 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
     // 'GET' matches the method TreeView stamps on a new MCP row.
     const mcp = useMcpStore.getState()
     return {
-      effectiveUrl: mcp.url || url,
+      // The MCP store is the URL's source of truth on an MCP tab — an
+      // intentionally cleared URL is saved empty, not replaced by the request
+      // store's stale one (issue #154).
+      effectiveUrl: mcp.url,
       effectiveMethod: 'GET',
       effectiveBody: { type: 'none' },
       protocolMeta: {
@@ -443,9 +446,10 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     }
     // The row's url column is always written from the MCP store
     // (effectiveUrl), and callers hydrate the request store first — fall
-    // back to it when the meta carries no url.
-    const url = typeof m.url === 'string' && m.url ? m.url : useRequestStore.getState().url
-    if (url) mcp.setUrl(url)
+    // back to it only when the meta carries no url at all. An empty string is
+    // a deliberately cleared URL and is restored as such (issue #154).
+    const url = typeof m.url === 'string' ? m.url : useRequestStore.getState().url
+    mcp.setUrl(url ?? '')
     if (Array.isArray(m.customHeaders)) mcp.setHeaders(m.customHeaders as KeyValuePair[])
     if (Array.isArray(m.envVars)) mcp.setEnvVars(m.envVars as KeyValuePair[])
     // Rows saved before the Authorization tab carry no `auth` → No Auth.

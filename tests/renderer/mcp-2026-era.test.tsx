@@ -303,7 +303,9 @@ describe('store — multi-round-trip tools/call', () => {
     expect(s.result).toEqual({ content: [{ type: 'text', text: '3 apples' }] })
   })
 
-  it('a refused retry (forged state) shows the error and closes the card', async () => {
+  // Issue #154: a refused retry used to close the card and drop the typed
+  // answers; it now stays open with the error inline so the user can retry.
+  it('a refused retry (forged state) keeps the card and shows the error on it', async () => {
     const { mcp } = installApi()
     await connectTab('tab-a')
     useMcpStore.getState().setSelectedTool('ask_count')
@@ -314,8 +316,9 @@ describe('store — multi-round-trip tools/call', () => {
     } as never)
     await useMcpStore.getState().respondInput({ count: { action: 'decline' } })
     const s = useMcpStore.getState()
-    expect(s.pendingInput).toBeNull()
-    expect(s.resultError).toMatch(/-32602/)
+    expect(s.pendingInput).toMatchObject({ round: 1, requestState: 'v1.state-1' })
+    expect(s.pendingInput?.error).toMatch(/-32602/)
+    expect(s.isInvoking).toBe(false)
   })
 })
 

@@ -73,6 +73,7 @@ import { T } from '../../styles/tokens'
 // up — v1.4.4 close-bypass).
 import { cleanupTabState } from '../../lib/cleanup-tab-state'
 import { saveActiveRequestInPlace } from '../../lib/save-active-request'
+import { saveMockMcpDraft } from '../mock-mcp/mock-mcp-save'
 import UnsavedChangesDialog from '../modals/UnsavedChangesDialog'
 import { toast } from '../../lib/toast'
 import { EditorVisibilityProvider } from '../../lib/editor-visibility'
@@ -451,10 +452,31 @@ export function EndpointTabBar() {
   }
 
   // ─── Unsaved-changes confirm handlers (issue #9) ────────────────
+  /**
+   * Mock MCP editor tab: save its draft through the editor's own path — it is
+   * not a request row, `saveActiveRequestInPlace` would report it not
+   * applicable and Save did nothing (issue #154). No activation needed.
+   */
+  async function closeSaveMockMcp(tabId: string, serverId: string | undefined) {
+    const result = serverId ? await saveMockMcpDraft(serverId) : null
+    setCloseSaving(false)
+    if (result && !result.ok) {
+      if (result.error) toast.error(`Failed to save: ${result.error}`)
+      return // keep the dialog open so the user can fix, retry or cancel
+    }
+    setCloseConfirmTabId(null)
+    doCloseTab(tabId)
+  }
+
   async function handleCloseSave() {
     const tabId = closeConfirmTabId
     if (!tabId) return
     setCloseSaving(true)
+    const closing = useTabsStore.getState().tabs.find((t) => t.id === tabId)
+    if (closing?.protocol === 'mockMcpServer') {
+      await closeSaveMockMcp(tabId, closing.mockMcpServerId)
+      return
+    }
     try {
       // `saveActiveRequestInPlace` targets the ACTIVE tab — make the closing tab
       // active first so a background tab's × still saves the right request.

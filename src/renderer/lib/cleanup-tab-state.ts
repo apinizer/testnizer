@@ -16,6 +16,7 @@ import { useGraphQLStore } from '../stores/graphql.store'
 import { useAiChatStore } from '../stores/ai-chat.store'
 import { useMcpStore } from '../stores/mcp.store'
 import { useSocketIOStore } from '../stores/socketio.store'
+import { useMockMcpStore } from '../stores/mock-mcp.store'
 
 /**
  * Tear down state belonging to a tab being closed. Every protocol store
@@ -36,6 +37,13 @@ export function cleanupTabState(tabId: string): void {
   useAiChatStore.getState().removeTabState(tabId)
   useMcpStore.getState().removeTabState(tabId)
   useSocketIOStore.getState().removeTabState(tabId)
+  // A Mock MCP editor's unsaved draft lives in its store, not in the tab:
+  // closing the tab without saving ("Close anyway", Ctrl+W, force close)
+  // discards it — otherwise reopening the server showed the dropped edits
+  // again (issue #154).
+  if (closing.protocol === 'mockMcpServer' && closing.mockMcpServerId) {
+    useMockMcpStore.getState().discardDraft(closing.mockMcpServerId)
+  }
 }
 
 /**

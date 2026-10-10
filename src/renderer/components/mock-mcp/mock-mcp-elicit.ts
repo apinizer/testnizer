@@ -5,7 +5,9 @@
  * Schema: `{ type: 'object', properties: { <name>: { type: string | number |
  * integer | boolean, enum?: string[] , …} }, required?: [...] }`. The editor
  * holds one row per property; keywords it has no column for (`title`,
- * `minLength`, …) ride along in `extra` so a round trip keeps them.
+ * `minLength`, …) ride along in `extra` so a round trip keeps them. Titled
+ * `oneOf` / `enumNames` labels and unsupported property shapes are kept too
+ * (issue #154) — see `rowFromProperty`.
  */
 import type {
   MockMcpElicit,
@@ -38,32 +40,86 @@ export function blankElicitDraft(): MockMcpElicitDraft {
   }
 }
 
-function rowFromProperty(name: string, raw: unknown, required: boolean): MockMcpElicitFieldRow {
-  const prop = isRecord(raw) ? raw : {}
-  const { type, enum: values, oneOf, ...extra } = prop
-  let enumValues: string[] | null = null
-  if (Array.isArray(values)) enumValues = values.filter((v): v is string => typeof v === 'string')
-  else if (Array.isArray(oneOf)) {
-    enumValues = oneOf
-      .filter(isRecord)
-      .map((o) => o.const)
-      .filter((v): v is string => typeof v === 'string')
-  }
-  const fieldType: MockMcpElicitFieldType = enumValues
-    ? 'enum'
-    : type === 'number' || type === 'integer' || type === 'boolean'
-      ? type
-      : 'string'
-  // `enumNames` only makes sense next to `enum`; drop it with the conversion.
-  if (!enumValues) delete extra.enumNames
+const PLAIN_TYPES = new Set(['string', 'number', 'integer', 'boolean'])
+
+const allStrings = (v: unknown[]): v is string[] => v.every((x) => typeof x === 'string')
+
+function unsupportedRow(
+  name: string,
+  prop: Record<string, unknown>,
+  required: boolean,
+): MockMcpElicitFieldRow {
   return {
     id: rowId(),
     name,
-    type: fieldType,
-    enumText: enumValues ? enumValues.join(', ') : '',
+    type: 'unsupported',
+    enumText: '',
     required,
-    extra,
+    extra: {},
+    raw: prop,
   }
+}
+
+/**
+ * One schema property → an editor row. What the table cannot edit is kept so
+ * Save writes it back unchanged (issue #154): titled `oneOf` and `enumNames`
+ * as per-value `enumEntries`, any other shape (array, non-string enum, no
+ * type, …) verbatim as an `unsupported` row.
+ */
+function rowFromProperty(name: string, raw: unknown, required: boolean): MockMcpElicitFieldRow {
+  const prop = isRecord(raw) ? raw : {}
+  const { type, enum: values, oneOf, enumNames, ...extra } = prop
+  const base = { id: rowId(), name, required, extra }
+  if (values !== undefined || oneOf !== undefined) {
+    if (type !== 'string') return unsupportedRow(name, prop, required)
+    if (Array.isArray(values) && allStrings(values) && oneOf === undefined) {
+      if (enumNames === undefined) {
+        return { ...base, type: 'enum', enumText: values.join(', ') }
+      }
+      if (!Array.isArray(enumNames) || !allStrings(enumNames)) {
+        return unsupportedRow(name, prop, required)
+      }
+      const entries: Record<string, Record<string, unknown>> = {}
+      values.forEach((v, i) => {
+        if (!Object.hasOwn(entries, v) && enumNames[i] !== undefined) {
+          entries[v] = { title: enumNames[i] }
+        }
+      })
+      return {
+        ...base,
+        type: 'enum',
+        enumText: values.join(', '),
+        enumStyle: 'enumNames',
+        enumEntries: entries,
+      }
+    }
+    if (
+      Array.isArray(oneOf) &&
+      values === undefined &&
+      enumNames === undefined &&
+      oneOf.every((o) => isRecord(o) && typeof o.const === 'string')
+    ) {
+      const consts: string[] = []
+      const entries: Record<string, Record<string, unknown>> = {}
+      for (const o of oneOf as Array<Record<string, unknown>>) {
+        const { const: c, ...rest } = o
+        consts.push(c as string)
+        if (!Object.hasOwn(entries, c as string)) entries[c as string] = rest
+      }
+      return {
+        ...base,
+        type: 'enum',
+        enumText: consts.join(', '),
+        enumStyle: 'oneOf',
+        enumEntries: entries,
+      }
+    }
+    return unsupportedRow(name, prop, required)
+  }
+  if (typeof type !== 'string' || !PLAIN_TYPES.has(type) || enumNames !== undefined) {
+    return unsupportedRow(name, prop, required)
+  }
+  return { ...base, type: type as MockMcpElicitFieldType, enumText: '' }
 }
 
 export function elicitToDraft(e: MockMcpElicit): MockMcpElicitDraft {
@@ -92,6 +148,39 @@ export function parseEnumText(text: string): string[] {
     .filter((v) => v !== '')
 }
 
+/** The `enumEntries` record of `value`, if any. */
+function entryOf(row: MockMcpElicitFieldRow, value: string): Record<string, unknown> | undefined {
+  const entries = row.enumEntries
+  return entries && Object.hasOwn(entries, value) ? entries[value] : undefined
+}
+
+/** One row → its schema property (enum labels re-aligned to the current values). */
+function propertyFromRow(row: MockMcpElicitFieldRow): Record<string, unknown> {
+  if (row.type === 'unsupported') return { ...(row.raw ?? {}) }
+  if (row.type !== 'enum') return { ...row.extra, type: row.type }
+  const values = parseEnumText(row.enumText)
+  if (row.enumStyle === 'oneOf') {
+    return {
+      ...row.extra,
+      type: 'string',
+      // A value without an entry is new — titled with itself.
+      oneOf: values.map((v) => ({ const: v, ...(entryOf(row, v) ?? { title: v }) })),
+    }
+  }
+  if (row.enumStyle === 'enumNames') {
+    return {
+      ...row.extra,
+      type: 'string',
+      enum: values,
+      enumNames: values.map((v) => {
+        const title = entryOf(row, v)?.title
+        return typeof title === 'string' ? title : v
+      }),
+    }
+  }
+  return { ...row.extra, type: 'string', enum: values }
+}
+
 /** Rows → the restricted schema. Rows without a name are skipped. */
 export function rowsToElicitSchema(
   rows: readonly MockMcpElicitFieldRow[],
@@ -101,10 +190,7 @@ export function rowsToElicitSchema(
   for (const row of rows) {
     const name = row.name.trim()
     if (!name) continue
-    properties[name] =
-      row.type === 'enum'
-        ? { ...row.extra, type: 'string', enum: parseEnumText(row.enumText) }
-        : { ...row.extra, type: row.type }
+    properties[name] = propertyFromRow(row)
     if (row.required && !required.includes(name)) required.push(name)
   }
   return { type: 'object', properties, ...(required.length > 0 ? { required } : {}) }
@@ -125,4 +211,16 @@ export function emptyEnumField(d: MockMcpElicitDraft): string | null {
     (r) => r.name.trim() !== '' && r.type === 'enum' && parseEnumText(r.enumText).length === 0,
   )
   return row ? row.name.trim() : null
+}
+
+/** The first field name used by more than one row (trimmed; blank names ignored), or null. */
+export function duplicateElicitField(d: MockMcpElicitDraft): string | null {
+  const seen = new Set<string>()
+  for (const row of d.fields) {
+    const name = row.name.trim()
+    if (!name) continue
+    if (seen.has(name)) return name
+    seen.add(name)
+  }
+  return null
 }

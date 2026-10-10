@@ -457,7 +457,10 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
     await window.getByTestId('mock-mcp-save').click()
     await expect(window.getByTestId('mock-mcp-save')).toBeDisabled({ timeout: 10_000 })
 
-    await window.getByTestId('mock-mcp-start').click()
+    // Scoped: the Mocks-panel row has its own `mock-mcp-start` / `-stop`
+    // (MockServerRow), so the bare test id resolves to two elements (issue #154).
+    const editor = window.getByTestId('mock-mcp-editor')
+    await editor.getByTestId('mock-mcp-start').click()
     const eras = window.getByTestId('mock-mcp-eras')
     await expect(eras).toContainText('2026-07-28', { timeout: 10_000 })
     await expect(eras).not.toContainText('2025')
@@ -476,8 +479,8 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
 
     await navigateSidebar(window, 'mocks')
     await window.getByText(`Modern only ${port}`).first().click()
-    await window.getByTestId('mock-mcp-stop').click()
-    await expect(window.getByTestId('mock-mcp-start')).toBeVisible({ timeout: 10_000 })
+    await editor.getByTestId('mock-mcp-stop').click()
+    await expect(editor.getByTestId('mock-mcp-start')).toBeVisible({ timeout: 10_000 })
   })
 
   // ── Issue #139: paste a host config ───────────────────────────────────────

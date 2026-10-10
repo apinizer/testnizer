@@ -26,6 +26,7 @@ import { snapshotEndpointForSuite, ensureUniqueSuiteName } from './test-suite.ha
 import { getEndpointById } from '../db/endpoint.repo'
 import { SAVED_RESPONSE_COLUMNS } from '../db/saved-response.repo'
 import { MOCK_MCP_SERVER_COLUMNS } from '../db/mock-mcp.repo'
+import { syncRunningMocksWithDb } from './mock-runtime-sync'
 import {
   getProjectGitConfig,
   gitAuth,
@@ -462,13 +463,18 @@ export interface ImportProjectOptions {
   adoptProjectHeader?: boolean
 }
 
+/**
+ * The DB work is synchronous (a bad file throws right here, before anything
+ * is awaited); the returned promise settles once running mock servers have
+ * been re-synced with the imported rows (issue #154) — await it.
+ */
 export function importProjectDataFromJson(
   jsonString: string,
   projectId: string,
   options: ImportProjectOptions = {},
-): void {
+): Promise<void> {
   const data = JSON.parse(jsonString) as ProjectExport
-  importProjectData(data, projectId, options)
+  return importProjectData(data, projectId, options)
 }
 
 /** `display_name` is what the Project Hub shows; `name` is the internal key. */
@@ -480,7 +486,7 @@ function importProjectData(
   data: ProjectExport,
   projectId: string,
   options: ImportProjectOptions = {},
-): void {
+): Promise<void> {
   const db = getDb()
 
   // Every project-scoped row in the export carries the SOURCE project's id
@@ -730,6 +736,11 @@ function importProjectData(
   }
 
   if (options.adoptProjectHeader) adoptProjectHeader(db, data, projectId)
+
+  // Mock servers running off these rows: the prune above may have deleted
+  // a row (stop it) and the upserts may have rewritten one (reload it) —
+  // issue #154. A running server never outlives or drifts from its row.
+  return syncRunningMocksWithDb()
 }
 
 /**
@@ -2275,7 +2286,7 @@ export function registerSaveHandlers(): void {
         if (!data.version || !data.project) {
           return { success: false, error: 'Invalid project file format.' }
         }
-        importProjectData(data, payload.projectId)
+        await importProjectData(data, payload.projectId)
         return {
           success: true,
           data: {
@@ -2605,7 +2616,7 @@ export function registerSaveHandlers(): void {
         }
 
         // Import into DB
-        importProjectData(data, payload.projectId)
+        await importProjectData(data, payload.projectId)
 
         addSaveHistory({
           project_id: payload.projectId,

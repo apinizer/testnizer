@@ -6,10 +6,35 @@ import {
   type MockMcpElicitFieldRow,
   type MockMcpElicitFieldType,
 } from '../../types/mock-mcp'
-import { blankElicitDraft, blankElicitRow } from './mock-mcp-elicit'
+import { blankElicitDraft, blankElicitRow, duplicateElicitField } from './mock-mcp-elicit'
 import { Checkbox, Field, GhostButton, INPUT_CLS, SectionLabel, SELECT_CLS } from './ui'
 
 const CELL_CLS = `${INPUT_CLS} h-7`
+
+/**
+ * A property the table cannot edit (array, non-string enum, …): its type and
+ * schema are shown read-only and saved back verbatim (issue #154).
+ */
+function UnsupportedCells({ row, label }: { row: MockMcpElicitFieldRow; label: string }) {
+  const json = JSON.stringify(row.raw ?? {})
+  return (
+    <>
+      <span
+        data-testid="mock-mcp-tool-elicit-field-unsupported"
+        className="truncate text-[11px] text-[var(--orange)]"
+      >
+        {label}
+      </span>
+      <code
+        data-testid="mock-mcp-tool-elicit-field-raw"
+        title={json}
+        className="truncate font-mono text-[11px] text-[var(--muted)]"
+      >
+        {json}
+      </code>
+    </>
+  )
+}
 
 /**
  * Optional per-tool elicitation (issue #152): on 2026-07-28 the first call
@@ -30,6 +55,7 @@ export default function MockMcpElicitSection({
   }
   const setRow = (id: string, patch: Partial<MockMcpElicitFieldRow>): void =>
     set({ fields: (value?.fields ?? []).map((r) => (r.id === id ? { ...r, ...patch } : r)) })
+  const duplicate = value ? duplicateElicitField(value) : null
 
   return (
     <div data-testid="mock-mcp-tool-elicit" className="flex flex-col gap-2">
@@ -81,28 +107,34 @@ export default function MockMcpElicitSection({
                   onChange={(e) => setRow(row.id, { name: e.target.value })}
                   className={`${CELL_CLS} font-mono`}
                 />
-                <select
-                  data-testid="mock-mcp-tool-elicit-field-type"
-                  value={row.type}
-                  onChange={(e) =>
-                    setRow(row.id, { type: e.target.value as MockMcpElicitFieldType })
-                  }
-                  className={SELECT_CLS}
-                >
-                  {MOCK_MCP_ELICIT_FIELD_TYPES.map((ft) => (
-                    <option key={ft} value={ft}>
-                      {ft}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  data-testid="mock-mcp-tool-elicit-field-enum"
-                  value={row.enumText}
-                  disabled={row.type !== 'enum'}
-                  placeholder={row.type === 'enum' ? 'low, normal, high' : ''}
-                  onChange={(e) => setRow(row.id, { enumText: e.target.value })}
-                  className={`${CELL_CLS} disabled:opacity-40`}
-                />
+                {row.type === 'unsupported' ? (
+                  <UnsupportedCells row={row} label={t('mockMcp.elicit.unsupported')} />
+                ) : (
+                  <>
+                    <select
+                      data-testid="mock-mcp-tool-elicit-field-type"
+                      value={row.type}
+                      onChange={(e) =>
+                        setRow(row.id, { type: e.target.value as MockMcpElicitFieldType })
+                      }
+                      className={SELECT_CLS}
+                    >
+                      {MOCK_MCP_ELICIT_FIELD_TYPES.map((ft) => (
+                        <option key={ft} value={ft}>
+                          {ft}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      data-testid="mock-mcp-tool-elicit-field-enum"
+                      value={row.enumText}
+                      disabled={row.type !== 'enum'}
+                      placeholder={row.type === 'enum' ? 'low, normal, high' : ''}
+                      onChange={(e) => setRow(row.id, { enumText: e.target.value })}
+                      className={`${CELL_CLS} disabled:opacity-40`}
+                    />
+                  </>
+                )}
                 <input
                   type="checkbox"
                   data-testid="mock-mcp-tool-elicit-field-required"
@@ -121,6 +153,14 @@ export default function MockMcpElicitSection({
               </div>
             ))}
           </div>
+          {duplicate && (
+            <div
+              data-testid="mock-mcp-tool-elicit-duplicate"
+              className="text-[11px] text-[var(--red)]"
+            >
+              {t('mockMcp.elicit.duplicate').replace('{name}', duplicate)}
+            </div>
+          )}
           <div>
             <GhostButton
               data-testid="mock-mcp-tool-elicit-add-field"
