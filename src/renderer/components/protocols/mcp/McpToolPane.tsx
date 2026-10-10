@@ -4,6 +4,7 @@ import { useTranslation } from '../../../lib/i18n'
 import EmptyState from '../../shared/EmptyState'
 import McpResultView from './McpResultView'
 import McpInputRequiredCard from './McpInputRequiredCard'
+import McpDescription from './McpDescription'
 import { CenterHint, ErrorLine, JsonPre, PrimaryButton, SectionLabel } from './ui'
 
 const HINT_BADGES: {
@@ -47,62 +48,75 @@ export default function McpToolPane() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 flex-col gap-2 border-b border-[var(--border)] px-3.5 py-2.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="font-semibold text-[var(--text)]">{def?.title || selectedTool}</span>
-          {def?.title && (
-            <span className="font-mono text-[11px] text-[var(--muted)]">{selectedTool}</span>
+      {/* Issue #155: the header scrolls as ONE unit above a floored result block and its
+          action row is sticky at the bottom, so Invoke stays visible however long the
+          description or tall the textarea. The column lives in an inner div: as a direct
+          flex child the textarea (a scroll container, min-height 0) would be squeezed
+          instead of the header scrolling. */}
+      <div
+        data-testid="mcp-tool-header"
+        className="min-h-0 shrink overflow-y-auto border-b border-[var(--border)]"
+      >
+        <div className="flex flex-col gap-2 px-3.5 pt-2.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-semibold text-[var(--text)]">{def?.title || selectedTool}</span>
+            {def?.title && (
+              <span className="font-mono text-[11px] text-[var(--muted)]">{selectedTool}</span>
+            )}
+            {HINT_BADGES.filter((b) => def?.annotations?.[b.key] === true).map((b) => (
+              <span key={b.key} className={`rounded px-1.5 text-[10px] font-medium ${b.tone}`}>
+                {hintLabels[b.key]}
+              </span>
+            ))}
+          </div>
+          {def?.description && <McpDescription text={def.description} />}
+          {hasSchema && (
+            <details className="text-[12px]">
+              <summary className="cursor-pointer text-[var(--muted)]">
+                {t('mcp.tool.inputSchema')}
+              </summary>
+              <div className="mt-1 max-h-40 overflow-auto rounded border border-[var(--border)] p-2">
+                <JsonPre value={def?.inputSchema} />
+              </div>
+            </details>
           )}
-          {HINT_BADGES.filter((b) => def?.annotations?.[b.key] === true).map((b) => (
-            <span key={b.key} className={`rounded px-1.5 text-[10px] font-medium ${b.tone}`}>
-              {hintLabels[b.key]}
-            </span>
-          ))}
-        </div>
-        {def?.description && (
-          <p className="m-0 text-[12px] text-[var(--muted)]">{def.description}</p>
-        )}
-        {hasSchema && (
-          <details className="text-[12px]">
-            <summary className="cursor-pointer text-[var(--muted)]">
-              {t('mcp.tool.inputSchema')}
-            </summary>
-            <div className="mt-1 max-h-40 overflow-auto rounded border border-[var(--border)] p-2">
-              <JsonPre value={def?.inputSchema} />
-            </div>
-          </details>
-        )}
-        {def?.outputSchema && (
-          <details className="text-[12px]">
-            <summary className="cursor-pointer text-[var(--muted)]">
-              {t('mcp.tool.outputSchema')}
-            </summary>
-            <div className="mt-1 max-h-40 overflow-auto rounded border border-[var(--border)] p-2">
-              <JsonPre value={def.outputSchema} />
-            </div>
-          </details>
-        )}
-        <SectionLabel>{t('mcp.tool.arguments')}</SectionLabel>
-        <textarea
-          value={toolArgs}
-          onChange={(e) => setToolArgs(e.target.value)}
-          rows={5}
-          data-testid="mcp-tool-args"
-          spellCheck={false}
-          className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--input-bg)] p-2 font-mono text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
-        />
-        <div>
-          <PrimaryButton
-            onClick={() => void callTool()}
-            disabled={isInvoking || !isConnected}
-            data-testid="mcp-invoke"
+          {def?.outputSchema && (
+            <details className="text-[12px]">
+              <summary className="cursor-pointer text-[var(--muted)]">
+                {t('mcp.tool.outputSchema')}
+              </summary>
+              <div className="mt-1 max-h-40 overflow-auto rounded border border-[var(--border)] p-2">
+                <JsonPre value={def.outputSchema} />
+              </div>
+            </details>
+          )}
+          <SectionLabel>{t('mcp.tool.arguments')}</SectionLabel>
+          <textarea
+            value={toolArgs}
+            onChange={(e) => setToolArgs(e.target.value)}
+            rows={5}
+            data-testid="mcp-tool-args"
+            spellCheck={false}
+            className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--input-bg)] p-2 font-mono text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+          />
+          {/* Opaque so scrolled content never shows through. The column has no bottom
+              padding: this bar's pb is the header's last pixels, so nothing shows below it. */}
+          <div
+            data-testid="mcp-tool-actions"
+            className="sticky bottom-0 bg-[var(--white)] pb-2.5 pt-2"
           >
-            <Play size={13} />
-            {isInvoking ? t('mcp.tool.invoking') : `${t('mcp.tool.invoke')} ${selectedTool}`}
-          </PrimaryButton>
+            <PrimaryButton
+              onClick={() => void callTool()}
+              disabled={isInvoking || !isConnected}
+              data-testid="mcp-invoke"
+            >
+              <Play size={13} />
+              {isInvoking ? t('mcp.tool.invoking') : `${t('mcp.tool.invoke')} ${selectedTool}`}
+            </PrimaryButton>
+          </div>
         </div>
       </div>
-      <div className="flex-1 overflow-auto p-3.5">
+      <div className="min-h-[5rem] flex-1 overflow-auto p-3.5">
         <SectionLabel>{t('mcp.result.title')}</SectionLabel>
         {resultError ? (
           <ErrorLine testId="mcp-result-call-error">{resultError}</ErrorLine>
