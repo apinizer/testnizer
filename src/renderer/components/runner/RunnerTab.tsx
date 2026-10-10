@@ -58,6 +58,8 @@ export interface RunnerEndpointItem {
   method: HttpMethod
   url: string
   selected: boolean
+  /** Non-HTTP rows (MCP runs, issue #161) show the protocol chip, not their placeholder method. */
+  protocol?: string
   folderName?: string
   /**
    * Lifecycle phase for THIS run (issue #72). Undefined = 'main' (the flow).
@@ -98,6 +100,7 @@ function collectEndpointsFromNode(node: TreeNode): RunnerEndpointItem[] {
       method: node.method as HttpMethod,
       url: node.path,
       selected: true,
+      protocol: node.protocol,
     })
   }
   if (node.children) {
@@ -134,6 +137,7 @@ function collectFolderGroupsFromNode(
         method: child.method as HttpMethod,
         url: child.path,
         selected: true,
+        protocol: child.protocol,
       })
     }
   }
@@ -826,6 +830,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           method: string | null
           url: string | null
           folder_id: string | null
+          protocol?: string
         }>
         // `parent_id` has always been in the row (suite folders nest); the
         // runner simply never read it, which is why a two-level suite arrived
@@ -877,6 +882,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         method: (it.method || 'GET').toUpperCase() as HttpMethod,
         url: it.url || '',
         selected: true,
+        protocol: it.protocol,
       })
 
       /**

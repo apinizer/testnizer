@@ -1,15 +1,18 @@
 import { useState } from 'react'
 import { useResponseStore } from '../../stores/response.store'
 import { ChevronDown } from 'lucide-react'
+import type { TestResult } from '../../types'
 
 type FilterMode = 'all' | 'passed' | 'failed'
 
 /**
  * Postman-style Test Results tab — PASSED/FAILED badges with filter dropdown.
+ * Reads the active tab's HTTP response by default; a caller with its own
+ * results (the MCP result area, issue #160) passes them in.
  */
-export default function TestResultsTab() {
+export default function TestResultsTab({ results: given }: { results?: TestResult[] } = {}) {
   const response = useResponseStore((s) => s.response)
-  const results = response?.testResults || []
+  const results = given ?? response?.testResults ?? []
   const [filter, setFilter] = useState<FilterMode>('all')
   const [showFilterDrop, setShowFilterDrop] = useState(false)
 

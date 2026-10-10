@@ -34,12 +34,16 @@ import { useEnvironmentStore } from './environment.store'
 import { resolveVariables } from '../lib/variable-resolver'
 import { makeId } from '../lib/utils'
 import { getMcpApi } from '../lib/mcp-api'
-import { parseCommandLine } from '../lib/mcp-command-line'
+import {
+  sendConnectParams,
+  sendPromptCall,
+  sendResourceUri,
+  sendToolCall,
+} from '../lib/mcp-send-request'
 import { tabUrlForServer, type ParsedMcpServer } from '../lib/mcp-config'
 import {
   blankRow,
   generateExampleArgs,
-  hasUnexpandedTemplate,
   kvRowsToRecord,
   pushCapped,
   recordToRows,
@@ -58,11 +62,36 @@ import {
   eraDefaults,
   eraFromConnect,
   eraIdle,
+  inputRequiredOf,
   subscriptionEventPatch,
   toolLegPatch,
   type McpEraTabState,
 } from './mcp-era.slice'
 import { normalizeMcpProtocol } from '../lib/mcp-protocol'
+import {
+  callIdle,
+  callMetaOf,
+  outcomeOfAction,
+  outcomeOfResponses,
+  savedCallDefaults,
+  type McpCallKind,
+  type McpCallTabState,
+  type McpPendingElicitation,
+  type McpSavedCall,
+} from './mcp-call.slice'
+import { getMcpCallApi, type McpCallReply, type McpElicitationEvent } from '../lib/mcp-call-api'
+import { loadArgsView, planArgsForm, prepareToolArgs, validateArgs } from '../lib/mcp-args-form'
+import {
+  beginMcpScripts,
+  flushMcpScriptLogs,
+  mcpSendVars,
+  runMcpPostChecks,
+  runMcpPreScripts,
+  type McpScriptContext,
+  type McpTestRun,
+} from '../lib/mcp-send-scripts'
+import type { McpCallOutcome } from '../../shared/mcp-response'
+import { t } from '../lib/i18n'
 
 export type { McpTransport, McpTool } from '../types/mcp'
 
@@ -72,7 +101,7 @@ type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 export const MCP_EXPLORER_SECTION = 'explorer'
 export const MCP_SECURITY_SECTION = 'security'
 
-export interface TabMcpState extends McpSecurityTabState, McpEraTabState {
+export interface TabMcpState extends McpSecurityTabState, McpEraTabState, McpCallTabState {
   transport: McpTransport
   /** Server URL — for stdio, the command line (`npx -y @scope/server …`). */
   url: string
@@ -217,7 +246,8 @@ interface McpStore extends TabMcpState {
   listTools: () => Promise<void>
   listResources: () => Promise<void>
   listPrompts: () => Promise<void>
-  callTool: () => Promise<void>
+  /** `force` skips the form view's pre-Invoke validation ("Invoke anyway", issue #162). */
+  callTool: (opts?: { force?: boolean }) => Promise<void>
   /**
    * Answer the pending `input_required` round (2026-07-28 MRTR): the same
    * tool + arguments again with `inputResponses` keyed like `inputRequests`
@@ -228,6 +258,19 @@ interface McpStore extends TabMcpState {
   dismissInput: () => void
   readResource: () => Promise<void>
   getPrompt: () => Promise<void>
+  /**
+   * Cancel this tab's running call of `kind` (issue #163). The tab is freed
+   * at once; main's late reply for that call id is ignored.
+   */
+  cancelCall: (kind: McpCallKind) => Promise<void>
+  /** Ctrl/Cmd+Enter (issue #165): Invoke / Read / Get for the active capability tab. */
+  runPrimaryAction: () => void
+  /** Answer a pending 2025-era elicitation (issue #168). */
+  respondElicitation: (
+    elicitationId: string,
+    action: 'accept' | 'decline' | 'cancel',
+    content?: Record<string, string | number | boolean | string[]>,
+  ) => Promise<void>
   switchToTab: (tabId: string) => void
   removeTabState: (tabId: string) => void
 }
@@ -257,6 +300,13 @@ type McpConfigKeys =
   | 'oauthRunning'
   | 'oauthError'
   | 'oauthNoAuthRequired'
+  // The call (issue #159): saved with the request, so it outlives the connection.
+  | 'selectedTool'
+  | 'toolArgs'
+  | 'selectedResourceUri'
+  | 'resourceUriDraft'
+  | 'selectedPrompt'
+  | 'promptArgs'
   | keyof McpSecurityTabState
 type ConnectionSlice = Omit<TabMcpState, McpConfigKeys>
 
@@ -275,24 +325,19 @@ function disconnectedPatch(): ConnectionSlice {
     resources: [],
     resourceTemplates: [],
     prompts: [],
-    selectedTool: null,
-    toolArgs: '{}',
     result: null,
     resultError: null,
     isInvoking: false,
-    selectedResourceUri: null,
-    resourceUriDraft: '',
     resourceContent: null,
     resourceError: null,
     isReadingResource: false,
-    selectedPrompt: null,
-    promptArgs: {},
     promptResult: null,
     promptError: null,
     isGettingPrompt: false,
     _pendingConnectId: undefined,
     unauthorized: false,
     ...eraIdle(),
+    ...callIdle(),
   }
 }
 
@@ -327,7 +372,7 @@ function emptyState(): TabMcpState {
     auth: defaultMcpAuth(),
     configTab: 'auth',
     configCollapsed: false,
-    capabilityTab: 'tools',
+    ...savedCallDefaults(),
     search: '',
     notifications: [],
     frames: [],
@@ -408,6 +453,19 @@ function extractState(s: TabMcpState): TabMcpState {
     discover: s.discover,
     subscription: s.subscription,
     pendingInput: s.pendingInput,
+    toolCallId: s.toolCallId,
+    resourceCallId: s.resourceCallId,
+    promptCallId: s.promptCallId,
+    toolMeta: s.toolMeta,
+    resourceMeta: s.resourceMeta,
+    promptMeta: s.promptMeta,
+    inputOutcome: s.inputOutcome,
+    pendingElicitations: s.pendingElicitations,
+    argsProblems: s.argsProblems,
+    hiddenArgs: s.hiddenArgs,
+    toolTests: s.toolTests,
+    resourceTests: s.resourceTests,
+    promptTests: s.promptTests,
   }
 }
 
@@ -570,6 +628,43 @@ function handleConnectionClosed(evt: McpConnectionClosedEvent): void {
   })
 }
 
+/** Answer elicitations nobody will fill in (call cancelled, tab closed) so the server never hangs. */
+function answerElicitations(
+  connectionId: string,
+  list: readonly McpPendingElicitation[],
+  action: 'decline' | 'cancel',
+): void {
+  const api = getMcpCallApi()
+  if (!api?.respondElicitation) return
+  for (const e of list) {
+    api.respondElicitation(connectionId, e.elicitationId, { action }).catch(() => {})
+  }
+}
+
+/**
+ * `mcp:elicitation` (2025 era, issue #168) → the tab that owns the
+ * connection, live or cached, so a background tab keeps it pending. Nobody
+ * owns it (tab closed mid-call) → cancel it at once: main is holding the
+ * server's request open until it is answered.
+ */
+function handleElicitation(evt: McpElicitationEvent): void {
+  if (!evt || typeof evt.connectionId !== 'string' || typeof evt.elicitationId !== 'string') return
+  const entry: McpPendingElicitation = {
+    elicitationId: evt.elicitationId,
+    message: typeof evt.message === 'string' ? evt.message : '',
+    requestedSchema:
+      evt.requestedSchema && typeof evt.requestedSchema === 'object' ? evt.requestedSchema : {},
+    ...(typeof evt.serverName === 'string' && evt.serverName ? { serverName: evt.serverName } : {}),
+  }
+  const routed = patchConnection(evt.connectionId, (s) => ({
+    pendingElicitations: [
+      ...s.pendingElicitations.filter((e) => e.elicitationId !== entry.elicitationId),
+      entry,
+    ],
+  }))
+  if (!routed) answerElicitations(evt.connectionId, [entry], 'cancel')
+}
+
 // ─── OAuth 2.1 debugger events (issue #141) — routed by flow id ─────────────
 
 function findOAuthTab(flowId: string): { tabId: string | null } | undefined {
@@ -702,6 +797,9 @@ export function ensureMcpEventSubscriptions(): void {
   }
   if (api.onSecurityFinding) unsubscribers.push(api.onSecurityFinding(securityEvents.onFinding))
   if (api.onSecurityDone) unsubscribers.push(api.onSecurityDone(securityEvents.onDone))
+  // Newer contract member (issue #168) — absent on an older preload / test bridge.
+  const callApi = getMcpCallApi()
+  if (callApi?.onElicitation) unsubscribers.push(callApi.onElicitation(handleElicitation))
 }
 
 // ─── Capability loaders (routed by connectionId) ────────────────────────────
@@ -781,6 +879,305 @@ function callContext(): { workspaceId?: string; projectId?: string } {
 
 const errText = (e: unknown, fallback: string): string =>
   e instanceof Error ? e.message : typeof e === 'string' ? e : fallback
+
+/** The arguments form (not the raw JSON) is what the user edits for this schema (issue #162). */
+const formShown = (schema: Record<string, unknown>): boolean =>
+  loadArgsView() === 'form' && planArgsForm(schema).ok
+
+const now = (): number =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+
+/** Start time of each running call — the cancelled pill still shows how long it ran. */
+const callStarts = new Map<string, number>()
+
+function elapsedSince(callId: string): number {
+  const started = callStarts.get(callId)
+  callStarts.delete(callId)
+  return started === undefined ? 0 : now() - started
+}
+
+const CALL_ID_KEY = {
+  tool: 'toolCallId',
+  resource: 'resourceCallId',
+  prompt: 'promptCallId',
+} as const
+
+/** What a cancelled call of `kind` leaves on its tab: idle, "Cancelled", no error. */
+function cancelledPatch(
+  kind: McpCallKind,
+  elapsedMs: number,
+  res: McpCallReply = { success: false, cancelled: true },
+): Partial<TabMcpState> {
+  const meta = callMetaOf({ ...res, cancelled: true }, elapsedMs)
+  if (kind === 'tool') {
+    return {
+      toolCallId: null,
+      isInvoking: false,
+      result: null,
+      resultError: null,
+      pendingInput: null,
+      toolMeta: meta,
+      toolTests: null,
+    }
+  }
+  if (kind === 'resource') {
+    return {
+      resourceCallId: null,
+      isReadingResource: false,
+      resourceContent: null,
+      resourceError: null,
+      resourceMeta: meta,
+      resourceTests: null,
+    }
+  }
+  return {
+    promptCallId: null,
+    isGettingPrompt: false,
+    promptResult: null,
+    promptError: null,
+    promptMeta: meta,
+    promptTests: null,
+  }
+}
+
+// ─── Scripts + Tests around a call (issue #160) ─────────────────────────────
+
+/**
+ * The script context of a tool call, kept across its `input_required` rounds
+ * (the final round — via `respondInput` — runs the post-response checks).
+ * Keyed by connection: one tool call per tab at a time, one tab per connection.
+ * Each leg passes the context it STARTED with to `toolChecks`, which only
+ * drops the entry when it is still that context — a cancelled call's late
+ * reply must not delete the next call's context (review item 3).
+ */
+const toolScriptCtx = new Map<string, McpScriptContext>()
+
+const CALL_ERROR_KEY = {
+  tool: 'resultError',
+  resource: 'resourceError',
+  prompt: 'promptError',
+} as const
+const CALL_BUSY_KEY = {
+  tool: 'isInvoking',
+  resource: 'isReadingResource',
+  prompt: 'isGettingPrompt',
+} as const
+
+/** The call still owns its tab (not cancelled / replaced / closed while a script ran). */
+function callIsCurrent(tabId: string | null, kind: McpCallKind, callId: string): boolean {
+  return readTab(tabId)?.[CALL_ID_KEY[kind]] === callId
+}
+
+/**
+ * 2025-era elicitation cards when a call of `kind` ends (review item 6b):
+ * they go once NO call of the tab is running any more — a card belongs to a
+ * running request, and nothing answers it after the call is over. A call of
+ * another kind still running (a tool call waiting on its card while a
+ * resource read finishes) keeps them.
+ */
+function elicitationsAfterEnd(s: TabMcpState, kind: McpCallKind): Partial<TabMcpState> {
+  if (s.pendingElicitations.length === 0) return {}
+  const othersRunning = (Object.keys(CALL_ID_KEY) as McpCallKind[]).some(
+    (k) => k !== kind && s[CALL_ID_KEY[k]] !== null,
+  )
+  return othersRunning ? {} : { pendingElicitations: [] }
+}
+
+/**
+ * Apply the patch that ENDS (or may end) a call of `kind` on its tab: when
+ * the patch frees the call slot, the tab's elicitation cards go too
+ * (`elicitationsAfterEnd`) and main is told `cancel` for them, best effort —
+ * so neither the card nor the server's request is left hanging.
+ */
+function patchEndingCall(
+  tabId: string | null,
+  kind: McpCallKind,
+  patch: (s: TabMcpState) => Partial<TabMcpState>,
+): void {
+  let dropped: McpPendingElicitation[] = []
+  let connectionId: string | null = null
+  patchTab(tabId, (s) => {
+    const p = patch(s)
+    if (!(CALL_ID_KEY[kind] in p) || p[CALL_ID_KEY[kind]] !== null) return p
+    const cards = elicitationsAfterEnd(s, kind)
+    if (cards.pendingElicitations) {
+      dropped = s.pendingElicitations
+      connectionId = s.connectionId
+    }
+    return { ...p, ...cards }
+  })
+  if (connectionId && dropped.length > 0) answerElicitations(connectionId, dropped, 'cancel')
+}
+
+/** `patchEndingCall` on the tab that owns `connectionId`. */
+function patchConnectionEndingCall(
+  connectionId: string,
+  kind: McpCallKind,
+  patch: (s: TabMcpState) => Partial<TabMcpState>,
+): void {
+  const owner = findConnectionTab(connectionId)
+  if (owner) patchEndingCall(owner.tabId, kind, patch)
+}
+
+/** End a call before it reached the server, with a message in its result area. */
+function stopCall(tabId: string | null, kind: McpCallKind, callId: string, message: string): void {
+  elapsedSince(callId)
+  patchEndingCall(tabId, kind, (s) =>
+    s[CALL_ID_KEY[kind]] === callId
+      ? {
+          [CALL_ID_KEY[kind]]: null,
+          [CALL_BUSY_KEY[kind]]: false,
+          [CALL_ERROR_KEY[kind]]: message,
+        }
+      : {},
+  )
+}
+
+/**
+ * Pre-request scripts of a call that has just taken its tab. `true` = go on
+ * and call the server; `false` = the call ended here (a script threw, asked
+ * to skip, or the user cancelled / switched the call away meanwhile).
+ */
+async function preScriptsAllow(
+  ctx: McpScriptContext,
+  kind: McpCallKind,
+  callId: string,
+): Promise<boolean> {
+  const pre = await runMcpPreScripts(ctx)
+  if (!callIsCurrent(ctx.tabId, kind, callId)) {
+    flushMcpScriptLogs(ctx, '')
+    return false
+  }
+  if (pre.ok) return true
+  stopCall(
+    ctx.tabId,
+    kind,
+    callId,
+    pre.skipped
+      ? t('mcp.script.skipped')
+      : t('mcp.script.preError').replace('{error}', pre.message),
+  )
+  flushMcpScriptLogs(ctx, '')
+  return false
+}
+
+/** Assertion rows + post-response scripts on a finished call (none on error / cancel / input). */
+async function postChecksOf(
+  ctx: McpScriptContext,
+  outcome: McpCallOutcome,
+): Promise<McpTestRun | null> {
+  try {
+    return await runMcpPostChecks(ctx, outcome)
+  } finally {
+    flushMcpScriptLogs(ctx, outcome.name)
+  }
+}
+
+/** A call reply → the shared adapter's outcome (`src/shared/mcp-response.ts`). */
+function outcomeOf(
+  capability: McpCallOutcome['capability'],
+  name: string,
+  res: McpCallReply,
+): McpCallOutcome {
+  return {
+    capability,
+    name,
+    ...(res.success ? { result: res.data } : { error: res.error ?? 'failed' }),
+    ...(res.cancelled ? { cancelled: true } : {}),
+    ...(res.timing ? { timing: res.timing } : {}),
+  }
+}
+
+const isToolErrorResult = (data: unknown): boolean =>
+  !!data && typeof data === 'object' && (data as { isError?: unknown }).isError === true
+
+/**
+ * A finished `tools/call` / `respondInput` leg on the tab that started it:
+ * a cancelled reply is "Cancelled" (issue #163), an `input_required` one
+ * (re)opens the input card, anything else ends the call with its meta (#164).
+ */
+function toolReplyPatch(
+  s: TabMcpState,
+  res: McpCallReply,
+  call: { callId: string; toolName: string; args: Record<string, unknown>; round: number },
+): Partial<TabMcpState> {
+  const elapsed = elapsedSince(call.callId)
+  // Cancelled, or a newer call took over this tab: the reply is stale.
+  if (s.toolCallId !== call.callId) return {}
+  if (res.cancelled) return cancelledPatch('tool', elapsed, res)
+  if (s.selectedTool !== call.toolName) return { isInvoking: false, toolCallId: null }
+  const leg = toolLegPatch(
+    { ...res, ...(res.success ? {} : { error: res.error ?? t('mcp.error.toolCallFailed') }) },
+    call,
+  )
+  return {
+    ...leg,
+    toolCallId: null,
+    toolMeta: leg.pendingInput ? null : callMetaOf(res, elapsed, isToolErrorResult(res.data)),
+  }
+}
+
+/**
+ * The post-response checks of a tool leg — only when it FINISHED the call
+ * (not an `input_required` round, an error or a cancel: the adapter returns
+ * no response then) and the call still owns its tab. The script context is
+ * dropped once the call is over.
+ */
+async function toolChecks(
+  connectionId: string,
+  toolName: string,
+  callId: string,
+  res: McpCallReply,
+  ctx: McpScriptContext | undefined,
+): Promise<McpTestRun | null> {
+  const outcome = outcomeOf('tool', toolName, res)
+  const owner = findConnectionTab(connectionId)
+  const current = !!owner && readTab(owner.tabId)?.toolCallId === callId
+  const pendingInput = res.success && !res.cancelled && inputRequiredOf(res.data) !== null
+  // Only this call's own context — a newer call may have replaced it already.
+  if (!pendingInput && ctx && toolScriptCtx.get(connectionId) === ctx) {
+    toolScriptCtx.delete(connectionId)
+  }
+  if (!ctx || !current || pendingInput) return null
+  return postChecksOf(ctx, outcome)
+}
+
+/** The tests go with the patch that ENDS the call (it carries the result meta). */
+function withToolTests(
+  patch: Partial<TabMcpState>,
+  tests: McpTestRun | null,
+): Partial<TabMcpState> {
+  return 'toolMeta' in patch && patch.toolMeta?.status !== 'cancelled'
+    ? { ...patch, toolTests: tests }
+    : patch
+}
+
+/** History-hidden arg paths whose value in `toolArgs` is still empty (null when none are). */
+function stillHidden(paths: readonly string[], toolArgs: string): string[] | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(toolArgs)
+  } catch {
+    return [...paths]
+  }
+  const left = paths.filter((p) => {
+    const v = valueAtDottedPath(parsed, p)
+    return v === undefined || v === ''
+  })
+  return left.length > 0 ? left : null
+}
+
+/** `a.b[0].c` → the value at that path (the paths `history-restore.ts` writes). */
+function valueAtDottedPath(root: unknown, path: string): unknown {
+  let cur: unknown = root
+  for (const part of path.match(/[^.[\]]+/g) ?? []) {
+    if (cur === null || typeof cur !== 'object') return undefined
+    cur = (cur as Record<string, unknown>)[part]
+  }
+  return cur
+}
 
 export const useMcpStore = create<McpStore>((set, get) => ({
   ...persisted.current,
@@ -863,14 +1260,51 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   setCapabilityTab: (capabilityTab) => set({ capabilityTab }),
   setSearch: (search) => set({ search }),
   setSelectedTool: (selectedTool) => {
+    // Re-selecting the selected tool keeps its (saved, edited) arguments —
+    // only a different tool starts from the schema's example (issue #159).
+    if (selectedTool === get().selectedTool) return
     const tool = selectedTool ? get().tools.find((t) => t.name === selectedTool) : undefined
-    const example = tool?.inputSchema ? generateExampleArgs(tool.inputSchema) : {}
+    // Form view: only required fields + defaults (empty optionals are not sent).
+    const example = tool?.inputSchema
+      ? generateExampleArgs(tool.inputSchema, { requiredOnly: formShown(tool.inputSchema) })
+      : {}
     const toolArgs = JSON.stringify(example, null, 2)
-    set({ selectedTool, toolArgs, result: null, resultError: null, pendingInput: null })
+    set({
+      selectedTool,
+      toolArgs,
+      result: null,
+      resultError: null,
+      pendingInput: null,
+      toolMeta: null,
+      inputOutcome: null,
+      argsProblems: null,
+      hiddenArgs: null,
+    })
+    // The selection (and the args it just reset) is saved with the request (issue #159).
+    markActiveTabDirty()
   },
-  setToolArgs: (toolArgs) => set({ toolArgs }),
+  setToolArgs: (toolArgs) => {
+    set({ toolArgs })
+    // A History-hidden arg the user has typed again loses its note.
+    const hidden = get().hiddenArgs
+    if (hidden && get().capabilityTab !== 'prompts') {
+      set({ hiddenArgs: stillHidden(hidden, toolArgs) })
+    }
+    // Problems on screen follow the edit (a fixed field loses its marker).
+    const { argsProblems, tools, selectedTool } = get()
+    if (argsProblems) {
+      const schema = tools.find((tool) => tool.name === selectedTool)?.inputSchema
+      const prepared = prepareToolArgs(toolArgs, activeVars(), schema)
+      const problems = prepared.error || !schema ? [] : validateArgs(prepared.raw, schema)
+      set({ argsProblems: problems.length > 0 ? problems : null })
+    }
+    // Arguments are saved with the request (issue #159).
+    markActiveTabDirty()
+  },
   selectResource: (key) => {
-    const { resources, resourceTemplates } = get()
+    const { resources, resourceTemplates, selectedResourceUri } = get()
+    // Re-selecting keeps the (saved, possibly edited) URI draft (issue #159).
+    if (key === selectedResourceUri) return
     const resource = resources.find((r) => r.uri === key)
     const template = resource ? undefined : resourceTemplates.find((t) => t.uriTemplate === key)
     set({
@@ -878,12 +1312,37 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       resourceUriDraft: resource?.uri ?? template?.uriTemplate ?? '',
       resourceContent: null,
       resourceError: null,
+      resourceMeta: null,
     })
+    markActiveTabDirty()
   },
-  setResourceUriDraft: (resourceUriDraft) => set({ resourceUriDraft }),
-  setSelectedPrompt: (selectedPrompt) =>
-    set({ selectedPrompt, promptArgs: {}, promptResult: null, promptError: null }),
-  setPromptArg: (name, value) => set((s) => ({ promptArgs: { ...s.promptArgs, [name]: value } })),
+  setResourceUriDraft: (resourceUriDraft) => {
+    set({ resourceUriDraft })
+    markActiveTabDirty()
+  },
+  setSelectedPrompt: (selectedPrompt) => {
+    if (selectedPrompt === get().selectedPrompt) return
+    set({
+      selectedPrompt,
+      promptArgs: {},
+      promptResult: null,
+      promptError: null,
+      promptMeta: null,
+      hiddenArgs: null,
+    })
+    markActiveTabDirty()
+  },
+  setPromptArg: (name, value) => {
+    set((s) => {
+      // A History-hidden prompt arg the user has typed again loses its note.
+      const left = value !== '' ? s.hiddenArgs?.filter((p) => p !== name) : s.hiddenArgs
+      return {
+        promptArgs: { ...s.promptArgs, [name]: value },
+        hiddenArgs: left && left.length > 0 ? left : null,
+      }
+    })
+    markActiveTabDirty()
+  },
   clearNotifications: () => set({ notifications: [] }),
   clearFrames: () => set({ frames: [] }),
   setSection: (section) => set({ section }),
@@ -1095,41 +1554,28 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     if (!api) {
       set({
         connectionState: 'error',
-        errorMessage: 'API not available',
+        errorMessage: t('mcp.error.apiUnavailable'),
         _pendingConnectId: undefined,
       })
       return
     }
-    // Resolve `{{var}}` placeholders in the server URL the same way HTTP /
-    // SOAP / GraphQL do — otherwise users can't parameterise local stdio /
-    // SSE endpoints via environments.
-    const vars = activeVars()
-    const resolvedUrl = resolveVariables(url, vars)
-    const request: McpConnectRequest = { transport, url: resolvedUrl, _pendingId: pendingConnectId }
-    // Era negotiation (issue #152) on every transport — the engine treats
-    // `auto` as `legacy` on the pre-2026 HTTP+SSE transport itself.
-    request.protocol = normalizeMcpProtocol(protocol)
+    // Saved connection → connect options: `{{var}}` resolved in the URL /
+    // command line, headers, env and the Authorization tab; stdio split
+    // quote-aware. ONE implementation with Run (`src/shared/mcp-call.ts`
+    // `buildMcpConnect`), so a request connects the same on Send and Run.
+    const params = sendConnectParams(
+      { transport, url, customHeaders, envVars, auth, protocol },
+      activeVars(),
+    )
+    const request: McpConnectRequest = { ...params, _pendingId: pendingConnectId }
+    // An explicit Connect of a stdio server trusts it for this project's
+    // unattended runs on this computer (main, local settings only).
     if (transport === 'stdio') {
-      // The URL field holds the command line; split it here (quote-aware) so
-      // an argument containing a space survives — the engine only splits the
-      // `command` string on whitespace, `args` pass through untouched.
-      const { command, args } = parseCommandLine(resolvedUrl)
-      if (command) {
-        request.command = command
-        request.args = args
-      }
-      const env = kvRowsToRecord(envVars, vars)
-      if (Object.keys(env).length > 0) request.env = env
-    } else {
-      // Custom headers (issue #137): enabled rows with a key, `{{var}}`
-      // resolved in both key and value. stdio has no HTTP layer.
-      const headers = kvRowsToRecord(customHeaders, vars)
-      if (Object.keys(headers).length > 0) request.headers = headers
-      // Authorization tab: `{{var}}` resolved here; main builds the header /
-      // query param — a same-named custom header row wins (issue #48 parity).
-      const resolvedAuth = resolveMcpAuth(auth, vars)
-      if (resolvedAuth) request.auth = resolvedAuth
-      // OAuth 2.1 (issue #141): main injects the session's token; we only name it.
+      const projectId = callContext().projectId
+      if (projectId) request.projectId = projectId
+    }
+    // OAuth 2.1 (issue #141): main injects the session's token; we only name it.
+    if (transport !== 'stdio') {
       const session = oauthSessionFor({ auth, oauthSessionId })
       if (session) request.oauthSessionId = session
     }
@@ -1137,7 +1583,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     try {
       res = await api.connect(request)
     } catch (e) {
-      res = { success: false, error: errText(e, 'Connection failed') }
+      res = { success: false, error: errText(e, t('mcp.error.connectionFailed')) }
     }
     // Cancelled / disconnected / re-connected while the handshake was in
     // flight: this result is stale. Close a connection nobody owns any more.
@@ -1171,7 +1617,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       const unauthorized = !!res.unauthorized
       patchTab(ownerTabId, (s) => ({
         connectionState: 'error',
-        errorMessage: res.error ?? 'Connection failed',
+        errorMessage: res.error ?? t('mcp.error.connectionFailed'),
         _pendingConnectId: undefined,
         unauthorized,
         ...(unauthorized
@@ -1226,153 +1672,358 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     if (connectionId) await loadPrompts(connectionId)
   },
 
-  callTool: async () => {
-    const { connectionId, selectedTool, toolArgs } = get()
-    if (!connectionId || !selectedTool) return
-    const api = getMcpApi()
+  callTool: async (opts) => {
+    const { connectionId, selectedTool, toolArgs, tools, toolCallId, url } = get()
+    const tabId = get()._currentTabId
+    if (!connectionId || !selectedTool || toolCallId) return
+    const api = getMcpCallApi()
     if (!api) return
-    // Resolve `{{var}}` in the JSON text before parsing so users can put
-    // env / global / dynamic placeholders anywhere in the args body.
-    let args: Record<string, unknown> = {}
-    try {
-      args = JSON.parse(resolveVariables(toolArgs, activeVars()))
-    } catch {
-      set({ resultError: 'Invalid JSON in arguments', result: null })
+    const schema = tools.find((tool) => tool.name === selectedTool)?.inputSchema
+    // The form view checks the arguments first; "Invoke anyway" (force) and
+    // the raw JSON view send as typed — negative tests stay possible. Checked
+    // before the pre-request script, so invalid args never run it.
+    const draft = prepareToolArgs(toolArgs, activeVars(), schema)
+    if (!draft.error && !opts?.force && schema && formShown(schema)) {
+      const problems = validateArgs(draft.raw, schema)
+      if (problems.length > 0) {
+        set({ argsProblems: problems })
+        return
+      }
+    }
+    const callId = makeId()
+    callStarts.set(callId, now())
+    // Captured NOW — the request store follows the active tab (issue #76).
+    const scripts = beginMcpScripts(tabId, url, get().customHeaders)
+    // The call owns the tab from here: Run turns into Cancel during the scripts too.
+    set({
+      isInvoking: true,
+      result: null,
+      resultError: null,
+      pendingInput: null,
+      toolCallId: callId,
+      toolMeta: null,
+      toolTests: null,
+      inputOutcome: null,
+      argsProblems: null,
+    })
+    const ctx = await scripts
+    if (!(await preScriptsAllow(ctx, 'tool', callId))) return
+    // `{{var}}` resolves in the JSON text (placeholders work anywhere) — with
+    // the pre-request script's writes — then values typed into number /
+    // boolean fields as `{{var}}` get their schema type back (issue #162).
+    const prepared = sendToolCall(selectedTool, toolArgs, mcpSendVars(ctx), schema)
+    if (prepared.error) {
+      stopCall(tabId, 'tool', callId, t('mcp.error.invalidArgsJson'))
       return
     }
-    set({ isInvoking: true, result: null, resultError: null, pendingInput: null })
-    let res: Awaited<ReturnType<McpBridge['callTool']>>
+    const args = prepared.call.args
+    toolScriptCtx.set(connectionId, ctx)
+    let res: McpCallReply
     try {
-      res = await api.callTool(connectionId, selectedTool, args, callContext())
+      res = await api.callTool(connectionId, selectedTool, args, { ...callContext(), callId })
     } catch (e) {
-      res = { success: false, error: errText(e, 'Tool call failed') }
+      res = { success: false, error: errText(e, t('mcp.error.toolCallFailed')) }
     }
+    const tests = await toolChecks(connectionId, selectedTool, callId, res, ctx)
     // A 2026-07-28 `input_required` answer opens the input card (MRTR).
-    patchConnection(connectionId, (s) =>
-      s.selectedTool !== selectedTool
-        ? { isInvoking: false }
-        : toolLegPatch(res, { toolName: selectedTool, args, round: 1 }),
+    patchConnectionEndingCall(connectionId, 'tool', (s) =>
+      withToolTests(
+        toolReplyPatch(s, res, { callId, toolName: selectedTool, args, round: 1 }),
+        tests,
+      ),
     )
   },
 
   respondInput: async (responses) => {
-    const { connectionId, pendingInput } = get()
-    if (!connectionId || !pendingInput) return
-    const api = getMcpApi()
+    const { connectionId, pendingInput, toolCallId } = get()
+    if (!connectionId || !pendingInput || toolCallId) return
+    const api = getMcpCallApi()
     if (!api?.respondInput) {
-      set({ pendingInput: { ...pendingInput, error: 'Input responses are not available' } })
+      set({ pendingInput: { ...pendingInput, error: t('mcp.error.inputUnavailable') } })
       return
     }
     const { toolName, args, requestState, round } = pendingInput
+    // The script context of the call this round continues (see `toolChecks`).
+    const scriptCtx = toolScriptCtx.get(connectionId)
     // Same round, same card (its key is round + requestState): only the
-    // previous attempt's error goes.
+    // previous attempt's error goes. A decline / cancel is remembered for the
+    // note above the result (issue #175).
     const { error: _previous, ...retry } = pendingInput
-    set({ isInvoking: true, resultError: null, pendingInput: retry })
-    let res: Awaited<ReturnType<McpBridge['respondInput']>>
+    const callId = makeId()
+    callStarts.set(callId, now())
+    set({
+      isInvoking: true,
+      resultError: null,
+      pendingInput: retry,
+      toolCallId: callId,
+      inputOutcome: outcomeOfResponses(responses),
+    })
+    let res: McpCallReply
     try {
-      res = await api.respondInput(
-        connectionId,
-        toolName,
-        args,
-        requestState,
-        responses,
-        callContext(),
-      )
+      res = await api.respondInput(connectionId, toolName, args, requestState, responses, {
+        ...callContext(),
+        callId,
+      })
     } catch (e) {
-      res = { success: false, error: errText(e, 'Tool call failed') }
+      res = { success: false, error: errText(e, t('mcp.error.toolCallFailed')) }
     }
-    patchConnection(connectionId, (s) => {
-      if (s.selectedTool !== toolName) return { isInvoking: false }
+    const tests = res.success
+      ? await toolChecks(connectionId, toolName, callId, res, scriptCtx)
+      : null
+    patchConnectionEndingCall(connectionId, 'tool', (s) => {
       // A failed answer keeps the card and the typed answers for a retry
       // (issue #154) — `toolLegPatch` would close it.
-      if (!res.success) {
+      if (
+        s.toolCallId === callId &&
+        !res.success &&
+        !res.cancelled &&
+        s.selectedTool === toolName
+      ) {
+        elapsedSince(callId)
         return {
           isInvoking: false,
+          toolCallId: null,
+          inputOutcome: null,
           pendingInput: s.pendingInput
-            ? { ...s.pendingInput, error: res.error ?? 'Tool call failed' }
+            ? { ...s.pendingInput, error: res.error ?? t('mcp.error.toolCallFailed') }
             : null,
         }
       }
-      return toolLegPatch(res, { toolName, args, round: round + 1 })
+      return withToolTests(
+        toolReplyPatch(s, res, { callId, toolName, args, round: round + 1 }),
+        tests,
+      )
     })
   },
 
   dismissInput: () => set({ pendingInput: null }),
 
   readResource: async () => {
-    const { connectionId, resourceUriDraft, selectedResourceUri } = get()
-    if (!connectionId) return
-    const api = getMcpApi()
-    const uri = resolveVariables(resourceUriDraft.trim(), activeVars())
-    if (!uri) return
-    if (hasUnexpandedTemplate(uri)) {
-      set({
-        resourceError: 'Replace the {placeholders} in the URI template first',
-        resourceContent: null,
-      })
-      return
-    }
+    const { connectionId, resourceUriDraft, selectedResourceUri, resourceCallId, url } = get()
+    const tabId = get()._currentTabId
+    if (!connectionId || resourceCallId) return
+    const api = getMcpCallApi()
+    const draft = resourceUriDraft.trim()
+    if (!draft) return
     if (!api?.readResource) {
-      set({ resourceError: 'resources/read is not available', resourceContent: null })
+      set({ resourceError: t('mcp.error.readUnavailable'), resourceContent: null })
       return
     }
-    set({ isReadingResource: true, resourceContent: null, resourceError: null })
-    let res: Awaited<ReturnType<NonNullable<McpBridge['readResource']>>>
-    try {
-      res = await api.readResource(connectionId, uri)
-    } catch (e) {
-      res = { success: false, error: errText(e, 'Read failed') }
+    const callId = makeId()
+    callStarts.set(callId, now())
+    const scripts = beginMcpScripts(tabId, url, get().customHeaders)
+    set({
+      isReadingResource: true,
+      resourceContent: null,
+      resourceError: null,
+      resourceCallId: callId,
+      resourceMeta: null,
+      resourceTests: null,
+    })
+    const ctx = await scripts
+    if (!(await preScriptsAllow(ctx, 'resource', callId))) return
+    // `{{var}}` with the pre-request script's writes — the same rule Run
+    // applies (`src/shared/mcp-call.ts`).
+    const resolved = sendResourceUri(draft, mcpSendVars(ctx))
+    if (resolved.error) {
+      const key = resolved.error === 'template' ? 'mcp.error.uriTemplate' : 'mcp.error.uriEmpty'
+      stopCall(tabId, 'resource', callId, t(key))
+      return
     }
-    patchConnection(connectionId, (s) =>
-      s.selectedResourceUri !== selectedResourceUri
-        ? { isReadingResource: false }
-        : res.success && res.data
-          ? { resourceContent: res.data, resourceError: null, isReadingResource: false }
-          : {
-              resourceContent: null,
-              resourceError: res.error ?? 'Read failed',
-              isReadingResource: false,
-            },
-    )
+    const uri = resolved.uri
+    let res: McpCallReply<McpReadResourceResult>
+    try {
+      // Scope ids too, so the History row lands in this project (issue #166).
+      res = await api.readResource(connectionId, uri, { ...callContext(), callId })
+    } catch (e) {
+      res = { success: false, error: errText(e, t('mcp.error.readFailed')) }
+    }
+    const tests = callIsCurrent(tabId, 'resource', callId)
+      ? await postChecksOf(ctx, outcomeOf('resource', uri, res))
+      : null
+    patchConnectionEndingCall(connectionId, 'resource', (s) => {
+      const elapsed = elapsedSince(callId)
+      if (s.resourceCallId !== callId) return {}
+      if (res.cancelled) return cancelledPatch('resource', elapsed, res)
+      const meta = callMetaOf(res, elapsed)
+      if (s.selectedResourceUri !== selectedResourceUri) {
+        return { isReadingResource: false, resourceCallId: null }
+      }
+      return res.success && res.data
+        ? {
+            resourceContent: res.data,
+            resourceError: null,
+            isReadingResource: false,
+            resourceCallId: null,
+            resourceMeta: meta,
+            resourceTests: tests,
+          }
+        : {
+            resourceContent: null,
+            resourceError: res.error ?? t('mcp.error.readFailed'),
+            isReadingResource: false,
+            resourceCallId: null,
+            resourceMeta: meta,
+          }
+    })
   },
 
   getPrompt: async () => {
-    const { connectionId, selectedPrompt, promptArgs, prompts } = get()
-    if (!connectionId || !selectedPrompt) return
-    const api = getMcpApi()
+    const { connectionId, selectedPrompt, promptArgs, prompts, promptCallId, url } = get()
+    const tabId = get()._currentTabId
+    if (!connectionId || !selectedPrompt || promptCallId) return
+    const api = getMcpCallApi()
     const def = prompts.find((p) => p.name === selectedPrompt)
-    const vars = activeVars()
-    const args: Record<string, string> = {}
-    for (const [k, v] of Object.entries(promptArgs)) {
-      if (v !== '') args[k] = resolveVariables(v, vars)
-    }
-    const missing = (def?.arguments ?? []).filter((a) => a.required && !args[a.name])
+    const typed = Object.entries(promptArgs).filter(([, v]) => v !== '')
+    const missing = (def?.arguments ?? []).filter(
+      (a) => a.required && !typed.some(([k]) => k === a.name),
+    )
     if (missing.length > 0) {
-      set({ promptError: `Missing required argument: ${missing.map((a) => a.name).join(', ')}` })
+      set({
+        promptError: t('mcp.error.promptMissingArg').replace(
+          '{names}',
+          missing.map((a) => a.name).join(', '),
+        ),
+      })
       return
     }
     if (!api?.getPrompt) {
-      set({ promptError: 'prompts/get is not available', promptResult: null })
+      set({ promptError: t('mcp.error.promptUnavailable'), promptResult: null })
       return
     }
-    set({ isGettingPrompt: true, promptResult: null, promptError: null })
-    let res: Awaited<ReturnType<NonNullable<McpBridge['getPrompt']>>>
+    const callId = makeId()
+    callStarts.set(callId, now())
+    const scripts = beginMcpScripts(tabId, url, get().customHeaders)
+    set({
+      isGettingPrompt: true,
+      promptResult: null,
+      promptError: null,
+      promptCallId: callId,
+      promptMeta: null,
+      promptTests: null,
+    })
+    const ctx = await scripts
+    if (!(await preScriptsAllow(ctx, 'prompt', callId))) return
+    // `{{var}}` with the pre-request script's writes.
+    const { args } = sendPromptCall(selectedPrompt, promptArgs, mcpSendVars(ctx))
+    let res: McpCallReply<McpGetPromptResult>
     try {
-      res = await api.getPrompt(connectionId, selectedPrompt, args)
+      res = await api.getPrompt(connectionId, selectedPrompt, args, { ...callContext(), callId })
     } catch (e) {
-      res = { success: false, error: errText(e, 'Get prompt failed') }
+      res = { success: false, error: errText(e, t('mcp.error.promptFailed')) }
     }
-    patchConnection(connectionId, (s) =>
-      s.selectedPrompt !== selectedPrompt
-        ? { isGettingPrompt: false }
-        : res.success && res.data
-          ? { promptResult: res.data, promptError: null, isGettingPrompt: false }
-          : {
-              promptResult: null,
-              promptError: res.error ?? 'Get prompt failed',
-              isGettingPrompt: false,
-            },
-    )
+    const tests = callIsCurrent(tabId, 'prompt', callId)
+      ? await postChecksOf(ctx, outcomeOf('prompt', selectedPrompt, res))
+      : null
+    patchConnectionEndingCall(connectionId, 'prompt', (s) => {
+      const elapsed = elapsedSince(callId)
+      if (s.promptCallId !== callId) return {}
+      if (res.cancelled) return cancelledPatch('prompt', elapsed, res)
+      const meta = callMetaOf(res, elapsed)
+      if (s.selectedPrompt !== selectedPrompt) return { isGettingPrompt: false, promptCallId: null }
+      return res.success && res.data
+        ? {
+            promptResult: res.data,
+            promptError: null,
+            isGettingPrompt: false,
+            promptCallId: null,
+            promptMeta: meta,
+            promptTests: tests,
+          }
+        : {
+            promptResult: null,
+            promptError: res.error ?? t('mcp.error.promptFailed'),
+            isGettingPrompt: false,
+            promptCallId: null,
+            promptMeta: meta,
+          }
+    })
+  },
+
+  cancelCall: async (kind) => {
+    const s = get()
+    const callId = s[CALL_ID_KEY[kind]]
+    const { connectionId } = s
+    if (!callId || !connectionId) return
+    // Free THIS tab now — a server that ignores the cancel must not keep the
+    // button stuck; main's reply for `callId` is then stale and dropped.
+    // Elicitations the cancelled call was waiting on go with it (main
+    // withdraws them too, `mcpCancelCall`).
+    patchEndingCall(s._currentTabId, kind, () => cancelledPatch(kind, elapsedSince(callId)))
+    const api = getMcpCallApi()
+    try {
+      await api?.cancelCall?.(connectionId, callId)
+    } catch {
+      /* the call already finished */
+    }
+  },
+
+  runPrimaryAction: () => {
+    const s = get()
+    if (s.connectionState !== 'connected') return
+    if (s.capabilityTab === 'resources') {
+      if (s.selectedResourceUri !== null || s.resourceUriDraft.trim()) void s.readResource()
+    } else if (s.capabilityTab === 'prompts') {
+      void s.getPrompt()
+    } else {
+      void s.callTool()
+    }
+  },
+
+  respondElicitation: async (elicitationId, action, content) => {
+    const { connectionId, pendingElicitations } = get()
+    const pending = pendingElicitations.find((e) => e.elicitationId === elicitationId)
+    if (!connectionId || !pending || pending.sending) return
+    const api = getMcpCallApi()
+    if (!api?.respondElicitation) {
+      set({
+        pendingElicitations: pendingElicitations.map((e) =>
+          e.elicitationId === elicitationId
+            ? { ...e, error: t('mcp.error.elicitationUnavailable') }
+            : e,
+        ),
+      })
+      return
+    }
+    set({
+      pendingElicitations: pendingElicitations.map((e) =>
+        e.elicitationId === elicitationId ? { ...e, sending: true, error: undefined } : e,
+      ),
+    })
+    const answer = action === 'accept' ? { action, content: content ?? {} } : { action }
+    let res: { success: boolean; error?: string }
+    try {
+      res = await api.respondElicitation(connectionId, elicitationId, answer)
+    } catch (e) {
+      res = { success: false, error: errText(e, t('mcp.error.elicitationFailed')) }
+    }
+    // Main no longer holds it (answered, timed out, withdrawn, call over):
+    // the card has nothing left to answer — drop it instead of an error.
+    const gone = !res.success && /No pending elicitation/i.test(res.error ?? '')
+    patchConnection(connectionId, (s) => {
+      if (!s.pendingElicitations.some((e) => e.elicitationId === elicitationId)) return {}
+      if (gone) {
+        return {
+          pendingElicitations: s.pendingElicitations.filter(
+            (e) => e.elicitationId !== elicitationId,
+          ),
+        }
+      }
+      if (!res.success) {
+        return {
+          pendingElicitations: s.pendingElicitations.map((e) =>
+            e.elicitationId === elicitationId
+              ? { ...e, sending: false, error: res.error ?? t('mcp.error.elicitationFailed') }
+              : e,
+          ),
+        }
+      }
+      const outcome = outcomeOfAction(action)
+      return {
+        pendingElicitations: s.pendingElicitations.filter((e) => e.elicitationId !== elicitationId),
+        ...(outcome ? { inputOutcome: outcome } : {}),
+      }
+    })
   },
 
   switchToTab: (tabId) => {
@@ -1403,6 +2054,10 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     }
     // The tab's OAuth tokens die with it, and so does a running scan.
     if (tab) forgetOAuthSessions([tab.oauthFlowId, tab.oauthSessionId])
+    // …and the elicitations it was asked (issue #168): the server is waiting.
+    if (cid && tab && tab.pendingElicitations.length > 0) {
+      answerElicitations(cid, tab.pendingElicitations, 'cancel')
+    }
     if (tab?.securityRunning && tab.securityScanId) {
       getMcpApi()
         ?.securityCancel?.(tab.securityScanId)
@@ -1418,6 +2073,25 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     set({ _tabStates: tabStates })
   },
 }))
+
+/**
+ * Put a saved call (issue #159) on the LIVE slice — reopen from the tree
+ * (`restoreProtocolFromMetadata`) and from History (#166). Written with
+ * `setState`, not the setters: those regenerate example args / reset the URI
+ * draft from the (still empty) capability lists and flag the tab dirty, and
+ * a restore is not an edit. Fields the snapshot lacks keep their value.
+ */
+export function restoreMcpCall(call: McpSavedCall): void {
+  const patch: Partial<TabMcpState> = {}
+  if (call.capabilityTab) patch.capabilityTab = call.capabilityTab
+  if (call.selectedTool !== undefined) patch.selectedTool = call.selectedTool
+  if (call.toolArgs !== undefined) patch.toolArgs = call.toolArgs
+  if (call.selectedResourceUri !== undefined) patch.selectedResourceUri = call.selectedResourceUri
+  if (call.resourceUriDraft !== undefined) patch.resourceUriDraft = call.resourceUriDraft
+  if (call.selectedPrompt !== undefined) patch.selectedPrompt = call.selectedPrompt
+  if (call.promptArgs !== undefined) patch.promptArgs = call.promptArgs
+  useMcpStore.setState(patch)
+}
 
 attachTabbedPersist(
   useMcpStore,

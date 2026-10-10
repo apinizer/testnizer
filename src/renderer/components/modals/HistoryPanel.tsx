@@ -6,7 +6,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
-import MethodBadge from '../shared/MethodBadge'
+import RequestBadge from '../shared/RequestBadge'
 import Modal from '../shared/Modal'
 import EmptyState from '../shared/EmptyState'
 import type {
@@ -235,7 +235,7 @@ export default function HistoryPanel() {
                           (e.currentTarget as HTMLElement).style.background = 'transparent'
                       }}
                     >
-                      <MethodBadge method={entry.method || 'GET'} small />
+                      <RequestBadge protocol={entry.protocol} method={entry.method} small />
                       <span className="flex-1 truncate">{shortUrl(entry.url)}</span>
                       {entry.status_code != null && (
                         <span
@@ -301,7 +301,7 @@ function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => v
   return (
     <div className="p-4">
       <div className="mb-3 flex items-center gap-2">
-        <MethodBadge method={entry.method || 'GET'} />
+        <RequestBadge protocol={entry.protocol} method={entry.method} />
         <span className="flex-1 truncate font-mono" style={{ color: 'var(--text)' }}>
           {entry.url}
         </span>

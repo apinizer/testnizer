@@ -34,7 +34,8 @@ import type {
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import ImportTestSuiteModal from '../modals/ImportTestSuiteModal'
 import FolderSettingsModal from '../modals/FolderSettingsModal'
-import MethodBadge from '../shared/MethodBadge'
+import { protocolChipLabel } from '../../lib/protocol-chip'
+import RequestBadge from '../shared/RequestBadge'
 import { useTranslation } from '../../lib/i18n'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import { openOrReuseRunnerTab as sharedOpenRunnerTab } from '../../lib/open-runner-tab'
@@ -1606,8 +1607,8 @@ function SuiteItemRow({
         onDrop={handleDrop}
         title={t('testsPanel.openEndpoint')}
       >
-        {item.method ? (
-          <MethodBadge method={item.method} small />
+        {item.method || protocolChipLabel(item.protocol) ? (
+          <RequestBadge protocol={item.protocol} method={item.method} small />
         ) : (
           <Globe size={12} style={{ color: 'var(--hint)' }} />
         )}

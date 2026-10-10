@@ -26,7 +26,7 @@
  *    name → server map without the wrapper key is accepted too.
  */
 import type { McpTransport } from '../types/mcp'
-import { joinCommandLine, parseCommandLine } from './mcp-command-line'
+import { joinCommandLine, parseCommandLine } from '../../shared/mcp-call'
 
 export type McpConfigHost = 'claude-desktop' | 'vscode' | 'cursor'
 

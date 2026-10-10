@@ -14,6 +14,8 @@ import {
 } from 'lucide-react'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import EmptyState from '../shared/EmptyState'
+import ProtocolChip from '../shared/ProtocolChip'
+import { protocolChipLabel } from '../../lib/protocol-chip'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import NewRunButton from './NewRunButton'
 
@@ -58,6 +60,8 @@ interface ScheduledTaskEndpointRow {
   name: string
   method: string | null
   url: string | null
+  /** Non-HTTP rows show the protocol chip, not their placeholder method (issue #173). */
+  protocol?: string | null
 }
 
 interface ScheduledTaskEndpointsPayload {
@@ -574,6 +578,7 @@ function TaskRow({
               >
                 {endpoints.items.map((ep, idx) => {
                   const c = methodColor(ep.method)
+                  const chip = protocolChipLabel(ep.protocol)
                   return (
                     <div
                       key={ep.id}
@@ -584,19 +589,25 @@ function TaskRow({
                       }}
                     >
                       <span style={{ color: 'var(--hint)', minWidth: 24 }}>{idx + 1}</span>
-                      <span
-                        style={{
-                          background: c.bg,
-                          color: c.fg,
-                          fontWeight: 600,
-                          padding: '1px 6px',
-                          borderRadius: 4,
-                          minWidth: 56,
-                          textAlign: 'center',
-                        }}
-                      >
-                        {(ep.method || 'GET').toUpperCase()}
-                      </span>
+                      {chip ? (
+                        <span className="min-w-[56px] text-center">
+                          <ProtocolChip protocol={ep.protocol} />
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            background: c.bg,
+                            color: c.fg,
+                            fontWeight: 600,
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            minWidth: 56,
+                            textAlign: 'center',
+                          }}
+                        >
+                          {(ep.method || 'GET').toUpperCase()}
+                        </span>
+                      )}
                       <span style={{ color: 'var(--text)', fontWeight: 500 }}>{ep.name}</span>
                       {ep.url && (
                         <span

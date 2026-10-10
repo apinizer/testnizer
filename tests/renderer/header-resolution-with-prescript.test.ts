@@ -177,3 +177,47 @@ describe('headers resolve whether or not a pre-request script runs', () => {
     expect(sentHeader('X-Seen')).toBe('Bearer secret-abc')
   })
 })
+
+describe('assertion rows read {{var}} on Send like on Run (runAssertionsMainProcess)', () => {
+  it('an expected value / header name with {{var}} resolves before the row is checked', async () => {
+    useRequestStore.setState({
+      assertions: [
+        {
+          id: 'a1',
+          name: 'status from var',
+          type: 'status_equals',
+          enabled: true,
+          expected: '{{code}}',
+        },
+        {
+          id: 'a2',
+          name: 'body has token',
+          type: 'body_contains',
+          enabled: true,
+          expected: '{{token}}',
+        },
+      ],
+      preScript: "pm.variables.set('code', '200')",
+    })
+    ;(
+      window as unknown as { api: { request: { send: ReturnType<typeof vi.fn> } } }
+    ).api.request.send.mockResolvedValueOnce({
+      success: true,
+      data: {
+        requestId: 'r1',
+        protocol: 'http',
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        body: '{"t":"secret-abc"}',
+        timing: { total: 1 },
+      },
+    })
+    await useRequestStore.getState().sendRequest()
+    const results = useResponseStore.getState().response?.testResults ?? []
+    expect(results.map((r) => [r.assertion.name, r.passed])).toEqual([
+      ['status from var', true],
+      ['body has token', true],
+    ])
+  })
+})

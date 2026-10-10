@@ -4,7 +4,8 @@
  */
 import type { KeyValuePair } from '../types'
 import type { McpPrompt, McpResource, McpResourceTemplate, McpTool } from '../types/mcp'
-import { resolveKeyValuePairs } from './variable-resolver'
+import { resolveVariables } from './variable-resolver'
+import { resolveKvRows } from '../../shared/mcp-call'
 import { makeId } from './utils'
 
 /** Ring-buffer cap for the per-tab notification and frame logs. */
@@ -21,22 +22,14 @@ export function blankRow(key = '', value = ''): KeyValuePair {
 
 /**
  * Enabled rows with a non-blank key → `{ key: value }`, `{{var}}` resolved in
- * both key and value (same rule as the SSE / WS header tables).
+ * both key and value — Send's binding of the rule Run shares
+ * (`src/shared/mcp-call.ts` `resolveKvRows`).
  */
 export function kvRowsToRecord(
   rows: readonly KeyValuePair[],
   vars: Record<string, string>,
 ): Record<string, string> {
-  const out: Record<string, string> = {}
-  const resolved = resolveKeyValuePairs(
-    rows.filter((r) => r.enabled && r.key.trim()),
-    vars,
-  )
-  for (const row of resolved) {
-    const key = row.key.trim()
-    if (key) out[key] = row.value
-  }
-  return out
+  return resolveKvRows(rows, (s) => resolveVariables(s, vars))
 }
 
 /** `{ key: value }` → editable rows (one blank row when empty). */
@@ -45,12 +38,26 @@ export function recordToRows(record: Record<string, string> | undefined): KeyVal
   return rows.length > 0 ? rows : [blankRow()]
 }
 
-export function generateExampleArgs(schema: Record<string, unknown>): Record<string, unknown> {
+/**
+ * The arguments a tool selection seeds. `requiredOnly` (the Form view, #162
+ * follow-up): an optional field without a schema `default` is left OUT — the
+ * form shows it empty and an empty optional field is not sent (MCP Inspector
+ * behaviour). The JSON view keeps the full skeleton as a typing aid; what it
+ * shows is what it sends.
+ */
+export function generateExampleArgs(
+  schema: Record<string, unknown>,
+  opts: { requiredOnly?: boolean } = {},
+): Record<string, unknown> {
   const props = (schema.properties as Record<string, Record<string, unknown>> | undefined) ?? {}
+  const required = new Set(Array.isArray(schema.required) ? schema.required : [])
   const result: Record<string, unknown> = {}
   for (const [key, def] of Object.entries(props)) {
     const type = def.type as string | undefined
-    if (def.enum && Array.isArray(def.enum)) result[key] = def.enum[0]
+    if (opts.requiredOnly && !required.has(key) && def.default === undefined) continue
+    // The schema's own `default` is the best example (issue #162).
+    if (def.default !== undefined) result[key] = def.default
+    else if (def.enum && Array.isArray(def.enum)) result[key] = def.enum[0]
     else if (type === 'string') result[key] = ''
     else if (type === 'integer' || type === 'number') result[key] = 0
     else if (type === 'boolean') result[key] = false
@@ -61,10 +68,8 @@ export function generateExampleArgs(schema: Record<string, unknown>): Record<str
   return result
 }
 
-/** True while a URI still holds an RFC 6570 `{name}` placeholder. */
-export function hasUnexpandedTemplate(uri: string): boolean {
-  return /\{[^{}]*\}/.test(uri)
-}
+/** True while a URI still holds an RFC 6570 `{name}` placeholder (shared with Run). */
+export { hasUnexpandedTemplate } from '../../shared/mcp-call'
 
 export type McpFrameKind = 'request' | 'notification' | 'result' | 'error' | 'unknown'
 

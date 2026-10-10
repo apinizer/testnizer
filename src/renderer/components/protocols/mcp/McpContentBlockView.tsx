@@ -87,12 +87,20 @@ function EmbeddedResource({ resource }: { resource: McpResourceContents }) {
 
 /** One MCP content block (tool result, resource contents, prompt message). */
 export default function McpContentBlockView({ block }: { block: unknown }) {
+  const { t } = useTranslation()
   if (!isContentBlock(block)) return <JsonPre value={block} testId="mcp-block-json" />
   switch (block.type) {
     case 'text':
       return (
         <pre data-testid="mcp-block-text" className={PRE}>
-          {prettyIfJson(block.text ?? '')}
+          {block.text ? (
+            prettyIfJson(block.text)
+          ) : (
+            // An empty answer must be visible, not a blank box (#162 follow-up).
+            <span data-testid="mcp-block-text-empty" className="italic text-[var(--muted)]">
+              {t('mcp.result.emptyText')}
+            </span>
+          )}
         </pre>
       )
     case 'image':

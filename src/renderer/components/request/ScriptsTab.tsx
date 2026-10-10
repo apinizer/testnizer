@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { HelpCircle } from 'lucide-react'
 import { useRequestStore } from '../../stores/request.store'
+import { useTabsStore } from '../../stores/tabs.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import ScriptHelpModal from '../shared/ScriptHelpModal'
 import { useTranslation } from '../../lib/i18n'
@@ -27,6 +28,11 @@ pm.test("Status code is 200", function () {
 });
 `
 
+// MCP requests (issue #160) host this tab too: their example checks `pm.mcp`.
+const MCP_POST_RESPONSE_EXAMPLE = `// MCP result: \`pm.mcp\` (the MCP view) and \`pm.response\` (HTTP-shaped).
+pm.test('tool succeeded', () => pm.expect(pm.mcp.isError).to.be.false)
+`
+
 export default function ScriptsTab() {
   const { t } = useTranslation()
   const [activeSection, setActiveSection] = useState<ScriptSection>('post-response')
@@ -34,6 +40,9 @@ export default function ScriptsTab() {
   const preScript = useRequestStore((s) => s.preScript)
   const setPreScript = useRequestStore((s) => s.setPreScript)
   const postScript = useRequestStore((s) => s.postScript)
+  const isMcp = useTabsStore(
+    (s) => s.tabs.find((tab) => tab.id === s.activeTabId)?.protocol === 'mcp',
+  )
   const setPostScript = useRequestStore((s) => s.setPostScript)
 
   const sections: { key: ScriptSection; label: string }[] = [
@@ -54,11 +63,8 @@ export default function ScriptsTab() {
           : PRE_REQUEST_EXAMPLE,
       )
     } else {
-      setPostScript(
-        postScript
-          ? `${postScript.replace(/\s+$/, '')}\n\n${POST_RESPONSE_EXAMPLE}`
-          : POST_RESPONSE_EXAMPLE,
-      )
+      const example = isMcp ? MCP_POST_RESPONSE_EXAMPLE : POST_RESPONSE_EXAMPLE
+      setPostScript(postScript ? `${postScript.replace(/\s+$/, '')}\n\n${example}` : example)
     }
   }
 
@@ -138,6 +144,7 @@ export default function ScriptsTab() {
         open={showHelp}
         onClose={() => setShowHelp(false)}
         variant={activeSection === 'pre-request' ? 'pre' : 'post'}
+        isMcp={isMcp}
       />
 
       {/* Editor */}

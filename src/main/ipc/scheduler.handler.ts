@@ -638,7 +638,8 @@ export function registerSchedulerHandlers(): void {
   })
 
   // Resolve the endpoint set behind a scheduled task to displayable rows
-  // (id + name + method + url). Suite-backed tasks read from
+  // (id + name + method + url + protocol — a non-HTTP row lists with its
+  // protocol chip, not its placeholder method, issue #173). Suite-backed tasks read from
   // test_suite_items; legacy ad-hoc tasks read from the endpoints table.
   // This is what powers the "Endpoints in this task" list in the expand row
   // — sidesteps the renderer having to know about either schema.
@@ -661,13 +662,14 @@ export function registerSchedulerHandlers(): void {
         const placeholders = ids.map(() => '?').join(',')
         const rows = db
           .prepare(
-            `SELECT id, name, method, url FROM test_suite_items WHERE id IN (${placeholders})`,
+            `SELECT id, name, method, url, protocol FROM test_suite_items WHERE id IN (${placeholders})`,
           )
           .all(...ids) as Array<{
           id: string
           name: string
           method: string | null
           url: string | null
+          protocol: string | null
         }>
         // Preserve the order the user stored on the schedule itself rather
         // than whatever SQLite returns; the run sequence is meaningful.
@@ -683,12 +685,16 @@ export function registerSchedulerHandlers(): void {
       // exposes the suite path.
       const placeholders = ids.map(() => '?').join(',')
       const rows = db
-        .prepare(`SELECT id, name, method, url FROM endpoints WHERE id IN (${placeholders})`)
+        .prepare(
+          // `endpoints` has no `url` column — its URL is `path`.
+          `SELECT id, name, method, path AS url, protocol FROM endpoints WHERE id IN (${placeholders})`,
+        )
         .all(...ids) as Array<{
         id: string
         name: string
         method: string | null
         url: string | null
+        protocol: string | null
       }>
       const byId = new Map(rows.map((r) => [r.id, r]))
       const ordered = ids

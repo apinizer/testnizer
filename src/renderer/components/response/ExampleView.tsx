@@ -5,7 +5,7 @@ import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { parseRequestSnapshot } from '../../stores/saved-response.store'
 import { useTranslation } from '../../lib/i18n'
-import MethodBadge from '../shared/MethodBadge'
+import RequestBadge from '../shared/RequestBadge'
 import StatusBadge from '../shared/StatusBadge'
 import ResponsePane from './ResponsePane'
 import type { ApiResponse, KeyValuePair, SavedRequestSnapshot, SavedResponse } from '../../types'
@@ -166,9 +166,14 @@ export default function ExampleView({ tabId, savedResponseId }: ExampleViewProps
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-2">
               {effectiveMode === 'sent' ? (
-                <SentRequest sent={sent} fallbackMethod={item.method} fallbackUrl={item.url} />
+                <SentRequest
+                  sent={sent}
+                  protocol={item.protocol}
+                  fallbackMethod={item.method}
+                  fallbackUrl={item.url}
+                />
               ) : (
-                <OriginalRequest configured={snapshot!.configured} />
+                <OriginalRequest configured={snapshot!.configured} protocol={item.protocol} />
               )}
               {!snapshot && (
                 <p className="mt-2 text-[var(--hint)]" data-testid="example-no-request-snapshot">
@@ -295,10 +300,12 @@ function BodyBlock({ body, testId }: { body: string | undefined; testId: string 
 
 function SentRequest({
   sent,
+  protocol,
   fallbackMethod,
   fallbackUrl,
 }: {
   sent: SavedRequestSnapshot['sent'] | undefined
+  protocol: string | null | undefined
   fallbackMethod: string | null
   fallbackUrl: string | null
 }) {
@@ -308,7 +315,7 @@ function SentRequest({
   return (
     <div data-testid="example-request-sent">
       <div className="mb-3 flex items-center gap-2 font-mono text-[12px]">
-        <MethodBadge method={method} small />
+        <RequestBadge protocol={protocol} method={method} small />
         <span className="break-all text-[var(--text)]" data-testid="example-sent-url">
           <VarText text={url} />
         </span>
@@ -328,7 +335,13 @@ function enabledPairs(pairs: KeyValuePair[] | undefined): Array<[string, string]
   return (pairs ?? []).filter((p) => p.enabled && p.key).map((p) => [p.key, p.value])
 }
 
-function OriginalRequest({ configured }: { configured: SavedRequestSnapshot['configured'] }) {
+function OriginalRequest({
+  configured,
+  protocol,
+}: {
+  configured: SavedRequestSnapshot['configured']
+  protocol: string | null | undefined
+}) {
   const { t } = useTranslation()
   const body = configured.body
   const bodyText =
@@ -341,7 +354,7 @@ function OriginalRequest({ configured }: { configured: SavedRequestSnapshot['con
   return (
     <div data-testid="example-request-original">
       <div className="mb-3 flex items-center gap-2 font-mono text-[12px]">
-        <MethodBadge method={configured.method || 'GET'} small />
+        <RequestBadge protocol={protocol} method={configured.method} small />
         <span className="break-all text-[var(--text)]" data-testid="example-original-url">
           <VarText text={configured.url || ''} />
         </span>

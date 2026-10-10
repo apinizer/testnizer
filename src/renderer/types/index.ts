@@ -437,6 +437,11 @@ export interface TreeNode {
   type: 'module' | 'folder' | 'endpoint' | 'schema' | 'component' | 'request' | 'example'
   label: string
   method?: HttpMethod | string
+  /**
+   * Request rows: the stored protocol. Non-HTTP/SOAP rows show a protocol chip
+   * instead of their placeholder method (issue #173). Absent on older data.
+   */
+  protocol?: Protocol | string
   path?: string
   /** Example rows: the saved status code shown in place of the method badge. */
   statusCode?: number | null

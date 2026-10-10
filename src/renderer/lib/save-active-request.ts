@@ -17,7 +17,8 @@ import { useSseStore } from '../stores/sse.store'
 import { useSocketIOStore } from '../stores/socketio.store'
 import { useGrpcStore } from '../stores/grpc.store'
 import { useGraphQLStore } from '../stores/graphql.store'
-import { useMcpStore, type McpTransport } from '../stores/mcp.store'
+import { restoreMcpCall, useMcpStore, type McpTransport } from '../stores/mcp.store'
+import { readSavedMcpCall, savedCallOf } from '../stores/mcp-call.slice'
 import { normalizeMcpAuth } from '../stores/mcp-auth.slice'
 import { normalizeMcpProtocol } from './mcp-protocol'
 import { useWorkspaceStore } from '../stores/workspace.store'
@@ -220,6 +221,9 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
           auth: mcp.auth,
           // Protocol era negotiation (issue #152): auto / legacy / a pin.
           protocol: mcp.protocol,
+          // The call itself (issue #159): capability tab, tool + raw args
+          // (`{{var}}` kept), resource URI, prompt + args.
+          call: savedCallOf(mcp),
         },
       },
     }
@@ -456,6 +460,8 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     mcp.setAuth(normalizeMcpAuth(m.auth))
     // Rows saved before issue #152 carry no `protocol` → Auto.
     mcp.setProtocol(normalizeMcpProtocol(m.protocol))
+    // Rows saved before issue #159 carry no `call` → nothing selected, as before.
+    restoreMcpCall(readSavedMcpCall(m.call))
     return
   }
 }

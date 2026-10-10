@@ -27,7 +27,7 @@ export default function McpProtocolSelect({ disabled }: { disabled: boolean }) {
     >
       <option value="auto">{t('mcp.protocol.auto')}</option>
       <option value="legacy">{t('mcp.protocol.legacy')}</option>
-      <option value={MCP_MODERN_VERSION}>{MCP_MODERN_VERSION}</option>
+      <option value={MCP_MODERN_VERSION}>{t('mcp.protocol.modern')}</option>
       <optgroup label={t('mcp.protocol.pinGroup')}>
         {MCP_LEGACY_VERSIONS.map((v) => (
           <option key={v} value={v}>

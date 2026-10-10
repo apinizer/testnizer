@@ -117,7 +117,9 @@ describe('MCP panes with a long description (issue #155)', () => {
   it('the tool header scrolls with a sticky Invoke row; the result block keeps a floor', () => {
     render(<McpToolPane />)
     const header = screen.getByTestId('mcp-tool-header')
-    expect(header).toContainElement(screen.getByTestId('mcp-tool-args'))
+    // Form is the default args view (issue #162); either view lives in the header.
+    const args = screen.queryByTestId('mcp-tool-args') ?? screen.getByTestId('mcp-args-form')
+    expect(header).toContainElement(args)
     expect(header).toContainElement(screen.getByTestId('mcp-tool-description'))
     expectStickyActions('mcp-tool-header', 'mcp-tool-actions', 'mcp-invoke')
     expect(screen.getByTestId('mcp-tool-description')).toHaveClass('line-clamp-3')

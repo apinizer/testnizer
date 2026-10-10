@@ -155,7 +155,11 @@ describe('Mock MCP editor — 2026-07-28 knobs', () => {
     expect([...pin.options].map((o) => o.value)).toContain('2026-07-28')
     expect(screen.getByTestId('mock-mcp-legacy-mode')).toHaveValue('stateless')
     fireEvent.change(screen.getByTestId('mock-mcp-legacy-mode'), { target: { value: 'reject' } })
-    expect(screen.getByText(/-32022/)).toBeInTheDocument()
+    // Issue #167: plain words on screen, the error code only in the tooltip.
+    const hint = screen.getByTestId('mock-mcp-legacy-hint')
+    expect(hint).toHaveTextContent('Only MCP 2026-07-28 clients can connect')
+    expect(hint).not.toHaveTextContent('-32022')
+    expect(hint.getAttribute('title')).toMatch(/-32022/)
     const ttl = screen.getByTestId('mock-mcp-cache-ttl')
     fireEvent.focus(ttl)
     fireEvent.change(ttl, { target: { value: '60000' } })
@@ -248,11 +252,24 @@ describe('Mock MCP editor — 2026-07-28 knobs', () => {
     })
     await renderEditor()
     const eras = await screen.findByTestId('mock-mcp-eras')
-    expect(eras).toHaveTextContent('2026-07-28 + 2025 (stateless)')
-    expect(eras).toHaveTextContent('2025 clients get no list_changed')
+    expect(eras).toHaveTextContent('Serves: MCP 2026-07-28 + MCP 2025')
+    expect(eras).toHaveTextContent("MCP 2025 clients aren't told when lists change")
     await act(async () => {
       fireEvent.click(screen.getByTestId('mock-mcp-notify'))
     })
     expect(stub.bridge.server.notify).toHaveBeenCalledWith('a', 'tools')
+  })
+})
+
+describe('review item 16: Mock MCP spec details are reachable without a mouse', () => {
+  it('each hint has a focusable info button carrying the spec detail', async () => {
+    await renderEditor()
+    fireEvent.change(screen.getByTestId('mock-mcp-legacy-mode'), { target: { value: 'reject' } })
+    const info = screen.getByTestId('mock-mcp-legacy-hint-info')
+    expect(info.tagName).toBe('BUTTON')
+    expect(info.getAttribute('aria-label')).toMatch(/-32022/)
+    // The hint text itself still reads plainly (issue #167).
+    expect(screen.getByTestId('mock-mcp-legacy-hint')).not.toHaveTextContent('-32022')
+    expect(screen.getByRole('button', { name: /ttlMs \(cacheScope: private\)/ })).toBeTruthy()
   })
 })

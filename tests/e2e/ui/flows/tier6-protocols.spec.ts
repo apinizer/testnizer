@@ -3,6 +3,7 @@ import { uiTest } from './_setup'
 import { dismissOverlays, navigateSidebar, openNewDropdownItem } from '../../helpers/ui/bootstrap'
 import { getTestServerUrls } from '../../helpers/test-servers'
 import { fillMonaco } from '../../helpers/ui/monaco'
+import { showMcpFormArgs } from '../../helpers/ui/mcp-args'
 
 uiTest.describe('Tier 6 — Protocol multi-step journeys', () => {
   uiTest.beforeEach(async ({ window }) => {
@@ -106,8 +107,11 @@ uiTest.describe('Tier 6 — Protocol multi-step journeys', () => {
     await window.getByTestId('mcp-connect').click()
     await expect(window.getByTestId('mcp-connect')).toHaveText('Disconnect', { timeout: 15_000 })
     await window.getByTestId('mcp-tool-echo').click()
+    await showMcpFormArgs(window)
     await window.getByTestId('mcp-invoke').click()
-    await expect(window.getByText(/"type":\s*"text"/i).first()).toBeVisible({ timeout: 10_000 })
+    // Form view leaves the empty optional `text` out, so echo answers its
+    // default 'ok' — the outcome, not raw JSON on the page (#162 follow-up).
+    await expect(window.getByTestId('mcp-result')).toContainText('ok', { timeout: 10_000 })
   })
 
   uiTest('F23 SOAP envelope compose and send', async ({ window }) => {

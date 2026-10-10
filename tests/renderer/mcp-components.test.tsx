@@ -17,11 +17,15 @@ import McpConfigTabs from '../../src/renderer/components/protocols/mcp/McpConfig
 import McpAuthSection from '../../src/renderer/components/protocols/mcp/McpAuthSection'
 import { useMcpStore } from '../../src/renderer/stores/mcp.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
+import { setLocale } from '../../src/renderer/lib/i18n'
+import { useUIStore } from '../../src/renderer/stores/ui.store'
 
 const PNG_1PX =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
 
 beforeEach(() => {
+  // The Messages pane remembers open/closed per user (issue #172) — start closed.
+  window.localStorage.clear()
   useTabsStore.setState({ tabs: [], activeTabId: null })
   useMcpStore.setState({ _tabStates: new Map(), _currentTabId: null })
   useMcpStore.getState().switchToTab('tab-ui')
@@ -135,6 +139,30 @@ describe('McpResultView — content types', () => {
   it('a non-CallToolResult value falls back to pretty JSON', () => {
     render(<McpResultView result={{ toolResult: 42 }} />)
     expect(screen.getByTestId('mcp-result-json')).toHaveTextContent('"toolResult": 42')
+  })
+})
+
+describe('McpResultView — empty text block (#162 follow-up)', () => {
+  it('a text block whose text is "" shows a muted "(empty text)" placeholder (EN + TR)', () => {
+    render(<McpResultView result={{ content: [{ type: 'text', text: '' }] }} />)
+    const block = screen.getByTestId('mcp-block-text')
+    expect(within(block).getByTestId('mcp-block-text-empty')).toHaveTextContent('(empty text)')
+    expect(within(block).getByTestId('mcp-block-text-empty').className).toContain('--muted')
+    cleanup()
+    // Components read the locale from the UI store (`useTranslation`).
+    useUIStore.setState({ locale: 'tr' })
+    try {
+      render(<McpResultView result={{ content: [{ type: 'text', text: '' }] }} />)
+      expect(screen.getByTestId('mcp-block-text-empty')).toHaveTextContent('(boş metin)')
+    } finally {
+      useUIStore.setState({ locale: 'en' })
+      setLocale('en')
+    }
+  })
+
+  it('a non-empty text block has no placeholder', () => {
+    render(<McpResultView result={{ content: [{ type: 'text', text: 'ok' }] }} />)
+    expect(screen.queryByTestId('mcp-block-text-empty')).toBeNull()
   })
 })
 
@@ -524,5 +552,24 @@ describe('McpAuthSection — each type renders its fields and writes the store',
     expect(screen.getByTestId('mcp-auth-stdio-note')).toHaveTextContent(/stdio/)
     expect(screen.queryByTestId('mcp-auth-preview')).toBeNull()
     expect(screen.queryByTestId('mcp-auth-bearer-token')).toBeNull()
+  })
+})
+
+describe('review item 12: the capability pane (and its Run button) can never be squeezed to zero', () => {
+  it('Messages pane is capped at half the editor, shrinks first; Scripts at 40vh; the middle keeps a floor', () => {
+    window.localStorage.setItem(
+      'testnizer-mcp-messages-pane',
+      JSON.stringify({ open: true, height: 600 }),
+    )
+    useMcpStore.setState({ configTab: 'scripts', configCollapsed: false })
+    render(<McpEditor />)
+    const pane = screen.getByTestId('mcp-messages-pane')
+    expect(pane.className).toContain('max-h-[50%]')
+    expect(pane.className).not.toContain('shrink-0')
+    const scripts = screen.getByTestId('mcp-config-panel-scripts')
+    expect(scripts.className).toContain('max-h-[40vh]')
+    // A fixed min-height would beat the max on a short window.
+    expect(scripts.className).not.toContain('min-h-[220px]')
+    expect(screen.getByTestId('mcp-editor-body').className).toContain('min-h-[120px]')
   })
 })

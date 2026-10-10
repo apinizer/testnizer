@@ -18,6 +18,7 @@
  * and only declined / cancelled.
  */
 import type { McpElicitAnswer } from '../types/mcp'
+import { DECIMAL_RE } from '../../shared/mcp-call'
 
 export type ElicitFieldKind = 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'unsupported'
 
@@ -96,11 +97,15 @@ function enumOptions(prop: Record<string, unknown>): ElicitField['options'] | un
 }
 
 /** The submitted value of an enum option (its typed original). */
-function optionValue(o: NonNullable<ElicitField['options']>[number]): EnumPrimitive {
+export function optionValue(o: NonNullable<ElicitField['options']>[number]): EnumPrimitive {
   return o.raw !== undefined ? o.raw : o.value
 }
 
-function toField(name: string, raw: unknown, required: boolean): ElicitField {
+/**
+ * One restricted-primitive JSON Schema property → a form field. Shared with
+ * the tool-arguments form (`mcp-args-form.ts`, issue #162).
+ */
+export function toField(name: string, raw: unknown, required: boolean): ElicitField {
   const prop = isRecord(raw) ? raw : {}
   const base: ElicitField = {
     name,
@@ -220,9 +225,10 @@ export type ContentResult =
 
 /**
  * Plain decimals only (issue #154): `Number()` also takes `0x10`, `1e3`,
- * `0b11`, `.5` or `+5`, which a user typing a number never means.
+ * `0b11`, `.5` or `+5`, which a user typing a number never means. One rule
+ * with the tool-args coercion Send and Run share (`src/shared/mcp-call.ts`).
  */
-const DECIMAL_RE = /^-?\d+(\.\d+)?$/
+export { DECIMAL_RE }
 const INTEGER_RE = /^-?\d+$/
 
 /** The first violated bound of a field, or null. */

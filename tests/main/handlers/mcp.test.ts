@@ -72,6 +72,8 @@ vi.mock('../../../src/main/protocols/mcp.engine', () => ({
   mcpCancelConnect: vi.fn(async () => true),
   mcpListTools: vi.fn(async () => [{ name: 'toolA' }, { name: 'toolB' }]),
   mcpCallTool: vi.fn(async () => ({ ok: true })),
+  mcpCancelCall: vi.fn(() => true),
+  mcpRespondElicitation: vi.fn(() => undefined),
   mcpRespondInput: vi.fn(async () => ({ content: [{ type: 'text', text: '3 apples' }] })),
   mcpListResources: vi.fn(async () => {
     if (shouldFailCapabilityCalls) throw new Error('resources boom')
@@ -98,6 +100,8 @@ vi.mock('../../../src/main/protocols/mcp.engine', () => ({
 }))
 
 const { registerMcpHandlers } = await import('../../../src/main/ipc/mcp.handler')
+// stdio connects record local run trust — keep it in memory, never a real settings file.
+const { setStdioTrustStoreForTests } = await import('../../../src/main/lib/mcp-stdio-trust')
 const engine = await import('../../../src/main/protocols/mcp.engine')
 const { mcpConnect } = engine
 
@@ -110,6 +114,8 @@ beforeEach(() => {
   consoleEntries = []
   sentEvents = []
   installedSink = null
+  const trustStore = new Map<string, unknown>()
+  setStdioTrustStoreForTests({ get: (k) => trustStore.get(k), set: (k, v) => void trustStore.set(k, v) })
   vi.mocked(mcpConnect).mockClear()
   registerMcpHandlers()
 })
@@ -233,6 +239,7 @@ describe('mcp:respondInput (issue #152)', () => {
     expect(res).toEqual({
       success: true,
       data: { content: [{ type: 'text', text: '3 apples' }] },
+      timing: { durationMs: expect.any(Number), sizeBytes: expect.any(Number) },
     })
     expect(vi.mocked(engine.mcpRespondInput)).toHaveBeenCalledWith(
       'mcp-1',
@@ -260,7 +267,11 @@ describe('mcp:respondInput (issue #152)', () => {
       undefined,
       undefined,
     ])
-    expect(res).toEqual({ success: false, error: 'Nothing to send' })
+    expect(res).toEqual({
+      success: false,
+      error: 'Nothing to send',
+      timing: { durationMs: expect.any(Number), sizeBytes: 0 },
+    })
   })
 
   it('an input_required tools/call result is a success, logged as INPUT_REQUIRED', async () => {
@@ -580,5 +591,440 @@ describe('mcp engine events → renderer broadcast (issue #139)', () => {
     })
     expect(sentEvents).toEqual([])
     expect(JSON.stringify(consoleEntries)).toContain('HTTP 500')
+  })
+})
+
+// ─── issue #163 / #164 / #166 / #168 / #169 ─────────────────────────────
+
+type Envelope = {
+  success: boolean
+  data?: unknown
+  error?: string
+  cancelled?: boolean
+  timing?: { durationMs: number; sizeBytes: number }
+}
+
+const cancelledError = (): Error =>
+  Object.assign(new Error('MCP call cancelled by user'), {
+    name: 'McpCallCancelledError',
+    cancelled: true,
+  })
+
+describe('timing on call responses (issue #164)', () => {
+  it.each([
+    ['mcp:callTool', ['mcp-1', 'toolA', {}], { ok: true }],
+    ['mcp:readResource', ['mcp-1', 'test://greeting'], null],
+    ['mcp:getPrompt', ['mcp-1', 'summarize', { text: 'x' }], null],
+    [
+      'mcp:respondInput',
+      ['mcp-1', 'ask_count', {}, 's', { count: { action: 'decline' } }],
+      { content: [{ type: 'text', text: '3 apples' }] },
+    ],
+  ])('%s success carries { durationMs, sizeBytes } of the response JSON', async (channel, args) => {
+    const res = (await harness.invoke(channel, ...args)) as Envelope
+    expect(res.success).toBe(true)
+    expect(res.timing?.durationMs).toBeGreaterThanOrEqual(0)
+    expect(res.timing?.sizeBytes).toBe(Buffer.byteLength(JSON.stringify(res.data), 'utf-8'))
+  })
+
+  it.each([
+    ['mcp:readResource', ['mcp-1', 'test://x']],
+    ['mcp:getPrompt', ['mcp-1', 'p', {}]],
+  ])('%s failure carries timing with sizeBytes 0', async (channel, args) => {
+    shouldFailCapabilityCalls = true
+    const res = (await harness.invoke(channel, ...args)) as Envelope
+    expect(res.success).toBe(false)
+    expect(res.timing).toEqual({ durationMs: expect.any(Number), sizeBytes: 0 })
+  })
+
+  it('mcp:callTool failure carries timing with sizeBytes 0', async () => {
+    vi.mocked(engine.mcpCallTool).mockRejectedValueOnce(new Error('tool boom'))
+    const res = (await harness.invoke('mcp:callTool', 'mcp-1', 'toolA', {})) as Envelope
+    expect(res).toEqual({
+      success: false,
+      error: 'tool boom',
+      timing: { durationMs: expect.any(Number), sizeBytes: 0 },
+    })
+  })
+})
+
+describe('cancel a running call (issue #163)', () => {
+  it('callTool / readResource / getPrompt / respondInput forward the callId to the engine', async () => {
+    await harness.invoke('mcp:callTool', 'mcp-1', 'toolA', { a: 1 }, { callId: 'c-1' })
+    expect(vi.mocked(engine.mcpCallTool)).toHaveBeenLastCalledWith(
+      'mcp-1',
+      'toolA',
+      { a: 1 },
+      {
+        callId: 'c-1',
+      },
+    )
+    await harness.invoke('mcp:readResource', 'mcp-1', 'test://greeting', { callId: 'r-1' })
+    expect(vi.mocked(engine.mcpReadResource)).toHaveBeenLastCalledWith('mcp-1', 'test://greeting', {
+      callId: 'r-1',
+    })
+    await harness.invoke('mcp:getPrompt', 'mcp-1', 'summarize', { text: 't' }, { callId: 'p-1' })
+    expect(vi.mocked(engine.mcpGetPrompt)).toHaveBeenLastCalledWith(
+      'mcp-1',
+      'summarize',
+      { text: 't' },
+      { callId: 'p-1' },
+    )
+    await harness.invoke('mcp:respondInput', 'mcp-1', 't', {}, 's', { k: {} }, { callId: 'i-1' })
+    expect(vi.mocked(engine.mcpRespondInput)).toHaveBeenLastCalledWith(
+      'mcp-1',
+      't',
+      {},
+      's',
+      { k: {} },
+      { callId: 'i-1' },
+    )
+  })
+
+  it('mcp:cancelCall → { cancelled } from the engine', async () => {
+    const res = (await harness.invoke('mcp:cancelCall', 'mcp-1', 'c-1')) as Envelope
+    expect(res).toEqual({ success: true, data: { cancelled: true } })
+    expect(vi.mocked(engine.mcpCancelCall)).toHaveBeenLastCalledWith('mcp-1', 'c-1')
+    vi.mocked(engine.mcpCancelCall).mockReturnValueOnce(false)
+    expect(await harness.invoke('mcp:cancelCall', 'mcp-1', 'gone')).toEqual({
+      success: true,
+      data: { cancelled: false },
+    })
+  })
+
+  it.each([
+    ['mcp:callTool', 'mcpCallTool', ['mcp-1', 'slow', {}, { callId: 'c-1' }]],
+    ['mcp:readResource', 'mcpReadResource', ['mcp-1', 'test://slow', { callId: 'r-1' }]],
+    ['mcp:getPrompt', 'mcpGetPrompt', ['mcp-1', 'slow', {}, { callId: 'p-1' }]],
+  ] as const)(
+    '%s: a user cancel resolves { success:false, cancelled:true, timing }',
+    async (channel, fn, args) => {
+      vi.mocked(engine[fn]).mockRejectedValueOnce(cancelledError())
+      const res = (await harness.invoke(channel, ...args)) as Envelope
+      expect(res).toEqual({
+        success: false,
+        error: 'MCP call cancelled by user',
+        cancelled: true,
+        timing: { durationMs: expect.any(Number), sizeBytes: 0 },
+      })
+    },
+  )
+})
+
+describe('elicitation bridge (issue #168)', () => {
+  it('the engine elicitation event is broadcast on mcp:elicitation', () => {
+    const payload = {
+      connectionId: 'mcp-1',
+      elicitationId: 'e-1',
+      serverName: 'srv',
+      message: 'Name?',
+      requestedSchema: { type: 'object', properties: {} },
+      mode: 'form',
+    }
+    installedSink?.({ type: 'elicitation', payload })
+    expect(sentEvents).toEqual([{ channel: 'mcp:elicitation', payload }])
+  })
+
+  it('mcp:respondElicitation forwards the answer; engine errors become the envelope', async () => {
+    const answer = { action: 'accept', content: { name: 'Ada' } }
+    expect(await harness.invoke('mcp:respondElicitation', 'mcp-1', 'e-1', answer)).toEqual({
+      success: true,
+    })
+    expect(vi.mocked(engine.mcpRespondElicitation)).toHaveBeenLastCalledWith('mcp-1', 'e-1', answer)
+    vi.mocked(engine.mcpRespondElicitation).mockImplementationOnce(() => {
+      throw new Error('No pending elicitation e-9')
+    })
+    expect(
+      await harness.invoke('mcp:respondElicitation', 'mcp-1', 'e-9', { action: 'decline' }),
+    ).toEqual({ success: false, error: 'No pending elicitation e-9' })
+  })
+
+  it('the answer content is never console-logged', async () => {
+    await harness.invoke('mcp:respondElicitation', 'mcp-1', 'e-1', {
+      action: 'accept',
+      content: { secret: 'answer-168' },
+    })
+    expect(JSON.stringify(consoleEntries)).not.toContain('answer-168')
+  })
+})
+
+describe('redirect credential drop (issue #169)', () => {
+  it('is broadcast as a notification AND written to the console (names only)', () => {
+    const payload = {
+      connectionId: 'mcp-1',
+      ts: 1,
+      method: 'notifications/testnizer/redirect_credentials_dropped',
+      params: { from: 'http://a.test', to: 'http://b.test', headers: ['X-API-Key'] },
+    }
+    installedSink?.({ type: 'notification', payload })
+    expect(sentEvents).toEqual([{ channel: 'mcp:notification', payload }])
+    const log = JSON.stringify(consoleEntries)
+    expect(log).toContain('X-API-Key')
+    expect(log).toContain('http://b.test')
+  })
+})
+
+describe('history rows for tools / resources / prompts (issue #166)', () => {
+  type Row = {
+    protocol: string
+    method: string
+    url: string
+    status_code: number
+    project_id: string | null
+    workspace_id: string | null
+    endpoint_id: string | null
+    request_snapshot: string
+    response_snapshot: string | null
+  }
+  const rows = (): Row[] =>
+    testDb.prepare('SELECT * FROM history ORDER BY executed_at ASC, rowid ASC').all() as Row[]
+  const snapshot = (row: Row): { mcp: Record<string, unknown> } =>
+    JSON.parse(row.request_snapshot) as { mcp: Record<string, unknown> }
+
+  async function connectHttp(): Promise<void> {
+    await harness.invoke('mcp:connect', {
+      transport: 'http',
+      url: 'http://user:pw@gw.local/mcp?token=abc&x=1',
+      headers: { 'X-API-Key': 'hdr-secret' },
+      auth: { type: 'bearer', bearer: { token: 'bearer-secret' } },
+      protocol: 'auto',
+    })
+  }
+
+  it('a tool call is CALL_TOOL against the server URL with a restorable mcp snapshot', async () => {
+    await connectHttp()
+    const ctx = { workspaceId: 'w-1', projectId: 'p-1', endpointId: 'e-1' }
+    await harness.invoke(
+      'mcp:callTool',
+      'mcp-1',
+      'get_weather',
+      {
+        city: 'Ankara',
+        apiKey: 'arg-secret',
+        nested: { password: 'pw-2' },
+        days: 3,
+        max_tokens: 256,
+        session_flag: true,
+      },
+      ctx,
+    )
+    const [row] = rows()
+    expect(row).toMatchObject({
+      protocol: 'mcp',
+      method: 'CALL_TOOL',
+      url: 'http://gw.local/mcp?token=***&x=1',
+      status_code: 0,
+      workspace_id: 'w-1',
+      project_id: 'p-1',
+      endpoint_id: 'e-1',
+    })
+    expect(snapshot(row)).toEqual({
+      mcp: {
+        transport: 'http',
+        url: 'http://gw.local/mcp?token=***&x=1',
+        protocol: 'auto',
+        capability: 'tool',
+        name: 'get_weather',
+        // Only string values under credential-like names are masked — numbers
+        // and booleans survive, so the restored call still validates.
+        args: {
+          city: 'Ankara',
+          apiKey: '••••••',
+          nested: { password: '••••••' },
+          days: 3,
+          max_tokens: 256,
+          session_flag: true,
+        },
+      },
+    })
+    expect(JSON.parse(row.response_snapshot ?? 'null')).toEqual({ ok: true })
+    const all = JSON.stringify(rows())
+    for (const secret of ['arg-secret', 'pw-2', 'hdr-secret', 'bearer-secret', 'abc', 'user:pw']) {
+      expect(all).not.toContain(secret)
+    }
+  })
+
+  it('a resource read is READ_RESOURCE with the uri; a prompt get is GET_PROMPT with name + args', async () => {
+    await connectHttp()
+    await harness.invoke('mcp:readResource', 'mcp-1', 'test://greeting', {
+      callId: 'r-1',
+      projectId: 'p-1',
+    })
+    await harness.invoke(
+      'mcp:getPrompt',
+      'mcp-1',
+      'summarize',
+      { text: 'hello' },
+      {
+        projectId: 'p-1',
+      },
+    )
+    const [read, prompt] = rows()
+    expect(read).toMatchObject({
+      method: 'READ_RESOURCE',
+      url: 'http://gw.local/mcp?token=***&x=1',
+    })
+    expect(read.project_id).toBe('p-1')
+    expect(snapshot(read).mcp).toEqual({
+      transport: 'http',
+      url: 'http://gw.local/mcp?token=***&x=1',
+      protocol: 'auto',
+      capability: 'resource',
+      uri: 'test://greeting',
+    })
+    expect(JSON.parse(read.response_snapshot ?? 'null')).toEqual({
+      contents: [{ uri: 'test://greeting', mimeType: 'text/plain', text: 'hi' }],
+    })
+    expect(prompt).toMatchObject({ method: 'GET_PROMPT', project_id: 'p-1' })
+    expect(snapshot(prompt).mcp).toEqual({
+      transport: 'http',
+      url: 'http://gw.local/mcp?token=***&x=1',
+      protocol: 'auto',
+      capability: 'prompt',
+      name: 'summarize',
+      args: { text: 'hello' },
+    })
+  })
+
+  it('stdio: the url is the command line with credential-like arguments masked; env is never stored', async () => {
+    await harness.invoke('mcp:connect', {
+      transport: 'stdio',
+      url: '',
+      command: 'npx',
+      args: [
+        '-y',
+        '@scope/server',
+        '--api-key',
+        'argv-secret',
+        '--token=tok-secret',
+        '--port',
+        '9',
+      ],
+      env: { API_TOKEN: 'env-secret' },
+    })
+    await harness.invoke('mcp:callTool', 'mcp-1', 'echo', { text: 'hi' })
+    const [row] = rows()
+    expect(row.url).toBe('npx -y @scope/server --api-key *** --token=*** --port 9')
+    expect(snapshot(row).mcp).toMatchObject({ transport: 'stdio', url: row.url, protocol: 'auto' })
+    const all = JSON.stringify(rows())
+    for (const secret of ['argv-secret', 'tok-secret', 'env-secret'])
+      expect(all).not.toContain(secret)
+  })
+
+  it('failures and user cancels are recorded with status -1 and the error', async () => {
+    await connectHttp()
+    vi.mocked(engine.mcpCallTool).mockRejectedValueOnce(new Error('tool boom'))
+    await harness.invoke('mcp:callTool', 'mcp-1', 'a', {})
+    vi.mocked(engine.mcpReadResource).mockRejectedValueOnce(cancelledError())
+    await harness.invoke('mcp:readResource', 'mcp-1', 'test://slow', { callId: 'r-1' })
+    const [failed, cancelled] = rows()
+    expect(failed).toMatchObject({ method: 'CALL_TOOL', status_code: -1 })
+    expect(JSON.parse(failed.response_snapshot ?? '{}')).toEqual({ error: 'tool boom' })
+    expect(snapshot(failed).mcp).toMatchObject({ capability: 'tool', name: 'a', args: {} })
+    expect(cancelled).toMatchObject({ method: 'READ_RESOURCE', status_code: -1 })
+    expect(JSON.parse(cancelled.response_snapshot ?? '{}')).toEqual({
+      error: 'MCP call cancelled by user',
+      cancelled: true,
+    })
+  })
+
+  it('respondInput rows stay RESPOND_INPUT with the tool snapshot (restores as the original call)', async () => {
+    await connectHttp()
+    await harness.invoke('mcp:respondInput', 'mcp-1', 'ask_count', { label: 'x' }, 's', {
+      count: { action: 'accept', content: { count: 3 } },
+    })
+    const [row] = rows()
+    expect(row.method).toBe('RESPOND_INPUT')
+    expect(snapshot(row).mcp).toMatchObject({
+      capability: 'tool',
+      name: 'ask_count',
+      args: { label: 'x' },
+    })
+    // The user's form answers are not part of the restorable request.
+    expect(row.request_snapshot).not.toContain('inputResponses')
+  })
+})
+
+describe('history scope fallback (issue #166)', () => {
+  it('a call without scope is filed under the scope the connection last saw', async () => {
+    await harness.invoke('mcp:connect', { transport: 'http', url: 'http://gw.local/mcp' })
+    await harness.invoke(
+      'mcp:callTool',
+      'mcp-1',
+      'echo',
+      {},
+      { workspaceId: 'w-9', projectId: 'p-9' },
+    )
+    await harness.invoke('mcp:readResource', 'mcp-1', 'test://greeting', { callId: 'r-9' })
+    await harness.invoke('mcp:getPrompt', 'mcp-1', 'summarize', { text: 'x' })
+    const scoped = testDb
+      .prepare('SELECT method, workspace_id, project_id FROM history ORDER BY rowid ASC')
+      .all() as Array<{ method: string; workspace_id: string | null; project_id: string | null }>
+    expect(scoped).toEqual([
+      { method: 'CALL_TOOL', workspace_id: 'w-9', project_id: 'p-9' },
+      { method: 'READ_RESOURCE', workspace_id: 'w-9', project_id: 'p-9' },
+      { method: 'GET_PROMPT', workspace_id: 'w-9', project_id: 'p-9' },
+    ])
+  })
+})
+
+describe('review round: history snapshot + console masking', () => {
+  type Row = { url: string; project_id: string | null; request_snapshot: string }
+  const rows = (): Row[] =>
+    testDb.prepare('SELECT * FROM history ORDER BY executed_at ASC, rowid ASC').all() as Row[]
+
+  it('item 8: the connection dropping while the call runs keeps the History target + scope', async () => {
+    await harness.invoke('mcp:connect', {
+      transport: 'http',
+      url: 'http://gw.local/mcp?token=abc',
+      protocol: '2026-07-28',
+    })
+    await harness.invoke('mcp:callTool', 'mcp-1', 'warm', {}, { projectId: 'p-8' })
+    let fail: (e: Error) => void = () => {}
+    vi.mocked(engine.mcpCallTool).mockImplementationOnce(
+      () => new Promise((_resolve, reject) => (fail = reject)),
+    )
+    const pending = harness.invoke('mcp:callTool', 'mcp-1', 'slow', {})
+    await Promise.resolve()
+    // The transport dies mid-call: main forgets the connection context…
+    installedSink?.({ type: 'connectionClosed', payload: { connectionId: 'mcp-1', reason: 'gone' } })
+    fail(new Error('connection closed'))
+    await pending
+    const row = rows()[1]
+    // …but the row still names the server, not the connection id.
+    expect(row.url).toBe('http://gw.local/mcp?token=***')
+    expect(row.project_id).toBe('p-8')
+    expect(JSON.parse(row.request_snapshot).mcp).toMatchObject({
+      transport: 'http',
+      url: 'http://gw.local/mcp?token=***',
+      protocol: '2026-07-28',
+    })
+  })
+
+  it('item 15: a stdio command line without args is split quote-aware for History', async () => {
+    await harness.invoke('mcp:connect', {
+      transport: 'stdio',
+      url: '',
+      command: 'node "C:\\My Tools\\srv.js" --api-key k1',
+    })
+    await harness.invoke('mcp:callTool', 'mcp-1', 'echo', {})
+    expect(rows()[0].url).toBe('node "C:\\My Tools\\srv.js" --api-key ***')
+  })
+
+  it('item 18: CONNECT and call console entries never carry the raw URL secret or credential args', async () => {
+    await harness.invoke('mcp:connect', {
+      transport: 'http',
+      url: 'http://user:pw@gw.local/mcp?api_key=url-secret&x=1',
+    })
+    await harness.invoke('mcp:callTool', 'mcp-1', 'echo', { text: 'hi', api_key: 'arg-secret' })
+    await harness.invoke('mcp:getPrompt', 'mcp-1', 'p', { password: 'prompt-secret' })
+    await harness.invoke('mcp:respondInput', 'mcp-1', 'echo', { token: 'input-secret' }, 's', {})
+    const all = JSON.stringify(consoleEntries)
+    for (const secret of ['url-secret', 'user:pw', 'arg-secret', 'prompt-secret', 'input-secret']) {
+      expect(all).not.toContain(secret)
+    }
+    // Non-secret parts stay readable.
+    expect(all).toContain('gw.local/mcp')
+    expect(all).toContain('hi')
   })
 })

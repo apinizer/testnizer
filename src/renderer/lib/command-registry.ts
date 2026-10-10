@@ -32,10 +32,10 @@ import {
 
 import { TOOL_CATALOG } from './tools-catalog'
 import { useTranslation } from './i18n'
-import { useRequestStore } from '../stores/request.store'
 import { useTabsStore } from '../stores/tabs.store'
 import { useUIStore } from '../stores/ui.store'
 import { openOrReuseRunnerTab } from './open-runner-tab'
+import { runActiveRequest } from './run-active-request'
 import { useEnvironmentStore } from '../stores/environment.store'
 import { isMac } from './platform'
 import { makeTabId } from './utils'
@@ -82,7 +82,6 @@ export function useCommandActions(): CommandAction[] {
 
   return useMemo<CommandAction[]>(() => {
     const tabs = useTabsStore.getState()
-    const req = useRequestStore.getState()
 
     const actions: CommandAction[] = []
 
@@ -162,7 +161,8 @@ export function useCommandActions(): CommandAction[] {
       group: 'request',
       icon: Send,
       keywords: ['send', 'execute', 'request'],
-      run: () => req.sendRequest(),
+      // Same dispatch as Ctrl/Cmd+Enter — an MCP tab runs its tool (issue #165).
+      run: () => runActiveRequest(),
     })
     actions.push({
       id: 'request.save',

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { ListChecks } from 'lucide-react'
 import Modal from '../shared/Modal'
-import MethodBadge from '../shared/MethodBadge'
+import { protocolChipLabel } from '../../lib/protocol-chip'
+import RequestBadge from '../shared/RequestBadge'
 import { t } from '../../lib/i18n'
 import { collectRequestIds, isRequestNode } from '../../lib/folder-request-selection'
 import type { TreeNode } from '../../types'
@@ -40,7 +41,9 @@ function SelectionRow({
           checked={selected.has(node.id)}
           onChange={() => onToggleRequest(node.id)}
         />
-        {node.method && <MethodBadge method={node.method} small />}
+        {(node.method || protocolChipLabel(node.protocol)) && (
+          <RequestBadge protocol={node.protocol} method={node.method} small />
+        )}
         <span className="min-w-0 flex-1 truncate">{node.label}</span>
       </label>
     )

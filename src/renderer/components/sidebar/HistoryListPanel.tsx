@@ -7,7 +7,13 @@ import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
 import { useUIStore } from '../../stores/ui.store'
-import MethodBadge from '../shared/MethodBadge'
+import {
+  mcpHistoryRestore,
+  mcpHistoryRowLabel,
+  mcpHistorySearchText,
+} from '../protocols/mcp/history-restore'
+import { openMcpHistoryRestore } from '../protocols/mcp/history-open'
+import RequestBadge from '../shared/RequestBadge'
 import EmptyState from '../shared/EmptyState'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import type {
@@ -59,7 +65,11 @@ export default function HistoryListPanel() {
     if (!searchTerm.trim()) return entries
     const q = searchTerm.toLowerCase()
     return entries.filter(
-      (e) => e.url.toLowerCase().includes(q) || (e.method || '').toLowerCase().includes(q),
+      (e) =>
+        e.url.toLowerCase().includes(q) ||
+        (e.method || '').toLowerCase().includes(q) ||
+        // MCP rows: the tool / prompt name and resource URI too (issue #166).
+        (e.protocol === 'mcp' && mcpHistorySearchText(e).toLowerCase().includes(q)),
     )
   }, [entries, searchTerm])
 
@@ -76,18 +86,30 @@ export default function HistoryListPanel() {
     // matching tree.)
     setActiveSidebarPage('apis')
 
+    // MCP rows carry the server + the call in their own shape (issue #166).
+    const mcpRow = protocol === 'mcp' ? mcpHistoryRestore(entry) : null
+
     openPreviewTab({
       id: tabId,
-      name: `${entry.method || 'GET'} ${shortUrl(entry.url)}`,
+      name: mcpRow
+        ? `${entry.method || 'CALL_TOOL'} ${mcpRow.name || shortUrl(mcpRow.url)}`
+        : `${entry.method || 'GET'} ${shortUrl(entry.url)}`,
       protocol,
       method: entry.method,
-      url: entry.url,
+      url: mcpRow ? mcpRow.url : entry.url,
     })
 
     // openPreviewTab is synchronous — read the resolved active tab id back
     // out of the store so per-tab state caches key off the right id (a
     // matching existing preview reuses its original id, not `tabId`).
     const realTabId = useTabsStore.getState().activeTabId || tabId
+
+    if (mcpRow) {
+      // Open the MCP tab on the server with the call selected; the user then
+      // presses Connect and Run (the shared helper the welcome page uses too).
+      openMcpHistoryRestore(mcpRow, realTabId)
+      return
+    }
 
     if (protocol === 'soap') {
       soapSwitchToTab(realTabId)
@@ -319,10 +341,21 @@ export default function HistoryListPanel() {
                   ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                 }}
               >
-                <MethodBadge method={entry.method || 'GET'} small />
-                <span className="flex-1 truncate" style={{ fontSize: 13 }}>
-                  {shortUrl(entry.url)}
-                </span>
+                <RequestBadge protocol={entry.protocol} method={entry.method} small />
+                {entry.protocol === 'mcp' ? (
+                  // The call (tool / prompt / resource), the server in the tooltip.
+                  <span
+                    className="flex-1 truncate"
+                    style={{ fontSize: 13 }}
+                    title={mcpHistoryRowLabel(entry).title}
+                  >
+                    {mcpHistoryRowLabel(entry).label}
+                  </span>
+                ) : (
+                  <span className="flex-1 truncate" style={{ fontSize: 13 }}>
+                    {shortUrl(entry.url)}
+                  </span>
+                )}
                 {entry.status_code != null && (
                   <span
                     className="shrink-0 font-medium"

@@ -84,3 +84,38 @@ describe('positionContextMenu', () => {
     })
   })
 })
+
+describe('positionAnchoredMenu — a button-anchored dropdown (review item 11)', () => {
+  it('opens above the button when there is room, below when there is not', async () => {
+    const { positionAnchoredMenu } = await import('../../src/renderer/lib/menu-position')
+    const base = { anchorLeft: 100, width: 200, height: 80, viewportWidth: 1000, viewportHeight: 600 }
+    expect(positionAnchoredMenu({ ...base, anchorTop: 500, anchorBottom: 532 })).toEqual({
+      left: 100,
+      top: 500 - 4 - 80,
+    })
+    // Near the top (the overflow header case): flips below the button.
+    expect(positionAnchoredMenu({ ...base, anchorTop: 40, anchorBottom: 72 })).toEqual({
+      left: 100,
+      top: 72 + 4,
+    })
+    // Clamped horizontally.
+    expect(
+      positionAnchoredMenu({ ...base, anchorLeft: 900, anchorTop: 500, anchorBottom: 532 }).left,
+    ).toBe(1000 - 200 - 8)
+  })
+
+  it('neither side fits: the larger side, scrolling', async () => {
+    const { positionAnchoredMenu } = await import('../../src/renderer/lib/menu-position')
+    const p = positionAnchoredMenu({
+      anchorLeft: 0,
+      anchorTop: 100,
+      anchorBottom: 120,
+      width: 100,
+      height: 500,
+      viewportWidth: 800,
+      viewportHeight: 300,
+    })
+    expect(p.top).toBe(124)
+    expect(p.maxHeight).toBe(300 - 8 - 124)
+  })
+})

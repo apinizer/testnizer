@@ -40,6 +40,10 @@ interface VariableAutocompleteInputProps {
   style?: React.CSSProperties
   className?: string
   'data-testid'?: string
+  /** Passed to the `<input>` — URL / command-line fields turn it off. */
+  spellCheck?: boolean
+  /** Passed to the `<input>` (`off` for URL fields). */
+  autoComplete?: string
 }
 
 /**
@@ -54,6 +58,8 @@ export default function VariableAutocompleteInput({
   style,
   className,
   'data-testid': testId,
+  spellCheck,
+  autoComplete,
 }: VariableAutocompleteInputProps) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -393,6 +399,8 @@ export default function VariableAutocompleteInput({
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
+          spellCheck={spellCheck}
+          autoComplete={autoComplete}
           style={{
             ...inputStyle,
             ...inputOverlayHider,

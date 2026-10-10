@@ -4,8 +4,14 @@ import { useTranslation } from '../../../lib/i18n'
 import { hasUnexpandedTemplate } from '../../../lib/mcp-store-helpers'
 import EmptyState from '../../shared/EmptyState'
 import McpResultView from './McpResultView'
+import McpResultTabs from './McpResultTabs'
 import McpDescription from './McpDescription'
-import { CenterHint, ErrorLine, PrimaryButton, SectionLabel } from './ui'
+import McpRunButton from './McpRunButton'
+import McpCallHeader from './McpCallHeader'
+import McpCallNotes from './McpCallNotes'
+import McpCopyAsMenu from './McpCopyAsMenu'
+import { resourceCopyText } from './call-ui'
+import { CenterHint, ErrorLine, SectionLabel } from './ui'
 
 /**
  * Right pane for the Resources tab. A concrete resource reads its own URI; a
@@ -22,7 +28,11 @@ export default function McpResourcePane() {
   const readResource = useMcpStore((s) => s.readResource)
   const content = useMcpStore((s) => s.resourceContent)
   const error = useMcpStore((s) => s.resourceError)
-  const isReading = useMcpStore((s) => s.isReadingResource)
+  const isReading = useMcpStore((s) => s.resourceCallId !== null)
+  const meta = useMcpStore((s) => s.resourceMeta)
+  const tests = useMcpStore((s) => s.resourceTests)
+  // Every MCP tab renders this pane: the tab id keeps the Result / Test Results choice per tab.
+  const tabId = useMcpStore((s) => s._currentTabId)
   const isConnected = useMcpStore((s) => s.connectionState === 'connected')
 
   if (!selected) {
@@ -70,20 +80,30 @@ export default function McpResourcePane() {
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && isConnected && !unexpanded) void readResource()
+                  if (
+                    e.key === 'Enter' &&
+                    !e.metaKey &&
+                    !e.ctrlKey &&
+                    isConnected &&
+                    !unexpanded &&
+                    !isReading
+                  ) {
+                    void readResource()
+                  }
                 }}
                 data-testid="mcp-resource-uri"
                 spellCheck={false}
                 className="h-8 min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-2.5 font-mono text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
               />
-              <PrimaryButton
-                onClick={() => void readResource()}
-                disabled={isReading || !isConnected || !draft.trim()}
-                data-testid="mcp-read-resource"
-              >
-                <BookOpen size={13} />
-                {isReading ? t('mcp.resource.reading') : t('mcp.resource.read')}
-              </PrimaryButton>
+              <McpRunButton
+                kind="resource"
+                testId="mcp-read-resource"
+                icon={<BookOpen size={13} />}
+                label={t('mcp.resource.read')}
+                disabled={!isConnected || !draft.trim()}
+                onRun={() => void readResource()}
+              />
+              <McpCopyAsMenu capability="resources" />
             </div>
             {template && unexpanded && (
               <p className="m-0 text-[11px] text-[var(--muted)]">
@@ -94,13 +114,24 @@ export default function McpResourcePane() {
         </div>
       </div>
       <div className="min-h-[5rem] flex-1 overflow-auto p-3.5">
-        <SectionLabel>{t('mcp.resource.contents')}</SectionLabel>
+        <SectionLabel
+          right={<McpCallHeader meta={meta} copyText={() => resourceCopyText(content)} />}
+        >
+          {t('mcp.resource.contents')}
+        </SectionLabel>
+        <McpCallNotes />
         {error ? (
           <ErrorLine testId="mcp-resource-error">{error}</ErrorLine>
+        ) : meta?.status === 'cancelled' ? (
+          <div data-testid="mcp-call-cancelled" className="text-[12px] text-[var(--muted)]">
+            {t('mcp.call.cancelledBody')}
+          </div>
         ) : content ? (
-          <McpResultView
-            result={{ content: content.contents.map((c) => ({ type: 'resource', resource: c })) }}
-          />
+          <McpResultTabs key={tabId ?? ''} tests={tests}>
+            <McpResultView
+              result={{ content: content.contents.map((c) => ({ type: 'resource', resource: c })) }}
+            />
+          </McpResultTabs>
         ) : (
           <EmptyState icon={Inbox} title={t('mcp.resource.none')} variant="compact" size="sm" />
         )}

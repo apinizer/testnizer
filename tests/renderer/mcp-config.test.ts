@@ -25,7 +25,7 @@ import {
   joinCommandLine,
   parseCommandLine,
   tokenizeCommandLine,
-} from '../../src/renderer/lib/mcp-command-line'
+} from '../../src/shared/mcp-call'
 
 const STDIO: ParsedMcpServer = {
   name: 'filesystem',

@@ -14,6 +14,9 @@ import {
 import type { OAuthProtectedResourceMetadata } from '@modelcontextprotocol/sdk/shared/auth.js'
 import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js'
 import { errorMessage } from '../mcp-oauth.engine'
+// The engine's own "same party" rule (issue #154): the scan flags exactly the
+// hops on which the client drops credential headers.
+import { isSameParty } from '../mcp.engine'
 import {
   ev,
   info,
@@ -231,6 +234,70 @@ const downgrade: CheckDef = {
       )
     }
     return pass(`Plain HTTP answers ${status} — the MCP endpoint is not served over it.`, ev(http))
+  },
+}
+
+/**
+ * Issue #169: the MCP endpoint itself redirects to another origin. A client
+ * that follows it must either replay its credential headers to that origin
+ * or drop them (Testnizer drops them since issue #154 — and then fails to
+ * authenticate). One anonymous probe with `redirect: 'manual'`: the
+ * `initialize` POST on Streamable HTTP, the event-stream GET on legacy SSE.
+ * Never carries credentials.
+ */
+const crossOriginRedirect: CheckDef = {
+  id: 'transport.cross_origin_redirect',
+  category: 'transport',
+  title: 'Cross-origin redirect',
+  refs: [REFS.mcpSecurity, REFS.mcpTransports],
+  run: async (ctx) => {
+    const sse = ctx.transport === 'sse'
+    const http = await ctx.http.send(
+      ctx.url.href,
+      sse
+        ? {
+            method: 'GET',
+            redirect: 'manual',
+            headers: { ...ctx.anonHeaders, Accept: 'text/event-stream' },
+          }
+        : {
+            method: 'POST',
+            redirect: 'manual',
+            headers: {
+              ...ctx.anonHeaders,
+              'Content-Type': 'application/json',
+              Accept: 'application/json, text/event-stream',
+            },
+            body: initializeBody('tz-scan-redirect'),
+          },
+      { auth: false, discardBody: true },
+    )
+    const status = http.status
+    if (status === undefined) {
+      return skipped(`The endpoint did not answer: ${http.error ?? 'no response'}.`)
+    }
+    const location = status >= 300 && status < 400 ? http.headers.get('location') : null
+    if (!location)
+      return pass(`The MCP endpoint answers without a redirect (HTTP ${status}).`, ev(http))
+    let target: URL
+    try {
+      target = new URL(location, ctx.url)
+    } catch {
+      return pass(`HTTP ${status} with an unusable Location — no redirect is followed.`, ev(http))
+    }
+    if (isSameParty(ctx.url, target)) {
+      return pass(
+        `The MCP endpoint redirects within its own origin (${status} → ${target.pathname}); clients keep their credentials.`,
+        ev(http),
+      )
+    }
+    return problem(
+      'warn',
+      'medium',
+      `The MCP endpoint redirects to another origin (${ctx.url.origin} → ${target.origin}, HTTP ${status}). A client following it must either send its credential headers to ${target.origin} or drop them and fail to authenticate.`,
+      `Configure clients with the final MCP URL (${target.origin}${target.pathname}), or keep the redirect within ${ctx.url.origin}.`,
+      ev(http),
+    )
   },
 }
 
@@ -584,6 +651,7 @@ export const TRANSPORT_AUTH_CHECKS: CheckDef[] = [
   https,
   tlsCheck,
   downgrade,
+  crossOriginRedirect,
   unauthInitialize,
   wwwAuthenticate,
   prmReachable,

@@ -102,8 +102,12 @@ export type McpAuthType = McpConnectAuth['type']
  * and its token never leaves main.
  */
 export type McpAuthConfig = McpConnectAuth
-/** Config tab strip under the connection bar. */
-export type McpConfigTab = 'auth' | 'headers' | 'env'
+/**
+ * Config tab strip under the connection bar. `scripts` / `tests` host the
+ * HTTP editor's Scripts and Tests tabs (issue #160) — same per-tab request
+ * store fields (`preScript` / `postScript` / `assertions`).
+ */
+export type McpConfigTab = 'auth' | 'headers' | 'env' | 'scripts' | 'tests'
 
 // ─── OAuth 2.1 debugger (issue #141) ─────────────────────────────
 export type McpOAuthStartRequest = Parameters<McpBridge['oauthStart']>[0]
@@ -164,3 +168,40 @@ export interface McpFrame {
 }
 
 export type McpCapabilityTab = 'tools' | 'resources' | 'prompts'
+
+// ─── Cancel / timing / elicitation / history (issues #163, #164, #166, #168) ──
+/** `timing` on every callTool / respondInput / readResource / getPrompt reply. */
+export type McpCallTiming = Awaited<ReturnType<McpBridge['callTool']>>['timing']
+/** Reply of a cancellable call: `timing` always, `cancelled` after `cancelCall`. */
+export type McpCallReply = Awaited<ReturnType<McpBridge['callTool']>>
+/** `opts` of `readResource` / `getPrompt` (same fields as `McpCallContext`). */
+export type McpCallOptions = NonNullable<Parameters<McpBridge['readResource']>[2]>
+/** `mcp:elicitation` — a 2025-era server's `elicitation/create`, routed by `connectionId`. */
+export type McpElicitationEvent = EventOf<McpBridge['onElicitation']>
+/** The answer `respondElicitation` sends. */
+export type McpElicitationResult = Parameters<McpBridge['respondElicitation']>[2]
+
+/**
+ * The restorable request of an MCP History row (issue #166):
+ * `JSON.parse(row.request_snapshot).mcp`. Values are as sent ({{var}}
+ * resolved), credential-like ones masked (`••••••` in args, `***` inside the
+ * URL / command line); headers, auth, OAuth and stdio env are never stored.
+ * Rows: `protocol 'mcp'`, `url` = `mcp.url`, `method` CALL_TOOL /
+ * RESPOND_INPUT (a tool call answered with input; restores as the tool call)
+ * / READ_RESOURCE / GET_PROMPT, `status_code` 0 (ok) or -1 (error / cancel);
+ * `response_snapshot` = the result JSON, or `{ error, cancelled? }`.
+ */
+export interface McpHistoryRequest {
+  transport: McpTransport | 'unknown'
+  /** Server URL, or the stdio command line. */
+  url: string
+  /** Requested protocol option: `auto` · `legacy` · a revision. */
+  protocol: string
+  capability: 'tool' | 'resource' | 'prompt'
+  /** Tool / prompt name (absent for a resource). */
+  name?: string
+  /** Tool / prompt arguments (absent for a resource). */
+  args?: Record<string, unknown>
+  /** Resource URI (resource only). */
+  uri?: string
+}

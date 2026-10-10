@@ -20,7 +20,7 @@ import {
   resolveAuth,
   resolveRequestBody,
 } from '../lib/variable-resolver'
-import { runAssertions, runScript, createPmApi } from '../lib/test-runner'
+import { runAssertions, runScript, createPmApi, resolveAssertionVars } from '../lib/test-runner'
 import { resolveInheritance } from '../lib/auth-inheritance'
 import { makeId } from '../lib/utils'
 // Shared dirty-flag helper, also used by the protocol stores so the blue dot
@@ -769,7 +769,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
 
         // Run built-in assertions
         if (asserts.length > 0) {
-          const assertionResults = runAssertions(asserts, apiResp)
+          // `{{var}}` in a row resolves like on Run (`runAssertionsMainProcess`).
+          const rows = resolveAssertionVars(asserts, (t) => resolveVariables(t, activeVars))
+          const assertionResults = runAssertions(rows, apiResp)
           allTestResults.push(...assertionResults)
         }
 
