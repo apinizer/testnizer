@@ -37,6 +37,8 @@ import FolderSettingsModal from '../modals/FolderSettingsModal'
 import { protocolChipLabel } from '../../lib/protocol-chip'
 import RequestBadge from '../shared/RequestBadge'
 import { useTranslation } from '../../lib/i18n'
+import { toast } from '../../lib/toast'
+import { formatExportSkipped } from '../../lib/export-skipped'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import { openOrReuseRunnerTab as sharedOpenRunnerTab } from '../../lib/open-runner-tab'
 
@@ -489,12 +491,19 @@ export default function TestsPanel() {
         if (!result?.success && result?.error && result.error !== 'Cancelled') {
           console.error('Export suite failed:', result.error)
         }
+        // Postman / Insomnia carry HTTP requests only — name the items (MCP,
+        // WebSocket, gRPC, AI …) left out of the file instead of dropping them
+        // silently (issue #197).
+        if (result?.success && format !== 'testnizer') {
+          const msg = formatExportSkipped(result.data?.skipped, format, t)
+          if (msg) toast.warning(msg)
+        }
       } catch (err) {
         console.error(err)
       }
       setContextMenu(null)
     },
-    [],
+    [t],
   )
 
   // ─── Import suite ─────────────────────────────────────────

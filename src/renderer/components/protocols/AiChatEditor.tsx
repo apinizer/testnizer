@@ -1,317 +1,39 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import { createPortal } from 'react-dom'
-import {
-  AlertTriangle,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Send,
-  Square,
-  Trash2,
-  Bot,
-  User,
-  Settings2,
-} from 'lucide-react'
-import {
-  useAiChatStore,
-  PROVIDER_MODELS,
-  AI_PROVIDERS,
-  resolveDefaultUrl,
-  type AiProvider,
-  type AiProviderInfo,
-} from '../../stores/ai-chat.store'
+import { Send, Square, Trash2, Bot } from 'lucide-react'
+import { useAiChatStore } from '../../stores/ai-chat.store'
+import { ensureAiConversationsLoaded } from '../../stores/ai-chat-conversations'
 import { useTranslation } from '../../lib/i18n'
-import EmptyState from '../shared/EmptyState'
-import KeyValueTable from '../shared/KeyValueTable'
-import { STANDARD_HTTP_HEADERS } from '../../lib/http-headers'
-import AiChatApiKeyField from './ai-chat/AiChatApiKeyField'
-import AiChatParameters from './ai-chat/AiChatParameters'
-import AiChatHeadersSessionNote from './ai-chat/AiChatHeadersSessionNote'
+import AiChatSettingsSection from './ai-chat/AiChatSettingsSection'
+import AiChatToolsSection from './ai-chat/AiChatToolsSection'
+import AiChatConversationView from './ai-chat/AiChatConversationView'
+import AiChatConversationBar from './ai-chat/AiChatConversationBar'
 
-function ProviderAvatar({
-  info,
-  size = 18,
-}: {
-  info: AiProviderInfo
-  size?: number
-}): ReactElement {
-  return (
-    <span
-      className="flex shrink-0 items-center justify-center rounded-md font-bold text-white"
-      style={{
-        width: size,
-        height: size,
-        background: info.color,
-        fontSize: Math.max(10, Math.floor(size * 0.6)),
-      }}
-    >
-      {info.letter}
-    </span>
-  )
-}
-
-function ProviderSelect({
-  value,
-  onChange,
-}: {
-  value: AiProvider
-  onChange: (v: AiProvider) => void
-}): ReactElement {
-  const [open, setOpen] = useState(false)
-  const buttonRef = useRef<HTMLButtonElement>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 })
-
-  const current = AI_PROVIDERS.find((p) => p.id === value) ?? AI_PROVIDERS[0]
-
-  useEffect(() => {
-    if (!open) return
-    const update = (): void => {
-      if (!buttonRef.current) return
-      const r = buttonRef.current.getBoundingClientRect()
-      setPos({ top: r.bottom + 4, left: r.left, width: r.width })
-    }
-    update()
-    const onMouseDown = (e: MouseEvent): void => {
-      const t = e.target as Node
-      if (buttonRef.current?.contains(t)) return
-      if (dropdownRef.current?.contains(t)) return
-      setOpen(false)
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
-    return () => {
-      document.removeEventListener('mousedown', onMouseDown)
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
-    }
-  }, [open])
-
-  return (
-    <div className="relative">
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full cursor-pointer items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--white)] px-2 py-1.5 text-left text-[var(--text)] transition-colors hover:border-[var(--accent)]"
-        style={{ fontSize: 13 }}
-      >
-        <ProviderAvatar info={current} />
-        <span className="flex-1 truncate">{current.label}</span>
-        <ChevronDown size={12} style={{ color: 'var(--muted)' }} />
-      </button>
-      {open &&
-        createPortal(
-          <div
-            ref={dropdownRef}
-            className="fixed z-[9000] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--white)]"
-            style={{
-              top: pos.top,
-              left: pos.left,
-              width: Math.max(pos.width, 220),
-              maxHeight: 320,
-              overflowY: 'auto',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-            }}
-          >
-            {AI_PROVIDERS.map((p) => {
-              const isActive = p.id === value
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    onChange(p.id)
-                    setOpen(false)
-                  }}
-                  className="flex w-full cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left"
-                  style={{
-                    background: isActive ? 'var(--accent-light)' : 'transparent',
-                    color: isActive ? 'var(--accent-text)' : 'var(--text)',
-                    border: 'none',
-                    fontSize: 13,
-                    fontWeight: isActive ? 500 : 400,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive)
-                      (e.currentTarget as HTMLElement).style.background = 'var(--surface)'
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'
-                  }}
-                >
-                  <ProviderAvatar info={p} />
-                  <span className="flex-1 truncate">{p.label}</span>
-                  {isActive && <Check size={12} style={{ color: 'var(--accent)' }} />}
-                </button>
-              )
-            })}
-          </div>,
-          document.body,
-        )}
-    </div>
-  )
-}
-
-// ─── Markdown-lite renderer ─────────────────────────────────
-// Apidog/Postman do basic markdown rendering for assistant turns. We avoid
-// pulling in a markdown lib — just render fenced code blocks specially and
-// preserve paragraph breaks. Inline code with backticks is also handled.
-
-interface MdSegment {
-  type: 'text' | 'code'
-  content: string
-  lang?: string
-}
-
-function parseMarkdown(text: string): MdSegment[] {
-  const segments: MdSegment[] = []
-  const fenceRegex = /```(\w+)?\n([\s\S]*?)(?:```|$)/g
-  let lastIndex = 0
-  let match: RegExpExecArray | null
-  while ((match = fenceRegex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      segments.push({ type: 'text', content: text.slice(lastIndex, match.index) })
-    }
-    segments.push({ type: 'code', content: match[2], lang: match[1] })
-    lastIndex = match.index + match[0].length
-  }
-  if (lastIndex < text.length) {
-    segments.push({ type: 'text', content: text.slice(lastIndex) })
-  }
-  return segments
-}
-
-function MarkdownText({ text }: { text: string }): ReactElement {
-  const segments = parseMarkdown(text)
-  return (
-    <div className="flex flex-col gap-2">
-      {segments.map((seg, i) =>
-        seg.type === 'code' ? (
-          <pre
-            key={i}
-            className="overflow-x-auto rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 font-mono"
-            style={{ fontSize: 12.5 }}
-          >
-            {seg.lang && (
-              <div
-                className="mb-2 uppercase tracking-wider text-[var(--muted)]"
-                style={{ fontSize: 11 }}
-              >
-                {seg.lang}
-              </div>
-            )}
-            <code>{seg.content}</code>
-          </pre>
-        ) : (
-          <div key={i} style={{ whiteSpace: 'pre-wrap' }}>
-            {renderInline(seg.content)}
-          </div>
-        ),
-      )}
-    </div>
-  )
-}
-
-function renderInline(text: string): ReactElement[] {
-  // Inline code: `...`
-  const parts: ReactElement[] = []
-  const regex = /`([^`]+)`/g
-  let lastIndex = 0
-  let match: RegExpExecArray | null
-  let key = 0
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(<span key={key++}>{text.slice(lastIndex, match.index)}</span>)
-    }
-    parts.push(
-      <code
-        key={key++}
-        className="rounded bg-[var(--bg)] px-1 py-0.5 font-mono"
-        style={{ fontSize: 12.5 }}
-      >
-        {match[1]}
-      </code>,
-    )
-    lastIndex = match.index + match[0].length
-  }
-  if (lastIndex < text.length) {
-    parts.push(<span key={key++}>{text.slice(lastIndex)}</span>)
-  }
-  return parts
-}
-
-// ─── Auto-scroll pinning ────────────────────────────────────
+// Kept importable from the editor (tests and older call sites).
+export { isPinnedToBottom, SCROLL_PIN_THRESHOLD_PX } from '../../lib/ai-chat-view'
 
 /**
- * Slack a user gets before we consider them "scrolled away". A couple of
- * lines' worth: sub-pixel rounding on a zoomed window and trackpad inertia
- * both leave the view a few px short of the true bottom, and unpinning there
- * would strand the stream one line above the fold.
+ * AI Chat request editor: Settings, Tools (MCP servers as tools, issue #180),
+ * the conversation (tool calls, approvals, per-message metrics — #198) and
+ * the conversation history (#199).
  */
-export const SCROLL_PIN_THRESHOLD_PX = 40
-
-/**
- * Whether the conversation view is close enough to the bottom that new
- * content should keep following it. Split out of the effect so the decision
- * is testable without a real scrolling layout (jsdom reports 0 for every
- * scroll metric).
- */
-export function isPinnedToBottom(
-  metrics: { scrollTop: number; scrollHeight: number; clientHeight: number },
-  threshold: number = SCROLL_PIN_THRESHOLD_PX,
-): boolean {
-  return metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight <= threshold
-}
-
-// ─── Editor ─────────────────────────────────────────────────
-
 export default function AiChatEditor(): ReactElement {
   const { t } = useTranslation()
-  const provider = useAiChatStore((s) => s.provider)
-  const customUrl = useAiChatStore((s) => s.customUrl)
-  const model = useAiChatStore((s) => s.model)
-  const systemPrompt = useAiChatStore((s) => s.systemPrompt)
-  const customHeaders = useAiChatStore((s) => s.customHeaders)
   const messages = useAiChatStore((s) => s.messages)
   const streaming = useAiChatStore((s) => s.streaming)
-  const errorMessage = useAiChatStore((s) => s.errorMessage)
-  const pendingResponseId = useAiChatStore((s) => s.pendingResponseId)
-
-  const setProvider = useAiChatStore((s) => s.setProvider)
-  const setCustomUrl = useAiChatStore((s) => s.setCustomUrl)
-  const setModel = useAiChatStore((s) => s.setModel)
-  const setSystemPrompt = useAiChatStore((s) => s.setSystemPrompt)
-  const addHeader = useAiChatStore((s) => s.addHeader)
-  const updateHeader = useAiChatStore((s) => s.updateHeader)
-  const removeHeader = useAiChatStore((s) => s.removeHeader)
-  const setHeaders = useAiChatStore((s) => s.setHeaders)
+  const currentTabId = useAiChatStore((s) => s._currentTabId)
+  const conversationLoaded = useAiChatStore((s) => s.conversationLoaded)
   const sendPrompt = useAiChatStore((s) => s.sendPrompt)
   const cancel = useAiChatStore((s) => s.cancel)
   const clearConversation = useAiChatStore((s) => s.clearConversation)
 
-  const [settingsExpanded, setSettingsExpanded] = useState(true)
-  const [headersExpanded, setHeadersExpanded] = useState(false)
-  const enabledHeaderCount = (customHeaders ?? []).filter((h) => h.enabled && h.key.trim()).length
   const [draft, setDraft] = useState('')
-  const conversationRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
 
-  const models = PROVIDER_MODELS[provider]
-  const providerInfo = AI_PROVIDERS.find((p) => p.id === provider) ?? AI_PROVIDERS[0]
-
-  // Auto-scroll follows new content only while the user is parked at the
-  // bottom. Scrolling up mid-stream used to be pointless — every SSE delta
-  // re-ran this effect and yanked the view back down (issue #75).
+  // The request's conversations come from the local database (issue #199) —
+  // once per tab and session (first open / after a restart).
   useEffect(() => {
-    const el = conversationRef.current
-    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
-  }, [messages])
-
-  function handleConversationScroll(e: React.UIEvent<HTMLDivElement>): void {
-    pinnedRef.current = isPinnedToBottom(e.currentTarget)
-  }
+    if (!conversationLoaded) void ensureAiConversationsLoaded()
+  }, [currentTabId, conversationLoaded])
 
   function handleSend(): void {
     const text = draft.trim()
@@ -332,7 +54,6 @@ export default function AiChatEditor(): ReactElement {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
-      {/* Tab bar label */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--white)] px-3.5 py-2">
         <Bot size={16} style={{ color: 'var(--accent-text)' }} />
         <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
@@ -347,6 +68,7 @@ export default function AiChatEditor(): ReactElement {
           </span>
         )}
         <div className="flex-1" />
+        <AiChatConversationBar />
         <button
           type="button"
           onClick={clearConversation}
@@ -359,263 +81,10 @@ export default function AiChatEditor(): ReactElement {
         </button>
       </div>
 
-      {/* Settings (collapsible) */}
-      <div className="shrink-0 border-b border-[var(--border)]">
-        <button
-          type="button"
-          onClick={() => setSettingsExpanded((v) => !v)}
-          className="flex w-full cursor-pointer items-center gap-2 px-3.5 py-2 text-left font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)]"
-          style={{ background: 'transparent', border: 'none' }}
-        >
-          {settingsExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          <span>{t('aiChat.settings')}</span>
-          <span
-            className="ml-1 flex items-center gap-1.5 text-[var(--muted)]"
-            style={{ fontSize: 12 }}
-          >
-            <ProviderAvatar info={providerInfo} size={14} />
-            {providerInfo.label} · {model || '—'}
-          </span>
-        </button>
-        {settingsExpanded && (
-          <div className="grid gap-3 p-3.5 pt-1" style={{ gridTemplateColumns: '1fr 1fr' }}>
-            {/* Provider */}
-            <label className="flex flex-col gap-1">
-              <span className="text-[var(--muted)]" style={{ fontSize: 12 }}>
-                {t('aiChat.provider')}
-              </span>
-              <ProviderSelect value={provider} onChange={setProvider} />
-            </label>
+      <AiChatSettingsSection />
+      <AiChatToolsSection />
+      <AiChatConversationView pinnedRef={pinnedRef} />
 
-            {/* Model */}
-            <label className="flex flex-col gap-1">
-              <span className="text-[var(--muted)]" style={{ fontSize: 12 }}>
-                {t('aiChat.model')}
-              </span>
-              <input
-                list={`ai-models-${provider}`}
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder="model-id"
-                className="rounded-md border border-[var(--border)] bg-[var(--white)] px-2 py-1.5 font-mono text-[var(--text)] outline-none focus:border-[var(--accent)]"
-                style={{ fontSize: 13 }}
-              />
-              <datalist id={`ai-models-${provider}`}>
-                {models.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </datalist>
-            </label>
-
-            {/* Endpoint URL — always editable, pre-filled with the provider's default. */}
-            <label className="flex flex-col gap-1" style={{ gridColumn: '1 / -1' }}>
-              <span className="text-[var(--muted)]" style={{ fontSize: 12 }}>
-                {t('aiChat.endpointUrl')}
-              </span>
-              <input
-                type="text"
-                value={customUrl}
-                onChange={(e) => setCustomUrl(e.target.value)}
-                placeholder={t('aiChat.endpointUrlPlaceholder')}
-                spellCheck={false}
-                className="rounded-md border border-[var(--border)] bg-[var(--white)] px-2 py-1.5 font-mono text-[var(--text)] outline-none focus:border-[var(--accent)]"
-                style={{ fontSize: 13 }}
-              />
-              {provider !== 'custom' && customUrl !== resolveDefaultUrl(provider) && (
-                <button
-                  type="button"
-                  onClick={() => setCustomUrl(resolveDefaultUrl(provider))}
-                  className="cursor-pointer self-start border-none bg-transparent p-0 text-[var(--accent-text)]"
-                  style={{ fontSize: 11 }}
-                >
-                  {t('aiChat.resetToDefault')}
-                </button>
-              )}
-            </label>
-
-            {/* API Key — stored encrypted per provider, never with the request (issue #188) */}
-            <AiChatApiKeyField />
-
-            {/* System prompt */}
-            <label className="flex flex-col gap-1" style={{ gridColumn: '1 / -1' }}>
-              <span className="text-[var(--muted)]" style={{ fontSize: 12 }}>
-                {t('aiChat.systemPrompt')}
-              </span>
-              <textarea
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-                placeholder={t('aiChat.systemPromptPlaceholder')}
-                rows={2}
-                className="resize-y rounded-md border border-[var(--border)] bg-[var(--white)] px-2 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
-                style={{ fontSize: 13 }}
-              />
-            </label>
-
-            {/* Temperature + max tokens (issue #189) */}
-            <AiChatParameters />
-
-            {/* Custom headers (issue #120) */}
-            <div
-              className="rounded-md border border-[var(--border)]"
-              style={{ gridColumn: '1 / -1' }}
-              data-testid="ai-chat-headers"
-            >
-              <button
-                type="button"
-                onClick={() => setHeadersExpanded((v) => !v)}
-                className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[var(--text)] hover:bg-[var(--hover)]"
-                style={{ background: 'transparent', border: 'none', fontSize: 12 }}
-                aria-expanded={headersExpanded}
-              >
-                {headersExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                <Settings2 size={14} className="text-[var(--muted)]" />
-                <span>{t('aiChat.headers')}</span>
-                {enabledHeaderCount > 0 && (
-                  <span
-                    className="ml-1 rounded-full px-[5px]"
-                    style={{ background: 'var(--green-bg)', color: 'var(--green)' }}
-                  >
-                    {enabledHeaderCount}
-                  </span>
-                )}
-              </button>
-              {headersExpanded && (
-                <div className="border-t border-[var(--border)] p-3">
-                  <p className="mb-2 text-[var(--muted)]" style={{ fontSize: 11 }}>
-                    {t('aiChat.headersHint')}
-                  </p>
-                  <KeyValueTable
-                    rows={customHeaders ?? []}
-                    onUpdate={updateHeader}
-                    onRemove={removeHeader}
-                    onAdd={addHeader}
-                    onReplaceAll={setHeaders}
-                    addLabel={t('aiChat.addHeader')}
-                    keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
-                  />
-                </div>
-              )}
-              {/* Shown collapsed too — a literal credential is not saved (issue #187). */}
-              <AiChatHeadersSessionNote />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Conversation */}
-      <div
-        ref={conversationRef}
-        data-testid="ai-conversation"
-        onScroll={handleConversationScroll}
-        className="flex-1 overflow-y-auto p-3.5"
-      >
-        {messages.length === 0 && !errorMessage ? (
-          <EmptyState
-            icon={Bot}
-            title={t('aiChat.emptyTitle')}
-            description={t('aiChat.emptyHint')}
-            size="lg"
-          />
-        ) : (
-          <div className="flex flex-col gap-3">
-            {messages.map((m) => {
-              if (m.role === 'user') {
-                return (
-                  <div key={m.id} className="flex justify-end">
-                    <div
-                      className="flex max-w-[80%] items-start gap-2 rounded-lg px-3 py-2"
-                      style={{
-                        background: 'var(--accent-light)',
-                        border: '1px solid var(--accent)',
-                        color: 'var(--text)',
-                      }}
-                    >
-                      <div
-                        data-testid="ai-bubble-text"
-                        className="flex-1 cursor-text select-text"
-                        style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}
-                      >
-                        {m.content}
-                      </div>
-                      <User
-                        size={14}
-                        className="select-none"
-                        style={{ color: 'var(--accent-text)', marginTop: 2 }}
-                      />
-                    </div>
-                  </div>
-                )
-              }
-              const isStreamingThis = pendingResponseId === m.id
-              return (
-                <div key={m.id} className="flex justify-start">
-                  <div
-                    className="flex max-w-[85%] items-start gap-2 rounded-lg px-3 py-2"
-                    style={{
-                      background: 'var(--surface)',
-                      border: '1px solid var(--border)',
-                      color: 'var(--text)',
-                    }}
-                  >
-                    <Bot
-                      size={14}
-                      className="select-none"
-                      style={{ color: 'var(--accent-text)', marginTop: 2 }}
-                    />
-                    <div
-                      data-testid="ai-bubble-text"
-                      className="flex-1 cursor-text select-text"
-                      style={{ fontSize: 13 }}
-                    >
-                      {m.content ? <MarkdownText text={m.content} /> : null}
-                      {m.truncated && (
-                        <div
-                          data-testid="ai-truncated-note"
-                          role="note"
-                          className="mt-2 flex items-center gap-1.5 text-[var(--orange)]"
-                          style={{ fontSize: 12 }}
-                        >
-                          <AlertTriangle size={12} />
-                          {t('aiChat.truncated')}
-                        </div>
-                      )}
-                      {isStreamingThis && (
-                        <span
-                          className="ml-0.5 inline-block animate-pulse"
-                          style={{
-                            width: 8,
-                            height: 14,
-                            background: 'var(--accent)',
-                            verticalAlign: 'middle',
-                            borderRadius: 1,
-                          }}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-            {errorMessage && (
-              <div
-                className="rounded-md border px-3 py-2"
-                style={{
-                  background: '#fff0f0',
-                  borderColor: '#f5b3b3',
-                  color: '#cc2200',
-                  fontSize: 12.5,
-                }}
-              >
-                {errorMessage}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Prompt input */}
       <div className="shrink-0 border-t border-[var(--border)] p-3.5">
         <div className="flex items-end gap-2 rounded-lg border border-[var(--border)] bg-[var(--white)] p-2 focus-within:border-[var(--accent)]">
           <textarea

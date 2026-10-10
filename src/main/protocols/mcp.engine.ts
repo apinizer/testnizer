@@ -2318,3 +2318,126 @@ export async function mcpCallOnce(opts: McpOneShotOptions): Promise<McpOneShotOu
     signal?.removeEventListener('abort', onAbort)
   }
 }
+
+// ─── Detached session (AI Chat tools, issue #180) ───────────
+
+/** An open detached connection with its tool list — one per server per AI Chat Send. */
+export interface McpDetachedSession {
+  connectionId: string
+  protocolVersion?: string
+  tools: McpTool[]
+}
+
+/**
+ * Connect (detached: no events, elicitations cancelled at once) and list the
+ * server's tools, for a caller that keeps the connection for several calls
+ * (AI Chat's tool loop: connect, list, call…, disconnect — `mcpCallOnce`
+ * reconnects per call and cannot list before the first one). `signal` aborts
+ * the handshake (`McpCallCancelledError`); the connect + `tools/list` phase is
+ * bounded by `timeoutMs` (default `MCP_ONE_SHOT_TIMEOUT_MS`, `0` = none). A
+ * connection that comes up after the attempt was abandoned is closed. The
+ * caller closes a returned session with `mcpDisconnect`.
+ */
+export async function mcpOpenDetachedSession(opts: {
+  connect: McpOneShotOptions['connect']
+  signal?: AbortSignal
+  timeoutMs?: number
+}): Promise<McpDetachedSession> {
+  const { signal } = opts
+  if (signal?.aborted) throw new McpCallCancelledError()
+  const pendingId = makeId()
+  const ms =
+    opts.timeoutMs !== undefined && Number.isFinite(opts.timeoutMs) && opts.timeoutMs >= 0
+      ? opts.timeoutMs
+      : MCP_ONE_SHOT_TIMEOUT_MS
+  let abandoned = false
+  let connectionId: string | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let onAbort: (() => void) | undefined
+  const stop = new Promise<never>((_resolve, reject) => {
+    const give = (err: Error): void => {
+      abandoned = true
+      void mcpCancelConnect(pendingId)
+      reject(err)
+    }
+    onAbort = () => give(new McpCallCancelledError())
+    signal?.addEventListener('abort', onAbort, { once: true })
+    if (ms > 0) {
+      timer = setTimeout(() => give(new Error(`MCP connect timed out after ${ms} ms`)), ms)
+      timer.unref?.()
+    }
+  })
+  stop.catch(() => {})
+  const connecting = mcpConnect({ ...opts.connect, pendingId, detached: true }).then((info) => {
+    // Came up after the attempt was given up — nobody will use or close it.
+    if (abandoned) void mcpDisconnect(info.connectionId).catch(() => {})
+    return info
+  })
+  connecting.catch(() => {})
+  try {
+    const info = await Promise.race([connecting, stop])
+    connectionId = info.connectionId
+    const tools = await Promise.race([mcpListTools(info.connectionId), stop])
+    return {
+      connectionId: info.connectionId,
+      ...(info.protocolVersion ? { protocolVersion: info.protocolVersion } : {}),
+      tools,
+    }
+  } catch (err) {
+    if (connectionId) await mcpDisconnect(connectionId).catch(() => {})
+    throw err
+  } finally {
+    clearTimeout(timer)
+    if (onAbort) signal?.removeEventListener('abort', onAbort)
+  }
+}
+
+/** Result of one tool call on a detached session. Never thrown. */
+export interface McpSessionCallOutcome {
+  result?: unknown
+  error?: string
+  cancelled?: boolean
+  /** The server asked for user input (`input_required` or an elicitation) — nobody can answer. */
+  inputRequired?: boolean
+}
+
+/**
+ * One `tools/call` on a detached session. `signal` cancels it (the server gets
+ * `notifications/cancelled`), `timeoutMs` bounds it like Send's call timeout
+ * (`0` = none). The connection's "input requested" flag is reset before the
+ * call so each call reports only its own request.
+ */
+export async function mcpSessionCallTool(
+  connectionId: string,
+  name: string,
+  args: Record<string, unknown>,
+  opts: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<McpSessionCallOutcome> {
+  const conn = connections.get(connectionId)
+  if (!conn) return { error: 'MCP connection is closed' }
+  if (opts.signal?.aborted) return { cancelled: true, error: MCP_CALL_CANCELLED_MESSAGE }
+  conn.state.inputRequested = false
+  const callId = makeId()
+  const onAbort = (): void => {
+    mcpCancelCall(connectionId, callId)
+  }
+  opts.signal?.addEventListener('abort', onAbort, { once: true })
+  try {
+    const result = await mcpCallTool(connectionId, name, args, {
+      callId,
+      ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+    })
+    const inputRequired =
+      connections.get(connectionId)?.state.inputRequested === true || isInputRequiredMarker(result)
+    return inputRequired ? { result, inputRequired } : { result }
+  } catch (err) {
+    if (err instanceof McpCallCancelledError || opts.signal?.aborted) {
+      return { cancelled: true, error: MCP_CALL_CANCELLED_MESSAGE }
+    }
+    const inputRequired = connections.get(connectionId)?.state.inputRequested === true
+    const message = err instanceof Error ? err.message : String(err)
+    return { error: message || 'MCP call failed', ...(inputRequired ? { inputRequired } : {}) }
+  } finally {
+    opts.signal?.removeEventListener('abort', onAbort)
+  }
+}

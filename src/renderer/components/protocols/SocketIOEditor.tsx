@@ -111,9 +111,10 @@ export default function SocketIOEditor() {
         >
           {isConnecting ? 'Cancel' : isConnected ? 'Disconnect' : 'Connect'}
         </button>
-        {store.connectionState === 'error' && store.errorMessage && (
-          <span style={{ fontSize: 12, color: T.DELETE.color }}>{store.errorMessage}</span>
-        )}
+        {(store.connectionState === 'error' || store.connectionState === 'connected') &&
+          store.errorMessage && (
+            <span style={{ fontSize: 12, color: T.DELETE.color }}>{store.errorMessage}</span>
+          )}
       </div>
 
       {/* ─ Body ─ */}

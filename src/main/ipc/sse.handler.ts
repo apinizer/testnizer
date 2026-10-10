@@ -8,6 +8,7 @@ import {
 } from '../protocols/sse.engine'
 import { logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
+import type { HistoryConfigured } from '../../shared/history-snapshot'
 
 interface SseConnectPayload {
   url: string
@@ -22,6 +23,8 @@ interface SseConnectPayload {
   _endpointId?: string
   /** Renderer-supplied id so `sse:cancelConnect(id)` can abort the handshake. */
   _pendingId?: string
+  /** Editor state (`{{var}}` kept) for History reopen (issues #182, #195). */
+  _configured?: HistoryConfigured
 }
 
 const sseContext = new Map<string, { url: string; tabId?: string; connectedAt: number }>()
@@ -89,6 +92,7 @@ export function registerSseHandlers(): void {
               headers: payload.headers,
               lastEventId: payload.lastEventId,
               body: payload.body,
+              ...(payload._configured ? { configured: payload._configured } : {}),
             }),
             response_snapshot: JSON.stringify({
               status: 200,
@@ -127,6 +131,7 @@ export function registerSseHandlers(): void {
               url: payload.url,
               method: payload.method ?? 'GET',
               headers: payload.headers,
+              ...(payload._configured ? { configured: payload._configured } : {}),
             }),
             response_snapshot: JSON.stringify({ error: (err as Error).message }),
           })

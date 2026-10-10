@@ -626,6 +626,24 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       useTls,
       _workspaceId: ws.activeWorkspaceId || undefined,
       _projectId: ws.activeProjectId || undefined,
+      // Editor state with `{{var}}` kept — the History row reopens from it
+      // (issues #182, #195). Same shape `snapshotProtocol` saves.
+      _configured: {
+        url: address,
+        meta: {
+          grpc: {
+            address,
+            useTls,
+            protoSource: get().protoSource,
+            protoUrl: get().protoUrl,
+            protoPath,
+            selectedService,
+            selectedMethod,
+            requestBody,
+            metadata,
+          },
+        },
+      },
     }
 
     // Helper that writes a partial state into the owning tab — either live

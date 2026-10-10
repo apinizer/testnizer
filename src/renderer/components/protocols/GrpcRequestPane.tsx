@@ -331,7 +331,7 @@ export default function GrpcRequestPane() {
                   onUpdate={updateMetadata}
                   onRemove={removeMetadata}
                   onAdd={addMetadata}
-                  addLabel="+ Add Metadata"
+                  addLabel={t('kv.addMetadata')}
                 />
               </div>
             )}

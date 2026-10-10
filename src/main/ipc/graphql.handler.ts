@@ -9,6 +9,8 @@ import {
 } from '../protocols/graphql.engine'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
+import type { HistoryConfigured } from '../../shared/history-snapshot'
+import { authSecretValues } from '../lib/sensitive-scrub'
 
 interface GraphqlExecutePayload {
   url: string
@@ -35,6 +37,8 @@ interface GraphqlExecutePayload {
   _workspaceId?: string
   _projectId?: string
   _endpointId?: string
+  /** Editor state (`{{var}}` kept) for the History row's `configured` (issues #182, #195). */
+  _configured?: HistoryConfigured
 }
 
 interface GraphqlIntrospectPayload {
@@ -104,6 +108,7 @@ export function registerGraphqlHandlers(): void {
             : undefined,
         tabId: payload._tabId,
         meta: { operation: opName, gqlErrors: hasGqlErrors },
+        secrets: authSecretValues(payload.auth),
       })
 
       try {
@@ -123,7 +128,9 @@ export function registerGraphqlHandlers(): void {
             operationName: payload.operationName,
             headers: response.actualRequest?.headers,
             body: response.actualRequest?.body,
+            ...(payload._configured ? { configured: payload._configured } : {}),
           }),
+          extra_secrets: authSecretValues(payload.auth),
           response_snapshot: JSON.stringify({
             status: response.status,
             statusText: response.statusText,

@@ -4,6 +4,11 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useTabsStore } from '../../stores/tabs.store'
+import {
+  aiSaveAsAction,
+  rehomeAiConversations,
+  startFreshForNewRow,
+} from '../../stores/ai-chat-conversations'
 import { useTranslation } from '../../lib/i18n'
 import {
   requestSettingsFor,
@@ -214,6 +219,15 @@ export default function EndpointSaveModal() {
       if (savedId) {
         const tabId = useTabsStore.getState().activeTabId
         if (tabId) {
+          // An unsaved AI tab's conversations follow it to the new row (issue
+          // #199). A tab already backed by a row keeps its conversations there
+          // — Save As does not copy them; the view starts fresh only when the
+          // conversations' owner id really changes (`aiSaveAsAction`).
+          if (protocol === 'ai') {
+            const action = aiSaveAsAction(activeTab ?? { id: tabId }, savedId)
+            if (action === 'rehome') await rehomeAiConversations(tabId, savedId)
+            else if (action === 'fresh') startFreshForNewRow()
+          }
           useTabsStore.getState().markDirty(tabId, false)
           useTabsStore.getState().updateTab(tabId, {
             name: endpointName.trim() || 'Untitled',

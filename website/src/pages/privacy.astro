@@ -128,7 +128,8 @@ import BaseLayout from '../layouts/BaseLayout.astro'
                 <tr><td class="px-4 py-2.5 font-medium text-text">Secrets (passwords, tokens, certificates)</td><td class="px-4 py-2.5 text-text-muted">OS keychain via Electron <code>safeStorage</code> (macOS Keychain, Windows DPAPI, libsecret on Linux)</td></tr>
                 <tr><td class="px-4 py-2.5 font-medium text-text">Logs (if any)</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/logs/</td></tr>
                 <tr><td class="px-4 py-2.5 font-medium text-text">AI Chat provider API keys</td><td class="px-4 py-2.5 text-text-muted">In <code>&lt;userData&gt;/settings.json</code>, one key per provider, encrypted via <code>safeStorage</code>. If encryption is unavailable on your system, the key is kept in memory only for the current session and is not written to disk.</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">AI Chat tab state &amp; saved AI Chat requests</td><td class="px-4 py-2.5 text-text-muted">Local application storage and the database. Saved requests contain the provider, model, endpoint URL, system prompt, custom headers with literal credential values removed, and generation settings; they never contain the API key. The conversation in an open AI Chat tab is kept in local application storage so that it survives a restart.</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">AI Chat tab state &amp; saved AI Chat requests</td><td class="px-4 py-2.5 text-text-muted">Local application storage and the database. Saved requests contain the provider, model, endpoint URL, system prompt, custom headers with literal credential values removed, and generation settings; they never contain the API key, and never "Run tools without asking".</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">AI Chat conversations</td><td class="px-4 py-2.5 text-text-muted">The local database only. Each AI Chat request keeps a list of conversations — prompts, responses, MCP tool-call arguments, tool results (each capped at 32,000 characters) and per-message metrics (status, timings, token counts) — so they survive a restart. They are deleted with their request or project, and they are never written to project files, git checkouts, exports or duplicated projects.</td></tr>
               </tbody>
             </table>
           </div>
@@ -224,8 +225,9 @@ import BaseLayout from '../layouts/BaseLayout.astro'
             authenticated with the API key you supplied. Testnizer does not proxy or relay this
             content, and we never receive it. Nothing leaves your machine except the request to the
             provider you selected. On your own device, the prompts and responses are shown in the
-            in-app Console log (held in memory, not sent anywhere), and the conversation of an open
-            AI Chat tab is kept in local application storage (Section 3). It is a direct connection
+            in-app Console log (held in memory, not sent anywhere), and AI Chat conversations — including
+            tool-call arguments and tool results — are stored in the local database (Section 3), never in
+            project files or git. It is a direct connection
             between your device and the provider you selected.
           </p>
           <ul class="mt-3 space-y-2 list-disc list-outside ml-5">
@@ -233,6 +235,7 @@ import BaseLayout from '../layouts/BaseLayout.astro'
             <li>The AI provider you selected sees your prompts, responses, and IP. Each provider has its own privacy policy, retention policy, and training-data policy. <strong class="text-text">Review the privacy policy of the provider you select before sending sensitive data.</strong></li>
             <li>Data sent to AI providers may be retained or used to improve their models, entirely outside our control.</li>
             <li>You can run AI Chat <strong class="text-text">fully offline</strong> by selecting the <strong class="text-text">Custom</strong> provider and entering the URL of a locally-hosted, OpenAI-compatible endpoint. No outbound traffic leaves your machine in that case.</li>
+            <li><strong class="text-text">MCP servers as tools:</strong> if you enable MCP servers in an AI Chat request's Tools tab, the arguments the model chooses for a tool call are sent to that MCP server and the tool's result is sent back to the AI provider as part of the conversation. Every tool call asks for your approval unless you turn on "Run tools without asking" for that tab (a per-tab setting on this computer, never saved with the request). A local (stdio) server is started only after you explicitly trust its command on this computer.</li>
             <li>Your API keys are stored locally, encrypted via <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">safeStorage</code> (the OS keychain; Section 3), one key per provider. They are never written to saved requests or exported project files, and are sent only to the provider they belong to.</li>
           </ul>
           <p class="mt-3 text-xs text-text-soft">

@@ -481,6 +481,12 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     if (typeof s.bearerToken === 'string') sio.setBearerToken(s.bearerToken)
     if (typeof s.emitEvent === 'string') sio.setEmitEvent(s.emitEvent)
     if (typeof s.emitPayload === 'string') sio.setEmitPayload(s.emitPayload)
+    // Snapshotted but never restored (found with issue #182).
+    if (Array.isArray(s.subscriptions)) {
+      useSocketIOStore.setState({
+        subscriptions: s.subscriptions.filter((x): x is string => typeof x === 'string'),
+      })
+    }
     return
   }
 
@@ -521,6 +527,9 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     }
     if (typeof g.protoUrl === 'string') grpc.setProtoUrl(g.protoUrl)
     if (typeof g.requestBody === 'string') grpc.setRequestBody(g.requestBody)
+    // Metadata was snapshotted but never restored, so reopened gRPC tabs lost
+    // their auth / tracing metadata (found with issue #182).
+    if (Array.isArray(g.metadata)) useGrpcStore.setState({ metadata: g.metadata as KeyValuePair[] })
     // `services` and `selectedService/Method` aren't restored here —
     // services need to be re-parsed by reloading the proto, otherwise
     // we'd be writing dropdown selections that the editor can't render.

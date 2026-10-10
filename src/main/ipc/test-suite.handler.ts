@@ -28,6 +28,7 @@ import {
   type EndpointCaseRow,
 } from '../db/endpoint.repo'
 import { readRequestSettingsJson } from '../../shared/request-settings'
+import { removeByOwners, suiteFolderOwnerIds, suiteOwnerIds } from '../db/ai-conversation.repo'
 
 interface TestSuiteRow {
   id: string
@@ -611,8 +612,11 @@ export function registerTestSuiteHandlers(): void {
   ipcMain.handle('testSuite:delete', async (_event, id: string) => {
     try {
       const db = getDb()
+      // AI Chat conversations of the suite's items (issue #199) — explicit delete only.
+      const owners = suiteOwnerIds(id)
       // FK cascade handles folders + items
       db.prepare('DELETE FROM test_suites WHERE id = ?').run(id)
+      removeByOwners(owners)
       return { success: true, data: true }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -790,6 +794,7 @@ export function registerTestSuiteHandlers(): void {
   ipcMain.handle('testSuiteItem:delete', async (_event, id: string) => {
     try {
       const ok = deleteItem(id)
+      if (ok) removeByOwners([id])
       return { success: true, data: { deleted: ok } }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -843,6 +848,7 @@ export function registerTestSuiteHandlers(): void {
         // The old payload referred to endpoint_id but the new model has
         // suite item ids; treat it as the item id.
         const ok = deleteItem(payload.endpoint_id)
+        if (ok) removeByOwners([payload.endpoint_id])
         return { success: true, data: ok }
       } catch (e) {
         return { success: false, error: (e as Error).message }
@@ -876,7 +882,9 @@ export function registerTestSuiteHandlers(): void {
 
   ipcMain.handle('testSuiteFolder:delete', async (_event, id: string) => {
     try {
+      const owners = suiteFolderOwnerIds(id)
       const ok = deleteFolder(id)
+      if (ok) removeByOwners(owners)
       return { success: true, data: { deleted: ok } }
     } catch (e) {
       return { success: false, error: (e as Error).message }

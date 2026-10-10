@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { getDb } from './database'
+import { invalidateSecretInventory } from '../lib/secret-inventory-cache'
 
 export interface EnvironmentRow {
   id: string
@@ -129,6 +130,8 @@ export function setActiveEnvironmentForProject(projectId: string, environmentId:
 }
 
 export function deleteEnvironment(id: string): boolean {
+  // Console mask cache (issues #195 / #196): a secret flag / value may change.
+  invalidateSecretInventory()
   const db = getDb()
   const result = db.prepare('DELETE FROM environments WHERE id = ?').run(id)
   return result.changes > 0
@@ -152,6 +155,8 @@ export function createVariable(data: {
   secret?: boolean
   initial_value?: string
 }): EnvironmentVariableRow {
+  // Console mask cache (issues #195 / #196): a secret flag / value may change.
+  invalidateSecretInventory()
   const db = getDb()
   const id = randomUUID()
 
@@ -186,6 +191,8 @@ export function updateVariable(
     initial_value?: string
   },
 ): EnvironmentVariableRow | undefined {
+  // Console mask cache (issues #195 / #196): a secret flag / value may change.
+  invalidateSecretInventory()
   const db = getDb()
   const existing = db.prepare('SELECT * FROM environment_variables WHERE id = ?').get(id) as
     | EnvironmentVariableRow
@@ -212,6 +219,8 @@ export function updateVariable(
 }
 
 export function deleteVariable(id: string): boolean {
+  // Console mask cache (issues #195 / #196): a secret flag / value may change.
+  invalidateSecretInventory()
   const db = getDb()
   const result = db.prepare('DELETE FROM environment_variables WHERE id = ?').run(id)
   return result.changes > 0
@@ -243,6 +252,8 @@ export function createGlobalVariable(data: {
   secret?: boolean
   initial_value?: string
 }): GlobalVariableRow {
+  // Console mask cache (issues #195 / #196): a secret flag / value may change.
+  invalidateSecretInventory()
   const db = getDb()
   const id = randomUUID()
 
@@ -276,6 +287,8 @@ export function updateGlobalVariable(
     initial_value?: string
   },
 ): GlobalVariableRow | undefined {
+  // Console mask cache (issues #195 / #196): a secret flag / value may change.
+  invalidateSecretInventory()
   const db = getDb()
   const existing = db.prepare('SELECT * FROM global_variables WHERE id = ?').get(id) as
     | GlobalVariableRow
@@ -300,6 +313,8 @@ export function updateGlobalVariable(
 }
 
 export function deleteGlobalVariable(id: string): boolean {
+  // Console mask cache (issues #195 / #196): a secret flag / value may change.
+  invalidateSecretInventory()
   const db = getDb()
   const result = db.prepare('DELETE FROM global_variables WHERE id = ?').run(id)
   return result.changes > 0

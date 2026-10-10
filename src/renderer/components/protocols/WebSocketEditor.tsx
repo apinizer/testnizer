@@ -6,8 +6,10 @@ import { STANDARD_HTTP_HEADERS } from '../../lib/http-headers'
 import WsConnectionBar from './WsConnectionBar'
 import WsComposer from './WsComposer'
 import WsMessageLog from './WsMessageLog'
+import { useTranslation } from '../../lib/i18n'
 
 export default function WebSocketEditor() {
+  const { t } = useTranslation()
   const [headersExpanded, setHeadersExpanded] = useState(false)
   const customHeaders = useWebSocketStore((s) => s.customHeaders)
   const addHeader = useWebSocketStore((s) => s.addHeader)
@@ -66,7 +68,7 @@ export default function WebSocketEditor() {
                 onUpdate={updateHeader}
                 onRemove={removeHeader}
                 onAdd={addHeader}
-                addLabel="+ Add Header"
+                addLabel={t('kv.addHeader')}
                 keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
               />
             </div>

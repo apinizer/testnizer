@@ -4,6 +4,7 @@ import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables } from '../lib/variable-resolver'
 import { makeId } from '../lib/utils'
+import { socketioMaskedSendError } from '../lib/masked-send-guard'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for Socket.IO, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
@@ -132,6 +133,12 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
   connect: async () => {
     const { url, namespace, bearerToken } = get()
     if (!url.trim()) return
+    // Issue #195: a History mask left in a credential field is never sent.
+    const maskedConnect = socketioMaskedSendError({ url, bearerToken })
+    if (maskedConnect) {
+      set({ connectionState: 'error', errorMessage: maskedConnect })
+      return
+    }
     const pendingConnectId = makeId()
     set({
       connectionState: 'connecting',
@@ -164,6 +171,21 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
       _workspaceId: ws.activeWorkspaceId || undefined,
       _projectId: ws.activeProjectId || undefined,
       _pendingId: pendingConnectId,
+      // Editor state with `{{var}}` kept — the History row reopens from it
+      // (issues #182, #195). Same shape `snapshotProtocol` saves.
+      _configured: {
+        url,
+        meta: {
+          socketio: {
+            url,
+            namespace,
+            bearerToken,
+            subscriptions: get().subscriptions,
+            emitEvent: get().emitEvent,
+            emitPayload: get().emitPayload,
+          },
+        },
+      },
     })
 
     if (res.success && res.data) {
@@ -232,6 +254,13 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
   emit: async () => {
     const { connectionId, emitEvent, emitPayload } = get()
     if (!connectionId || !emitEvent.trim()) return
+    // Issue #195: a History mask left in a credential field is never sent.
+    const maskedEmit = socketioMaskedSendError({ emitPayload })
+    if (maskedEmit) {
+      set({ errorMessage: maskedEmit })
+      return
+    }
+    set({ errorMessage: null })
     const vars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedEvent = resolveVariables(emitEvent, vars)
     const resolvedPayload = resolveVariables(emitPayload, vars)

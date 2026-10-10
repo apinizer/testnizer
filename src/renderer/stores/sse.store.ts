@@ -299,6 +299,22 @@ export const useSseStore = create<SseStore>((set, get) => ({
         _workspaceId: wsStore.activeWorkspaceId || undefined,
         _projectId: wsStore.activeProjectId || undefined,
         _pendingId: pendingConnectId,
+        // Editor state with `{{var}}` kept — the History row reopens from it
+        // (issues #182, #195). Same shape `snapshotProtocol` saves.
+        _configured: {
+          url,
+          meta: {
+            sse: {
+              url,
+              method,
+              body,
+              bodyType,
+              customHeaders,
+              lastEventId,
+              eventTypeFilter: get().eventTypeFilter,
+            },
+          },
+        },
       })
       if (result?.success && result.data) {
         const newId = result.data.connectionId

@@ -71,6 +71,13 @@ import { mcpCallOnce, type McpOneShotCall, type McpTransport } from '../protocol
 import { isStdioServerTrusted, MCP_STDIO_UNTRUSTED_MESSAGE } from '../lib/mcp-stdio-trust'
 import { isCredentialHeaderName } from '../lib/credential-headers'
 import { MASKED_VALUE } from '../db/saved-response.repo'
+import {
+  authSecretValues,
+  loadSecretInventory,
+  maskRunResult,
+  scrubberFor,
+  type SecretDb,
+} from '../lib/sensitive-scrub'
 import { mcpOutcomeToResponse, mcpScriptInfo, type McpScriptInfo } from '../../shared/mcp-response'
 import {
   INLINE_MASK,
@@ -1075,6 +1082,7 @@ async function runUserScript(
               error: apiResp.error ? { message: apiResp.error } : undefined,
               tabId: ctx.consoleTag.tabId,
               meta: { ...ctx.consoleTag.meta, via: 'pm.sendRequest' },
+              secrets: [...authSecretValues(sendOptions.auth), ...liveSecretValues(ctx.envVars)],
             })
           }
           return buildResponseShim({
@@ -1486,7 +1494,42 @@ interface StepOutcome {
  * (`countsTowardRunVerdict`) so cleanup can neither rescue a failed run nor
  * fail a green one; skipped rows stay neutral exactly as they did before.
  */
-function recordStep(ctx: RunContext, result: EndpointRunResult): StepOutcome {
+/** The DB handle for the secret inventory — null before init (never throws). */
+function secretDb(): SecretDb | null {
+  try {
+    return getDb()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Current values of the variables marked secret, as the run holds them now.
+ * A setup step's `pm.environment.set('token', …)` is only written back to the
+ * DB when the run ends, so the DB alone would miss it (issue #195).
+ */
+function liveSecretValues(envVars: Record<string, string>): string[] {
+  const out: string[] = []
+  for (const k of loadSecretInventory(secretDb()).keys) {
+    const v = envVars[k]
+    if (typeof v === 'string' && v) out.push(v)
+  }
+  return out
+}
+
+/**
+ * `secrets`: values this step's request carried beyond the variables marked
+ * secret (its resolved auth). The result is masked HERE — the one funnel for
+ * the live `runner:progress` view, the run's return value (the renderer keeps
+ * it in sessionStorage for the report) and `runner_history.results_json`
+ * (issue #195).
+ */
+function recordStep(
+  ctx: RunContext,
+  rawResult: EndpointRunResult,
+  secrets: unknown[] = [],
+): StepOutcome {
+  const result = maskRunResult(rawResult, scrubberFor(secretDb(), secrets, ctx.envVars))
   ctx.results.push(result)
   const didPass = endpointDidPass(result)
   const skipped = (result.skipped ?? 0) > 0
@@ -1849,6 +1892,9 @@ async function runEndpointStep(
 
     // Resolve environment variables in request
     const resolvedOptions = resolveRequestOptions(requestOptions, envVars)
+    // The resolved auth's secrets — masked from the Console entry, the History
+    // row and the step result wherever they appear (issue #195).
+    const authSecrets = authSecretValues(resolvedOptions.auth)
     // Scope the cookie jar to this project so session cookies (login →
     // protected call) behave the same in Run as they do in Send. Without
     // it the engine falls back to the shared "_default" jar (issue: Send
@@ -1934,6 +1980,7 @@ async function runEndpointStep(
       error: response.error ? { message: response.error } : undefined,
       tabId: consoleTag.tabId,
       meta: consoleTag.meta,
+      secrets: [...authSecrets, ...liveSecretValues(envVars)],
     })
 
     // Run post-response (test) scripts in cascade order (project →
@@ -1998,7 +2045,18 @@ async function runEndpointStep(
           auth: resolvedOptions.auth
             ? { type: (resolvedOptions.auth as AuthConfig).type }
             : undefined,
+          // The endpoint as configured (`{{var}}` kept, inherited auth folded
+          // in) — what reopening / re-sending this row uses (issue #195).
+          configured: {
+            method: requestOptions.method,
+            url: requestOptions.url,
+            params: requestOptions.params ?? [],
+            headers: requestOptions.headers ?? [],
+            body: requestOptions.body,
+            auth: requestOptions.auth,
+          },
         }),
+        extra_secrets: [...authSecrets, ...liveSecretValues(envVars)],
         response_snapshot: JSON.stringify({
           status: response.status,
           statusText: response.statusText,
@@ -2110,7 +2168,7 @@ async function runEndpointStep(
     // (an idempotent DELETE asserting `oneOf([200,204,404,400])` passes on
     // 400 — issue #16), HTTP-status fallback only for check-less requests.
     // `recordStep` applies it and routes the tally to the right phase.
-    const outcome = recordStep(ctx, result)
+    const outcome = recordStep(ctx, result, authSecrets)
     // Hand the caller whatever pm.execution.setNextRequest() asked for —
     // only the main phase has a sequence to jump around in.
     return { ...outcome, nextRequestName: scriptCtx.nextRequestName }
@@ -3383,11 +3441,16 @@ export function registerRunnerHandlers(): void {
 
   ipcMain.handle('runner:export', async (_event, options: RunnerExportOptions) => {
     try {
+      // Masked again on the way out (issue #195): live results are already
+      // masked in `recordStep`, but results handed back from an older
+      // session's report — or a run recorded before masking existed — are not.
+      const scrub = scrubberFor(secretDb())
+      const results = (options.results ?? []).map((r) => maskRunResult(r, scrub))
       let content: string
       if (options.format === 'html') {
-        content = exportAsHtml(options.results)
+        content = exportAsHtml(results)
       } else {
-        content = exportAsJson(options.results)
+        content = exportAsJson(results)
       }
       return { success: true, data: content }
     } catch (e) {

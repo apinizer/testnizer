@@ -8,9 +8,11 @@ import { isBlankScratchTab } from '../../lib/tab-kind'
 import { isRequestLikeTab } from '../../lib/mark-dirty'
 import { openEndpointTab } from '../../lib/open-endpoint-tab'
 import { activateTabStores, switchActiveTab } from '../../lib/activate-tab'
+import { useTranslation } from '../../lib/i18n'
 import UrlBar from './UrlBar'
 import UrlPreview from './UrlPreview'
 import RequestEditor from '../request/RequestEditor'
+import HistoryHiddenNote from '../shared/HistoryHiddenNote'
 import ResponsePane from '../response/ResponsePane'
 import ExampleView from '../response/ExampleView'
 import SoapEditor from '../protocols/SoapEditor'
@@ -114,6 +116,7 @@ const TOOL_COMPONENTS: Record<string, ComponentType> = {
 
 /** Exported for the zero-tab regression test (issue #97). */
 export function EndpointTabBar() {
+  const { t } = useTranslation()
   // One global strip: every open tab shows on every sidebar page. The sidebar
   // page only swaps the left panel, never the tab set.
   const tabs = useTabsStore((s) => s.tabs)
@@ -706,7 +709,7 @@ export function EndpointTabBar() {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 style={{ flexShrink: 0 }}
-                aria-label="Test suite item"
+                aria-label={t('tabStrip.suiteItem')}
               >
                 <path d="M9 3h6" />
                 <path d="M10 3v6.5L5.5 19a2 2 0 0 0 1.7 3h9.6a2 2 0 0 0 1.7-3L14 9.5V3" />
@@ -723,7 +726,7 @@ export function EndpointTabBar() {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 style={{ flexShrink: 0 }}
-                aria-label="Saved example"
+                aria-label={t('tabStrip.savedExample')}
               >
                 <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
               </svg>
@@ -807,8 +810,8 @@ export function EndpointTabBar() {
       <button
         type="button"
         onClick={handleNewTab}
-        title="New tab"
-        aria-label="New tab"
+        title={t('tabStrip.newTab')}
+        aria-label={t('tabStrip.newTab')}
         data-testid="tab-new"
         style={{
           display: 'flex',
@@ -855,43 +858,43 @@ export function EndpointTabBar() {
         createPortal(
           <TabContextMenuShell x={contextMenu.x} y={contextMenu.y}>
             <ContextMenuItem
-              label="New Request"
+              label={t('tabStrip.newRequest')}
               shortcut={cmdOrCtrl('T')}
               onClick={() => handleTabContextAction(contextMenu.tabId, 'newRequest')}
             />
             <ContextMenuItem
-              label="Duplicate Tab"
+              label={t('tabStrip.duplicate')}
               onClick={() => handleTabContextAction(contextMenu.tabId, 'duplicate')}
             />
             <div style={{ height: 1, background: 'var(--border-split)', margin: '4px 0' }} />
             <ContextMenuItem
-              label="Close Tab"
+              label={t('tabStrip.close')}
               shortcut={cmdOrCtrl('W')}
               onClick={() => handleTabContextAction(contextMenu.tabId, 'close')}
             />
             <ContextMenuItem
-              label="Force Close Tab"
+              label={t('tabStrip.forceClose')}
               shortcut={altCmdOrCtrl('W')}
               onClick={() => handleTabContextAction(contextMenu.tabId, 'closeForce')}
             />
             <ContextMenuItem
-              label="Close Other Tabs"
+              label={t('tabStrip.closeOthers')}
               onClick={() => handleTabContextAction(contextMenu.tabId, 'closeOthers')}
             />
             <ContextMenuItem
-              label="Close to the Left"
+              label={t('tabStrip.closeLeft')}
               onClick={() => handleTabContextAction(contextMenu.tabId, 'closeLeft')}
             />
             <ContextMenuItem
-              label="Close to the Right"
+              label={t('tabStrip.closeRight')}
               onClick={() => handleTabContextAction(contextMenu.tabId, 'closeRight')}
             />
             <ContextMenuItem
-              label="Close All Tabs"
+              label={t('tabStrip.closeAll')}
               onClick={() => handleTabContextAction(contextMenu.tabId, 'closeAll')}
             />
             <ContextMenuItem
-              label="Force Close All Tabs"
+              label={t('tabStrip.forceCloseAll')}
               danger
               onClick={() => handleTabContextAction(contextMenu.tabId, 'closeAllForce')}
             />
@@ -1140,6 +1143,7 @@ export default function Workbench() {
           style={{ background: 'var(--white)' }}
         >
           <EndpointTabBar />
+          <HistoryHiddenNote />
           <SoapEditor key={activeTab.id} />
         </div>
       )
@@ -1152,6 +1156,7 @@ export default function Workbench() {
           style={{ background: 'var(--white)' }}
         >
           <EndpointTabBar />
+          <HistoryHiddenNote />
           <WebSocketEditor key={activeTab.id} />
         </div>
       )
@@ -1164,6 +1169,7 @@ export default function Workbench() {
           style={{ background: 'var(--white)' }}
         >
           <EndpointTabBar />
+          <HistoryHiddenNote />
           <GraphQLEditor key={activeTab.id} />
         </div>
       )
@@ -1176,6 +1182,7 @@ export default function Workbench() {
           style={{ background: 'var(--white)' }}
         >
           <EndpointTabBar />
+          <HistoryHiddenNote />
           <GrpcEditor key={activeTab.id} />
         </div>
       )
@@ -1188,6 +1195,7 @@ export default function Workbench() {
           style={{ background: 'var(--white)' }}
         >
           <EndpointTabBar />
+          <HistoryHiddenNote />
           <SseEditor key={activeTab.id} />
         </div>
       )
@@ -1265,6 +1273,7 @@ export default function Workbench() {
           style={{ background: 'var(--white)' }}
         >
           <EndpointTabBar />
+          <HistoryHiddenNote />
           <SocketIOEditor key={activeTab.id} />
         </div>
       )
@@ -1316,6 +1325,7 @@ export default function Workbench() {
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Endpoint tab bar */}
           <EndpointTabBar />
+          <HistoryHiddenNote />
 
           {/* URL Bar */}
           <UrlBar />

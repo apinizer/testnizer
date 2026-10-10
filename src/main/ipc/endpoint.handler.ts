@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import * as endpointRepo from '../db/endpoint.repo'
 import * as projectRepo from '../db/project.repo'
+import * as aiConversationRepo from '../db/ai-conversation.repo'
 import { getDb } from '../db/database'
 import { ipcResult } from '../lib/ipc-helpers'
 
@@ -75,8 +76,14 @@ export function registerEndpointHandlers(): void {
       }),
   )
 
+  // An explicit user delete also deletes the request's AI Chat conversations
+  // (issue #199) — there is no DB trigger, so git reimports keep them.
   ipcMain.handle('endpoint:delete', (_event, id: string) =>
-    ipcResult(() => endpointRepo.deleteEndpoint(id)),
+    ipcResult(() => {
+      const ok = endpointRepo.deleteEndpoint(id)
+      if (ok) aiConversationRepo.removeByOwners([id])
+      return ok
+    }),
   )
 
   // ─── Endpoint Cases ──────────────────────────────────────
@@ -183,7 +190,11 @@ export function registerEndpointHandlers(): void {
   )
 
   ipcMain.handle('savedRequest:delete', (_event, id: string) =>
-    ipcResult(() => endpointRepo.deleteSavedRequest(id)),
+    ipcResult(() => {
+      const ok = endpointRepo.deleteSavedRequest(id)
+      if (ok) aiConversationRepo.removeByOwners([id])
+      return ok
+    }),
   )
 
   // ─── Tree drag-drop reparent ─────────────────────────────

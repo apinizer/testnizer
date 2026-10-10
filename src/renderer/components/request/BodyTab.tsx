@@ -3,6 +3,7 @@ import { useRequestStore } from '../../stores/request.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
 import type { BodyType, KeyValuePair } from '../../types'
+import { useTranslation } from '../../lib/i18n'
 
 const BODY_TYPE_TEST_IDS: Record<string, string> = {
   none: 'none',
@@ -35,6 +36,7 @@ function makeId(): string {
 const isRawType = (t: BodyType) => ['json', 'xml', 'text', 'html', 'javascript'].includes(t)
 
 export default function BodyTab() {
+  const { t } = useTranslation()
   const body = useRequestStore((s) => s.body)
   const setBody = useRequestStore((s) => s.setBody)
 
@@ -123,7 +125,7 @@ export default function BodyTab() {
   const handleBinaryPick = async () => {
     try {
       const res = await window.api?.dialog?.openFile?.({
-        title: 'Select binary file',
+        title: t('body.selectBinaryFile'),
       })
       if (res?.success && res.data && !Array.isArray(res.data)) {
         setBody({ ...body, binaryPath: res.data.filePath })
@@ -220,7 +222,7 @@ export default function BodyTab() {
             data-testid="body-beautify"
             className="cursor-pointer rounded border border-[var(--border)] bg-transparent px-2 py-0.5 text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
           >
-            Beautify
+            {t('body.beautify')}
           </button>
         )}
       </div>
@@ -228,7 +230,7 @@ export default function BodyTab() {
       {/* Content area */}
       {body.type === 'none' && (
         <div className="flex flex-1 items-center justify-center text-[var(--hint)]">
-          This request does not have a body.
+          {t('body.noBody')}
         </div>
       )}
 
@@ -250,7 +252,7 @@ export default function BodyTab() {
             onUpdate={handleFormDataUpdate}
             onRemove={handleFormDataRemove}
             onAdd={handleFormDataAdd}
-            addLabel="+ Add Field"
+            addLabel={t('kv.addField')}
             enableFileType
           />
         </div>
@@ -264,7 +266,7 @@ export default function BodyTab() {
             onRemove={handleUrlEncodedRemove}
             onAdd={handleUrlEncodedAdd}
             onReplaceAll={handleUrlEncodedReplaceAll}
-            addLabel="+ Add Field"
+            addLabel={t('kv.addField')}
           />
         </div>
       )}
@@ -277,7 +279,7 @@ export default function BodyTab() {
               onClick={handleBinaryPick}
               className="cursor-pointer rounded border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 text-[var(--text)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
             >
-              {body.binaryPath ? 'Change File' : 'Select File'}
+              {body.binaryPath ? t('body.changeFile') : t('body.selectFile')}
             </button>
             {body.binaryPath && (
               <div className="mt-1.5 flex items-center justify-center gap-2 text-[var(--muted)]">
@@ -288,7 +290,7 @@ export default function BodyTab() {
                   type="button"
                   onClick={handleBinaryClear}
                   className="cursor-pointer border-none bg-transparent text-[var(--muted)] hover:text-[var(--accent)]"
-                  title="Clear file"
+                  title={t('body.clearFile')}
                 >
                   ×
                 </button>

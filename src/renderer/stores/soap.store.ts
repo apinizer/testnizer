@@ -15,6 +15,7 @@ import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { makeId } from '../lib/utils'
+import { soapMaskedSendError } from '../lib/masked-send-guard'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for SOAP, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
@@ -408,6 +409,16 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const activeTabId = tabsStore.activeTabId
+
+    // Issue #195: a History mask left in a credential field is never sent.
+    const masked = soapMaskedSendError({ endpointUrl: get().endpointUrl || '', envelope: rawXml })
+    if (masked) {
+      responseStore.setResponse(
+        { requestId: makeId(), protocol: 'soap', error: masked, timing: { total: 0 } },
+        activeTabId,
+      )
+      return
+    }
 
     responseStore.setLoading(true, activeTabId)
     responseStore.clearResponse(activeTabId)

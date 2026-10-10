@@ -7,41 +7,43 @@ import { useTranslation } from '../../lib/i18n'
 import AssertionRow from './AssertionRow'
 import type { AssertionType, TestAssertion } from '../../types'
 
+// i18n keys (issue #193). The picked item's label also becomes the new
+// assertion's default name, so a Turkish UI names it in Turkish.
 interface AssertionCategory {
-  label: string
-  items: { type: AssertionType; label: string }[]
+  labelKey: string
+  items: { type: AssertionType; labelKey: string }[]
 }
 
 const ASSERTION_CATEGORIES: AssertionCategory[] = [
   {
-    label: 'Status',
+    labelKey: 'testsTab.catStatus',
     items: [
-      { type: 'status_equals', label: 'Status code equals' },
-      { type: 'status_in_range', label: 'Status code in range (200-299)' },
+      { type: 'status_equals', labelKey: 'tests.statusCodeEquals' },
+      { type: 'status_in_range', labelKey: 'testsTab.statusInRange' },
     ],
   },
   {
-    label: 'Body',
+    labelKey: 'testsTab.catBody',
     items: [
-      { type: 'body_contains', label: 'Body contains' },
-      { type: 'body_equals_json', label: 'Body equals JSON' },
-      { type: 'body_jsonpath', label: 'Body JSON path' },
-      { type: 'body_xpath', label: 'Body XPath' },
+      { type: 'body_contains', labelKey: 'tests.bodyContains' },
+      { type: 'body_equals_json', labelKey: 'testsTab.bodyEqualsJson' },
+      { type: 'body_jsonpath', labelKey: 'testsTab.bodyJsonPath' },
+      { type: 'body_xpath', labelKey: 'testsTab.bodyXPath' },
     ],
   },
   {
-    label: 'Headers',
+    labelKey: 'testsTab.catHeaders',
     items: [
-      { type: 'header_exists', label: 'Header exists' },
-      { type: 'header_equals', label: 'Header equals' },
-      { type: 'header_contains', label: 'Header contains' },
+      { type: 'header_exists', labelKey: 'tests.headerExists' },
+      { type: 'header_equals', labelKey: 'tests.headerEquals' },
+      { type: 'header_contains', labelKey: 'testsTab.headerContains' },
     ],
   },
   {
-    label: 'Performance',
+    labelKey: 'testsTab.catPerformance',
     items: [
-      { type: 'response_time_under', label: 'Response time under' },
-      { type: 'response_size_under', label: 'Response size under' },
+      { type: 'response_time_under', labelKey: 'testsTab.responseTimeUnder' },
+      { type: 'response_size_under', labelKey: 'testsTab.responseSizeUnder' },
     ],
   },
 ]
@@ -139,7 +141,7 @@ export default function TestsTab() {
   return (
     <div>
       <div className="mb-2 font-medium" style={{ color: 'var(--text)' }}>
-        Visual Assertions
+        {t('tests.visualAssertions')}
       </div>
 
       {assertions.map((assertion) => (
@@ -159,7 +161,7 @@ export default function TestsTab() {
           data-testid="tests-add-assertion"
           className="mb-3 mt-1 w-full cursor-pointer rounded-[7px] border border-dashed border-[var(--border2)] bg-transparent py-[5px] text-[var(--hint)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
         >
-          + Add Assertion
+          {t('testsTab.addAssertion')}
         </button>
 
         {showPicker && (
@@ -169,19 +171,19 @@ export default function TestsTab() {
             style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
           >
             {ASSERTION_CATEGORIES.map((cat) => (
-              <div key={cat.label}>
+              <div key={cat.labelKey}>
                 <div className="px-3 pb-0.5 pt-2 font-semibold uppercase tracking-wider text-[var(--hint)]">
-                  {cat.label}
+                  {t(cat.labelKey)}
                 </div>
                 {cat.items.map((item) => (
                   <button
                     key={item.type}
                     type="button"
-                    onClick={() => handlePickType(item.type, item.label)}
+                    onClick={() => handlePickType(item.type, t(item.labelKey))}
                     className="flex w-full cursor-pointer items-center gap-2 bg-transparent px-3 py-1.5 text-left text-[var(--text)] transition-colors hover:bg-[var(--accent-light)]"
                     style={{ border: 'none' }}
                   >
-                    {item.label}
+                    {t(item.labelKey)}
                   </button>
                 ))}
               </div>
@@ -192,7 +194,7 @@ export default function TestsTab() {
 
       <div className="mb-1 flex items-center justify-between">
         <div className="font-medium" style={{ color: 'var(--text)' }}>
-          Post-response Script
+          {t('testsTab.postScript')}
         </div>
         <div className="flex items-center gap-2">
           {!postScript && (
@@ -207,7 +209,7 @@ export default function TestsTab() {
                 fontSize: 12,
               }}
             >
-              + Insert example
+              {t('scripts.insertExample')}
             </button>
           )}
           <button

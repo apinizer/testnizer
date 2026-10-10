@@ -3,6 +3,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { T } from '../../styles/tokens'
 import ProjectIcon from '../shared/ProjectIcon'
 import { type SidebarPage } from '../../lib/sidebar-pages'
+import { useTranslation } from '../../lib/i18n'
 
 interface NavItem {
   id: SidebarPage
@@ -136,6 +137,7 @@ function ShieldIcon({ active }: { active: boolean }) {
 }
 
 export default function IconSidebar() {
+  const { t } = useTranslation()
   const activePage = useUIStore((s) => s.activeSidebarPage)
   const setActivePage = useUIStore((s) => s.setActiveSidebarPage)
   const setShowProjectDetailModal = useUIStore((s) => s.setShowProjectDetailModal)
@@ -145,18 +147,18 @@ export default function IconSidebar() {
   })
 
   const topItems: NavItem[] = [
-    { id: 'apis', label: 'APIs', icon: (a) => <GlobeIcon active={a} /> },
-    { id: 'tests', label: 'Tests', icon: (a) => <CheckIcon active={a} /> },
-    { id: 'mocks', label: 'Mocks', icon: (a) => <ServerIcon active={a} /> },
-    { id: 'history', label: 'History', icon: (a) => <ClockIcon active={a} /> },
-    { id: 'tools', label: 'Tools', icon: (a) => <WrenchIcon active={a} /> },
-    { id: 'security', label: 'Security', icon: (a) => <ShieldIcon active={a} /> },
+    { id: 'apis', label: t('sidebar.apis'), icon: (a) => <GlobeIcon active={a} /> },
+    { id: 'tests', label: t('sidebar.tests'), icon: (a) => <CheckIcon active={a} /> },
+    { id: 'mocks', label: t('sidebar.mocks'), icon: (a) => <ServerIcon active={a} /> },
+    { id: 'history', label: t('sidebar.history'), icon: (a) => <ClockIcon active={a} /> },
+    { id: 'tools', label: t('sidebar.tools'), icon: (a) => <WrenchIcon active={a} /> },
+    { id: 'security', label: t('sidebar.security'), icon: (a) => <ShieldIcon active={a} /> },
   ]
 
   const bottomItems: NavItem[] = [
     {
       id: 'settings',
-      label: 'Settings',
+      label: t('sidebar.settings'),
       icon: () => <CogIcon />,
       action: () => setShowProjectDetailModal(true),
     },

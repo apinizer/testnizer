@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { getDb } from './database'
+import { maskHistoryRow, scrubberFor } from '../lib/sensitive-scrub'
 
 export interface HistoryRow {
   id: string
@@ -60,10 +61,33 @@ export function addHistory(data: {
   duration_ms?: number
   request_snapshot: string
   response_snapshot?: string
+  /**
+   * Secret values this request carried beyond the variables marked secret —
+   * its resolved auth (bearer token, basic password, API key value, …).
+   * Used only to mask; never stored.
+   */
+  extra_secrets?: unknown[]
 }): HistoryRow {
   const db = getDb()
   const id = randomUUID()
   const now = Date.now()
+
+  // Issue #195: History rows never hold credentials. Masked HERE, in the one
+  // function every writer (each protocol handler, the Runner, `history:add`)
+  // goes through — the same place-of-truth idea as `maskRequestJson` for
+  // saved examples. Name rule + secret-value scrub; `configured` (the
+  // `{{var}}` template kept for re-send) keeps variable references.
+  const masked = maskHistoryRow(
+    {
+      url: data.url,
+      request_snapshot: data.request_snapshot,
+      response_snapshot: data.response_snapshot,
+    },
+    scrubberFor(db, data.extra_secrets ?? []),
+  )
+  const url = masked.url
+  const requestSnapshot = masked.request_snapshot
+  const responseSnapshot = masked.response_snapshot
 
   db.prepare(
     `
@@ -77,11 +101,11 @@ export function addHistory(data: {
     data.endpoint_id ?? null,
     data.protocol,
     data.method ?? null,
-    data.url,
+    url,
     data.status_code ?? null,
     data.duration_ms ?? null,
-    data.request_snapshot,
-    data.response_snapshot ?? null,
+    requestSnapshot,
+    responseSnapshot ?? null,
     now,
   )
   return getHistoryById(id)!

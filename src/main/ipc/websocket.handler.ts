@@ -8,6 +8,7 @@ import {
 } from '../protocols/websocket.engine'
 import { logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
+import type { HistoryConfigured } from '../../shared/history-snapshot'
 
 interface WsConnectPayload {
   url: string
@@ -20,6 +21,11 @@ interface WsConnectPayload {
   _endpointId?: string
   /** Renderer-supplied id so `ws:cancelConnect(id)` can abort the handshake. */
   _pendingId?: string
+  /**
+   * The editor state (`{{var}}` kept) for the History row's `configured` —
+   * what reopening the row restores (issues #182, #195).
+   */
+  _configured?: HistoryConfigured
 }
 
 // Map connectionId -> { url, tabId, connectedAt } so disconnect / send events
@@ -88,6 +94,7 @@ export function registerWebSocketHandlers(): void {
               headers: payload.headers,
               protocols: payload.protocols,
               rejectUnauthorized: payload.rejectUnauthorized,
+              ...(payload._configured ? { configured: payload._configured } : {}),
             }),
             response_snapshot: JSON.stringify({
               status: 101,
@@ -126,6 +133,7 @@ export function registerWebSocketHandlers(): void {
               url: payload.url,
               headers: payload.headers,
               protocols: payload.protocols,
+              ...(payload._configured ? { configured: payload._configured } : {}),
             }),
             response_snapshot: JSON.stringify({ error: (err as Error).message }),
           })
