@@ -11,16 +11,31 @@
  * text back into a number / boolean per the schema at call time.
  *
  * Leaf fields reuse the elicitation form's parser (`toField`) and number
- * rules (`DECIMAL_RE`) so both forms read a schema the same way (P-K).
+ * rules (`DECIMAL_RE` / `numberFromText`) so both forms read a schema the same way (P-K).
  */
 import {
-  DECIMAL_RE,
   optionValue,
   toField,
   type ContentProblemReason,
   type ElicitField,
 } from './mcp-elicitation'
 import { resolveVariables } from './variable-resolver'
+import {
+  numberFromText,
+  MAX_SCHEMA_DEPTH,
+  hasTemplate,
+  isConstOneOf,
+  isNullSchema,
+  prepareToolArgs as prepareToolArgsShared,
+  unwrapSchema,
+  type ArgsFormUnsupported,
+  type PreparedArgs,
+} from '../../shared/mcp-call'
+
+// Schema reading and call-time coercion are the ONE shared implementation
+// Send and Run use (`src/shared/mcp-call.ts`, P-T parity).
+export { coerceTemplated, hasTemplate, unwrapSchema } from '../../shared/mcp-call'
+export type { ArgsFormUnsupported, PreparedArgs } from '../../shared/mcp-call'
 
 export type ArgsPath = Array<string | number>
 
@@ -46,15 +61,6 @@ export type ArgsNode =
       children: ArgsNode[]
     }
 
-/** Why a schema has no form — the JSON view's one-line note says it. */
-export type ArgsFormUnsupported =
-  | 'composition'
-  | 'ref'
-  | 'patternProperties'
-  | 'arrayOfObjects'
-  | 'untyped'
-  | 'notObject'
-
 export type ArgsFormPlan =
   | { ok: true; fields: ArgsNode[] }
   | { ok: false; reason: ArgsFormUnsupported }
@@ -76,44 +82,8 @@ function isRecord(v: unknown): v is Json {
   return !!v && typeof v === 'object' && !Array.isArray(v)
 }
 
-const MAX_DEPTH = 24
+const MAX_DEPTH = MAX_SCHEMA_DEPTH
 const PRIMITIVE_TYPES = new Set(['string', 'number', 'integer', 'boolean'])
-
-/** `oneOf: [{ const, title }, …]` is a titled enum, not a composition. */
-const isConstOneOf = (v: unknown): boolean =>
-  Array.isArray(v) && v.length > 0 && v.every((o) => isRecord(o) && 'const' in o)
-
-const isNullSchema = (v: unknown): boolean => isRecord(v) && v.type === 'null'
-
-/**
- * Unwrap the nullable spellings generators emit (pydantic / zod):
- * `type: ['string', 'null']` and `anyOf|oneOf: [X, { type: 'null' }]` → X.
- * Real compositions, `$ref` and `patternProperties` are reported instead.
- */
-export function unwrapSchema(raw: unknown): Json | ArgsFormUnsupported {
-  let p: Json = isRecord(raw) ? raw : {}
-  if (Array.isArray(p.type)) {
-    const types = p.type.filter((t) => t !== 'null')
-    if (types.length !== 1) return 'composition'
-    p = { ...p, type: types[0] }
-  }
-  for (const key of ['anyOf', 'oneOf'] as const) {
-    const list = p[key]
-    if (!Array.isArray(list) || (key === 'oneOf' && isConstOneOf(list))) continue
-    const rest = list.filter((s) => !isNullSchema(s))
-    if (rest.length !== 1 || !isRecord(rest[0])) return 'composition'
-    const { [key]: _dropped, ...outer } = p
-    p = { ...rest[0], ...outer }
-  }
-  if (Array.isArray(p.allOf)) {
-    if (p.allOf.length !== 1 || !isRecord(p.allOf[0])) return 'composition'
-    const { allOf, ...outer } = p
-    p = { ...(allOf as Json[])[0], ...outer }
-  }
-  if ('$ref' in p) return 'ref'
-  if ('patternProperties' in p) return 'patternProperties'
-  return p
-}
 
 const hasEnum = (p: Json): boolean => Array.isArray(p.enum) || isConstOneOf(p.oneOf)
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
@@ -224,8 +194,6 @@ export function setAtPath(obj: unknown, path: ArgsPath, value: unknown): unknown
   return rec
 }
 
-export const hasTemplate = (v: unknown): boolean => typeof v === 'string' && v.includes('{{')
-
 /** A JSON value → what the leaf's input shows. */
 export function leafText(field: ElicitField, value: unknown): string | boolean {
   if (field.kind === 'boolean') return value === true
@@ -241,8 +209,10 @@ export function leafText(field: ElicitField, value: unknown): string | boolean {
 
 /**
  * What the leaf's input means as a JSON value — `REMOVE` for an empty
- * optional field. Numbers are only stored as numbers once the text is
- * canonical (`1.0` stays text until it becomes `1.05`), so typing is never
+ * optional field. A number field stores any decimal as a number, canonical
+ * or not (`0.70` → 0.7, review item 5); an integer field only whole numbers
+ * (`1.0` stays text and is flagged). The rule is the shared `numberFromText`.
+ * The input itself keeps the typed text (`Leaf`'s draft), so typing is never
  * rewritten under the cursor; `{{var}}` stays a string.
  */
 export function leafValue(field: ElicitField, input: string | boolean): unknown {
@@ -256,13 +226,48 @@ export function leafValue(field: ElicitField, input: string | boolean): unknown 
   if (field.kind === 'number' || field.kind === 'integer') {
     const trimmed = text.trim()
     if (trimmed === '') return REMOVE
-    if (!hasTemplate(trimmed) && DECIMAL_RE.test(trimmed) && String(Number(trimmed)) === trimmed) {
-      return Number(trimmed)
+    if (!hasTemplate(trimmed)) {
+      const n = numberFromText(trimmed, field.kind)
+      if (n !== undefined) return n
     }
     return text
   }
   if (text === '' && !field.required) return REMOVE
   return text
+}
+
+/** A value the form shows as an empty input: "", null, [] or {} (after pruning). */
+const isEmptyValue = (v: unknown): boolean =>
+  v === '' ||
+  v === null ||
+  (Array.isArray(v) && v.length === 0) ||
+  (isRecord(v) && Object.keys(v).length === 0)
+
+/**
+ * The Form view's rule for optional fields (#162 follow-up, MCP Inspector
+ * parity): an optional property whose value is empty ("" / null / [] / an
+ * object that is empty once its own empty optionals are gone) is left out of
+ * the arguments; required properties and keys the schema does not know stay.
+ * Applied when the user switches to the Form view, so the saved text — which
+ * Send and Run both send — holds no empty optional value the form hides.
+ */
+export function pruneEmptyOptional(value: Json, schema: unknown, depth = 0): Json {
+  if (depth > MAX_DEPTH) return value
+  const p = unwrapSchema(schema)
+  if (typeof p === 'string') return value
+  const props = isRecord(p.properties) ? p.properties : {}
+  const required = new Set(Array.isArray(p.required) ? p.required : [])
+  const out: Json = {}
+  for (const [k, v] of Object.entries(value)) {
+    if (!(k in props)) {
+      out[k] = v
+      continue
+    }
+    const next = isRecord(v) ? pruneEmptyOptional(v, props[k], depth + 1) : v
+    if (!required.has(k) && isEmptyValue(next)) continue
+    out[k] = next
+  }
+  return out
 }
 
 // ─── Validation (before Invoke) ─────────────────────────────────────────────
@@ -385,70 +390,17 @@ export function validateArgs(value: unknown, schema: unknown): ArgsProblem[] {
 // ─── Call-time preparation ──────────────────────────────────────────────────
 
 /**
- * `{{var}}` placeholders the user put in a number / integer / boolean field
- * resolved to text (`"5"`); turn that text into the type the schema asks for.
- * Only values whose RAW form held a placeholder are touched.
- */
-export function coerceTemplated(
-  raw: unknown,
-  resolved: unknown,
-  schema: unknown,
-  depth = 0,
-): unknown {
-  if (depth > MAX_DEPTH) return resolved
-  const p = unwrapSchema(schema)
-  if (typeof p === 'string') return resolved
-  if (hasTemplate(raw) && typeof resolved === 'string') {
-    const text = resolved.trim()
-    if ((p.type === 'number' || p.type === 'integer') && DECIMAL_RE.test(text)) return Number(text)
-    if (p.type === 'boolean' && (text === 'true' || text === 'false')) return text === 'true'
-    return resolved
-  }
-  if (Array.isArray(raw) && Array.isArray(resolved)) {
-    return resolved.map((v, i) => coerceTemplated(raw[i], v, p.items, depth + 1))
-  }
-  if (isRecord(raw) && isRecord(resolved)) {
-    const props = isRecord(p.properties) ? p.properties : {}
-    const out: Json = {}
-    for (const [k, v] of Object.entries(resolved)) {
-      out[k] = k in props ? coerceTemplated(raw[k], v, props[k], depth + 1) : v
-    }
-    return out
-  }
-  return resolved
-}
-
-export type PreparedArgs =
-  | { args: Record<string, unknown>; raw: unknown; error?: undefined }
-  | { error: 'json'; args?: undefined; raw?: undefined }
-
-/**
- * `toolArgs` text → the arguments a call sends: `{{var}}` resolved in the text
- * (so placeholders work anywhere, as before), parsed, then schema-coerced.
- * `raw` is the unresolved parse (for validation), or the resolved one when
- * the raw text is not JSON on its own (an unquoted `{{n}}`).
+ * `toolArgs` text → the arguments a call sends (Send's binding of the shared
+ * `prepareToolArgs`, over the active environment's variables): `{{var}}`
+ * resolved in the text, parsed, then schema-coerced. Run applies the very
+ * same function (`src/shared/mcp-call.ts`).
  */
 export function prepareToolArgs(
   text: string,
   vars: Record<string, string>,
   schema?: unknown,
 ): PreparedArgs {
-  let resolved: unknown
-  try {
-    resolved = JSON.parse(resolveVariables(text, vars))
-  } catch {
-    return { error: 'json' }
-  }
-  let raw: unknown
-  try {
-    raw = JSON.parse(text)
-  } catch {
-    raw = undefined
-  }
-  const args = (
-    schema !== undefined && raw !== undefined ? coerceTemplated(raw, resolved, schema) : resolved
-  ) as Record<string, unknown>
-  return { args, raw: raw ?? resolved }
+  return prepareToolArgsShared(text, (s) => resolveVariables(s, vars), schema)
 }
 
 // ─── View preference ────────────────────────────────────────────────────────
@@ -457,15 +409,17 @@ export type ArgsView = 'form' | 'json'
 const VIEW_KEY = 'testnizer-mcp-args-view'
 
 /**
- * The user's last Form / JSON choice (per user, not per tab). JSON until the
- * user picks Form: the raw editor is what existing users (and the e2e
- * flows) know, and it never blocks a call.
+ * The user's last Form / JSON choice (per user, not per tab). Form until the
+ * user picks JSON (issue #162 decision): typed fields with inline validation
+ * are what a first-time user needs (recognition over recall, MCP Inspector
+ * parity). A stored choice always wins, and a schema the form cannot
+ * represent still falls back to JSON in the editor.
  */
 export function loadArgsView(): ArgsView {
   try {
-    return localStorage.getItem(VIEW_KEY) === 'form' ? 'form' : 'json'
+    return localStorage.getItem(VIEW_KEY) === 'json' ? 'json' : 'form'
   } catch {
-    return 'json'
+    return 'form'
   }
 }
 

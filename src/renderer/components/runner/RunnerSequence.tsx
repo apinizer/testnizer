@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import MethodBadge from '../shared/MethodBadge'
+import RequestBadge from '../shared/RequestBadge'
 import { ChevronRight, ChevronDown, FolderClosed, FolderOpen } from 'lucide-react'
 import type { RunPhase } from '../../../shared/runner-verdict'
 import { useTranslation } from '../../lib/i18n'
@@ -497,7 +497,7 @@ function EndpointRow({
       />
 
       {/* Method badge */}
-      <MethodBadge method={endpoint.method} />
+      <RequestBadge protocol={endpoint.protocol} method={endpoint.method} />
 
       {/* Name */}
       <span draggable={false} className="flex-1 truncate" style={{ color: 'var(--text)' }}>

@@ -13,6 +13,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
   REMOVE,
   leafValue,
+  loadArgsView,
   planArgsForm,
   prepareToolArgs,
   validateArgs,
@@ -109,6 +110,20 @@ describe('leafValue / validateArgs / prepareToolArgs', () => {
     expect(leafValue(int, '')).toBe(REMOVE)
   })
 
+  it('review item 5: a number field takes non-canonical decimals; an integer only whole numbers', () => {
+    const num = toField('x', { type: 'number' }, false)
+    expect(leafValue(num, '0.70')).toBe(0.7)
+    expect(leafValue(num, '1.0')).toBe(1)
+    expect(leafValue(num, '2.50')).toBe(2.5)
+    expect(leafValue(num, '1.')).toBe('1.')
+    expect(leafValue(int, '10')).toBe(10)
+    // `1.0` in an integer field stays text → the form flags it, never sends it as 1.
+    expect(validateArgs({ n: leafValue(int, '1.0') }, { type: 'object', properties: { n: { type: 'integer' } } })).toEqual([
+      { path: 'n', reason: 'type', expected: 'integer' },
+    ])
+    expect(validateArgs({ x: leafValue(num, '0.70') }, { type: 'object', properties: { x: { type: 'number' } } })).toEqual([])
+  })
+
   it('reports required / type / enum / bounds, skipping {{var}} values', () => {
     const problems = validateArgs(
       { days: 9, units: 'kelvin', tags: ['a', 3], where: {}, city: '{{city}}' },
@@ -195,20 +210,31 @@ afterEach(() => {
 })
 
 describe('Form / JSON toggle (issue #162)', () => {
-  it('JSON is the default; the Form choice is remembered across remounts', async () => {
+  it('Form is the default (issue #162 decision); a JSON choice is remembered across remounts', async () => {
     await connected()
     const { unmount } = render(<McpToolPane />)
-    expect(screen.getByTestId('mcp-tool-args')).toBeTruthy()
-    fireEvent.click(screen.getByTestId('mcp-args-view-form'))
     expect(screen.queryByTestId('mcp-tool-args')).toBeNull()
     expect(screen.getByTestId('mcp-arg-city')).toBeTruthy()
-    expect(localStorage.getItem('testnizer-mcp-args-view')).toBe('form')
+    expect(screen.getByTestId('mcp-args-view-form').getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByTestId('mcp-args-view-json'))
+    expect(screen.getByTestId('mcp-tool-args')).toBeTruthy()
+    expect(localStorage.getItem('testnizer-mcp-args-view')).toBe('json')
     unmount()
     render(<McpToolPane />)
-    expect(screen.getByTestId('mcp-arg-city')).toBeTruthy()
+    expect(screen.getByTestId('mcp-tool-args')).toBeTruthy()
+  })
+
+  it('a stored Form choice still wins, and so does a stored JSON one', () => {
+    localStorage.setItem('testnizer-mcp-args-view', 'json')
+    expect(loadArgsView()).toBe('json')
+    localStorage.setItem('testnizer-mcp-args-view', 'form')
+    expect(loadArgsView()).toBe('form')
+    localStorage.removeItem('testnizer-mcp-args-view')
+    expect(loadArgsView()).toBe('form')
   })
 
   it('both views edit the same toolArgs (single source of truth)', async () => {
+    localStorage.setItem('testnizer-mcp-args-view', 'json')
     await connected()
     render(<McpToolPane />)
     fireEvent.change(screen.getByTestId('mcp-tool-args'), {
@@ -302,8 +328,14 @@ describe('validation before Invoke (issue #162)', () => {
       fireEvent.click(screen.getByTestId('mcp-invoke'))
     })
     expect(screen.getByTestId('mcp-args-problems').textContent).toContain('"city"')
+    // Starting the optional `where` group makes its required `lat` count.
+    fireEvent.change(screen.getByTestId('mcp-arg-where_lon'), { target: { value: '2' } })
     fireEvent.change(screen.getByTestId('mcp-arg-city'), { target: { value: 'Rome' } })
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('mcp-invoke'))
+    })
     // `where.lat` is still missing; the city marker and line are gone.
+    expect(screen.getByTestId('mcp-args-problems').textContent).toContain('"where.lat"')
     expect(screen.getByTestId('mcp-args-problems').textContent).not.toContain('"city"')
     expect(screen.getByTestId('mcp-arg-city').className).not.toContain('border-[var(--red)]')
     fireEvent.change(screen.getByTestId('mcp-arg-where_lat'), { target: { value: '1' } })
@@ -328,11 +360,106 @@ describe('validation before Invoke (issue #162)', () => {
     )
   })
 
+  it('review item 5: 0.70 / 2.50 in a number field are valid and sent as numbers; the input keeps the text', async () => {
+    localStorage.setItem('testnizer-mcp-args-view', 'form')
+    await connected()
+    render(<McpToolPane />)
+    fireEvent.change(screen.getByTestId('mcp-arg-city'), { target: { value: 'Rome' } })
+    fireEvent.change(screen.getByTestId('mcp-arg-where_lat'), { target: { value: '0.70' } })
+    fireEvent.change(screen.getByTestId('mcp-arg-where_lon'), { target: { value: '2.50' } })
+    // Typing is never rewritten under the cursor.
+    expect((screen.getByTestId('mcp-arg-where_lat') as HTMLInputElement).value).toBe('0.70')
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('mcp-invoke'))
+    })
+    expect(screen.queryByTestId('mcp-args-problems')).toBeNull()
+    expect(mcp.callTool).toHaveBeenCalledWith(
+      'conn-1',
+      'forecast',
+      expect.objectContaining({ where: { lat: 0.7, lon: 2.5 } }),
+      expect.anything(),
+    )
+  })
+
   it('JSON view sends without pre-validation (negative tests stay possible)', async () => {
+    localStorage.setItem('testnizer-mcp-args-view', 'json')
     await connected()
     useMcpStore.setState({ toolArgs: '{"days": 99}' })
     await useMcpStore.getState().callTool()
     expect(mcp.callTool).toHaveBeenCalledWith('conn-1', 'forecast', { days: 99 }, expect.anything())
+  })
+})
+
+describe('empty optional fields are not sent from the Form view (#162 follow-up)', () => {
+  it('form view: selecting a tool seeds only required fields + schema defaults', async () => {
+    localStorage.setItem('testnizer-mcp-args-view', 'form')
+    await connected()
+    // `city` is required (empty → validation error), `days` has a default;
+    // every other optional field is left out instead of being sent as "" / [] / {}.
+    expect(args()).toEqual({ city: '', days: 3 })
+    render(<McpToolPane />)
+    fireEvent.change(screen.getByTestId('mcp-arg-city'), { target: { value: 'Rome' } })
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('mcp-invoke'))
+    })
+    expect(mcp.callTool).toHaveBeenCalledWith(
+      'conn-1',
+      'forecast',
+      { city: 'Rome', days: 3 },
+      expect.anything(),
+    )
+  })
+
+  it('a required field left empty is still a validation error', async () => {
+    localStorage.setItem('testnizer-mcp-args-view', 'form')
+    await connected()
+    render(<McpToolPane />)
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('mcp-invoke'))
+    })
+    expect(mcp.callTool).not.toHaveBeenCalled()
+    expect(screen.getByTestId('mcp-args-problems').textContent).toContain('"city" is required')
+  })
+
+  it('JSON view keeps the full skeleton and sends exactly what is typed', async () => {
+    localStorage.setItem('testnizer-mcp-args-view', 'json')
+    await connected()
+    expect(args()).toEqual({
+      city: '',
+      days: 3,
+      units: 'metric',
+      alerts: false,
+      tags: [],
+      where: {},
+      note: null,
+    })
+    await useMcpStore.getState().callTool()
+    expect(mcp.callTool).toHaveBeenCalledWith(
+      'conn-1',
+      'forecast',
+      { city: '', days: 3, units: 'metric', alerts: false, tags: [], where: {}, note: null },
+      expect.anything(),
+    )
+  })
+
+  it('switching JSON → Form drops the empty optional values the form cannot show', async () => {
+    localStorage.setItem('testnizer-mcp-args-view', 'json')
+    await connected()
+    render(<McpToolPane />)
+    fireEvent.click(screen.getByTestId('mcp-args-view-form'))
+    // "" / [] / {} / null under optional keys go; typed values and required keys stay.
+    expect(args()).toEqual({ city: '', days: 3, units: 'metric', alerts: false })
+  })
+
+  it('removing the last row of an optional array removes the key', async () => {
+    localStorage.setItem('testnizer-mcp-args-view', 'form')
+    await connected()
+    render(<McpToolPane />)
+    fireEvent.click(screen.getByTestId('mcp-arg-tags-add'))
+    fireEvent.change(screen.getByTestId('mcp-arg-tags-0'), { target: { value: 'a' } })
+    expect(args().tags).toEqual(['a'])
+    fireEvent.click(screen.getByTestId('mcp-arg-tags-remove-0'))
+    expect('tags' in args()).toBe(false)
   })
 })
 

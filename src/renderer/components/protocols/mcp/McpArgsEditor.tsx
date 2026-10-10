@@ -5,6 +5,7 @@ import {
   loadArgsView,
   parseArgsObject,
   planArgsForm,
+  pruneEmptyOptional,
   saveArgsView,
   setAtPath,
   type ArgsFormUnsupported,
@@ -103,6 +104,15 @@ export default function McpArgsEditor() {
   const choose = (v: ArgsView): void => {
     setView(v)
     saveArgsView(v)
+    // Into the Form view: empty optional values (the JSON skeleton's "" / [] /
+    // {}) are dropped — the form shows them as blank, and a blank optional
+    // field is not sent (#162 follow-up).
+    if (v === 'form' && parsed && schema && plan?.ok) {
+      const pruned = pruneEmptyOptional(parsed, schema)
+      if (JSON.stringify(pruned) !== JSON.stringify(parsed)) {
+        setToolArgs(JSON.stringify(pruned, null, 2))
+      }
+    }
   }
   const patch = (path: ArgsPath, value: unknown): void => {
     if (!parsed) return

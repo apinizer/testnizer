@@ -112,7 +112,11 @@ function ArrayNode({
             data-testid={`mcp-arg-${id}-remove-${i}`}
             aria-label={t('mcp.args.removeItem')}
             title={t('mcp.args.removeItem')}
-            onClick={() => onPatch([...node.path, i], REMOVE)}
+            onClick={() =>
+              // The last row of an optional array takes the key with it: an
+              // empty optional field is not sent (#162 follow-up).
+              onPatch(rows.length === 1 && !node.required ? node.path : [...node.path, i], REMOVE)
+            }
             className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-transparent text-[var(--muted)] hover:bg-[var(--surface)]"
           >
             <X size={12} />

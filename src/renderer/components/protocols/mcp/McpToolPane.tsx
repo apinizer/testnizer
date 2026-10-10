@@ -3,12 +3,14 @@ import { useMcpStore } from '../../../stores/mcp.store'
 import { useTranslation } from '../../../lib/i18n'
 import EmptyState from '../../shared/EmptyState'
 import McpResultView from './McpResultView'
+import McpResultTabs from './McpResultTabs'
 import McpInputRequiredCard from './McpInputRequiredCard'
 import McpDescription from './McpDescription'
 import McpArgsEditor from './McpArgsEditor'
 import McpRunButton from './McpRunButton'
 import McpCallHeader from './McpCallHeader'
 import McpCallNotes from './McpCallNotes'
+import McpHiddenArgsNote from './McpHiddenArgsNote'
 import McpCopyAsMenu from './McpCopyAsMenu'
 import { toolResultCopyText } from './call-ui'
 import { CenterHint, ErrorLine, JsonPre, SectionLabel } from './ui'
@@ -41,6 +43,7 @@ export default function McpToolPane() {
   const toolMeta = useMcpStore((s) => s.toolMeta)
   const result = useMcpStore((s) => s.result)
   const resultError = useMcpStore((s) => s.resultError)
+  const toolTests = useMcpStore((s) => s.toolTests)
   const pendingInput = useMcpStore((s) => s.pendingInput)
   // Every MCP tab renders this same pane; the tab id in the card's key keeps
   // tab A's typed answers out of tab B paused at the same round.
@@ -108,6 +111,7 @@ export default function McpToolPane() {
               </div>
             </details>
           )}
+          <McpHiddenArgsNote />
           <McpArgsEditor />
           {/* Opaque so scrolled content never shows through. The column has no bottom
               padding: this bar's pb is the header's last pixels, so nothing shows below it. */}
@@ -144,7 +148,9 @@ export default function McpToolPane() {
             pending={pendingInput}
           />
         ) : result != null ? (
-          <McpResultView result={result} />
+          <McpResultTabs key={tabId ?? ''} tests={toolTests}>
+            <McpResultView result={result} />
+          </McpResultTabs>
         ) : (
           <EmptyState icon={Inbox} title={t('mcp.result.none')} variant="compact" size="sm" />
         )}

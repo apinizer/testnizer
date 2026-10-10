@@ -260,3 +260,16 @@ describe('Mock MCP editor — 2026-07-28 knobs', () => {
     expect(stub.bridge.server.notify).toHaveBeenCalledWith('a', 'tools')
   })
 })
+
+describe('review item 16: Mock MCP spec details are reachable without a mouse', () => {
+  it('each hint has a focusable info button carrying the spec detail', async () => {
+    await renderEditor()
+    fireEvent.change(screen.getByTestId('mock-mcp-legacy-mode'), { target: { value: 'reject' } })
+    const info = screen.getByTestId('mock-mcp-legacy-hint-info')
+    expect(info.tagName).toBe('BUTTON')
+    expect(info.getAttribute('aria-label')).toMatch(/-32022/)
+    // The hint text itself still reads plainly (issue #167).
+    expect(screen.getByTestId('mock-mcp-legacy-hint')).not.toHaveTextContent('-32022')
+    expect(screen.getByRole('button', { name: /ttlMs \(cacheScope: private\)/ })).toBeTruthy()
+  })
+})

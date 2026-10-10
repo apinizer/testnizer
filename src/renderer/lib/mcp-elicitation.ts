@@ -18,6 +18,7 @@
  * and only declined / cancelled.
  */
 import type { McpElicitAnswer } from '../types/mcp'
+import { DECIMAL_RE } from '../../shared/mcp-call'
 
 export type ElicitFieldKind = 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'unsupported'
 
@@ -224,9 +225,10 @@ export type ContentResult =
 
 /**
  * Plain decimals only (issue #154): `Number()` also takes `0x10`, `1e3`,
- * `0b11`, `.5` or `+5`, which a user typing a number never means.
+ * `0b11`, `.5` or `+5`, which a user typing a number never means. One rule
+ * with the tool-args coercion Send and Run share (`src/shared/mcp-call.ts`).
  */
-export const DECIMAL_RE = /^-?\d+(\.\d+)?$/
+export { DECIMAL_RE }
 const INTEGER_RE = /^-?\d+$/
 
 /** The first violated bound of a field, or null. */

@@ -13,10 +13,12 @@ const URL_INPUT =
   'h-8 w-full min-w-0 rounded-md border border-[var(--border)] px-2.5 font-mono text-[13px] text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]'
 
 /**
- * Status pill, transport, protocol, URL / command, Connect, config menu and
- * the connected server's identity on ONE line; an error goes in a box under
- * it (WebSocket bar parity, issue #171). The URL field is the `{{var}}`-aware
- * input HTTP uses — variables resolve at Connect.
+ * Row 1: status pill, transport, protocol, URL / command (grows, never below
+ * 280px), Connect, config menu. Row 2, only when connected: the server's name
+ * + version and the protocol badge; an error goes in a box under it
+ * (WebSocket bar parity, issue #171). The identity used to share row 1, which
+ * overflowed at a 1200px window and clipped the badge off-screen. The URL
+ * field is the `{{var}}`-aware input HTTP uses — variables resolve at Connect.
  */
 export default function McpConnectionBar() {
   const { t } = useTranslation()
@@ -63,7 +65,9 @@ export default function McpConnectionBar() {
 
   return (
     <div className="flex shrink-0 flex-col gap-2 border-b border-[var(--border)] px-3.5 py-2.5">
-      <div data-testid="mcp-connection-row" className="flex flex-nowrap items-center gap-2">
+      {/* Wraps instead of clipping when the pane is narrower than the row; at a
+          1200px window everything fits on one line with the URL at >= 280px. */}
+      <div data-testid="mcp-connection-row" className="flex flex-wrap items-center gap-2">
         <McpStatusPill state={state} />
         <select
           value={transport}
@@ -82,7 +86,7 @@ export default function McpConnectionBar() {
         {/* A disabled fieldset disables the inner <input> (the shared input has no `disabled` prop). */}
         <fieldset
           disabled={busy}
-          className="m-0 flex min-w-[140px] flex-1 border-0 p-0 disabled:opacity-60"
+          className="m-0 flex min-w-[280px] flex-1 basis-[280px] border-0 p-0 disabled:opacity-60"
         >
           <VariableAutocompleteInput
             value={url}
@@ -91,6 +95,8 @@ export default function McpConnectionBar() {
               if (e.key === 'Enter' && !busy) void connect()
             }}
             data-testid="mcp-url"
+            spellCheck={false}
+            autoComplete="off"
             placeholder={
               transport === 'stdio'
                 ? 'npx -y @modelcontextprotocol/server-everything'
@@ -112,32 +118,35 @@ export default function McpConnectionBar() {
           {isConnecting ? t('mcp.cancel') : isConnected ? t('mcp.disconnect') : t('mcp.connect')}
         </button>
         <McpConfigMenu disabled={busy} />
-        {isConnected && (
-          <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-[var(--muted)]">
-            {serverName && (
-              <span data-testid="mcp-server-name" className="truncate">
-                {serverName}
-                {serverVersion ? ` ${serverVersion}` : ''}
-              </span>
-            )}
-            {protocolVersion && (
-              <span
-                data-testid="mcp-protocol-version"
-                data-era={era ?? undefined}
-                title={tooltip || undefined}
-                className={`shrink-0 cursor-help rounded border bg-[var(--surface)] px-1.5 font-mono text-[11px] ${
-                  era === 'modern'
-                    ? 'border-[var(--accent)] text-[var(--accent-text)]'
-                    : 'border-[var(--border)] text-[var(--text)]'
-                }`}
-              >
-                {/* Never "(legacy)": a 2025 server is simply "MCP 2025-11-25" (issue #167). */}
-                {`MCP ${protocolVersion}`}
-              </span>
-            )}
-          </span>
-        )}
       </div>
+      {isConnected && (serverName || protocolVersion) && (
+        <div
+          data-testid="mcp-server-info"
+          className="flex min-w-0 items-center gap-1.5 text-[12px] text-[var(--muted)]"
+        >
+          {serverName && (
+            <span data-testid="mcp-server-name" className="min-w-0 truncate">
+              {serverName}
+              {serverVersion ? ` ${serverVersion}` : ''}
+            </span>
+          )}
+          {protocolVersion && (
+            <span
+              data-testid="mcp-protocol-version"
+              data-era={era ?? undefined}
+              title={tooltip || undefined}
+              className={`shrink-0 cursor-help rounded border bg-[var(--surface)] px-1.5 font-mono text-[11px] ${
+                era === 'modern'
+                  ? 'border-[var(--accent)] text-[var(--accent-text)]'
+                  : 'border-[var(--border)] text-[var(--text)]'
+              }`}
+            >
+              {/* Never "(legacy)": a 2025 server is simply "MCP 2025-11-25" (issue #167). */}
+              {`MCP ${protocolVersion}`}
+            </span>
+          )}
+        </div>
+      )}
       {showError && (
         <div
           data-testid="mcp-error-box"

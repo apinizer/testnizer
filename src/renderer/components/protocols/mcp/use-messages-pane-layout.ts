@@ -28,9 +28,15 @@ export function useMessagesPaneLayout() {
   const startResize = useCallback((e: ReactMouseEvent) => {
     e.preventDefault()
     const startY = e.clientY
-    const startH = heightRef.current
+    // The pane is capped at half the editor (`max-h-[50%]`): drag from the
+    // height it SHOWS, and never store more than the editor can give it now.
+    const pane = (e.currentTarget as HTMLElement | null)?.parentElement ?? null
+    const editorH = pane?.parentElement?.clientHeight ?? 0
+    const maxH = editorH > 0 ? Math.floor(editorH / 2) : Number.POSITIVE_INFINITY
+    const shown = pane?.getBoundingClientRect().height ?? 0
+    const startH = shown > 0 ? Math.min(heightRef.current, shown) : heightRef.current
     const onMove = (ev: MouseEvent): void => {
-      heightRef.current = clampPaneHeight(startH + (startY - ev.clientY))
+      heightRef.current = Math.min(maxH, clampPaneHeight(startH + (startY - ev.clientY)))
       setPrefs((p) => ({ ...p, height: heightRef.current }))
     }
     const onUp = (): void => {

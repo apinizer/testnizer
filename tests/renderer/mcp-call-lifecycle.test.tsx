@@ -106,6 +106,15 @@ function switchTo(id: string): void {
 
 const flush = () => act(async () => {})
 
+/**
+ * Wait until `n` calls reached main. A call first resolves the script cascade
+ * and runs the pre-request scripts (issue #160), so the IPC call is no longer
+ * made in the same tick as `callTool()` / `readResource()` / `getPrompt()`.
+ */
+async function sent(n: number): Promise<void> {
+  await vi.waitFor(() => expect(api.pending.length).toBeGreaterThanOrEqual(n))
+}
+
 beforeEach(() => {
   api = installApi()
   useTabsStore.setState({ tabs: [], activeTabId: null })
@@ -122,6 +131,7 @@ describe('Cancel an MCP call (issue #163)', () => {
     expect(s.isInvoking).toBe(true)
     const callId = s.toolCallId
     expect(callId).toBeTruthy()
+    await sent(1)
     expect(api.mcp.callTool).toHaveBeenCalledWith(
       'conn-1',
       'slow',
@@ -154,6 +164,7 @@ describe('Cancel an MCP call (issue #163)', () => {
     await connectTab('tab-a')
     useMcpStore.getState().setSelectedTool('slow')
     const run = useMcpStore.getState().callTool()
+    await sent(1)
     api.pending[0].resolve({
       success: false,
       error: 'MCP call cancelled by user',
@@ -197,6 +208,7 @@ describe('Cancel an MCP call (issue #163)', () => {
     useMcpStore.getState().selectResource('test://a')
     void useMcpStore.getState().readResource()
     const rid = useMcpStore.getState().resourceCallId
+    await sent(1)
     expect(api.mcp.readResource).toHaveBeenCalledWith('conn-1', 'test://a', { callId: rid })
     await useMcpStore.getState().cancelCall('resource')
     expect(useMcpStore.getState().isReadingResource).toBe(false)
@@ -205,6 +217,7 @@ describe('Cancel an MCP call (issue #163)', () => {
     useMcpStore.getState().setSelectedPrompt('greet')
     void useMcpStore.getState().getPrompt()
     const pid = useMcpStore.getState().promptCallId
+    await sent(2)
     expect(api.mcp.getPrompt).toHaveBeenCalledWith('conn-1', 'greet', {}, { callId: pid })
     await useMcpStore.getState().cancelCall('prompt')
     expect(useMcpStore.getState().isGettingPrompt).toBe(false)
@@ -217,6 +230,7 @@ describe('Cancel an MCP call (issue #163)', () => {
       await connectTab('tab-a')
       useMcpStore.getState().selectResource('test://a')
       void useMcpStore.getState().readResource()
+      await sent(1)
       expect(api.mcp.readResource).toHaveBeenCalledWith(
         'conn-1',
         'test://a',
@@ -224,6 +238,7 @@ describe('Cancel an MCP call (issue #163)', () => {
       )
       useMcpStore.getState().setSelectedPrompt('greet')
       void useMcpStore.getState().getPrompt()
+      await sent(2)
       expect(api.mcp.getPrompt).toHaveBeenCalledWith(
         'conn-1',
         'greet',
@@ -263,6 +278,7 @@ describe('Result header (issue #164)', () => {
     useMcpStore.getState().setSelectedTool('slow')
     render(<McpToolPane />)
     const run = useMcpStore.getState().callTool()
+    await sent(1)
     api.pending[0].resolve({
       success: true,
       data: { content: [{ type: 'text', text: 'hello' }] },
@@ -287,6 +303,7 @@ describe('Result header (issue #164)', () => {
     render(<McpToolPane />)
     const data = { content: [{ type: 'text', text: 'boom' }], isError: true }
     const run = useMcpStore.getState().callTool()
+    await sent(1)
     api.pending[0].resolve({ success: true, data })
     await act(async () => {
       await run
@@ -302,6 +319,7 @@ describe('Result header (issue #164)', () => {
     useMcpStore.getState().setSelectedTool('slow')
     render(<McpToolPane />)
     const run = useMcpStore.getState().callTool()
+    await sent(1)
     api.pending[0].resolve({
       success: false,
       error: 'boom',
@@ -319,6 +337,7 @@ describe('Result header (issue #164)', () => {
     useMcpStore.getState().selectResource('test://a')
     const { unmount } = render(<McpResourcePane />)
     const read = useMcpStore.getState().readResource()
+    await sent(1)
     api.pending[0].resolve({
       success: true,
       data: { contents: [{ uri: 'test://a', text: 'x' }] },
@@ -334,6 +353,7 @@ describe('Result header (issue #164)', () => {
     useMcpStore.getState().setSelectedPrompt('greet')
     render(<McpPromptPane />)
     const get = useMcpStore.getState().getPrompt()
+    await sent(2)
     api.pending[1].resolve({
       success: true,
       data: { messages: [] },
@@ -365,6 +385,7 @@ describe('Decline vs Cancel note (issue #175)', () => {
     await connectTab('tab-a')
     useMcpStore.getState().setSelectedTool('slow')
     const run = useMcpStore.getState().callTool()
+    await sent(1)
     api.pending[0].resolve({ success: true, data: INPUT_REQUIRED })
     await run
     expect(useMcpStore.getState().pendingInput).not.toBeNull()

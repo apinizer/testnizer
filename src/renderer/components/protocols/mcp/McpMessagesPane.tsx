@@ -85,7 +85,10 @@ export default function McpMessagesPane() {
   return (
     <div
       data-testid="mcp-messages-pane"
-      className="relative flex shrink-0 flex-col border-t border-[var(--border)]"
+      // Capped at half the editor and the first thing to give way (issue #155
+      // class): a remembered 600 px must never squeeze the capability pane —
+      // and its Run button — out of a short window.
+      className="relative flex min-h-[28px] max-h-[50%] shrink flex-col border-t border-[var(--border)]"
       style={open ? { height } : undefined}
     >
       {open && (

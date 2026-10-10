@@ -1,12 +1,19 @@
-import { protocolChip } from '../../lib/protocol-chip'
+import { protocolChip, tabProtocolChip } from '../../lib/protocol-chip'
 
 /**
  * Short protocol chip (MCP, WS, SSE, SIO, GQL, gRPC) shown on tree rows and
  * tabs in place of a non-HTTP request's placeholder method (issue #173).
  * Renders nothing for HTTP / SOAP — they keep their method badge.
  */
-export default function ProtocolChip({ protocol }: { protocol: string | undefined | null }) {
-  const chip = protocolChip(protocol)
+export default function ProtocolChip({
+  protocol,
+  title,
+}: {
+  protocol: string | undefined | null
+  /** A tab's title: the chip is left out when the title is the chip's own label ("MCP MCP"). */
+  title?: string
+}) {
+  const chip = title === undefined ? protocolChip(protocol) : tabProtocolChip(protocol, title)
   if (!chip) return null
   return (
     <span

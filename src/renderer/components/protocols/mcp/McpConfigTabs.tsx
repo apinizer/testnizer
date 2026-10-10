@@ -1,18 +1,24 @@
 import type { ComponentType } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useMcpStore } from '../../../stores/mcp.store'
+import { useRequestStore } from '../../../stores/request.store'
 import { availableConfigTabs, effectiveConfigTab } from '../../../stores/mcp-auth.slice'
 import type { McpConfigTab } from '../../../types/mcp'
 import { useTranslation } from '../../../lib/i18n'
 import McpAuthSection from './McpAuthSection'
 import McpHeadersSection from './McpHeadersSection'
 import McpStdioEnvSection from './McpStdioEnvSection'
+import ScriptsTab from '../../request/ScriptsTab'
+import TestsTab from '../../request/TestsTab'
 import { enabledRowCount } from './config-ui'
 
 const LABEL_KEYS: Record<McpConfigTab, string> = {
   auth: 'mcp.config.auth',
   headers: 'mcp.config.headers',
   env: 'mcp.config.env',
+  // The HTTP editor's own labels (P-K): same tab, same words.
+  scripts: 'request.scripts',
+  tests: 'request.tests',
 }
 
 /** Pre-tab-strip e2e hooks, kept on the tab label (issue #137 / #139 specs). */
@@ -25,12 +31,28 @@ const PANELS: Record<McpConfigTab, ComponentType> = {
   auth: McpAuthSection,
   headers: McpHeadersSection,
   env: McpStdioEnvSection,
+  // The HTTP editor's tabs, reused as-is (issue #160): they read / write the
+  // per-tab request store, which every save path already persists for MCP.
+  scripts: ScriptsTab,
+  tests: TestsTab,
 }
+
+const PANEL_BASE = 'border-t border-[var(--border)]'
+/**
+ * Scripts hosts Monaco (`h-full`): it needs a real height, capped at 40vh.
+ * The floor is `min(220px, 40vh)` — a plain 220 px minimum beat the cap on a
+ * short window and pushed the capability pane out (review item 12).
+ */
+const PANEL_CLASS: Partial<Record<McpConfigTab, string>> = {
+  scripts: `${PANEL_BASE} h-[40vh] max-h-[40vh] min-h-[min(220px,40vh)] overflow-hidden`,
+}
+const PANEL_DEFAULT = `${PANEL_BASE} max-h-[45vh] overflow-auto px-3.5 py-2.5`
 
 /**
  * Postman-style request config strip under the MCP connection bar:
- * Authorization · Headers (http / sse) · Environment (stdio), with a count
- * badge of the enabled rows and a chevron that folds the whole panel away.
+ * Authorization · Headers (http / sse) · Environment (stdio) · Scripts ·
+ * Tests, with a count badge of the enabled rows / assertions, a dot for an
+ * active auth or a script, and a chevron that folds the whole panel away.
  * Active tab and fold state are per tab in the store (persisted). Clicking a
  * tab always shows it — only the chevron folds.
  */
@@ -44,10 +66,23 @@ export default function McpConfigTabs() {
   const authType = useMcpStore((s) => s.auth.type)
   const headerCount = useMcpStore((s) => enabledRowCount(s.customHeaders))
   const envCount = useMcpStore((s) => enabledRowCount(s.envVars))
+  // Same badge rules as the HTTP RequestEditor tab strip.
+  const hasScripts = useRequestStore(
+    (s) => (s.preScript?.trim().length ?? 0) > 0 || (s.postScript?.trim().length ?? 0) > 0,
+  )
+  const testCount = useRequestStore((s) => s.assertions.filter((a) => a.enabled !== false).length)
 
   // Derived, never written back: switching transport keeps the stored choice.
   const active = effectiveConfigTab(storedTab, transport)
-  const counts: Partial<Record<McpConfigTab, number>> = { headers: headerCount, env: envCount }
+  const counts: Partial<Record<McpConfigTab, number>> = {
+    headers: headerCount,
+    env: envCount,
+    tests: testCount,
+  }
+  const dots: Partial<Record<McpConfigTab, boolean>> = {
+    auth: authType !== 'none',
+    scripts: hasScripts,
+  }
   const Panel = PANELS[active]
 
   return (
@@ -72,9 +107,9 @@ export default function McpConfigTabs() {
                 }`}
               >
                 <span data-testid={LEGACY_TOGGLE_IDS[id]}>{t(LABEL_KEYS[id])}</span>
-                {id === 'auth' && authType !== 'none' && (
+                {dots[id] && (
                   <span
-                    data-testid="mcp-config-auth-dot"
+                    data-testid={`mcp-config-${id}-dot`}
                     aria-hidden="true"
                     className="h-1.5 w-1.5 rounded-full bg-[var(--green)]"
                   />
@@ -107,7 +142,7 @@ export default function McpConfigTabs() {
         <div
           role="tabpanel"
           data-testid={`mcp-config-panel-${active}`}
-          className="max-h-[45vh] overflow-auto border-t border-[var(--border)] px-3.5 py-2.5"
+          className={PANEL_CLASS[active] ?? PANEL_DEFAULT}
         >
           <Panel />
         </div>

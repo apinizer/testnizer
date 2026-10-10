@@ -4,6 +4,7 @@ import { useTranslation } from '../../../lib/i18n'
 import { hasUnexpandedTemplate } from '../../../lib/mcp-store-helpers'
 import EmptyState from '../../shared/EmptyState'
 import McpResultView from './McpResultView'
+import McpResultTabs from './McpResultTabs'
 import McpDescription from './McpDescription'
 import McpRunButton from './McpRunButton'
 import McpCallHeader from './McpCallHeader'
@@ -29,6 +30,9 @@ export default function McpResourcePane() {
   const error = useMcpStore((s) => s.resourceError)
   const isReading = useMcpStore((s) => s.resourceCallId !== null)
   const meta = useMcpStore((s) => s.resourceMeta)
+  const tests = useMcpStore((s) => s.resourceTests)
+  // Every MCP tab renders this pane: the tab id keeps the Result / Test Results choice per tab.
+  const tabId = useMcpStore((s) => s._currentTabId)
   const isConnected = useMcpStore((s) => s.connectionState === 'connected')
 
   if (!selected) {
@@ -123,9 +127,11 @@ export default function McpResourcePane() {
             {t('mcp.call.cancelledBody')}
           </div>
         ) : content ? (
-          <McpResultView
-            result={{ content: content.contents.map((c) => ({ type: 'resource', resource: c })) }}
-          />
+          <McpResultTabs key={tabId ?? ''} tests={tests}>
+            <McpResultView
+              result={{ content: content.contents.map((c) => ({ type: 'resource', resource: c })) }}
+            />
+          </McpResultTabs>
         ) : (
           <EmptyState icon={Inbox} title={t('mcp.resource.none')} variant="compact" size="sm" />
         )}

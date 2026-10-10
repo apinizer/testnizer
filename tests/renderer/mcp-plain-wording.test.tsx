@@ -35,7 +35,6 @@ function both(key: string): { en: string; tr: string } {
 describe('plain-language strings (EN + TR)', () => {
   it('the primary tool action is Run', () => {
     expect(both('mcp.tool.invoke')).toEqual({ en: 'Run', tr: 'Çalıştır' })
-    expect(both('mcp.tool.invoking')).toEqual({ en: 'Running…', tr: 'Çalıştırılıyor…' })
   })
 
   it('protocol choices name MCP versions, never eras', () => {

@@ -8,6 +8,8 @@ interface ScriptHelpModalProps {
   /** 'pre' adjusts copy + ordering for pre-request scripts (e.g. `pm.response`
    *  is not available before the request fires). */
   variant?: 'pre' | 'post'
+  /** The script belongs to an MCP request: show the `pm.mcp` section (post-response only). */
+  isMcp?: boolean
 }
 
 interface Snippet {
@@ -83,6 +85,32 @@ if (!pm.environment.get("authToken")) {
   },
 ]
 
+/**
+ * MCP requests (issue #160) run the same post-response scripts; `pm.response`
+ * is the HTTP-shaped view of the result and `pm.mcp` the MCP one
+ * (`src/shared/mcp-response.ts`, the same on Send and Run).
+ */
+const MCP_SNIPPETS: Snippet[] = [
+  {
+    titleKey: 'scriptHelp.snippet.mcpSucceeded',
+    code: `pm.test('tool succeeded', () => pm.expect(pm.mcp.isError).to.be.false)`,
+  },
+  {
+    titleKey: 'scriptHelp.snippet.mcpChain',
+    code: `// Chain calls: keep a value from this result for the next request
+pm.environment.set('libraryId', pm.response.json().libraryId)
+// Same data without the HTTP view: pm.mcp.structuredContent.libraryId`,
+  },
+]
+
+const MCP_API_ROWS: ApiRow[] = [
+  { expr: 'pm.mcp.isError', descKey: 'scriptHelp.api.mcpIsError' },
+  { expr: 'pm.mcp.result', descKey: 'scriptHelp.api.mcpResult' },
+  { expr: 'pm.mcp.structuredContent', descKey: 'scriptHelp.api.mcpStructured' },
+  { expr: 'pm.mcp.content', descKey: 'scriptHelp.api.mcpContent' },
+  { expr: 'pm.mcp.capability / .name', descKey: 'scriptHelp.api.mcpCapability' },
+]
+
 interface ApiRow {
   expr: string
   descKey: string
@@ -145,6 +173,63 @@ function CodeBlock({ code }: { code: string }) {
   )
 }
 
+function ApiTable({ rows }: { rows: ApiRow[] }) {
+  const { t } = useTranslation()
+  return (
+    <table className="w-full" style={{ fontSize: 13, borderCollapse: 'collapse' }}>
+      <thead>
+        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+          <th
+            className="py-2 pr-4 text-left"
+            style={{ fontWeight: 600, color: 'var(--muted)', width: '45%' }}
+          >
+            {t('scriptHelp.api.expression')}
+          </th>
+          <th className="py-2 text-left" style={{ fontWeight: 600, color: 'var(--muted)' }}>
+            {t('scriptHelp.api.description')}
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.expr} style={{ borderBottom: '1px solid var(--border-split)' }}>
+            <td
+              className="py-1.5 pr-4"
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 12,
+                color: 'var(--text)',
+                verticalAlign: 'top',
+              }}
+            >
+              {r.expr}
+            </td>
+            <td className="py-1.5" style={{ color: 'var(--muted)', verticalAlign: 'top' }}>
+              {t(r.descKey)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function SnippetList({ snippets }: { snippets: Snippet[] }) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex flex-col gap-3">
+      {snippets.map((s) => (
+        <div key={s.titleKey}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
+            {t(s.titleKey)}
+          </div>
+          <CodeBlock code={s.code} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -161,7 +246,12 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   )
 }
 
-export default function ScriptHelpModal({ open, onClose, variant = 'post' }: ScriptHelpModalProps) {
+export default function ScriptHelpModal({
+  open,
+  onClose,
+  variant = 'post',
+  isMcp = false,
+}: ScriptHelpModalProps) {
   const { t } = useTranslation()
   // Pre-request scripts can't read response data — surface request-time
   // snippets first so the user lands on the right examples.
@@ -214,77 +304,24 @@ export default function ScriptHelpModal({ open, onClose, variant = 'post' }: Scr
               ? t('scriptHelp.section.responseChecks')
               : t('scriptHelp.section.preRequest')}
           </SectionTitle>
-          <div className="flex flex-col gap-3">
-            {responseSnippets.map((s) => (
-              <div key={s.titleKey}>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: 'var(--muted)',
-                    marginBottom: 4,
-                  }}
-                >
-                  {t(s.titleKey)}
-                </div>
-                <CodeBlock code={s.code} />
-              </div>
-            ))}
-          </div>
+          <SnippetList snippets={responseSnippets} />
 
           <SectionTitle>{t('scriptHelp.section.variables')}</SectionTitle>
-          <div className="flex flex-col gap-3">
-            {ENV_SNIPPETS.map((s) => (
-              <div key={s.titleKey}>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: 'var(--muted)',
-                    marginBottom: 4,
-                  }}
-                >
-                  {t(s.titleKey)}
-                </div>
-                <CodeBlock code={s.code} />
-              </div>
-            ))}
-          </div>
+          <SnippetList snippets={ENV_SNIPPETS} />
 
           <SectionTitle>{t('scriptHelp.section.api')}</SectionTitle>
-          <table className="w-full" style={{ fontSize: 13, borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                <th
-                  className="py-2 pr-4 text-left"
-                  style={{ fontWeight: 600, color: 'var(--muted)', width: '45%' }}
-                >
-                  {t('scriptHelp.api.expression')}
-                </th>
-                <th className="py-2 text-left" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-                  {t('scriptHelp.api.description')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {API_ROWS.map((r) => (
-                <tr key={r.expr} style={{ borderBottom: '1px solid var(--border-split)' }}>
-                  <td
-                    className="py-1.5 pr-4"
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 12,
-                      color: 'var(--text)',
-                      verticalAlign: 'top',
-                    }}
-                  >
-                    {r.expr}
-                  </td>
-                  <td className="py-1.5" style={{ color: 'var(--muted)', verticalAlign: 'top' }}>
-                    {t(r.descKey)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ApiTable rows={API_ROWS} />
+
+          {variant === 'post' && isMcp && (
+            <div data-testid="script-help-mcp">
+              <SectionTitle>{t('scriptHelp.section.mcp')}</SectionTitle>
+              <p className="mb-2 text-[13px] text-[var(--muted)]">{t('scriptHelp.mcp.intro')}</p>
+              <SnippetList snippets={MCP_SNIPPETS} />
+              <div className="mt-2">
+                <ApiTable rows={MCP_API_ROWS} />
+              </div>
+            </div>
+          )}
 
           <SectionTitle>{t('scriptHelp.section.notes')}</SectionTitle>
           <ul

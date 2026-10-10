@@ -170,4 +170,22 @@ describe('tab strip', () => {
     expect(chipOf(8)).toBeUndefined()
     expect(tabs[8]).not.toHaveTextContent('POST')
   })
+
+  it('a tab titled with the chip label shows the title once ("MCP", not "MCP MCP")', () => {
+    useTabsStore.setState({
+      tabs: [
+        { ...tab('t-new-mcp', 'mcp'), name: 'MCP' },
+        { ...tab('t-new-grpc', 'grpc'), name: 'gRPC' },
+        { ...tab('t-new-sse', 'sse'), name: 'sse ' },
+        { ...tab('t-named', 'mcp'), name: 'Weather' },
+        { ...tab('t-ws', 'websocket'), name: 'WebSocket' },
+      ],
+      activeTabId: 't-new-mcp',
+    })
+    render(<EndpointTabBar />)
+    const tabs = screen.getAllByTestId('endpoint-tab')
+    const chipOf = (i: number) => within(tabs[i]).queryByTestId('protocol-chip')?.textContent
+    expect([0, 1, 2, 3, 4].map(chipOf)).toEqual([undefined, undefined, undefined, 'MCP', 'WS'])
+    expect(tabs[0].textContent).not.toMatch(/MCP\s*MCP/)
+  })
 })

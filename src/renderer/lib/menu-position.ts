@@ -79,3 +79,49 @@ export function positionContextMenu({
     ? { left, top: pad, maxHeight: usable }
     : { left, top: 0, maxHeight: Math.max(0, viewportHeight) }
 }
+
+export interface AnchoredMenuInput {
+  /** The anchor button's client rect edges. */
+  anchorLeft: number
+  anchorTop: number
+  anchorBottom: number
+  /** Measured menu size, unconstrained. */
+  width: number
+  height: number
+  viewportWidth: number
+  viewportHeight: number
+  /** Minimum gap from every edge. Defaults to 8. */
+  pad?: number
+  /** Gap between the button and the menu. Defaults to 4. */
+  gap?: number
+}
+
+/**
+ * Place a dropdown anchored to a button (review item 11 — "Copy as…" sat in
+ * an overflow-clipped header and opened upward off-screen): above the button
+ * when it fits (the action bars sit low in their pane), else below, else on
+ * the roomier side with a `maxHeight` so it scrolls. Left-aligned with the
+ * button, clamped into the viewport.
+ */
+export function positionAnchoredMenu({
+  anchorLeft,
+  anchorTop,
+  anchorBottom,
+  width,
+  height,
+  viewportWidth,
+  viewportHeight,
+  pad = 8,
+  gap = 4,
+}: AnchoredMenuInput): MenuPosition {
+  const left = Math.max(0, Math.min(anchorLeft, viewportWidth - width - pad))
+  const above = anchorTop - gap - height
+  const below = anchorBottom + gap
+  if (above >= pad) return { left, top: above }
+  if (below + height <= viewportHeight - pad) return { left, top: below }
+  const roomAbove = anchorTop - gap - pad
+  const roomBelow = viewportHeight - pad - below
+  return roomAbove > roomBelow
+    ? { left, top: pad, maxHeight: Math.max(0, roomAbove) }
+    : { left, top: below, maxHeight: Math.max(0, roomBelow) }
+}

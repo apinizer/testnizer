@@ -102,8 +102,12 @@ export type McpAuthType = McpConnectAuth['type']
  * and its token never leaves main.
  */
 export type McpAuthConfig = McpConnectAuth
-/** Config tab strip under the connection bar. */
-export type McpConfigTab = 'auth' | 'headers' | 'env'
+/**
+ * Config tab strip under the connection bar. `scripts` / `tests` host the
+ * HTTP editor's Scripts and Tests tabs (issue #160) — same per-tab request
+ * store fields (`preScript` / `postScript` / `assertions`).
+ */
+export type McpConfigTab = 'auth' | 'headers' | 'env' | 'scripts' | 'tests'
 
 // ─── OAuth 2.1 debugger (issue #141) ─────────────────────────────
 export type McpOAuthStartRequest = Parameters<McpBridge['oauthStart']>[0]

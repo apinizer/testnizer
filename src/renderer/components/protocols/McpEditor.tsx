@@ -35,7 +35,8 @@ export default function McpEditor() {
     >
       <McpConnectionBar />
       <McpConfigTabs />
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      {/* A floor for the capability pane: the Messages pane shrinks before it does. */}
+      <div data-testid="mcp-editor-body" className="flex min-h-[120px] flex-1 overflow-hidden">
         <McpCapabilityList />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {MCP_EXTRA_SECTIONS.length > 0 && (

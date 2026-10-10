@@ -186,3 +186,147 @@ describe('HistoryListPanel — MCP rows (issue #166)', () => {
     expect(screen.getAllByTestId('history-entry')).toHaveLength(1)
   })
 })
+
+// ─── Review round (items 1b, 10) ─────────────────────────────────
+
+const MASKED_ROW = row({
+  id: 'h-masked',
+  request_snapshot: {
+    mcp: {
+      transport: 'http',
+      url: 'http://127.0.0.1:3100/mcp',
+      capability: 'tool',
+      name: 'search_books',
+      args: { author: 'Tolkien', api_key: '••••••', auth: { token: '***' } },
+    },
+  } as never,
+})
+
+describe('review item 1b: a masked History value is never re-sent', () => {
+  it('the restore blanks masked credential args and names them', () => {
+    const r = mcpHistoryRestore(MASKED_ROW)
+    expect(JSON.parse(r.call.toolArgs ?? '{}')).toEqual({
+      author: 'Tolkien',
+      api_key: '',
+      auth: { token: '' },
+    })
+    expect(r.hiddenArgs).toEqual(['api_key', 'auth.token'])
+  })
+
+  it('a row written under the old broad rule (author masked) is blanked too — never re-sent', () => {
+    const r = mcpHistoryRestore(
+      row({
+        request_snapshot: {
+          mcp: { capability: 'tool', name: 'search', args: { author: '••••••', q: '***' } },
+        } as never,
+      }),
+    )
+    // `***` under a plain name may be a real value — kept.
+    expect(JSON.parse(r.call.toolArgs ?? '{}')).toEqual({ author: '', q: '***' })
+    expect(r.hiddenArgs).toEqual(['author'])
+  })
+
+  it('a prompt arg that was masked comes back empty too', () => {
+    const r = mcpHistoryRestore(
+      row({
+        method: 'GET_PROMPT',
+        request_snapshot: {
+          mcp: { capability: 'prompt', name: 'p', args: { password: '••••••', topic: 'x' } },
+        } as never,
+      }),
+    )
+    expect(r.call.promptArgs).toEqual({ password: '', topic: 'x' })
+    expect(r.hiddenArgs).toEqual(['password'])
+  })
+
+  it('opening the row shows the args empty with the note (EN + TR); editing the arg clears it', async () => {
+    ;(window as unknown as { api: unknown }).api = { mcp: {} }
+    useTabsStore.setState({ tabs: [], activeTabId: null })
+    useMcpStore.setState({ _tabStates: new Map(), _currentTabId: null })
+    useHistoryStore.setState({
+      entries: [MASKED_ROW],
+      searchTerm: '',
+      fetch: vi.fn(async () => undefined),
+    } as never)
+    const { setLocale } = await import('../../src/renderer/lib/i18n')
+    setLocale('en')
+    render(<HistoryListPanel />)
+    fireEvent.click(screen.getByTestId('history-entry'))
+    const s = useMcpStore.getState()
+    expect(JSON.parse(s.toolArgs).api_key).toBe('')
+    expect(s.hiddenArgs).toEqual(['api_key', 'auth.token'])
+    cleanup()
+    const { default: McpHiddenArgsNote } = await import(
+      '../../src/renderer/components/protocols/mcp/McpHiddenArgsNote'
+    )
+    render(<McpHiddenArgsNote />)
+    expect(screen.getByTestId('mcp-hidden-args').textContent).toContain(
+      'This value was hidden in History — enter it again',
+    )
+    expect(screen.getByTestId('mcp-hidden-args').textContent).toContain('api_key')
+    cleanup()
+    const { useUIStore } = await import('../../src/renderer/stores/ui.store')
+    useUIStore.setState({ locale: 'tr' })
+    render(<McpHiddenArgsNote />)
+    expect(screen.getByTestId('mcp-hidden-args').textContent).toContain('Geçmiş')
+    useUIStore.setState({ locale: 'en' })
+    setLocale('en')
+    useMcpStore
+      .getState()
+      .setToolArgs(JSON.stringify({ author: 'Tolkien', api_key: 'k-new', auth: { token: '' } }))
+    expect(useMcpStore.getState().hiddenArgs).toEqual(['auth.token'])
+    cleanup()
+  })
+})
+
+describe('review item 10: MCP rows read as the call, not "MCP host/mcp"', () => {
+  beforeEach(() => {
+    ;(window as unknown as { api: unknown }).api = { mcp: {} }
+    useTabsStore.setState({ tabs: [], activeTabId: null })
+    useMcpStore.setState({ _tabStates: new Map(), _currentTabId: null })
+  })
+  afterEach(cleanup)
+
+  it('History sidebar: the label is the tool name, the server URL is the title', () => {
+    useHistoryStore.setState({
+      entries: [TOOL_ROW],
+      searchTerm: '',
+      fetch: vi.fn(async () => undefined),
+    } as never)
+    render(<HistoryListPanel />)
+    const entry = screen.getByTestId('history-entry')
+    expect(entry.textContent).toContain('echo')
+    expect(entry.querySelector('[title="http://127.0.0.1:3100/mcp"]')).not.toBeNull()
+  })
+
+  it('welcome recent list: labelled by call, distinct calls on one server not merged, restores the call', async () => {
+    const { default: NewRequestWelcome } = await import(
+      '../../src/renderer/components/layout/NewRequestWelcome'
+    )
+    const second = row({
+      id: 'h-res',
+      method: 'READ_RESOURCE',
+      request_snapshot: {
+        mcp: {
+          transport: 'http',
+          url: 'http://127.0.0.1:3100/mcp',
+          capability: 'resource',
+          uri: 'test://docs',
+        },
+      } as never,
+    })
+    useHistoryStore.setState({
+      entries: [TOOL_ROW, second],
+      fetch: vi.fn(async () => undefined),
+    } as never)
+    render(<NewRequestWelcome />)
+    expect(screen.getByText('echo')).toBeTruthy()
+    expect(screen.getByText('test://docs')).toBeTruthy()
+    fireEvent.click(screen.getByText('echo'))
+    const s = useMcpStore.getState()
+    expect(s._currentTabId).toBe(useTabsStore.getState().activeTabId)
+    expect(s.url).toBe('http://127.0.0.1:3100/mcp')
+    expect(s.selectedTool).toBe('echo')
+    expect(JSON.parse(s.toolArgs)).toEqual({ text: 'hi' })
+  })
+})

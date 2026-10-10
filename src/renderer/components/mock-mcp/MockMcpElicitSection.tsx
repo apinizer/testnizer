@@ -8,6 +8,7 @@ import {
 } from '../../types/mock-mcp'
 import { blankElicitDraft, blankElicitRow, duplicateElicitField } from './mock-mcp-elicit'
 import { Checkbox, Field, GhostButton, INPUT_CLS, SectionLabel, SELECT_CLS } from './ui'
+import MockMcpSpecHint from './MockMcpSpecHint'
 
 const CELL_CLS = `${INPUT_CLS} h-7`
 
@@ -66,12 +67,7 @@ export default function MockMcpElicitSection({
         onChange={(on) => onChange(on ? blankElicitDraft() : undefined)}
         label={t('mockMcp.elicit.enable')}
       />
-      <div
-        title={t('mockMcp.elicit.hintTooltip')}
-        className="cursor-help text-[11px] text-[var(--hint)]"
-      >
-        {t('mockMcp.elicit.hint')}
-      </div>
+      <MockMcpSpecHint text={t('mockMcp.elicit.hint')} detail={t('mockMcp.elicit.hintTooltip')} />
       {value && (
         <>
           <div className="grid grid-cols-[160px_1fr] gap-3">

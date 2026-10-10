@@ -3,6 +3,7 @@ import { uiTest } from './_setup'
 import { dismissOverlays, navigateSidebar, openNewDropdownItem } from '../helpers/ui/bootstrap'
 import { getTestServerUrls } from '../helpers/test-servers'
 import { fillMonaco } from '../helpers/ui/monaco'
+import { fillMcpArgs } from '../helpers/ui/mcp-args'
 
 uiTest.describe('Protocol editors (deep + local servers)', () => {
   uiTest.beforeEach(async ({ window }) => {
@@ -82,7 +83,7 @@ uiTest.describe('Protocol editors (deep + local servers)', () => {
     // Selecting a tool pre-fills the arguments from its input schema
     // (`{"text": ""}`), which makes echo return an empty block — give it a
     // real payload so the assertion proves the round trip, not just a node.
-    await window.getByTestId('mcp-tool-args').fill('{"text":"hello-e2e"}')
+    await fillMcpArgs(window, '{"text":"hello-e2e"}')
     await window.getByTestId('mcp-invoke').click()
     // The result pane renders content blocks (not raw JSON).
     await expect(
@@ -132,7 +133,7 @@ uiTest.describe('Protocol editors (deep + local servers)', () => {
         await invoke.scrollIntoViewIfNeeded()
         await expect(invoke).toBeInViewport()
 
-        await window.getByTestId('mcp-tool-args').fill('{"text":"long-e2e"}')
+        await fillMcpArgs(window, '{"text":"long-e2e"}')
         await invoke.click()
         await expect(
           window.getByTestId('mcp-result').getByTestId('mcp-block-text').first(),

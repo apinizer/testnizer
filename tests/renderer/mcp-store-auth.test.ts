@@ -293,9 +293,10 @@ describe('mcp-auth.slice helpers', () => {
   })
 
   it('config tabs follow the transport; an unavailable stored tab falls back to Authorization', () => {
-    expect(availableConfigTabs('http')).toEqual(['auth', 'headers'])
-    expect(availableConfigTabs('sse')).toEqual(['auth', 'headers'])
-    expect(availableConfigTabs('stdio')).toEqual(['auth', 'env'])
+    expect(availableConfigTabs('http')).toEqual(['auth', 'headers', 'scripts', 'tests'])
+    expect(availableConfigTabs('sse')).toEqual(['auth', 'headers', 'scripts', 'tests'])
+    expect(availableConfigTabs('stdio')).toEqual(['auth', 'env', 'scripts', 'tests'])
+    expect(effectiveConfigTab('tests', 'stdio')).toBe('tests')
     expect(effectiveConfigTab('headers', 'stdio')).toBe('auth')
     expect(effectiveConfigTab('env', 'http')).toBe('auth')
     expect(effectiveConfigTab('env', 'stdio')).toBe('env')
@@ -381,5 +382,20 @@ describe('applyMcpAuth — the config export (parity with main)', () => {
       },
     )
     expect(r).toEqual({ url: '{{base}}/mcp', headers: {}, applied: false })
+  })
+})
+
+describe('stdio Connect names the project for run trust (review item 2)', () => {
+  it('a stdio Connect sends the active project id; an http Connect does not', async () => {
+    const { useWorkspaceStore } = await import('../../src/renderer/stores/workspace.store')
+    useWorkspaceStore.setState({ activeWorkspaceId: 'ws-1', activeProjectId: 'p-trust' } as never)
+    const mcp = installApi()
+    useMcpStore.setState({ transport: 'stdio', url: 'node server.js' })
+    await useMcpStore.getState().connect()
+    expect(lastConnect(mcp)).toMatchObject({ transport: 'stdio', projectId: 'p-trust' })
+    await useMcpStore.getState().disconnect()
+    useMcpStore.setState({ transport: 'http', url: 'http://srv.test/mcp' })
+    await useMcpStore.getState().connect()
+    expect(lastConnect(mcp).projectId).toBeUndefined()
   })
 })

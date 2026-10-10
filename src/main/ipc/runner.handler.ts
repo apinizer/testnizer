@@ -60,6 +60,26 @@ import type {
   ScriptConsoleLog,
 } from '../../shared/runner-types'
 import type { StoredProjectSettings } from '../lib/project-settings'
+import { mcpCallOnce, type McpOneShotCall, type McpTransport } from '../protocols/mcp.engine'
+import { isStdioServerTrusted, MCP_STDIO_UNTRUSTED_MESSAGE } from '../lib/mcp-stdio-trust'
+import { isCredentialHeaderName } from '../lib/credential-headers'
+import { MASKED_VALUE } from '../db/saved-response.repo'
+import { mcpOutcomeToResponse, mcpScriptInfo, type McpScriptInfo } from '../../shared/mcp-response'
+import {
+  INLINE_MASK,
+  MCP_HISTORY_METHOD,
+  buildMcpConnect,
+  mcpDisplayTarget,
+  mcpHistoryRequest,
+  mcpJsonRpc,
+  readSavedMcpCall,
+  resolveSavedMcpCall,
+  type McpCallProblem,
+  type McpConnectParams,
+  type McpSavedCall,
+  type ResolvedMcpCall,
+  type McpSavedConnection,
+} from '../../shared/mcp-call'
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -802,10 +822,22 @@ function pushConsoleLog(
   }
 }
 
+/**
+ * A response that did not come from the HTTP engine — today the MCP call
+ * adapter (`src/shared/mcp-response.ts`, issues #160/#161). `normalized` is
+ * handed to `pm.response` as-is (real `responseTime`, content-type header) and
+ * `mcp` becomes `pm.mcp`.
+ */
+interface ScriptResponseOverride {
+  normalized: NormalizedResponse
+  mcp?: McpScriptInfo
+}
+
 async function runUserScript(
   script: string,
   ctx: ScriptContext,
   response: ScriptResponseShape | null,
+  override?: ScriptResponseOverride,
 ): Promise<void> {
   if (!script) return
 
@@ -822,17 +854,19 @@ async function runUserScript(
     }
   const log = mkLog('log')
 
-  const normalized: NormalizedResponse | null = response
-    ? {
-        code: response.status ?? 0,
-        statusText: response.statusText ?? '',
-        headers: response.headers ?? {},
-        body: response.body ?? '',
-        cookies: response.cookies ?? [],
-        responseTime: 0,
-        responseSize: response.bodySize ?? (response.body ? response.body.length : 0),
-      }
-    : null
+  const normalized: NormalizedResponse | null = override
+    ? override.normalized
+    : response
+      ? {
+          code: response.status ?? 0,
+          statusText: response.statusText ?? '',
+          headers: response.headers ?? {},
+          body: response.body ?? '',
+          cookies: response.cookies ?? [],
+          responseTime: 0,
+          responseSize: response.bodySize ?? (response.body ? response.body.length : 0),
+        }
+      : null
   const substitute = (t: string, obj: Record<string, unknown>): string =>
     t.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_m, k: string) =>
       obj[k] == null ? `{{${k}}}` : String(obj[k]),
@@ -1057,7 +1091,11 @@ async function runUserScript(
   // postman.*/responseBody/tests/xml2Json interface, bare expect/test, and the
   // CryptoJS/_/atob/btoa globals.
   const pm = buildPm()
-  const { bindings, legacyTests } = buildScriptBindings({ pm, normalizedResponse: normalized })
+  const { bindings, legacyTests } = buildScriptBindings({
+    pm,
+    normalizedResponse: normalized,
+    ...(override?.mcp ? { mcp: override.mcp } : {}),
+  })
   const allBindings: Record<string, unknown> = {
     ...bindings,
     console: { log, warn: mkLog('warn'), error: mkLog('error') },
@@ -1509,7 +1547,7 @@ function recordCancelled(
   ctx: RunContext,
   endpointId: string,
   endpoint: { name: string },
-  requestOptions: HttpRequestOptions,
+  requestOptions: { method: string; url: string },
   phase: RunPhase,
   iteration: number | undefined,
   statusText: 'CANCELLED' | 'NOT_RUN' = 'CANCELLED',
@@ -1586,6 +1624,9 @@ async function runEndpointStep(
   // clear "unsupported" result (counted as skipped, so it neither fails the
   // suite nor trips stopOnError) instead of a misleading "No URL".
   const proto = (endpoint.protocol || 'http').toLowerCase()
+  // MCP has its own step (issue #161): connect → call → disconnect, then the
+  // same scripts / assertions / verdict as an HTTP row.
+  if (proto === 'mcp') return runMcpStep(ctx, endpointId, entity, phase, iter)
   const HTTP_LIKE = new Set(['http', 'https', 'rest', 'soap', 'graphql', ''])
   if (!HTTP_LIKE.has(proto)) {
     const result: EndpointRunResult = {
@@ -2091,6 +2132,447 @@ async function runEndpointStep(
       consoleLogs: scriptCtx.consoleLogs.length > 0 ? scriptCtx.consoleLogs : undefined,
     }
     return recordStep(ctx, result)
+  }
+}
+
+// ─── MCP step (issues #160, #161) ────────────────────────────────
+
+/** Error text of a run row whose MCP server asked for user input. */
+const MCP_RUN_INPUT_REQUIRED =
+  'The server asked for input; runs cannot answer interactive requests.'
+/** Error text of a run row saved with OAuth 2.1 (an interactive sign-in). */
+const MCP_RUN_OAUTH =
+  'OAuth 2.1 requires an interactive sign-in; use Bearer with a token variable in runs'
+
+/**
+ * The MCP request as Ctrl+S saved it (`save-active-request.ts` →
+ * `metadata.mcp`, `call` per `mcp-call.slice.ts#savedCallOf`). Read
+ * tolerantly — rows saved before a field existed open with its default. The
+ * call half is read by the SAME reader the tab uses (`readSavedMcpCall`), and
+ * everything after (connect options, call params, masking, the History
+ * snapshot) comes from `src/shared/mcp-call.ts` — one implementation with Send.
+ */
+interface SavedMcpRequest extends McpSavedConnection {
+  transport: McpTransport
+  customHeaders: KeyValuePair[]
+  envVars: KeyValuePair[]
+  call: McpSavedCall
+}
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+}
+
+function kvRows(v: unknown): KeyValuePair[] {
+  if (!Array.isArray(v)) return []
+  return v.filter(
+    (r): r is KeyValuePair =>
+      !!r && typeof r === 'object' && typeof (r as KeyValuePair).key === 'string',
+  )
+}
+
+export function readSavedMcpRequest(endpoint: endpointRepo.EndpointRow): SavedMcpRequest {
+  const schema = parseJsonSafe<{ metadata?: unknown }>(endpoint.request_schema, {})
+  const m = asRecord(asRecord(schema.metadata)?.mcp) ?? {}
+  return {
+    transport: m.transport === 'sse' || m.transport === 'stdio' ? m.transport : 'http',
+    // The MCP store is the URL's source of truth; the row's path is the fallback.
+    url: typeof m.url === 'string' ? m.url : (endpoint.path ?? ''),
+    customHeaders: kvRows(m.customHeaders),
+    envVars: kvRows(m.envVars),
+    auth: asRecord(m.auth),
+    protocol: m.protocol,
+    call: readSavedMcpCall(m.call),
+  }
+}
+
+/**
+ * Run's entry into the shared MCP call module: the saved request + the run's
+ * live variables → connect options and the call params — the same shared
+ * builders Send's `mcp-send-request.ts` uses (parity test:
+ * `tests/main/shared/mcp-call-parity.test.ts`). A tool call keeps `rawArgs`;
+ * `mcpCallOnce` applies the tool's schema once it has listed the tools.
+ */
+export function mcpRunRequest(
+  saved: SavedMcpRequest,
+  vars: Record<string, string>,
+): { connect: McpConnectParams; call: ResolvedMcpCall } {
+  const resolve = (text: string): string => resolveRunnerVariables(text, vars)
+  return {
+    connect: buildMcpConnect(saved, resolve),
+    call: resolveSavedMcpCall(saved.call, resolve),
+  }
+}
+
+/** Run-row text of a call that cannot be made (`resolveSavedMcpCall`'s problem). */
+function mcpCallProblemText(problem: McpCallProblem, uri?: string): string {
+  switch (problem) {
+    case 'noTool':
+      return 'No tool selected in the saved MCP request'
+    case 'noPrompt':
+      return 'No prompt selected in the saved MCP request'
+    case 'noResource':
+      return 'No resource URI in the saved MCP request'
+    case 'argsJson':
+      return 'Tool arguments are not valid JSON (after resolving variables)'
+    case 'argsNotObject':
+      return 'Tool arguments must be a JSON object'
+    case 'uriEmpty':
+      return 'The resource URI resolved to an empty string'
+    case 'uriTemplate':
+      return `Resource URI template is not filled in: ${uri ?? ''}`
+  }
+}
+
+/** JSON-RPC view of the call — the run row's "request body" (credential args masked). */
+function mcpRequestBody(call: McpOneShotCall): string {
+  return JSON.stringify(mcpJsonRpc(call, INLINE_MASK), null, 2)
+}
+
+/**
+ * Execute ONE MCP request of a run (issue #161) — the MCP twin of the HTTP
+ * branch of `runEndpointStep`, sharing everything that is not transport:
+ * pre-request script cascade (it can set variables), `{{var}}` resolution
+ * against the run's live variable map, post-response scripts with
+ * `pm.response` + `pm.mcp` built by the shared adapter
+ * (`src/shared/mcp-response.ts`, the same one Send uses), assertion rows, and
+ * the verdict via `recordStep` → `endpointDidPass`. Setup / main / teardown,
+ * Test Suite items and scheduled runs all come through here.
+ *
+ * MCP auth is the request's own `metadata.mcp.auth` — Send applies no folder /
+ * project auth inheritance to MCP, so neither does Run.
+ */
+async function runMcpStep(
+  ctx: RunContext,
+  endpointId: string,
+  entity: RunnableEntity,
+  phase: RunPhase,
+  iter: number,
+): Promise<StepOutcome> {
+  const endpoint = entity.row
+  const envVars = ctx.envVars
+  const iteration = phase === 'main' ? iter + 1 : undefined
+  const saved = readSavedMcpRequest(endpoint)
+  const rowBase = {
+    endpointId,
+    endpointName: endpoint.name,
+    method: 'MCP',
+    iteration,
+    phase,
+  }
+  const scriptCtx = newScriptContext(envVars, ctx.iterationData[iter] ?? {}, iter, ctx.iterations)
+  const consoleTag = runConsoleTag(ctx, { step: endpoint.name, phase, iteration })
+  scriptCtx.consoleTag = consoleTag
+  scriptCtx.projectId = ctx.options.projectId
+  const logsOf = (): ScriptConsoleLog[] | undefined =>
+    scriptCtx.consoleLogs.length > 0 ? scriptCtx.consoleLogs : undefined
+  const failRow = (url: string, error: string, extra: Partial<EndpointRunResult> = {}) =>
+    recordStep(ctx, {
+      ...rowBase,
+      url,
+      status: null,
+      statusText: '',
+      duration: 0,
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+      assertions: [],
+      error,
+      consoleLogs: logsOf(),
+      ...extra,
+    })
+
+  if (!saved.url.trim()) {
+    return { ...failRow('', 'No server URL configured for MCP request'), configError: true }
+  }
+
+  try {
+    const folderChain =
+      entity.kind === 'suite'
+        ? buildSuiteFolderChain(endpoint.folder_id)
+        : buildFolderChain(endpoint.folder_id)
+    const schema = parseJsonSafe<{
+      preScript?: string
+      postScript?: string
+      assertions?: TestAssertion[]
+      timeout?: unknown
+    }>(endpoint.request_schema, {})
+    // The request's own timeout — the field HTTP rows read in
+    // `buildRequestFromEndpoint` (0 = no timeout). Absent: the engine's
+    // MCP default (120 s — a stdio `npx` spawn + handshake is slow), not
+    // HTTP's 30 s, which would cut long tools that used to pass.
+    const mcpTimeoutMs =
+      typeof schema.timeout === 'number' && Number.isFinite(schema.timeout) && schema.timeout >= 0
+        ? schema.timeout
+        : undefined
+    const { pre: preScripts, post: postScripts } = collectCascadeScripts(
+      folderChain,
+      ctx.projectSettings,
+      schema.preScript,
+      schema.postScript,
+    )
+
+    // pm.request on an MCP row: the server URL (raw, like Send) and the
+    // enabled custom headers — a pre-request script may add one.
+    scriptCtx.request = {
+      method: 'MCP',
+      url: saved.url,
+      headers: new HeaderCollection(
+        saved.customHeaders.filter((h) => h.enabled !== false) as HeaderEntry[],
+      ),
+    }
+    for (const s of preScripts) {
+      scriptCtx.envUpdates = {}
+      scriptCtx.globalUpdates = {}
+      scriptCtx.varUpdates = {}
+      await runUserScript(s, scriptCtx, null)
+      mergeScriptUpdates(scriptCtx, envVars, ctx.runEnvUpdates, ctx.runGlobalUpdates)
+    }
+    // Same rule as HTTP: a throwing pre-request script stops the call.
+    if (scriptCtx.scriptError) {
+      const scriptAssertions = scriptCtx.testResults.map((t) => ({
+        name: t.name,
+        passed: t.passed,
+        error: t.error,
+      }))
+      return failRow(
+        mcpDisplayTarget(saved.transport, saved.url),
+        `Pre-request script error: ${scriptCtx.scriptError}`,
+        {
+          statusText: 'SCRIPT',
+          passed: scriptAssertions.filter((a) => a.passed).length,
+          failed: scriptAssertions.filter((a) => !a.passed).length,
+          assertions: scriptAssertions,
+        },
+      )
+    }
+    let customHeaders = saved.customHeaders
+    if (preScripts.some((s) => s && s.trim())) {
+      customHeaders = scriptCtx.request.headers.toArray().map((h, i) => ({
+        id: `script-${i}`,
+        key: h.key,
+        value: h.value,
+        enabled: true,
+      }))
+    }
+    if (scriptCtx.skipRequest) {
+      return recordStep(ctx, {
+        ...rowBase,
+        url: mcpDisplayTarget(saved.transport, saved.url),
+        status: null,
+        statusText: 'SKIPPED',
+        duration: 0,
+        passed: 0,
+        failed: 0,
+        skipped: 1,
+        assertions: [],
+      })
+    }
+
+    // ── Resolve against the run's live variables (pre-script writes included) ──
+    const { connect, call: resolvedCall } = mcpRunRequest({ ...saved, customHeaders }, envVars)
+    const target = mcpDisplayTarget(saved.transport, connect.url)
+    if (asRecord(saved.auth)?.type === 'oauth2') return failRow(target, MCP_RUN_OAUTH)
+    if (resolvedCall.problem !== undefined) {
+      const step = failRow(target, mcpCallProblemText(resolvedCall.problem, resolvedCall.uri))
+      return resolvedCall.configError ? { ...step, configError: true } : step
+    }
+    // A stdio row IS a command line, and a pulled project can carry any:
+    // only a server the user connected from its MCP tab on this computer runs
+    // unattended (`lib/mcp-stdio-trust.ts`). Checked before anything spawns.
+    if (
+      connect.transport === 'stdio' &&
+      !(await isStdioServerTrusted({
+        projectId: ctx.options.projectId,
+        command: connect.command,
+        args: connect.args,
+        url: connect.url,
+        env: connect.env,
+      }))
+    ) {
+      return { ...failRow(target, MCP_STDIO_UNTRUSTED_MESSAGE), configError: true }
+    }
+    const call: McpOneShotCall = resolvedCall.call
+    // Persisted with the run: credential-named header values masked.
+    const shownHeaders = connect.headers
+      ? Object.fromEntries(
+          Object.entries(connect.headers).map(([k, v]) => [
+            k,
+            isCredentialHeaderName(k) ? INLINE_MASK : v,
+          ]),
+        )
+      : undefined
+
+    if (ctx.runState.directStop) {
+      return recordCancelled(
+        ctx,
+        endpointId,
+        endpoint,
+        { method: 'MCP', url: target },
+        phase,
+        iteration,
+        'NOT_RUN',
+      )
+    }
+    const controller = new AbortController()
+    ctx.runState.cancelInFlight = () => controller.abort()
+    const outcome = await mcpCallOnce({
+      connect,
+      call,
+      signal: controller.signal,
+      ...(mcpTimeoutMs !== undefined ? { timeoutMs: mcpTimeoutMs } : {}),
+    }).finally(() => {
+      ctx.runState.cancelInFlight = null
+    })
+    if (outcome.cancelled) {
+      return recordCancelled(
+        ctx,
+        endpointId,
+        endpoint,
+        { method: 'MCP', url: target },
+        phase,
+        iteration,
+      )
+    }
+
+    const consoleMethod = MCP_HISTORY_METHOD[call.capability]
+    // What went on the wire: tool args after the engine applied the schema.
+    const sent: McpOneShotCall =
+      call.capability === 'tool' && outcome.args ? { ...call, args: outcome.args } : call
+    const requestBody = mcpRequestBody(sent)
+    const failure = outcome.inputRequired ? MCP_RUN_INPUT_REQUIRED : outcome.error
+    const response = failure ? null : mcpOutcomeToResponse(outcome)
+    writeMcpRunHistory(
+      ctx,
+      endpointId,
+      { saved, target, protocol: connect.protocol ?? 'auto', sent },
+      {
+        result: failure ? undefined : outcome.result,
+        failure,
+        durationMs: outcome.timing?.durationMs,
+      },
+    )
+    try {
+      logRequestResponse({
+        protocol: 'mcp',
+        method: consoleMethod,
+        url: target,
+        status: response ? 0 : -1,
+        statusText: response ? response.statusText : (failure ?? 'No result'),
+        durationMs: outcome.timing?.durationMs,
+        sizeBytes: outcome.timing?.sizeBytes,
+        requestHeaders: shownHeaders,
+        requestBody,
+        responseBody: response?.body,
+        error: failure ? { message: failure } : undefined,
+        tabId: consoleTag.tabId,
+        meta: { ...consoleTag.meta, capability: call.capability, name: outcome.name },
+      })
+    } catch {
+      /* logger must never break the run */
+    }
+    if (!response) {
+      return failRow(target, failure ?? 'The MCP call returned no result', {
+        duration: outcome.timing?.durationMs ?? 0,
+        requestHeaders: ctx.persistResponses ? shownHeaders : undefined,
+        requestBody: ctx.persistResponses ? requestBody : undefined,
+      })
+    }
+
+    // Post-response scripts see `pm.response` (HTTP-shaped) + `pm.mcp`.
+    const info = mcpScriptInfo(outcome) ?? undefined
+    for (const s of postScripts) {
+      scriptCtx.envUpdates = {}
+      scriptCtx.globalUpdates = {}
+      scriptCtx.varUpdates = {}
+      await runUserScript(s, scriptCtx, null, { normalized: response, mcp: info })
+      mergeScriptUpdates(scriptCtx, envVars, ctx.runEnvUpdates, ctx.runGlobalUpdates)
+    }
+    const declarative = runAssertionsMainProcess(
+      schema.assertions ?? [],
+      {
+        status: response.code,
+        statusText: response.statusText,
+        headers: response.headers,
+        body: response.body,
+        bodySize: response.responseSize,
+        timing: { total: response.responseTime },
+      },
+      envVars,
+    )
+    const assertionResults: AssertionResult[] = [
+      ...declarative,
+      ...scriptCtx.testResults.map((t) => ({ name: t.name, passed: t.passed, error: t.error })),
+    ]
+    const result: EndpointRunResult = {
+      ...rowBase,
+      url: target,
+      status: response.code,
+      statusText: response.statusText,
+      duration: response.responseTime,
+      passed: assertionResults.filter((a) => a.passed).length,
+      failed: assertionResults.filter((a) => !a.passed).length,
+      skipped: 0,
+      assertions: assertionResults,
+      error: scriptCtx.scriptError
+        ? `Post-response script error: ${scriptCtx.scriptError}`
+        : undefined,
+      responseSize: response.responseSize,
+      responseBody: ctx.persistResponses ? response.body : undefined,
+      responseHeaders: ctx.persistResponses ? response.headers : undefined,
+      requestHeaders: ctx.persistResponses ? shownHeaders : undefined,
+      requestBody: ctx.persistResponses ? requestBody : undefined,
+      consoleLogs: logsOf(),
+    }
+    const outcomeStep = recordStep(ctx, result)
+    return { ...outcomeStep, nextRequestName: scriptCtx.nextRequestName }
+  } catch (e) {
+    // Never crash the run: anything unexpected is this row's failure.
+    return failRow(mcpDisplayTarget(saved.transport, saved.url), (e as Error).message)
+  }
+}
+
+/**
+ * The History row of an MCP run step — what HTTP run steps write
+ * (`runEndpointStep`, same scope ids), in the restorable `{ mcp: … }` shape
+ * Send's History stores (`mcp.handler.ts`, issue #166), built by the shared
+ * `mcpHistoryRequest` with the same mask. Status 0 = a result, -1 = failed.
+ */
+function writeMcpRunHistory(
+  ctx: RunContext,
+  endpointId: string,
+  req: { saved: SavedMcpRequest; target: string; protocol: string; sent: McpOneShotCall },
+  res: { result: unknown; failure?: string; durationMs?: number },
+): void {
+  try {
+    const { sent } = req
+    const snapshot = mcpHistoryRequest(
+      { transport: req.saved.transport, url: req.target, protocol: req.protocol },
+      sent.capability === 'resource'
+        ? { capability: 'resource', uri: sent.uri }
+        : { capability: sent.capability, name: sent.name, args: sent.args },
+      MASKED_VALUE,
+    )
+    let responseSnapshot: string | undefined
+    if (res.failure) responseSnapshot = JSON.stringify({ error: res.failure })
+    else if (ctx.persistResponses) {
+      const body = JSON.stringify(res.result) ?? ''
+      responseSnapshot = body.length <= 500_000 ? body : undefined
+    }
+    historyRepo.addHistory({
+      workspace_id: ctx.options.workspaceId,
+      project_id: ctx.options.projectId,
+      endpoint_id: endpointId,
+      protocol: 'mcp',
+      method: MCP_HISTORY_METHOD[sent.capability],
+      url: req.target,
+      status_code: res.failure ? -1 : 0,
+      duration_ms: res.durationMs,
+      request_snapshot: JSON.stringify({ mcp: snapshot }),
+      response_snapshot: responseSnapshot,
+    })
+  } catch {
+    // History save failure should not affect runner
   }
 }
 

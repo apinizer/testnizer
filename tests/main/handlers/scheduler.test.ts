@@ -252,3 +252,39 @@ describe('scheduler — stopOnError parity', () => {
     expect(after.stop_on_error).toBe(0)
   })
 })
+
+describe('scheduler:taskEndpoints — protocol for the chip (issue #173)', () => {
+  it('returns each row’s protocol so an MCP item lists as MCP, not its placeholder GET', async () => {
+    const now = Date.now()
+    testDb
+      .prepare(
+        `INSERT INTO test_suites (id, project_id, name, sort_order, created_at, updated_at)
+         VALUES ('suite-1', ?, 'Suite', 0, ?, ?)`,
+      )
+      .run(projectId, now, now)
+    const item = testDb.prepare(
+      `INSERT INTO test_suite_items
+         (id, suite_id, folder_id, protocol, name, method, url, request_schema, assertions,
+          source_endpoint_id, sort_order, created_at, updated_at)
+       VALUES (?, 'suite-1', NULL, ?, ?, 'GET', ?, '{}', NULL, NULL, 0, ?, ?)`,
+    )
+    item.run('it-mcp', 'mcp', 'Echo tool', 'http://x/mcp', now, now)
+    item.run('it-http', 'http', 'Health', 'http://x/health', now, now)
+    const created = (await harness.invoke('scheduler:create', {
+      projectId,
+      name: 'Nightly',
+      suiteId: 'suite-1',
+      endpointIds: ['it-mcp', 'it-http'],
+      intervalValue: 60,
+      intervalUnit: 'minutes',
+    })) as { success: boolean; data?: { id: string } }
+    const res = (await harness.invoke('scheduler:taskEndpoints', created.data!.id)) as {
+      success: boolean
+      data?: { items: Array<{ id: string; protocol?: string }> }
+    }
+    expect(res.data?.items.map((i) => [i.id, i.protocol])).toEqual([
+      ['it-mcp', 'mcp'],
+      ['it-http', 'http'],
+    ])
+  })
+})

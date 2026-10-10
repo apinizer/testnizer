@@ -16,8 +16,15 @@ import { useHistoryStore } from '../../stores/history.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTranslation } from '../../lib/i18n'
 import { makeTabId } from '../../lib/utils'
-import MethodBadge from '../shared/MethodBadge'
-import type { HistoryEntry, HttpMethod } from '../../types'
+import RequestBadge from '../shared/RequestBadge'
+import { mcpHistoryRestore, mcpHistoryRowLabel } from '../protocols/mcp/history-restore'
+import { openMcpHistoryRestore } from '../protocols/mcp/history-open'
+import type { HistoryEntry } from '../../types'
+
+/** What a recent row reads as: MCP rows by their call (tool / prompt / URI), the rest by URL. */
+function recentLabel(entry: HistoryEntry): { label: string; title?: string } {
+  return entry.protocol === 'mcp' ? mcpHistoryRowLabel(entry) : { label: entry.url }
+}
 
 interface QuickAction {
   icon: React.ReactNode
@@ -52,7 +59,9 @@ export default function NewRequestWelcome() {
     const seenUrls = new Set<string>()
     const list: HistoryEntry[] = []
     for (const entry of history) {
-      const key = `${entry.method ?? 'GET'} ${entry.url}`
+      // MCP rows of one server share the URL — keyed by the call instead, so
+      // two different tools are not merged into one row.
+      const key = `${entry.method ?? 'GET'} ${entry.url} ${entry.protocol === 'mcp' ? recentLabel(entry).label : ''}`
       if (seenUrls.has(key)) continue
       seenUrls.add(key)
       list.push(entry)
@@ -64,6 +73,19 @@ export default function NewRequestWelcome() {
   function openRecent(entry: HistoryEntry) {
     const tabId = `recent-${entry.id}`
     const protocol = (entry.protocol || 'http') as HistoryEntry['protocol']
+    if (protocol === 'mcp') {
+      // The same restore the History sidebar does: server + the call selected.
+      const mcpRow = mcpHistoryRestore(entry)
+      openTab({
+        id: tabId,
+        name: `${entry.method || 'CALL_TOOL'} ${mcpRow.name || mcpRow.url}`,
+        protocol,
+        method: entry.method,
+        url: mcpRow.url,
+      })
+      openMcpHistoryRestore(mcpRow, useTabsStore.getState().activeTabId || tabId)
+      return
+    }
     openTab({
       id: tabId,
       name: `${entry.method || 'GET'} ${entry.url.split('?')[0].slice(0, 50)}`,
@@ -236,12 +258,13 @@ export default function NewRequestWelcome() {
                   onClick={() => openRecent(entry)}
                   className="flex w-full cursor-pointer items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-left transition-colors hover:border-[var(--accent)] hover:bg-[var(--surface)]"
                 >
-                  <MethodBadge method={(entry.method as HttpMethod) || 'GET'} />
+                  <RequestBadge protocol={entry.protocol} method={entry.method} />
                   <span
                     className="flex-1 truncate font-mono"
                     style={{ color: 'var(--text)', fontSize: 13 }}
+                    title={recentLabel(entry).title}
                   >
-                    {entry.url}
+                    {recentLabel(entry).label}
                   </span>
                   {entry.status_code != null && (
                     <span

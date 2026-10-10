@@ -20,12 +20,22 @@ import {
 // Pure module, not the engine: the handler tests mock `mcp.engine` wholesale.
 import { parseMcpAuth } from '../protocols/mcp-auth'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
+import { trustStdioServer } from '../lib/mcp-stdio-trust'
 import * as historyRepo from '../db/history.repo'
 import { maskSensitiveHeaders, MASKED_VALUE } from '../db/saved-response.repo'
 // Gateway credentials rarely use the standard names (`X-Gateway-Token`,
 // `X-Client-Secret`, … — the whole point of issue #137): one broad name rule,
 // shared with the OAuth debugger and the Security Scan evidence.
 import { isCredentialHeaderName } from '../lib/credential-headers'
+import {
+  maskMcpArgs,
+  mcpHistoryRequest,
+  mcpSafeCommandLine,
+  mcpSafeUrl,
+  tokenizeCommandLine,
+  type McpHistoryCapability,
+  type McpHistoryRequest,
+} from '../../shared/mcp-call'
 
 /**
  * Console-safe view of the user's custom connect headers (issue #137): values
@@ -77,7 +87,11 @@ function parseProtocolOption(raw: unknown): string | undefined {
 const REDIRECT_CREDENTIALS_DROPPED = 'notifications/testnizer/redirect_credentials_dropped'
 
 interface McpConnectionContext {
-  /** The renderer's URL (console log, lifetime log). */
+  /**
+   * URL every console / lifetime log of this connection shows: the server URL
+   * without userinfo and with credential query values masked, or the masked
+   * stdio command line — the same text as `target`. Never the raw URL.
+   */
   url: string
   connectedAt: number
   transport: McpTransport
@@ -100,116 +114,24 @@ const mcpContext = new Map<string, McpConnectionContext>()
 
 // ─── History snapshot (issue #166) ──────────────────────────
 
-/** Replaces a credential value inside a URL / command line (URL-safe, unlike `MASKED_VALUE`). */
-const INLINE_MASK = '***'
-
-/** Server URL as History stores it: no `user:pass@`, credential-named query values masked. */
-function historySafeUrl(raw: string): string {
-  let url: URL
-  try {
-    url = new URL(raw)
-  } catch {
-    return raw
-  }
-  let changed = false
-  if (url.username || url.password) {
-    url.username = ''
-    url.password = ''
-    changed = true
-  }
-  for (const key of new Set(url.searchParams.keys())) {
-    if (isCredentialHeaderName(key)) {
-      url.searchParams.set(key, INLINE_MASK)
-      changed = true
-    }
-  }
-  return changed ? url.toString() : raw
-}
-
-/** A flag that names a credential (`--api-key`, `--token`, `-password`). */
-function isCredentialFlag(flag: string): boolean {
-  return /^--?[A-Za-z]/.test(flag) && isCredentialHeaderName(flag.replace(/^-+/, ''))
-}
-
-/**
- * stdio command line as History stores it: the value after a credential flag
- * (`--api-key X`, `--token=X`) and credential query values in URL arguments
- * are masked. Env vars are never part of it.
- */
-function historySafeCommandLine(parts: string[]): string {
-  const out: string[] = []
-  let maskNext = false
-  for (const part of parts) {
-    if (maskNext) {
-      out.push(INLINE_MASK)
-      maskNext = false
-      continue
-    }
-    const inline = /^(--?[^=\s]+)=(.*)$/.exec(part)
-    if (inline && isCredentialFlag(inline[1])) {
-      out.push(`${inline[1]}=${INLINE_MASK}`)
-      continue
-    }
-    if (isCredentialFlag(part)) maskNext = true
-    const safe = /^[a-z][a-z0-9+.-]*:\/\//i.test(part) ? historySafeUrl(part) : part
-    out.push(/\s/.test(safe) ? JSON.stringify(safe) : safe)
-  }
-  return out.join(' ')
-}
-
 function historyTarget(options: {
   transport: McpTransport
   url: string
   command?: string
   args?: string[]
 }): string {
-  if (options.transport !== 'stdio') return historySafeUrl(options.url)
-  // Same tokenisation as the engine: explicit `args` → `command` is verbatim.
+  if (options.transport !== 'stdio') return mcpSafeUrl(options.url)
+  // Explicit `args` → `command` is one token; otherwise the line is split
+  // quote-aware, like the shared `parseCommandLine` (a quoted path with a
+  // space stays one token).
   const parts =
     options.command && Array.isArray(options.args)
       ? [options.command, ...options.args]
-      : (options.command || options.url).trim().split(/\s+/)
-  return historySafeCommandLine(parts.filter((p) => typeof p === 'string'))
+      : tokenizeCommandLine(options.command || options.url)
+  return mcpSafeCommandLine(parts.filter((p) => typeof p === 'string'))
 }
 
-/** Tool / prompt arguments with credential-named values masked (recursively). */
-function maskArgs(value: unknown, depth = 0): unknown {
-  if (depth > 32) return value
-  if (Array.isArray(value)) return value.map((v) => maskArgs(v, depth + 1))
-  if (!value || typeof value !== 'object') return value
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    // Strings only: the name rule is broad (`max_tokens`, `session_id`), and a
-    // number / boolean is not a typed-in credential — masking it would make
-    // the restored call fail its input schema.
-    const secret = isCredentialHeaderName(k) && typeof v === 'string' && v !== ''
-    out[k] = secret ? MASKED_VALUE : maskArgs(v, depth + 1)
-  }
-  return out
-}
-
-type McpCapability = 'tool' | 'resource' | 'prompt'
-
-/**
- * The restorable request of an MCP history row (issue #166), stored as
- * `request_snapshot = JSON.stringify({ mcp: … })`. Values are what was sent
- * (`{{var}}` already resolved by the renderer), credential-like ones masked;
- * headers, auth, OAuth and stdio env are never stored.
- */
-interface McpHistoryRequest {
-  transport: McpTransport | 'unknown'
-  /** Server URL, or the stdio command line. */
-  url: string
-  /** Requested protocol option: `auto` / `legacy` / a revision. */
-  protocol: string
-  capability: McpCapability
-  /** Tool or prompt name (absent for a resource). */
-  name?: string
-  /** Tool or prompt arguments (absent for a resource). */
-  args?: Record<string, unknown>
-  /** Resource URI (resource only). */
-  uri?: string
-}
+type McpCapability = McpHistoryCapability
 
 interface CallTarget {
   capability: McpCapability
@@ -218,19 +140,26 @@ interface CallTarget {
   uri?: string
 }
 
-function historyRequest(connectionId: string, target: CallTarget): McpHistoryRequest {
-  const ctx = mcpContext.get(connectionId)
-  return {
-    transport: ctx?.transport ?? 'unknown',
-    url: ctx?.target ?? connectionId,
-    protocol: ctx?.protocol ?? 'auto',
-    capability: target.capability,
-    ...(target.name !== undefined ? { name: target.name } : {}),
-    ...(target.args !== undefined
-      ? { args: maskArgs(target.args) as Record<string, unknown> }
-      : {}),
-    ...(target.uri !== undefined ? { uri: target.uri } : {}),
-  }
+/**
+ * The restorable request of an MCP history row — the shared builder Run's
+ * History rows use too (`src/shared/mcp-call.ts` `mcpHistoryRequest`). `ctx`
+ * is the connection context snapshotted when the call STARTED: a connection
+ * that drops mid-call is forgotten (`connectionClosed`) before the row is written.
+ */
+function historyRequest(
+  ctx: McpConnectionContext | undefined,
+  connectionId: string,
+  target: CallTarget,
+): McpHistoryRequest {
+  return mcpHistoryRequest(
+    {
+      transport: ctx?.transport ?? 'unknown',
+      url: ctx?.target ?? connectionId,
+      protocol: ctx?.protocol ?? 'auto',
+    },
+    target,
+    MASKED_VALUE,
+  )
 }
 
 /** Push an MCP event to every live window (issue #139 — per-connection, never "the active tab"). */
@@ -452,7 +381,11 @@ interface LoggedCall {
  */
 async function loggedMcpCall(call: LoggedCall): Promise<McpCallReply> {
   const started = Date.now()
+  // Snapshot of the connection AT CALL START (target, transport, protocol,
+  // scope): `connectionClosed` deletes the context while a call may still be
+  // running, and the History row is written after the await.
   const conn = mcpContext.get(call.connectionId)
+  const connAtStart = conn ? { ...conn } : undefined
   const given = call.ctx.workspaceId || call.ctx.projectId || call.ctx.endpointId
   if (conn && given) {
     conn.scope = compactContext({
@@ -461,7 +394,7 @@ async function loggedMcpCall(call: LoggedCall): Promise<McpCallReply> {
       endpointId: call.ctx.endpointId,
     })
   }
-  const scope = given ? call.ctx : (conn?.scope ?? {})
+  const scope = given ? call.ctx : (connAtStart?.scope ?? {})
   const history = (
     statusCode: number,
     responseSnapshot: string | undefined,
@@ -474,10 +407,12 @@ async function loggedMcpCall(call: LoggedCall): Promise<McpCallReply> {
         endpoint_id: scope.endpointId,
         protocol: 'mcp',
         method: call.method,
-        url: mcpContext.get(call.connectionId)?.target ?? call.connectionId,
+        url: connAtStart?.target ?? call.connectionId,
         status_code: statusCode,
         duration_ms: durationMs,
-        request_snapshot: JSON.stringify({ mcp: historyRequest(call.connectionId, call.target) }),
+        request_snapshot: JSON.stringify({
+          mcp: historyRequest(connAtStart, call.connectionId, call.target),
+        }),
         response_snapshot: responseSnapshot,
       })
     } catch {
@@ -548,6 +483,11 @@ const describeToolResult = (
 ): { statusText?: string; meta?: Record<string, string | number | boolean> } =>
   isInputRequired(data) ? { statusText: 'INPUT_REQUIRED', meta: { inputRequired: true } } : {}
 
+/** Console request body of a tool / prompt call: credential-named args masked (History's rule). */
+function consoleArgs(args: unknown): string {
+  return JSON.stringify(maskMcpArgs(args ?? {}, MASKED_VALUE)) ?? '{}'
+}
+
 function toolConsoleUrl(connectionId: string, toolName: string): string {
   const ctx = mcpContext.get(connectionId)
   return ctx ? `${ctx.url}/${toolName}` : `${connectionId}/${toolName}`
@@ -575,11 +515,20 @@ export function registerMcpHandlers(): void {
         oauthSessionId?: string
         /** Protocol era negotiation: `auto` (default) / `legacy` / a pinned revision (issue #152). */
         protocol?: unknown
+        /**
+         * Project of the tab that connects. A stdio server connected here (the
+         * user's explicit Connect) becomes trusted for runs of that project on
+         * this computer (`lib/mcp-stdio-trust.ts`).
+         */
+        projectId?: unknown
         _pendingId?: string
       },
     ) => {
       const started = Date.now()
       const loggedHeaders = consoleSafeHeaders(options.headers)
+      // Console / History text of this server: no userinfo, credential query
+      // values and stdio credential flags masked (the raw URL never logs).
+      const target = historyTarget(options)
       const auth = options.transport === 'stdio' ? undefined : parseMcpAuth(options.auth)
       const protocol = parseProtocolOption(options.protocol)
       try {
@@ -597,17 +546,27 @@ export function registerMcpHandlers(): void {
             : {}),
           ...(protocol ? { protocol } : {}),
         })
+        if (options.transport === 'stdio') {
+          // The user ran this command line from its tab — runs may now too.
+          await trustStdioServer({
+            projectId: typeof options.projectId === 'string' ? options.projectId : undefined,
+            command: options.command,
+            args: options.args,
+            url: options.url,
+            env: options.env,
+          })
+        }
         mcpContext.set(data.connectionId, {
-          url: options.url,
+          url: target,
           connectedAt: Date.now(),
           transport: options.transport,
-          target: historyTarget(options),
+          target,
           protocol: protocol ?? 'auto',
         })
         logRequestResponse({
           protocol: 'mcp',
           method: 'CONNECT',
-          url: options.url,
+          url: target,
           status: 0,
           statusText: 'OK',
           durationMs: Date.now() - started,
@@ -626,7 +585,7 @@ export function registerMcpHandlers(): void {
             oauth: !!options.oauthSessionId,
             // Authorization tab: the type (and api-key placement) only — never
             // a username, password, token or key value. The logged url is the
-            // renderer's, so an api-key query param is not in it either.
+            // masked target, so an api-key query param is not in it either.
             authType: auth?.type ?? 'none',
             ...(auth?.type === 'api-key' ? { authIn: auth.apiKey?.in ?? 'header' } : {}),
             // stdio env values routinely carry API tokens — count only, never values.
@@ -639,7 +598,7 @@ export function registerMcpHandlers(): void {
         logRequestResponse({
           protocol: 'mcp',
           method: 'CONNECT',
-          url: options.url,
+          url: target,
           status: -1,
           statusText: err.message,
           durationMs: Date.now() - started,
@@ -782,7 +741,7 @@ export function registerMcpHandlers(): void {
         method: 'GET_PROMPT',
         connectionId,
         consoleUrl: ctxInfo ? `${ctxInfo.url}/${name}` : `${connectionId}/${name}`,
-        requestBody: JSON.stringify(args ?? {}),
+        requestBody: consoleArgs(args),
         target: { capability: 'prompt', name, args: args ?? {} },
         ctx,
         run: () => mcpGetPrompt(connectionId, name, args ?? {}, ...callOpts(ctx)),
@@ -807,7 +766,7 @@ export function registerMcpHandlers(): void {
         method: 'CALL_TOOL',
         connectionId,
         consoleUrl: toolConsoleUrl(connectionId, toolName),
-        requestBody: JSON.stringify(args),
+        requestBody: consoleArgs(args),
         target: { capability: 'tool', name: toolName, args: args ?? {} },
         ctx,
         run: () => mcpCallTool(connectionId, toolName, args, ...callOpts(ctx)),
@@ -898,7 +857,7 @@ export function registerMcpHandlers(): void {
         method: 'RESPOND_INPUT',
         connectionId,
         consoleUrl: toolConsoleUrl(connectionId, toolName),
-        requestBody: JSON.stringify(args),
+        requestBody: consoleArgs(args),
         // The restorable request is the tool call itself — the form answers
         // of this round are not part of it.
         target: { capability: 'tool', name: toolName, args: args ?? {} },

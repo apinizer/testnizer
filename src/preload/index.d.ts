@@ -857,7 +857,14 @@ interface SchedulerApi {
   history(taskId: string): Promise<IpcResult<SchedulerHistoryRow[]>>
   taskEndpoints(taskId: string): Promise<
     IpcResult<{
-      items: Array<{ id: string; name: string; method: string | null; url: string | null }>
+      items: Array<{
+        id: string
+        name: string
+        method: string | null
+        url: string | null
+        /** Non-HTTP rows show the protocol chip (issue #173). */
+        protocol?: string | null
+      }>
       source: 'suite' | 'apis' | 'empty'
     }>
   >
@@ -1209,6 +1216,12 @@ interface McpConnectOptions {
    * as `'legacy'`.
    */
   protocol?: 'auto' | 'legacy' | (string & {})
+  /**
+   * Project of the connecting tab. A stdio server connected with it becomes
+   * trusted for unattended runs of that project on this computer (local
+   * settings only — never the project file).
+   */
+  projectId?: string
   _pendingId?: string
 }
 

@@ -14,6 +14,8 @@
 import type { HistoryEntry } from '../../../types'
 import type { McpTransport } from '../../../types/mcp'
 import type { McpSavedCall } from '../../../stores/mcp-call.slice'
+import { HISTORY_MASK, isCredentialArgName } from '../../../../shared/credential-headers'
+import { INLINE_MASK } from '../../../../shared/mcp-call'
 
 export interface McpHistoryRestore {
   transport: McpTransport
@@ -24,6 +26,43 @@ export interface McpHistoryRestore {
   /** Tool / prompt name or resource URI — tab title and search. */
   name: string
   call: McpSavedCall
+  /**
+   * Arguments History stored masked (credential-named), restored EMPTY so a
+   * re-run never sends the mask: dotted paths (`api_key`, `auth.token`) the
+   * tab names in its "enter it again" note. Absent when nothing was hidden.
+   */
+  hiddenArgs?: string[]
+}
+
+/**
+ * Was this value masked when the row was written? History always writes
+ * `HISTORY_MASK` — and rows from before the word rule masked plain args too
+ * (`author`, `keyword`), so the mask counts whatever the key. `***` (the Run
+ * row body's mask) only counts under a credential name: as a free-text value
+ * it may be real.
+ */
+function wasMasked(key: string, value: string): boolean {
+  return value === HISTORY_MASK || (value === INLINE_MASK && isCredentialArgName(key))
+}
+
+/** Blank the values History masked, recursively; `hidden` collects their paths. */
+function unmaskArgs(value: unknown, path: string, hidden: string[], depth = 0): unknown {
+  if (depth > 32) return value
+  if (Array.isArray(value)) {
+    return value.map((v, i) => unmaskArgs(v, `${path}[${i}]`, hidden, depth + 1))
+  }
+  if (!isRecord(value)) return value
+  const out: Json = {}
+  for (const [k, v] of Object.entries(value)) {
+    const at = path ? `${path}.${k}` : k
+    if (typeof v === 'string' && wasMasked(k, v)) {
+      hidden.push(at)
+      out[k] = ''
+    } else {
+      out[k] = unmaskArgs(v, at, hidden, depth + 1)
+    }
+  }
+  return out
 }
 
 type Row = Pick<HistoryEntry, 'url' | 'method' | 'request_snapshot'>
@@ -94,13 +133,15 @@ export function mcpHistoryRestore(entry: Row): McpHistoryRestore {
     t === 'http' || t === 'sse' || t === 'stdio' ? t : guessTransport(url)
   const protocol = str(meta.protocol)
 
+  const hidden: string[] = []
   let call: McpSavedCall
   if (capability === 'resource') {
     call = { capabilityTab: 'resources', selectedResourceUri: uri, resourceUriDraft: uri }
   } else if (capability === 'prompt') {
     const promptArgs: Record<string, string> = {}
-    if (isRecord(args)) {
-      for (const [k, v] of Object.entries(args)) {
+    const visible = unmaskArgs(args, '', hidden)
+    if (isRecord(visible)) {
+      for (const [k, v] of Object.entries(visible)) {
         if (v !== undefined && v !== null) promptArgs[k] = typeof v === 'string' ? v : String(v)
       }
     }
@@ -109,10 +150,27 @@ export function mcpHistoryRestore(entry: Row): McpHistoryRestore {
     call = {
       capabilityTab: 'tools',
       selectedTool: name || null,
-      toolArgs: JSON.stringify(isRecord(args) ? args : {}, null, 2),
+      toolArgs: JSON.stringify(isRecord(args) ? unmaskArgs(args, '', hidden) : {}, null, 2),
     }
   }
-  return { transport, url, ...(protocol ? { protocol } : {}), name, call }
+  return {
+    transport,
+    url,
+    ...(protocol ? { protocol } : {}),
+    name,
+    call,
+    ...(hidden.length > 0 ? { hiddenArgs: hidden } : {}),
+  }
+}
+
+/**
+ * How an MCP row reads in History lists (review item 10): the tool / prompt
+ * name or resource URI as the label — every row of one server used to read
+ * "MCP host/mcp" — and the server URL (stdio: command line) as the tooltip.
+ */
+export function mcpHistoryRowLabel(entry: Row): { label: string; title: string } {
+  const r = mcpHistoryRestore(entry)
+  return { label: r.name || r.url, title: r.url }
 }
 
 /** Extra text History search matches for an MCP row: the tool / prompt name and resource URI. */

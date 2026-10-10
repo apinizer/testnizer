@@ -38,6 +38,8 @@ import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotoc
 import { createMcpOAuthFetch } from './mcp-oauth.engine'
 import { isCredentialHeaderName } from '../lib/credential-headers'
 import { applyMcpAuth, type McpAuthOptions } from './mcp-auth'
+import type { McpCallOutcome } from '../../shared/mcp-response'
+import { applyToolSchema } from '../../shared/mcp-call'
 
 export type McpTransport = 'http' | 'sse' | 'stdio'
 
@@ -344,6 +346,14 @@ interface WireState {
   postsById: Map<string, AbortController>
   /** Until when a stream error caused by our own POST abort is expected (not logged). */
   postAbortQuietUntil: number
+  /**
+   * A connection nobody watches (`mcpCallOnce`, issue #161): no event reaches
+   * the sink (no tab owns it), and a 2025-era `elicitation/create` is answered
+   * `cancel` at once — there is no user to ask — and noted in `inputRequested`.
+   */
+  detached: boolean
+  /** A detached connection's server asked for user input (see `detached`). */
+  inputRequested: boolean
 }
 
 interface Connection {
@@ -372,7 +382,7 @@ function makeId(): string {
 }
 
 function emit(state: WireState, event: McpEngineEvent): void {
-  if (state.discarded) return
+  if (state.discarded || state.detached) return
   if (state.buffering) {
     state.buffer.push(event)
     return
@@ -947,6 +957,18 @@ export class McpCallCancelledError extends Error {
 export interface McpCallOptions {
   /** Renderer-chosen id `mcpCancelCall(connectionId, callId)` aborts this call by. */
   callId?: string
+  /**
+   * SDK request timeout (ms) — default the SDK's 60 s. `mcpCallOnce` passes
+   * the run's bound so a long tool call is not cut at 60 s by the SDK first.
+   */
+  timeoutMs?: number
+  /** Called on every `notifications/progress` of this call (tools/call only). */
+  onProgress?: () => void
+}
+
+/** `{ timeout }` for the SDK request options — only when a positive bound was given. */
+function sdkTimeout(opts: McpCallOptions): { timeout?: number } {
+  return opts.timeoutMs && opts.timeoutMs > 0 ? { timeout: opts.timeoutMs } : {}
 }
 
 /** In-flight cancellable calls: connectionId → callId → controller. */
@@ -999,6 +1021,11 @@ export function mcpCancelCall(connectionId: string, callId: string): boolean {
   if (!controller || controller.signal.aborted) return false
   // The reason is what the server reads in `notifications/cancelled`.
   controller.abort(MCP_CALL_CANCELLED_MESSAGE)
+  // A 2025-era `elicitation/create` the cancelled call was waiting on is
+  // bound to the SERVER's request signal, not to this call: answer it
+  // `cancel` now instead of leaving it open for the 10-minute timeout.
+  // (A tab runs one tool call at a time; the cards go with its cancel.)
+  cancelPendingElicitations(connectionId)
   return true
 }
 
@@ -1061,6 +1088,12 @@ function handleElicitation(
       `[mcp] ${state.connectionId}: declined a URL-mode elicitation — Testnizer answers form-mode elicitations only`,
     )
     return Promise.resolve({ action: 'decline' })
+  }
+  // Nobody to ask (a run, issue #161): decline-by-cancel now instead of
+  // holding the call for the 10-minute timeout; the caller reads the flag.
+  if (state.detached) {
+    state.inputRequested = true
+    return Promise.resolve({ action: 'cancel' })
   }
   const connectionId = state.connectionId
   const elicitationId = `elicit-${nextElicitationId++}-${Date.now()}`
@@ -1360,6 +1393,11 @@ export async function mcpConnect(options: {
   oauthSessionId?: string
   /** Protocol era negotiation (issue #152). Default `'auto'`. */
   protocol?: McpProtocolOption
+  /**
+   * No user / tab behind this connection (`mcpCallOnce`, issue #161): events
+   * are not emitted and elicitations are cancelled at once. Default false.
+   */
+  detached?: boolean
 }): Promise<McpConnectionInfo> {
   const connectionId = makeId()
   const plan = resolveNegotiation(options.protocol, options.transport)
@@ -1380,6 +1418,8 @@ export async function mcpConnect(options: {
     outbound: new Set(),
     postsById: new Map(),
     postAbortQuietUntil: 0,
+    detached: options.detached === true,
+    inputRequested: false,
   }
 
   /** A fresh transport for one connect attempt (a transport cannot be restarted). */
@@ -1826,7 +1866,12 @@ export async function mcpReadResource(
 ): Promise<McpReadResourceResult> {
   const { client } = requireConnection(connectionId)
   const res = await runCancellable(connectionId, opts.callId, (signal) =>
-    sdkCall(() => client.readResource({ uri }, { ...FRESH, ...(signal ? { signal } : {}) })),
+    sdkCall(() =>
+      client.readResource(
+        { uri },
+        { ...FRESH, ...(signal ? { signal } : {}), ...sdkTimeout(opts) },
+      ),
+    ),
   )
   return {
     contents: res.contents.map((c) => {
@@ -1888,7 +1933,11 @@ export async function mcpGetPrompt(
   }
   const params = { name, arguments: promptArgs }
   const res = await runCancellable(connectionId, opts.callId, (signal) =>
-    sdkCall(() => (signal ? client.getPrompt(params, { signal }) : client.getPrompt(params))),
+    sdkCall(() =>
+      signal || opts.timeoutMs
+        ? client.getPrompt(params, { ...(signal ? { signal } : {}), ...sdkTimeout(opts) })
+        : client.getPrompt(params),
+    ),
   )
   return compact<McpGetPromptResult>({
     description: res.description,
@@ -1925,6 +1974,7 @@ async function runToolCall(
   conn: Connection,
   request: ToolCallParams,
   signal?: AbortSignal,
+  opts: McpCallOptions = {},
 ): Promise<unknown> {
   let params = request
   const modern = conn.client.getProtocolEra() === 'modern'
@@ -1932,9 +1982,11 @@ async function runToolCall(
   // allows a server to emit `notifications/progress` for this call at all
   // (they reach the renderer through the frame tap as `mcp:notification`).
   // Progress also resets the SDK's 60 s request timeout.
+  const onProgress = opts.onProgress
   const options: CallToolRequestOptions = {
-    onprogress: () => {},
+    onprogress: () => onProgress?.(),
     resetTimeoutOnProgress: true,
+    ...sdkTimeout(opts),
     // Issue #163: `mcpCancelCall` — the MRTR retry legs get their own signal.
     ...(signal ? { signal } : {}),
   }
@@ -1983,7 +2035,7 @@ export async function mcpCallTool(
 ): Promise<unknown> {
   const conn = requireConnection(connectionId)
   return runCancellable(connectionId, opts.callId, (signal) =>
-    runToolCall(conn, { name: toolName, arguments: args }, signal),
+    runToolCall(conn, { name: toolName, arguments: args }, signal, opts),
   )
 }
 
@@ -2040,5 +2092,206 @@ export function mcpGetConnection(connectionId: string): McpConnectionInfo | unde
 export function mcpDisconnectAll(): void {
   for (const [id] of connections) {
     mcpDisconnect(id).catch(() => {})
+  }
+}
+
+// ─── One-shot call (Runner / Test Suite / Scheduler, issue #161) ──
+
+/**
+ * The saved call a run executes — one capability, already `{{var}}`-resolved.
+ * A tool call's `rawArgs` (the UNRESOLVED parse, `src/shared/mcp-call.ts`
+ * `resolveSavedMcpCall`) lets the engine apply the tool's `inputSchema` once
+ * it has listed the tools — a `{{n}}` typed into a number field goes out as a
+ * number, exactly as Send sends it.
+ */
+export type McpOneShotCall =
+  | { capability: 'tool'; name: string; args: Record<string, unknown>; rawArgs?: unknown }
+  | { capability: 'resource'; uri: string }
+  | { capability: 'prompt'; name: string; args: Record<string, string> }
+
+export interface McpOneShotOptions {
+  /** Connect options as for `mcpConnect` (no OAuth session — runs are non-interactive). */
+  connect: Omit<Parameters<typeof mcpConnect>[0], 'pendingId' | 'oauthSessionId' | 'detached'>
+  call: McpOneShotCall
+  /** Aborts the handshake or the running call; the outcome comes back `cancelled`. */
+  signal?: AbortSignal
+  /**
+   * Upper bound for connect + call, reset by every progress notification of
+   * the tool call (like Send's `resetTimeoutOnProgress`). Default
+   * `MCP_ONE_SHOT_TIMEOUT_MS`; `0` = no bound (the HTTP "0 = no timeout"
+   * rule) — the run's Stop still ends the call.
+   */
+  timeoutMs?: number
+}
+
+export interface McpOneShotOutcome extends McpCallOutcome {
+  /**
+   * The server asked for user input — a 2026-07-28 `input_required` round or
+   * a 2025-era `elicitation/create` (answered `cancel`). A run cannot answer
+   * either, so the caller fails the step whatever `result` / `error` say.
+   */
+  inputRequired?: boolean
+  /** Negotiated protocol revision, when the handshake got that far. */
+  protocolVersion?: string
+  /** Tool arguments as sent — after the tool's schema was applied (`rawArgs`). */
+  args?: Record<string, unknown>
+}
+
+/** Default bound for one connect + call in a run — no step may hang. */
+export const MCP_ONE_SHOT_TIMEOUT_MS = 120_000
+
+function isInputRequiredMarker(result: unknown): boolean {
+  return isObject(result) && isObject(result.__mcp) && result.__mcp.kind === 'input_required'
+}
+
+/**
+ * Connect → call one capability → disconnect, for a caller with no user and
+ * no tab behind it (the Collection Runner, Test Suites, the Scheduler).
+ *
+ * - The connection is `detached`: no event reaches the renderer, and an
+ *   elicitation is cancelled immediately and reported as `inputRequired`.
+ * - A tool call lists tools first, exactly like a tab does after Connect —
+ *   the SDK's `outputSchema` / `Mcp-Param-*` handling reads that list.
+ * - `timing` covers the call itself (not the handshake), matching the
+ *   `mcp:callTool` reply's `timing` on Send.
+ * - Never throws: transport / protocol failures come back as `error`,
+ *   `signal` aborts as `cancelled`, the bound as a timeout `error`. The
+ *   connection is ALWAYS closed — also when the bound fires mid-handshake.
+ */
+export async function mcpCallOnce(opts: McpOneShotOptions): Promise<McpOneShotOutcome> {
+  const { call, signal } = opts
+  const base = {
+    capability: call.capability,
+    name: call.capability === 'resource' ? call.uri : call.name,
+  }
+  const timeoutMs =
+    opts.timeoutMs !== undefined && Number.isFinite(opts.timeoutMs) && opts.timeoutMs >= 0
+      ? opts.timeoutMs
+      : MCP_ONE_SHOT_TIMEOUT_MS
+  const pendingId = makeId()
+  const callId = makeId()
+  let connectionId: string | undefined
+  let stopped: 'cancel' | 'timeout' | null = null
+  /** Tool args as sent (schema applied) — on every outcome, also a failed one. */
+  let sentArgs: { args?: Record<string, unknown> } = {}
+  /**
+   * Rejects once the run is stopped: raced against steps that take no
+   * signal (`tools/list`), so Stop / the bound never wait for them. The
+   * connection still closes in the work's `finally`.
+   */
+  let rejectStop: (err: Error) => void = () => {}
+  const stopArm = new Promise<never>((_resolve, reject) => {
+    rejectStop = reject
+  })
+  stopArm.catch(() => {})
+
+  const halt = (why: 'cancel' | 'timeout'): void => {
+    if (stopped) return
+    stopped = why
+    rejectStop(new McpCallCancelledError())
+    if (connectionId) mcpCancelCall(connectionId, callId)
+    else void mcpCancelConnect(pendingId)
+  }
+
+  // The bound — restartable, so progress notifications push it out.
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let fireTimeout: () => void = () => {}
+  const bound = new Promise<'timeout'>((resolve) => {
+    fireTimeout = () => resolve('timeout')
+  })
+  const armBound = (): void => {
+    clearTimeout(timer)
+    if (timeoutMs === 0 || stopped) return
+    timer = setTimeout(fireTimeout, timeoutMs)
+    timer.unref?.()
+  }
+  const callOpts: McpCallOptions = {
+    callId,
+    ...(timeoutMs > 0 ? { timeoutMs } : {}),
+    onProgress: armBound,
+  }
+  const onAbort = (): void => halt('cancel')
+  if (signal?.aborted) return { ...base, cancelled: true, error: MCP_CALL_CANCELLED_MESSAGE }
+  signal?.addEventListener('abort', onAbort, { once: true })
+
+  const work = (async (): Promise<McpOneShotOutcome> => {
+    const info = await mcpConnect({ ...opts.connect, pendingId, detached: true })
+    connectionId = info.connectionId
+    const id = info.connectionId
+    try {
+      if (stopped) throw new McpCallCancelledError()
+      let toolArgs: Record<string, unknown> | undefined
+      if (call.capability === 'tool') {
+        // Best effort: a server without tools/list can still answer the call.
+        // Raced against Stop: `tools/list` takes no signal.
+        const tools = await Promise.race([mcpListTools(id).catch((): McpTool[] => []), stopArm])
+        if (stopped) throw new McpCallCancelledError()
+        // Schema coercion of `{{var}}` values — the shared Send rule.
+        const schema = tools.find((t) => t.name === call.name)?.inputSchema
+        toolArgs = applyToolSchema(call.args, call.rawArgs, schema)
+        sentArgs = { args: toolArgs }
+      }
+      const started = Date.now()
+      let result: unknown
+      let callError: unknown
+      try {
+        if (call.capability === 'tool') {
+          result = await mcpCallTool(id, call.name, toolArgs ?? call.args, callOpts)
+        } else if (call.capability === 'resource') {
+          result = await mcpReadResource(id, call.uri, callOpts)
+        } else {
+          result = await mcpGetPrompt(id, call.name, call.args, callOpts)
+        }
+      } catch (err) {
+        callError = err
+      }
+      const durationMs = Date.now() - started
+      const inputRequired =
+        connections.get(id)?.state.inputRequested === true || isInputRequiredMarker(result)
+      const protocolVersion = info.protocolVersion
+      if (callError !== undefined) {
+        if (inputRequired) return { ...base, ...sentArgs, inputRequired, protocolVersion }
+        throw callError
+      }
+      const sizeBytes = Buffer.byteLength(JSON.stringify(result) ?? '', 'utf-8')
+      return {
+        ...base,
+        ...sentArgs,
+        result,
+        timing: { durationMs, sizeBytes },
+        ...(inputRequired ? { inputRequired } : {}),
+        ...(protocolVersion ? { protocolVersion } : {}),
+      }
+    } finally {
+      await mcpDisconnect(id).catch(() => {})
+    }
+  })()
+
+  armBound()
+  try {
+    const settled = await Promise.race([
+      work.then(
+        (outcome) => ({ outcome }),
+        (err: unknown) => ({ err }),
+      ),
+      bound,
+    ])
+    if (settled === 'timeout') {
+      halt('timeout')
+      // The work settles on its own (cancelled handshake / call) and closes
+      // the connection in its `finally`; nobody waits for it here.
+      work.catch(() => {})
+      return { ...base, ...sentArgs, error: `MCP call timed out after ${timeoutMs} ms` }
+    }
+    if ('outcome' in settled) return settled.outcome
+    if (stopped === 'cancel' || signal?.aborted) {
+      return { ...base, ...sentArgs, cancelled: true, error: MCP_CALL_CANCELLED_MESSAGE }
+    }
+    const err = settled.err
+    const message = err instanceof Error ? err.message : String(err)
+    return { ...base, ...sentArgs, error: message || 'MCP call failed' }
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onAbort)
   }
 }

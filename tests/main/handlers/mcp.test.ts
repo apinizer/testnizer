@@ -100,6 +100,8 @@ vi.mock('../../../src/main/protocols/mcp.engine', () => ({
 }))
 
 const { registerMcpHandlers } = await import('../../../src/main/ipc/mcp.handler')
+// stdio connects record local run trust — keep it in memory, never a real settings file.
+const { setStdioTrustStoreForTests } = await import('../../../src/main/lib/mcp-stdio-trust')
 const engine = await import('../../../src/main/protocols/mcp.engine')
 const { mcpConnect } = engine
 
@@ -112,6 +114,8 @@ beforeEach(() => {
   consoleEntries = []
   sentEvents = []
   installedSink = null
+  const trustStore = new Map<string, unknown>()
+  setStdioTrustStoreForTests({ get: (k) => trustStore.get(k), set: (k, v) => void trustStore.set(k, v) })
   vi.mocked(mcpConnect).mockClear()
   registerMcpHandlers()
 })
@@ -961,5 +965,66 @@ describe('history scope fallback (issue #166)', () => {
       { method: 'READ_RESOURCE', workspace_id: 'w-9', project_id: 'p-9' },
       { method: 'GET_PROMPT', workspace_id: 'w-9', project_id: 'p-9' },
     ])
+  })
+})
+
+describe('review round: history snapshot + console masking', () => {
+  type Row = { url: string; project_id: string | null; request_snapshot: string }
+  const rows = (): Row[] =>
+    testDb.prepare('SELECT * FROM history ORDER BY executed_at ASC, rowid ASC').all() as Row[]
+
+  it('item 8: the connection dropping while the call runs keeps the History target + scope', async () => {
+    await harness.invoke('mcp:connect', {
+      transport: 'http',
+      url: 'http://gw.local/mcp?token=abc',
+      protocol: '2026-07-28',
+    })
+    await harness.invoke('mcp:callTool', 'mcp-1', 'warm', {}, { projectId: 'p-8' })
+    let fail: (e: Error) => void = () => {}
+    vi.mocked(engine.mcpCallTool).mockImplementationOnce(
+      () => new Promise((_resolve, reject) => (fail = reject)),
+    )
+    const pending = harness.invoke('mcp:callTool', 'mcp-1', 'slow', {})
+    await Promise.resolve()
+    // The transport dies mid-call: main forgets the connection context…
+    installedSink?.({ type: 'connectionClosed', payload: { connectionId: 'mcp-1', reason: 'gone' } })
+    fail(new Error('connection closed'))
+    await pending
+    const row = rows()[1]
+    // …but the row still names the server, not the connection id.
+    expect(row.url).toBe('http://gw.local/mcp?token=***')
+    expect(row.project_id).toBe('p-8')
+    expect(JSON.parse(row.request_snapshot).mcp).toMatchObject({
+      transport: 'http',
+      url: 'http://gw.local/mcp?token=***',
+      protocol: '2026-07-28',
+    })
+  })
+
+  it('item 15: a stdio command line without args is split quote-aware for History', async () => {
+    await harness.invoke('mcp:connect', {
+      transport: 'stdio',
+      url: '',
+      command: 'node "C:\\My Tools\\srv.js" --api-key k1',
+    })
+    await harness.invoke('mcp:callTool', 'mcp-1', 'echo', {})
+    expect(rows()[0].url).toBe('node "C:\\My Tools\\srv.js" --api-key ***')
+  })
+
+  it('item 18: CONNECT and call console entries never carry the raw URL secret or credential args', async () => {
+    await harness.invoke('mcp:connect', {
+      transport: 'http',
+      url: 'http://user:pw@gw.local/mcp?api_key=url-secret&x=1',
+    })
+    await harness.invoke('mcp:callTool', 'mcp-1', 'echo', { text: 'hi', api_key: 'arg-secret' })
+    await harness.invoke('mcp:getPrompt', 'mcp-1', 'p', { password: 'prompt-secret' })
+    await harness.invoke('mcp:respondInput', 'mcp-1', 'echo', { token: 'input-secret' }, 's', {})
+    const all = JSON.stringify(consoleEntries)
+    for (const secret of ['url-secret', 'user:pw', 'arg-secret', 'prompt-secret', 'input-secret']) {
+      expect(all).not.toContain(secret)
+    }
+    // Non-secret parts stay readable.
+    expect(all).toContain('gw.local/mcp')
+    expect(all).toContain('hi')
   })
 })

@@ -11,10 +11,12 @@
  */
 import type { McpCapabilityTab, McpConnectAuth, McpTool } from '../types/mcp'
 import type { KeyValuePair } from '../types'
-import { prepareToolArgs } from './mcp-args-form'
+import { sendPromptCall, sendResourceUri, sendToolCall } from './mcp-send-request'
 import { kvRowsToRecord } from './mcp-store-helpers'
 import { resolveVariables } from './variable-resolver'
 import { resolveMcpAuth } from '../stores/mcp-auth.slice'
+import { isCredentialHeaderName } from '../../shared/credential-headers'
+import { mcpSafeUrl } from '../../shared/mcp-call'
 
 export type McpCopyTarget =
   | { kind: 'tool'; name: string; args: unknown }
@@ -50,24 +52,13 @@ export function buildJsonRpc(target: McpCopyTarget, id = 1): JsonRpcRequest {
 
 export const REDACTED = '<redacted>'
 
-const CREDENTIAL_HEADERS = new Set([
-  'authorization',
-  'proxy-authorization',
-  'cookie',
-  'set-cookie',
-  'x-api-key',
-  'api-key',
-  'apikey',
-  'x-auth-token',
-  'x-access-token',
-])
-
-/** Header names whose value is a credential (exact list + token / secret / password / key shapes). */
+/**
+ * Header names whose value is a credential — the ONE broad rule every MCP
+ * diagnostic uses (`src/shared/credential-headers.ts`: gateway names like
+ * `Ocp-Apim-Subscription-Key` included). Its own narrower list leaked those.
+ */
 export function isCredentialHeader(name: string): boolean {
-  const n = name.trim().toLowerCase()
-  return (
-    CREDENTIAL_HEADERS.has(n) || /(token|secret|password|passwd|api[-_]?key|session|cookie)/.test(n)
-  )
+  return isCredentialHeaderName(name.trim())
 }
 
 /** POSIX single-quote a word for the shell. */
@@ -80,7 +71,8 @@ export function buildCurl(opts: {
   protocolVersion?: string | null
   body: unknown
 }): string {
-  let url = opts.url
+  // No `user:pass@`, credential query values masked — the History rule.
+  let url = mcpSafeUrl(opts.url)
   const headers: Array<[string, string]> = [
     ['Content-Type', 'application/json'],
     ['Accept', 'application/json, text/event-stream'],
@@ -129,23 +121,22 @@ export function copyTargetOf(
   capability: McpCapabilityTab,
   vars: Record<string, string>,
 ): McpCopyTarget | null {
+  // The same Send entry Invoke / Read / Get use (`mcp-send-request.ts`, shared with Run).
   if (capability === 'resources') {
-    const uri = resolveVariables(s.resourceUriDraft.trim(), vars)
+    // A copy may still hold an unfilled `{id}` — the user sees it in the command.
+    const { uri } = sendResourceUri(s.resourceUriDraft, vars)
     return uri ? { kind: 'resource', uri } : null
   }
   if (capability === 'prompts') {
     if (!s.selectedPrompt) return null
-    const args: Record<string, string> = {}
-    for (const [k, v] of Object.entries(s.promptArgs)) {
-      if (v !== '') args[k] = resolveVariables(v, vars)
-    }
+    const { args } = sendPromptCall(s.selectedPrompt, s.promptArgs, vars)
     return { kind: 'prompt', name: s.selectedPrompt, args }
   }
   if (!s.selectedTool) return null
   const schema = s.tools.find((t) => t.name === s.selectedTool)?.inputSchema
-  const prepared = prepareToolArgs(s.toolArgs, vars, schema)
+  const prepared = sendToolCall(s.selectedTool, s.toolArgs, vars, schema)
   if (prepared.error) return null
-  return { kind: 'tool', name: s.selectedTool, args: prepared.args }
+  return { kind: 'tool', name: s.selectedTool, args: prepared.call.args }
 }
 
 /** cURL for the tab's call (Streamable HTTP only). */

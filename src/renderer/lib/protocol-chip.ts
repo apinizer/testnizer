@@ -31,3 +31,18 @@ export function protocolChip(protocol: string | undefined | null): ProtocolChipI
 export function protocolChipLabel(protocol: string | undefined | null): string | null {
   return protocolChip(protocol)?.label ?? null
 }
+
+/**
+ * The tab strip's chip, unless the tab title already says the same thing: a
+ * tab opened from the welcome page is titled with the protocol's name, so an
+ * MCP tab read "MCP MCP" (gRPC and SSE the same). Case-insensitive, trimmed.
+ */
+export function tabProtocolChip(
+  protocol: string | undefined | null,
+  title: string | undefined | null,
+): ProtocolChipInfo | null {
+  const chip = protocolChip(protocol)
+  if (!chip) return null
+  const name = (title ?? '').trim().toLowerCase()
+  return name === chip.label.toLowerCase() ? null : chip
+}

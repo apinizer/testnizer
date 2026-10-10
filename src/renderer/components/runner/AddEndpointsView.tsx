@@ -3,12 +3,15 @@ import { Search, ChevronRight, ChevronDown, FolderOpen, X } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
-import MethodBadge from '../shared/MethodBadge'
+import RequestBadge from '../shared/RequestBadge'
+import { protocolChipLabel } from '../../lib/protocol-chip'
 
 interface EndpointWithFolder {
   id: string
   name: string
   method: string | null
+  /** Non-HTTP rows show the protocol chip, not their placeholder method (issue #173). */
+  protocol?: string | null
   path: string
   folder_id: string | null
 }
@@ -64,6 +67,7 @@ export default function AddEndpointsView() {
               id: e.id,
               name: e.name,
               method: e.method ?? null,
+              protocol: e.protocol,
               path: e.path,
               folder_id: e.folder_id,
             }))
@@ -74,6 +78,7 @@ export default function AddEndpointsView() {
               id: r.id,
               name: r.name,
               method: r.method ?? null,
+              protocol: r.protocol,
               path: r.url,
               folder_id: r.folder_id,
             }))
@@ -353,7 +358,9 @@ export default function AddEndpointsView() {
                             onChange={() => toggleEndpoint(ep.id)}
                             className="cursor-pointer"
                           />
-                          {ep.method && <MethodBadge method={ep.method} small />}
+                          {(ep.method || protocolChipLabel(ep.protocol)) && (
+                            <RequestBadge protocol={ep.protocol} method={ep.method} small />
+                          )}
                           <span
                             className="flex-1 truncate"
                             style={{ fontSize: 13, color: 'var(--text)' }}
@@ -386,7 +393,9 @@ export default function AddEndpointsView() {
                   onChange={() => toggleEndpoint(ep.id)}
                   className="cursor-pointer"
                 />
-                {ep.method && <MethodBadge method={ep.method} small />}
+                {(ep.method || protocolChipLabel(ep.protocol)) && (
+                  <RequestBadge protocol={ep.protocol} method={ep.method} small />
+                )}
                 <span className="flex-1 truncate" style={{ fontSize: 13, color: 'var(--text)' }}>
                   {ep.name}
                 </span>

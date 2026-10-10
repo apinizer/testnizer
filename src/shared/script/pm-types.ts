@@ -9,6 +9,7 @@ import type { Expect } from './expect'
 import type { JoseHelper } from './jose'
 import type { PmResponse } from './response'
 import type { NormalizedResponse } from './types'
+import type { McpScriptInfo } from '../mcp-response'
 
 export interface PmScope {
   get(key: string): unknown
@@ -59,6 +60,9 @@ export interface PmLike {
   /** JWS/JWT helper (#73). Hosts do NOT supply it — `buildScriptBindings`
    *  attaches the one shared instance, so Send and Run get the same object. */
   jose?: JoseHelper
+  /** MCP call view (issues #160, #161) — `undefined` for non-MCP requests.
+   *  Hosts do NOT set it: `buildScriptBindings` copies `ScriptHostContext.mcp`. */
+  mcp?: McpScriptInfo
 }
 
 /** Everything a host (each path) must supply to build the full pm + aliases. */
@@ -67,4 +71,10 @@ export interface ScriptHostContext {
   /** Normalized response (null in pre-request scope) — alias layers need the
    *  raw numeric/string fields (Insomnia's response.status = numeric code). */
   normalizedResponse: NormalizedResponse | null
+  /**
+   * The MCP call this script runs after (post-response scope of an MCP
+   * request), built with `mcpScriptInfo` from `src/shared/mcp-response.ts`.
+   * Exposed as `pm.mcp`; omit for every non-MCP request.
+   */
+  mcp?: McpScriptInfo
 }

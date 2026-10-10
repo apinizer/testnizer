@@ -731,8 +731,9 @@ export function EndpointTabBar() {
             {tab.method && (tab.protocol === 'http' || tab.protocol === 'soap') && (
               <MethodBadge method={tab.method} small />
             )}
-            {/* MCP / WS / SSE / SIO / GQL / gRPC: protocol chip, same as the tree (issue #173). */}
-            <ProtocolChip protocol={tab.protocol} />
+            {/* MCP / WS / SSE / SIO / GQL / gRPC: protocol chip, same as the tree (issue #173) —
+                left out when the title already is that label ("MCP MCP"). */}
+            <ProtocolChip protocol={tab.protocol} title={tab.name} />
             {renamingTabId === tab.id ? (
               <input
                 ref={renameInputRef}

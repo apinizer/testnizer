@@ -9,6 +9,13 @@
 import type { McpCapabilityTab } from '../types/mcp'
 import type { McpCallReply } from '../lib/mcp-call-api'
 import type { ArgsProblem } from '../lib/mcp-args-form'
+import type { McpTestRun } from '../lib/mcp-send-scripts'
+import type { McpSavedCall } from '../../shared/mcp-call'
+
+// The saved-call shape and its tolerant reader are shared with Run
+// (`runner.handler.ts`) — one implementation (`src/shared/mcp-call.ts`).
+export { readSavedMcpCall } from '../../shared/mcp-call'
+export type { McpSavedCall } from '../../shared/mcp-call'
 
 export type McpCallKind = 'tool' | 'resource' | 'prompt'
 
@@ -36,18 +43,6 @@ export interface McpPendingElicitation {
   error?: string
 }
 
-/** The call as saved with the request (`metadata.mcp.call`, issue #159). */
-export interface McpSavedCall {
-  capabilityTab?: McpCapabilityTab
-  selectedTool?: string | null
-  /** Raw JSON text — `{{var}}` kept. */
-  toolArgs?: string
-  selectedResourceUri?: string | null
-  resourceUriDraft?: string
-  selectedPrompt?: string | null
-  promptArgs?: Record<string, string>
-}
-
 /** Saved with the request and kept across Connect / Disconnect. */
 export interface McpSavedCallState {
   capabilityTab: McpCapabilityTab
@@ -71,6 +66,16 @@ export interface McpCallTabState {
   pendingElicitations: McpPendingElicitation[]
   /** Problems found by the pre-Invoke validation — shown until the args change. */
   argsProblems: ArgsProblem[] | null
+  /**
+   * Arguments a History restore left EMPTY because History stored them
+   * masked (dotted paths) — the "enter it again" note; each goes once the
+   * user types a value. Never saved (not part of `metadata.mcp.call`).
+   */
+  hiddenArgs: string[] | null
+  /** Assertion rows + post-response script results of the last finished call (issue #160). */
+  toolTests: McpTestRun | null
+  resourceTests: McpTestRun | null
+  promptTests: McpTestRun | null
 }
 
 export function savedCallDefaults(): McpSavedCallState {
@@ -96,10 +101,12 @@ export function callIdle(): McpCallTabState {
     inputOutcome: null,
     pendingElicitations: [],
     argsProblems: null,
+    hiddenArgs: null,
+    toolTests: null,
+    resourceTests: null,
+    promptTests: null,
   }
 }
-
-const CAPABILITY_TABS = new Set<McpCapabilityTab>(['tools', 'resources', 'prompts'])
 
 /** The live slice → what `metadata.mcp.call` stores. */
 export function savedCallOf(s: McpSavedCallState): McpSavedCall {
@@ -112,36 +119,6 @@ export function savedCallOf(s: McpSavedCallState): McpSavedCall {
     selectedPrompt: s.selectedPrompt,
     promptArgs: s.promptArgs,
   }
-}
-
-/**
- * Tolerant read of `metadata.mcp.call` (or a History snapshot adapted to the
- * same shape): unknown / mistyped fields are dropped, never thrown on, so a
- * row saved before #159 — or by a newer build — opens with what it has.
- */
-export function readSavedMcpCall(raw: unknown): McpSavedCall {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
-  const r = raw as Record<string, unknown>
-  const out: McpSavedCall = {}
-  if (
-    typeof r.capabilityTab === 'string' &&
-    CAPABILITY_TABS.has(r.capabilityTab as McpCapabilityTab)
-  ) {
-    out.capabilityTab = r.capabilityTab as McpCapabilityTab
-  }
-  for (const key of ['selectedTool', 'selectedResourceUri', 'selectedPrompt'] as const) {
-    if (typeof r[key] === 'string' || r[key] === null) out[key] = r[key] as string | null
-  }
-  if (typeof r.toolArgs === 'string') out.toolArgs = r.toolArgs
-  if (typeof r.resourceUriDraft === 'string') out.resourceUriDraft = r.resourceUriDraft
-  if (r.promptArgs && typeof r.promptArgs === 'object' && !Array.isArray(r.promptArgs)) {
-    const args: Record<string, string> = {}
-    for (const [k, v] of Object.entries(r.promptArgs as Record<string, unknown>)) {
-      if (typeof v === 'string') args[k] = v
-    }
-    out.promptArgs = args
-  }
-  return out
 }
 
 /** UTF-8 size of a value's JSON — the fallback when main sent no `timing`. */

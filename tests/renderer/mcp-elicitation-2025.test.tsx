@@ -186,4 +186,45 @@ describe('2025-era elicitation (issue #168)', () => {
     expect(screen.getByTestId('mcp-input-error').textContent).toBe('gone')
     expect(screen.getByTestId('mcp-elicitation')).toBeTruthy()
   })
+
+  it('review item 6b: the tool call finishing drops cards still showing', async () => {
+    await connectTab('tab-a')
+    const call = useMcpStore.getState().callTool()
+    api.emit(ASK_NAME('conn-1'))
+    expect(useMcpStore.getState().pendingElicitations).toHaveLength(1)
+    await vi.waitFor(() => expect(api.mcp.callTool).toHaveBeenCalled())
+    api.resolveCall({ success: true, data: { content: [{ type: 'text', text: 'done' }] } })
+    await call
+    expect(useMcpStore.getState().pendingElicitations).toEqual([])
+  })
+
+  it('review item 6b: a resource read ending keeps the card a running tool call waits on', async () => {
+    await connectTab('tab-a')
+    ;(api.mcp as unknown as { readResource: unknown }).readResource = vi.fn(async () => ({
+      success: true,
+      data: { contents: [{ uri: 'x://1', text: 'r' }] },
+    }))
+    void useMcpStore.getState().callTool()
+    api.emit(ASK_NAME('conn-1'))
+    useMcpStore.setState({ resourceUriDraft: 'x://1' })
+    await useMcpStore.getState().readResource()
+    expect(useMcpStore.getState().pendingElicitations).toHaveLength(1)
+  })
+
+  it('review item 6b: "No pending elicitation" from main drops the card instead of an error', async () => {
+    await connectTab('tab-a')
+    api.mcp.respondElicitation.mockResolvedValueOnce({
+      success: false,
+      error:
+        'No pending elicitation el-1 on this connection (already answered, timed out, or the connection closed)',
+    } as never)
+    render(<McpToolPane />)
+    api.emit(ASK_NAME('conn-1'))
+    fireEvent.change(screen.getByTestId('mcp-input-field-el-1-name'), { target: { value: 'Ada' } })
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('mcp-input-submit'))
+    })
+    expect(screen.queryByTestId('mcp-elicitation')).toBeNull()
+    expect(useMcpStore.getState().pendingElicitations).toEqual([])
+  })
 })

@@ -70,6 +70,45 @@ describe('builders', () => {
   })
 })
 
+describe('review item 4: Copy as cURL uses the shared credential rules', () => {
+  it('gateway headers (Ocp-Apim-Subscription-Key, X-Gateway-Token) are redacted', () => {
+    const cmd = buildCurl({
+      url: 'http://h/mcp',
+      headers: { 'Ocp-Apim-Subscription-Key': 'sub-1', 'X-Gateway-Token': 'gw-2', 'X-Team': 'a' },
+      body: {},
+    })
+    expect(cmd).not.toContain('sub-1')
+    expect(cmd).not.toContain('gw-2')
+    expect(cmd).toContain("-H 'Ocp-Apim-Subscription-Key: <redacted>'")
+    expect(cmd).toContain("-H 'X-Team: a'")
+  })
+
+  it('userinfo and credential query values of the resolved URL never reach the command', async () => {
+    const { curlOf } = await import('../../src/renderer/lib/mcp-copy-as')
+    const cmd = curlOf(
+      {
+        transport: 'http',
+        url: 'http://user:pass@h.test/mcp?api_key={{k}}&x=1',
+        customHeaders: [],
+        auth: { type: 'none' } as never,
+        protocolVersion: null,
+        tools: [],
+        selectedTool: 'echo',
+        toolArgs: '{}',
+        resourceUriDraft: '',
+        selectedPrompt: null,
+        promptArgs: {},
+      },
+      { kind: 'tool', name: 'echo', args: {} },
+      { k: 'key-123' },
+    )
+    expect(cmd).not.toContain('key-123')
+    expect(cmd).not.toContain('user:pass')
+    expect(cmd).toContain('h.test/mcp?api_key=')
+    expect(cmd).toContain('x=1')
+  })
+})
+
 // ─── Menu ───────────────────────────────────────────────────────────────────
 
 function installApi() {
@@ -191,5 +230,24 @@ describe('Copy as… menu (issue #174)', () => {
     render(<McpToolPane />)
     await pick('mcp-copy-jsonrpc')
     expect(writeText).not.toHaveBeenCalled()
+  })
+})
+
+describe('review item 11: the Copy as… menu is not clipped by the overflow header', () => {
+  it('renders in a body portal with fixed positioning; clicking an item still works', async () => {
+    await connected()
+    useMcpStore.getState().setSelectedTool('echo')
+    render(<McpToolPane />)
+    fireEvent.click(screen.getByTestId('mcp-copy-as'))
+    const menu = screen.getByRole('menu')
+    expect(menu.parentElement).toBe(document.body)
+    expect(menu.style.position).toBe('fixed')
+    expect(screen.getByTestId('mcp-tool-actions').contains(menu)).toBe(false)
+    // mousedown inside the portal must not close the menu before the click runs.
+    fireEvent.mouseDown(screen.getByTestId('mcp-copy-jsonrpc'))
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('mcp-copy-jsonrpc'))
+    })
+    expect(writeText).toHaveBeenCalledTimes(1)
   })
 })

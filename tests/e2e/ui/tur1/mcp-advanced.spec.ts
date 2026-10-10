@@ -41,6 +41,7 @@ import {
   openNewDropdownItem,
 } from '../../helpers/ui/bootstrap'
 import { getTestServerUrls } from '../../helpers/test-servers'
+import { fillMcpArgs } from '../../helpers/ui/mcp-args'
 
 const STDIO_STUB = path.join(__dirname, '../../../fixtures/mcp-stdio-stub.cjs')
 
@@ -398,7 +399,7 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
     await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
 
     await window.getByTestId('mcp-tool-ask_count').click()
-    await window.getByTestId('mcp-tool-args').fill('{"label":"apples"}')
+    await fillMcpArgs(window, '{"label":"apples"}')
     await window.getByTestId('mcp-invoke').click()
     const card = window.getByTestId('mcp-input-required')
     await expect(card).toBeVisible({ timeout: 10_000 })

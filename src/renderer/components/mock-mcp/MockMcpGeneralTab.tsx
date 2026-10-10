@@ -9,6 +9,7 @@ import {
 } from '../../types/mock-mcp'
 import { Checkbox, Field, INPUT_CLS, IntInput, SectionLabel, SELECT_CLS } from './ui'
 import MockMcpExposedWarning from './MockMcpExposedWarning'
+import MockMcpSpecHint from './MockMcpSpecHint'
 
 const LEGACY_MODE_KEYS: Record<MockMcpLegacyMode, string> = {
   stateless: 'mockMcp.general.legacyStateless',
@@ -133,25 +134,23 @@ export default function MockMcpGeneralTab({
           </Field>
         </div>
         {/* Plain words on screen; the spec detail (error code, headers) in the tooltip (issue #167). */}
-        <div
-          data-testid="mock-mcp-legacy-hint"
-          title={
+        <MockMcpSpecHint
+          testId="mock-mcp-legacy-hint"
+          text={
+            draft.legacyMode === 'reject'
+              ? t('mockMcp.general.legacyRejectHint')
+              : t('mockMcp.general.legacyStatelessHint')
+          }
+          detail={
             draft.legacyMode === 'reject'
               ? t('mockMcp.general.legacyRejectTooltip')
               : t('mockMcp.general.legacyStatelessTooltip')
           }
-          className="cursor-help text-[11px] text-[var(--hint)]"
-        >
-          {draft.legacyMode === 'reject'
-            ? t('mockMcp.general.legacyRejectHint')
-            : t('mockMcp.general.legacyStatelessHint')}
-        </div>
-        <div
-          title={t('mockMcp.general.cacheTtlTooltip')}
-          className="cursor-help text-[11px] text-[var(--hint)]"
-        >
-          {t('mockMcp.general.cacheTtlHint')}
-        </div>
+        />
+        <MockMcpSpecHint
+          text={t('mockMcp.general.cacheTtlHint')}
+          detail={t('mockMcp.general.cacheTtlTooltip')}
+        />
       </div>
     </div>
   )

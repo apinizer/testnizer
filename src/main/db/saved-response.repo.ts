@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { getDb } from './database'
+import { HISTORY_MASK } from '../../shared/credential-headers'
 
 /**
  * Named response examples pinned to a request (issue #125) — "Save response"
@@ -60,7 +61,8 @@ const SENSITIVE_HEADERS = new Set([
   'x-api-key',
   'x-auth-token',
 ])
-export const MASKED_VALUE = '••••••'
+// Shared with the renderer, which recognises it when restoring a History row.
+export const MASKED_VALUE = HISTORY_MASK
 
 export function maskSensitiveHeaders(
   headers: Record<string, unknown> | undefined | null,

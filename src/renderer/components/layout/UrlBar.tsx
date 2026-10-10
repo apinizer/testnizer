@@ -175,6 +175,8 @@ export default function UrlBar() {
       {/* URL input — Postman style: flush with method dropdown */}
       <VariableAutocompleteInput
         data-testid="url-input"
+        spellCheck={false}
+        autoComplete="off"
         value={url}
         onChange={(v) => {
           pinIfPreview()

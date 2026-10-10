@@ -88,12 +88,55 @@ describe('error line', () => {
     render(<McpConnectionBar />)
     expect(screen.queryByTestId('mcp-error-box')).toBeNull()
   })
+})
 
-  it('the row never wraps (single line at 1200 px)', () => {
+describe('layout at a 1200px window (wave-1 regression)', () => {
+  it('the URL grows and never shrinks below 280px; the row wraps instead of clipping', () => {
     render(<McpConnectionBar />)
     const row = screen.getByTestId('mcp-connection-row')
-    expect(row.className).toContain('flex-nowrap')
-    expect(row.className).not.toMatch(/(^|\s)flex-wrap(\s|$)/)
+    expect(row.className).toMatch(/(^|\s)flex-wrap(\s|$)/)
+    expect(row.className).not.toContain('flex-nowrap')
+    const field = screen.getByTestId('mcp-url').closest('fieldset') as HTMLElement
+    expect(field.className).toMatch(/(^|\s)flex-1(\s|$)/)
+    expect(field.className).toContain('min-w-[280px]')
+  })
+
+  it('Paste / Export config are icon buttons in row 1 with accessible names', () => {
+    render(<McpConnectionBar />)
+    const row = screen.getByTestId('mcp-connection-row')
+    const paste = within(row).getByTestId('mcp-config-paste')
+    const exp = within(row).getByTestId('mcp-config-export')
+    expect(paste).toHaveAccessibleName('Paste config…')
+    expect(exp).toHaveAccessibleName('Export config')
+    // No visible label text competing with the URL for room.
+    expect(paste.textContent).toBe('')
+    expect(exp.textContent).toBe('')
+  })
+
+  it('connected: server name + version and the protocol badge render on row 2', () => {
+    useMcpStore.setState({
+      connectionState: 'connected',
+      url: 'https://mcp.context7.com/mcp',
+      serverName: 'Context7',
+      serverVersion: '1.0.13',
+      protocolVersion: '2025-06-18',
+    })
+    render(<McpConnectionBar />)
+    const row = screen.getByTestId('mcp-connection-row')
+    const info = screen.getByTestId('mcp-server-info')
+    expect(row.contains(info)).toBe(false)
+    expect(within(info).getByTestId('mcp-server-name')).toHaveTextContent('Context7 1.0.13')
+    expect(within(info).getByTestId('mcp-protocol-version')).toHaveTextContent('MCP 2025-06-18')
+  })
+
+  it('disconnected: no second row', () => {
+    useMcpStore.setState({
+      connectionState: 'disconnected',
+      serverName: null,
+      protocolVersion: null,
+    })
+    render(<McpConnectionBar />)
+    expect(screen.queryByTestId('mcp-server-info')).toBeNull()
   })
 })
 
@@ -104,6 +147,13 @@ describe('URL field with {{variables}}', () => {
     const input = screen.getByTestId('mcp-url')
     expect(input.tagName).toBe('INPUT')
     expect(input).toHaveValue('http://x/mcp')
+  })
+
+  it('review item 14: the URL / command line is not spell-checked or autocompleted', () => {
+    render(<McpConnectionBar />)
+    const input = screen.getByTestId('mcp-url')
+    expect(input.getAttribute('spellcheck')).toBe('false')
+    expect(input.getAttribute('autocomplete')).toBe('off')
   })
 
   it('typing {{ suggests environment variables; picking one writes it to the tab', () => {

@@ -41,6 +41,10 @@ export function buildScriptBindings(ctx: ScriptHostContext): ScriptBindings {
   // Attach before the alias layers: `insomnia` is Object.create(pm), and Bruno's
   // req/res close over pm — both then see pm.jose too.
   if (!ctx.pm.jose) ctx.pm.jose = joseHelper
+  // `pm.mcp` (issues #160, #161): set here, in the single assembly point, so
+  // Send and Run expose the same object — and before the alias layers, so
+  // `insomnia.mcp` (Object.create(pm)) sees it too. Undefined for non-MCP.
+  ctx.pm.mcp = ctx.mcp
   const insomnia = buildInsomnia(ctx)
   const { bru, req, res } = buildBruno(ctx)
   const legacy = buildLegacyGlobals(ctx)

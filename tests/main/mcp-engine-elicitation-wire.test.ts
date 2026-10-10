@@ -13,6 +13,7 @@ import type { McpServer as McpServerV1 } from '@modelcontextprotocol/sdk/server/
 import { CLIENT_CAPABILITIES_META_KEY } from '@modelcontextprotocol/client'
 import {
   mcpCallTool,
+  mcpCancelCall,
   mcpConnect,
   mcpListTools,
   mcpDisconnect,
@@ -129,6 +130,19 @@ describe('elicitation/create on 2025-era connections (issue #168)', () => {
     const call = mcpCallTool(id, 'ask_name', {})
     await waitFor(() => elicitations(id).length === 1)
     expect(textOf(await call)).toBe('action:cancel')
+  })
+
+  it('review item 6a: cancelling the call also withdraws its pending elicitation', async () => {
+    const id = await connectV1()
+    const call = mcpCallTool(id, 'ask_name', {}, { callId: 'c-6a' }).catch((e: Error) => e)
+    await waitFor(() => elicitations(id).length === 1)
+    const { elicitationId } = elicitations(id)[0]
+    expect(mcpCancelCall(id, 'c-6a')).toBe(true)
+    expect(await call).toMatchObject({ cancelled: true })
+    // The card's answer now has nowhere to go — it is not left open for 10 minutes.
+    expect(() => mcpRespondElicitation(id, elicitationId, { action: 'decline' })).toThrow(
+      /No pending elicitation/,
+    )
   })
 
   it('a pending elicitation is answered cancel on disconnect', async () => {

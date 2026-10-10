@@ -12,6 +12,7 @@ import type {
   McpSubscriptionFilter,
   McpSubscriptionView,
 } from '../types/mcp'
+import { normalizeMcpProtocolOption } from '../../shared/mcp-call'
 
 /** The first modern-era revision (stateless, `server/discover`). */
 export const MCP_MODERN_VERSION = '2026-07-28'
@@ -31,24 +32,12 @@ export const MCP_LEGACY_VERSIONS = [
 
 export const DEFAULT_MCP_PROTOCOL: McpProtocolChoice = 'auto'
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/
-
-/** Tolerant read of a stored / pasted value: anything unknown becomes `auto`. */
+/**
+ * Tolerant read of a stored / pasted value: anything unknown becomes `auto`.
+ * The rule Run applies too (`src/shared/mcp-call.ts`).
+ */
 export function normalizeMcpProtocol(value: unknown): McpProtocolChoice {
-  if (typeof value !== 'string') return DEFAULT_MCP_PROTOCOL
-  const v = value.trim()
-  if (v === 'auto' || v === 'legacy') return v
-  return DATE.test(v) ? v : DEFAULT_MCP_PROTOCOL
-}
-
-/** Badge text: `MCP 2026-07-28` on the modern era, `MCP 2025-11-25 (legacy)` on the legacy one. */
-export function eraBadgeText(
-  protocolVersion: string | null,
-  era: McpConnectResult['era'] | null,
-  legacyLabel: string,
-): string {
-  const version = protocolVersion ?? ''
-  return era === 'legacy' ? `MCP ${version} (${legacyLabel})` : `MCP ${version}`
+  return normalizeMcpProtocolOption(value)
 }
 
 /** `server/discover` descriptor lines for the badge tooltip (supported versions). */

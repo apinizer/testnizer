@@ -7,10 +7,13 @@ import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
 import { useUIStore } from '../../stores/ui.store'
-import { restoreMcpCall, useMcpStore } from '../../stores/mcp.store'
-import { normalizeMcpProtocol } from '../../lib/mcp-protocol'
-import { mcpHistoryRestore, mcpHistorySearchText } from '../protocols/mcp/history-restore'
-import MethodBadge from '../shared/MethodBadge'
+import {
+  mcpHistoryRestore,
+  mcpHistoryRowLabel,
+  mcpHistorySearchText,
+} from '../protocols/mcp/history-restore'
+import { openMcpHistoryRestore } from '../protocols/mcp/history-open'
+import RequestBadge from '../shared/RequestBadge'
 import EmptyState from '../shared/EmptyState'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import type {
@@ -103,16 +106,8 @@ export default function HistoryListPanel() {
 
     if (mcpRow) {
       // Open the MCP tab on the server with the call selected; the user then
-      // presses Connect and Run. Switch the (tab-scoped) MCP store to the new
-      // tab FIRST so the restore lands on it, not on the previous tab.
-      clearResponse()
-      useMcpStore.getState().switchToTab(realTabId)
-      useMcpStore.setState({
-        transport: mcpRow.transport,
-        url: mcpRow.url,
-        protocol: normalizeMcpProtocol(mcpRow.protocol),
-      })
-      restoreMcpCall(mcpRow.call)
+      // presses Connect and Run (the shared helper the welcome page uses too).
+      openMcpHistoryRestore(mcpRow, realTabId)
       return
     }
 
@@ -346,10 +341,21 @@ export default function HistoryListPanel() {
                   ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                 }}
               >
-                <MethodBadge method={entry.method || 'GET'} small />
-                <span className="flex-1 truncate" style={{ fontSize: 13 }}>
-                  {shortUrl(entry.url)}
-                </span>
+                <RequestBadge protocol={entry.protocol} method={entry.method} small />
+                {entry.protocol === 'mcp' ? (
+                  // The call (tool / prompt / resource), the server in the tooltip.
+                  <span
+                    className="flex-1 truncate"
+                    style={{ fontSize: 13 }}
+                    title={mcpHistoryRowLabel(entry).title}
+                  >
+                    {mcpHistoryRowLabel(entry).label}
+                  </span>
+                ) : (
+                  <span className="flex-1 truncate" style={{ fontSize: 13 }}>
+                    {shortUrl(entry.url)}
+                  </span>
+                )}
                 {entry.status_code != null && (
                   <span
                     className="shrink-0 font-medium"

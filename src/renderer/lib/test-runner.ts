@@ -4,6 +4,7 @@
 import type { TestAssertion, TestResult, ApiResponse, ConsoleLog } from '../types'
 import { buildScriptBindings, createPmResponse, expect as chaiExpect } from '../../shared/script'
 import type { NormalizedResponse, PmLike } from '../../shared/script'
+import type { McpScriptInfo } from '../../shared/mcp-response'
 
 // ─── JSONPath Evaluator ──────────────────────────────────────────
 
@@ -128,6 +129,37 @@ function evaluateXPath(xml: string, xpath: string): string | undefined {
 }
 
 // ─── Assertion Runner ────────────────────────────────────────────
+
+/**
+ * `{{var}}` in an assertion row's expected value / header name / range, the
+ * way the Runner reads them (`runAssertionsMainProcess` resolves the same
+ * fields). Send used to compare the literal `{{greeting}}` — a Send≡Run gap
+ * (Header assertion / effectiveValue class). Rows without a placeholder come
+ * back untouched.
+ */
+export function resolveAssertionVars(
+  assertions: TestAssertion[],
+  resolve: (text: string) => string,
+): TestAssertion[] {
+  const str = (v: string | undefined): string | undefined =>
+    typeof v === 'string' && v.includes('{{') ? resolve(v) : v
+  const num = (v: number | undefined): number | undefined => {
+    const raw = v as unknown
+    if (typeof raw !== 'string' || !raw.includes('{{')) return v
+    const n = Number(resolve(raw))
+    return Number.isFinite(n) ? n : v
+  }
+  return assertions.map((a) => {
+    const expected = typeof a.expected === 'string' ? str(a.expected) : a.expected
+    return {
+      ...a,
+      expected,
+      headerName: str(a.headerName),
+      rangeMin: num(a.rangeMin),
+      rangeMax: num(a.rangeMax),
+    }
+  })
+}
 
 export function runAssertions(assertions: TestAssertion[], response: ApiResponse): TestResult[] {
   return assertions
@@ -1301,7 +1333,17 @@ function ensurePmLike(pm: PmApi, normalized: NormalizedResponse | null): void {
   if (typeof exec.setNextRequest !== 'function') exec.setNextRequest = () => {}
 }
 
-export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRunResult> {
+/** Extra host context of a run — today only `pm.mcp` for an MCP call's post-response script. */
+export interface ScriptRunHost {
+  /** `mcpScriptInfo(outcome)` (src/shared/mcp-response.ts) — becomes `pm.mcp`. */
+  mcp?: McpScriptInfo
+}
+
+export async function runScript(
+  script: string,
+  pmApi: PmApi,
+  host?: ScriptRunHost,
+): Promise<ScriptRunResult> {
   const consoleLogs: ConsoleLog[] = []
   let scriptError: string | undefined
 
@@ -1345,6 +1387,7 @@ export async function runScript(script: string, pmApi: PmApi): Promise<ScriptRun
   const { bindings, legacyTests } = buildScriptBindings({
     pm: pmApi as unknown as PmLike,
     normalizedResponse: normalized,
+    ...(host?.mcp ? { mcp: host.mcp } : {}),
   })
   const allBindings: Record<string, unknown> = { ...bindings, console: captureConsole }
   const names = Object.keys(allBindings)

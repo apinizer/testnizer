@@ -24,7 +24,6 @@ import {
 import {
   MCP_LEGACY_VERSIONS,
   describeSubscriptionFilter,
-  eraBadgeText,
   normalizeMcpProtocol,
 } from '../../src/renderer/lib/mcp-protocol'
 import { LEGACY_PROTOCOL_VERSIONS } from '../../src/main/mock-mcp/config'
@@ -200,9 +199,7 @@ describe('elicitation form helpers', () => {
 })
 
 describe('protocol helpers', () => {
-  it('era badge text, protocol normalisation and the subscription filter summary', () => {
-    expect(eraBadgeText('2026-07-28', 'modern', 'legacy')).toBe('MCP 2026-07-28')
-    expect(eraBadgeText('2025-11-25', 'legacy', 'legacy')).toBe('MCP 2025-11-25 (legacy)')
+  it('protocol normalisation and the subscription filter summary', () => {
     expect(normalizeMcpProtocol(' legacy ')).toBe('legacy')
     expect(normalizeMcpProtocol('2025-06-18')).toBe('2025-06-18')
     expect(normalizeMcpProtocol('bogus')).toBe('auto')
