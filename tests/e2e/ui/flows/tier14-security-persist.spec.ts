@@ -2,6 +2,8 @@
  * MST-283..289 — Security guards
  */
 import path from 'node:path'
+import { mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
 import {
@@ -174,6 +176,28 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
         secret?: boolean | number
       }>
       expect(vars.find((v) => v.key === 'apiSecret')?.secret).toBeTruthy()
+
+      // Issue #177: the project file keeps the variable and its `secret` type
+      // but never its value — the value stays on this computer.
+      const dir = mkdtempSync(path.join(tmpdir(), 'mst287-'))
+      const saved = (await window.evaluate(
+        async ({ pid, d }) => {
+          const w = window as unknown as Window & {
+            api: { save: { local: (p: unknown) => Promise<unknown> } }
+          }
+          return w.api.save.local({ projectId: pid, directoryPath: d })
+        },
+        { pid: projectId, d: dir },
+      )) as { success: boolean; data?: { path: string }; error?: string }
+      expect(saved.error).toBeUndefined()
+      const fileText = readFileSync(saved.data!.path, 'utf-8')
+      expect(fileText).not.toContain(secretVal)
+      const fileVars = (
+        JSON.parse(fileText) as {
+          environmentVariables: Array<{ key: string; secret: number; value: string }>
+        }
+      ).environmentVariables
+      expect(fileVars.find((v) => v.key === 'apiSecret')).toMatchObject({ secret: 1, value: '' })
 
       await window.keyboard.press('Escape')
     },

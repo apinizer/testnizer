@@ -5,7 +5,11 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
-import { snapshotProtocol } from '../../lib/save-active-request'
+import {
+  requestSettingsFor,
+  savedRequestMetadata,
+  snapshotProtocol,
+} from '../../lib/save-active-request'
 import Modal from '../shared/Modal'
 import type { Folder, Tab } from '../../types'
 
@@ -160,6 +164,9 @@ export default function EndpointSaveModal() {
             protocolMeta: {} as Record<string, unknown>,
           }
       const { effectiveUrl, effectiveMethod, effectiveBody, protocolMeta } = snapshot
+      // Timeout / redirects / SSL (issue #185): the first save creates the row
+      // and marks the tab clean, so it must carry them like Ctrl+S does.
+      const settings = activeTab ? requestSettingsFor(activeTab) : {}
 
       const payload = {
         name: endpointName.trim() || 'Untitled',
@@ -174,7 +181,7 @@ export default function EndpointSaveModal() {
         post_script: postScript,
         assertions: JSON.stringify(assertions),
         folder_id: selectedFolder || null,
-        ...(Object.keys(protocolMeta).length > 0 ? { metadata: JSON.stringify(protocolMeta) } : {}),
+        metadata: savedRequestMetadata(protocolMeta, settings),
       }
 
       let savedId: string | undefined

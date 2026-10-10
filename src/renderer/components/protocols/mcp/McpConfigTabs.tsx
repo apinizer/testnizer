@@ -8,6 +8,7 @@ import { useTranslation } from '../../../lib/i18n'
 import McpAuthSection from './McpAuthSection'
 import McpHeadersSection from './McpHeadersSection'
 import McpStdioEnvSection from './McpStdioEnvSection'
+import McpSettingsSection from './McpSettingsSection'
 import ScriptsTab from '../../request/ScriptsTab'
 import TestsTab from '../../request/TestsTab'
 import { enabledRowCount } from './config-ui'
@@ -19,6 +20,7 @@ const LABEL_KEYS: Record<McpConfigTab, string> = {
   // The HTTP editor's own labels (P-K): same tab, same words.
   scripts: 'request.scripts',
   tests: 'request.tests',
+  settings: 'request.settings',
 }
 
 /** Pre-tab-strip e2e hooks, kept on the tab label (issue #137 / #139 specs). */
@@ -35,6 +37,8 @@ const PANELS: Record<McpConfigTab, ComponentType> = {
   // per-tab request store, which every save path already persists for MCP.
   scripts: ScriptsTab,
   tests: TestsTab,
+  // Call timeout (issue #185) — the MCP store's, not the HTTP request store's.
+  settings: McpSettingsSection,
 }
 
 const PANEL_BASE = 'border-t border-[var(--border)]'
@@ -51,7 +55,7 @@ const PANEL_DEFAULT = `${PANEL_BASE} max-h-[45vh] overflow-auto px-3.5 py-2.5`
 /**
  * Postman-style request config strip under the MCP connection bar:
  * Authorization · Headers (http / sse) · Environment (stdio) · Scripts ·
- * Tests, with a count badge of the enabled rows / assertions, a dot for an
+ * Tests · Settings, with a count badge of the enabled rows / assertions, a dot for an
  * active auth or a script, and a chevron that folds the whole panel away.
  * Active tab and fold state are per tab in the store (persisted). Clicking a
  * tab always shows it — only the chevron folds.
@@ -71,6 +75,7 @@ export default function McpConfigTabs() {
     (s) => (s.preScript?.trim().length ?? 0) > 0 || (s.postScript?.trim().length ?? 0) > 0,
   )
   const testCount = useRequestStore((s) => s.assertions.filter((a) => a.enabled !== false).length)
+  const hasTimeout = useMcpStore((s) => s.requestTimeout != null)
 
   // Derived, never written back: switching transport keeps the stored choice.
   const active = effectiveConfigTab(storedTab, transport)
@@ -82,6 +87,7 @@ export default function McpConfigTabs() {
   const dots: Partial<Record<McpConfigTab, boolean>> = {
     auth: authType !== 'none',
     scripts: hasScripts,
+    settings: hasTimeout,
   }
   const Panel = PANELS[active]
 

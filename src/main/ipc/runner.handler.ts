@@ -27,7 +27,14 @@ import { isRunnableInProject } from '../lib/ownership'
 import { resolveVariables } from '../lib/variable-resolver'
 import { loadEnvVars } from '../lib/env-vars'
 import { evaluateJsonPath } from '../lib/json-path'
-import { loadProjectSettings } from '../lib/project-settings'
+import { loadAppDefaultTimeout, loadProjectSettings } from '../lib/project-settings'
+import {
+  HTTP_ENGINE_DEFAULT_TIMEOUT_MS,
+  readRequestSettings,
+  readRequestSettingsJson,
+  resolveHttpTimeout,
+  resolveMcpTimeout,
+} from '../../shared/request-settings'
 import {
   soapTransportFromMeta,
   withSoapTransportHeaders,
@@ -205,8 +212,18 @@ function parseJsonSafe<T>(json: string | null, fallback: T): T {
   }
 }
 
+/**
+ * The general timeouts below a request's own (issue #185): the project's
+ * `requestTimeout` and the app-wide `defaultTimeout`, loaded once per run.
+ */
+export interface InheritedTimeouts {
+  project?: number
+  app?: number
+}
+
 export function buildRequestFromEndpoint(
   endpoint: endpointRepo.EndpointRow,
+  inherited: InheritedTimeouts = {},
 ): HttpRequestOptions | null {
   const schema = parseJsonSafe<{
     method?: string
@@ -215,12 +232,11 @@ export function buildRequestFromEndpoint(
     headers?: KeyValuePair[]
     body?: RequestBody
     auth?: AuthConfig
-    timeout?: number
-    followRedirects?: boolean
-    maxRedirects?: number
-    sslVerification?: boolean
     metadata?: { soap?: SoapTransportMeta }
   }>(endpoint.request_schema, {})
+  // Timeout / redirects / SSL as Ctrl+S wrote them (issue #185) — the same
+  // reader the tab-open paths use.
+  const settings = readRequestSettings(parseJsonSafe<unknown>(endpoint.request_schema, {}))
 
   const url = schema.url || endpoint.path
   if (!url) return null
@@ -247,12 +263,14 @@ export function buildRequestFromEndpoint(
     headers,
     body: schema.body as HttpRequestOptions['body'],
     auth: schema.auth as HttpRequestOptions['auth'],
-    // Mirror the engine's "explicit 0 = no timeout" semantics (issue #24)
-    // rather than clobbering 0 with the 30s default.
-    timeout: schema.timeout == null ? 30000 : schema.timeout,
-    followRedirects: schema.followRedirects ?? true,
-    maxRedirects: schema.maxRedirects,
-    sslVerification: schema.sslVerification ?? true,
+    // Send's chain (issue #185): per-request (explicit 0 = no timeout, issue
+    // #24) → project → app-wide → the engine's 30 s.
+    timeout:
+      resolveHttpTimeout(settings.timeout, inherited.project, inherited.app) ??
+      HTTP_ENGINE_DEFAULT_TIMEOUT_MS,
+    followRedirects: settings.followRedirects ?? true,
+    maxRedirects: settings.maxRedirects,
+    sslVerification: settings.sslVerification ?? true,
   }
 }
 
@@ -278,6 +296,9 @@ function savedRequestToEndpoint(saved: endpointRepo.SavedRequestRow): endpointRe
     assertions: parseJsonSafe<unknown[]>(saved.assertions, []),
     // Protocol metadata (SOAP version/action, …) — the Runner needs it too.
     metadata: saved.metadata ? parseJsonSafe<unknown>(saved.metadata, undefined) : undefined,
+    // Timeout / redirects / SSL ride in `metadata` on this table (issue #185);
+    // lifted to the top level where endpoint rows keep them.
+    ...readRequestSettingsJson(saved.metadata),
   })
   return {
     id: saved.id,
@@ -1427,6 +1448,8 @@ interface RunContext {
    *  token fetched in setup resolves in the main flow AND in teardown. */
   envVars: Record<string, string>
   projectSettings: StoredProjectSettings | undefined
+  /** Project + app-wide timeouts below a request's own — Send's chain (issue #185). */
+  inheritedTimeouts: InheritedTimeouts
   projectAuth: AuthConfigLike | null
   iterationData: Record<string, string>[]
   iterations: number
@@ -1648,7 +1671,7 @@ async function runEndpointStep(
     return recordStep(ctx, result)
   }
 
-  const requestOptions = buildRequestFromEndpoint(endpoint)
+  const requestOptions = buildRequestFromEndpoint(endpoint, ctx.inheritedTimeouts)
 
   if (!requestOptions) {
     const result: EndpointRunResult = {
@@ -2204,6 +2227,17 @@ export function mcpRunRequest(
   }
 }
 
+/**
+ * The MCP call's bound on Run (issue #185): the row's own `timeout` (the
+ * top-level key every save branch writes; 0 = no limit), else the shared
+ * `MCP_DEFAULT_TIMEOUT_MS` — exactly what Send passes (`mcpSendTimeout`).
+ */
+export function mcpRunTimeout(endpoint: Pick<endpointRepo.EndpointRow, 'request_schema'>): number {
+  return resolveMcpTimeout(
+    readRequestSettings(parseJsonSafe<unknown>(endpoint.request_schema, {})).timeout,
+  )
+}
+
 /** Run-row text of a call that cannot be made (`resolveSavedMcpCall`'s problem). */
 function mcpCallProblemText(problem: McpCallProblem, uri?: string): string {
   switch (problem) {
@@ -2295,16 +2329,8 @@ async function runMcpStep(
       preScript?: string
       postScript?: string
       assertions?: TestAssertion[]
-      timeout?: unknown
     }>(endpoint.request_schema, {})
-    // The request's own timeout — the field HTTP rows read in
-    // `buildRequestFromEndpoint` (0 = no timeout). Absent: the engine's
-    // MCP default (120 s — a stdio `npx` spawn + handshake is slow), not
-    // HTTP's 30 s, which would cut long tools that used to pass.
-    const mcpTimeoutMs =
-      typeof schema.timeout === 'number' && Number.isFinite(schema.timeout) && schema.timeout >= 0
-        ? schema.timeout
-        : undefined
+    const mcpTimeoutMs = mcpRunTimeout(endpoint)
     const { pre: preScripts, post: postScripts } = collectCascadeScripts(
       folderChain,
       ctx.projectSettings,
@@ -2420,7 +2446,7 @@ async function runMcpStep(
       connect,
       call,
       signal: controller.signal,
-      ...(mcpTimeoutMs !== undefined ? { timeoutMs: mcpTimeoutMs } : {}),
+      timeoutMs: mcpTimeoutMs,
     }).finally(() => {
       ctx.runState.cancelInFlight = null
     })
@@ -2775,6 +2801,12 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
   // no ancestor folder sets one. Best-effort — undefined in headless contexts.
   const projectSettings = await loadProjectSettings(options.projectId)
   const projectAuth = projectAuthToAuthConfig(projectSettings?.auth)
+  // The HTTP timeout chain below a request's own (issue #185) — what Send
+  // reads from `project.<id>.settings` and `defaultTimeout`.
+  const inheritedTimeouts: InheritedTimeouts = {
+    project: projectSettings?.requestTimeout,
+    app: await loadAppDefaultTimeout(),
+  }
 
   // Run-level accumulators for every variable a script writes. `envVars` is
   // mutated in place so updates flow to *later requests within this run*; these
@@ -2801,6 +2833,7 @@ async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerR
     runState,
     envVars,
     projectSettings,
+    inheritedTimeouts,
     projectAuth,
     iterationData,
     iterations,

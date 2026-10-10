@@ -9,7 +9,16 @@ import type {
 import { useTabsStore } from '../stores/tabs.store'
 import { useRequestStore } from '../stores/request.store'
 import { useResponseStore } from '../stores/response.store'
-import { restoreProtocolFromMetadata } from './save-active-request'
+import {
+  requestStoreSettings,
+  restoreProtocolFromMetadata,
+  restoreRequestSettings,
+} from './save-active-request'
+import {
+  readRequestSettings,
+  readRequestSettingsJson,
+  type RequestSettings,
+} from '../../shared/request-settings'
 import { switchActiveTab } from './activate-tab'
 
 /**
@@ -86,6 +95,8 @@ export async function openEndpointTab(id: string): Promise<void> {
       const body = (sr.body ? JSON.parse(sr.body) : { type: 'none' }) as RequestBody
       const auth = (sr.auth ? JSON.parse(sr.auth) : { type: 'none' }) as AuthConfig
       const assertions = (sr.assertions ? JSON.parse(sr.assertions) : []) as TestAssertion[]
+      // Timeout / redirects / SSL ride in `metadata` on this table (issue #185).
+      const settings = readRequestSettingsJson(sr.metadata)
 
       useTabsStore.getState().openPreviewTab({
         id: tabId,
@@ -113,7 +124,9 @@ export async function openEndpointTab(id: string): Promise<void> {
         preScript: sr.pre_script ?? '',
         postScript: sr.post_script ?? '',
         assertions,
+        ...requestStoreSettings(settings),
       })
+      restoreRequestSettings((sr.protocol || 'http') as string, settings)
       // Re-hydrate protocol-specific state (SOAP/WS/SSE/Socket.IO/gRPC/GraphQL)
       // that snapshotProtocol wrote into the `metadata` column. Without this a
       // saved protocol request reopened with an empty editor even though the
@@ -158,10 +171,12 @@ export async function openEndpointTab(id: string): Promise<void> {
       let url = ep.path
       let method = ep.method || 'GET'
       let metadata: unknown = undefined
+      let settings: RequestSettings = {}
 
       if (ep.request_schema) {
         try {
           const schema = JSON.parse(ep.request_schema)
+          settings = readRequestSettings(schema)
           params = schema.params || []
           headers = schema.headers || []
           body = schema.body || { type: 'none' }
@@ -203,7 +218,9 @@ export async function openEndpointTab(id: string): Promise<void> {
         preScript,
         postScript,
         assertions,
+        ...requestStoreSettings(settings),
       })
+      restoreRequestSettings(protocol, settings)
       // Restore protocol-specific state from request_schema.metadata (#18).
       if (metadata) {
         try {
@@ -263,8 +280,10 @@ export async function openSuiteItemTab(id: string, opts?: { pinned?: boolean }):
     let auth: AuthConfig = { type: 'none' }
     let preScript = ''
     let postScript = ''
+    let settings: RequestSettings = {}
     try {
       const schema = JSON.parse(item.request_schema || '{}')
+      settings = readRequestSettings(schema)
       params = schema.params || []
       headers = schema.headers || []
       body = schema.body || { type: 'none' }
@@ -310,7 +329,9 @@ export async function openSuiteItemTab(id: string, opts?: { pinned?: boolean }):
       preScript,
       postScript,
       assertions,
+      ...requestStoreSettings(settings),
     })
+    restoreRequestSettings(protocol, settings)
 
     // Re-hydrate protocol-specific state (SOAP / Socket.IO / gRPC) from
     // the snapshot metadata that `snapshotProtocol` writes into

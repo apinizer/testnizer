@@ -139,13 +139,18 @@ function normalizeDef(input: MockMcpServerDef): MockMcpServerDef {
   }
 }
 
+export const MOCK_MCP_BEARER_TOKEN_MISSING =
+  'Bearer auth is enabled but the token is not set on this computer. Tokens are not saved to the project file or git — enter it in the server settings.'
+
 /** Normalise + validate a definition the way `start()` requires it. */
 function checkDef(
   input: MockMcpServerDef,
 ): { ok: true; def: MockMcpServerDef } | { ok: false; error: string } {
   const def = normalizeDef(input)
   if (def.authMode === 'bearer' && !def.bearerToken) {
-    return { ok: false, error: 'Bearer auth is enabled but no token is set' }
+    // Fail closed. The token never travels in the project file (issue #177),
+    // so a mock pulled from git arrives here with a blank one.
+    return { ok: false, error: MOCK_MCP_BEARER_TOKEN_MISSING }
   }
   const problem = validateMockMcpConfig(def)
   return problem ? { ok: false, error: problem } : { ok: true, def }

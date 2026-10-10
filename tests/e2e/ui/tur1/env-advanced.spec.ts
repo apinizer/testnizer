@@ -6,6 +6,7 @@
  */
 import path from 'node:path'
 import fs from 'node:fs'
+import os from 'node:os'
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
 import {
@@ -106,7 +107,7 @@ uiTest.describe('Tur1 — Env Advanced [MST-063, MST-064, MST-066, MST-068]', ()
   // -------------------------------------------------------------------------
   // MST-064 — Secret masking + export safety
   // -------------------------------------------------------------------------
-  uiTest('MST-064 secret variable masked in UI and kept secret in DB', async ({ window }) => {
+  uiTest('MST-064 secret variable masked in UI and kept secret in DB', async ({ app, window }) => {
     const secretVal = `top-secret-${uid()}`
     const envName = `SecretEnvAdv ${uid()}`
     const key = 'myApiSecret'
@@ -146,29 +147,72 @@ uiTest.describe('Tur1 — Env Advanced [MST-063, MST-064, MST-066, MST-068]', ()
     }>
     expect(vars.find((v) => v.key === key)?.secret).toBeTruthy()
 
-    // 4. Export via IPC should not include the plain-text current value.
-    const exportRes = await window.evaluate(
-      async ({ eid }) => {
+    // 4. The real environment export (issue #177): the modal's "Export
+    //    Environment" button → export:saveFile → native save dialog. The dialog
+    //    is stubbed in the main process to a temp path; the file must keep the
+    //    key and the `secret` type but never the value. (This used to call an
+    //    `exportPostmanEnvironment` IPC that does not exist and skipped silently.)
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'testnizer-mst064-'))
+    const outFile = path.join(outDir, 'env.testnizer_environment.json')
+    await app.evaluate(({ dialog }, fp) => {
+      const d = dialog as unknown as {
+        showSaveDialog: unknown
+        __mst064_orig?: unknown
+      }
+      d.__mst064_orig = d.showSaveDialog
+      d.showSaveDialog = async () => ({ canceled: false, filePath: fp })
+    }, outFile)
+    try {
+      await window
+        .getByTestId('environment-modal')
+        .getByRole('button', { name: 'Export Environment' })
+        .click()
+      await expect.poll(() => fs.existsSync(outFile), { timeout: 5_000 }).toBe(true)
+      const text = fs.readFileSync(outFile, 'utf-8')
+      expect(text).not.toContain(secretVal)
+      const doc = JSON.parse(text) as {
+        values?: Array<{ key: string; value: string; type?: string }>
+      }
+      expect(doc.values?.find((v) => v.key === key)).toMatchObject({ value: '', type: 'secret' })
+    } finally {
+      await app.evaluate(({ dialog }) => {
+        const d = dialog as unknown as { showSaveDialog: unknown; __mst064_orig?: unknown }
+        if (d.__mst064_orig) {
+          d.showSaveDialog = d.__mst064_orig
+          delete d.__mst064_orig
+        }
+      })
+      fs.rmSync(outDir, { recursive: true, force: true })
+    }
+
+    // 5. The Postman collection export projects the ACTIVE environment as
+    //    collection variables — same rule: key + secret type, empty value.
+    const pmRes = await window.evaluate(
+      async ({ pid }) => {
         const w = window as unknown as Window & {
-          api?: {
-            importExport?: {
-              exportPostmanEnvironment?: (id: string) => Promise<{
+          api: {
+            importExport: {
+              exportPostman: (id: string) => Promise<{
                 success: boolean
                 data?: string
+                error?: string
               }>
             }
           }
         }
-        return w.api?.importExport?.exportPostmanEnvironment?.(eid)
+        return w.api.importExport.exportPostman(pid)
       },
-      { eid: envId },
+      { pid: projectId },
     )
-    if (exportRes?.success && exportRes.data) {
-      // Exported JSON must not contain the plain text secret value.
-      expect(exportRes.data).not.toContain(secretVal)
-    } else {
-      console.log('MST-064: exportPostmanEnvironment IPC not available — export safety unverified')
+    expect(pmRes.error).toBeUndefined()
+    expect(pmRes.data ?? '').not.toContain(secretVal)
+    const collection = JSON.parse(pmRes.data ?? '{}') as {
+      variable?: Array<{ key: string; value: string; type?: string }>
     }
+    expect(collection.variable?.find((v) => v.key === key)).toMatchObject({
+      value: '',
+      type: 'secret',
+    })
 
     await closeEnvModal(window)
   })

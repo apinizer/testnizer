@@ -28,6 +28,15 @@ import { SAVED_RESPONSE_COLUMNS } from '../db/saved-response.repo'
 import { MOCK_MCP_SERVER_COLUMNS } from '../db/mock-mcp.repo'
 import { syncRunningMocksWithDb } from './mock-runtime-sync'
 import {
+  stripLocalSecrets,
+  keepLocalVariableSecrets,
+  keepLocalMockAuth,
+  keepLocalMcpBearer,
+  keepLocalCertSecrets,
+  CERT_SECRET_COLUMNS,
+  type LocalRowLookup,
+} from '../lib/local-secrets'
+import {
   getProjectGitConfig,
   gitAuth,
   gitClientOptions,
@@ -217,7 +226,141 @@ const CERTIFICATE_COLUMNS = [
   'passphrase',
   'enabled',
   'created_at',
+  // Key Material Provider (#60) — exported by `SELECT *` but dropped on
+  // import until issue #186.
+  'source',
+  'keystore_id',
+  'keystore_alias',
+  'keystore_key_password',
 ] as const
+
+/**
+ * Certificate columns a file written before issue #186 does not carry, with
+ * the value a NEW row takes (the column default). SQLite rejects an explicit
+ * NULL in `source` (NOT NULL DEFAULT 'file') even on the conflict path, so an
+ * absent key must never become NULL.
+ */
+const CERTIFICATE_ADDED_COLUMN_DEFAULTS: Readonly<Record<string, unknown>> = {
+  source: 'file',
+  keystore_id: null,
+  keystore_alias: null,
+  keystore_key_password: null,
+}
+
+/** Folder-level auth + scripts (folders, test_suite_folders) — nullable, no default. */
+const FOLDER_ADDED_COLUMN_DEFAULTS: Readonly<Record<string, unknown>> = {
+  auth: null,
+  pre_script: null,
+  post_script: null,
+}
+
+/**
+ * A key ABSENT from an incoming row (a file written by an older build, which
+ * did not know the column) keeps the local row's value, or takes `defaults`
+ * for a row this machine does not have yet. A key that is present — even
+ * with `null` — is the file's word and wins. Issue #186.
+ */
+function fillAbsentColumns(
+  rows: Record<string, unknown>[],
+  defaults: Readonly<Record<string, unknown>>,
+  lookup: LocalRowLookup,
+): Record<string, unknown>[] {
+  const cols = Object.keys(defaults)
+  return rows.map((row) => {
+    const missing = cols.filter((c) => !(c in row))
+    if (missing.length === 0) return row
+    const local = typeof row.id === 'string' ? lookup(row.id) : undefined
+    const next: Record<string, unknown> = { ...row }
+    for (const c of missing) next[c] = local && c in local ? local[c] : defaults[c]
+    return next
+  })
+}
+
+/**
+ * Whether a certificate row's key material is usable on THIS machine: every
+ * crt / key / pfx path it names is a file here, or — keystore-backed — its
+ * keystore is in the local library; and no passphrase was stripped from it
+ * (a project file writes a held passphrase as '' — issue #177 — while "no
+ * passphrase" stays NULL, and the DB itself never stores ''). A cert is
+ * applied to every request to its host, so an imported row without usable
+ * material would break Send to that host (the cert-host leak class in
+ * CLAUDE.md) — such rows are imported disabled (issue #186).
+ */
+function certMaterialAvailableHere(
+  db: ReturnType<typeof getDb>,
+  row: Record<string, unknown>,
+): boolean {
+  if (CERT_SECRET_COLUMNS.some((c) => row[c] === '')) return false
+  if (row.source === 'keystore') {
+    const ksId = row.keystore_id
+    return (
+      typeof ksId === 'string' &&
+      ksId !== '' &&
+      db.prepare('SELECT 1 AS x FROM keystores WHERE id = ?').get(ksId) !== undefined
+    )
+  }
+  return [row.crt_path, row.key_path, row.pfx_path]
+    .filter((p): p is string => typeof p === 'string' && p.trim() !== '')
+    .every((p) => existsSync(p))
+}
+
+/**
+ * A suite's saved Runner configuration (`test_suites.run_config`, issue #100)
+ * names suite items and an environment by id. The fresh-id import paths
+ * (Duplicate / Import Project, Import Test Suite) give those rows new ids, so
+ * the config is rewritten to follow them: items whose row did not come along
+ * are dropped, and `environmentId` is kept only when `envId` maps it (absent
+ * → the run falls back to the active environment). Anything that is not a
+ * JSON object is returned as-is — the renderer's parser is tolerant and a
+ * corrupt blob must never block an import (issue #186).
+ */
+export function remapSuiteRunConfig(
+  raw: unknown,
+  itemIds: ReadonlyMap<string, string>,
+  envId: (id: string) => string | undefined,
+): string | null {
+  if (typeof raw !== 'string' || raw === '') return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return raw
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return raw
+  const cfg: Record<string, unknown> = { ...(parsed as Record<string, unknown>) }
+  if (Array.isArray(cfg.items)) {
+    cfg.items = cfg.items.flatMap((entry: unknown) => {
+      if (!entry || typeof entry !== 'object') return []
+      const e = entry as Record<string, unknown>
+      const next = typeof e.id === 'string' ? itemIds.get(e.id) : undefined
+      return next ? [{ ...e, id: next }] : []
+    })
+  }
+  if (typeof cfg.environmentId === 'string' && cfg.environmentId !== '') {
+    const next = envId(cfg.environmentId)
+    if (next) cfg.environmentId = next
+    else delete cfg.environmentId
+  }
+  return JSON.stringify(cfg)
+}
+
+/**
+ * INSERT one exported row into `table`, writing only the listed columns the
+ * row actually carries. A column an older file does not have is left out so
+ * its `NOT NULL DEFAULT …` applies — an explicit NULL would fail the
+ * constraint and roll back the whole import.
+ */
+function insertPresentColumns(
+  db: ReturnType<typeof getDb>,
+  table: string,
+  columns: readonly string[],
+  row: Record<string, unknown>,
+): void {
+  const present = columns.filter((c) => row[c] !== undefined && row[c] !== null)
+  db.prepare(
+    `INSERT INTO ${table} (${present.join(', ')}) VALUES (${present.map(() => '?').join(', ')})`,
+  ).run(...present.map((c) => row[c]))
+}
 
 // Returns null when the export shape is acceptable, or a specific user-facing
 // error string. Lets the importer point users at the actual problem (empty
@@ -548,8 +691,34 @@ function importProjectData(
     tx()
   }
 
-  // Import folders
-  upsert('folders', rebind(data.folders), ['id', 'project_id', 'parent_id', 'name', 'sort_order'])
+  // Values marked secret never travel in the project file (issue #177): the
+  // file carries '' for them. Before the upsert, a stripped value is refilled
+  // from the row this machine already has, so Pull / switch / merge never
+  // wipe a token the user typed in here. Runs ahead of every mode (merge,
+  // base, replace) and before `syncRunningMocksWithDb`, so a running mock is
+  // never reloaded with a blank credential.
+  const localRow = (table: string, columns: string): LocalRowLookup => {
+    const stmt = db.prepare(`SELECT ${columns} FROM ${table} WHERE id = ?`)
+    return (id) => stmt.get(id) as Record<string, unknown> | undefined
+  }
+
+  // Import folders — folder-level auth + pre/post scripts included (issue #186).
+  // A file from an older build lacks those keys: the local values stay.
+  const folderRows = fillAbsentColumns(
+    rebind(data.folders),
+    FOLDER_ADDED_COLUMN_DEFAULTS,
+    localRow('folders', 'auth, pre_script, post_script'),
+  )
+  upsert('folders', folderRows, [
+    'id',
+    'project_id',
+    'parent_id',
+    'name',
+    'sort_order',
+    'auth',
+    'pre_script',
+    'post_script',
+  ])
 
   // Import endpoints
   upsert('endpoints', rebind(data.endpoints), [
@@ -624,7 +793,11 @@ function importProjectData(
 
   // Import environment variables
   if (data.environmentVariables?.length) {
-    upsert('environment_variables', data.environmentVariables, [
+    const rows = keepLocalVariableSecrets(
+      data.environmentVariables,
+      localRow('environment_variables', 'value, initial_value'),
+    )
+    upsert('environment_variables', rows, [
       'id',
       'environment_id',
       'key',
@@ -640,7 +813,11 @@ function importProjectData(
   // global was scoped to a project on the source side, it must land scoped to
   // the target project rather than leaking workspace-wide.
   if (data.globalVariables?.length) {
-    upsert('global_variables', rebind(data.globalVariables), [
+    const rows = keepLocalVariableSecrets(
+      rebind(data.globalVariables),
+      localRow('global_variables', 'value, initial_value'),
+    )
+    upsert('global_variables', rows, [
       'id',
       'workspace_id',
       'project_id',
@@ -653,14 +830,23 @@ function importProjectData(
     ])
   }
 
-  // Import test suites
+  // Import test suites — with the saved Runner configuration (issue #186).
+  // Row ids are stable in this model, so the config's item / environment ids
+  // stay valid verbatim. A file written before `run_config` existed keeps the
+  // local value instead of wiping it.
   if (data.testSuites?.length) {
-    upsert('test_suites', rebind(data.testSuites), [
+    const rows = fillAbsentColumns(
+      rebind(data.testSuites),
+      { run_config: null },
+      localRow('test_suites', 'run_config'),
+    )
+    upsert('test_suites', rows, [
       'id',
       'project_id',
       'name',
       'description',
       'sort_order',
+      'run_config',
       'created_at',
       'updated_at',
     ])
@@ -672,12 +858,21 @@ function importProjectData(
   // dropped and the link rows reference endpoints that may not exist in
   // the target project.
   if (data.testSuiteFolders?.length) {
-    upsert('test_suite_folders', data.testSuiteFolders, [
+    const rows = fillAbsentColumns(
+      data.testSuiteFolders,
+      FOLDER_ADDED_COLUMN_DEFAULTS,
+      localRow('test_suite_folders', 'auth, pre_script, post_script'),
+    )
+    upsert('test_suite_folders', rows, [
       'id',
       'suite_id',
       'parent_id',
       'name',
       'sort_order',
+      // Folder-level auth + scripts (issue #186).
+      'auth',
+      'pre_script',
+      'post_script',
       'created_at',
     ])
   }
@@ -704,10 +899,20 @@ function importProjectData(
   // upsert parents before children. Missing arrays are skipped — pre-v1.2
   // export files don't carry these.
   if (data.mockServers?.length) {
-    upsert('mock_servers', rebind(data.mockServers), [...MOCK_SERVER_COLUMNS])
+    const rows = keepLocalMockAuth(
+      rebind(data.mockServers),
+      'auth_config',
+      localRow('mock_servers', 'auth_config'),
+    )
+    upsert('mock_servers', rows, [...MOCK_SERVER_COLUMNS])
   }
   if (data.mockEndpoints?.length) {
-    upsert('mock_endpoints', data.mockEndpoints, [...MOCK_ENDPOINT_COLUMNS])
+    const rows = keepLocalMockAuth(
+      data.mockEndpoints,
+      'auth_override',
+      localRow('mock_endpoints', 'auth_override'),
+    )
+    upsert('mock_endpoints', rows, [...MOCK_ENDPOINT_COLUMNS])
   }
   if (data.mockResponses?.length) {
     upsert('mock_responses', data.mockResponses, [...MOCK_RESPONSE_COLUMNS])
@@ -720,13 +925,35 @@ function importProjectData(
   }
 
   // Import client certificates (mTLS / SSL pinning configs).
+  //  - columns an older file lacks keep the local value / take the default
+  //    (issue #186 — an absent `source` used to abort the import on NOT NULL);
+  //  - the passphrase + keystore entry password are machine-bound: the local
+  //    value wins (issue #177);
+  //  - `enabled` is per machine: an existing row keeps its local value; a NEW
+  //    row whose key material is missing here lands disabled (issue #186).
   if (data.certificates?.length) {
-    upsert('certificates', rebind(data.certificates), [...CERTIFICATE_COLUMNS])
+    const localCert = localRow(
+      'certificates',
+      'source, keystore_id, keystore_alias, keystore_key_password, passphrase, enabled',
+    )
+    const rows = keepLocalCertSecrets(
+      fillAbsentColumns(rebind(data.certificates), CERTIFICATE_ADDED_COLUMN_DEFAULTS, localCert),
+      localCert,
+    ).map((r) => {
+      const local = typeof r.id === 'string' ? localCert(r.id) : undefined
+      if (local) return { ...r, enabled: local.enabled }
+      return certMaterialAvailableHere(db, r) ? r : { ...r, enabled: 0 }
+    })
+    upsert('certificates', rows, [...CERTIFICATE_COLUMNS])
   }
 
   // Mock MCP servers (issue #140) — absent from pre-#140 files, skipped then.
   if (data.mockMcpServers?.length) {
-    upsert('mock_mcp_servers', rebind(data.mockMcpServers), [...MOCK_MCP_SERVER_COLUMNS])
+    const rows = keepLocalMcpBearer(
+      rebind(data.mockMcpServers),
+      localRow('mock_mcp_servers', 'bearer_token'),
+    )
+    upsert('mock_mcp_servers', rows, [...MOCK_MCP_SERVER_COLUMNS])
   }
 
   if (options.mode === 'replace') {
@@ -990,7 +1217,8 @@ export function importFolderData(
   for (const s of data.savedRequests || []) savedReqIdMap.set(s.id as string, randomUUID())
 
   const insertFolder = db.prepare(
-    `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO folders (id, project_id, parent_id, name, sort_order, auth, pre_script, post_script)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   const insertEndpoint = db.prepare(
     `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
@@ -1020,7 +1248,17 @@ export function importFolderData(
             ? (folderIdMap.get(oldParent) as string)
             : parentFolderId
       }
-      insertFolder.run(newId, projectId, newParent, f.name, f.sort_order ?? 0)
+      // Folder-level auth + scripts travel with the folder (issue #186).
+      insertFolder.run(
+        newId,
+        projectId,
+        newParent,
+        f.name,
+        f.sort_order ?? 0,
+        f.auth ?? null,
+        f.pre_script ?? null,
+        f.post_script ?? null,
+      )
     }
 
     // Endpoints
@@ -1197,10 +1435,21 @@ export function importTestSuiteData(
   const newSuiteId = randomUUID()
   const folderIdMap = new Map<string, string>()
   for (const f of folders) folderIdMap.set(f.id as string, randomUUID())
+  const itemIdMap = new Map<string, string>()
+  for (const it of items) {
+    if (typeof it.id === 'string') itemIdMap.set(it.id, randomUUID())
+  }
+  // The saved Runner configuration follows the new item ids; its environment
+  // is kept only when it belongs to the target project (issue #186).
+  const runConfig = remapSuiteRunConfig(data.suite?.run_config, itemIdMap, (id) =>
+    db.prepare('SELECT id FROM environments WHERE id = ? AND project_id = ?').get(id, projectId)
+      ? id
+      : undefined,
+  )
 
   const insertSuite = db.prepare(
-    `INSERT INTO test_suites (id, project_id, name, description, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO test_suites (id, project_id, name, description, sort_order, run_config, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   const insertFolder = db.prepare(
     `INSERT INTO test_suite_folders
@@ -1229,6 +1478,7 @@ export function importTestSuiteData(
       suiteName,
       suite?.description ?? null,
       suite?.sort_order ?? 0,
+      runConfig,
       now,
       now,
     )
@@ -1266,7 +1516,7 @@ export function importTestSuiteData(
       const repairedUrl =
         repairedSuiteItemUrl(storedUrl, it.request_schema as string | null) ?? storedUrl
       insertItem.run(
-        randomUUID(),
+        (typeof it.id === 'string' ? itemIdMap.get(it.id) : undefined) ?? randomUUID(),
         newSuiteId,
         newFolderId,
         it.protocol || 'http',
@@ -1640,14 +1890,25 @@ export function importProjectAsNew(
 
     // Folders
     const insertFolder = db.prepare(
-      `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO folders (id, project_id, parent_id, name, sort_order, auth, pre_script, post_script)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     for (const f of data.folders) {
       const newId = folderIdMap.get(f.id as string) as string
       const oldParent = f.parent_id as string | null
       const newParent =
         oldParent && folderIdMap.has(oldParent) ? (folderIdMap.get(oldParent) as string) : null
-      insertFolder.run(newId, newProjectId, newParent, f.name, f.sort_order ?? 0)
+      // Folder-level auth + scripts travel with the folder (issue #186).
+      insertFolder.run(
+        newId,
+        newProjectId,
+        newParent,
+        f.name,
+        f.sort_order ?? 0,
+        f.auth ?? null,
+        f.pre_script ?? null,
+        f.post_script ?? null,
+      )
     }
 
     // Endpoints
@@ -1795,8 +2056,8 @@ export function importProjectAsNew(
 
     // Test suites
     const insertSuite = db.prepare(
-      `INSERT INTO test_suites (id, project_id, name, description, sort_order, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO test_suites (id, project_id, name, description, sort_order, run_config, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     for (const s of data.testSuites || []) {
       const newId = suiteIdMap.get(s.id as string) as string
@@ -1806,6 +2067,9 @@ export function importProjectAsNew(
         s.name,
         s.description ?? null,
         s.sort_order ?? 0,
+        // Saved Runner configuration (issue #186), re-pointed at the copy's
+        // suite items and environments.
+        remapSuiteRunConfig(s.run_config, suiteItemIdMap, (id) => envIdMap.get(id)),
         (s.created_at as number) || now,
         now,
       )
@@ -1816,8 +2080,9 @@ export function importProjectAsNew(
     // and item folder_id are remapped through `folderIdMap` so the suite
     // tree shape is preserved end-to-end.
     const insertSuiteFolder = db.prepare(
-      `INSERT INTO test_suite_folders (id, suite_id, parent_id, name, sort_order, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO test_suite_folders
+         (id, suite_id, parent_id, name, sort_order, auth, pre_script, post_script, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     const insertSuiteItem = db.prepare(
       `INSERT INTO test_suite_items
@@ -1841,6 +2106,10 @@ export function importProjectAsNew(
         newParentId,
         f.name ?? 'Folder',
         f.sort_order ?? 0,
+        // Folder-level auth + scripts (issue #186).
+        f.auth ?? null,
+        f.pre_script ?? null,
+        f.post_script ?? null,
         (f.created_at as number) || now,
       )
     }
@@ -1906,21 +2175,83 @@ export function importProjectAsNew(
       )
     }
 
+    // HTTP mock servers → endpoints → responses (issue #190). Fresh ids at
+    // every level, children re-keyed onto their new parents; rows whose parent
+    // did not come along are dropped. Auth secrets are copied as they are:
+    // Duplicate stays on this machine, and a file already carries '' for them
+    // (issue #177). `port` is kept, but the copy never auto-starts: it would
+    // fight the original for that port at launch — the user starts it by hand.
+    const mockServerIdMap = new Map<string, string>()
+    const mockEndpointIdMap = new Map<string, string>()
+    for (const m of data.mockServers || []) {
+      if (typeof m.id !== 'string') continue
+      const newId = randomUUID()
+      mockServerIdMap.set(m.id, newId)
+      insertPresentColumns(db, 'mock_servers', MOCK_SERVER_COLUMNS, {
+        ...m,
+        id: newId,
+        project_id: newProjectId,
+        auto_start: 0,
+        created_at: (m.created_at as number) || now,
+        updated_at: now,
+      })
+    }
+    for (const e of data.mockEndpoints || []) {
+      const serverId = mockServerIdMap.get(e.server_id as string)
+      if (!serverId || typeof e.id !== 'string') continue
+      const newId = randomUUID()
+      mockEndpointIdMap.set(e.id, newId)
+      insertPresentColumns(db, 'mock_endpoints', MOCK_ENDPOINT_COLUMNS, {
+        ...e,
+        id: newId,
+        server_id: serverId,
+        created_at: (e.created_at as number) || now,
+        updated_at: now,
+      })
+    }
+    for (const r of data.mockResponses || []) {
+      const endpointId = mockEndpointIdMap.get(r.endpoint_id as string)
+      if (!endpointId) continue
+      insertPresentColumns(db, 'mock_responses', MOCK_RESPONSE_COLUMNS, {
+        ...r,
+        id: randomUUID(),
+        endpoint_id: endpointId,
+      })
+    }
+
     // Mock MCP servers (issue #140) — self-contained rows, so a fresh id and
-    // the new project are the only rewrites.
-    const insertMockMcp = db.prepare(
-      `INSERT INTO mock_mcp_servers (${MOCK_MCP_SERVER_COLUMNS.join(', ')})
-       VALUES (${MOCK_MCP_SERVER_COLUMNS.map(() => '?').join(', ')})`,
-    )
+    // the new project are the only rewrites. Columns a file lacks take their
+    // defaults (nullable ones such as `options_json` stay NULL). There is no
+    // auto-start column on this table, so nothing starts a copy at launch.
     for (const m of data.mockMcpServers || []) {
-      const row: Record<string, unknown> = {
+      insertPresentColumns(db, 'mock_mcp_servers', MOCK_MCP_SERVER_COLUMNS, {
         ...m,
         id: randomUUID(),
         project_id: newProjectId,
         created_at: (m.created_at as number) || now,
         updated_at: now,
+      })
+    }
+
+    // Client certificates (mTLS) — keystore-backed rows included (issue #186).
+    // Self-contained per project: a fresh id and the new project id only. A
+    // row whose key material is not on this machine (a file from elsewhere)
+    // lands disabled; on the same machine (Duplicate) `enabled` is unchanged.
+    const insertCert = db.prepare(
+      `INSERT INTO certificates (${CERTIFICATE_COLUMNS.join(', ')})
+       VALUES (${CERTIFICATE_COLUMNS.map(() => '?').join(', ')})`,
+    )
+    for (const c of data.certificates || []) {
+      const row: Record<string, unknown> = {
+        ...c,
+        id: randomUUID(),
+        project_id: newProjectId,
+        kind: c.kind ?? 'client',
+        enabled: certMaterialAvailableHere(db, c) ? (c.enabled ?? 1) : 0,
+        source: c.source ?? 'file',
+        created_at: (c.created_at as number) || now,
       }
-      insertMockMcp.run(...MOCK_MCP_SERVER_COLUMNS.map((c) => row[c] ?? null))
+      insertCert.run(...CERTIFICATE_COLUMNS.map((col) => row[col] ?? null))
     }
   })
   tx()
@@ -1953,7 +2284,8 @@ export function registerSaveHandlers(): void {
   // ─── Export Project (JSON file dialog) ─────────────────────
   ipcMain.handle('save:exportProject', async (_event, projectId: string) => {
     try {
-      const data = exportProjectData(projectId)
+      // The file leaves this machine — values marked secret stay here (issue #177).
+      const data = stripLocalSecrets(exportProjectData(projectId))
       if (!data.project || Object.keys(data.project).length === 0) {
         return {
           success: false,
@@ -2058,6 +2390,8 @@ export function registerSaveHandlers(): void {
     'project:duplicate',
     async (_event, payload: { projectId: string; workspaceId: string; name?: string }) => {
       try {
+        // NOT stripped: the copy stays on this machine, so values marked
+        // secret are copied too (issue #177 — only files lose them).
         const data = exportProjectData(payload.projectId)
         if (!data.project || Object.keys(data.project).length === 0) {
           return { success: false, error: 'Source project not found' }
@@ -2222,7 +2556,8 @@ export function registerSaveHandlers(): void {
           dirPath = result.filePaths[0]
         }
 
-        const data = exportProjectData(payload.projectId)
+        // The file leaves this machine — values marked secret stay here (issue #177).
+        const data = stripLocalSecrets(exportProjectData(payload.projectId))
         const projectName = safeFileName((data.project?.name as string) || 'project', 'project')
         const dateStr = new Date().toISOString().slice(0, 10)
         const fileName = `${projectName}-${dateStr}.json`
@@ -2339,7 +2674,8 @@ export function registerSaveHandlers(): void {
       try {
         const { simpleGit } = await import('simple-git')
 
-        const data = exportProjectData(payload.projectId)
+        // The file leaves this machine — values marked secret stay here (issue #177).
+        const data = stripLocalSecrets(exportProjectData(payload.projectId))
         // ASCII slug via the SHARED helper (issue #78). This used to slugify
         // with '_' while git.handler used '-', and `save:git` deletes every
         // `.json` that is not the name it computed — so the two paths took
@@ -2461,7 +2797,8 @@ export function registerSaveHandlers(): void {
 
         const { simpleGit } = await import('simple-git')
 
-        const data = exportProjectData(payload.projectId)
+        // The file leaves this machine — values marked secret stay here (issue #177).
+        const data = stripLocalSecrets(exportProjectData(payload.projectId))
         // Shared helper — see the note in `save:git` (issue #78).
         const projectName = projectFileSlug(data.project?.name as string | undefined)
         const auth = gitAuth(config.repoUrl, config.username, config.token)
@@ -2849,7 +3186,8 @@ export function registerSaveHandlers(): void {
           rmSync(tmpDir, { recursive: true, force: true })
         }
 
-        const localData = exportProjectData(payload.projectId)
+        // Compare what Push WOULD write: secrets never reach the file (issue #177).
+        const localData = stripLocalSecrets(exportProjectData(payload.projectId))
 
         function diffCollection(
           local: Record<string, unknown>[],

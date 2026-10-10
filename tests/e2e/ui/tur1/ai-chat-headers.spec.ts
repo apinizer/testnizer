@@ -42,7 +42,10 @@ uiTest.describe('Tur1 — AI Chat custom headers / optional key [issues #120, #1
       await window
         .getByPlaceholder(/chat completions|Endpoint URL|https:\/\/\.\.\./i)
         .fill(`${llm}/v1/chat/completions`)
-      // API key deliberately left EMPTY (#121).
+      // API key deliberately EMPTY (#121). Keys are stored per provider since
+      // issue #188, so an earlier spec's OpenAI key pre-fills a new tab —
+      // clear it explicitly instead of assuming a blank field.
+      await window.getByPlaceholder('sk-...').fill('')
       await expect(window.getByPlaceholder('sk-...')).toHaveValue('')
 
       await window.getByTestId('ai-chat-headers').getByRole('button').first().click()

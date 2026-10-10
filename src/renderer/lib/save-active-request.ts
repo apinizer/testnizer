@@ -18,6 +18,7 @@ import { useSocketIOStore } from '../stores/socketio.store'
 import { useGrpcStore } from '../stores/grpc.store'
 import { useGraphQLStore } from '../stores/graphql.store'
 import { restoreMcpCall, useMcpStore, type McpTransport } from '../stores/mcp.store'
+import { restoreAiConfig, savedAiConfigOf, useAiChatStore } from '../stores/ai-chat.store'
 import { readSavedMcpCall, savedCallOf } from '../stores/mcp-call.slice'
 import { normalizeMcpAuth } from '../stores/mcp-auth.slice'
 import { normalizeMcpProtocol } from './mcp-protocol'
@@ -25,6 +26,7 @@ import { useWorkspaceStore } from '../stores/workspace.store'
 import { stripWsSecuritySecrets } from './key-material'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
+import type { RequestSettings } from '../../shared/request-settings'
 
 type SseHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
@@ -228,7 +230,99 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
       },
     }
   }
+  if (protocol === 'ai') {
+    // AI Chat had no branch (issue #187): Ctrl+S saved an empty row and
+    // reopening showed a blank chat. The configuration is saved — provider,
+    // model, endpoint URL, system prompt, headers minus credential headers,
+    // temperature, max tokens. Never the API key (encrypted in main, per
+    // provider — issue #188) and never the conversation.
+    // 'POST' matches the method TreeView stamps on a new AI row (a chat
+    // completion is a POST), so the tree badge does not flip on save.
+    const ai = useAiChatStore.getState()
+    return {
+      effectiveUrl: ai.customUrl,
+      effectiveMethod: 'POST',
+      effectiveBody: { type: 'none' },
+      protocolMeta: { ai: savedAiConfigOf(ai) },
+    }
+  }
   return { effectiveUrl: url, effectiveMethod: method, effectiveBody: body, protocolMeta }
+}
+
+/**
+ * Protocols edited in the HTTP RequestEditor, whose Settings tab (timeout,
+ * redirects, SSL) the request store holds. An allow-list: a protocol with its
+ * own editor must not inherit HTTP's settings by falling through.
+ */
+const HTTP_SETTINGS_PROTOCOLS = new Set(['http'])
+
+/**
+ * The per-request settings Ctrl+S / Save As persist with the row (issue #185):
+ * top-level keys of `request_schema` (endpoint, suite item) or of `metadata`
+ * (saved_request) — `src/shared/request-settings.ts` documents the shape.
+ * HTTP: timeout + redirects + SSL from the request store's Settings tab. MCP:
+ * the timeout from the MCP store. Other protocols carry none. A `null`
+ * timeout (inherit) is left out, so a cleared value does not survive.
+ */
+export function requestSettingsFor(tab: Tab): RequestSettings {
+  const protocol = (tab.protocol ?? 'http') as string
+  if (protocol === 'mcp') {
+    const timeout = useMcpStore.getState().requestTimeout
+    return timeout != null ? { timeout } : {}
+  }
+  if (!HTTP_SETTINGS_PROTOCOLS.has(protocol)) return {}
+  const req = useRequestStore.getState()
+  return {
+    ...(req.requestTimeout != null ? { timeout: req.requestTimeout } : {}),
+    followRedirects: req.followRedirects,
+    maxRedirects: req.maxRedirects,
+    sslVerification: req.sslVerification,
+  }
+}
+
+/**
+ * saved_requests has no `request_schema`: the settings sit at the top of its
+ * `metadata` JSON next to the protocol blocks. `undefined` when there is
+ * nothing to store (the update then keeps the column as it was).
+ */
+export function savedRequestMetadata(
+  protocolMeta: Record<string, unknown>,
+  settings: RequestSettings,
+): string | undefined {
+  const merged = { ...protocolMeta, ...settings }
+  return Object.keys(merged).length > 0 ? JSON.stringify(merged) : undefined
+}
+
+/**
+ * Settings read off a saved row (`readRequestSettings`) → the request store's
+ * `loadFromEndpoint` fields. Absent keys fall back to the store's defaults.
+ */
+export function requestStoreSettings(s: RequestSettings): {
+  requestTimeout: number | null
+  followRedirects?: boolean
+  maxRedirects?: number
+  sslVerification?: boolean
+} {
+  return {
+    requestTimeout: s.timeout ?? null,
+    followRedirects: s.followRedirects,
+    maxRedirects: s.maxRedirects,
+    sslVerification: s.sslVerification,
+  }
+}
+
+/**
+ * Put a reopened row's settings on the protocol store that owns them — the
+ * MCP store's per-tab timeout (HTTP's go through `loadFromEndpoint`). Uses
+ * `setState`, not the dirty-marking setter: a restore is not an edit. Switches
+ * the MCP store to the active tab first (the MST-120 race — a row without
+ * metadata never reaches `restoreProtocolFromMetadata`'s switch).
+ */
+export function restoreRequestSettings(protocol: string, settings: RequestSettings): void {
+  if (protocol !== 'mcp') return
+  const activeTabId = useTabsStore.getState().activeTabId
+  if (activeTabId) switchProtocolToTab(protocol, activeTabId)
+  useMcpStore.setState({ requestTimeout: settings.timeout ?? null })
 }
 
 /**
@@ -301,6 +395,9 @@ function switchProtocolToTab(protocol: string, tabId: string): void {
       break
     case 'mcp':
       useMcpStore.getState().switchToTab(tabId)
+      break
+    case 'ai':
+      useAiChatStore.getState().switchToTab(tabId)
       break
     default:
       break
@@ -464,6 +561,11 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     restoreMcpCall(readSavedMcpCall(m.call))
     return
   }
+
+  if (protocol === 'ai' && meta.ai && typeof meta.ai === 'object') {
+    restoreAiConfig(meta.ai)
+    return
+  }
 }
 
 /**
@@ -497,6 +599,9 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
   const req = useRequestStore.getState()
   const { effectiveUrl, effectiveMethod, effectiveBody, protocolMeta } = snapshotProtocol(activeTab)
   const protocol = (activeTab.protocol ?? 'http') as string
+  // Timeout / redirects / SSL (issue #185) — top-level keys, read back by the
+  // tab-open paths and the Runner through `readRequestSettings`.
+  const settings = requestSettingsFor(activeTab)
 
   // ─── Test Suite item ─────────────────────────────────────────
   if (activeTab.testSuiteItemId) {
@@ -507,6 +612,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       auth: req.auth,
       preScript: req.preScript,
       postScript: req.postScript,
+      ...settings,
       ...(Object.keys(protocolMeta).length > 0 ? { metadata: protocolMeta } : {}),
     }
     try {
@@ -554,7 +660,8 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       pre_script: req.preScript,
       post_script: req.postScript,
       assertions: JSON.stringify(req.assertions ?? []),
-      ...(Object.keys(protocolMeta).length > 0 ? { metadata: JSON.stringify(protocolMeta) } : {}),
+      // No request_schema on this table: settings ride in `metadata`.
+      metadata: savedRequestMetadata(protocolMeta, settings),
     }
     try {
       const result = (await window.api?.savedRequest?.update(activeTab.savedRequestId, payload)) as
@@ -591,6 +698,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       preScript: req.preScript,
       postScript: req.postScript,
       assertions: req.assertions ?? [],
+      ...settings,
       ...(Object.keys(protocolMeta).length > 0 ? { metadata: protocolMeta } : {}),
     }
     try {

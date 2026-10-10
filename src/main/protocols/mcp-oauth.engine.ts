@@ -26,7 +26,12 @@
  * the flow's cancel signal. SDK 2.x behaviour worth knowing here:
  *   - AS metadata issuer validation is skipped (`skipIssuerValidation`) so a
  *     mismatch stays a step-3 WARNING as before, not a hard failure;
- *   - the token endpoint must be https (or loopback) — `InsecureTokenEndpointError`;
+ *   - the token endpoint must be https (or loopback) — `InsecureTokenEndpointError`.
+ *     The one exception is the per-request intranet opt-in (issue #170,
+ *     `allowHttpAuthServer`): a plain-HTTP token endpoint on the SAME host:port as
+ *     the discovered authorization server is then reached through
+ *     `plainHttpTokenRequest` (the SDK has no opt-out); every other host or
+ *     port still needs https, and https / loopback endpoints keep the SDK path;
  *   - token-endpoint errors are one `OAuthError` class with the RFC 6749
  *     `error` string in `.code` (v1 had a class per code) — see `errorMessage`.
  *
@@ -51,6 +56,8 @@ import {
   discoverOAuthProtectedResourceMetadata,
   exchangeAuthorization,
   extractWWWAuthenticateParams,
+  parseErrorResponse,
+  prepareAuthorizationCodeRequest,
   refreshAuthorization,
   registerClient,
   resourceUrlFromServerUrl,
@@ -125,6 +132,12 @@ export interface McpOAuthSummary {
   hasRefreshToken: boolean
   clientAuthMethod: string
   resource?: string
+  /**
+   * Issue #170: the token came from a plain-HTTP token endpoint (intranet
+   * opt-in), so its refresh would go over HTTP too — the renderer forgets the
+   * session when the user turns the opt-in off.
+   */
+  plainHttpTokenEndpoint?: boolean
 }
 
 export interface McpOAuthDone {
@@ -151,6 +164,13 @@ export interface McpOAuthStartOptions {
   scope?: string
   /** Fixed loopback port for a pre-registered redirect URI; 0 / absent = ephemeral. */
   callbackPort?: number
+  /**
+   * Intranet opt-in (issue #170): allow a plain-HTTP token endpoint, but only
+   * on the host of the authorization server this flow discovers. Token
+   * exchange and refresh to that host then run over HTTP; any other non-TLS,
+   * non-loopback token endpoint is still refused. Off by default.
+   */
+  allowHttpAuthServer?: boolean
 }
 
 export interface McpOAuthHooks {
@@ -201,6 +221,13 @@ interface TokenSession {
   resource?: URL
   /** Origin of the MCP server URL the flow ran against (fallback when `resource` is absent). */
   serverOrigin: string
+  /**
+   * `host:port` whose plain-HTTP token endpoint the user opted into (issue
+   * #170) — the authorization server's, pinned when the flow ran (see
+   * `plainHttpPinOf`). Absent = the
+   * SDK's https-or-loopback rule applies to refresh as well.
+   */
+  plainHttpTokenHost?: string
   /** Single-flight refresh shared by concurrent 401s. */
   refreshing?: Promise<boolean>
   /**
@@ -628,6 +655,150 @@ function metadataFlag(metadata: AuthorizationServerMetadata, key: string): unkno
   return (metadata as Record<string, unknown>)[key]
 }
 
+// ─── Plain-HTTP token endpoint (intranet opt-in, issue #170) ──
+
+/**
+ * The SDK's loopback list (`isLoopbackHost` in `@modelcontextprotocol/client`,
+ * not exported) — those hosts are already exempt from the https rule, so the
+ * opt-in never changes how they are reached.
+ */
+function isLoopbackHostname(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname === '127.0.0.1' ||
+    hostname === '[::1]' ||
+    hostname === '::1'
+  )
+}
+
+/** The token endpoint the SDK would POST to (metadata, else `<AS>/token`). */
+function tokenEndpointOf(
+  authorizationServerUrl: string,
+  metadata: AuthorizationServerMetadata | undefined,
+): URL {
+  return new URL(metadata?.token_endpoint ?? new URL('/token', authorizationServerUrl))
+}
+
+/**
+ * The `host:port` the plain-HTTP opt-in is pinned to (issue #170): lower-cased
+ * hostname plus the EFFECTIVE port — a missing port is the scheme's default
+ * (80 / 443), so `http://as.corp` ≡ `http://as.corp:80`, while
+ * `http://as.corp:9999` is a different service than `as.corp:8080` and an
+ * `https://as.corp` server does not vouch for `http://as.corp` (port 80).
+ */
+export function plainHttpPinOf(url: URL): string {
+  const port = url.port || (url.protocol === 'https:' ? '443' : '80')
+  return `${url.hostname.toLowerCase()}:${port}`
+}
+
+/**
+ * Whether a token request must bypass the SDK because the user opted into a
+ * plain-HTTP authorization server. `false` → the SDK path (https, loopback,
+ * or no opt-in — the SDK then raises its own `InsecureTokenEndpointError`).
+ * Throws when the opt-in is on but the http endpoint is on another host OR
+ * port: the opt-in covers the authorization server's `host:port` only
+ * (`allowedPin`, from `plainHttpPinOf`).
+ */
+export function usesPlainHttpTokenEndpoint(tokenUrl: URL, allowedPin: string | undefined): boolean {
+  if (!allowedPin) return false
+  if (tokenUrl.protocol !== 'http:' || isLoopbackHostname(tokenUrl.hostname)) return false
+  if (plainHttpPinOf(tokenUrl) === allowedPin.toLowerCase()) return true
+  throw new Error(
+    `Insecure token endpoint ${tokenUrl.href}: the plain-HTTP authorization server opt-in covers ${allowedPin} only — every other host or port requires HTTPS`,
+  )
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+/** RFC 6749 §5.1 token response, checked the way the SDK's `OAuthTokensSchema` does. */
+function parseTokenResponse(json: unknown): OAuthTokens | null {
+  if (!isRecord(json)) return null
+  const { access_token, token_type, expires_in, refresh_token, scope, id_token } = json
+  if (typeof access_token !== 'string' || typeof token_type !== 'string') return null
+  if (expires_in !== undefined && typeof expires_in !== 'number') return null
+  if (refresh_token !== undefined && typeof refresh_token !== 'string') return null
+  if (scope !== undefined && typeof scope !== 'string') return null
+  if (id_token !== undefined && typeof id_token !== 'string') return null
+  return {
+    access_token,
+    token_type,
+    ...(typeof id_token === 'string' ? { id_token } : {}),
+    ...(typeof expires_in === 'number' ? { expires_in } : {}),
+    ...(typeof scope === 'string' ? { scope } : {}),
+    ...(typeof refresh_token === 'string' ? { refresh_token } : {}),
+  }
+}
+
+/**
+ * The SDK's `executeTokenRequest` minus `assertSecureTokenEndpoint`, for the
+ * opted-in plain-HTTP host only: RFC 8707 `resource`, client authentication
+ * picked by `selectClientAuthMethod` (client_secret_basic / client_secret_post
+ * / none), errors as the SDK's `OAuthError` (via `parseErrorResponse`, so
+ * `.code` drives the refresh give-up rule). Redirects are NOT followed — a
+ * 3xx would re-send the code, verifier and secret to wherever it points.
+ * The request goes through the caller's `fetchFn`, so the recorded exchange
+ * is redacted exactly like the SDK path's.
+ */
+async function plainHttpTokenRequest(
+  tokenUrl: URL,
+  params: URLSearchParams,
+  ctx: {
+    metadata: AuthorizationServerMetadata | undefined
+    clientInformation: OAuthClientInformationMixed
+    resource: URL | undefined
+  },
+  fetchFn: FetchLike,
+): Promise<OAuthTokens> {
+  const headers = new Headers({
+    'Content-Type': 'application/x-www-form-urlencoded',
+    Accept: 'application/json',
+  })
+  if (ctx.resource) params.set('resource', ctx.resource.href)
+  const { client_id, client_secret } = ctx.clientInformation
+  const method = selectClientAuthMethod(
+    ctx.clientInformation,
+    ctx.metadata?.token_endpoint_auth_methods_supported ?? [],
+  )
+  switch (method) {
+    case 'client_secret_basic':
+      if (!client_secret) {
+        throw new Error('client_secret_basic authentication requires a client_secret')
+      }
+      headers.set('Authorization', `Basic ${btoa(`${client_id}:${client_secret}`)}`)
+      break
+    case 'client_secret_post':
+      params.set('client_id', client_id)
+      if (client_secret) params.set('client_secret', client_secret)
+      break
+    case 'none':
+      params.set('client_id', client_id)
+      break
+    default:
+      throw new Error(`Unsupported client authentication method: ${String(method)}`)
+  }
+  const res = await fetchFn(tokenUrl, {
+    method: 'POST',
+    headers,
+    body: params,
+    redirect: 'manual',
+  })
+  if (res.status >= 300 && res.status < 400) {
+    await res.body?.cancel().catch(() => {})
+    throw new Error(
+      `The token endpoint answered HTTP ${res.status} (redirect) — not followed, so the credentials are not re-sent elsewhere`,
+    )
+  }
+  if (!res.ok) throw await parseErrorResponse(res)
+  const json: unknown = await res.json()
+  const tokens = parseTokenResponse(json)
+  if (tokens) return tokens
+  if (isRecord(json) && 'error' in json) throw await parseErrorResponse(JSON.stringify(json))
+  throw new Error('The token endpoint returned an invalid token response')
+}
+
 // ─── The flow ───────────────────────────────────────────────
 
 interface ProbeOutcome {
@@ -866,6 +1037,12 @@ async function runFlow(flow: Flow, opts: McpOAuthStartOptions): Promise<McpOAuth
     const metadata = await runStep(flow, 'auth-server-metadata', (step) =>
       authServerMetadataStep(step, authorizationServerUrl, fetchFn),
     )
+    // Issue #170: the plain-HTTP opt-in is pinned to the host AND port of
+    // the authorization server discovered above — a token endpoint on any
+    // other host or port still needs https.
+    const plainHttpTokenHost = opts.allowHttpAuthServer
+      ? plainHttpPinOf(new URL(authorizationServerUrl))
+      : undefined
 
     // The redirect URI is part of the DCR body and the authorization URL, so
     // the loopback listener must be bound before step 4.
@@ -994,19 +1171,29 @@ async function runFlow(flow: Flow, opts: McpOAuthStartOptions): Promise<McpOAuth
       clientInformation,
       metadata.token_endpoint_auth_methods_supported ?? [],
     )
+    let plainHttp = false
     const tokens: OAuthTokens = await runStep(flow, 'token-exchange', async (step) => {
-      const t = await exchangeAuthorization(authorizationServerUrl, {
-        metadata,
-        clientInformation,
-        authorizationCode: callback.code,
-        // Step 6 already compared it with the issuer (RFC 9207); SDK 2.x
-        // re-checks it here, so pass what the callback carried.
-        ...(callback.iss ? { iss: callback.iss } : {}),
-        codeVerifier,
-        redirectUri,
-        resource,
-        fetchFn,
-      })
+      const tokenUrl = tokenEndpointOf(authorizationServerUrl, metadata)
+      plainHttp = usesPlainHttpTokenEndpoint(tokenUrl, plainHttpTokenHost)
+      // Step 6 already compared `iss` with the issuer (RFC 9207); SDK 2.x
+      // re-checks it in `exchangeAuthorization`, so pass what the callback carried.
+      const t = plainHttp
+        ? await plainHttpTokenRequest(
+            tokenUrl,
+            prepareAuthorizationCodeRequest(callback.code, codeVerifier, redirectUri),
+            { metadata, clientInformation, resource },
+            fetchFn,
+          )
+        : await exchangeAuthorization(authorizationServerUrl, {
+            metadata,
+            clientInformation,
+            authorizationCode: callback.code,
+            ...(callback.iss ? { iss: callback.iss } : {}),
+            codeVerifier,
+            redirectUri,
+            resource,
+            fetchFn,
+          })
       flow.secrets.add(t.access_token)
       if (t.refresh_token) flow.secrets.add(t.refresh_token)
       if (t.id_token) flow.secrets.add(t.id_token)
@@ -1019,6 +1206,11 @@ async function runFlow(flow: Flow, opts: McpOAuthStartOptions): Promise<McpOAuth
       ]
       if (t.token_type.toLowerCase() !== 'bearer') {
         notes.push('Warning: MCP expects a Bearer token')
+      }
+      if (plainHttp) {
+        notes.push(
+          `Warning: plain-HTTP token endpoint ${tokenUrl.host} (intranet opt-in) — the authorization code, PKCE verifier and tokens crossed the network unencrypted`,
+        )
       }
       step.note = notes.join('; ')
       return t
@@ -1037,6 +1229,7 @@ async function runFlow(flow: Flow, opts: McpOAuthStartOptions): Promise<McpOAuth
       clientInformation,
       resource,
       serverOrigin: serverUrl.origin,
+      ...(plainHttpTokenHost ? { plainHttpTokenHost } : {}),
     })
     return {
       oauthSessionId: flow.id,
@@ -1050,6 +1243,7 @@ async function runFlow(flow: Flow, opts: McpOAuthStartOptions): Promise<McpOAuth
         hasRefreshToken: !!tokens.refresh_token,
         clientAuthMethod,
         resource: resource.href,
+        ...(plainHttp ? { plainHttpTokenEndpoint: true } : {}),
       },
     }
   } catch (err) {
@@ -1175,13 +1369,28 @@ async function refreshSession(session: TokenSession, timeoutMs: number): Promise
     }
     session.refreshing = (async () => {
       try {
-        const t = await refreshAuthorization(session.authorizationServerUrl, {
-          metadata: session.metadata,
-          clientInformation: session.clientInformation,
-          refreshToken,
-          resource: session.resource,
-          fetchFn,
-        })
+        const tokenUrl = tokenEndpointOf(session.authorizationServerUrl, session.metadata)
+        const t = usesPlainHttpTokenEndpoint(tokenUrl, session.plainHttpTokenHost)
+          ? {
+              refresh_token: refreshToken,
+              ...(await plainHttpTokenRequest(
+                tokenUrl,
+                new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken }),
+                {
+                  metadata: session.metadata,
+                  clientInformation: session.clientInformation,
+                  resource: session.resource,
+                },
+                fetchFn,
+              )),
+            }
+          : await refreshAuthorization(session.authorizationServerUrl, {
+              metadata: session.metadata,
+              clientInformation: session.clientInformation,
+              refreshToken,
+              resource: session.resource,
+              fetchFn,
+            })
         session.accessToken = t.access_token
         session.tokenType = t.token_type
         if (t.refresh_token) session.refreshToken = t.refresh_token

@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { createPortal } from 'react-dom'
 import {
+  AlertTriangle,
   Check,
   ChevronDown,
   ChevronRight,
-  Eye,
-  EyeOff,
   Send,
   Square,
   Trash2,
@@ -25,6 +24,9 @@ import { useTranslation } from '../../lib/i18n'
 import EmptyState from '../shared/EmptyState'
 import KeyValueTable from '../shared/KeyValueTable'
 import { STANDARD_HTTP_HEADERS } from '../../lib/http-headers'
+import AiChatApiKeyField from './ai-chat/AiChatApiKeyField'
+import AiChatParameters from './ai-chat/AiChatParameters'
+import AiChatHeadersSessionNote from './ai-chat/AiChatHeadersSessionNote'
 
 function ProviderAvatar({
   info,
@@ -269,7 +271,6 @@ export default function AiChatEditor(): ReactElement {
   const { t } = useTranslation()
   const provider = useAiChatStore((s) => s.provider)
   const customUrl = useAiChatStore((s) => s.customUrl)
-  const apiKey = useAiChatStore((s) => s.apiKey)
   const model = useAiChatStore((s) => s.model)
   const systemPrompt = useAiChatStore((s) => s.systemPrompt)
   const customHeaders = useAiChatStore((s) => s.customHeaders)
@@ -280,7 +281,6 @@ export default function AiChatEditor(): ReactElement {
 
   const setProvider = useAiChatStore((s) => s.setProvider)
   const setCustomUrl = useAiChatStore((s) => s.setCustomUrl)
-  const setApiKey = useAiChatStore((s) => s.setApiKey)
   const setModel = useAiChatStore((s) => s.setModel)
   const setSystemPrompt = useAiChatStore((s) => s.setSystemPrompt)
   const addHeader = useAiChatStore((s) => s.addHeader)
@@ -292,7 +292,6 @@ export default function AiChatEditor(): ReactElement {
   const clearConversation = useAiChatStore((s) => s.clearConversation)
 
   const [settingsExpanded, setSettingsExpanded] = useState(true)
-  const [showApiKey, setShowApiKey] = useState(false)
   const [headersExpanded, setHeadersExpanded] = useState(false)
   const enabledHeaderCount = (customHeaders ?? []).filter((h) => h.enabled && h.key.trim()).length
   const [draft, setDraft] = useState('')
@@ -436,31 +435,8 @@ export default function AiChatEditor(): ReactElement {
               )}
             </label>
 
-            {/* API Key */}
-            <label className="flex flex-col gap-1" style={{ gridColumn: '1 / -1' }}>
-              <span className="text-[var(--muted)]" style={{ fontSize: 12 }}>
-                {t('aiChat.apiKey')}
-              </span>
-              <div className="flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--white)] focus-within:border-[var(--accent)]">
-                <input
-                  type={showApiKey ? 'text' : 'password'}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..."
-                  className="flex-1 bg-transparent px-2 py-1.5 font-mono text-[var(--text)] outline-none"
-                  style={{ fontSize: 13 }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey((v) => !v)}
-                  className="flex h-7 w-7 cursor-pointer items-center justify-center text-[var(--muted)] hover:text-[var(--text)]"
-                  style={{ background: 'transparent', border: 'none' }}
-                  title={showApiKey ? t('aiChat.hideKey') : t('aiChat.showKey')}
-                >
-                  {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-            </label>
+            {/* API Key — stored encrypted per provider, never with the request (issue #188) */}
+            <AiChatApiKeyField />
 
             {/* System prompt */}
             <label className="flex flex-col gap-1" style={{ gridColumn: '1 / -1' }}>
@@ -476,6 +452,9 @@ export default function AiChatEditor(): ReactElement {
                 style={{ fontSize: 13 }}
               />
             </label>
+
+            {/* Temperature + max tokens (issue #189) */}
+            <AiChatParameters />
 
             {/* Custom headers (issue #120) */}
             <div
@@ -518,6 +497,8 @@ export default function AiChatEditor(): ReactElement {
                   />
                 </div>
               )}
+              {/* Shown collapsed too — a literal credential is not saved (issue #187). */}
+              <AiChatHeadersSessionNote />
             </div>
           </div>
         )}
@@ -589,6 +570,17 @@ export default function AiChatEditor(): ReactElement {
                       style={{ fontSize: 13 }}
                     >
                       {m.content ? <MarkdownText text={m.content} /> : null}
+                      {m.truncated && (
+                        <div
+                          data-testid="ai-truncated-note"
+                          role="note"
+                          className="mt-2 flex items-center gap-1.5 text-[var(--orange)]"
+                          style={{ fontSize: 12 }}
+                        >
+                          <AlertTriangle size={12} />
+                          {t('aiChat.truncated')}
+                        </div>
+                      )}
                       {isStreamingThis && (
                         <span
                           className="ml-0.5 inline-block animate-pulse"

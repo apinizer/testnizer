@@ -853,6 +853,10 @@ const api = {
   aiChat: {
     send: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('aichat:send', payload),
     cancel: (messageId: string): Promise<unknown> => ipcRenderer.invoke('aichat:cancel', messageId),
+    /** Provider API key at rest, encrypted in main (issue #188). */
+    getKey: (scope: string): Promise<unknown> => ipcRenderer.invoke('aichat:getKey', scope),
+    setKey: (scope: string, key: string): Promise<unknown> =>
+      ipcRenderer.invoke('aichat:setKey', scope, key),
     onChunk: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)
@@ -905,7 +909,13 @@ const api = {
       connectionId: string,
       toolName: string,
       args: unknown,
-      ctx?: { workspaceId?: string; projectId?: string; endpointId?: string; callId?: string },
+      ctx?: {
+        workspaceId?: string
+        projectId?: string
+        endpointId?: string
+        callId?: string
+        timeoutMs?: number
+      },
     ): Promise<unknown> => ipcRenderer.invoke('mcp:callTool', connectionId, toolName, args, ctx),
     // issue #152 — answer an `input_required` tools/call result (2026-07-28 MRTR)
     respondInput: (
@@ -914,7 +924,13 @@ const api = {
       args: unknown,
       requestState: string | undefined,
       inputResponses: Record<string, unknown>,
-      ctx?: { workspaceId?: string; projectId?: string; endpointId?: string; callId?: string },
+      ctx?: {
+        workspaceId?: string
+        projectId?: string
+        endpointId?: string
+        callId?: string
+        timeoutMs?: number
+      },
     ): Promise<unknown> =>
       ipcRenderer.invoke(
         'mcp:respondInput',
@@ -931,7 +947,13 @@ const api = {
     readResource: (
       connectionId: string,
       uri: string,
-      opts?: { callId?: string; workspaceId?: string; projectId?: string; endpointId?: string },
+      opts?: {
+        callId?: string
+        workspaceId?: string
+        projectId?: string
+        endpointId?: string
+        timeoutMs?: number
+      },
     ): Promise<unknown> => ipcRenderer.invoke('mcp:readResource', connectionId, uri, opts),
     listPrompts: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('mcp:listPrompts', connectionId),
@@ -939,7 +961,13 @@ const api = {
       connectionId: string,
       name: string,
       args: Record<string, string>,
-      opts?: { callId?: string; workspaceId?: string; projectId?: string; endpointId?: string },
+      opts?: {
+        callId?: string
+        workspaceId?: string
+        projectId?: string
+        endpointId?: string
+        timeoutMs?: number
+      },
     ): Promise<unknown> => ipcRenderer.invoke('mcp:getPrompt', connectionId, name, args, opts),
     // issue #163 — abort the running call registered under `callId`
     cancelCall: (connectionId: string, callId: string): Promise<unknown> =>

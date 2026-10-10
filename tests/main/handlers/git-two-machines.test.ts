@@ -678,3 +678,138 @@ describe('issue #135 — teammate pulls a merge made on the other machine', () =
     expectBAtRemoteMain(B)
   }, 30_000)
 })
+
+// ─── Issue #177: values marked secret stay on each machine ───────
+
+function addSecretVariable(m: Machine, key: string, value: string): string {
+  const envId = randomUUID()
+  const varId = randomUUID()
+  const now = Date.now()
+  const ws = (
+    m.db.prepare('SELECT workspace_id FROM projects WHERE id = ?').get(m.projectId) as {
+      workspace_id: string
+    }
+  ).workspace_id
+  m.db
+    .prepare(
+      `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, 'Dev', 1, ?, ?)`,
+    )
+    .run(envId, ws, m.projectId, now, now)
+  m.db
+    .prepare(
+      `INSERT INTO environment_variables (id, environment_id, key, value, enabled, secret, initial_value)
+       VALUES (?, ?, ?, ?, 1, 1, ?)`,
+    )
+    .run(varId, envId, key, value, `${value}-init`)
+  return varId
+}
+
+function addBearerMcpMock(m: Machine, token: string): string {
+  const id = randomUUID()
+  const now = Date.now()
+  m.db
+    .prepare(
+      `INSERT INTO mock_mcp_servers (id, project_id, name, port, auth_mode, bearer_token, created_at, updated_at)
+       VALUES (?, ?, 'MCP mock', 4777, 'bearer', ?, ?, ?)`,
+    )
+    .run(id, m.projectId, token, now, now)
+  return id
+}
+
+function secretsOf(m: Machine, varId: string, mcpId: string): Record<string, unknown> {
+  const v = m.db
+    .prepare('SELECT value, initial_value FROM environment_variables WHERE id = ?')
+    .get(varId) as { value: string; initial_value: string } | undefined
+  const mcp = m.db.prepare('SELECT bearer_token FROM mock_mcp_servers WHERE id = ?').get(mcpId) as
+    | { bearer_token: string }
+    | undefined
+  return { value: v?.value, initial_value: v?.initial_value, bearer: mcp?.bearer_token }
+}
+
+function remoteText(branch: string): string {
+  const listed = execFileSync('git', ['--git-dir', remote, 'ls-tree', '--name-only', branch], {
+    encoding: 'utf-8',
+  })
+    .split('\n')
+    .filter((f) => f.endsWith('.json'))
+  return execFileSync('git', ['--git-dir', remote, 'show', `${branch}:${listed[0]}`], {
+    encoding: 'utf-8',
+  })
+}
+
+describe('values marked secret stay on each machine (issue #177)', () => {
+  it('Push blanks them on the remote; Pull and branch switches keep each machine’s own values without an Auto-save commit', async () => {
+    const A = machine('A')
+    const B = machine('B')
+    const varId = addSecretVariable(A, 'token', 'A-secret')
+    const mcpId = addBearerMcpMock(A, 'A-mcp-token')
+    addEndpoint(A, 'A1')
+    await push(A)
+
+    // The remote file has the rows, the `secret` flag and '' — never A's values.
+    const fileA = JSON.parse(remoteText('main')) as {
+      environmentVariables: Record<string, unknown>[]
+      mockMcpServers: Record<string, unknown>[]
+    }
+    expect(fileA.environmentVariables.find((r) => r.id === varId)).toMatchObject({
+      key: 'token',
+      secret: 1,
+      value: '',
+      initial_value: '',
+    })
+    expect(fileA.mockMcpServers.find((r) => r.id === mcpId)).toMatchObject({
+      auth_mode: 'bearer',
+      bearer_token: '',
+    })
+    expect(remoteText('main')).not.toMatch(/A-secret|A-mcp-token/)
+    // A keeps its own values.
+    expect(secretsOf(A, varId, mcpId)).toEqual({
+      value: 'A-secret',
+      initial_value: 'A-secret-init',
+      bearer: 'A-mcp-token',
+    })
+
+    // B (fresh machine): the rows arrive blank; B types in its own values.
+    await pull(B)
+    expect(secretsOf(B, varId, mcpId)).toEqual({ value: '', initial_value: '', bearer: '' })
+    B.db
+      .prepare('UPDATE environment_variables SET value = ?, initial_value = ? WHERE id = ?')
+      .run('B-secret', 'B-secret-init', varId)
+    B.db.prepare('UPDATE mock_mcp_servers SET bearer_token = ? WHERE id = ?').run('B-mcp', mcpId)
+    const bOwn = { value: 'B-secret', initial_value: 'B-secret-init', bearer: 'B-mcp' }
+
+    // A pushes an unrelated change; B's Pull (merge + base) keeps B's values.
+    addEndpoint(A, 'A2')
+    await push(A)
+    await pull(B)
+    expect(names(B)).toEqual(['A1', 'A2'])
+    expect(secretsOf(B, varId, mcpId)).toEqual(bOwn)
+
+    // Switch away and back (replace re-imports): values kept, and leaving
+    // `main` commits nothing — the stripped DB equals the stripped file.
+    await createBranch(B, 'feature', 'main')
+    const mainBefore = git(B.localPath, 'rev-parse', 'main')
+    await switchTo(B, 'feature')
+    expect(secretsOf(B, varId, mcpId)).toEqual(bOwn)
+    expect(git(B.localPath, 'rev-parse', 'main'), 'no Auto-save commit on main').toBe(mainBefore)
+    const featureBefore = git(B.localPath, 'rev-parse', 'feature')
+    await switchTo(B, 'main')
+    expect(secretsOf(B, varId, mcpId)).toEqual(bOwn)
+    expect(git(B.localPath, 'rev-parse', 'feature'), 'no Auto-save commit on feature').toBe(
+      featureBefore,
+    )
+
+    // B pushes real work: B's values do not leak either, and A keeps its own.
+    addEndpoint(B, 'B1')
+    await push(B)
+    expect(remoteText('main')).not.toMatch(/B-secret|B-mcp|A-secret|A-mcp-token/)
+    await pull(A)
+    expect(names(A)).toEqual(['A1', 'A2', 'B1'])
+    expect(secretsOf(A, varId, mcpId)).toEqual({
+      value: 'A-secret',
+      initial_value: 'A-secret-init',
+      bearer: 'A-mcp-token',
+    })
+  }, 30_000)
+})

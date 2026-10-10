@@ -39,6 +39,7 @@ import {
   sendPromptCall,
   sendResourceUri,
   sendToolCall,
+  mcpSendTimeout,
 } from '../lib/mcp-send-request'
 import { tabUrlForServer, type ParsedMcpServer } from '../lib/mcp-config'
 import {
@@ -57,7 +58,7 @@ import {
   securityIdle,
   type McpSecurityTabState,
 } from './mcp-security.slice'
-import { defaultMcpAuth, resolveMcpAuth } from './mcp-auth.slice'
+import { allowsHttpAuthServer, defaultMcpAuth, resolveMcpAuth } from './mcp-auth.slice'
 import {
   eraDefaults,
   eraFromConnect,
@@ -119,6 +120,12 @@ export interface TabMcpState extends McpSecurityTabState, McpEraTabState, McpCal
    * `{{var}}` resolves at Connect. Ignored for stdio.
    */
   auth: McpAuthConfig
+  /**
+   * Settings tab timeout (ms), HTTP's semantics (issue #185): `null` = the
+   * shared default (`MCP_DEFAULT_TIMEOUT_MS`), `0` = no limit, `>0` = explicit.
+   * Part of the Ctrl+S snapshot (top-level `timeout`) and sent with each call.
+   */
+  requestTimeout: number | null
   /** Active tab of the config strip under the connection bar. Persisted, not saved. */
   configTab: McpConfigTab
   /** The config strip's panel is folded away. Persisted, not saved. */
@@ -208,6 +215,8 @@ interface McpStore extends TabMcpState {
   setEnvVars: (envVars: KeyValuePair[]) => void
   /** Replace the Authorization config (type + fields). Marks the tab dirty. */
   setAuth: (auth: McpAuthConfig) => void
+  /** Settings tab timeout: `null` = default, `0` = no limit. Marks the tab dirty. */
+  setRequestTimeout: (ms: number | null) => void
   /** Select a config tab (and unfold the panel). Not part of Ctrl+S. */
   setConfigTab: (tab: McpConfigTab) => void
   setConfigCollapsed: (collapsed: boolean) => void
@@ -229,6 +238,8 @@ interface McpStore extends TabMcpState {
   setOAuthClientId: (v: string) => void
   setOAuthClientSecret: (v: string) => void
   setOAuthScope: (v: string) => void
+  /** Issue #170 — saved with the request (lives in `auth.oauth2`), so it marks the tab dirty. */
+  setOAuthAllowHttpAuthServer: (allow: boolean) => void
   /** Run the OAuth 2.1 debugger flow against this tab's server (issue #141). */
   startOAuth: () => Promise<void>
   cancelOAuth: () => Promise<void>
@@ -283,6 +294,7 @@ type McpConfigKeys =
   | 'customHeaders'
   | 'envVars'
   | 'auth'
+  | 'requestTimeout'
   | 'configTab'
   | 'configCollapsed'
   | 'capabilityTab'
@@ -370,6 +382,7 @@ function emptyState(): TabMcpState {
     customHeaders: [blankRow()],
     envVars: [blankRow()],
     auth: defaultMcpAuth(),
+    requestTimeout: null,
     configTab: 'auth',
     configCollapsed: false,
     ...savedCallDefaults(),
@@ -395,6 +408,7 @@ function extractState(s: TabMcpState): TabMcpState {
     customHeaders: s.customHeaders,
     envVars: s.envVars,
     auth: s.auth,
+    requestTimeout: s.requestTimeout,
     configTab: s.configTab,
     configCollapsed: s.configCollapsed,
     connectionId: s.connectionId,
@@ -1240,6 +1254,12 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     set({ auth })
     markActiveTabDirty()
   },
+  setRequestTimeout: (ms) => {
+    // Same rule as HTTP's Settings tab: a finite >= 0 number is explicit
+    // (0 = no limit); anything else is "use the default".
+    set({ requestTimeout: ms != null && Number.isFinite(ms) && ms >= 0 ? ms : null })
+    markActiveTabDirty()
+  },
   // Layout only — not part of the Ctrl+S snapshot, so no dirty flag.
   setConfigTab: (configTab) => set({ configTab, configCollapsed: false }),
   setConfigCollapsed: (configCollapsed) => set({ configCollapsed }),
@@ -1350,6 +1370,14 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   setOAuthClientId: (oauthClientId) => set({ oauthClientId }),
   setOAuthClientSecret: (oauthClientSecret) => set({ oauthClientSecret }),
   setOAuthScope: (oauthScope) => set({ oauthScope }),
+  setOAuthAllowHttpAuthServer: (allow) => {
+    const { auth, oauthSummary } = get()
+    get().setAuth({ ...auth, oauth2: { ...auth.oauth2, allowHttpAuthServer: allow } })
+    // Off takes effect at once: a token issued over plain HTTP would refresh
+    // over HTTP too, so drop it (main forgets the session; a live connection
+    // then meets the server's 401 like any unauthorized one).
+    if (!allow && oauthSummary?.plainHttpTokenEndpoint) void get().forgetOAuth()
+  },
 
   startOAuth: async () => {
     const st = get()
@@ -1381,6 +1409,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     if (secret) request.clientSecret = secret
     const scope = resolveVariables(st.oauthScope.trim(), vars)
     if (scope) request.scope = scope
+    if (allowsHttpAuthServer(st.auth)) request.allowHttpAuthServer = true
     set({
       oauthRunning: true,
       oauthFlowId: null,
@@ -1692,6 +1721,8 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     }
     const callId = makeId()
     callStarts.set(callId, now())
+    // This tab's timeout, captured before any await (issue #76 / #185).
+    const timeoutMs = mcpSendTimeout(get().requestTimeout)
     // Captured NOW — the request store follows the active tab (issue #76).
     const scripts = beginMcpScripts(tabId, url, get().customHeaders)
     // The call owns the tab from here: Run turns into Cancel during the scripts too.
@@ -1720,7 +1751,11 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     toolScriptCtx.set(connectionId, ctx)
     let res: McpCallReply
     try {
-      res = await api.callTool(connectionId, selectedTool, args, { ...callContext(), callId })
+      res = await api.callTool(connectionId, selectedTool, args, {
+        ...callContext(),
+        callId,
+        timeoutMs,
+      })
     } catch (e) {
       res = { success: false, error: errText(e, t('mcp.error.toolCallFailed')) }
     }
@@ -1751,6 +1786,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     const { error: _previous, ...retry } = pendingInput
     const callId = makeId()
     callStarts.set(callId, now())
+    const timeoutMs = mcpSendTimeout(get().requestTimeout)
     set({
       isInvoking: true,
       resultError: null,
@@ -1763,6 +1799,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       res = await api.respondInput(connectionId, toolName, args, requestState, responses, {
         ...callContext(),
         callId,
+        timeoutMs,
       })
     } catch (e) {
       res = { success: false, error: errText(e, t('mcp.error.toolCallFailed')) }
@@ -1811,6 +1848,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     }
     const callId = makeId()
     callStarts.set(callId, now())
+    const timeoutMs = mcpSendTimeout(get().requestTimeout)
     const scripts = beginMcpScripts(tabId, url, get().customHeaders)
     set({
       isReadingResource: true,
@@ -1834,7 +1872,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     let res: McpCallReply<McpReadResourceResult>
     try {
       // Scope ids too, so the History row lands in this project (issue #166).
-      res = await api.readResource(connectionId, uri, { ...callContext(), callId })
+      res = await api.readResource(connectionId, uri, { ...callContext(), callId, timeoutMs })
     } catch (e) {
       res = { success: false, error: errText(e, t('mcp.error.readFailed')) }
     }
@@ -1893,6 +1931,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     }
     const callId = makeId()
     callStarts.set(callId, now())
+    const timeoutMs = mcpSendTimeout(get().requestTimeout)
     const scripts = beginMcpScripts(tabId, url, get().customHeaders)
     set({
       isGettingPrompt: true,
@@ -1908,7 +1947,11 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     const { args } = sendPromptCall(selectedPrompt, promptArgs, mcpSendVars(ctx))
     let res: McpCallReply<McpGetPromptResult>
     try {
-      res = await api.getPrompt(connectionId, selectedPrompt, args, { ...callContext(), callId })
+      res = await api.getPrompt(connectionId, selectedPrompt, args, {
+        ...callContext(),
+        callId,
+        timeoutMs,
+      })
     } catch (e) {
       res = { success: false, error: errText(e, t('mcp.error.promptFailed')) }
     }

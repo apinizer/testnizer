@@ -28,6 +28,11 @@ export interface StoredProjectSettings {
   auth?: StoredProjectAuth
   preScript?: string
   testScript?: string
+  /**
+   * Project "general" request timeout (ms, 0 = none) — the second link of the
+   * HTTP timeout chain Send and Run share (`resolveHttpTimeout`, issue #185).
+   */
+  requestTimeout?: number
 }
 
 interface MinimalStore {
@@ -59,6 +64,24 @@ export async function loadProjectSettings(
     // plaintext — no decrypt step needed. If that ever changes, mirror the
     // settings handler's transformSecrets('decrypt') here.
     return raw as StoredProjectSettings
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * App-wide "general" timeout (Settings → `defaultTimeout`, ms) — the last link
+ * of the HTTP timeout chain before the engine's own 30 s (issue #185). The
+ * renderer's Send reads it through `settings:get`, whose store carries the
+ * handler's `defaults` (30000); this store has none, so a never-saved value
+ * comes back `undefined` and the engine default (also 30 s) applies — the
+ * same number either way.
+ */
+export async function loadAppDefaultTimeout(): Promise<number | undefined> {
+  try {
+    const store = await getStore()
+    const raw = store.get('defaultTimeout')
+    return typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? raw : undefined
   } catch {
     return undefined
   }

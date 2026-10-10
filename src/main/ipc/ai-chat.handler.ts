@@ -1,11 +1,14 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import {
+  effectiveMaxTokens,
   streamChatCompletion,
   type AiProvider,
   type AiChatMessage,
 } from '../protocols/ai-chat.engine'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
+import { getAiKey, setAiKey } from '../lib/ai-chat-keys'
+import { AI_MAX_TOKENS_CAP } from '../../shared/ai-limits'
 
 interface AiChatSendPayload {
   provider: AiProvider
@@ -17,6 +20,26 @@ interface AiChatSendPayload {
   headers?: Record<string, string>
   temperature?: number
   maxTokens?: number
+}
+
+/**
+ * Sampling temperature from the renderer, checked in main (issues #188/#189):
+ * a finite number in 0..2 (every supported provider's range). Anything else
+ * — NaN, Infinity, a string, out of range — is ignored → provider default.
+ */
+export function sanitizeTemperature(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 2 ? v : undefined
+}
+
+/**
+ * `max_tokens` from the renderer: an integer ≥ 1, clamped to
+ * `AI_MAX_TOKENS_CAP` (shared with the renderer field, which already rejects
+ * larger values — the clamp only guards a payload that bypassed it).
+ * Anything else is ignored → provider default.
+ */
+export function sanitizeMaxTokens(v: unknown): number | undefined {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) return undefined
+  return Math.min(v, AI_MAX_TOKENS_CAP)
 }
 
 interface ActiveStream {
@@ -51,11 +74,17 @@ export function registerAiChatHandlers(): void {
       const promptPreview = lastUserMsg?.content?.slice(0, 200) ?? ''
       const started = Date.now()
       const targetUrl = payload.url ?? `${payload.provider}://chat/completions`
+      // Never trust generation settings from IPC — validated here, once, and
+      // only the sanitized values reach the engine and the console log.
+      const temperature = sanitizeTemperature(payload.temperature)
+      const maxTokens = sanitizeMaxTokens(payload.maxTokens)
+      const sentMaxTokens = effectiveMaxTokens(payload.provider, maxTokens)
 
       // Drive streaming in the background — the IPC call resolves immediately
       // with the messageId so the renderer can route subsequent chunk events.
       void (async () => {
         let fullText = ''
+        let truncated = false
         let chunkCount = 0
         let firstChunkAt: number | null = null
         try {
@@ -66,13 +95,16 @@ export function registerAiChatHandlers(): void {
             headers: payload.headers,
             model: payload.model,
             messages: payload.messages,
-            temperature: payload.temperature,
-            maxTokens: payload.maxTokens,
+            temperature,
+            maxTokens,
             signal: controller.signal,
           })
 
           for await (const chunk of stream) {
             if (controller.signal.aborted) break
+            // Stop signal (token limit reached, issue #189) — not a text chunk.
+            if (chunk.truncated) truncated = true
+            if (!chunk.delta) continue
             chunkCount++
             if (firstChunkAt === null) firstChunkAt = Date.now()
             fullText += chunk.delta ?? ''
@@ -100,7 +132,7 @@ export function registerAiChatHandlers(): void {
               },
             })
           } else {
-            emit(win.id, 'aichat:done', { messageId })
+            emit(win.id, 'aichat:done', { messageId, ...(truncated ? { truncated: true } : {}) })
             logRequestResponse({
               protocol: 'ai',
               method: 'CHAT',
@@ -115,7 +147,12 @@ export function registerAiChatHandlers(): void {
                 provider: payload.provider,
                 model: payload.model,
                 messageCount: payload.messages.length,
-                temperature: payload.temperature ?? 0,
+                // What the request body actually carried (issue #189): no
+                // `temperature` key when none was sent (provider default), and
+                // the effective `max_tokens` (Anthropic's default included).
+                ...(temperature !== undefined ? { temperature } : {}),
+                ...(sentMaxTokens !== undefined ? { maxTokens: sentMaxTokens } : {}),
+                ...(truncated ? { truncated: true } : {}),
                 chunks: chunkCount,
                 ttfbMs: ttfb,
                 avgChunkBytes: chunkCount > 0 ? Math.round(totalBytes / chunkCount) : 0,
@@ -158,6 +195,25 @@ export function registerAiChatHandlers(): void {
       })()
 
       return { success: true, data: { messageId } }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── Provider API keys at rest (issue #188) ──────────────────
+  // Encrypted with safeStorage in main; never in renderer localStorage. The
+  // read returns the decrypted key to the renderer that owns the field.
+  ipcMain.handle('aichat:getKey', async (_event, scope: string) => {
+    try {
+      return { success: true, data: await getAiKey(scope) }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('aichat:setKey', async (_event, scope: string, key: string) => {
+    try {
+      return { success: true, data: await setAiKey(scope, key) }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

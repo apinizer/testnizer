@@ -63,6 +63,27 @@ export function decryptSecret(stored: string | null | undefined): string | null 
   }
 }
 
+/**
+ * Strict variant of {@link encryptSecret}: returns `null` instead of the
+ * plaintext when the OS keychain cannot encrypt. For secrets that must never
+ * reach disk unencrypted (AI Chat provider keys, issue #188) — the caller keeps
+ * the value in memory only when this returns `null`.
+ */
+export function encryptSecretStrict(plaintext: string): string | null {
+  if (plaintext === '') return null
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return null
+    return ENC_PREFIX + safeStorage.encryptString(plaintext).toString('base64')
+  } catch {
+    return null
+  }
+}
+
+/** Does this stored value carry the {@link encryptSecret} envelope? */
+export function isEncryptedSecret(stored: unknown): stored is string {
+  return typeof stored === 'string' && stored.startsWith(ENC_PREFIX)
+}
+
 export function isEncryptionAvailable(): boolean {
   try {
     return safeStorage.isEncryptionAvailable()

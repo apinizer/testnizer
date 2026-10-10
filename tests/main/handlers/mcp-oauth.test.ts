@@ -94,6 +94,21 @@ describe('mcp:oauth:start', () => {
     expect(JSON.stringify(consoleEntries)).not.toContain('shh-secret-141')
   })
 
+  it('issue #170: the plain-HTTP authorization server opt-in passes only for a literal true', async () => {
+    await harness.invoke('mcp:oauth:start', {
+      url: 'http://srv.local/mcp',
+      allowHttpAuthServer: true,
+    })
+    expect(lastStart?.options.allowHttpAuthServer).toBe(true)
+    for (const value of ['true', 1, {}, false, undefined]) {
+      await harness.invoke('mcp:oauth:start', {
+        url: 'http://srv.local/mcp',
+        allowHttpAuthServer: value,
+      })
+      expect(lastStart?.options).not.toHaveProperty('allowHttpAuthServer')
+    }
+  })
+
   it('error envelope for a missing url or an engine refusal', async () => {
     expect(await harness.invoke('mcp:oauth:start', {})).toMatchObject({
       success: false,

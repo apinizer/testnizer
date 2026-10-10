@@ -2,11 +2,16 @@
  * MST-151 P1 — Multi-turn conversation context
  * MST-152 P1 — Provider/model switch persist
  * MST-154 P1 — Stream cancel + error handling
- * MST-153 P1 — Tool-call loop (fake LLM with tool_calls — see NOTE below)
+ * MST-153 P1 — Plain chat completion contract + generation settings
  *
- * NOTE on MST-153: The existing fake-llm.ts (tests/e2e/servers/fake-llm.ts)
- * does not return tool_calls responses.  This file includes a mini OpenAI-
- * compatible server that does, started inline with startToolCallServer().
+ * NOTE on MST-153: AI Chat has NO tool calling — it never sends a `tools`
+ * array and has no tool-call loop. (This test used to be titled "tool-call
+ * loop" while only asserting a text reply.) It now checks what AI Chat really
+ * does against the inline OpenAI-compatible stub (startToolCallServer, which
+ * would answer with tool_calls only if a request carried tools): the request
+ * carries no `tools`, the reply renders, and — issue #189 — temperature /
+ * max tokens from the Settings section reach the request body and a
+ * `finish_reason: 'length'` stop shows the "Answer truncated" note.
  *
  * NOTE on data-testids: AiChatEditor.tsx has no data-testid attributes.
  * All UI interactions here use placeholder-text and role-based selectors
@@ -40,11 +45,14 @@ const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 interface ToolCallServer {
   port: number
   url: string
+  /** Every parsed chat-completion request body, in order. */
+  bodies: Array<Record<string, unknown>>
   close: () => Promise<void>
 }
 
 async function startToolCallServer(port: number): Promise<ToolCallServer> {
   let callCount = 0
+  const bodies: Array<Record<string, unknown>> = []
 
   const server = http.createServer(async (req, res) => {
     if (req.url === '/health') {
@@ -60,7 +68,9 @@ async function startToolCallServer(port: number): Promise<ToolCallServer> {
         messages?: Array<{ role: string; content?: string }>
         tools?: unknown[]
         stream?: boolean
+        max_tokens?: number
       }
+      bodies.push(body as Record<string, unknown>)
 
       callCount++
       const last = body.messages?.at(-1)?.content ?? ''
@@ -102,6 +112,12 @@ async function startToolCallServer(port: number): Promise<ToolCallServer> {
         res.write(
           `data: ${JSON.stringify({ choices: [{ delta: { content: reply } }] })}\n\n`,
         )
+        // A request with max_tokens is answered as cut off at the limit.
+        if (body.max_tokens !== undefined) {
+          res.write(
+            `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'length' }] })}\n\n`,
+          )
+        }
         res.write('data: [DONE]\n\n')
         res.end()
         return
@@ -128,6 +144,7 @@ async function startToolCallServer(port: number): Promise<ToolCallServer> {
   return {
     port,
     url: `http://127.0.0.1:${port}/v1/chat/completions`,
+    bodies,
     close: () =>
       new Promise((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()))
@@ -156,13 +173,20 @@ async function openAiChatTab(
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-uiTest.describe('Tur1 — AI Chat deep [MST-151, 152, 154]', () => {
+uiTest.describe('Tur1 — AI Chat deep [MST-151, 152, 153, 154]', () => {
   uiTest.beforeEach(async ({ window }) => {
     // Önceki spec sidebar'ı Tests/Mocks sayfasında bırakabilir — new-dropdown-btn
     // yalnızca APIs panelinde var (worker-scoped fixture pollution guard'ı).
     await dismissOverlays(window)
     await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
+  })
+
+  // Keys are stored per provider (issue #188): clear the one these tests typed
+  // through the field, so later AI specs in the shared window start blank.
+  uiTest.afterEach(async ({ window }) => {
+    const key = window.getByTestId('ai-api-key')
+    if (await key.isVisible().catch(() => false)) await key.fill('').catch(() => {})
   })
 
   // ── MST-151: Multi-turn conversation ──────────────────────────────────────
@@ -324,8 +348,8 @@ uiTest.describe('Tur1 — AI Chat deep [MST-151, 152, 154]', () => {
     await expect(sendBtn).toBeEnabled({ timeout: 10_000 })
   })
 
-  // ── MST-153: Tool-call loop ──────────────────────────────────────────────
-  uiTest('MST-153 tool-call server responds with tool_calls and then final text', async ({ window }) => {
+  // ── MST-153: plain completion (AI Chat has no tool calling) ─────────────
+  uiTest('MST-153 sends a plain chat completion without tools and renders the reply', async ({ window }) => {
     // Spin up the inline tool-call server on a fixed port
     const tcPort = 27491
     let tcServer: ToolCallServer | null = null
@@ -344,10 +368,42 @@ uiTest.describe('Tur1 — AI Chat deep [MST-151, 152, 154]', () => {
       await prompt.fill(`ToolCallTest-${uid()}`)
       await sendBtn.click()
 
-      // Tool-call stub returns a final text reply
+      // The stub's plain text reply renders.
       await expect(
         window.getByText(/Tool-call stub final reply/i).first(),
       ).toBeVisible({ timeout: 20_000 })
+      // AI Chat never offers tools, so the stub never enters its tool_calls branch.
+      expect(tcServer.bodies.length).toBeGreaterThan(0)
+      expect(tcServer.bodies.at(-1)?.tools).toBeUndefined()
+      // No generation settings set → none sent (provider defaults).
+      expect(tcServer.bodies.at(-1)?.temperature).toBeUndefined()
+      expect(tcServer.bodies.at(-1)?.max_tokens).toBeUndefined()
+    } finally {
+      if (tcServer) await tcServer.close().catch(() => {})
+    }
+  })
+
+  // ── MST-153: generation settings + truncation (issue #189) ──────────────
+  uiTest('MST-153 temperature + max tokens reach the request; a length stop is flagged', async ({ window }) => {
+    const tcPort = 27492
+    let tcServer: ToolCallServer | null = null
+    try {
+      tcServer = await startToolCallServer(tcPort)
+      await openAiChatTab(window, tcServer.url, 'tc-test-key')
+
+      await window.getByTestId('ai-temperature').fill('0.3')
+      await window.getByTestId('ai-max-tokens').fill('77')
+
+      const prompt = window.getByPlaceholder(/Ask anything/i)
+      await prompt.fill(`SettingsTest-${uid()}`)
+      await window.getByRole('button', { name: /^Send$|^Gönder$/i }).click()
+
+      await expect(window.getByTestId('ai-truncated-note').first()).toBeVisible({
+        timeout: 20_000,
+      })
+      const body = tcServer.bodies.at(-1)
+      expect(body?.temperature).toBe(0.3)
+      expect(body?.max_tokens).toBe(77)
     } finally {
       if (tcServer) await tcServer.close().catch(() => {})
     }

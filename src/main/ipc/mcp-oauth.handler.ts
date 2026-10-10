@@ -68,6 +68,8 @@ function sanitizeOptions(raw: unknown): McpOAuthStartOptions {
     ...(str(o.clientSecret) ? { clientSecret: str(o.clientSecret) } : {}),
     ...(str(o.scope) ? { scope: str(o.scope) } : {}),
     ...(port !== undefined && port >= 0 && port <= 65535 ? { callbackPort: port } : {}),
+    // Issue #170: strictly opt-in — anything but a literal `true` keeps https required.
+    ...(o.allowHttpAuthServer === true ? { allowHttpAuthServer: true } : {}),
   }
 }
 

@@ -76,6 +76,7 @@ interface UiSchema {
   body?: { type?: string; content?: string }
   assertions?: UiAssertion[]
   timeoutSeconds?: number
+  timeout?: number
 }
 
 let projectId: string
@@ -198,7 +199,7 @@ describe('importPostman — x-apinizer read (Apinizer → Testnizer)', () => {
     expect(ep.schema.assertions?.[0]).toMatchObject({ type: 'body_contains', expected: 'pong' })
   })
 
-  it('carries timeoutSeconds into request_schema', async () => {
+  it('issue #185: maps timeoutSeconds onto the one timeout key (`timeout`, ms) Send and Run read', async () => {
     const content = apinizerCollection({
       name: 'Slow',
       request: { method: 'GET', url: 'https://api.example.com/slow' },
@@ -206,7 +207,21 @@ describe('importPostman — x-apinizer read (Apinizer → Testnizer)', () => {
     })
     await importPostman(projectId, content)
     const [ep] = endpointSchemas()
-    expect(ep.schema.timeoutSeconds).toBe(30)
+    expect(ep.schema.timeout).toBe(30_000)
+    // The old key — written here, read by nothing — is gone.
+    expect(ep.schema.timeoutSeconds).toBeUndefined()
+  })
+
+  it('issue #185: Apinizer timeoutSeconds 0 means "default" — imported as not set (inherit), not "no limit"', async () => {
+    const content = apinizerCollection({
+      name: 'Default timeout',
+      request: { method: 'GET', url: 'https://api.example.com/d' },
+      'x-apinizer': { schemaVersion: '1.0', timeoutSeconds: 0 },
+    })
+    await importPostman(projectId, content)
+    const [ep] = endpointSchemas()
+    expect(ep.schema.timeout).toBeUndefined()
+    expect(ep.schema.timeoutSeconds).toBeUndefined()
   })
 
   it('ignores an unknown MAJOR schemaVersion and falls back to plain Postman (with a warning)', async () => {
@@ -238,6 +253,7 @@ describe('importPostman — x-apinizer read (Apinizer → Testnizer)', () => {
     const [ep] = endpointSchemas()
     expect(ep.schema.assertions).toBeUndefined()
     expect(ep.schema.timeoutSeconds).toBeUndefined()
+    expect(ep.schema.timeout).toBeUndefined()
   })
 })
 
@@ -313,6 +329,17 @@ describe('exportAsPostman — x-apinizer write (Testnizer → Apinizer)', () => 
       { kind: 'XPATH', path: '//id', expected: '3' },
       { kind: 'BODY', expected: 'ok' },
     ])
+  })
+
+  it("issue #185: exports the request's `timeout` (ms) as x-apinizer.timeoutSeconds", () => {
+    insertEndpoint({
+      name: 'Timed',
+      method: 'GET',
+      url: 'https://api.example.com/t',
+      timeout: 20_000,
+    })
+    const col = JSON.parse(exportAsPostman(projectId)) as PmCollection
+    expect(col.item.find((i) => i.name === 'Timed')?.['x-apinizer']?.timeoutSeconds).toBe(20)
   })
 
   it('derives WSDL/SOAP testType+apiType for a SOAP protocol endpoint', () => {

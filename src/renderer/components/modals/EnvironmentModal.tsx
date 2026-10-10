@@ -395,9 +395,11 @@ export default function EnvironmentModal() {
                 const doc = {
                   id: selectedEnv.id,
                   name: selectedEnv.name,
+                  // Values marked secret stay on this computer (issue #177):
+                  // the file keeps the key and the `secret` type, never the value.
                   values: selectedEnv.variables.map((v) => ({
                     key: v.key,
-                    value: v.value || v.initialValue || '',
+                    value: v.secret ? '' : v.value || v.initialValue || '',
                     enabled: v.enabled,
                     type: v.secret ? 'secret' : 'default',
                   })),
@@ -761,7 +763,7 @@ function VarTable({
       >
         <span />
         <span>Variable</span>
-        <span>Type</span>
+        <span title={t('env.secretStaysLocal')}>Type</span>
         <span>Initial Value</span>
         <span>Current Value</span>
         <span />
@@ -826,6 +828,7 @@ function VarRowView({
   onRemove: () => void
   onFocus?: () => void
 }) {
+  const { t } = useTranslation()
   const [showCurrent, setShowCurrent] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -873,8 +876,11 @@ function VarRowView({
 
       {/* Type */}
       <select
+        data-testid="env-var-type"
         value={variable.secret ? 'secret' : 'default'}
         onChange={(e) => onUpdate({ secret: e.target.value === 'secret' })}
+        // What "secret" means for sharing (issue #177).
+        title={t('env.secretStaysLocal')}
         style={{
           background: 'transparent',
           border: '1px solid var(--border)',
@@ -884,7 +890,9 @@ function VarRowView({
         }}
       >
         <option value="default">default</option>
-        <option value="secret">secret</option>
+        <option value="secret" title={t('env.secretStaysLocal')}>
+          secret
+        </option>
       </select>
 
       {/* Initial Value */}

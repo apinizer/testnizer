@@ -1,12 +1,29 @@
 // src/renderer/stores/ai-chat.store.ts
 // Postman-style AI chat — provider/model selection, multi-turn conversation,
-// streaming response with cancellation. State is in-memory only (no DB).
+// streaming response with cancellation. The per-tab state is snapshotted to
+// localStorage WITHOUT the API key and credential headers (issue #188); the
+// key lives encrypted in main, one per provider (see "API keys" below). The
+// request configuration is saved with the request row (issue #187).
 
 import { create } from 'zustand'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { useEnvironmentStore } from './environment.store'
-import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import {
+  loadJson,
+  loadTabbedState,
+  attachTabbedPersist,
+  writeTabbedSnapshot,
+  type PersistedTabbed,
+} from '../lib/persist-helpers'
 import { makeId } from '../lib/utils'
+import { markActiveTabDirty } from '../lib/mark-dirty'
+import {
+  aiKeyScope,
+  canCarryAiKey,
+  isValidMaxTokens,
+  isValidTemperature,
+  stripCredentialHeaders,
+} from '../lib/ai-chat-config'
 import type { KeyValuePair } from '../types'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
@@ -83,6 +100,8 @@ export interface AiChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   timestamp: number
+  /** The provider stopped at the token limit — the answer is cut off (issue #189). */
+  truncated?: boolean
 }
 
 export interface AiModelOption {
@@ -259,6 +278,10 @@ interface TabAiChatState {
   systemPrompt: string
   /** User-defined HTTP headers sent with every completion request (issue #120). */
   customHeaders: KeyValuePair[]
+  /** Sampling temperature; `null` = provider default (issue #189). */
+  temperature: number | null
+  /** `max_tokens`; `null` = provider default (Anthropic: 4096, issue #189). */
+  maxTokens: number | null
   messages: AiChatMessage[]
   streaming: boolean
   pendingResponseId: string | null
@@ -266,16 +289,26 @@ interface TabAiChatState {
   errorMessage: string | null
 }
 
+/**
+ * Where API keys end up (issue #188): `encrypted` = safeStorage in main,
+ * `memory` = encryption unavailable, the key lives for this session only.
+ * Global, not per tab.
+ */
+export type AiKeyStorage = 'unknown' | 'encrypted' | 'memory'
+
 interface AiChatStore extends TabAiChatState {
   /** Per-tab state cache */
   _tabStates: Map<string, TabAiChatState>
   _currentTabId: string | null
+  keyStorage: AiKeyStorage
 
   setProvider: (provider: AiProvider) => void
   setCustomUrl: (url: string) => void
   setApiKey: (key: string) => void
   setModel: (model: string) => void
   setSystemPrompt: (prompt: string) => void
+  setTemperature: (temperature: number | null) => void
+  setMaxTokens: (maxTokens: number | null) => void
   addHeader: () => void
   updateHeader: (id: string, updates: Partial<KeyValuePair>) => void
   removeHeader: (id: string) => void
@@ -287,7 +320,7 @@ interface AiChatStore extends TabAiChatState {
 
   /** Internal — used by the IPC subscription. */
   _onChunk: (messageId: string, delta: string) => void
-  _onDone: (messageId: string) => void
+  _onDone: (messageId: string, truncated?: boolean) => void
   _onError: (messageId: string, error: string) => void
   _onCancelled: (messageId: string) => void
 
@@ -305,6 +338,8 @@ function emptyTabState(): TabAiChatState {
     model: defaultModelFor('openai'),
     systemPrompt: '',
     customHeaders: [defaultKv()],
+    temperature: null,
+    maxTokens: null,
     messages: [],
     streaming: false,
     pendingResponseId: null,
@@ -321,6 +356,8 @@ function extractState(s: AiChatStore): TabAiChatState {
     model: s.model,
     systemPrompt: s.systemPrompt,
     customHeaders: s.customHeaders,
+    temperature: s.temperature ?? null,
+    maxTokens: s.maxTokens ?? null,
     messages: s.messages,
     streaming: s.streaming,
     pendingResponseId: s.pendingResponseId,
@@ -357,7 +394,11 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
   ...persisted.current,
   _tabStates: persisted._tabStates,
   _currentTabId: persisted._currentTabId,
+  keyStorage: 'unknown',
 
+  // Every config setter below marks the tab dirty (issue #187) — the
+  // configuration is saved with the request. The API key is NOT: it is not
+  // part of the saved request, so typing it never dirties the tab.
   setProvider: (provider) => {
     // Switching provider auto-selects a sensible default model unless the
     // current model is already in the new provider's list, and pre-fills the
@@ -371,19 +412,73 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
       model: stillValid ? state.model : defaultModelFor(provider),
       customUrl: provider === 'custom' ? state.customUrl : resolveDefaultUrl(provider),
     })
+    markActiveTabDirty()
+    // A different provider has its own key — never send the old one to it.
+    syncLiveKey({ clear: true })
   },
-  setCustomUrl: (customUrl) => set({ customUrl }),
-  setApiKey: (apiKey) => set({ apiKey }),
-  setModel: (model) => set({ model }),
-  setSystemPrompt: (systemPrompt) => set({ systemPrompt }),
-  addHeader: () => set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] })),
-  updateHeader: (id, updates) =>
+  setCustomUrl: (customUrl) => {
+    const before = get()
+    const fromScope = aiKeyScope(before.provider, before.customUrl)
+    set({ customUrl })
+    markActiveTabDirty()
+    // Custom provider: the key belongs to the base URL (issue #188). A key
+    // typed for one gateway is never handed to another: the field is cleared
+    // at once (not after main answers — a Send in between would carry it).
+    // Only a key typed for no origin yet follows the edit (`canCarryAiKey`:
+    // a blank URL being typed, or a templated path edit that stays
+    // templated), in memory — a carried key is never persisted.
+    const toScope = aiKeyScope(before.provider, customUrl)
+    if (toScope === fromScope) return
+    const origin = keyOrigins.get(fromScope) ?? fromScope
+    if (before.apiKey && canCarryAiKey(origin, toScope)) {
+      syncLiveKey({ carry: { key: before.apiKey, origin } })
+    } else {
+      syncLiveKey({ clear: true })
+    }
+  },
+  setApiKey: (apiKey) => {
+    set({ apiKey })
+    const s = get()
+    const scope = aiKeyScope(s.provider, s.customUrl)
+    sessionKeys.set(scope, apiKey)
+    // Typed here → it belongs here (no longer a carried key).
+    keyOrigins.delete(scope)
+    schedulePersist(scope, apiKey)
+  },
+  setModel: (model) => {
+    set({ model })
+    markActiveTabDirty()
+  },
+  setSystemPrompt: (systemPrompt) => {
+    set({ systemPrompt })
+    markActiveTabDirty()
+  },
+  setTemperature: (temperature) => {
+    set({ temperature: isValidTemperature(temperature) ? temperature : null })
+    markActiveTabDirty()
+  },
+  setMaxTokens: (maxTokens) => {
+    set({ maxTokens: isValidMaxTokens(maxTokens) ? maxTokens : null })
+    markActiveTabDirty()
+  },
+  addHeader: () => {
+    set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] }))
+    markActiveTabDirty()
+  },
+  updateHeader: (id, updates) => {
     set((state) => ({
       customHeaders: state.customHeaders.map((h) => (h.id === id ? { ...h, ...updates } : h)),
-    })),
-  removeHeader: (id) =>
-    set((state) => ({ customHeaders: state.customHeaders.filter((h) => h.id !== id) })),
-  setHeaders: (customHeaders) => set({ customHeaders }),
+    }))
+    markActiveTabDirty()
+  },
+  removeHeader: (id) => {
+    set((state) => ({ customHeaders: state.customHeaders.filter((h) => h.id !== id) }))
+    markActiveTabDirty()
+  },
+  setHeaders: (customHeaders) => {
+    set({ customHeaders })
+    markActiveTabDirty()
+  },
 
   sendPrompt: async (content) => {
     const trimmed = content.trim()
@@ -403,6 +498,8 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     const resolvedUrl = state.customUrl
       ? resolveVariables(state.customUrl, envVars)
       : state.customUrl
+    // The key field takes {{var}} like every other field (issue #188).
+    const resolvedKey = state.apiKey ? resolveVariables(state.apiKey, envVars) : ''
 
     const userMsg: AiChatMessage = {
       id: makeId(),
@@ -437,10 +534,14 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
       const result = (await window.api.aiChat.send({
         provider: state.provider,
         url: resolvedUrl || undefined,
-        apiKey: state.apiKey,
+        apiKey: resolvedKey,
         headers: Object.keys(headerMap).length > 0 ? headerMap : undefined,
         model: state.model,
         messages: history,
+        // Generation settings (issue #189) — left out when unset so the
+        // provider (or the engine's Anthropic default) decides.
+        ...(isValidTemperature(state.temperature) ? { temperature: state.temperature } : {}),
+        ...(isValidMaxTokens(state.maxTokens) ? { maxTokens: state.maxTokens } : {}),
       })) as { success: boolean; data?: { messageId: string }; error?: string }
 
       if (!result?.success || !result.data?.messageId) {
@@ -494,16 +595,23 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     }
   },
 
-  _onDone: (messageId) => {
+  _onDone: (messageId, truncated) => {
     const state = get()
     const found = findTabByPendingId(state, messageId)
     if (!found) return
+    // Flag the cut-off answer BEFORE pendingResponseId is cleared (issue #189).
+    const messages = truncated
+      ? found.snapshot.messages.map((m) =>
+          m.id === found.snapshot.pendingResponseId ? { ...m, truncated: true } : m,
+        )
+      : found.snapshot.messages
     if (found.isLive) {
-      set({ streaming: false, pendingResponseId: null, pendingMessageId: null })
+      set({ messages, streaming: false, pendingResponseId: null, pendingMessageId: null })
     } else if (found.tabKey !== undefined) {
       const map = new Map(state._tabStates)
       map.set(found.tabKey, {
         ...found.snapshot,
+        messages,
         streaming: false,
         pendingResponseId: null,
         pendingMessageId: null,
@@ -570,6 +678,8 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
       _tabStates: tabStates,
       _currentTabId: tabId,
     })
+    // The key is not in the snapshot — bring the provider's key back.
+    syncLiveKey()
   },
 
   removeTabState: (tabId) => {
@@ -579,10 +689,249 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
   },
 }))
 
-attachTabbedPersist(useAiChatStore, STORAGE_KEY, extractState, (s) => ({
-  _tabStates: s._tabStates,
-  _currentTabId: s._currentTabId,
-}))
+/**
+ * What the localStorage snapshot may hold (issue #188): no API key and no
+ * credential headers. Both stay usable in memory for the session — switching
+ * tabs keeps them — and the key is also in main's encrypted store.
+ */
+export function sanitizeAiTabState(st: TabAiChatState): TabAiChatState {
+  return { ...st, apiKey: '', customHeaders: stripCredentialHeaders(st.customHeaders) }
+}
+
+function tabMapOf(s: AiChatStore): {
+  _tabStates: Map<string, TabAiChatState>
+  _currentTabId: string | null
+} {
+  return { _tabStates: s._tabStates, _currentTabId: s._currentTabId }
+}
+
+attachTabbedPersist(useAiChatStore, STORAGE_KEY, extractState, tabMapOf, sanitizeAiTabState)
+
+// ─── API keys (issue #188) ──────────────────────────────────
+// One key per scope (`aiKeyScope`: provider, or Custom + base URL), kept in
+// main encrypted with safeStorage. `sessionKeys` is this session's source of
+// truth — what the user typed or main returned — so a tab switch or provider
+// change never waits on IPC for a key it already knows, and a key still works
+// for the session when encryption is unavailable.
+
+const KEY_WRITE_DEBOUNCE_MS = 500
+const sessionKeys = new Map<string, string>()
+const pendingWrites = new Map<string, string>()
+/**
+ * Session keys that were carried, not typed or loaded: scope → the scope the
+ * key was really entered for. Lets a carry chain (`https://a` → `https:/` →
+ * `https://b`) remember the key came from `https://a`. Memory only.
+ */
+const keyOrigins = new Map<string, string>()
+let writeTimer: ReturnType<typeof setTimeout> | null = null
+
+function noteKeyStorage(encrypted: boolean): void {
+  const next: AiKeyStorage = encrypted ? 'encrypted' : 'memory'
+  if (useAiChatStore.getState().keyStorage !== next) useAiChatStore.setState({ keyStorage: next })
+}
+
+/** Only an explicit `setApiKey` (and the legacy migration) persists a key. */
+function schedulePersist(scope: string, key: string): void {
+  pendingWrites.set(scope, key)
+  if (writeTimer) clearTimeout(writeTimer)
+  writeTimer = setTimeout(() => void flushAiKeyWrites(), KEY_WRITE_DEBOUNCE_MS)
+}
+
+/** Write every pending key to main now (debounce flush; awaited by tests). */
+export async function flushAiKeyWrites(): Promise<void> {
+  if (writeTimer) {
+    clearTimeout(writeTimer)
+    writeTimer = null
+  }
+  const batch = [...pendingWrites]
+  pendingWrites.clear()
+  for (const [scope, key] of batch) {
+    try {
+      const res = await window.api?.aiChat?.setKey?.(scope, key)
+      if (res?.success && res.data && key) noteKeyStorage(res.data.persisted)
+    } catch {
+      /* the key still works from memory this session */
+    }
+  }
+}
+
+/** Put the session key for `scope` on the live tab, if it still shows that scope. */
+function applyKeyIfLive(scope: string): void {
+  const s = useAiChatStore.getState()
+  if (aiKeyScope(s.provider, s.customUrl) !== scope) return
+  const key = sessionKeys.get(scope) ?? ''
+  if (s.apiKey !== key) useAiChatStore.setState({ apiKey: key })
+}
+
+interface CarriedKey {
+  key: string
+  /** The scope the key was typed / loaded for. */
+  origin: string
+}
+
+async function loadKeyFromMain(scope: string, carry: CarriedKey | undefined): Promise<void> {
+  let res: Awaited<ReturnType<NonNullable<Window['api']['aiChat']['getKey']>>> | undefined
+  try {
+    res = await window.api?.aiChat?.getKey?.(scope)
+  } catch {
+    return
+  }
+  if (!res?.success || !res.data) return
+  if (!res.data.encryptionAvailable) noteKeyStorage(false)
+  else if (res.data.key) noteKeyStorage(true)
+  // The user typed a key for this scope while we were asking — theirs wins.
+  if (!sessionKeys.has(scope)) {
+    if (res.data.key) {
+      sessionKeys.set(scope, res.data.key)
+      keyOrigins.delete(scope)
+    } else if (carry?.key) {
+      // In memory only — typing a URL walks through many intermediate
+      // origins, and a key the user did not enter for this one is never
+      // written under it.
+      sessionKeys.set(scope, carry.key)
+      keyOrigins.set(scope, carry.origin)
+    } else {
+      sessionKeys.set(scope, '')
+      keyOrigins.delete(scope)
+    }
+  }
+  applyKeyIfLive(scope)
+}
+
+/**
+ * Show the right key for the live tab's scope: from this session when known,
+ * otherwise from main's encrypted store. `clear` blanks the field while main
+ * answers (provider / origin change); `carry` is the key a Custom URL edit
+ * keeps in memory when the new base URL has none stored (`canCarryAiKey`).
+ */
+function syncLiveKey(opts: { clear?: boolean; carry?: CarriedKey } = {}): void {
+  const s = useAiChatStore.getState()
+  const scope = aiKeyScope(s.provider, s.customUrl)
+  if (sessionKeys.has(scope)) {
+    applyKeyIfLive(scope)
+    return
+  }
+  if (opts.clear && s.apiKey) useAiChatStore.setState({ apiKey: '' })
+  void loadKeyFromMain(scope, opts.carry)
+}
+
+/**
+ * Upgrade path (issue #188): releases before this one wrote the API key in
+ * plain text into the `testnizer-ai-chat` snapshot. Move every key found there
+ * into main's encrypted store and rewrite the snapshot without it at once —
+ * the subscription only rewrites on the next state change. The keys stay in
+ * memory for this session either way.
+ */
+export function migrateLegacyAiKeys(): Promise<void> {
+  const raw = loadJson<PersistedTabbed<Partial<TabAiChatState>>>(STORAGE_KEY)
+  if (!raw) return Promise.resolve()
+  const found = new Map<string, string>()
+  const consider = (st: Partial<TabAiChatState> | undefined): void => {
+    if (!st || typeof st.apiKey !== 'string' || !st.apiKey) return
+    const scope = aiKeyScope(st.provider ?? 'openai', st.customUrl ?? '')
+    if (!found.has(scope)) found.set(scope, st.apiKey)
+  }
+  consider(raw.current)
+  for (const entry of raw._tabStates ?? []) consider(entry?.[1])
+
+  for (const [scope, key] of found) if (!sessionKeys.has(scope)) sessionKeys.set(scope, key)
+  const writes = [...found].map(async ([scope, key]) => {
+    try {
+      const res = await window.api?.aiChat?.setKey?.(scope, key)
+      if (res?.success && res.data) noteKeyStorage(res.data.persisted)
+    } catch {
+      /* kept in memory for this session */
+    }
+  })
+  const s = useAiChatStore.getState()
+  writeTabbedSnapshot(STORAGE_KEY, extractState(s), tabMapOf(s), sanitizeAiTabState)
+  return Promise.all(writes).then(() => undefined)
+}
+
+/** Test seam: forget this session's keys and pending writes. */
+export function resetAiKeySessionForTests(): void {
+  sessionKeys.clear()
+  pendingWrites.clear()
+  keyOrigins.clear()
+  if (writeTimer) clearTimeout(writeTimer)
+  writeTimer = null
+}
+
+// ─── Saved request configuration (issue #187) ───────────────
+
+/** The AI tab's configuration as saved with the request: no key, no conversation. */
+export interface SavedAiConfig {
+  provider: AiProvider
+  customUrl: string
+  model: string
+  systemPrompt: string
+  customHeaders: KeyValuePair[]
+  temperature: number | null
+  maxTokens: number | null
+}
+
+export function savedAiConfigOf(s: TabAiChatState): SavedAiConfig {
+  return {
+    provider: s.provider,
+    customUrl: s.customUrl,
+    model: s.model,
+    systemPrompt: s.systemPrompt,
+    customHeaders: stripCredentialHeaders(s.customHeaders),
+    temperature: isValidTemperature(s.temperature) ? s.temperature : null,
+    maxTokens: isValidMaxTokens(s.maxTokens) ? s.maxTokens : null,
+  }
+}
+
+function isAiProvider(v: unknown): v is AiProvider {
+  return typeof v === 'string' && AI_PROVIDERS.some((p) => p.id === v)
+}
+
+function headerRowsOf(raw: unknown): KeyValuePair[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  return raw
+    .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
+    .map((r) => ({
+      id: typeof r.id === 'string' && r.id ? r.id : makeId(),
+      key: typeof r.key === 'string' ? r.key : '',
+      value: typeof r.value === 'string' ? r.value : '',
+      enabled: r.enabled !== false,
+    }))
+}
+
+/**
+ * Put a saved configuration (`savedAiConfigOf`) back on the live tab. Tolerant
+ * of partial / older rows; uses `setState`, not the setters — `setProvider`
+ * would overwrite the saved URL and model, and a restore is not an edit. The
+ * provider's key is then loaded from the session / main.
+ */
+export function restoreAiConfig(raw: unknown): void {
+  if (!raw || typeof raw !== 'object') return
+  const c = raw as Record<string, unknown>
+  const patch: Partial<TabAiChatState> = {}
+  const provider = isAiProvider(c.provider) ? c.provider : undefined
+  if (provider) patch.provider = provider
+  if (typeof c.customUrl === 'string') patch.customUrl = c.customUrl
+  else if (provider) patch.customUrl = resolveDefaultUrl(provider)
+  if (typeof c.model === 'string') patch.model = c.model
+  if (typeof c.systemPrompt === 'string') patch.systemPrompt = c.systemPrompt
+  // Same empty state as a fresh editor (one blank row) when nothing is left —
+  // saved `[]`, an older row without headers, or every row a stripped credential.
+  const headers = stripCredentialHeaders(headerRowsOf(c.customHeaders))
+  patch.customHeaders = headers.length > 0 ? headers : [defaultKv()]
+  patch.temperature = isValidTemperature(c.temperature) ? c.temperature : null
+  patch.maxTokens = isValidMaxTokens(c.maxTokens) ? c.maxTokens : null
+  useAiChatStore.setState(patch)
+  syncLiveKey({ clear: true })
+}
+
+// Upgrade migration first (it seeds the session keys), then load the key for
+// the tab restored from the snapshot.
+void migrateLegacyAiKeys()
+syncLiveKey()
+// A key typed just before closing the window must not wait out the debounce.
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => void flushAiKeyWrites())
+}
 
 // ─── IPC subscriptions ──────────────────────────────────────
 // Subscribe once at module load; the preload bridge multiplexes events to
@@ -595,9 +944,9 @@ if (typeof window !== 'undefined' && window.api?.aiChat) {
     useAiChatStore.getState()._onChunk(e.messageId, e.delta)
   })
   window.api.aiChat.onDone((event) => {
-    const e = event as { messageId: string }
+    const e = event as { messageId: string; truncated?: boolean }
     if (!e?.messageId) return
-    useAiChatStore.getState()._onDone(e.messageId)
+    useAiChatStore.getState()._onDone(e.messageId, e.truncated === true)
   })
   window.api.aiChat.onError((event) => {
     const e = event as { messageId: string; error: string }

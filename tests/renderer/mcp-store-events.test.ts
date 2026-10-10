@@ -401,9 +401,11 @@ describe('resources / prompts', () => {
 
     useMcpStore.getState().setResourceUriDraft('test://item/42')
     await useMcpStore.getState().readResource()
-    // Issue #163: every call carries its cancellable callId.
+    // Issue #163: every call carries its cancellable callId; issue #185: and
+    // its timeout (the shared default here).
     expect(mcp.readResource).toHaveBeenCalledWith('conn-1', 'test://item/42', {
       callId: expect.any(String),
+      timeoutMs: 120_000,
     })
     expect(useMcpStore.getState().resourceContent?.contents[0].text).toBe('hello')
   })
@@ -423,7 +425,7 @@ describe('resources / prompts', () => {
       'conn-1',
       'summarize',
       { text: 'long text' },
-      { callId: expect.any(String) },
+      { callId: expect.any(String), timeoutMs: 120_000 },
     )
     expect(useMcpStore.getState().promptResult?.messages).toHaveLength(1)
   })

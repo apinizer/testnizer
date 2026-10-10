@@ -5,6 +5,13 @@ import { getDb } from '../db/database'
 import { parseWsdl, parseWsdlFromContent, type WsdlParseResult } from '../protocols/soap.engine'
 import { loadProto, type GrpcServiceDescription } from '../protocols/grpc.engine'
 import { ensureDefaultExtension, saveFileFiltersFor } from '../lib/save-file-filters'
+import { readRequestSettings } from '../../shared/request-settings'
+import {
+  isSecretFlag,
+  localSecretsByKey,
+  keepLocalSecretByKey,
+  type LocalSecretsByKey,
+} from '../lib/local-secrets'
 
 interface ImportResult {
   success: boolean
@@ -2097,8 +2104,12 @@ export async function importPostman(
         .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
         .get(projectId, envName) as { id: string } | undefined
       let envId: string
+      // Secret values this machine holds for the env being replaced (issue
+      // #177): our export writes them as '' — a re-import must not blank them.
+      let localSecrets: LocalSecretsByKey = new Map()
       if (envRow) {
         envId = envRow.id
+        localSecrets = readEnvSecretsByKey(db, envId)
         db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(envId)
       } else {
         envId = randomUUID()
@@ -2117,7 +2128,19 @@ export async function importPostman(
       )
       for (const v of collection.variable) {
         if (!v.key) continue
-        insertVar.run(randomUUID(), envId, v.key, v.value ?? '', null, 1, 0, v.value ?? null)
+        // `type: "secret"` (Postman, and our own export — issue #177) keeps
+        // the variable masked in the env modal.
+        const isSecret = v.type === 'secret' ? 1 : 0
+        const kept = keepLocalSecretByKey(
+          {
+            key: v.key,
+            secret: isSecret === 1,
+            value: v.value ?? '',
+            initial_value: v.value ?? null,
+          },
+          localSecrets,
+        )
+        insertVar.run(randomUUID(), envId, v.key, kept.value, null, 1, isSecret, kept.initial_value)
       }
     }
   }
@@ -2241,8 +2264,17 @@ export async function importPostman(
           // mutating it here updates the persisted schema.
           body.type = refinedBodyType
         }
-        if (typeof xa.timeoutSeconds === 'number') {
-          requestSchema.timeoutSeconds = xa.timeoutSeconds
+        // Apinizer carries seconds; Testnizer's one timeout key is the
+        // top-level `timeout` in ms that Send, Ctrl+S and Run all use (issue
+        // #185). `timeoutSeconds` used to be written here and read by nothing.
+        // Apinizer's 0 means "use the default" — left unset (inherit), never
+        // mapped to Testnizer's `timeout: 0` (= no limit).
+        if (
+          typeof xa.timeoutSeconds === 'number' &&
+          Number.isFinite(xa.timeoutSeconds) &&
+          xa.timeoutSeconds > 0
+        ) {
+          requestSchema.timeout = Math.round(xa.timeoutSeconds * 1000)
         }
       } else if (xa) {
         warnings.push(
@@ -2296,6 +2328,17 @@ export async function importPostman(
 
 // ─── Postman Environment Import ─────────────────────────────
 
+/** The secret rows an environment holds right now, by key (read before a re-import's DELETE). */
+function readEnvSecretsByKey(db: ReturnType<typeof getDb>, envId: string): LocalSecretsByKey {
+  return localSecretsByKey(
+    db
+      .prepare(
+        'SELECT key, value, initial_value, secret FROM environment_variables WHERE environment_id = ? AND secret = 1',
+      )
+      .all(envId) as Record<string, unknown>[],
+  )
+}
+
 /**
  * Import a standalone Postman environment export file. Creates (or replaces)
  * a project-scoped environment whose name matches the export's `name` field.
@@ -2337,8 +2380,12 @@ export async function importPostmanEnvironment(
     .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
     .get(projectId, env.name) as { id: string } | undefined
   let envId: string
+  // Secret values this machine holds for the env being replaced (issue #177):
+  // the environment export writes them as '' — a re-import must not blank them.
+  let localSecrets: LocalSecretsByKey = new Map()
   if (existing) {
     envId = existing.id
+    localSecrets = readEnvSecretsByKey(db, envId)
     db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(envId)
   } else {
     envId = randomUUID()
@@ -2366,15 +2413,19 @@ export async function importPostmanEnvironment(
     // convention.
     const isSecret = v.type === 'secret' ? 1 : 0
     const isEnabled = v.enabled === false ? 0 : 1
+    const kept = keepLocalSecretByKey(
+      { key: v.key, secret: isSecret === 1, value: v.value ?? '', initial_value: v.value ?? null },
+      localSecrets,
+    )
     insertVar.run(
       randomUUID(),
       envId,
       v.key,
-      v.value ?? '',
+      kept.value,
       null,
       isEnabled,
       isSecret,
-      v.value ?? null,
+      kept.initial_value,
     )
     varCount++
   }
@@ -2428,7 +2479,9 @@ interface UiRequestSchema {
    * round-trip.
    */
   assertions?: TestAssertionLike[]
-  /** Request timeout in seconds — carried via x-apinizer.timeoutSeconds. */
+  /** The request's own timeout in ms (issue #185) — exported as x-apinizer.timeoutSeconds. */
+  timeout?: number
+  /** Legacy: what imports wrote before issue #185 (seconds). Read, never written. */
   timeoutSeconds?: number
   /**
    * OpenAPI round-trip metadata. Populated by `importOpenApi`; consumed by
@@ -2695,12 +2748,19 @@ function collectPostmanVariables(
   if (!envRow) return undefined
   const rows = db
     .prepare(
-      `SELECT key, value FROM environment_variables WHERE environment_id = ?
+      `SELECT key, value, secret FROM environment_variables WHERE environment_id = ?
        ORDER BY rowid ASC`,
     )
-    .all(envRow.id) as Array<{ key: string; value: string | null }>
+    .all(envRow.id) as Array<{ key: string; value: string | null; secret: number | null }>
   if (rows.length === 0) return undefined
-  return rows.map((r) => ({ key: r.key, value: r.value ?? '', type: 'string' }))
+  // Values marked secret stay on this machine (issue #177): the collection
+  // keeps the key and Postman's `secret` type, never the value — the same
+  // rule as the project file (`stripLocalSecrets`) and the env-file export.
+  return rows.map((r) =>
+    isSecretFlag(r.secret)
+      ? { key: r.key, value: '', type: 'secret' }
+      : { key: r.key, value: r.value ?? '', type: 'string' },
+  )
 }
 
 /** Build a Postman v2.1 collection from folder + endpoint rows (shared by project & suite export). */
@@ -2801,8 +2861,14 @@ function buildPostmanCollection(
       itemAssertions = schema.assertions
     }
     const xaAssertions = assertionsToXApinizer(itemAssertions)
+    // `timeout` (ms) is the request's own timeout (issue #185); rows imported
+    // before it carry the legacy `timeoutSeconds` — `readRequestSettings`
+    // reads both. Apinizer takes whole seconds; 0 (= no limit) is not sent.
+    const ownTimeout = readRequestSettings(schema).timeout
     const timeoutSeconds =
-      typeof schema.timeoutSeconds === 'number' ? schema.timeoutSeconds : undefined
+      ownTimeout !== undefined && ownTimeout > 0
+        ? Math.max(1, Math.round(ownTimeout / 1000))
+        : undefined
     if (xaAssertions.length > 0 || timeoutSeconds !== undefined) {
       const { apiType, testType } = protocolToApinizerTypes(ep.protocol ?? undefined)
       const ext: XApinizerExtension = {
