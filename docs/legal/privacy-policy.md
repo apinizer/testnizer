@@ -1,7 +1,7 @@
 # Testnizer — Privacy Policy
 
 **Effective date:** 2026-05-07
-**Last updated:** 2026-05-08
+**Last updated:** 2026-10-10
 **Applies to:** Testnizer v1.0.3 and later
 
 This Privacy Policy explains how **Testnizer** ("the Software", "we", "our")
@@ -78,10 +78,11 @@ ability to retrieve it.
 | Item | Location |
 |---|---|
 | Database (SQLite) | `<userData>/testnizer.db` |
-| Settings (electron-store) | `<userData>/config.json` |
+| Settings (electron-store) | `<userData>/settings.json` |
 | Secrets (passwords, tokens, certificates) | OS keychain via Electron `safeStorage` (macOS Keychain, Windows DPAPI, libsecret on Linux) |
 | Logs (if any) | `<userData>/logs/` |
-| Cached AI provider configurations | `<userData>/config.json` (the API keys you paste are stored encrypted via `safeStorage`) |
+| AI Chat provider API keys | `<userData>/settings.json`, one key per provider, encrypted via `safeStorage`. If `safeStorage` encryption is unavailable on your system, the key is kept in memory only for the current session and is not written to disk. |
+| AI Chat tab state and saved AI Chat requests | Local application storage and the database. Saved requests contain the provider, model, endpoint URL, system prompt, custom headers with literal credential values removed, and generation settings; they never contain the API key. The conversation in an open AI Chat tab is kept in local application storage so that it survives a restart. |
 
 `<userData>` resolves to:
 
@@ -182,7 +183,6 @@ The application ships with presets for the following providers:
 - Anthropic
 - Groq
 - Google (Gemini)
-- Azure OpenAI
 - Cohere
 - Mistral
 - Perplexity
@@ -191,15 +191,22 @@ The application ships with presets for the following providers:
 - Fireworks AI
 - DeepSeek
 - xAI (Grok)
-- Ollama (local; no outbound network call)
+- Cerebras
+- DeepInfra
+- Custom (any OpenAI-compatible endpoint URL you enter, including one
+  hosted on your own machine or network)
 
 **How AI Chat data flows:**
 
 When you use AI Chat, the prompts you submit and the responses returned by
 the model travel **directly from your machine to the AI provider's API
 endpoint**, authenticated with the API key **you** supplied in the
-provider's settings. **Testnizer does not proxy, relay, intercept, log, or
-store this content at any point.** It is a peer-to-peer connection between
+provider's settings. **Testnizer does not proxy or relay this content, and
+we never receive it.** Nothing leaves your machine except the request to the
+provider you selected. On your own device, the prompts and responses are
+shown in the in-app Console log (held in memory, not sent anywhere), and the
+conversation of an open AI Chat tab is kept in local application storage
+(Section 3). It is a direct connection between
 your device and the provider you selected — exactly the same as if you
 called that provider's API yourself with `curl`.
 
@@ -214,12 +221,13 @@ called that provider's API yourself with `curl`.
 - Data sent to AI providers may be retained, used to improve their models,
   or made available to third parties in accordance with the provider's
   terms — entirely outside our control.
-- You can run AI Chat **fully offline** by selecting the **Ollama** preset
-  (or any other locally-hosted, OpenAI-compatible endpoint). In that case
-  no outbound network traffic leaves your machine.
-- Your API keys are stored locally and encrypted via the OS keychain
-  (Section 3). They are sent only to the provider whose configuration they
-  belong to.
+- You can run AI Chat **fully offline** by selecting the **Custom**
+  provider and entering the URL of a locally-hosted, OpenAI-compatible
+  endpoint. In that case no outbound network traffic leaves your machine.
+- Your API keys are stored locally, encrypted via `safeStorage` (the OS
+  keychain; Section 3), one key per provider. They are never written to
+  saved requests or exported project files, and are sent only to the
+  provider whose configuration they belong to.
 
 **Lawful basis (GDPR Art. 6(1)(a)):** explicit opt-in by the user, who
 configures an AI provider and submits prompts. With respect to data

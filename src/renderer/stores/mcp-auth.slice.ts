@@ -56,7 +56,17 @@ export function normalizeMcpAuth(raw: unknown): McpAuthConfig {
       in: raw.apiKey.in === 'query' ? 'query' : 'header',
     }
   }
+  // Issue #170: the plain-HTTP authorization server opt-in is only ever on
+  // for a literal `true` — a missing / malformed value keeps HTTPS required.
+  if (isRecord(raw.oauth2)) {
+    out.oauth2 = { allowHttpAuthServer: raw.oauth2.allowHttpAuthServer === true }
+  }
   return out
+}
+
+/** Whether the request opted into a plain-HTTP OAuth authorization server (issue #170). */
+export function allowsHttpAuthServer(auth: McpAuthConfig): boolean {
+  return auth.oauth2?.allowHttpAuthServer === true
 }
 
 /**
@@ -152,9 +162,10 @@ export function applyMcpAuth(
  * order (Authorization · Headers · Scripts · Tests).
  */
 export function availableConfigTabs(transport: McpTransport): McpConfigTab[] {
+  // Settings (timeout, issue #185) last — the HTTP editor's order.
   return transport === 'stdio'
-    ? ['auth', 'env', 'scripts', 'tests']
-    : ['auth', 'headers', 'scripts', 'tests']
+    ? ['auth', 'env', 'scripts', 'tests', 'settings']
+    : ['auth', 'headers', 'scripts', 'tests', 'settings']
 }
 
 /** The stored tab when the transport offers it, else Authorization (derived — never written back). */

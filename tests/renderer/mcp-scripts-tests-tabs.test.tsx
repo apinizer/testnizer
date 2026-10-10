@@ -43,7 +43,7 @@ afterEach(() => {
 })
 
 describe('MCP config strip — Scripts and Tests tabs', () => {
-  it('order: Authorization, Headers | Environment, Scripts, Tests — with the HTTP labels', () => {
+  it('order: Authorization, Headers | Environment, Scripts, Tests, Settings — with the HTTP labels', () => {
     render(<McpConfigTabs />)
     const labels = () => screen.getAllByRole('tab').map((el) => el.getAttribute('data-testid'))
     expect(labels()).toEqual([
@@ -51,6 +51,7 @@ describe('MCP config strip — Scripts and Tests tabs', () => {
       'mcp-config-tab-headers',
       'mcp-config-tab-scripts',
       'mcp-config-tab-tests',
+      'mcp-config-tab-settings',
     ])
     expect(screen.getByTestId('mcp-config-tab-scripts')).toHaveTextContent('Scripts')
     expect(screen.getByTestId('mcp-config-tab-tests')).toHaveTextContent('Tests')
@@ -60,6 +61,7 @@ describe('MCP config strip — Scripts and Tests tabs', () => {
       'mcp-config-tab-env',
       'mcp-config-tab-scripts',
       'mcp-config-tab-tests',
+      'mcp-config-tab-settings',
     ])
   })
 

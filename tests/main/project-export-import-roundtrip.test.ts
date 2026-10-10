@@ -30,6 +30,7 @@ vi.mock('../../src/main/db/database', () => ({
   getDb: () => testDb,
 }))
 
+const { stripLocalSecrets } = await import('../../src/main/lib/local-secrets')
 const {
   exportProjectData,
   importProjectDataFromJson,
@@ -151,6 +152,7 @@ function createSchema(db: Database.Database): void {
       name TEXT NOT NULL,
       description TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      run_config TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -268,7 +270,12 @@ function createSchema(db: Database.Database): void {
       pfx_path TEXT,
       passphrase TEXT,
       enabled INTEGER NOT NULL DEFAULT 1,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      -- Key Material Provider (#60); imported since issue #186.
+      source TEXT NOT NULL DEFAULT 'file',
+      keystore_id TEXT,
+      keystore_alias TEXT,
+      keystore_key_password TEXT
     );
     CREATE TABLE saved_responses (
       id TEXT PRIMARY KEY,
@@ -323,6 +330,22 @@ function forgetSourceProject(): void {
     .prepare('UPDATE saved_responses SET project_id = NULL WHERE project_id = ?')
     .run(SOURCE_PID)
   testDb.prepare('DELETE FROM projects WHERE id = ?').run(SOURCE_PID)
+}
+
+/** A saved Runner configuration (issue #100) — refers to suite item + env ids. */
+function suiteRunConfig(itemId: string, envId: string): string {
+  return JSON.stringify({
+    version: 1,
+    items: [{ id: itemId, selected: false, phase: 'setup' }],
+    delay: 250,
+    iterationDelay: 0,
+    iterations: 3,
+    stopOnError: false,
+    persistResponses: true,
+    keepVariableValues: true,
+    environmentId: envId,
+    runPreScript: 'pm.variables.set("x", 1)',
+  })
 }
 
 // Build a representative source project with one row in every table the
@@ -448,10 +471,10 @@ function seedRichProject(): {
   // Test suite + folder + item
   testDb
     .prepare(
-      `INSERT INTO test_suites (id, project_id, name, description, sort_order, created_at, updated_at)
-       VALUES (?, ?, 'Smoke Suite', 'desc', 0, ?, ?)`,
+      `INSERT INTO test_suites (id, project_id, name, description, sort_order, run_config, created_at, updated_at)
+       VALUES (?, ?, 'Smoke Suite', 'desc', 0, ?, ?, ?)`,
     )
-    .run(ids.suiteId, SOURCE_PID, now, now)
+    .run(ids.suiteId, SOURCE_PID, suiteRunConfig(ids.suiteItemId, ids.envId), now, now)
   testDb
     .prepare(
       `INSERT INTO test_suite_folders
@@ -497,8 +520,10 @@ function seedRichProject(): {
   testDb
     .prepare(
       `INSERT INTO certificates
-         (id, project_id, kind, host, crt_path, key_path, enabled, created_at)
-       VALUES (?, ?, 'client', 'example.com', '/tmp/c.crt', '/tmp/c.key', 1, ?)`,
+         (id, project_id, kind, host, crt_path, key_path, enabled, created_at,
+          source, keystore_id, keystore_alias, keystore_key_password)
+       VALUES (?, ?, 'client', 'example.com', '/tmp/c.crt', '/tmp/c.key', 1, ?,
+               'keystore', 'ks-1', 'alias-1', 'entry-pw')`,
     )
     .run(ids.certificateId, SOURCE_PID, now)
 
@@ -773,9 +798,14 @@ describe('Project export → import round-trip (different target project)', () =
 
   it('round-trips global_variables WITH their project_id (regression guard)', () => {
     const ids = seedRichProject()
-    const data = exportProjectData(SOURCE_PID)
+    // The project FILE — what Export / Save / git write — never carries a
+    // value marked secret (issue #177): it travels as '' with the flag set.
+    const data = stripLocalSecrets(exportProjectData(SOURCE_PID))
     for (const g of data.globalVariables ?? []) g.project_id = TARGET_PID
     forgetSourceProject()
+    // Machine B has no row with this id (this schema has no FK cascade from
+    // projects). With a local row the importer keeps THAT row's value.
+    testDb.prepare('DELETE FROM global_variables WHERE id = ?').run(ids.globalVarId)
     importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
 
     const row = testDb
@@ -787,7 +817,9 @@ describe('Project export → import round-trip (different target project)', () =
       secret: number
     }
     expect(row.key).toBe('apiKey')
-    expect(row.value).toBe('abc')
+    // Machine B has no local value for this secret, so it lands blank (issue
+    // #177); it used to arrive as 'abc' — the secret had left the machine.
+    expect(row.value).toBe('')
     expect(row.secret).toBe(1)
     // Same fix as environments — without project_id the global var would
     // leak into the workspace-wide list rather than landing under the
@@ -800,12 +832,17 @@ describe('Project export → import round-trip (different target project)', () =
     const data = exportProjectData(SOURCE_PID)
     for (const s of data.testSuites ?? []) s.project_id = TARGET_PID
     forgetSourceProject()
+    // Machine B has no copy of the suite row — the file is the only source.
+    testDb.prepare('DELETE FROM test_suites WHERE id = ?').run(ids.suiteId)
     importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
 
     const suite = testDb
-      .prepare('SELECT name, description FROM test_suites WHERE id = ?')
-      .get(ids.suiteId) as { name: string; description: string }
+      .prepare('SELECT name, description, run_config FROM test_suites WHERE id = ?')
+      .get(ids.suiteId) as { name: string; description: string; run_config: string | null }
     expect(suite.name).toBe('Smoke Suite')
+    // The saved Runner configuration travels too (issue #186) — same ids in
+    // the upsert model, so verbatim.
+    expect(suite.run_config).toBe(suiteRunConfig(ids.suiteItemId, ids.envId))
 
     const folder = testDb
       .prepare('SELECT name, parent_id FROM test_suite_folders WHERE id = ?')
@@ -880,19 +917,31 @@ describe('Project export → import round-trip (different target project)', () =
     importProjectDataFromJson(JSON.stringify(data), TARGET_PID)
 
     const cert = testDb
-      .prepare('SELECT kind, host, crt_path, key_path, enabled FROM certificates WHERE id = ?')
+      .prepare(
+        'SELECT kind, host, crt_path, key_path, enabled, source, keystore_id, keystore_alias, keystore_key_password FROM certificates WHERE id = ?',
+      )
       .get(ids.certificateId) as {
       kind: string
       host: string
       crt_path: string
       key_path: string
       enabled: number
+      source: string
+      keystore_id: string
+      keystore_alias: string
+      keystore_key_password: string
     }
     expect(cert.kind).toBe('client')
     expect(cert.host).toBe('example.com')
     expect(cert.crt_path).toBe('/tmp/c.crt')
     expect(cert.key_path).toBe('/tmp/c.key')
     expect(cert.enabled).toBe(1)
+    // Keystore-backed rows (Key Material Provider #60) were exported but
+    // dropped on import until issue #186.
+    expect(cert.source).toBe('keystore')
+    expect(cert.keystore_id).toBe('ks-1')
+    expect(cert.keystore_alias).toBe('alias-1')
+    expect(cert.keystore_key_password).toBe('entry-pw')
   })
 
   it('round-trips saved response examples with owner + snapshot intact (issue #125)', () => {
@@ -997,6 +1046,24 @@ describe('Mock MCP servers in the project file (issue #140)', () => {
 // ───────── Folder export → import ─────────
 
 describe('Folder export → import round-trip', () => {
+  it('carries folder-level auth and pre/post scripts (issue #186)', () => {
+    const ids = seedRichProject()
+    const auth = JSON.stringify({ type: 'bearer', bearer: { token: '{{t}}' } })
+    testDb
+      .prepare('UPDATE folders SET auth = ?, pre_script = ?, post_script = ? WHERE id = ?')
+      .run(auth, 'folderPre()', 'folderPost()', ids.rootFolderId)
+    const exported = exportFolderData(ids.rootFolderId)
+
+    importFolderData(JSON.parse(JSON.stringify(exported)), TARGET_PID, null)
+
+    const row = testDb
+      .prepare(
+        'SELECT auth, pre_script, post_script FROM folders WHERE project_id = ? AND name = ?',
+      )
+      .get(TARGET_PID, 'Root')
+    expect(row).toEqual({ auth, pre_script: 'folderPre()', post_script: 'folderPost()' })
+  })
+
   it('exports a folder subtree and re-imports it under a different parent', () => {
     const ids = seedRichProject()
     const exported = exportFolderData(ids.rootFolderId)

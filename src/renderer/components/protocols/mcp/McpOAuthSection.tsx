@@ -2,6 +2,7 @@ import type { InputHTMLAttributes } from 'react'
 import { KeyRound, ShieldAlert, X } from 'lucide-react'
 import { useMcpStore } from '../../../stores/mcp.store'
 import { useTranslation } from '../../../lib/i18n'
+import McpOAuthHttpOptIn from './McpOAuthHttpOptIn'
 import McpOAuthStepRow from './McpOAuthStepRow'
 import McpOAuthSummaryCard from './McpOAuthSummaryCard'
 import { stepRows } from './oauth-steps'
@@ -102,6 +103,7 @@ export default function McpOAuthSection({ embedded = false }: { embedded?: boole
           data-testid="mcp-oauth-scope"
         />
       </div>
+      <McpOAuthHttpOptIn disabled={running} />
       <div className="flex items-center gap-2">
         <PrimaryButton
           onClick={() => void startOAuth()}

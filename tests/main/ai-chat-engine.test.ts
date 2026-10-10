@@ -4,7 +4,9 @@ import {
   buildHeaders,
   buildBody,
   extractDelta,
+  isTruncationEvent,
   streamChatCompletion,
+  ANTHROPIC_DEFAULT_MAX_TOKENS,
 } from '../../src/main/protocols/ai-chat.engine'
 
 describe('resolveProviderUrl', () => {
@@ -329,5 +331,100 @@ describe('streamChatCompletion', () => {
     const sentHeaders = fetchMock.mock.calls[0][1].headers as Record<string, string>
     expect(sentHeaders['Authorization']).toBe('Bearer gw-token')
     expect(sentHeaders['X-Tenant-Id']).toBe('acme')
+  })
+})
+
+// ─── Issue #189: generation settings, Anthropic default, truncation ─────────
+
+describe('buildBody — generation settings (issue #189)', () => {
+  const messages = [{ role: 'user' as const, content: 'hi' }]
+
+  it('Anthropic default max_tokens is 4096 (was a silent 1024 cap)', () => {
+    expect(ANTHROPIC_DEFAULT_MAX_TOKENS).toBe(4096)
+    expect(buildBody({ provider: 'anthropic', model: 'c', messages }).max_tokens).toBe(4096)
+  })
+
+  it('passes temperature and max tokens to both body shapes', () => {
+    const a = buildBody({ provider: 'anthropic', model: 'c', messages, temperature: 0.7, maxTokens: 9000 })
+    expect(a.temperature).toBe(0.7)
+    expect(a.max_tokens).toBe(9000)
+    const o = buildBody({ provider: 'openai', model: 'g', messages, temperature: 0, maxTokens: 50 })
+    expect(o.temperature).toBe(0)
+    expect(o.max_tokens).toBe(50)
+  })
+
+  it('OpenAI-compatible bodies carry no max_tokens / temperature when unset', () => {
+    const o = buildBody({ provider: 'groq', model: 'g', messages })
+    expect('max_tokens' in o).toBe(false)
+    expect('temperature' in o).toBe(false)
+  })
+})
+
+describe('isTruncationEvent (issue #189)', () => {
+  it('Anthropic message_delta with stop_reason max_tokens', () => {
+    expect(
+      isTruncationEvent('anthropic', { type: 'message_delta', delta: { stop_reason: 'max_tokens' } }),
+    ).toBe(true)
+    expect(
+      isTruncationEvent('anthropic', { type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+    ).toBe(false)
+  })
+
+  it('OpenAI-compatible finish_reason length', () => {
+    expect(isTruncationEvent('openai', { choices: [{ delta: {}, finish_reason: 'length' }] })).toBe(true)
+    expect(isTruncationEvent('deepseek', { choices: [{ delta: {}, finish_reason: 'stop' }] })).toBe(false)
+  })
+})
+
+describe('streamChatCompletion — truncation from the SSE stream (issue #189)', () => {
+  const originalFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  async function collect(provider: 'anthropic' | 'openai', events: string[]) {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(makeSseStream(events), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      }),
+    ) as unknown as typeof fetch
+    const out: Array<{ delta: string; truncated?: true }> = []
+    for await (const c of streamChatCompletion({
+      provider,
+      apiKey: 'k',
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+    })) {
+      out.push(c)
+    }
+    return out
+  }
+
+  it('Anthropic stop_reason max_tokens yields a truncated chunk', async () => {
+    const out = await collect('anthropic', [
+      'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Cut"}}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"max_tokens"}}\n\n',
+      'data: {"type":"message_stop"}\n\n',
+    ])
+    expect(out).toEqual([{ delta: 'Cut' }, { delta: '', truncated: true }])
+  })
+
+  it('OpenAI finish_reason length (before [DONE]) yields a truncated chunk', async () => {
+    const out = await collect('openai', [
+      'data: {"choices":[{"delta":{"content":"Cut"}}]}\n\n',
+      'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n',
+      'data: [DONE]\n\n',
+    ])
+    expect(out).toEqual([{ delta: 'Cut' }, { delta: '', truncated: true }])
+  })
+
+  it('a normal stop is not flagged', async () => {
+    const out = await collect('openai', [
+      'data: {"choices":[{"delta":{"content":"Done"}}]}\n\n',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+      'data: [DONE]\n\n',
+    ])
+    expect(out).toEqual([{ delta: 'Done' }])
   })
 })

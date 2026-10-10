@@ -40,6 +40,7 @@ import { isCredentialHeaderName } from '../lib/credential-headers'
 import { applyMcpAuth, type McpAuthOptions } from './mcp-auth'
 import type { McpCallOutcome } from '../../shared/mcp-response'
 import { applyToolSchema } from '../../shared/mcp-call'
+import { MCP_DEFAULT_TIMEOUT_MS } from '../../shared/request-settings'
 
 export type McpTransport = 'http' | 'sse' | 'stdio'
 
@@ -958,17 +959,30 @@ export interface McpCallOptions {
   /** Renderer-chosen id `mcpCancelCall(connectionId, callId)` aborts this call by. */
   callId?: string
   /**
-   * SDK request timeout (ms) — default the SDK's 60 s. `mcpCallOnce` passes
-   * the run's bound so a long tool call is not cut at 60 s by the SDK first.
+   * The call's timeout (ms), re-armed by progress on tools/call: absent =
+   * `MCP_DEFAULT_TIMEOUT_MS` (Send and Run share it — issue #185), `0` = no
+   * limit, `>0` = explicit. Never left to the SDK's implicit 60 s.
    */
   timeoutMs?: number
   /** Called on every `notifications/progress` of this call (tools/call only). */
   onProgress?: () => void
 }
 
-/** `{ timeout }` for the SDK request options — only when a positive bound was given. */
-function sdkTimeout(opts: McpCallOptions): { timeout?: number } {
-  return opts.timeoutMs && opts.timeoutMs > 0 ? { timeout: opts.timeoutMs } : {}
+/**
+ * Largest delay a Node timer honours (int32 ms, ~24.8 days). A bigger value —
+ * or `Infinity` — is clamped to 1 ms by Node, so "no limit" is this instead.
+ */
+export const MCP_NO_TIMEOUT_MS = 2_147_483_647
+
+/**
+ * `{ timeout }` for the SDK request options (issue #185): always explicit, so
+ * the SDK's own 60 s default never decides. Absent / invalid → the shared
+ * default, `0` → no limit, `>0` → as given.
+ */
+export function sdkTimeout(opts: Pick<McpCallOptions, 'timeoutMs'>): { timeout: number } {
+  const ms = opts.timeoutMs
+  if (ms === undefined || !Number.isFinite(ms) || ms < 0) return { timeout: MCP_DEFAULT_TIMEOUT_MS }
+  return { timeout: ms === 0 ? MCP_NO_TIMEOUT_MS : Math.min(ms, MCP_NO_TIMEOUT_MS) }
 }
 
 /** In-flight cancellable calls: connectionId → callId → controller. */
@@ -1933,11 +1947,7 @@ export async function mcpGetPrompt(
   }
   const params = { name, arguments: promptArgs }
   const res = await runCancellable(connectionId, opts.callId, (signal) =>
-    sdkCall(() =>
-      signal || opts.timeoutMs
-        ? client.getPrompt(params, { ...(signal ? { signal } : {}), ...sdkTimeout(opts) })
-        : client.getPrompt(params),
-    ),
+    sdkCall(() => client.getPrompt(params, { ...(signal ? { signal } : {}), ...sdkTimeout(opts) })),
   )
   return compact<McpGetPromptResult>({
     description: res.description,
@@ -1981,7 +1991,7 @@ async function runToolCall(
   // `onprogress` makes the SDK attach `_meta.progressToken`, which is what
   // allows a server to emit `notifications/progress` for this call at all
   // (they reach the renderer through the frame tap as `mcp:notification`).
-  // Progress also resets the SDK's 60 s request timeout.
+  // Progress also resets the request timeout (`sdkTimeout`).
   const onProgress = opts.onProgress
   const options: CallToolRequestOptions = {
     onprogress: () => onProgress?.(),
@@ -2116,10 +2126,13 @@ export interface McpOneShotOptions {
   /** Aborts the handshake or the running call; the outcome comes back `cancelled`. */
   signal?: AbortSignal
   /**
-   * Upper bound for connect + call, reset by every progress notification of
-   * the tool call (like Send's `resetTimeoutOnProgress`). Default
-   * `MCP_ONE_SHOT_TIMEOUT_MS`; `0` = no bound (the HTTP "0 = no timeout"
-   * rule) — the run's Stop still ends the call.
+   * The request's timeout, with Send's semantics (issue #185): it bounds the
+   * CALL and is reset by every progress notification of a tool call (Send's
+   * `resetTimeoutOnProgress`). Default `MCP_DEFAULT_TIMEOUT_MS`; `0` = no
+   * bound (the HTTP "0 = no timeout" rule) — the run's Stop still ends the
+   * call. The connect + `tools/list` phase before it — which on Send happens
+   * at Connect, outside the call's timeout — gets at least the default, so a
+   * short call timeout does not fail a slow stdio spawn that Send tolerates.
    */
   timeoutMs?: number
 }
@@ -2137,8 +2150,11 @@ export interface McpOneShotOutcome extends McpCallOutcome {
   args?: Record<string, unknown>
 }
 
-/** Default bound for one connect + call in a run — no step may hang. */
-export const MCP_ONE_SHOT_TIMEOUT_MS = 120_000
+/**
+ * Default bound of a run's MCP call — the value Send uses too
+ * (`src/shared/request-settings.ts`). Kept under its old name for callers.
+ */
+export const MCP_ONE_SHOT_TIMEOUT_MS = MCP_DEFAULT_TIMEOUT_MS
 
 function isInputRequiredMarker(result: unknown): boolean {
   return isObject(result) && isObject(result.__mcp) && result.__mcp.kind === 'input_required'
@@ -2168,6 +2184,9 @@ export async function mcpCallOnce(opts: McpOneShotOptions): Promise<McpOneShotOu
     opts.timeoutMs !== undefined && Number.isFinite(opts.timeoutMs) && opts.timeoutMs >= 0
       ? opts.timeoutMs
       : MCP_ONE_SHOT_TIMEOUT_MS
+  // Connect phase: never shorter than the default (see `timeoutMs` above).
+  const connectTimeoutMs = timeoutMs === 0 ? 0 : Math.max(timeoutMs, MCP_ONE_SHOT_TIMEOUT_MS)
+  let phase: 'connect' | 'call' = 'connect'
   const pendingId = makeId()
   const callId = makeId()
   let connectionId: string | undefined
@@ -2201,15 +2220,14 @@ export async function mcpCallOnce(opts: McpOneShotOptions): Promise<McpOneShotOu
   })
   const armBound = (): void => {
     clearTimeout(timer)
-    if (timeoutMs === 0 || stopped) return
-    timer = setTimeout(fireTimeout, timeoutMs)
+    const ms = phase === 'connect' ? connectTimeoutMs : timeoutMs
+    if (ms === 0 || stopped) return
+    timer = setTimeout(fireTimeout, ms)
     timer.unref?.()
   }
-  const callOpts: McpCallOptions = {
-    callId,
-    ...(timeoutMs > 0 ? { timeoutMs } : {}),
-    onProgress: armBound,
-  }
+  // The SDK gets the same value Send gives it (0 → no limit), so it never cuts
+  // the call before the bound does.
+  const callOpts: McpCallOptions = { callId, timeoutMs, onProgress: armBound }
   const onAbort = (): void => halt('cancel')
   if (signal?.aborted) return { ...base, cancelled: true, error: MCP_CALL_CANCELLED_MESSAGE }
   signal?.addEventListener('abort', onAbort, { once: true })
@@ -2231,6 +2249,9 @@ export async function mcpCallOnce(opts: McpOneShotOptions): Promise<McpOneShotOu
         toolArgs = applyToolSchema(call.args, call.rawArgs, schema)
         sentArgs = { args: toolArgs }
       }
+      // The call gets the full timeout from here, exactly like a Send.
+      phase = 'call'
+      armBound()
       const started = Date.now()
       let result: unknown
       let callError: unknown
@@ -2281,7 +2302,9 @@ export async function mcpCallOnce(opts: McpOneShotOptions): Promise<McpOneShotOu
       // The work settles on its own (cancelled handshake / call) and closes
       // the connection in its `finally`; nobody waits for it here.
       work.catch(() => {})
-      return { ...base, ...sentArgs, error: `MCP call timed out after ${timeoutMs} ms` }
+      return phase === 'connect'
+        ? { ...base, ...sentArgs, error: `MCP connect timed out after ${connectTimeoutMs} ms` }
+        : { ...base, ...sentArgs, error: `MCP call timed out after ${timeoutMs} ms` }
     }
     if ('outcome' in settled) return settled.outcome
     if (stopped === 'cancel' || signal?.aborted) {

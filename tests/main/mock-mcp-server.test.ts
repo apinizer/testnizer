@@ -896,7 +896,11 @@ describe('Mock MCP server — logs and lifecycle', () => {
 
   it('refuses bearer mode without a token', async () => {
     const r = await mockMcpServerManager.start(baseDef({ authMode: 'bearer', bearerToken: ' ' }))
-    expect(r).toEqual({ ok: false, error: 'Bearer auth is enabled but no token is set' })
+    expect(r).toEqual({
+      ok: false,
+      error:
+        'Bearer auth is enabled but the token is not set on this computer. Tokens are not saved to the project file or git — enter it in the server settings.',
+    })
   })
 
   it('stop closes live sessions and frees the port; notify on a stopped server is false', async () => {

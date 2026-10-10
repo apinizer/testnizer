@@ -105,9 +105,10 @@ export type McpAuthConfig = McpConnectAuth
 /**
  * Config tab strip under the connection bar. `scripts` / `tests` host the
  * HTTP editor's Scripts and Tests tabs (issue #160) — same per-tab request
- * store fields (`preScript` / `postScript` / `assertions`).
+ * store fields (`preScript` / `postScript` / `assertions`). `settings` holds
+ * the call timeout (issue #185).
  */
-export type McpConfigTab = 'auth' | 'headers' | 'env' | 'scripts' | 'tests'
+export type McpConfigTab = 'auth' | 'headers' | 'env' | 'scripts' | 'tests' | 'settings'
 
 // ─── OAuth 2.1 debugger (issue #141) ─────────────────────────────
 export type McpOAuthStartRequest = Parameters<McpBridge['oauthStart']>[0]

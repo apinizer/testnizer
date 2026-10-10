@@ -209,7 +209,10 @@ describe('Cancel an MCP call (issue #163)', () => {
     void useMcpStore.getState().readResource()
     const rid = useMcpStore.getState().resourceCallId
     await sent(1)
-    expect(api.mcp.readResource).toHaveBeenCalledWith('conn-1', 'test://a', { callId: rid })
+    expect(api.mcp.readResource).toHaveBeenCalledWith('conn-1', 'test://a', {
+      callId: rid,
+      timeoutMs: 120_000,
+    })
     await useMcpStore.getState().cancelCall('resource')
     expect(useMcpStore.getState().isReadingResource).toBe(false)
     expect(useMcpStore.getState().resourceMeta?.status).toBe('cancelled')
@@ -218,7 +221,12 @@ describe('Cancel an MCP call (issue #163)', () => {
     void useMcpStore.getState().getPrompt()
     const pid = useMcpStore.getState().promptCallId
     await sent(2)
-    expect(api.mcp.getPrompt).toHaveBeenCalledWith('conn-1', 'greet', {}, { callId: pid })
+    expect(api.mcp.getPrompt).toHaveBeenCalledWith(
+      'conn-1',
+      'greet',
+      {},
+      { callId: pid, timeoutMs: 120_000 },
+    )
     await useMcpStore.getState().cancelCall('prompt')
     expect(useMcpStore.getState().isGettingPrompt).toBe(false)
     expect(useMcpStore.getState().promptMeta?.status).toBe('cancelled')

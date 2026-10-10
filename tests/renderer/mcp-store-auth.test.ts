@@ -293,9 +293,9 @@ describe('mcp-auth.slice helpers', () => {
   })
 
   it('config tabs follow the transport; an unavailable stored tab falls back to Authorization', () => {
-    expect(availableConfigTabs('http')).toEqual(['auth', 'headers', 'scripts', 'tests'])
-    expect(availableConfigTabs('sse')).toEqual(['auth', 'headers', 'scripts', 'tests'])
-    expect(availableConfigTabs('stdio')).toEqual(['auth', 'env', 'scripts', 'tests'])
+    expect(availableConfigTabs('http')).toEqual(['auth', 'headers', 'scripts', 'tests', 'settings'])
+    expect(availableConfigTabs('sse')).toEqual(['auth', 'headers', 'scripts', 'tests', 'settings'])
+    expect(availableConfigTabs('stdio')).toEqual(['auth', 'env', 'scripts', 'tests', 'settings'])
     expect(effectiveConfigTab('tests', 'stdio')).toBe('tests')
     expect(effectiveConfigTab('headers', 'stdio')).toBe('auth')
     expect(effectiveConfigTab('env', 'http')).toBe('auth')

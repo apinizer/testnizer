@@ -14,7 +14,7 @@ import BaseLayout from '../layouts/BaseLayout.astro'
         your local device. This policy explains what little does leave your machine, and why.
       </p>
       <p class="mt-3 text-xs text-text-soft">
-        Effective date: 2026-05-07 &nbsp;·&nbsp; Applies to: all versions of Testnizer
+        Effective date: 2026-05-07 &nbsp;·&nbsp; Last updated: 2026-10-10 &nbsp;·&nbsp; Applies to: all versions of Testnizer
       </p>
     </div>
   </section>
@@ -78,7 +78,7 @@ import BaseLayout from '../layouts/BaseLayout.astro'
               <ol class="mt-2 ml-5 space-y-1 list-decimal list-outside">
                 <li>The API requests <strong class="text-text">you</strong> explicitly send — these go directly from your device to the target you specify and never pass through us.</li>
                 <li>A periodic version check against the GitHub Releases feed for auto-update.</li>
-                <li><strong class="text-text">AI Chat:</strong> if you use the AI Chat feature, prompts and responses travel directly between your device and the AI provider you selected. We do not see, proxy, or store this content. See Section 6.</li>
+                <li><strong class="text-text">AI Chat:</strong> if you use the AI Chat feature, prompts and responses travel directly between your device and the AI provider you selected. We never receive this content and do not proxy or relay it. See Section 6.</li>
                 <li>Optional crash telemetry, <strong class="text-text">only</strong> if you supply a <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">SENTRY_DSN</code> environment variable (off by default). See Section 5.</li>
               </ol>
             </li>
@@ -124,10 +124,11 @@ import BaseLayout from '../layouts/BaseLayout.astro'
               </thead>
               <tbody class="divide-y divide-border">
                 <tr><td class="px-4 py-2.5 font-medium text-text">Database (SQLite)</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/testnizer.db</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">Settings</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/config.json</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">Settings</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/settings.json</td></tr>
                 <tr><td class="px-4 py-2.5 font-medium text-text">Secrets (passwords, tokens, certificates)</td><td class="px-4 py-2.5 text-text-muted">OS keychain via Electron <code>safeStorage</code> (macOS Keychain, Windows DPAPI, libsecret on Linux)</td></tr>
                 <tr><td class="px-4 py-2.5 font-medium text-text">Logs (if any)</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/logs/</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">AI provider configs &amp; keys</td><td class="px-4 py-2.5 text-text-muted">Encrypted in <code>config.json</code> via <code>safeStorage</code></td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">AI Chat provider API keys</td><td class="px-4 py-2.5 text-text-muted">In <code>&lt;userData&gt;/settings.json</code>, one key per provider, encrypted via <code>safeStorage</code>. If encryption is unavailable on your system, the key is kept in memory only for the current session and is not written to disk.</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">AI Chat tab state &amp; saved AI Chat requests</td><td class="px-4 py-2.5 text-text-muted">Local application storage and the database. Saved requests contain the provider, model, endpoint URL, system prompt, custom headers with literal credential values removed, and generation settings; they never contain the API key. The conversation in an open AI Chat tab is kept in local application storage so that it survives a restart.</td></tr>
               </tbody>
             </table>
           </div>
@@ -211,25 +212,28 @@ import BaseLayout from '../layouts/BaseLayout.astro'
             provider of your choice from within the application. The application ships with presets for:
           </p>
           <ul class="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 list-disc list-outside ml-5 sm:grid-cols-3">
-            {['OpenAI', 'Anthropic', 'Groq', 'Google (Gemini)', 'Azure OpenAI', 'Cohere',
+            {['OpenAI', 'Anthropic', 'Groq', 'Google (Gemini)', 'Cohere',
               'Mistral', 'Perplexity', 'Together AI', 'OpenRouter', 'Fireworks AI', 'DeepSeek',
-              'xAI (Grok)', 'Ollama (local — no outbound)'].map((p) => (
+              'xAI (Grok)', 'Cerebras', 'DeepInfra', 'Custom (any OpenAI-compatible endpoint, including local)'].map((p) => (
               <li>{p}</li>
             ))}
           </ul>
           <p class="mt-4">
             When you use AI Chat, the prompts you submit and the responses returned travel{' '}
             <strong class="text-text">directly from your machine to the AI provider's API endpoint</strong>,
-            authenticated with the API key you supplied. Testnizer does not proxy, relay, intercept,
-            log, or store this content at any point — it is a peer-to-peer connection between your
-            device and the provider you selected.
+            authenticated with the API key you supplied. Testnizer does not proxy or relay this
+            content, and we never receive it. Nothing leaves your machine except the request to the
+            provider you selected. On your own device, the prompts and responses are shown in the
+            in-app Console log (held in memory, not sent anywhere), and the conversation of an open
+            AI Chat tab is kept in local application storage (Section 3). It is a direct connection
+            between your device and the provider you selected.
           </p>
           <ul class="mt-3 space-y-2 list-disc list-outside ml-5">
             <li>We have no access to your prompts or model responses.</li>
             <li>The AI provider you selected sees your prompts, responses, and IP. Each provider has its own privacy policy, retention policy, and training-data policy. <strong class="text-text">Review the privacy policy of the provider you select before sending sensitive data.</strong></li>
             <li>Data sent to AI providers may be retained or used to improve their models, entirely outside our control.</li>
-            <li>You can run AI Chat <strong class="text-text">fully offline</strong> by selecting the <strong class="text-text">Ollama</strong> preset (or any locally-hosted endpoint). No outbound traffic leaves your machine in that case.</li>
-            <li>Your API keys are stored locally, encrypted via the OS keychain (Section 3), and sent only to the provider they belong to.</li>
+            <li>You can run AI Chat <strong class="text-text">fully offline</strong> by selecting the <strong class="text-text">Custom</strong> provider and entering the URL of a locally-hosted, OpenAI-compatible endpoint. No outbound traffic leaves your machine in that case.</li>
+            <li>Your API keys are stored locally, encrypted via <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">safeStorage</code> (the OS keychain; Section 3), one key per provider. They are never written to saved requests or exported project files, and are sent only to the provider they belong to.</li>
           </ul>
           <p class="mt-3 text-xs text-text-soft">
             <strong>Lawful basis (GDPR Art. 6(1)(a)):</strong> explicit opt-in by the user. With respect

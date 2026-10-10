@@ -146,3 +146,48 @@ describe('checkAuth — apiKey', () => {
     ).toBe(false)
   })
 })
+
+// Issue #177: secrets are blanked in the project file, so a mock pulled from
+// git arrives with '' tokens / passwords / keys until the user sets them on
+// this computer. A blank configured secret must never let a request in.
+describe('checkAuth — blank configured secrets fail closed (issue #177)', () => {
+  const basic = (user: string, pw: string): string =>
+    `Basic ${Buffer.from(`${user}:${pw}`).toString('base64')}`
+
+  it('basic: a user with a blank password rejects "alice:" (was accepted)', () => {
+    const cfg: AuthConfig = { type: 'basic', users: [{ username: 'alice', password: '' }] }
+    const r = checkAuth({ config: cfg, headers: { authorization: basic('alice', '') }, query: {} })
+    expect(r.ok).toBe(false)
+  })
+
+  it('basic: a blank-password user does not shadow a configured one', () => {
+    const cfg: AuthConfig = {
+      type: 'basic',
+      users: [
+        { username: 'alice', password: '' },
+        { username: 'bob', password: 'pw' },
+      ],
+    }
+    expect(
+      checkAuth({ config: cfg, headers: { authorization: basic('bob', 'pw') }, query: {} }).ok,
+    ).toBe(true)
+    expect(
+      checkAuth({ config: cfg, headers: { authorization: basic('alice', '') }, query: {} }).ok,
+    ).toBe(false)
+  })
+
+  it('bearer: only blank tokens configured → every request is rejected', () => {
+    const cfg: AuthConfig = { type: 'bearer', tokens: ['', ''] }
+    for (const authorization of ['Bearer x', 'Bearer ', 'Bearer', '']) {
+      expect(checkAuth({ config: cfg, headers: { authorization }, query: {} }).ok).toBe(false)
+    }
+  })
+
+  it('apiKey: only blank keys configured → header and query requests are rejected', () => {
+    const hdr: AuthConfig = { type: 'apiKey', in: 'header', name: 'X-Key', keys: [''] }
+    expect(checkAuth({ config: hdr, headers: { 'x-key': '' }, query: {} }).ok).toBe(false)
+    expect(checkAuth({ config: hdr, headers: { 'x-key': 'anything' }, query: {} }).ok).toBe(false)
+    const qry: AuthConfig = { type: 'apiKey', in: 'query', name: 'k', keys: [''] }
+    expect(checkAuth({ config: qry, headers: {}, query: { k: '' } }).ok).toBe(false)
+  })
+})

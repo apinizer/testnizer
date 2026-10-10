@@ -26,7 +26,16 @@ import { openFolderRunner } from '../../lib/open-runner-tab'
 import { openEndpointTab, focusOpenTabFor } from '../../lib/open-endpoint-tab'
 import { openExampleTab } from '../../lib/open-example-tab'
 import { useSavedResponseStore } from '../../stores/saved-response.store'
-import { restoreProtocolFromMetadata } from '../../lib/save-active-request'
+import {
+  requestStoreSettings,
+  restoreProtocolFromMetadata,
+  restoreRequestSettings,
+} from '../../lib/save-active-request'
+import {
+  readRequestSettings,
+  readRequestSettingsJson,
+  type RequestSettings,
+} from '../../../shared/request-settings'
 
 // Re-alias for flattenTree signature
 type TreeNode = TreeNodeType
@@ -388,6 +397,9 @@ export default function TreeView() {
             const parsedAuth: AuthConfig = sr.auth ? JSON.parse(sr.auth) : { type: 'none' }
             // Saved requests carry preScript/postScript/assertions in dedicated columns.
             const parsedAsserts = sr.assertions ? JSON.parse(sr.assertions) : []
+            // Timeout / redirects / SSL ride in `metadata` (issue #185) — same
+            // reader as `openEndpointTab`.
+            const settings = readRequestSettingsJson(sr.metadata)
 
             openPreviewTab({
               id: tabId,
@@ -411,7 +423,9 @@ export default function TreeView() {
               preScript: sr.pre_script ?? '',
               postScript: sr.post_script ?? '',
               assertions: parsedAsserts,
+              ...requestStoreSettings(settings),
             })
+            restoreRequestSettings((sr.protocol || 'http') as string, settings)
             // Re-hydrate protocol-specific state (WS/SSE/Socket.IO/gRPC/GraphQL/
             // SOAP) that snapshotProtocol wrote into the `metadata` column.
             // This inline tree-click handler is a parallel load path to
@@ -465,10 +479,12 @@ export default function TreeView() {
             let metadata: unknown = undefined
             let schemaUrl = ep.path
             let schemaMethod = ep.method || 'GET'
+            let settings: RequestSettings = {}
 
             if (ep.request_schema) {
               try {
                 const schema = JSON.parse(ep.request_schema)
+                settings = readRequestSettings(schema)
                 params = schema.params || []
                 headers = schema.headers || []
                 body = schema.body || { type: 'none' }
@@ -516,7 +532,9 @@ export default function TreeView() {
               preScript,
               postScript,
               assertions: endpointAssertions,
+              ...requestStoreSettings(settings),
             })
+            restoreRequestSettings(effectiveProtocol, settings)
             if (effectiveProtocol === 'soap') {
               switchSoapToTab(realTabId)
               if (!metadata) {

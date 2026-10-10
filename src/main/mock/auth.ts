@@ -36,7 +36,7 @@ export function checkAuth(input: AuthCheckInput): AuthCheckResult {
     const m = /^Bearer\s+(.+)$/i.exec(auth.trim())
     const token = m ? m[1] : ''
     if (!token) return failure('Bearer realm="mock"', 'Missing bearer token')
-    if (!config.tokens.some((t) => safeEqual(t, token))) {
+    if (!(config.tokens ?? []).some((t) => isSet(t) && safeEqual(t, token))) {
       return failure('Bearer realm="mock", error="invalid_token"', 'Invalid bearer token')
     }
     return { ok: true }
@@ -59,8 +59,11 @@ export function checkAuth(input: AuthCheckInput): AuthCheckResult {
     }
     const u = decoded.slice(0, colonIdx)
     const p = decoded.slice(colonIdx + 1)
-    const matched = config.users.some(
-      (user) => safeEqual(user.username, u) && safeEqual(user.password, p),
+    // A user whose password is blank never matches — `alice:` must not get
+    // in. Secrets are blanked in the project file (issue #177), so a mock
+    // pulled onto a machine where nobody set the password yet stays closed.
+    const matched = (config.users ?? []).some(
+      (user) => isSet(user.password) && safeEqual(user.username, u) && safeEqual(user.password, p),
     )
     if (!matched) return failure('Basic realm="mock"', 'Invalid basic credentials')
     return { ok: true }
@@ -72,7 +75,7 @@ export function checkAuth(input: AuthCheckInput): AuthCheckResult {
         ? (headers[config.name.toLowerCase()] ?? '')
         : (query[config.name] ?? '')
     if (!value) return failure(`ApiKey name="${config.name}"`, 'Missing API key')
-    if (!config.keys.some((k) => safeEqual(k, value))) {
+    if (!(config.keys ?? []).some((k) => isSet(k) && safeEqual(k, value))) {
       return failure(`ApiKey name="${config.name}"`, 'Invalid API key')
     }
     return { ok: true }
@@ -93,6 +96,15 @@ function failure(challenge: string, message: string): AuthCheckResult {
       body: JSON.stringify({ error: 'unauthorized', message }),
     },
   }
+}
+
+/**
+ * A configured credential counts only when it is a non-empty string. A blank
+ * entry means "not set on this computer" (issue #177) and must never match —
+ * fail closed rather than accept an empty credential.
+ */
+function isSet(v: unknown): v is string {
+  return typeof v === 'string' && v !== ''
 }
 
 /** Constant-time string equality (avoids timing leaks for short tokens). */

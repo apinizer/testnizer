@@ -1152,6 +1152,20 @@ interface AiChatChunkEvent {
 
 interface AiChatDoneEvent {
   messageId: string
+  /** The provider stopped at the token limit — the answer is cut off (issue #189). */
+  truncated?: boolean
+}
+
+/** Provider API key read back from main's encrypted store (issue #188). */
+interface AiChatKeyRead {
+  key: string
+  encryptionAvailable: boolean
+}
+
+interface AiChatKeyWrite {
+  /** False when safeStorage cannot encrypt — nothing was written. */
+  persisted: boolean
+  encryptionAvailable: boolean
 }
 
 interface AiChatErrorEvent {
@@ -1162,6 +1176,8 @@ interface AiChatErrorEvent {
 interface AiChatApi {
   send(payload: AiChatSendPayload): Promise<IpcResult<{ messageId: string }>>
   cancel(messageId: string): Promise<IpcResult<{ cancelled: boolean }>>
+  getKey(scope: string): Promise<IpcResult<AiChatKeyRead>>
+  setKey(scope: string, key: string): Promise<IpcResult<AiChatKeyWrite>>
   onChunk(callback: (event: AiChatChunkEvent) => void): () => void
   onDone(callback: (event: AiChatDoneEvent) => void): () => void
   onError(callback: (event: AiChatErrorEvent) => void): () => void
@@ -1185,6 +1201,12 @@ interface McpConnectAuth {
   bearer?: { token: string; prefix?: string }
   /** `in: 'query'` appends `key=value` to the server URL (http / sse). */
   apiKey?: { key: string; value: string; in: 'header' | 'query' }
+  /**
+   * OAuth 2.1 tab settings saved with the request (issue #170). Never sent on
+   * connect — `resolveMcpAuth` drops `oauth2`; the store passes the flag to
+   * `oauthStart` instead.
+   */
+  oauth2?: { allowHttpAuthServer?: boolean }
 }
 
 interface McpConnectOptions {
@@ -1373,6 +1395,8 @@ interface McpCallContextDto {
   projectId?: string
   endpointId?: string
   callId?: string
+  /** The tab's timeout (ms, 0 = no limit — issue #185); absent = the shared default. */
+  timeoutMs?: number
 }
 
 /** `mcp:elicitation` — a 2025-era server's `elicitation/create` (issue #168), form mode only. */
@@ -1419,6 +1443,12 @@ interface McpOAuthStartOptions {
   scope?: string
   /** Fixed loopback port for a pre-registered redirect URI (default: ephemeral). */
   callbackPort?: number
+  /**
+   * Intranet opt-in (issue #170): token exchange / refresh may use a plain-HTTP
+   * token endpoint on the discovered authorization server's host. Every other
+   * host still requires HTTPS. Off unless `true`.
+   */
+  allowHttpAuthServer?: boolean
 }
 
 type McpOAuthStepId =
@@ -1473,6 +1503,8 @@ interface McpOAuthSummary {
   hasRefreshToken: boolean
   clientAuthMethod: string
   resource?: string
+  /** Issue #170: issued by a plain-HTTP token endpoint (intranet opt-in) — refresh would be HTTP too. */
+  plainHttpTokenEndpoint?: boolean
 }
 
 /** `mcp:oauth:step` */

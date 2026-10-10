@@ -311,31 +311,47 @@ interface CallContext {
   endpointId?: string
   /** Renderer-chosen id `mcp:cancelCall` aborts this call by. */
   callId?: string
+  /**
+   * The tab's resolved timeout (ms, 0 = no limit — issue #185). Absent: the
+   * engine applies the shared `MCP_DEFAULT_TIMEOUT_MS`, as Run does.
+   */
+  timeoutMs?: number
 }
 
 function contextOf(raw: unknown): CallContext {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
   const r = raw as Record<string, unknown>
   const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined)
-  return compactContext({
+  const ctx = compactContext({
     workspaceId: str(r.workspaceId),
     projectId: str(r.projectId),
     endpointId: str(r.endpointId),
     callId: str(r.callId),
   })
+  const t = r.timeoutMs
+  if (typeof t === 'number' && Number.isFinite(t) && t >= 0) ctx.timeoutMs = t
+  return ctx
 }
 
-function compactContext(ctx: CallContext): CallContext {
+function compactContext(ctx: Omit<CallContext, 'timeoutMs'>): CallContext {
   const out: CallContext = {}
-  for (const [k, v] of Object.entries(ctx) as Array<[keyof CallContext, string | undefined]>) {
+  for (const [k, v] of Object.entries(ctx) as Array<
+    [Exclude<keyof CallContext, 'timeoutMs'>, string | undefined]
+  >) {
     if (v !== undefined) out[k] = v
   }
   return out
 }
 
-/** `{ callId }` for the engine — only when the renderer gave one (keeps the engine call minimal). */
-function callOpts(ctx: CallContext): [] | [{ callId: string }] {
-  return ctx.callId ? [{ callId: ctx.callId }] : []
+/**
+ * `{ callId, timeoutMs }` for the engine — each only when the renderer gave
+ * it (keeps the engine call minimal; an absent timeout is the engine default).
+ */
+function callOpts(ctx: CallContext): [] | [{ callId?: string; timeoutMs?: number }] {
+  const opts: { callId?: string; timeoutMs?: number } = {}
+  if (ctx.callId) opts.callId = ctx.callId
+  if (ctx.timeoutMs !== undefined) opts.timeoutMs = ctx.timeoutMs
+  return Object.keys(opts).length > 0 ? [opts] : []
 }
 
 /** `timing` on every call reply (issue #164): wall time + byte size of the response JSON. */

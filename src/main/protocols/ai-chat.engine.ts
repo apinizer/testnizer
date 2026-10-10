@@ -54,8 +54,30 @@ export interface AiStreamOptions {
 }
 
 export interface AiStreamChunk {
-  /** Incremental text delta for this chunk. */
+  /** Incremental text delta for this chunk ('' on a stop-signal chunk). */
   delta: string
+  /**
+   * The provider stopped because the token limit was reached (Anthropic
+   * `stop_reason: 'max_tokens'`, OpenAI-compatible `finish_reason: 'length'`)
+   * — the answer is cut off (issue #189).
+   */
+  truncated?: true
+}
+
+/**
+ * `max_tokens` sent to Anthropic when the request sets none. The Messages API
+ * requires the field (OpenAI-compatible providers do not, so they get none and
+ * use their own default). It used to be 1024, which silently cut off ordinary
+ * long answers (issue #189); 4096 is accepted by every current Claude model and
+ * leaves room for a full answer. Users raise or lower it in the AI Chat
+ * Settings section.
+ */
+export const ANTHROPIC_DEFAULT_MAX_TOKENS = 4096
+
+/** The `max_tokens` actually sent, or `undefined` when the body carries none. */
+export function effectiveMaxTokens(provider: AiProvider, maxTokens?: number): number | undefined {
+  if (maxTokens !== undefined) return maxTokens
+  return provider === 'anthropic' ? ANTHROPIC_DEFAULT_MAX_TOKENS : undefined
 }
 
 // ─── URL + body builders (exported for unit testing) ─────────
@@ -168,7 +190,7 @@ export function buildBody(opts: BuildBodyOptions): Record<string, unknown> {
       model,
       messages: nonSystem,
       stream: true,
-      max_tokens: maxTokens ?? 1024,
+      max_tokens: effectiveMaxTokens(provider, maxTokens),
     }
     if (system.length > 0) body.system = system
     if (temperature !== undefined) body.temperature = temperature
@@ -216,6 +238,24 @@ export function extractDelta(provider: AiProvider, parsed: unknown): string {
     if (typeof choice.text === 'string') return choice.text
   }
   return ''
+}
+
+/**
+ * Did this parsed SSE payload report that generation stopped at the token
+ * limit? Anthropic: `{type:'message_delta', delta:{stop_reason:'max_tokens'}}`.
+ * OpenAI-compatible: `{choices:[{finish_reason:'length'}]}` (sent before
+ * `[DONE]`).
+ */
+export function isTruncationEvent(provider: AiProvider, parsed: unknown): boolean {
+  if (!parsed || typeof parsed !== 'object') return false
+  const obj = parsed as Record<string, unknown>
+  if (provider === 'anthropic') {
+    if (obj.type !== 'message_delta') return false
+    const delta = obj.delta as Record<string, unknown> | undefined
+    return delta?.stop_reason === 'max_tokens'
+  }
+  const choices = obj.choices as Array<Record<string, unknown>> | undefined
+  return Array.isArray(choices) && choices.some((c) => c?.finish_reason === 'length')
 }
 
 // ─── Streaming driver ───────────────────────────────────────
@@ -303,6 +343,9 @@ export async function* streamChatCompletion(
 
         const delta = extractDelta(provider, parsed)
         if (delta) yield { delta }
+        // A stop signal may ride on its own frame with no text — yield it
+        // anyway so the caller can flag the answer as cut off.
+        if (isTruncationEvent(provider, parsed)) yield { delta: '', truncated: true }
       }
     }
   } finally {

@@ -7,6 +7,7 @@ import { asConflictAwareGit, runGitOpWithConflictHandling } from '../lib/git-con
 import type { SimpleGit, BranchSummaryBranch } from 'simple-git'
 import { projectFileSlug, pickProjectFile } from '../lib/project-file'
 import { canonical, mergeProjectFiles } from '../lib/project-merge'
+import { stripLocalSecrets } from '../lib/local-secrets'
 import {
   getProjectGitConfig,
   gitAuth,
@@ -339,8 +340,14 @@ export function sameExport(a: string, b: Record<string, unknown>): boolean {
   // JSON, `null` in `canonical`) or a `Date` / `Buffer` (an ISO string /
   // `{type,data}` once written) compared unequal to its own file and every
   // switch committed a no-op "Auto-save" (issue #154).
+  //
+  // Values marked secret never reach the file (issue #177), so the live side
+  // is compared in its stripped form — otherwise every switch would see a
+  // "change" and commit a no-op Auto-save. The FILE side is deliberately not
+  // stripped: a file written before #177 still holding a secret compares
+  // unequal once, gets rewritten without it, and is equal from then on.
   try {
-    const live = JSON.parse(JSON.stringify(b)) as Record<string, unknown>
+    const live = JSON.parse(JSON.stringify(stripLocalSecrets(b))) as Record<string, unknown>
     return normalise(JSON.parse(a) as Record<string, unknown>) === normalise(live)
   } catch {
     return false
@@ -374,7 +381,9 @@ async function syncWorkingTreeFromDb(
   projectId: string,
   opts: { skipIfEmpty: boolean },
 ): Promise<{ fileName: string; displayName: string; changed: boolean }> {
-  const data = exportProjectData(projectId) as unknown as Record<string, unknown>
+  // What lands in the checkout leaves this machine: values marked secret are
+  // blanked (issue #177). The same stripped object is compared and written.
+  const data = stripLocalSecrets(exportProjectData(projectId)) as unknown as Record<string, unknown>
   const project = (data.project ?? {}) as Record<string, unknown>
   const slug = projectFileSlug(project.name as string | undefined)
   const displayName = ((project.display_name || project.name) as string) || 'project'

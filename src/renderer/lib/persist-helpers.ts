@@ -97,14 +97,27 @@ export function attachTabbedPersist<TStore, TState>(
   sanitize?: (s: TState) => TState,
 ): void {
   store.subscribe((state) => {
-    const tabbed = extractTabMap(state)
-    const clean = sanitize ?? ((s: TState) => s)
-    saveJson(storageKey, {
-      current: clean(extractCurrent(state)),
-      _currentTabId: tabbed._currentTabId,
-      _tabStates: mapToEntries(tabbed._tabStates).map(
-        ([id, st]) => [id, clean(st)] as [string, TState],
-      ),
-    })
+    writeTabbedSnapshot(storageKey, extractCurrent(state), extractTabMap(state), sanitize)
+  })
+}
+
+/**
+ * Write one `PersistedTabbed` snapshot now — what `attachTabbedPersist` does on
+ * every change. Exported for a store that must rewrite its snapshot without a
+ * state change (e.g. removing secrets an older release left in storage).
+ */
+export function writeTabbedSnapshot<TState>(
+  storageKey: string,
+  current: TState,
+  tabbed: { _tabStates: Map<string, TState>; _currentTabId: string | null },
+  sanitize?: (s: TState) => TState,
+): void {
+  const clean = sanitize ?? ((s: TState) => s)
+  saveJson(storageKey, {
+    current: clean(current),
+    _currentTabId: tabbed._currentTabId,
+    _tabStates: mapToEntries(tabbed._tabStates).map(
+      ([id, st]) => [id, clean(st)] as [string, TState],
+    ),
   })
 }

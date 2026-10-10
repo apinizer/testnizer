@@ -681,6 +681,35 @@ describe('cancel a running call (issue #163)', () => {
     )
   })
 
+  it('issue #185: the tab timeout (timeoutMs, 0 = no limit) reaches the engine on all four calls', async () => {
+    await harness.invoke('mcp:callTool', 'mcp-1', 'toolA', {}, { callId: 'c-2', timeoutMs: 4321 })
+    expect(vi.mocked(engine.mcpCallTool)).toHaveBeenLastCalledWith('mcp-1', 'toolA', {}, {
+      callId: 'c-2',
+      timeoutMs: 4321,
+    })
+    await harness.invoke('mcp:readResource', 'mcp-1', 'test://greeting', { timeoutMs: 0 })
+    expect(vi.mocked(engine.mcpReadResource)).toHaveBeenLastCalledWith('mcp-1', 'test://greeting', {
+      timeoutMs: 0,
+    })
+    await harness.invoke('mcp:getPrompt', 'mcp-1', 'summarize', {}, { callId: 'p-2', timeoutMs: 9 })
+    expect(vi.mocked(engine.mcpGetPrompt)).toHaveBeenLastCalledWith('mcp-1', 'summarize', {}, {
+      callId: 'p-2',
+      timeoutMs: 9,
+    })
+    await harness.invoke('mcp:respondInput', 'mcp-1', 't', {}, 's', { k: {} }, { timeoutMs: 77 })
+    expect(vi.mocked(engine.mcpRespondInput)).toHaveBeenLastCalledWith(
+      'mcp-1',
+      't',
+      {},
+      's',
+      { k: {} },
+      { timeoutMs: 77 },
+    )
+    // Garbage is dropped — the engine then applies the shared default.
+    await harness.invoke('mcp:callTool', 'mcp-1', 'toolA', {}, { timeoutMs: -1 })
+    expect(vi.mocked(engine.mcpCallTool)).toHaveBeenLastCalledWith('mcp-1', 'toolA', {})
+  })
+
   it('mcp:cancelCall → { cancelled } from the engine', async () => {
     const res = (await harness.invoke('mcp:cancelCall', 'mcp-1', 'c-1')) as Envelope
     expect(res).toEqual({ success: true, data: { cancelled: true } })

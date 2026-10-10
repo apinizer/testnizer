@@ -15,7 +15,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
         yerel cihazınızda kalır. Bu politika, makinenizden ne kadar az şeyin ayrıldığını ve nedenini açıklar.
       </p>
       <p class="mt-3 text-xs text-text-soft">
-        Yürürlük tarihi: 2026-05-07 &nbsp;·&nbsp; Geçerlilik: Testnizer'ın tüm sürümleri
+        Yürürlük tarihi: 2026-05-07 &nbsp;·&nbsp; Son güncelleme: 2026-10-10 &nbsp;·&nbsp; Geçerlilik: Testnizer'ın tüm sürümleri
       </p>
       <p class="mt-3 text-xs text-text-soft">
         Hukuken bağlayıcı metin <a href="/privacy" class="text-accent-text hover:underline">İngilizce sürümdür</a>. Türkçe metin yalnızca bilgilendirme amaçlıdır.
@@ -81,7 +81,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
               <ol class="mt-2 ml-5 space-y-1 list-decimal list-outside">
                 <li><strong class="text-text">Sizin</strong> açıkça gönderdiğiniz API istekleri — bunlar cihazınızdan belirttiğiniz hedefe doğrudan gider ve asla bizden geçmez.</li>
                 <li>Otomatik güncelleme için GitHub Releases beslemesine yönelik periyodik bir sürüm kontrolü.</li>
-                <li><strong class="text-text">Yapay Zeka Sohbet:</strong> Yapay Zeka Sohbet özelliğini kullanırsanız, istemler ve yanıtlar cihazınız ile seçtiğiniz Yapay Zeka sağlayıcısı arasında doğrudan dolaşır. Bu içeriği görmez, vekil sunucu olarak kullanmaz veya saklamayız. Bkz. Bölüm 6.</li>
+                <li><strong class="text-text">Yapay Zeka Sohbet:</strong> Yapay Zeka Sohbet özelliğini kullanırsanız, istemler ve yanıtlar cihazınız ile seçtiğiniz Yapay Zeka sağlayıcısı arasında doğrudan dolaşır. Bu içeriği asla almayız; vekil sunucu olarak kullanmaz veya iletmeyiz. Bkz. Bölüm 6.</li>
                 <li>İsteğe bağlı çökme telemetrisi, <strong class="text-text">yalnızca</strong> <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">SENTRY_DSN</code> ortam değişkeni sağlarsanız (varsayılan olarak kapalı). Bkz. Bölüm 5.</li>
               </ol>
             </li>
@@ -128,10 +128,11 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
               </thead>
               <tbody class="divide-y divide-border">
                 <tr><td class="px-4 py-2.5 font-medium text-text">Veritabanı (SQLite)</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/testnizer.db</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">Ayarlar</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/config.json</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">Ayarlar</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/settings.json</td></tr>
                 <tr><td class="px-4 py-2.5 font-medium text-text">Gizli bilgiler (parolalar, token'lar, sertifikalar)</td><td class="px-4 py-2.5 text-text-muted">Electron <code>safeStorage</code> aracılığıyla işletim sistemi anahtarlığı (macOS Keychain, Windows DPAPI, Linux libsecret)</td></tr>
                 <tr><td class="px-4 py-2.5 font-medium text-text">Loglar (varsa)</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/logs/</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">Yapay Zeka sağlayıcı yapılandırmaları ve anahtarlar</td><td class="px-4 py-2.5 text-text-muted"><code>safeStorage</code> aracılığıyla <code>config.json</code> içinde şifrelenmiş</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">Yapay Zeka Sohbet sağlayıcı API anahtarları</td><td class="px-4 py-2.5 text-text-muted"><code>&lt;userData&gt;/settings.json</code> içinde, sağlayıcı başına bir anahtar, <code>safeStorage</code> ile şifrelenmiş. Sisteminizde şifreleme kullanılamıyorsa anahtar yalnızca mevcut oturum için bellekte tutulur ve diske yazılmaz.</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">Yapay Zeka Sohbet sekme durumu ve kaydedilmiş Yapay Zeka Sohbet istekleri</td><td class="px-4 py-2.5 text-text-muted">Yerel uygulama depolaması ve veritabanı. Kaydedilmiş istekler sağlayıcıyı, modeli, uç nokta URL'sini, sistem istemini, düz metin kimlik bilgisi değerleri çıkarılmış özel başlıkları ve üretim ayarlarını içerir; API anahtarını asla içermez. Açık bir Yapay Zeka Sohbet sekmesindeki konuşma, yeniden başlatmada kaybolmaması için yerel uygulama depolamasında tutulur.</td></tr>
               </tbody>
             </table>
           </div>
@@ -220,9 +221,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
             sağlayan bir "Yapay Zeka Sohbet" sekmesi içerir. Uygulama aşağıdakiler için hazır ayarlarla gelir:
           </p>
           <ul class="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 list-disc list-outside ml-5 sm:grid-cols-3">
-            {['OpenAI', 'Anthropic', 'Groq', 'Google (Gemini)', 'Azure OpenAI', 'Cohere',
+            {['OpenAI', 'Anthropic', 'Groq', 'Google (Gemini)', 'Cohere',
               'Mistral', 'Perplexity', 'Together AI', 'OpenRouter', 'Fireworks AI', 'DeepSeek',
-              'xAI (Grok)', 'Ollama (yerel — giden trafik yok)'].map((p) => (
+              'xAI (Grok)', 'Cerebras', 'DeepInfra', 'Özel (OpenAI uyumlu herhangi bir uç nokta, yerel dahil)'].map((p) => (
               <li>{p}</li>
             ))}
           </ul>
@@ -230,16 +231,18 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
             Yapay Zeka Sohbet'i kullandığınızda, gönderdiğiniz istemler ve dönen yanıtlar, sağladığınız
             API anahtarıyla kimliği doğrulanarak{' '}
             <strong class="text-text">cihazınızdan Yapay Zeka sağlayıcısının API uç noktasına doğrudan</strong>
-            gider. Testnizer bu içeriği herhangi bir noktada vekil olarak iletmez, yönlendirmez, kesmez,
-            kaydetmez veya saklamaz — bu, cihazınız ile seçtiğiniz sağlayıcı arasında uçtan uca bir
-            bağlantıdır.
+            gider. Testnizer bu içeriği vekil olarak iletmez veya yönlendirmez ve içerik bize asla ulaşmaz.
+            Makinenizden seçtiğiniz sağlayıcıya giden istek dışında hiçbir şey çıkmaz. Kendi cihazınızda,
+            istemler ve yanıtlar uygulama içi Konsol günlüğünde gösterilir (bellekte tutulur, hiçbir yere
+            gönderilmez) ve açık bir Yapay Zeka Sohbet sekmesindeki konuşma yerel uygulama depolamasında
+            tutulur (Bölüm 3). Bu, cihazınız ile seçtiğiniz sağlayıcı arasında doğrudan bir bağlantıdır.
           </p>
           <ul class="mt-3 space-y-2 list-disc list-outside ml-5">
             <li>İstemlerinize veya model yanıtlarınıza erişimimiz yoktur.</li>
             <li>Seçtiğiniz Yapay Zeka sağlayıcısı istemlerinizi, yanıtlarınızı ve IP'nizi görür. Her sağlayıcının kendi gizlilik politikası, saklama politikası ve eğitim verisi politikası vardır. <strong class="text-text">Hassas veri göndermeden önce seçtiğiniz sağlayıcının gizlilik politikasını gözden geçirin.</strong></li>
             <li>Yapay Zeka sağlayıcılarına gönderilen veriler, tamamen bizim kontrolümüz dışında, modellerini iyileştirmek için saklanabilir veya kullanılabilir.</li>
-            <li>Yapay Zeka Sohbet'i, <strong class="text-text">Ollama</strong> hazır ayarını (veya yerel olarak barındırılan herhangi bir uç noktayı) seçerek <strong class="text-text">tamamen çevrimdışı</strong> çalıştırabilirsiniz. Bu durumda makinenizden hiçbir giden trafik çıkmaz.</li>
-            <li>API anahtarlarınız yerel olarak, işletim sistemi anahtarlığı (Bölüm 3) aracılığıyla şifrelenmiş olarak saklanır ve yalnızca ait oldukları sağlayıcıya gönderilir.</li>
+            <li>Yapay Zeka Sohbet'i, <strong class="text-text">Özel</strong> sağlayıcıyı seçip yerel olarak barındırılan, OpenAI uyumlu bir uç noktanın URL'sini girerek <strong class="text-text">tamamen çevrimdışı</strong> çalıştırabilirsiniz. Bu durumda makinenizden hiçbir giden trafik çıkmaz.</li>
+            <li>API anahtarlarınız yerel olarak, <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">safeStorage</code> (işletim sistemi anahtarlığı; Bölüm 3) ile sağlayıcı başına bir anahtar olarak şifrelenmiş şekilde saklanır. Kaydedilmiş isteklere veya dışa aktarılan proje dosyalarına asla yazılmaz ve yalnızca ait oldukları sağlayıcıya gönderilir.</li>
           </ul>
           <p class="mt-3 text-xs text-text-soft">
             <strong>Hukuki dayanak (GDPR Md. 6(1)(a)):</strong> kullanıcının açık katılımı. Yapay Zeka

@@ -27,6 +27,7 @@ import {
   getCasesByEndpoint,
   type EndpointCaseRow,
 } from '../db/endpoint.repo'
+import { readRequestSettingsJson } from '../../shared/request-settings'
 
 interface TestSuiteRow {
   id: string
@@ -161,6 +162,7 @@ export function snapshotEndpointForSuite(endpointId: string): SnapshotForSuite |
   if (sr) {
     // saved_requests has individual columns; rebuild a schema object that
     // mirrors what the renderer's request store expects on load.
+    const protocolMeta = savedRequestProtocolMetadata(sr.metadata)
     const schema = {
       params: tryParseJSON(sr.params, []),
       headers: tryParseJSON(sr.headers, []),
@@ -168,6 +170,13 @@ export function snapshotEndpointForSuite(endpointId: string): SnapshotForSuite |
       auth: tryParseJSON(sr.auth, { type: 'none' }),
       preScript: sr.pre_script ?? '',
       postScript: sr.post_script ?? '',
+      // Timeout / redirects / SSL ride in `metadata` on saved_requests and at
+      // the top level of a suite item's schema (issue #185).
+      ...readRequestSettingsJson(sr.metadata),
+      // The protocol blocks (`mcp`, `soap`, `websocket`, `grpc`, …) go where
+      // an endpoint row keeps them — `request_schema.metadata` — which is what
+      // the suite tab and Run (`readSavedMcpRequest`) read (issue #191).
+      ...(protocolMeta ? { metadata: protocolMeta } : {}),
     }
     return {
       protocol: sr.protocol || 'http',
@@ -181,6 +190,31 @@ export function snapshotEndpointForSuite(endpointId: string): SnapshotForSuite |
     }
   }
   return null
+}
+
+/** The request-settings keys that sit at the top of `saved_requests.metadata` (issue #185). */
+const REQUEST_SETTINGS_KEYS = new Set([
+  'timeout',
+  'timeoutSeconds',
+  'followRedirects',
+  'maxRedirects',
+  'sslVerification',
+])
+
+/**
+ * `saved_requests.metadata` minus the request-settings keys (lifted to the top
+ * of the suite item's schema separately) — i.e. the protocol blocks, in the
+ * shape an endpoint keeps under `request_schema.metadata`. `undefined` when
+ * there is nothing left or the column is not a JSON object.
+ */
+function savedRequestProtocolMetadata(raw: string | null): Record<string, unknown> | undefined {
+  const parsed = tryParseJSON<unknown>(raw, null)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!REQUEST_SETTINGS_KEYS.has(k)) out[k] = v
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 function tryParseJSON<T>(raw: string | null, fallback: T): T {

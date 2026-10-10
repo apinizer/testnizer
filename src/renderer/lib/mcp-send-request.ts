@@ -19,6 +19,7 @@ import {
   type McpConnectParams,
   type ResourceUriResult,
 } from '../../shared/mcp-call'
+import { resolveMcpTimeout } from '../../shared/request-settings'
 
 export interface McpSendConnection {
   transport: McpTransport
@@ -73,4 +74,13 @@ export function sendPromptCall(
   vars: Record<string, string>,
 ): Extract<McpCallParams, { capability: 'prompt' }> {
   return { capability: 'prompt', name, args: resolvePromptArgs(promptArgs, resolverOf(vars)) }
+}
+
+/**
+ * The call's timeout (issue #185): the tab's own (0 = no limit) or the shared
+ * `MCP_DEFAULT_TIMEOUT_MS` — the same rule Run applies (`runner.handler.ts`
+ * `mcpRunTimeout`). Always sent, so the SDK's implicit 60 s never decides.
+ */
+export function mcpSendTimeout(perTab: number | null | undefined): number {
+  return resolveMcpTimeout(perTab)
 }

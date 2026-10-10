@@ -45,8 +45,9 @@ vi.mock('../../../src/main/db/database', () => ({
   getDb: () => testDb,
 }))
 
-const { registerRunnerHandlers, executeCollectionForScheduler } =
+const { registerRunnerHandlers, executeCollectionForScheduler, readSavedMcpRequest } =
   await import('../../../src/main/ipc/runner.handler')
+const { snapshotEndpointForSuite } = await import('../../../src/main/ipc/test-suite.handler')
 const { mcpConnectionIds, setMcpElicitationTimeoutMs } =
   await import('../../../src/main/protocols/mcp.engine')
 
@@ -190,6 +191,36 @@ function seedMcpSuiteItem(opts: McpSeed): string {
       opts.url,
       JSON.stringify(schema),
       JSON.stringify(assertions ?? []),
+      now,
+      now,
+    )
+  return id
+}
+
+/**
+ * A saved_requests MCP row as Ctrl+S writes it (issue #185): no
+ * request_schema, so the timeout sits at the top of `metadata` next to `mcp`.
+ */
+function seedMcpSavedRequest(opts: McpSeed): string {
+  const id = crypto.randomUUID()
+  const now = Date.now()
+  const { metadata } = mcpSchema(opts) as { metadata: Record<string, unknown> }
+  testDb
+    .prepare(
+      `INSERT INTO saved_requests
+         (id, project_id, folder_id, name, protocol, method, url, params, headers, body, auth,
+          pre_script, post_script, assertions, metadata, sort_order, created_at, updated_at)
+       VALUES (?, ?, NULL, ?, 'mcp', 'GET', ?, '[]', '[]', NULL, NULL, NULL, NULL, '[]', ?, 0, ?, ?)`,
+    )
+    .run(
+      id,
+      projectId,
+      opts.name ?? 'Saved MCP',
+      opts.url,
+      JSON.stringify({
+        ...metadata,
+        ...(opts.timeout !== undefined ? { timeout: opts.timeout } : {}),
+      }),
       now,
       now,
     )
@@ -617,6 +648,28 @@ describe('Runner — MCP tool call (issue #161)', () => {
     expect(row.error).toMatch(/timed out after 300 ms/)
   })
 
+  it('issue #185: a saved request\'s timeout (in metadata) bounds its MCP call on Run', async () => {
+    const id = seedMcpSavedRequest({
+      url: custom.url,
+      timeout: 300,
+      call: { capabilityTab: 'tools', selectedTool: 'slow', toolArgs: '{}' },
+    })
+    const started = Date.now()
+    const row = (await run({ endpointIds: [id] })).data!.results[0]
+    expect(Date.now() - started).toBeLessThan(4_000)
+    expect(row.error).toMatch(/MCP call timed out after 300 ms/)
+  })
+
+  it('issue #185: a suite item\'s timeout bounds its MCP call on Run', async () => {
+    const id = seedMcpSuiteItem({
+      url: custom.url,
+      timeout: 300,
+      call: { capabilityTab: 'tools', selectedTool: 'slow', toolArgs: '{}' },
+    })
+    const row = (await run({ endpointIds: [id] })).data!.results[0]
+    expect(row.error).toMatch(/MCP call timed out after 300 ms/)
+  })
+
   it('credential-named args are masked in the persisted request body, not on the wire', async () => {
     seedActiveEnv({ key: 'k-123' })
     const id = seedMcpEndpoint({
@@ -771,6 +824,72 @@ describe('Test Suite — MCP item runs through the same step', () => {
     expect(row.statusText).toBe('OK')
     expect(row.assertions).toEqual([expect.objectContaining({ name: 'Body is 3', passed: true })])
     expect(res.data!.passedEndpoints).toBe(1)
+  })
+})
+
+describe('Test Suite — a saved MCP request added to a suite (issue #191)', () => {
+  it('the snapshot carries the protocol block: transport, url and call reach Run', async () => {
+    const savedId = seedMcpSavedRequest({
+      name: 'Saved add',
+      url: fixture.url,
+      timeout: 4_000,
+      call: { capabilityTab: 'tools', selectedTool: 'add', toolArgs: '{"a": 2, "b": 5}' },
+    })
+    const snap = snapshotEndpointForSuite(savedId)
+    expect(snap).not.toBeNull()
+
+    // What Run reads off the suite item's request_schema.
+    const saved = readSavedMcpRequest({
+      request_schema: snap!.request_schema,
+      path: snap!.url ?? '',
+    } as Parameters<typeof readSavedMcpRequest>[0])
+    expect(saved.transport).toBe('http')
+    expect(saved.url).toBe(fixture.url)
+    expect(saved.call).toMatchObject({
+      capabilityTab: 'tools',
+      selectedTool: 'add',
+      toolArgs: '{"a": 2, "b": 5}',
+    })
+    // The request-settings lift (issue #185) is kept alongside.
+    expect(JSON.parse(snap!.request_schema).timeout).toBe(4_000)
+
+    // And the real run: the item is inserted the way testSuite:addEndpoints does.
+    const suiteId = crypto.randomUUID()
+    const itemId = crypto.randomUUID()
+    const now = Date.now()
+    testDb
+      .prepare(
+        `INSERT INTO test_suites (id, project_id, name, sort_order, created_at, updated_at)
+         VALUES (?, ?, 'Suite', 0, ?, ?)`,
+      )
+      .run(suiteId, projectId, now, now)
+    testDb
+      .prepare(
+        `INSERT INTO test_suite_items
+           (id, suite_id, folder_id, protocol, name, method, url, request_schema, assertions,
+            source_endpoint_id, sort_order, created_at, updated_at)
+         VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+      )
+      .run(
+        itemId,
+        suiteId,
+        snap!.protocol,
+        snap!.name,
+        snap!.method,
+        snap!.url,
+        snap!.request_schema,
+        JSON.stringify([
+          { id: 'b7', name: 'Body is 7', type: 'body_contains', enabled: true, expected: '7' },
+        ]),
+        snap!.source_endpoint_id,
+        now,
+        now,
+      )
+    const res = await run({ endpointIds: [itemId] })
+    const row = res.data!.results[0]
+    expect(row.error).toBeUndefined()
+    expect(row.statusText).toBe('OK')
+    expect(row.assertions).toEqual([expect.objectContaining({ name: 'Body is 7', passed: true })])
   })
 })
 

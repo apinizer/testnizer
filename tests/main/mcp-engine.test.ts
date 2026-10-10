@@ -783,9 +783,11 @@ describe('mcp.engine — listResources / readResource (issue #139)', () => {
     })
     const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
     const res = await mcpReadResource(info.connectionId, 'test://greeting')
+    // Issue #185: the timeout is always explicit (the shared default), never
+    // left to the SDK's implicit 60 s.
     expect(mockClient.readResource).toHaveBeenCalledWith(
       { uri: 'test://greeting' },
-      { cacheMode: 'refresh' },
+      { cacheMode: 'refresh', timeout: 120_000 },
     )
     expect(res).toEqual({
       contents: [
@@ -848,10 +850,10 @@ describe('mcp.engine — listPrompts / getPrompt (issue #139)', () => {
     })
     const info = await mcpConnect({ transport: 'http', url: 'http://mock.local/mcp' })
     const res = await mcpGetPrompt(info.connectionId, 'summarize', { text: 'hello' })
-    expect(mockClient.getPrompt).toHaveBeenCalledWith({
-      name: 'summarize',
-      arguments: { text: 'hello' },
-    })
+    expect(mockClient.getPrompt).toHaveBeenCalledWith(
+      { name: 'summarize', arguments: { text: 'hello' } },
+      { timeout: 120_000 },
+    )
     expect(res).toEqual({
       description: 'Summarize prompt',
       messages: [
@@ -868,7 +870,10 @@ describe('mcp.engine — listPrompts / getPrompt (issue #139)', () => {
       n: 5 as unknown as string,
       gone: undefined as unknown as string,
     })
-    expect(mockClient.getPrompt).toHaveBeenCalledWith({ name: 'p', arguments: { n: '5' } })
+    expect(mockClient.getPrompt).toHaveBeenCalledWith(
+      { name: 'p', arguments: { n: '5' } },
+      { timeout: 120_000 },
+    )
   })
 })
 

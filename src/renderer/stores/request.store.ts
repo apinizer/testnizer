@@ -23,6 +23,7 @@ import {
 import { runAssertions, runScript, createPmApi, resolveAssertionVars } from '../lib/test-runner'
 import { resolveInheritance } from '../lib/auth-inheritance'
 import { makeId } from '../lib/utils'
+import { resolveHttpTimeout } from '../../shared/request-settings'
 // Shared dirty-flag helper, also used by the protocol stores so the blue dot
 // is consistent across request types (issue #8). Aliased to keep the existing
 // `markActiveDirty()` call sites unchanged.
@@ -719,12 +720,13 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     //   app-wide general → engine 30s default (when all are null/undefined).
     // `requestTimeout === null` means "inherit", so a 0 only wins when the
     // user explicitly typed it on the Settings tab.
-    const resolvedTimeout =
-      reqCfg.requestTimeout != null
-        ? reqCfg.requestTimeout
-        : netSettings.requestTimeout != null
-          ? netSettings.requestTimeout
-          : appDefaultTimeout
+    // One chain for Send and Run (issue #185): `resolveHttpTimeout` is also
+    // what the Runner's `buildRequestFromEndpoint` resolves with.
+    const resolvedTimeout = resolveHttpTimeout(
+      reqCfg.requestTimeout,
+      netSettings.requestTimeout,
+      appDefaultTimeout,
+    )
 
     try {
       const result = await window.api?.request?.send({
