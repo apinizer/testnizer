@@ -192,6 +192,16 @@ const translations: Record<Locale, Record<string, string>> = {
     // Shell + request editor labels (issue #193) — EN is byte-identical to the old literals
     'kv.addParameter': '+ Add Parameter',
     'kv.addHeader': '+ Add Header',
+    // Auto-generated request headers preview (issue #204)
+    'autoHeaders.title': 'Auto-generated headers',
+    'autoHeaders.hiddenCount': '{n} hidden',
+    'autoHeaders.source.auth': 'Auth',
+    'autoHeaders.source.engine': 'Engine',
+    'autoHeaders.source.cookie': 'Cookie',
+    'autoHeaders.calculatedAtSend': 'calculated at send',
+    'autoHeaders.cookieJar': 'From the cookie jar, if any',
+    'autoHeaders.overridden': 'Overridden',
+    'autoHeaders.overriddenHint': 'Your header with the same name is sent instead',
     'kv.addField': '+ Add Field',
     'kv.addMetadata': '+ Add Metadata',
     'request.queryParams': 'Query Params',
@@ -395,6 +405,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'leftPanel.search': 'Search...',
     'leftPanel.collapseAll': 'Collapse all folders',
     'leftPanel.expandAll': 'Expand all folders',
+    'leftPanel.collapse': 'Collapse sidebar',
+    'leftPanel.expand': 'Expand sidebar',
     'leftPanel.new': 'New',
 
     // Import dropdown (sits next to the "+" New button)
@@ -3349,6 +3361,16 @@ const translations: Record<Locale, Record<string, string>> = {
     // Shell + request editor labels (issue #193)
     'kv.addParameter': '+ Parametre Ekle',
     'kv.addHeader': '+ Başlık Ekle',
+    // Otomatik oluşturulan istek başlıkları önizlemesi (issue #204)
+    'autoHeaders.title': 'Otomatik oluşturulan başlıklar',
+    'autoHeaders.hiddenCount': '{n} gizli',
+    'autoHeaders.source.auth': 'Yetkilendirme',
+    'autoHeaders.source.engine': 'Motor',
+    'autoHeaders.source.cookie': 'Çerez',
+    'autoHeaders.calculatedAtSend': 'gönderimde hesaplanır',
+    'autoHeaders.cookieJar': 'Varsa çerez deposundan',
+    'autoHeaders.overridden': 'Geçersiz kılındı',
+    'autoHeaders.overriddenHint': 'Bunun yerine aynı adlı kendi başlığınız gönderilir',
     'kv.addField': '+ Alan Ekle',
     'kv.addMetadata': '+ Üst Veri Ekle',
     'request.queryParams': 'Sorgu Parametreleri',
@@ -3550,6 +3572,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'leftPanel.search': 'Ara...',
     'leftPanel.collapseAll': 'Tüm klasörleri daralt',
     'leftPanel.expandAll': 'Tüm klasörleri genişlet',
+    'leftPanel.collapse': 'Kenar çubuğunu daralt',
+    'leftPanel.expand': 'Kenar çubuğunu genişlet',
     'leftPanel.new': 'Yeni',
 
     // Import dropdown
@@ -6341,6 +6365,17 @@ export function setLocale(locale: Locale): void {
 
 export function getLocale(): Locale {
   return currentLocale
+}
+
+/**
+ * Every locale's value for `key` — for matching text the app wrote in
+ * whichever language was active then (issue #201: a request created as
+ * "Yeni Uç Nokta" must still read as a default name after switching to EN).
+ */
+export function valuesInAllLocales(key: string): string[] {
+  return (Object.keys(translations) as Locale[])
+    .map((l) => translations[l][key])
+    .filter((v): v is string => typeof v === 'string')
 }
 
 /**

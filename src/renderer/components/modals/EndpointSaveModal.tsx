@@ -10,6 +10,7 @@ import {
   startFreshForNewRow,
 } from '../../stores/ai-chat-conversations'
 import { useTranslation } from '../../lib/i18n'
+import { autoRequestName } from '../../lib/endpoint-name'
 import {
   requestSettingsFor,
   savedRequestMetadata,
@@ -64,7 +65,14 @@ export default function EndpointSaveModal() {
 
   useEffect(() => {
     if (show && activeProjectId) {
-      setEndpointName(activeTab?.name || t('endpointSave.defaultName'))
+      // Issue #201: a placeholder name on an HTTP request ('New Endpoint', …)
+      // is replaced with one derived from the URL; the user can still edit it.
+      const derived = autoRequestName(
+        activeTab?.protocol,
+        activeTab?.name,
+        useRequestStore.getState().url,
+      )
+      setEndpointName(derived || activeTab?.name || t('endpointSave.defaultName'))
       // Reset folder selection on every open so the dropdown does not leak
       // across modal sessions (the modal is mounted at AppShell level and
       // only hidden via `if (!show) return null`, so state survives close).

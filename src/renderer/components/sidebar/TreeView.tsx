@@ -22,6 +22,7 @@ import CreateSuiteFromFolderModal from '../modals/CreateSuiteFromFolderModal'
 import { collectRequestIds } from '../../lib/folder-request-selection'
 import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
+import { DEFAULT_REQUEST_BY_PROTOCOL } from '../../lib/endpoint-name'
 import { openFolderRunner } from '../../lib/open-runner-tab'
 import { openEndpointTab, focusOpenTabFor } from '../../lib/open-endpoint-tab'
 import { openExampleTab } from '../../lib/open-example-tab'
@@ -689,24 +690,11 @@ export default function TreeView() {
         const folderId = parentNode.type === 'folder' ? parentNode.id : null
         // Default name + method follow the same conventions as the global
         // "+ New" dropdown (UX 4 — same operation, same defaults everywhere).
-        const defaultsByProtocol: Partial<Record<Protocol, { name: string; method: string }>> = {
-          // 'New Endpoint', not 'New Request': the Workbench treats a tab named
-          // exactly "New Request" with an empty url as the blank scratch tab
-          // and renders the protocol picker instead of the HTTP editor, so the
-          // freshly-created request opened onto the landing screen while every
-          // other protocol (all distinctly named) opened its editor (issue
-          // #69). This also restores the name the global "+ New" dropdown uses.
-          http: { name: 'New Endpoint', method: 'GET' },
-          soap: { name: 'New SOAP Method', method: 'POST' },
-          websocket: { name: 'New WebSocket', method: 'GET' },
-          graphql: { name: 'New GraphQL', method: 'POST' },
-          grpc: { name: 'New gRPC', method: 'POST' },
-          sse: { name: 'New SSE', method: 'GET' },
-          ai: { name: 'New AI Chat', method: 'POST' },
-          mcp: { name: 'New MCP', method: 'GET' },
-          socketio: { name: 'New Socket.IO', method: 'GET' },
-        }
-        const d = defaultsByProtocol[protocol] ?? defaultsByProtocol.http!
+        // HTTP's is 'New Endpoint', not 'New Request' (issue #69 — see the
+        // table's comment). The table is shared with `isDefaultRequestName`, so
+        // saving an HTTP request still named this renames it from its URL
+        // (issue #201).
+        const d = DEFAULT_REQUEST_BY_PROTOCOL[protocol] ?? DEFAULT_REQUEST_BY_PROTOCOL.http!
         const result = (await window.api?.savedRequest?.create({
           project_id: activeProjectId,
           folder_id: folderId,
