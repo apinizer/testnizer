@@ -11,6 +11,14 @@ import FormData from 'form-data'
 import { createReadStream, statSync } from 'fs'
 import { basename } from 'path'
 import { applyDefaultUserAgent } from '../lib/user-agent'
+// Default Content-Type per body type + its precedence check come from the same
+// module that renders the Headers tab's auto-generated section (issue #204), so
+// the preview cannot drift from what is sent.
+import {
+  defaultContentTypeForBody,
+  findHeaderKey,
+  hasUserContentType,
+} from '../../shared/http-auto-headers'
 import { parseSseBody } from '../lib/sse-body-parser'
 import { classifyTransportError, hintForHttpStatus } from '../lib/error-classifier'
 import { normaliseTlsVersion, isLegacyTlsVersion, type TlsOptions } from '../lib/tls-presets'
@@ -1013,23 +1021,23 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       switch (options.body.type) {
         case 'json':
           data = options.body.content
-          contentType = 'application/json'
+          contentType = defaultContentTypeForBody('json')
           break
         case 'xml':
           data = options.body.content
-          contentType = 'application/xml'
+          contentType = defaultContentTypeForBody('xml')
           break
         case 'text':
           data = options.body.content
-          contentType = 'text/plain'
+          contentType = defaultContentTypeForBody('text')
           break
         case 'html':
           data = options.body.content
-          contentType = 'text/html'
+          contentType = defaultContentTypeForBody('html')
           break
         case 'javascript':
           data = options.body.content
-          contentType = 'application/javascript'
+          contentType = defaultContentTypeForBody('javascript')
           break
         case 'urlencoded': {
           const urlParams = new URLSearchParams()
@@ -1041,7 +1049,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
             }
           }
           data = urlParams
-          contentType = 'application/x-www-form-urlencoded'
+          contentType = defaultContentTypeForBody('urlencoded')
           break
         }
         case 'form-data': {
@@ -1089,8 +1097,9 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
           // boundary-LESS `Content-Type: multipart/form-data`; keeping it makes a
           // strict server unable to parse ANY part (issue #46). Drop whatever
           // came in and apply the form's own header verbatim.
-          delete headers['Content-Type']
-          delete headers['content-type']
+          for (const k of Object.keys(headers)) {
+            if (k.toLowerCase() === 'content-type') delete headers[k]
+          }
           Object.assign(headers, form.getHeaders())
           // Sentinel so the default Content-Type assignment below skips us.
           contentType = headers['content-type'] ?? headers['Content-Type'] ?? 'multipart/form-data'
@@ -1100,20 +1109,26 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
           if (options.body.binaryPath) {
             const fs = await import('fs')
             data = fs.readFileSync(options.body.binaryPath).toString('base64')
-            contentType = 'application/octet-stream'
+            contentType = defaultContentTypeForBody('binary')
           }
           break
       }
     }
 
-    if (contentType && !headers['Content-Type']) {
+    // A user Content-Type in any case wins (issue #204). The check is shared
+    // with the Headers-tab preview so the two cannot disagree.
+    if (contentType && !hasUserContentType(headers)) {
       headers['Content-Type'] = contentType
     }
 
-    // Add cookies from jar
+    // Add cookies from jar — appended to the user's own Cookie header under
+    // ITS key, whatever the case. A second `Cookie` key next to a user
+    // `cookie` one made axios' case-insensitive merge keep only the jar value,
+    // dropping the user's cookie from the wire (issue #204).
     const jarCookies = await getJarCookieHeader(options.url, options.projectId)
     if (jarCookies) {
-      headers['Cookie'] = headers['Cookie'] ? `${headers['Cookie']}; ${jarCookies}` : jarCookies
+      const cookieKey = findHeaderKey(headers, 'Cookie') ?? 'Cookie'
+      headers[cookieKey] = headers[cookieKey] ? `${headers[cookieKey]}; ${jarCookies}` : jarCookies
     }
 
     // Build axios config

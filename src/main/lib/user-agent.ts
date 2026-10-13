@@ -5,6 +5,8 @@
 // reflect the installed app version), falling back to package.json for
 // non-Electron contexts (vitest, scripts, etc).
 
+import { formatDefaultUserAgent, hasHeaderIgnoreCase } from '../../shared/http-auto-headers'
+
 let cached: string | null = null
 
 function readVersion(): string {
@@ -30,7 +32,8 @@ function readVersion(): string {
 
 export function getDefaultUserAgent(): string {
   if (cached === null) {
-    cached = `Testnizer/${readVersion()}`
+    // Format shared with the Headers-tab preview (issue #204).
+    cached = formatDefaultUserAgent(readVersion())
   }
   return cached
 }
@@ -40,8 +43,7 @@ export function getDefaultUserAgent(): string {
  * has not provided one (case-insensitive). Mutates and returns `headers`.
  */
 export function applyDefaultUserAgent(headers: Record<string, string>): Record<string, string> {
-  const hasUserAgent = Object.keys(headers).some((k) => k.toLowerCase() === 'user-agent')
-  if (!hasUserAgent) {
+  if (!hasHeaderIgnoreCase(headers, 'User-Agent')) {
     headers['User-Agent'] = getDefaultUserAgent()
   }
   return headers
