@@ -1,6 +1,6 @@
-import { useState } from 'react'
 import { useRequestStore } from '../../stores/request.store'
 import { useTranslation } from '../../lib/i18n'
+import { useTabSubTab } from '../../lib/use-tab-sub-tab'
 import ParamsTab from './ParamsTab'
 import AuthTab from './AuthTab'
 import HeadersTab from './HeadersTab'
@@ -25,8 +25,12 @@ const REQ_TABS: { key: ReqTabKey; label: string; i18n: string }[] = [
   { key: 'settings', label: 'Settings', i18n: 'request.settings' },
 ]
 
+const REQ_TAB_KEYS: readonly ReqTabKey[] = REQ_TABS.map((tab) => tab.key)
+
 export default function RequestEditor() {
-  const [activeTab, setActiveTab] = useState<ReqTabKey>('params')
+  // Remembered per open request tab (issue #205): Workbench remounts this
+  // editor on every tab switch, so plain useState reset to Params each time.
+  const [activeTab, setActiveTab] = useTabSubTab<ReqTabKey>('request', REQ_TAB_KEYS, 'params')
   const params = useRequestStore((s) => s.params)
   const headers = useRequestStore((s) => s.headers)
   const body = useRequestStore((s) => s.body)
@@ -90,6 +94,7 @@ export default function RequestEditor() {
               key={tab.key}
               type="button"
               data-testid={`req-tab-${tab.key}`}
+              data-active={isActive}
               onClick={() => setActiveTab(tab.key)}
               className="flex cursor-pointer items-center gap-1 whitespace-nowrap px-2.5 transition-colors"
               style={{
