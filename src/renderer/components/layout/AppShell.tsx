@@ -25,6 +25,7 @@ import ConsolePanel from './ConsolePanel'
 import LoginScreen from '../auth/LoginScreen'
 import QuickTestShell from './QuickTestShell'
 import { useUIStore } from '../../stores/ui.store'
+import { isLeftPanelCollapsible } from '../../lib/sidebar-pages'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useAuthStore } from '../../stores/auth.store'
 import { useTabsStore } from '../../stores/tabs.store'
@@ -290,9 +291,7 @@ export default function AppShell() {
         <IconSidebar />
 
         {/* Left Panel — collection tree or history */}
-        {(!isLeftPanelCollapsed ||
-          activeSidebarPage === 'history' ||
-          activeSidebarPage === 'tests') && (
+        {(!isLeftPanelCollapsed || !isLeftPanelCollapsible(activeSidebarPage)) && (
           <>
             <LeftPanel />
             {/* Drag divider between the APIs tree and the workbench (issue #15) */}

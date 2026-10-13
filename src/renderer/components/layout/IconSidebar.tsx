@@ -4,6 +4,7 @@ import { T } from '../../styles/tokens'
 import ProjectIcon from '../shared/ProjectIcon'
 import { type SidebarPage } from '../../lib/sidebar-pages'
 import { useTranslation } from '../../lib/i18n'
+import { LeftPanelExpandButton } from './LeftPanelCollapseButton'
 
 interface NavItem {
   id: SidebarPage
@@ -141,6 +142,8 @@ export default function IconSidebar() {
   const activePage = useUIStore((s) => s.activeSidebarPage)
   const setActivePage = useUIStore((s) => s.setActiveSidebarPage)
   const setShowProjectDetailModal = useUIStore((s) => s.setShowProjectDetailModal)
+  const isLeftPanelCollapsed = useUIStore((s) => s.isLeftPanelCollapsed)
+  const setLeftPanelCollapsed = useUIStore((s) => s.setLeftPanelCollapsed)
   const activeProject = useWorkspaceStore((s) => {
     const pid = s.activeProjectId
     return s.projects.find((p) => p.id === pid)
@@ -170,6 +173,9 @@ export default function IconSidebar() {
       return
     }
     const page = item.id as SidebarPage
+    // A page icon is also the way back from a collapsed left panel (issue
+    // #202): picking any page — the current one included — shows its panel.
+    if (isLeftPanelCollapsed) setLeftPanelCollapsed(false)
     // Switching the sidebar page only swaps the left panel; the open tabs and
     // the active tab are global and stay put (a page switch must never hide or
     // deselect a tab — that lost unsaved request edits).
@@ -258,6 +264,7 @@ export default function IconSidebar() {
           width: '100%',
         }}
       >
+        <LeftPanelExpandButton />
         {bottomItems.map((item) => (
           <div
             key={item.id}
