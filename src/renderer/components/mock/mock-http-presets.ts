@@ -199,7 +199,10 @@ export function buildHttpPreset(id: MockHttpPresetId): HttpPreset {
       const token = generateMockToken()
       return {
         server: {
-          description: `Requests need "Authorization: Bearer ${token}" (GET /public is open).`,
+          // The token itself stays in Auth Config only: a description is plain
+          // text that travels with the project file (issue #177).
+          description:
+            'Requests need "Authorization: Bearer <token>" — the token is in Auth Config (GET /public is open).',
           authConfig: { type: 'bearer', tokens: [token] },
         },
         endpoints: [

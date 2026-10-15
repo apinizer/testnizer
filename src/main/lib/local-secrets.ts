@@ -13,7 +13,15 @@
  *      `initial_value` become ''.
  *   2. HTTP mock auth (`mock_servers.auth_config`, `mock_endpoints.auth_override`):
  *      bearer tokens, basic-auth passwords and API keys become '' — structure
- *      (type, user names, header/query name) stays.
+ *      (type, user names, header/query name) stays. The column is free JSON
+ *      typed in the mock editor, so the rule is by FIELD NAME, not by one
+ *      fixed shape: any credential-named field (`tokens`, `token`, `keys`,
+ *      `password`, `apiKey`, `secret`, … — the shared `isCredentialArgName`
+ *      rule, plurals included) plus `value(s)` (an API key's value carries no
+ *      credential-looking name), at any depth (issue #177 re-open). The same
+ *      values are also scrubbed out of the mock servers' and endpoints'
+ *      `description` (the "Auth required" preset used to write its token
+ *      there).
  *   3. Mock MCP `mock_mcp_servers.bearer_token` becomes ''.
  *   4. Client certificates: `passphrase` and `keystore_key_password` become ''
  *      (a NULL stays NULL — "no passphrase" must not turn into one). Both are
@@ -30,6 +38,9 @@
  * user fills it in; every mock runtime treats a blank secret as "no
  * credential" (fail-closed).
  */
+
+import { HISTORY_MASK, isCredentialArgName } from '../../shared/credential-headers'
+import { createScrubber, type Scrubber } from './sensitive-scrub'
 
 type Row = Record<string, unknown>
 
@@ -57,51 +68,160 @@ function blank(v: unknown): boolean {
 
 // ─── Mock auth JSON ──────────────────────────────────────────────
 
-interface MockAuthShape {
-  type?: unknown
-  tokens?: unknown
-  users?: unknown
-  keys?: unknown
-  [k: string]: unknown
+const MAX_DEPTH = 32
+
+/**
+ * Field names inside a mock auth config that hold a secret but carry no
+ * credential-looking word: an API key written as `{ name, value }`.
+ */
+const MOCK_AUTH_VALUE_FIELDS = new Set(['value', 'values'])
+
+/**
+ * Is this mock-auth field credential-bearing? The shared whole-word rule
+ * (`isCredentialArgName`) on the name and on its singular — the canonical
+ * shape stores lists (`tokens`, `keys`) — plus `value(s)`. Structural fields
+ * (`type`, `in`, `name`, `username`, `users`) never match.
+ */
+export function isMockAuthSecretField(name: string): boolean {
+  if (MOCK_AUTH_VALUE_FIELDS.has(name.toLowerCase())) return true
+  if (isCredentialArgName(name)) return true
+  return name.length > 1 && /s$/i.test(name) && isCredentialArgName(name.slice(0, -1))
 }
 
-function parseAuth(raw: unknown): MockAuthShape | null {
+const isRecord = (v: unknown): v is Row => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/**
+ * Rebuild `v` with `fn` applied to every string that sits under a
+ * credential-named field. Arrays inherit the field's verdict; an object
+ * decides again per key (so `{ auth: { type: 'bearer', … } }` keeps `type`).
+ */
+function mapSecretStrings(
+  v: unknown,
+  secret: boolean,
+  fn: (s: string) => string,
+  depth = 0,
+): unknown {
+  if (depth > MAX_DEPTH) return v
+  if (typeof v === 'string') return secret ? fn(v) : v
+  if (Array.isArray(v)) return v.map((x) => mapSecretStrings(x, secret, fn, depth + 1))
+  if (isRecord(v)) {
+    const out: Row = {}
+    for (const [k, x] of Object.entries(v)) {
+      out[k] = mapSecretStrings(x, isMockAuthSecretField(k), fn, depth + 1)
+    }
+    return out
+  }
+  return v
+}
+
+interface ParsedAuth {
+  auth: Row
+  /** The column held the JSON as a JSON string (`"{\"type\":…}"`) — written back the same way. */
+  doubleEncoded: boolean
+}
+
+/**
+ * A mock auth column → the auth object. Accepts a JSON string (the DB form),
+ * a JSON string that itself encodes a JSON string (one level), or an object.
+ * Anything else (`''` = no endpoint override, unparseable text) is null.
+ */
+function parseAuth(raw: unknown): ParsedAuth | null {
+  if (isRecord(raw)) return { auth: raw, doubleEncoded: false }
   if (typeof raw !== 'string' || raw.trim() === '') return null
   try {
-    const parsed: unknown = JSON.parse(raw)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as MockAuthShape)
-      : null
+    let parsed: unknown = JSON.parse(raw)
+    let doubleEncoded = false
+    if (typeof parsed === 'string') {
+      parsed = JSON.parse(parsed)
+      doubleEncoded = true
+    }
+    return isRecord(parsed) ? { auth: parsed, doubleEncoded } : null
   } catch {
     return null
   }
 }
 
+function serialiseAuth(raw: unknown, parsed: ParsedAuth, out: Row): unknown {
+  if (isRecord(raw)) return out
+  const json = JSON.stringify(out)
+  return parsed.doubleEncoded ? JSON.stringify(json) : json
+}
+
+/** Every non-empty secret value inside a mock auth column (for the description scrub). */
+export function mockAuthSecretValues(raw: unknown): string[] {
+  const parsed = parseAuth(raw)
+  if (!parsed) return []
+  const out: string[] = []
+  mapSecretStrings(parsed.auth, false, (s) => {
+    if (s !== '') out.push(s)
+    return s
+  })
+  return out
+}
+
 /**
  * Blank every secret inside a serialised mock `AuthConfig`. Values that are
  * not a JSON object ('' = no endpoint override, or something unparseable)
- * come back unchanged.
+ * and configs without a secret come back unchanged (same reference).
  */
 export function stripMockAuthJson(raw: unknown): unknown {
-  const auth = parseAuth(raw)
-  if (!auth) return raw
-  const out: MockAuthShape = { ...auth }
+  const parsed = parseAuth(raw)
+  if (!parsed) return raw
   let changed = false
-  if (Array.isArray(auth.tokens)) {
-    out.tokens = auth.tokens.map(() => '')
+  const out = mapSecretStrings(parsed.auth, false, (s) => {
+    if (s === '') return s
     changed = true
+    return ''
+  }) as Row
+  return changed ? serialiseAuth(raw, parsed, out) : raw
+}
+
+/** A list of user-like objects is matched by `username`, anything else by position. */
+function userKey(v: unknown): string | null {
+  return isRecord(v) && typeof v.username === 'string' ? v.username : null
+}
+
+/**
+ * `inc` with every blank secret refilled from the same place in `loc`.
+ * Lists of `{ username, … }` match by user name, other lists by position.
+ */
+function refill(
+  inc: unknown,
+  loc: unknown,
+  secret: boolean,
+  onFill: () => void,
+  depth = 0,
+): unknown {
+  if (depth > MAX_DEPTH) return inc
+  if (typeof inc === 'string') {
+    if (secret && inc === '' && typeof loc === 'string' && loc !== '') {
+      onFill()
+      return loc
+    }
+    return inc
   }
-  if (Array.isArray(auth.keys)) {
-    out.keys = auth.keys.map(() => '')
-    changed = true
+  if (Array.isArray(inc)) {
+    const locList = Array.isArray(loc) ? loc : []
+    const byUser = new Map<string, unknown>()
+    for (const l of locList) {
+      const k = userKey(l)
+      if (k !== null && !byUser.has(k)) byUser.set(k, l)
+    }
+    return inc.map((x, i) => {
+      const k = userKey(x)
+      const counterpart = k !== null ? byUser.get(k) : locList[i]
+      return refill(x, counterpart, secret, onFill, depth + 1)
+    })
   }
-  if (Array.isArray(auth.users)) {
-    out.users = auth.users.map((u) =>
-      u && typeof u === 'object' ? { ...(u as Row), password: '' } : u,
-    )
-    changed = true
+  if (isRecord(inc)) {
+    const locRow = isRecord(loc) ? loc : {}
+    const out: Row = {}
+    for (const [k, x] of Object.entries(inc)) {
+      out[k] = refill(x, locRow[k], isMockAuthSecretField(k), onFill, depth + 1)
+    }
+    return out
   }
-  return changed ? JSON.stringify(out) : raw
+  return inc
 }
 
 /**
@@ -113,46 +233,44 @@ export function stripMockAuthJson(raw: unknown): unknown {
 export function mergeMockAuthJson(incoming: unknown, local: unknown): unknown {
   const inc = parseAuth(incoming)
   const loc = parseAuth(local)
-  if (!inc || !loc || inc.type !== loc.type) return incoming
-  const out: MockAuthShape = { ...inc }
+  if (!inc || !loc || inc.auth.type !== loc.auth.type) return incoming
   let changed = false
+  const out = refill(inc.auth, loc.auth, false, () => {
+    changed = true
+  }) as Row
+  return changed ? serialiseAuth(incoming, inc, out) : incoming
+}
 
-  const refillList = (key: 'tokens' | 'keys'): void => {
-    const a = inc[key]
-    const b = loc[key]
-    if (!Array.isArray(a) || !Array.isArray(b)) return
-    out[key] = a.map((v, i) => {
-      if (v === '' && typeof b[i] === 'string' && b[i] !== '') {
-        changed = true
-        return b[i]
-      }
-      return v
-    })
-  }
-  refillList('tokens')
-  refillList('keys')
+// ─── Mock descriptions ───────────────────────────────────────────
 
-  if (Array.isArray(inc.users) && Array.isArray(loc.users)) {
-    const localPw = new Map<string, string>()
-    for (const u of loc.users) {
-      if (!u || typeof u !== 'object') continue
-      const { username, password } = u as Row
-      if (typeof username === 'string' && typeof password === 'string' && password !== '') {
-        localPw.set(username, password)
-      }
-    }
-    out.users = inc.users.map((u) => {
-      if (!u || typeof u !== 'object') return u
-      const row = u as Row
-      if (row.password !== '' || typeof row.username !== 'string') return u
-      const pw = localPw.get(row.username)
-      if (pw === undefined) return u
-      changed = true
-      return { ...row, password: pw }
-    })
-  }
+/**
+ * `description` with every mock auth secret of the export replaced by
+ * `HISTORY_MASK` (values shorter than `MIN_SECRET_LENGTH` are left alone, as
+ * everywhere else). The "Auth required" preset used to write its token there.
+ */
+function scrubDescriptions(rows: Row[] | undefined, scrub: Scrubber): Row[] | undefined {
+  if (!Array.isArray(rows) || scrub.needles.length === 0) return rows
+  return rows.map((r) => {
+    if (typeof r.description !== 'string') return r
+    const next = scrub.text(r.description)
+    return next === r.description ? r : { ...r, description: next }
+  })
+}
 
-  return changed ? JSON.stringify(out) : incoming
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Import side: an incoming description that carries masks keeps this
+ * machine's description when the local one is the same text with the
+ * secrets in place — a Pull never turns the local token into dots.
+ */
+export function keepLocalMaskedText(incoming: unknown, local: unknown): unknown {
+  if (typeof incoming !== 'string' || !incoming.includes(HISTORY_MASK)) return incoming
+  if (typeof local !== 'string' || local === incoming) return incoming
+  const pattern = incoming.split(HISTORY_MASK).map(escapeRegExp).join('[\\s\\S]+?')
+  return new RegExp(`^${pattern}$`).test(local) ? local : incoming
 }
 
 // ─── Export boundary ─────────────────────────────────────────────
@@ -182,8 +300,21 @@ export function stripLocalSecrets<T extends SecretBearingExport>(data: T): T {
   if (data.environmentVariables)
     out.environmentVariables = stripVariables(data.environmentVariables)
   if (data.globalVariables) out.globalVariables = stripVariables(data.globalVariables)
-  if (data.mockServers) out.mockServers = stripColumn(data.mockServers, 'auth_config')
-  if (data.mockEndpoints) out.mockEndpoints = stripColumn(data.mockEndpoints, 'auth_override')
+  // Every mock auth secret of the project, scrubbed out of free-text
+  // descriptions before the auth columns themselves are blanked.
+  const mockSecrets = createScrubber([
+    ...(data.mockServers ?? []).flatMap((r) => mockAuthSecretValues(r.auth_config)),
+    ...(data.mockEndpoints ?? []).flatMap((r) => mockAuthSecretValues(r.auth_override)),
+  ])
+  if (data.mockServers) {
+    out.mockServers = stripColumn(scrubDescriptions(data.mockServers, mockSecrets), 'auth_config')
+  }
+  if (data.mockEndpoints) {
+    out.mockEndpoints = stripColumn(
+      scrubDescriptions(data.mockEndpoints, mockSecrets),
+      'auth_override',
+    )
+  }
   if (Array.isArray(data.mockMcpServers)) {
     out.mockMcpServers = data.mockMcpServers.map((r) =>
       'bearer_token' in r ? { ...r, bearer_token: '' } : r,
@@ -228,14 +359,31 @@ export function keepLocalVariableSecrets(rows: Row[], lookup: LocalRowLookup): R
   })
 }
 
-/** Mock auth JSON columns: refill blank secrets from the local row. */
+/**
+ * Mock auth JSON columns: refill blank secrets from the local row. When the
+ * lookup also reads `description`, a masked description keeps the local text
+ * (see `keepLocalMaskedText`).
+ */
 export function keepLocalMockAuth(rows: Row[], column: string, lookup: LocalRowLookup): Row[] {
   return rows.map((row) => {
     if (typeof row.id !== 'string') return row
     const local = lookup(row.id)
     if (!local) return row
-    const next = mergeMockAuthJson(row[column], local[column])
-    return next === row[column] ? row : { ...row, [column]: next }
+    const next: Row = { ...row }
+    let changed = false
+    const auth = mergeMockAuthJson(row[column], local[column])
+    if (auth !== row[column]) {
+      next[column] = auth
+      changed = true
+    }
+    if ('description' in local) {
+      const description = keepLocalMaskedText(row.description, local.description)
+      if (description !== row.description) {
+        next.description = description
+        changed = true
+      }
+    }
+    return changed ? next : row
   })
 }
 
