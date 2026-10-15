@@ -529,6 +529,7 @@ import type {
   AiTurn,
   AiTurnMetrics,
 } from '../shared/ai-chat-types'
+import type { GitChangesSummary, GitCommitOutcome, GitDiscardOutcome } from '../shared/git-changes'
 type CollectionExportIpcResult = IpcResult<string> & { skipped?: ExportSkippedItem[] }
 
 interface ImportExportApi {
@@ -2039,6 +2040,12 @@ interface GitApi {
   /** `commitMessage` blank / omitted → automatic "Update <name> — <date>". */
   push(projectId: string, opts?: { commitMessage?: string }): Promise<IpcResult<GitPushOutcome>>
   pull(projectId: string): Promise<IpcResult<GitPullOutcome>>
+  /** Row-level summary of what a commit would write + ahead/behind (local refs, no fetch). */
+  changes(projectId: string): Promise<IpcResult<GitChangesSummary>>
+  /** Local commit, no push; blank message → "Update <name> — <date>". */
+  commit(projectId: string, message?: string): Promise<IpcResult<GitCommitOutcome>>
+  /** Restore the project (DB + checkout file) to the last commit. */
+  discard(projectId: string): Promise<IpcResult<GitDiscardOutcome>>
   status(projectId: string): Promise<IpcResult<GitStatusResult>>
   deleteBranch(payload: {
     projectId: string

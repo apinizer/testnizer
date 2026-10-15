@@ -746,6 +746,11 @@ const api = {
     push: (projectId: string, opts?: unknown): Promise<unknown> =>
       ipcRenderer.invoke('git:push', projectId, opts),
     pull: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:pull', projectId),
+    // Issue #207: local-only commit, discard and the pre-commit summary.
+    changes: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:changes', projectId),
+    commit: (projectId: string, message?: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:commit', projectId, message),
+    discard: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:discard', projectId),
     status: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:status', projectId),
     deleteBranch: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('git:deleteBranch', payload),
