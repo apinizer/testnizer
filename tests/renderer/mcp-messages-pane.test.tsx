@@ -101,6 +101,25 @@ describe('remembered open state and height', () => {
 })
 
 describe('auto-scroll', () => {
+  // @tanstack/virtual-core debounces every scroll event with a 150 ms
+  // `targetWindow.setTimeout` (isScrollingResetDelay) that its unmount cleanup
+  // does NOT cancel. Under vitest `document.defaultView === globalThis`, so that
+  // is a plain Node timer which jsdom's window.close() cannot stop: on a slow CI
+  // runner it fired after env teardown and React's `window.event` lookup threw
+  // "window is not defined" (an Unhandled Error after all tests passed). Fake
+  // timers make the debounce ours: drain it while the tree is still mounted and
+  // the environment is alive, and prove nothing is left pending.
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    act(() => {
+      vi.runOnlyPendingTimers()
+    })
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+
   function stubScroll(el: HTMLElement, sizes: { scrollHeight: number; clientHeight: number }) {
     Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => sizes.scrollHeight })
     Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => sizes.clientHeight })
