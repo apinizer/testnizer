@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useResponseStore } from '../../stores/response.store'
+import { useTranslation } from '../../lib/i18n'
 import type { SseEvent } from '../../types'
 
 /**
@@ -48,13 +49,14 @@ function truncate(str: string, max: number): string {
  * connection store.
  */
 export default function EventsTab() {
+  const { t } = useTranslation()
   const events = useResponseStore((s) => s.response?.sseEvents) as SseEvent[] | undefined
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
 
   if (!events || events.length === 0) {
     return (
       <div className="p-4 text-center" style={{ color: 'var(--hint)' }}>
-        No events found in response body.
+        {t('response.events.none')}
       </div>
     )
   }

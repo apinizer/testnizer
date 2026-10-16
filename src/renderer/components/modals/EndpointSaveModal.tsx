@@ -249,6 +249,9 @@ export default function EndpointSaveModal() {
             protocol: protocol as Tab['protocol'],
           })
         }
+        // Confirm the save (issue #212) — the modal closes, so without this
+        // nothing but the vanished dirty dot said it worked.
+        toast.success(t('toast.requestSaved'))
         handleClose()
       }
     } catch (e) {
@@ -661,6 +664,7 @@ export default function EndpointSaveModal() {
             type="button"
             onClick={handleSave}
             disabled={saving}
+            data-testid="endpoint-save-submit"
             style={{
               padding: '8px 18px',
               background: saving ? 'var(--hint)' : '#2D5FA0',

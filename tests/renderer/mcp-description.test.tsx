@@ -48,8 +48,7 @@ function toggle(): HTMLElement {
 function expectStickyActions(headerId: string, actionsId: string, buttonId: string): void {
   const header = screen.getByTestId(headerId)
   const actions = screen.getByTestId(actionsId)
-  expect(header).toHaveClass('overflow-y-auto', 'min-h-0', 'shrink')
-  expect(header).not.toHaveClass('shrink-0')
+  expect(header).toHaveClass('overflow-y-auto', 'min-h-0', 'h-full')
   expect(header).toContainElement(actions)
   expect(actions).toHaveClass('sticky', 'bottom-0', 'bg-[var(--white)]')
   expect(actions).toContainElement(screen.getByTestId(buttonId))
@@ -59,7 +58,15 @@ function expectStickyActions(headerId: string, actionsId: string, buttonId: stri
   expect(header.firstElementChild).not.toHaveClass('pb-2.5')
   expect(actions).toHaveClass('pb-2.5')
   expect(actions).not.toHaveClass('-mb-2.5')
-  expect(header.nextElementSibling).toHaveClass('flex-1', 'overflow-auto', 'min-h-[5rem]')
+  // Issue #211: header and result are the two panels of a vertical split; the
+  // result keeps its own scroll and a pixel floor (CALL_RESULT_MIN_PX).
+  const headerPanel = header.parentElement
+  expect(headerPanel).toHaveAttribute('data-panel-id', 'mcp-call-header-panel')
+  const handle = headerPanel?.nextElementSibling
+  expect(handle).toHaveAttribute('data-testid', 'mcp-call-split-handle')
+  const result = handle?.nextElementSibling?.firstElementChild
+  expect(result).toHaveAttribute('data-testid', 'mcp-call-result')
+  expect(result).toHaveClass('h-full', 'overflow-auto')
 }
 
 beforeEach(() => {

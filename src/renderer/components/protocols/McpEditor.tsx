@@ -1,3 +1,5 @@
+import { useRef } from 'react'
+import { Panel, PanelGroup } from 'react-resizable-panels'
 import { useMcpStore, MCP_EXPLORER_SECTION } from '../../stores/mcp.store'
 import { useTranslation } from '../../lib/i18n'
 import McpConnectionBar from './mcp/McpConnectionBar'
@@ -8,6 +10,16 @@ import McpResourcePane from './mcp/McpResourcePane'
 import McpPromptPane from './mcp/McpPromptPane'
 import McpMessagesPane from './mcp/McpMessagesPane'
 import { MCP_EXTRA_SECTIONS } from './mcp/sections'
+import McpSplitHandle from './mcp/McpSplitHandle'
+import {
+  EXPLORER_PANEL_ID,
+  LIST_MIN_PX,
+  LIST_PANEL_ID,
+  MCP_LIST_SPLIT_ID,
+  mcpSplitStorage,
+  pxToPercent,
+  useElementLength,
+} from './mcp/mcp-split-layout'
 
 const EXPLORER = MCP_EXPLORER_SECTION
 
@@ -15,9 +27,9 @@ const EXPLORER = MCP_EXPLORER_SECTION
  * MCP request editor (issues #137, #139) — a thin host. Connection bar, the
  * Postman-style config strip (Authorization · Headers · Environment), then
  * the capability list on the left and the matching pane on the right
- * (Tools | Resources | Prompts), the messages pane at the bottom. Extra
- * right-pane tabs come from `mcp/sections.ts`, so later phases plug in
- * without editing this file.
+ * (Tools | Resources | Prompts) behind a drag divider (#211), the messages
+ * pane at the bottom. Extra right-pane tabs come from `mcp/sections.ts`, so
+ * later phases plug in without editing this file.
  */
 export default function McpEditor() {
   const { t } = useTranslation()
@@ -27,6 +39,9 @@ export default function McpEditor() {
   const setRightTab = useMcpStore((s) => s.setSection)
   const extra = MCP_EXTRA_SECTIONS.find((s) => s.id === rightTab)
   const ExtraComponent = extra?.component
+  const bodyRef = useRef<HTMLDivElement>(null)
+  // Pixel floor for the list (its tabs + counts), as a share of the body width.
+  const listMin = pxToPercent(LIST_MIN_PX, useElementLength(bodyRef, 'width'), 18, 45)
 
   return (
     <div
@@ -36,45 +51,57 @@ export default function McpEditor() {
       <McpConnectionBar />
       <McpConfigTabs />
       {/* A floor for the capability pane: the Messages pane shrinks before it does. */}
-      <div data-testid="mcp-editor-body" className="flex min-h-[120px] flex-1 overflow-hidden">
-        <McpCapabilityList />
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {MCP_EXTRA_SECTIONS.length > 0 && (
-            <div
-              role="tablist"
-              className="flex shrink-0 gap-1 border-b border-[var(--border)] px-2"
-            >
-              {[{ id: EXPLORER, label: t('mcp.section.explorer') }, ...MCP_EXTRA_SECTIONS].map(
-                (s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={rightTab === s.id}
-                    data-testid={`mcp-section-${s.id}`}
-                    onClick={() => setRightTab(s.id)}
-                    className={`cursor-pointer border-x-0 border-t-0 border-b-2 bg-transparent px-2.5 py-1.5 text-[12px] ${
-                      rightTab === s.id
-                        ? 'border-[var(--accent)] text-[var(--accent-text)]'
-                        : 'border-transparent text-[var(--muted)]'
-                    }`}
-                  >
-                    {s.id === EXPLORER ? s.label : t(s.label)}
-                  </button>
-                ),
+      <div
+        ref={bodyRef}
+        data-testid="mcp-editor-body"
+        className="flex min-h-[120px] flex-1 overflow-hidden"
+      >
+        {/* Issue #211: list ↔ Explorer is a drag divider, remembered per user. */}
+        <PanelGroup direction="horizontal" autoSaveId={MCP_LIST_SPLIT_ID} storage={mcpSplitStorage}>
+          <Panel id={LIST_PANEL_ID} order={1} defaultSize={26} minSize={listMin} maxSize={60}>
+            <McpCapabilityList />
+          </Panel>
+          <McpSplitHandle direction="horizontal" testId="mcp-list-split-handle" />
+          <Panel id={EXPLORER_PANEL_ID} order={2} defaultSize={74} minSize={40}>
+            <div className="flex h-full min-w-0 flex-col overflow-hidden">
+              {MCP_EXTRA_SECTIONS.length > 0 && (
+                <div
+                  role="tablist"
+                  className="flex shrink-0 gap-1 border-b border-[var(--border)] px-2"
+                >
+                  {[{ id: EXPLORER, label: t('mcp.section.explorer') }, ...MCP_EXTRA_SECTIONS].map(
+                    (s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={rightTab === s.id}
+                        data-testid={`mcp-section-${s.id}`}
+                        onClick={() => setRightTab(s.id)}
+                        className={`cursor-pointer border-x-0 border-t-0 border-b-2 bg-transparent px-2.5 py-1.5 text-[12px] ${
+                          rightTab === s.id
+                            ? 'border-[var(--accent)] text-[var(--accent-text)]'
+                            : 'border-transparent text-[var(--muted)]'
+                        }`}
+                      >
+                        {s.id === EXPLORER ? s.label : t(s.label)}
+                      </button>
+                    ),
+                  )}
+                </div>
+              )}
+              {ExtraComponent ? (
+                <ExtraComponent />
+              ) : capabilityTab === 'resources' ? (
+                <McpResourcePane />
+              ) : capabilityTab === 'prompts' ? (
+                <McpPromptPane />
+              ) : (
+                <McpToolPane />
               )}
             </div>
-          )}
-          {ExtraComponent ? (
-            <ExtraComponent />
-          ) : capabilityTab === 'resources' ? (
-            <McpResourcePane />
-          ) : capabilityTab === 'prompts' ? (
-            <McpPromptPane />
-          ) : (
-            <McpToolPane />
-          )}
-        </div>
+          </Panel>
+        </PanelGroup>
       </div>
       <McpMessagesPane />
     </div>

@@ -48,6 +48,24 @@ export function blankToolDraft(name: string): MockMcpToolDraft {
   })
 }
 
+/**
+ * What "Add resource" inserts. Shared with the blank-default check before
+ * Save (issue #210) so the two cannot drift.
+ */
+export function blankResource(n: number): MockMcpResource {
+  return { uri: `mock://resource-${n}`, name: `resource-${n}`, mimeType: 'text/plain', text: '' }
+}
+
+/** What "Add prompt" inserts (shared with the blank-default check, issue #210). */
+export function blankPrompt(name: string): MockMcpPrompt {
+  return {
+    name,
+    description: '',
+    arguments: [{ name: 'topic', required: true }],
+    messages: [{ role: 'user', text: 'Tell me about {{args.topic}}.' }],
+  }
+}
+
 export function serverToDraft(s: MockMcpServer): MockMcpServerDraft {
   return {
     name: s.name,

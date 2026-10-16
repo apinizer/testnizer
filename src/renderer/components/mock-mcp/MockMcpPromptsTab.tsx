@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
-import type { MockMcpDraftUpdater, MockMcpPrompt, MockMcpServerDraft } from '../../types/mock-mcp'
+import type { MockMcpDraftUpdater, MockMcpServerDraft } from '../../types/mock-mcp'
+import { blankPrompt } from './mock-mcp-draft'
 import { uniqueName } from './mock-mcp-presets'
 import MockMcpPromptForm from './MockMcpPromptForm'
 import { GhostButton } from './ui'
@@ -26,12 +27,7 @@ export default function MockMcpPromptsTab({
       draft.prompts.map((p) => p.name),
       '_',
     )
-    const p: MockMcpPrompt = {
-      name,
-      description: '',
-      arguments: [{ name: 'topic', required: true }],
-      messages: [{ role: 'user', text: 'Tell me about {{args.topic}}.' }],
-    }
+    const p = blankPrompt(name)
     change((d) => ({ ...d, prompts: [...d.prompts, p] }))
     setSelected(draft.prompts.length)
   }

@@ -25,6 +25,7 @@ import { t } from '../../lib/i18n'
 import { DEFAULT_REQUEST_BY_PROTOCOL } from '../../lib/endpoint-name'
 import { openFolderRunner } from '../../lib/open-runner-tab'
 import { openEndpointTab, focusOpenTabFor } from '../../lib/open-endpoint-tab'
+import { exportProjectAs, type ProjectExportFormat } from '../../lib/project-export'
 import { openExampleTab } from '../../lib/open-example-tab'
 import { useSavedResponseStore } from '../../stores/saved-response.store'
 import {
@@ -889,23 +890,15 @@ export default function TreeView() {
   }, [])
 
   const handleExport = useCallback(
-    async (node: TreeNode) => {
+    async (node: TreeNode, format?: ProjectExportFormat) => {
       try {
         if (node.type === 'module') {
-          // Project-root → full project export (kind: 'project') instead of
-          // routing through exportFolder, which would look up a folders row
-          // with id "project-<uuid>" and return a stub. v1.3.1 B22.
+          // Project-root → full project export instead of routing through
+          // exportFolder, which would look up a folders row with id
+          // "project-<uuid>" and return a stub (v1.3.1 B22). The submenu picks
+          // the format; the shared action owns dialog + toasts (issue #208).
           if (!activeProjectId) return
-          const result = (await window.api?.save?.exportProject?.(activeProjectId)) as {
-            success: boolean
-            error?: string
-          }
-          if (result?.success) {
-            toast.success(t('toast.exported'))
-          } else if (result?.error && result.error !== 'Cancelled') {
-            console.error('Export project failed:', result.error)
-            toast.error(`${t('toast.exportFailed')}: ${result.error}`)
-          }
+          await exportProjectAs(activeProjectId, format ?? 'testnizer', node.label)
           return
         }
         if (node.type !== 'folder') return

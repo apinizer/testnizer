@@ -11,6 +11,8 @@ import { isRequestLikeTab } from './mark-dirty'
 import { saveActiveRequestInPlace } from './save-active-request'
 import { runActiveRequest } from './run-active-request'
 import { toast } from './toast'
+import { t } from './i18n'
+import { requestMockMcpSave } from './mock-mcp-save-request'
 
 interface ShortcutHandler {
   key: string
@@ -96,6 +98,18 @@ export function useKeyboardShortcuts(): void {
             // A saved-example tab is read-only: nothing to save, and the
             // project-export modal would be a non-sequitur here.
             if (active?.protocol === 'example') return
+            // Non-request tabs that own their data never open a Save dialog
+            // (issue #210 follow-up). With focus inside the Mock MCP editor
+            // its own handler saves and stops the event; with focus outside
+            // (tab strip, tree) the chord lands here and is handed to that
+            // editor's save — blank-default warning included. The HTTP mock
+            // editor saves each field on blur and the Runner has nothing to
+            // save, so for them the chord is simply swallowed.
+            if (active?.protocol === 'mockMcpServer') {
+              if (active.mockMcpServerId) requestMockMcpSave(active.mockMcpServerId)
+              return
+            }
+            if (active?.protocol === 'mockServer' || active?.protocol === 'runner') return
             const isRequestTab = !!active && isRequestLikeTab(active)
             if (!isRequestTab) {
               ui.setShowSaveModal(true)
@@ -117,8 +131,14 @@ export function useKeyboardShortcuts(): void {
                   return
                 }
                 if (!result.success) {
-                  toast.error(result.error || 'Save failed')
+                  toast.error(result.error || t('toast.saveFailed'))
+                  return
                 }
+                // Confirm the save (issue #212) — every protocol goes through
+                // this one call site. Not inside `saveActiveRequestInPlace`:
+                // the UrlBar Save button shows its own inline confirmation
+                // and the close / run dialogs need no message.
+                toast.success(t('toast.requestSaved'))
               })
               return
             }

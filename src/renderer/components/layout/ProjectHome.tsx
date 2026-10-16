@@ -1,11 +1,21 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, Trash2, MoreHorizontal, GitBranch, Pencil, Download, Copy } from 'lucide-react'
+import {
+  Plus,
+  Trash2,
+  MoreHorizontal,
+  GitBranch,
+  Pencil,
+  Download,
+  Copy,
+  Upload,
+} from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
 import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 import { isMac } from '../../lib/platform'
+import { useProjectExportStore } from '../../stores/project-export.store'
 import type { Project } from '../../types'
 import ProjectIcon from '../shared/ProjectIcon'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
@@ -86,6 +96,13 @@ export default function ProjectHome() {
     setContextMenuId(null)
     setRenamingId(project.id)
     setRenameValue(project.display_name || project.name)
+  }
+
+  // Export without opening the project (issue #208): the format picker is
+  // mounted next to ProjectHome in AppShell's no-project branch.
+  function handleExportProject(project: Project) {
+    setContextMenuId(null)
+    useProjectExportStore.getState().openPicker(project.id, project.display_name || project.name)
   }
 
   async function handleDuplicateProject(project: Project) {
@@ -450,6 +467,18 @@ export default function ProjectHome() {
                     >
                       <Copy size={14} />
                       {t('home.duplicate') || 'Duplicate'}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="home-card-export"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleExportProject(project)
+                      }}
+                      className="flex w-full cursor-pointer items-center gap-2 rounded-md border-none bg-transparent px-2 py-1.5 text-left text-[var(--text)] hover:bg-[var(--surface)]"
+                    >
+                      <Upload size={14} />
+                      {t('home.export')}
                     </button>
                     <button
                       type="button"
