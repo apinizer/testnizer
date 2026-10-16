@@ -266,6 +266,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
         'ui.rightPanelWidth',
         'ui.responseHeaderKeyWidth',
         'ui.requestKeyColWidth',
+        'ui.leftPanelCollapsed',
       ] as const
       const results = await Promise.all(keys.map((k) => api.get!(k)))
       const [
@@ -278,6 +279,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
         rightWRes,
         hdrKeyWRes,
         reqKeyWRes,
+        leftCollapsedRes,
       ] = results
       const patch: Partial<UIStore> = {}
       const themeVal = themeRes?.data as Theme | undefined
@@ -322,6 +324,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
       const reqKeyW = reqKeyWRes?.data
       if (typeof reqKeyW === 'number' && reqKeyW >= 15 && reqKeyW <= 60)
         patch.requestKeyColWidth = reqKeyW
+      const leftCollapsed = leftCollapsedRes?.data
+      if (typeof leftCollapsed === 'boolean') patch.isLeftPanelCollapsed = leftCollapsed
       set(patch)
     } catch {
       /* noop */
@@ -355,9 +359,13 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   setSplitPosition: (position) => set({ splitPosition: Math.max(22, Math.min(78, position)) }),
 
-  toggleLeftPanel: () => set((state) => ({ isLeftPanelCollapsed: !state.isLeftPanelCollapsed })),
+  // Collapsed state survives a restart (issue #202), persisted like the width.
+  toggleLeftPanel: () => get().setLeftPanelCollapsed(!get().isLeftPanelCollapsed),
 
-  setLeftPanelCollapsed: (collapsed) => set({ isLeftPanelCollapsed: collapsed }),
+  setLeftPanelCollapsed: (collapsed) => {
+    set({ isLeftPanelCollapsed: collapsed })
+    void persistSetting('ui.leftPanelCollapsed', collapsed)
+  },
 
   setActiveSidebarPage: (page) => {
     // The sidebar page only swaps the LEFT panel (tree/tools). Open tabs and the

@@ -8,6 +8,7 @@ import McpResultTabs from './McpResultTabs'
 import McpDescription from './McpDescription'
 import McpRunButton from './McpRunButton'
 import McpCallHeader from './McpCallHeader'
+import McpCallSplit from './McpCallSplit'
 import McpCallNotes from './McpCallNotes'
 import McpCopyAsMenu from './McpCopyAsMenu'
 import { resourceCopyText } from './call-ui'
@@ -44,14 +45,12 @@ export default function McpResourcePane() {
   const mime = item?.mimeType
   const unexpanded = hasUnexpandedTemplate(draft)
 
+  // Issue #155: same layout as McpToolPane — a scrolling header whose action row
+  // (URI + Read, with its template hint) is sticky at the bottom; floored result.
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Issue #155: same layout as McpToolPane — a scrolling header whose action row
-          (URI + Read, with its template hint) is sticky at the bottom; floored result. */}
-      <div
-        data-testid="mcp-resource-header"
-        className="min-h-0 shrink overflow-y-auto border-b border-[var(--border)]"
-      >
+    <McpCallSplit
+      headerTestId="mcp-resource-header"
+      header={
         <div className="flex flex-col gap-2 px-3.5 pt-2.5">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="font-semibold text-[var(--text)]">
@@ -112,30 +111,34 @@ export default function McpResourcePane() {
             )}
           </div>
         </div>
-      </div>
-      <div className="min-h-[5rem] flex-1 overflow-auto p-3.5">
-        <SectionLabel
-          right={<McpCallHeader meta={meta} copyText={() => resourceCopyText(content)} />}
-        >
-          {t('mcp.resource.contents')}
-        </SectionLabel>
-        <McpCallNotes />
-        {error ? (
-          <ErrorLine testId="mcp-resource-error">{error}</ErrorLine>
-        ) : meta?.status === 'cancelled' ? (
-          <div data-testid="mcp-call-cancelled" className="text-[12px] text-[var(--muted)]">
-            {t('mcp.call.cancelledBody')}
-          </div>
-        ) : content ? (
-          <McpResultTabs key={tabId ?? ''} tests={tests}>
-            <McpResultView
-              result={{ content: content.contents.map((c) => ({ type: 'resource', resource: c })) }}
-            />
-          </McpResultTabs>
-        ) : (
-          <EmptyState icon={Inbox} title={t('mcp.resource.none')} variant="compact" size="sm" />
-        )}
-      </div>
-    </div>
+      }
+      result={
+        <>
+          <SectionLabel
+            right={<McpCallHeader meta={meta} copyText={() => resourceCopyText(content)} />}
+          >
+            {t('mcp.resource.contents')}
+          </SectionLabel>
+          <McpCallNotes />
+          {error ? (
+            <ErrorLine testId="mcp-resource-error">{error}</ErrorLine>
+          ) : meta?.status === 'cancelled' ? (
+            <div data-testid="mcp-call-cancelled" className="text-[12px] text-[var(--muted)]">
+              {t('mcp.call.cancelledBody')}
+            </div>
+          ) : content ? (
+            <McpResultTabs key={tabId ?? ''} tests={tests}>
+              <McpResultView
+                result={{
+                  content: content.contents.map((c) => ({ type: 'resource', resource: c })),
+                }}
+              />
+            </McpResultTabs>
+          ) : (
+            <EmptyState icon={Inbox} title={t('mcp.resource.none')} variant="compact" size="sm" />
+          )}
+        </>
+      }
+    />
   )
 }

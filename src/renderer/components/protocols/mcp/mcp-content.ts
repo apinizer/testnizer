@@ -63,6 +63,12 @@ export function fileNameFromUri(uri: string): string {
   return last && last.length < 120 ? last : 'resource.bin'
 }
 
+/** Download name for an image block: `image/png` → `image.png`, anything odd → `image.bin`. */
+export function imageFileName(mimeType: string): string {
+  const sub = (mimeType.split('/')[1] ?? '').split('+')[0]
+  return /^[a-z0-9-]{1,12}$/i.test(sub) ? `image.${sub.toLowerCase()}` : 'image.bin'
+}
+
 /** Pretty-print text that is JSON; anything else is returned as-is. */
 export function prettyIfJson(text: string): string {
   const trimmed = text.trim()

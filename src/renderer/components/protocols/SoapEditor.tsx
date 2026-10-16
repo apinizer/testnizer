@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Send } from 'lucide-react'
 import { useSoapStore, type SoapMode } from '../../stores/soap.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { registerSoapTabActivity, openWsSecurityToolWith } from '../../lib/tools-bridge'
+import { useTabSubTab } from '../../lib/use-tab-sub-tab'
 import SoapWsdlImport from './SoapWsdlImport'
 import SoapOperationSelector from './SoapOperationSelector'
 import SoapBodyEditor from './SoapBodyEditor'
@@ -15,6 +16,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import MonacoWrapper from '../shared/MonacoWrapper'
 
 type SoapDetailTab = 'body' | 'auth' | 'headers'
+const SOAP_DETAIL_TABS: readonly SoapDetailTab[] = ['body', 'auth', 'headers']
 
 function RawXmlBodyEditor() {
   const rawXml = useSoapStore((s) => s.rawXml)
@@ -38,7 +40,8 @@ export default function SoapEditor() {
   // the Manual form instead of WSDL Import (issue #124).
   const mode: SoapMode = useSoapStore((s) => s.mode)
   const setMode = useSoapStore((s) => s.setMode)
-  const [detailTab, setDetailTab] = useState<SoapDetailTab>('body')
+  // Remembered per open tab (issue #205) — this editor remounts on tab switch.
+  const [detailTab, setDetailTab] = useTabSubTab<SoapDetailTab>('soap', SOAP_DETAIL_TABS, 'body')
 
   useEffect(() => {
     if (activeTabId) registerSoapTabActivity(activeTabId)
@@ -126,6 +129,8 @@ export default function SoapEditor() {
                 <button
                   key={tab.key}
                   type="button"
+                  data-testid={`soap-detail-tab-${tab.key}`}
+                  data-active={isActive}
                   onClick={() => setDetailTab(tab.key)}
                   className="flex cursor-pointer items-center gap-1 whitespace-nowrap px-3 transition-colors"
                   style={{

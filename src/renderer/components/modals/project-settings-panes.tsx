@@ -9,6 +9,8 @@ import { isMac } from '../../lib/platform'
 import { useNumberDraft } from '../../lib/number-draft'
 import { FONT_PRESETS } from '../../stores/ui.store'
 import { toast } from '../../lib/toast'
+import { projectDisplayName } from '../../lib/project-export'
+import { useProjectExportStore } from '../../stores/project-export.store'
 
 // ════════════════════════════════════════════════════════════════
 // Shared types & styles
@@ -627,37 +629,12 @@ export function StoragePane(props: {
   onToggleShowToken: () => void
 }) {
   const { t } = useTranslation()
-  async function handleExportProject() {
-    try {
-      const result = (await window.api?.save?.exportProject?.(props.projectId)) as
-        | {
-            success: boolean
-            error?: string
-            data?: {
-              path?: string
-              counts?: {
-                folders: number
-                endpoints: number
-                savedRequests: number
-                environments: number
-                testSuites: number
-                mockServers: number
-              }
-            }
-          }
-        | undefined
-      if (result?.success && result.data?.counts) {
-        const c = result.data.counts
-        toast.success(
-          `Exported ${c.folders} folder(s), ${c.endpoints} endpoint(s), ${c.environments} env(s)`,
-        )
-      } else if (!result?.success && result?.error && result.error !== 'Cancelled') {
-        toast.error(result.error)
-      }
-    } catch (err) {
-      console.error(err)
-      toast.error('Export project failed')
-    }
+  // Format picker → shared `exportProjectAs` (issue #208); the toast used to
+  // be hard-coded English here.
+  function handleExportProject() {
+    useProjectExportStore
+      .getState()
+      .openPicker(props.projectId, projectDisplayName(props.projectId))
   }
 
   return (
@@ -1276,22 +1253,9 @@ export function DataPane({
   const { t } = useTranslation()
   const [clearing, setClearing] = useState<'cache' | 'history' | null>(null)
 
-  async function handleExport() {
-    try {
-      const result = (await window.api?.save?.exportProject?.(projectId)) as
-        | { success: boolean; error?: string }
-        | undefined
-      // Success feedback was missing entirely (issue #38) — users had to go
-      // find the file in Finder to know it worked.
-      if (result?.success) {
-        toast.success(t('data.exportSuccess'))
-      } else if (result?.error && result.error !== 'Cancelled') {
-        toast.error(`${t('data.exportFailed')}: ${result.error}`)
-      }
-    } catch (err) {
-      console.error(err)
-      toast.error(t('data.exportFailed'))
-    }
+  // Format picker → shared `exportProjectAs` (issue #208).
+  function handleExport() {
+    useProjectExportStore.getState().openPicker(projectId, projectDisplayName(projectId))
   }
 
   async function handleClearHistory() {

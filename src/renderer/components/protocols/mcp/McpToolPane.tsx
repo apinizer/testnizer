@@ -9,6 +9,7 @@ import McpDescription from './McpDescription'
 import McpArgsEditor from './McpArgsEditor'
 import McpRunButton from './McpRunButton'
 import McpCallHeader from './McpCallHeader'
+import McpCallSplit from './McpCallSplit'
 import McpCallNotes from './McpCallNotes'
 import McpHiddenArgsNote from './McpHiddenArgsNote'
 import McpCopyAsMenu from './McpCopyAsMenu'
@@ -62,17 +63,15 @@ export default function McpToolPane() {
   }
   const hasSchema = !!def?.inputSchema && Object.keys(def.inputSchema).length > 0
 
+  // Issue #155: the header scrolls as ONE unit above a floored result block and its
+  // action row is sticky at the bottom, so Invoke stays visible however long the
+  // description or tall the textarea. The column lives in an inner div: as a direct
+  // flex child the textarea (a scroll container, min-height 0) would be squeezed
+  // instead of the header scrolling.
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Issue #155: the header scrolls as ONE unit above a floored result block and its
-          action row is sticky at the bottom, so Invoke stays visible however long the
-          description or tall the textarea. The column lives in an inner div: as a direct
-          flex child the textarea (a scroll container, min-height 0) would be squeezed
-          instead of the header scrolling. */}
-      <div
-        data-testid="mcp-tool-header"
-        className="min-h-0 shrink overflow-y-auto border-b border-[var(--border)]"
-      >
+    <McpCallSplit
+      headerTestId="mcp-tool-header"
+      header={
         <div className="flex flex-col gap-2 px-3.5 pt-2.5">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="font-semibold text-[var(--text)]">{def?.title || selectedTool}</span>
@@ -130,31 +129,33 @@ export default function McpToolPane() {
             <McpCopyAsMenu capability="tools" />
           </div>
         </div>
-      </div>
-      <div className="min-h-[5rem] flex-1 overflow-auto p-3.5">
-        <SectionLabel
-          right={<McpCallHeader meta={toolMeta} copyText={() => toolResultCopyText(result)} />}
-        >
-          {t('mcp.result.title')}
-        </SectionLabel>
-        <McpCallNotes />
-        {resultError ? (
-          <ErrorLine testId="mcp-result-call-error">{resultError}</ErrorLine>
-        ) : toolMeta?.status === 'cancelled' ? (
-          <CancelledLine />
-        ) : pendingInput ? (
-          <McpInputRequiredCard
-            key={`${tabId ?? ''}:${pendingInput.round}:${pendingInput.requestState ?? ''}`}
-            pending={pendingInput}
-          />
-        ) : result != null ? (
-          <McpResultTabs key={tabId ?? ''} tests={toolTests}>
-            <McpResultView result={result} />
-          </McpResultTabs>
-        ) : (
-          <EmptyState icon={Inbox} title={t('mcp.result.none')} variant="compact" size="sm" />
-        )}
-      </div>
-    </div>
+      }
+      result={
+        <>
+          <SectionLabel
+            right={<McpCallHeader meta={toolMeta} copyText={() => toolResultCopyText(result)} />}
+          >
+            {t('mcp.result.title')}
+          </SectionLabel>
+          <McpCallNotes />
+          {resultError ? (
+            <ErrorLine testId="mcp-result-call-error">{resultError}</ErrorLine>
+          ) : toolMeta?.status === 'cancelled' ? (
+            <CancelledLine />
+          ) : pendingInput ? (
+            <McpInputRequiredCard
+              key={`${tabId ?? ''}:${pendingInput.round}:${pendingInput.requestState ?? ''}`}
+              pending={pendingInput}
+            />
+          ) : result != null ? (
+            <McpResultTabs key={tabId ?? ''} tests={toolTests}>
+              <McpResultView result={result} />
+            </McpResultTabs>
+          ) : (
+            <EmptyState icon={Inbox} title={t('mcp.result.none')} variant="compact" size="sm" />
+          )}
+        </>
+      }
+    />
   )
 }

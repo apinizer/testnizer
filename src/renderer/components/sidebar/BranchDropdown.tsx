@@ -1,14 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import {
-  GitBranch,
-  GitMerge,
-  Plus,
-  Check,
-  Trash2,
-  ArrowUpCircle,
-  ArrowDownCircle,
-  Cloud,
-} from 'lucide-react'
+import { GitBranch, Plus, Check, Trash2, Cloud } from 'lucide-react'
 import { useBranchStore } from '../../stores/branch.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
@@ -17,6 +8,8 @@ import { toast } from '../../lib/toast'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import PushCommitModal from '../modals/PushCommitModal'
 import { suggestedCommitMessage } from '../../lib/push-commit-message'
+import BranchGitActions from './BranchGitActions'
+import GitCommitFlow, { type GitFlowMode } from './GitCommitFlow'
 
 export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
   const { t, locale } = useTranslation()
@@ -28,6 +21,8 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
   const [deleteBranchTarget, setDeleteBranchTarget] = useState<string | null>(null)
   // Commit message being edited in the Push dialog; null = dialog closed.
   const [pushDraft, setPushDraft] = useState<string | null>(null)
+  // Commit panel / discard confirmation (issue #207); null = closed.
+  const [gitFlow, setGitFlow] = useState<GitFlowMode>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -48,6 +43,8 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
   const pushBranch = useBranchStore((s) => s.pushBranch)
   const pullBranch = useBranchStore((s) => s.pullBranch)
   const deleteBranch = useBranchStore((s) => s.deleteBranch)
+  const changes = useBranchStore((s) => s.changes)
+  const fetchChanges = useBranchStore((s) => s.fetchChanges)
   const setGitLoading = useUIStore((s) => s.setGitLoading)
   const syncAfterGit = useWorkspaceStore((s) => s.syncAfterGit)
 
@@ -146,6 +143,13 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     setBusy(false)
   }
 
+  function openGitFlow(mode: Exclude<GitFlowMode, null>) {
+    if (!activeProjectId) return
+    setOpen(false)
+    setGitFlow(mode)
+    if (mode === 'commit') void fetchChanges(activeProjectId)
+  }
+
   // Push asks for the commit message first (issue #136); `runPush` does it.
   function handlePush() {
     if (!activeProjectId) return
@@ -161,6 +165,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     const result = await pushBranch(activeProjectId, commitMessage)
     if (result.success) {
       toast.success(t(result.committed === false ? 'toast.pushedNoChanges' : 'toast.pushed'))
+      void fetchChanges(activeProjectId)
     } else {
       toast.error(result.error || t('toast.pushFailed'))
     }
@@ -177,6 +182,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
       toast.success(t('toast.pulled'))
       // Full app refresh
       await syncAfterGit(activeProjectId)
+      void fetchChanges(activeProjectId)
     } else if ('error' in result) {
       toast.error(result.error || t('toast.pullFailed'))
     }
@@ -233,7 +239,10 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
         }
         onClick={() => {
           setOpen(!open)
-          if (!open && activeProjectId) fetchBranches(activeProjectId)
+          if (!open && activeProjectId) {
+            const id = activeProjectId
+            void fetchBranches(id).then(() => (hasGit ? fetchChanges(id) : null))
+          }
         }}
       >
         <GitBranch size={pill ? 11 : 9} aria-hidden="true" />
@@ -266,81 +275,17 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
             boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
           }}
         >
-          {/* Git action buttons (push/pull/merge) */}
+          {/* Git actions: Commit… / Discard / Pull / Push / Merge (issue #207) */}
           {hasGit && (
-            <div
-              className="flex items-center gap-1 border-b px-2 py-1.5"
-              style={{ borderColor: 'var(--border)' }}
-            >
-              <button
-                type="button"
-                data-testid="branch-push"
-                className="flex cursor-pointer items-center gap-1 rounded px-2 py-1"
-                style={{
-                  fontSize: 13,
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text)',
-                }}
-                onClick={handlePush}
-                disabled={busy}
-                title="Push"
-                onMouseOver={(e) => {
-                  ;(e.currentTarget as HTMLElement).style.background = 'var(--bg)'
-                }}
-                onMouseOut={(e) => {
-                  ;(e.currentTarget as HTMLElement).style.background = 'transparent'
-                }}
-              >
-                <ArrowUpCircle size={13} aria-hidden="true" />
-                <span>Push</span>
-              </button>
-              <button
-                type="button"
-                data-testid="branch-pull"
-                className="flex cursor-pointer items-center gap-1 rounded px-2 py-1"
-                style={{
-                  fontSize: 13,
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text)',
-                }}
-                onClick={handlePull}
-                disabled={busy}
-                title="Pull"
-                onMouseOver={(e) => {
-                  ;(e.currentTarget as HTMLElement).style.background = 'var(--bg)'
-                }}
-                onMouseOut={(e) => {
-                  ;(e.currentTarget as HTMLElement).style.background = 'transparent'
-                }}
-              >
-                <ArrowDownCircle size={13} aria-hidden="true" />
-                <span>Pull</span>
-              </button>
-              <button
-                type="button"
-                className="flex cursor-pointer items-center gap-1 rounded px-2 py-1"
-                style={{
-                  fontSize: 13,
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text)',
-                }}
-                onClick={() => setMerging(!merging)}
-                disabled={busy}
-                title="Merge"
-                onMouseOver={(e) => {
-                  ;(e.currentTarget as HTMLElement).style.background = 'var(--bg)'
-                }}
-                onMouseOut={(e) => {
-                  ;(e.currentTarget as HTMLElement).style.background = 'transparent'
-                }}
-              >
-                <GitMerge size={13} aria-hidden="true" />
-                <span>Merge</span>
-              </button>
-            </div>
+            <BranchGitActions
+              busy={busy}
+              changes={changes}
+              onCommit={() => openGitFlow('commit')}
+              onDiscard={() => openGitFlow('discard')}
+              onPull={handlePull}
+              onPush={handlePush}
+              onToggleMerge={() => setMerging(!merging)}
+            />
           )}
 
           {/* Merge mode — select source branch */}
@@ -554,6 +499,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
         onConfirm={confirmDeleteBranch}
         onCancel={() => setDeleteBranchTarget(null)}
       />
+      <GitCommitFlow mode={gitFlow} setMode={setGitFlow} />
       <PushCommitModal
         open={pushDraft !== null}
         defaultMessage={pushDraft ?? ''}

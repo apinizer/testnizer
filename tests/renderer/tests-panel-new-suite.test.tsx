@@ -121,11 +121,22 @@ describe('TestsPanel — new suite placement (issue #57)', () => {
     await waitFor(() => expect(screen.queryByText('Gamma')).not.toBeNull())
     // Append, not prepend — and the pre-existing rows keep their order.
     expect(suiteNames()).toEqual(['Alpha', 'Beta', 'Gamma'])
-    const rows = screen.getAllByTestId('suite-row')
-    // Only the freshly created row is marked — no stale highlight elsewhere.
-    expect(rows.map((r) => r.getAttribute('data-focused'))).toEqual([null, null, 'true'])
-    // Appended rows can sit below the fold, so the panel must scroll to it.
-    expect(scrollSpy).toHaveBeenCalled()
+    // handleCreateSuite does `await loadSuites()` (row appears) and only THEN
+    // setFocusSuiteId, and the row's scrollIntoView lives in a passive effect
+    // React flushes after that commit — all outside act(). waitFor's
+    // MutationObserver can wake up between any two of those steps on a slow
+    // runner (CI: "expected spy to be called at least once"), so the focus mark
+    // and the scroll are asserted as a settled end state, not as a snapshot
+    // taken the instant "Gamma" shows up.
+    await waitFor(() => {
+      const rows = screen.getAllByTestId('suite-row')
+      // Only the freshly created row is marked — no stale highlight elsewhere.
+      expect(rows.map((r) => r.getAttribute('data-focused'))).toEqual([null, null, 'true'])
+      // Appended rows can sit below the fold, so the panel must scroll to it —
+      // to THAT row, not just to any element.
+      expect(scrollSpy).toHaveBeenCalled()
+      expect(scrollSpy.mock.contexts.at(-1)).toBe(rows[2])
+    })
   })
 
   it('drops a search filter that would hide the freshly created suite', async () => {

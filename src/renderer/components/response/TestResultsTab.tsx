@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useResponseStore } from '../../stores/response.store'
 import { ChevronDown } from 'lucide-react'
+import { useTranslation } from '../../lib/i18n'
 import type { TestResult } from '../../types'
 
 type FilterMode = 'all' | 'passed' | 'failed'
@@ -11,6 +12,7 @@ type FilterMode = 'all' | 'passed' | 'failed'
  * results (the MCP result area, issue #160) passes them in.
  */
 export default function TestResultsTab({ results: given }: { results?: TestResult[] } = {}) {
+  const { t } = useTranslation()
   const response = useResponseStore((s) => s.response)
   const results = given ?? response?.testResults ?? []
   const [filter, setFilter] = useState<FilterMode>('all')
@@ -19,7 +21,7 @@ export default function TestResultsTab({ results: given }: { results?: TestResul
   if (results.length === 0) {
     return (
       <div className="p-4 text-center" style={{ color: 'var(--hint)' }}>
-        No tests were run for this request.
+        {t('response.tests.none')}
       </div>
     )
   }
@@ -35,7 +37,11 @@ export default function TestResultsTab({ results: given }: { results?: TestResul
         : results.filter((r) => !r.passed)
 
   const filterLabel =
-    filter === 'all' ? 'Filter Results' : filter === 'passed' ? 'Passed' : 'Failed'
+    filter === 'all'
+      ? t('response.tests.filter')
+      : filter === 'passed'
+        ? t('response.tests.passed')
+        : t('response.tests.failed')
 
   return (
     <div className="h-full overflow-auto" data-testid="test-results-panel">
@@ -94,7 +100,11 @@ export default function TestResultsTab({ results: given }: { results?: TestResul
                     ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                   }}
                 >
-                  {mode === 'all' ? 'All Results' : mode === 'passed' ? 'Passed' : 'Failed'}
+                  {mode === 'all'
+                    ? t('response.tests.all')
+                    : mode === 'passed'
+                      ? t('response.tests.passed')
+                      : t('response.tests.failed')}
                   {mode === 'all' && ` (${results.length})`}
                   {mode === 'passed' && ` (${passed})`}
                   {mode === 'failed' && ` (${failed})`}
@@ -125,7 +135,7 @@ export default function TestResultsTab({ results: given }: { results?: TestResul
                 letterSpacing: '0.02em',
               }}
             >
-              {r.passed ? 'PASSED' : 'FAILED'}
+              {r.passed ? t('response.tests.passBadge') : t('response.tests.failBadge')}
             </span>
 
             {/* Test name + error */}

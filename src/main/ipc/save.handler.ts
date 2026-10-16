@@ -905,7 +905,7 @@ function importProjectData(
     const rows = keepLocalMockAuth(
       rebind(data.mockServers),
       'auth_config',
-      localRow('mock_servers', 'auth_config'),
+      localRow('mock_servers', 'auth_config, description'),
     )
     upsert('mock_servers', rows, [...MOCK_SERVER_COLUMNS])
   }
@@ -913,7 +913,7 @@ function importProjectData(
     const rows = keepLocalMockAuth(
       data.mockEndpoints,
       'auth_override',
-      localRow('mock_endpoints', 'auth_override'),
+      localRow('mock_endpoints', 'auth_override, description'),
     )
     upsert('mock_endpoints', rows, [...MOCK_ENDPOINT_COLUMNS])
   }

@@ -11,7 +11,8 @@ const TABS: McpCapabilityTab[] = ['tools', 'resources', 'prompts']
 /**
  * Left column of the MCP editor (issue #139): Tools | Resources | Prompts
  * tabs with counts, one search box filtering by name / title / description /
- * URI, and the matching list. Selecting a row drives the right pane.
+ * URI, and the matching list. Selecting a row drives the right pane. Its width
+ * is a resizable panel in `McpEditor` (issue #211).
  */
 export default function McpCapabilityList() {
   const { t } = useTranslation()
@@ -72,10 +73,7 @@ export default function McpCapabilityList() {
   else if (filtered.length === 0) emptyText = t('mcp.list.noMatches')
 
   return (
-    <div
-      data-testid="mcp-capability-list"
-      className="flex w-[240px] shrink-0 flex-col overflow-hidden border-r border-[var(--border)]"
-    >
+    <div data-testid="mcp-capability-list" className="flex h-full flex-col overflow-hidden">
       <div role="tablist" className="flex shrink-0 border-b border-[var(--border)]">
         {TABS.map((id) => (
           <button

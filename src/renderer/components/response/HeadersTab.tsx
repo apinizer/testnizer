@@ -2,6 +2,7 @@ import { useRef, useCallback } from 'react'
 import { useResponseStore } from '../../stores/response.store'
 import { useUIStore } from '../../stores/ui.store'
 import { lockDragStyles } from '../../lib/drag-lock'
+import { useTranslation } from '../../lib/i18n'
 
 /**
  * Postman-style response headers tab — clean 2-column list with a draggable
@@ -10,6 +11,7 @@ import { lockDragStyles } from '../../lib/drag-lock'
  * happens on every tab switch.
  */
 export default function HeadersTab() {
+  const { t } = useTranslation()
   const response = useResponseStore((s) => s.response)
   const keyWidth = useUIStore((s) => s.responseHeaderKeyWidth)
   const setKeyWidth = useUIStore((s) => s.setResponseHeaderKeyWidth)
@@ -48,7 +50,7 @@ export default function HeadersTab() {
   if (keys.length === 0) {
     return (
       <div className="p-4 text-center" style={{ color: 'var(--hint)' }}>
-        No headers in response.
+        {t('response.headers.none')}
       </div>
     )
   }
@@ -68,7 +70,7 @@ export default function HeadersTab() {
                 fontSize: 13,
               }}
             >
-              Key
+              {t('response.headers.key')}
               {/* Drag handle straddling the KEY/VALUE border. */}
               <span
                 role="separator"
@@ -100,7 +102,7 @@ export default function HeadersTab() {
                 fontSize: 13,
               }}
             >
-              Value
+              {t('response.headers.value')}
             </th>
           </tr>
         </thead>

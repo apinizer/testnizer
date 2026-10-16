@@ -211,7 +211,10 @@ describe('HTTP mock presets — behaviour on the real engine', () => {
     if (cfg?.type !== 'bearer') return
     const [token] = cfg.tokens
     expect(token).toMatch(/^mock_[0-9a-f]{32}$/)
-    expect(auth.server.description).toContain(token)
+    // The token never goes into the free-text description: it would travel
+    // with the project file unstripped (issue #177).
+    expect(auth.server.description).not.toContain(token)
+    expect(auth.server.description).toContain('Auth Config')
     expect(buildHttpPreset('auth').server.authConfig).not.toEqual(cfg)
 
     const check = (path: string, headers: Record<string, string>) => {

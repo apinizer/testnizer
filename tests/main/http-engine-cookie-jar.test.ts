@@ -21,7 +21,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { randomUUID } from 'node:crypto'
-import { executeHttpRequest } from '../../src/main/protocols/http.engine'
+import { executeHttpRequest, storeResponseCookies } from '../../src/main/protocols/http.engine'
 
 // ─── Local server: /login sets a cookie, everything else echoes it ──
 
@@ -29,6 +29,8 @@ let server: Server
 let port = 0
 /** Cookie header the server saw on the most recent non-login request. */
 let lastCookieHeader: string | undefined
+/** How many separate Cookie header lines that request carried (raw). */
+let lastCookieLineCount = 0
 
 beforeAll(
   () =>
@@ -49,6 +51,9 @@ beforeAll(
           return
         }
         lastCookieHeader = req.headers.cookie
+        lastCookieLineCount = req.rawHeaders.filter(
+          (h, i) => i % 2 === 0 && h.toLowerCase() === 'cookie',
+        ).length
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ cookie: req.headers.cookie ?? null }))
       })
@@ -122,5 +127,45 @@ describe('http.engine cookie jar — per-project scoping (issue #104)', () => {
     // …but a project jar does not.
     const projectCookie = await whoami(projectC)
     expect(projectCookie ?? '').not.toContain('SESSION_DEFAULT')
+  })
+})
+
+// ─── User Cookie header + jar merge (issue #204) ──────────────
+//
+// The user's own Cookie header wins whatever case it is written in: jar cookies
+// are APPENDED to that same header. Before the fix the engine only looked for
+// the exact key `Cookie`, so a lowercase `cookie` row got a second `Cookie` key
+// and axios' case-insensitive merge kept only the jar value — the user's cookie
+// silently vanished from the wire.
+
+describe('http.engine cookie jar — user Cookie header in any case (issue #204)', () => {
+  async function sendWithUserCookie(key: string, projectId: string): Promise<void> {
+    lastCookieHeader = undefined
+    lastCookieLineCount = 0
+    const res = await executeHttpRequest({
+      method: 'GET',
+      url: baseUrl('/whoami'),
+      timeout: 3000,
+      projectId,
+      headers: [{ id: 'c', key, value: 'mine=1', enabled: true }],
+    })
+    expect(res.status).toBe(200)
+  }
+
+  it.each(['cookie', 'Cookie', 'COOKIE'])(
+    'appends jar cookies to a user `%s` header — one header, both values',
+    async (key) => {
+      const project = `projCk-${randomUUID()}`
+      await storeResponseCookies(baseUrl('/'), { 'set-cookie': ['SEEDED=xyz; Path=/'] }, project)
+      await sendWithUserCookie(key, project)
+      expect(lastCookieLineCount).toBe(1)
+      expect(lastCookieHeader).toBe('mine=1; SEEDED=xyz')
+    },
+  )
+
+  it('leaves the user cookie alone when the jar is empty', async () => {
+    await sendWithUserCookie('cookie', `projEmpty-${randomUUID()}`)
+    expect(lastCookieLineCount).toBe(1)
+    expect(lastCookieHeader).toBe('mine=1')
   })
 })

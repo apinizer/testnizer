@@ -27,7 +27,8 @@ export interface AuthCheckInput {
 export type AuthCheckResult = { ok: true } | { ok: false; failure: AuthFailure }
 
 export function checkAuth(input: AuthCheckInput): AuthCheckResult {
-  const { config, headers, query } = input
+  const { headers, query } = input
+  const config = unwrapAuthConfig(input.config)
 
   if (config.type === 'none') return { ok: true }
 
@@ -82,6 +83,26 @@ export function checkAuth(input: AuthCheckInput): AuthCheckResult {
   }
 
   return { ok: true }
+}
+
+/**
+ * Auth Config is a free JSON textarea: a JSON string typed into it (quoted
+ * JSON) is stored one level deeper, and read back as a string. A string has
+ * no `type`, so it used to fall through to "allowed" — a server the user had
+ * protected answered everyone. Unwrap that one level; anything that still is
+ * not an object is treated as no auth configured, as before.
+ */
+function unwrapAuthConfig(config: AuthConfig | string): AuthConfig {
+  if (typeof config !== 'string') return config
+  try {
+    const parsed: unknown = JSON.parse(config)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as AuthConfig
+    }
+  } catch {
+    // not JSON — fall through
+  }
+  return { type: 'none' }
 }
 
 function failure(challenge: string, message: string): AuthCheckResult {

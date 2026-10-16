@@ -10,6 +10,7 @@ import TestsPanel from '../sidebar/TestsPanel'
 import ToolsPanel from '../sidebar/ToolsPanel'
 import SecurityPanel from '../sidebar/SecurityPanel'
 import MockServersPanel from '../mock/MockServersPanel'
+import LeftPanelCollapseButton from './LeftPanelCollapseButton'
 
 export default function LeftPanel() {
   const searchQuery = useWorkspaceStore((s) => s.searchQuery)
@@ -126,6 +127,9 @@ export default function LeftPanel() {
 
             {/* New dropdown (+ button) */}
             <NewDropdown />
+
+            {/* Hide the whole panel (issue #202) — same as Ctrl+B. */}
+            <LeftPanelCollapseButton />
           </div>
 
           {/* Search */}

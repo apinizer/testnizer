@@ -7,6 +7,7 @@ import { protocolChipLabel } from '../../lib/protocol-chip'
 import StatusBadge from '../shared/StatusBadge'
 import { useTranslation } from '../../lib/i18n'
 import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
+import { PROJECT_EXPORT_FORMATS, type ProjectExportFormat } from '../../lib/project-export'
 import {
   FileText,
   Box,
@@ -45,7 +46,8 @@ interface TreeNodeProps {
   onAddFolder?: (parentNode: TreeNodeType) => void
   onDuplicate?: (node: TreeNodeType) => void
   onRunFolder?: (node: TreeNodeType) => void
-  onExport?: (node: TreeNodeType) => void
+  /** `format` is set only for the project root's Export submenu (issue #208). */
+  onExport?: (node: TreeNodeType, format?: ProjectExportFormat) => void
   onImport?: (node: TreeNodeType) => void
   onCreateTestSuite?: (node: TreeNodeType) => void
   onCreateMockServer?: (node: TreeNodeType) => void
@@ -636,7 +638,18 @@ export default function TreeNodeComponent({
       }
       // Export was gated to top-level folders only; nested folders had no
       // Export action (issue #6). handleExport handles any folder/module id.
-      if (onExport) {
+      // The project root picks a format (issue #208): Testnizer JSON or a
+      // Postman / OpenAPI / Insomnia collection. Folders export Testnizer JSON.
+      if (onExport && isProjectRoot) {
+        items.push({
+          label: t('tree.export'),
+          icon: ExportIcon,
+          submenu: PROJECT_EXPORT_FORMATS.map((f) => ({
+            label: t(f.labelKey),
+            action: () => onExport(node, f.id),
+          })),
+        })
+      } else if (onExport) {
         items.push({ label: t('tree.export'), icon: ExportIcon, action: () => onExport(node) })
       }
       if (onImport) {

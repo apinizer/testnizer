@@ -92,6 +92,13 @@ describe('tree rows', () => {
     expect(row).not.toHaveTextContent('GET')
   })
 
+  it('an AI Chat row saved with POST shows the AI chip, not a POST badge (issue #203)', () => {
+    renderNode({ id: 'a1', type: 'request', label: 'AI Test', method: 'POST', protocol: 'ai' })
+    const row = screen.getByTestId('tree-node')
+    expect(within(row).getByTestId('protocol-chip')).toHaveTextContent('AI')
+    expect(row).not.toHaveTextContent('POST')
+  })
+
   it('HTTP and SOAP rows keep their method badge', () => {
     renderNode({ id: 'h1', type: 'request', label: 'List', method: 'GET', protocol: 'http' })
     renderNode({ id: 's1', type: 'endpoint', label: 'Op', method: 'POST', protocol: 'soap' })
@@ -166,8 +173,8 @@ describe('tab strip', () => {
     expect(tabs[6]).toHaveTextContent('DELETE')
     expect(chipOf(7)).toBeUndefined()
     expect(tabs[7]).toHaveTextContent('POST')
-    // AI chat tabs are out of scope: no chip, no fake method.
-    expect(chipOf(8)).toBeUndefined()
+    // AI Chat tabs show the AI chip, never the placeholder POST (issue #203).
+    expect(chipOf(8)).toBe('AI')
     expect(tabs[8]).not.toHaveTextContent('POST')
   })
 
