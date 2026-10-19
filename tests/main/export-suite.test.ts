@@ -364,3 +364,66 @@ describe('suite export → re-import round-trip', () => {
     expect(orders.parent_id).toBe(setup.id)
   })
 })
+
+// ─── Execution order (tester report, 2026-10) ─────────────────
+// `sort_order` is a per-folder sibling index; ordering the whole suite by it
+// interleaved modules ("request 0 of every module, then 1…") in the exported
+// file, and Insomnia — which orders siblings by metaSortKey — got none at all.
+describe('suite export keeps the execution order', () => {
+  function seedModules(): void {
+    // A fresh suite: two modules, each with two requests numbered 0, 1.
+    suiteId = insertSuite('Modules')
+    for (const mod of ['00 Init', '03 Proxy']) {
+      const f = insertSuiteFolder({ name: mod, sortOrder: mod === '00 Init' ? 0 : 1 })
+      for (let i = 0; i < 2; i++) {
+        insertSuiteItem({
+          folderId: f,
+          name: `${mod} #${i}`,
+          method: 'GET',
+          sortOrder: i,
+          schema: { url: `{{baseUrl}}/${i}` },
+        })
+      }
+    }
+  }
+
+  it('Postman: module by module, a level’s requests before its subfolders', () => {
+    const col = JSON.parse(exportSuiteAsPostman(suiteId)) as PmCollection
+    // Fixture: root "Health", then Setup → [Login, Orders → [Create order]].
+    expect(col.item?.map((n) => n.name)).toEqual(['Health', 'Setup'])
+    const setup = col.item?.find((n) => n.name === 'Setup')
+    expect(setup?.item?.map((n) => n.name)).toEqual(['Login', 'Orders'])
+
+    seedModules()
+    const mods = JSON.parse(exportSuiteAsPostman(suiteId)) as PmCollection
+    const flat = (mods.item ?? []).flatMap((m) => (m.item ?? []).map((r) => r.name))
+    expect(flat).toEqual(['00 Init #0', '00 Init #1', '03 Proxy #0', '03 Proxy #1'])
+  })
+
+  it('Insomnia: stamps metaSortKey in execution order and carries folder scripts + auth', () => {
+    const doc = JSON.parse(exportSuiteAsInsomnia(suiteId)) as {
+      resources: Array<{
+        _type: string
+        name?: string
+        metaSortKey?: number
+        preRequestScript?: string
+        authentication?: { type?: string }
+      }>
+    }
+    const setup = doc.resources.find((r) => r._type === 'request_group' && r.name === 'Setup')
+    expect(setup?.preRequestScript).toContain("pm.environment.set('ran'")
+    expect(setup?.authentication?.type).toBe('bearer')
+
+    seedModules()
+    const mods = JSON.parse(exportSuiteAsInsomnia(suiteId)) as typeof doc
+    const requests = mods.resources
+      .filter((r) => r._type === 'request')
+      .sort((a, b) => (a.metaSortKey ?? 0) - (b.metaSortKey ?? 0))
+    expect(requests.map((r) => r.name)).toEqual([
+      '00 Init #0',
+      '00 Init #1',
+      '03 Proxy #0',
+      '03 Proxy #1',
+    ])
+  })
+})

@@ -5,6 +5,7 @@ import {
   buildSuiteRunConfig,
   parseSuiteRunConfig,
 } from '../../lib/suite-run-config'
+import { suiteReorderTarget } from '../../lib/suite-reorder'
 import type { SuiteRunConfig } from '../../types'
 import { Braces, ChevronRight } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
@@ -1440,16 +1441,23 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 onToggleFolder={toggleFolder}
                 onReorder={
                   suiteIdForRunner
-                    ? async (draggedId, insertBeforeId) => {
+                    ? async (draggedId, insertBeforeId, anchorId) => {
                         // Persist through the suite move IPC (single
                         // transaction renumber). The shared event drives both
                         // the sidebar reload and the runner's suite-items
                         // effect — one signal, both surfaces stay in sync.
+                        // Into the folder of the row it was dropped on — see
+                        // lib/suite-reorder.ts (it used to go to the suite root).
+                        const target = suiteReorderTarget(
+                          folderGroups,
+                          draggedId,
+                          insertBeforeId,
+                          anchorId,
+                        )
                         await window.api?.testSuiteItem?.move({
                           id: draggedId,
                           targetSuiteId: suiteIdForRunner,
-                          targetFolderId: null,
-                          insertBeforeId,
+                          ...target,
                         })
                         window.dispatchEvent(new CustomEvent('tests:suite-item-changed'))
                       }

@@ -2803,7 +2803,37 @@ async function runTeardownPhase(
 const RUN_PRE_SCRIPT_ID = '__run_pre_script__'
 const RUN_POST_SCRIPT_ID = '__run_post_script__'
 
-async function executeCollection(options: RunnerExecuteOptions): Promise<RunnerReport> {
+/**
+ * Suite item ids in the suite's execution order (`listItemsBySuite`). The
+ * renderer already sends that order; this protects runs whose id list was
+ * frozen earlier — a scheduled task saved while suites were read with a
+ * suite-wide `ORDER BY sort_order` still holds the interleaved order ("request
+ * 0 of every module, then request 1…"). Applies only when every id is an item
+ * of ONE suite; any other list (APIs endpoints, mixed) is returned unchanged.
+ */
+export function inSuiteExecutionOrder(ids: readonly string[]): string[] {
+  if (ids.length < 2) return [...ids]
+  let suiteId: string | null = null
+  for (const id of ids) {
+    const item = tsiRepo.getItemById(id)
+    if (!item || (suiteId !== null && item.suite_id !== suiteId)) return [...ids]
+    suiteId = item.suite_id
+  }
+  const rank = new Map(tsiRepo.listItemsBySuite(suiteId as string).map((it, i) => [it.id, i]))
+  return [...ids].sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0))
+}
+
+async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<RunnerReport> {
+  const options: RunnerExecuteOptions = {
+    ...rawOptions,
+    endpointIds: inSuiteExecutionOrder(rawOptions.endpointIds),
+    ...(Array.isArray(rawOptions.setupEndpointIds)
+      ? { setupEndpointIds: inSuiteExecutionOrder(rawOptions.setupEndpointIds) }
+      : {}),
+    ...(Array.isArray(rawOptions.teardownEndpointIds)
+      ? { teardownEndpointIds: inSuiteExecutionOrder(rawOptions.teardownEndpointIds) }
+      : {}),
+  }
   const runId = String(nextRunId++)
   const runState: RunState = {
     shouldStop: false,

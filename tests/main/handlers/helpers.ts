@@ -486,7 +486,11 @@ const SCHEMA_SQL = `
     auth TEXT,
     pre_script TEXT,
     post_script TEXT,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    -- Mirrors database.ts: without these the import paths' FK failures
+    -- (child folder inserted before its parent) never reproduced in tests.
+    FOREIGN KEY (suite_id) REFERENCES test_suites(id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_id) REFERENCES test_suite_folders(id) ON DELETE CASCADE
   );
 
   CREATE TABLE test_suite_items (
@@ -502,7 +506,9 @@ const SCHEMA_SQL = `
     source_endpoint_id TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (suite_id) REFERENCES test_suites(id) ON DELETE CASCADE,
+    FOREIGN KEY (folder_id) REFERENCES test_suite_folders(id) ON DELETE CASCADE
   );
 
   CREATE TABLE mock_servers (

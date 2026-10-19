@@ -54,6 +54,14 @@ import { projectFileSlug, pickProjectFile } from '../lib/project-file'
 import { remapAiToolServerRefs, type ToolServerIdMap } from '../lib/ai-tool-server-remap'
 import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
 import { invalidateSecretInventory } from '../lib/secret-inventory-cache'
+import { withFkContext } from '../lib/fk-context'
+import {
+  orderSuiteFolders,
+  orderSuiteItems,
+  parentsFirst,
+  type SuiteOrderFolder,
+  type SuiteOrderItem,
+} from '../../shared/suite-order'
 
 // ─── Multi-format detection for test suite import ────────────────
 export type TestSuiteImportFormat = 'testnizer' | 'postman' | 'insomnia' | 'unknown'
@@ -154,10 +162,24 @@ interface TestSuiteExport {
   version: string
   exportedAt: number
   kind: 'testSuite'
+  /** How `items[].execution_order` is derived — see `SUITE_EXECUTION_MODEL`. */
+  execution_model?: string
   suite: Record<string, unknown>
   items: Record<string, unknown>[]
   folders: Record<string, unknown>[]
 }
+
+/**
+ * Written into every suite export so a reader (another runner, a re-import, a
+ * human) does not have to guess what the numbers mean. Documented in
+ * docs/test-suite-export-format.md.
+ */
+export const SUITE_EXECUTION_MODEL =
+  'items[] is in execution order and items[].execution_order is its 0-based global index. ' +
+  'sort_order is a sibling index within one folder (items.folder_id / folders.parent_id), ' +
+  "not a global order. Execution is a depth-first walk: at every level the level's own " +
+  'items run first by sort_order, then each child folder by sort_order, whole. ' +
+  'folders[] is listed parents-first; folder_path / path are " / "-joined folder names.'
 
 // Columns serialised for git-tracked tables. Kept here as a single source of
 // truth so export, import, and migration share the same projection.
@@ -712,7 +734,10 @@ function importProjectData(
     FOLDER_ADDED_COLUMN_DEFAULTS,
     localRow('folders', 'auth, pre_script, post_script'),
   )
-  upsert('folders', folderRows, [
+  // Parents first: the file lists rows in DB order, and a folder reparented
+  // under a newer one comes ahead of it — on a fresh clone its INSERT failed
+  // the parent_id FK.
+  upsert('folders', parentsFirst(folderRows), [
     'id',
     'project_id',
     'parent_id',
@@ -866,7 +891,7 @@ function importProjectData(
       FOLDER_ADDED_COLUMN_DEFAULTS,
       localRow('test_suite_folders', 'auth, pre_script, post_script'),
     )
-    upsert('test_suite_folders', rows, [
+    upsert('test_suite_folders', parentsFirst(rows), [
       'id',
       'suite_id',
       'parent_id',
@@ -1237,8 +1262,9 @@ export function importFolderData(
   )
 
   const tx = db.transaction(() => {
-    // Folders — root's parent becomes parentFolderId, others remap
-    for (const f of data.folders) {
+    // Folders — root's parent becomes parentFolderId, others remap. Parents
+    // first, or a child listed ahead of its parent fails the parent_id FK.
+    for (const f of parentsFirst(data.folders)) {
       const oldId = f.id as string
       const newId = folderIdMap.get(oldId) as string
       const oldParent = f.parent_id as string | null
@@ -1403,20 +1429,50 @@ export function exportTestSuiteData(suiteId: string): TestSuiteExport {
     }
   }
 
-  const items = db
-    .prepare('SELECT * FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order')
-    .all(suiteId) as Record<string, unknown>[]
-  const folders = db
-    .prepare('SELECT * FROM test_suite_folders WHERE suite_id = ? ORDER BY sort_order')
-    .all(suiteId) as Record<string, unknown>[]
+  // `sort_order` is a per-folder sibling index; ordering the whole suite by it
+  // interleaved folders and wrote a file whose order nobody could run. Items go
+  // out in execution order with an explicit global index, folders parents-first
+  // (which is also the order an import can insert them in).
+  const folders = orderSuiteFolders(
+    db
+      .prepare(
+        'SELECT * FROM test_suite_folders WHERE suite_id = ? ORDER BY sort_order, created_at',
+      )
+      .all(suiteId) as Array<Record<string, unknown> & SuiteOrderFolder>,
+  )
+  const items = orderSuiteItems(
+    db
+      .prepare('SELECT * FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order, created_at')
+      .all(suiteId) as Array<Record<string, unknown> & SuiteOrderItem>,
+    folders,
+  )
+  const byId = new Map(folders.map((f) => [f.id, f]))
+  const pathOf = (folderId: string | null): string => {
+    const parts: string[] = []
+    const seen = new Set<string>()
+    let cur = folderId
+    while (cur && !seen.has(cur)) {
+      seen.add(cur)
+      const f = byId.get(cur)
+      if (!f) break
+      parts.unshift(String(f.name ?? ''))
+      cur = f.parent_id
+    }
+    return parts.join(' / ')
+  }
 
   return {
     version: '2.0.0',
     exportedAt: Date.now(),
     kind: 'testSuite',
+    execution_model: SUITE_EXECUTION_MODEL,
     suite,
-    items,
-    folders,
+    items: items.map((it, i) => ({
+      ...it,
+      execution_order: i,
+      folder_path: pathOf(it.folder_id),
+    })),
+    folders: folders.map((f) => ({ ...f, path: pathOf(f.id) })),
   }
 }
 
@@ -1432,8 +1488,29 @@ export function importTestSuiteData(
 ): { suiteId: string; itemsImported: number } {
   const db = getDb()
   const now = Date.now()
-  const folders = data.folders ?? []
+  // Parents before children: the file may list folders in any order (older
+  // exports used sibling `sort_order`, which puts a child with index 0 ahead of
+  // its parent) and each INSERT is checked against its parent at once — the
+  // "FOREIGN KEY constraint failed" a same-project export → import hit.
+  const folders = parentsFirst(data.folders ?? [])
   const items = data.items ?? []
+  /*
+   * A file that states a global `execution_order` is the authority on run
+   * order: sort by it and renumber `sort_order` per folder from it, so a
+   * hand-edited or foreign file runs in the order it says. Files without it
+   * (pre-1.5.5) keep their per-folder `sort_order` as written.
+   */
+  const hasExecutionOrder =
+    items.length > 0 && items.every((it) => typeof it.execution_order === 'number')
+  const importItems = hasExecutionOrder
+    ? [...items].sort((a, b) => (a.execution_order as number) - (b.execution_order as number))
+    : items
+  const siblingIndex = new Map<string, number>()
+  const nextSiblingIndex = (folderKey: string): number => {
+    const n = siblingIndex.get(folderKey) ?? 0
+    siblingIndex.set(folderKey, n + 1)
+    return n
+  }
 
   const newSuiteId = randomUUID()
   const folderIdMap = new Map<string, string>()
@@ -1492,20 +1569,22 @@ export function importTestSuiteData(
     for (const f of folders) {
       const newId = folderIdMap.get(f.id as string) as string
       const newParentId = f.parent_id ? (folderIdMap.get(f.parent_id as string) ?? null) : null
-      insertFolder.run(
-        newId,
-        newSuiteId,
-        newParentId,
-        f.name ?? 'Folder',
-        f.sort_order ?? 0,
-        (f.auth as string) ?? null,
-        (f.pre_script as string) ?? null,
-        (f.post_script as string) ?? null,
-        (f.created_at as number) || now,
+      withFkContext('test_suite_folders', f, () =>
+        insertFolder.run(
+          newId,
+          newSuiteId,
+          newParentId,
+          f.name ?? 'Folder',
+          f.sort_order ?? 0,
+          (f.auth as string) ?? null,
+          (f.pre_script as string) ?? null,
+          (f.post_script as string) ?? null,
+          (f.created_at as number) || now,
+        ),
       )
     }
 
-    for (const it of items) {
+    for (const it of importItems) {
       const newFolderId = it.folder_id ? (folderIdMap.get(it.folder_id as string) ?? null) : null
       /*
        * An export taken on a build that still had the truncation bug carries
@@ -1518,22 +1597,26 @@ export function importTestSuiteData(
       const storedUrl = (it.url as string | null) ?? null
       const repairedUrl =
         repairedSuiteItemUrl(storedUrl, it.request_schema as string | null) ?? storedUrl
-      insertItem.run(
-        (typeof it.id === 'string' ? itemIdMap.get(it.id) : undefined) ?? randomUUID(),
-        newSuiteId,
-        newFolderId,
-        it.protocol || 'http',
-        it.name ?? 'Imported request',
-        it.method ?? null,
-        repairedUrl,
-        (it.request_schema as string) ?? '{}',
-        (it.assertions as string) ?? null,
-        // source_endpoint_id points at a row in the SOURCE project; keeping
-        // it would leak that id into the target. Drop it on import.
-        null,
-        it.sort_order ?? 0,
-        (it.created_at as number) || now,
-        now,
+      withFkContext('test_suite_items', it, () =>
+        insertItem.run(
+          (typeof it.id === 'string' ? itemIdMap.get(it.id) : undefined) ?? randomUUID(),
+          newSuiteId,
+          newFolderId,
+          it.protocol || 'http',
+          it.name ?? 'Imported request',
+          it.method ?? null,
+          repairedUrl,
+          (it.request_schema as string) ?? '{}',
+          (it.assertions as string) ?? null,
+          // source_endpoint_id points at a row in the SOURCE project; keeping
+          // it would leak that id into the target. Drop it on import. Items
+          // are self-contained snapshots, so nothing needs re-pointing at the
+          // target's endpoints (by id or by name + URL).
+          null,
+          hasExecutionOrder ? nextSiblingIndex(newFolderId ?? '') : (it.sort_order ?? 0),
+          (it.created_at as number) || now,
+          now,
+        ),
       )
     }
   })
@@ -1900,7 +1983,9 @@ export function importProjectAsNew(
       `INSERT INTO folders (id, project_id, parent_id, name, sort_order, auth, pre_script, post_script)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    for (const f of data.folders) {
+    // Parents first — see `parentsFirst` (a child listed ahead of its parent
+    // failed the parent_id FK).
+    for (const f of parentsFirst(data.folders)) {
       const newId = folderIdMap.get(f.id as string) as string
       const oldParent = f.parent_id as string | null
       const newParent =
@@ -2104,22 +2189,24 @@ export function importProjectAsNew(
     for (const f of data.testSuiteFolders || []) {
       suiteFolderIdMap.set(f.id as string, randomUUID())
     }
-    for (const f of data.testSuiteFolders || []) {
+    for (const f of parentsFirst(data.testSuiteFolders || [])) {
       const newSuiteId = suiteIdMap.get(f.suite_id as string)
       if (!newSuiteId) continue
       const newId = suiteFolderIdMap.get(f.id as string) as string
       const newParentId = f.parent_id ? (suiteFolderIdMap.get(f.parent_id as string) ?? null) : null
-      insertSuiteFolder.run(
-        newId,
-        newSuiteId,
-        newParentId,
-        f.name ?? 'Folder',
-        f.sort_order ?? 0,
-        // Folder-level auth + scripts (issue #186).
-        f.auth ?? null,
-        f.pre_script ?? null,
-        f.post_script ?? null,
-        (f.created_at as number) || now,
+      withFkContext('test_suite_folders', f, () =>
+        insertSuiteFolder.run(
+          newId,
+          newSuiteId,
+          newParentId,
+          f.name ?? 'Folder',
+          f.sort_order ?? 0,
+          // Folder-level auth + scripts (issue #186).
+          f.auth ?? null,
+          f.pre_script ?? null,
+          f.post_script ?? null,
+          (f.created_at as number) || now,
+        ),
       )
     }
     for (const it of data.testSuiteItems || []) {

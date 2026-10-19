@@ -31,7 +31,8 @@ interface RunnerSequenceProps {
    * Only wired in suite-mode today — the APIs / Runner mode keeps the
    * tree's sort order and doesn't support inline reorder.
    */
-  onReorder?: (draggedId: string, insertBeforeId: string | null) => void
+  /** `anchorId` is the row the drop landed on — its folder is the target. */
+  onReorder?: (draggedId: string, insertBeforeId: string | null, anchorId?: string) => void
 }
 
 /* ── Tree model ────────────────────────────────────────────────
@@ -394,7 +395,8 @@ function EndpointRow({
   depth: number
   endpoint: RunnerEndpointItem
   onToggle: () => void
-  onReorder?: (draggedId: string, insertBeforeId: string | null) => void
+  /** `anchorId` is the row the drop landed on — its folder is the target. */
+  onReorder?: (draggedId: string, insertBeforeId: string | null, anchorId?: string) => void
   nextEndpointId: string | null
   onSetPhase?: (id: string, phase: RunPhase) => void
   t: (key: string) => string
@@ -433,7 +435,7 @@ function EndpointRow({
     if (draggedId === endpoint.id) return
     // 'before' → insert before this row. 'after' → insert before the row
     // that immediately follows this one (null = append at end of list).
-    onReorder(draggedId, pos === 'before' ? endpoint.id : nextEndpointId)
+    onReorder(draggedId, pos === 'before' ? endpoint.id : nextEndpointId, endpoint.id)
   }
 
   return (

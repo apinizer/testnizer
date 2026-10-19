@@ -123,7 +123,11 @@ describe('projectIdOfRunnable', () => {
   })
 
   it('returns null for a suite item whose parent suite is missing (orphaned JOIN)', () => {
-    const item = seedSuiteItem(randomUUID()) // suite_id points at nothing
+    // suite_id points at nothing. The test schema mirrors production's FKs, so
+    // the orphan (a damaged DB, not one Testnizer writes) is seeded with them off.
+    testDb.pragma('foreign_keys = OFF')
+    const item = seedSuiteItem(randomUUID())
+    testDb.pragma('foreign_keys = ON')
     expect(projectIdOfRunnable(item)).toBeNull()
   })
 })
