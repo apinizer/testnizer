@@ -3336,6 +3336,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.noChatEndpoint': 'Add POST /v1/chat/completions first',
     'mock.noChatEndpoints': 'No chat endpoints yet — Add creates POST /v1/chat/completions.',
     'mock.sdkBaseUrl': 'SDK base URL',
+    'mock.aiSettingsHint':
+      'Any OpenAI / Anthropic SDK works with base URL {url}; auth is none by default.',
     'mock.anthropicKeyHint':
       'Testing /v1/messages from the AI Chat tab sends your saved Anthropic key to this mock — fine for localhost; never type a mock token into the Anthropic provider (it replaces your real key).',
     'mockLlm.title': 'LLM',
@@ -6826,6 +6828,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.noChatEndpoints':
       'Henüz sohbet uç noktası yok — Ekle, POST /v1/chat/completions oluşturur.',
     'mock.sdkBaseUrl': 'SDK temel URL’si',
+    'mock.aiSettingsHint':
+      'Her OpenAI / Anthropic SDK’sı {url} temel URL’siyle çalışır; kimlik doğrulama varsayılan olarak kapalıdır.',
     'mock.anthropicKeyHint':
       '/v1/messages’ı AI Chat sekmesinden denemek kayıtlı Anthropic anahtarınızı bu mock’a gönderir — localhost için sorun değil; Anthropic sağlayıcısına asla bir mock belirteci yazmayın (gerçek anahtarınızın yerine geçer).',
     'mockLlm.title': 'LLM',

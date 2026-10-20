@@ -28,7 +28,7 @@ import { provisionJwksServe } from '../../lib/jwks-serve'
 import { normalizeMockServerKind, type MockServerKind } from '../../../shared/mock-kind'
 import MockEditorHeader, { MockStartStopButton, MockUrlLine } from './MockEditorHeader'
 import { MockEditorTabButton } from '../mock-mcp/MockMcpEditorTabs'
-import { mockServerUrl } from './mock-http-tabs'
+import { mockSdkBaseUrl, mockServerUrl } from './mock-http-tabs'
 import { bodyTypeOptions, showsHttpEndpointTools } from './mock-kind-ui'
 import { MockEndpointOpenInSse, MockSseHeaderButton } from './MockOpenInSse'
 import MockSseOptions, { MockSseBodyNotes } from './MockSseOptions'
@@ -128,7 +128,7 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
         {kind === 'ai' && (
           <MockUrlLine
             label={t('mock.sdkBaseUrl')}
-            url={`${mockServerUrl(server)}/v1`}
+            url={mockSdkBaseUrl(server)}
             testId="mock-sdk-base-url"
           />
         )}
@@ -153,7 +153,7 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
 
       <div className="flex min-h-0 flex-1">
         {tab === 'endpoints' && <EndpointsTab serverId={serverId} kind={kind} />}
-        {tab === 'settings' && <SettingsTab server={server} />}
+        {tab === 'settings' && <SettingsTab server={server} kind={kind} />}
         {tab === 'logs' && <LogsTab serverId={serverId} />}
       </div>
     </div>
@@ -1183,7 +1183,7 @@ function HeadersTable({
 
 // ─── Settings tab ────────────────────────────────────────────────
 
-function SettingsTab({ server }: { server: MockServer }) {
+function SettingsTab({ server, kind }: { server: MockServer; kind: MockServerKind }) {
   const { t } = useTranslation()
   const updateServer = useMockStore((s) => s.updateServer)
   const [draft, setDraft] = useState(server)
@@ -1275,6 +1275,16 @@ function SettingsTab({ server }: { server: MockServer }) {
             className="w-full rounded border px-2 py-1 font-mono text-sm"
             style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
           />
+          {/* AI: the SDK base URL the header shows, and that auth is off by default (§D.3.3). */}
+          {kind === 'ai' && (
+            <div
+              className="mt-1 text-[11px]"
+              style={{ color: 'var(--muted)' }}
+              data-testid="mock-settings-ai-hint"
+            >
+              {t('mock.aiSettingsHint').replace('{url}', mockSdkBaseUrl(server))}
+            </div>
+          )}
         </Field>
         <Field label="">
           <label

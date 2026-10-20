@@ -343,6 +343,28 @@ describe('MockServerEditor — AI kind (issue #221, Faz 2b)', () => {
     expect(screen.queryByTestId('mock-sdk-base-url')).toBeNull()
   })
 
+  it('Settings tab: an AI server says which SDK base URL to use (same as the header line)', async () => {
+    await mount({ ...AI_SERVER, basePath: 'llm' })
+    fireEvent.click(screen.getByTestId('mock-tab-settings'))
+    const hint = screen.getByTestId('mock-settings-ai-hint')
+    expect(hint).toHaveTextContent(
+      'Any OpenAI / Anthropic SDK works with base URL http://127.0.0.1:3300/llm/v1; auth is none by default.',
+    )
+    expect(screen.getByTestId('mock-sdk-base-url')).toHaveTextContent(
+      'http://127.0.0.1:3300/llm/v1',
+    )
+  })
+
+  it('Settings tab: HTTP and SSE servers show no AI SDK hint', async () => {
+    for (const kind of ['http', 'sse'] as const) {
+      await mount(httpServer({ id: 'srv-1', kind }))
+      fireEvent.click(screen.getByTestId('mock-tab-settings'))
+      expect(screen.getByText('Base path')).toBeInTheDocument()
+      expect(screen.queryByTestId('mock-settings-ai-hint')).toBeNull()
+      cleanup()
+    }
+  })
+
   it('AI without a chat endpoint (Anthropic only): the header button is disabled and says why', async () => {
     await mount(AI_SERVER, {
       endpoints: [httpEndpoint({ serverId: 'srv-1', method: 'POST', path: '/v1/messages' })],
